@@ -106,6 +106,23 @@ export function renderPageShellStyles(): string {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .workdir-pill .workdir-action {
+      flex: 0 0 26px;
+      width: 26px;
+      min-width: 26px;
+      height: 26px;
+      padding: 0;
+      line-height: 1;
+    }
+    .project-name {
+      max-width: min(28vw, 320px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+    }
     .pill-compact {
       gap: 4px;
       padding: 3px 7px;
@@ -446,6 +463,10 @@ export function renderPageShellStyles(): string {
     .brand-lockup span {
       color: var(--muted);
       font-size: 11px;
+    }
+    .brand-lockup .project-name {
+      color: var(--accent);
+      font-size: 12px;
     }
     .top-nav-actions {
       display: flex;
@@ -3431,7 +3452,20 @@ export function renderPageShellStyles(): string {
         align-items: center;
         justify-content: space-between;
       }
-      .top-nav-meta .pill { display: none; }
+      .top-nav-meta .pill {
+        display: flex;
+        flex: 1 1 100%;
+        max-width: 100%;
+      }
+      .top-nav-brand,
+      .top-nav-meta,
+      .workdir-pill {
+        width: 100%;
+        min-width: 0;
+      }
+      .workdir-pill #workdir { flex: 1 1 0; }
+      #workdir { max-width: none; }
+      .project-name { max-width: 55vw; }
       .top-nav-center { min-width: 0; gap: 5px; }
       .top-nav-center .console-tabs { overflow-x: auto; }
       .top-nav-center .hero-utilities {

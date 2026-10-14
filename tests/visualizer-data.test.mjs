@@ -64,6 +64,7 @@ async function seedProjectFixture(workdir) {
     JSON.stringify(
       {
         projectId: "viz.project.demo",
+        projectName: "visualizer-demo",
         createdAt: "2026-04-23T00:00:00.000Z"
       },
       null,
@@ -852,6 +853,7 @@ test("visualizer data projects project and graph information", async () => {
 
   const project = await inspectProjectVisualization(workdir);
   assert.equal(project.project.systemId, "viz.project.demo");
+  assert.equal(project.project.projectName, "visualizer-demo");
   assert.equal(project.project.reviewedRoleIds[0], "demo-analyst");
   assert.ok(project.project.bindingSummaryByRoleId["demo-analyst"]);
 

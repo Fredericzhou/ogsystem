@@ -9,6 +9,7 @@ export type ControlPlanePrincipal = {
 
 export type ControlPlaneAction =
   | "read"
+  | "workspace.open"
   | "project.write"
   | "run.start"
   | "run.control"

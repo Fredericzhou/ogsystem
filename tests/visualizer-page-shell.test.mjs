@@ -37,6 +37,9 @@ const REQUIRED_ELEMENT_IDS = [
   "logs",
   "detail",
   "locale-select",
+  "project-name",
+  "copy-workdir",
+  "open-workdir",
   "global-status-context",
   "global-status-diagnostics"
 ];
@@ -75,6 +78,8 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /class="top-nav-center"[\s\S]*id="console-tabs"[\s\S]*class="hero-utilities"/);
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="workdir"/);
+  assert.match(html, /id="copy-workdir"[^>]*aria-label=/);
+  assert.match(html, /id="open-workdir"[^>]*hidden/);
   assert.match(html, /class="workbench-state-cache" hidden[\s\S]*id="workbench-title"[\s\S]*id="workbench-meta"[\s\S]*id="workbench-tabs"[\s\S]*id="workbench-actions"/);
   assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="global-status-context"[\s\S]*id="global-status-diagnostics"[\s\S]*id="workbench-status"[\s\S]*id="live"/);
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
@@ -109,6 +114,16 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /id="log-page-size"[^>]*aria-label="[^"]+"/);
   assert.match(html, /id="logs-all"[^>]*aria-label="[^"]+"/);
   assert.doesNotMatch(html, /aria-label="Log (page size|scope|since)"/);
+});
+
+test("local directory action is exposed only when the server allows local opening", () => {
+  const localHtml = renderPageHtml("/tmp/demo", "/api/v1", { allowLocalDirectoryOpen: true });
+  const remoteHtml = renderPageHtml("/tmp/demo", "/api/v1");
+  assert.match(localHtml, /id="open-workdir"[^>]*aria-label="Open folder"/);
+  assert.doesNotMatch(localHtml, /id="open-workdir"[^>]*hidden/);
+  assert.match(remoteHtml, /id="open-workdir"[^>]*hidden/);
+  assert.match(localHtml, /"allowLocalDirectoryOpen":true/);
+  assert.match(remoteHtml, /"allowLocalDirectoryOpen":false/);
 });
 
 test("page shell styles are isolated behind a CSS renderer", () => {

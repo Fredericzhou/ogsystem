@@ -114,7 +114,6 @@ export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
 export type StudioGraphBridgeOptions = {
   initialLayoutMode?: StudioLayoutMode;
-  forceInitialAutoLayout?: boolean;
   defaultAutoLayoutRequestId?: number;
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasSnapshot | null;
@@ -281,6 +280,7 @@ export class StudioGraphIsland {
   private lastHandledDismissCommandFormRequest = 0;
   private lastHandledHistoryEventId = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
+  private liveRouteRefreshFrame: number | null = null;
   private commandForm: StudioCommandFormState | null = null;
   private pendingEdgePreview: PendingStudioEdgePreview | null = null;
   private pendingRoleInsertion: PendingStudioRoleInsertion | null = null;
@@ -534,6 +534,10 @@ export class StudioGraphIsland {
 
   dispose(): void {
     this.updateGeneration += 1;
+    if (this.liveRouteRefreshFrame !== null) {
+      cancelAnimationFrame(this.liveRouteRefreshFrame);
+      this.liveRouteRefreshFrame = null;
+    }
     if (this.syncCanvasTimer) {
       clearTimeout(this.syncCanvasTimer);
       this.syncCanvasTimer = null;
@@ -867,8 +871,16 @@ export class StudioGraphIsland {
     this.graph.on("blank:mouseup", () => {
       this.schedulePendingEdgeCleanup();
     });
+    this.graph.on("node:moving", ({ node }) => {
+      if (this.isReadOnly() || isStudioSccGroup(node) || this.syncingSccGroupDrag) return;
+      this.scheduleLiveRouteRefresh();
+    });
     this.graph.on("node:moved", ({ node }) => {
       if (this.isReadOnly()) return;
+      if (this.liveRouteRefreshFrame !== null) {
+        cancelAnimationFrame(this.liveRouteRefreshFrame);
+        this.liveRouteRefreshFrame = null;
+      }
       if (isStudioSccGroup(node)) {
         const previous = studioSccGroupPreviousPosition(node);
         const current = node.getPosition();
@@ -1646,7 +1658,6 @@ export class StudioGraphIsland {
     if (
       !requested &&
       !this.isReadOnly() &&
-      !this.options.forceInitialAutoLayout &&
       !this.hasRenderedProjection &&
       this.hasCompleteStoredRoleLayout()
     ) {
@@ -1882,6 +1893,17 @@ export class StudioGraphIsland {
       this.syncCanvasTimer = null;
       void this.syncCanvas();
     }, 250);
+  }
+
+  private scheduleLiveRouteRefresh(): void {
+    if (this.liveRouteRefreshFrame !== null) return;
+    this.liveRouteRefreshFrame = requestAnimationFrame(() => {
+      this.liveRouteRefreshFrame = null;
+      if (this.isReadOnly() || !this.currentViewModel) return;
+      alignStudioSccGroups(this.graph);
+      this.refreshStoredProjectionFromGraph();
+      this.renderMinimap();
+    });
   }
 
   private async applyCommand(

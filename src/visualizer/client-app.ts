@@ -420,6 +420,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     let actionFormReturnFocusEl = null;
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
+    const projectNameEl = document.getElementById("project-name");
+    const copyWorkdirButton = document.getElementById("copy-workdir");
+    const openWorkdirButton = document.getElementById("open-workdir");
     const projectWizardEl = document.getElementById("project-wizard");
     const opsSummaryEl = document.getElementById("ops-summary");
     const releaseGateEl = document.getElementById("release-gate");
@@ -1652,9 +1655,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of workbenchViewButtons()) {
         bindOnce(button, "click", "workbench-view", () => {
           const nextView = button.getAttribute("data-workbench-view") || "bridge";
-          if (nextView === "bridge" && state.workbenchView !== "bridge") {
-            state.studioAutoLayoutRequestId = Number(state.studioAutoLayoutRequestId || 0) + 1;
-          }
           state.workbenchView = nextView;
           state.buildMode = "edit";
           if (state.workbenchView === "bridge") {
@@ -2107,9 +2107,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(button, "click", "console-tab", () => {
           const nextTab = button.getAttribute("data-console-tab") || designConsoleTab();
           const enteringRun = nextTab === runConsoleTab() && state.consoleTab !== runConsoleTab();
-          if (nextTab === designConsoleTab() && state.consoleTab !== designConsoleTab()) {
-            state.studioAutoLayoutRequestId = Number(state.studioAutoLayoutRequestId || 0) + 1;
-          }
           state.consoleTab = nextTab;
           if (enteringRun && !state.selectedRunId) {
             state.operateTab = "operations";
@@ -5004,7 +5001,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         viewport: state.graphViewport || undefined,
         initialLayoutMode: window.matchMedia?.("(max-width: 720px)").matches ? "stacked" : "flow",
-        forceInitialAutoLayout: true,
         defaultAutoLayoutRequestId: state.studioAutoLayoutRequestId,
         editSelectionRequest: state.studioBridgeEditSelectionRequest,
         defaultAutoLayout: true,
@@ -5632,6 +5628,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           workdirEl.textContent = workspace.workdir;
           workdirEl.title = workspace.workdir;
         }
+        if (projectNameEl) {
+          projectNameEl.textContent = String(workspace.workdir || getCurrentWorkdir()).split(/[\\/]/).filter(Boolean).pop() || "";
+          projectNameEl.hidden = !projectNameEl.textContent;
+        }
         if (opsSummaryEl) opsSummaryEl.innerHTML = workspaceEmptyStateHtml("operate");
         if (releaseGateEl) releaseGateEl.innerHTML = workspaceEmptyStateHtml("validate");
         bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is initialized.")) + '</div>';
@@ -5652,6 +5652,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (workdirEl) {
         workdirEl.textContent = state.project.summary?.workdir || workdirEl.textContent;
         workdirEl.title = workdirEl.textContent || "";
+      }
+      if (projectNameEl) {
+        projectNameEl.textContent = state.project.summary?.project?.projectName || state.project.summary?.name || "";
+        projectNameEl.hidden = !projectNameEl.textContent;
       }
       if (opsSummaryEl) {
         opsSummaryEl.innerHTML = renderOpsSummaryPanel({
@@ -8428,6 +8432,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setFlash("success", t("visualizer.refreshed", undefined, "Visualizer refreshed."));
       });
     });
+
+    if (copyWorkdirButton) {
+      copyWorkdirButton.addEventListener("click", async () => {
+        const path = state.project?.summary?.workdir || state.workspace?.workdir || workdirEl?.textContent || "";
+        try {
+          await navigator.clipboard.writeText(path);
+          setFlash("success", t("app.workdirCopied"));
+        } catch {
+          setFlash("error", t("app.workdirCopyFailed"));
+        }
+      });
+    }
+    if (openWorkdirButton && (window.__OGS_VISUALIZER_BOOTSTRAP__?.allowLocalDirectoryOpen === true)) {
+      openWorkdirButton.addEventListener("click", async () => {
+        try {
+          await requestAction(API_PREFIX + "/project/open-directory", {});
+          setFlash("success", t("app.workdirOpened"));
+        } catch {
+          setFlash("error", t("app.workdirOpenFailed"));
+        }
+      });
+    }
 
     timelineApplyButton.addEventListener("click", async () => {
       readTimelineFiltersFromInputs();

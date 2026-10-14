@@ -14,6 +14,7 @@ import { addTopologyFlowOrder, topologyComponentIds } from "../src/visualizer/to
 import { formatStudioEdgeLabel } from "../src/visualizer/studio-edge-semantics.ts";
 import { studioRoleMarkerVisible, studioRoleMonogram } from "../src/visualizer/studio-client/studio-role-marker.ts";
 import { studioSccGroupGeometry } from "../src/visualizer/studio-client/studio-graph-render.ts";
+import { buildGraphViewModel } from "../src/visualizer/graph-view-model.ts";
 
 test("SCC frames keep compact padding clear of neighboring role and boundary nodes", () => {
   const geometry = studioSccGroupGeometry({
@@ -56,6 +57,23 @@ test("Studio role markers derive readable monograms", () => {
   assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: true }), true);
   assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: false }), false);
   assert.equal(studioRoleMarkerVisible({ roleSeat: false, editable: true }), false);
+});
+
+test("Mini Program factory stored layout keeps its feedback loop clear of nodes and labels", async () => {
+  const authoringPath = new URL("../examples/wechat-miniprogram-factory/.ogs/studio/system.authoring.json", import.meta.url);
+  const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
+  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
+  const projection = createStoredLayoutProjection(viewModel);
+  const feedback = projection.edges.find((item) => item.id === "4:testing:TEST_FAIL:coding");
+
+  assert.ok(feedback);
+  assert.ok(feedback.routing.routePoints.length >= 2);
+  assert.equal(projection.diagnostics.some((item) => item.code === "EDGE_NODE_COLLISION"), false);
+  assert.equal(projection.diagnostics.some((item) => item.code === "LABEL_COLLISION"), false, JSON.stringify(projection.diagnostics));
+  assert.deepEqual(
+    projection.nodes.filter((item) => ["coding", "testing"].includes(item.id)).map(({ id, x, y }) => ({ id, x, y })),
+    [{ id: "coding", x: 330, y: 376 }, { id: "testing", x: 610, y: 376 }]
+  );
 });
 
 test("Chinese role names stay readable in compact graph cards", () => {

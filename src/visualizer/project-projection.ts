@@ -1047,11 +1047,12 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
   const ogsPaths = resolveOgsPaths(workdir);
   const context = await loadProjectContext(workdir);
   const persistedIndex = await loadPersistedRunsIndex(workdir);
+  const projectName = asString(asRecord(context.projectMeta)?.projectName)?.trim() || basename(workdir);
 
   return {
     workdir,
     project: {
-      projectName: basename(workdir),
+      projectName,
       projectId: asString(asRecord(context.projectMeta)?.projectId),
       createdAt: asString(asRecord(context.projectMeta)?.createdAt),
       systemId: context.system.systemId,

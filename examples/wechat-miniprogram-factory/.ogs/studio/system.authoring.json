@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "project": {
+    "workdir": ".",
+    "systemPath": "system.mmd"
+  },
+  "system": {
+    "systemId": "wechat.miniprogram.factory",
+    "systemVersion": "1.0.0",
+    "entryRoleId": "requirements",
+    "entryEventType": "REQUEST",
+    "lawGlobalRef": "law.console.base"
+  },
+  "roles": {
+    "requirements": {
+      "roleId": "requirements",
+      "title": "Requirements",
+      "bindingKind": "exec",
+      "profileId": "profile.workflow.stage"
+    },
+    "design": {
+      "roleId": "design",
+      "title": "Design",
+      "bindingKind": "exec",
+      "profileId": "profile.workflow.stage"
+    },
+    "coding": {
+      "roleId": "coding",
+      "title": "Coding",
+      "bindingKind": "exec",
+      "profileId": "profile.workflow.stage",
+      "loopMax": 2,
+      "contextMap": {
+        "previous_output": "direct.data"
+      }
+    },
+    "testing": {
+      "roleId": "testing",
+      "title": "Testing",
+      "bindingKind": "exec",
+      "profileId": "profile.workflow.stage"
+    },
+    "seal": {
+      "roleId": "seal",
+      "title": "Seal",
+      "bindingKind": "exec",
+      "profileId": "profile.workflow.stage"
+    }
+  },
+  "flows": {
+    "1:requirements:SPEC_READY:design": {
+      "flowId": "1:requirements:SPEC_READY:design",
+      "fromRoleId": "requirements",
+      "toRoleId": "design",
+      "eventType": "SPEC_READY",
+      "runtimeOnlyErrorFlow": false
+    },
+    "2:design:DESIGN_READY:coding": {
+      "flowId": "2:design:DESIGN_READY:coding",
+      "fromRoleId": "design",
+      "toRoleId": "coding",
+      "eventType": "DESIGN_READY",
+      "runtimeOnlyErrorFlow": false
+    },
+    "3:coding:CODE_READY:testing": {
+      "flowId": "3:coding:CODE_READY:testing",
+      "fromRoleId": "coding",
+      "toRoleId": "testing",
+      "eventType": "CODE_READY",
+      "runtimeOnlyErrorFlow": false
+    },
+    "4:testing:TEST_FAIL:coding": {
+      "flowId": "4:testing:TEST_FAIL:coding",
+      "fromRoleId": "testing",
+      "toRoleId": "coding",
+      "eventType": "TEST_FAIL",
+      "runtimeOnlyErrorFlow": false
+    },
+    "5:testing:TEST_PASS:seal": {
+      "flowId": "5:testing:TEST_PASS:seal",
+      "fromRoleId": "testing",
+      "toRoleId": "seal",
+      "eventType": "TEST_PASS",
+      "runtimeOnlyErrorFlow": false
+    },
+    "6:seal:SEALED:output": {
+      "flowId": "6:seal:SEALED:output",
+      "fromRoleId": "seal",
+      "toRoleId": "__system_end__",
+      "eventType": "SEALED",
+      "runtimeOnlyErrorFlow": false
+    }
+  },
+  "layout": {
+    "nodes": {
+      "requirements": {
+        "x": 64,
+        "y": 210,
+        "width": 185,
+        "height": 84
+      },
+      "design": {
+        "x": 64,
+        "y": 376,
+        "width": 180,
+        "height": 84
+      },
+      "coding": {
+        "x": 330,
+        "y": 376,
+        "width": 180,
+        "height": 84
+      },
+      "testing": {
+        "x": 610,
+        "y": 376,
+        "width": 180,
+        "height": 84
+      },
+      "seal": {
+        "x": 880,
+        "y": 376,
+        "width": 180,
+        "height": 84
+      }
+    },
+    "viewport": {
+      "x": 329,
+      "y": -70.4,
+      "zoom": 0.787
+    }
+  }
+}

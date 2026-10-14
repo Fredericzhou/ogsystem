@@ -3,6 +3,12 @@ import type { en } from "./en.js";
 type MessageKey = keyof typeof en;
 
 export const zhCN = {
+  "app.copyWorkdir": "复制路径",
+  "app.openWorkdir": "打开所在目录",
+  "app.workdirCopied": "工作目录路径已复制。",
+  "app.workdirCopyFailed": "无法复制工作目录路径。",
+  "app.workdirOpened": "已打开工作目录。",
+  "app.workdirOpenFailed": "无法打开工作目录。",
   "studio.graph.authoringDraft.saved": "Studio 作者草稿已保存",
   "studio.graph.authoringDraft.unsaved": "Studio 作者草稿未保存",
   "studio.graph.authoringDraft.stale": "Studio 作者草稿已过期",

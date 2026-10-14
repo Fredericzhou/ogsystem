@@ -8,6 +8,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
+import { spawn } from "node:child_process";
 import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { isIP, type Server as NetServer } from "node:net";
@@ -680,8 +681,16 @@ function isLoopbackHost(host: string): boolean {
   return addressType === 4 ? normalized.startsWith("127.") : addressType === 6 && normalized === "::1";
 }
 
+function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const normalized = address.toLowerCase().replace(/^::ffff:/, "").replace(/^\[|\]$/g, "");
+  return normalized === "::1" || normalized === "localhost" ||
+    (isIP(normalized) === 4 && normalized.startsWith("127."));
+}
+
 function resolveControlPlaneAction(method: string, segments: string[]): ControlPlaneAction {
   if (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") return "read";
+  if (segments[2] === "project" && segments[3] === "open-directory") return "workspace.open";
   if (segments[2] === "runs" && segments[3] === "start") return "run.start";
   if (segments[2] === "sessions" && segments[4] === "turns") return "run.start";
   if (segments[2] === "runs" && segments[4] === "stop") return "run.control";
@@ -862,6 +871,27 @@ async function handleApiStudioTemplates(response: ServerResponse): Promise<void>
 
 async function handleApiWorkspace(state: VisualizationServerState, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectWorkspace(state.workdir));
+}
+
+async function handleApiOpenWorkdir(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: VisualizationServerOptions
+): Promise<void> {
+  if (!isLoopbackHost(options.host) || !isLoopbackAddress(request.socket.remoteAddress)) {
+    throw new HttpError(403, "LOCAL_WORKDIR_OPEN_ONLY", "Opening the workdir is available only to local Visualizer clients.");
+  }
+  const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const child = spawn(command, [workdir], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", rejectPromise);
+    child.once("spawn", () => {
+      child.unref();
+      resolvePromise();
+    });
+  });
+  jsonResponse(response, 200, { opened: true });
 }
 
 async function assertInitializedProject(workdir: string): Promise<void> {
@@ -1610,10 +1640,11 @@ function resolveServerLocale(url: URL, request: IncomingMessage): Locale {
   return resolveLocaleFromAcceptLanguage(request.headers["accept-language"]) ?? "en";
 }
 
-function renderPageHtml(workdir: string, locale: Locale): string {
+function renderPageHtml(workdir: string, locale: Locale, allowLocalDirectoryOpen: boolean): string {
   return renderVisualizerPageHtml(workdir, API_PREFIX, {
     locale,
-    messages: getDictionary(locale)
+    messages: getDictionary(locale),
+    allowLocalDirectoryOpen
   });
 }
 
@@ -1994,7 +2025,8 @@ async function handleVisualizationRequest(
   if (await handleHealthRequest(pathname, state.workdir, response)) return;
 
   if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
-    textResponse(response, 200, renderPageHtml(state.workdir, resolveServerLocale(url, request)), "text/html; charset=utf-8");
+    const allowLocalDirectoryOpen = isLoopbackHost(options.host) && isLoopbackAddress(request.socket.remoteAddress);
+    textResponse(response, 200, renderPageHtml(state.workdir, resolveServerLocale(url, request), allowLocalDirectoryOpen), "text/html; charset=utf-8");
     return;
   }
 
@@ -2019,6 +2051,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 3 && segments[2] === "workspace" && method === "GET") {
     await handleApiWorkspace(state, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "open-directory" && method === "POST") {
+    await handleApiOpenWorkdir(state.workdir, request, response, options);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "create" && method === "POST") {

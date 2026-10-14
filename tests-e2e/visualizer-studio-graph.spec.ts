@@ -736,12 +736,12 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     })).toBe(true);
     await page.getByRole("tab", { name: runTabName }).click();
     await page.getByRole("tab", { name: designTabName }).click();
-    await expect(layoutSelect).toHaveValue("flow");
+    await expect(layoutSelect).toHaveValue("stacked");
     await expect.poll(async () => page.evaluate(() => {
-      const left = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
       const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
       const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
-      return Boolean(left && role && right && left.right < role.left && role.right < right.left);
+      const input = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
+      return Boolean(input && role && right && input.top < role.top && role.top < right.top);
     })).toBe(true);
     await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeVisible();
@@ -759,6 +759,56 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/has-collapsed-selection/);
   } finally {
     await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("workdir controls fit mobile, show the app name, and saved node positions survive reload", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-layout-refresh-"));
+  await seedCyclicProject(workdir);
+  await writeFile(path.resolve(workdir, ".ogs", "project.json"), JSON.stringify({
+    projectId: "viz.studio.graph",
+    projectName: "Layout Refresh Test",
+    createdAt: "2026-04-30T00:00:00.000Z"
+  }, null, 2), "utf8");
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(started.url).origin });
+    await page.goto(started.url);
+    await expect(page.locator("#project-name")).toHaveText("Layout Refresh Test");
+    await expect(page.locator("#copy-workdir")).toBeVisible();
+    await expect(page.locator("#open-workdir")).toBeVisible();
+    const controlBounds = await page.locator("#open-workdir").boundingBox();
+    expect(controlBounds).toBeTruthy();
+    expect(controlBounds!.x + controlBounds!.width).toBeLessThanOrEqual(390);
+    await page.locator("#copy-workdir").click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(workdir);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole("tab", { name: "Design" }).click();
+    await waitForStudioCell(page, "demo-analyst");
+    const node = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
+    const before = await node.boundingBox();
+    const beforeModelPosition = await node.getAttribute("transform");
+    expect(before).toBeTruthy();
+    expect(beforeModelPosition).toBeTruthy();
+    await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(before!.x + before!.width / 2 + 72, before!.y + before!.height / 2 + 34, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+    const moved = await node.boundingBox();
+    const movedModelPosition = await node.getAttribute("transform");
+    expect(moved).toBeTruthy();
+    expect(Math.abs(moved!.x - before!.x) + Math.abs(moved!.y - before!.y)).toBeGreaterThan(40);
+    expect(movedModelPosition).not.toBe(beforeModelPosition);
+
+    await page.reload();
+    await page.getByRole("tab", { name: "Design" }).click();
+    await waitForStudioCell(page, "demo-analyst");
+    await expect(node).toHaveAttribute("transform", movedModelPosition!);
+  } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
 });

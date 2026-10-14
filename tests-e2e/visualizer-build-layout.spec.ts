@@ -20,7 +20,7 @@ async function seedProject(workdir: string): Promise<void> {
   }
   await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
-    JSON.stringify({ projectId: "viz.build.layout", createdAt: "2026-05-08T00:00:00.000Z" }, null, 2),
+    JSON.stringify({ projectId: "viz.build.layout", projectName: "Build Layout Test", createdAt: "2026-05-08T00:00:00.000Z" }, null, 2),
     "utf8"
   );
   await writeFile(
@@ -298,6 +298,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
       animations: "disabled",
       caret: "hide",
       scale: "css",
+      mask: [page.locator("#workdir")],
       maxDiffPixels: 200
     });
     await page.waitForTimeout(150);
@@ -409,6 +410,7 @@ test("Build workbench remains usable on a narrow mobile viewport", async ({ page
       animations: "disabled",
       caret: "hide",
       scale: "css",
+      mask: [page.locator("#workdir")],
       maxDiffPixels: 200
     });
   } finally {
