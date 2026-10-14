@@ -1190,6 +1190,21 @@ Local visualizer:
 ogs visualizer --ogs-dir .
 ```
 
+For a phone or another machine on a trusted network, bind the Visualizer to the host's LAN interface and provide a certificate whose SAN matches the hostname or IP used by the browser. Non-loopback binding refuses to start without both TLS and credentials. Set `OGS_VIS_USERNAME` and `OGS_VIS_PASSWORD` in the service environment. In PowerShell:
+
+```powershell
+$env:OGS_VIS_USERNAME = "operator"
+$env:OGS_VIS_PASSWORD = "<long-random-secret>"
+```
+
+Then run:
+
+```bash
+ogs vis --ogs-dir . --host 0.0.0.0 --port 3337 --tls-cert ./certs/visualizer.crt --tls-key ./certs/visualizer.key
+```
+
+Open `https://<server-hostname-or-ip>:3337`. Use a certificate trusted by the client device; a self-signed certificate is suitable only for local testing after explicitly trusting it. Keep the private key readable only by the service account. `/healthz` and `/readyz` remain unauthenticated for probes; all other paths, including `/metrics`, require Basic Auth. Do not expose the listener directly to the public internet; restrict network access to the intended operators. Loopback mode remains HTTP and uses the local OS identity.
+
 The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
 
 Studio Bridge is available from the Project view. Its graph editor is the real isolated `@antv/x6` Studio Graph Island: drag role nodes for layout, drag from a role output port to another role input port to create a flow, and use undo/redo to replay authoring/canvas snapshots back through the draft apply path. X6 cells are never the project truth; generated Mermaid and saved source still come from the Studio authoring document.

@@ -3,20 +3,26 @@
  */
 import { parseArgs } from "node:util";
 
+import { createBasicControlPlaneIdentityProvider } from "../runtime/identity.js";
 import { startVisualizationServer } from "./server.js";
 
 function usage(): string {
   return [
     "Usage:",
-    "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>] [--tls-cert <path> --tls-key <path>]",
     "",
     "Source repository equivalent:",
-    "  pnpm run run:visualizer -- [--ogs-dir <path>] [--host <host>] [--port <n|0>]",
+    "  pnpm run run:visualizer -- [--ogs-dir <path>] [--host <host>] [--port <n|0>] [--tls-cert <path> --tls-key <path>]",
     "",
     "Defaults:",
     "  ogs-dir: current directory",
     "  host: 127.0.0.1",
-    "  port: 3337"
+    "  port: 3337",
+    "",
+    "Remote access:",
+    "  Non-loopback hosts require TLS certificate/key and OGS_VIS_USERNAME / OGS_VIS_PASSWORD.",
+    "  Credentials are read only from the environment; never pass passwords on the command line.",
+    "  Keep the private key restricted to the service account and use a trusted certificate for deployment."
   ].join("\n");
 }
 
@@ -42,6 +48,8 @@ async function main(): Promise<void> {
       "ogs-dir": { type: "string" },
       host: { type: "string" },
       port: { type: "string" },
+      "tls-cert": { type: "string" },
+      "tls-key": { type: "string" },
       help: { type: "boolean", short: "h" }
     },
     allowPositionals: false
@@ -55,10 +63,22 @@ async function main(): Promise<void> {
   const workdir = asString(values["ogs-dir"]) ?? process.cwd();
   const host = asString(values.host) ?? "127.0.0.1";
   const port = parsePort(asString(values.port));
+  const tlsCert = asString(values["tls-cert"]);
+  const tlsKey = asString(values["tls-key"]);
+  const username = process.env.OGS_VIS_USERNAME;
+  const password = process.env.OGS_VIS_PASSWORD;
+  if (Boolean(username) !== Boolean(password)) {
+    throw new Error("VISUALIZER_BASIC_AUTH_CONFIG_INVALID: Set both OGS_VIS_USERNAME and OGS_VIS_PASSWORD.");
+  }
+  const identityProvider = username && password
+    ? createBasicControlPlaneIdentityProvider({ username, password })
+    : undefined;
   const result = await startVisualizationServer({
     workdir,
     host,
-    port
+    port,
+    tls: tlsCert || tlsKey ? { cert: tlsCert ?? "", key: tlsKey ?? "" } : undefined,
+    identityProvider
   });
 
   console.log(`OGS Multi-Agent Graph Orchestration System listening on ${result.url}`);

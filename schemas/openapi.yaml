@@ -3,15 +3,21 @@ info:
   title: OGSystem Control Plane API
   version: 1.0.0
   description: >-
-    Local-first control-plane API. Mutating operations are authorized by the configured identity
-    provider; the local provider records the server's OS account, while deployments may inject a
-    request-authenticating provider. Audit principals are never accepted from request bodies.
+    Local-first control-plane API. Loopback mode records the server's OS account. Non-loopback
+    listeners use HTTPS and the configured Basic Auth operator identity. Audit principals are
+    never accepted from request bodies.
 servers:
   - url: http://127.0.0.1:3337
-security: []
+  - url: https://{host}:3337
+    variables:
+      host:
+        default: localhost
+security:
+  - basicAuth: []
 x-ogs-control-plane:
   version: v1
-  identityProvider: Required for API requests; non-loopback listeners require an injected provider.
+  identityProvider: Loopback uses the local OS identity; non-loopback uses HTTPS Basic Auth from OGS_VIS_USERNAME and OGS_VIS_PASSWORD.
+  anonymousPaths: [/healthz, /readyz]
   audit: Mutating run operations persist the authenticated principal with the action.
 paths:
   /api/v1/workspace:
@@ -246,11 +252,13 @@ paths:
   /healthz:
     get:
       operationId: health
+      security: []
       responses:
         "200": { description: Process is alive. }
   /readyz:
     get:
       operationId: readiness
+      security: []
       responses:
         "200": { description: Local project directory is available. }
         "503": { description: Server is not ready. }
@@ -263,6 +271,10 @@ paths:
           content:
             text/plain: {}
 components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
   parameters:
     RunId:
       name: runId

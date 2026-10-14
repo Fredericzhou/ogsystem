@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import https from "node:https";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 
@@ -16,6 +17,7 @@ import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
 import { loadLaws, loadRolePackages, loadRuntimeConfig } from "../dist/runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../dist/runtime/runtime-setup.js";
 import { isConvergedRunStatus, startVisualizationServer } from "../dist/visualizer/server.js";
+import { createBasicControlPlaneIdentityProvider } from "../dist/runtime/identity.js";
 import {
   JsonBodyError,
   parseJsonObjectBody,
@@ -53,7 +55,7 @@ test("visualizer health, readiness, scrape metrics, and external bind guard are 
   await seedProjectFixture(workdir);
   await assert.rejects(
     () => startVisualizationServer({ workdir, host: "0.0.0.0", port: 0 }),
-    /REMOTE_VISUALIZER_AUTH_REQUIRED/
+    /REMOTE_VISUALIZER_HTTPS_REQUIRED/
   );
   const started = await startVisualizationServer({
     workdir,
@@ -86,6 +88,66 @@ test("visualizer health, readiness, scrape metrics, and external bind guard are 
     assert.match(updatedMetrics, /ogs_visualizer_http_responses_total\{status="403"\} [1-9]\d*/);
   } finally {
     await new Promise((resolve) => started.server.close(resolve));
+  }
+});
+
+test("remote visualizer requires HTTPS and Basic authentication for UI, assets, APIs, and metrics", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-remote-auth-"));
+  const tlsDir = path.resolve("tests/fixtures");
+  const identityProvider = createBasicControlPlaneIdentityProvider({ username: "operator", password: "test-only-secret" });
+  await assert.rejects(
+    () => startVisualizationServer({ workdir, host: "0.0.0.0", port: 0, identityProvider }),
+    /REMOTE_VISUALIZER_HTTPS_REQUIRED/
+  );
+  await assert.rejects(
+    () => startVisualizationServer({
+      workdir,
+      host: "0.0.0.0",
+      port: 0,
+      tls: { cert: path.join(tlsDir, "visualizer-test-cert.pem"), key: path.join(tlsDir, "visualizer-test-key.pem") }
+    }),
+    /REMOTE_VISUALIZER_AUTH_REQUIRED/
+  );
+  const started = await startVisualizationServer({
+    workdir,
+    host: "0.0.0.0",
+    port: 0,
+    tls: { cert: path.join(tlsDir, "visualizer-test-cert.pem"), key: path.join(tlsDir, "visualizer-test-key.pem") },
+    identityProvider
+  });
+  const baseUrl = started.url.replace("0.0.0.0", "localhost");
+  const request = (pathname, authorization) => new Promise((resolve, reject) => {
+    const req = https.get(`${baseUrl}${pathname}`, {
+      rejectUnauthorized: false,
+      headers: authorization ? { authorization } : {}
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body }));
+    });
+    req.on("error", reject);
+  });
+  const goodCredentials = `Basic ${Buffer.from("operator:test-only-secret").toString("base64")}`;
+  const badCredentials = `Basic ${Buffer.from("operator:wrong").toString("base64")}`;
+  try {
+    const anonymousPage = await request("/");
+    assert.equal(anonymousPage.status, 401);
+    assert.match(anonymousPage.headers["www-authenticate"], /^Basic realm=/);
+    assert.deepEqual(JSON.parse((await request("/healthz")).body), { status: "ok" });
+    assert.equal((await request("/readyz")).status, 200);
+    assert.equal((await request("/assets/client-app.js")).status, 401);
+    assert.equal((await request("/api/v1/diagnostics/visualizer", badCredentials)).status, 401);
+    assert.equal((await request("/metrics")).status, 401);
+    assert.equal((await request("/", goodCredentials)).status, 200);
+    assert.equal((await request("/api/v1/diagnostics/visualizer", goodCredentials)).status, 200);
+    assert.equal((await request("/metrics", goodCredentials)).status, 200);
+    const authenticated = await identityProvider.authenticate({ headers: { authorization: goodCredentials } });
+    assert.equal(authenticated.principal.id, "operator");
+    assert.equal(authenticated.principal.issuer, "ogs:basic-auth");
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
   }
 });
 

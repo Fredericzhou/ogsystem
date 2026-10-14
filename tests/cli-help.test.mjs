@@ -39,6 +39,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(rootHelp.stdout, /ogs help compatibility/);
   assert.match(rootHelp.stdout, /ogs project create --help/);
   assert.match(rootHelp.stdout, /ogs vis --help/);
+
   const serveHelp = await runNodeCli(runtimeCliPath, ["serve", "--help"]);
   assert.strictEqual(serveHelp.code, 0);
   assert.match(serveHelp.stdout, /ogs serve \[--ogs-dir <path>\] \[--system <file\.mmd>\] \[--workspace-dir <path>\]/);
@@ -112,14 +113,15 @@ test("ogs help command surfaces layered guidance", async () => {
 
   const visualizerHelp = await runNodeCli(runtimeCliPath, ["vis", "--help"]);
   assert.strictEqual(visualizerHelp.code, 0);
-  assert.match(visualizerHelp.stdout, /ogs vis \[--ogs-dir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+  assert.match(visualizerHelp.stdout, /ogs vis \[--ogs-dir <path>\] \[--host <host>\] \[--port <n\|0>\] \[--tls-cert <path> --tls-key <path>\]/);
+  assert.match(visualizerHelp.stdout, /OGS_VIS_USERNAME \/ OGS_VIS_PASSWORD/);
   assert.match(visualizerHelp.stdout, /read-mostly OGSystem visualizer/);
   assert.match(visualizerHelp.stdout, /Nodes are responsibility roles\/agents, not events, actions, or process steps/);
   assert.match(visualizerHelp.stdout, /Edges are role-to-role flows\/handoffs/);
 
   const visualizerAliasHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
   assert.strictEqual(visualizerAliasHelp.code, 0);
-  assert.match(visualizerAliasHelp.stdout, /ogs vis \[--ogs-dir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+  assert.match(visualizerAliasHelp.stdout, /ogs vis \[--ogs-dir <path>\] \[--host <host>\] \[--port <n\|0>\] \[--tls-cert <path> --tls-key <path>\]/);
 
   const version = await runNodeCli(runtimeCliPath, ["--version"]);
   assert.strictEqual(version.code, 0);

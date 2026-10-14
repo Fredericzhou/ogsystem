@@ -34,7 +34,7 @@ import {
 } from "./project-lifecycle.js";
 import { HumanReviewCommentError } from "./human-review-comment.js";
 import { streamRunLogs } from "./project-lifecycle.js";
-import { createLocalControlPlanePrincipal } from "./identity.js";
+import { createBasicControlPlaneIdentityProvider, createLocalControlPlanePrincipal } from "./identity.js";
 import {
   RuntimeError,
   createRuntimeError,
@@ -440,7 +440,7 @@ function usageRun(subcommand?: RunSubcommand): string {
 function usageVisualizer(): string {
   return [
     "Usage:",
-    "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>] [--tls-cert <path> --tls-key <path>]",
     "",
     "What it does:",
     "  Starts the lightweight read-mostly OGSystem visualizer.",
@@ -456,6 +456,10 @@ function usageVisualizer(): string {
     "  ogs-dir: current directory",
     "  host: 127.0.0.1",
     "  port: 3337",
+    "",
+    "Remote access:",
+    "  Non-loopback hosts require HTTPS and OGS_VIS_USERNAME / OGS_VIS_PASSWORD.",
+    "  Credentials are read from the environment; use a trusted certificate for deployment.",
     "",
     "Examples:",
     "  ogs vis --ogs-dir .",
@@ -1318,6 +1322,8 @@ async function runVisualizerCommand(argv: string[]): Promise<void> {
     workdir: { type: "string" },
     host: { type: "string" },
     port: { type: "string" },
+    "tls-cert": { type: "string" },
+    "tls-key": { type: "string" },
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
@@ -1325,6 +1331,16 @@ async function runVisualizerCommand(argv: string[]): Promise<void> {
     return;
   }
 
+  const tlsCert = asString(values["tls-cert"]);
+  const tlsKey = asString(values["tls-key"]);
+  const username = process.env.OGS_VIS_USERNAME;
+  const password = process.env.OGS_VIS_PASSWORD;
+  if (Boolean(username) !== Boolean(password)) {
+    throw createCliInputError("VISUALIZER_BASIC_AUTH_CONFIG_INVALID", "Set both OGS_VIS_USERNAME and OGS_VIS_PASSWORD.");
+  }
+  const identityProvider = username && password
+    ? createBasicControlPlaneIdentityProvider({ username, password })
+    : undefined;
   const result = await startVisualizationServer({
     workdir: asString(values.workdir) ?? process.cwd(),
     host: asString(values.host) ?? "127.0.0.1",
@@ -1333,7 +1349,9 @@ async function runVisualizerCommand(argv: string[]): Promise<void> {
       value: asString(values.port),
       defaultValue: 3337,
       allowZero: true
-    })
+    }),
+    tls: tlsCert || tlsKey ? { cert: tlsCert ?? "", key: tlsKey ?? "" } : undefined,
+    identityProvider
   });
 
   console.log(`OGS Multi-Agent Graph Orchestration System listening on ${result.url}`);

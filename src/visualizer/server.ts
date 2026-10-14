@@ -7,9 +7,10 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
+import { isIP, type Server as NetServer } from "node:net";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -167,6 +168,7 @@ type VisualizationServerOptions = {
   serveProject?: ServeProject;
   host: string;
   port: number;
+  tls?: { cert: string; key: string };
   identityProvider?: ControlPlaneIdentityProvider<IncomingMessage>;
   projectCreateRequestCacheTtlMs?: number;
   projectCreateRequestCacheMaxSize?: number;
@@ -1970,13 +1972,26 @@ async function handleVisualizationRequest(
   const method = request.method?.toUpperCase() ?? "GET";
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${options.host}:${options.port}`}`);
   const pathname = url.pathname;
-  if (await handleHealthRequest(pathname, state.workdir, response)) return;
+  if (pathname === "/healthz" || pathname === "/readyz") {
+    await handleHealthRequest(pathname, state.workdir, response);
+    return;
+  }
   let segments: string[];
   try {
     segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
   } catch {
     throw new HttpError(400, "INVALID_PATH_ENCODING", "Invalid path encoding.");
   }
+
+  const authenticated = await state.identityProvider.authenticate(request);
+  if (!isControlPlaneIdentity(authenticated)) {
+    response.setHeader("WWW-Authenticate", 'Basic realm="OGSystem Visualizer", charset="UTF-8"');
+    throw new HttpError(401, "UNAUTHENTICATED", "A valid control-plane identity is required.");
+  }
+  if (!(await authenticated.authorize(resolveControlPlaneAction(method, segments)))) {
+    throw new HttpError(403, "FORBIDDEN", "The authenticated principal is not authorized for this action.");
+  }
+  if (await handleHealthRequest(pathname, state.workdir, response)) return;
 
   if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
     textResponse(response, 200, renderPageHtml(state.workdir, resolveServerLocale(url, request)), "text/html; charset=utf-8");
@@ -1994,14 +2009,6 @@ async function handleVisualizationRequest(
 
   if (segments[0] !== "api" || segments[1] !== "v1") {
     throw new HttpError(404, "NOT_FOUND", "Not found");
-  }
-
-  const authenticated = await state.identityProvider.authenticate(request);
-  if (!isControlPlaneIdentity(authenticated)) {
-    throw new HttpError(401, "UNAUTHENTICATED", "A valid control-plane identity is required.");
-  }
-  if (!(await authenticated.authorize(resolveControlPlaneAction(method, segments)))) {
-    throw new HttpError(403, "FORBIDDEN", "The authenticated principal is not authorized for this action.");
   }
 
   if (await handleSessionRoutes(state, request, response, segments, url, authenticated.principal)) return;
@@ -2372,7 +2379,7 @@ async function handleVisualizationRequest(
 }
 
 export async function startVisualizationServer(args: VisualizationServerOptions): Promise<{
-  server: ReturnType<typeof createServer>;
+  server: NetServer;
   url: string;
   port: number;
 }> {
@@ -2383,8 +2390,14 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
       throw new Error(`SERVE_WORKSPACE_INVALID: Workspace directory does not exist: ${resolve(args.serveProject.workspaceDir)}`);
     }
   }
+  if (args.tls && (!args.tls.cert || !args.tls.key)) {
+    throw new Error("VISUALIZER_TLS_CONFIG_INVALID: TLS requires both certificate and private key paths.");
+  }
+  if (!isLoopbackHost(args.host) && !args.tls) {
+    throw new Error("REMOTE_VISUALIZER_HTTPS_REQUIRED: Non-loopback binding requires HTTPS with a TLS certificate and key.");
+  }
   if (!isLoopbackHost(args.host) && !args.identityProvider) {
-    throw new Error("REMOTE_VISUALIZER_AUTH_REQUIRED: Non-loopback binding requires an identity provider.");
+    throw new Error("REMOTE_VISUALIZER_AUTH_REQUIRED: Non-loopback HTTPS binding requires an identity provider.");
   }
   const state: VisualizationServerState = {
     workdir: resolve(args.workdir),
@@ -2409,7 +2422,7 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
     identityProvider: args.identityProvider ?? createLocalControlPlaneIdentityProvider<IncomingMessage>(),
     testHooks: args.testHooks
   };
-  const server = createServer((request, response) => {
+  const handler = (request: IncomingMessage, response: ServerResponse): void => {
     response.once("finish", () => recordVisualizerHttpResponse(response.statusCode));
     void handleVisualizationRequest(request, response, state, args).catch((error) => {
       const normalized = normalizeError(error);
@@ -2423,7 +2436,13 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
         })
       );
     });
-  });
+  };
+  const server = args.tls
+    ? createHttpsServer({
+        cert: await readFile(resolve(args.tls.cert)),
+        key: await readFile(resolve(args.tls.key))
+      }, handler)
+    : createServer(handler);
 
   await recoverSessionTurns(state);
 
@@ -2446,7 +2465,7 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
     typeof address === "object" && address && "port" in address ? address.port : args.port;
   return {
     server,
-    url: `http://${args.host}:${port}`,
+    url: `${args.tls ? "https" : "http"}://${args.host}:${port}`,
     port
   };
 }
