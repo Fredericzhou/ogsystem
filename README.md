@@ -96,6 +96,11 @@ ogs vis --ogs-dir .
 ogs visualizer --ogs-dir .
 ```
 
+With the default bind settings, the current Visualizer is available locally at
+[`http://127.0.0.1:3337`](http://127.0.0.1:3337). This loopback address is reachable only from
+the machine running OGSystem. For phone or LAN access, use the authenticated HTTPS setup in the
+[usage manual](docs/usage/usage-manual.md#10-commands); there is no shared hosted service address.
+
 Stable lifecycle command anchors:
 
 ```bash

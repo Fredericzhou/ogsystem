@@ -1190,6 +1190,10 @@ Local visualizer:
 ogs visualizer --ogs-dir .
 ```
 
+当前稳定版本为 `1.0.0`（以 `ogs --version` 查看本机实际安装版本）。默认本机服务地址为
+[`http://127.0.0.1:3337`](http://127.0.0.1:3337)，启动后可在同一台电脑的浏览器打开；该地址不对手机或局域网其他设备开放。
+本项目没有公共托管服务地址。手机或其他设备访问时，请按下面的远程 HTTPS 配置启动，并使用证书匹配的主机名/IP。
+
 For a phone or another machine on a trusted network, bind the Visualizer to the host's LAN interface and provide a certificate whose SAN matches the hostname or IP used by the browser. Non-loopback binding refuses to start without both TLS and credentials. Set `OGS_VIS_USERNAME` and `OGS_VIS_PASSWORD` in the service environment. In PowerShell:
 
 ```powershell
