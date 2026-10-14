@@ -101,6 +101,11 @@ With the default bind settings, the current Visualizer is available locally at
 the machine running OGSystem. For phone or LAN access, use the authenticated HTTPS setup in the
 [usage manual](docs/usage/usage-manual.md#10-commands); there is no shared hosted service address.
 
+The current local project Visualizers are also available while their processes are running:
+
+- WeChat mini-program factory: [`http://127.0.0.1:3338`](http://127.0.0.1:3338)
+- Multi Debate: [`http://127.0.0.1:3339`](http://127.0.0.1:3339)
+
 Stable lifecycle command anchors:
 
 ```bash

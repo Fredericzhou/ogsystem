@@ -1194,6 +1194,13 @@ ogs visualizer --ogs-dir .
 [`http://127.0.0.1:3337`](http://127.0.0.1:3337)，启动后可在同一台电脑的浏览器打开；该地址不对手机或局域网其他设备开放。
 本项目没有公共托管服务地址。手机或其他设备访问时，请按下面的远程 HTTPS 配置启动，并使用证书匹配的主机名/IP。
 
+当前另外两个本机项目服务地址（仅在对应服务运行期间有效）：
+
+| OGS 项目 | Visualizer 地址 | 启动命令 |
+| --- | --- | --- |
+| 微信小程序工厂 | [`http://127.0.0.1:3338`](http://127.0.0.1:3338) | `ogs vis --ogs-dir examples/wechat-miniprogram-factory --port 3338` |
+| Multi Debate | [`http://127.0.0.1:3339`](http://127.0.0.1:3339) | `ogs vis --ogs-dir examples/mulit-debate-ogs --port 3339` |
+
 For a phone or another machine on a trusted network, bind the Visualizer to the host's LAN interface and provide a certificate whose SAN matches the hostname or IP used by the browser. Non-loopback binding refuses to start without both TLS and credentials. Set `OGS_VIS_USERNAME` and `OGS_VIS_PASSWORD` in the service environment. In PowerShell:
 
 ```powershell
