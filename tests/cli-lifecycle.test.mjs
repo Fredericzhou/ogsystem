@@ -87,6 +87,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(initPayload.command, "project init");
   assert.equal(initPayload.template, "minimal");
   await stat(path.resolve(tempRoot, ".ogs", "runtime.json"));
+  const initRuntime = JSON.parse(await readFile(path.resolve(tempRoot, ".ogs", "runtime.json"), "utf8"));
   const initReadmePath = path.resolve(tempRoot, ".ogs", "README.md");
   await stat(path.resolve(tempRoot, ".ogs", "model-catalog.json"));
   await stat(path.resolve(tempRoot, ".ogs", "model-selection.json"));
@@ -116,6 +117,9 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.match(initReadme, /profiles\.json/);
   assert.match(initReadme, /tools\.json/);
   assert.match(initReadme, /valid JSON with no comments/);
+  assert.equal(initRuntime.tools.environmentPolicy, "inherit");
+  assert.deepEqual(initRuntime.tools.envAllowlist, []);
+  assert.match(initReadme, /Set it to `minimal` for production/);
   assert.ok(initProfiles.some((entry) => entry?.profileId === "profile.console.print"));
   assert.ok(initProfiles.some((entry) => entry?.profileId === "profile.hello.ogsystem"));
   assert.ok(initTools.tools.some((entry) => entry?.toolRef === "tool.console.print"));
@@ -131,6 +135,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(createPayload.template, "minimal");
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
+  const createdRuntime = JSON.parse(await readFile(path.resolve(createdDir, ".ogs", "runtime.json"), "utf8"));
   const createdReadmePath = path.resolve(createdDir, ".ogs", "README.md");
   await stat(path.resolve(createdDir, ".ogs", "model-catalog.json"));
   await stat(path.resolve(createdDir, ".ogs", "model-selection.json"));
@@ -151,6 +156,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
   assert.match(createdReadme, /model-catalog\.json/);
   assert.match(createdReadme, /workspaceIsolation/);
+  assert.equal(createdRuntime.tools.environmentPolicy, "inherit");
+  assert.deepEqual(createdRuntime.tools.envAllowlist, []);
   assert.ok(createdProfiles.some((entry) => entry?.profileId === "profile.console.print"));
   assert.ok(createdProfiles.some((entry) => entry?.profileId === "profile.hello.ogsystem"));
   assert.ok(createdTools.tools.some((entry) => entry?.toolRef === "tool.console.print"));

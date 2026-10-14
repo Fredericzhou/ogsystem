@@ -332,6 +332,10 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
     redaction: {
       enabled: true
     },
+    tools: {
+      environmentPolicy: "inherit",
+      envAllowlist: []
+    },
     opencode: {
       baseArgs: ["run"]
     },
@@ -466,6 +470,10 @@ function createDefaultOgsReadme(): string {
     '  "executor": "opencode",',
     '  "roleRepo": "og-roles",',
     '  "runsDir": ".ogs/runs",',
+    '  "tools": {',
+    '    "environmentPolicy": "inherit",',
+    '    "envAllowlist": []',
+    "  },",
     '  "workspace": {',
     '    "rolesDir": "roles",',
     '    "privateDirName": "private",',
@@ -476,6 +484,8 @@ function createDefaultOgsReadme(): string {
     "",
     "Common edits:",
     "- Change `runsDir` if run artifacts should live outside `.ogs/runs`.",
+    "- `tools.environmentPolicy` defaults to `inherit` for compatibility. Set it to `minimal` for production; add only reviewed variable names to `tools.envAllowlist`.",
+    "- Minimal environment mode limits inherited credentials, but it is not a filesystem sandbox. Review tool commands and workspace permissions separately.",
     "- Change `workspace.workspaceIsolation` when the execution sandbox policy changes.",
     "- Keep `roleRepo` pointed at the project role repository root.",
     "",

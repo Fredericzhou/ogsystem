@@ -53,6 +53,7 @@ import { resolveProjectTargetDirectory } from "./project-target.js";
 import type { AdapterRunResult } from "./types.js";
 import { formatHumanRunSummary, shouldEmitFullRunJson } from "./cli-run-output.js";
 import { promoteSealedArtifact } from "./artifact-promotion.js";
+import { generateDeploymentManifest } from "./deployment-manifest.js";
 
 await ensureSystemHome();
 
@@ -60,7 +61,7 @@ const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };
 
 type HelpTopic = "compatibility" | "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
-type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
+type ProjectSubcommand = "init" | "create" | "sync" | "sync-models" | "manifest";
 type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review" | "artifact";
 
 function isVisualizerTopic(value: string | undefined): value is "vis" | "visualizer" {
@@ -218,24 +219,40 @@ function usageProject(subcommand?: ProjectSubcommand): string {
     ].join("\n");
   }
 
+  if (subcommand === "manifest") {
+    return [
+      "Usage:",
+      "  ogs project manifest [--system <file.mmd>] [--output <file>] [--ogs-dir <path>]",
+      "",
+      "Options:",
+      "  --system <file>  System source (default: system.mmd)",
+      "  --output <file>  Destination (default: deploy-manifest.json)",
+      "  --ogs-dir <path> Project root (default: cwd)",
+      "  --help           Show help"
+    ].join("\n");
+  }
+
   return [
     "Usage:",
     "  ogs project init [options]",
     "  ogs project create <name> [options]",
     "  ogs project sync --system <file.mmd> [options]",
     "  ogs project sync-models [options]",
+    "  ogs project manifest [options]",
     "",
     "Project lifecycle:",
     "  init   scaffold the current directory as a runnable project",
     "  create scaffold a new project directory from a template",
     "  sync   import roles referenced by a Mermaid system into the local project role repo",
     "  sync-models   refresh .ogs/model-catalog.json and seed .ogs/model-selection.json when missing",
+    "  manifest      write a redacted deployment/version manifest",
     "",
     "Drill down:",
     "  ogs project init --help",
     "  ogs project create --help",
     "  ogs project sync --help",
-    "  ogs project sync-models --help"
+    "  ogs project sync-models --help",
+    "  ogs project manifest --help"
   ].join("\n");
 }
 
@@ -1148,6 +1165,31 @@ async function runProjectCommand(argv: string[]): Promise<void> {
         2
       )
     );
+    return;
+  }
+
+  if (subcommand === "manifest") {
+    const { values } = parseLifecycleArgs(argv.slice(1), {
+      system: { type: "string" },
+      output: { type: "string" },
+      workdir: { type: "string" },
+      help: { type: "boolean", short: "h" }
+    });
+    if (asBool(values.help)) {
+      console.log(usage("project", "manifest"));
+      return;
+    }
+    const workdir = resolve(asString(values.workdir) ?? process.cwd());
+    const manifest = await generateDeploymentManifest({ workdir, systemPath: asString(values.system) });
+    const outputPath = resolve(workdir, asString(values.output) ?? "deploy-manifest.json");
+    await writeJsonFileAtomic(outputPath, manifest);
+    console.log(JSON.stringify({
+      status: "ok",
+      command: "project manifest",
+      outputPath,
+      manifestVersion: manifest.manifestVersion,
+      runPlanFingerprint: manifest.fingerprints.runPlan
+    }, null, 2));
     return;
   }
 

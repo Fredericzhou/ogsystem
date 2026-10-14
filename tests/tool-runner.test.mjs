@@ -2,9 +2,48 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 
-import { resolveCliCommand, runCliTool } from "../dist/runtime/tool-runner.js";
+import { buildCliToolEnvironment, resolveCliCommand, runCliTool } from "../dist/runtime/tool-runner.js";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
+
+test("minimal tool environment preserves platform basics and explicit variables only", () => {
+  const environment = buildCliToolEnvironment({
+    policy: "minimal",
+    allowlist: ["DEPLOY_TOKEN"],
+    explicitEnv: { TOOL_SETTING: "enabled" },
+    sourceEnv: {
+      PATH: "/bin",
+      HOME: "/home/operator",
+      DEPLOY_TOKEN: "allowed-value",
+      AWS_SECRET_ACCESS_KEY: "must-not-pass"
+    },
+    platform: "linux"
+  });
+  assert.equal(environment.PATH, "/bin");
+  assert.equal(environment.HOME, "/home/operator");
+  assert.equal(environment.DEPLOY_TOKEN, "allowed-value");
+  assert.equal(environment.TOOL_SETTING, "enabled");
+  assert.equal(environment.AWS_SECRET_ACCESS_KEY, undefined);
+});
+
+test("minimal Windows tool environment matches baseline names case-insensitively", () => {
+  const environment = buildCliToolEnvironment({
+    policy: "minimal",
+    sourceEnv: { Path: "C:\\Windows", systemroot: "C:\\Windows", PRIVATE_TOKEN: "hidden" },
+    platform: "win32"
+  });
+  assert.equal(environment.Path, "C:\\Windows");
+  assert.equal(environment.systemroot, "C:\\Windows");
+  assert.equal(environment.PRIVATE_TOKEN, undefined);
+});
+
+test("inherit tool environment keeps backward-compatible pass-through", () => {
+  const environment = buildCliToolEnvironment({
+    policy: "inherit",
+    sourceEnv: { PATH: "/bin", PRIVATE_TOKEN: "available" }
+  });
+  assert.equal(environment.PRIVATE_TOKEN, "available");
+});
 
 const baseTool = {
   toolRef: "tool.test",

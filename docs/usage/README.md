@@ -10,6 +10,9 @@ the meaning of Role, Responsibility Seat, nested System, and runtime execution f
 See [OGS Multi-Agent Graph Orchestration System](visualizer-console.md) for the design/debug workspace, role handoffs,
 human review, role I/O, and run-history views.
 
+For installation, single-host production checks, backups, recovery, and OS scheduler recipes, see
+[Single Host Production Runbook](single-host-production.md).
+
 The core modeling rule is role-first: a graph node is a responsibility role/agent seat, and a
 Flow is the direct handoff from one completed role to another. Events, actions, process steps,
 and runtime facts belong on flows or in run details, not as Role nodes.

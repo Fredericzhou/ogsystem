@@ -39,6 +39,10 @@ export async function loadRuntimeConfig(
     redaction: {
       enabled: true
     },
+    tools: {
+      environmentPolicy: "inherit",
+      envAllowlist: []
+    },
     opencode: {
       baseArgs: ["run"]
     },
@@ -94,6 +98,18 @@ export async function loadRuntimeConfig(
         overlayRecord.retention &&
         !Array.isArray(overlayRecord.retention)
           ? (overlayRecord.retention as Record<string, unknown>)
+          : {})
+      },
+      tools: {
+        ...(typeof merged.tools === "object" &&
+        merged.tools &&
+        !Array.isArray(merged.tools)
+          ? (merged.tools as Record<string, unknown>)
+          : {}),
+        ...(typeof overlayRecord.tools === "object" &&
+        overlayRecord.tools &&
+        !Array.isArray(overlayRecord.tools)
+          ? (overlayRecord.tools as Record<string, unknown>)
           : {})
       },
       opencode: {

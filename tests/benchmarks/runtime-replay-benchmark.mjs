@@ -243,6 +243,19 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     "utf8"
   );
   await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    JSON.stringify({
+      configVersion: "2",
+      defaults: {
+        backend: "codex",
+        modelId: "gpt-5.6-sol",
+        timeoutMs: 120000,
+        maxOutputBytes: 4096
+      }
+    }, null, 2),
+    "utf8"
+  );
+  await writeFile(
     path.resolve(roleDir, "role.json"),
     JSON.stringify(
       {
@@ -252,7 +265,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
         description: "Runtime replay benchmark role",
         promptTemplate: "prompt.md",
         outputSchema: "output.schema.json",
-        ...latestRoleContract({ events: ["DONE"] })
+        ...latestRoleContract({ events: ["RETRY", "DONE"] })
       },
       null,
       2

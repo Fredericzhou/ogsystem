@@ -140,6 +140,24 @@ test("runtime config defaults runsDir to .ogs/runs", () => {
   );
 
   assert.equal(config.runsDir, ".ogs/runs");
+  assert.deepStrictEqual(config.tools, { environmentPolicy: "inherit", envAllowlist: [] });
+});
+
+test("runtime config accepts minimal tool environment policy and validates variable names", () => {
+  const config = validateRuntimeConfig({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    tools: { environmentPolicy: "minimal", envAllowlist: ["DEPLOY_TOKEN", "API_ENDPOINT"] }
+  }, "runtime.json");
+  assert.deepStrictEqual(config.tools, {
+    environmentPolicy: "minimal",
+    envAllowlist: ["DEPLOY_TOKEN", "API_ENDPOINT"]
+  });
+  assert.throws(() => validateRuntimeConfig({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    tools: { environmentPolicy: "minimal", envAllowlist: ["BAD=VALUE"] }
+  }, "runtime.json"), /envAllowlist\[0\]/);
 });
 
 test("runtime config accepts retention policy with defaults", () => {

@@ -135,6 +135,8 @@ export function createDefaultExecutor(args: {
   targetDir: string;
   needsModelExecutor: boolean;
   modelBackends?: string[];
+  toolEnvironmentPolicy?: "inherit" | "minimal";
+  toolEnvAllowlist?: string[];
 }): Executor {
   let runClient: Awaited<ReturnType<typeof startOpencodeRunClient>> | undefined;
   let codexClient: CodexAppServerClient | undefined;
@@ -244,6 +246,8 @@ export function createDefaultExecutor(args: {
         tool: request.binding.tool,
         vars: { prompt: request.prompt },
         env: request.env,
+        environmentPolicy: args.toolEnvironmentPolicy,
+        envAllowlist: args.toolEnvAllowlist,
         commandBaseDir: request.commandBaseDir ?? request.workdir,
         workdir: request.workdir,
         timeoutMs: request.timeoutMs,

@@ -111,6 +111,16 @@ test("runtime config schema accepts redaction and branch workspace isolation", a
   assert.equal(ok, true, JSON.stringify(validate.errors, null, 2));
 });
 
+test("runtime config schema accepts minimal tool environment policy", async () => {
+  const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
+  const validate = createValidator(runtimeSchema);
+  assert.equal(validate({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    tools: { environmentPolicy: "minimal", envAllowlist: ["DEPLOY_TOKEN"] }
+  }), true, JSON.stringify(validate.errors, null, 2));
+});
+
 test("user profile schema accepts repository user-profile.json", async () => {
   const profileSchema = await readJson(path.resolve("schemas/user-profile.schema.json"));
   const userProfile = await readJson(path.resolve(".ogs/user-profile.json"));

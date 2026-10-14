@@ -8,8 +8,9 @@
  * - Diagnostic only; does not start graph execution.
  */
 import { accessSync, constants } from "node:fs";
-import { readdir } from "node:fs/promises";
-import { delimiter, extname, join, resolve } from "node:path";
+import { access, readdir, stat, statfs, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { delimiter, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -55,6 +56,7 @@ export type ProviderHealthCheck = {
 };
 
 export type DoctorReport = {
+  schemaVersion: 1;
   status: "ok" | "failed";
   required: string[];
   missingRequired: string[];
@@ -63,6 +65,12 @@ export type DoctorReport = {
   warnings: string[];
   notes: string[];
   providerHealth: ProviderHealthCheck[];
+  storage: {
+    checkedPath: string;
+    writable: boolean;
+    availableBytes?: number;
+    minFreeBytes?: number;
+  };
   run?: {
     runDir: string;
     status?: string;
@@ -92,6 +100,8 @@ export function usage(): string {
     "  --system <file>        Mermaid system to validate with the active config/law catalog",
     "  --run-dir <dir>        Inspect an existing run directory for resume prerequisites",
     "  --online-check         Optional online model connectivity probe (costs tokens)",
+    "  --production           Require production runtime safeguards",
+    "  --min-free-bytes <n>   Minimum run-volume free space (required with --production)",
     "  --ogs-dir <path>       OGS control-plane root (default: cwd)",
     "  --help                 Show help"
   ].join("\n");
@@ -118,6 +128,8 @@ function parseDoctorArgs() {
         system: { type: "string" },
         "run-dir": { type: "string" },
         "online-check": { type: "boolean" },
+        production: { type: "boolean" },
+        "min-free-bytes": { type: "string" },
         "ogs-dir": { type: "string" },
         help: { type: "boolean", short: "h" }
       },
@@ -438,6 +450,8 @@ export async function runDoctor(args: {
   systemPath?: string;
   runDir?: string;
   onlineCheck?: boolean;
+  production?: boolean;
+  minFreeBytes?: number;
   workdir?: string;
 }): Promise<DoctorReport> {
   const workdir = resolve(args.workdir ?? process.cwd());
@@ -452,16 +466,28 @@ export async function runDoctor(args: {
         .filter(Boolean)
     )
   );
+  if (args.minFreeBytes !== undefined && (!Number.isSafeInteger(args.minFreeBytes) || args.minFreeBytes < 0)) {
+    throw createDoctorInputError("DOCTOR_INVALID_DISK_THRESHOLD", "--min-free-bytes must be a non-negative safe integer");
+  }
+  if (args.production && args.minFreeBytes === undefined) {
+    throw createDoctorInputError("DOCTOR_PRODUCTION_DISK_THRESHOLD_REQUIRED", "--production requires --min-free-bytes");
+  }
 
   const report: DoctorReport = {
+    schemaVersion: 1,
     status: "ok",
     required,
     missingRequired: [],
-    checks: ["opencode", "codex"].map((command) => checkCommand(command)),
+    checks: Array.from(new Set(["opencode", "codex", ...required])).map((command) => checkCommand(command)),
     errors: [],
     warnings: [],
     notes: [],
-    providerHealth: []
+    providerHealth: [],
+    storage: {
+      checkedPath: resolve(workdir, ".ogs", "runs"),
+      writable: false,
+      ...(args.minFreeBytes === undefined ? {} : { minFreeBytes: args.minFreeBytes })
+    }
   };
 
   report.missingRequired = report.checks
@@ -485,6 +511,45 @@ export async function runDoctor(args: {
     await inspectModelCatalog(report, workdir);
   } catch (error) {
     addError(report, `runtime config invalid: ${String(error)}`);
+  }
+
+  if (args.production) {
+    if (!args.systemPath) addError(report, "production check requires --system");
+    if (runtimeConfig?.tools.environmentPolicy !== "minimal") {
+      addError(report, "production check requires tools.environmentPolicy=\"minimal\"");
+    }
+    if (!runtimeConfig?.retention?.enabled) {
+      addError(report, "production check requires retention.enabled=true");
+    }
+  }
+
+  const runStoragePath = resolve(workdir, runtimeConfig?.runsDir ?? ".ogs/runs");
+  report.storage.checkedPath = runStoragePath;
+  let probeDir = runStoragePath;
+  while (!(await stat(probeDir).then((value) => value.isDirectory()).catch(() => false))) {
+    const parent = dirname(probeDir);
+    if (parent === probeDir) break;
+    probeDir = parent;
+  }
+  try {
+    await access(probeDir, constants.W_OK | constants.X_OK);
+    const probePath = resolve(probeDir, `.ogs-doctor-write-${randomUUID()}`);
+    await writeFile(probePath, "", { flag: "wx" });
+    await unlink(probePath);
+    report.storage.writable = true;
+  } catch (error) {
+    addError(report, `run storage is not writable: ${probeDir} (${String(error)})`);
+  }
+  try {
+    const filesystem = await statfs(probeDir);
+    report.storage.availableBytes = Number(filesystem.bavail) * Number(filesystem.bsize);
+    if (args.minFreeBytes !== undefined && report.storage.availableBytes < args.minFreeBytes) {
+      addError(report, `run storage free space ${report.storage.availableBytes} bytes is below required ${args.minFreeBytes} bytes`);
+    }
+  } catch (error) {
+    const message = `run storage free space unavailable: ${probeDir} (${String(error)})`;
+    if (args.minFreeBytes !== undefined) addError(report, message);
+    else addWarning(report, message);
   }
 
   try {
@@ -596,6 +661,8 @@ export async function main(): Promise<void> {
     systemPath: values.system ? resolve(values.system) : undefined,
     runDir: values["run-dir"],
     onlineCheck: values["online-check"] ?? false,
+    production: values.production ?? false,
+    minFreeBytes: values["min-free-bytes"] === undefined ? undefined : Number(values["min-free-bytes"]),
     workdir: values["ogs-dir"]
   });
 

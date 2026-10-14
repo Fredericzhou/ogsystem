@@ -69,11 +69,14 @@ jobs:
         run: pnpm run test:doctor
 
   package-install-smoke:
-    name: Package Install Smoke (${{ matrix.package_manager }})
-    runs-on: ubuntu-latest
+    name: Package Install Smoke (${{ matrix.os }}, ${{ matrix.package_manager }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
         package_manager:
           - npm
           - pnpm

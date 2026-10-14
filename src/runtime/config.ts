@@ -336,6 +336,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       "workspace",
       "retention",
       "redaction",
+      "tools",
       "opencode",
       "runtime"
     ],
@@ -431,6 +432,36 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           keepLatest: retentionKeepLatest ?? 100
         };
 
+  const toolsRecord =
+    record.tools === undefined
+      ? undefined
+      : expectRecord(record.tools, filePath, "$.tools");
+  if (toolsRecord) {
+    expectNoExtraKeys(toolsRecord, ["environmentPolicy", "envAllowlist"], filePath, "$.tools");
+  }
+  const environmentPolicy = expectOptionalString(
+    toolsRecord?.environmentPolicy,
+    filePath,
+    "$.tools.environmentPolicy"
+  );
+  if (environmentPolicy !== undefined && environmentPolicy !== "inherit" && environmentPolicy !== "minimal") {
+    fail(filePath, "$.tools.environmentPolicy", `expected "inherit" or "minimal", received "${environmentPolicy}"`);
+  }
+  const envAllowlist =
+    toolsRecord?.envAllowlist === undefined
+      ? []
+      : expectArray(toolsRecord.envAllowlist, filePath, "$.tools.envAllowlist").map((entry, index) =>
+          expectString(entry, filePath, `$.tools.envAllowlist[${index}]`)
+        );
+  if (new Set(envAllowlist).size !== envAllowlist.length) {
+    fail(filePath, "$.tools.envAllowlist", "must not contain duplicate variable names");
+  }
+  envAllowlist.forEach((name, index) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      fail(filePath, `$.tools.envAllowlist[${index}]`, "must be a valid environment variable name");
+    }
+  });
+
   const redactionRecord =
     record.redaction === undefined
       ? undefined
@@ -480,6 +511,10 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     },
     retention,
     redaction,
+    tools: {
+      environmentPolicy: (environmentPolicy as "inherit" | "minimal" | undefined) ?? "inherit",
+      envAllowlist
+    },
     opencode: {
       baseArgs
     },

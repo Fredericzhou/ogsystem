@@ -31,6 +31,46 @@ type ResolveCliCommandOptions = {
   lookupVoltaNode?: (env: NodeJS.ProcessEnv) => string | undefined;
 };
 
+export type ToolEnvironmentPolicy = "inherit" | "minimal";
+
+const POSIX_ENV_BASELINE = ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL"];
+const WINDOWS_ENV_BASELINE = [
+  "PATH", "SystemRoot", "WINDIR", "PATHEXT", "COMSPEC", "TEMP", "TMP", "USERPROFILE"
+];
+
+export function buildCliToolEnvironment(args: {
+  policy?: ToolEnvironmentPolicy;
+  allowlist?: string[];
+  explicitEnv?: Record<string, string>;
+  sourceEnv?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+} = {}): NodeJS.ProcessEnv {
+  const sourceEnv = args.sourceEnv ?? process.env;
+  if ((args.policy ?? "inherit") === "inherit") {
+    return { ...sourceEnv, ...args.explicitEnv };
+  }
+
+  const windows = (args.platform ?? process.platform) === "win32";
+  const names = [...(windows ? WINDOWS_ENV_BASELINE : POSIX_ENV_BASELINE), ...(args.allowlist ?? [])];
+  const environment: NodeJS.ProcessEnv = {};
+  const sourceByNormalizedName = new Map(
+    Object.entries(sourceEnv).map(([name, value]) => [windows ? name.toUpperCase() : name, { name, value }])
+  );
+  for (const requestedName of names) {
+    const entry = sourceByNormalizedName.get(windows ? requestedName.toUpperCase() : requestedName);
+    if (entry?.value !== undefined) environment[entry.name] = entry.value;
+  }
+  for (const [name, value] of Object.entries(args.explicitEnv ?? {})) {
+    if (windows) {
+      for (const existing of Object.keys(environment)) {
+        if (existing.toUpperCase() === name.toUpperCase()) delete environment[existing];
+      }
+    }
+    environment[name] = value;
+  }
+  return environment;
+}
+
 function renderTemplate(value: string, vars: Record<string, string>): string {
   return value.replace(/\{\{([a-zA-Z0-9_.-]+)\}\}/g, (_all, key) => vars[key] ?? "");
 }
@@ -179,6 +219,8 @@ export async function runCliTool(args: {
   maxOutputBytes: number;
   signal?: AbortSignal;
   dryRun?: boolean;
+  environmentPolicy?: ToolEnvironmentPolicy;
+  envAllowlist?: string[];
   dryRunOutput?: {
     event?: string;
   };
@@ -208,10 +250,11 @@ export async function runCliTool(args: {
 
     const child = spawn(resolvedCommand, renderedArgs, {
       cwd: args.workdir,
-      env: {
-        ...process.env,
-        ...args.env
-      },
+      env: buildCliToolEnvironment({
+        policy: args.environmentPolicy,
+        allowlist: args.envAllowlist,
+        explicitEnv: args.env
+      }),
       stdio: ["pipe", "pipe", "pipe"]
     });
 

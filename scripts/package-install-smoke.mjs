@@ -234,6 +234,8 @@ async function main() {
   });
   assert.equal(doctorHelpResult.code, 0, doctorHelpResult.stderr);
   assert.match(doctorHelpResult.stdout, /--required <csv>/);
+  assert.match(doctorHelpResult.stdout, /--production/);
+  assert.match(doctorHelpResult.stdout, /--min-free-bytes <n>/);
 
   const createResult = await runCommand(
     "node",
@@ -257,6 +259,60 @@ async function main() {
   assert.match(ogsReadme, /Backend credentials stay in each CLI's own user-level configuration/);
   assert.doesNotMatch(ogsReadme, /providers\/opencode\.json/);
   assert.match(ogsReadme, /Use this README for operator notes and examples/);
+
+  const syncModelsResult = await runCommand(
+    "node",
+    [ogsBinPath, "models", "sync", "--ogs-dir", projectDir],
+    { cwd: projectDir, env: isolatedEnv }
+  );
+  assert.equal(syncModelsResult.code, 0, syncModelsResult.stderr);
+
+  const runtimeConfigPath = path.resolve(projectDir, ".ogs", "runtime.json");
+  const runtimeConfig = JSON.parse(await readFile(runtimeConfigPath, "utf8"));
+  assert.equal(runtimeConfig.tools.environmentPolicy, "inherit");
+  assert.deepEqual(runtimeConfig.tools.envAllowlist, []);
+  runtimeConfig.tools = { environmentPolicy: "minimal", envAllowlist: [] };
+  runtimeConfig.retention = { enabled: true, executionDirThreshold: 2000, keepLatest: 250 };
+  await writeFile(runtimeConfigPath, JSON.stringify(runtimeConfig, null, 2), "utf8");
+
+  const doctorResult = await runCommand(
+    "node",
+    [ogsBinPath, "doctor", "--production", "--min-free-bytes", "1", "--system", "system.mmd", "--ogs-dir", projectDir],
+    { cwd: projectDir, env: isolatedEnv }
+  );
+  assert.equal(doctorResult.code, 0, doctorResult.stderr || doctorResult.stdout);
+  const doctorReport = JSON.parse(doctorResult.stdout);
+  assert.equal(doctorReport.schemaVersion, 1);
+  assert.equal(doctorReport.storage.writable, true);
+  assert.ok(doctorReport.storage.availableBytes >= 1);
+
+  const doctorMissingRequired = await runCommand(
+    "node",
+    [ogsBinPath, "doctor", "--required", "ogs-command-that-does-not-exist", "--ogs-dir", projectDir],
+    { cwd: projectDir, env: isolatedEnv }
+  );
+  assert.equal(doctorMissingRequired.code, 2);
+  assert.equal(JSON.parse(doctorMissingRequired.stdout).schemaVersion, 1);
+
+  const manifestPath = path.resolve(projectDir, "deploy-manifest.json");
+  const manifestResult = await runCommand(
+    "node",
+    [ogsBinPath, "project", "manifest", "--output", "deploy-manifest.json", "--ogs-dir", projectDir],
+    { cwd: projectDir, env: isolatedEnv }
+  );
+  assert.equal(manifestResult.code, 0, manifestResult.stderr || manifestResult.stdout);
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  assert.equal(manifest.manifestVersion, 1);
+  assert.match(manifest.ogsystem.installedTreeSha256, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(manifest), /password|secret|api[_-]?key|token/i);
+
+  const dryRunResult = await runCommand(
+    "node",
+    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "install smoke", "--dry-run"],
+    { cwd: projectDir, env: isolatedEnv }
+  );
+  assert.equal(dryRunResult.code, 0, dryRunResult.stderr);
+  assert.equal(JSON.parse(dryRunResult.stdout).status, "done");
 
   const startResult = await runCommand(
     "node",

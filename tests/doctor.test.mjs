@@ -13,7 +13,40 @@ test("doctor keeps required command checks", async () => {
   });
 
   assert.ok(Array.isArray(report.checks));
+  assert.equal(report.schemaVersion, 1);
+  assert.equal(report.storage.writable, true);
+  assert.ok(report.storage.availableBytes > 0);
   assert.equal(report.required.includes("opencode"), true);
+});
+
+test("doctor checks arbitrary required command names and reports them as missing", async () => {
+  const missingCommand = "ogs-command-that-does-not-exist";
+  const report = await runDoctor({ requiredCsv: missingCommand, workdir: process.cwd() });
+  assert.equal(report.status, "failed");
+  assert.deepEqual(report.missingRequired, [missingCommand]);
+  assert.equal(report.checks.find((item) => item.command === missingCommand)?.found, false);
+});
+
+test("doctor enforces the requested minimum free space", async () => {
+  const report = await runDoctor({
+    minFreeBytes: Number.MAX_SAFE_INTEGER,
+    workdir: process.cwd()
+  });
+  assert.equal(report.status, "failed");
+  assert.ok(report.errors.some((item) => item.includes("below required")));
+});
+
+test("production doctor requires a disk threshold, minimal environment, and retention", async () => {
+  await assert.rejects(() => runDoctor({ production: true, workdir: process.cwd() }), /requires --min-free-bytes/);
+  const report = await runDoctor({
+    production: true,
+    minFreeBytes: 1,
+    systemPath: path.resolve("examples/target-model-binding-system.mmd"),
+    workdir: process.cwd()
+  });
+  assert.equal(report.status, "failed");
+  assert.ok(report.errors.some((item) => item.includes("environmentPolicy=\"minimal\"")));
+  assert.ok(report.errors.some((item) => item.includes("retention.enabled=true")));
 });
 
 test("doctor validates system/runtime/law inputs", async () => {

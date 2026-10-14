@@ -153,7 +153,9 @@ export async function runSystemWithAdapter(args: {
         needsModelExecutor:
           Array.from(setup.plan.nodesByRoleId.values()).some((node) => node.binding.kind === "model"),
         modelBackends: [...new Set(Array.from(setup.plan.nodesByRoleId.values())
-          .flatMap((node) => node.binding.kind === "model" ? [node.binding.backend] : []))]
+          .flatMap((node) => node.binding.kind === "model" ? [node.binding.backend] : []))],
+        toolEnvironmentPolicy: setup.runtimeConfig.tools.environmentPolicy,
+        toolEnvAllowlist: setup.runtimeConfig.tools.envAllowlist
       });
 
       try {

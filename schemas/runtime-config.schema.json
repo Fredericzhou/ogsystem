@@ -85,6 +85,24 @@
         }
       }
     },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environmentPolicy": {
+          "type": "string",
+          "enum": ["inherit", "minimal"]
+        },
+        "envAllowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        }
+      }
+    },
     "opencode": {
       "type": "object",
       "additionalProperties": false,

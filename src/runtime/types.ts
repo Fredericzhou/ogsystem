@@ -340,6 +340,11 @@ export type RuntimeRedactionConfig = {
   enabled: boolean;
 };
 
+export type RuntimeToolEnvironmentConfig = {
+  environmentPolicy: "inherit" | "minimal";
+  envAllowlist: string[];
+};
+
 export type RuntimeConfig = {
   configVersion?: string;
   executor: "opencode";
@@ -349,6 +354,7 @@ export type RuntimeConfig = {
   workspace: RuntimeWorkspaceConfig;
   retention?: RuntimeRetentionConfig;
   redaction?: RuntimeRedactionConfig;
+  tools: RuntimeToolEnvironmentConfig;
   opencode?: {
     baseArgs?: string[];
   };
