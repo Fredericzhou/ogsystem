@@ -13,6 +13,7 @@ import { loadRolePackage } from "../dist/runtime/role-repo.js";
 import { initializeRunContext } from "../dist/runtime/run-artifacts.js";
 import { loadFlowContractPlan } from "../dist/runtime/flow-contract.js";
 import { executeRoleNode } from "../dist/runtime/role-executor.js";
+import { buildProjectedContext } from "../dist/runtime/role-input-projector.js";
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
@@ -21,6 +22,78 @@ function parseJsonCodeBlock(markdown) {
   assert.ok(match, "expected markdown to contain one json code block");
   return JSON.parse(match[1]);
 }
+
+test("optional handoff context omits unavailable fields, preserves null, and keeps required mappings fail-closed", () => {
+  const branch = {
+    branchId: "consumer@1#2",
+    roleId: "consumer",
+    loopIteration: 1,
+    lineageId: "lineage-1",
+    parentBranchId: "producer@1#1"
+  };
+  const state = {
+    userPrompt: "test",
+    humanReviewContextByBranchId: {},
+    roleResults: {
+      "producer@1#1": {
+        roleId: "producer",
+        event: "DONE",
+        content: "source",
+        data: { explicitNull: null, present: { value: 7 } },
+        branchId: branch.parentBranchId,
+        lineageId: branch.lineageId,
+        loopIteration: 1
+      }
+    }
+  };
+  const projected = (selector) => buildProjectedContext({
+    roleId: "consumer",
+    node: { contextMap: { selected: selector } },
+    branch,
+    state
+  });
+
+  assert.deepEqual(projected("direct.data.absent?").selected, undefined);
+  assert.equal(Object.hasOwn(projected("direct.data.absent?"), "selected"), false);
+  assert.equal(projected("direct.data.explicitNull?").selected, null);
+  assert.equal(projected("direct.data.present.value?").selected, 7);
+  assert.throws(() => projected("direct.data.absent"), (error) => error.envelope.errorCode === "ROLE_CONTEXT_PATH_MISSING");
+});
+
+test("optional source data selectors omit an unavailable quorum member but reject unauthorized sources", () => {
+  const branch = {
+    branchId: "review@1#3",
+    roleId: "review",
+    loopIteration: 1,
+    lineageId: "lineage-1"
+  };
+  const state = {
+    userPrompt: "test",
+    humanReviewContextByBranchId: {},
+    roleResults: {
+      "worker-a@1#1": {
+        roleId: "worker-a",
+        event: "DONE",
+        content: "A",
+        data: { finding: "found" },
+        branchId: "worker-a@1#1",
+        lineageId: "lineage-1",
+        loopIteration: 1
+      }
+    }
+  };
+  const node = { contextMap: { a: "source(worker-a).data.finding?", b: "source(worker-b).data.finding?" }, joinMode: "quorum_of", joinSources: ["worker-a", "worker-b"] };
+  assert.deepEqual(buildProjectedContext({ roleId: "review", node, branch, state }), { a: "found" });
+  assert.throws(
+    () => buildProjectedContext({
+      roleId: "review",
+      node: { ...node, contextMap: { c: "source(worker-c).data.finding?" } },
+      branch,
+      state
+    }),
+    (error) => error.envelope.errorCode === "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED"
+  );
+});
 
 async function writeRolePackage(args) {
   const roleDir = path.resolve(args.rolesRoot, args.roleId);

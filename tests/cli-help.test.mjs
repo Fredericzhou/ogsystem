@@ -50,7 +50,7 @@ test("ogs help command surfaces layered guidance", async () => {
   const compatibilityHelp = await runNodeCli(runtimeCliPath, ["help", "compatibility"]);
   assert.strictEqual(compatibilityHelp.code, 0);
   assert.match(compatibilityHelp.stdout, /latest two minor lines of the current major release/);
-  assert.match(compatibilityHelp.stdout, /development-test; no stable release line/);
+  assert.match(compatibilityHelp.stdout, /released; see the policy document/);
   assert.match(compatibilityHelp.stdout, /future\/unknown config or schema versions/);
   assert.match(compatibilityHelp.stdout, /replacement and planned removal release/);
   assert.match(compatibilityHelp.stdout, /docs\/development\/release-compatibility-policy\.md/);
@@ -81,6 +81,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(runHelp.code, 0);
   assert.match(runHelp.stdout, /ogs run start \[--system <file\.mmd>\] --input <text> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs <run-id> \[options\]/);
+  assert.match(runHelp.stdout, /ogs run artifact promote <run-id> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs --help/);
   assert.doesNotMatch(runHelp.stdout, /run reindex/);
 
@@ -98,6 +99,10 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(runLogsHelp.stdout, /--json          Emit one JSON array/);
   assert.match(runLogsHelp.stdout, /--ndjson        Emit one JSON object per line/);
   assert.match(runLogsHelp.stdout, /default text    human-readable one-line summaries/);
+
+  const runArtifactHelp = await runNodeCli(runtimeCliPath, ["run", "artifact", "--help"]);
+  assert.strictEqual(runArtifactHelp.code, 0);
+  assert.match(runArtifactHelp.stdout, /ogs run artifact promote <run-id> --source <shared-relative-path> --destination <project-relative-path> \[--ogs-dir <path>\]/);
 
   const runResumeHelp = await runNodeCli(runtimeCliPath, ["run", "resume", "--help"]);
   assert.strictEqual(runResumeHelp.code, 0);

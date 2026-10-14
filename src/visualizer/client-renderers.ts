@@ -1,7 +1,7 @@
 import { escapeHtml as escapeText } from "./html-escape.js";
 import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
 import { roleColorForId } from "./role-color.js";
-import { listContextSelectorCandidates } from "../context-selector.js";
+import { listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
 
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
@@ -1191,7 +1191,9 @@ export function renderStudioRoleConfigEditor(args: {
     const optional = typeof selector === "string" && selector.endsWith("?");
     const selectorValue = optional ? selector.slice(0, -1) : String(selector || "");
     const { base: sourceSelector, path: pathValue } = splitContextSelector(selectorValue);
-    const optionalDisabled = disabled || (!optional && !sourceSelector.startsWith("global.human_review.current")) ? " disabled" : "";
+    const optionalSummary = summarizeContextSelector(selectorValue + "?");
+    const optionalSupported = optionalSummary.validPath && optionalSummary.optional === true && !sourceUnavailable(sourceSelector);
+    const optionalDisabled = disabled || !optionalSupported ? " disabled" : "";
     return '<div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value="' + escapeText(field) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector data-current-selector="' + escapeText(sourceSelector) + '"' + disabled + '>' + selectorOptionsFor(sourceSelector) + '</select></label><label class="field"><span>' + escapeText(t("studio.contextMapPath", undefined, "Field path (optional)")) + '</span><input data-context-map-path value="' + escapeText(pathValue) + '" placeholder="issue.id"' + disabled + '></label><label class="field checkbox"><input type="checkbox" data-context-map-optional' + (optional ? " checked" : "") + optionalDisabled + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle studio-icon-button" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '" title="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div>';
   }).join("");
   const quorumSourcesUnavailable = joinMode === "quorum_of" && Number(joinMin) < joinSources.length;

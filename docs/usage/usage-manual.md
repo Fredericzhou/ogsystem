@@ -2,7 +2,7 @@
 
 ## Read This First
 
-OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（开发测试版本 `0.3.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
+OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（稳定版本 `1.0.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
 
 建议先建立这四个认知：
 
@@ -143,11 +143,11 @@ pnpm run smoke:package-install:npm
 pnpm run smoke:package-install:pnpm
 ```
 
-版本说明：`0.3.0` 是开发测试版本，直接采用 Semantic IR v1 和当前版本化运行时合同，不提供历史 DSL、API 或运行数据迁移。
+版本说明：`1.0.0` 是首个稳定版本，直接采用 Semantic IR v1 和当前版本化运行时合同。`0.3.0` 开发测试版项目和运行数据不提供迁移；升级时新建项目和 run，旧 run 目录保留只读审计。
 
-发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `0.3.0` 仍在开发测试边界之外，不属于正式发布兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
+发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `1.0.0` 为首个正式发布版本；`0.3.0` 不属于兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
 
-当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。当前开发测试版本没有历史配置、schema 或 run-data 迁移命令；resume 也不因配置文件可读取就获得跨版本保证。
+当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。`1.0.0` 不提供 `0.3.0` 的配置、schema 或 run-data 迁移；resume 也不因配置文件可读取就获得跨版本保证。
 
 覆盖率判读约定：
 

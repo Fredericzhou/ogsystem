@@ -52,6 +52,7 @@ import { writeJsonFileAtomic } from "./json-file.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import type { AdapterRunResult } from "./types.js";
 import { formatHumanRunSummary, shouldEmitFullRunJson } from "./cli-run-output.js";
+import { promoteSealedArtifact } from "./artifact-promotion.js";
 
 await ensureSystemHome();
 
@@ -60,7 +61,7 @@ const { version: CLI_VERSION } = require("../../package.json") as { version: str
 
 type HelpTopic = "compatibility" | "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
-type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review";
+type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review" | "artifact";
 
 function isVisualizerTopic(value: string | undefined): value is "vis" | "visualizer" {
   return value === "vis" || value === "visualizer";
@@ -405,6 +406,16 @@ function usageRun(subcommand?: RunSubcommand): string {
     ].join("\n");
   }
 
+  if (subcommand === "artifact") {
+    return [
+      "Usage:",
+      "  ogs run artifact promote <run-id> --source <shared-relative-path> --destination <project-relative-path> [--ogs-dir <path>]",
+      "",
+      "Promotes a sealed artifact only when its run is done, its referenced test report passed, and all source hashes match.",
+      "The destination must not exist. The source run and its audit artifacts are never modified."
+    ].join("\n");
+  }
+
   return [
     "Usage:",
     "  ogs run start [--system <file.mmd>] --input <text> [options]",
@@ -415,12 +426,14 @@ function usageRun(subcommand?: RunSubcommand): string {
     "  ogs run inspect <run-id> [options]",
     "  ogs run logs <run-id> [options]",
     "  ogs run review <list|inspect|decide> ...",
+    "  ogs run artifact promote <run-id> [options]",
     "",
     "Drill down:",
     "  ogs run start --help",
     "  ogs run resume --help",
     "  ogs run logs --help",
-    "  ogs run review --help"
+    "  ogs run review --help",
+    "  ogs run artifact --help"
   ].join("\n");
 }
 
@@ -1368,6 +1381,43 @@ async function runRunCommand(argv: string[]): Promise<void> {
   }
   if (subcommand === "resume") {
     await runResumeCommand(argv.slice(1));
+    return;
+  }
+  if (subcommand === "artifact") {
+    const nested = argv[1];
+    if (!nested || nested === "--help" || nested === "-h") {
+      console.log(usage("run", "artifact"));
+      return;
+    }
+    if (nested !== "promote") {
+      throw createCliInputError("CLI_RUN_ARTIFACT_UNKNOWN_SUBCOMMAND", `unknown run artifact subcommand: ${nested}`);
+    }
+    const { values, positionals } = parseLifecycleArgs(argv.slice(2), {
+      "ogs-dir": { type: "string" },
+      source: { type: "string" },
+      destination: { type: "string" },
+      help: { type: "boolean", short: "h" }
+    });
+    if (asBool(values.help)) {
+      console.log(usage("run", "artifact"));
+      return;
+    }
+    const runId = positionals[0];
+    const source = asString(values.source);
+    const destination = asString(values.destination);
+    if (!runId || !source || !destination) {
+      throw createCliInputError(
+        "CLI_RUN_ARTIFACT_PROMOTE_MISSING_ARGS",
+        "run artifact promote requires <run-id>, --source, and --destination"
+      );
+    }
+    const promoted = await promoteSealedArtifact({
+      workdir: asString(values["ogs-dir"]) ?? process.cwd(),
+      runId,
+      source,
+      destination
+    });
+    console.log(JSON.stringify({ status: "promoted", ...promoted }, null, 2));
     return;
   }
   if (subcommand === "stop") {

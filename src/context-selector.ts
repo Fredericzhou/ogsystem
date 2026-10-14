@@ -50,7 +50,11 @@ export function isValidSourceRoleId(roleId: string): boolean {
 export function summarizeContextSelector(selector: string): SelectorSummary {
   const optional = selector.endsWith("?");
   const value = optional ? selector.slice(0, -1) : selector;
-  if (optional && !value.startsWith("global.human_review.current")) return { selectorKind: "unsupported", validPath: false, optional };
+  const optionalAllowed = value.startsWith("global.human_review.current") ||
+    value === "direct.data" ||
+    value.startsWith("direct.data.") ||
+    /^source\([A-Za-z0-9._:-]+\)\.data(?:\.|$)/.test(value);
+  if (optional && !optionalAllowed) return { selectorKind: "unsupported", validPath: false, optional };
   if (value === "global.task" || value === "global.user_profile") return { selectorKind: value, validPath: true, optional };
   if (value.startsWith("global.user_profile.")) return { selectorKind: "global.user_profile.path", validPath: isValidSelectorPath(value.slice("global.user_profile.".length)), optional };
   if (value === "global.human_review.current") return { selectorKind: value, validPath: true, optional };

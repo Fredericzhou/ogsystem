@@ -89,6 +89,31 @@ test("visualizer health, readiness, scrape metrics, and external bind guard are 
   }
 });
 
+test("visualizer closes repeated SSE connections and returns the active gauge to zero", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-sse-lifecycle-"));
+  await seedProjectFixture(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    for (let index = 0; index < 100; index += 1) {
+      const response = await fetch(`${started.url}/api/v1/runs/sse-lifecycle-run/stream`);
+      assert.equal(response.status, 200);
+      await response.body.cancel();
+    }
+    let metrics = "";
+    const deadline = Date.now() + 5000;
+    do {
+      metrics = await (await fetch(`${started.url}/metrics`)).text();
+      if (/ogs_visualizer_sse_connections_active 0(?:\n|$)/.test(metrics)) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    } while (Date.now() < deadline);
+    assert.match(metrics, /ogs_visualizer_sse_connections_active 0(?:\n|$)/);
+    assert.match(metrics, /ogs_visualizer_sse_connections_total 100(?:\n|$)/);
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
 test("contract editor API restricts paths and preserves files rejected by validation", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-contract-editor-"));
   await seedProjectFixture(workdir);

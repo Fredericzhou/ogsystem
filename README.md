@@ -1,7 +1,7 @@
 # OGSystem
 
-OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current development-test
-release: `0.3.0`.
+OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current stable release:
+`1.0.0`.
 
 Implemented scope:
 
@@ -47,7 +47,7 @@ CLI installation prerequisites:
 node >= 20
 ```
 
-Install the current development-test CLI from the source checkout:
+Install the stable CLI from a versioned package tarball:
 
 ```bash
 npm install -g .
@@ -115,12 +115,13 @@ ogs visualizer --ogs-dir .
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model choices live in `.ogs/model-selection.json`; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
 
-Version `0.3.0` is a development-test release. It uses the current Semantic IR v1 and versioned
-runtime contracts directly; historical DSL, API, and run-data migration is not supported.
+Version `1.0.0` is the first stable release. It uses Semantic IR v1 and the current versioned
+runtime contracts directly. There is no migration from the `0.3.0` development-test artifacts;
+create a fresh project and run when moving to this stable release.
 
 Released CLI compatibility policy: released versions support the latest two minor lines of the
 current major release, with documented migrations for changed config or schema contracts. The
-current `0.3.0` package is outside that released window. Run `ogs help compatibility` for the
+current `1.0.0` package is the first released line. Run `ogs help compatibility` for the
 installed CLI's summary, unsupported-input boundary, and deprecation timing; see
 `docs/development/release-compatibility-policy.md` for the full policy.
 

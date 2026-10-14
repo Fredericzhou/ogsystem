@@ -3634,7 +3634,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const invalidPathSelector = mapRows.map(contextMapSelectorForRow).find((selector) => !summarizeContextSelector(selector).validPath);
       const invalidOptionalSource = mapRows.some((row) =>
         row.querySelector("[data-context-map-optional]")?.checked === true &&
-        !String(row.querySelector("[data-context-map-selector]")?.value || "").startsWith("global.human_review.current")
+        !summarizeContextSelector(contextMapSelectorForRow(row)).validPath
       );
       const badSourceSelector = mapSelectors.find((selector) => {
         const sourceEnd = selector.startsWith("source(") ? selector.indexOf(").") : -1;
@@ -3930,7 +3930,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const editorRoot = element.closest("[data-role-config-editor]");
           const row = element.closest("[data-context-map-row]");
           const optional = row?.querySelector("[data-context-map-optional]");
-          const supported = summarizeContextSelector(String(element.value || "")).selectorKind.startsWith("global.human_review.current");
+          const selector = String(element.value || "");
+          const summary = summarizeContextSelector(selector + "?");
+          const supported = summary.validPath && summary.optional === true;
           if (optional) {
             optional.disabled = !supported;
             if (!supported) optional.checked = false;

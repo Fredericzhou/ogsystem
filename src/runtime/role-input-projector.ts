@@ -81,6 +81,7 @@ function resolveObjectPath(args: {
   selector: string;
   roleId: string;
   branchId: string;
+  optional?: boolean;
 }): unknown {
   let current = args.value;
   for (const segment of args.path) {
@@ -90,6 +91,7 @@ function resolveObjectPath(args: {
       Array.isArray(current) ||
       !Object.prototype.hasOwnProperty.call(current, segment)
     ) {
+      if (args.optional) return undefined;
       failContextProjection({
         errorCode: "ROLE_CONTEXT_PATH_MISSING",
         message: `Role "${args.roleId}" selector "${args.selector}" is missing required path "${segment}".`,
@@ -108,9 +110,11 @@ function resolveArtifactField(args: {
   selector: string;
   roleId: string;
   branchId: string;
+  optional?: boolean;
 }): unknown {
   const value = args.artifact[args.field];
   if (value === undefined) {
+    if (args.optional) return undefined;
     failContextProjection({
       errorCode: "ROLE_CONTEXT_PATH_MISSING",
       message: `Role "${args.roleId}" selector "${args.selector}" is missing required field "${args.field}".`,
@@ -186,6 +190,37 @@ function getRequiredJoinSourceArtifact(args: {
     });
   }
   return result;
+}
+
+function getOptionalJoinSourceArtifact(args: {
+  state: GraphState;
+  branch: BranchRecord;
+  roleId: string;
+  node: ExecutionPlanNode;
+  sourceRoleId: string;
+}): StoredRoleResult | undefined {
+  if (!args.node.joinMode) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED",
+      message: `Role "${args.roleId}" cannot use source(...) selectors without join.mode.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  if (!args.node.joinSources.includes(args.sourceRoleId)) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED",
+      message: `Role "${args.roleId}" selector source("${args.sourceRoleId}") is not declared in join.sources.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  return findRoleResult({
+    state: args.state,
+    roleId: args.sourceRoleId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration
+  });
 }
 
 function getRequiredHumanReviewContext(args: {
@@ -294,7 +329,7 @@ function evaluateContextSelector(args: {
     }
   }
 
-  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
+  if (normalizedSelector === "direct.content" || normalizedSelector === "direct.event" || normalizedSelector === "direct.data") {
     const artifact = getRequiredDirectArtifact({
       state: args.state,
       branch: args.branch,
@@ -302,50 +337,53 @@ function evaluateContextSelector(args: {
     });
     return resolveArtifactField({
       artifact,
-      field: selector.slice("direct.".length) as "content" | "event" | "data",
+      field: normalizedSelector.slice("direct.".length) as "content" | "event" | "data",
       selector,
       roleId: args.roleId,
       branchId: args.branch.branchId
     });
   }
 
-  if (selector.startsWith("direct.data.")) {
-    const artifact = getRequiredDirectArtifact({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
+  if (normalizedSelector.startsWith("direct.data.")) {
+    const artifact = optional
+      ? args.branch.parentBranchId
+        ? getBranchResult(args.state, args.branch.parentBranchId)
+        : undefined
+      : getRequiredDirectArtifact({ state: args.state, branch: args.branch, roleId: args.roleId });
+    if (!artifact) return undefined;
+    const data = resolveArtifactField({
+      artifact,
+      field: "data",
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId,
+      optional
     });
+    if (data === undefined) return undefined;
     return resolveObjectPath({
-      value: resolveArtifactField({
-        artifact,
-        field: "data",
-        selector,
-        roleId: args.roleId,
-        branchId: args.branch.branchId
-      }),
-      path: selector.slice("direct.data.".length).split("."),
+      value: data,
+      path: normalizedSelector.slice("direct.data.".length).split("."),
       selector,
       roleId: args.roleId,
-      branchId: args.branch.branchId
+      branchId: args.branch.branchId,
+      optional
     });
   }
 
-  const sourceMatch = selector.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data)(?:\.(.+))?$/);
+  const sourceMatch = normalizedSelector.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data)(?:\.(.+))?$/);
   if (sourceMatch) {
     const [, sourceRoleId, field, nestedPath] = sourceMatch;
-    const artifact = getRequiredJoinSourceArtifact({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId,
-      node: args.node,
-      sourceRoleId
-    });
+    const artifact = optional
+      ? getOptionalJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId })
+      : getRequiredJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId });
+    if (!artifact) return undefined;
     const fieldValue = resolveArtifactField({
       artifact,
       field: field as "content" | "event" | "data",
       selector,
       roleId: args.roleId,
-      branchId: args.branch.branchId
+      branchId: args.branch.branchId,
+      optional
     });
     if (!nestedPath) {
       return fieldValue;
@@ -355,7 +393,8 @@ function evaluateContextSelector(args: {
       path: nestedPath.split("."),
       selector,
       roleId: args.roleId,
-      branchId: args.branch.branchId
+      branchId: args.branch.branchId,
+      optional
     });
   }
 

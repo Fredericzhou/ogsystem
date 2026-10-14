@@ -13,9 +13,15 @@ test("context selector semantic module accepts supported nested paths", () => {
   }
 });
 
-test("context selector optional marker remains limited to Human Review values", () => {
+test("context selector optional marker supports human review and handoff data paths only", () => {
   assert.equal(summarizeContextSelector("global.human_review.current.comment?").validPath, true);
-  assert.equal(summarizeContextSelector("direct.data.issueId?").validPath, false);
+  assert.equal(summarizeContextSelector("direct.data?").validPath, true);
+  assert.equal(summarizeContextSelector("source(worker-a).data?").validPath, true);
+  assert.equal(summarizeContextSelector("direct.data.issueId?").validPath, true);
+  assert.equal(summarizeContextSelector("source(worker-a).data.findings?").validPath, true);
+  assert.equal(summarizeContextSelector("direct.content?").validPath, false);
+  assert.equal(summarizeContextSelector("source(worker-a).content?").validPath, false);
+  assert.equal(summarizeContextSelector("source(worker-a).data.bad-key?").validPath, false);
   assert.equal(summarizeContextSelector("direct.data.bad-key").validPath, false);
 });
 

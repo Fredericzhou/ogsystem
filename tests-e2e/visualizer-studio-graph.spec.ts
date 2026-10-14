@@ -1754,25 +1754,30 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     await expect(analystEditor.locator("[data-context-map-preview]")).toContainText("direct.data.issue.id");
     await expect(analystEditor.locator("[data-context-map-path]").last()).toHaveAttribute("data-bound-context-map-path-edit", "true");
     await expect(analystEditor.locator("[data-context-map-path]").last()).toHaveAttribute("aria-invalid", "false");
-    await expect(analystEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await expect(analystEditor.locator("[data-context-map-optional]").last()).toBeEnabled();
     await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
       roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+    });
+    await analystEditor.locator("[data-context-map-optional]").last().check();
+    await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id?" } } }
     });
     const analystPath = analystEditor.locator("[data-context-map-path]").last();
     await analystPath.fill("issue..id");
     await expect(analystPath).toHaveAttribute("aria-invalid", "true");
     await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
-    await expect(analystEditor).toContainText("The composed Selector direct.data.issue..id is invalid.");
+    await expect(analystEditor).toContainText("The composed Selector direct.data.issue..id? is invalid.");
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id?" } } }
     });
     await analystPath.fill(".issue.id.");
     await expect(analystPath).toHaveAttribute("aria-invalid", "true");
     await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
-    await expect(analystEditor).toContainText("The composed Selector direct.data..issue.id. is invalid.");
+    await expect(analystEditor).toContainText("The composed Selector direct.data..issue.id.? is invalid.");
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id?" } } }
     });
     await analystEditor.locator("[data-context-map-selector]").last().selectOption("direct.content");
     await analystPath.fill("issue.id");
@@ -1780,13 +1785,13 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
     await expect(analystEditor).toContainText("The composed Selector direct.content.issue.id is invalid.");
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id?" } } }
     });
     await analystEditor.locator("[data-context-map-selector]").last().selectOption("direct.data");
     await analystPath.fill("issue.id");
     await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id?" } } }
     });
     await page.locator('[data-studio-selection-back]').click();
     if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
@@ -1806,10 +1811,11 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     expect(pageErrors).toEqual([]);
     await expect(reviewerEditor.locator("[data-context-map-path]").last()).toHaveAttribute("aria-invalid", "false");
     await expect(reviewerEditor.locator("[data-context-map-preview]")).toContainText("source(demo-intake).data.result.summary");
-    await expect(reviewerEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await expect(reviewerEditor.locator("[data-context-map-optional]").last()).toBeEnabled();
+    await reviewerEditor.locator("[data-context-map-optional]").last().check();
     await reviewerEditor.locator("[data-role-config-save='test-operator']").click();
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      roles: { "test-operator": { contextMap: { reviewSummary: "source(demo-intake).data.result.summary" } } }
+      roles: { "test-operator": { contextMap: { reviewSummary: "source(demo-intake).data.result.summary?" } } }
     });
     const savedAuthoring = JSON.parse(await readFile(authoringDraftPath, "utf8"));
     const generateResponse = await page.request.post(new URL("/api/v1/project/studio/authoring/generate-mmd", started.url).toString(), {
