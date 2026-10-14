@@ -761,6 +761,40 @@ export function renderPageShellStyles(): string {
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
     }
+    .review-pending-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid rgba(251, 191, 36, 0.42);
+      border-radius: 7px;
+      background: rgba(251, 191, 36, 0.09);
+      color: var(--text);
+    }
+    .review-pending-banner > div {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .review-pending-banner strong { color: #fbbf24; }
+    .review-pending-banner span { color: var(--muted); overflow-wrap: anywhere; }
+    #action-form label.field.checkbox {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 36px;
+    }
+    #action-form label.field.checkbox input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      min-width: 16px;
+      min-height: 16px;
+      margin: 0;
+      accent-color: var(--warn);
+    }
+    #action-form label.field.checkbox span { line-height: 1.4; }
     .operate-main {
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
@@ -3083,6 +3117,7 @@ export function renderPageShellStyles(): string {
       .operate-tabs {
         width: 100%;
       }
+      .review-pending-banner { align-items: flex-start; flex-direction: column; }
       .studio-bridge-layout { grid-template-columns: 1fr; }
       .studio-index-grid { grid-template-columns: 1fr; }
       .studio-canvas-shell.has-docked-selection {

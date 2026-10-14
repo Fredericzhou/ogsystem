@@ -635,6 +635,9 @@ test("lifecycle cli review commands expose pending human review state and can ap
     tempRoot
   ]);
   assert.strictEqual(start.code, 0, start.stderr);
+  assert.match(start.stderr, /Human review required/);
+  assert.match(start.stderr, /ogs run review list/);
+  assert.match(start.stderr, /review\.test-operator@1#1\.r1/);
   const startPayload = JSON.parse(start.stdout);
   assert.equal(startPayload.status, "stopped");
   const list = await runCli(["run", "list", "--ogs-dir", tempRoot]);
@@ -715,17 +718,15 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "review.test-operator@1#1.r1",
     "--decision",
     "approve",
+    "--resume",
+    "--dry-run",
     "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(decide.code, 0);
   const decidePayload = JSON.parse(decide.stdout);
-  assert.equal(decidePayload.decision.decision, "approve");
-
-  const resume = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
-  assert.strictEqual(resume.code, 0, resume.stderr);
-  const resumePayload = JSON.parse(resume.stdout);
-  assert.equal(resumePayload.status, "done");
+  assert.equal(decidePayload.decision.decision.decision, "approve");
+  assert.equal(decidePayload.resume.result.status, "done");
 
   const statusAfterResume = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(statusAfterResume.code, 0);
@@ -790,6 +791,17 @@ test("lifecycle cli review commands preserve paused status and allow a later app
   assert.strictEqual(list.code, 0);
   const runId = JSON.parse(list.stdout).runs[0].runId;
   const reviewId = "review.test-operator@1#1.r1";
+
+  const invalidAutoResume = await runCli([
+    "run", "review", "decide", runId, reviewId,
+    "--decision", "pause", "--resume", "--ogs-dir", tempRoot
+  ]);
+  assert.equal(invalidAutoResume.code, 1);
+  assert.match(invalidAutoResume.stderr, /CLI_RUN_REVIEW_RESUME_INVALID_DECISION/);
+  const reviewBeforePauseDecision = await runCli([
+    "run", "review", "inspect", runId, reviewId, "--ogs-dir", tempRoot
+  ]);
+  assert.equal(JSON.parse(reviewBeforePauseDecision.stdout).decisionSnapshot, undefined);
 
   const pause = await runCli([
     "run",
@@ -919,13 +931,13 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "rework",
     "--comment",
     "needs another pass",
+    "--resume",
+    "--dry-run",
     "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(rework.code, 0, rework.stderr);
-
-  const resume = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
-  assert.strictEqual(resume.code, 0, resume.stderr);
+  assert.equal(JSON.parse(rework.stdout).resume.result.status, "stopped");
 
   const statusAfterRework = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(statusAfterRework.code, 0);
@@ -1009,6 +1021,30 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
   ]);
   assert.strictEqual(invalidTerminateScope.code, 1);
   assert.match(invalidTerminateScope.stderr, /invalid --scope value/);
+
+  const secondReviewId = statusAfterReworkPayload.latestPendingReviewId;
+  const failedAutoResume = await runCli([
+    "run", "review", "decide", runId, secondReviewId,
+    "--decision", "approve",
+    "--comment", "The revised output meets the documented acceptance criteria.",
+    "--resume",
+    "--runtime", path.resolve(tempRoot, "missing-runtime.json"),
+    "--ogs-dir", tempRoot
+  ]);
+  assert.equal(failedAutoResume.code, 1);
+  assert.match(failedAutoResume.stderr, /Decision recorded, but resuming run .* failed/);
+
+  const reviewAfterFailedResume = await runCli([
+    "run", "review", "inspect", runId, secondReviewId, "--ogs-dir", tempRoot
+  ]);
+  assert.equal(reviewAfterFailedResume.code, 0);
+  assert.equal(JSON.parse(reviewAfterFailedResume.stdout).decisionSnapshot.decision, "approve");
+
+  const resumeAfterFailedAutoResume = await runCli([
+    "run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot
+  ]);
+  assert.equal(resumeAfterFailedAutoResume.code, 0, resumeAfterFailedAutoResume.stderr);
+  assert.equal(JSON.parse(resumeAfterFailedAutoResume.stdout).status, "done");
 });
 
 test("lifecycle cli modern run failures print modern resume hints and reject removed hidden flags", { concurrency: false }, async () => {

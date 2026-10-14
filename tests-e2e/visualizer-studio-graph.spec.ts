@@ -961,7 +961,9 @@ test("Run, review, and resume are operable through the visual workflow", async (
 
     await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Operate", "Run"]) }).click();
     await expect(page.locator("#stats")).toContainText(/waiting review|等待评审/i);
-    await page.locator("#operate-tab-operations").click();
+    const pendingBanner = page.locator("#review-pending-banner");
+    await expect(pendingBanner).toBeVisible();
+    await pendingBanner.locator("#banner-jump-review").click();
     await expect(page.locator("#operate-tab-operations")).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("#operate-tabpanel-reviews")).toBeVisible();
     const reviewQueue = page.locator("#reviews");
@@ -971,6 +973,7 @@ test("Run, review, and resume are operable through the visual workflow", async (
 
     const comment = page.locator("#action-review-comment");
     await expect(comment).toBeVisible();
+    await expect(page.locator("#action-review-auto-resume")).toBeChecked();
     await expect(comment).toHaveAttribute("maxlength", "2000");
     await comment.fill("The simulated output passed the review gate.");
     await page.locator("#action-form-submit").click();
@@ -984,11 +987,6 @@ test("Run, review, and resume are operable through the visual workflow", async (
     await page.locator("#action-form-submit").click();
     await expect(page.locator("#action-form-section")).toBeHidden();
 
-    await page.locator('[data-operate-tab="operations"]').click();
-    await expect(page.locator("#resume-run")).toBeVisible();
-    await page.locator("#resume-run").click();
-    await page.locator("#action-resume-dry-run").selectOption("true");
-    await page.locator("#action-form-submit").click();
     await expect(page.locator("#run-list [data-run-id]").first()).toContainText(/done|完成/i, { timeout: 30000 });
     await expect(page.locator("#stats")).toContainText(/done|完成/i);
   } finally {

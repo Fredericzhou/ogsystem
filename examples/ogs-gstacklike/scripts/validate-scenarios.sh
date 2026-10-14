@@ -228,9 +228,9 @@ assert_file_absent "${happy_run_dir}/shared/index.html"
 
 cli run review decide "$happy_run_id" "$happy_review_id" \
   --decision approve \
-  --comment "approved" \
+  --comment "The generated page and release artifacts meet the acceptance checks." \
+  --resume \
   --ogs-dir "$PROJECT_DIR" >/dev/null
-cli run resume "$happy_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$happy_run_id" 'data.status === "done" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$happy_run_id" "$happy_review_id" 'data.decisionSnapshot.decision === "approve" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'
@@ -265,8 +265,8 @@ assert_review_inspect "$rework_run_id" "$rework_review_id" 'data.currentStatus =
 cli run review decide "$rework_run_id" "$rework_review_id" \
   --decision rework \
   --comment "请补充风险与边界条件" \
+  --resume \
   --ogs-dir "$PROJECT_DIR" >/dev/null
-cli run resume "$rework_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$rework_run_id" 'data.status === "stopped" && data.pendingReviewCount === 1 && data.hasWaitingHumanReview === true && data.latestPendingReviewId !== "review.ship@1#4.r1"'
 assert_review_inspect "$rework_run_id" "$rework_review_id" 'data.decisionSnapshot.decision === "rework" && data.currentStatus === "resolved" && data.currentState.status === "resolved" && data.requestSnapshot.status === "pending"'
@@ -278,9 +278,9 @@ assert_file_contains "${rework_run_dir}/roles/ship/inbox.md" 'human_review_round
 rework_followup_review_id="$(pending_review_id_for "$rework_run_id")"
 cli run review decide "$rework_run_id" "$rework_followup_review_id" \
   --decision approve \
-  --comment "rework approved" \
+  --comment "The revised submission now includes the requested risk boundaries." \
+  --resume \
   --ogs-dir "$PROJECT_DIR" >/dev/null
-cli run resume "$rework_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$rework_run_id" 'data.status === "done" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$rework_run_id" "$rework_followup_review_id" 'data.decisionSnapshot.decision === "approve" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'
@@ -297,7 +297,7 @@ pause_run_dir="$(run_dir_for "$pause_run_id")"
 
 cli run review decide "$pause_run_id" "$pause_review_id" \
   --decision pause \
-  --comment "hold" \
+  --comment "Pause until the deployment owner confirms the rollback window." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 cli run resume "$pause_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
@@ -318,7 +318,7 @@ terminate_run_dir="$(run_dir_for "$terminate_run_id")"
 cli run review decide "$terminate_run_id" "$terminate_review_id" \
   --decision terminate \
   --scope run \
-  --comment "stop" \
+  --comment "Terminate because the deployment precondition is no longer valid." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 cli run resume "$terminate_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
@@ -337,11 +337,11 @@ deploy_fail_run_id="$(
 deploy_fail_review_id="$(review_id_for "$deploy_fail_run_id")"
 deploy_fail_run_dir="$(run_dir_for "$deploy_fail_run_id")"
 
-cli run review decide "$deploy_fail_run_id" "$deploy_fail_review_id" \
+SHIP_DEPLOY_FAIL=1 cli run review decide "$deploy_fail_run_id" "$deploy_fail_review_id" \
   --decision approve \
-  --comment "approved" \
+  --comment "The candidate passed review with compensation checks enabled." \
+  --resume \
   --ogs-dir "$PROJECT_DIR" >/dev/null
-SHIP_DEPLOY_FAIL=1 cli run resume "$deploy_fail_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$deploy_fail_run_id" 'data.status === "done" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$deploy_fail_run_id" "$deploy_fail_review_id" 'data.decisionSnapshot.decision === "approve" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'

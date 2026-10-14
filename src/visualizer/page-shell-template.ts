@@ -99,6 +99,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </section>
           <section id="console-panel-debug" class="console-panel grid operate-workspace" data-console-panel="debug" role="presentation" hidden>
             <div id="operate-tabs" class="segmented operate-tabs span-12" role="tablist" aria-label="${escapeHtml(t("operate.tablist"))}"></div>
+            <div id="review-pending-banner" class="span-12" hidden></div>
           <section id="operate-tabpanel-overview" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-overview">
               <div id="operate-empty-state" class="operate-empty-state span-12" hidden>
                 <strong>${escapeHtml(t("state.noRunSelected"))}</strong>

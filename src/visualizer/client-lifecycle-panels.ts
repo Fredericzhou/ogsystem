@@ -61,6 +61,24 @@ export function renderOperateTabsHtml(args: {
   ).join("");
 }
 
+export function renderPendingReviewBannerHtml(args: {
+  count: number;
+  roleId?: string;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { count, roleId, t, escapeText } = args;
+  if (count <= 0) return "";
+  return [
+    '<div class="review-pending-banner" role="status">',
+    '<div><strong>' + escapeText(t("review.pendingBannerTitle", { count: String(count) }, "{count} pending human review(s)")) + '</strong>',
+    roleId ? '<span>' + escapeText(t("review.pendingBannerRole", { roleId }, "Role {roleId} is waiting for review.")) + '</span>' : "",
+    '</div>',
+    '<button type="button" class="button warn compact" id="banner-jump-review">' + escapeText(t("review.pendingBannerAction", undefined, "Review now")) + '</button>',
+    '</div>'
+  ].join("");
+}
+
 export function renderFlowTraceHtml(args: {
   projection: Record<string, any> | null | undefined;
   graph: Record<string, any> | null | undefined;

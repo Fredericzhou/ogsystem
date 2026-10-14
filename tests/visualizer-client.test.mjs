@@ -56,6 +56,7 @@ const PAGE_ELEMENT_IDS = [
   "workbench-tabs",
   "workbench-body",
   "operate-tabs",
+  "review-pending-banner",
   "operate-tabpanel-overview",
   "run-graph-disclosure",
   "operate-tabpanel-recovery",
@@ -2351,6 +2352,9 @@ function createBackend(options = {}) {
       }
       if (runResumeMatch && method === "POST") {
         this.lastResumeBody = JSON.parse(request.body ?? "{}");
+        if (options.failResume) {
+          return createResponse({ error: "resume unavailable" }, 500, "Internal Server Error");
+        }
         return createResponse({
           runId: runResumeMatch[1],
           status: "done",
@@ -3910,9 +3914,11 @@ test("visualizer client allows an optional reason, previews the decision, and re
   await settle();
 
   const commentInput = harness.document.getElementById("action-review-comment");
+  const autoResumeInput = harness.document.getElementById("action-review-auto-resume");
   const submitButton = harness.document.getElementById("action-form-submit");
   assert.equal(harness.document.getElementById("action-review-actor"), null);
   assert.ok(commentInput);
+  assert.ok(autoResumeInput);
   assert.ok(submitButton);
   assert.equal(commentInput.value, "");
 
@@ -3939,6 +3945,7 @@ test("visualizer client allows an optional reason, previews the decision, and re
   await harness.document.getElementById("action-review-back").click();
   await settle();
   assert.equal(harness.document.getElementById("action-review-comment").value, reason);
+  harness.document.getElementById("action-review-auto-resume").checked = false;
   await harness.document.getElementById("action-form-submit").click();
   await settle();
 
@@ -3964,6 +3971,67 @@ test("visualizer client allows an optional reason, previews the decision, and re
   assert.ok(
     harness.document.getElementById("review-detail").textContent.includes("recorded")
   );
+  assert.equal(harness.backend.lastResumeBody, undefined);
+});
+
+test("visualizer review decision resumes after recording when enabled", async () => {
+  const harness = await createClientHarness();
+  const banner = harness.document.getElementById("review-pending-banner");
+  assert.equal(banner.hidden, false);
+  assert.match(banner.textContent, /pending human review|待处理的人工审核/i);
+  await banner.querySelectorAll("button")[0].click();
+  await settle();
+  assert.equal(harness.document.getElementById("review-detail-disclosure").open, true);
+
+  const approveButton = harness.document
+    .getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  await harness.document.getElementById("action-review-comment").input(
+    "The evidence supports a bounded test with the current rollback plan."
+  );
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  assert.match(harness.document.getElementById("action-form").textContent, /Resume execution after this decision/);
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  const decisionIndex = harness.backend.fetchCalls.findIndex((call) => call.path.endsWith("/reviews/review-1/decide"));
+  const resumeIndex = harness.backend.fetchCalls.findIndex((call) => call.method === "POST" && call.path.endsWith("/runs/run-123/resume"));
+  assert.ok(decisionIndex >= 0);
+  assert.ok(resumeIndex > decisionIndex);
+  assert.deepEqual(harness.backend.lastResumeBody, {
+    dryRun: false,
+    runtimePath: ".ogs/runtime.json",
+    userProfilePath: ".ogs/user-profile.json",
+    lawsPath: ".ogs/laws.json"
+  });
+});
+
+test("visualizer reports a durable review decision when automatic resume fails", async () => {
+  const harness = await createClientHarness({
+    backend: createBackend({ failResume: true })
+  });
+  const approveButton = harness.document
+    .getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  await harness.document.getElementById("action-review-comment").input(
+    "The evidence supports a bounded test with the current rollback plan."
+  );
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.equal(harness.backend.lastDecisionBody.decision, "approve");
+  assert.ok(harness.backend.lastResumeBody);
+  assert.match(harness.document.getElementById("flash").textContent, /Decision recorded, but the run could not resume/);
+  assert.ok(harness.document.getElementById("review-detail").textContent.includes("recorded"));
 });
 
 test("visualizer client action failures stay local and show an error flash", async () => {

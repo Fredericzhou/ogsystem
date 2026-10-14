@@ -50,6 +50,8 @@ import { ensureSystemHome } from "./system-home.js";
 import { discoverLocalModelCatalog } from "./model-catalog.js";
 import { writeJsonFileAtomic } from "./json-file.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
+import type { AdapterRunResult } from "./types.js";
+import { formatHumanRunSummary, shouldEmitFullRunJson } from "./cli-run-output.js";
 
 await ensureSystemHome();
 
@@ -259,6 +261,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "  --port <n|0>           Visualizer bind port when --visualize is enabled (default: 0 auto)",
       "  --print-graph-link     Print Mermaid Live graph preview URL to stderr",
       "  --trace-out <file>     Write final runtime result JSON",
+      "  --json                 Emit full JSON instead of a human summary in a terminal",
       "  --dry-run              Do not execute external commands",
       "  --help                 Show help",
       "",
@@ -291,6 +294,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "  --host <host>          Visualizer bind host when --visualize is enabled (default: 127.0.0.1)",
       "  --port <n|0>           Visualizer bind port when --visualize is enabled (default: 0 auto)",
       "  --trace-out <file>     Write final runtime result JSON",
+      "  --json                 Emit full JSON instead of a human summary in a terminal",
       "  --dry-run              Do not execute external commands",
       "  --help                 Show help",
       "",
@@ -390,13 +394,14 @@ function usageRun(subcommand?: RunSubcommand): string {
       "Usage:",
       "  ogs run review list <run-id> [--ogs-dir <path>]",
       "  ogs run review inspect <run-id> <review-id> [--ogs-dir <path>]",
-      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> --comment <reason> [--scope <branch|run>] [--ogs-dir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> --comment <reason> [--resume] [resume options] [--scope <branch|run>] [--ogs-dir <path>]",
       "",
       "Examples:",
       "  ogs run review list <run-id>",
       "  ogs run review inspect <run-id> <review-id>",
       "  ogs run review decide <run-id> <review-id> --decision approve --comment 'Evidence supports this bounded experiment; keep the default unchanged.'",
-      "  ogs run review decide <run-id> <review-id> --decision rework --comment \"missing evidence\""
+      "  ogs run review decide <run-id> <review-id> --decision approve --comment 'Evidence supports the proposed limits.' --resume",
+      "  --resume continues the run after approve or rework; it is invalid with pause or terminate."
     ].join("\n");
   }
 
@@ -545,7 +550,7 @@ function appendModernResumeOptions(args: {
     args.tokens.push(`--laws ${shellEscape(args.values.laws)}`);
   }
   if (typeof args.values["target-dir"] === "string") {
-    args.tokens.push(`--workspace-dir ${shellEscape(args.values["target-dir"])}`);
+    args.tokens.push(`--target-dir ${shellEscape(args.values["target-dir"])}`);
   }
   if (typeof args.values["cleanup-executions"] === "string") {
     args.tokens.push(`--cleanup-executions ${shellEscape(args.values["cleanup-executions"])}`);
@@ -771,6 +776,55 @@ async function closeServer(server: { close(callback: () => void): void }): Promi
   await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
 }
 
+type RunExecutionReport = {
+  runId: string;
+  runDir: string;
+  result: AdapterRunResult;
+  detail: Record<string, unknown>;
+};
+
+function printHumanReviewActionCard(args: {
+  report: RunExecutionReport;
+  workdir: string;
+  reviews: Array<Record<string, unknown>>;
+  values: CliValueMap;
+}): void {
+  const ansi = Boolean(process.stderr.isTTY) && !process.env.NO_COLOR;
+  const amber = ansi ? "\u001b[33m" : "";
+  const cyan = ansi ? "\u001b[36m" : "";
+  const green = ansi ? "\u001b[32m" : "";
+  const reset = ansi ? "\u001b[0m" : "";
+  const pending = args.reviews.filter((review) => review.currentStatus === "pending");
+  const roleId =
+    typeof args.report.detail.summary === "object" && args.report.detail.summary !== null
+      ? (args.report.detail.summary as Record<string, unknown>).lastRoleId
+      : undefined;
+  const lines = [
+    `${amber}[review] Human review required${reset}`,
+    `  Run: ${args.report.runId}`,
+    `  Status: ${args.report.result.status}; pending reviews: ${pending.length || args.report.result.runSummary.pendingReviewCount || 1}`,
+    ...(typeof roleId === "string" && roleId ? [`  Last role: ${roleId}`] : []),
+    `  Run directory: ${args.report.runDir}`,
+    `  List reviews: ${cyan}ogs run review list ${shellEscape(args.report.runId)} --ogs-dir ${shellEscape(args.workdir)}${reset}`
+  ];
+  if (pending.length) {
+    lines.push("  Decide and resume:");
+    for (const review of pending) {
+      const reviewId = String(review.reviewId ?? "");
+      if (!reviewId) continue;
+      const tokens = [
+        "ogs", "run", "review", "decide", shellEscape(args.report.runId), shellEscape(reviewId),
+        "--decision approve --comment \"<reason based on the review evidence>\" --resume",
+        `--ogs-dir ${shellEscape(args.workdir)}`
+      ];
+      appendModernResumeOptions({ tokens, values: args.values, includeSystemAndInput: false });
+      if (args.report.detail.isSimulation === true && !args.values["dry-run"]) tokens.push("--dry-run");
+      lines.push(`    ${green}${tokens.join(" ")}${reset} (${String(review.roleId ?? "role")})`);
+    }
+  }
+  console.error(`\n${lines.join("\n")}\n`);
+}
+
 async function runAdapterCommand(args: {
   systemPath: string;
   prompt: string;
@@ -784,13 +838,17 @@ async function runAdapterCommand(args: {
   cleanupExecutionHistory?: number;
   logRun: boolean;
   traceOut?: string;
+  json?: boolean;
+  outputMode?: "auto" | "none";
+  cliValues?: CliValueMap;
+  showReviewCard?: boolean;
   visualizer?: {
     enabled: boolean;
     host: string;
     port: number;
     autoClose: boolean;
   };
-}): Promise<void> {
+}): Promise<RunExecutionReport> {
   let visualizer = null;
   if (args.visualizer?.enabled) {
     try {
@@ -813,6 +871,7 @@ async function runAdapterCommand(args: {
 
   try {
     await ensureProjectSkeleton({ workdir: args.workdir });
+    let initializedRun: { runId: string; runDir: string } | undefined;
     const result = await runSystemWithAdapter({
       systemPath: args.systemPath,
       runtimeConfigPath: args.runtimeConfigPath,
@@ -824,15 +883,60 @@ async function runAdapterCommand(args: {
       targetDir: args.targetDir,
       dryRun: args.dryRun,
       cleanupExecutionHistory: args.cleanupExecutionHistory,
-      logRun: args.logRun
+      logRun: args.logRun,
+      onRunInitialized(run) {
+        initializedRun = run;
+      }
     });
+    if (!initializedRun) {
+      throw new Error("Runtime completed without reporting its Run ID and directory.");
+    }
     await rebuildRunsIndex(args.workdir);
 
     const output = JSON.stringify(result, null, 2);
-    console.log(output);
+    const detail = await inspectRun(args.workdir, initializedRun.runId);
+    const report: RunExecutionReport = {
+      ...initializedRun,
+      result,
+      detail: detail as Record<string, unknown>
+    };
+    if (args.outputMode !== "none") {
+      const summary =
+        typeof detail.summary === "object" && detail.summary !== null
+          ? detail.summary as Record<string, unknown>
+          : {};
+      console.log(shouldEmitFullRunJson({
+        jsonRequested: args.json === true,
+        stdoutIsTty: process.stdout.isTTY === true
+      }) ? output : formatHumanRunSummary({
+        runId: report.runId,
+        runDir: report.runDir,
+        result,
+        durationMs: typeof summary.executionDurationMs === "number"
+          ? summary.executionDurationMs
+          : typeof summary.durationMs === "number" ? summary.durationMs : undefined
+      }));
+    }
     if (args.traceOut) {
       await writeFile(args.traceOut, output, "utf8");
     }
+    const hasPendingReview =
+      result.runSummary.hasWaitingHumanReview === true ||
+      result.systemState.hasWaitingHumanReview === true ||
+      Number(result.runSummary.pendingReviewCount ?? result.systemState.pendingReviewCount ?? 0) > 0;
+    if (hasPendingReview && args.showReviewCard !== false) {
+      const reviewList = await listHumanReviews(args.workdir, initializedRun.runId);
+      const reviews = Array.isArray(reviewList.reviews)
+        ? reviewList.reviews as Array<Record<string, unknown>>
+        : [];
+      printHumanReviewActionCard({
+        report,
+        workdir: args.workdir,
+        reviews,
+        values: args.cliValues ?? {}
+      });
+    }
+    return report;
   } finally {
     if (visualizer && args.visualizer?.autoClose) {
       await closeServer(visualizer.server);
@@ -1053,6 +1157,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
     "print-graph-link": { type: "boolean" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
+    json: { type: "boolean" },
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
@@ -1090,6 +1195,8 @@ async function runStartCommand(argv: string[]): Promise<void> {
       cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
       logRun: resolveLogRunOption(values),
       traceOut: asString(values["trace-out"]),
+      json: asBool(values.json),
+      cliValues: values,
       visualizer: {
         enabled: asBool(values.visualize),
         host: asString(values.host) ?? "127.0.0.1",
@@ -1131,6 +1238,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     port: { type: "string" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
+    json: { type: "boolean" },
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
@@ -1165,6 +1273,8 @@ async function runResumeCommand(argv: string[]): Promise<void> {
       cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
       logRun: resolveLogRunOption(values),
       traceOut: asString(values["trace-out"]),
+      json: asBool(values.json),
+      cliValues: values,
       visualizer: {
         enabled: asBool(values.visualize),
         host: asString(values.host) ?? "127.0.0.1",
@@ -1438,6 +1548,21 @@ async function runRunCommand(argv: string[]): Promise<void> {
         decision: { type: "string" },
         comment: { type: "string" },
         scope: { type: "string" },
+        resume: { type: "boolean" },
+        system: { type: "string" },
+        runtime: { type: "string" },
+        "user-profile": { type: "string" },
+        laws: { type: "string" },
+        input: { type: "string" },
+        "target-dir": { type: "string" },
+        "cleanup-executions": { type: "string" },
+        "quiet-run": { type: "boolean" },
+        visualize: { type: "boolean" },
+        host: { type: "string" },
+        port: { type: "string" },
+        "trace-out": { type: "string" },
+        "dry-run": { type: "boolean" },
+        json: { type: "boolean" },
         help: { type: "boolean", short: "h" }
       });
       if (asBool(values.help)) {
@@ -1459,6 +1584,13 @@ async function runRunCommand(argv: string[]): Promise<void> {
           `invalid --decision value: ${decision}`
         );
       }
+      const shouldResume = asBool(values.resume);
+      if (shouldResume && decision !== "approve" && decision !== "rework") {
+        throw createCliInputError(
+          "CLI_RUN_REVIEW_RESUME_INVALID_DECISION",
+          `--resume is only valid with --decision approve or rework; received ${decision}.`
+        );
+      }
       const scope = asString(values.scope);
       if (scope !== undefined && scope !== "branch" && scope !== "run") {
         throw createCliInputError(
@@ -1472,8 +1604,9 @@ async function runRunCommand(argv: string[]): Promise<void> {
           "--scope is only valid with --decision terminate"
         );
       }
+      const workdir = asString(values.workdir) ?? process.cwd();
       const result = await writeHumanReviewDecision({
-        workdir: asString(values.workdir) ?? process.cwd(),
+        workdir,
         runId,
         reviewId,
         decision: decision as "approve" | "rework" | "pause" | "terminate",
@@ -1481,7 +1614,76 @@ async function runRunCommand(argv: string[]): Promise<void> {
         principal: createLocalControlPlanePrincipal(),
         scope: scope as "branch" | "run" | undefined
       });
-      console.log(JSON.stringify(result, null, 2));
+      if (!shouldResume) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      const runDir = resolveRunDir(workdir, runId);
+      const systemPath = resolveCliSystemPath(workdir, asString(values.system) ?? resolve(runDir, "system.mmd"));
+      const prompt = asString(values.input) ?? (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
+      let resumeReport: RunExecutionReport | undefined;
+      let resumeError: unknown;
+      try {
+        resumeReport = await runAdapterCommand({
+          systemPath,
+          prompt,
+          runtimeConfigPath: asString(values.runtime),
+          userProfilePath: asString(values["user-profile"]),
+          resumeRunDir: runDir,
+          lawsPath: asString(values.laws),
+          workdir,
+          targetDir: asString(values["target-dir"]),
+          dryRun: asBool(values["dry-run"]),
+          cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
+          logRun: resolveLogRunOption(values),
+          traceOut: asString(values["trace-out"]),
+          json: asBool(values.json),
+          outputMode: "none",
+          cliValues: values,
+          visualizer: asBool(values.visualize) ? {
+            enabled: true,
+            host: asString(values.host) ?? "127.0.0.1",
+            port: parsePortOption({
+              optionName: "--port",
+              value: asString(values.port),
+              defaultValue: 0,
+              allowZero: true
+            }),
+            autoClose: true
+          } : undefined
+        });
+      } catch (error) {
+        resumeError = error;
+        console.error(`[review] Decision recorded, but resuming run ${runId} failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (error instanceof RuntimeError) {
+          await printModernResumeHint({ error, values, workdir, includeSystemAndInput: true });
+        }
+      }
+
+      if (shouldEmitFullRunJson({ jsonRequested: asBool(values.json), stdoutIsTty: process.stdout.isTTY === true })) {
+        console.log(JSON.stringify({
+          decision: result,
+          resume: resumeReport
+            ? { runId: resumeReport.runId, runDir: resumeReport.runDir, result: resumeReport.result }
+            : { error: resumeError instanceof Error ? resumeError.message : String(resumeError) }
+        }, null, 2));
+      } else if (resumeReport) {
+        const summary = typeof resumeReport.detail.summary === "object" && resumeReport.detail.summary !== null
+          ? resumeReport.detail.summary as Record<string, unknown>
+          : {};
+        console.log(`Review ${reviewId}: ${decision} recorded.\n${formatHumanRunSummary({
+          runId: resumeReport.runId,
+          runDir: resumeReport.runDir,
+          result: resumeReport.result,
+          durationMs: typeof summary.executionDurationMs === "number"
+            ? summary.executionDurationMs
+            : typeof summary.durationMs === "number" ? summary.durationMs : undefined
+        })}`);
+      } else {
+        console.log(`Review ${reviewId}: ${decision} recorded; run ${runId} remains stopped until recovery succeeds.`);
+      }
+      if (resumeError) process.exitCode = 1;
       return;
     }
     throw createCliInputError("CLI_RUN_REVIEW_UNKNOWN_SUBCOMMAND", `unknown run review subcommand: ${nested}`);

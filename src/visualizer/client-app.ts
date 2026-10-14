@@ -63,6 +63,7 @@ import {
 import { projectGraphReadingViewModel } from "./graph-view-model.js";
 import {
   renderOperateTabsHtml,
+  renderPendingReviewBannerHtml,
   renderLoadingSkeletonHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
@@ -224,6 +225,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const resolveRunLiveState = ${resolveRunLiveState.toString()};
     const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
     const renderOperateTabsHtml = ${renderOperateTabsHtml.toString()};
+    const renderPendingReviewBannerHtml = ${renderPendingReviewBannerHtml.toString()};
     const renderConsoleTabsHtml = ${renderConsoleTabsHtml.toString()};
     const getVisibleConsolePanelIds = ${getVisibleConsolePanelIds.toString()};
     const shouldShowRunSidebar = ${shouldShowRunSidebar.toString()};
@@ -427,6 +429,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const workbenchTabsEl = document.getElementById("workbench-tabs");
     const workbenchBodyEl = document.getElementById("workbench-body");
     const operateTabsEl = document.getElementById("operate-tabs");
+    const reviewPendingBannerEl = document.getElementById("review-pending-banner");
     const statsEl = document.getElementById("stats");
     const failureControlsEl = document.getElementById("failure-controls");
     const failureSummaryEl = document.getElementById("failure-summary");
@@ -1952,6 +1955,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
         button.disabled = disabled;
       }
+      const pendingReviewButton = reviewPendingBannerEl?.querySelector("#banner-jump-review");
+      if (pendingReviewButton) {
+        const reviews = Array.isArray(state.reviews?.reviews) ? state.reviews.reviews : [];
+        const hasActionableReview = reviews.some((review) => review?.currentStatus === "pending" || review?.currentStatus === "paused");
+        pendingReviewButton.disabled = disabled || !hasActionableReview;
+      }
       renderHeroActions();
       renderGlobalStatusBar();
     }
@@ -1978,9 +1987,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       operateTabsEl.setAttribute("aria-label", t("operate.tablist", undefined, "Run views"));
       if (!showOperateWorkspace) {
         setInnerHtmlIfChanged(operateTabsEl, "");
+        if (reviewPendingBannerEl) reviewPendingBannerEl.hidden = true;
         return;
       }
       setInnerHtmlIfChanged(operateTabsEl, renderOperateTabsHtml({ operateTab: state.operateTab, t, escapeText }));
+      const reviews = Array.isArray(state.reviews?.reviews) ? state.reviews.reviews : [];
+      const actionableReviews = reviews.filter((review) => review?.currentStatus === "pending" || review?.currentStatus === "paused");
+      const pendingCount = Math.max(
+        Number(state.detail?.header?.pendingReviewCount || 0),
+        actionableReviews.length
+      );
+      if (reviewPendingBannerEl) {
+        reviewPendingBannerEl.innerHTML = renderPendingReviewBannerHtml({
+          count: pendingCount,
+          roleId: actionableReviews[0]?.roleId,
+          t,
+          escapeText
+        });
+        reviewPendingBannerEl.hidden = pendingCount <= 0;
+        const jumpButton = reviewPendingBannerEl.querySelector("button");
+        if (jumpButton) {
+          jumpButton.disabled = Boolean(state.actionBusy) || actionableReviews.length === 0;
+          bindOnce(jumpButton, "click", "jump-to-pending-review", async () => {
+            const currentReviews = Array.isArray(state.reviews?.reviews) ? state.reviews.reviews : [];
+            const firstReview = currentReviews.find((review) => review?.currentStatus === "pending" || review?.currentStatus === "paused");
+            if (!firstReview?.reviewId || !state.selectedRunId) return;
+            state.operateTab = "operations";
+            renderConsoleTabs();
+            renderOperateTabs();
+            await selectReview(state.selectedRunId, String(firstReview.reviewId));
+          });
+        }
+      }
       const graphDisclosure = document.getElementById("run-graph-disclosure");
       if (graphDisclosure) {
         bindOnce(graphDisclosure, "toggle", "run-graph-toggle", () => {
@@ -5472,6 +5510,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } else if (form.kind === "review" && form.confirming) {
         const decision = form.fields.decision;
         const scope = form.fields.scope || "branch";
+        const autoResume = form.fields.autoResume !== false;
         const decisionLabel = decision === "approve"
           ? t("review.approve")
           : decision === "rework"
@@ -5491,6 +5530,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<dl class="form-grid review-decision-preview">',
           '<dt>' + escapeText(t("form.decision")) + '</dt><dd>' + escapeText(decisionLabel) + '</dd>',
           '<dt>' + escapeText(t("form.comment")) + '</dt><dd class="review-decision-comment">' + escapeText(form.fields.comment || "") + '</dd>',
+          decision === "approve" || decision === "rework"
+            ? '<dt>' + escapeText(t("form.reviewAutoResume")) + '</dt><dd>' + escapeText(autoResume ? t("common.yes") : t("common.no")) + '</dd>'
+            : "",
           decision === "terminate" ? '<dt>' + escapeText(t("form.terminateScope")) + '</dt><dd>' + escapeText(scope) + '</dd>' : "",
           '</dl>',
           '<div class="actions"><button id="action-review-back" class="button subtle"' + disabled + '>' + escapeText(t("form.editReviewDecision")) + '</button><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.confirmAndRecordReviewDecision")) + '</button></div>'
@@ -5508,6 +5550,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<div class="form-grid">',
           '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
           '<label class="field full"><span>' + escapeText(t("form.reviewReasonOptional")) + '</span><textarea id="action-review-comment" maxlength="' + HUMAN_REVIEW_COMMENT_MAX_LENGTH + '" aria-describedby="action-review-comment-hint"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea><span id="action-review-comment-hint" class="hint">' + escapeText(t(reasonHintKey)) + '</span></label>',
+          (form.fields.decision === "approve" || form.fields.decision === "rework"
+            ? '<label class="field checkbox full"><input type="checkbox" id="action-review-auto-resume"' + (form.fields.autoResume === false ? "" : " checked") + disabled + ' /><span>' + escapeText(t("form.reviewAutoResume")) + '</span></label>'
+            : ""),
           (form.fields.decision === "terminate"
             ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
             : ""),
@@ -6167,7 +6212,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             reviewId: state.selectedReviewId,
             decision: button.getAttribute("data-review-action"),
             scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
-            comment: ""
+            comment: "",
+            autoResume: button.getAttribute("data-review-action") === "approve" || button.getAttribute("data-review-action") === "rework"
           }, { returnFocusEl: button })
         );
       }
@@ -7423,7 +7469,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const scope = form.fields.decision === "terminate"
             ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
             : undefined;
-          state.actionForm.fields = Object.assign({}, form.fields, { comment, scope });
+          const autoResumeInput = document.getElementById("action-review-auto-resume");
+          const autoResume = form.fields.decision === "approve" || form.fields.decision === "rework"
+            ? autoResumeInput ? autoResumeInput.checked !== false : form.fields.autoResume !== false
+            : false;
+          state.actionForm.fields = Object.assign({}, form.fields, { comment, scope, autoResume });
           state.actionForm.confirming = true;
           renderActionForm();
           focusActionField("action-form-submit");
@@ -7434,7 +7484,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           scope: form.fields.decision === "terminate"
             ? form.fields.scope || "branch"
             : undefined,
-          comment
+          comment,
+          autoResume: form.fields.autoResume === true
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
         await submitReviewDecision(payload);
@@ -8067,9 +8118,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!state.selectedRunId || !state.selectedReviewId) {
         return;
       }
+      const runId = state.selectedRunId;
+      const reviewId = state.selectedReviewId;
       await runAction("review:" + args.decision, async () => {
         const payload = await requestAction(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}/decide\`,
+          \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(reviewId)}/decide\`,
           {
             decision: args.decision,
             scope: args.decision === "terminate" ? args.scope : undefined,
@@ -8082,15 +8135,48 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setFlash(
           "success",
           t("flash.reviewActionRecorded", {
-            reviewId: state.selectedReviewId,
+            reviewId,
             status: displayUiToken(payload.semanticStatus || args.decision, t),
             note: payload.detail?.note || ""
           })
         );
-        await refreshRunDetailAndGraph(state.selectedRunId);
-        await refreshReviews(state.selectedRunId);
+        let resumeError;
+        let resumed = false;
+        if (args.autoResume === true && (args.decision === "approve" || args.decision === "rework")) {
+          setFlash("info", t("flash.reviewResuming", { runId }, "Decision recorded. Resuming run {runId}..."));
+          const paths = defaultProjectArtifactPaths();
+          try {
+            const resumePayload = await requestAction(
+              \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/resume\`,
+              {
+                dryRun: state.detail?.header?.isSimulation === true,
+                runtimePath: paths.runtimePath || undefined,
+                userProfilePath: paths.userProfilePath || undefined,
+                lawsPath: paths.lawsPath || undefined
+              }
+            );
+            setFlash("success", t("flash.resumeFinished", {
+              runId: resumePayload.runId || runId,
+              status: displayUiToken(resumePayload.status, t)
+            }));
+            resumed = true;
+          } catch (error) {
+            resumeError = error;
+          }
+        }
+        await refreshRunDetailAndGraph(runId);
+        await refreshReviews(runId);
         state.resumeReadinessStale = state.resumeReadinessLoaded || state.resumeReadinessStale;
-        await loadResumeReadiness(state.selectedRunId, { force: true, internal: true });
+        await loadResumeReadiness(runId, { force: true, internal: true });
+        if (resumed) {
+          await loadProject();
+          await loadRuns();
+          await loadSelectedRunBoot(runId, { keepStream: false });
+        }
+        if (resumeError) {
+          const message = resumeError instanceof Error ? resumeError.message : String(resumeError);
+          setFlash("error", t("flash.reviewResumeFailed", { message }, "Decision recorded, but the run could not resume: " + message));
+        }
       });
     }
 
