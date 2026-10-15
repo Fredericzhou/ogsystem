@@ -418,9 +418,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function readStoredStudioInspectorWidth() {
       try {
         const raw = Number(window.localStorage.getItem(STUDIO_INSPECTOR_WIDTH_STORAGE_KEY));
-        return Number.isFinite(raw) && raw >= 280 ? raw : 380;
+        return Number.isFinite(raw) && raw >= 280 ? raw : 340;
       } catch {
-        return 380;
+        return 340;
       }
     }
     function persistStudioInspectorWidth(width) {
@@ -2238,7 +2238,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : { width: Number(shell?.clientWidth || 0) };
       const shellWidth = Number(rect?.width || 0);
       const maxWidth = shellWidth > 0 ? Math.max(320, Math.floor(shellWidth * 0.5)) : 520;
-      const minWidth = shellWidth > 0 ? Math.min(380, Math.max(280, Math.floor(shellWidth * 0.28))) : 300;
+      const minWidth = shellWidth > 0 ? Math.min(340, Math.max(280, Math.floor(shellWidth * 0.28))) : 300;
       return {
         minWidth,
         maxWidth: Math.max(minWidth, maxWidth)
@@ -2250,7 +2250,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const bounds = studioInspectorWidthBounds(shell);
-      const nextWidth = Math.max(bounds.minWidth, Math.min(bounds.maxWidth, Math.round(Number(width) || state.studioInspectorWidth || 380)));
+      const nextWidth = Math.max(bounds.minWidth, Math.min(bounds.maxWidth, Math.round(Number(width) || state.studioInspectorWidth || 340)));
       shell.style.setProperty("--studio-inspector-width", nextWidth + "px");
       state.studioInspectorWidth = nextWidth;
     }

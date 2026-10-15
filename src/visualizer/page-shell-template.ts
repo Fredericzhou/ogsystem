@@ -35,7 +35,9 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </div>
           <div class="top-nav-center">
             <nav id="console-tabs" class="console-tabs" aria-label="${escapeHtml(t("app.sections"))}"></nav>
-            <div class="hero-utilities">
+          </div>
+          <div class="top-nav-actions">
+            <div class="hero-utilities top-nav-utilities">
               <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
               <div class="segmented visualizer-theme-switch" role="group" aria-label="${escapeHtml(t("app.theme"))}">
                 <button type="button" class="button subtle active" data-visualizer-theme-choice="light" aria-pressed="true">${escapeHtml(t("theme.light"))}</button>
@@ -49,8 +51,6 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                 </select>
               </label>
             </div>
-          </div>
-          <div class="top-nav-actions">
             <div class="actions hero-actions hero-actions-primary">
               <button id="hero-validate" class="button primary">${escapeHtml(t("action.validate"))}</button>
               <button id="hero-save" class="button subtle">${escapeHtml(t("action.save"))}</button>

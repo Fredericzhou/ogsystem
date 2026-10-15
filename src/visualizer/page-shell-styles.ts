@@ -470,7 +470,7 @@ export function renderPageShellStyles(): string {
     }
     .top-nav-center {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
       gap: 8px;
       align-items: start;
       flex: 1 1 460px;
@@ -599,12 +599,17 @@ export function renderPageShellStyles(): string {
       display: flex;
       gap: 4px;
       align-items: center;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
       justify-content: flex-end;
       min-width: 0;
     }
     .hero-actions-primary {
       grid-column: auto;
+    }
+    .hero-actions-primary .button {
+      min-height: 32px;
+      padding: 5px 8px;
+      font-size: 11px;
     }
     .hero-utilities {
       display: flex;
@@ -614,24 +619,24 @@ export function renderPageShellStyles(): string {
       flex-wrap: wrap;
       min-width: 0;
     }
-    .top-nav-center .hero-utilities {
+    .top-nav-utilities {
       justify-self: end;
       padding: 4px;
       border: 1px solid rgba(148, 163, 184, 0.14);
       border-radius: 11px;
       background: rgba(255, 255, 255, 0.02);
     }
-    .top-nav-center .locale-field {
+    .top-nav-utilities .locale-field {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       padding: 0 2px;
     }
-    .top-nav-center .locale-field span {
+    .top-nav-utilities .locale-field span {
       white-space: nowrap;
       font-size: 11px;
     }
-    .top-nav-center .locale-field .select {
+    .top-nav-utilities .locale-field .select {
       min-width: 92px;
       width: auto;
       min-height: 32px;
@@ -1579,7 +1584,7 @@ export function renderPageShellStyles(): string {
       grid-template-columns:
         minmax(0, 1fr)
         10px
-        minmax(300px, min(50%, var(--studio-inspector-width, 380px)));
+        minmax(300px, min(50%, var(--studio-inspector-width, 340px)));
       grid-template-rows: auto minmax(0, 1fr);
       gap: 0;
       min-width: 0;
@@ -1593,7 +1598,7 @@ export function renderPageShellStyles(): string {
       grid-template-columns:
         minmax(0, 1fr)
         10px
-        minmax(300px, min(50%, var(--studio-inspector-width, 380px)));
+        minmax(300px, min(50%, var(--studio-inspector-width, 340px)));
     }
     .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
       grid-template-columns: minmax(0, 1fr) 0 0;
@@ -3195,7 +3200,7 @@ export function renderPageShellStyles(): string {
       .top-nav-center {
         grid-column: 1 / -1;
         grid-row: 2;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr);
       }
     }
     @media (max-width: 1180px) {
@@ -3460,8 +3465,9 @@ export function renderPageShellStyles(): string {
         display: grid;
         grid-template-columns: 1fr;
       }
-      .top-nav-center .hero-utilities {
+      .top-nav-utilities {
         justify-self: stretch;
+        grid-template-columns: auto auto minmax(0, 1fr);
       }
       .top-nav-actions,
       .build-control-bar #workbench-status,
@@ -3576,7 +3582,7 @@ export function renderPageShellStyles(): string {
       .project-name { max-width: 55vw; }
       .top-nav-center { min-width: 0; gap: 5px; }
       .top-nav-center .console-tabs { overflow-x: auto; }
-      .top-nav-center .hero-utilities {
+      .top-nav-utilities {
         display: flex;
         width: auto;
         justify-self: stretch;
@@ -3656,7 +3662,7 @@ export function renderPageShellStyles(): string {
     :root[data-visualizer-theme="light"] .button.warn { color: #805d16; }
     :root[data-visualizer-theme="light"] .button.danger { color: #9e423c; }
     :root[data-visualizer-theme="light"] .segmented,
-    :root[data-visualizer-theme="light"] .top-nav-center .hero-utilities {
+    :root[data-visualizer-theme="light"] .top-nav-utilities {
       border-color: var(--border);
       background: #f7faf8;
       box-shadow: none;
@@ -3721,7 +3727,7 @@ export function renderPageShellStyles(): string {
     :root[data-visualizer-theme="dark"] .button.danger { color: #fca5a5; }
     :root[data-visualizer-theme="dark"] .segmented,
     :root[data-visualizer-theme="dark"] .console-tabs,
-    :root[data-visualizer-theme="dark"] .top-nav-center .hero-utilities {
+    :root[data-visualizer-theme="dark"] .top-nav-utilities {
       border-color: #334155;
       background: #0f172a;
       box-shadow: none;
@@ -3732,6 +3738,66 @@ export function renderPageShellStyles(): string {
       background: #12354b;
       color: #d7f3ff;
     }
+    :root[data-visualizer-theme="dark"] select,
+    :root[data-visualizer-theme="dark"] select option { color-scheme: dark; color: var(--text); background-color: #111c2e; }
+    :root[data-visualizer-theme="dark"] .sidebar,
+    :root[data-visualizer-theme="dark"] .top-nav,
+    :root[data-visualizer-theme="dark"] .card,
+    :root[data-visualizer-theme="dark"] .pill,
+    :root[data-visualizer-theme="dark"] .live,
+    :root[data-visualizer-theme="dark"] .global-status,
+    :root[data-visualizer-theme="dark"] .console-tabs,
+    :root[data-visualizer-theme="dark"] .editor,
+    :root[data-visualizer-theme="dark"] pre,
+    :root[data-visualizer-theme="dark"] .preview,
+    :root[data-visualizer-theme="dark"] .workbench-source-actions,
+    :root[data-visualizer-theme="dark"] .studio-system-settings,
+    :root[data-visualizer-theme="dark"] .studio-contract-editor,
+    :root[data-visualizer-theme="dark"] .studio-role-package-editor,
+    :root[data-visualizer-theme="dark"] .studio-flow-config-editor,
+    :root[data-visualizer-theme="dark"] .studio-execution-config-editor,
+    :root[data-visualizer-theme="dark"] .studio-role-config-editor,
+    :root[data-visualizer-theme="dark"] .studio-selection-dialog,
+    :root[data-visualizer-theme="dark"] .studio-selection-header,
+    :root[data-visualizer-theme="dark"] .studio-canvas-toolbar,
+    :root[data-visualizer-theme="dark"] .studio-outline-panel,
+    :root[data-visualizer-theme="dark"] .studio-source-panel,
+    :root[data-visualizer-theme="dark"] .studio-chat-panel.is-open,
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar,
+    :root[data-visualizer-theme="dark"] .studio-graph-island,
+    :root[data-visualizer-theme="dark"] .studio-graph-diagnostic-card,
+    :root[data-visualizer-theme="dark"] .studio-graph-minimap,
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-panel,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-panel,
+    :root[data-visualizer-theme="dark"] .studio-command-dialog {
+      color: var(--text);
+      background-color: #111c2e;
+      border-color: var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: none;
+    }
+    :root[data-visualizer-theme="dark"] .editor,
+    :root[data-visualizer-theme="dark"] pre,
+    :root[data-visualizer-theme="dark"] .preview,
+    :root[data-visualizer-theme="dark"] .studio-system-settings,
+    :root[data-visualizer-theme="dark"] .studio-contract-editor,
+    :root[data-visualizer-theme="dark"] .studio-role-package-editor,
+    :root[data-visualizer-theme="dark"] .studio-flow-config-editor,
+    :root[data-visualizer-theme="dark"] .studio-execution-config-editor,
+    :root[data-visualizer-theme="dark"] .studio-role-config-editor { background-color: #0b1220; }
+    :root[data-visualizer-theme="dark"] .flash { color: var(--text); background: #111c2e; border-color: var(--border); }
+    :root[data-visualizer-theme="dark"] .event code { color: #7dd3fc; }
+    :root[data-visualizer-theme="dark"] .event strong.severity-critical,
+    :root[data-visualizer-theme="dark"] .event-top .severity-critical,
+    :root[data-visualizer-theme="dark"] .hint.severity-critical { color: #fca5a5; }
+    :root[data-visualizer-theme="dark"] .event strong.severity-warning,
+    :root[data-visualizer-theme="dark"] .event-top .severity-warning,
+    :root[data-visualizer-theme="dark"] .hint.severity-warning { color: #fcd34d; }
+    :root[data-visualizer-theme="dark"] .event strong.severity-info,
+    :root[data-visualizer-theme="dark"] .event-top .severity-info,
+    :root[data-visualizer-theme="dark"] .hint.severity-info { color: #7dd3fc; }
+    :root[data-visualizer-theme="dark"] .field-error { color: #fca5a5; }
     :root .studio-index-section-heading strong { color: var(--text); }
 `;
 }

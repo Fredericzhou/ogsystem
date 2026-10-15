@@ -943,6 +943,7 @@ class FakeDocument {
     this.dynamicElements = new Set();
     this.listeners = new Map();
     this.activeElement = null;
+    this.documentElement = new FakeElement(this, "html", "html");
     this.body = {
       classList: {
         classes: new Set(),
@@ -994,6 +995,13 @@ class FakeDocument {
     const handlers = this.listeners.get(type) ?? [];
     handlers.push(handler);
     this.listeners.set(type, handlers);
+  }
+
+  dispatchEvent(event) {
+    for (const handler of this.listeners.get(event.type) ?? []) {
+      handler(event);
+    }
+    return true;
   }
 
   unregisterElement(element, options = {}) {
@@ -2588,6 +2596,12 @@ async function createClientHarness(options = {}) {
     URLSearchParams,
     Date,
     JSON,
+    CustomEvent: class FakeCustomEvent {
+      constructor(type, options = {}) {
+        this.type = type;
+        this.detail = options.detail;
+      }
+    },
     console,
     encodeURIComponent,
     FormData: class FakeFormData {

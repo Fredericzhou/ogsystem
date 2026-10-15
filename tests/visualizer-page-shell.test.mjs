@@ -77,7 +77,7 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
 
   assert.match(html, /<div class="shell content">[\s\S]*<aside id="sidebar" class="sidebar">/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="console-tabs"/);
-  assert.match(html, /class="top-nav-center"[\s\S]*id="console-tabs"[\s\S]*class="hero-utilities"/);
+  assert.match(html, /class="top-nav-center"[\s\S]*id="console-tabs"[\s\S]*class="top-nav-actions"[\s\S]*class="hero-utilities top-nav-utilities"/);
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="workdir"/);
   assert.match(html, /<span id="workdir" hidden>/);

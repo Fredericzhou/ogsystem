@@ -318,7 +318,7 @@ export function renderStudioGraphCanvas(args: {
     t
   });
   const hasSelection = Boolean(args.selectedRoleId || args.selectedFlowKey);
-  const inspectorWidth = Number.isFinite(args.inspectorWidth) ? Math.max(280, Number(args.inspectorWidth)) : 380;
+  const inspectorWidth = Number.isFinite(args.inspectorWidth) ? Math.max(280, Number(args.inspectorWidth)) : 340;
   const shellStyle = ` style="--studio-inspector-width:${escapeText(String(inspectorWidth))}px"`;
   const tab = (id: string, label: string) =>
     '<button type="button" class="button subtle' + ((args.sideTab || "structure") === id ? " active" : "") + '" data-studio-side-tab="' + id + '">' + escapeText(label) + '</button>';

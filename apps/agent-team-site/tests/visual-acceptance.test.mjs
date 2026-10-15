@@ -72,6 +72,12 @@ test("site uses the OGSystem graph, exports it, and runs its project", async () 
     assert.equal(await page.locator('#landing-view [data-site-theme-choice="light"]').isVisible(), true);
     await page.locator('#landing-view [data-site-theme-choice="dark"]').click();
     assert.equal(await page.locator('#landing-view [data-site-theme-choice="dark"]').getAttribute("aria-pressed"), "true");
+    const darkLandingSurfaces = await page.evaluate(() => ({
+      hero: getComputedStyle(document.querySelector(".hero-visual")).backgroundColor,
+      caseIcon: getComputedStyle(document.querySelector(".case-icon-code")).backgroundColor
+    }));
+    assert.equal(darkLandingSurfaces.hero, "rgb(21, 31, 49)");
+    assert.equal(darkLandingSurfaces.caseIcon, "rgb(24, 52, 47)");
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     await page.locator(".studio-graph-island .x6-node").nth(6).waitFor();
     assert.equal(await page.locator("html").getAttribute("data-visualizer-theme"), "dark");

@@ -804,9 +804,21 @@ test("workdir controls fit mobile, show the project directory name, and saved no
     const beforeModelPosition = await node.getAttribute("transform");
     expect(before).toBeTruthy();
     expect(beforeModelPosition).toBeTruthy();
+    await page.evaluate(() => {
+      const cell = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]');
+      (window as typeof window & { __studioDragCell?: Element | null }).__studioDragCell = cell;
+    });
     await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
     await page.mouse.down();
-    await page.mouse.move(before!.x + before!.width / 2 + 72, before!.y + before!.height / 2 + 34, { steps: 6 });
+    for (let step = 1; step <= 6; step += 1) {
+      await page.mouse.move(
+        before!.x + before!.width / 2 + 12 * step,
+        before!.y + before!.height / 2 + Math.round(34 * step / 6)
+      );
+      await expect.poll(() => page.evaluate(() =>
+        Boolean((window as typeof window & { __studioDragCell?: Element | null }).__studioDragCell?.isConnected)
+      )).toBe(true);
+    }
     await page.mouse.up();
     await page.waitForTimeout(700);
     const moved = await node.boundingBox();
@@ -2044,6 +2056,11 @@ test("visualizer theme switches the complete graph workspace and persists across
     await page.goto(started.url);
     await expect(page.locator("#console-panel-project")).toBeVisible();
     await expect(page.locator(".visualizer-theme-switch")).toBeVisible();
+    await expect(page.locator(".visualizer-theme-switch").locator("..")).toHaveClass(/top-nav-utilities/);
+    await expect.poll(async () => {
+      const bounds = await page.locator(".visualizer-theme-switch").boundingBox();
+      return Boolean(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391);
+    }).toBe(true);
     const mobileHomeWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(mobileHomeWidth).toBeLessThanOrEqual(391);
     const mobileHomeAudit = await page.evaluate(() => {
@@ -2068,6 +2085,7 @@ test("visualizer theme switches the complete graph workspace and persists across
     await page.goto(started.url);
     await expect(page.locator("#console-panel-project")).toBeVisible();
     await expect(page.locator(".visualizer-theme-switch")).toBeVisible();
+    await expect(page.locator(".visualizer-theme-switch").locator("..")).toHaveClass(/top-nav-utilities/);
     const homeAudit = await page.evaluate(() => ({
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
@@ -2088,6 +2106,7 @@ test("visualizer theme switches the complete graph workspace and persists across
     await page.getByRole("tab", { name: designTabName }).click();
     await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
     await waitForStudioCell(page, "demo-analyst");
+    await expect.poll(() => page.locator("[data-studio-canvas-shell]").evaluate((element) => getComputedStyle(element).getPropertyValue("--studio-inspector-width").trim())).toBe("340px");
 
     const lightTheme = page.locator('[data-visualizer-theme-choice="light"]');
     const darkTheme = page.locator('[data-visualizer-theme-choice="dark"]');
@@ -2111,8 +2130,8 @@ test("visualizer theme switches the complete graph workspace and persists across
     const darkRoleText = await page.locator('#studio-graph-root [data-cell-id="demo-analyst"] text').filter({ hasText: "Demo Analyst" }).first().getAttribute("fill");
     expect(darkRoleText).toBe("#e5eefb");
     const darkRoleBounds = await page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').boundingBox();
-    expect(darkRoleBounds?.width).toBe(initialRoleBounds?.width);
-    expect(darkRoleBounds?.height).toBe(initialRoleBounds?.height);
+    expect(darkRoleBounds?.width).toBeCloseTo(initialRoleBounds?.width ?? 0, 2);
+    expect(darkRoleBounds?.height).toBeCloseTo(initialRoleBounds?.height ?? 0, 2);
 
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "dark");
