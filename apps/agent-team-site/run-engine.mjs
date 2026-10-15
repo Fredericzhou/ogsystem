@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getCase } from "./cases.mjs";
 
@@ -125,10 +126,17 @@ function parseJsonTail(output) {
 
 function runCli(args, options) {
   return new Promise((resolveRun, rejectRun) => {
+    const env = { ...process.env, NO_COLOR: "1" };
+    if (process.platform === "win32" && env.OGS_DEMO_BACKEND === "opencode") {
+      const nativeBin = join(dirname(process.execPath), "node_modules", "opencode-ai", "bin");
+      if (existsSync(join(nativeBin, "opencode.exe"))) {
+        env.PATH = `${nativeBin}${delimiter}${env.PATH || ""}`;
+      }
+    }
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd: options.cwd,
       windowsHide: true,
-      env: { ...process.env, NO_COLOR: "1" },
+      env,
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "";
@@ -190,7 +198,8 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
         status: item.status,
         durationMs: item.durationMs,
         backend: item.backend,
-        modelId: item.modelId
+        modelId: item.modelId,
+        failure: item.error
       })) : [],
       summary: result.runSummary ?? {},
       durationMs: Date.now() - start

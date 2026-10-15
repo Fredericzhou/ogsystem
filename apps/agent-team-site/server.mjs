@@ -61,10 +61,19 @@ async function serveStatic(pathname, response) {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
   if (request.method === "GET" && url.pathname === "/api/cases") {
-    sendJson(response, 200, cases.map(({ roles, flows, ...item }) => ({
-      ...item,
-      roles: roles.map(({ id, label }) => ({ id, label })),
-      flows: flows.map(([from, to, event]) => ({ from, to, event }))
+    sendJson(response, 200, cases.map((item) => ({
+      id: item.id,
+      title: item.title,
+      short: item.short,
+      category: item.category,
+      duration: item.duration,
+      accent: item.accent,
+      icon: item.icon,
+      detail: item.detail,
+      layout: item.layout,
+      roles: item.roles.map(({ id, label }) => ({ id, label, description: item.detail?.roles?.[id] })),
+      flows: item.flows.map(([from, to, event]) => ({ from, to, event })),
+      joins: item.joins.map(({ roleId }) => ({ roleId }))
     })));
     return;
   }
@@ -79,6 +88,10 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "GET") {
+    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
+      await serveStatic("/index.html", response);
+      return;
+    }
     await serveStatic(url.pathname, response);
     return;
   }

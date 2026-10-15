@@ -2,103 +2,101 @@ const state = { cases: [], selected: null, locale: localStorage.getItem("ogs-loc
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const text = (value) => value?.[state.locale] ?? value?.["zh-CN"] ?? value?.en ?? "";
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const icon = { code: "⌘", medical: "✚", scales: "⚖" };
 const eventLabels = {
-  SOFTWARE_REQUEST: ["软件需求", "Software request"], PLAN_BACKEND: ["制定后端方案", "Plan backend"], PLAN_EXPERIENCE: ["制定体验方案", "Plan experience"], PLAN_QUALITY: ["制定质量方案", "Plan quality"], BACKEND_PLAN_READY: ["后端方案就绪", "Backend plan ready"], EXPERIENCE_PLAN_READY: ["体验方案就绪", "Experience plan ready"], QUALITY_PLAN_READY: ["质量方案就绪", "Quality plan ready"], DELIVERY_READY: ["交付方案就绪", "Delivery ready"], CASE_RECEIVED: ["收到会诊资料", "Case received"], START_CARDIOLOGY: ["请心血管专科评估", "Request cardiology review"], START_NEUROLOGY: ["请神经专科评估", "Request neurology review"], START_IMAGING: ["请影像专科评估", "Request imaging review"], CARDIOLOGY_REVIEW_READY: ["心血管评估完成", "Cardiology review ready"], NEUROLOGY_REVIEW_READY: ["神经专科评估完成", "Neurology review ready"], IMAGING_REVIEW_READY: ["影像评估完成", "Imaging review ready"], CONSULTATION_READY: ["会诊建议就绪", "Consultation ready"], DEBATE_TOPIC: ["辩题", "Debate topic"], ISSUE_TO_PRO: ["提交正方", "Issue to proposition"], ISSUE_TO_CON: ["提交反方", "Issue to opposition"], PRO_ARGUMENT_READY: ["正方论点完成", "Proposition argument ready"], CON_ARGUMENT_READY: ["反方论点完成", "Opposition argument ready"], REBUTTAL_REQUESTED: ["请求补充辩论", "Rebuttal requested"], DECISION_READY: ["裁决完成", "Decision ready"], DEBATE_SUMMARY_READY: ["辩论纪要完成", "Debate summary ready"]
+  SOFTWARE_REQUEST: ["研发需求", "Product request"], PLAN_BACKEND: ["规划工程实现", "Plan engineering"], PLAN_EXPERIENCE: ["规划使用体验", "Plan user experience"], PLAN_QUALITY: ["规划质量检查", "Plan quality checks"], BACKEND_PLAN_READY: ["工程方案已提交", "Engineering plan shared"], EXPERIENCE_PLAN_READY: ["体验方案已提交", "Experience plan shared"], QUALITY_PLAN_READY: ["质量方案已提交", "Quality plan shared"], DELIVERY_READY: ["研发方案已汇总", "Delivery plan assembled"], CASE_RECEIVED: ["收到会诊资料", "Case brief received"], START_CARDIOLOGY: ["请心血管专科评估", "Request cardiology review"], START_NEUROLOGY: ["请神经专科评估", "Request neurology review"], START_IMAGING: ["请影像专科评估", "Request imaging review"], CARDIOLOGY_REVIEW_READY: ["心血管意见已提交", "Cardiology view shared"], NEUROLOGY_REVIEW_READY: ["神经专科意见已提交", "Neurology view shared"], IMAGING_REVIEW_READY: ["影像意见已提交", "Imaging view shared"], CONSULTATION_READY: ["会诊意见已汇总", "Consultation views assembled"], DEBATE_TOPIC: ["讨论议题", "Debate topic"], ISSUE_TO_PRO: ["交由支持方陈述", "Invite the proposition"], ISSUE_TO_CON: ["交由反对方陈述", "Invite the opposition"], PRO_ARGUMENT_READY: ["支持方观点已提交", "Proposition shared its case"], CON_ARGUMENT_READY: ["反对方观点已提交", "Opposition shared its case"], REBUTTAL_REQUESTED: ["请双方补充回应", "Request a rebuttal"], DECISION_READY: ["评议已完成", "Review completed"], DEBATE_SUMMARY_READY: ["讨论纪要已整理", "Debate brief prepared"]
 };
-
 const copy = {
   "zh-CN": {
-    workspaceName: "个人工作台", workspaceType: "访客空间", navTeams: "团队工作台", navExamples: "案例库", navRuns: "最近运行", runtimeReady: "运行服务就绪", navGuide: "产品指南", crumbHome: "工作区", guestMode: "访客体验", eyebrow: "AGENT TEAM WORKSPACE", pageTitle: "把复杂任务，交给一支有分工的团队", pageIntro: "从一个目标开始。选择团队角色，查看协作路径，再运行一次完整流程。", metaLabel: "本次体验", metaValue: "模拟角色 · 真实流程", taskLabel: "你想完成什么？", taskHint: "先选一个团队案例，也可以改写任务目标", taskPlaceholder: "例如：为一款面向自由职业者的记账工具设计首版研发方案", charCount: "/ 1,200", runDemo: "运行团队示例", chooseCase: "STEP 01 · 选择协作方式", caseHeading: "从经典团队开始", allExamples: "查看全部案例", teamPlan: "STEP 02 · 团队方案", temporaryConfig: "临时配置", adjustWithChat: "调整任务", membersTitle: "团队成员", membersSubtitle: "每个角色负责一类工作", memberNote: "角色名称与职责可随团队模板切换；高级自定义将在后续版本开放。", flowTitle: "协作流程", flowSubtitle: "从任务输入到最终交付", legendRole: "团队角色", legendFlow: "任务交接", taskInputNode: "任务", deliveryNode: "交付", splitNote: "分支按运行语义执行，并在汇总节点收集所需结果。", capabilityKicker: "清晰、有边界、可追踪", capabilityTitle: "每一次协作，都有迹可循", capabilityBody: "团队按职责交接工作，运行过程保留时间线。需要人工把关时，可暂停、审查并继续。", capabilityOne: "明确角色职责", capabilityOneBody: "每个成员有清晰输入与交付", capabilityTwo: "按流程汇总", capabilityTwoBody: "并行分工、全员或法定人数汇合", capabilityThree: "查看运行证据", capabilityThreeBody: "进度、结果和交接记录可回看", footerNote: "当前为公开体验版。角色输出使用模拟内容，展示真实流程语义。", footerLink: "了解产品边界", runHistoryEyebrow: "RUN HISTORY", historyTitle: "最近运行", historyIntro: "本机浏览器临时保存的体验记录。", clearHistory: "清空记录", guideEyebrow: "PRODUCT GUIDE", guideTitle: "让团队协作变得清晰可控", guideIntro: "从职责分工到交付结果，了解一次 Agent Team 运行会发生什么。", guide1Title: "先定义目标", guide1Body: "告诉团队希望完成什么，模板会提供一组职责明确的角色。", guide2Title: "查看分工与交接", guide2Body: "协作图展示角色之间如何交接，以及哪些结果需要汇总。", guide3Title: "运行并检查结果", guide3Body: "运行记录按时间展示角色状态、交接事件和最终交付。", guide4Title: "公开体验模式", guide4Body: "示例通过框架运行真实图流程，但角色输出使用模拟内容，不调用真实模型。请勿提交个人或敏感信息。", libraryEyebrow: "TEAM LIBRARY", libraryTitle: "案例库", libraryIntro: "选择一种协作方式，查看团队如何分工、汇总和交付。", errorDemoKicker: "能力演示", errorDemoTitle: "失败后继续有序处理", errorDemoBody: "查看受控故障如何进入补偿或升级流程，并保留运行记录。", comingSoon: "即将开放", runPanelKicker: "TEAM RUN", runPanelTitle: "团队运行", noHistory: "还没有运行记录。选择一个案例并运行团队示例。", running: "正在运行团队流程…", runFailed: "运行未完成", simulation: "模拟运行", rolesCompleted: "角色执行", transitions: "流程交接", elapsed: "耗时", finalDelivery: "最终交付", timeline: "运行时间线", noOutput: "框架没有返回最终交付内容。", historyDone: "已完成", selectCase: "已选择", roleReady: "待运行", inputRequired: "请先输入任务目标。", networkError: "暂时无法连接运行服务，请稍后重试。", promptCopied: "已载入案例任务，可继续修改。", selected: "当前团队", close: "关闭", historyRestore: "查看运行", runAgain: "再次运行", inputEvent: "任务进入", outputEvent: "流程结束"
+    homeCases: "经典团队", homeStudio: "在线体验", homeCta: "开始体验", homeEyebrow: "为复杂工作，组织一支 AI 团队", homeTitle: "让不同专长，<br>协作成一个结果。", homeIntro: "从清楚的目标开始，让合适的成员各司其职、交接信息，并共同完成可检查的成果。", homePrimary: "在线运行示例", homeSecondary: "浏览经典团队", homeProof: "真实运行流程 · 无需注册 · 中英文示例", visualTitle: "从不同观点，到共同交付", visualStatus: "协作中", visualTask: "一个清楚的目标", visualTaskSub: "给团队共同的方向", visualRoleOne: "工程规划", visualRoleOneSub: "实现与依赖", visualRoleTwo: "体验设计", visualRoleTwoSub: "流程与细节", visualRoleThree: "质量把关", visualRoleThreeSub: "验收与风险", visualResult: "汇成一份完整方案", visualResultSub: "意见 · 依据 · 下一步", visualFooter: "分工清楚，过程可追踪", homeCasesEyebrow: "三种真实的协作方式", homeCasesTitle: "从经典团队开始", homeAllCases: "查看全部案例 →", promiseKicker: "面向真实工作", promiseTitle: "过程清楚，交付有据。", promiseOne: "每位成员有明确职责", promiseOneBody: "从目标拆解到结果整合，每一步都有负责的人。", promiseTwo: "工作交接看得见", promiseTwoBody: "随时了解谁在处理、信息如何流转。", promiseThree: "结果可以逐步检查", promiseThreeBody: "回看各方意见、汇总过程和最终输出。", homeFooter: "为复杂工作构建协作团队", homeFooterCta: "进入在线工作台 →",
+    workspaceName: "个人工作台", workspaceType: "访客空间", navTeams: "团队工作台", navExamples: "经典团队", navRuns: "最近运行", runtimeReady: "运行服务就绪", crumbHome: "首页", guestMode: "访客体验", eyebrow: "在线团队工作台", pageTitle: "把复杂任务，交给一支有分工的团队", pageIntro: "从一个目标开始。选择团队案例，查看协作路径，再运行一次完整流程。", metaLabel: "本次体验", metaValue: "完整团队流程 · 结果可回看", taskLabel: "你想完成什么？", taskHint: "先选一个团队案例，也可以改写任务目标", taskPlaceholder: "例如：为一款记账工具制定首版研发方案", charCount: "/ 1,200", runDemo: "运行团队示例", chooseCase: "选择一种协作方式", caseHeading: "经典团队案例", allExamples: "查看团队详情", teamPlan: "团队如何协作", temporaryConfig: "访客预览", adjustWithChat: "编辑任务", membersTitle: "团队成员", membersSubtitle: "每位成员负责一项工作", roleReady: "待开始", memberCompleted: "已完成", flowTitle: "协作路径", flowSubtitle: "从任务输入到最终交付", legendRole: "团队成员", legendFlow: "工作交接", taskInputNode: "任务", deliveryNode: "成果", splitNote: "成员按职责交接，并在汇总时整合所需信息。", capabilityKicker: "清楚 · 有序 · 可回看", capabilityTitle: "每一次协作，都有迹可循", capabilityBody: "团队按职责交接工作，运行过程保留时间线，成果可以逐步检查。", capabilityOne: "明确成员职责", capabilityOneBody: "每位成员有清晰的工作范围", capabilityTwo: "逐步整合意见", capabilityTwoBody: "各方结果按团队安排汇总", capabilityThree: "回看交付过程", capabilityThreeBody: "进度、结果和交接记录可查", footerNote: "公开体验展示完整的团队协作过程，不调用模型或生成业务交付内容。", libraryEyebrow: "经典团队案例", libraryTitle: "团队如何协作", libraryIntro: "浏览不同团队的背景、分工和预期成果。", caseBackground: "场景背景", caseProblem: "适合解决", caseCollaboration: "协作过程", caseDeliverable: "预期成果", caseRoles: "团队分工", openCase: "查看案例详情", useCase: "使用这个团队", backCases: "返回全部团队", detailEyebrow: "经典团队案例", runHistoryEyebrow: "最近运行", historyTitle: "最近运行", historyIntro: "本机浏览器临时保存的体验记录。", clearHistory: "清空记录", noHistory: "还没有运行记录。选择一个案例并运行团队示例。", historyRestore: "查看运行", runPanelKicker: "团队运行", runPanelTitle: "运行结果", running: "正在运行团队流程…", runFailed: "运行未完成", simulation: "流程预览", rolesCompleted: "角色执行", transitions: "任务交接", elapsed: "耗时", finalDelivery: "最终成果", runResult: "预览说明", dryOutput: "本次预览展示团队如何分工与交接工作，不调用真实角色模型，也不会生成业务交付内容。", timeline: "运行时间线", noOutput: "团队没有返回最终交付内容。", historyDone: "已完成", selected: "当前团队", close: "关闭", inputRequired: "请先输入任务目标。", networkError: "暂时无法连接运行服务，请稍后重试。", promptCopied: "已载入案例任务，可继续修改。", inputEvent: "收到任务", outputEvent: "流程完成", roleStatus: "已完成", fallbackEvent: "工作已更新"
   },
   en: {
-    workspaceName: "Personal workspace", workspaceType: "Guest space", navTeams: "Team workspace", navExamples: "Case library", navRuns: "Recent runs", runtimeReady: "Runtime ready", navGuide: "Product guide", crumbHome: "Workspace", guestMode: "Guest preview", eyebrow: "AGENT TEAM WORKSPACE", pageTitle: "Give complex work to a team with clear roles", pageIntro: "Start with an outcome. Choose a team, inspect its flow, then run the complete workflow.", metaLabel: "This preview", metaValue: "Simulated roles · real workflow", taskLabel: "What would you like to accomplish?", taskHint: "Choose a team example or rewrite the task", taskPlaceholder: "For example: plan the first release of a bookkeeping tool for independent professionals", charCount: "/ 1,200", runDemo: "Run team example", chooseCase: "STEP 01 · CHOOSE A COLLABORATION PATTERN", caseHeading: "Start with a classic team", allExamples: "Browse all cases", teamPlan: "STEP 02 · TEAM DESIGN", temporaryConfig: "Temporary config", adjustWithChat: "Edit task", membersTitle: "Team members", membersSubtitle: "Each role owns a part of the work", memberNote: "Roles and responsibilities change with the selected template. Advanced customization is planned for a later release.", flowTitle: "Collaboration flow", flowSubtitle: "From task input to final delivery", legendRole: "Team role", legendFlow: "Handoff", taskInputNode: "Task", deliveryNode: "Delivery", splitNote: "Branches follow the configured run semantics and collect required results at the join.", capabilityKicker: "Clear, bounded, traceable", capabilityTitle: "Every collaboration leaves a trail", capabilityBody: "Roles hand work off by responsibility, with a timeline for each run. Review and continue when human oversight is needed.", capabilityOne: "Clear role ownership", capabilityOneBody: "Each member has defined inputs and outputs", capabilityTwo: "Workflow-based joins", capabilityTwoBody: "Parallel work, all-of, or quorum joins", capabilityThree: "Inspectable run evidence", capabilityThreeBody: "Review progress, results, and handoffs", footerNote: "Public preview. Role outputs are simulated while the framework runs the actual workflow semantics.", footerLink: "Product boundaries", runHistoryEyebrow: "RUN HISTORY", historyTitle: "Recent runs", historyIntro: "Preview history stored temporarily in this browser.", clearHistory: "Clear history", guideEyebrow: "PRODUCT GUIDE", guideTitle: "Make team collaboration clear and controlled", guideIntro: "See what happens during an Agent Team run, from role ownership to delivery.", guide1Title: "Define the outcome", guide1Body: "Describe what the team should accomplish. A template supplies roles with clear responsibilities.", guide2Title: "Inspect work and handoffs", guide2Body: "The flow shows how roles pass work and which results must be collected.", guide3Title: "Run and review", guide3Body: "The run timeline shows role states, handoff events, and the final delivery.", guide4Title: "Public preview mode", guide4Body: "The framework runs the actual graph workflow, while role outputs are simulated and no model is called. Do not submit personal or sensitive information.", libraryEyebrow: "TEAM LIBRARY", libraryTitle: "Case library", libraryIntro: "Choose a collaboration pattern to see how a team divides, joins, and delivers work.", errorDemoKicker: "CAPABILITY PREVIEW", errorDemoTitle: "Recover in a controlled way", errorDemoBody: "See how a controlled failure can enter compensation or escalation while preserving the run record.", comingSoon: "Coming soon", runPanelKicker: "TEAM RUN", runPanelTitle: "Team run", noHistory: "No run history yet. Choose a case and run the team example.", running: "Running the team workflow…", runFailed: "Run did not complete", simulation: "Simulation", rolesCompleted: "Role executions", transitions: "Transitions", elapsed: "Duration", finalDelivery: "Final delivery", timeline: "Run timeline", noOutput: "The framework returned no final delivery content.", historyDone: "Completed", selectCase: "Selected", roleReady: "Ready", inputRequired: "Enter a task to run.", networkError: "The runtime is temporarily unavailable. Try again shortly.", promptCopied: "Example task loaded. You can edit it before running.", selected: "Selected team", close: "Close", historyRestore: "View run", runAgain: "Run again", inputEvent: "Task received", outputEvent: "Workflow complete"
+    homeCases: "Classic teams", homeStudio: "Live preview", homeCta: "Explore the preview", homeEyebrow: "A team for complex work", homeTitle: "Bring different strengths<br>together around one result.", homeIntro: "Start with a clear goal. Give each member a defined responsibility, pass work between them, and create an outcome you can review.", homePrimary: "Run an example", homeSecondary: "Explore classic teams", homeProof: "Real workflow run · No sign-up · English and Chinese", visualTitle: "Different perspectives, one delivery", visualStatus: "Working together", visualTask: "A clear shared goal", visualTaskSub: "One direction for the team", visualRoleOne: "Engineering plan", visualRoleOneSub: "Build and dependencies", visualRoleTwo: "Experience design", visualRoleTwoSub: "Flow and details", visualRoleThree: "Quality review", visualRoleThreeSub: "Acceptance and risks", visualResult: "One complete proposal", visualResultSub: "Views · Evidence · Next steps", visualFooter: "Clear ownership. Visible progress.", homeCasesEyebrow: "Three practical ways to collaborate", homeCasesTitle: "Start with a classic team", homeAllCases: "Browse all cases →", promiseKicker: "Built for real work", promiseTitle: "Clear process. Reviewable results.", promiseOne: "Every member has a clear role", promiseOneBody: "Each step has an owner, from framing the task to assembling the result.", promiseTwo: "Handoffs stay visible", promiseTwoBody: "See who is working and how information moves through the team.", promiseThree: "Results are easy to review", promiseThreeBody: "Revisit each view, the synthesis, and the final output.", homeFooter: "Teams for complex work", homeFooterCta: "Open the team workspace →",
+    workspaceName: "My workspace", workspaceType: "Guest space", navTeams: "Team workspace", navExamples: "Classic teams", navRuns: "Recent runs", runtimeReady: "Service ready", crumbHome: "Home", guestMode: "Guest preview", eyebrow: "Online team workspace", pageTitle: "Give complex work to a team with clear roles", pageIntro: "Start with a goal. Choose a team, inspect how it works, then run the complete flow.", metaLabel: "This preview", metaValue: "Complete team workflow · Reviewable results", taskLabel: "What would you like to accomplish?", taskHint: "Choose a team example or rewrite the task", taskPlaceholder: "For example: plan the first release of a bookkeeping tool", charCount: "/ 1,200", runDemo: "Run team example", chooseCase: "Choose how to collaborate", caseHeading: "Classic team examples", allExamples: "Explore team details", teamPlan: "How this team works", temporaryConfig: "Guest preview", adjustWithChat: "Edit task", membersTitle: "Team members", membersSubtitle: "Each member owns a part of the work", roleReady: "Ready", memberCompleted: "Completed", flowTitle: "Collaboration flow", flowSubtitle: "From task input to final delivery", legendRole: "Team member", legendFlow: "Work handoff", taskInputNode: "Task", deliveryNode: "Outcome", splitNote: "Members hand off work by responsibility and bring the needed information together.", capabilityKicker: "Clear · Ordered · Reviewable", capabilityTitle: "Every collaboration leaves a trail", capabilityBody: "Members hand off work by responsibility. A timeline captures progress, and you can review each result.", capabilityOne: "Clear member ownership", capabilityOneBody: "Each member has a defined scope", capabilityTwo: "Views brought together", capabilityTwoBody: "Results are assembled according to the team plan", capabilityThree: "Review the process", capabilityThreeBody: "Progress, results, and handoffs stay visible", footerNote: "The public preview demonstrates a complete team workflow. It does not call models or generate business deliverables.", libraryEyebrow: "Classic team examples", libraryTitle: "How teams work together", libraryIntro: "Explore each team's context, responsibilities, and expected outcome.", caseBackground: "Background", caseProblem: "When to use it", caseCollaboration: "How the team works", caseDeliverable: "Expected outcome", caseRoles: "Team responsibilities", openCase: "View case details", useCase: "Use this team", backCases: "All teams", detailEyebrow: "Classic team example", runHistoryEyebrow: "Recent runs", historyTitle: "Recent runs", historyIntro: "Preview history stored temporarily in this browser.", clearHistory: "Clear history", noHistory: "No run history yet. Choose a case and run the team example.", historyRestore: "View run", runPanelKicker: "Team run", runPanelTitle: "Run result", running: "Running the team workflow…", runFailed: "Run did not complete", simulation: "Workflow preview", rolesCompleted: "Role executions", transitions: "Handoffs", elapsed: "Duration", finalDelivery: "Final delivery", runResult: "Preview details", dryOutput: "This preview shows how the team divides and hands off work. It does not call role models or generate a business deliverable.", timeline: "Run timeline", noOutput: "The team returned no final delivery content.", historyDone: "Completed", selected: "Selected team", close: "Close", inputRequired: "Enter a task to run.", networkError: "The runtime is temporarily unavailable. Try again shortly.", promptCopied: "Example task loaded. You can edit it before running.", inputEvent: "Task received", outputEvent: "Workflow complete", roleStatus: "Completed", fallbackEvent: "Work updated"
   }
 };
+
 Object.assign(copy["zh-CN"], {
-  splitNote: "分支按图中路由语义依次进入流程，并在汇总节点收集所需结果。",
-  capabilityTwoBody: "分支调度、全员或法定人数汇合"
+  homeCases: "团队协作",
+  homeSecondary: "浏览典型协作案例",
+  homeProof: "可运行团队示例 · 无需注册 · 中英文支持",
+  homeCasesEyebrow: "三类常见协作场景",
+  homeCasesTitle: "从典型团队协作开始",
+  homeAllCases: "查看全部协作案例 →",
+  navExamples: "协作案例",
+  caseHeading: "典型团队协作案例",
+  allExamples: "查看案例详情",
+  libraryEyebrow: "典型团队协作案例",
+  libraryTitle: "团队协作案例",
+  libraryIntro: "浏览不同协作场景的背景、分工和预期成果。",
+  detailEyebrow: "典型团队协作案例"
 });
 Object.assign(copy.en, {
-  splitNote: "Branches follow the diagram's routing semantics in order, then collect required results at the join.",
-  capabilityTwoBody: "Branch routing, all-of, or quorum joins"
-});
-Object.assign(copy["zh-CN"], {
-  runResult: "运行说明",
-  dryOutput: "框架已完成流程模拟验证。本次访客运行未调用角色模型，因此没有生成业务交付内容。"
-});
-Object.assign(copy.en, {
-  runResult: "Run details",
-  dryOutput: "The framework completed a workflow dry run. Guest preview does not call role models, so this run did not generate a business deliverable."
-});
-Object.assign(copy["zh-CN"], {
-  footerNote: "公开体验会运行框架图流程的 dry-run，不调用真实角色模型，也不会生成业务交付内容。",
-  guide4Body: "示例通过框架 dry-run 校验图流程与路由语义，不调用真实模型，也不会生成角色内容。请勿提交个人或敏感信息。"
-});
-Object.assign(copy.en, {
-  footerNote: "The public preview runs the framework graph in dry-run mode. It does not call role models or generate business deliverables.",
-  guide4Body: "The framework dry-runs the graph and routing semantics. It does not call models or generate role content. Do not submit personal or sensitive information."
+  homeCases: "Team collaboration",
+  homeSecondary: "Explore representative examples",
+  homeProof: "Runnable team examples · No sign-up · Bilingual",
+  homeCasesEyebrow: "Three common collaboration scenarios",
+  homeCasesTitle: "Explore representative team workflows",
+  homeAllCases: "Browse all collaboration examples →",
+  navExamples: "Collaboration examples",
+  caseHeading: "Representative team workflows",
+  allExamples: "Explore case details",
+  libraryEyebrow: "Representative collaboration examples",
+  libraryTitle: "Team collaboration examples",
+  libraryIntro: "Explore the context, responsibilities, and expected outcomes for each scenario.",
+  detailEyebrow: "Representative collaboration example"
 });
 
 function readHistory() { try { return JSON.parse(localStorage.getItem("ogs-run-history") || "[]"); } catch { return []; } }
 function saveHistory() { localStorage.setItem("ogs-run-history", JSON.stringify(state.history.slice(0, 12))); }
-function labelEvent(event) { const label = eventLabels[event]; return label ? label[state.locale === "zh-CN" ? 0 : 1] : String(event || "").replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-function displayRun(run) { return typeof run === "string" ? run : JSON.stringify(run, null, 2); }
-
-function applyLocale() {
-  document.documentElement.lang = state.locale;
-  $$('[data-i18n]').forEach((element) => { const value = copy[state.locale][element.dataset.i18n]; if (value) element.textContent = value; });
-  $$('[data-i18n-placeholder]').forEach((element) => { const value = copy[state.locale][element.dataset.i18nPlaceholder]; if (value) element.placeholder = value; });
-  $("#locale-toggle").textContent = state.locale === "zh-CN" ? "EN" : "中文";
-  const selected = state.cases.find((item) => item.id === state.selected);
-  if (selected) renderSelected(selected);
-  renderCases();
-  renderHistory();
-  setView(state.view);
+function localized(value) { return text(value); }
+function labelEvent(event) { const value = eventLabels[event]; return value ? value[state.locale === "zh-CN" ? 0 : 1] : copy[state.locale].fallbackEvent; }
+function taskExample(item) {
+  const tasks = {
+    "software-team": { "zh-CN": "为一款面向自由职业者的记账工具制定首版研发方案，覆盖核心体验、技术拆分与验收标准。", en: "Plan the first release of a bookkeeping tool for independent professionals, covering core experience, engineering, and acceptance criteria." },
+    "expert-consultation": { "zh-CN": "梳理一位患者反复头痛且伴短暂视物模糊的资料，列出需要补充的信息与紧急风险信号。", en: "Review a case of recurring headache with brief blurred vision, noting missing information and urgent risk signals." },
+    "structured-debate": { "zh-CN": "讨论一家 30 人的公司是否应采用每周三天到办公室的混合办公政策。", en: "Debate whether a 30-person company should adopt a hybrid policy requiring three office days per week." }
+  };
+  return tasks[item.id]?.[state.locale] || "";
 }
-
+function caseIcon(item) { return `<span class="case-icon case-icon-${esc(item.icon)}" aria-hidden="true">${icon[item.icon] || "✦"}</span>`; }
 function renderCases() {
-  const list = state.cases;
-  const card = (item) => `<button class="case-card ${item.id === state.selected ? "selected" : ""}" data-case="${escapeHtml(item.id)}" data-accent="${escapeHtml(item.accent)}" type="button"><span class="case-card-top"><span class="case-icon">${escapeHtml(item.title.en.slice(0, 1))}</span>${item.id === state.selected ? `<span class="case-selected">${escapeHtml(copy[state.locale].selected)}</span>` : ""}</span><h3>${escapeHtml(text(item.title))}</h3><p>${escapeHtml(text(item.short))}</p><span class="case-card-foot"><span>${escapeHtml(text(item.category))}</span><span class="semantics">${item.semantics.map((semantic) => `<span class="semantic-chip">${escapeHtml(semantic)}</span>`).join("")}</span></span></button>`;
-  $("#case-grid").innerHTML = list.map(card).join("");
-  $("#library-grid").innerHTML = list.map((item) => `<article class="library-card"><span class="case-icon" data-accent="${escapeHtml(item.accent)}">${escapeHtml(item.title.en.slice(0, 1))}</span><h2>${escapeHtml(text(item.title))}</h2><p>${escapeHtml(text(item.short))}</p><div class="semantics">${item.semantics.map((semantic) => `<span class="semantic-chip">${escapeHtml(semantic)}</span>`).join("")}</div><button class="secondary-button" type="button" data-select-case="${escapeHtml(item.id)}">${escapeHtml(copy[state.locale].selectCase)}</button></article>`).join("");
-  $$("[data-case]").forEach((button) => button.addEventListener("click", () => selectCase(button.dataset.case)));
-  $$("[data-select-case]").forEach((button) => button.addEventListener("click", () => { selectCase(button.dataset.selectCase); setView("workspace"); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+  const card = (item, landing = false) => `<article class="${landing ? "landing-case-card" : "library-card"}" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-more">${esc(copy[state.locale].openCase)} <span aria-hidden="true">→</span></span></a></article>`;
+  $("#landing-case-grid").innerHTML = state.cases.map((item) => card(item, true)).join("");
+  $("#library-grid").innerHTML = state.cases.map((item) => card(item)).join("");
+  $("#case-grid").innerHTML = state.cases.map((item) => `<button class="case-card ${item.id === state.selected ? "selected" : ""}" data-case="${esc(item.id)}" data-accent="${esc(item.accent)}" type="button">${caseIcon(item)}<span class="case-selected">${item.id === state.selected ? esc(copy[state.locale].selected) : esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-card-foot">${esc(text(item.duration))}<span aria-hidden="true">→</span></span></button>`).join("");
+  $$('[data-case]').forEach((button) => button.addEventListener("click", () => selectCase(button.dataset.case)));
 }
-
 function renderSelected(item) {
+  if (!item) return;
   $("#selected-case-title").textContent = text(item.title);
   $("#selected-case-description").textContent = text(item.short);
   $("#role-count").textContent = item.roles.length;
-  $("#member-list").innerHTML = item.roles.map((role, index) => `<div class="member-row"><span class="member-avatar">${escapeHtml(text(role.label).slice(0, 1))}</span><div><div class="member-name">${escapeHtml(text(role.label))}</div><div class="member-role">${escapeHtml(role.id)}</div></div><span class="member-status">${escapeHtml(copy[state.locale].roleReady)}</span></div>`).join("");
+  $("#member-list").innerHTML = item.roles.map((role, index) => `<div class="member-row"><span class="member-avatar member-avatar-${index % 3}">${esc(icon[item.icon] || "✦")}</span><div><div class="member-name">${esc(text(role.label))}</div><div class="member-role">${esc(text(role.description))}</div></div><span class="member-status">${esc(copy[state.locale].roleReady)}</span></div>`).join("");
   renderGraph(item);
 }
-
 function renderGraph(item) {
-  const stage = $("#graph-stage");
-  stage.style.width = "1080px";
   const positions = item.layout;
-  const nodeWidth = 154;
-  const nodeHeight = 62;
-  const centers = Object.fromEntries(Object.entries(positions).map(([id, [x, y]]) => [id, [x + nodeWidth / 2, y + nodeHeight / 2]]));
+  const centers = Object.fromEntries(Object.entries(positions).map(([id, [x, y]]) => [id, [x + 77, y + 31]]));
   const flows = item.flows.map(({ from, to, event }) => {
     const start = from === "input" ? [63, 175] : centers[from];
     const end = to === "output" ? [927, 175] : centers[to];
     if (!start || !end) return "";
     const middle = Math.max(30, (end[0] - start[0]) * .48);
-    const label = escapeHtml(labelEvent(event));
+    const label = esc(labelEvent(event));
     const loop = event === "REBUTTAL_REQUESTED";
     const curve = loop ? `M ${end[0]} ${end[1] - 31} C ${end[0] + 175} ${end[1] - 115}, ${start[0] + 10} ${start[1] - 105}, ${start[0]} ${start[1] - 31}` : `M ${start[0]} ${start[1]} C ${start[0] + middle} ${start[1]}, ${end[0] - middle} ${end[1]}, ${end[0]} ${end[1]}`;
     return `<path class="edge-path ${loop ? "edge-loop" : ""}" d="${curve}"/><text class="edge-label" x="${(start[0] + end[0]) / 2}" y="${(start[1] + end[1]) / 2 - 8}">${label}</text>`;
   }).join("");
-  $("#graph-edges").innerHTML = `<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#a7b9b0"/></marker></defs>${flows}`;
+  $("#graph-edges").innerHTML = `<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#829b8d"/></marker></defs>${flows}`;
   $("#graph-nodes").innerHTML = item.roles.map((role, index) => {
     const [x, y] = positions[role.id] || [60 + index * 190, 145];
     const isJoin = item.joins.some((join) => join.roleId === role.id);
-    return `<div class="graph-node node-${escapeHtml(role.id)} ${isJoin ? "join-node" : ""}"><div class="node-top"><span class="node-number">${String(index + 1).padStart(2, "0")}</span><span class="node-name" title="${escapeHtml(text(role.label))}">${escapeHtml(text(role.label))}</span></div><div class="node-role">${escapeHtml(role.id)}</div></div>`;
+    return `<div class="graph-node node-${esc(role.id)} ${isJoin ? "join-node" : ""}"><div class="node-top"><span class="node-number">${String(index + 1).padStart(2, "0")}</span><span class="node-name">${esc(text(role.label))}</span></div><div class="node-role">${esc(text(role.description))}</div></div>`;
   }).join("");
 }
-
 function selectCase(caseId) {
   const item = state.cases.find((entry) => entry.id === caseId);
   if (!item) return;
@@ -106,29 +104,58 @@ function selectCase(caseId) {
   renderSelected(item);
   renderCases();
   const input = $("#task-input");
-  if (!input.value.trim()) input.value = item.taskExample?.[state.locale] || defaultTask(item);
+  if (!input.value.trim()) input.value = taskExample(item);
   updateCount();
 }
-
-function defaultTask(item) {
-  const defaults = {
-    "software-team": { "zh-CN": "为一款面向自由职业者的记账工具制定首版研发方案，覆盖核心体验、技术拆分与验收标准。", en: "Plan the first release of a bookkeeping tool for independent professionals, covering core experience, engineering, and acceptance criteria." },
-    "expert-consultation": { "zh-CN": "评估一位患者反复头痛且伴短暂视物模糊的情况，列出需要补充的信息与紧急风险信号。", en: "Review a case of recurring headache with brief blurred vision, noting missing information and urgent risk signals." },
-    "structured-debate": { "zh-CN": "讨论一家 30 人的公司是否应采用每周三天到办公室的混合办公政策。", en: "Debate whether a 30-person company should adopt a hybrid policy requiring three office days per week." }
-  };
-  return defaults[item.id]?.[state.locale] || "";
+function renderDetail(item) {
+  const details = item.detail;
+  $("#case-detail-view").innerHTML = `<a class="detail-back" href="/studio" data-route="/studio">← ${esc(copy[state.locale].backCases)}</a><header class="detail-heading" data-accent="${esc(item.accent)}"><div>${caseIcon(item)}<span class="eyebrow">${esc(copy[state.locale].detailEyebrow)} · ${esc(text(item.category))}</span></div><h1>${esc(text(item.title))}</h1><p>${esc(text(item.short))}</p><a class="primary-button" href="/studio?team=${esc(item.id)}" data-use-case="${esc(item.id)}">${esc(copy[state.locale].useCase)} <span aria-hidden="true">→</span></a></header><div class="detail-content"><section><span class="detail-index">01</span><div><h2>${esc(copy[state.locale].caseBackground)}</h2><p>${esc(text(details.background))}</p></div></section><section><span class="detail-index">02</span><div><h2>${esc(copy[state.locale].caseProblem)}</h2><p>${esc(text(details.problem))}</p></div></section><section><span class="detail-index">03</span><div><h2>${esc(copy[state.locale].caseCollaboration)}</h2><p>${esc(text(details.collaboration))}</p></div></section><section><span class="detail-index">04</span><div><h2>${esc(copy[state.locale].caseDeliverable)}</h2><p>${esc(text(details.deliverable))}</p></div></section><section class="detail-roles"><span class="detail-index">05</span><div><h2>${esc(copy[state.locale].caseRoles)}</h2><div class="detail-role-grid">${item.roles.map((role, index) => `<article><span class="member-avatar member-avatar-${index % 3}">${esc(icon[item.icon] || "✦")}</span><div><h3>${esc(text(role.label))}</h3><p>${esc(text(role.description))}</p></div></article>`).join("")}</div></div></section></div>`;
+  $("#breadcrumb-current").textContent = text(item.title);
+  $$('[data-use-case]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); selectCase(element.dataset.useCase); navigate("/studio"); }));
 }
-
+function applyLocale() {
+  document.documentElement.lang = state.locale;
+  $$('[data-i18n]').forEach((element) => { const value = copy[state.locale][element.dataset.i18n]; if (value) element.innerHTML = value; });
+  $$('[data-i18n-placeholder]').forEach((element) => { const value = copy[state.locale][element.dataset.i18nPlaceholder]; if (value) element.placeholder = value; });
+  $$("#locale-toggle, #landing-locale").forEach((button) => { button.textContent = state.locale === "zh-CN" ? "EN" : "中文"; });
+  renderCases();
+  renderSelected(state.cases.find((item) => item.id === state.selected));
+  renderHistory();
+  syncRoute();
+}
 function updateCount() { $("#input-count").textContent = $("#task-input").value.length; }
 function setView(view) {
   state.view = view;
-  const viewMap = { workspace: "workspace-view", examples: "examples-view", history: "history-view", guide: "guide-view" };
+  const viewMap = { workspace: "workspace-view", examples: "examples-view", history: "history-view" };
   Object.entries(viewMap).forEach(([key, id]) => $(`#${id}`).classList.toggle("hidden", key !== view));
+  $("#case-detail-view").classList.add("hidden");
   $$(".nav-item[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   const nav = $(`.nav-item[data-view="${view}"] [data-i18n]`);
   $("#breadcrumb-current").textContent = nav?.textContent || copy[state.locale].navTeams;
 }
-
+function navigate(path) { history.pushState({}, "", path); syncRoute(); window.scrollTo({ top: 0, behavior: "instant" }); }
+function syncRoute() {
+  const path = location.pathname.replace(/\/$/, "") || "/";
+  const landing = path === "/";
+  $("#landing-view").classList.toggle("hidden", !landing);
+  $("#app-shell").classList.toggle("hidden", landing);
+  if (landing) return;
+  const detailMatch = path.match(/^\/cases\/([a-z0-9-]+)$/);
+  if (detailMatch) {
+    const item = state.cases.find((entry) => entry.id === detailMatch[1]);
+    if (item) { $("#workspace-view").classList.add("hidden"); $("#examples-view").classList.add("hidden"); $("#history-view").classList.add("hidden"); $("#case-detail-view").classList.remove("hidden"); state.selected = item.id; renderDetail(item); return; }
+    navigate("/studio"); return;
+  }
+  if (path === "/studio" && new URLSearchParams(location.search).has("team")) {
+    const id = new URLSearchParams(location.search).get("team");
+    if (state.cases.some((entry) => entry.id === id)) state.selected = id;
+  }
+  if (path === "/studio") state.view = "workspace";
+  else if (path === "/examples") state.view = "examples";
+  else if (path === "/history") state.view = "history";
+  setView(state.view);
+  if (!["/studio", "/examples", "/history", "/cases"].includes(path)) history.replaceState({}, "", "/studio");
+}
 function openDrawer() { $("#run-drawer").classList.add("open"); $("#run-drawer").setAttribute("aria-hidden", "false"); document.body.classList.add("drawer-open"); }
 function closeDrawer() { $("#run-drawer").classList.remove("open"); $("#run-drawer").setAttribute("aria-hidden", "true"); document.body.classList.remove("drawer-open"); }
 function openRun(result, item, prompt, id = crypto.randomUUID()) {
@@ -136,67 +163,55 @@ function openRun(result, item, prompt, id = crypto.randomUUID()) {
   const finalOutput = result.finalOutput;
   const dryRun = typeof finalOutput === "string" && finalOutput.startsWith("[dry-run]");
   const content = dryRun ? copy[state.locale].dryOutput : (typeof finalOutput === "string" ? finalOutput : finalOutput?.content || JSON.stringify(finalOutput ?? "", null, 2));
-  const outputTitle = dryRun ? copy[state.locale].runResult : copy[state.locale].finalDelivery;
-  const timeline = audit.map((entry) => `<div class="timeline-item"><span class="timeline-marker"></span><div class="timeline-copy"><strong>${escapeHtml(text(item.roles.find((role) => role.id === entry.roleId)?.label) || entry.roleId)} · ${escapeHtml(labelEvent(entry.selectedEvent))}</strong><span>${escapeHtml(entry.status || "ok")}${entry.durationMs ? ` · ${Math.round(entry.durationMs)} ms` : ""}</span></div></div>`).join("");
-  $("#run-content").innerHTML = `<section class="run-summary"><div class="run-summary-top"><h3>${escapeHtml(text(item.title))}</h3><span class="run-mode">${escapeHtml(copy[state.locale].simulation)}</span></div><div class="run-metrics"><div><strong>${audit.length}</strong><span>${escapeHtml(copy[state.locale].rolesCompleted)}</span></div><div><strong>${escapeHtml(result.summary?.totalTransitions ?? audit.length)}</strong><span>${escapeHtml(copy[state.locale].transitions)}</span></div><div><strong>${(result.durationMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(copy[state.locale].elapsed)}</span></div></div><h3 class="output-heading">${escapeHtml(outputTitle)}</h3><div class="run-output">${escapeHtml(content || copy[state.locale].noOutput)}</div></section><section class="timeline"><h3>${escapeHtml(copy[state.locale].timeline)}</h3><div class="timeline-list">${timeline}</div></section><p class="run-disclaimer">${escapeHtml(copy[state.locale].footerNote)}</p>`;
+  const title = dryRun ? copy[state.locale].runResult : copy[state.locale].finalDelivery;
+  const timeline = audit.map((entry) => `<div class="timeline-item"><span class="timeline-marker"></span><div class="timeline-copy"><strong>${esc(text(item.roles.find((role) => role.id === entry.roleId)?.label) || copy[state.locale].fallbackEvent)} · ${esc(labelEvent(entry.selectedEvent))}</strong><span>${esc(copy[state.locale].roleStatus)}${entry.durationMs ? ` · ${Math.round(entry.durationMs)} ms` : ""}</span></div></div>`).join("");
+  $("#run-content").innerHTML = `<section class="run-summary"><div class="run-summary-top"><h3>${esc(text(item.title))}</h3><span class="run-mode">${esc(copy[state.locale].simulation)}</span></div><div class="run-metrics"><div><strong>${audit.length}</strong><span>${esc(copy[state.locale].rolesCompleted)}</span></div><div><strong>${esc(result.summary?.totalTransitions ?? audit.length)}</strong><span>${esc(copy[state.locale].transitions)}</span></div><div><strong>${(result.durationMs / 1000).toFixed(1)}s</strong><span>${esc(copy[state.locale].elapsed)}</span></div></div><h3 class="output-heading">${esc(title)}</h3><div class="run-output">${esc(content || copy[state.locale].noOutput)}</div></section><section class="timeline"><h3>${esc(copy[state.locale].timeline)}</h3><div class="timeline-list">${timeline}</div></section><p class="run-disclaimer">${esc(copy[state.locale].footerNote)}</p>`;
   openDrawer();
   if (id) {
-    const row = { id, caseId: item.id, prompt, title: text(item.title), durationMs: result.durationMs, status: result.status, createdAt: new Date().toISOString(), result };
-    state.history = [row, ...state.history.filter((entry) => entry.id !== id)].slice(0, 12);
-    saveHistory();
-    renderHistory();
+    state.history = [{ id, caseId: item.id, prompt, title: text(item.title), durationMs: result.durationMs, status: result.status, createdAt: new Date().toISOString(), result }, ...state.history.filter((entry) => entry.id !== id)].slice(0, 12);
+    saveHistory(); renderHistory();
   }
 }
-
 async function runSelected() {
   const item = state.cases.find((entry) => entry.id === state.selected);
   const prompt = $("#task-input").value.trim();
   if (!prompt) { $("#task-input").focus(); showToast(copy[state.locale].inputRequired); return; }
-  const button = $("#run-button");
-  button.disabled = true;
-  $("#run-content").innerHTML = `<div class="run-loading"><span class="spinner"></span><span>${escapeHtml(copy[state.locale].running)}</span></div>`;
-  openDrawer();
+  const button = $("#run-button"); button.disabled = true;
+  $("#run-content").innerHTML = `<div class="run-loading"><span class="spinner"></span><span>${esc(copy[state.locale].running)}</span></div>`; openDrawer();
   try {
     const response = await fetch("/api/demo-runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ caseId: item.id, prompt, locale: state.locale }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || copy[state.locale].networkError);
     if (result.status !== "done") throw new Error(`${copy[state.locale].runFailed}: ${result.status || "unknown"}`);
     openRun(result, item, prompt);
-  } catch (error) {
-    $("#run-content").innerHTML = `<div class="run-error">${escapeHtml(error.message || copy[state.locale].networkError)}</div>`;
-  } finally { button.disabled = false; }
+  } catch (error) { $("#run-content").innerHTML = `<div class="run-error">${esc(error.message || copy[state.locale].networkError)}</div>`; }
+  finally { button.disabled = false; }
 }
-
 function renderHistory() {
-  const root = $("#history-list");
-  if (!root) return;
-  if (!state.history.length) { root.innerHTML = `<div class="history-empty">${escapeHtml(copy[state.locale].noHistory)}</div>`; return; }
-  root.innerHTML = state.history.map((entry) => `<article class="history-row"><span class="history-icon">✓</span><div><strong>${escapeHtml(entry.title || entry.caseId)}</strong><p>${escapeHtml(entry.prompt)} · ${new Date(entry.createdAt).toLocaleString(state.locale)}</p></div><button class="text-button" type="button" data-history="${escapeHtml(entry.id)}">${escapeHtml(copy[state.locale].historyRestore)}</button></article>`).join("");
-  $$("[data-history]").forEach((button) => button.addEventListener("click", () => {
-    const entry = state.history.find((item) => item.id === button.dataset.history);
-    const item = state.cases.find((candidate) => candidate.id === entry.caseId);
-    if (entry && item) { selectCase(item.id); openRun(entry.result, item, entry.prompt, null); }
-  }));
+  const root = $("#history-list"); if (!root) return;
+  if (!state.history.length) { root.innerHTML = `<div class="history-empty">${esc(copy[state.locale].noHistory)}</div>`; return; }
+  root.innerHTML = state.history.map((entry) => { const item = state.cases.find((candidate) => candidate.id === entry.caseId); return `<article class="history-row"><span class="history-icon">✓</span><div><strong>${esc(item ? text(item.title) : entry.title)}</strong><p>${esc(entry.prompt)} · ${new Date(entry.createdAt).toLocaleString(state.locale)}</p></div><button class="text-button" type="button" data-history="${esc(entry.id)}">${esc(copy[state.locale].historyRestore)}</button></article>`; }).join("");
+  $$('[data-history]').forEach((button) => button.addEventListener("click", () => { const entry = state.history.find((item) => item.id === button.dataset.history); const item = state.cases.find((candidate) => candidate.id === entry?.caseId); if (entry && item) openRun(entry.result, item, entry.prompt, null); }));
 }
-
 function showToast(message) { const toast = $("#toast"); toast.textContent = message; toast.classList.add("show"); setTimeout(() => toast.classList.remove("show"), 2300); }
-
 async function init() {
-  const response = await fetch("/api/cases");
-  if (!response.ok) throw new Error("Unable to load team cases.");
-  state.cases = await response.json();
-  state.selected = state.cases[0]?.id;
-  $$(".nav-item[data-view], [data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
-  $("#locale-toggle").addEventListener("click", () => { state.locale = state.locale === "zh-CN" ? "en" : "zh-CN"; localStorage.setItem("ogs-locale", state.locale); applyLocale(); });
-  $("#task-input").addEventListener("input", updateCount);
-  $("#run-button").addEventListener("click", runSelected);
+  const response = await fetch("/api/cases"); if (!response.ok) throw new Error("Unable to load team cases.");
+  state.cases = await response.json(); state.selected = state.cases[0]?.id;
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[data-route]");
+    if (!link) return;
+    event.preventDefault(); navigate(link.getAttribute("href"));
+  });
+  window.addEventListener("popstate", syncRoute);
+  $$("button.nav-item[data-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; history.pushState({}, "", `/${state.view}`); syncRoute(); }));
+  $$("#locale-toggle, #landing-locale").forEach((button) => button.addEventListener("click", () => { state.locale = state.locale === "zh-CN" ? "en" : "zh-CN"; localStorage.setItem("ogs-locale", state.locale); applyLocale(); }));
+  $("#task-input").addEventListener("input", updateCount); $("#run-button").addEventListener("click", runSelected);
   $("#edit-task-button").addEventListener("click", () => { $("#task-input").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
   $("#clear-history").addEventListener("click", () => { state.history = []; saveHistory(); renderHistory(); });
   $$('[data-close-drawer]').forEach((element) => element.addEventListener("click", closeDrawer));
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
-  selectCase(state.selected);
   applyLocale();
-  updateCount();
+  const team = new URLSearchParams(location.search).get("team"); if (team && state.cases.some((item) => item.id === team)) state.selected = team;
+  selectCase(state.selected); syncRoute(); updateCount();
 }
-
-init().catch((error) => { document.body.innerHTML = `<main class="fatal-error">${escapeHtml(error.message)}</main>`; });
+init().catch((error) => { document.body.innerHTML = `<main class="fatal-error">${esc(error.message)}</main>`; });

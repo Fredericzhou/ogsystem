@@ -8,6 +8,20 @@ export const cases = [
     },
     category: { "zh-CN": "产品研发", en: "Product development" },
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
+    icon: "code",
+    detail: {
+      background: { "zh-CN": "一项产品需求通常同时牵涉工程实现、用户体验和质量保障。由单一角色从头包办，容易遗漏接口依赖或验收条件。", en: "A product request often spans engineering, user experience, and quality. A single owner can miss interface dependencies or acceptance criteria." },
+      problem: { "zh-CN": "适合把目标明确、但需要多专业共同拆解的产品功能，整理成可评审的首版交付方案。", en: "Use this team when a clear product goal needs several disciplines to shape a reviewable first delivery plan." },
+      collaboration: { "zh-CN": "产品负责人先统一目标和限制；后端、体验、质量成员分别准备方案；交付负责人收齐三方结果，明确依赖、顺序和完成标准。", en: "The product lead aligns on goals and constraints. Engineering, experience, and quality prepare separate plans; a delivery lead combines them with dependencies, sequencing, and a definition of done." },
+      deliverable: { "zh-CN": "一份包含实现拆分、关键体验、验收检查、风险和待确认问题的研发建议。", en: "A delivery proposal covering implementation slices, key experience, acceptance checks, risks, and open questions." },
+      roles: {
+        "delivery-coordinator": { "zh-CN": "归纳用户目标、约束与验收重点。", en: "Aligns the user outcome, constraints, and acceptance priorities." },
+        "backend-planner": { "zh-CN": "规划服务端职责、接口和数据处理。", en: "Plans backend responsibilities, interfaces, and data handling." },
+        "experience-planner": { "zh-CN": "梳理主要操作路径、界面状态与无障碍要求。", en: "Maps the main user flow, interface states, and accessibility needs." },
+        "quality-planner": { "zh-CN": "提出高价值验收检查、边界情况与发布风险。", en: "Defines useful acceptance checks, edge cases, and release risks." },
+        "delivery-lead": { "zh-CN": "整合专业方案，标出依赖、顺序和完成条件。", en: "Combines the plans and identifies dependencies, order, and completion criteria." }
+      }
+    },
     accent: "mint",
     layout: {
       "delivery-coordinator": [80, 145],
@@ -72,6 +86,20 @@ export const cases = [
     },
     category: { "zh-CN": "专业咨询", en: "Expert consultation" },
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
+    icon: "medical",
+    detail: {
+      background: { "zh-CN": "复杂个案往往需要从不同专科视角核对线索。先独立分析，再由主审归纳，有助于看见共识、分歧和资料缺口。", en: "Complex cases can benefit from separate specialist perspectives. Independent reviews followed by synthesis make agreement, disagreement, and missing information visible." },
+      problem: { "zh-CN": "适合信息尚不完整、需要多学科辅助梳理风险与后续问题的讨论。此示例用于辅助决策，不构成诊断或治疗建议。", en: "Use this team to organize risks and follow-up questions when information is incomplete. This example supports decision making and does not provide a diagnosis or treatment advice." },
+      collaboration: { "zh-CN": "协调员向心血管、神经和影像专科提供同一份资料；各专科独立列出观察、疑点和需要补充的证据；主审归纳已收到的意见，并指出紧急信号与不确定性。", en: "A coordinator gives cardiology, neurology, and imaging the same brief. Each specialist independently records observations, concerns, and needed evidence; a lead reviewer synthesizes the available views, urgent signals, and uncertainty." },
+      deliverable: { "zh-CN": "一份谨慎的会诊摘要，区分观察与假设，列出共识、分歧、风险信号和建议补充的信息。", en: "A cautious consultation summary that separates observations from hypotheses and lists agreement, disagreement, risk signals, and information to gather." },
+      roles: {
+        "consultation-dispatcher": { "zh-CN": "整理中立、简明的共同资料摘要。", en: "Prepares a concise, neutral shared case brief." },
+        "cardiology-expert": { "zh-CN": "从心血管角度梳理线索、风险与补充证据。", en: "Reviews cardiovascular clues, risks, and evidence needs." },
+        "neurology-expert": { "zh-CN": "从神经系统角度梳理线索、风险与补充证据。", en: "Reviews neurological clues, risks, and evidence needs." },
+        "imaging-expert": { "zh-CN": "核对影像证据能支持什么，以及还缺少什么。", en: "Clarifies what imaging supports and what evidence is missing." },
+        "chief-reviewer": { "zh-CN": "归纳专科意见、分歧、不确定性及后续问题。", en: "Synthesizes specialist views, disagreements, uncertainty, and follow-up questions." }
+      }
+    },
     accent: "coral",
     layout: {
       "consultation-dispatcher": [80, 145],
@@ -131,6 +159,20 @@ export const cases = [
     },
     category: { "zh-CN": "观点讨论", en: "Deliberation" },
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
+    icon: "scales",
+    detail: {
+      background: { "zh-CN": "面对影响团队的选择，支持与反对意见都需要被充分表达。让双方围绕同一问题和标准交锋，再交由中立角色评议，可以减少只听到单一立场的风险。", en: "Team decisions deserve a fair account of both support and opposition. Giving each side the same question and criteria before neutral review reduces the risk of hearing only one position." },
+      problem: { "zh-CN": "适合比较政策、产品方向或资源投入等存在真实取舍的问题。它帮助团队澄清依据，不替代负责人作出决定。", en: "Use this team to compare policies, product directions, or investments with real trade-offs. It clarifies the reasoning while leaving the decision to the responsible people." },
+      collaboration: { "zh-CN": "主持人给双方相同的辩题和评议标准；正反方分别陈述理由并回应对方；中立评议者判断是否需要一轮补充质询，随后作出有依据的评议；记录员整理双方强点、结论与未决问题。", en: "A host gives both sides the same question and criteria. The proposition and opposition make their cases and respond to one another. A neutral reviewer may request one bounded rebuttal before reaching a reasoned view; a reporter records the strongest points and open questions." },
+      deliverable: { "zh-CN": "一份平衡的讨论纪要，呈现双方最有力的论据、评议理由、不确定因素和后续决策问题。", en: "A balanced debate brief with each side's strongest case, the reviewer's reasoning, uncertainty, and questions for the decision makers." },
+      roles: {
+        "debate-host": { "zh-CN": "明确辩题、评议标准，并把相同资料交给双方。", en: "Frames the question and criteria, then gives both sides the same brief." },
+        "proponent": { "zh-CN": "提出支持方案的理由、依据与成立条件。", en: "Builds the case for the proposal, its rationale, and conditions." },
+        "opponent": { "zh-CN": "指出方案的假设、代价、风险与替代思路。", en: "Challenges assumptions and explains costs, risks, and alternatives." },
+        "neutral-judge": { "zh-CN": "按共同标准比较双方论据，说明评议依据与不确定性。", en: "Compares both cases against shared criteria and explains its reasoning and uncertainty." },
+        "debate-reporter": { "zh-CN": "整理双方强点、评议结论和仍待回答的问题。", en: "Records each side's strongest points, the review, and unanswered questions." }
+      }
+    },
     accent: "blue",
     layout: {
       "debate-host": [55, 145],
