@@ -207,7 +207,7 @@ test("generic ELK fixtures preserve fan-out, Join, cycle, error, and multi-termi
 
 test("ELK honors node size variation without projected overlap", async () => {
   const projection = await createElkLayoutProjection(fixture("size-variation"), "flow");
-  assert.equal(projection.nodes.find((item) => item.id === "large").width, 300);
+  assert.equal(projection.nodes.find((item) => item.id === "large").width, 220);
   assert.equal(projection.nodes.find((item) => item.id === "large").height, 132);
   assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
 });
@@ -238,7 +238,23 @@ test("role labels omit the redundant type prefix without forcing oversized nodes
   assert.match(label, /^Debate Reviewer/);
   assert.doesNotMatch(label, /^Role:/);
   assert.doesNotMatch(label, /Role \/ Agent:/);
-  assert.ok(size.width <= 260);
+  assert.ok(size.width <= 220);
+});
+
+test("stored projection clamps persisted role widths and expands long labels within the card limit", () => {
+  const view = graph([
+    node("long-role", {
+      label: "Long responsibility title ".repeat(8),
+      layout: { x: 10, y: 10, width: 420, height: 84 }
+    }),
+    node("input"),
+    node("output")
+  ], [edge("input-role", "input", "long-role"), edge("role-output", "long-role", "output")]);
+  const projection = createStoredLayoutProjection(view);
+  const projected = projection.nodes.find((item) => item.id === "long-role");
+
+  assert.equal(projected.width, 220);
+  assert.ok(projected.height > 84);
 });
 
 test("stored routing keeps diagonal fan-in on its nearby sides", () => {
@@ -668,7 +684,7 @@ test("layout digest is stable across repeated layout and input ordering", async 
 
 test("stored projection detects node overlap and clipped labels", () => {
   const view = graph([
-    node("a", { label: "A deliberately long responsibility label", layout: { x: 10, y: 10, width: 72, height: 30 } }),
+    node("a", { label: "A deliberately long responsibility label ".repeat(8), layout: { x: 10, y: 10, width: 72, height: 30 } }),
     node("b", { layout: { x: 60, y: 20, width: 100, height: 50 } })
   ], [edge("a-b", "a", "b")]);
   const projection = createStoredLayoutProjection(view);

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import { parseSystemFromMermaidSource } from "../src/runtime/parse-mermaid.ts";
+import { importSystemToAuthoring } from "../src/visualizer/studio-authoring.ts";
 import {
   createElkLayoutProjection
 } from "../src/visualizer/studio-client/elk-layout-adapter.ts";
@@ -105,8 +107,48 @@ test("Chinese role names stay readable in compact graph cards", () => {
   role.label = "风险分析与投资价值评估审查角色".repeat(5);
   const size = layoutNodeSize(role);
   assert.equal(studioRoleMonogram(role.label, role.roleId), "风险");
-  assert.ok(size.width <= 260);
+  assert.ok(size.width <= 220);
   assert.ok(size.height > 84);
+});
+
+test("both shipped example graphs keep bounded roles and complete routes in automatic layouts", async () => {
+  const examples = ["wechat-miniprogram-factory", "mulit-debate-ogs"];
+  for (const example of examples) {
+    const systemPath = new URL(`../examples/${example}/system.mmd`, import.meta.url);
+    const source = await readFile(systemPath, "utf8");
+    const system = parseSystemFromMermaidSource(source);
+    const authoring = importSystemToAuthoring({
+      workdir: `examples/${example}`,
+      systemPath: `examples/${example}/system.mmd`,
+      system,
+      systemSource: source
+    });
+    const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
+    const layouts = [
+      ["flow", await createElkLayoutProjection(viewModel, "flow")],
+      ["compact", await createElkLayoutProjection(viewModel, "compact")],
+      ["stacked", await createElkLayoutProjection(viewModel, "stacked")]
+    ];
+    const expectedNodeIds = new Set(viewModel.nodes.map((node) => node.id));
+    const expectedEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
+
+    for (const [layout, projection] of layouts) {
+      const context = `${example}/${layout}`;
+      assert.deepEqual(new Set(projection.nodes.map((node) => node.id)), expectedNodeIds, context);
+      assert.deepEqual(new Set(projection.edges.map((edge) => edge.id)), expectedEdgeIds, context);
+      assert.ok(projection.nodes.filter((node) => viewModel.nodes.find((item) => item.id === node.id)?.roleSeat)
+        .every((node) => node.width >= 180 && node.width <= 220), context);
+      assert.equal(projection.diagnostics.some((item) =>
+        ["NODE_OVERLAP", "EDGE_NODE_COLLISION", "ROUTE_LOSS"].includes(item.code)
+      ), false, `${context}: ${JSON.stringify(projection.diagnostics)}`);
+      assert.ok(projection.edges.every((edge) =>
+        expectedNodeIds.has(edge.source) && expectedNodeIds.has(edge.target) &&
+        [edge.routing.source, edge.routing.target].every((terminal) =>
+          ["top", "right", "bottom", "left"].includes(terminal.side) && Number.isFinite(terminal.offset)
+        ) && edge.routing.routePoints.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+      ), context);
+    }
+  }
 });
 
 function node(id, x, y, structure = {}) {
