@@ -7,6 +7,7 @@ import { validateRoleOutputSchema } from "../dist/runtime/role-repo.js";
 const proposerRoleDir = new URL("../examples/mulit-debate-ogs/og-roles/roles/investment-proposer/", import.meta.url);
 const proposerSchema = JSON.parse(await readFile(new URL("output.schema.json", proposerRoleDir), "utf8"));
 const proposerPrompt = await readFile(new URL("prompt.md", proposerRoleDir), "utf8");
+const debateJudgeSchema = JSON.parse(await readFile(new URL("../debate-judge/output.schema.json", proposerRoleDir), "utf8"));
 
 const nestedOutputSchema = {
   type: "object",
@@ -126,4 +127,37 @@ test("investment proposer keeps its optional event contract aligned with its sch
     }),
     /\$\.event: must be equal to one of the allowed values/
   );
+});
+
+test("investment debate schemas keep branch contracts strict and distinct", () => {
+  assert.doesNotThrow(() => validateRoleOutputSchema({
+    roleId: "debate-judge",
+    schema: debateJudgeSchema,
+    schemaPath: "examples/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
+    output: {
+      event: "REBUTTAL_NEEDED",
+      content: "A bounded objection remains.",
+      data: { consensus_reached: false, objections: { summary: "Missing evidence." } }
+    }
+  }));
+  assert.doesNotThrow(() => validateRoleOutputSchema({
+    roleId: "debate-judge",
+    schema: debateJudgeSchema,
+    schemaPath: "examples/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
+    output: {
+      event: "DECISION_READY",
+      content: "The decision is ready with stated uncertainty.",
+      data: { consensus_reached: true, decision: "Proceed to diligence." }
+    }
+  }));
+  assert.throws(() => validateRoleOutputSchema({
+    roleId: "debate-judge",
+    schema: debateJudgeSchema,
+    schemaPath: "examples/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
+    output: {
+      event: "DECISION_READY",
+      content: "Invalid branch payload.",
+      data: { consensus_reached: false, objections: { summary: "Not ready." } }
+    }
+  }));
 });

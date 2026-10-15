@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["event", "content"],
+  "required": ["event", "content", "data"],
   "properties": {
     "event": {
       "type": "string",
@@ -9,17 +9,44 @@
     "content": { "type": "string" },
     "data": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "consensus_reached": { "type": "boolean" },
         "objections": {
           "type": "object",
-          "additionalProperties": true,
-          "properties": { "summary": { "type": "string" } }
+          "additionalProperties": false,
+          "required": ["summary"],
+          "properties": { "summary": { "type": "string", "minLength": 1 } }
         },
         "decision": { "type": "string", "minLength": 1 }
       }
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "REBUTTAL_NEEDED" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["consensus_reached", "objections"],
+            "properties": { "consensus_reached": { "const": false } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "DECISION_READY" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["consensus_reached", "decision"],
+            "properties": { "consensus_reached": { "const": true } }
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }

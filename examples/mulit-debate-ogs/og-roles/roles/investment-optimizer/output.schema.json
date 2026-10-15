@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["event", "content"],
+  "required": ["event", "content", "data"],
   "properties": {
     "event": {
       "type": "string",
@@ -9,18 +9,21 @@
     "content": { "type": "string" },
     "data": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
+      "required": ["positions"],
       "properties": {
         "positions": {
           "type": "object",
-          "additionalProperties": true,
+          "additionalProperties": false,
+          "required": ["optimizer"],
           "properties": {
             "optimizer": {
               "type": "object",
-              "additionalProperties": true,
+              "additionalProperties": false,
+              "required": ["argument", "improvements"],
               "properties": {
-                "argument": { "type": "string" },
-                "improvements": { "type": "array", "items": { "type": "string" } }
+                "argument": { "type": "string", "minLength": 1 },
+                "improvements": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
               }
             }
           }

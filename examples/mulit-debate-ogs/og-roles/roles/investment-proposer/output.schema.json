@@ -3,7 +3,7 @@
   "required": ["content", "data"],
   "properties": {
     "event": {
-      "type": ["string", "null"],
+      "type": "string",
       "enum": ["SEND_CRITIC", "SEND_OPTIMIZER"]
     },
     "content": { "type": "string" },
@@ -11,7 +11,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["debate_round"],
-      "properties": { "debate_round": { "type": ["integer", "null"], "minimum": 1 } }
+      "properties": { "debate_round": { "type": "integer", "minimum": 1 } }
     }
   },
   "additionalProperties": false

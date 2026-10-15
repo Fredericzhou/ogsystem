@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["event", "content"],
+  "required": ["event", "content", "data"],
   "properties": {
     "event": {
       "type": "string",
@@ -9,18 +9,21 @@
     "content": { "type": "string" },
     "data": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
+      "required": ["positions"],
       "properties": {
         "positions": {
           "type": "object",
-          "additionalProperties": true,
+          "additionalProperties": false,
+          "required": ["critic"],
           "properties": {
             "critic": {
               "type": "object",
-              "additionalProperties": true,
+              "additionalProperties": false,
+              "required": ["argument", "risks"],
               "properties": {
-                "argument": { "type": "string" },
-                "risks": { "type": "string" }
+                "argument": { "type": "string", "minLength": 1 },
+                "risks": { "type": "string", "minLength": 1 }
               }
             }
           }
