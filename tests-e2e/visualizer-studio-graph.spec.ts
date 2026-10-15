@@ -252,6 +252,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const runTabName = await resolveLifecycleTabName(page, ["Operate", "Run"]);
     await expect(page.locator("#console-panel-project")).toBeVisible();
     await expect(page.locator("#console-panel-project > article > header").getByRole("heading", { name: "Project Overview" })).toBeVisible();
+    await expect(page.locator("#console-panel-project").getByRole("heading", { name: "Project Overview" })).toHaveCount(1);
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeHidden();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
@@ -777,11 +778,15 @@ test("workdir controls fit mobile, show the app name, and saved node positions s
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(started.url).origin });
     await page.goto(started.url);
     await expect(page.locator("#project-name")).toHaveText("Layout Refresh Test");
+    await expect(page.getByRole("heading", { level: 2, name: "Layout Refresh Test" })).toBeVisible();
+    await expect(page.locator(".project-home-directory code")).toHaveText(workdir);
+    await expect(page.locator(".top-nav #workdir")).toBeHidden();
     await expect(page.locator("#copy-workdir")).toBeVisible();
     await expect(page.locator("#open-workdir")).toBeVisible();
-    const controlBounds = await page.locator("#open-workdir").boundingBox();
-    expect(controlBounds).toBeTruthy();
-    expect(controlBounds!.x + controlBounds!.width).toBeLessThanOrEqual(390);
+    await expect.poll(async () => {
+      const controlBounds = await page.locator("#open-workdir").boundingBox();
+      return controlBounds ? controlBounds.x + controlBounds.width <= 390 : false;
+    }).toBe(true);
     await page.locator("#copy-workdir").click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(workdir);
 

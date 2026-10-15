@@ -448,6 +448,9 @@ export function renderPageShellStyles(): string {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    #workdir[hidden] {
+      display: none;
+    }
     .brand-lockup {
       display: flex;
       align-items: center;
@@ -1355,9 +1358,46 @@ export function renderPageShellStyles(): string {
     }
     .project-home-info-strip {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
       min-width: 0;
+    }
+    .project-home-identity {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      margin-bottom: 12px;
+    }
+    .project-home-identity h2 {
+      margin: 0;
+      color: #f8fbff;
+      font-size: 24px;
+      font-weight: 650;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .project-home-directory {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--muted);
+    }
+    .project-home-directory code {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: #d8e3ef;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .project-home-directory .workdir-action {
+      flex: 0 0 28px;
+      width: 28px;
+      min-width: 28px;
+      height: 28px;
+      padding: 0;
+      line-height: 1;
     }
     .project-home-info-item {
       display: grid;

@@ -6,11 +6,10 @@ type PageShellTranslator = (key: MessageKey) => string;
 export type PageShellBodyOptions = {
   workdir: string;
   locale: Locale;
-  allowLocalDirectoryOpen?: boolean;
   t: PageShellTranslator;
 };
 
-export function renderPageShellBody({ workdir, locale, allowLocalDirectoryOpen = false, t }: PageShellBodyOptions): string {
+export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions): string {
   return `<body>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
   <div class="app">
@@ -31,7 +30,7 @@ export function renderPageShellBody({ workdir, locale, allowLocalDirectoryOpen =
             </div>
             <div class="top-nav-meta">
               <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
-              <div class="pill workdir-pill"><span>${escapeHtml(t("app.workdir"))}</span><code id="workdir" title="${escapeHtml(workdir)}">${escapeHtml(workdir)}</code><button id="copy-workdir" class="button subtle workdir-action" type="button" title="${escapeHtml(t("app.copyWorkdir"))}" aria-label="${escapeHtml(t("app.copyWorkdir"))}">⧉</button><button id="open-workdir" class="button subtle workdir-action" type="button" title="${escapeHtml(t("app.openWorkdir"))}" aria-label="${escapeHtml(t("app.openWorkdir"))}"${allowLocalDirectoryOpen ? "" : " hidden"}>↗</button></div>
+              <span id="workdir" hidden>${escapeHtml(workdir)}</span>
             </div>
           </div>
           <div class="top-nav-center">

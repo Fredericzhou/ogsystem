@@ -421,8 +421,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
     const projectNameEl = document.getElementById("project-name");
-    const copyWorkdirButton = document.getElementById("copy-workdir");
-    const openWorkdirButton = document.getElementById("open-workdir");
     const projectWizardEl = document.getElementById("project-wizard");
     const opsSummaryEl = document.getElementById("ops-summary");
     const releaseGateEl = document.getElementById("release-gate");
@@ -5789,18 +5787,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? recentRuns.map((run) => '<div class="event"><div class="event-top"><span><code>' + escapeText(run.runId || "n/a") + '</code></span><span>' + escapeText(displayUiToken(run.status || "unknown", t)) + '</span></div><strong>' + escapeText(run.lastExecutedRoleId || run.finalRoleId || t("common.notAvailable", undefined, "n/a")) + '</strong><div class="hint">' + escapeText(run.startedAt ? formatTime(run.startedAt) : t("common.notAvailable", undefined, "n/a")) + '</div></div>').join("")
           : '<div class="hint">' + escapeText(t("project.noRunsYet", undefined, "No runs recorded yet.")) + '</div>';
         const infoItems = [
-          [t("project.currentProject", undefined, "Current project"), projectName],
           [t("project.structure", undefined, "structure"), t("project.structureSummary", { roles: String(summary.roleCount ?? state.project?.roles?.roles?.length ?? 0), flows: String(summary.flowCount ?? 0) }, "{roles} roles · {flows} flows")],
-          [t("project.currentDirectory", undefined, "Current directory"), workspace.workdir || getCurrentWorkdir() || "n/a"],
           [t("common.system", undefined, "system"), String(summary.systemId || summary.projectId || "n/a")],
           [t("project.systemPath", { path: state.workbenchSavedPath || "system.mmd" }, "system path " + (state.workbenchSavedPath || "system.mmd")), state.workbenchSavedPath || "system.mmd"]
-        ].map(([label, value], index) => (
-          '<div class="project-home-info-item' + (index === 1 ? " is-primary" : "") + '"><span class="project-home-info-label">' + escapeText(label) + '</span><strong class="project-home-info-value">' + escapeText(value) + "</strong></div>"
+        ].map(([label, value]) => (
+          '<div class="project-home-info-item"><span class="project-home-info-label">' + escapeText(label) + '</span><strong class="project-home-info-value">' + escapeText(value) + "</strong></div>"
         )).join("");
+        const projectWorkdir = workspace.workdir || getCurrentWorkdir() || "n/a";
+        const openDirectoryButton = window.__OGS_VISUALIZER_BOOTSTRAP__?.allowLocalDirectoryOpen === true
+          ? '<button id="open-workdir" class="button subtle workdir-action" type="button" title="' + escapeText(t("app.openWorkdir")) + '" aria-label="' + escapeText(t("app.openWorkdir")) + '">↗</button>'
+          : "";
         mainHtml = [
           '<article class="card project-home-card">',
-          '<header><div class="card-header"><div class="header-copy"><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Design for structure and bindings, Release for gates and export, and Run for runtime inspection.")) + '</div></div></div></header>',
           '<div class="body">',
+          '<div class="project-home-identity"><h2>' + escapeText(projectName) + '</h2><div class="project-home-directory"><span class="project-home-info-label">' + escapeText(t("project.currentDirectory", undefined, "Current directory")) + '</span><code>' + escapeText(projectWorkdir) + '</code><button id="copy-workdir" class="button subtle workdir-action" type="button" title="' + escapeText(t("app.copyWorkdir")) + '" aria-label="' + escapeText(t("app.copyWorkdir")) + '">⧉</button>' + openDirectoryButton + '</div></div>',
           '<div class="project-home-info-strip">' + infoItems + '</div>',
           '<div class="project-home-side-note"><strong>' + escapeText(t("project.readinessSummary", { blockers: String(readinessBlockers.length), warnings: String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0) }, "{blockers} blockers · {warnings} warnings")) + '</strong><div class="hint">' + escapeText(validationOk ? t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + " · " + escapeText(displayUiToken(workspaceState, t)) + '</div></div>',
           '<section class="project-home-section"><h4>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</h4><div class="structure-list">' + projectReadinessHtml + '</div></section>',
@@ -8433,24 +8433,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     });
 
-    if (copyWorkdirButton) {
-      copyWorkdirButton.addEventListener("click", async () => {
-        const path = state.project?.summary?.workdir || state.workspace?.workdir || workdirEl?.textContent || "";
-        try {
-          await navigator.clipboard.writeText(path);
-          setFlash("success", t("app.workdirCopied"));
-        } catch {
-          setFlash("error", t("app.workdirCopyFailed"));
-        }
-      });
-    }
-    if (openWorkdirButton && (window.__OGS_VISUALIZER_BOOTSTRAP__?.allowLocalDirectoryOpen === true)) {
-      openWorkdirButton.addEventListener("click", async () => {
-        try {
-          await requestAction(API_PREFIX + "/project/open-directory", {});
-          setFlash("success", t("app.workdirOpened"));
-        } catch {
-          setFlash("error", t("app.workdirOpenFailed"));
+    if (projectWizardEl) {
+      projectWizardEl.addEventListener("click", async (event) => {
+        const target = event.target instanceof Element ? event.target.closest("#copy-workdir, #open-workdir") : null;
+        if (!(target instanceof HTMLButtonElement)) return;
+        if (target.id === "copy-workdir") {
+          const path = state.project?.summary?.workdir || state.workspace?.workdir || workdirEl?.textContent || "";
+          try {
+            await navigator.clipboard.writeText(path);
+            setFlash("success", t("app.workdirCopied"));
+          } catch {
+            setFlash("error", t("app.workdirCopyFailed"));
+          }
+        } else if (target.id === "open-workdir" && window.__OGS_VISUALIZER_BOOTSTRAP__?.allowLocalDirectoryOpen === true) {
+          try {
+            await requestAction(API_PREFIX + "/project/open-directory", {});
+            setFlash("success", t("app.workdirOpened"));
+          } catch {
+            setFlash("error", t("app.workdirOpenFailed"));
+          }
         }
       });
     }

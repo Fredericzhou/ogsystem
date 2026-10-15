@@ -3575,7 +3575,8 @@ test("visualizer client switches Design Run Release shells without unloading dat
   assert.equal(projectTab.getAttribute("aria-pressed"), "true");
   assert.equal(runTab.getAttribute("aria-pressed"), "false");
   assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
-  assert.match(harness.document.getElementById("project-wizard").textContent, /Overview/);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /demo.*Current directory/);
+  assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-identity").length >= 1);
   assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-layout").length >= 1);
 
   await runTab.click();

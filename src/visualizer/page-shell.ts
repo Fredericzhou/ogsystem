@@ -27,7 +27,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
   <style>
 ${renderPageShellStyles()}  </style>
 </head>
-${renderPageShellBody({ workdir, locale, allowLocalDirectoryOpen: i18n.allowLocalDirectoryOpen, t })}  <script>window.__OGS_VISUALIZER_BOOTSTRAP__ = ${bootstrap};</script>
+${renderPageShellBody({ workdir, locale, t })}  <script>window.__OGS_VISUALIZER_BOOTSTRAP__ = ${bootstrap};</script>
   <script src="/assets/client-app.js"></script>
 </body>
 </html>`;

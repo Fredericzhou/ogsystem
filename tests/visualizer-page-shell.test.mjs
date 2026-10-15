@@ -38,8 +38,6 @@ const REQUIRED_ELEMENT_IDS = [
   "detail",
   "locale-select",
   "project-name",
-  "copy-workdir",
-  "open-workdir",
   "global-status-context",
   "global-status-diagnostics"
 ];
@@ -78,8 +76,10 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /class="top-nav-center"[\s\S]*id="console-tabs"[\s\S]*class="hero-utilities"/);
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="workdir"/);
-  assert.match(html, /id="copy-workdir"[^>]*aria-label=/);
-  assert.match(html, /id="open-workdir"[^>]*hidden/);
+  assert.match(html, /<span id="workdir" hidden>/);
+  assert.match(styles, /#workdir\[hidden\] \{[\s\S]*?display: none/);
+  assert.doesNotMatch(html, /id="copy-workdir"/);
+  assert.doesNotMatch(html, /id="open-workdir"/);
   assert.match(html, /class="workbench-state-cache" hidden[\s\S]*id="workbench-title"[\s\S]*id="workbench-meta"[\s\S]*id="workbench-tabs"[\s\S]*id="workbench-actions"/);
   assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="global-status-context"[\s\S]*id="global-status-diagnostics"[\s\S]*id="workbench-status"[\s\S]*id="live"/);
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
@@ -116,12 +116,13 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.doesNotMatch(html, /aria-label="Log (page size|scope|since)"/);
 });
 
-test("local directory action is exposed only when the server allows local opening", () => {
+test("page shell keeps local directory permission in bootstrap without showing the path in the header", () => {
   const localHtml = renderPageHtml("/tmp/demo", "/api/v1", { allowLocalDirectoryOpen: true });
   const remoteHtml = renderPageHtml("/tmp/demo", "/api/v1");
-  assert.match(localHtml, /id="open-workdir"[^>]*aria-label="Open folder"/);
-  assert.doesNotMatch(localHtml, /id="open-workdir"[^>]*hidden/);
-  assert.match(remoteHtml, /id="open-workdir"[^>]*hidden/);
+  assert.match(localHtml, /<span id="workdir" hidden>/);
+  assert.doesNotMatch(localHtml, /class="workdir-pill"/);
+  assert.match(remoteHtml, /<span id="workdir" hidden>/);
+  assert.doesNotMatch(remoteHtml, /class="workdir-pill"/);
   assert.match(localHtml, /"allowLocalDirectoryOpen":true/);
   assert.match(remoteHtml, /"allowLocalDirectoryOpen":false/);
 });
