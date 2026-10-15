@@ -26,12 +26,17 @@ Object.assign(copy["zh-CN"], {
   homeCasesTitle: "从典型团队协作开始",
   homeAllCases: "查看全部协作案例 →",
   navExamples: "协作案例",
-  caseHeading: "典型团队协作案例",
+  caseHeading: "典型团队协作",
+  pageIntro: "从一个目标开始。选择团队案例，了解成员之间如何协作，再运行一次完整流程。",
+  membersSubtitle: "成员各有专长，分工完成任务",
   allExamples: "查看案例详情",
   libraryEyebrow: "典型团队协作案例",
   libraryTitle: "团队协作案例",
   libraryIntro: "浏览不同协作场景的背景、分工和预期成果。",
-  detailEyebrow: "典型团队协作案例"
+  detailEyebrow: "典型团队协作案例",
+  flowTitle: "协作关系",
+  flowSubtitle: "成员之间如何分工与衔接",
+  caseScenario: "示例任务"
 });
 Object.assign(copy.en, {
   homeCases: "Team collaboration",
@@ -41,12 +46,17 @@ Object.assign(copy.en, {
   homeCasesTitle: "Explore representative team workflows",
   homeAllCases: "Browse all collaboration examples →",
   navExamples: "Collaboration examples",
-  caseHeading: "Representative team workflows",
+  caseHeading: "Representative team collaboration",
+  pageIntro: "Start with a goal. Choose a team, see how members work together, then run the complete example.",
+  membersSubtitle: "Each member brings a specialty to the shared task",
   allExamples: "Explore case details",
   libraryEyebrow: "Representative collaboration examples",
   libraryTitle: "Team collaboration examples",
   libraryIntro: "Explore the context, responsibilities, and expected outcomes for each scenario.",
-  detailEyebrow: "Representative collaboration example"
+  detailEyebrow: "Representative collaboration example",
+  flowTitle: "Team relationships",
+  flowSubtitle: "How members divide and connect their work",
+  caseScenario: "Example task"
 });
 
 function readHistory() { try { return JSON.parse(localStorage.getItem("ogs-run-history") || "[]"); } catch { return []; } }
@@ -78,24 +88,37 @@ function renderSelected(item) {
   renderGraph(item);
 }
 function renderGraph(item) {
+  const stage = $("#graph-stage");
+  const isDebate = item.id === "structured-debate";
+  stage.dataset.case = item.id;
+  stage.dataset.accent = item.accent;
+  stage.classList.toggle("graph-stage-debate", isDebate);
+  stage.style.setProperty("--graph-width", isDebate ? "1120px" : "1080px");
+  stage.style.setProperty("--graph-height", isDebate ? "410px" : "350px");
+  $("#graph-edges").setAttribute("viewBox", isDebate ? "0 0 1120 410" : "0 0 1080 350");
   const positions = item.layout;
-  const centers = Object.fromEntries(Object.entries(positions).map(([id, [x, y]]) => [id, [x + 77, y + 31]]));
+  const centers = Object.fromEntries(Object.entries(positions).map(([id, [x, y]]) => [id, [x + 84, y + 34]]));
   const flows = item.flows.map(({ from, to, event }) => {
     const start = from === "input" ? [63, 175] : centers[from];
-    const end = to === "output" ? [927, 175] : centers[to];
+    const end = to === "output" ? [isDebate ? 1060 : 927, 175] : centers[to];
     if (!start || !end) return "";
     const middle = Math.max(30, (end[0] - start[0]) * .48);
     const label = esc(labelEvent(event));
     const loop = event === "REBUTTAL_REQUESTED";
-    const curve = loop ? `M ${end[0]} ${end[1] - 31} C ${end[0] + 175} ${end[1] - 115}, ${start[0] + 10} ${start[1] - 105}, ${start[0]} ${start[1] - 31}` : `M ${start[0]} ${start[1]} C ${start[0] + middle} ${start[1]}, ${end[0] - middle} ${end[1]}, ${end[0]} ${end[1]}`;
-    return `<path class="edge-path ${loop ? "edge-loop" : ""}" d="${curve}"/><text class="edge-label" x="${(start[0] + end[0]) / 2}" y="${(start[1] + end[1]) / 2 - 8}">${label}</text>`;
+    const loopLane = 368;
+    const curve = loop ? `M ${start[0]} ${start[1] + 34} C ${start[0]} ${loopLane}, ${end[0]} ${loopLane}, ${end[0]} ${end[1] + 34}` : `M ${start[0]} ${start[1]} C ${start[0] + middle} ${start[1]}, ${end[0] - middle} ${end[1]}, ${end[0]} ${end[1]}`;
+    const labelY = loop ? loopLane + 15 : (start[1] + end[1]) / 2 - 8;
+    return `<path class="edge-path ${loop ? "edge-loop" : ""}" d="${curve}"/><text class="edge-label" x="${(start[0] + end[0]) / 2}" y="${labelY}">${label}</text>`;
   }).join("");
   $("#graph-edges").innerHTML = `<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#829b8d"/></marker></defs>${flows}`;
   $("#graph-nodes").innerHTML = item.roles.map((role, index) => {
     const [x, y] = positions[role.id] || [60 + index * 190, 145];
     const isJoin = item.joins.some((join) => join.roleId === role.id);
-    return `<div class="graph-node node-${esc(role.id)} ${isJoin ? "join-node" : ""}"><div class="node-top"><span class="node-number">${String(index + 1).padStart(2, "0")}</span><span class="node-name">${esc(text(role.label))}</span></div><div class="node-role">${esc(text(role.description))}</div></div>`;
+    const side = role.id === "proponent" ? "side-positive" : role.id === "opponent" ? "side-negative" : "";
+    return `<div class="graph-node node-${esc(role.id)} ${isJoin ? "join-node" : ""} ${side}"><div class="node-top"><span class="node-number">${String(index + 1).padStart(2, "0")}</span><span class="node-name">${esc(text(role.label))}</span></div><div class="node-role">${esc(text(role.description))}</div></div>`;
   }).join("");
+  $(".graph-foot span[data-i18n='splitNote']").textContent = text(item.detail.relationship);
+  $("#graph-edges").setAttribute("aria-label", state.locale === "zh-CN" ? `${text(item.title)}协作关系图` : `${text(item.title)} team relationship diagram`);
 }
 function selectCase(caseId) {
   const item = state.cases.find((entry) => entry.id === caseId);
@@ -109,7 +132,21 @@ function selectCase(caseId) {
 }
 function renderDetail(item) {
   const details = item.detail;
-  $("#case-detail-view").innerHTML = `<a class="detail-back" href="/studio" data-route="/studio">← ${esc(copy[state.locale].backCases)}</a><header class="detail-heading" data-accent="${esc(item.accent)}"><div>${caseIcon(item)}<span class="eyebrow">${esc(copy[state.locale].detailEyebrow)} · ${esc(text(item.category))}</span></div><h1>${esc(text(item.title))}</h1><p>${esc(text(item.short))}</p><a class="primary-button" href="/studio?team=${esc(item.id)}" data-use-case="${esc(item.id)}">${esc(copy[state.locale].useCase)} <span aria-hidden="true">→</span></a></header><div class="detail-content"><section><span class="detail-index">01</span><div><h2>${esc(copy[state.locale].caseBackground)}</h2><p>${esc(text(details.background))}</p></div></section><section><span class="detail-index">02</span><div><h2>${esc(copy[state.locale].caseProblem)}</h2><p>${esc(text(details.problem))}</p></div></section><section><span class="detail-index">03</span><div><h2>${esc(copy[state.locale].caseCollaboration)}</h2><p>${esc(text(details.collaboration))}</p></div></section><section><span class="detail-index">04</span><div><h2>${esc(copy[state.locale].caseDeliverable)}</h2><p>${esc(text(details.deliverable))}</p></div></section><section class="detail-roles"><span class="detail-index">05</span><div><h2>${esc(copy[state.locale].caseRoles)}</h2><div class="detail-role-grid">${item.roles.map((role, index) => `<article><span class="member-avatar member-avatar-${index % 3}">${esc(icon[item.icon] || "✦")}</span><div><h3>${esc(text(role.label))}</h3><p>${esc(text(role.description))}</p></div></article>`).join("")}</div></div></section></div>`;
+  $("#case-detail-view").innerHTML = `
+    <a class="detail-back" href="/studio" data-route="/studio">← ${esc(copy[state.locale].backCases)}</a>
+    <header class="detail-heading" data-accent="${esc(item.accent)}">
+      <div>${caseIcon(item)}<span class="eyebrow">${esc(copy[state.locale].detailEyebrow)} · ${esc(text(item.category))}</span></div>
+      <h1>${esc(text(item.title))}</h1><p>${esc(text(item.short))}</p>
+      <a class="primary-button" href="/studio?team=${esc(item.id)}" data-use-case="${esc(item.id)}">${esc(copy[state.locale].useCase)} <span aria-hidden="true">→</span></a>
+    </header>
+    <aside class="detail-scenario"><span>${esc(copy[state.locale].caseScenario)}</span><p>${esc(text(details.scenario))}</p></aside>
+    <div class="detail-content">
+      <section><span class="detail-index">01</span><div><h2>${esc(copy[state.locale].caseBackground)}</h2><p>${esc(text(details.background))}</p></div></section>
+      <section><span class="detail-index">02</span><div><h2>${esc(copy[state.locale].caseProblem)}</h2><p>${esc(text(details.problem))}</p></div></section>
+      <section><span class="detail-index">03</span><div><h2>${esc(copy[state.locale].caseCollaboration)}</h2><p>${esc(text(details.collaboration))}</p></div></section>
+      <section><span class="detail-index">04</span><div><h2>${esc(copy[state.locale].caseDeliverable)}</h2><p>${esc(text(details.deliverable))}</p></div></section>
+      <section class="detail-roles"><span class="detail-index">05</span><div><h2>${esc(copy[state.locale].caseRoles)}</h2><div class="detail-role-grid">${item.roles.map((role, index) => `<article><span class="member-avatar member-avatar-${index % 3}">${esc(icon[item.icon] || "✦")}</span><div><h3>${esc(text(role.label))}</h3><p>${esc(text(role.description))}</p></div></article>`).join("")}</div></div></section>
+    </div>`;
   $("#breadcrumb-current").textContent = text(item.title);
   $$('[data-use-case]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); selectCase(element.dataset.useCase); navigate("/studio"); }));
 }

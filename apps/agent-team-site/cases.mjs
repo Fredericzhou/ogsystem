@@ -10,6 +10,8 @@ export const cases = [
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
     icon: "code",
     detail: {
+      scenario: { "zh-CN": "为自由职业者记账工具规划首版：覆盖账目记录、月度汇总，并列出上线前的验收项。", en: "Plan the first release of a bookkeeping tool for independent professionals, including expense entry, monthly summaries, and launch checks." },
+      relationship: { "zh-CN": "产品负责人先明确目标；工程、体验和质量三方分别拆解；交付负责人收齐三份方案后统一排期与验收。", en: "The product lead frames the goal. Engineering, experience, and quality plan in parallel; the delivery lead combines all three into one sequence and acceptance plan." },
       background: { "zh-CN": "一项产品需求通常同时牵涉工程实现、用户体验和质量保障。由单一角色从头包办，容易遗漏接口依赖或验收条件。", en: "A product request often spans engineering, user experience, and quality. A single owner can miss interface dependencies or acceptance criteria." },
       problem: { "zh-CN": "适合把目标明确、但需要多专业共同拆解的产品功能，整理成可评审的首版交付方案。", en: "Use this team when a clear product goal needs several disciplines to shape a reviewable first delivery plan." },
       collaboration: { "zh-CN": "产品负责人先统一目标和限制；后端、体验、质量成员分别准备方案；交付负责人收齐三方结果，明确依赖、顺序和完成标准。", en: "The product lead aligns on goals and constraints. Engineering, experience, and quality prepare separate plans; a delivery lead combines them with dependencies, sequencing, and a definition of done." },
@@ -81,13 +83,15 @@ export const cases = [
     id: "expert-consultation",
     title: { "zh-CN": "多学科专家会诊", en: "Expert consultation" },
     short: {
-      "zh-CN": "让不同专科独立分析，再由主审按法定人数形成综合建议。",
-      en: "Gather independent specialist views, then let a lead reviewer synthesize a quorum-based recommendation."
+      "zh-CN": "让不同专科独立分析，由主审汇总已收到的意见与待确认的问题。",
+      en: "Gather independent specialist views, then let a lead reviewer summarize the available perspectives and open questions."
     },
     category: { "zh-CN": "专业咨询", en: "Expert consultation" },
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
     icon: "medical",
     detail: {
+      scenario: { "zh-CN": "个案资料：患者反复头痛并伴短暂视物模糊。请梳理风险信号、待补充资料与合理的后续问题。", en: "Case brief: recurring headaches with brief blurred vision. Identify risk signals, missing information, and useful follow-up questions." },
+      relationship: { "zh-CN": "同一份资料交给三位专科独立评估；主审至少收到两份意见后综合，并标出分歧和需升级关注的信号。", en: "Three specialists review the same brief independently. The lead reviewer synthesizes once at least two reviews arrive, noting disagreement and urgent signals." },
       background: { "zh-CN": "复杂个案往往需要从不同专科视角核对线索。先独立分析，再由主审归纳，有助于看见共识、分歧和资料缺口。", en: "Complex cases can benefit from separate specialist perspectives. Independent reviews followed by synthesis make agreement, disagreement, and missing information visible." },
       problem: { "zh-CN": "适合信息尚不完整、需要多学科辅助梳理风险与后续问题的讨论。此示例用于辅助决策，不构成诊断或治疗建议。", en: "Use this team to organize risks and follow-up questions when information is incomplete. This example supports decision making and does not provide a diagnosis or treatment advice." },
       collaboration: { "zh-CN": "协调员向心血管、神经和影像专科提供同一份资料；各专科独立列出观察、疑点和需要补充的证据；主审归纳已收到的意见，并指出紧急信号与不确定性。", en: "A coordinator gives cardiology, neurology, and imaging the same brief. Each specialist independently records observations, concerns, and needed evidence; a lead reviewer synthesizes the available views, urgent signals, and uncertainty." },
@@ -161,6 +165,8 @@ export const cases = [
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
     icon: "scales",
     detail: {
+      scenario: { "zh-CN": "讨论议题：一家 30 人的公司，是否应要求员工每周到办公室三天？", en: "Debate topic: should a 30-person company ask employees to work from the office three days each week?" },
+      relationship: { "zh-CN": "主持人把同一议题交给正反双方；裁判比较双方论据，可要求补充回应，再将评议交给记录员整理。", en: "The host gives both sides the same question. A neutral judge compares their arguments, may request a rebuttal, then hands the review to a reporter." },
       background: { "zh-CN": "面对影响团队的选择，支持与反对意见都需要被充分表达。让双方围绕同一问题和标准交锋，再交由中立角色评议，可以减少只听到单一立场的风险。", en: "Team decisions deserve a fair account of both support and opposition. Giving each side the same question and criteria before neutral review reduces the risk of hearing only one position." },
       problem: { "zh-CN": "适合比较政策、产品方向或资源投入等存在真实取舍的问题。它帮助团队澄清依据，不替代负责人作出决定。", en: "Use this team to compare policies, product directions, or investments with real trade-offs. It clarifies the reasoning while leaving the decision to the responsible people." },
       collaboration: { "zh-CN": "主持人给双方相同的辩题和评议标准；正反方分别陈述理由并回应对方；中立评议者判断是否需要一轮补充质询，随后作出有依据的评议；记录员整理双方强点、结论与未决问题。", en: "A host gives both sides the same question and criteria. The proposition and opposition make their cases and respond to one another. A neutral reviewer may request one bounded rebuttal before reaching a reasoned view; a reporter records the strongest points and open questions." },
@@ -175,11 +181,11 @@ export const cases = [
     },
     accent: "blue",
     layout: {
-      "debate-host": [55, 145],
-      proponent: [300, 60],
-      opponent: [300, 230],
-      "neutral-judge": [570, 145],
-      "debate-reporter": [845, 145]
+      "debate-host": [90, 155],
+      proponent: [360, 55],
+      opponent: [360, 250],
+      "neutral-judge": [640, 155],
+      "debate-reporter": [900, 155]
     },
     semantics: ["parallel_split", "all_of", "loop.max"],
     entryRole: "debate-host",
