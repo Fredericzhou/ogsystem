@@ -253,10 +253,18 @@ export function renderWorkbenchViewTabsHtml(args: {
   escapeText: (value: unknown) => string;
 }): string {
   const { workbenchView, t, escapeText } = args;
-  return [
-    '<button type="button" class="button subtle ' + (workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge" aria-pressed="' + escapeText(String(workbenchView === "bridge")) + '">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
-    '<button type="button" class="button subtle ' + (workbenchView === "source" ? "active" : "") + '" data-workbench-view="source" aria-pressed="' + escapeText(String(workbenchView === "source")) + '">' + escapeText(t("workbench.source")) + '</button>'
-  ].join("");
+  const currentView = workbenchView === "source" ? "source" : "bridge";
+  const nextView = currentView === "source" ? "bridge" : "source";
+  const currentLabel = currentView === "source"
+    ? t("workbench.source", undefined, "Source")
+    : t("workbench.graph", undefined, "Graph");
+  const nextLabel = nextView === "source"
+    ? t("workbench.source", undefined, "Source")
+    : t("workbench.graph", undefined, "Graph");
+  const switchLabel = nextView === "source"
+    ? t("workbench.switchToSource", undefined, "Switch to Source")
+    : t("workbench.switchToGraph", undefined, "Switch to Graph");
+  return '<button type="button" class="button subtle workbench-view-toggle" data-workbench-view-toggle data-workbench-view="' + escapeText(currentView) + '" aria-pressed="' + escapeText(String(currentView === "source")) + '" aria-label="' + escapeText(switchLabel) + '" title="' + escapeText(switchLabel) + '"><span class="workbench-view-option is-active">' + escapeText(currentLabel) + '</span><span class="workbench-view-divider" aria-hidden="true">/</span><span class="workbench-view-option">' + escapeText(nextLabel) + '</span></button>';
 }
 
 export function renderWorkbenchActionsHtml(args: {

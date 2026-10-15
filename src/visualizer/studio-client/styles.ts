@@ -105,7 +105,7 @@ export function injectStudioGraphStyles(): void {
       cursor: pointer;
     }
     .studio-graph-status {
-      color: #6b7e78;
+      color: #52665e;
       font-size: 12px;
       flex: 0 1 auto;
       overflow-wrap: anywhere;
@@ -313,7 +313,7 @@ export function injectStudioGraphStyles(): void {
       z-index: 2;
       padding: 24px;
       text-align: center;
-      color: #6b7e78;
+      color: #52665e;
       font-size: 13px;
       background: rgba(28, 48, 44, 0.12);
     }
@@ -469,7 +469,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-quick-open-label {
       font-size: 12px;
-      color: #6b7e78;
+      color: #52665e;
     }
     .studio-graph-quick-open-input {
       width: 100%;
@@ -515,7 +515,7 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-quick-open-kind,
     .studio-graph-quick-open-empty {
       font-size: 11px;
-      color: #6b7e78;
+      color: #52665e;
     }
     .studio-graph-quick-debug {
       position: absolute;
@@ -543,7 +543,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-quick-debug-label {
       font-size: 12px;
-      color: #6b7e78;
+      color: #52665e;
     }
     .studio-graph-quick-debug-input {
       width: 100%;
@@ -686,7 +686,7 @@ export function injectStudioGraphStyles(): void {
       color: #946b1d;
     }
     .studio-command-form-diagnostic.info {
-      color: #55798c;
+      color: #426b7a;
     }
     @media (max-width: 540px) {
       .studio-graph-island {

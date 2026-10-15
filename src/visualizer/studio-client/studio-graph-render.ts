@@ -181,7 +181,10 @@ export function renderStudioGraphViewModel(
     }
 
   });
-  positionStudioEdgeLabels(graph, viewModel.edges, showTechnicalDetails);
+  // X6 updates the SVG geometry after the batch completes. Wait for two paint
+  // frames so node and edge bounds are final before calculating label offsets.
+  // A pass token prevents a stale render from overwriting newer labels.
+  scheduleStudioEdgeLabelPosition(graph, viewModel.edges, showTechnicalDetails);
 }
 
 function bundleStroke(channel: string): string {
@@ -556,7 +559,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       y: 19,
       textAnchor: "start",
       textVerticalAnchor: "middle",
-      fill: dark ? "#8fa1c3" : "#6b7e78",
+      fill: dark ? "#8fa1c3" : "#52665e",
       fontSize: 11,
       fontWeight: 450,
       textWrap: {
@@ -678,6 +681,31 @@ function studioEdgeMetadata(
 type StudioEdgeLabelPosition = { distance: number; offset: number };
 type StudioEdgeLabelPositions = { summary: StudioEdgeLabelPosition; topology?: StudioEdgeLabelPosition };
 type StudioLabelRect = { left: number; right: number; top: number; bottom: number };
+type StudioEdgeLabelKind = "summary" | "topology";
+const studioLabelPassByGraph = new WeakMap<Graph, number>();
+
+function scheduleStudioEdgeLabelPosition(
+  graph: Graph,
+  edges: readonly GraphViewModelEdge[],
+  showTechnicalDetails: boolean
+): void {
+  const pass = (studioLabelPassByGraph.get(graph) ?? 0) + 1;
+  studioLabelPassByGraph.set(graph, pass);
+  const run = (): void => {
+    if (studioLabelPassByGraph.get(graph) !== pass) return;
+    positionStudioEdgeLabels(graph, edges, showTechnicalDetails);
+  };
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      run();
+      // X6 can finish a route update one task after the paint that rendered
+      // the nodes. Recheck once after that task without creating a loop.
+      setTimeout(run, 40);
+    }));
+  } else {
+    run();
+  }
+}
 
 function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEdge[], showTechnicalDetails: boolean): void {
   const visibleNodes = Array.from(graph.container.querySelectorAll<SVGGElement>(".x6-node[data-cell-id]"))
@@ -698,15 +726,27 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
     bottom: canvasBounds.bottom
   };
   const reservations: StudioLabelRect[] = [];
+
+  // Topology labels are separate from the flow summary label. Position them
+  // first so both kinds of labels share the same node and label reservations.
   for (const { edge } of ordered) {
-    if (!formatStudioEdgeTopologyLabel(edge) ||
-      estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) continue;
-    const cell = graph.getCellById(edge.id);
-    const view = cell?.isEdge() ? graph.findViewByCell(cell) : null;
-    const badge = view?.container.querySelector<SVGGElement>('.x6-edge-label[data-index="0"]');
-    if (!badge) continue;
-    const bounds = badge.getBoundingClientRect();
-    reservations.push({ left: bounds.left - 4, right: bounds.right + 4, top: bounds.top - 4, bottom: bounds.bottom + 4 });
+    const hasTopologyLabel = Boolean(formatStudioEdgeTopologyLabel(edge)) &&
+      estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+    if (!hasTopologyLabel) continue;
+    const defaultLabels = studioEdgeLabels(edge, undefined, showTechnicalDetails);
+    const defaultPosition = defaultLabels[0]?.position as StudioEdgeLabelPosition | undefined;
+    const position = findStudioEdgeLabelPosition(
+      graph,
+      edge,
+      0,
+      "topology",
+      visibleNodes,
+      reservations,
+      viewport,
+      defaultPosition?.offset ?? -15,
+      showTechnicalDetails
+    );
+    if (position) reservations.push(position.bounds);
   }
 
   for (const { edge } of ordered) {
@@ -719,6 +759,7 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
       graph,
       edge,
       labelIndex,
+      "summary",
       visibleNodes,
       reservations,
       viewport,
@@ -734,6 +775,7 @@ function findStudioEdgeLabelPosition(
   graph: Graph,
   edge: GraphViewModelEdge,
   labelIndex: number,
+  labelKind: StudioEdgeLabelKind,
   obstacles: readonly StudioLabelRect[],
   reserved: readonly StudioLabelRect[],
   viewport: StudioLabelRect,
@@ -761,8 +803,15 @@ function findStudioEdgeLabelPosition(
   const fractions = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95, 0.02, 0.98];
   // Keep labels attached to their route. Long-range offsets avoid collisions
   // visually, but make a flow label read as if it belongs to another edge.
-  const offsetRange = edge.topologyOrder?.endsWith("L") ? 10 : 18;
-  const offsets = [...new Set([preferredOffset, 0, preferredOffset + offsetRange, preferredOffset - offsetRange])];
+  const offsetRange = edge.topologyOrder?.endsWith("L") ? 12 : 24;
+  const offsets = [...new Set([
+    preferredOffset,
+    0,
+    preferredOffset + offsetRange,
+    preferredOffset - offsetRange,
+    preferredOffset + 32,
+    preferredOffset - 32
+  ])];
   const candidates = fractions.flatMap((fraction) => {
     const distance = length * fraction;
     const point = path.getPointAtLength(distance);
@@ -799,16 +848,54 @@ function findStudioEdgeLabelPosition(
     (candidate.bounds.left < viewport.left || candidate.bounds.right > viewport.right ||
       candidate.bounds.top < viewport.top || candidate.bounds.bottom > viewport.bottom ? 10000 : 0) +
     Math.abs(candidate.fraction - 0.5) * 10 + Math.abs(candidate.offset - preferredOffset) * 0.01;
-  const best = candidates.slice().sort((left, right) => predictedScore(left) - predictedScore(right))[0];
-  if (!best) return undefined;
   const currentLabels = cell.getLabels();
-  cell.setLabels(studioEdgeLabels(edge, {
-    summary: best.position,
-    ...(formatStudioEdgeTopologyLabel(edge)
-      ? { topology: currentLabels[0]?.position as StudioEdgeLabelPosition ?? { distance: 0.5, offset: -15 } }
-      : {})
-  }, showTechnicalDetails));
-  return { position: best.position, bounds: best.bounds };
+  const currentTopology = currentLabels[0]?.position as StudioEdgeLabelPosition | undefined;
+  const currentSummary = currentLabels[formatStudioEdgeTopologyLabel(edge) ? 1 : 0]?.position as StudioEdgeLabelPosition | undefined;
+  const setPosition = (position: StudioEdgeLabelPosition): void => {
+    cell.setLabels(studioEdgeLabels(edge, {
+      summary: labelKind === "summary" ? position : currentSummary ?? { distance: 0.5, offset: 0 },
+      ...(formatStudioEdgeTopologyLabel(edge)
+        ? { topology: labelKind === "topology" ? position : currentTopology ?? { distance: 0.5, offset: -15 } }
+        : {})
+    }, showTechnicalDetails));
+  };
+  const actualBounds = (): StudioLabelRect => {
+    const measured = label.getBoundingClientRect();
+    return {
+      left: measured.left,
+      right: measured.right,
+      top: measured.top,
+      bottom: measured.bottom
+    };
+  };
+  const actualScore = (bounds: StudioLabelRect): number =>
+    obstacles.filter((obstacle) => intersects(bounds, obstacle)).length * 10000 +
+    reserved.filter((obstacle) => intersects(bounds, obstacle)).length * 1000 +
+    (bounds.left < viewport.left || bounds.right > viewport.right ||
+      bounds.top < viewport.top || bounds.bottom > viewport.bottom ? 10000 : 0);
+  const rankedCandidates = candidates.slice().sort((left, right) => predictedScore(left) - predictedScore(right));
+  if (!rankedCandidates.length) return undefined;
+  const firstCandidate = rankedCandidates[0];
+  setPosition(firstCandidate.position);
+  const firstBounds = actualBounds();
+  const firstScore = actualScore(firstBounds);
+  if (firstScore === 0) return { position: firstCandidate.position, bounds: firstBounds };
+  let selected: { candidate: typeof rankedCandidates[number]; bounds: StudioLabelRect; score: number } = {
+    candidate: firstCandidate,
+    bounds: firstBounds,
+    score: firstScore
+  };
+  // Only retry the most promising candidates. Each X6 label write causes an
+  // SVG view update, so evaluating every route fraction creates visible churn.
+  for (const candidate of rankedCandidates.slice(1, 16)) {
+    setPosition(candidate.position);
+    const bounds = actualBounds();
+    const score = actualScore(bounds);
+    if (score < selected.score) selected = { candidate, bounds, score };
+    if (score === 0) break;
+  }
+  setPosition(selected.candidate.position);
+  return { position: selected.candidate.position, bounds: selected.bounds };
 }
 
 function studioEdgeLabels(
@@ -844,7 +931,7 @@ function studioEdgeLabels(
       attrs: {
         label: {
           text: topologyLabel,
-          fill: isCycle ? (dark ? "#7dd3fc" : "#165f50") : (dark ? "#cbd5e1" : "#55798c"),
+          fill: isCycle ? (dark ? "#7dd3fc" : "#165f50") : (dark ? "#cbd5e1" : "#426b7a"),
           fontSize: 10,
           fontWeight: 800
         },

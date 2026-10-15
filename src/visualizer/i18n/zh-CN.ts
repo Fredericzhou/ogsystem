@@ -791,6 +791,8 @@ export const zhCN = {
   "workbench.diagnostics": "{count} 条诊断",
   "workbench.graph": "图编排",
   "workbench.source": "源码",
+  "workbench.switchToGraph": "切换到图编排",
+  "workbench.switchToSource": "切换到源码",
   "workbench.rendered": "渲染",
   "workbench.structure": "结构",
   "workbench.bridge": "图编排工作区",

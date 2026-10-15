@@ -966,8 +966,11 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
 
   const modeTabsHtml = renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText });
   assert.equal(modeTabsHtml, "");
-  assert.match(renderWorkbenchViewTabsHtml({ buildMode: "edit", workbenchView: "source", t, escapeText }), /data-workbench-view="source"/);
-  assert.match(renderWorkbenchViewTabsHtml({ buildMode: "debug", workbenchView: "source", t, escapeText }), /data-workbench-view="source"/);
+  const sourceViewToggle = renderWorkbenchViewTabsHtml({ buildMode: "edit", workbenchView: "source", t, escapeText });
+  assert.match(sourceViewToggle, /data-workbench-view-toggle/);
+  assert.match(sourceViewToggle, /data-workbench-view="source"/);
+  assert.equal((sourceViewToggle.match(/data-workbench-view-toggle/g) || []).length, 1);
+  assert.match(renderWorkbenchViewTabsHtml({ buildMode: "debug", workbenchView: "source", t, escapeText }), /data-workbench-view-toggle/);
   assert.match(renderWorkbenchActionsHtml({ dirty: false, t, escapeText }), /id="build-save" disabled/);
   assert.equal(renderWorkbenchModeBodyHtml({
     buildMode: "debug",

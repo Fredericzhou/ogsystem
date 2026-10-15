@@ -317,11 +317,21 @@ function cloneJson(value) {
 function findWorkbenchViewButton(harness, view) {
   const scope = harness.document.getElementById("global-status-context") ?? harness.document;
   const matches = scope
-    .querySelectorAll(`[data-workbench-view="${view}"]`)
+    .querySelectorAll("[data-workbench-view-toggle]")
     .filter((button) => button.getAttribute("data-workbench-view") === view);
   return matches.findLast((button) => (button.listeners?.get("click")?.length ?? 0) > 0)
     ?? matches.at(-1)
     ?? null;
+}
+
+async function switchWorkbenchView(harness, view) {
+  const current = findWorkbenchViewButton(harness, view);
+  if (current) return current;
+  const scope = harness.document.getElementById("global-status-context") ?? harness.document;
+  const toggle = scope.querySelectorAll("[data-workbench-view-toggle]").at(-1);
+  assert.ok(toggle);
+  await toggle.click();
+  return findWorkbenchViewButton(harness, view);
 }
 
 function findStudioSideTabButton(harness, tab) {
@@ -657,6 +667,9 @@ function matchesSelector(element, selector) {
   }
   if (selector === "[data-studio-bridge-fullscreen]") {
     return Object.hasOwn(element.attributes, "data-studio-bridge-fullscreen");
+  }
+  if (selector === "[data-workbench-view-toggle]") {
+    return Object.hasOwn(element.attributes, "data-workbench-view-toggle");
   }
   if (selector === "[data-workbench-view]") {
     return Object.hasOwn(element.attributes, "data-workbench-view");
@@ -4289,9 +4302,8 @@ test("visualizer client keeps the workbench editor visible with source intact du
   const harness = await createClientHarness();
   await openDesignTab(harness);
 
-  const sourceTab = findWorkbenchViewButton(harness, "source");
+  const sourceTab = await switchWorkbenchView(harness, "source");
   assert.ok(sourceTab);
-  await sourceTab.click();
   await settle();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-new-draft")));
 
@@ -4326,9 +4338,8 @@ test("visualizer client debounces workbench validation to the latest input", asy
   const harness = await createClientHarness();
   await openDesignTab(harness);
 
-  const sourceTab = findWorkbenchViewButton(harness, "source");
+  const sourceTab = await switchWorkbenchView(harness, "source");
   assert.ok(sourceTab);
-  await sourceTab.click();
   await settle();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-editor")));
 
@@ -4394,9 +4405,8 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   const harness = await createClientHarness({ readinessCanDryRun: true });
   await openDesignTab(harness);
 
-  const sourceTab = findWorkbenchViewButton(harness, "source");
+  const sourceTab = await switchWorkbenchView(harness, "source");
   assert.ok(sourceTab);
-  await sourceTab.click();
   await settle();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-new-draft")));
 
@@ -4502,7 +4512,7 @@ test("visualizer client removes the separate dry-run action button and keeps Bui
   const debugTabButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab=\"debug\"]")[0];
   assert.ok(debugTabButton);
   assert.ok(findWorkbenchViewButton(harness, "bridge"));
-  assert.ok(findWorkbenchViewButton(harness, "source"));
+  assert.equal(harness.document.getElementById("global-status-context").querySelectorAll("[data-workbench-view-toggle]").length, 1);
   assert.equal(harness.document.getElementById("workbench-tabs").textContent, "");
 });
 
@@ -4510,12 +4520,7 @@ test("visualizer client keeps the right-side shell mounted when switching betwee
   const harness = await createClientHarness({ readinessCanDryRun: true });
   await openDesignTab(harness);
 
-  const sourceViewButton = findWorkbenchViewButton(harness, "source");
-  const graphViewButton = findWorkbenchViewButton(harness, "bridge");
-  assert.ok(sourceViewButton);
-  assert.ok(graphViewButton);
-
-  await sourceViewButton.click();
+  assert.ok(await switchWorkbenchView(harness, "source"));
   await settle();
   assert.equal(
     harness.document.getElementById("studio-graph-root").getAttribute("data-workbench-root-mode"),
@@ -4523,7 +4528,7 @@ test("visualizer client keeps the right-side shell mounted when switching betwee
   );
   assert.ok(harness.document.getElementById("workbench-editor"));
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab=\"debug\"]").length);
-  await graphViewButton.click();
+  assert.ok(await switchWorkbenchView(harness, "bridge"));
   await settle();
   assert.equal(
     harness.document.getElementById("studio-graph-root").getAttribute("data-workbench-root-mode"),
@@ -4685,10 +4690,10 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   assert.ok(findWorkbenchViewButton(harness, "bridge"));
-  assert.equal(findWorkbenchViewButton(harness, "bridge").getAttribute("aria-pressed"), "true");
+  assert.equal(findWorkbenchViewButton(harness, "bridge").getAttribute("data-workbench-view"), "bridge");
   assert.equal(harness.document.getElementById("workbench-tabs").textContent, "");
   assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/i);
-  await bridgeTab.click();
+  await switchWorkbenchView(harness, "bridge");
   await settle();
 
   let latestMount = latestEditableMount();
@@ -4934,7 +4939,8 @@ test("visualizer client retries Studio graph mount until the Build panel is visi
   buildPanel.hidden = true;
   const bridgeButton = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeButton);
-  await bridgeButton.click();
+  await switchWorkbenchView(harness, "source");
+  await switchWorkbenchView(harness, "bridge");
   await settle();
   assert.equal(mountCalls.length, initialMountCalls);
 
@@ -5029,9 +5035,8 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
   assert.equal(latestEditableMount().authoring.flows["2:demo-analyst:REVIEW:qa-reviewer"].label, "进入复核");
   assert.ok(latestEditableMount().canvas.nodes.some((node) => node.roleId === "qa-reviewer"));
   assert.ok(latestEditableMount().canvas.edges.some((edge) => edge.eventType === "REVIEW" && edge.label === "进入复核"));
-  const sourceTab = findWorkbenchViewButton(harness, "source");
+  const sourceTab = await switchWorkbenchView(harness, "source");
   assert.ok(sourceTab);
-  await sourceTab.click();
   await settle();
   await waitForCondition(() => /qa-reviewer/.test(harness.document.getElementById("workbench-body").textContent));
   assert.match(harness.document.getElementById("workbench-body").textContent, /qa-reviewer/);

@@ -50,7 +50,7 @@ export function renderPageShellStyles(): string {
       --panel-deep: #f1f5f3;
       --border: #dbe5df;
       --text: #243b32;
-      --muted: #65776f;
+      --muted: #52665e;
       --accent: #1b7662;
       --accent-soft: rgba(27, 118, 98, 0.1);
       --ok: #18794e;
@@ -67,7 +67,7 @@ export function renderPageShellStyles(): string {
       --graph-panel: #ffffff;
       --graph-inset: #f3f7f4;
       --graph-border: #dce8e2;
-      --graph-muted: #6b7e78;
+      --graph-muted: #52665e;
       --graph-text: #33483f;
       --graph-strong-text: #243b32;
       --graph-hover: #e7f4ef;
@@ -1275,6 +1275,37 @@ export function renderPageShellStyles(): string {
     .workbench-view-tabs {
       justify-content: flex-start;
       margin-bottom: 0;
+    }
+    .workbench-view-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      min-height: 32px;
+      padding: 3px;
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--control-bg-strong);
+      border-color: var(--control-border-strong);
+    }
+    .workbench-view-toggle .workbench-view-option {
+      padding: 4px 9px;
+      border-radius: 999px;
+      color: var(--muted);
+      line-height: 1.1;
+      transition: color 120ms ease, background 120ms ease;
+    }
+    .workbench-view-toggle .workbench-view-option.is-active {
+      color: var(--text);
+      background: var(--tab-active-bg);
+    }
+    .workbench-view-toggle .workbench-view-divider {
+      color: var(--muted);
+      opacity: 0.72;
+      user-select: none;
+    }
+    .workbench-view-toggle:hover .workbench-view-option:not(.is-active) {
+      color: var(--text);
     }
     .build-submenu-tabs {
       margin-left: 10px;
@@ -3681,11 +3712,25 @@ export function renderPageShellStyles(): string {
     :root[data-visualizer-theme="light"] .hint.severity-warning { color: #805d16; }
     :root[data-visualizer-theme="light"] .event-top .severity-info,
     :root[data-visualizer-theme="light"] .hint.severity-info { color: #245f78; }
+    :root[data-visualizer-theme="light"] .stat.is-mode,
+    :root[data-visualizer-theme="light"] .stat.is-transitions,
+    :root[data-visualizer-theme="light"] .studio-debug-metric.is-transitions > strong { color: #17637b; }
+    :root[data-visualizer-theme="light"] .stat.is-active-branches,
+    :root[data-visualizer-theme="light"] .studio-debug-metric.is-flows > strong { color: #177267; }
+    :root[data-visualizer-theme="light"] .stat.is-pending-reviews,
+    :root[data-visualizer-theme="light"] .studio-debug-metric.is-reviews > strong { color: #806018; }
+    :root[data-visualizer-theme="light"] .stat.is-recent-audits { --stat-accent: #287044; }
+    :root[data-visualizer-theme="light"] .studio-debug-metric > span,
+    :root[data-visualizer-theme="light"] .stat span { color: #53685e; }
     :root[data-visualizer-theme="light"] .global-status { backdrop-filter: none; }
     :root[data-visualizer-theme="light"] .button { background: #fff; }
     :root[data-visualizer-theme="light"] .button:hover { border-color: #84b9a0; background: #eef7f2; box-shadow: 0 2px 8px rgba(35, 67, 56, 0.1); }
     :root[data-visualizer-theme="light"] .button.primary { border-color: #8dc4aa; background: #e1f2e9; color: #145b47; }
     :root[data-visualizer-theme="light"] .button.subtle { background: #f7faf8; color: #53685e; }
+    :root[data-visualizer-theme="light"] .workbench-view-toggle { background: #f1f6f3; border-color: #bdccc3; color: #486257; }
+    :root[data-visualizer-theme="light"] .workbench-view-toggle .workbench-view-option { color: #5a7065; }
+    :root[data-visualizer-theme="light"] .workbench-view-toggle .workbench-view-option.is-active { color: #164f40; background: #dcefe7; }
+    :root[data-visualizer-theme="light"] .workbench-view-toggle .workbench-view-divider { color: #789087; }
     :root[data-visualizer-theme="light"] .button.warn { color: #805d16; }
     :root[data-visualizer-theme="light"] .button.danger { color: #9e423c; }
     :root[data-visualizer-theme="light"] .segmented,
@@ -3770,6 +3815,8 @@ export function renderPageShellStyles(): string {
       background: #12354b;
       color: #d7f3ff;
     }
+    :root[data-visualizer-theme="dark"] .workbench-view-toggle { background: #0f1b2d; border-color: #334155; }
+    :root[data-visualizer-theme="dark"] .workbench-view-toggle .workbench-view-option.is-active { color: #e0f2fe; background: #12354b; }
     :root[data-visualizer-theme="dark"] .button.warn { color: #fcd34d; }
     :root[data-visualizer-theme="dark"] .button.danger { color: #fca5a5; }
     :root[data-visualizer-theme="dark"] .button.visualizer-theme-toggle:not(.primary):not(.warn):not(.danger) {

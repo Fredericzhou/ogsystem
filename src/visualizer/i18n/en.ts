@@ -787,6 +787,8 @@ export const en = {
   "workbench.diagnostics": "{count} diagnostics",
   "workbench.graph": "Graph",
   "workbench.source": "Source",
+  "workbench.switchToGraph": "Switch to Graph",
+  "workbench.switchToSource": "Switch to Source",
   "workbench.rendered": "Rendered",
   "workbench.structure": "Structure",
   "workbench.bridge": "Graph workspace",

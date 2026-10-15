@@ -1655,7 +1655,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!slot || typeof slot.querySelectorAll !== "function") {
         return [];
       }
-      return Array.from(slot.querySelectorAll("[data-workbench-view]"));
+      return Array.from(slot.querySelectorAll("[data-workbench-view-toggle]"));
     }
 
     function renderWorkbenchViewTabs() {
@@ -1684,7 +1684,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function bindWorkbenchViewButtons() {
       for (const button of workbenchViewButtons()) {
         bindOnce(button, "click", "workbench-view", () => {
-          const nextView = button.getAttribute("data-workbench-view") || "bridge";
+          const currentView = button.getAttribute("data-workbench-view") === "source" ? "source" : "bridge";
+          const nextView = currentView === "source" ? "bridge" : "source";
           state.workbenchView = nextView;
           state.buildMode = "edit";
           if (state.workbenchView === "bridge") {

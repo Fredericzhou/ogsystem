@@ -9,6 +9,15 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
 
+async function setWorkbenchView(page: import("@playwright/test").Page, view: "bridge" | "source"): Promise<void> {
+  const toggle = page.locator("[data-workbench-view-toggle]").last();
+  await expect(toggle).toBeVisible();
+  if (await toggle.getAttribute("data-workbench-view") !== view) {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("data-workbench-view", view);
+}
+
 async function seedProject(workdir: string): Promise<void> {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
@@ -269,13 +278,13 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
     const globalStatusBar = page.locator("footer.status-bar.global-status");
     const workbenchViewSlot = globalStatusBar.locator("#global-status-context");
-    const bridgeViewButton = workbenchViewSlot.locator('[data-workbench-view="bridge"]');
-    const sourceViewButton = workbenchViewSlot.locator('[data-workbench-view="source"]');
+    const viewToggle = workbenchViewSlot.locator("[data-workbench-view-toggle]");
     await expect(globalStatusBar).toBeVisible();
     await expect(workbenchViewSlot).toBeVisible();
-    await expect(bridgeViewButton).toBeVisible();
-    await expect(sourceViewButton).toBeVisible();
-    await bridgeViewButton.click();
+    await expect(viewToggle).toBeVisible();
+    await setWorkbenchView(page, "source");
+    await setWorkbenchView(page, "bridge");
+    await setWorkbenchView(page, "bridge");
 
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeHidden();
@@ -435,10 +444,10 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(debugPanel.locator("#workbench-run-laws-path")).toBeVisible();
     await expect(debugPanel).toContainText(/Select an exec role|请选择一个 exec 角色/);
     await expectDockedSelectionAligned(page);
-    await sourceViewButton.click();
+    await setWorkbenchView(page, "source");
     await expect(page.locator("#workbench-editor")).toBeVisible();
     await expect(page.locator("#workbench-editor")).toContainText("demo-analyst");
-    await bridgeViewButton.click();
+    await setWorkbenchView(page, "bridge");
     await waitForStudioCell(page, "demo-analyst");
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
@@ -663,7 +672,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await waitForStudioCell(page, "demo-analyst");
 
     const workbenchBody = page.locator("#workbench-body");
-    await page.locator('[data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeHidden();
@@ -760,7 +769,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       const input = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
       return Boolean(input && role && right && input.top < role.top && role.top < right.top);
     })).toBe(true);
-    await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-workbench-view-toggle]").last()).toHaveAttribute("data-workbench-view", "bridge");
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="undo"]')).toBeVisible();
     await expectDockedSelectionAligned(page);
@@ -862,7 +871,7 @@ test("Studio graph controls expose localized names in English and Simplified Chi
     await expect.poll(async () => page.locator("#console-tabs [role=tab]").count()).toBeGreaterThan(0);
     const openGraph = async () => {
       await page.locator("#console-tab-design").click();
-      await page.locator('[data-workbench-view="bridge"]').click();
+      await setWorkbenchView(page, "bridge");
       await expect(page.locator("#studio-graph-root")).toBeVisible();
       await waitForStudioCell(page, "demo-analyst");
     };
@@ -931,7 +940,7 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient));
     await expect.poll(async () => page.locator("#console-tabs [role=tab]").count()).toBeGreaterThan(0);
     await page.locator("#console-tab-design").click();
-    await page.locator('[data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     const graph = page.locator("#studio-graph-root");
     await expect(graph).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
@@ -1282,7 +1291,7 @@ test("SCC container drag moves every member node with the container", async ({ p
     await page.goto(started.url);
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
     await page.locator("#console-tab-design").click();
-    await page.locator('[data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     await waitForStudioCell(page, "demo-analyst");
     await waitForStudioCell(page, "demo-intake");
 
@@ -1724,7 +1733,7 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     await page.goto(started.url);
     const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
     await page.getByRole("tab", { name: designTabName }).click();
-    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     const systemSettings = page.locator(".studio-system-settings");
     await expect(systemSettings).toBeVisible();
@@ -1833,7 +1842,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     await page.goto(started.url);
     const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
     await page.getByRole("tab", { name: designTabName }).click();
-    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
     const rolesSection = page.locator("[data-studio-role-list-section]");
@@ -1946,7 +1955,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     });
     await page.reload();
     await page.getByRole("tab", { name: designTabName }).click();
-    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
     await page.locator('[data-studio-role-id="test-operator"]').click();
     const reloadedReviewerEditor = page.locator('[data-role-config-editor="test-operator"]');
@@ -1967,7 +1976,7 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
     await page.goto(started.url);
     const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
     await page.getByRole("tab", { name: designTabName }).click();
-    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
 
     const graph = page.locator("#studio-graph-root");
     const layoutSelect = graph.locator("[data-studio-graph-layout]");
@@ -2121,7 +2130,7 @@ test("visualizer theme switches the complete graph workspace and persists across
     await page.screenshot({ path: path.join(os.tmpdir(), "ogs-vis-home-light.png"), fullPage: true });
     const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
     await page.getByRole("tab", { name: designTabName }).click();
-    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "bridge");
     await waitForStudioCell(page, "demo-analyst");
     await expect.poll(() => page.locator("[data-studio-canvas-shell]").evaluate((element) => getComputedStyle(element).getPropertyValue("--studio-inspector-width").trim())).toBe("340px");
 

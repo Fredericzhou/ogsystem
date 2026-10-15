@@ -5,6 +5,15 @@ import path from "node:path";
 
 import { startVisualizationServer } from "../dist/visualizer/server.js";
 
+async function setWorkbenchView(page: import("@playwright/test").Page, view: "bridge" | "source"): Promise<void> {
+  const toggle = page.locator("[data-workbench-view-toggle]").last();
+  await expect(toggle).toBeVisible();
+  if (await toggle.getAttribute("data-workbench-view") !== view) {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("data-workbench-view", view);
+}
+
 async function seedProject(workdir: string): Promise<void> {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
@@ -273,15 +282,15 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
 
     const globalStatusBar = page.locator("footer.status-bar.global-status");
     const workbenchViewSlot = globalStatusBar.locator("#global-status-context");
-    const bridgeViewButton = workbenchViewSlot.locator('[data-workbench-view="bridge"]');
-    const sourceViewButton = workbenchViewSlot.locator('[data-workbench-view="source"]');
+    const viewToggle = workbenchViewSlot.locator("[data-workbench-view-toggle]");
 
     await expect(globalStatusBar).toBeVisible();
     await expect(workbenchViewSlot).toBeVisible();
-    await expect(bridgeViewButton).toBeVisible();
-    await expect(sourceViewButton).toBeVisible();
+    await expect(viewToggle).toBeVisible();
+    await setWorkbenchView(page, "source");
+    await setWorkbenchView(page, "bridge");
 
-    await bridgeViewButton.click();
+    await setWorkbenchView(page, "bridge");
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
@@ -344,11 +353,11 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expectDockedSelectionAligned(page);
     await expectBuildCanvasIdentityStable(page);
 
-    await sourceViewButton.click();
+    await setWorkbenchView(page, "source");
     await expect(page.locator("#workbench-editor")).toBeVisible();
     await expect(page.locator("#workbench-editor")).toContainText("demo-analyst");
 
-    await bridgeViewButton.click();
+    await setWorkbenchView(page, "bridge");
     await waitForStudioCell(page, "demo-analyst");
     await rememberBuildCanvasIdentity(page);
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
@@ -391,7 +400,8 @@ test("Build workbench remains usable on a narrow mobile viewport", async ({ page
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(started.url);
     await page.locator("#console-tab-design").click();
-    await page.locator('[data-workbench-view="bridge"]').click();
+    await setWorkbenchView(page, "source");
+    await setWorkbenchView(page, "bridge");
     await waitForStudioCell(page, "demo-analyst");
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('[data-studio-graph-action="reset-view"]')).toBeVisible();
