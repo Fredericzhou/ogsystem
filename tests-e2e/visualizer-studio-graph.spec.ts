@@ -2049,16 +2049,17 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
 
 test("visualizer theme switches the complete graph workspace and persists across reloads", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-theme-"));
-  await seedProject(workdir);
+  await seedCyclicProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(started.url);
     await expect(page.locator("#console-panel-project")).toBeVisible();
-    await expect(page.locator(".visualizer-theme-switch")).toBeVisible();
-    await expect(page.locator(".visualizer-theme-switch").locator("..")).toHaveClass(/top-nav-utilities/);
+    const responsiveThemeToggle = page.locator("[data-visualizer-theme-toggle]");
+    await expect(responsiveThemeToggle).toBeVisible();
+    await expect(responsiveThemeToggle.locator("..")).toHaveClass(/top-nav-utilities/);
     await expect.poll(async () => {
-      const bounds = await page.locator(".visualizer-theme-switch").boundingBox();
+      const bounds = await responsiveThemeToggle.boundingBox();
       return Boolean(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391);
     }).toBe(true);
     const mobileHomeWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -2084,8 +2085,8 @@ test("visualizer theme switches the complete graph workspace and persists across
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(started.url);
     await expect(page.locator("#console-panel-project")).toBeVisible();
-    await expect(page.locator(".visualizer-theme-switch")).toBeVisible();
-    await expect(page.locator(".visualizer-theme-switch").locator("..")).toHaveClass(/top-nav-utilities/);
+    await expect(page.locator("[data-visualizer-theme-toggle]")).toBeVisible();
+    await expect(page.locator("[data-visualizer-theme-toggle]").locator("..")).toHaveClass(/top-nav-utilities/);
     const homeAudit = await page.evaluate(() => ({
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
@@ -2108,21 +2109,67 @@ test("visualizer theme switches the complete graph workspace and persists across
     await waitForStudioCell(page, "demo-analyst");
     await expect.poll(() => page.locator("[data-studio-canvas-shell]").evaluate((element) => getComputedStyle(element).getPropertyValue("--studio-inspector-width").trim())).toBe("340px");
 
-    const lightTheme = page.locator('[data-visualizer-theme-choice="light"]');
-    const darkTheme = page.locator('[data-visualizer-theme-choice="dark"]');
-    await expect(lightTheme).toHaveAttribute("aria-pressed", "true");
+    const themeToggle = page.locator("[data-visualizer-theme-toggle]");
+    await expect(themeToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(themeToggle).toHaveAttribute("aria-label", /Switch to dark mode|切换到深色模式/);
     await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "light");
+    const auditRoleColors = () => page.locator("#studio-graph-root").evaluate((root) => {
+      const luminance = (value: string) => {
+        const channels = value.match(/[0-9.]+/g)?.slice(0, 3).map(Number) ?? [];
+        const linear = channels.map((channel) => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+      };
+      const contrast = (foreground: string, background: string) => {
+        const first = luminance(foreground);
+        const second = luminance(background);
+        return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+      };
+      const roles = Array.from(root.querySelectorAll<SVGGElement>(".x6-node[data-cell-id]"))
+        .flatMap((node) => {
+          const badge = node.querySelector<SVGRectElement>(".studio-role-marker-badge");
+          const label = node.querySelector<SVGTextElement>(".studio-role-marker-text");
+          const body = node.querySelector<SVGRectElement>("rect");
+          if (!badge || badge.getAttribute("visibility") === "hidden" || !label || !body) return [];
+          const foreground = getComputedStyle(label).fill;
+          const badgeBackground = getComputedStyle(badge).fill;
+          return [{
+            badgeBackground,
+            bodyBackground: getComputedStyle(body).fill,
+            contrast: contrast(foreground, badgeBackground)
+          }];
+        });
+      const toggle = document.querySelector<HTMLElement>("[data-visualizer-theme-toggle]");
+      const toggleStyle = toggle ? getComputedStyle(toggle) : null;
+      return {
+        roles,
+        toggleContrast: toggleStyle ? contrast(toggleStyle.color, toggleStyle.backgroundColor) : 0
+      };
+    });
+    const lightColorAudit = await auditRoleColors();
+    expect(lightColorAudit.roles.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(lightColorAudit.roles.map((role) => role.badgeBackground)).size).toBe(lightColorAudit.roles.length);
+    expect(new Set(lightColorAudit.roles.map((role) => role.bodyBackground)).size).toBe(lightColorAudit.roles.length);
+    expect(lightColorAudit.roles.every((role) => role.contrast >= 4.5)).toBe(true);
+    expect(lightColorAudit.toggleContrast).toBeGreaterThanOrEqual(4.5);
     await page.screenshot({ path: path.join(os.tmpdir(), "ogs-vis-theme-light.png"), fullPage: true });
     const initialRoleBounds = await page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').boundingBox();
     const toolbar = page.locator("#studio-graph-root .studio-graph-toolbar-main");
     const toolbarAudit = await toolbar.evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
     expect(toolbarAudit.scrollWidth).toBeLessThanOrEqual(toolbarAudit.clientWidth + 1);
 
-    await darkTheme.click();
+    await themeToggle.click();
     await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "dark");
-    await expect(darkTheme).toHaveAttribute("aria-pressed", "true");
-    await expect(lightTheme).toHaveAttribute("aria-pressed", "false");
+    await expect(themeToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(themeToggle).toHaveAttribute("aria-label", /Switch to light mode|切换到浅色模式/);
     await expect.poll(() => page.locator("#refresh").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(23, 35, 55)");
+    const darkColorAudit = await auditRoleColors();
+    expect(new Set(darkColorAudit.roles.map((role) => role.badgeBackground)).size).toBe(darkColorAudit.roles.length);
+    expect(new Set(darkColorAudit.roles.map((role) => role.bodyBackground)).size).toBe(darkColorAudit.roles.length);
+    expect(darkColorAudit.roles.every((role) => role.contrast >= 4.5)).toBe(true);
+    expect(darkColorAudit.toggleContrast).toBeGreaterThanOrEqual(4.5);
     const darkControlBackground = await page.locator("#refresh").evaluate((element) => getComputedStyle(element).backgroundColor);
     expect(darkControlBackground).toBe("rgb(23, 35, 55)");
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("ogs.visualizer.theme"))).toBe("dark");
@@ -2135,7 +2182,7 @@ test("visualizer theme switches the complete graph workspace and persists across
 
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "dark");
-    await expect(page.locator('[data-visualizer-theme-choice="dark"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-visualizer-theme-toggle]")).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#studio-graph-root")).toBeVisible();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
@@ -2241,4 +2288,42 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
   await expect(page.locator("#release-gate")).toContainText(/release candidate ready/i);
   await expect(page.locator("#release-gate")).toContainText(/No blocking readiness issues\./i);
   expect(pageErrors).toEqual([]);
+});
+
+test("deployed example workspace exposes a persistent single-button theme toggle", async ({ page }) => {
+  const baseUrls = (process.env.OGS_VISUALIZER_BASE_URLS || process.env.OGS_VISUALIZER_BASE_URL || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  test.skip(!baseUrls.length, "Set OGS_VISUALIZER_BASE_URLS to run against example workspaces.");
+
+  for (const baseUrl of baseUrls) {
+    await page.goto(baseUrl);
+    await expect(page.locator("#console-panel-project")).toBeVisible();
+
+    const toggle = page.locator("[data-visualizer-theme-toggle]");
+    await expect(toggle).toBeVisible();
+    await expect(page.locator("[data-visualizer-theme-choice]")).toHaveCount(0);
+    const initialTheme = await page.locator("html").getAttribute("data-visualizer-theme");
+    expect(initialTheme === "light" || initialTheme === "dark").toBe(true);
+    await expect(toggle).toHaveAttribute("aria-pressed", initialTheme === "dark" ? "true" : "false");
+    await page.locator('[data-console-tab="design"]').click();
+    await expect(page.locator("#console-panel-build")).toBeVisible();
+    const workbenchText = await page.locator("#workbench-body").innerText();
+    if (/not initialized as an OGSystem project|尚未初始化为 OGSystem 项目/i.test(workbenchText)) {
+      expect(workbenchText).toMatch(/Open Project and initialize|打开“项目”并初始化当前目录/i);
+    }
+
+    await toggle.click();
+    const nextTheme = initialTheme === "dark" ? "light" : "dark";
+    await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", nextTheme);
+    await expect(toggle).toHaveAttribute("aria-pressed", nextTheme === "dark" ? "true" : "false");
+    await expect(toggle).toHaveAttribute("aria-label", nextTheme === "dark"
+      ? /Switch to light mode|切换到浅色模式/
+      : /Switch to dark mode|切换到深色模式/);
+
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", nextTheme);
+    await expect(page.locator("[data-visualizer-theme-toggle]")).toHaveAttribute("aria-pressed", nextTheme === "dark" ? "true" : "false");
+  }
 });

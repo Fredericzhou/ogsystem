@@ -2913,7 +2913,7 @@ test("visualizer client renders empty workspace without project API writes", asy
   await waitForCondition(() => /Initialize current directory|Start a new OGSystem project here/i.test(harness.document.getElementById("project-wizard").textContent));
   assert.match(harness.document.getElementById("project-wizard").textContent, /Start a new OGSystem project here|Initialize current directory/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /initialize the current directory|not initialized/i);
-  assert.match(harness.document.getElementById("graph-view").textContent, /initialize the current directory|project first/i);
+  assert.match(harness.document.getElementById("graph-view").textContent, /open project and initialize|project first/i);
   assert.equal(harness.document.getElementById("build-dry-run"), null);
   assert.equal(harness.document.getElementById("build-save"), null);
   assert.equal(harness.document.getElementById("resume-run").hidden, true);

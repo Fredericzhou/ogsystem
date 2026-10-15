@@ -779,8 +779,8 @@ test("visualizer dto guards preserve finite numbers and booleans after helper co
 
 test("client lifecycle panel renderers expose workspace and operate tab HTML", () => {
   const empty = renderWorkspaceEmptyStateHtml({ kind: "build", t, escapeText });
-  assert.match(empty, /Initialize the current directory before building/);
-  assert.match(empty, /Use Project to initialize the current directory/);
+  assert.match(empty, /This directory is not initialized as an OGSystem project yet/);
+  assert.match(empty, /Open Project and initialize this directory to start building/);
   assert.doesNotMatch(empty, /<script/);
 
   const tabs = renderOperateTabsHtml({ operateTab: "operations", t, escapeText });

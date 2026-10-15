@@ -3706,8 +3706,28 @@ export function renderPageShellStyles(): string {
     :root[data-visualizer-theme="light"] .console-tabs .button:focus-visible {
       outline-color: rgba(27, 118, 98, 0.72);
     }
-    .visualizer-theme-switch { display: inline-flex; flex: 0 0 auto; }
-    .visualizer-theme-switch .button { min-width: 52px; }
+    .visualizer-theme-toggle {
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 36px;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      color: var(--accent);
+    }
+    .visualizer-theme-toggle svg {
+      display: none;
+      width: 19px;
+      height: 19px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+    }
+    :root[data-visualizer-theme="light"] .visualizer-theme-toggle [data-theme-icon="moon"],
+    :root[data-visualizer-theme="dark"] .visualizer-theme-toggle [data-theme-icon="sun"] { display: block; }
+    :root[data-visualizer-theme="light"] .visualizer-theme-toggle { color: #146c5b; }
     :root[data-visualizer-theme="dark"] .button:not(.primary):not(.warn):not(.danger) {
       border-color: #334155;
       background: #172337;
@@ -3725,6 +3745,16 @@ export function renderPageShellStyles(): string {
     }
     :root[data-visualizer-theme="dark"] .button.warn { color: #fcd34d; }
     :root[data-visualizer-theme="dark"] .button.danger { color: #fca5a5; }
+    :root[data-visualizer-theme="dark"] .button.visualizer-theme-toggle:not(.primary):not(.warn):not(.danger) {
+      border-color: #236b7f;
+      background: #12354b;
+      color: #7dd3fc;
+    }
+    :root[data-visualizer-theme="dark"] .button.visualizer-theme-toggle:not(.primary):not(.warn):not(.danger):hover {
+      border-color: #38bdf8;
+      background: #17435a;
+      color: #bae6fd;
+    }
     :root[data-visualizer-theme="dark"] .segmented,
     :root[data-visualizer-theme="dark"] .console-tabs,
     :root[data-visualizer-theme="dark"] .top-nav-utilities {

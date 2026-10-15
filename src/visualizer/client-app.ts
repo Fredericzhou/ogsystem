@@ -402,17 +402,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } catch {
         // Keep the current session usable when storage is restricted.
       }
-      for (const button of Array.from(document.querySelectorAll("[data-visualizer-theme-choice]"))) {
-        const active = button.getAttribute("data-visualizer-theme-choice") === nextTheme;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-pressed", active ? "true" : "false");
+      const themeToggle = document.querySelector("[data-visualizer-theme-toggle]");
+      if (themeToggle) {
+        const targetTheme = nextTheme === "dark" ? "light" : "dark";
+        const toggleLabel = t(targetTheme === "dark" ? "theme.switchToDark" : "theme.switchToLight");
+        themeToggle.setAttribute("aria-label", toggleLabel);
+        themeToggle.setAttribute("title", toggleLabel);
+        themeToggle.setAttribute("aria-pressed", nextTheme === "dark" ? "true" : "false");
       }
       document.dispatchEvent(new CustomEvent("ogs-visualizer-theme-change", { detail: { theme: nextTheme } }));
     }
     applyVisualizerTheme(document.documentElement.dataset.visualizerTheme);
-    for (const button of Array.from(document.querySelectorAll("[data-visualizer-theme-choice]"))) {
-      button.addEventListener("click", () => applyVisualizerTheme(button.getAttribute("data-visualizer-theme-choice")));
-    }
+    document.querySelector("[data-visualizer-theme-toggle]")?.addEventListener("click", () => {
+      applyVisualizerTheme(document.documentElement.dataset.visualizerTheme === "dark" ? "light" : "dark");
+    });
     let studioCanvasSaveChain = Promise.resolve();
     let graphViewportRouteTimer = null;
     function readStoredStudioInspectorWidth() {
@@ -5256,7 +5259,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!state.hasProject || invalidProject) {
         workbenchMetaEl.textContent = invalidProject
           ? t("workspace.invalidProjectBuildHint", undefined, "Fix the project diagnostics before editing in Build.")
-          : t("workspace.buildUnavailableTitle", undefined, "Initialize the current directory before building.");
+          : t("workspace.buildUnavailableTitle", undefined, "This directory is not initialized as an OGSystem project yet.");
         workbenchStatusEl.innerHTML = '<span class="pill warn">' + escapeText(invalidProject
           ? t("workspace.invalidProjectStatus", undefined, "invalid project")
           : t("workspace.notInitialized", undefined, "not initialized")) + '</span>';

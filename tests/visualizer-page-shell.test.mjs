@@ -49,14 +49,16 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /<html lang="zh-CN" data-visualizer-theme="light">/);
   assert.match(html, /data-visualizer-theme="light"/);
   assert.match(html, /ogs\.visualizer\.theme/);
-  assert.match(html, /data-visualizer-theme-choice="light"/);
-  assert.match(html, /data-visualizer-theme-choice="dark"/);
+  assert.match(html, /data-visualizer-theme-toggle/);
+  assert.match(html, /data-theme-icon="moon"/);
+  assert.match(html, /data-theme-icon="sun"/);
   assert.match(html, /<title>OGS多智能体图编排系统<\/title>/);
   assert.match(html, /<link rel="icon" href="data:," \/>/);
   assert.match(html, /<style>\n/);
   assert.match(styles, /--surface-panel: var\(--panel\)/);
   assert.match(styles, /--surface-section: var\(--panel-soft\)/);
   assert.match(styles, /--surface-inset: var\(--panel-deep\)/);
+  assert.match(styles, /\.visualizer-theme-toggle \{[\s\S]*?width: 36px;[\s\S]*?height: 36px;/);
   assert.match(styles, /select option \{[\s\S]*?color: #e5eefb;[\s\S]*?background-color: #0f172a/);
   assert.match(styles, /\.studio-system-settings > summary,[\s\S]*?\.studio-contract-editor > summary[\s\S]*?font-size: 13px;[\s\S]*?font-weight: 600/);
   assert.match(styles, /\.studio-system-settings \.field input,[\s\S]*?\.studio-system-settings \.field select[\s\S]*?min-height: 36px;[\s\S]*?font-size: 13px/);

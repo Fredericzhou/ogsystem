@@ -30,9 +30,9 @@ export function renderWorkspaceEmptyStateHtml(args: {
     : kind === "operate"
       ? t("workspace.operateUnavailableTitle", undefined, "No project or runs are available yet.")
       : kind === "build"
-        ? t("workspace.buildUnavailableTitle", undefined, "Initialize the current directory before building.")
+        ? t("workspace.buildUnavailableTitle", undefined, "This directory is not initialized as an OGSystem project yet.")
         : t("workspace.projectUnavailableTitle", undefined, "This directory is not initialized as an OGSystem project.");
-  const hint = t("workspace.createOrLoadHint", undefined, "Use Project to initialize the current directory as an OGSystem project.");
+  const hint = t("workspace.createOrLoadHint", undefined, "Open Project and initialize this directory to start building.");
   return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.empty", undefined, "empty")) +
     '</span><span>' + escapeText(t("nav.lifecycle.project", undefined, "Project")) + '</span></div><strong>' +
     escapeText(title) + '</strong><div class="hint">' + escapeText(hint) + '</div></div>';

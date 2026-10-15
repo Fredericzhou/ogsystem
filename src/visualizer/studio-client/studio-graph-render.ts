@@ -41,7 +41,7 @@ function nodeStroke(node: GraphViewModelNode): string {
   if (node.diagnostic?.severity === "error") return "#f87171";
   if (node.diagnostic?.severity === "warning") return "#fbbf24";
   if (node.kind === "boundary") return isDarkTheme() ? "#64748b" : "#91aa9d";
-  if (node.roleSeat) return roleColorForId(node.roleId).accent;
+  if (node.roleSeat) return roleColorForId(node.roleId, isDarkTheme() ? "dark" : "light").accent;
   return isDarkTheme() ? "#52677e" : "#55798c";
 }
 
@@ -484,24 +484,24 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
   };
 }
 
-function nodeFill(node: GraphViewModelNode): string {
+function nodeFill(node: GraphViewModelNode, roleColor?: ReturnType<typeof roleColorForId>): string {
+  if (node.roleSeat) return roleColor?.fill ?? (isDarkTheme() ? "#101c2d" : "#ffffff");
   if (isDarkTheme()) return node.kind === "boundary" ? "#152235" : "#101c2d";
   if (node.kind === "boundary") return "#f1f7f3";
-  if (node.roleSeat) return "#ffffff";
   return "#ffffff";
 }
 
 function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
   const dark = isDarkTheme();
   const showRoleMarker = studioRoleMarkerVisible(node);
-  const roleColor = showRoleMarker ? roleColorForId(node.roleId) : undefined;
+  const roleColor = node.roleSeat ? roleColorForId(node.roleId, dark ? "dark" : "light") : undefined;
   const markerX = 28;
   const markerY = 10;
   return {
     body: {
       rx: node.kind === "boundary" ? 20 : 8,
       ry: node.kind === "boundary" ? 20 : 8,
-      fill: nodeFill(node),
+      fill: nodeFill(node, roleColor),
       stroke: nodeStroke(node),
       strokeWidth: node.kind === "boundary" ? 1.2 : 1.5,
       strokeDasharray: node.kind === "boundary" ? "6 4" : ""
@@ -516,7 +516,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       height: 24,
       rx: 8,
       ry: 8,
-      fill: roleColor?.fill ?? "none",
+      fill: roleColor?.accent ?? "none",
       fillOpacity: 1,
       stroke: roleColor?.accent ?? "none",
       strokeOpacity: 0.85,
@@ -530,7 +530,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       textAnchor: "middle",
       fontSize: 11,
       fontWeight: 700,
-      fill: "#29463b",
+      fill: roleColor?.ink ?? (dark ? "#e5eefb" : "#243b32"),
       visibility: showRoleMarker ? "visible" : "hidden"
     },
     label: {
