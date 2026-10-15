@@ -764,7 +764,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
   }
 });
 
-test("workdir controls fit mobile, show the app name, and saved node positions survive reload", async ({ page }) => {
+test("workdir controls fit mobile, show the project directory name, and saved node positions survive reload", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-layout-refresh-"));
   await seedCyclicProject(workdir);
   await writeFile(path.resolve(workdir, ".ogs", "project.json"), JSON.stringify({
@@ -777,7 +777,9 @@ test("workdir controls fit mobile, show the app name, and saved node positions s
     await page.setViewportSize({ width: 390, height: 844 });
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(started.url).origin });
     await page.goto(started.url);
-    await expect(page.locator("#project-name")).toHaveText("Layout Refresh Test");
+    await expect(page.locator("#project-name")).toHaveText(path.basename(workdir));
+    await expect(page.locator("#project-name")).toHaveCSS("font-size", "16px");
+    await expect(page.locator("#project-name")).toHaveCSS("font-weight", "750");
     await expect(page.getByRole("heading", { level: 2, name: "Layout Refresh Test" })).toBeVisible();
     await expect(page.locator(".project-home-directory code")).toHaveText(workdir);
     await expect(page.locator(".top-nav #workdir")).toBeHidden();

@@ -627,6 +627,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return state.project?.summary?.workdir || workdirEl?.textContent || "";
     }
 
+    function getWorkdirName(workdir = getCurrentWorkdir()) {
+      return String(workdir || "").replaceAll(String.fromCharCode(92), "/").split("/").filter(Boolean).pop() || "";
+    }
+
     function relativeToWorkdir(path) {
       if (!path) {
         return "";
@@ -5627,7 +5631,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           workdirEl.title = workspace.workdir;
         }
         if (projectNameEl) {
-          projectNameEl.textContent = String(workspace.workdir || getCurrentWorkdir()).split(/[\\/]/).filter(Boolean).pop() || "";
+          projectNameEl.textContent = getWorkdirName(workspace.workdir || getCurrentWorkdir());
           projectNameEl.hidden = !projectNameEl.textContent;
         }
         if (opsSummaryEl) opsSummaryEl.innerHTML = workspaceEmptyStateHtml("operate");
@@ -5652,7 +5656,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workdirEl.title = workdirEl.textContent || "";
       }
       if (projectNameEl) {
-        projectNameEl.textContent = state.project.summary?.project?.projectName || state.project.summary?.name || "";
+        projectNameEl.textContent = getWorkdirName() || state.project.summary?.project?.projectName || state.project.summary?.name || "";
         projectNameEl.hidden = !projectNameEl.textContent;
       }
       if (opsSummaryEl) {

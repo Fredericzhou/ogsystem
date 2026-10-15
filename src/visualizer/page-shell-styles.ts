@@ -119,9 +119,6 @@ export function renderPageShellStyles(): string {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 600;
     }
     .pill-compact {
       gap: 4px;
@@ -460,7 +457,9 @@ export function renderPageShellStyles(): string {
     }
     .brand-lockup h1 {
       margin: 0;
-      font-size: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 550;
       letter-spacing: 0;
     }
     .brand-lockup span {
@@ -469,7 +468,8 @@ export function renderPageShellStyles(): string {
     }
     .brand-lockup .project-name {
       color: var(--accent);
-      font-size: 12px;
+      font-size: 16px;
+      font-weight: 750;
     }
     .top-nav-actions {
       display: flex;

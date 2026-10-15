@@ -258,7 +258,8 @@ test("localized release warnings render without breaking project loading", async
 });
 
 test("Build workbench keeps view toggles in footer and aligns graph with docked inspector", async ({ page }) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-layout-"));
+  const workdir = path.join(await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-layout-")), "build-layout-test");
+  await mkdir(workdir);
   await seedProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
   try {
@@ -382,7 +383,8 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
 });
 
 test("Build workbench remains usable on a narrow mobile viewport", async ({ page }) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-mobile-"));
+  const workdir = path.join(await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-mobile-")), "build-mobile-test");
+  await mkdir(workdir);
   await seedProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
   try {
