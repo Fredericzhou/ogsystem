@@ -36,6 +36,8 @@ test("site uses the OGSystem graph, exports it, and runs its project", async () 
     await page.locator(".studio-graph-island .x6-node").nth(6).waitFor();
     assert.equal(await page.locator(".studio-graph-island .x6-node").count(), 7);
     assert.match(await page.locator("#graph-stage").innerText(), /任务|成果/);
+    assert.ok(await page.locator('.studio-graph-island .studio-role-marker-badge[visibility="visible"]').count() >= 5);
+    assert.ok(await page.locator(".studio-graph-island .studio-edge-label-body").count() >= 5);
     assert.equal(await page.locator('[data-studio-graph-action="export-svg"]').getAttribute("aria-label"), "导出 SVG");
 
     const downloadPromise = page.waitForEvent("download");
@@ -46,6 +48,11 @@ test("site uses the OGSystem graph, exports it, and runs its project", async () 
     await page.locator("#locale-toggle").click();
     await page.waitForFunction(() => document.querySelector("#graph-stage")?.textContent?.includes("Task"));
     assert.match(await page.locator("#graph-stage").textContent(), /Engineering\s+plan\s+shared/);
+    await page.locator("#graph-stage").click();
+    await page.keyboard.press("Control+p");
+    await page.locator('.studio-graph-island [data-studio-graph-quick-open]').waitFor({ state: "visible" });
+    await page.locator('.studio-graph-island [data-studio-graph-quick-open-input]').fill("Engineering");
+    assert.match(await page.locator(".studio-graph-quick-open-results").innerText(), /Engineering/);
 
     await page.locator("#run-button").click();
     await page.locator(".run-summary").waitFor({ timeout: 30000 });

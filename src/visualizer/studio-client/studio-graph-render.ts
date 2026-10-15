@@ -460,8 +460,8 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
     markup: [
       { tagName: "rect", selector: "body" },
       { tagName: "title", selector: "nodeTitle" },
-      { tagName: "rect", selector: "roleMarkerBadge" },
-      { tagName: "text", selector: "roleMarkerText" },
+      { tagName: "rect", selector: "roleMarkerBadge", className: "studio-role-marker-badge" },
+      { tagName: "text", selector: "roleMarkerText", className: "studio-role-marker-text" },
       { tagName: "text", selector: "label" },
       { tagName: "text", selector: "description" },
       { tagName: "circle", selector: "diagnosticBadge" },
@@ -482,7 +482,7 @@ function nodeFill(node: GraphViewModelNode): string {
 function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
   const showRoleMarker = studioRoleMarkerVisible(node);
   const roleColor = showRoleMarker ? roleColorForId(node.roleId) : undefined;
-  const markerX = 24;
+  const markerX = 28;
   const markerY = 10;
   return {
     body: {
@@ -497,17 +497,17 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       text: showRoleMarker ? formatStudioNodeLabel(node) : ""
     },
     roleMarkerBadge: {
-      x: markerX - 16,
-      y: markerY - 10,
-      width: 32,
-      height: 20,
-      rx: 10,
-      ry: 10,
+      x: markerX - 22,
+      y: markerY - 12,
+      width: 44,
+      height: 24,
+      rx: 8,
+      ry: 8,
       fill: roleColor?.fill ?? "none",
       fillOpacity: 1,
       stroke: roleColor?.accent ?? "none",
       strokeOpacity: 0.85,
-      strokeWidth: 1.2,
+      strokeWidth: 1.6,
       visibility: showRoleMarker ? "visible" : "hidden"
     },
     roleMarkerText: {
@@ -523,7 +523,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
     label: {
       text: showRoleMarker ? node.label : nodeLabel(node),
       ...(showRoleMarker ? {
-        x: 64 - node.layout.width / 2,
+        x: 70 - node.layout.width / 2,
         y: 0,
         textAnchor: "start",
         textVerticalAnchor: "middle"
@@ -539,7 +539,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
     },
     description: {
       text: node.description || "",
-      x: 64 - node.layout.width / 2,
+      x: 70 - node.layout.width / 2,
       y: 19,
       textAnchor: "start",
       textVerticalAnchor: "middle",
@@ -677,6 +677,13 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
     edge,
     width: estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label)
   })).sort((left, right) => right.width - left.width || left.edge.id.localeCompare(right.edge.id));
+  const canvasBounds = graph.container.getBoundingClientRect();
+  const viewport: StudioLabelRect = {
+    left: canvasBounds.left,
+    right: canvasBounds.right,
+    top: canvasBounds.top,
+    bottom: canvasBounds.bottom
+  };
   const reservations: StudioLabelRect[] = [];
   for (const { edge } of ordered) {
     if (!formatStudioEdgeTopologyLabel(edge) ||
@@ -701,6 +708,7 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
       labelIndex,
       visibleNodes,
       reservations,
+      viewport,
       defaultPosition?.offset ?? 0,
       showTechnicalDetails
     );
@@ -715,6 +723,7 @@ function findStudioEdgeLabelPosition(
   labelIndex: number,
   obstacles: readonly StudioLabelRect[],
   reserved: readonly StudioLabelRect[],
+  viewport: StudioLabelRect,
   preferredOffset: number,
   showTechnicalDetails: boolean
 ): { position: StudioEdgeLabelPosition; bounds: StudioLabelRect } | undefined {
@@ -739,7 +748,8 @@ function findStudioEdgeLabelPosition(
   const fractions = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95, 0.02, 0.98];
   // Keep labels attached to their route. Long-range offsets avoid collisions
   // visually, but make a flow label read as if it belongs to another edge.
-  const offsets = [...new Set([preferredOffset, 0, preferredOffset + 10, preferredOffset - 10])];
+  const offsetRange = edge.topologyOrder?.endsWith("L") ? 10 : 18;
+  const offsets = [...new Set([preferredOffset, 0, preferredOffset + offsetRange, preferredOffset - offsetRange])];
   const candidates = fractions.flatMap((fraction) => {
     const distance = length * fraction;
     const point = path.getPointAtLength(distance);
@@ -773,6 +783,8 @@ function findStudioEdgeLabelPosition(
   const predictedScore = (candidate: typeof candidates[number]) =>
     obstacles.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 10000 +
     reserved.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 1000 +
+    (candidate.bounds.left < viewport.left || candidate.bounds.right > viewport.right ||
+      candidate.bounds.top < viewport.top || candidate.bounds.bottom > viewport.bottom ? 10000 : 0) +
     Math.abs(candidate.fraction - 0.5) * 10 + Math.abs(candidate.offset - preferredOffset) * 0.01;
   const best = candidates.slice().sort((left, right) => predictedScore(left) - predictedScore(right))[0];
   if (!best) return undefined;
@@ -812,7 +824,7 @@ function studioEdgeLabels(
         offset: positions?.topology?.offset ?? -topologyLabelOffset
       },
       markup: [
-        { tagName: "rect", selector: "body" },
+        { tagName: "rect", selector: "body", className: "studio-edge-label-body" },
         { tagName: "text", selector: "label" }
       ],
       attrs: {
@@ -833,6 +845,10 @@ function studioEdgeLabels(
     });
   }
   labels.push({
+    markup: [
+      { tagName: "rect", selector: "body", className: "studio-edge-label-body" },
+      { tagName: "text", selector: "label" }
+    ],
     position: {
       distance: summaryPosition.distance,
       offset: summaryPosition.offset
@@ -841,7 +857,7 @@ function studioEdgeLabels(
       label: {
         text: renderedSummaryLabel,
         fill: "#33483f",
-        fontSize: 10,
+        fontSize: 11,
         textWrap: {
           width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,
           height: summaryLabelHeight,
@@ -851,7 +867,9 @@ function studioEdgeLabels(
       body: {
         fill: "#ffffff",
         stroke: edgeStroke(edge),
-        strokeWidth: 1
+        strokeWidth: 1.2,
+        rx: 4,
+        ry: 4
       }
     }
   });

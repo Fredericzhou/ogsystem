@@ -57,7 +57,7 @@ test("Studio role markers derive readable monograms", () => {
   assert.equal(studioRoleMonogram("风险审查", "risk-review"), "风险");
   assert.equal(studioRoleMonogram("", "test-operator"), "TO");
   assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: true }), true);
-  assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: false }), false);
+  assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: false }), true);
   assert.equal(studioRoleMarkerVisible({ roleSeat: false, editable: true }), false);
 });
 
@@ -72,9 +72,10 @@ test("Mini Program factory stored layout keeps its feedback loop clear of nodes 
   assert.ok(feedback.routing.routePoints.length >= 2);
   assert.equal(projection.diagnostics.some((item) => item.code === "EDGE_NODE_COLLISION"), false);
   assert.equal(projection.diagnostics.some((item) => item.code === "LABEL_COLLISION"), false, JSON.stringify(projection.diagnostics));
+  const storedNodes = authoring.layout.nodes;
   assert.deepEqual(
     projection.nodes.filter((item) => ["coding", "testing"].includes(item.id)).map(({ id, x, y }) => ({ id, x, y })),
-    [{ id: "coding", x: 330, y: 376 }, { id: "testing", x: 610, y: 376 }]
+    ["coding", "testing"].map((id) => ({ id, x: storedNodes[id].x, y: storedNodes[id].y }))
   );
 });
 
@@ -510,7 +511,8 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /interacting: true/);
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
-  assert.match(renderer, /text: renderedSummaryLabel,[\s\S]*?fontSize: 10/);
+  assert.match(renderer, /text: renderedSummaryLabel,[\s\S]*?fontSize: 11/);
+  assert.match(renderer, /labels\.push\(\{\s+markup: \[\s+\{ tagName: "rect", selector: "body", className: "studio-edge-label-body" \},\s+\{ tagName: "text", selector: "label" \}\s+\],\s+position: \{\s+distance: summaryPosition\.distance/s);
   assert.match(renderer, /inlineTopologyLabel = hasWrappedSummaryLabel \? formatStudioEdgeTopologyLabel\(edge\) : ""/);
   assert.match(renderer, /offset: positions\?\.topology\?\.offset \?\? -topologyLabelOffset/);
   assert.match(renderer, /textWrap: \{\r?\n\s+width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,[\s\S]*?ellipsis: false/);

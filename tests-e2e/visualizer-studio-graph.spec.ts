@@ -1491,6 +1491,8 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-minimap]')).toHaveAttribute("aria-label", "Graph minimap");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#studio-graph-direct-root [data-cell-id=\"demo-analyst\"]")).toBeVisible();
+    await expect(page.locator('#studio-graph-direct-root [data-cell-id="demo-analyst"] .studio-role-marker-badge[visibility="visible"]')).toBeAttached();
+    await expect(page.locator('#studio-graph-direct-root [data-cell-id="demo-analyst"] .studio-role-marker-text')).toHaveText("DA");
     await expect(page.locator("#studio-graph-direct-root [data-studio-graph-minimap]")).toBeVisible();
     await expect(page.locator("#studio-graph-direct-root [data-minimap-role-id=\"demo-analyst\"]")).toBeVisible();
     const directGraph = page.locator("#studio-graph-direct-root");
@@ -1507,6 +1509,7 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
       topologyLabels: expect.arrayContaining([expect.stringMatching(/^#/)]),
       hasTargetMarker: true
     });
+    await expect.poll(() => directGraph.locator(".x6-edge-label rect").count()).toBeGreaterThan(0);
 
     await directGraph.locator('[data-studio-graph-action="topology-order"]').evaluate((button) => button.click());
     await expect(directGraph.locator('[data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "false");
@@ -1539,6 +1542,10 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await page.keyboard.press(quickOpenShortcut);
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeVisible();
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]')).toHaveAttribute("aria-label", "Quick open");
+    await page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]').fill("Demo Analyst");
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-item] strong').first()).toHaveText("Demo Analyst");
+    await page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]').fill("handoff");
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-item] strong')).toContainText("Demo Analyst → QA Reviewer · handoff");
     await page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]').fill("demo-analyst");
     await page.keyboard.press("Enter");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeHidden();
@@ -1971,7 +1978,21 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
         && roleNameBounds.x + roleNameBounds.width > flowLabelBounds.x
         && roleNameBounds.y < flowLabelBounds.y + flowLabelBounds.height
         && roleNameBounds.y + roleNameBounds.height > flowLabelBounds.y;
-      expect(overlaps).toBe(false);
+      const flowAudit = await flowLabel.evaluate((text) => {
+        const label = text.closest(".x6-edge-label");
+        const edge = text.closest("[data-cell-id]");
+        const id = edge?.getAttribute("data-cell-id");
+        const edgeCell = id ? document.querySelector<SVGGElement>(`#studio-graph-root [data-cell-id="${CSS.escape(id)}"]`) : null;
+        const source = edgeCell?.getAttribute("data-cell-id");
+        return {
+          labelText: text.textContent,
+          labelBounds: label?.getBoundingClientRect().toJSON(),
+          bodyBounds: label?.querySelector("rect")?.getBoundingClientRect().toJSON(),
+          edgeCellBounds: edgeCell?.getBoundingClientRect().toJSON(),
+          edgeCellId: source
+        };
+      });
+      expect(overlaps, JSON.stringify({ roleNameBounds, flowLabelBounds, flowAudit })).toBe(false);
     }
     const roleBounds = await graph.locator('[data-cell-id="demo-analyst"]').boundingBox();
     expect(roleBounds?.width ?? 0).toBeGreaterThanOrEqual(90);

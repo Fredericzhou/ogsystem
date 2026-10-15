@@ -39,6 +39,7 @@ export function injectStudioGraphStyles(): void {
       min-width: 0;
       overflow-x: auto;
       scrollbar-width: thin;
+      scrollbar-color: #cbdad2 #f3f7f4;
     }
     .studio-graph-toolbar-group {
       display: flex;
@@ -409,6 +410,11 @@ export function injectStudioGraphStyles(): void {
       border-radius: 12px;
       background: #ffffff;
       box-shadow: 0 14px 32px rgba(35, 67, 56, 0.14);
+      max-width: min(260px, calc(100% - 20px));
+      max-height: calc(100% - 20px);
+      overflow: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #cbdad2 #f3f7f4;
     }
     .studio-graph-context-menu[hidden] {
       display: none;
@@ -485,6 +491,8 @@ export function injectStudioGraphStyles(): void {
       gap: 6px;
       max-height: 240px;
       overflow: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #cbdad2 #f3f7f4;
     }
     .studio-graph-quick-open-item {
       display: grid;
@@ -542,6 +550,8 @@ export function injectStudioGraphStyles(): void {
       min-height: 104px;
       box-sizing: border-box;
       resize: vertical;
+      scrollbar-width: thin;
+      scrollbar-color: #cbdad2 #f3f7f4;
     }
     .studio-graph-quick-debug-actions {
       display: flex;
@@ -562,6 +572,32 @@ export function injectStudioGraphStyles(): void {
       border: 1px solid #dce8e2;
       background: #ffffff;
       box-shadow: 0 18px 48px rgba(35, 67, 56, 0.16);
+      scrollbar-width: thin;
+      scrollbar-color: #cbdad2 #f3f7f4;
+    }
+    .studio-graph-toolbar-main::-webkit-scrollbar,
+    .studio-graph-context-menu::-webkit-scrollbar,
+    .studio-graph-quick-open-results::-webkit-scrollbar,
+    .studio-graph-quick-debug-input::-webkit-scrollbar,
+    .studio-command-dialog::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .studio-graph-toolbar-main::-webkit-scrollbar-track,
+    .studio-graph-context-menu::-webkit-scrollbar-track,
+    .studio-graph-quick-open-results::-webkit-scrollbar-track,
+    .studio-graph-quick-debug-input::-webkit-scrollbar-track,
+    .studio-command-dialog::-webkit-scrollbar-track {
+      background: #f3f7f4;
+    }
+    .studio-graph-toolbar-main::-webkit-scrollbar-thumb,
+    .studio-graph-context-menu::-webkit-scrollbar-thumb,
+    .studio-graph-quick-open-results::-webkit-scrollbar-thumb,
+    .studio-graph-quick-debug-input::-webkit-scrollbar-thumb,
+    .studio-command-dialog::-webkit-scrollbar-thumb {
+      border: 2px solid #f3f7f4;
+      border-radius: 8px;
+      background: #cbdad2;
     }
     .studio-command-dialog[hidden] {
       display: none;

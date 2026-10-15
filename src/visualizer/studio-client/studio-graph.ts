@@ -81,6 +81,10 @@ type StudioGraphLabelKey =
   | "quickOpenEmpty"
   | "quickOpenRole"
   | "quickOpenFlow"
+  | "contextEditRole"
+  | "contextEditFlow"
+  | "contextInsertRole"
+  | "contextDelete"
   | "minimap"
   | "addRole"
   | "addEdge"
@@ -1290,7 +1294,7 @@ export class StudioGraphIsland {
     }).join("");
   }
 
-  private quickOpenItems(): Array<{ kind: "role" | "flow"; id: string; label: string }> {
+  private quickOpenItems(): Array<{ kind: "role" | "flow"; id: string; label: string; searchText: string }> {
     const viewModel = this.currentViewModel;
     if (!viewModel) {
       return [];
@@ -1301,18 +1305,29 @@ export class StudioGraphIsland {
       .map((node) => ({
         kind: "role" as const,
         id: node.roleId,
-        label: node.title ? `${node.roleId} · ${node.title}` : node.roleId
+        label: node.label || node.roleId,
+        searchText: [node.label, node.roleId, node.id].filter(Boolean).join(" ").toLowerCase()
       }));
-    const flowItems = viewModel.edges.map((edge) => ({
-      kind: "flow" as const,
-      id: studioEdgeFlowKey(edge),
-      label: `${edge.source} -> ${edge.target} · ${edge.eventType}`
-    }));
+    const nodesById = new Map(viewModel.nodes.map((node) => [node.id, node]));
+    const flowItems = viewModel.edges.map((edge) => {
+      const source = nodesById.get(edge.source);
+      const target = nodesById.get(edge.target);
+      const sourceLabel = source?.label || edge.source;
+      const targetLabel = target?.label || edge.target;
+      const relationLabel = edge.label || edge.eventType;
+      return {
+        kind: "flow" as const,
+        id: studioEdgeFlowKey(edge),
+        label: `${sourceLabel} → ${targetLabel} · ${relationLabel}`,
+        searchText: [edge.label, edge.eventType, edge.id, edge.source, edge.target, source?.label, target?.label]
+          .filter(Boolean).join(" ").toLowerCase()
+      };
+    });
     const items = roleItems.concat(flowItems);
     if (!query) {
       return items.slice(0, 24);
     }
-    return items.filter((item) => item.label.toLowerCase().includes(query) || item.id.toLowerCase().includes(query)).slice(0, 24);
+    return items.filter((item) => item.searchText.includes(query) || item.id.toLowerCase().includes(query)).slice(0, 24);
   }
 
   private showDiagnosticCard(node: Record<string, unknown> | undefined, event: Event | undefined): void {
@@ -2682,13 +2697,13 @@ export class StudioGraphIsland {
       : Boolean(args.state.edge.editable);
     const items = args.state.kind === "role"
       ? [
-          { action: "edit", label: "Edit", disabled: false },
-          { action: "delete", label: "Delete", disabled: !canDeleteRole, destructive: true }
+          { action: "edit", label: this.label("contextEditRole"), disabled: false },
+          { action: "delete", label: this.label("contextDelete"), disabled: !canDeleteRole, destructive: true }
         ]
       : [
-          { action: "edit", label: "Edit", disabled: args.state.edge.editable === false },
-          { action: "insert-role", label: "Insert role", disabled: args.state.edge.editable === false },
-          { action: "delete", label: "Delete", disabled: args.state.edge.editable === false, destructive: true }
+          { action: "edit", label: this.label("contextEditFlow"), disabled: args.state.edge.editable === false },
+          { action: "insert-role", label: this.label("contextInsertRole"), disabled: args.state.edge.editable === false },
+          { action: "delete", label: this.label("contextDelete"), disabled: args.state.edge.editable === false, destructive: true }
         ];
     this.contextMenuEl.innerHTML = items.map((item) =>
       '<button type="button" class="studio-graph-context-menu-item' +

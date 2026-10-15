@@ -1,5 +1,5 @@
 export function studioRoleMarkerVisible(node: { roleSeat: boolean; editable: boolean }): boolean {
-  return node.roleSeat && node.editable;
+  return node.roleSeat;
 }
 
 export function studioRoleMonogram(label: string, roleId: string): string {
