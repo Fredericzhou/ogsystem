@@ -64,7 +64,7 @@ export function buildCaseGraph(caseId, locale = "zh-CN") {
     caseSpec.detail.roles[role.id][locale] || caseSpec.detail.roles[role.id]["zh-CN"]
   ]));
   const edgeLabels = Object.fromEntries(caseSpec.flows.map(([, , eventType]) => [eventType, localizedEventLabel(eventType, locale)]));
-  return buildGraphViewModel({
+  const graph = buildGraphViewModel({
     authoring,
     mode: "run",
     presentation: {
@@ -73,6 +73,10 @@ export function buildCaseGraph(caseId, locale = "zh-CN") {
       boundaryLabels: locale === "zh-CN" ? { input: "任务", output: "成果" } : { input: "Task", output: "Outcome" }
     }
   });
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => ({ ...node, badges: [], structure: {} }))
+  };
 }
 
 function roleManifest(role) {

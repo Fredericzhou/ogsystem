@@ -16,6 +16,8 @@ for (const locale of ["zh-CN", "en"]) {
         const node = graph.nodes.find((candidate) => candidate.id === role.id);
         assert.equal(node?.label, role.label[locale]);
         assert.equal(node?.description, item.detail.roles[role.id][locale]);
+        assert.deepEqual(node?.structure, {});
+        assert.deepEqual(node?.badges, []);
       }
       for (const [, , eventType] of item.flows) {
         const edge = graph.edges.find((candidate) => candidate.eventType === eventType);
