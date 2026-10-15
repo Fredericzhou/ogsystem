@@ -197,6 +197,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
     const roleColorForId = ${roleColorForId.toString()};
     const I18N_STORAGE_KEY = "ogs.visualizer.lang";
+    const VISUALIZER_THEME_STORAGE_KEY = "ogs.visualizer.theme";
     const STUDIO_INSPECTOR_WIDTH_STORAGE_KEY = "ogs.visualizer.studio.inspectorWidth";
     window.OGSVisualizerClient = window.OGSVisualizerClient || {};
     const readRouteStateFromSearch = ${readRouteStateFromSearch.toString()};
@@ -393,6 +394,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
     const resolvedLocale = resolveClientLocale();
     const state = createInitialVisualizerState(resolvedLocale);
+    function applyVisualizerTheme(theme) {
+      const nextTheme = theme === "dark" ? "dark" : "light";
+      document.documentElement.dataset.visualizerTheme = nextTheme;
+      try {
+        window.localStorage.setItem(VISUALIZER_THEME_STORAGE_KEY, nextTheme);
+      } catch {
+        // Keep the current session usable when storage is restricted.
+      }
+      for (const button of Array.from(document.querySelectorAll("[data-visualizer-theme-choice]"))) {
+        const active = button.getAttribute("data-visualizer-theme-choice") === nextTheme;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      }
+      document.dispatchEvent(new CustomEvent("ogs-visualizer-theme-change", { detail: { theme: nextTheme } }));
+    }
+    applyVisualizerTheme(document.documentElement.dataset.visualizerTheme);
+    for (const button of Array.from(document.querySelectorAll("[data-visualizer-theme-choice]"))) {
+      button.addEventListener("click", () => applyVisualizerTheme(button.getAttribute("data-visualizer-theme-choice")));
+    }
     let studioCanvasSaveChain = Promise.resolve();
     let graphViewportRouteTimer = null;
     function readStoredStudioInspectorWidth() {
@@ -528,6 +548,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderConsolePanels(visiblePanelIds) {
       const operateLabelIds = joinIdRefs("console-tab-run", "operate-tab-" + state.operateTab);
+      document.body.classList.toggle("show-project-workspace", visiblePanelIds.has("project"));
       setPanelState("console-panel-project", visiblePanelIds.has("project"), "tabpanel", "console-tab-project");
       setPanelState("console-panel-build", visiblePanelIds.has("build"), "tabpanel", "console-tab-design");
       setPanelState("console-panel-debug", visiblePanelIds.has("debug"), "presentation", "");
@@ -3203,6 +3224,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         t
       }) || "";
       const collapsed = state.studioInspectorCollapsed === true;
+      let sidePanelToggle = shell.querySelector?.("[data-studio-selection-toggle]");
+      if (!sidePanelToggle) {
+        sidePanelToggle = document.createElement("button");
+        sidePanelToggle.type = "button";
+        sidePanelToggle.className = "button subtle studio-selection-expand";
+        sidePanelToggle.setAttribute("data-studio-selection-toggle", "");
+        shell.appendChild(sidePanelToggle);
+      }
+      sidePanelToggle.hidden = false;
+      sidePanelToggle.disabled = shouldLockWorkbenchNavigation();
+      sidePanelToggle.textContent = collapsed ? "›" : "‹";
+      sidePanelToggle.setAttribute("aria-label", t(collapsed ? "studio.showSidePanel" : "studio.hideSidePanel", undefined, collapsed ? "Show right panel" : "Hide right panel"));
+      sidePanelToggle.title = sidePanelToggle.getAttribute("aria-label");
       overlay.hidden = false;
       overlay.classList.toggle("is-collapsed", collapsed);
       shell.classList.toggle("has-collapsed-selection", collapsed);
@@ -3241,6 +3275,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const collapseButton = overlay.querySelector?.("[data-studio-selection-collapse]");
       if (collapseButton) {
         collapseButton.textContent = collapsed ? ">" : "<";
+        collapseButton.hidden = true;
+        collapseButton.setAttribute("aria-label", t(collapsed ? "studio.showSidePanel" : "studio.hideSidePanel", undefined, collapsed ? "Show right panel" : "Hide right panel"));
+        collapseButton.title = collapseButton.getAttribute("aria-label");
       }
 
       if (activeTab === "structure" && selectionKind === "role") {
@@ -3487,6 +3524,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
         const collapseButton = closestSelectionAction(event.target, "data-studio-selection-collapse");
         if (collapseButton) {
+          state.studioInspectorCollapsed = !state.studioInspectorCollapsed;
+          renderStudioSelectionDialog();
+          event.preventDefault();
+          return;
+        }
+        const sidePanelToggle = closestSelectionAction(event.target, "data-studio-selection-toggle");
+        if (sidePanelToggle) {
           state.studioInspectorCollapsed = !state.studioInspectorCollapsed;
           renderStudioSelectionDialog();
           event.preventDefault();

@@ -33,20 +33,24 @@ function diagnosticBadgeText(severity: GraphViewModelNode["diagnostic"] extends 
   return severity === "error" ? "!" : "?";
 }
 
+function isDarkTheme(): boolean {
+  return document.documentElement.dataset.visualizerTheme === "dark";
+}
+
 function nodeStroke(node: GraphViewModelNode): string {
   if (node.diagnostic?.severity === "error") return "#f87171";
   if (node.diagnostic?.severity === "warning") return "#fbbf24";
-  if (node.kind === "boundary") return "#91aa9d";
+  if (node.kind === "boundary") return isDarkTheme() ? "#64748b" : "#91aa9d";
   if (node.roleSeat) return roleColorForId(node.roleId).accent;
-  return "#55798c";
+  return isDarkTheme() ? "#52677e" : "#55798c";
 }
 
 function edgeStroke(edge: GraphViewModelEdge): string {
   if (edge.diagnostic?.severity === "error") return "#c9674b";
   if (edge.diagnostic?.severity === "warning" || edge.runtimeOnlyErrorFlow) return "#bc8b39";
-  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return "#55798c";
-  if (edge.participatesInJoin) return "#1b7662";
-  return "#82998e";
+  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return isDarkTheme() ? "#38bdf8" : "#55798c";
+  if (edge.participatesInJoin) return isDarkTheme() ? "#34d399" : "#1b7662";
+  return isDarkTheme() ? "#94a3b8" : "#82998e";
 }
 
 function isLoopEdge(edge: GraphViewModelEdge): boolean {
@@ -183,8 +187,8 @@ export function renderStudioGraphViewModel(
 function bundleStroke(channel: string): string {
   if (channel === "error") return "#b7791f";
   if (channel === "join") return "#8064b5";
-  if (channel === "loop" || channel === "feedback") return "#168477";
-  return "#64748b";
+  if (channel === "loop" || channel === "feedback") return isDarkTheme() ? "#38bdf8" : "#168477";
+  return isDarkTheme() ? "#94a3b8" : "#64748b";
 }
 
 function bundleEdgeMetadata(bundle: LayoutEdgeBundle): Edge.Metadata {
@@ -296,6 +300,12 @@ const SCC_COLORS = [
   { fill: "rgba(251, 191, 36, 0.025)", stroke: "rgba(251, 191, 36, 0.38)", label: "#c6ae71" },
   { fill: "rgba(192, 132, 252, 0.025)", stroke: "rgba(192, 132, 252, 0.38)", label: "#b39acb" }
 ];
+const SCC_DARK_COLORS = [
+  { fill: "rgba(45, 212, 191, 0.035)", stroke: "rgba(45, 212, 191, 0.34)", label: "#7fbdb4" },
+  { fill: "rgba(96, 165, 250, 0.035)", stroke: "rgba(96, 165, 250, 0.34)", label: "#8eafd0" },
+  { fill: "rgba(251, 191, 36, 0.035)", stroke: "rgba(251, 191, 36, 0.34)", label: "#c6ae71" },
+  { fill: "rgba(192, 132, 252, 0.035)", stroke: "rgba(192, 132, 252, 0.34)", label: "#b39acb" }
+];
 
 function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
@@ -316,7 +326,7 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): Scc
       label,
       ...geometry,
       memberIds,
-      color: SCC_COLORS[index % SCC_COLORS.length]
+      color: (isDarkTheme() ? SCC_DARK_COLORS : SCC_COLORS)[index % SCC_COLORS.length]
     };
   });
 }
@@ -427,13 +437,14 @@ function portPosition(side: LayoutSide, offset: number): { name: LayoutSide; arg
 }
 
 function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unknown> {
+  const dark = isDarkTheme();
   return {
     circle: {
       r: 4,
       magnet: true,
-      stroke: direction === "in" ? "#bae6fd" : "#67e8f9",
+      stroke: direction === "in" ? "#bae6fd" : (dark ? "#67e8f9" : "#168477"),
       strokeWidth: 1.5,
-      fill: "#07111f",
+      fill: dark ? "#07111f" : "#f7faf8",
       "vector-effect": "non-scaling-stroke",
       "data-studio-port": direction
     }
@@ -474,12 +485,14 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
 }
 
 function nodeFill(node: GraphViewModelNode): string {
+  if (isDarkTheme()) return node.kind === "boundary" ? "#152235" : "#101c2d";
   if (node.kind === "boundary") return "#f1f7f3";
   if (node.roleSeat) return "#ffffff";
   return "#ffffff";
 }
 
 function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
+  const dark = isDarkTheme();
   const showRoleMarker = studioRoleMarkerVisible(node);
   const roleColor = showRoleMarker ? roleColorForId(node.roleId) : undefined;
   const markerX = 28;
@@ -528,7 +541,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
         textAnchor: "start",
         textVerticalAnchor: "middle"
       } : {}),
-      fill: node.kind === "boundary" ? "#165f50" : "#243b32",
+      fill: node.kind === "boundary" ? (dark ? "#dbeafe" : "#165f50") : (dark ? "#e5eefb" : "#243b32"),
       fontSize: node.kind === "boundary" ? 14 : 13,
       fontWeight: 650,
       textWrap: {
@@ -543,7 +556,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       y: 19,
       textAnchor: "start",
       textVerticalAnchor: "middle",
-      fill: "#6b7e78",
+      fill: dark ? "#8fa1c3" : "#6b7e78",
       fontSize: 11,
       fontWeight: 450,
       textWrap: {
@@ -803,6 +816,7 @@ function studioEdgeLabels(
   positions?: StudioEdgeLabelPositions,
   showTechnicalDetails = true
 ): Edge.Metadata["labels"] {
+  const dark = isDarkTheme();
   const labels: NonNullable<Edge.Metadata["labels"]> = [];
   const summaryLabel = showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label;
   const topologyLabel = formatStudioEdgeTopologyLabel(edge);
@@ -830,13 +844,13 @@ function studioEdgeLabels(
       attrs: {
         label: {
           text: topologyLabel,
-          fill: isCycle ? "#165f50" : "#55798c",
+          fill: isCycle ? (dark ? "#7dd3fc" : "#165f50") : (dark ? "#cbd5e1" : "#55798c"),
           fontSize: 10,
           fontWeight: 800
         },
         body: {
-          fill: "#f1f7f3",
-          stroke: isCycle ? "#1b7662" : "#9fc3b1",
+          fill: dark ? "#172337" : "#f1f7f3",
+          stroke: isCycle ? (dark ? "#38bdf8" : "#1b7662") : (dark ? "#52677e" : "#9fc3b1"),
           strokeWidth: 1,
           rx: 5,
           ry: 5
@@ -856,7 +870,7 @@ function studioEdgeLabels(
     attrs: {
       label: {
         text: renderedSummaryLabel,
-        fill: "#33483f",
+        fill: dark ? "#e5eefb" : "#33483f",
         fontSize: 11,
         textWrap: {
           width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,
@@ -865,7 +879,7 @@ function studioEdgeLabels(
         }
       },
       body: {
-        fill: "#ffffff",
+        fill: dark ? "#101827" : "#ffffff",
         stroke: edgeStroke(edge),
         strokeWidth: 1.2,
         rx: 4,

@@ -1,6 +1,9 @@
 export const en = {
   "app.title": "OGS Multi-Agent Graph Orchestration System",
   "app.locale": "Language",
+  "app.theme": "Display theme",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
   "app.local": "local",
   "app.sections": "Workspace sections",
   "app.workdir": "workdir",
@@ -89,6 +92,8 @@ export const en = {
   "studio.graphWorkspace": "Graph workspace",
   "studio.graphIndex": "Browse",
   "studio.sidePanel": "Right panel",
+  "studio.showSidePanel": "Show right panel",
+  "studio.hideSidePanel": "Hide right panel",
   "studio.retrievalTab": "Configuration",
   "studio.debugHandoff": "handoff",
   "studio.debugHandoffAfterReview": "handoff after review",

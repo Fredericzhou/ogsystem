@@ -18,12 +18,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
   const t = createTranslator(locale);
   const bootstrap = safeInlineJson({ apiPrefix, locale, allowLocalDirectoryOpen: i18n.allowLocalDirectoryOpen === true });
   return `<!doctype html>
-<html lang="${escapeHtml(locale)}">
+<html lang="${escapeHtml(locale)}" data-visualizer-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:," />
   <title>${escapeHtml(t("app.title"))}</title>
+  <script>try { document.documentElement.dataset.visualizerTheme = localStorage.getItem("ogs.visualizer.theme") === "dark" ? "dark" : "light"; } catch {}</script>
   <style>
 ${renderPageShellStyles()}  </style>
 </head>

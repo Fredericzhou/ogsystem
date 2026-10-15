@@ -46,7 +46,11 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   const html = renderPageHtml("/tmp/<demo>&project", "/api/v1", { locale: "zh-CN" });
   const styles = renderPageShellStyles();
   assert.match(html, /^<!doctype html>/);
-  assert.match(html, /<html lang="zh-CN">/);
+  assert.match(html, /<html lang="zh-CN" data-visualizer-theme="light">/);
+  assert.match(html, /data-visualizer-theme="light"/);
+  assert.match(html, /ogs\.visualizer\.theme/);
+  assert.match(html, /data-visualizer-theme-choice="light"/);
+  assert.match(html, /data-visualizer-theme-choice="dark"/);
   assert.match(html, /<title>OGS多智能体图编排系统<\/title>/);
   assert.match(html, /<link rel="icon" href="data:," \/>/);
   assert.match(html, /<style>\n/);
@@ -145,6 +149,7 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   assert.match(css, /\.studio-role-io-dialog\s*\{[\s\S]*width:\s*min\(760px/);
   assert.match(css, /\.console-panel\[hidden\]\s*\{/);
   assert.match(css, /--control-height:\s*36px/);
+  assert.match(css, /:root\[data-visualizer-theme="light"\]/);
   assert.match(css, /\.button:focus-visible,[\s\S]*?\.select:focus-visible/);
   assert.match(css, /select\.select,[\s\S]*?\.studio-graph-toolbar select,[\s\S]*?\.studio-bridge-index-controls > select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?background-image:/);
   assert.match(css, /scrollbar-gutter:\s*stable both-edges/);

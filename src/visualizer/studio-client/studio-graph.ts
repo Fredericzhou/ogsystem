@@ -311,6 +311,17 @@ export class StudioGraphIsland {
   private currentLayoutProjection: LayoutProjection | null = null;
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
+  private readonly themeChangeListener = () => {
+    if (!this.currentViewModel || !this.currentLayoutProjection) return;
+    this.applying = true;
+    try {
+      this.renderCurrentProjection();
+      this.applyRuntimeOverlay();
+      this.renderMinimap();
+    } finally {
+      this.applying = false;
+    }
+  };
   private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
     redoStack: []
@@ -430,6 +441,7 @@ export class StudioGraphIsland {
     this.bindQuickDebug();
     this.bindResizeObserver();
     this.root.addEventListener("keydown", (event) => this.handleRootKeydown(event));
+    document.addEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     // Command forms can be mounted in a sibling host outside `root`, so use a document-level
     // submit fallback to prevent accidental native navigation during rapid host swaps.
     document.addEventListener("submit", this.delegatedCommandFormSubmitListener, true);
@@ -570,6 +582,7 @@ export class StudioGraphIsland {
       this.resizeObserver = null;
     }
     document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
+    document.removeEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     this.quickDebugBusy = false;
     this.graph.dispose();
     this.root.innerHTML = "";
@@ -727,7 +740,7 @@ export class StudioGraphIsland {
         this.updateToolbarState();
       }
       if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 32, preserveDimensions: true });
-      if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: "#f4f7f5" });
+      if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
       if (action === "debug-run") this.toggleQuickDebug();
       if (action === "validate") void this.options.onValidateWorkbench?.();

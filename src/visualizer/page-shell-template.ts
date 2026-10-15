@@ -37,6 +37,10 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
             <nav id="console-tabs" class="console-tabs" aria-label="${escapeHtml(t("app.sections"))}"></nav>
             <div class="hero-utilities">
               <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
+              <div class="segmented visualizer-theme-switch" role="group" aria-label="${escapeHtml(t("app.theme"))}">
+                <button type="button" class="button subtle active" data-visualizer-theme-choice="light" aria-pressed="true">${escapeHtml(t("theme.light"))}</button>
+                <button type="button" class="button subtle" data-visualizer-theme-choice="dark" aria-pressed="false">${escapeHtml(t("theme.dark"))}</button>
+              </div>
               <label class="field locale-field">
                 <span>${escapeHtml(t("app.locale"))}</span>
                 <select id="locale-select" class="select">

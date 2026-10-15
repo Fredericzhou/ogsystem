@@ -33,21 +33,22 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-toolbar-main {
       display: flex;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
       align-items: center;
       gap: 5px;
       min-width: 0;
-      overflow-x: auto;
-      scrollbar-width: thin;
-      scrollbar-color: #cbdad2 #f3f7f4;
+      overflow: visible;
+      flex: 1 1 auto;
     }
     .studio-graph-toolbar-group {
       display: flex;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
       align-items: center;
       gap: 3px;
       min-width: 0;
-      flex-shrink: 0;
+      flex: 0 1 auto;
+      flex-shrink: 1;
+      max-width: 100%;
       padding: 2px;
       border: 1px solid #e5ede8;
       border-radius: 8px;
@@ -705,6 +706,99 @@ export function injectStudioGraphStyles(): void {
         max-width: calc(100% - 16px);
       }
     }
+    :root[data-visualizer-theme="dark"] .studio-graph-island {
+      border-color: #334155;
+      background: #0b1220;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar {
+      border-color: #263449;
+      background: #0f172a;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar-group {
+      border-color: #334155;
+      background: #111c2e;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar button,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-item {
+      background: #172337;
+      border-color: #334155;
+      color: #dbeafe;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar button:hover,
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu-item:hover,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-item:hover,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-item.is-active {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.14);
+      color: #d7f3ff;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-status,
+    :root[data-visualizer-theme="dark"] .studio-graph-empty,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-label,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-kind,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-empty,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-label {
+      color: #8fa1c3;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-empty { background: rgba(8, 13, 26, 0.72); }
+    :root[data-visualizer-theme="dark"] .studio-graph-diagnostic-card,
+    :root[data-visualizer-theme="dark"] .studio-graph-minimap,
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-panel,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-panel,
+    :root[data-visualizer-theme="dark"] .studio-command-dialog {
+      border-color: #334155;
+      background: #0f172a;
+      color: #dbeafe;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu-item,
+    :root[data-visualizer-theme="dark"] .studio-command-form {
+      color: #dbeafe;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-input,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input,
+    :root[data-visualizer-theme="dark"] .studio-command-form input,
+    :root[data-visualizer-theme="dark"] .studio-command-form select {
+      border-color: #475569;
+      background: #111c2e;
+      color: #e5eefb;
+      color-scheme: dark;
+    }
+    :root[data-visualizer-theme="dark"] .studio-command-form-header button,
+    :root[data-visualizer-theme="dark"] .studio-command-form-actions button {
+      border-color: #475569;
+      background: #172337;
+      color: #dbeafe;
+    }
+    :root[data-visualizer-theme="dark"] .studio-command-form-actions button { border-color: #1b7662; background: #12352f; }
+    :root[data-visualizer-theme="dark"] .studio-graph-minimap-edges line { stroke: rgba(148, 163, 184, 0.55); }
+    :root[data-visualizer-theme="dark"] .studio-graph-minimap-node { background: rgba(56, 189, 248, 0.65); border-color: rgba(186, 230, 253, 0.58); }
+    :root[data-visualizer-theme="dark"] .studio-graph-minimap-viewport { border-color: rgba(56, 189, 248, 0.95); background: rgba(56, 189, 248, 0.13); }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar-main,
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-results,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input,
+    :root[data-visualizer-theme="dark"] .studio-command-dialog {
+      scrollbar-color: #475569 #111c2e;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar-main::-webkit-scrollbar-track,
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu::-webkit-scrollbar-track,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-results::-webkit-scrollbar-track,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input::-webkit-scrollbar-track,
+    :root[data-visualizer-theme="dark"] .studio-command-dialog::-webkit-scrollbar-track { background: #111c2e; }
+    :root[data-visualizer-theme="dark"] .studio-graph-toolbar-main::-webkit-scrollbar-thumb,
+    :root[data-visualizer-theme="dark"] .studio-graph-context-menu::-webkit-scrollbar-thumb,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-results::-webkit-scrollbar-thumb,
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input::-webkit-scrollbar-thumb,
+    :root[data-visualizer-theme="dark"] .studio-command-dialog::-webkit-scrollbar-thumb { border-color: #111c2e; background: #475569; }
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover rect,
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover path:first-of-type { stroke: #84b9a0; }
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node.is-selection-active rect,
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node.is-selection-active path:first-of-type { stroke: #1b7662; }
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-selection-active .connection,
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .connection { stroke: #1b7662 !important; }
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .x6-edge-label rect { stroke: #1b7662; }
   `;
   document.head.appendChild(style);
 }

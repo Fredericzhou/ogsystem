@@ -345,7 +345,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       const style = getComputedStyle(option);
       return { color: style.color, backgroundColor: style.backgroundColor };
     });
-    expect(optionColors).toEqual({ color: "rgb(229, 238, 251)", backgroundColor: "rgb(15, 23, 42)" });
+    expect(optionColors).toEqual({ color: "rgb(36, 59, 50)", backgroundColor: "rgb(255, 255, 255)" });
     await page.locator(".studio-system-settings summary").click();
     await page.locator("[data-system-setting='entryEventType']").fill("BEGIN");
     await page.locator("[data-system-settings-save]").click();
@@ -749,11 +749,15 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="undo"]')).toBeVisible();
     await expectDockedSelectionAligned(page);
 
-    const collapseButton = page.locator('[data-studio-selection-collapse]').first();
+    const graphWidthBeforeCollapse = (await page.locator("#studio-graph-root").boundingBox())?.width ?? 0;
+    const collapseButton = page.locator('[data-studio-selection-toggle]');
     await expect(collapseButton).toBeVisible();
     await collapseButton.click();
     await expect(page.locator(".studio-selection-overlay")).toHaveClass(/is-collapsed/);
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/has-collapsed-selection/);
+    await expect(collapseButton).toBeVisible();
+    const graphWidthAfterCollapse = (await page.locator("#studio-graph-root").boundingBox())?.width ?? 0;
+    expect(graphWidthAfterCollapse).toBeGreaterThan(graphWidthBeforeCollapse + 200);
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await collapseButton.click();
     await expect(page.locator(".studio-selection-overlay")).not.toHaveClass(/is-collapsed/);
@@ -849,7 +853,7 @@ test("Studio graph controls expose localized names in English and Simplified Chi
       const style = getComputedStyle(option);
       return { color: style.color, backgroundColor: style.backgroundColor };
     });
-    expect(layoutOptionColors).toEqual({ color: "rgb(229, 238, 251)", backgroundColor: "rgb(15, 23, 42)" });
+    expect(layoutOptionColors).toEqual({ color: "rgb(36, 59, 50)", backgroundColor: "rgb(255, 255, 255)" });
 
     const mainStage = page.locator(".main-stage");
     const statusBar = page.locator("footer.status-bar");
@@ -2020,6 +2024,100 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
     await expect(graph.locator('[data-studio-graph-action="add-role"]')).toBeVisible();
     await graph.locator('[data-studio-graph-action="add-role"]').click();
     await expect(page.locator(".studio-selection-overlay")).toBeVisible();
+    await page.locator('[data-studio-selection-toggle]').click();
+    await expect(page.locator(".studio-selection-overlay")).toBeHidden();
+    const mobilePanelToggle = page.locator('[data-studio-selection-toggle]');
+    await expect(mobilePanelToggle).toBeVisible();
+    await mobilePanelToggle.click();
+    await expect(page.locator(".studio-selection-overlay")).toBeVisible();
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("visualizer theme switches the complete graph workspace and persists across reloads", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-theme-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(started.url);
+    await expect(page.locator("#console-panel-project")).toBeVisible();
+    await expect(page.locator(".visualizer-theme-switch")).toBeVisible();
+    const mobileHomeWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(mobileHomeWidth).toBeLessThanOrEqual(391);
+    const mobileHomeAudit = await page.evaluate(() => {
+      const panel = document.querySelector("#console-panel-project");
+      const heading = panel?.querySelector("h3");
+      const panelBounds = panel?.getBoundingClientRect();
+      const headingBounds = heading?.getBoundingClientRect();
+      const mainBounds = document.querySelector(".main-stage")?.getBoundingClientRect();
+      return {
+        panelTop: panelBounds?.top ?? 0,
+        headingTop: headingBounds?.top ?? 0,
+        headingVisible: Boolean(headingBounds && headingBounds.top >= 0 && headingBounds.bottom <= window.innerHeight),
+        mainTop: mainBounds?.top ?? 0,
+        horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+      };
+    });
+    expect(mobileHomeAudit.headingVisible).toBe(true);
+    expect(mobileHomeAudit.headingTop).toBeGreaterThanOrEqual(mobileHomeAudit.mainTop - 1);
+    expect(mobileHomeAudit.horizontalOverflow).toBe(false);
+
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(started.url);
+    await expect(page.locator("#console-panel-project")).toBeVisible();
+    await expect(page.locator(".visualizer-theme-switch")).toBeVisible();
+    const homeAudit = await page.evaluate(() => ({
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      navBottom: document.querySelector(".top-nav")?.getBoundingClientRect().bottom ?? 0,
+      mainTop: document.querySelector(".main-stage")?.getBoundingClientRect().top ?? 0,
+      projectContentVisible: Boolean(document.querySelector("#project-wizard")?.getBoundingClientRect().height),
+      projectHeadingTop: document.querySelector("#console-panel-project h3")?.getBoundingClientRect().top ?? 0,
+      projectCardHeight: document.querySelector("#console-panel-project > .card")?.getBoundingClientRect().height ?? 0,
+      viewportHeight: window.innerHeight
+    }));
+    expect(homeAudit.documentWidth).toBeLessThanOrEqual(homeAudit.viewportWidth + 1);
+    expect(homeAudit.projectContentVisible).toBe(true);
+    expect(homeAudit.mainTop).toBeGreaterThanOrEqual(homeAudit.navBottom - 1);
+    expect(homeAudit.projectHeadingTop).toBeGreaterThanOrEqual(homeAudit.mainTop - 1);
+    expect(homeAudit.projectCardHeight).toBeLessThan(homeAudit.viewportHeight * 0.8);
+    await page.screenshot({ path: path.join(os.tmpdir(), "ogs-vis-home-light.png"), fullPage: true });
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await waitForStudioCell(page, "demo-analyst");
+
+    const lightTheme = page.locator('[data-visualizer-theme-choice="light"]');
+    const darkTheme = page.locator('[data-visualizer-theme-choice="dark"]');
+    await expect(lightTheme).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "light");
+    await page.screenshot({ path: path.join(os.tmpdir(), "ogs-vis-theme-light.png"), fullPage: true });
+    const initialRoleBounds = await page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').boundingBox();
+    const toolbar = page.locator("#studio-graph-root .studio-graph-toolbar-main");
+    const toolbarAudit = await toolbar.evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
+    expect(toolbarAudit.scrollWidth).toBeLessThanOrEqual(toolbarAudit.clientWidth + 1);
+
+    await darkTheme.click();
+    await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "dark");
+    await expect(darkTheme).toHaveAttribute("aria-pressed", "true");
+    await expect(lightTheme).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(() => page.locator("#refresh").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(23, 35, 55)");
+    const darkControlBackground = await page.locator("#refresh").evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(darkControlBackground).toBe("rgb(23, 35, 55)");
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem("ogs.visualizer.theme"))).toBe("dark");
+    await page.screenshot({ path: path.join(os.tmpdir(), "ogs-vis-theme-dark.png"), fullPage: true });
+    const darkRoleText = await page.locator('#studio-graph-root [data-cell-id="demo-analyst"] text').filter({ hasText: "Demo Analyst" }).first().getAttribute("fill");
+    expect(darkRoleText).toBe("#e5eefb");
+    const darkRoleBounds = await page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').boundingBox();
+    expect(darkRoleBounds?.width).toBe(initialRoleBounds?.width);
+    expect(darkRoleBounds?.height).toBe(initialRoleBounds?.height);
+
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-visualizer-theme", "dark");
+    await expect(page.locator('[data-visualizer-theme-choice="dark"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

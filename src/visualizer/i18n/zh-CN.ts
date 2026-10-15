@@ -3,6 +3,11 @@ import type { en } from "./en.js";
 type MessageKey = keyof typeof en;
 
 export const zhCN = {
+  "studio.showSidePanel": "鏄剧ず鍙充晶闈㈡澘",
+  "studio.hideSidePanel": "鏀惰捣鍙充晶闈㈡澘",
+  "app.theme": "显示主题",
+  "theme.light": "浅色",
+  "theme.dark": "深色",
   "app.copyWorkdir": "复制路径",
   "app.openWorkdir": "打开所在目录",
   "app.workdirCopied": "工作目录路径已复制。",
