@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogsystem.dev/schemas/system-design.schema.json",
+  "title": "OGSystem System Design",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "intent", "system", "seats", "transitions", "state", "contracts", "policies", "bindings", "presentation"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective", "inputs", "outputs", "constraints", "acceptanceCriteria"],
+      "properties": {
+        "objective": { "type": "string" },
+        "inputs": { "type": "array", "items": { "type": "string" } },
+        "outputs": { "type": "array", "items": { "type": "string" } },
+        "constraints": { "type": "array", "items": { "type": "string" } },
+        "acceptanceCriteria": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["systemId", "systemVersion", "entrySeatId", "lawGlobalRef"],
+      "properties": {
+        "systemId": { "type": "string", "minLength": 1 },
+        "systemVersion": { "type": "string", "minLength": 1 },
+        "entrySeatId": { "type": "string" },
+        "entryEventType": { "type": "string" },
+        "lawGlobalRef": { "type": "string", "minLength": 1 },
+        "handoffMode": { "enum": ["strict", "transition"] },
+        "handoffContracts": { "type": "string" }
+      }
+    },
+    "seats": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/seat" }
+    },
+    "transitions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/transition" }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schemaVersion"],
+      "properties": { "schemaVersion": { "type": "integer", "minimum": 1 } }
+    },
+    "contracts": { "type": "array" },
+    "policies": { "type": "object", "additionalProperties": true },
+    "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/binding" } },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes"],
+      "properties": {
+        "nodes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/layout" } },
+        "viewport": {
+          "type": "object",
+          "required": ["x", "y", "zoom"],
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "zoom": { "type": "number", "exclusiveMinimum": 0 } },
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["model", "exec", "noop"] },
+        "modelRef": { "type": "string" },
+        "profileId": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "seat": {
+      "type": "object",
+      "required": ["seatId", "rolePackageRef", "binding"],
+      "properties": {
+        "seatId": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$" },
+        "title": { "type": "string" },
+        "responsibility": { "type": "string" },
+        "rolePackageRef": { "type": "string", "minLength": 1 },
+        "binding": { "$ref": "#/$defs/binding" },
+        "routingMode": { "const": "parallel_split" },
+        "routeOrder": { "type": "array", "items": { "type": "string" } },
+        "join": {
+          "type": "object",
+          "required": ["mode", "sources"],
+          "properties": { "mode": { "enum": ["all_of", "quorum_of"] }, "sources": { "type": "array", "items": { "type": "string" } }, "min": { "type": "integer", "minimum": 1 } },
+          "additionalProperties": false
+        },
+        "loop": { "type": "object", "required": ["maxRounds"], "properties": { "maxRounds": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+        "review": { "type": "object", "required": ["mode"], "properties": { "mode": { "const": "required" }, "timeoutSeconds": { "type": "integer", "minimum": 1 }, "timeoutAction": { "enum": ["pause", "terminate"] }, "reworkTargetSeatId": { "type": "string" }, "reworkMax": { "type": "integer", "minimum": 0 }, "terminateScope": { "enum": ["branch", "run"] } }, "additionalProperties": false },
+        "contextMap": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": ["transitionId", "fromSeatId", "toSeatId", "eventType"],
+      "properties": {
+        "transitionId": { "type": "string", "minLength": 1 },
+        "fromSeatId": { "type": "string" },
+        "toSeatId": { "type": "string" },
+        "eventType": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+        "label": { "type": "string" },
+        "condition": { "type": "object" },
+        "priority": { "type": "integer", "minimum": 0 },
+        "channel": { "enum": ["normal", "error", "loop", "join"] }
+      },
+      "additionalProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 } },
+      "additionalProperties": false
+    }
+  }
+}

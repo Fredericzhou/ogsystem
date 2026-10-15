@@ -17,6 +17,7 @@ import { filesystemRunStore } from "./run-store.js";
 import { loadOgsSpecification, type OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
 import { compileSemanticIR } from "./semantic-ir-compiler.js";
 import type { SemanticIR } from "./semantic-ir.js";
+import { designDigest, designToSystemDefinition, loadSystemDesign } from "../design/index.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import {
   loadLaws,
@@ -241,8 +242,15 @@ export async function prepareRuntimeSetup(args: {
       break;
     }
   }
-  let system = await loadSystemFromMermaid(args.systemPath);
-  if (args.systemBaseDir && system.graph?.handoffContracts) {
+  const projectDesign = await loadSystemDesign(args.workdir);
+  const requestedProjectMermaid = resolve(args.systemPath) === resolve(args.workdir, "system.mmd");
+  const activeDesign = projectDesign && (requestedProjectMermaid || args.systemPath.endsWith("system.design.json"))
+    ? projectDesign
+    : undefined;
+  let system = activeDesign
+    ? designToSystemDefinition(activeDesign)
+    : await loadSystemFromMermaid(args.systemPath);
+  if (!activeDesign && args.systemBaseDir && system.graph?.handoffContracts) {
     const sourceSystem = parseSystemFromMermaidSource(await readFile(args.systemPath, "utf8"));
     if (sourceSystem.graph?.handoffContracts) {
       system = {
@@ -257,15 +265,33 @@ export async function prepareRuntimeSetup(args: {
       specificationSnapshot.systemVersion !== system.systemVersion)
   ) {
     throw new Error(
-      `OGS specification system mismatch: Mermaid is ${system.systemId}@${system.systemVersion}, ` +
+      `OGS specification system mismatch: design is ${system.systemId}@${system.systemVersion}, ` +
         `semantic files are ${specificationSnapshot.systemId}@${specificationSnapshot.systemVersion}`
     );
   }
   const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
-  const modelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
+  const storedModelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
+  const designModelOverrides = activeDesign
+    ? Object.fromEntries(Object.entries(activeDesign.seats).flatMap(([roleId, seat]) => {
+        if (seat.binding.kind !== "model" || !seat.binding.modelRef) return [];
+        const separator = seat.binding.modelRef.indexOf("/");
+        if (separator <= 0 || separator === seat.binding.modelRef.length - 1) return [];
+        return [[roleId, {
+          backend: seat.binding.modelRef.slice(0, separator),
+          modelId: seat.binding.modelRef.slice(separator + 1)
+        }]];
+      }))
+    : {};
+  const modelSelection = activeDesign && Object.keys(designModelOverrides).length
+    ? {
+        configVersion: "2" as const,
+        defaults: storedModelSelection?.defaults,
+        roles: { ...(storedModelSelection?.roles ?? {}), ...designModelOverrides }
+      }
+    : storedModelSelection;
   const modelCatalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
   const resolvedModelSelection = resolveModelSelectionForSystem({
-    system,
+    system: activeDesign ? { ...system, modelBinding: {} } : system,
     selection: modelSelection,
     catalog: modelCatalog
   });
@@ -284,7 +310,22 @@ export async function prepareRuntimeSetup(args: {
   const tools = await loadTools(args.toolsPath, args.workdir);
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
-  const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+  const baseLaw = resolveEffectiveLaw(system, lawCatalog);
+  const effectiveLaw = activeDesign
+    ? {
+        ...baseLaw,
+        forbiddenToolRefs: Array.from(new Set([
+          ...baseLaw.forbiddenToolRefs,
+          ...(activeDesign.policies.forbiddenToolRefs ?? [])
+        ])),
+        maxTransitions: activeDesign.policies.maxTransitionsPerRun === undefined
+          ? baseLaw.maxTransitions
+          : baseLaw.maxTransitions === undefined
+            ? activeDesign.policies.maxTransitionsPerRun
+            : Math.min(baseLaw.maxTransitions, activeDesign.policies.maxTransitionsPerRun),
+        allowNoopWithoutExecutionBinding: activeDesign.policies.allowNoopWithoutExecutionBinding ?? baseLaw.allowNoopWithoutExecutionBinding
+      }
+    : baseLaw;
   let compiledSemanticIR = specificationSnapshot
     ? compileSemanticIR({
         system,
@@ -366,13 +407,15 @@ export async function prepareRuntimeSetup(args: {
     effectiveLaw,
     contractPlan,
     compilerSnapshot: compilerResult.snapshot,
-    specificationDigest: compiledSemanticIR?.digest ?? specificationSnapshot?.digest
+    specificationDigest: compiledSemanticIR?.digest ?? specificationSnapshot?.digest,
+    designDigest: projectDesign ? designDigest(projectDesign) : undefined
   });
   const resolvedConfigSnapshot: Record<string, unknown> = {
     version: 1,
     resolvedAt: new Date().toISOString(),
     sources: {
       runtimeConfigPath: args.runtimeConfigPath ?? ".ogs/runtime.json",
+      designPath: activeDesign ? "system.design.json" : null,
       modelSelectionPath: ".ogs/model-selection.json",
       modelCatalogPath: ".ogs/model-catalog.json",
       userProfilePath: args.userProfilePath ?? ".ogs/user-profile.json",
@@ -410,6 +453,11 @@ export async function prepareRuntimeSetup(args: {
           }
         : undefined
       , semanticIR: compiledSemanticIR?.ir
+      , design: activeDesign ? {
+        path: "system.design.json",
+        revision: activeDesign.revision,
+        digest: designDigest(activeDesign)
+      } : undefined
     }
   };
   const runContext = await filesystemRunStore.initialize({

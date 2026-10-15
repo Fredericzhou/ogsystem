@@ -1551,6 +1551,7 @@ export function renderStudioBridgeStructureHtml(args: {
 
 export function renderStudioBridgePanel(args: {
   bridge: JsonRecord | null | undefined;
+  design?: JsonRecord | null | undefined;
   readiness: JsonRecord | null | undefined;
   projectRoles?: JsonRecord | null | undefined;
   selectedRoleId: string;
@@ -1572,6 +1573,8 @@ export function renderStudioBridgePanel(args: {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const sideTab = args.sideTab || "structure";
   const bridge = args.bridge ?? {};
+  const designEnvelope = asRecord(args.design) ?? {};
+  const design = asRecord(designEnvelope.design);
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
   const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
@@ -1629,7 +1632,13 @@ export function renderStudioBridgePanel(args: {
     t
   });
   return [
-    '<div class="studio-bridge-layout studio-graph-column" data-studio-bridge-region="graph">',
+    '<div class="studio-bridge-layout studio-graph-column' + (design ? ' has-design-header' : '') + '" data-studio-bridge-region="graph">',
+    design ? '<section class="studio-design-header" data-studio-design-header>' +
+      '<div class="studio-design-header-copy"><div class="eyebrow">' + escapeText(t("studio.design.eyebrow", undefined, "DESIGN WORKSPACE")) + '</div><h2>' + escapeText(String(extracted.systemId || t("studio.design.title", undefined, "Design your system"))) + '</h2><p>' + escapeText(t("studio.design.subtitle", undefined, "Describe the outcome, review the proposed structure, then tune the details.")) + '</p></div>' +
+      '<div class="studio-design-header-actions"><span class="studio-design-revision"><span class="status ok">' + escapeText(t("studio.design.ready", undefined, "Ready to refine")) + '</span><code>' + escapeText(String(extracted.systemVersion || "v1")) + '</code><small>' + escapeText(`rev ${design.revision ?? "0"}`) + (designEnvelope.digest ? ` · ${String(designEnvelope.digest).slice(0, 8)}` : "") + '</small></span><button type="button" class="button subtle" data-studio-design-help title="' + escapeText(t("studio.design.helpTitle", undefined, "Open design guidance")) + '">' + escapeText(t("studio.design.help", undefined, "Guide")) + '</button></div>' +
+      '<nav class="studio-design-steps" aria-label="' + escapeText(t("studio.design.steps", undefined, "Design stages")) + '"><span class="is-current"><b>1</b>' + escapeText(t("studio.design.stepDescribe", undefined, "Describe")) + '</span><span><b>2</b>' + escapeText(t("studio.design.stepShape", undefined, "Shape")) + '</span><span><b>3</b>' + escapeText(t("studio.design.stepCheck", undefined, "Check")) + '</span><span><b>4</b>' + escapeText(t("studio.design.stepRelease", undefined, "Release")) + '</span></nav>' +
+      '<div class="studio-design-metrics"><div><strong>' + escapeText(String(roles.length)) + '</strong><span>' + escapeText(t("studio.design.roles", undefined, "roles")) + '</span></div><div><strong>' + escapeText(String(flows.length)) + '</strong><span>' + escapeText(t("studio.design.flows", undefined, "flows")) + '</span></div><div><strong>' + escapeText(String(Array.isArray((args.readiness as JsonRecord | undefined)?.blockers) ? ((args.readiness as JsonRecord).blockers as unknown[]).length : 0)) + '</strong><span>' + escapeText(t("studio.design.blockers", undefined, "blockers")) + '</span></div></div>' +
+      '</section>' : '',
     graphCanvas,
     "</div>"
   ].join("");

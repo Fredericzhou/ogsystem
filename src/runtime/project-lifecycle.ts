@@ -45,6 +45,7 @@ import type {
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import type { SystemDefinition } from "./types.js";
 import type { ControlPlanePrincipal } from "./identity.js";
+import { systemDefinitionToDesign, saveSystemDesign, loadSystemDesign } from "../design/index.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -1365,6 +1366,10 @@ export async function scaffoldProjectTemplate(args: {
   const template = getProjectTemplate(args.templateId);
   const paths = resolveOgsPaths(args.workdir);
   await ensureFile(resolve(args.workdir, "system.mmd"), `${template.systemMmd}\n`);
+  if (!(await loadSystemDesign(args.workdir))) {
+    const systemSource = await readFile(resolve(args.workdir, "system.mmd"), "utf8");
+    await saveSystemDesign(args.workdir, systemDefinitionToDesign(parseSystemFromMermaidSource(systemSource)));
+  }
   if (template.exampleSystemMmd) {
     await ensureFile(resolve(args.workdir, "system.example.mmd"), `${template.exampleSystemMmd}\n`);
   }

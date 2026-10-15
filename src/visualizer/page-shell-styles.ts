@@ -231,6 +231,39 @@ export function renderPageShellStyles(): string {
       background-size: 5px 5px, 5px 5px;
       background-repeat: no-repeat;
     }
+    .studio-design-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 14px 24px;
+      padding: 18px 20px 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: linear-gradient(135deg, color-mix(in srgb, var(--surface-section) 94%, var(--accent) 6%), var(--surface-section));
+      box-shadow: var(--shadow);
+    }
+    .studio-design-header-copy { min-width: 0; }
+    .studio-design-header-copy .eyebrow {
+      color: var(--accent);
+      font: 700 10px/1.2 "IBM Plex Mono", ui-monospace, monospace;
+      letter-spacing: .08em;
+    }
+    .studio-design-header-copy h2 { margin: 5px 0 4px; font-size: clamp(19px, 2vw, 27px); line-height: 1.15; color: var(--text); }
+    .studio-design-header-copy p { margin: 0; max-width: 650px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .studio-design-header-actions { grid-column: 2; grid-row: 1; display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .studio-design-revision { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--control-bg); font-size: 11px; }
+    .studio-design-steps { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding-top: 4px; overflow-x: auto; }
+    .studio-design-steps span { display: inline-flex; align-items: center; gap: 7px; min-width: max-content; color: var(--muted); font-size: 12px; }
+    .studio-design-steps span:not(:last-child)::after { content: ""; width: 22px; height: 1px; margin-left: 4px; background: var(--border); }
+    .studio-design-steps b { display: inline-grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--border); border-radius: 50%; font: 700 11px/1 "IBM Plex Mono", ui-monospace, monospace; }
+    .studio-design-steps .is-current { color: var(--text); font-weight: 700; }
+    .studio-design-steps .is-current b { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+    .studio-design-metrics { grid-column: 3; grid-row: 1; display: flex; align-items: stretch; gap: 1px; padding-top: 4px; }
+    .studio-design-metrics div { display: grid; gap: 2px; min-width: 86px; padding-right: 18px; }
+    .studio-design-metrics strong { color: var(--text); font-size: 18px; line-height: 1; }
+    .studio-design-metrics span { color: var(--muted); font-size: 11px; }
+    .studio-chat-proposal { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border)); border-radius: 8px; background: var(--accent-soft); }
+    .studio-chat-proposal-mark { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    .studio-chat-proposal p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .field select,
     .studio-command-form select {
       width: 100%;
@@ -1606,6 +1639,13 @@ export function renderPageShellStyles(): string {
       gap: 8px;
       min-height: 0;
       height: 100%;
+    }
+    .studio-graph-column.has-design-header {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .studio-graph-column.has-design-header > .studio-canvas-shell {
+      height: auto;
+      min-height: 0;
     }
     .studio-diagnostics {
       min-width: 0;
@@ -3307,6 +3347,11 @@ export function renderPageShellStyles(): string {
       }
       .review-pending-banner { align-items: flex-start; flex-direction: column; }
       .studio-bridge-layout { grid-template-columns: 1fr; }
+      .studio-design-header { grid-template-columns: minmax(0, 1fr); }
+      .studio-design-header-actions { justify-content: flex-start; }
+      .studio-design-header-actions,
+      .studio-design-metrics { grid-column: 1; grid-row: auto; }
+      .studio-design-metrics { border-top: 1px solid var(--border); padding-top: 10px; }
       .studio-index-grid { grid-template-columns: 1fr; }
       .studio-canvas-shell.has-docked-selection {
         grid-template-columns: 1fr;
@@ -3601,6 +3646,21 @@ export function renderPageShellStyles(): string {
     }
     @media (max-width: 480px) {
       .content { padding: 8px; }
+      .studio-design-header { padding: 15px; gap: 12px; }
+      .studio-design-header-copy h2 { font-size: 20px; }
+      .studio-design-header-copy p,
+      .studio-design-steps { display: none; }
+      .studio-design-metrics { display: none; }
+      .studio-design-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 9px;
+      }
+      .studio-design-header-actions { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
+      .studio-design-header-actions .button { width: auto; }
+      .studio-design-header-actions { align-items: center; }
+      .studio-design-steps span:not(:last-child)::after { width: 10px; }
+      .studio-design-metrics div { min-width: 70px; padding-right: 12px; }
       .top-nav {
         padding: 8px;
       }
@@ -3668,6 +3728,19 @@ export function renderPageShellStyles(): string {
       .editor {
         border-radius: 9px;
       }
+    }
+    @media (min-width: 721px) and (max-height: 760px) {
+      .studio-design-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+      }
+      .studio-design-header-copy p,
+      .studio-design-steps,
+      .studio-design-metrics { display: none; }
+      .studio-design-header-actions { grid-column: 2; grid-row: 1; flex-wrap: nowrap; align-items: center; }
+      .studio-design-header-actions .button { width: auto; }
     }
     .button:focus-visible,
     .run-card:focus-visible,

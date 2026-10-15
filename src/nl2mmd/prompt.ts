@@ -79,6 +79,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "4. Never exceed current OGSystem support. Do not invent unsupported syntax, metadata, or routing modes.",
     "5. Prefer existing role ids from the role repo. If the user mentions an unknown @roleId, keep it in unresolvedItems and ask for clarification.",
     "6. Keep the system prompt compact; use the turn prompt's ranked role/model suggestions instead of restating full catalogs.",
+    "7. Treat the supplied System Design context as a hard contract. Generated Mermaid is only a preview that will be compiled into that contract.",
     "",
     "Authoring rules:",
     "- Mermaid header must be one of: " + dictionary.flowcharts.join(", "),
@@ -118,6 +119,15 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "- unresolvedItems should list open blockers or unsupported requests",
     "",
     `Available laws: ${laws}`,
+    ...(context.designContext ? [
+      "",
+      `Canonical design: ${context.designContext.canonicalPath}, schema=${context.designContext.schemaVersion}, revision=${context.designContext.revision}, digest=${context.designContext.digest}`,
+      `Design system: ${context.designContext.systemId}@${context.designContext.systemVersion}; entry=${context.designContext.entrySeatId}`,
+      `Design seats: ${context.designContext.seatIds.join(", ") || "(none)"}`,
+      `Design transitions: ${context.designContext.transitions.map((item) => `${item.fromSeatId} -${item.eventType}-> ${item.toSeatId}`).join("; ") || "(none)"}`,
+      `Design state ref: ${context.designContext.stateRef ?? "(not declared)"}`,
+      `Hard constraints: ${context.designContext.hardConstraints.join(" | ")}`
+    ] : []),
     "",
     `Local role count: ${context.roleCatalog.length}`,
     `Local model count: ${context.modelCatalog.length}`
@@ -162,6 +172,9 @@ export function buildNl2MmdTurnPrompt(args: {
   const warningSummary = args.input.validationWarnings?.length
     ? args.input.validationWarnings.join(" | ")
     : "(none)";
+  const designSummary = args.context.designContext
+    ? `revision=${args.context.designContext.revision}; digest=${args.context.designContext.digest}; seats=${args.context.designContext.seatIds.join(", ") || "(none)"}`
+    : "(no system.design.json loaded)";
 
   return [
     `User: ${args.input.message}`,
@@ -172,6 +185,7 @@ export function buildNl2MmdTurnPrompt(args: {
     `Draft: ${draftSummary}`,
     `Errors: ${errorSummary}`,
     `Warnings: ${warningSummary}`,
+    `Canonical design context: ${designSummary}`,
     "Return only the JSON object required by the schema."
   ].join("\n");
 }

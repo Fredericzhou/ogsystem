@@ -23,6 +23,7 @@ import { readJsonFile } from "../runtime/json-file.js";
 import { chooseDefaultModelFromCatalog, loadModelCatalog } from "../runtime/model-catalog.js";
 import { isDirectModelRef, loadModelSelection } from "../runtime/model-selection.js";
 import { loadRolePackage } from "../runtime/role-repo.js";
+import { designDigest, loadSystemDesign } from "../design/index.js";
 import { logNl2MmdDebug } from "./logger.js";
 import type { Nl2MmdContext, Nl2MmdRoleMention, Nl2MmdSupportedDictionary } from "./types.js";
 
@@ -295,6 +296,32 @@ export async function loadNl2MmdContext(args: {
     lawIds = laws.laws.map((item) => item.lawId).sort();
   }
 
+  const design = await loadSystemDesign(args.workdir);
+  const designContext = design
+    ? {
+        canonicalPath: "system.design.json" as const,
+        schemaVersion: 1 as const,
+        revision: design.revision,
+        digest: designDigest(design),
+        systemId: design.system.systemId,
+        systemVersion: design.system.systemVersion,
+        entrySeatId: design.system.entrySeatId,
+        seatIds: Object.keys(design.seats).sort(),
+        transitions: design.transitions.map((item) => ({
+          fromSeatId: item.fromSeatId,
+          toSeatId: item.toSeatId,
+          eventType: item.eventType
+        })),
+        stateRef: design.state.ref,
+        hardConstraints: [
+          "The design document is canonical runtime input; Mermaid is import/export only.",
+          "Every generated transition must reference declared seats and use an uppercase event type.",
+          "Entry seat, join sources, loop budgets, review policies, and bindings must remain explicit.",
+          "Do not invent role packages, tools, state fields, or model capabilities absent from the local project."
+        ]
+      }
+    : undefined;
+
   const context = {
     workdir: args.workdir,
     roleRootDir,
@@ -308,6 +335,7 @@ export async function loadNl2MmdContext(args: {
     defaultTimeoutMs,
     defaultMaxOutputBytes,
     lawIds,
+    designContext,
     supportedDictionary: getSupportedNl2MmdDictionary()
   };
   logNl2MmdDebug("context.loaded", {

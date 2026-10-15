@@ -16,6 +16,13 @@ import {
   type Nl2MmdTurnResult
 } from "../nl2mmd/index.js";
 import {
+  diffSystemDesign,
+  loadSystemDesign,
+  type ChangeSet,
+  type SystemDesignDocument
+} from "../design/index.js";
+import {
+  authoringToDesign,
   importMermaidToAuthoring,
   serializeAuthoringToMermaid,
   type StudioAuthoringDocument,
@@ -69,6 +76,7 @@ export type StudioChatToMmdRequest = {
   authoring?: StudioAuthoringDocument;
   systemSource?: string;
   validation?: Record<string, unknown>;
+  runtimeContext?: Record<string, unknown>;
   runtimeConfigPath?: string;
   runtimePath?: string;
   lawsPath?: string;
@@ -103,6 +111,8 @@ export type StudioChatToMmdResponse = {
     referencedRoles: string[];
     unresolvedItems: string[];
   };
+  designPreview: SystemDesignDocument | null;
+  changeSet: ChangeSet | null;
 };
 
 type ValidateStudioSystemSource = (args: {
@@ -171,6 +181,7 @@ export function parseStudioChatToMmdRequest(body: Record<string, unknown>): Stud
     authoring: normalizeAuthoring(body.authoring),
     systemSource: asString(body.systemSource),
     validation: asRecord(body.validation),
+    runtimeContext: asRecord(body.runtimeContext),
     runtimeConfigPath: normalizeOptionalString(body.runtimeConfigPath ?? body.runtimePath),
     runtimePath: normalizeOptionalString(body.runtimePath),
     lawsPath: normalizeOptionalString(body.lawsPath),
@@ -243,10 +254,13 @@ function buildContextualMessage(request: StudioChatToMmdRequest): string {
     request.selectedRoleId ? `Selected role: ${request.selectedRoleId}` : "",
     request.selectedFlowKey ? `Selected flow: ${request.selectedFlowKey}` : ""
   ].filter(Boolean);
+  const runtimeContext = request.runtimeContext && Object.keys(request.runtimeContext).length
+    ? `\nRuntime result context:\n${JSON.stringify(request.runtimeContext).slice(0, 8000)}`
+    : "";
   if (contextLines.length === 0) {
-    return request.message;
+    return request.message + runtimeContext;
   }
-  return `${request.message}\n\nStudio Bridge context:\n${contextLines.join("\n")}`;
+  return `${request.message}\n\nStudio Bridge context:\n${contextLines.join("\n")}${runtimeContext}`;
 }
 
 function buildDraftMermaid(request: StudioChatToMmdRequest): string | undefined {
@@ -648,6 +662,8 @@ export async function runStudioChatToMmdTurn(args: {
   const previewMermaid = turn.mermaid;
   let projectValidation: StudioSystemValidation | undefined;
   let authoringPatch: StudioChatToMmdResponse["authoringPatch"] = null;
+  let designPreview: SystemDesignDocument | null = null;
+  let changeSet: ChangeSet | null = null;
   const warnings = [...turn.unresolvedItems];
 
   if (previewMermaid.trim()) {
@@ -681,6 +697,20 @@ export async function runStudioChatToMmdTurn(args: {
             authoring,
             source: "nl2mmd"
           };
+      const currentDesign = await loadSystemDesign(args.workdir);
+      if (currentDesign) {
+        designPreview = authoringToDesign(authoring, currentDesign);
+        changeSet = diffSystemDesign({
+          current: currentDesign,
+          proposed: designPreview,
+          summary: turn.summary,
+          assumptions: turn.assumptions.map((text, index) => ({
+            id: `nl2mmd-assumption-${index + 1}`,
+            text,
+            affects: ["generated design"]
+          }))
+        });
+      }
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : String(error));
     }
@@ -712,6 +742,8 @@ export async function runStudioChatToMmdTurn(args: {
       selectedFlowKey: args.request.selectedFlowKey,
       referencedRoles: asStringArray(turn.referencedRoles),
       unresolvedItems: asStringArray(turn.unresolvedItems)
-    }
+    },
+    designPreview,
+    changeSet
   };
 }

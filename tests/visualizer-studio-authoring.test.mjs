@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 
 import {
   applyCanvasDocumentToAuthoring,
   authoringToCanvasDocument,
+  authoringToDesign,
   inspectStudioBridgeDraft,
   importMermaidToAuthoring,
   loadStudioAuthoringDraft,
@@ -119,6 +120,42 @@ test("Studio save writes role backend/model separately and preserves project def
   } finally {
     await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
   }
+});
+
+test("Studio draft save does not create or replace canonical runtime artifacts", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-draft-canonical-"));
+  try {
+    const authoring = importMermaidToAuthoring({
+      workdir,
+      systemPath: path.join(workdir, "system.mmd"),
+      systemSource: source
+    });
+    await saveStudioAuthoringDraft({ workdir, authoring });
+
+    await stat(path.join(workdir, ".ogs", "studio", "system.authoring.json"));
+    await assert.rejects(() => stat(path.join(workdir, "system.mmd")), { code: "ENOENT" });
+    await assert.rejects(() => stat(path.join(workdir, "system.design.json")), { code: "ENOENT" });
+  } finally {
+    await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
+  }
+});
+
+test("Studio and chat design application preserve existing role package references", async () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const existing = authoringToDesign(authoring);
+  existing.seats.dispatch.rolePackageRef = "custom-dispatch-package";
+  existing.seats.worker.rolePackageRef = "custom-worker-package";
+
+  authoring.roles.dispatch.title = "Updated dispatch";
+  const applied = authoringToDesign(authoring, existing);
+
+  assert.equal(applied.seats.dispatch.rolePackageRef, "custom-dispatch-package");
+  assert.equal(applied.seats.worker.rolePackageRef, "custom-worker-package");
+  assert.equal(applied.seats.review.rolePackageRef, "review");
 });
 
 test("Studio authoring serializer is deterministic and preserves parse semantics", () => {

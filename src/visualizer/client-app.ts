@@ -1504,7 +1504,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return {
         projectName: inferredName || "my-ogs-project",
         templateId: "empty",
-        conflictStrategy: workspace?.state === "non-project-ready" ? "reject" : "init-current"
+        conflictStrategy: workspace?.state === "non-project-ready" ? "reject" : "init-current",
+        initialTeamPrompt: ""
       };
     }
 
@@ -1555,7 +1556,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       Object.assign(draft, {
         projectName: readFormValue("projectName", String(draft.projectName || "")),
         templateId: readFormValue("templateId", String(draft.templateId || "empty")),
-        conflictStrategy: readFormValue("conflictStrategy", String(draft.conflictStrategy || "reject"))
+        conflictStrategy: readFormValue("conflictStrategy", String(draft.conflictStrategy || "reject")),
+        initialTeamPrompt: readFormValue("initialTeamPrompt", String(draft.initialTeamPrompt || ""))
       });
       return draft;
     }
@@ -2200,6 +2202,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const bridge = resolveStudioBridgeForDisplay();
       return {
         bridge,
+        design: state.project?.design,
         readiness: state.projectReadiness,
         projectRoles: projectRolesForStudioDisplay(),
         selectedRoleId: state.studioBridgeSelectedRoleId,
@@ -5927,13 +5930,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             errorHtml,
             '<form id="project-create-form" class="structure-list">',
             '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName || "") + '"></label>',
+            '<label class="field full"><span>' + escapeText(t("projectWizard.teamGoal", undefined, "Team goal")) + '</span><textarea name="initialTeamPrompt" rows="5" placeholder="' + escapeText(t("projectWizard.teamGoalPlaceholder", undefined, "Describe the team in one sentence: roles, workflow, handoffs, and acceptance criteria.")) + '">' + escapeText(draft.initialTeamPrompt || "") + '</textarea><span class="hint">' + escapeText(t("projectWizard.teamGoalHint", undefined, "After the project is created, Studio Chat will generate a reviewable team design. Nothing is applied until you confirm it.")) + '</span></label>',
             '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId">' +
               templateOptions.map(([value, label]) => '<option value="' + escapeText(value) + '"' + (draft.templateId === value ? " selected" : "") + '>' + escapeText(label) + '</option>').join("") +
             '</select><span class="hint">' + escapeText(selectedTemplateHint) + '</span></label>',
             workspace.state === "non-project-ready"
               ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.reviewBeforeInit", undefined, "Do not initialize yet")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>'
               : '<input type="hidden" name="conflictStrategy" value="init-current">',
-            '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button></div>',
+            '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(draft.initialTeamPrompt ? t("projectWizard.createAndBuildTeam", undefined, "Create project and build team") : t("projectWizard.createProject", undefined, "Create project")) + '</button></div>',
             '</form>',
             '</div>',
             '</article>'
@@ -6978,7 +6982,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           selectedFlowKey: state.studioBridgeSelectedFlowKey || undefined,
           authoring: state.studioBridge?.authoring,
           systemSource: state.workbenchSource,
-          validation: state.workbench?.validation
+          validation: state.workbench?.validation,
+          runtimeContext: state.selectedRunId ? {
+            runId: state.selectedRunId,
+            status: state.detail?.header?.status,
+            finalRoleId: state.detail?.header?.finalRoleId,
+            lastErrorCode: state.detail?.header?.lastErrorCode,
+            transitionCount: state.detail?.header?.transitionCount,
+            failureSummary: state.failure?.summary
+          } : undefined
         }, {
           signal: chatAbortController.signal,
           timeoutMs: state.studioChatTimeoutMs || 60000
@@ -7009,6 +7021,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function applyStudioChatResult() {
       const patch = state.studioChatResult?.authoringPatch;
+      const changeSet = state.studioChatResult?.changeSet;
+      if (changeSet?.operations?.length && studioChatCanApply(state.studioChatResult)) {
+        await runAction("studio:design-apply", async () => {
+          await requestAction(API_PREFIX + "/project/design/apply", { changeSet });
+          state.workbenchSource = state.studioChatResult?.previewMermaid || state.workbenchSource;
+          state.workbenchDiskSource = state.workbenchSource;
+          state.studioChatDialogOpen = false;
+          await refreshStudioBridge();
+          renderWorkbench();
+          renderProject();
+          setFlash("success", t("studio.chat.applied", undefined, "Chat design proposal applied."));
+        });
+        return;
+      }
       if (!patch?.authoring) {
         setFlash("error", t("studio.chat.noPatch", undefined, "No structured Studio draft is available to apply."));
         return;
@@ -7645,8 +7671,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderActionState();
           return;
         }
-        const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates, roleCatalog] = await Promise.all([
+        const [summary, design, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates, roleCatalog] = await Promise.all([
           requestJson(\`\${API_PREFIX}/project\`),
+          requestJson(\`\${API_PREFIX}/project/design\`).catch(() => ({ design: null })),
           requestJson(\`\${API_PREFIX}/project/system\`),
           requestJson(\`\${API_PREFIX}/project/config\`),
           requestJson(\`\${API_PREFIX}/project/roles\`),
@@ -7658,7 +7685,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] })),
           requestJson(\`\${API_PREFIX}/project/role-catalog\`).catch(() => state.studioRoleCatalog)
         ]);
-        state.project = { summary, system, config, roles };
+        state.project = { summary, design, system, config, roles };
         state.opsSummary = opsSummary;
         state.projectReadiness = readiness;
         state.bindings = bindings;
@@ -7696,6 +7723,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function createProjectFromWizard(_formData) {
       const draft = updateProjectWizardDraftFromForm(document.getElementById("project-create-form"));
+      const initialTeamPrompt = String(draft.initialTeamPrompt || "").trim();
       const body = {
         requestId: state.projectCreateRequestId || ("project-create-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)),
         projectName: String(draft.projectName || ""),
@@ -7747,6 +7775,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               requireGraph: true,
               attempts: 5
             });
+            if (initialTeamPrompt) {
+              state.studioChatDialogOpen = true;
+              state.studioChatCollapsed = false;
+              renderWorkbench();
+              await submitStudioChatMessage(initialTeamPrompt);
+            }
           } catch (error) {
             state.studioBridgeStale = true;
             try {

@@ -51,6 +51,13 @@ export function renderStudioChatPanelHtml(args: {
   const hasResult = Boolean(result);
   const applyDisabled = !studioChatCanApply(result) || Boolean(state.actionBusy);
   const applyReason = result?.actions?.find((item: Record<string, any>) => item?.id === "apply-authoring-patch")?.reason || "";
+  const patchType = result?.authoringPatch?.type || "";
+  const changeCount = Array.isArray(result?.changeSet?.operations) ? result.changeSet.operations.length : 0;
+  const proposalLabel = patchType === "commands"
+    ? t("studio.chat.proposalCommands", undefined, "Focused changes")
+    : patchType === "replace-authoring"
+      ? t("studio.chat.proposalStructure", undefined, "Structure proposal")
+      : "";
   const messageHtml = messages.length
     ? messages.slice(-8).map((message) =>
         '<div class="event"><div class="event-top"><span>' + escapeText(message.role === "assistant" ? t("studio.chat.assistant", undefined, "assistant") : t("studio.chat.you", undefined, "you")) +
@@ -102,6 +109,7 @@ export function renderStudioChatPanelHtml(args: {
           '<div class="structure-list">',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.preview", undefined, "preview")) + '</span><span>' + escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : studioChatModeLabel(resultMode, t)) + '</span></div><strong>' +
             escapeText(result?.summary || t("studio.chat.noPreview", undefined, "No generated preview yet.")) + '</strong></div>',
+          proposalLabel ? '<div class="studio-chat-proposal"><div class="studio-chat-proposal-mark" aria-hidden="true">&#10003;</div><div><strong>' + escapeText(proposalLabel) + '</strong><p>' + escapeText(changeCount ? `${changeCount} ${t("studio.chat.designChanges", undefined, "design changes ready for review")}.` : t("studio.chat.proposalHint", undefined, "The preview stays separate until you apply it to the design.")) + '</p></div></div>' : "",
           questionHtml,
           assumptionHtml,
           warningHtml,

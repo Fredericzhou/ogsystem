@@ -18,14 +18,16 @@ test("scaffolded console print tool executes as a standard exec.bind debugger", 
   await scaffoldProjectTemplate({ workdir, templateId: "minimal" });
   await syncProjectDependencies({ workdir, systemPath: "system.mmd" });
 
-  const systemPath = path.resolve(workdir, "system.mmd");
-  const systemSource = await readFile(systemPath, "utf8");
+  const designPath = path.resolve(workdir, "system.design.json");
+  const design = JSON.parse(await readFile(designPath, "utf8"));
+  design.seats["hello-ogsystem"].binding = {
+    kind: "exec",
+    profileId: "profile.console.print"
+  };
+  design.bindings["hello-ogsystem"] = design.seats["hello-ogsystem"].binding;
   await writeFile(
-    systemPath,
-    systemSource.replace(
-      "%% exec.bind.hello-ogsystem=profile.hello.ogsystem",
-      "%% exec.bind.hello-ogsystem=profile.console.print"
-    ),
+    designPath,
+    JSON.stringify(design, null, 2) + "\n",
     "utf8"
   );
 
@@ -34,7 +36,7 @@ test("scaffolded console print tool executes as a standard exec.bind debugger", 
   await stat(path.resolve(workdir, "scripts", "console-print.mjs"));
 
   const result = await runSystemWithAdapter({
-    systemPath,
+    systemPath: path.resolve(workdir, "system.mmd"),
     prompt: "debug this role through the standard console print tool",
     workdir,
     dryRun: false

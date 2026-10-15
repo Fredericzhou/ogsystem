@@ -220,7 +220,7 @@ export async function loadRolePackages(args: {
 
   for (const roleId of args.system.roleIds) {
     const rolePackage = await loadRolePackage({
-      roleId,
+      roleId: args.system.rolePackageRefByRoleId?.[roleId] ?? roleId,
       roleRootDir: args.roleRootDir
     });
     rolePackagesByRoleId.set(roleId, rolePackage);

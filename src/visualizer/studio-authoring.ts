@@ -15,6 +15,12 @@ import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { Flow, ModelCatalog, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
+import {
+  createEmptySystemDesign,
+  loadSystemDesign,
+  saveSystemDesign,
+  type SystemDesignDocument
+} from "../design/index.js";
 import type {
   StudioAuthoringDocument,
   StudioAuthoringFlow,
@@ -33,6 +39,86 @@ export type {
   StudioAuthoringRole
 };
 export { authoringToCanvasDocument, buildBridgeFlows, buildBridgeRoles };
+
+export function authoringToDesign(
+  authoring: StudioAuthoringDocument,
+  existing?: SystemDesignDocument | null
+): SystemDesignDocument {
+  const base = existing ?? createEmptySystemDesign({
+    systemId: authoring.system.systemId,
+    systemVersion: authoring.system.systemVersion,
+    entrySeatId: authoring.system.entryRoleId,
+    entryEventType: authoring.system.entryEventType,
+    lawGlobalRef: authoring.system.lawGlobalRef
+  });
+  const design: SystemDesignDocument = {
+    ...base,
+    revision: existing ? existing.revision + 1 : base.revision,
+    system: {
+      ...base.system,
+      systemId: authoring.system.systemId,
+      systemVersion: authoring.system.systemVersion,
+      entrySeatId: authoring.system.entryRoleId,
+      entryEventType: authoring.system.entryEventType ?? base.system.entryEventType,
+      lawGlobalRef: authoring.system.lawGlobalRef,
+      ...(authoring.system.handoffMode === "strict" || authoring.system.handoffMode === "transition"
+        ? { handoffMode: authoring.system.handoffMode }
+        : {}),
+      ...(authoring.system.handoffContracts ? { handoffContracts: authoring.system.handoffContracts } : {})
+    },
+    seats: {},
+    transitions: [],
+    bindings: {},
+    presentation: {
+      ...base.presentation,
+      nodes: { ...authoring.layout.nodes },
+      viewport: authoring.layout.viewport
+    }
+  };
+  for (const [roleId, role] of Object.entries(authoring.roles)) {
+    const binding = role.bindingKind === "exec" && role.profileId
+      ? { kind: "exec" as const, profileId: role.profileId }
+      : role.bindingKind === "model" && (role.modelRef || (role.backend && role.modelId))
+        ? { kind: "model" as const, modelRef: role.modelRef ?? `${role.backend}/${role.modelId}` }
+        : { kind: "noop" as const };
+    const seat = {
+      seatId: roleId,
+      ...(role.title ? { title: role.title } : {}),
+      rolePackageRef: existing?.seats[roleId]?.rolePackageRef ?? roleId,
+      binding,
+      ...(role.routingMode ? { routingMode: role.routingMode } : {}),
+      ...(role.routeOrder?.length ? { routeOrder: [...role.routeOrder] } : {}),
+      ...(role.joinMode ? { join: { mode: role.joinMode, sources: [...(role.joinSources ?? [])], min: role.joinMin } } : {}),
+      ...(role.loopMax ? { loop: { maxRounds: role.loopMax } } : {}),
+      ...(role.review?.mode === "required" ? {
+        review: {
+          mode: "required" as const,
+          timeoutSeconds: role.review.timeoutSeconds,
+          timeoutAction: role.review.timeoutAction === "terminate" ? "terminate" as const : "pause" as const,
+          reworkTargetSeatId: role.review.reworkTargetRoleId,
+          reworkMax: role.review.reworkMax,
+          terminateScope: role.review.terminateScope === "run" ? "run" as const : "branch" as const
+        }
+      } : {}),
+      ...(role.contextMap ? { contextMap: { ...role.contextMap } } : {})
+    };
+    design.seats[roleId] = seat;
+    design.bindings[roleId] = binding;
+  }
+  for (const flow of Object.values(authoring.flows)) {
+    design.transitions.push({
+      transitionId: flow.flowId,
+      fromSeatId: flow.fromRoleId,
+      toSeatId: flow.toRoleId,
+      eventType: flow.eventType,
+      ...(flow.label ? { label: flow.label } : {}),
+      ...(flow.condition ? { condition: flow.condition } : {}),
+      ...(flow.priority !== undefined ? { priority: flow.priority } : {}),
+      channel: flow.runtimeOnlyErrorFlow || flow.eventType.startsWith("ERROR") ? "error" : undefined
+    });
+  }
+  return design;
+}
 
 function sortStrings(left: string, right: string): number {
   return left.localeCompare(right);
@@ -584,18 +670,21 @@ export async function saveStudioAuthoringDraft(args: {
   workdir: string;
   authoring: unknown;
   validateSystemSource?: ValidateStudioSystemSource;
+  persistCanonicalDesign?: boolean;
 }): Promise<{
   workdir: string;
   draftPath: string;
   authoring: unknown;
   generatedMermaid?: string;
   validation?: StudioSystemValidation;
+  design?: SystemDesignDocument;
 }> {
   const draftPath = authoringDraftPath(args.workdir);
   let generatedMermaid: string | undefined;
   let validation: StudioSystemValidation | undefined;
   let nextSelection: ModelSelectionConfig | undefined;
   let semanticCandidate: { path: string; source: string } | undefined;
+  let design: SystemDesignDocument | undefined;
   if (
     typeof args.authoring === "object" &&
     args.authoring !== null &&
@@ -689,6 +778,9 @@ export async function saveStudioAuthoringDraft(args: {
         systemSource: generatedMermaid
       });
     }
+    if (args.persistCanonicalDesign === true) {
+      design = authoringToDesign(authoring, await loadSystemDesign(args.workdir));
+    }
   }
   await mkdir(dirname(draftPath), { recursive: true });
   if (semanticCandidate) {
@@ -699,12 +791,16 @@ export async function saveStudioAuthoringDraft(args: {
   if (nextSelection) {
     await writeJsonFileAtomic(resolve(args.workdir, ".ogs", "model-selection.json"), nextSelection);
   }
+  if (design) {
+    await saveSystemDesign(args.workdir, design);
+  }
   await writeJsonFileAtomic(draftPath, args.authoring);
   return {
     workdir: args.workdir,
     draftPath,
     authoring: args.authoring,
     generatedMermaid,
-    validation
+    validation,
+    design
   };
 }

@@ -19,6 +19,19 @@ import { runSystemWithAdapter } from "../runtime/adapter.js";
 import { randomUUID } from "node:crypto";
 import { createRunId } from "../runtime/run-artifacts.js";
 import { loadSystemFromMermaid } from "../runtime/parse-mermaid.js";
+import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
+import {
+  applyChangeSet,
+  designDigest,
+  exportDesignToMermaid,
+  systemDefinitionToDesign,
+  validateSystemDesign,
+  loadSystemDesign,
+  saveSystemDesign,
+  systemDesignPath,
+  type ChangeSet,
+  type SystemDesignDocument
+} from "../design/index.js";
 import {
   rebuildRunsIndex,
   RunRoleIoLookupError,
@@ -33,8 +46,8 @@ import {
   type ControlPlanePrincipal,
   type ControlPlaneIdentityProvider
 } from "../runtime/identity.js";
-import { writeJsonFileAtomic } from "../runtime/json-file.js";
-import { loadModelSelection } from "../runtime/model-selection.js";
+import { writeJsonFileAtomic, writeTextFileAtomic } from "../runtime/json-file.js";
+import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
   inspectRun,
@@ -734,6 +747,176 @@ async function handleApiModelsSync(workdir: string, response: ServerResponse): P
   const result = await syncProjectModels({ workdir });
   invalidateAllProjectCaches(workdir);
   jsonResponse(response, 200, { status: "ok", ...result });
+}
+
+async function handleApiDesignGet(workdir: string, response: ServerResponse): Promise<void> {
+  const design = await loadSystemDesign(workdir);
+  jsonResponse(response, 200, {
+    workdir,
+    designPath: systemDesignPath(workdir),
+    design,
+    status: design ? "ready" : "empty",
+    revision: design?.revision,
+    digest: design ? designDigest(design) : undefined
+  });
+}
+
+async function handleApiDesignContext(workdir: string, response: ServerResponse): Promise<void> {
+  const design = await loadSystemDesign(workdir);
+  if (!design) {
+    throw new HttpError(409, "DESIGN_DOCUMENT_MISSING", "Create or import a design before inspecting runtime context.");
+  }
+  const runs = await loadPersistedRunsIndex(workdir);
+  const recentRuns = (runs?.runs ?? []).slice(-8).reverse().map((run) => ({
+    runId: run.runId,
+    status: run.status,
+    lastErrorCode: run.lastErrorCode,
+    lastRoleId: run.lastRoleId,
+    finalRoleId: run.finalRoleId,
+    transitionCount: run.transitionCount,
+    updatedAt: run.updatedAt
+  }));
+  jsonResponse(response, 200, {
+    projectRevision: design.revision,
+    designDigest: designDigest(design),
+    canonicalPath: systemDesignPath(workdir),
+    supportedCapabilities: {
+      changeSetApply: true,
+      contextMapping: true,
+      mermaidImportExport: true,
+      runtimeUsesDesign: true
+    },
+    currentDesign: {
+      system: design.system,
+      seats: design.seats,
+      transitions: design.transitions,
+      state: design.state,
+      policies: design.policies
+    },
+    diagnostics: validateSystemDesign(design).diagnostics,
+    runtimeObservations: { recentRuns }
+  });
+}
+
+async function syncDesignModelSelection(workdir: string, design: SystemDesignDocument): Promise<void> {
+  const selectionPath = resolve(workdir, ".ogs", "model-selection.json");
+  const currentSelection = await loadModelSelection(selectionPath);
+  const roles: Record<string, { backend?: string; modelId?: string; variant?: string; timeoutMs?: number; maxOutputBytes?: number }> = {
+    ...(currentSelection?.roles ?? {})
+  };
+  for (const [seatId, seat] of Object.entries(design.seats)) {
+    if (seat.binding.kind !== "model" || !seat.binding.modelRef) continue;
+    const separator = seat.binding.modelRef.indexOf("/");
+    if (separator <= 0 || separator === seat.binding.modelRef.length - 1) {
+      throw new HttpError(409, "DESIGN_MODEL_BINDING_INVALID", `Model binding for ${seatId} must use provider/model format.`);
+    }
+    roles[seatId] = {
+      ...roles[seatId],
+      backend: seat.binding.modelRef.slice(0, separator),
+      modelId: seat.binding.modelRef.slice(separator + 1)
+    };
+  }
+  await writeJsonFileAtomic(selectionPath, validateModelSelection({
+    configVersion: "2",
+    defaults: currentSelection?.defaults,
+    roles
+  }, selectionPath));
+}
+
+async function handleApiDesignValidate(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  void workdir;
+  const body = await readJsonRequest(request);
+  const design = body.design;
+  if (!design || typeof design !== "object" || Array.isArray(design)) {
+    throw new HttpError(400, "DESIGN_DOCUMENT_REQUIRED", "design is required.");
+  }
+  jsonResponse(response, 200, validateSystemDesign(design as SystemDesignDocument));
+}
+
+async function handleApiDesignApply(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const changeSet = body.changeSet;
+  if (!changeSet || typeof changeSet !== "object" || Array.isArray(changeSet)) {
+    throw new HttpError(400, "CHANGE_SET_REQUIRED", "changeSet is required.");
+  }
+  const current = await loadSystemDesign(workdir);
+  if (!current) {
+    throw new HttpError(409, "DESIGN_DOCUMENT_MISSING", "Create or import a design before applying changes.");
+  }
+  const result = applyChangeSet({ design: current, changeSet: changeSet as ChangeSet });
+  if (!result.ok || !result.design) {
+    throw new HttpError(409, "CHANGE_SET_REJECTED", "The design change could not be applied.", result);
+  }
+  await syncDesignModelSelection(workdir, result.design);
+  const saved = await saveSystemDesign(workdir, result.design);
+  await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(result.design));
+  invalidateAllProjectCaches(workdir);
+  jsonResponse(response, 200, {
+    status: "applied",
+    design: result.design,
+    designPath: saved.path,
+    digest: saved.digest,
+    diagnostics: result.diagnostics
+  });
+}
+
+async function handleApiDesignImportMermaid(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const source = asString(body.systemSource);
+  if (!source?.trim()) throw new HttpError(400, "MERMAID_SOURCE_REQUIRED", "systemSource is required.");
+  const design = systemDefinitionToDesign(parseSystemFromMermaidSource(source));
+  const validation = validateSystemDesign(design);
+  const apply = body.apply === true;
+  if (apply && validation.ok) {
+    const current = await loadSystemDesign(workdir);
+    const appliedDesign = current ? { ...design, revision: current.revision + 1 } : design;
+    await syncDesignModelSelection(workdir, appliedDesign);
+    const saved = await saveSystemDesign(workdir, appliedDesign);
+    await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(appliedDesign));
+    invalidateAllProjectCaches(workdir);
+    jsonResponse(response, 200, {
+      status: "applied",
+      design: appliedDesign,
+      designPath: saved.path,
+      digest: saved.digest,
+      validation,
+      sourceLength: source.length,
+      workdir
+    });
+    return;
+  }
+  jsonResponse(response, 200, {
+    status: validation.ok ? "preview" : "invalid",
+    design,
+    validation,
+    sourceLength: source.length,
+    workdir
+  });
+}
+
+async function handleApiDesignExportMermaid(
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const design = body.design;
+  if (!design || typeof design !== "object" || Array.isArray(design)) {
+    throw new HttpError(400, "DESIGN_DOCUMENT_REQUIRED", "design is required.");
+  }
+  const source = exportDesignToMermaid(design as SystemDesignDocument);
+  jsonResponse(response, 200, { source, format: "mermaid" });
 }
 
 async function handleApiStudioAuthoringSave(
@@ -1717,6 +1900,12 @@ type ExactApiRouteHandler = (context: ExactApiRouteContext) => Promise<void>;
 
 const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["GET project", async ({ state, response }) => handleApiProjectSummary(state.workdir, response)],
+  ["GET project/design", async ({ state, response }) => handleApiDesignGet(state.workdir, response)],
+  ["GET project/design/context", async ({ state, response }) => handleApiDesignContext(state.workdir, response)],
+  ["POST project/design/validate", async ({ state, request, response }) => handleApiDesignValidate(state.workdir, request, response)],
+  ["POST project/design/apply", async ({ state, request, response }) => handleApiDesignApply(state.workdir, request, response)],
+  ["POST project/design/import/mermaid", async ({ state, request, response }) => handleApiDesignImportMermaid(state.workdir, request, response)],
+  ["POST project/design/export/mermaid", async ({ request, response }) => handleApiDesignExportMermaid(request, response)],
   ["GET project/system", async ({ state, response }) => handleApiProjectSystem(state.workdir, response)],
   ["GET project/system/workbench", async ({ state, response }) => handleApiProjectWorkbench(state.workdir, response)],
   ["POST project/system/validate", async ({ state, request, response }) => handleApiProjectValidate(state.workdir, request, response)],

@@ -112,11 +112,15 @@ export type SystemDefinition = {
   systemId: string;
   systemVersion: string;
   entryRoleId: string;
+  /** Event carried by the input boundary; older callers default to START. */
+  entryEventType?: string;
   roleIds: string[];
   flows: Flow[];
   lawBinding: LawBinding;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
+  /** Resolves runtime role ids to role-package ids without changing the consumer map keys. */
+  rolePackageRefByRoleId?: Record<string, string>;
   graph?: GraphMetadata;
 };
 

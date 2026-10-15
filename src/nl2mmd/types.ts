@@ -85,6 +85,19 @@ export type Nl2MmdContext = {
   defaultTimeoutMs?: number;
   defaultMaxOutputBytes?: number;
   lawIds: string[];
+  designContext?: {
+    canonicalPath: "system.design.json";
+    schemaVersion: 1;
+    revision: number;
+    digest: string;
+    systemId: string;
+    systemVersion: string;
+    entrySeatId: string;
+    seatIds: string[];
+    transitions: Array<{ fromSeatId: string; toSeatId: string; eventType: string }>;
+    stateRef?: string;
+    hardConstraints: string[];
+  };
   supportedDictionary: Nl2MmdSupportedDictionary;
 };
 

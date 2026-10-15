@@ -1,6 +1,6 @@
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 
 import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
@@ -43,6 +43,7 @@ import {
 import type { SystemDefinition } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
+import { loadSystemDesign, saveSystemDesign, systemDefinitionToDesign } from "../design/index.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -74,6 +75,7 @@ const PROJECT_CONTROLLED_PATHS = [
   ".ogs",
   "og-roles",
   "system.mmd",
+  "system.design.json",
   "system.example.mmd",
   "profiles.json",
   "tools.json",
@@ -372,6 +374,7 @@ async function removeCreatedProjectFiles(workdir: string, testHooks?: ProjectCre
   const failures: Array<{ path: string; message: string }> = [];
   for (const [targetPath, options] of [
     [resolve(workdir, "system.mmd"), { force: true }],
+    [resolve(workdir, "system.design.json"), { force: true }],
     [resolve(workdir, "system.example.mmd"), { force: true }],
     [resolve(workdir, "profiles.json"), { force: true }],
     [resolve(workdir, "tools.json"), { force: true }],
@@ -673,6 +676,32 @@ export async function saveProjectSystemSource(args: {
   }
   await mkdir(dirname(savedPath), { recursive: true });
   await writeTextFileAtomic(savedPath, args.systemSource);
+  const canonicalSystemPath = resolve(args.workdir, "system.mmd");
+  const isCanonicalSave = process.platform === "win32"
+    ? savedPath.toLowerCase() === canonicalSystemPath.toLowerCase()
+    : savedPath === canonicalSystemPath;
+  if (isCanonicalSave) {
+    const importedDesign = systemDefinitionToDesign(parseSystemFromMermaidSource(args.systemSource));
+    const existingDesign = await loadSystemDesign(args.workdir);
+    await saveSystemDesign(args.workdir, existingDesign
+      ? {
+          ...importedDesign,
+          revision: existingDesign.revision + 1,
+          seats: Object.fromEntries(Object.entries(importedDesign.seats).map(([seatId, seat]) => [
+            seatId,
+            {
+              ...seat,
+              rolePackageRef: existingDesign.seats[seatId]?.rolePackageRef ?? seat.rolePackageRef
+            }
+          ])),
+          intent: existingDesign.intent,
+          state: existingDesign.state,
+          contracts: existingDesign.contracts,
+          policies: existingDesign.policies,
+          presentation: existingDesign.presentation
+        }
+      : importedDesign);
+  }
   invalidateProjectProjectionCache(args.workdir);
   return {
     workdir: args.workdir,
@@ -701,6 +730,7 @@ export async function exportProjectBundle(workdir: string): Promise<Record<strin
   const projectMeta = await readOptionalJson(ogsPaths.projectPath);
   const projectRecord = asRecord(projectMeta);
   const systemHash = createHash("sha256").update(systemSource).digest("hex");
+  const design = await loadSystemDesign(workdir);
   const generatedAt = new Date().toISOString();
   return {
     mode: "single-project-v1",
@@ -713,6 +743,7 @@ export async function exportProjectBundle(workdir: string): Promise<Record<strin
       systemHash,
       artifactScope: [
         "system.mmd",
+        "system.design.json",
         ".ogs/runtime.json",
         ".ogs/model-selection.json",
         ".ogs/model-catalog.json",
@@ -728,6 +759,7 @@ export async function exportProjectBundle(workdir: string): Promise<Record<strin
     project: {
       systemPath: "system.mmd",
       systemSource,
+      design,
       runtime: await readOptionalJson(ogsPaths.runtimePath),
       modelSelection: await readOptionalJson(ogsPaths.modelSelectionPath),
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
@@ -783,6 +815,14 @@ export async function loadProjectBundle(args: {
     [resolve(args.workdir, "tools.json"), project.tools ?? null, true],
     [ogsPaths.projectPath, project.project ?? null, true]
   ];
+  const designPath = resolve(args.workdir, "system.design.json");
+  if (project.design === undefined || project.design === null) {
+    await unlink(designPath).catch((error) => {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    });
+  } else {
+    writes.splice(1, 0, [designPath, project.design, true]);
+  }
   const loadedFiles: string[] = [];
   for (const [path, value, json] of writes) {
     if (value === null || value === undefined) {
@@ -875,7 +915,8 @@ export async function createProjectVisualization(args: {
     const draft = await saveStudioAuthoringDraft({
       workdir: targetWorkdir,
       authoring: authoringRecord,
-      validateSystemSource: validateProjectSystemSource
+      validateSystemSource: validateProjectSystemSource,
+      persistCanonicalDesign: true
     });
     if (forceCreateFailure) {
       const forcedError = new Error("PROJECT_CREATE_FORCED_FAILURE") as Error & {

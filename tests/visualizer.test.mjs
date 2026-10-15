@@ -26,6 +26,7 @@ import {
 } from "../dist/visualizer/request-body.js";
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
+import { loadProjectBundle, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
 
 test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
   const parsed = parseStudioChatToMmdRequest({
@@ -3324,4 +3325,123 @@ test("visualizer request body helpers keep JSON parsing limits and errors explic
     Buffer.from('"hello":"world"}')
   ]);
   assert.deepEqual(body, { hello: "world" });
+});
+
+test("project persistence keeps Save As and bundle import from replacing canonical design unexpectedly", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-persistence-regression-"));
+  try {
+    await seedProjectFixture(workdir);
+    const canonicalSource = await readFile(path.join(workdir, "system.mmd"), "utf8");
+    await saveProjectSystemSource({ workdir, systemSource: canonicalSource });
+    const designPath = path.join(workdir, "system.design.json");
+    const beforeSaveAs = JSON.parse(await readFile(designPath, "utf8"));
+
+    const copySource = canonicalSource.replace("system.version=1.0.0", "system.version=2.0.0");
+    await saveProjectSystemSource({ workdir, systemSource: copySource, saveAsPath: "drafts/system-copy.mmd" });
+    assert.deepEqual(JSON.parse(await readFile(designPath, "utf8")), beforeSaveAs);
+    assert.equal(await readFile(path.join(workdir, "system.mmd"), "utf8"), canonicalSource);
+
+    await loadProjectBundle({
+      workdir,
+      bundle: {
+        mode: "single-project-v1",
+        project: { systemSource: canonicalSource }
+      }
+    });
+    await assert.rejects(() => stat(designPath), { code: "ENOENT" });
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("saving system.mmd preserves custom role package references in the canonical design", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-role-package-ref-"));
+  try {
+    await seedProjectFixture(workdir);
+    const designPath = path.join(workdir, "system.design.json");
+    await saveProjectSystemSource({
+      workdir,
+      systemSource: await readFile(path.join(workdir, "system.mmd"), "utf8")
+    });
+    const design = JSON.parse(await readFile(designPath, "utf8"));
+    design.seats["demo-analyst"].rolePackageRef = "custom-analyst-package";
+    await writeFile(designPath, JSON.stringify(design, null, 2), "utf8");
+
+    await saveProjectSystemSource({
+      workdir,
+      systemSource: await readFile(path.join(workdir, "system.mmd"), "utf8")
+    });
+
+    const reloaded = JSON.parse(await readFile(designPath, "utf8"));
+    assert.equal(reloaded.seats["demo-analyst"].rolePackageRef, "custom-analyst-package");
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("design apply merges stored role overrides with design model bindings", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-design-selection-"));
+  let started;
+  try {
+    await seedProjectFixture(workdir);
+    const selectionPath = path.join(workdir, ".ogs", "model-selection.json");
+    await rm(selectionPath, { force: true });
+    await writeFile(selectionPath, JSON.stringify({
+      configVersion: "2",
+      defaults: { backend: "opencode", modelId: "default-model" },
+      roles: {
+        "legacy-role": { backend: "codex", modelId: "legacy-model", variant: "keep" },
+        "demo-analyst": { backend: "opencode", modelId: "old-model", variant: "fast", timeoutMs: 123 }
+      }
+    }), "utf8");
+    started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+
+    const source = await readFile(path.join(workdir, "system.mmd"), "utf8");
+    const importResponse = await fetch(`${started.url}/api/v1/project/design/import/mermaid`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ systemSource: source, apply: true })
+    });
+    assert.equal(importResponse.status, 200);
+    const imported = await importResponse.json();
+
+    const applyResponse = await fetch(`${started.url}/api/v1/project/design/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        changeSet: {
+          id: "selection-merge-regression",
+          baseRevision: imported.design.revision,
+          summary: "bind the active role",
+          assumptions: [],
+          operations: [{ type: "bindModel", seatId: "demo-analyst", modelRef: "codex/new-model" }],
+          affectedPaths: ["seats.demo-analyst.binding"],
+          diagnostics: []
+        }
+      })
+    });
+    assert.equal(applyResponse.status, 200);
+    const savedSelection = JSON.parse(await readFile(selectionPath, "utf8"));
+    assert.deepEqual(savedSelection.roles["legacy-role"], {
+      backend: "codex",
+      modelId: "legacy-model",
+      variant: "keep"
+    });
+    assert.deepEqual(savedSelection.roles["demo-analyst"], {
+      backend: "codex",
+      modelId: "new-model",
+      variant: "fast",
+      timeoutMs: 123
+    });
+  } catch (error) {
+    const errorCode = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  } finally {
+    if (started) await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
+  }
 });

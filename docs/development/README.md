@@ -8,6 +8,7 @@ and the active backlog.
 - [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): prioritized productization work and acceptance criteria for the accepted OGS orchestration semantics.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
 - [OGS GStacklike productionization plan](ogs-gstacklike-productionization-plan.md): simplify the example around real implementation, verification, gated deployment, and explicit production readiness levels.
+- [OGSystem AI productivity platform selection plan](ogs-ai-productivity-platform-selection-plan.md): background, goals, mature open-source component selection, dynamic environments, and phased service architecture.
 - [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
   boundaries, and generated source.

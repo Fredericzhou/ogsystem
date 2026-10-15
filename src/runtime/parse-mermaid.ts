@@ -85,6 +85,7 @@ type ParsedSystemGraph = {
   nodeByRole: Map<string, string>;
   flows: Flow[];
   inputEntryCandidates: Set<string>;
+  inputEntryEventType?: string;
   hasOutputTransition: boolean;
 };
 
@@ -110,6 +111,7 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   systemVersion: string;
   globalLawRef: string;
   entryRoleId: string;
+  entryEventType: string;
   roleIds: string[];
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
@@ -463,6 +465,7 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
   const nodeByRole = new Map<string, string>();
   const flows: Flow[] = [];
   const inputEntryCandidates = new Set<string>();
+  let inputEntryEventType: string | undefined;
   let hasOutputTransition = false;
   const fallbackErrorLineByFromRole = new Map<string, number>();
   const typedErrorLineByFromRole = new Map<string, Map<string, number>>();
@@ -538,6 +541,7 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
         });
       }
       inputEntryCandidates.add(edge.to.roleId);
+      inputEntryEventType = edge.eventType;
       continue;
     }
 
@@ -612,6 +616,7 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
     nodeByRole,
     flows,
     inputEntryCandidates,
+    inputEntryEventType,
     hasOutputTransition
   };
 }
@@ -1373,6 +1378,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     systemVersion,
     globalLawRef,
     entryRoleId,
+    entryEventType: graph.inputEntryEventType ?? "START",
     roleIds,
     executionBinding,
     modelBinding,
@@ -1385,11 +1391,13 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
     systemId: graph.systemId,
     systemVersion: graph.systemVersion,
     entryRoleId: graph.entryRoleId,
+    entryEventType: graph.entryEventType,
     roleIds: graph.roleIds,
     flows: graph.flows,
     lawBinding: { globalLawRef: graph.globalLawRef },
     executionBinding: graph.executionBinding,
     modelBinding: graph.modelBinding,
+    rolePackageRefByRoleId: Object.fromEntries(graph.roleIds.map((roleId) => [roleId, roleId])),
     graph: graph.graph
   };
 }

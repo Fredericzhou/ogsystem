@@ -185,6 +185,7 @@ export function buildRunPlanFingerprint(args: {
   contractPlan?: FlowContractPlan;
   compilerSnapshot?: CompiledExecutionSnapshot;
   specificationDigest?: string;
+  designDigest?: string;
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelSelectionComponents = buildModelSelectionFingerprintComponent(
@@ -203,6 +204,9 @@ export function buildRunPlanFingerprint(args: {
   };
   if (args.specificationDigest) {
     componentValues.specification = args.specificationDigest;
+  }
+  if (args.designDigest) {
+    componentValues.design = args.designDigest;
   }
   if (compilerComponent) {
     componentValues.compiler = compilerComponent.identity;
@@ -243,6 +247,14 @@ export function buildRunPlanFingerprint(args: {
             specification: {
               digest: componentDigests.specification,
               value: componentValues.specification
+            }
+          }
+        : {}),
+      ...(args.designDigest
+        ? {
+            design: {
+              digest: componentDigests.design,
+              value: componentValues.design
             }
           }
         : {}),

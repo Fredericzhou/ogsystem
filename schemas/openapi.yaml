@@ -32,6 +32,74 @@ paths:
       responses:
         "200": { description: Current project summary. }
         "401": { $ref: "#/components/responses/ApiError" }
+  /api/v1/project/design:
+    get:
+      operationId: getProjectDesign
+      responses:
+        "200": { description: Current System Design Document and revision state. }
+  /api/v1/project/design/context:
+    get:
+      operationId: getProjectDesignContext
+      responses:
+        "200": { description: Canonical design, runtime observations, and context-tuning capabilities. }
+        "409": { $ref: "#/components/responses/ApiError" }
+  /api/v1/project/design/validate:
+    post:
+      operationId: validateProjectDesign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [design]
+              properties:
+                design: { $ref: "#/components/schemas/SystemDesignDocument" }
+      responses:
+        "200": { description: Design diagnostics. }
+  /api/v1/project/design/apply:
+    post:
+      operationId: applyProjectDesignChangeSet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [changeSet]
+              properties:
+                changeSet: { $ref: "#/components/schemas/DesignChangeSet" }
+      responses:
+        "200": { description: Applied design and incremented revision. }
+        "409": { $ref: "#/components/responses/ApiError" }
+  /api/v1/project/design/import/mermaid:
+    post:
+      operationId: importMermaidDesign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [systemSource]
+              properties:
+                systemSource: { type: string, minLength: 1 }
+      responses:
+        "200": { description: Validated design preview. }
+  /api/v1/project/design/export/mermaid:
+    post:
+      operationId: exportDesignMermaid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [design]
+              properties:
+                design: { $ref: "#/components/schemas/SystemDesignDocument" }
+      responses:
+        "200": { description: Deterministic Mermaid export. }
   /api/v1/project/system:
     get:
       operationId: getProjectSystem
@@ -297,3 +365,57 @@ components:
                   code: { type: string }
                   message: { type: string }
                   details: {}
+  schemas:
+    DesignBinding:
+      type: object
+      required: [kind]
+      properties:
+        kind: { enum: [model, exec, noop] }
+        modelRef: { type: string }
+        profileId: { type: string }
+      additionalProperties: false
+    DesignSeat:
+      type: object
+      required: [seatId, rolePackageRef, binding]
+      properties:
+        seatId: { type: string }
+        title: { type: string }
+        responsibility: { type: string }
+        rolePackageRef: { type: string }
+        binding: { $ref: "#/components/schemas/DesignBinding" }
+        routingMode: { enum: [parallel_split] }
+        routeOrder: { type: array, items: { type: string } }
+        join: { type: object }
+        loop: { type: object }
+        review: { type: object }
+        contextMap: { type: object, additionalProperties: { type: string } }
+      additionalProperties: false
+    SystemDesignDocument:
+      type: object
+      required: [schemaVersion, revision, intent, system, seats, transitions, state, contracts, policies, bindings, presentation]
+      properties:
+        schemaVersion: { const: 1 }
+        revision: { type: integer, minimum: 0 }
+        intent: { type: object }
+        system: { type: object }
+        seats: { type: object, additionalProperties: { $ref: "#/components/schemas/DesignSeat" } }
+        transitions: { type: array, items: { type: object } }
+        state: { type: object }
+        contracts: { type: array }
+        policies: { type: object }
+        bindings: { type: object, additionalProperties: { $ref: "#/components/schemas/DesignBinding" } }
+        presentation: { type: object }
+      additionalProperties: false
+    DesignChangeSet:
+      type: object
+      required: [id, baseRevision, summary, assumptions, operations, affectedPaths, diagnostics]
+      properties:
+        id: { type: string }
+        baseRevision: { type: integer, minimum: 0 }
+        summary: { type: string }
+        assumptions: { type: array }
+        operations: { type: array }
+        affectedPaths: { type: array, items: { type: string } }
+        diagnostics: { type: array }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+      additionalProperties: false
