@@ -1,16 +1,17 @@
 {
   "type": "object",
-  "required": ["content"],
+  "required": ["content", "data"],
   "properties": {
     "event": {
-      "type": "string",
+      "type": ["string", "null"],
       "enum": ["SEND_CRITIC", "SEND_OPTIMIZER"]
     },
     "content": { "type": "string" },
     "data": {
       "type": "object",
-      "additionalProperties": true,
-      "properties": { "debate_round": { "type": "integer", "minimum": 1 } }
+      "additionalProperties": false,
+      "required": ["debate_round"],
+      "properties": { "debate_round": { "type": ["integer", "null"], "minimum": 1 } }
     }
   },
   "additionalProperties": false

@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { validateRoleOutputSchema } from "../dist/runtime/role-repo.js";
+
+const proposerRoleDir = new URL("../examples/mulit-debate-ogs/og-roles/roles/investment-proposer/", import.meta.url);
+const proposerSchema = JSON.parse(await readFile(new URL("output.schema.json", proposerRoleDir), "utf8"));
+const proposerPrompt = await readFile(new URL("prompt.md", proposerRoleDir), "utf8");
 
 const nestedOutputSchema = {
   type: "object",
@@ -90,5 +95,35 @@ test("role output schema validation rejects nested additional properties", () =>
         }
       }),
     /\$\.data\.extra: additional property not allowed/
+  );
+});
+
+test("investment proposer keeps its optional event contract aligned with its schema", () => {
+  assert.match(proposerPrompt, /event is optional for this parallel_split role/i);
+  assert.deepEqual(proposerSchema.required, ["content", "data"]);
+  assert.deepEqual(proposerSchema.properties.event.enum, ["SEND_CRITIC", "SEND_OPTIMIZER"]);
+  assert.doesNotThrow(() =>
+    validateRoleOutputSchema({
+      roleId: "investment-proposer",
+      schema: proposerSchema,
+      schemaPath: "examples/mulit-debate-ogs/og-roles/roles/investment-proposer/output.schema.json",
+      output: {
+        content: "A reviewable proposal",
+        data: { debate_round: 1 }
+      }
+    })
+  );
+  assert.throws(() =>
+    validateRoleOutputSchema({
+      roleId: "investment-proposer",
+      schema: proposerSchema,
+      schemaPath: "examples/mulit-debate-ogs/og-roles/roles/investment-proposer/output.schema.json",
+      output: {
+        event: "UNKNOWN",
+        content: "A reviewable proposal",
+        data: { debate_round: 1 }
+      }
+    }),
+    /\$\.event: must be equal to one of the allowed values/
   );
 });

@@ -2839,7 +2839,34 @@ export function renderPageShellStyles(): string {
       border: 1px solid var(--border);
       border-left: 3px solid var(--accent);
       border-radius: 6px;
-      background: linear-gradient(90deg, var(--role-fill, transparent), transparent 42%), var(--panel);
+      --role-accent: var(--flow-role-accent-light, var(--accent));
+      --role-fill: var(--flow-role-fill-light, transparent);
+      background: linear-gradient(90deg, var(--role-fill), transparent 52%), var(--panel);
+    }
+    :root[data-visualizer-theme="dark"] .flow-step {
+      --role-accent: var(--flow-role-accent-dark, var(--accent));
+      --role-fill: var(--flow-role-fill-dark, transparent);
+      border-color: rgba(148, 163, 184, 0.2);
+      border-left-color: var(--role-accent);
+      background: linear-gradient(90deg, var(--role-fill), transparent 58%), var(--panel);
+    }
+    :root[data-visualizer-theme="dark"] .flow-step-head {
+      border-bottom-color: rgba(148, 163, 184, 0.22);
+    }
+    :root[data-visualizer-theme="dark"] .flow-step-index,
+    :root[data-visualizer-theme="dark"] .flow-step-meta,
+    :root[data-visualizer-theme="dark"] .flow-step-route,
+    :root[data-visualizer-theme="dark"] .flow-message-meta {
+      color: #b7c5dc;
+    }
+    :root[data-visualizer-theme="dark"] .flow-step-io h4,
+    :root[data-visualizer-theme="dark"] .flow-step-detail > summary,
+    :root[data-visualizer-theme="dark"] .flow-step-detail-grid h4 {
+      color: #aebdd4;
+    }
+    :root[data-visualizer-theme="dark"] .flow-step-route {
+      border-top-color: rgba(148, 163, 184, 0.22);
+      background: rgba(4, 10, 20, 0.34);
     }
     .flow-step.is-loop-step {
       margin-left: 14px;

@@ -710,15 +710,31 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       return Boolean(shell && graph && state && graph.width >= shell.width - 2 && state.width >= shell.width - 2 && state.top >= graph.bottom - 1);
     })).toBe(true);
     await expect(page.locator("#run-flow .flow-step")).toBeVisible();
-    const roleColorMatch = await page.evaluate(() => {
+    const flowRoleColors = await page.evaluate(() => {
       const step = document.querySelector<HTMLElement>("#run-flow .flow-step");
-      const node = document.querySelector<SVGElement>('#run-graph-root [data-cell-id="demo-analyst"] rect');
+      const theme = document.documentElement.dataset.visualizerTheme;
       return {
-        flow: step?.style.getPropertyValue("--role-accent").toLowerCase() || "",
-        graph: node?.getAttribute("stroke")?.toLowerCase() || ""
+        theme,
+        active: step ? getComputedStyle(step).getPropertyValue("--role-accent").trim() : "",
+        light: step?.style.getPropertyValue("--flow-role-accent-light").trim() || "",
+        dark: step?.style.getPropertyValue("--flow-role-accent-dark").trim() || ""
       };
     });
-    expect(roleColorMatch.graph).toBe(roleColorMatch.flow);
+    expect(flowRoleColors.light).toMatch(/^hsl\(/);
+    expect(flowRoleColors.dark).toMatch(/^hsl\(/);
+    expect(flowRoleColors.active).toBe(flowRoleColors.theme === "dark" ? flowRoleColors.dark : flowRoleColors.light);
+    await page.locator("[data-visualizer-theme-toggle]").click();
+    const switchedFlowColors = await page.evaluate(() => {
+      const step = document.querySelector<HTMLElement>("#run-flow .flow-step");
+      const theme = document.documentElement.dataset.visualizerTheme;
+      return {
+        theme,
+        active: step ? getComputedStyle(step).getPropertyValue("--role-accent").trim() : "",
+        expected: step?.style.getPropertyValue(theme === "dark" ? "--flow-role-accent-dark" : "--flow-role-accent-light").trim() || ""
+      };
+    });
+    expect(switchedFlowColors.theme).not.toBe(flowRoleColors.theme);
+    expect(switchedFlowColors.active).toBe(switchedFlowColors.expected);
     await page.locator('#run-flow [data-flow-role-focus="demo-analyst"]').click();
     await expect(page.locator('#run-flow [data-flow-role="demo-analyst"]')).toHaveClass(/is-role-focus/);
     await page.locator('#run-graph-root [data-cell-id="demo-analyst"]').click();

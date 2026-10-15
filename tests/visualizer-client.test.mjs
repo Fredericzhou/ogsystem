@@ -3424,7 +3424,9 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.equal(defaultOperateGraphTab?.getAttribute("aria-pressed"), "true");
   assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
   assert.match(harness.document.getElementById("run-flow").textContent, /Representative role output/);
-  assert.match(harness.document.getElementById("run-flow").innerHTML, /--role-accent:/);
+  const flowHtml = harness.document.getElementById("run-flow").innerHTML;
+  assert.match(flowHtml, /--flow-role-accent-light:/);
+  assert.match(flowHtml, /--flow-role-accent-dark:/);
   assert.equal(
     harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/role-io?")),
     false
