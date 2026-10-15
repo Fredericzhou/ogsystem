@@ -36,17 +36,17 @@ function diagnosticBadgeText(severity: GraphViewModelNode["diagnostic"] extends 
 function nodeStroke(node: GraphViewModelNode): string {
   if (node.diagnostic?.severity === "error") return "#f87171";
   if (node.diagnostic?.severity === "warning") return "#fbbf24";
-  if (node.kind === "boundary") return "#64748b";
+  if (node.kind === "boundary") return "#91aa9d";
   if (node.roleSeat) return roleColorForId(node.roleId).accent;
-  return "#38bdf8";
+  return "#55798c";
 }
 
 function edgeStroke(edge: GraphViewModelEdge): string {
-  if (edge.diagnostic?.severity === "error") return "#f87171";
-  if (edge.diagnostic?.severity === "warning" || edge.runtimeOnlyErrorFlow) return "#fbbf24";
-  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return "#2dd4bf";
-  if (edge.participatesInJoin) return "#a78bfa";
-  return "#94a3b8";
+  if (edge.diagnostic?.severity === "error") return "#c9674b";
+  if (edge.diagnostic?.severity === "warning" || edge.runtimeOnlyErrorFlow) return "#bc8b39";
+  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return "#55798c";
+  if (edge.participatesInJoin) return "#1b7662";
+  return "#82998e";
 }
 
 function isLoopEdge(edge: GraphViewModelEdge): boolean {
@@ -107,7 +107,13 @@ function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
   };
 }
 
-export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection): void {
+export function renderStudioGraphViewModel(
+  graph: Graph,
+  viewModel: GraphViewModel,
+  projection: LayoutProjection,
+  options: { showTechnicalDetails?: boolean } = {}
+): void {
+  const showTechnicalDetails = options.showTechnicalDetails !== false;
   const projectedNodes = viewModel.nodes.map((node) => {
     const layout = projection.nodes.find((candidate) => candidate.id === node.id);
     return layout ? { ...node, layout } : node;
@@ -155,9 +161,9 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
     for (const edge of viewModel.edges) {
       const existing = graph.getCellById(edge.id);
       if (existing?.isEdge()) {
-        updateStudioEdge(existing, edge, routingByEdgeId.get(edge.id));
+        updateStudioEdge(existing, edge, routingByEdgeId.get(edge.id), undefined, showTechnicalDetails);
       } else {
-        graph.addEdge(studioEdgeMetadata(edge, routingByEdgeId.get(edge.id)));
+        graph.addEdge(studioEdgeMetadata(edge, routingByEdgeId.get(edge.id), showTechnicalDetails));
       }
     }
 
@@ -171,7 +177,7 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
     }
 
   });
-  positionStudioEdgeLabels(graph, viewModel.edges);
+  positionStudioEdgeLabels(graph, viewModel.edges, showTechnicalDetails);
 }
 
 function bundleStroke(channel: string): string {
@@ -457,6 +463,7 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
       { tagName: "rect", selector: "roleMarkerBadge" },
       { tagName: "text", selector: "roleMarkerText" },
       { tagName: "text", selector: "label" },
+      { tagName: "text", selector: "description" },
       { tagName: "circle", selector: "diagnosticBadge" },
       { tagName: "text", selector: "diagnosticText" }
     ],
@@ -467,9 +474,9 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
 }
 
 function nodeFill(node: GraphViewModelNode): string {
-  if (node.kind === "boundary") return "rgba(15, 23, 42, 0.6)";
-  if (node.roleSeat) return roleColorForId(node.roleId).fill;
-  return "rgba(15, 23, 42, 0.96)";
+  if (node.kind === "boundary") return "#f1f7f3";
+  if (node.roleSeat) return "#ffffff";
+  return "#ffffff";
 }
 
 function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
@@ -487,7 +494,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       strokeDasharray: node.kind === "boundary" ? "6 4" : ""
     },
     nodeTitle: {
-      text: showRoleMarker ? nodeLabel(node) : ""
+      text: showRoleMarker ? formatStudioNodeLabel(node) : ""
     },
     roleMarkerBadge: {
       x: markerX - 16,
@@ -496,8 +503,8 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       height: 20,
       rx: 10,
       ry: 10,
-      fill: roleColor?.accent ?? "none",
-      fillOpacity: 0.22,
+      fill: roleColor?.fill ?? "none",
+      fillOpacity: 1,
       stroke: roleColor?.accent ?? "none",
       strokeOpacity: 0.85,
       strokeWidth: 1.2,
@@ -510,7 +517,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       textAnchor: "middle",
       fontSize: 11,
       fontWeight: 700,
-      fill: "#f8fafc",
+      fill: "#29463b",
       visibility: showRoleMarker ? "visible" : "hidden"
     },
     label: {
@@ -521,20 +528,36 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
         textAnchor: "start",
         textVerticalAnchor: "middle"
       } : {}),
-      fill: node.kind === "boundary" ? "#94a3b8" : "#e5eefb",
-      fontSize: 12,
-      fontWeight: 600,
+      fill: node.kind === "boundary" ? "#165f50" : "#243b32",
+      fontSize: node.kind === "boundary" ? 14 : 13,
+      fontWeight: 650,
       textWrap: {
         width: node.layout.width - (showRoleMarker ? 74 : 18),
         height: node.layout.height - 12,
         ellipsis: true
       }
     },
+    description: {
+      text: node.description || "",
+      x: 64 - node.layout.width / 2,
+      y: 19,
+      textAnchor: "start",
+      textVerticalAnchor: "middle",
+      fill: "#6b7e78",
+      fontSize: 11,
+      fontWeight: 450,
+      textWrap: {
+        width: node.layout.width - 76,
+        height: 36,
+        ellipsis: true
+      },
+      visibility: node.description ? "visible" : "hidden"
+    },
     diagnosticBadge: {
       cx: node.layout.width - 14,
       cy: 14,
       r: 9,
-      fill: node.diagnostic?.severity === "error" ? "#7f1d1d" : "#713f12",
+      fill: node.diagnostic?.severity === "error" ? "#c9674b" : "#bc8b39",
       stroke: node.diagnostic?.severity === "error" ? "#f87171" : "#fbbf24",
       strokeWidth: 1.2,
       visibility: node.roleSeat && node.diagnostic ? "visible" : "hidden"
@@ -545,7 +568,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       textAnchor: "middle",
       fontSize: 11,
       fontWeight: 700,
-      fill: "#f8fafc",
+      fill: "#ffffff",
       text: node.diagnostic ? diagnosticBadgeText(node.diagnostic.severity) : "",
       visibility: node.roleSeat && node.diagnostic ? "visible" : "hidden"
     }
@@ -622,7 +645,8 @@ function projectionPortsByNode(projection: LayoutProjection): Map<string, Studio
 
 function studioEdgeMetadata(
   edge: GraphViewModelEdge,
-  routing?: StudioEdgeRouting
+  routing?: StudioEdgeRouting,
+  showTechnicalDetails = true
 ): Edge.Metadata {
   return {
     id: edge.id,
@@ -630,7 +654,7 @@ function studioEdgeMetadata(
     target: routing?.target ?? { cell: edge.target },
     zIndex: 1,
     data: { studioEdge: edge },
-    labels: studioEdgeLabels(edge),
+    labels: studioEdgeLabels(edge, undefined, showTechnicalDetails),
     attrs: studioEdgeAttrs(edge),
     router: routing?.router,
     connector: routing?.connector ?? STUDIO_EDGE_CONNECTOR,
@@ -642,7 +666,7 @@ type StudioEdgeLabelPosition = { distance: number; offset: number };
 type StudioEdgeLabelPositions = { summary: StudioEdgeLabelPosition; topology?: StudioEdgeLabelPosition };
 type StudioLabelRect = { left: number; right: number; top: number; bottom: number };
 
-function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEdge[]): void {
+function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEdge[], showTechnicalDetails: boolean): void {
   const visibleNodes = Array.from(graph.container.querySelectorAll<SVGGElement>(".x6-node[data-cell-id]"))
     .filter((node) => !node.getAttribute("data-cell-id")?.startsWith("__ogs-scc-"))
     .map((node) => {
@@ -651,12 +675,12 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
     });
   const ordered = edges.map((edge) => ({
     edge,
-    width: estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge))
+    width: estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label)
   })).sort((left, right) => right.width - left.width || left.edge.id.localeCompare(right.edge.id));
   const reservations: StudioLabelRect[] = [];
   for (const { edge } of ordered) {
     if (!formatStudioEdgeTopologyLabel(edge) ||
-      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge)) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) continue;
+      estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) continue;
     const cell = graph.getCellById(edge.id);
     const view = cell?.isEdge() ? graph.findViewByCell(cell) : null;
     const badge = view?.container.querySelector<SVGGElement>('.x6-edge-label[data-index="0"]');
@@ -667,9 +691,9 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
 
   for (const { edge } of ordered) {
     const topologyLabel = Boolean(formatStudioEdgeTopologyLabel(edge)) &&
-      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge)) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+      estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
     const labelIndex = topologyLabel ? 1 : 0;
-    const defaultLabels = studioEdgeLabels(edge);
+    const defaultLabels = studioEdgeLabels(edge, undefined, showTechnicalDetails);
     const defaultPosition = defaultLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
     const position = findStudioEdgeLabelPosition(
       graph,
@@ -677,7 +701,8 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
       labelIndex,
       visibleNodes,
       reservations,
-      defaultPosition?.offset ?? 0
+      defaultPosition?.offset ?? 0,
+      showTechnicalDetails
     );
     if (!position) continue;
     reservations.push(position.bounds);
@@ -690,7 +715,8 @@ function findStudioEdgeLabelPosition(
   labelIndex: number,
   obstacles: readonly StudioLabelRect[],
   reserved: readonly StudioLabelRect[],
-  preferredOffset: number
+  preferredOffset: number,
+  showTechnicalDetails: boolean
 ): { position: StudioEdgeLabelPosition; bounds: StudioLabelRect } | undefined {
   const cell = graph.getCellById(edge.id);
   if (!cell?.isEdge()) return undefined;
@@ -703,7 +729,7 @@ function findStudioEdgeLabelPosition(
   if (length <= 1) return undefined;
   const labelSize = label.getBoundingClientRect();
   const width = labelSize.width + 4;
-  const summaryText = formatStudioEdgeSummaryLabel(edge);
+  const summaryText = showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label;
   const inlineTopology = estimateStudioEdgeSummaryLabelWidth(summaryText) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
     ? formatStudioEdgeTopologyLabel(edge)
     : "";
@@ -756,13 +782,17 @@ function findStudioEdgeLabelPosition(
     ...(formatStudioEdgeTopologyLabel(edge)
       ? { topology: currentLabels[0]?.position as StudioEdgeLabelPosition ?? { distance: 0.5, offset: -15 } }
       : {})
-  }));
+  }, showTechnicalDetails));
   return { position: best.position, bounds: best.bounds };
 }
 
-function studioEdgeLabels(edge: GraphViewModelEdge, positions?: StudioEdgeLabelPositions): Edge.Metadata["labels"] {
+function studioEdgeLabels(
+  edge: GraphViewModelEdge,
+  positions?: StudioEdgeLabelPositions,
+  showTechnicalDetails = true
+): Edge.Metadata["labels"] {
   const labels: NonNullable<Edge.Metadata["labels"]> = [];
-  const summaryLabel = formatStudioEdgeSummaryLabel(edge);
+  const summaryLabel = showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label;
   const topologyLabel = formatStudioEdgeTopologyLabel(edge);
   const hasWrappedSummaryLabel = estimateStudioEdgeSummaryLabelWidth(summaryLabel) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
   const inlineTopologyLabel = hasWrappedSummaryLabel ? formatStudioEdgeTopologyLabel(edge) : "";
@@ -788,13 +818,13 @@ function studioEdgeLabels(edge: GraphViewModelEdge, positions?: StudioEdgeLabelP
       attrs: {
         label: {
           text: topologyLabel,
-          fill: isCycle ? "#ccfbf1" : "#e0f2fe",
+          fill: isCycle ? "#165f50" : "#55798c",
           fontSize: 10,
           fontWeight: 800
         },
         body: {
-          fill: isCycle ? "#115e59" : "#075985",
-          stroke: isCycle ? "#2dd4bf" : "#38bdf8",
+          fill: "#f1f7f3",
+          stroke: isCycle ? "#1b7662" : "#9fc3b1",
           strokeWidth: 1,
           rx: 5,
           ry: 5
@@ -810,7 +840,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge, positions?: StudioEdgeLabelP
     attrs: {
       label: {
         text: renderedSummaryLabel,
-        fill: "#dbeafe",
+        fill: "#33483f",
         fontSize: 10,
         textWrap: {
           width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,
@@ -819,7 +849,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge, positions?: StudioEdgeLabelP
         }
       },
       body: {
-        fill: "rgba(15, 23, 42, 0.94)",
+        fill: "#ffffff",
         stroke: edgeStroke(edge),
         strokeWidth: 1
       }
@@ -839,7 +869,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge, positions?: StudioEdgeLabelP
           fontWeight: 700
         },
         body: {
-          fill: edge.diagnostic.severity === "error" ? "#7f1d1d" : "#713f12",
+          fill: edge.diagnostic.severity === "error" ? "#c9674b" : "#bc8b39",
           stroke: edge.diagnostic.severity === "error" ? "#f87171" : "#fbbf24",
           strokeWidth: 1
         }
@@ -878,12 +908,13 @@ function updateStudioEdge(
   cell: Edge,
   edge: GraphViewModelEdge,
   routing?: StudioEdgeRouting,
-  labelPosition?: StudioEdgeLabelPosition
+  labelPosition?: StudioEdgeLabelPosition,
+  showTechnicalDetails = true
 ): void {
   cell.setData({ studioEdge: edge });
   cell.setSource(routing?.source ?? { cell: edge.source });
   cell.setTarget(routing?.target ?? { cell: edge.target });
-  cell.setLabels(studioEdgeLabels(edge, labelPosition));
+  cell.setLabels(studioEdgeLabels(edge, labelPosition, showTechnicalDetails));
   cell.attr(studioEdgeAttrs(edge));
   cell.setRouter(routing?.router ?? STUDIO_EDGE_ORTH_ROUTER);
   cell.setVertices(routing?.vertices ?? []);

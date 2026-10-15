@@ -1,13 +1,13 @@
 export function roleColorForId(roleId: string): { accent: string; fill: string } {
   const colors = [
-    { accent: "#38bdf8", fill: "rgba(56, 189, 248, 0.12)" },
-    { accent: "#34d399", fill: "rgba(52, 211, 153, 0.12)" },
-    { accent: "#fb7185", fill: "rgba(251, 113, 133, 0.12)" },
-    { accent: "#fbbf24", fill: "rgba(251, 191, 36, 0.12)" },
-    { accent: "#a78bfa", fill: "rgba(167, 139, 250, 0.12)" },
-    { accent: "#22d3ee", fill: "rgba(34, 211, 238, 0.12)" },
-    { accent: "#fb923c", fill: "rgba(251, 146, 60, 0.12)" },
-    { accent: "#a3e635", fill: "rgba(163, 230, 53, 0.12)" }
+    { accent: "#1b7662", fill: "#e7f4ef" },
+    { accent: "#c9674b", fill: "#fbefeb" },
+    { accent: "#55798c", fill: "#eaf1f4" },
+    { accent: "#bc8b39", fill: "#fbf5e7" },
+    { accent: "#467c72", fill: "#e9f3ef" },
+    { accent: "#738a73", fill: "#eef3eb" },
+    { accent: "#9b6a58", fill: "#f7efeb" },
+    { accent: "#687c86", fill: "#edf2f4" }
   ];
   let hash = 2166136261;
   for (const character of roleId) {

@@ -12,8 +12,8 @@ export function injectStudioGraphStyles(): void {
       grid-template-rows: auto minmax(0, 1fr);
       min-height: 390px;
       height: 100%;
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      background: rgba(4, 8, 16, 0.54);
+      border: 1px solid #dce8e2;
+      background: #f7faf8;
       min-width: 0;
       overflow: hidden;
       container-type: inline-size;
@@ -27,10 +27,8 @@ export function injectStudioGraphStyles(): void {
       align-items: center;
       gap: 8px;
       padding: 5px 6px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-      background:
-        linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(8, 13, 26, 0.76));
-      backdrop-filter: blur(14px);
+      border-bottom: 1px solid #e1e9e5;
+      background: #ffffff;
       min-width: 0;
     }
     .studio-graph-toolbar-main {
@@ -50,9 +48,9 @@ export function injectStudioGraphStyles(): void {
       min-width: 0;
       flex-shrink: 0;
       padding: 2px;
-      border: 1px solid rgba(148, 163, 184, 0.14);
+      border: 1px solid #e5ede8;
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.035);
+      background: #f7faf8;
     }
     .studio-graph-toolbar-group[hidden],
     .studio-graph-toolbar button[hidden] {
@@ -65,8 +63,8 @@ export function injectStudioGraphStyles(): void {
       gap: 5px;
       border: 1px solid transparent;
       border-radius: 6px;
-      background: rgba(255, 255, 255, 0.025);
-      color: #e5eefb;
+      background: #ffffff;
+      color: #40574e;
       padding: 5px 7px;
       min-width: 32px;
       min-height: 32px;
@@ -78,9 +76,9 @@ export function injectStudioGraphStyles(): void {
       transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
     }
     .studio-graph-toolbar button:hover {
-      border-color: rgba(56, 189, 248, 0.38);
-      background: rgba(56, 189, 248, 0.1);
-      color: #d7f3ff;
+      border-color: #a9cfbd;
+      background: #e7f4ef;
+      color: #165f50;
     }
     .studio-graph-toolbar button:focus-visible,
     .studio-graph-toolbar select:focus-visible,
@@ -90,8 +88,8 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-context-menu-item:focus-visible,
     .studio-graph-quick-open-item:focus-visible {
       outline: none;
-      border-color: rgba(56, 189, 248, 0.76);
-      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+      border-color: #1b7662;
+      box-shadow: 0 0 0 3px rgba(27, 118, 98, 0.16);
     }
     .studio-graph-toolbar button:disabled {
       cursor: not-allowed;
@@ -105,7 +103,7 @@ export function injectStudioGraphStyles(): void {
       cursor: pointer;
     }
     .studio-graph-status {
-      color: #8fa1c3;
+      color: #6b7e78;
       font-size: 12px;
       flex: 0 1 auto;
       overflow-wrap: anywhere;
@@ -313,9 +311,9 @@ export function injectStudioGraphStyles(): void {
       z-index: 2;
       padding: 24px;
       text-align: center;
-      color: #8fa1c3;
+      color: #6b7e78;
       font-size: 13px;
-      background: rgba(4, 8, 16, 0.76);
+      background: rgba(28, 48, 44, 0.12);
     }
     .studio-graph-empty[hidden] {
       display: none;
@@ -325,11 +323,11 @@ export function injectStudioGraphStyles(): void {
       z-index: 6;
       max-width: 320px;
       padding: 10px 12px;
-      border: 1px solid rgba(148, 163, 184, 0.28);
+      border: 1px solid #dce8e2;
       border-radius: 10px;
-      background: rgba(8, 13, 26, 0.96);
-      color: #dbeafe;
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
+      background: #ffffff;
+      color: #243b32;
+      box-shadow: 0 14px 32px rgba(35, 67, 56, 0.14);
       pointer-events: none;
       display: grid;
       gap: 6px;
@@ -345,10 +343,10 @@ export function injectStudioGraphStyles(): void {
       bottom: 14px;
       width: 180px;
       height: 120px;
-      border: 1px solid rgba(148, 163, 184, 0.28);
+      border: 1px solid #dce8e2;
       border-radius: 10px;
-      background: rgba(8, 13, 26, 0.92);
-      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+      background: #ffffff;
+      box-shadow: 0 12px 28px rgba(35, 67, 56, 0.12);
       overflow: hidden;
       z-index: 4;
       pointer-events: auto;
@@ -407,11 +405,10 @@ export function injectStudioGraphStyles(): void {
       gap: 4px;
       min-width: 152px;
       padding: 6px;
-      border: 1px solid rgba(148, 163, 184, 0.24);
+      border: 1px solid #dce8e2;
       border-radius: 12px;
-      background: rgba(8, 13, 26, 0.97);
-      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
-      backdrop-filter: blur(12px);
+      background: #ffffff;
+      box-shadow: 0 14px 32px rgba(35, 67, 56, 0.14);
     }
     .studio-graph-context-menu[hidden] {
       display: none;
@@ -424,7 +421,7 @@ export function injectStudioGraphStyles(): void {
       border: 1px solid transparent;
       border-radius: 8px;
       background: transparent;
-      color: #e5eefb;
+      color: #33483f;
       padding: 8px 10px;
       font-size: 12px;
       text-align: left;
@@ -432,14 +429,14 @@ export function injectStudioGraphStyles(): void {
       transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
     }
     .studio-graph-context-menu-item:hover {
-      border-color: rgba(56, 189, 248, 0.34);
-      background: rgba(56, 189, 248, 0.12);
-      color: #bae6fd;
+      border-color: #a9cfbd;
+      background: #e7f4ef;
+      color: #165f50;
     }
     .studio-graph-context-menu-item.is-destructive:hover {
       border-color: rgba(248, 113, 113, 0.36);
       background: rgba(248, 113, 113, 0.12);
-      color: #fecaca;
+      color: #9d4e37;
     }
     .studio-graph-context-menu-item:disabled {
       opacity: 0.42;
@@ -458,30 +455,30 @@ export function injectStudioGraphStyles(): void {
       display: grid;
       gap: 8px;
       padding: 12px;
-      border: 1px solid rgba(148, 163, 184, 0.24);
+      border: 1px solid #dce8e2;
       border-radius: 12px;
-      background: rgba(8, 13, 26, 0.96);
-      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+      background: #ffffff;
+      box-shadow: 0 18px 38px rgba(35, 67, 56, 0.14);
     }
     .studio-graph-quick-open-label {
       font-size: 12px;
-      color: #8fa1c3;
+      color: #6b7e78;
     }
     .studio-graph-quick-open-input {
       width: 100%;
       min-width: 0;
-      border: 1px solid rgba(148, 163, 184, 0.24);
+      border: 1px solid #dce8e2;
       border-radius: 8px;
-      background: rgba(4, 8, 16, 0.92);
-      color: #e5eefb;
+      background: #fbfcfb;
+      color: #243b32;
       padding: 9px 10px;
       box-sizing: border-box;
     }
     .studio-graph-quick-open-input:focus-visible,
     .studio-graph-quick-debug-input:focus-visible {
       outline: none;
-      border-color: rgba(56, 189, 248, 0.76);
-      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+      border-color: #1b7662;
+      box-shadow: 0 0 0 3px rgba(27, 118, 98, 0.16);
     }
     .studio-graph-quick-open-results {
       display: grid;
@@ -494,22 +491,22 @@ export function injectStudioGraphStyles(): void {
       gap: 3px;
       width: 100%;
       text-align: left;
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      background: rgba(255, 255, 255, 0.03);
-      color: #e5eefb;
+      border: 1px solid #e5ede8;
+      background: #ffffff;
+      color: #33483f;
       padding: 9px 10px;
       cursor: pointer;
     }
     .studio-graph-quick-open-item.is-active,
     .studio-graph-quick-open-item:hover {
-      border-color: rgba(56, 189, 248, 0.4);
-      background: rgba(56, 189, 248, 0.12);
-      color: #bae6fd;
+      border-color: #a9cfbd;
+      background: #e7f4ef;
+      color: #165f50;
     }
     .studio-graph-quick-open-kind,
     .studio-graph-quick-open-empty {
       font-size: 11px;
-      color: #8fa1c3;
+      color: #6b7e78;
     }
     .studio-graph-quick-debug {
       position: absolute;
@@ -524,10 +521,10 @@ export function injectStudioGraphStyles(): void {
       display: grid;
       gap: 8px;
       padding: 12px;
-      border: 1px solid rgba(148, 163, 184, 0.24);
+      border: 1px solid #dce8e2;
       border-radius: 12px;
-      background: rgba(8, 13, 26, 0.96);
-      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+      background: #ffffff;
+      box-shadow: 0 18px 38px rgba(35, 67, 56, 0.14);
     }
     .studio-graph-quick-debug-head {
       display: flex;
@@ -537,7 +534,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-quick-debug-label {
       font-size: 12px;
-      color: #8fa1c3;
+      color: #6b7e78;
     }
     .studio-graph-quick-debug-input {
       width: 100%;
@@ -562,9 +559,9 @@ export function injectStudioGraphStyles(): void {
       width: 100%;
       max-width: 100%;
       overflow: auto;
-      border: 1px solid rgba(148, 163, 184, 0.28);
-      background: rgba(8, 13, 26, 0.96);
-      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
+      border: 1px solid #dce8e2;
+      background: #ffffff;
+      box-shadow: 0 18px 48px rgba(35, 67, 56, 0.16);
     }
     .studio-command-dialog[hidden] {
       display: none;
@@ -573,7 +570,7 @@ export function injectStudioGraphStyles(): void {
       display: grid;
       gap: 10px;
       padding: 12px;
-      color: #dbeafe;
+      color: #33483f;
       font-size: 13px;
     }
     .studio-command-form-header,
@@ -585,18 +582,18 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-command-form-header button,
     .studio-command-form-actions button {
-      border: 1px solid rgba(148, 163, 184, 0.24);
+      border: 1px solid #dce8e2;
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      color: #e5eefb;
+      background: #ffffff;
+      color: #33483f;
       padding: 7px 10px;
       min-height: 34px;
       cursor: pointer;
       font-weight: 600;
     }
     .studio-command-form-actions button {
-      background: rgba(56, 189, 248, 0.16);
-      border-color: rgba(56, 189, 248, 0.36);
+      background: #e7f4ef;
+      border-color: #b8d8c8;
     }
     .studio-command-form-actions button:disabled {
       cursor: not-allowed;
@@ -639,7 +636,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-command-form-error,
     .studio-command-form-diagnostic {
-      color: #fecaca;
+      color: #a14f39;
       font-size: 12px;
       line-height: 1.35;
       overflow-wrap: anywhere;
@@ -649,10 +646,10 @@ export function injectStudioGraphStyles(): void {
       gap: 6px;
     }
     .studio-command-form-diagnostic.warning {
-      color: #fde68a;
+      color: #946b1d;
     }
     .studio-command-form-diagnostic.info {
-      color: #bae6fd;
+      color: #55798c;
     }
     @media (max-width: 540px) {
       .studio-graph-island {

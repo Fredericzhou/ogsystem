@@ -469,3 +469,11 @@ body { min-width: 0; font-size: 15px; }
 @media (max-width: 760px) {
   .member-list { grid-template-columns: minmax(0,1fr); }
 }
+
+.graph-stage.studio-graph-island { background: #f7faf8; height: 440px; margin: 0; min-height: 0; min-width: 0; width: 100%; }
+.graph-stage.studio-graph-island .studio-graph-stage,
+.graph-stage.studio-graph-island .studio-graph-canvas { min-height: 0; }
+.graph-stage.studio-graph-island .studio-graph-toolbar { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .graph-stage.studio-graph-island { height: 390px; }
+}

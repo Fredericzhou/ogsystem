@@ -496,7 +496,7 @@ test("stored projection preserves positions while renderer stays library-indepen
   const renderer = await readFile(new URL("../src/visualizer/studio-client/studio-graph-render.ts", import.meta.url), "utf8");
   const labelProjection = await readFile(new URL("../src/visualizer/studio-client/semantic-layout-projection.ts", import.meta.url), "utf8");
   assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
-  assert.match(renderer, /renderStudioGraphViewModel\(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection\)/);
+  assert.match(renderer, /renderStudioGraphViewModel\([\s\S]*?projection: LayoutProjection,[\s\S]*?showTechnicalDetails\?: boolean/);
   assert.doesNotMatch(labelProjection, /Role:/);
   assert.match(labelProjection, /STUDIO_EDGE_CONNECTOR_RADIUS = 4/);
   assert.match(renderer, /name: "boundary",\r?\n\s+args: \{ offset: 0 \}/);

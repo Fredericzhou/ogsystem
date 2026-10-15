@@ -261,6 +261,11 @@ export type BuildGraphViewModelArgs = {
   state?: GraphState | null;
   semanticIR?: SemanticIR | null;
   validation?: ValidationLike | null;
+  presentation?: {
+    roleDescriptions?: Readonly<Record<string, string>>;
+    edgeLabels?: Readonly<Record<string, string>>;
+    boundaryLabels?: { input?: string; output?: string };
+  };
   mode: GraphViewModelMode;
 };
 
@@ -316,6 +321,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       roleSeat: true,
       executionScope: "roleAggregate",
       label: role.title?.trim() || role.roleId,
+      description: args.presentation?.roleDescriptions?.[role.roleId],
       bindingKind: role.bindingKind,
       badges: role.badges.slice(),
       structure: nodeStructure(role, args.semanticIR ?? undefined),
@@ -340,7 +346,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     entityKind: "boundary",
     roleSeat: false,
     executionScope: "boundary",
-    label: "▶ Entry",
+    label: `▶ ${args.presentation?.boundaryLabels?.input || "Entry"}`,
     bindingKind: "boundary",
     badges: ["START"],
     structure: {},
@@ -354,7 +360,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     entityKind: "boundary",
     roleSeat: false,
     executionScope: "boundary",
-    label: "■ End",
+    label: `■ ${args.presentation?.boundaryLabels?.output || "End"}`,
     bindingKind: "boundary",
     badges: ["END"],
     structure: {},
@@ -370,7 +376,9 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       id: "__boundary__:input:entry",
       source: "input",
       target: entryRoleId,
-      label: authoring.system.entryEventType || "entry",
+      label: args.presentation?.edgeLabels?.[authoring.system.entryEventType || "entry"]
+        || authoring.system.entryEventType
+        || "entry",
       eventType: authoring.system.entryEventType || "entry",
       runtimeOnlyErrorFlow: false,
       participatesInJoin: false,
@@ -400,7 +408,10 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       id: flow.flowId || edgeKey,
       source: flow.fromRoleId,
       target,
-      label: flow.label?.trim() || flow.eventType,
+      label: args.presentation?.edgeLabels?.[flow.flowId]
+        || args.presentation?.edgeLabels?.[flow.eventType]
+        || flow.label?.trim()
+        || flow.eventType,
       eventType: flow.eventType,
       runtimeOnlyErrorFlow,
       participatesInJoin: flow.participatesInJoin,

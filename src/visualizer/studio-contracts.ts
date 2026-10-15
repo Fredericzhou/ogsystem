@@ -195,6 +195,7 @@ type GraphViewModelNodeBase = {
   id: string;
   roleId: string;
   label: string;
+  description?: string;
   badges: string[];
   structure: GraphViewModelNodeStructure;
   layout: GraphViewModelLayout;

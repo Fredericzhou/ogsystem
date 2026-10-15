@@ -1,4 +1,4 @@
-import { Graph, History, Keyboard, Selection } from "@antv/x6";
+import { Export, Graph, History, Keyboard, Selection } from "@antv/x6";
 
 import {
   normalizeStudioGraphTargetRoleId,
@@ -108,7 +108,9 @@ type StudioGraphLabelKey =
   | "deleteRoleConfirm"
   | "editBlocked"
   | "boundaryEntry"
-  | "boundaryEnd";
+  | "boundaryEnd"
+  | "exportSvg"
+  | "exportPng";
 
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
@@ -123,6 +125,8 @@ export type StudioGraphBridgeOptions = {
   selectedFlowKey?: string;
   editSelectionRequest?: number;
   defaultAutoLayout?: boolean;
+  showTopologyOrder?: boolean;
+  showTechnicalDetails?: boolean;
   busy?: boolean;
   readOnly?: boolean;
   rolePackages?: unknown;
@@ -310,6 +314,7 @@ export class StudioGraphIsland {
 
   constructor(private root: HTMLElement, initialOptions: StudioGraphBridgeOptions = {}) {
     this.options = initialOptions;
+    this.showTopologyOrder = initialOptions.showTopologyOrder !== false;
     if (initialOptions.initialLayoutMode) {
       this.layoutMode = initialOptions.initialLayoutMode;
     }
@@ -330,6 +335,8 @@ export class StudioGraphIsland {
       '<option value="stacked">' + this.escapeHtml(this.label("layoutModeStacked")) + '</option>' +
       '</select>',
       this.toolbarButton("topology-order", "topologyOrder", "#"),
+      this.toolbarButton("export-svg", "exportSvg", "⇩", "SVG"),
+      this.toolbarButton("export-png", "exportPng", "⇩", "PNG"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
       this.toolbarButton("chat-generate", "generate", "✦"),
@@ -637,6 +644,7 @@ export class StudioGraphIsland {
         validateConnection: ({ sourceCell, targetCell }) => !this.isReadOnly() && validateStudioConnectionCells(sourceCell, targetCell).ok
       }
     });
+    graph.use(new Export());
     graph.use(new History({ enabled: false }));
     graph.use(new Keyboard({ enabled: true }));
     graph.use(new Selection({ enabled: true, multiple: false, rubberband: true, modifiers: ["shift"] }));
@@ -714,6 +722,8 @@ export class StudioGraphIsland {
         this.renderCurrentProjection();
         this.updateToolbarState();
       }
+      if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 32, preserveDimensions: true });
+      if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
       if (action === "debug-run") this.toggleQuickDebug();
       if (action === "validate") void this.options.onValidateWorkbench?.();
@@ -2174,6 +2184,7 @@ export class StudioGraphIsland {
     }
     const topologyOrder = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="topology-order"]');
     if (topologyOrder) {
+      topologyOrder.hidden = this.options.showTopologyOrder === false;
       topologyOrder.setAttribute("aria-pressed", this.showTopologyOrder ? "true" : "false");
       topologyOrder.title = this.label("topologyOrder") + " · " + this.label(this.showTopologyOrder ? "enabled" : "disabled");
     }

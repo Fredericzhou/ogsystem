@@ -5,6 +5,10 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getCase } from "./cases.mjs";
+import { localizedEventLabel } from "./event-labels.mjs";
+import { parseSystemFromMermaidSource } from "../../dist/runtime/parse-mermaid.js";
+import { importSystemToAuthoring } from "../../dist/visualizer/studio-authoring.js";
+import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(process.env.OGSYSTEM_ROOT || appRoot, process.env.OGSYSTEM_ROOT ? "." : "../..");
@@ -37,6 +41,38 @@ function buildSystem(caseSpec) {
     lines.push(`${source} -->|${event}| ${target}`);
   }
   return `${lines.join("\n")}\n`;
+}
+
+export function buildCaseGraph(caseId, locale = "zh-CN") {
+  const caseSpec = getCase(caseId);
+  if (!caseSpec) throw new Error("Unknown example team.");
+  const systemSource = buildSystem(caseSpec);
+  const system = parseSystemFromMermaidSource(systemSource);
+  const authoring = importSystemToAuthoring({
+    workdir: repositoryRoot,
+    systemPath: `apps/agent-team-site/projects/${caseId}/system.mmd`,
+    system,
+    systemSource,
+    roleDisplayNames: new Map(caseSpec.roles.map((role) => [role.id, role.label[locale] || role.label["zh-CN"]]))
+  });
+  authoring.layout.nodes = Object.fromEntries(caseSpec.roles.map((role) => {
+    const [x, y] = caseSpec.layout[role.id] || [120, 120];
+    return [role.id, { x, y, width: 230, height: 104 }];
+  }));
+  const roleDescriptions = Object.fromEntries(caseSpec.roles.map((role) => [
+    role.id,
+    caseSpec.detail.roles[role.id][locale] || caseSpec.detail.roles[role.id]["zh-CN"]
+  ]));
+  const edgeLabels = Object.fromEntries(caseSpec.flows.map(([, , eventType]) => [eventType, localizedEventLabel(eventType, locale)]));
+  return buildGraphViewModel({
+    authoring,
+    mode: "run",
+    presentation: {
+      roleDescriptions,
+      edgeLabels,
+      boundaryLabels: locale === "zh-CN" ? { input: "任务", output: "成果" } : { input: "Task", output: "Outcome" }
+    }
+  });
 }
 
 function roleManifest(role) {

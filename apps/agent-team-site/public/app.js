@@ -1,12 +1,9 @@
-const state = { cases: [], selected: null, locale: localStorage.getItem("ogs-locale") || "zh-CN", view: "workspace", history: readHistory() };
+const state = { cases: [], eventLabels: {}, selected: null, locale: localStorage.getItem("ogs-locale") || "zh-CN", view: "workspace", history: readHistory() };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const text = (value) => value?.[state.locale] ?? value?.["zh-CN"] ?? value?.en ?? "";
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = { code: "⌘", medical: "✚", scales: "⚖" };
-const eventLabels = {
-  SOFTWARE_REQUEST: ["研发需求", "Product request"], PLAN_BACKEND: ["规划工程实现", "Plan engineering"], PLAN_EXPERIENCE: ["规划使用体验", "Plan user experience"], PLAN_QUALITY: ["规划质量检查", "Plan quality checks"], BACKEND_PLAN_READY: ["工程方案已提交", "Engineering plan shared"], EXPERIENCE_PLAN_READY: ["体验方案已提交", "Experience plan shared"], QUALITY_PLAN_READY: ["质量方案已提交", "Quality plan shared"], DELIVERY_READY: ["研发方案已汇总", "Delivery plan assembled"], CASE_RECEIVED: ["收到会诊资料", "Case brief received"], START_CARDIOLOGY: ["请心血管专科评估", "Request cardiology review"], START_NEUROLOGY: ["请神经专科评估", "Request neurology review"], START_IMAGING: ["请影像专科评估", "Request imaging review"], CARDIOLOGY_REVIEW_READY: ["心血管意见已提交", "Cardiology view shared"], NEUROLOGY_REVIEW_READY: ["神经专科意见已提交", "Neurology view shared"], IMAGING_REVIEW_READY: ["影像意见已提交", "Imaging view shared"], CONSULTATION_READY: ["会诊意见已汇总", "Consultation views assembled"], DEBATE_TOPIC: ["讨论议题", "Debate topic"], ISSUE_TO_PRO: ["交由支持方陈述", "Invite the proposition"], ISSUE_TO_CON: ["交由反对方陈述", "Invite the opposition"], PRO_ARGUMENT_READY: ["支持方观点已提交", "Proposition shared its case"], CON_ARGUMENT_READY: ["反对方观点已提交", "Opposition shared its case"], REBUTTAL_REQUESTED: ["请双方补充回应", "Request a rebuttal"], DECISION_READY: ["评议已完成", "Review completed"], DEBATE_SUMMARY_READY: ["讨论纪要已整理", "Debate brief prepared"]
-};
 const copy = {
   "zh-CN": {
     homeCases: "经典团队", homeStudio: "在线体验", homeCta: "开始体验", homeEyebrow: "为复杂工作，组织一支 AI 团队", homeTitle: "让不同专长，<br>协作成一个结果。", homeIntro: "从清楚的目标开始，让合适的成员各司其职、交接信息，并共同完成可检查的成果。", homePrimary: "在线运行示例", homeSecondary: "浏览经典团队", homeProof: "真实运行流程 · 无需注册 · 中英文示例", visualTitle: "从不同观点，到共同交付", visualStatus: "协作中", visualTask: "一个清楚的目标", visualTaskSub: "给团队共同的方向", visualRoleOne: "工程规划", visualRoleOneSub: "实现与依赖", visualRoleTwo: "体验设计", visualRoleTwoSub: "流程与细节", visualRoleThree: "质量把关", visualRoleThreeSub: "验收与风险", visualResult: "汇成一份完整方案", visualResultSub: "意见 · 依据 · 下一步", visualFooter: "分工清楚，过程可追踪", homeCasesEyebrow: "三种真实的协作方式", homeCasesTitle: "从经典团队开始", homeAllCases: "查看全部案例 →", promiseKicker: "面向真实工作", promiseTitle: "过程清楚，交付有据。", promiseOne: "每位成员有明确职责", promiseOneBody: "从目标拆解到结果整合，每一步都有负责的人。", promiseTwo: "工作交接看得见", promiseTwoBody: "随时了解谁在处理、信息如何流转。", promiseThree: "结果可以逐步检查", promiseThreeBody: "回看各方意见、汇总过程和最终输出。", homeFooter: "为复杂工作构建协作团队", homeFooterCta: "进入在线工作台 →",
@@ -62,7 +59,7 @@ Object.assign(copy.en, {
 function readHistory() { try { return JSON.parse(localStorage.getItem("ogs-run-history") || "[]"); } catch { return []; } }
 function saveHistory() { localStorage.setItem("ogs-run-history", JSON.stringify(state.history.slice(0, 12))); }
 function localized(value) { return text(value); }
-function labelEvent(event) { const value = eventLabels[event]; return value ? value[state.locale === "zh-CN" ? 0 : 1] : copy[state.locale].fallbackEvent; }
+function labelEvent(event) { const value = state.eventLabels[event]; return value ? value[state.locale === "zh-CN" ? 0 : 1] : copy[state.locale].fallbackEvent; }
 function taskExample(item) {
   const tasks = {
     "software-team": { "zh-CN": "为一款面向自由职业者的记账工具制定首版研发方案，覆盖核心体验、技术拆分与验收标准。", en: "Plan the first release of a bookkeeping tool for independent professionals, covering core experience, engineering, and acceptance criteria." },
@@ -87,39 +84,43 @@ function renderSelected(item) {
   $("#member-list").innerHTML = item.roles.map((role, index) => `<div class="member-row"><span class="member-avatar member-avatar-${index % 3}">${esc(icon[item.icon] || "✦")}</span><div><div class="member-name">${esc(text(role.label))}</div><div class="member-role">${esc(text(role.description))}</div></div><span class="member-status">${esc(copy[state.locale].roleReady)}</span></div>`).join("");
   renderGraph(item);
 }
-function renderGraph(item) {
+async function renderGraph(item) {
   const stage = $("#graph-stage");
-  const isDebate = item.id === "structured-debate";
   stage.dataset.case = item.id;
-  stage.dataset.accent = item.accent;
-  stage.classList.toggle("graph-stage-debate", isDebate);
-  stage.style.setProperty("--graph-width", isDebate ? "1120px" : "1080px");
-  stage.style.setProperty("--graph-height", isDebate ? "410px" : "350px");
-  $("#graph-edges").setAttribute("viewBox", isDebate ? "0 0 1120 410" : "0 0 1080 350");
-  const positions = item.layout;
-  const centers = Object.fromEntries(Object.entries(positions).map(([id, [x, y]]) => [id, [x + 84, y + 34]]));
-  const flows = item.flows.map(({ from, to, event }) => {
-    const start = from === "input" ? [63, 175] : centers[from];
-    const end = to === "output" ? [isDebate ? 1060 : 927, 175] : centers[to];
-    if (!start || !end) return "";
-    const middle = Math.max(30, (end[0] - start[0]) * .48);
-    const label = esc(labelEvent(event));
-    const loop = event === "REBUTTAL_REQUESTED";
-    const loopLane = 368;
-    const curve = loop ? `M ${start[0]} ${start[1] + 34} C ${start[0]} ${loopLane}, ${end[0]} ${loopLane}, ${end[0]} ${end[1] + 34}` : `M ${start[0]} ${start[1]} C ${start[0] + middle} ${start[1]}, ${end[0] - middle} ${end[1]}, ${end[0]} ${end[1]}`;
-    const labelY = loop ? loopLane + 15 : (start[1] + end[1]) / 2 - 8;
-    return `<path class="edge-path ${loop ? "edge-loop" : ""}" d="${curve}"/><text class="edge-label" x="${(start[0] + end[0]) / 2}" y="${labelY}">${label}</text>`;
-  }).join("");
-  $("#graph-edges").innerHTML = `<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#829b8d"/></marker></defs>${flows}`;
-  $("#graph-nodes").innerHTML = item.roles.map((role, index) => {
-    const [x, y] = positions[role.id] || [60 + index * 190, 145];
-    const isJoin = item.joins.some((join) => join.roleId === role.id);
-    const side = role.id === "proponent" ? "side-positive" : role.id === "opponent" ? "side-negative" : "";
-    return `<div class="graph-node node-${esc(role.id)} ${isJoin ? "join-node" : ""} ${side}"><div class="node-top"><span class="node-number">${String(index + 1).padStart(2, "0")}</span><span class="node-name">${esc(text(role.label))}</span></div><div class="node-role">${esc(text(role.description))}</div></div>`;
-  }).join("");
+  stage.setAttribute("aria-label", state.locale === "zh-CN" ? `${text(item.title)}协作关系图` : `${text(item.title)} team relationship diagram`);
   $(".graph-foot span[data-i18n='splitNote']").textContent = text(item.detail.relationship);
-  $("#graph-edges").setAttribute("aria-label", state.locale === "zh-CN" ? `${text(item.title)}协作关系图` : `${text(item.title)} team relationship diagram`);
+  try {
+    const response = await fetch(`/api/cases/${encodeURIComponent(item.id)}/graph?locale=${encodeURIComponent(state.locale)}`);
+    const viewModel = await response.json();
+    if (!response.ok) throw new Error(viewModel.error || "Unable to load the team graph.");
+    if (state.selected !== item.id) return;
+    window.OGSStudioGraphBundle.mountStudioX6Bridge(stage, {
+      viewModel,
+      readOnly: true,
+      showTopologyOrder: false,
+      showTechnicalDetails: false,
+      initialLayoutMode: "flow",
+      defaultAutoLayout: true,
+      defaultAutoLayoutRequestId: 1,
+      labels: graphLabels[state.locale],
+      onToggleFullscreen: async () => {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await stage.requestFullscreen();
+      }
+    });
+  } catch (error) {
+    stage.textContent = error.message || "Unable to load the team graph.";
+  }
 }
+
+const graphLabels = {
+  "zh-CN": {
+    viewportGroup: "图谱视图", zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布", autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局", topologyOrder: "关系顺序", enabled: "开启", disabled: "关闭", generate: "生成与运行", editGroup: "编辑图谱", minimap: "图谱导航", exportSvg: "导出 SVG", exportPng: "导出 PNG", boundaryEntry: "任务", boundaryEnd: "成果", graphReady: "图谱已载入"
+  },
+  en: {
+    viewportGroup: "Graph view", zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph", autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout", topologyOrder: "Flow order", enabled: "On", disabled: "Off", generate: "Generate and run", editGroup: "Graph editing", minimap: "Graph navigator", exportSvg: "Export SVG", exportPng: "Export PNG", boundaryEntry: "Task", boundaryEnd: "Outcome", graphReady: "Graph loaded"
+  }
+};
 function selectCase(caseId) {
   const item = state.cases.find((entry) => entry.id === caseId);
   if (!item) return;
@@ -233,7 +234,10 @@ function renderHistory() {
 function showToast(message) { const toast = $("#toast"); toast.textContent = message; toast.classList.add("show"); setTimeout(() => toast.classList.remove("show"), 2300); }
 async function init() {
   const response = await fetch("/api/cases"); if (!response.ok) throw new Error("Unable to load team cases.");
-  state.cases = await response.json(); state.selected = state.cases[0]?.id;
+  const payload = await response.json();
+  state.cases = payload.cases || [];
+  state.eventLabels = payload.eventLabels || {};
+  state.selected = state.cases[0]?.id;
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[data-route]");
     if (!link) return;

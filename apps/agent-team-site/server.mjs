@@ -3,7 +3,8 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cases } from "./cases.mjs";
-import { runCase } from "./run-engine.mjs";
+import { buildCaseGraph, runCase } from "./run-engine.mjs";
+import { eventLabels } from "./event-labels.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const publicRoot = join(root, "public");
@@ -50,7 +51,7 @@ async function serveStatic(pathname, response) {
       "content-type": mimeTypes[extname(filePath)] || "application/octet-stream",
       "cache-control": "no-cache",
       "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+      "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     });
     response.end(contents);
   } catch {
@@ -61,7 +62,7 @@ async function serveStatic(pathname, response) {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
   if (request.method === "GET" && url.pathname === "/api/cases") {
-    sendJson(response, 200, cases.map((item) => ({
+    sendJson(response, 200, { eventLabels, cases: cases.map((item) => ({
       id: item.id,
       title: item.title,
       short: item.short,
@@ -74,7 +75,16 @@ const server = createServer(async (request, response) => {
       roles: item.roles.map(({ id, label }) => ({ id, label, description: item.detail?.roles?.[id] })),
       flows: item.flows.map(([from, to, event]) => ({ from, to, event })),
       joins: item.joins.map(({ roleId }) => ({ roleId }))
-    })));
+    })) });
+    return;
+  }
+  const graphMatch = url.pathname.match(/^\/api\/cases\/([a-z0-9-]+)\/graph$/);
+  if (request.method === "GET" && graphMatch) {
+    try {
+      sendJson(response, 200, buildCaseGraph(graphMatch[1], url.searchParams.get("locale") || "zh-CN"));
+    } catch (error) {
+      sendJson(response, 404, { error: error instanceof Error ? error.message : "Unable to load team graph." });
+    }
     return;
   }
   if (request.method === "POST" && url.pathname === "/api/demo-runs") {
@@ -88,6 +98,19 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "GET") {
+    if (url.pathname === "/assets/ogs-studio-graph.js") {
+      try {
+        response.writeHead(200, {
+          "content-type": "text/javascript; charset=utf-8",
+          "cache-control": "no-cache",
+          "x-content-type-options": "nosniff"
+        });
+        response.end(await readFile(resolve(root, "../../dist/visualizer/studio-client/studio-graph.js")));
+      } catch {
+        sendJson(response, 503, { error: "Build OGSystem before starting the team site." });
+      }
+      return;
+    }
     if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
@@ -99,7 +122,9 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
-  process.stdout.write(`OGSystem Team Studio is ready at http://${host}:${port}\n`);
+  const address = server.address();
+  const boundPort = address && typeof address === "object" ? address.port : port;
+  process.stdout.write(`OGSystem Team Studio is ready at http://${host}:${boundPort}\n`);
 });
 
 function close() {
