@@ -731,7 +731,7 @@ test("client lifecycle state factory keeps Design Run Release active across expl
 });
 
 test("visualizer dto project views normalize the supported artifact mode", () => {
-  assert.equal(mapProjectTransferView({ mode: "unexpected", project: {} }).mode, "single-project-v1");
+  assert.equal(mapProjectTransferView({ mode: "unexpected", team: {} }).mode, "single-project-v1");
 });
 
 test("visualizer dto guards preserve finite numbers and booleans after helper consolidation", () => {
@@ -1146,7 +1146,7 @@ test("client run data loaders keep fetch scope and deferred-load gating explicit
       logPageSize: "250",
       logSince: "2026-05-03T01:00:00.000Z"
     }),
-    "/api/runs/run%201/logs?engine=true&tail=250&since=2026-05-03T01%3A00%3A00.000Z"
+    "/api/ogs/runs/run%201/logs?engine=true&tail=250&since=2026-05-03T01%3A00%3A00.000Z"
   );
 
   const requests = [];

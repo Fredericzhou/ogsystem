@@ -119,6 +119,7 @@ type StudioGraphLabelKey =
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
 export type StudioGraphBridgeOptions = {
+  mode?: "product-edit" | "vis-edit" | "run-diagnosis";
   initialLayoutMode?: StudioLayoutMode;
   defaultAutoLayoutRequestId?: number;
   authoring?: StudioAuthoringDocument | null;

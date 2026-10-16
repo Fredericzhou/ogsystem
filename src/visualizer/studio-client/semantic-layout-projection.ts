@@ -266,6 +266,19 @@ function pathPoints(edge: LayoutProjectionEdge, nodeById: ReadonlyMap<string, La
 
 function pathMidpoint(points: readonly LayoutPoint[]): LayoutPoint | undefined {
   if (points.length < 2) return undefined;
+  const horizontalSegments = points.slice(1).map((end, index) => ({
+    start: points[index],
+    end,
+    length: Math.abs(end.x - points[index].x)
+  })).filter((segment) => segment.start.y === segment.end.y && segment.length > 0)
+    .sort((left, right) => right.length - left.length);
+  const labelSegment = horizontalSegments[0];
+  if (labelSegment) {
+    return {
+      x: (labelSegment.start.x + labelSegment.end.x) / 2,
+      y: labelSegment.start.y
+    };
+  }
   let total = 0;
   for (let index = 1; index < points.length; index += 1) {
     total += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
@@ -287,10 +300,31 @@ function pathMidpoint(points: readonly LayoutPoint[]): LayoutPoint | undefined {
 }
 
 function labelRect(edge: LayoutProjectionEdge, points: readonly LayoutPoint[]): LayoutRect | undefined {
+  return labelRectForEdgeId(edge.id, points);
+}
+
+function labelRectForEdgeId(edgeId: string, points: readonly LayoutPoint[]): LayoutRect | undefined {
   const center = pathMidpoint(points);
   if (!center) return undefined;
-  const width = Math.max(28, Math.min(190, estimateTextWidth(edge.id) + 18));
+  const width = Math.max(28, Math.min(190, estimateTextWidth(edgeId) + 18));
   return { x: center.x - width / 2, y: center.y - 10, width, height: 20 };
+}
+
+function labelRectsForEdgeId(edgeId: string, points: readonly LayoutPoint[]): LayoutRect[] {
+  const width = Math.max(28, Math.min(190, estimateTextWidth(edgeId) + 18));
+  const segments = points.slice(1).map((end, index) => ({
+    start: points[index],
+    end,
+    length: Math.hypot(end.x - points[index].x, end.y - points[index].y),
+    horizontal: end.y === points[index].y
+  })).filter((segment) => segment.length > 0)
+    .sort((left, right) => Number(right.horizontal) - Number(left.horizontal) || right.length - left.length);
+  return segments.map(({ start, end }) => ({
+    x: (start.x + end.x) / 2 - width / 2,
+    y: (start.y + end.y) / 2 - 10,
+    width,
+    height: 20
+  }));
 }
 
 function sharesBundle(left: LayoutProjectionEdge, right: LayoutProjectionEdge): boolean {
@@ -472,8 +506,12 @@ function labelCollisionDiagnostics(
 ): LayoutDiagnostic[] {
   const diagnostics: LayoutDiagnostic[] = [];
   for (const edge of context.edges) {
-    const rect = context.labels.get(edge.id);
-    if (!rect) continue;
+    const path = context.paths.get(edge.id) ?? [];
+    const rects = labelRectsForEdgeId(edge.id, path);
+    if (rects.length === 0) continue;
+    const nonTerminalNodes = nodes.filter((node) => node.id !== edge.source && node.id !== edge.target);
+    if (rects.some((rect) => nonTerminalNodes.every((node) => !hasRectangleOverlap(rect, node)))) continue;
+    const rect = context.labels.get(edge.id) ?? rects[0];
     for (const node of nodes) {
       if (node.id === edge.source || node.id === edge.target || !hasRectangleOverlap(rect, node)) continue;
       diagnostics.push({
@@ -1104,6 +1142,10 @@ function backwardFeedbackRoute(
       ];
       const path = [sourcePoint, ...points, targetPoint];
       if (path.some((point, index) => index > 0 && routeSegmentBlocked(path[index - 1], point, obstacles))) continue;
+      const label = labelRectForEdgeId(edge.id, path);
+      if (label && [...nodeById.values()].some((node) =>
+        node.id !== edge.source && node.id !== edge.target && hasRectangleOverlap(label, node)
+      )) continue;
       simplifyRoutePoints(points);
       candidates.push({ source, target, points, length: routeLength(path), order });
       break;

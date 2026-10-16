@@ -13,20 +13,27 @@ import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools,
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
-import type { LoadedRolePackage, SystemDefinition } from "../runtime/types.js";
+import type {
+  CliTool,
+  ExecutionProfile,
+  LoadedRolePackage,
+  RuntimeConfig,
+  SystemDefinition,
+  UserProfile
+} from "../runtime/types.js";
 
 export type ProjectContext = {
   systemPath: string;
   systemSource: string;
   system: SystemDefinition;
-  runtimeConfig: unknown;
+  runtimeConfig: RuntimeConfig;
   modelSelection: unknown;
   modelCatalog: unknown;
   laws: unknown;
   effectiveLaw: ReturnType<typeof resolveEffectiveLaw>;
-  userProfile: unknown;
-  profiles: unknown;
-  tools: unknown;
+  userProfile?: UserProfile;
+  profiles: ExecutionProfile[];
+  tools: CliTool[];
   compilerSnapshot: ReturnType<typeof compileExecutionSnapshot>["snapshot"];
   resolvedModelWarnings: string[];
   resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>;

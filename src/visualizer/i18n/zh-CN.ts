@@ -1228,7 +1228,7 @@ export const zhCN = {
   "release.gate": "发布 gate",
   "release.candidateReady": "release candidate 就绪",
   "release.candidateBlocked": "release candidate 被阻塞",
-  "release.artifactContract": "已校验导出候选使用 single-project-v1 产物契约。",
+  "release.artifactContract": "已校验导出候选使用 single-project-v1 项目包契约。",
   "release.sourceDigestHint": "来源 {path} · digest 来自生成和导出的项目内容",
   "release.validationReport": "校验报告",
   "release.systemMmdValid": "system.mmd 校验通过",

@@ -24,7 +24,9 @@ export function createProjectStateSlice(resolvedLocale: string) {
     projectCreateRequestId: "",
     opsSummary: null,
     projectReadiness: null,
-    projectLoading: false
+    projectLoading: false,
+    projectId: "",
+    projectDigest: ""
   };
 }
 

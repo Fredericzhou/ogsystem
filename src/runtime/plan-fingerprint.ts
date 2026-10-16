@@ -9,10 +9,14 @@ import {
   RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH
 } from "./role-prompt-input-schema.js";
 import type {
+  CliTool,
   EffectiveLawConstraints,
+  ExecutionProfile,
   FlowContractPlan,
   LoadedRolePackage,
-  SystemDefinition
+  RuntimeConfig,
+  SystemDefinition,
+  UserProfile
 } from "./types.js";
 
 function sortedRecordEntries(record: Record<string, string>): Array<[string, string]> {
@@ -177,6 +181,37 @@ function buildCompilerFingerprintComponent(
   };
 }
 
+function buildRuntimeAssetsFingerprintComponent(args: {
+  runtimeConfig?: RuntimeConfig;
+  profiles?: ExecutionProfile[];
+  tools?: CliTool[];
+  userProfile?: UserProfile;
+}): {
+  identity: Record<string, unknown>;
+  sourceHints: Record<string, unknown>;
+} | undefined {
+  if (!args.runtimeConfig && !args.profiles && !args.tools && !args.userProfile) return undefined;
+  const runtimeConfig = args.runtimeConfig
+    ? { ...args.runtimeConfig, roleRepo: "<project-role-repo>" }
+    : undefined;
+  return {
+    identity: {
+      // roleRepo is a physical source path; the loaded role package component fingerprints
+      // the executable contents, so equivalent repository locations must remain path-stable.
+      runtimeConfig: normalizeFingerprintValue(runtimeConfig),
+      profiles: normalizeFingerprintValue([...(args.profiles ?? [])].sort((left, right) => left.profileId.localeCompare(right.profileId))),
+      tools: normalizeFingerprintValue([...(args.tools ?? [])].sort((left, right) => left.toolRef.localeCompare(right.toolRef))),
+      userProfile: normalizeFingerprintValue(args.userProfile)
+    },
+    sourceHints: {
+      runtimeConfigPath: ".ogs/runtime.json",
+      profilesPath: "profiles.json",
+      toolsPath: "tools.json",
+      userProfilePath: ".ogs/user-profile.json"
+    }
+  };
+}
+
 export function buildRunPlanFingerprint(args: {
   system: SystemDefinition;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
@@ -186,6 +221,10 @@ export function buildRunPlanFingerprint(args: {
   compilerSnapshot?: CompiledExecutionSnapshot;
   specificationDigest?: string;
   designDigest?: string;
+  runtimeConfig?: RuntimeConfig;
+  profiles?: ExecutionProfile[];
+  tools?: CliTool[];
+  userProfile?: UserProfile;
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelSelectionComponents = buildModelSelectionFingerprintComponent(
@@ -195,6 +234,7 @@ export function buildRunPlanFingerprint(args: {
   const compilerComponent = args.compilerSnapshot
     ? buildCompilerFingerprintComponent(args.compilerSnapshot)
     : undefined;
+  const runtimeAssetsComponent = buildRuntimeAssetsFingerprintComponent(args);
   const componentValues: Record<string, unknown> = {
     system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
@@ -210,6 +250,9 @@ export function buildRunPlanFingerprint(args: {
   }
   if (compilerComponent) {
     componentValues.compiler = compilerComponent.identity;
+  }
+  if (runtimeAssetsComponent) {
+    componentValues.runtimeAssets = runtimeAssetsComponent.identity;
   }
   const componentDigests = Object.fromEntries(
     Object.keys(componentValues).map((componentName) => [
@@ -267,12 +310,21 @@ export function buildRunPlanFingerprint(args: {
             }
           }
         : {})
+      , ...(runtimeAssetsComponent
+        ? {
+            runtimeAssets: {
+              digest: componentDigests.runtimeAssets,
+              value: runtimeAssetsComponent.identity,
+              sourceHints: runtimeAssetsComponent.sourceHints
+            }
+          }
+        : {})
     }
   };
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 6,
+    version: 7,
     algorithm: "sha256",
     digest,
     payload

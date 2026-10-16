@@ -13,6 +13,7 @@ import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/pr
 import { createHash } from "node:crypto";
 import { isIP, type Server as NetServer } from "node:net";
 import { dirname, resolve, sep } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
@@ -63,6 +64,14 @@ import {
 import { inspectHumanReview, listHumanReviews } from "./review-query-service.js";
 import { requestStop, writeHumanReviewDecision } from "./run-control-service.js";
 import { HumanReviewCommentError } from "../runtime/human-review-comment.js";
+import { loadProjectMaterialSnapshots, loadProjectRunPlan } from "../runtime/project-run.js";
+import { loadSideEffects } from "../runtime/side-effect-store.js";
+import type { ProjectMaterialInput, ProjectRunMode } from "../runtime/project-run.js";
+import { evaluateProjectRunPlan, evaluateProjectRunResult } from "../runtime/project-quality.js";
+import { loadProjectRunState } from "../runtime/project-run-state.js";
+import { acquireProjectWriteLock } from "../runtime/project-run-lock.js";
+import { computeProjectAssetDigest } from "../runtime/project-asset-digest.js";
+import { writeProjectRunControl } from "../runtime/project-run-control.js";
 import {
   createServeSession,
   fingerprintServeProject,
@@ -82,7 +91,7 @@ import { inspectProjectOpsSummaryVisualization } from "./ops-summary-projection.
 import { inspectProjectReadiness } from "./project-readiness.js";
 import {
   createProjectVisualization,
-  exportProjectBundle,
+  exportTeamPackage,
   inspectProjectBindingVisualization,
   inspectProjectConfigVisualization,
   inspectProjectContractVisualization,
@@ -297,6 +306,49 @@ function normalizePositiveInteger(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
+function readProjectRunMode(value: unknown, dryRun: boolean): ProjectRunMode | undefined {
+  if (value === undefined) {
+    return dryRun ? "dry-run" : undefined;
+  }
+  if (value !== "dry-run" && value !== "sandbox" && value !== "real") {
+    throw new HttpError(400, "INVALID_RUN_MODE", "runMode must be dry-run, sandbox, or real.");
+  }
+  if (value === "dry-run" && !dryRun) {
+    throw new HttpError(400, "RUN_MODE_MISMATCH", "runMode=dry-run requires dryRun=true.");
+  }
+  return value;
+}
+
+function readMaterialInputs(value: unknown): ProjectMaterialInput[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, "INVALID_MATERIAL_INPUTS", "materialInputs must be an array.");
+  }
+  return value.map((item, index) => {
+    const record = asRecord(item);
+    const materialId = asString(record?.materialId);
+    const sourcePath = asString(record?.sourcePath);
+    if (!materialId || !sourcePath) {
+      throw new HttpError(400, "INVALID_MATERIAL_INPUT", `materialInputs[${index}] requires materialId and sourcePath.`);
+    }
+    const ranges = record?.selectedRanges;
+    if (ranges !== undefined && (!Array.isArray(ranges) || ranges.some((range) => {
+      const value = asRecord(range);
+      return value && value.start !== undefined && typeof value.start !== "number";
+    }))) {
+      throw new HttpError(400, "INVALID_MATERIAL_RANGES", `materialInputs[${index}].selectedRanges is invalid.`);
+    }
+    return {
+      materialId,
+      sourcePath,
+      contentType: asString(record?.contentType),
+      selectedRanges: Array.isArray(ranges) ? ranges as Array<{ start?: number; end?: number }> : undefined
+    };
+  });
+}
+
 function readProjectCreatePayload(body: Record<string, unknown>): {
   projectName?: unknown;
   templateId?: unknown;
@@ -439,6 +491,29 @@ function invalidateAllProjectCaches(workdir: string): void {
   invalidateProjectProjectionCache(workdir);
 }
 
+async function invalidateAttachedProjectConfirmation(workdir: string, reason: string): Promise<void> {
+  const metaPath = resolve(workdir, ".site", "project.json");
+  const meta = await readFile(metaPath, "utf8").then((value) => JSON.parse(value) as Record<string, unknown>).catch(() => undefined);
+  if (!meta || meta.projectStatus !== "confirmed") return;
+  await writeJsonFileAtomic(metaPath, {
+    ...meta,
+    projectStatus: "draft",
+    projectDigest: null,
+    confirmedAt: null,
+    invalidatedReason: reason,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+async function withProjectWriteLock<T>(workdir: string, operation: string, action: () => Promise<T>): Promise<T> {
+  const lock = await acquireProjectWriteLock(workdir, operation);
+  try {
+    return await action();
+  } finally {
+    await lock.release();
+  }
+}
+
 function resolveRuntimePathWithinProject(workdir: string, inputPath: string, label: string): string {
   const resolvedWorkdir = resolve(workdir);
   const resolvedPath = resolve(workdir, inputPath);
@@ -540,10 +615,15 @@ async function handleApiProjectProfilesUpsert(
   response: ServerResponse
 ): Promise<void> {
   const body = await readJsonRequest(request);
-  jsonResponse(response, 200, await upsertProjectProfilesVisualization({
-    workdir,
-    profiles: Array.isArray(body.profiles) ? body.profiles : []
-  }));
+  const result = await withProjectWriteLock(workdir, "visualizer-profiles-upsert", async () => {
+    const result = await upsertProjectProfilesVisualization({
+      workdir,
+      profiles: Array.isArray(body.profiles) ? body.profiles : []
+    });
+    await invalidateAttachedProjectConfirmation(workdir, "visualizer-profiles-upsert");
+    return result;
+  });
+  jsonResponse(response, 200, result);
 }
 
 async function handleApiProjectExecutionConfigUpsert(
@@ -552,11 +632,16 @@ async function handleApiProjectExecutionConfigUpsert(
   response: ServerResponse
 ): Promise<void> {
   const body = await readJsonRequest(request);
-  jsonResponse(response, 200, await upsertProjectExecutionConfigVisualization({
-    workdir,
-    profiles: Array.isArray(body.profiles) ? body.profiles : [],
-    tools: Array.isArray(body.tools) ? body.tools : []
-  }));
+  const result = await withProjectWriteLock(workdir, "visualizer-execution-config-upsert", async () => {
+    const result = await upsertProjectExecutionConfigVisualization({
+      workdir,
+      profiles: Array.isArray(body.profiles) ? body.profiles : [],
+      tools: Array.isArray(body.tools) ? body.tools : []
+    });
+    await invalidateAttachedProjectConfirmation(workdir, "visualizer-execution-config-upsert");
+    return result;
+  });
+  jsonResponse(response, 200, result);
 }
 
 async function handleApiProjectRoles(workdir: string, response: ServerResponse): Promise<void> {
@@ -581,11 +666,16 @@ async function handleApiProjectContractSave(
   response: ServerResponse
 ): Promise<void> {
   const body = await readJsonRequest(request);
-  jsonResponse(response, 200, await saveProjectContractFileVisualization({
-    workdir,
-    filePath: asString(body.filePath) ?? "",
-    content: asString(body.content) ?? ""
-  }));
+  const result = await withProjectWriteLock(workdir, "visualizer-contract-save", async () => {
+    const result = await saveProjectContractFileVisualization({
+      workdir,
+      filePath: asString(body.filePath) ?? "",
+      content: asString(body.content) ?? ""
+    });
+    await invalidateAttachedProjectConfirmation(workdir, "visualizer-contract-save");
+    return result;
+  });
+  jsonResponse(response, 200, result);
 }
 
 async function handleApiProjectRolePackages(workdir: string, response: ServerResponse): Promise<void> {
@@ -600,11 +690,16 @@ async function handleApiProjectRolePackageDetail(
 ): Promise<void> {
   if (request.method?.toUpperCase() === "POST") {
     const body = await readJsonRequest(request);
-    jsonResponse(response, 200, await saveProjectRolePackageFilesVisualization({
-      workdir,
-      roleId,
-      files: body.files ?? body
-    }));
+    const result = await withProjectWriteLock(workdir, "visualizer-role-package-save", async () => {
+      const result = await saveProjectRolePackageFilesVisualization({
+        workdir,
+        roleId,
+        files: body.files ?? body
+      });
+      await invalidateAttachedProjectConfirmation(workdir, "visualizer-role-package-save");
+      return result;
+    });
+    jsonResponse(response, 200, result);
     return;
   }
   jsonResponse(response, 200, await inspectProjectRolePackageFilesVisualization({ workdir, roleId }));
@@ -658,10 +753,14 @@ async function handleApiProjectSave(
   if (saveAs && !saveAsPath) {
     throw new HttpError(400, "SAVE_AS_PATH_REQUIRED", "saveAsPath is required for save-as.");
   }
-  const result = await saveProjectSystemSource({
-    workdir,
-    systemSource,
-    saveAsPath
+  const result = await withProjectWriteLock(workdir, saveAs ? "visualizer-system-save-as" : "visualizer-system-save", async () => {
+    const result = await saveProjectSystemSource({
+      workdir,
+      systemSource,
+      saveAsPath
+    });
+    await invalidateAttachedProjectConfirmation(workdir, saveAs ? "visualizer-system-save-as" : "visualizer-system-save");
+    return result;
   });
   invalidateAllProjectCaches(workdir);
   jsonResponse(response, 200, mapWorkbenchSaveView(result));
@@ -855,17 +954,21 @@ async function handleApiDesignApply(
   if (!result.ok || !result.design) {
     throw new HttpError(409, "CHANGE_SET_REJECTED", "The design change could not be applied.", result);
   }
-  await syncDesignModelSelection(workdir, result.design);
-  const saved = await saveSystemDesign(workdir, result.design);
-  await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(result.design));
-  invalidateAllProjectCaches(workdir);
-  jsonResponse(response, 200, {
-    status: "applied",
-    design: result.design,
-    designPath: saved.path,
-    digest: saved.digest,
-    diagnostics: result.diagnostics
+  const payload = await withProjectWriteLock(workdir, "visualizer-design-apply", async () => {
+    await syncDesignModelSelection(workdir, result.design!);
+    const saved = await saveSystemDesign(workdir, result.design!);
+    await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(result.design!));
+    await invalidateAttachedProjectConfirmation(workdir, "visualizer-design-apply");
+    invalidateAllProjectCaches(workdir);
+    return {
+      status: "applied",
+      design: result.design,
+      designPath: saved.path,
+      digest: saved.digest,
+      diagnostics: result.diagnostics
+    };
   });
+  jsonResponse(response, 200, payload);
 }
 
 async function handleApiDesignImportMermaid(
@@ -880,21 +983,25 @@ async function handleApiDesignImportMermaid(
   const validation = validateSystemDesign(design);
   const apply = body.apply === true;
   if (apply && validation.ok) {
-    const current = await loadSystemDesign(workdir);
-    const appliedDesign = current ? { ...design, revision: current.revision + 1 } : design;
-    await syncDesignModelSelection(workdir, appliedDesign);
-    const saved = await saveSystemDesign(workdir, appliedDesign);
-    await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(appliedDesign));
-    invalidateAllProjectCaches(workdir);
-    jsonResponse(response, 200, {
-      status: "applied",
-      design: appliedDesign,
-      designPath: saved.path,
-      digest: saved.digest,
-      validation,
-      sourceLength: source.length,
-      workdir
+    const payload = await withProjectWriteLock(workdir, "visualizer-mermaid-apply", async () => {
+      const current = await loadSystemDesign(workdir);
+      const appliedDesign = current ? { ...design, revision: current.revision + 1 } : design;
+      await syncDesignModelSelection(workdir, appliedDesign);
+      const saved = await saveSystemDesign(workdir, appliedDesign);
+      await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(appliedDesign));
+      await invalidateAttachedProjectConfirmation(workdir, "visualizer-mermaid-apply");
+      invalidateAllProjectCaches(workdir);
+      return {
+        status: "applied",
+        design: appliedDesign,
+        designPath: saved.path,
+        digest: saved.digest,
+        validation,
+        sourceLength: source.length,
+        workdir
+      };
     });
+    jsonResponse(response, 200, payload);
     return;
   }
   jsonResponse(response, 200, {
@@ -929,11 +1036,16 @@ async function handleApiStudioAuthoringSave(
   if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
     throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
   }
-  jsonResponse(response, 200, await saveStudioAuthoringDraft({
-    workdir,
-    authoring,
-    validateSystemSource: validateProjectSystemSource
-  }));
+  const result = await withProjectWriteLock(workdir, "visualizer-authoring-save", async () => {
+    const result = await saveStudioAuthoringDraft({
+      workdir,
+      authoring,
+      validateSystemSource: validateProjectSystemSource
+    });
+    await invalidateAttachedProjectConfirmation(workdir, "visualizer-authoring-save");
+    return result;
+  });
+  jsonResponse(response, 200, result);
 }
 
 async function handleApiStudioAuthoringImportMmd(
@@ -990,10 +1102,14 @@ async function handleApiStudioAuthoringApplyCanvas(
   if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
     throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
   }
-  const saved = await saveStudioAuthoringDraft({
-    workdir,
-    authoring,
-    validateSystemSource: validateProjectSystemSource
+  const saved = await withProjectWriteLock(workdir, "visualizer-canvas-apply", async () => {
+    const saved = await saveStudioAuthoringDraft({
+      workdir,
+      authoring,
+      validateSystemSource: validateProjectSystemSource
+    });
+    await invalidateAttachedProjectConfirmation(workdir, "visualizer-canvas-apply");
+    return saved;
   });
   const appliedAuthoring = saved.authoring as StudioAuthoringDocument;
   jsonResponse(response, 200, {
@@ -1053,7 +1169,26 @@ async function handleApiStudioTemplates(response: ServerResponse): Promise<void>
 }
 
 async function handleApiWorkspace(state: VisualizationServerState, response: ServerResponse): Promise<void> {
-  jsonResponse(response, 200, await inspectProjectWorkspace(state.workdir));
+  const workspace = await inspectProjectWorkspace(state.workdir);
+  if (workspace.hasProject !== true || workspace.isProjectValid !== true) {
+    jsonResponse(response, 200, workspace);
+    return;
+  }
+  const summary = await inspectProjectVisualization(state.workdir);
+  const siteMeta = await readFile(resolve(state.workdir, ".site", "project.json"), "utf8")
+    .then((value) => JSON.parse(value) as Record<string, unknown>)
+    .catch(() => undefined);
+  jsonResponse(response, 200, {
+    ...workspace,
+    project: {
+      ...((summary as Record<string, unknown>).project as Record<string, unknown>),
+      ...(siteMeta ? {
+        projectId: siteMeta.projectId,
+        projectStatus: siteMeta.projectStatus,
+        projectDigest: siteMeta.projectDigest
+      } : {})
+    }
+  });
 }
 
 async function handleApiOpenWorkdir(
@@ -1224,10 +1359,15 @@ async function handleApiRoleImport(
     throw new HttpError(400, "ROLE_IMPORT_SOURCE_UNSUPPORTED", "Only installed role catalog imports are supported.");
   }
   try {
-    jsonResponse(response, 200, await importInstalledRolesVisualization({
-      workdir,
-      roleIds: body.roleIds
-    }));
+    const result = await withProjectWriteLock(workdir, "visualizer-role-import", async () => {
+      const result = await importInstalledRolesVisualization({
+        workdir,
+        roleIds: body.roleIds
+      });
+      await invalidateAttachedProjectConfirmation(workdir, "visualizer-role-import");
+      return result;
+    });
+    jsonResponse(response, 200, result);
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
     if (code === "ROLE_IMPORT_SELECTION_REQUIRED") {
@@ -1238,7 +1378,7 @@ async function handleApiRoleImport(
 }
 
 async function handleApiProjectExport(workdir: string, response: ServerResponse): Promise<void> {
-  const exported = await exportProjectBundle(workdir);
+  const exported = await exportTeamPackage(workdir);
   jsonResponse(
     response,
     200,
@@ -1274,6 +1414,31 @@ async function handleApiRunDetail(workdir: string, runId: string, response: Serv
 async function handleApiRunState(workdir: string, runId: string, response: ServerResponse): Promise<void> {
   const detail = await inspectRun(workdir, runId);
   jsonResponse(response, 200, detail.state ?? null);
+}
+
+async function handleApiRunPlan(workdir: string, runId: string, response: ServerResponse): Promise<void> {
+  const runDir = resolveRunDir(workdir, runId);
+  try {
+    const [runPlan, materials, sideEffects] = await Promise.all([
+      loadProjectRunPlan(runDir),
+      loadProjectMaterialSnapshots(runDir),
+      loadSideEffects(runDir)
+    ]);
+    const state = await loadProjectRunState(runDir).catch(() => undefined);
+    jsonResponse(response, 200, {
+      runId,
+      runPlan,
+      materials,
+      sideEffects,
+      quality: state ? evaluateProjectRunResult({ plan: runPlan, state }) : evaluateProjectRunPlan(runPlan)
+    });
+  } catch (error) {
+    throw new HttpError(
+      404,
+      "RUN_PLAN_NOT_FOUND",
+      error instanceof Error ? error.message : "Run plan is unavailable."
+    );
+  }
 }
 
 async function handleApiRunEvents(
@@ -1527,6 +1692,12 @@ async function handleApiRunStart(
   if (!systemPath || !prompt) {
     throw new HttpError(400, "RUN_START_INPUT_REQUIRED", "systemPath and input are required.");
   }
+  const dryRun = body.dryRun === true;
+  const projectRunMode = readProjectRunMode(body.runMode, dryRun);
+  if (projectRunMode === "real") {
+    throw new HttpError(501, "REAL_RUN_UNSUPPORTED", "Real project runs are not enabled in the first phase.");
+  }
+  const materialInputs = readMaterialInputs(body.materialInputs);
   const workspace = await inspectProjectWorkspace(workdir);
   if (workspace.hasProject !== true) {
     throw new HttpError(
@@ -1535,6 +1706,21 @@ async function handleApiRunStart(
       "Create or load an OGSystem project before starting a run.",
       workspace
     );
+  }
+  const attachedSiteMeta = await readFile(resolve(workdir, ".site", "project.json"), "utf8")
+    .then((value) => JSON.parse(value) as { projectId?: unknown; projectStatus?: unknown; projectDigest?: unknown })
+    .catch(() => undefined);
+  if (attachedSiteMeta && attachedSiteMeta.projectStatus !== "confirmed") {
+    throw new HttpError(409, "PROJECT_NOT_CONFIRMED", "Confirm the project asset before starting a run.");
+  }
+  if (attachedSiteMeta) {
+    if (asString(body.projectId) !== asString(attachedSiteMeta.projectId) || asString(body.projectDigest) !== asString(attachedSiteMeta.projectDigest)) {
+      throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project context and confirmation digest are required for project runs.");
+    }
+    const currentDigest = await computeProjectAssetDigest(workdir);
+    if (currentDigest !== asString(attachedSiteMeta.projectDigest)) {
+      throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project executable assets changed; confirm the project again.");
+    }
   }
   const runId = createRunId(new Date());
   let resolveRunReady: (() => void) | undefined;
@@ -1552,8 +1738,12 @@ async function handleApiRunStart(
     lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     workdir,
     runId,
+    projectId: asString(body.projectId) ?? asString(attachedSiteMeta?.projectId),
+    projectDigest: asString(body.projectDigest) ?? asString(attachedSiteMeta?.projectDigest),
     targetDir: asString(body.targetDir),
-    dryRun: body.dryRun === true,
+    dryRun,
+    projectRunMode,
+    materialInputs,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
     logRun: false,
     onRunInitialized: async () => {
@@ -1620,11 +1810,63 @@ async function handleApiRunResume(
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const runDir = resolveRunDir(workdir, runId);
-  const systemPath =
-    asString(body.systemPath) ?? resolve(runDir, "system.mmd");
-  const prompt =
-    asString(body.input) ??
-    (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
+  const attachedSiteMeta = await readFile(resolve(workdir, ".site", "project.json"), "utf8")
+    .then((value) => JSON.parse(value) as { projectId?: unknown; projectStatus?: unknown; projectDigest?: unknown })
+    .catch(() => undefined);
+  let projectRunMode: ProjectRunMode | undefined;
+  let projectId: string | undefined;
+  let projectDigest: string | undefined;
+  let materialInputs: ProjectMaterialInput[] | undefined;
+  let systemPath = asString(body.systemPath) ?? resolve(runDir, "system.mmd");
+  let prompt = asString(body.input);
+  let onProjectRunPrepared: (() => Promise<void>) | undefined;
+  if (attachedSiteMeta) {
+    const plan = await loadProjectRunPlan(runDir).catch((error) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+      throw new HttpError(409, "RUN_SNAPSHOT_INVALID", error instanceof Error ? error.message : "Project run plan is unavailable.");
+    });
+    if (plan) {
+      if (asString(body.projectId) !== asString(attachedSiteMeta.projectId)) {
+        throw new HttpError(409, "PROJECT_CONTEXT_INVALID", "Project context does not match this run.");
+      }
+      if (asString(body.projectDigest) && asString(body.projectDigest) !== plan.projectDigest) {
+        throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "The resume request digest does not match the immutable Run snapshot.");
+      }
+      const state = await loadProjectRunState(runDir);
+      if (plan.projectId !== asString(attachedSiteMeta.projectId)) throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Run snapshot belongs to another project.");
+      if (!["waiting_review", "paused", "ready"].includes(state.status)) {
+        throw new HttpError(409, "RUN_RESUME_NOT_ALLOWED", `Project run status is ${state.status}.`);
+      }
+      if (plan.executionPolicy.mode === "real") throw new HttpError(501, "REAL_RUN_UNSUPPORTED", "Real project runs are not enabled in the first phase.");
+      const task = JSON.parse(await readFile(resolve(runDir, "task.json"), "utf8")) as { prompt?: unknown };
+      if (prompt !== undefined && prompt !== String(task.prompt ?? "")) throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Project resume must use the immutable task snapshot.");
+      prompt = String(task.prompt ?? "");
+      systemPath = resolve(runDir, "system.mmd");
+      projectRunMode = plan.executionPolicy.mode;
+      projectId = asString(attachedSiteMeta.projectId);
+      projectDigest = plan.projectDigest;
+      materialInputs = (await loadProjectMaterialSnapshots(runDir)).map((item) => ({
+        materialId: item.materialId,
+        sourcePath: resolve(runDir, item.snapshotPath),
+        contentType: item.contentType,
+        selectedRanges: item.selectedRanges,
+        consumingNodeIds: item.consumingNodeIds
+      }));
+      onProjectRunPrepared = async () => { await writeProjectRunControl(runDir, "resume", "visualizer"); };
+    }
+    if (!plan && attachedSiteMeta.projectStatus !== "confirmed") {
+      throw new HttpError(409, "PROJECT_NOT_CONFIRMED", "Confirm the project asset before resuming a non-project run.");
+    }
+    if (!plan && (asString(body.projectId) !== asString(attachedSiteMeta.projectId) || asString(body.projectDigest) !== asString(attachedSiteMeta.projectDigest))) {
+      throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project context and confirmation digest are required for project resumes.");
+    }
+    if (!plan && await computeProjectAssetDigest(workdir) !== asString(attachedSiteMeta.projectDigest)) {
+      throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project executable assets changed; confirm the project again.");
+    }
+  }
+  if (!prompt) {
+    prompt = (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
+  }
   let resolveRunReady: (() => void) | undefined;
   const runReady = new Promise<void>((resolveReady) => {
     resolveRunReady = resolveReady;
@@ -1639,6 +1881,12 @@ async function handleApiRunResume(
     userProfilePath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.userProfilePath), "userProfilePath"),
     lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     resumeRunDir: runDir,
+    projectId,
+    projectDigest,
+    projectRunMode,
+    materialInputs,
+    enforceTerminalResumeGate: Boolean(projectRunMode),
+    onProjectRunPrepared,
     workdir,
     targetDir: asString(body.targetDir),
     dryRun: body.dryRun === true,
@@ -2192,6 +2440,22 @@ async function handleVisualizationRequest(
   const method = request.method?.toUpperCase() ?? "GET";
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${options.host}:${options.port}`}`);
   const pathname = url.pathname;
+  const requestedProjectId = url.searchParams.get("projectId") || "";
+  if (requestedProjectId) {
+    if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(requestedProjectId)) {
+      throw new HttpError(400, "INVALID_PROJECT_ID", "Invalid projectId.");
+    }
+    const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || resolve(homedir(), ".ogsystem", "projects"));
+    const requestedWorkdir = resolve(projectsRoot, requestedProjectId);
+    if (requestedWorkdir !== projectsRoot && !requestedWorkdir.startsWith(`${projectsRoot}${sep}`)) {
+      throw new HttpError(400, "INVALID_PROJECT_ID", "Invalid projectId.");
+    }
+    const attachedMeta = await readFile(resolve(requestedWorkdir, ".site", "project.json"), "utf8")
+      .then((value) => JSON.parse(value) as Record<string, unknown>)
+      .catch(() => undefined);
+    if (!attachedMeta) throw new HttpError(404, "PROJECT_NOT_FOUND", `Project asset not found: ${requestedProjectId}`);
+    state = { ...state, workdir: requestedWorkdir };
+  }
   if (pathname === "/healthz" || pathname === "/readyz") {
     await handleHealthRequest(pathname, state.workdir, response);
     return;
@@ -2230,6 +2494,22 @@ async function handleVisualizationRequest(
 
   if (segments[0] !== "api" || segments[1] !== "v1") {
     throw new HttpError(404, "NOT_FOUND", "Not found");
+  }
+
+  // The public Vis namespace is separated from product-site project routes.
+  // Handlers below keep their concise internal names while all clients use the
+  // explicit OGS workspace/run paths.
+  if (segments[2] === "ogs") {
+    if (segments[3] === "workspace") {
+      const workspaceSuffix = segments.slice(4);
+      segments = workspaceSuffix.length
+        ? ["api", "v1", "project", ...workspaceSuffix]
+        : ["api", "v1", "workspace"];
+    } else if (segments[3] === "runs") {
+      segments = ["api", "v1", "runs", ...segments.slice(4)];
+    } else {
+      throw new HttpError(404, "NOT_FOUND", "Not found");
+    }
   }
 
   if (await handleSessionRoutes(state, request, response, segments, url, authenticated.principal)) return;
@@ -2478,6 +2758,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[4] === "state" && method === "GET") {
     await handleApiRunState(state.workdir, runId, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "plan" && method === "GET") {
+    await handleApiRunPlan(state.workdir, runId, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "events" && method === "GET") {

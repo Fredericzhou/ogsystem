@@ -32,7 +32,7 @@ export function buildLogsQuery(args: {
       : args.logSince;
     params.set("since", normalized);
   }
-  return args.apiPrefix + "/runs/" + encodeURIComponent(args.runId) + "/logs?" + params.toString();
+  return args.apiPrefix + "/ogs/runs/" + encodeURIComponent(args.runId) + "/logs?" + params.toString();
 }
 
 export async function fetchSelectedLogs(args: {
@@ -110,7 +110,7 @@ export async function fetchFailureData(args: {
   apiPrefix: string;
   runId: string;
 }): Promise<any> {
-  return args.requestJson(args.apiPrefix + "/runs/" + encodeURIComponent(args.runId) + "/failure");
+  return args.requestJson(args.apiPrefix + "/ogs/runs/" + encodeURIComponent(args.runId) + "/failure");
 }
 
 export async function fetchResumeReadinessData(args: {
@@ -118,7 +118,7 @@ export async function fetchResumeReadinessData(args: {
   apiPrefix: string;
   runId: string;
 }): Promise<any> {
-  return args.requestJson(args.apiPrefix + "/runs/" + encodeURIComponent(args.runId) + "/resume-readiness");
+  return args.requestJson(args.apiPrefix + "/ogs/runs/" + encodeURIComponent(args.runId) + "/resume-readiness");
 }
 
 export async function fetchResumeDiagnosticsData(args: {
@@ -126,5 +126,5 @@ export async function fetchResumeDiagnosticsData(args: {
   apiPrefix: string;
   runId: string;
 }): Promise<any> {
-  return args.requestJson(args.apiPrefix + "/runs/" + encodeURIComponent(args.runId) + "/resume-diagnostics");
+  return args.requestJson(args.apiPrefix + "/ogs/runs/" + encodeURIComponent(args.runId) + "/resume-diagnostics");
 }

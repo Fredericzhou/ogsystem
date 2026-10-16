@@ -50,7 +50,7 @@ export function buildCaseGraph(caseId, locale = "zh-CN") {
   const system = parseSystemFromMermaidSource(systemSource);
   const authoring = importSystemToAuthoring({
     workdir: repositoryRoot,
-    systemPath: `apps/agent-team-site/projects/${caseId}/system.mmd`,
+    systemPath: `apps/team-site/projects/${caseId}/system.mmd`,
     system,
     systemSource,
     roleDisplayNames: new Map(caseSpec.roles.map((role) => [role.id, role.label[locale] || role.label["zh-CN"]]))

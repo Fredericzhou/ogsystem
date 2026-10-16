@@ -691,20 +691,38 @@ function scheduleStudioEdgeLabelPosition(
 ): void {
   const pass = (studioLabelPassByGraph.get(graph) ?? 0) + 1;
   studioLabelPassByGraph.set(graph, pass);
+  let attempts = 0;
   const run = (): void => {
     if (studioLabelPassByGraph.get(graph) !== pass) return;
     positionStudioEdgeLabels(graph, edges, showTechnicalDetails);
+    if (!studioEdgeLabelsReady(graph, edges) && attempts < 5) {
+      attempts += 1;
+      setTimeout(run, 40);
+    }
   };
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       run();
       // X6 can finish a route update one task after the paint that rendered
-      // the nodes. Recheck once after that task without creating a loop.
+      // the nodes. Recheck once after that task without creating a render loop.
       setTimeout(run, 40);
     }));
   } else {
     run();
   }
+}
+
+function studioEdgeLabelsReady(graph: Graph, edges: readonly GraphViewModelEdge[]): boolean {
+  return edges.every((edge) => {
+    const cell = graph.getCellById(edge.id);
+    if (!cell?.isEdge()) return false;
+    const view = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
+    const path = view?.container.querySelector<SVGPathElement>("path[marker-end]");
+    const label = view?.container.querySelector<SVGGElement>(".x6-edge-label text");
+    if (!path || !label || path.getTotalLength() <= 1) return false;
+    const bounds = label.getBoundingClientRect();
+    return bounds.width > 0 && bounds.height > 0;
+  });
 }
 
 function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEdge[], showTechnicalDetails: boolean): void {
@@ -793,6 +811,15 @@ function findStudioEdgeLabelPosition(
   if (length <= 1) return undefined;
   const labelSize = label.getBoundingClientRect();
   const width = labelSize.width + 4;
+  // Long labels are more sensitive to SVG rounding at node boundaries. Keep the
+  // existing placement for short labels and add a small clearance only here.
+  const nodeClearance = width > 80 ? 6 : 0;
+  const collisionObstacles = obstacles.map((obstacle) => ({
+    left: obstacle.left - nodeClearance,
+    right: obstacle.right + nodeClearance,
+    top: obstacle.top - nodeClearance,
+    bottom: obstacle.bottom + nodeClearance
+  }));
   const summaryText = showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label;
   const inlineTopology = estimateStudioEdgeSummaryLabelWidth(summaryText) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
     ? formatStudioEdgeTopologyLabel(edge)
@@ -843,7 +870,7 @@ function findStudioEdgeLabelPosition(
   const intersects = (left: StudioLabelRect, right: StudioLabelRect) =>
     left.left < right.right && right.left < left.right && left.top < right.bottom && right.top < left.bottom;
   const predictedScore = (candidate: typeof candidates[number]) =>
-    obstacles.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 10000 +
+     collisionObstacles.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 10000 +
     reserved.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 1000 +
     (candidate.bounds.left < viewport.left || candidate.bounds.right > viewport.right ||
       candidate.bounds.top < viewport.top || candidate.bounds.bottom > viewport.bottom ? 10000 : 0) +
@@ -852,15 +879,25 @@ function findStudioEdgeLabelPosition(
   const currentTopology = currentLabels[0]?.position as StudioEdgeLabelPosition | undefined;
   const currentSummary = currentLabels[formatStudioEdgeTopologyLabel(edge) ? 1 : 0]?.position as StudioEdgeLabelPosition | undefined;
   const setPosition = (position: StudioEdgeLabelPosition): void => {
-    cell.setLabels(studioEdgeLabels(edge, {
+    const nextLabels = studioEdgeLabels(edge, {
       summary: labelKind === "summary" ? position : currentSummary ?? { distance: 0.5, offset: 0 },
       ...(formatStudioEdgeTopologyLabel(edge)
         ? { topology: labelKind === "topology" ? position : currentTopology ?? { distance: 0.5, offset: -15 } }
         : {})
-    }, showTechnicalDetails));
+    }, showTechnicalDetails);
+    const liveLabels = cell.getLabels();
+    const livePosition = liveLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
+    if (livePosition?.distance === position.distance && livePosition.offset === position.offset) return;
+    cell.setLabels(nextLabels);
+  };
+  const currentLabel = (): SVGGElement | null => {
+    const currentView = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
+    return currentView?.container.querySelector<SVGGElement>(`.x6-edge-label[data-index="${labelIndex}"]`) ?? null;
   };
   const actualBounds = (): StudioLabelRect => {
-    const measured = label.getBoundingClientRect();
+    // X6 may replace the edge view synchronously after setLabels(). Always
+    // measure the current node instead of retaining a detached SVG label.
+    const measured = (currentLabel() ?? label).getBoundingClientRect();
     return {
       left: measured.left,
       right: measured.right,
@@ -869,7 +906,7 @@ function findStudioEdgeLabelPosition(
     };
   };
   const actualScore = (bounds: StudioLabelRect): number =>
-    obstacles.filter((obstacle) => intersects(bounds, obstacle)).length * 10000 +
+     collisionObstacles.filter((obstacle) => intersects(bounds, obstacle)).length * 10000 +
     reserved.filter((obstacle) => intersects(bounds, obstacle)).length * 1000 +
     (bounds.left < viewport.left || bounds.right > viewport.right ||
       bounds.top < viewport.top || bounds.bottom > viewport.bottom ? 10000 : 0);
@@ -916,7 +953,10 @@ function studioEdgeLabels(
   const separateTopologyLabel = topologyLabel && !hasWrappedSummaryLabel;
   const topologyLabelOffset = 15;
   const summaryLabelOffset = separateTopologyLabel ? 9 : 0;
-  const summaryPosition = positions?.summary ?? { distance: 0.5, offset: summaryLabelOffset };
+  const summaryPosition = positions?.summary ?? {
+    distance: hasWrappedSummaryLabel ? 0.8 : 0.5,
+    offset: summaryLabelOffset
+  };
   const isCycle = edge.topologyOrder?.endsWith("L") === true;
   if (separateTopologyLabel) {
     labels.push({

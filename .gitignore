@@ -11,6 +11,8 @@ Thumbs.db
 Desktop.ini
 .ogs/runs/
 .ogs/runs-index.json
+**/.ogs/runs/
+**/.ogs/runs-index.json
 .ogs/project.json
 .ogs/README.md
 .ogs/providers/

@@ -524,7 +524,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toBeVisible();
 
-    await page.route("**/api/v1/project/studio/chat", async (route) => {
+    await page.route("**/api/v1/ogs/workspace/studio/chat", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {
         await route.fallback();
@@ -636,8 +636,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toHaveCount(0);
 
-    await page.unroute("**/api/v1/project/studio/chat");
-    await page.route("**/api/v1/project/studio/chat", async (route) => {
+    await page.unroute("**/api/v1/ogs/workspace/studio/chat");
+    await page.route("**/api/v1/ogs/workspace/studio/chat", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {
         await route.fallback();
@@ -653,7 +653,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-chat-close")).toBeEnabled();
     await page.locator("#studio-chat-close").click();
     await expect(page.locator(".studio-chat-panel.is-open")).toHaveCount(0);
-    await page.unroute("**/api/v1/project/studio/chat");
+    await page.unroute("**/api/v1/ogs/workspace/studio/chat");
 
     const roleNodeForDrag = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     const box = await roleNodeForDrag.boundingBox();
@@ -960,8 +960,11 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
       const labelWidth = await summary.evaluate((label) => label.getBoundingClientRect().width);
       expect(labelWidth).toBeLessThanOrEqual(112);
       const distanceFromFlow = await summary.evaluate((label) => {
-        const edge = label.closest(".x6-edge");
-        const path = edge?.querySelector<SVGPathElement>("path[marker-end]");
+        // X6 renders labels in a separate SVG layer after layout updates. Use
+        // the stable business edge id instead of relying on label DOM nesting.
+        const path = document.querySelector<SVGPathElement>(
+          '[data-cell-id="1:demo-analyst:ANALYSIS_DONE:output"] path[marker-end]'
+        );
         const matrix = path?.getScreenCTM();
         if (!path || !matrix) return { distance: Number.POSITIVE_INFINITY };
         const bounds = label.getBoundingClientRect();
@@ -1051,7 +1054,7 @@ test("Run, review, and resume are operable through the visual workflow", async (
     await debugPanel.locator("#workbench-start-run").click();
 
     await page.waitForFunction(async () => {
-      const response = await fetch("/api/v1/runs");
+      const response = await fetch("/api/v1/ogs/runs");
       const payload = await response.json();
       return payload.runs?.[0]?.runId || false;
     }, undefined, { timeout: 30000 });
@@ -1159,12 +1162,12 @@ test("Design shows the latest dry-run trace and keeps it separate from Run selec
     await debugPanel.locator("#workbench-start-run").click();
 
     await expect.poll(async () => page.evaluate(async () => {
-      const response = await fetch("/api/v1/runs");
+      const response = await fetch("/api/v1/ogs/runs");
       const payload = await response.json();
       return payload.runs?.find((run) => run.isSimulation === true)?.runId || "";
     }), { timeout: 30000 }).not.toBe("");
     const runId = await page.evaluate(async () => {
-      const response = await fetch("/api/v1/runs");
+      const response = await fetch("/api/v1/ogs/runs");
       const payload = await response.json();
       return payload.runs.find((run) => run.isSimulation === true).runId;
     });
@@ -1923,7 +1926,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
       roles: { "test-operator": { contextMap: { reviewSummary: "source(demo-intake).data.result.summary?" } } }
     });
     const savedAuthoring = JSON.parse(await readFile(authoringDraftPath, "utf8"));
-    const generateResponse = await page.request.post(new URL("/api/v1/project/studio/authoring/generate-mmd", started.url).toString(), {
+    const generateResponse = await page.request.post(new URL("/api/v1/ogs/workspace/studio/authoring/generate-mmd", started.url).toString(), {
       data: { authoring: savedAuthoring }
     });
     expect(generateResponse.status()).toBe(200);
@@ -1934,7 +1937,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
       Object.entries(role.contextMap || {}).map(([field, selector]) => `%% context.map.${roleId}.${field}=${selector}`)
     ).sort();
     expect(generatedContextMapLines.sort()).toEqual(expectedContextMapLines);
-    const importResponse = await page.request.post(new URL("/api/v1/project/studio/authoring/import-mmd", started.url).toString(), {
+    const importResponse = await page.request.post(new URL("/api/v1/ogs/workspace/studio/authoring/import-mmd", started.url).toString(), {
       data: { systemSource: generated.systemSource, systemPath: "system.mmd" }
     });
     expect(importResponse.status()).toBe(200);

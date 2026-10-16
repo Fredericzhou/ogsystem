@@ -238,7 +238,7 @@ test("localized release warnings render without breaking project loading", async
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
-    await page.route("**/api/v1/project/readiness", async (route) => {
+    await page.route("**/api/v1/ogs/workspace/readiness", async (route) => {
       const response = await route.fetch();
       const readiness = await response.json();
       readiness.warnings = [

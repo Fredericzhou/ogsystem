@@ -761,7 +761,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : "unknown";
     }
 
-    const clientApi = createClientApi(t);
+    const clientApi = createClientApi(t, () => state.projectId);
     const requestJson = clientApi.requestJson;
     const requestAction = clientApi.requestAction;
     const isAbortError = clientApi.isAbortError;
@@ -835,6 +835,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function writeRouteToLocation() {
       const params = new URLSearchParams(buildRouteSearch({
+        projectId: state.projectId,
         projectHome: state.projectHome,
         lifecycle: state.consoleTab,
         selectedRunId: state.selectedRunId,
@@ -1423,7 +1424,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (state.timelineChannel) {
         params.set("channel", state.timelineChannel);
       }
-      return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/events?" + params.toString();
+      return API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/events?" + params.toString();
     }
 
     function timelineChannelForRecord(record) {
@@ -3018,7 +3019,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (loopIteration !== undefined) {
           params.set("loopIteration", String(loopIteration));
         }
-        const payload = await requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/role-io?" + params.toString());
+        const payload = await requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/role-io?" + params.toString());
         if (state.studioRoleIoModal?.requestKey !== requestKey || activeStudioRoleIoRunId() !== runId) {
           return;
         }
@@ -3637,20 +3638,34 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       loadStudioRoleConfigEditor(roleIdValue, { force: true });
     }
 
-    async function saveStudioRoleConfigEditor(roleId) {
+    async function saveStudioRoleConfigEditor(roleId, sourceElement) {
       const selectedRoleIdValue = roleId || state.studioRoleConfigEditor?.roleId || selectedStudioRoleId();
       if (!selectedRoleIdValue || !state.studioBridge?.authoring) {
         return;
       }
       const current = state.studioRoleConfigEditor?.data || {};
-      const editorRoot = Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-editor]") || []).find((candidate) =>
-        candidate.getAttribute("data-role-config-editor") === selectedRoleIdValue &&
-        (typeof candidate.getClientRects !== "function" || candidate.getClientRects().length > 0)
+      const editorFromAction = sourceElement?.closest?.("[data-role-config-editor]") || null;
+      const editorCandidates = Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-editor]") || [])
+        .filter((candidate) => candidate.getAttribute("data-role-config-editor") === selectedRoleIdValue);
+      const editorRoot = editorFromAction || editorCandidates.find((candidate) =>
+        typeof candidate.getClientRects !== "function" || candidate.getClientRects().length > 0
+      ) || editorCandidates[0] || Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-editor]") || []).find((candidate) =>
+        typeof candidate.getClientRects !== "function" || candidate.getClientRects().length > 0
       );
       const existingDraft = state.studioRoleConfigEditor?.draft;
       const formDraft = readStudioRoleConfigDraft(editorRoot);
       const draft = existingDraft?.roleId === selectedRoleIdValue
-        ? { ...existingDraft, ...formDraft }
+        // Input/change handlers keep the structured draft current, including
+        // the optional selector suffix. Prefer it when present so a transient
+        // rerender cannot silently turn an optional mapping into a required
+        // one while the save button is being clicked.
+        ? {
+            ...existingDraft,
+            ...formDraft,
+            contextMap: existingDraft.contextMap && typeof existingDraft.contextMap === "object"
+              ? existingDraft.contextMap
+              : formDraft.contextMap
+          }
         : formDraft;
       const bindingKind = draft.bindingKind === "model" || draft.bindingKind === "exec"
         ? draft.bindingKind
@@ -3857,7 +3872,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           button.disabled = true;
           if (errorEl) errorEl.textContent = "";
           try {
-            state.contracts = await requestJson(API_PREFIX + "/project/contracts", {
+            state.contracts = await requestJson(API_PREFIX + "/ogs/workspace/contracts", {
               method: "POST",
               body: JSON.stringify({ filePath: button.getAttribute("data-contract-file-save"), content })
             });
@@ -3905,7 +3920,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           button.disabled = true;
           if (errorEl) errorEl.textContent = "";
           try {
-            state.contracts = await requestJson(API_PREFIX + "/project/contracts", {
+            state.contracts = await requestJson(API_PREFIX + "/ogs/workspace/contracts", {
               method: "POST",
               body: JSON.stringify({ filePath: button.getAttribute("data-contract-manifest-save"), content })
             });
@@ -4035,7 +4050,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-save]") || [])) {
         bindOnce(button, "click", "role-config-save", () => {
-          void saveStudioRoleConfigEditor(button.getAttribute("data-role-config-save") || selectedStudioRoleId());
+          void saveStudioRoleConfigEditor(button.getAttribute("data-role-config-save") || selectedStudioRoleId(), button);
         });
       }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-revert]") || [])) {
@@ -4047,8 +4062,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(button, "click", "model-catalog-sync", async () => {
           button.disabled = true;
           try {
-            await requestJson(API_PREFIX + "/project/models/sync", { method: "POST", body: JSON.stringify({}) });
-            const bridge = await requestJson(API_PREFIX + "/project/studio/bridge");
+            await requestJson(API_PREFIX + "/ogs/workspace/models/sync", { method: "POST", body: JSON.stringify({}) });
+            const bridge = await requestJson(API_PREFIX + "/ogs/workspace/studio/bridge");
             state.studioBridge = bridge;
             state.studioBridgeLoaded = true;
             state.studioBridgeStale = false;
@@ -4089,9 +4104,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function refreshRolePackageDependentProjectState() {
       const [readiness, rolePackages, roleCatalog] = await Promise.all([
-        requestJson(API_PREFIX + "/project/readiness").catch(() => state.projectReadiness),
-        requestJson(API_PREFIX + "/project/role-packages").catch(() => state.rolePackages),
-        requestJson(API_PREFIX + "/project/role-catalog").catch(() => state.studioRoleCatalog)
+        requestJson(API_PREFIX + "/ogs/workspace/readiness").catch(() => state.projectReadiness),
+        requestJson(API_PREFIX + "/ogs/workspace/role-packages").catch(() => state.rolePackages),
+        requestJson(API_PREFIX + "/ogs/workspace/role-catalog").catch(() => state.studioRoleCatalog)
       ]);
       state.projectReadiness = readiness;
       state.rolePackages = rolePackages;
@@ -4228,7 +4243,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       renderStudioSelectionDialog();
       try {
-        const payload = await requestAction(API_PREFIX + "/project/execution-config", {
+        const payload = await requestAction(API_PREFIX + "/ogs/workspace/execution-config", {
           profiles: [{
             profileId: draft.profileId,
             toolRef: draft.toolRef,
@@ -4560,7 +4575,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       renderStudioSelectionDialog();
       try {
-        const payload = await requestJson(API_PREFIX + "/project/role-packages/" + encodeURIComponent(selectedRoleIdValue));
+        const payload = await requestJson(API_PREFIX + "/ogs/workspace/role-packages/" + encodeURIComponent(selectedRoleIdValue));
         if (state.studioRolePackageEditor?.roleId !== selectedRoleIdValue) {
           return;
         }
@@ -4626,7 +4641,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       renderStudioSelectionDialog();
       try {
-        const payload = await requestAction(API_PREFIX + "/project/role-packages/" + encodeURIComponent(selectedRoleIdValue), {
+        const payload = await requestAction(API_PREFIX + "/ogs/workspace/role-packages/" + encodeURIComponent(selectedRoleIdValue), {
           files: draftFiles
         });
         const files = payload.files || {};
@@ -5302,10 +5317,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(restoreAuthoringDraftButton, "click", "restore-authoring-draft", async () => {
           restoreAuthoringDraftButton.disabled = true;
           try {
-            const saved = await requestJson(API_PREFIX + "/project/studio/authoring");
+            const saved = await requestJson(API_PREFIX + "/ogs/workspace/studio/authoring");
             if (!saved?.authoring) throw new Error(t("studio.graph.noSavedDraft", undefined, "No saved Studio draft is available."));
-            const generated = await requestAction(API_PREFIX + "/project/studio/authoring/generate-mmd", { authoring: saved.authoring });
-            const bridge = await requestAction(API_PREFIX + "/project/studio/bridge", {
+            const generated = await requestAction(API_PREFIX + "/ogs/workspace/studio/authoring/generate-mmd", { authoring: saved.authoring });
+            const bridge = await requestAction(API_PREFIX + "/ogs/workspace/studio/bridge", {
               systemSource: generated.systemSource,
               systemPath: state.workbenchSavedPath || "system.mmd"
             });
@@ -6085,7 +6100,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (branchId) params.set("branchId", branchId);
           if (loopIteration) params.set("loopIteration", loopIteration);
           try {
-            const detail = await requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/role-io?" + params.toString());
+            const detail = await requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/role-io?" + params.toString());
             if (!disclosure.isConnected || state.selectedRunId !== runId) return;
             const result = asRecord(detail?.result);
             const resultJson = result && Object.keys(result).length ? formatJson(result) : "";
@@ -6588,7 +6603,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (state.timelineStatus) params.set("status", state.timelineStatus);
       if (state.timelineChannel) params.set("channel", state.timelineChannel);
       try {
-        const payload = await requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/conversation?" + params.toString());
+        const payload = await requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/conversation?" + params.toString());
         if (!isCurrentRunSelection(runId, requestId)) {
           return;
         }
@@ -6628,18 +6643,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const [summary, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates, roleCatalog] = await Promise.all([
-        requestJson(\`\${API_PREFIX}/project\`),
-        requestJson(\`\${API_PREFIX}/project/config\`),
-        requestJson(\`\${API_PREFIX}/project/roles\`),
-        requestJson(\`\${API_PREFIX}/project/ops-summary\`),
-        requestJson(\`\${API_PREFIX}/project/readiness\`),
-        requestJson(\`\${API_PREFIX}/project/bindings\`),
-        requestJson(\`\${API_PREFIX}/project/contracts\`),
-        requestJson(\`\${API_PREFIX}/project/role-packages\`),
-        requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] })),
-        requestJson(\`\${API_PREFIX}/project/role-catalog\`).catch(() => state.studioRoleCatalog)
+        requestJson(\`\${API_PREFIX}/ogs/workspace\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/config\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/roles\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/ops-summary\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/readiness\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/bindings\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/contracts\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/role-packages\`),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/studio/templates\`).catch(() => ({ templates: [] })),
+        requestJson(\`\${API_PREFIX}/ogs/workspace/role-catalog\`).catch(() => state.studioRoleCatalog)
       ]);
       state.project = Object.assign({}, state.project || {}, { summary, config, roles });
+      state.projectDigest = summary?.project?.projectDigest || state.projectDigest || "";
       state.opsSummary = opsSummary;
       state.projectReadiness = readiness;
       state.bindings = bindings;
@@ -6668,7 +6684,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderWorkbench();
       }
       try {
-        const payload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/studio/bridge\`, {
           systemSource: state.workbenchSource,
           systemPath: state.workbenchSavedPath || "system.mmd"
         });
@@ -6798,7 +6814,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       await runAction("studio:apply-canvas", async () => {
         if (result.repositoryRoleId) {
-          await requestAction(API_PREFIX + "/project/roles/import", {
+          await requestAction(API_PREFIX + "/ogs/workspace/roles/import", {
             source: "installed",
             roleIds: [result.repositoryRoleId]
           });
@@ -6822,7 +6838,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!profiles.length && !tools.length) {
         return;
       }
-      const payload = await requestAction(API_PREFIX + "/project/execution-config", {
+      const payload = await requestAction(API_PREFIX + "/ogs/workspace/execution-config", {
         profiles,
         tools
       });
@@ -6892,7 +6908,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function applyStudioGraphPayload(args) {
-      const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/apply-canvas\`, {
+      const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/studio/authoring/apply-canvas\`, {
         authoring: args.authoring
       });
       if (args.requestId && args.requestId !== state.studioCanvasSyncRequestId) {
@@ -6900,7 +6916,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.workbenchSource = payload.systemSource || state.workbenchSource;
       persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
-      const bridgePayload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
+      const bridgePayload = await requestAction(\`\${API_PREFIX}/ogs/workspace/studio/bridge\`, {
         systemSource: state.workbenchSource,
         systemPath: state.workbenchSavedPath || "system.mmd"
       });
@@ -6975,7 +6991,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.studioChatLastRequest = prompt;
         state.studioChatDraftMessage = "";
         patchStudioChatPanel();
-        const payload = await requestAction(\`\${API_PREFIX}/project/studio/chat\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/studio/chat\`, {
           message: requestMessage,
           sessionId: state.studioChatSessionId || undefined,
           selectedRoleId: state.studioBridgeSelectedRoleId || undefined,
@@ -7024,7 +7040,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const changeSet = state.studioChatResult?.changeSet;
       if (changeSet?.operations?.length && studioChatCanApply(state.studioChatResult)) {
         await runAction("studio:design-apply", async () => {
-          await requestAction(API_PREFIX + "/project/design/apply", { changeSet });
+          await requestAction(API_PREFIX + "/ogs/workspace/design/apply", { changeSet });
           state.workbenchSource = state.studioChatResult?.previewMermaid || state.workbenchSource;
           state.workbenchDiskSource = state.workbenchSource;
           state.studioChatDialogOpen = false;
@@ -7101,7 +7117,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("studio:draft-save", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/studio/authoring\`, {
           authoring: state.studioBridge.authoring
         });
         state.studioAuthoringDraftStatus = "saved";
@@ -7123,7 +7139,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return false;
       }
       await runAction("studio:generate-mmd", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/generate-mmd\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/studio/authoring/generate-mmd\`, {
           authoring: state.studioBridge.authoring
         });
         state.workbenchSource = payload.systemSource || state.workbenchSource;
@@ -7151,7 +7167,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.workbenchValidating = true;
       renderWorkbench({ preserveEditor: true });
       try {
-        const payload = await requestAction(\`\${API_PREFIX}/project/system/validate\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/system/validate\`, {
           systemSource: state.workbenchSource,
           systemPath: state.workbenchSavedPath
         });
@@ -7193,7 +7209,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderWorkbench();
       }
       try {
-        const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
+        const payload = await requestJson(\`\${API_PREFIX}/ogs/workspace/system/workbench\`);
         state.workbench = payload;
         if (workdirEl && payload.workdir) {
           workdirEl.textContent = payload.workdir;
@@ -7238,7 +7254,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       await runAction("workbench:save", async () => {
         const payload = await requestAction(
-          \`\${API_PREFIX}/project/system/save\`,
+          \`\${API_PREFIX}/ogs/workspace/system/save\`,
           {
             systemSource: state.workbenchSource
           }
@@ -7282,7 +7298,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("workbench:save-as", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/project/system/save-as\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/system/save-as\`, {
           systemSource: state.workbenchSource,
           saveAsPath
         });
@@ -7414,10 +7430,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           forceStudioWorkbenchSideTab(preferredStudioSideTab);
           writeRouteToLocation();
         }
-        const payload = await requestAction(\`\${API_PREFIX}/runs/start\`, {
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/runs/start\`, {
           systemPath: args.systemPath,
           input: args.input,
           dryRun: args.dryRun,
+          projectId: state.projectId || undefined,
+          projectDigest: state.projectDigest || undefined,
+          runMode: args.runMode || undefined,
           runtimePath: args.runtimePath || undefined,
           userProfilePath: args.userProfilePath || undefined,
           lawsPath: args.lawsPath || undefined
@@ -7467,11 +7486,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       await runAction("run:resume", async () => {
         const payload = await requestAction(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/resume\`,
+          \`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(state.selectedRunId)}/resume\`,
           {
             systemPath: args.systemPath || undefined,
             input: args.input || undefined,
             dryRun: args.dryRun,
+            projectId: state.projectId || undefined,
+            projectDigest: state.projectDigest || undefined,
+            runMode: args.runMode || undefined,
             runtimePath: args.runtimePath || undefined,
             userProfilePath: args.userProfilePath || undefined,
             lawsPath: args.lawsPath || undefined
@@ -7598,7 +7620,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("reindex", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/runs/reindex\`);
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/runs/reindex\`);
         state.runs = payload.runs || [];
         closeActionForm();
         renderRuns();
@@ -7629,7 +7651,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("project:export", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/project/export\`);
+        const payload = await requestAction(\`\${API_PREFIX}/ogs/workspace/export\`);
         const blob = new Blob([JSON.stringify(payload, null, 2) + "\\n"], { type: "application/json" });
         const anchor = document.createElement("a");
         anchor.href = URL.createObjectURL(blob);
@@ -7646,7 +7668,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.projectLoading = true;
       renderProject();
       try {
-        state.workspace = await requestJson(API_PREFIX + "/workspace");
+        state.workspace = await requestJson(API_PREFIX + "/ogs/workspace");
         state.hasProject = state.workspace?.hasProject === true;
         if (!state.hasProject) {
           state.project = null;
@@ -7663,6 +7685,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.workbenchRunDraftErrors = {};
           state.studioTemplates = [];
           state.projectLoading = false;
+          state.projectDigest = "";
           state.workbenchLoading = false;
           state.runDetailLoading = false;
           renderProject();
@@ -7672,20 +7695,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           return;
         }
         const [summary, design, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates, roleCatalog] = await Promise.all([
-          requestJson(\`\${API_PREFIX}/project\`),
-          requestJson(\`\${API_PREFIX}/project/design\`).catch(() => ({ design: null })),
-          requestJson(\`\${API_PREFIX}/project/system\`),
-          requestJson(\`\${API_PREFIX}/project/config\`),
-          requestJson(\`\${API_PREFIX}/project/roles\`),
-          requestJson(\`\${API_PREFIX}/project/ops-summary\`),
-          requestJson(\`\${API_PREFIX}/project/readiness\`),
-          requestJson(\`\${API_PREFIX}/project/bindings\`),
-          requestJson(\`\${API_PREFIX}/project/contracts\`),
-          requestJson(\`\${API_PREFIX}/project/role-packages\`),
-          requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] })),
-          requestJson(\`\${API_PREFIX}/project/role-catalog\`).catch(() => state.studioRoleCatalog)
+          requestJson(\`\${API_PREFIX}/ogs/workspace\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/design\`).catch(() => ({ design: null })),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/system\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/config\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/roles\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/ops-summary\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/readiness\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/bindings\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/contracts\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/role-packages\`),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/studio/templates\`).catch(() => ({ templates: [] })),
+          requestJson(\`\${API_PREFIX}/ogs/workspace/role-catalog\`).catch(() => state.studioRoleCatalog)
         ]);
         state.project = { summary, design, system, config, roles };
+        state.projectDigest = summary?.project?.projectDigest || "";
         state.opsSummary = opsSummary;
         state.projectReadiness = readiness;
         state.bindings = bindings;
@@ -7735,7 +7759,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       setProjectCreateStage("request");
       await runAction("project:create", async () => {
         try {
-          await requestAction(API_PREFIX + "/project/create", body);
+          await requestAction(API_PREFIX + "/ogs/workspace/create", body);
         } catch (error) {
           const { code, message } = projectCreateErrorFromResponse(error);
           state.projectCreateError = {
@@ -7799,7 +7823,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadRuns() {
-      const payload = await requestJson(\`\${API_PREFIX}/runs\`);
+      const payload = await requestJson(\`\${API_PREFIX}/ogs/runs\`);
       state.runs = payload.runs || [];
       const latestDebugRun = state.runs.find((run) => run.isSimulation === true);
       state.studioBridgeLastDryRunId = latestDebugRun?.runId || "";
@@ -7823,10 +7847,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       try {
         const [detail, eventsPayload, graph, reviews] = await Promise.all([
-          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId)),
+          requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId)),
           requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
-          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/graph"),
-          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/reviews").catch(() => null)
+          requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/graph"),
+          requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/reviews").catch(() => null)
         ]);
         if (requestId !== state.studioDebugSnapshotRequestId) return;
         state.studioDebugSnapshot = {
@@ -7895,7 +7919,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       try {
         const reviewDetail = await requestJson(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}\`
+          \`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}\`
         );
         if (!isCurrentRunSelection(runId, requestId)) {
           return;
@@ -7921,7 +7945,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const requestId = state.runSelectionRequestId;
       let reviewsPayload;
       try {
-        reviewsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`);
+        reviewsPayload = await requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/reviews\`);
       } catch (error) {
         setFlash("error", t("reviews.loadFailed", { message: error?.message || error }, "Failed to load reviews: {message}"));
         return;
@@ -7947,10 +7971,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function refreshRunDetailAndGraph(runId) {
       const requestId = state.runSelectionRequestId;
       const [detail, graphPayload, contractRuntimeStatus, conversation] = await Promise.all([
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/conversation?limit=250\`).catch(() => null)
+        requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}\`),
+        requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/graph\`),
+        requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null),
+        requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/conversation?limit=250\`).catch(() => null)
       ]);
       if (!isCurrentRunSelection(runId, requestId)) {
         return;
@@ -8083,12 +8107,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderSelectedRun();
       try {
         const [detail, eventsPayload, graphPayload, reviewsPayload, contractRuntimeStatus, conversation] = await Promise.all([
-          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
+          requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}\`),
           requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
-          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
-          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
-          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null),
-          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/conversation?limit=250\`).catch(() => null)
+          requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/graph\`),
+          requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/reviews\`),
+          requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null),
+          requestJson(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/conversation?limit=250\`).catch(() => null)
         ]);
         if (!isCurrentRunSelection(runId, requestId)) {
           return;
@@ -8218,7 +8242,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const reviewId = state.selectedReviewId;
       await runAction("review:" + args.decision, async () => {
         const payload = await requestAction(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(reviewId)}/decide\`,
+          \`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(reviewId)}/decide\`,
           {
             decision: args.decision,
             scope: args.decision === "terminate" ? args.scope : undefined,
@@ -8243,7 +8267,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const paths = defaultProjectArtifactPaths();
           try {
             const resumePayload = await requestAction(
-              \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/resume\`,
+              \`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/resume\`,
               {
                 dryRun: state.detail?.header?.isSimulation === true,
                 runtimePath: paths.runtimePath || undefined,
@@ -8282,7 +8306,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       await runAction("stop", async () => {
         const payload = await requestAction(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/stop\`,
+          \`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(state.selectedRunId)}/stop\`,
           { reason: args.reason }
         );
         state.resumeDiagnosticsStale = true;
@@ -8399,7 +8423,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function connectStream(runId, cursor) {
       stopStream();
       resetStreamRefreshForRun(runId);
-      const stream = new EventSource(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/stream?cursor=\${cursor}\`);
+      const streamParams = new URLSearchParams({ cursor: String(cursor) });
+      if (state.projectId) streamParams.set("projectId", state.projectId);
+      const stream = new EventSource(\`\${API_PREFIX}/ogs/runs/\${encodeURIComponent(runId)}/stream?\${streamParams.toString()}\`);
       state.stream = stream;
       stream.onopen = () => setLive("online", t("live.live"));
       stream.onmessage = (message) => {
@@ -8537,7 +8563,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
         } else if (target.id === "open-workdir" && window.__OGS_VISUALIZER_BOOTSTRAP__?.allowLocalDirectoryOpen === true) {
           try {
-            await requestAction(API_PREFIX + "/project/open-directory", {});
+            await requestAction(API_PREFIX + "/ogs/workspace/open-directory", {});
             setFlash("success", t("app.workdirOpened"));
           } catch {
             setFlash("error", t("app.workdirOpenFailed"));
@@ -8656,6 +8682,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       initialRoute.lifecycle,
       initialRoute.view
     );
+    state.projectId = initialRoute.projectId;
     if (!initialRoute.lifecycle && (initialRoute.runId || initialRoute.reviewId || initialRoute.logRoleId || initialRoute.tail || initialRoute.since)) {
       state.consoleTab = runConsoleTab();
     }

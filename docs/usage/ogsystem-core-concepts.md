@@ -17,6 +17,25 @@ An actual person, model, service, or tool may realize a responsibility through a
 binding or an external governance integration. That realization is not the identity of the OGS
 role and does not change the process graph.
 
+## Product Layers And Assets
+
+| Term | Contains | Does not contain |
+| --- | --- | --- |
+| **Framework** | Runtime core, parser/compiler, CLI, and `nl2mmd`. | Role library, model library, Vis UI, or product-site data. |
+| **Platform** | Framework plus model adapters/catalog, installed role library, and Vis. | User team library, user accounts, or project run history. |
+| **Team Asset** | A portable static OGS team definition: Mermaid/design, role packages or references, execution bindings, and team metadata. | Framework code, model catalog, credentials, workspace materials, and `.ogs/runs`. |
+| **Product Site** | Platform plus team library, project/workspace management, users, materials, tasks, and runs. | A second runtime or a second Team entity. |
+
+The product site presents a Team Asset as a **team** and stores it in the team library. A
+**Project** is the working instance of that asset: Team Asset + resources + task input + run
+history. A **Run** is one execution of a project and remains the canonical API/code term; the
+product UI labels it **运行**. The same Runtime Core serves the product site and Vis.
+
+The portable public package format is `single-project-v1`. It contains the static team definition
+and excludes framework code, credentials, model catalogs, `.ogs/runs`, logs, checkpoints, review
+records, and other execution history. The stable on-disk framework contracts remain `.ogs/`,
+`og-roles/`, `system.mmd`, and `.ogs/runs/`.
+
 ## Role-first Graph Contract
 
 The OGS graph is intentionally **role-first**:

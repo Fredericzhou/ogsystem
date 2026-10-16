@@ -1362,6 +1362,64 @@ export async function loadResumeGraphState(args: {
   return graphState;
 }
 
+/**
+ * Resume is only meaningful for an interrupted or review-paused run. Terminal graph
+ * states are immutable outcomes and must be retried by creating a new run.
+ */
+export function assertResumeAllowed(args: { runDir: string; state: GraphState }): void {
+  if (["done", "failed", "terminated"].includes(args.state.status)) {
+    throw createRuntimeError({
+      errorCode: "RUN_RESUME_NOT_ALLOWED",
+      errorCategory: "state",
+      message: `Run ${basename(args.runDir)} is terminal (${args.state.status}); create a new run instead of resuming it.`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+}
+
+/**
+ * A setup failure during resume has no graph transition that can persist the outcome.
+ * Record it explicitly so the next resume cannot silently replay a failed recovery.
+ */
+export async function markResumeFailure(args: {
+  runDir: string;
+  errorCode: string;
+  message: string;
+}): Promise<void> {
+  const statePath = resolve(args.runDir, "state.json");
+  const raw = await readJsonFile(statePath);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return;
+  const record = raw as Record<string, unknown>;
+  const graphState = record.graphState;
+  if (typeof graphState !== "object" || graphState === null || Array.isArray(graphState)) return;
+  const graph = graphState as Record<string, unknown>;
+  if (["done", "failed", "terminated"].includes(String(graph.status))) return;
+  graph.status = "failed";
+  graph.error = args.message;
+  graph.errorEnvelope = {
+    errorCode: args.errorCode,
+    errorCategory: "state",
+    message: args.message,
+    retryable: false,
+    stage: "resume",
+    runId: basename(args.runDir)
+  };
+  await writeAtomicFile(statePath, stringifyJson({ ...record, status: "failed", graphState: graph }));
+
+  const summaryPath = resolve(args.runDir, "summary.json");
+  const summary = await readJsonFile(summaryPath).catch(() => undefined);
+  if (typeof summary === "object" && summary !== null && !Array.isArray(summary)) {
+    await writeJsonFileAtomic(summaryPath, {
+      ...(summary as Record<string, unknown>),
+      status: "failed",
+      lastErrorCode: args.errorCode,
+      updatedAt: new Date().toISOString()
+    });
+  }
+}
+
 export async function persistRunPlanFingerprint(args: {
   runDir: string;
   fingerprint: RunPlanFingerprint;

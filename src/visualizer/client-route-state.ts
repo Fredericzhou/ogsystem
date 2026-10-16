@@ -34,6 +34,7 @@ export function normalizeGraphViewport(value: Partial<Record<keyof GraphViewport
 }
 
 export type RouteState = {
+  projectId?: string;
   view: string;
   lifecycle: string;
   runId: string;
@@ -68,14 +69,17 @@ export function readRouteStateFromSearch(search: string): RouteState {
     ? value as RouteState["timelineChannel"]
     : "";
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const panel = params.get("panel");
   const graphViewport = normalizeGraphViewport({
     x: params.get("graphX"),
     y: params.get("graphY"),
     zoom: params.get("graphZoom")
   });
+  const projectId = bounded(params.get("projectId"));
   return {
+    ...(projectId ? { projectId } : {}),
     view: params.get("view") || "",
-    lifecycle: params.get("lifecycle") || "",
+    lifecycle: params.get("lifecycle") || (panel === "design" ? "design" : panel ? "run" : ""),
     runId: params.get("runId") || "",
     reviewId: params.get("reviewId") || "",
     logRoleId: params.get("logRoleId") || "",
@@ -136,6 +140,7 @@ export function normalizeLifecycleView(
 }
 
 export function buildRouteSearch(args: {
+  projectId?: string;
   lifecycle?: string;
   projectHome: boolean;
   selectedRunId: string;
@@ -169,6 +174,9 @@ export function buildRouteSearch(args: {
     : "";
   const graphViewport = normalizeGraphViewport(args.graphViewport);
   const params = new URLSearchParams();
+  if (args.projectId && bounded(args.projectId)) {
+    params.set("projectId", bounded(args.projectId));
+  }
   let lifecycle = args.lifecycle || "";
   switch (lifecycle) {
     case "project":

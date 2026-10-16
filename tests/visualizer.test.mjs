@@ -5,7 +5,7 @@ import path from "node:path";
 import http from "node:http";
 import https from "node:https";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -14,7 +14,7 @@ import { loadModelCatalog } from "../dist/runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../dist/runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
-import { loadLaws, loadRolePackages, loadRuntimeConfig } from "../dist/runtime/runtime-loader.js";
+import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../dist/runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../dist/runtime/runtime-setup.js";
 import { isConvergedRunStatus, startVisualizationServer } from "../dist/visualizer/server.js";
 import { createBasicControlPlaneIdentityProvider } from "../dist/runtime/identity.js";
@@ -26,7 +26,7 @@ import {
 } from "../dist/visualizer/request-body.js";
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
-import { loadProjectBundle, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
+import { loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
 
 test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
   const parsed = parseStudioChatToMmdRequest({
@@ -81,7 +81,7 @@ test("visualizer health, readiness, scrape metrics, and external bind guard are 
     assert.match(metrics.headers.get("content-type"), /text\/plain/);
     assert.match(await metrics.text(), /ogs_visualizer_sse_connections_active/);
 
-    const denied = await fetch(`${started.url}/api/v1/project` , { method: "POST" });
+    const denied = await fetch(`${started.url}/api/v1/ogs/workspace` , { method: "POST" });
     assert.equal(denied.status, 403);
     assert.equal((await denied.json()).error.code, "FORBIDDEN");
     const updatedMetrics = await (await fetch(`${started.url}/metrics`)).text();
@@ -158,7 +158,7 @@ test("visualizer closes repeated SSE connections and returns the active gauge to
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
   try {
     for (let index = 0; index < 100; index += 1) {
-      const response = await fetch(`${started.url}/api/v1/runs/sse-lifecycle-run/stream`);
+      const response = await fetch(`${started.url}/api/v1/ogs/runs/sse-lifecycle-run/stream`);
       assert.equal(response.status, 200);
       await response.body.cancel();
     }
@@ -190,24 +190,24 @@ test("contract editor API restricts paths and preserves files rejected by valida
   let started;
   try {
     started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
-    const response = await fetch(`${started.url}/api/v1/project/contracts`);
+    const response = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`);
     assert.equal(response.status, 200);
     const contracts = await response.json();
     assert.equal(contracts.manifest.path, "contracts/handoff.json");
-    const rejectedPath = await fetch(`${started.url}/api/v1/project/contracts`, {
+    const rejectedPath = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ filePath: "../system.mmd", content: "{}" })
     });
     assert.notEqual(rejectedPath.status, 200);
-    const rejectedJson = await fetch(`${started.url}/api/v1/project/contracts`, {
+    const rejectedJson = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ filePath: "contracts/handoff.json", content: "{" })
     });
     assert.notEqual(rejectedJson.status, 200);
     assert.equal(await readFile(contractPath, "utf8"), contractSource);
-    const saved = await fetch(`${started.url}/api/v1/project/contracts`, {
+    const saved = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ filePath: "contracts/handoff.json", content: contractSource })
@@ -226,20 +226,20 @@ test("contract editor API restricts paths and preserves files rejected by valida
         schema: "handoff.schema.json"
       }]
     }, null, 2);
-    const bindResponse = await fetch(`${started.url}/api/v1/project/contracts`, {
+    const bindResponse = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ filePath: "contracts/handoff.json", content: boundManifest })
     });
     assert.equal(bindResponse.status, 200);
-    const invalidManifest = await fetch(`${started.url}/api/v1/project/contracts`, {
+    const invalidManifest = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ filePath: "contracts/handoff.json", content: JSON.stringify({ version: 2, contracts: [] }) })
     });
     assert.notEqual(invalidManifest.status, 200);
     assert.equal(await readFile(contractPath, "utf8"), JSON.stringify(JSON.parse(boundManifest), null, 2) + "\n");
-    const invalidSchema = await fetch(`${started.url}/api/v1/project/contracts`, {
+    const invalidSchema = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ filePath: "contracts/handoff.schema.json", content: "[]" })
@@ -251,7 +251,7 @@ test("contract editor API restricts paths and preserves files rejected by valida
     try {
       const outsideSchema = path.resolve(outsideDir, "schema.json");
       await writeFile(outsideSchema, schemaSource, "utf8");
-      const outsideReference = await fetch(`${started.url}/api/v1/project/contracts`, {
+      const outsideReference = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ filePath: "contracts/handoff.schema.json", content: JSON.stringify({ $ref: outsideSchema }) })
@@ -270,7 +270,7 @@ test("contract editor API restricts paths and preserves files rejected by valida
         }]
       }, null, 2);
       await writeFile(contractPath, outsideManifest, "utf8");
-      const outsideWrite = await fetch(`${started.url}/api/v1/project/contracts`, {
+      const outsideWrite = await fetch(`${started.url}/api/v1/ogs/workspace/contracts`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ filePath: "contracts/outside.schema.json", content: schemaSource })
@@ -289,7 +289,7 @@ test("contract editor API restricts paths and preserves files rejected by valida
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
-  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
+  await cp(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), { recursive: true });
   for (const file of [
     "runtime.json",
     "model-selection.json",
@@ -297,7 +297,7 @@ async function seedProjectFixture(workdir) {
     "laws.json",
     "user-profile.json"
   ]) {
-    await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
+    await cp(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
   await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
@@ -376,7 +376,7 @@ async function seedAlternateProjectFixture(workdir) {
 async function seedRunnableReviewProjectFixture(workdir) {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
-  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
+  await cp(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), { recursive: true });
   for (const file of [
     "runtime.json",
     "model-selection.json",
@@ -384,7 +384,7 @@ async function seedRunnableReviewProjectFixture(workdir) {
     "laws.json",
     "user-profile.json"
   ]) {
-    await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
+    await cp(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
   await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
@@ -456,7 +456,11 @@ async function writeMatchingPlanFingerprint(workdir, runDir, systemSource) {
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     effectiveLaw,
     contractPlan,
-    compilerSnapshot: compilerResult.snapshot
+    compilerSnapshot: compilerResult.snapshot,
+    runtimeConfig,
+    profiles: await loadProfiles(undefined, workdir),
+    tools: await loadTools(undefined, workdir),
+    userProfile: await loadUserProfile(undefined, workdir)
   });
   await writeFile(path.resolve(runDir, "plan-fingerprint.json"), JSON.stringify(fingerprint, null, 2), "utf8");
 }
@@ -1130,19 +1134,19 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const projectHome = await fetch(`${url}/?view=project`);
     assert.equal(projectHome.status, 200);
 
-    const projectResponse = await fetch(`${url}/api/v1/project`);
+    const projectResponse = await fetch(`${url}/api/v1/ogs/workspace`);
     assert.equal(projectResponse.status, 200);
     const project = await projectResponse.json();
     assert.equal(project.project.systemId, "viz.project.demo");
     assert.equal(project.project.roleCount, 1);
     assert.match(project.project.roleRepoRoot, /og-roles$/);
 
-    const projectSystemResponse = await fetch(`${url}/api/v1/project/system`);
+    const projectSystemResponse = await fetch(`${url}/api/v1/ogs/workspace/system`);
     assert.equal(projectSystemResponse.status, 200);
     const projectSystem = await projectSystemResponse.json();
     assert.match(projectSystem.systemSource, /Role:demo-analyst/);
 
-    const projectConfigResponse = await fetch(`${url}/api/v1/project/config`);
+    const projectConfigResponse = await fetch(`${url}/api/v1/ogs/workspace/config`);
     assert.equal(projectConfigResponse.status, 200);
     const projectConfig = await projectConfigResponse.json();
     assert.ok(projectConfig.runtime);
@@ -1150,7 +1154,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(projectConfig.profiles[0].profileId, "profile.review");
     assert.equal(projectConfig.tools[0].toolRef, "tool.review");
 
-    const profileUpsertResponse = await fetch(`${url}/api/v1/project/profiles`, {
+    const profileUpsertResponse = await fetch(`${url}/api/v1/ogs/workspace/profiles`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1163,7 +1167,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const profilesFile = JSON.parse(await readFile(path.resolve(workdir, "profiles.json"), "utf8"));
     assert.ok(profilesFile.some((profile) => profile.profileId === "profile.generated"));
 
-    const executionConfigUpsertResponse = await fetch(`${url}/api/v1/project/execution-config`, {
+    const executionConfigUpsertResponse = await fetch(`${url}/api/v1/ogs/workspace/execution-config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1179,13 +1183,13 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.ok(Array.isArray(toolsFile.tools));
     assert.ok(toolsFile.tools.some((tool) => tool.toolRef === "tool.exec"));
 
-    const projectRolesResponse = await fetch(`${url}/api/v1/project/roles`);
+    const projectRolesResponse = await fetch(`${url}/api/v1/ogs/workspace/roles`);
     assert.equal(projectRolesResponse.status, 200);
     const projectRoles = await projectRolesResponse.json();
     assert.equal(projectRoles.roles.length, 1);
     assert.equal(projectRoles.roles[0].roleId, "demo-analyst");
 
-    const projectOpsResponse = await fetch(`${url}/api/v1/project/ops-summary`);
+    const projectOpsResponse = await fetch(`${url}/api/v1/ogs/workspace/ops-summary`);
     assert.equal(projectOpsResponse.status, 200);
     const projectOps = await projectOpsResponse.json();
     assert.equal(projectOps.summary.recentFailureCount, 1);
@@ -1193,20 +1197,20 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(projectOps.reviewRework.pendingReviewCount, 0);
     assert.equal(Array.isArray(projectOps.resumeReadiness.runs), true);
 
-    const projectReadinessResponse = await fetch(`${url}/api/v1/project/readiness`);
+    const projectReadinessResponse = await fetch(`${url}/api/v1/ogs/workspace/readiness`);
     assert.equal(projectReadinessResponse.status, 200);
     const projectReadiness = await projectReadinessResponse.json();
     assert.equal(projectReadiness.systemId, "viz.project.demo");
     assert.equal(projectReadiness.canDryRun, true);
     assert.equal(projectReadiness.roleRepoHealth.roles[0].status, "ok");
 
-    const projectBindingsResponse = await fetch(`${url}/api/v1/project/bindings`);
+    const projectBindingsResponse = await fetch(`${url}/api/v1/ogs/workspace/bindings`);
     assert.equal(projectBindingsResponse.status, 200);
     const projectBindings = await projectBindingsResponse.json();
     assert.equal(projectBindings.bindings.length, 1);
     assert.equal(projectBindings.bindings[0].roleId, "demo-analyst");
 
-    const projectRolePackagesResponse = await fetch(`${url}/api/v1/project/role-packages`);
+    const projectRolePackagesResponse = await fetch(`${url}/api/v1/ogs/workspace/role-packages`);
     assert.equal(projectRolePackagesResponse.status, 200);
     const projectRolePackages = await projectRolePackagesResponse.json();
     assert.equal(projectRolePackages.rolePackages.length > 1, true);
@@ -1215,12 +1219,12 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(activeRolePackage.inSystem, true);
     assert.ok(projectRolePackages.rolePackages.some((entry) => entry.roleId !== "demo-analyst" && entry.inSystem === false));
 
-    const projectContractsResponse = await fetch(`${url}/api/v1/project/contracts`);
+    const projectContractsResponse = await fetch(`${url}/api/v1/ogs/workspace/contracts`);
     assert.equal(projectContractsResponse.status, 200);
     const projectContracts = await projectContractsResponse.json();
     assert.equal(Array.isArray(projectContracts.contracts), true);
 
-    const listResponse = await fetch(`${url}/api/v1/runs`);
+    const listResponse = await fetch(`${url}/api/v1/ogs/runs`);
     assert.equal(listResponse.status, 200);
     const list = await listResponse.json();
     assert.equal(list.runs[0].isSimulation, true);
@@ -1228,7 +1232,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(list.runs[0].runId, runId);
     assert.equal(list.runs[0].status, "done");
 
-    const detailResponse = await fetch(`${url}/api/v1/runs/${runId}`);
+    const detailResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}`);
     assert.equal(detailResponse.status, 200);
     const detail = await detailResponse.json();
     assert.equal(detail.header.status, "done");
@@ -1238,27 +1242,27 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(detail.header.isSimulation, true);
     assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|DONE\| output/);
 
-    const failureResponse = await fetch(`${url}/api/v1/runs/${runId}/failure`);
+    const failureResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/failure`);
     assert.equal(failureResponse.status, 200);
     const failure = await failureResponse.json();
     assert.equal(failure.status, "failed");
     assert.equal(failure.summary.errorCode, "E_VIS_TEST");
     assert.equal(Array.isArray(failure.suggestedNextChecks), true);
 
-    const runContractsResponse = await fetch(`${url}/api/v1/runs/${runId}/contracts`);
+    const runContractsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/contracts`);
     assert.equal(runContractsResponse.status, 200);
     const runContracts = await runContractsResponse.json();
     assert.equal(runContracts.status, "pass");
     assert.equal(runContracts.runId, runId);
 
     for (const debugEndpoint of ["failure", "contracts", "resume-readiness"]) {
-      const missingResponse = await fetch(`${url}/api/v1/runs/missing-run/${debugEndpoint}`);
+      const missingResponse = await fetch(`${url}/api/v1/ogs/runs/missing-run/${debugEndpoint}`);
       assert.equal(missingResponse.status, 404);
       const missing = await missingResponse.json();
       assert.equal(missing.error.code, "RUN_NOT_FOUND");
     }
 
-    const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
+    const eventsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/events?cursor=0&limit=1`);
     assert.equal(eventsResponse.status, 200);
     const events = await eventsResponse.json();
     assert.equal(events.events.length, 1);
@@ -1266,7 +1270,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(events.events[0].record.type, "run_start");
 
     const failedEventsResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/events?cursor=0&limit=10&status=failed&errorCode=E_VIS_TEST`
+      `${url}/api/v1/ogs/runs/${runId}/events?cursor=0&limit=10&status=failed&errorCode=E_VIS_TEST`
     );
     assert.equal(failedEventsResponse.status, 200);
     const failedEvents = await failedEventsResponse.json();
@@ -1274,14 +1278,14 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(failedEvents.events[0].record.errorCode, "E_VIS_TEST");
 
     const errorChannelResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/events?cursor=0&limit=10&channel=error`
+      `${url}/api/v1/ogs/runs/${runId}/events?cursor=0&limit=10&channel=error`
     );
     assert.equal(errorChannelResponse.status, 200);
     const errorChannel = await errorChannelResponse.json();
     assert.equal(errorChannel.events.length, 1);
     assert.equal(errorChannel.events[0].record.channel, "error");
 
-    const conversationResponse = await fetch(`${url}/api/v1/runs/${runId}/conversation?limit=2`);
+    const conversationResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/conversation?limit=2`);
     assert.equal(conversationResponse.status, 200);
     const conversation = await conversationResponse.json();
     assert.equal(conversation.items.length, 2);
@@ -1292,19 +1296,19 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(conversation.items[1].status, "ok");
     assert.equal(conversation.cursor.hasMore, true);
 
-    const errorConversationResponse = await fetch(`${url}/api/v1/runs/${runId}/conversation?channel=error&errorCode=E_VIS_TEST`);
+    const errorConversationResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/conversation?channel=error&errorCode=E_VIS_TEST`);
     assert.equal(errorConversationResponse.status, 200);
     const errorConversation = await errorConversationResponse.json();
     assert.equal(errorConversation.items.length, 1);
     assert.equal(errorConversation.items[0].kind, "error_flow");
     assert.equal(errorConversation.items[0].errorCode, "E_VIS_TEST");
 
-    const invalidConversationResponse = await fetch(`${url}/api/v1/runs/${runId}/conversation?channel=unsupported`);
+    const invalidConversationResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/conversation?channel=unsupported`);
     assert.equal(invalidConversationResponse.status, 400);
     const invalidConversation = await invalidConversationResponse.json();
     assert.equal(invalidConversation.error.code, "INVALID_CONVERSATION_CHANNEL");
 
-    const graphResponse = await fetch(`${url}/api/v1/runs/${runId}/graph`);
+    const graphResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/graph`);
     assert.equal(graphResponse.status, 200);
     const graph = await graphResponse.json();
     assert.match(graph.systemSource, /flowchart TD/);
@@ -1314,14 +1318,14 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(graph.graph.nodes.some((node) => node.roleId === "alpha" && node.roleSeat === true), true);
     assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
 
-    const engineLogsResponse = await fetch(`${url}/api/v1/runs/${runId}/logs?engine=true`);
+    const engineLogsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/logs?engine=true`);
     assert.equal(engineLogsResponse.status, 200);
     const engineLogs = await engineLogsResponse.json();
     assert.equal(engineLogs.records.length, 1);
     assert.doesNotMatch(JSON.stringify(engineLogs), /sk-visualizersecret123456/);
     assert.match(JSON.stringify(engineLogs), /\[REDACTED\]/);
 
-    const roleLogsResponse = await fetch(`${url}/api/v1/runs/${runId}/logs?roleId=alpha`);
+    const roleLogsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/logs?roleId=alpha`);
     assert.equal(roleLogsResponse.status, 200);
     const roleLogs = await roleLogsResponse.json();
     assert.equal(roleLogs.records.length, 1);
@@ -1329,13 +1333,13 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(JSON.stringify(roleLogs), /\[REDACTED\]/);
 
     const filteredRoleLogsResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/logs?roleId=alpha&tail=1&since=2026-04-16T01:02:04.000Z`
+      `${url}/api/v1/ogs/runs/${runId}/logs?roleId=alpha&tail=1&since=2026-04-16T01:02:04.000Z`
     );
     assert.equal(filteredRoleLogsResponse.status, 200);
     const filteredRoleLogs = await filteredRoleLogsResponse.json();
     assert.equal(filteredRoleLogs.records.length, 1);
 
-    const stream = await readFirstSseChunk(`${url}/api/v1/runs/${runId}/stream?cursor=1`);
+    const stream = await readFirstSseChunk(`${url}/api/v1/ogs/runs/${runId}/stream?cursor=1`);
     assert.equal(stream.statusCode, 200);
     assert.equal(stream.contentType, "text/event-stream; charset=utf-8");
     assert.match(stream.chunk, /"type":"audit"/);
@@ -1370,7 +1374,7 @@ test("visualizer server bounds structured log responses", async () => {
   );
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
   try {
-    const response = await fetch(`${started.url}/api/v1/runs/${runId}/logs?engine=true`);
+    const response = await fetch(`${started.url}/api/v1/ogs/runs/${runId}/logs?engine=true`);
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.records.length, 200);
@@ -1408,7 +1412,7 @@ test("visualizer server reports SSE active connections and closes them", async (
   const { server, url } = started;
 
   try {
-    const sse = await openSseUntilFirstChunk(`${url}/api/v1/runs/${runId}/stream?cursor=1`);
+    const sse = await openSseUntilFirstChunk(`${url}/api/v1/ogs/runs/${runId}/stream?cursor=1`);
     const activeResponse = await fetch(`${url}/api/v1/diagnostics/visualizer`);
     assert.equal(activeResponse.status, 200);
     const activeDiagnostics = await activeResponse.json();
@@ -1455,8 +1459,8 @@ test("visualizer server clears SSE metrics after multiple quick disconnects", as
   const { server, url } = started;
 
   try {
-    const first = await openSseUntilFirstChunk(`${url}/api/v1/runs/${runId}/stream?cursor=0`);
-    const second = await openSseUntilFirstChunk(`${url}/api/v1/runs/${runId}/stream?cursor=1`);
+    const first = await openSseUntilFirstChunk(`${url}/api/v1/ogs/runs/${runId}/stream?cursor=0`);
+    const second = await openSseUntilFirstChunk(`${url}/api/v1/ogs/runs/${runId}/stream?cursor=1`);
     const activeDiagnostics = await waitForVisualizerDiagnostics(
       url,
       (diagnostics) => diagnostics.sse.activeConnections === 2
@@ -1509,7 +1513,7 @@ test("visualizer server maps config explain API setup failures to error envelope
 
   try {
     for (const endpoint of ["bindings", "contracts", "role-packages"]) {
-      const response = await fetch(`${url}/api/v1/project/${endpoint}`);
+      const response = await fetch(`${url}/api/v1/ogs/workspace/${endpoint}`);
       assert.equal(response.status, 409);
       const body = await response.json();
       assert.equal(body.error.code, "PROJECT_NOT_INITIALIZED");
@@ -1543,7 +1547,7 @@ test("visualizer server exposes pending human review fields on waiting-review ru
   const { server, url } = started;
 
   try {
-    const listResponse = await fetch(`${url}/api/v1/runs`);
+    const listResponse = await fetch(`${url}/api/v1/ogs/runs`);
     assert.equal(listResponse.status, 200);
     const list = await listResponse.json();
     assert.equal(list.runs.length, 1);
@@ -1552,26 +1556,26 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(list.runs[0].pendingReviewCount, 1);
     assert.equal(list.runs[0].hasWaitingHumanReview, true);
 
-    const detailResponse = await fetch(`${url}/api/v1/runs/${runId}`);
+    const detailResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}`);
     assert.equal(detailResponse.status, 200);
     const detail = await detailResponse.json();
     assert.equal(detail.header.status, "stopped");
     assert.equal(detail.header.pendingReviewCount, 1);
     assert.equal(detail.header.hasWaitingHumanReview, true);
     assert.equal(detail.header.activeBranches, 0);
-    const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
+    const eventsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/events?cursor=0&limit=1`);
     assert.equal(eventsResponse.status, 200);
     const events = await eventsResponse.json();
     assert.equal(events.events[0].record.type, "human_review_requested");
 
     const reviewEventsResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/events?cursor=0&limit=10&reviewId=review.demo-analyst@1%231.r1`
+      `${url}/api/v1/ogs/runs/${runId}/events?cursor=0&limit=10&reviewId=review.demo-analyst@1%231.r1`
     );
     assert.equal(reviewEventsResponse.status, 200);
     const reviewEvents = await reviewEventsResponse.json();
     assert.equal(reviewEvents.events.length, 2);
 
-    const reviewsResponse = await fetch(`${url}/api/v1/runs/${runId}/reviews`);
+    const reviewsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/reviews`);
     assert.equal(reviewsResponse.status, 200);
     const reviews = await reviewsResponse.json();
     assert.equal(reviews.reviews.length, 1);
@@ -1582,7 +1586,7 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(reviews.reviews[0].decisionPhase, "recorded");
 
     const reviewDetailResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
+      `${url}/api/v1/ogs/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
     );
     assert.equal(reviewDetailResponse.status, 200);
     const reviewDetail = await reviewDetailResponse.json();
@@ -1591,14 +1595,14 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(reviewDetail.currentStatus, "pending");
     assert.equal(reviewDetail.decisionPhase, "recorded");
 
-    const diagnosticsResponse = await fetch(`${url}/api/v1/runs/${runId}/resume-diagnostics`);
+    const diagnosticsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/resume-diagnostics`);
     assert.equal(diagnosticsResponse.status, 200);
     const diagnostics = await diagnosticsResponse.json();
     assert.equal(diagnostics.status, "dirty");
     assert.ok(diagnostics.checks.some((check) => check.id === "review-decisions"));
     assert.ok(diagnostics.checks.some((check) => check.id === "execution-outcomes"));
 
-    const readinessResponse = await fetch(`${url}/api/v1/runs/${runId}/resume-readiness`);
+    const readinessResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/resume-readiness`);
     assert.equal(readinessResponse.status, 200);
     const readiness = await readinessResponse.json();
     assert.equal(Array.isArray(readiness.blockers), true);
@@ -1634,7 +1638,7 @@ test("visualizer server exposes role I/O snapshots for a selected role execution
 
   try {
     const response = await fetch(
-      `${url}/api/v1/runs/${runId}/role-io?roleId=demo-analyst&branchId=demo-analyst%401%231&loopIteration=1`
+      `${url}/api/v1/ogs/runs/${runId}/role-io?roleId=demo-analyst&branchId=demo-analyst%401%231&loopIteration=1`
     );
     assert.equal(response.status, 200);
     const payload = await response.json();
@@ -1681,7 +1685,7 @@ test("visualizer server reports lookup failures when selected Role I/O artifacts
 
   try {
     const response = await fetch(
-      `${url}/api/v1/runs/${runId}/role-io?roleId=demo-analyst&branchId=demo-analyst%401%231&loopIteration=1`
+      `${url}/api/v1/ogs/runs/${runId}/role-io?roleId=demo-analyst&branchId=demo-analyst%401%231&loopIteration=1`
     );
     assert.equal(response.status, 500);
     const payload = await response.json();
@@ -1721,14 +1725,14 @@ test("visualizer server exposes applied review decision phases without changing 
   const { server, url } = started;
 
   try {
-    const reviewsResponse = await fetch(`${url}/api/v1/runs/${runId}/reviews`);
+    const reviewsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/reviews`);
     assert.equal(reviewsResponse.status, 200);
     const reviews = await reviewsResponse.json();
     assert.equal(reviews.reviews[0].currentStatus, "pending");
     assert.equal(reviews.reviews[0].decisionPhase, "applied");
 
     const reviewDetailResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
+      `${url}/api/v1/ogs/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
     );
     assert.equal(reviewDetailResponse.status, 200);
     const reviewDetail = await reviewDetailResponse.json();
@@ -1769,14 +1773,14 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
   const { server, url } = started;
 
   try {
-    const reindexResponse = await fetch(`${url}/api/v1/runs/reindex`, { method: "POST" });
+    const reindexResponse = await fetch(`${url}/api/v1/ogs/runs/reindex`, { method: "POST" });
     assert.equal(reindexResponse.status, 200);
     const reindex = await reindexResponse.json();
     assert.equal(reindex.runs[0].runId, runId);
 
     for (const comment of ["填写审阅依据和接受的风险", "recorded via visualizer (approve)"]) {
       const invalidDecisionResponse = await fetch(
-        `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`,
+        `${url}/api/v1/ogs/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1791,12 +1795,12 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     }
 
     const untouchedReview = await fetch(
-      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
+      `${url}/api/v1/ogs/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
     );
     assert.equal((await untouchedReview.json()).decision, undefined);
 
     const decisionResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`,
+      `${url}/api/v1/ogs/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1814,7 +1818,7 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     assert.equal(decision.detail.reviewId, "review.demo-analyst@1#1.r1");
 
     const reviewDetailResponse = await fetch(
-      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
+      `${url}/api/v1/ogs/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
     );
     assert.equal(reviewDetailResponse.status, 200);
     const reviewDetail = await reviewDetailResponse.json();
@@ -1831,7 +1835,7 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
       .find((event) => event.type === "control.audit" && event.action === "review.decide");
     assert.equal(reviewAudit.principal.id, "test:workflow-operator");
 
-    const stopResponse = await fetch(`${url}/api/v1/runs/${runId}/stop`, {
+    const stopResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/stop`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ reason: "stop from visualizer test" })
@@ -1888,7 +1892,7 @@ test("visualizer server keeps idle run list stable until reindex refreshes the c
   const { server, url } = started;
 
   try {
-    const firstListResponse = await fetch(`${url}/api/v1/runs`);
+    const firstListResponse = await fetch(`${url}/api/v1/ogs/runs`);
     assert.equal(firstListResponse.status, 200);
     const firstList = await firstListResponse.json();
     assert.equal(firstList.runs.length, 1);
@@ -1896,18 +1900,18 @@ test("visualizer server keeps idle run list stable until reindex refreshes the c
     assert.equal(firstList.runs[0].isSimulation, true);
 
     const secondRun = await createWaitingReviewFixtureRun(workdir);
-    const cachedListResponse = await fetch(`${url}/api/v1/runs`);
+    const cachedListResponse = await fetch(`${url}/api/v1/ogs/runs`);
     assert.equal(cachedListResponse.status, 200);
     const cachedList = await cachedListResponse.json();
     assert.equal(cachedList.runs.length, 1);
     assert.equal(cachedList.runs[0].runId, firstRun.runId);
 
-    const reindexResponse = await fetch(`${url}/api/v1/runs/reindex`, { method: "POST" });
+    const reindexResponse = await fetch(`${url}/api/v1/ogs/runs/reindex`, { method: "POST" });
     assert.equal(reindexResponse.status, 200);
     const reindex = await reindexResponse.json();
     assert.equal(reindex.runs.length, 2);
 
-    const refreshedListResponse = await fetch(`${url}/api/v1/runs`);
+    const refreshedListResponse = await fetch(`${url}/api/v1/ogs/runs`);
     assert.equal(refreshedListResponse.status, 200);
     const refreshedList = await refreshedListResponse.json();
     assert.equal(refreshedList.runs.length, 2);
@@ -1939,13 +1943,13 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
   const { server, url } = started;
 
   try {
-    const workbenchResponse = await fetch(`${url}/api/v1/project/system/workbench`);
+    const workbenchResponse = await fetch(`${url}/api/v1/ogs/workspace/system/workbench`);
     assert.equal(workbenchResponse.status, 200);
     const workbench = await workbenchResponse.json();
     assert.equal(workbench.validation.ok, true);
     assert.equal(workbench.validation.structure.roleCount, 1);
 
-    const invalidValidateResponse = await fetch(`${url}/api/v1/project/system/validate`, {
+    const invalidValidateResponse = await fetch(`${url}/api/v1/ogs/workspace/system/validate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1958,7 +1962,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.ok(invalidValidation.diagnostics.length > 0);
 
     const originalSystemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
-    const invalidSaveResponse = await fetch(`${url}/api/v1/project/system/save`, {
+    const invalidSaveResponse = await fetch(`${url}/api/v1/ogs/workspace/system/save`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1970,7 +1974,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(invalidSave.validation.ok, false);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
 
-    const validSaveResponse = await fetch(`${url}/api/v1/project/system/save`, {
+    const validSaveResponse = await fetch(`${url}/api/v1/ogs/workspace/system/save`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ systemSource: originalSystemSource })
@@ -1979,7 +1983,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal((await validSaveResponse.json()).validation.ok, true);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
 
-    const bridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
+    const bridgeResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/bridge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1997,7 +2001,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
     assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "ANALYSIS_DONE"), true);
 
-    const fallbackBridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
+    const fallbackBridgeResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/bridge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2011,7 +2015,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(fallbackBridge.extracted.systemId, "viz.project.demo");
     assert.equal(fallbackBridge.extracted.roles.some((role) => role.roleId === "demo-analyst"), true);
 
-    const invalidBridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
+    const invalidBridgeResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/bridge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2034,7 +2038,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       true
     );
 
-    const templatesResponse = await fetch(`${url}/api/v1/project/studio/templates`);
+    const templatesResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/templates`);
     assert.equal(templatesResponse.status, 200);
     const templates = await templatesResponse.json();
     assert.deepEqual(templates.templates.map((template) => template.id).sort(), [
@@ -2046,7 +2050,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       "zh-dev-team"
     ]);
 
-    const emptyChatResponse = await fetch(`${url}/api/v1/project/studio/chat`, {
+    const emptyChatResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: "" })
@@ -2054,7 +2058,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(emptyChatResponse.status, 400);
     assert.equal((await emptyChatResponse.json()).error.code, "CHAT_MESSAGE_REQUIRED");
 
-    const outsideChatPathResponse = await fetch(`${url}/api/v1/project/studio/chat`, {
+    const outsideChatPathResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2065,7 +2069,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(outsideChatPathResponse.status, 400);
     assert.equal((await outsideChatPathResponse.json()).error.code, "PROJECT_PATH_OUTSIDE_WORKDIR");
 
-    const draftSaveResponse = await fetch(`${url}/api/v1/project/studio/authoring`, {
+    const draftSaveResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/authoring`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2080,7 +2084,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     );
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
 
-    const generateResponse = await fetch(`${url}/api/v1/project/studio/authoring/generate-mmd`, {
+    const generateResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/authoring/generate-mmd`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2108,7 +2112,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
         }
       }
     };
-    const applyCanvasResponse = await fetch(`${url}/api/v1/project/studio/authoring/apply-canvas`, {
+    const applyCanvasResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/authoring/apply-canvas`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2157,7 +2161,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       }
     ];
     for (const fixture of compatibilityPayloads) {
-      const response = await fetch(`${url}/api/v1/project/studio/authoring/apply-canvas`, {
+      const response = await fetch(`${url}/api/v1/ogs/workspace/studio/authoring/apply-canvas`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(fixture.body)
@@ -2169,7 +2173,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       assert.equal(payload.canvas.edges.some((edge) => edge.eventType === fixture.expectedEventType), true, fixture.label);
     }
 
-    const saveAsResponse = await fetch(`${url}/api/v1/project/system/save-as`, {
+    const saveAsResponse = await fetch(`${url}/api/v1/ogs/workspace/system/save-as`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2185,7 +2189,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       `unexpected savedPath: ${saveAs.savedPath}`
     );
 
-    const exportResponse = await fetch(`${url}/api/v1/project/export`, { method: "POST" });
+    const exportResponse = await fetch(`${url}/api/v1/ogs/workspace/export`, { method: "POST" });
     assert.equal(exportResponse.status, 200);
     const exported = await exportResponse.json();
     assert.equal(exported.mode, "single-project-v1");
@@ -2193,8 +2197,8 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(exported.releaseManifest.systemPath, "system.mmd");
     assert.match(exported.releaseManifest.systemHash, /^[a-f0-9]{64}$/);
     assert.ok(exported.releaseManifest.excludes.includes(".ogs/runs"));
-    assert.match(exported.project.systemSource, /viz\.project\.demo/);
-    assert.equal(Object.hasOwn(exported.project, "runs"), false);
+    assert.match(exported.team.systemSource, /viz\.project\.demo/);
+    assert.equal(Object.hasOwn(exported.team, "runs"), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -2227,7 +2231,7 @@ test("visualizer server maps Studio chat dependency failures to explicit API err
   const { server, url } = started;
 
   try {
-    const response = await fetch(`${url}/api/v1/project/studio/chat`, {
+    const response = await fetch(`${url}/api/v1/ogs/workspace/studio/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: "增加一个审核角色" })
@@ -2262,17 +2266,17 @@ test("visualizer server supports empty workspace project creation without implic
   const { server, url } = started;
 
   try {
-    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    const workspaceResponse = await fetch(`${url}/api/v1/ogs/workspace`);
     assert.equal(workspaceResponse.status, 200);
     const workspace = await workspaceResponse.json();
     assert.equal(workspace.hasProject, false);
     assert.equal(workspace.state, "empty");
 
-    const runsResponse = await fetch(`${url}/api/v1/runs`);
+    const runsResponse = await fetch(`${url}/api/v1/ogs/runs`);
     assert.equal(runsResponse.status, 200);
     assert.deepEqual((await runsResponse.json()).runs, []);
 
-    const startResponse = await fetch(`${url}/api/v1/runs/start`, {
+    const startResponse = await fetch(`${url}/api/v1/ogs/runs/start`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ systemPath: "system.mmd", input: "must not write", dryRun: true })
@@ -2282,7 +2286,7 @@ test("visualizer server supports empty workspace project creation without implic
     await assert.rejects(() => stat(path.resolve(workdir, ".ogs")), /ENOENT/);
     await assert.rejects(() => stat(path.resolve(workdir, "system.mmd")), /ENOENT/);
 
-    const catalogResponse = await fetch(`${url}/api/v1/project/role-catalog`);
+    const catalogResponse = await fetch(`${url}/api/v1/ogs/workspace/role-catalog`);
     assert.equal(catalogResponse.status, 200);
     const catalog = await catalogResponse.json();
     assert.equal(catalog.source, "installed");
@@ -2293,7 +2297,7 @@ test("visualizer server supports empty workspace project creation without implic
     await assert.rejects(() => stat(path.resolve(workdir, ".ogs")), /ENOENT/);
     await assert.rejects(() => stat(path.resolve(workdir, "og-roles")), /ENOENT/);
 
-    const roleImportResponse = await fetch(`${url}/api/v1/project/roles/import`, {
+    const roleImportResponse = await fetch(`${url}/api/v1/ogs/workspace/roles/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ source: "installed", roleIds: ["demo-analyst"] })
@@ -2302,7 +2306,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal((await roleImportResponse.json()).error.code, "PROJECT_NOT_INITIALIZED");
     await assert.rejects(() => stat(path.resolve(workdir, "og-roles")), /ENOENT/);
 
-    const createResponse = await fetch(`${url}/api/v1/project/create`, {
+    const createResponse = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2327,7 +2331,7 @@ test("visualizer server supports empty workspace project creation without implic
     const parsed = parseSystemFromMermaidSource(systemSource);
     assert.equal(parsed.entryRoleId, "demo-analyst");
 
-    const rolePackageResponse = await fetch(`${url}/api/v1/project/role-packages/demo-analyst`);
+    const rolePackageResponse = await fetch(`${url}/api/v1/ogs/workspace/role-packages/demo-analyst`);
     assert.equal(rolePackageResponse.status, 200);
     const rolePackage = await rolePackageResponse.json();
     assert.equal(rolePackage.roleId, "demo-analyst");
@@ -2335,7 +2339,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.match(rolePackage.files["agent.md"].content, /technical analyst/i);
 
     const editedAgent = `${rolePackage.files["agent.md"].content}\n\nVisual editor smoke note.\n`;
-    const saveRolePackageResponse = await fetch(`${url}/api/v1/project/role-packages/demo-analyst`, {
+    const saveRolePackageResponse = await fetch(`${url}/api/v1/ogs/workspace/role-packages/demo-analyst`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2352,7 +2356,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(savedRolePackage.validation.ok, true);
     assert.match(await readFile(path.resolve(workdir, "og-roles", "roles", "demo-analyst", "agent.md"), "utf8"), /Visual editor smoke note/);
 
-    const invalidRolePackageResponse = await fetch(`${url}/api/v1/project/role-packages/demo-analyst`, {
+    const invalidRolePackageResponse = await fetch(`${url}/api/v1/ogs/workspace/role-packages/demo-analyst`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2367,7 +2371,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(invalidRolePackageResponse.status, 400);
     assert.equal((await invalidRolePackageResponse.json()).error.code, "ROLE_PACKAGE_INVALID");
 
-    const createReplayResponse = await fetch(`${url}/api/v1/project/create`, {
+    const createReplayResponse = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2382,13 +2386,13 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(createReplay.idempotentReplay, true);
     assert.equal(createReplay.projectId, "empty-created");
 
-    const workspaceAfterResponse = await fetch(`${url}/api/v1/workspace`);
+    const workspaceAfterResponse = await fetch(`${url}/api/v1/ogs/workspace`);
     assert.equal(workspaceAfterResponse.status, 200);
     const workspaceAfter = await workspaceAfterResponse.json();
     assert.equal(workspaceAfter.hasProject, true);
     assert.equal(workspaceAfter.state, "project");
 
-    const duplicateCreateResponse = await fetch(`${url}/api/v1/project/create`, {
+    const duplicateCreateResponse = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ projectName: "Empty Created", templateId: "empty" })
@@ -2396,7 +2400,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(duplicateCreateResponse.status, 409);
     assert.equal((await duplicateCreateResponse.json()).error.code, "PROJECT_ALREADY_EXISTS");
 
-    const roleImportAfterCreate = await fetch(`${url}/api/v1/project/roles/import`, {
+    const roleImportAfterCreate = await fetch(`${url}/api/v1/ogs/workspace/roles/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ source: "installed", roleIds: ["demo-analyst"] })
@@ -2435,7 +2439,7 @@ test("visualizer server rejects explicit workdir parameters for project creation
       { workdir: "/tmp/other", projectName: "Bad Workdir", templateId: "empty" },
       { targetWorkdir: "/tmp/other", projectName: "Bad Target", templateId: "empty" }
     ]) {
-      const response = await fetch(`${url}/api/v1/project/create`, {
+      const response = await fetch(`${url}/api/v1/ogs/workspace/create`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
@@ -2470,13 +2474,13 @@ test("visualizer server requires confirmation for ordinary non-empty current dir
   const { server, url } = started;
 
   try {
-    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    const workspaceResponse = await fetch(`${url}/api/v1/ogs/workspace`);
     assert.equal(workspaceResponse.status, 200);
     const workspace = await workspaceResponse.json();
     assert.equal(workspace.state, "non-project-ready");
     assert.equal(workspace.canInitialize, true);
 
-    const rejected = await fetch(`${url}/api/v1/project/create`, {
+    const rejected = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2488,7 +2492,7 @@ test("visualizer server requires confirmation for ordinary non-empty current dir
     assert.equal(rejected.status, 409);
     assert.equal((await rejected.json()).error.code, "PROJECT_DIR_CONFLICT");
 
-    const confirmed = await fetch(`${url}/api/v1/project/create`, {
+    const confirmed = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2529,14 +2533,14 @@ test("visualizer server blocks initialization when OGSystem-controlled paths alr
   const { server, url } = started;
 
   try {
-    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    const workspaceResponse = await fetch(`${url}/api/v1/ogs/workspace`);
     assert.equal(workspaceResponse.status, 200);
     const workspace = await workspaceResponse.json();
     assert.equal(workspace.state, "non-project-conflict");
     assert.equal(workspace.canInitialize, false);
     assert.ok(workspace.controlledPathConflicts.includes("system.mmd"));
 
-    const response = await fetch(`${url}/api/v1/project/create`, {
+    const response = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2591,7 +2595,7 @@ test("visualizer server marks invalid project directories and exposes diagnostic
   const { server, url } = started;
 
   try {
-    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    const workspaceResponse = await fetch(`${url}/api/v1/ogs/workspace`);
     assert.equal(workspaceResponse.status, 200);
     const workspace = await workspaceResponse.json();
     assert.equal(workspace.hasProject, true);
@@ -2656,7 +2660,7 @@ test("visualizer server reports stable project create error codes for invalid in
     ];
 
     for (const testCase of cases) {
-      const response = await fetch(`${url}/api/v1/project/create`, {
+      const response = await fetch(`${url}/api/v1/ogs/workspace/create`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(testCase.body)
@@ -2665,7 +2669,7 @@ test("visualizer server reports stable project create error codes for invalid in
       assert.equal((await response.json()).error.code, testCase.code);
     }
 
-    const oversizedResponse = await fetch(`${url}/api/v1/project/create`, {
+    const oversizedResponse = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2709,7 +2713,7 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
   const { server, url } = started;
 
   try {
-    const response = await fetch(`${url}/api/v1/project/create`, {
+    const response = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2760,7 +2764,7 @@ test("visualizer server expires project create request replay entries after TTL"
       projectName: "TTL Project",
       templateId: "empty"
     };
-    const createResponse = await fetch(`${url}/api/v1/project/create`, {
+    const createResponse = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
@@ -2769,7 +2773,7 @@ test("visualizer server expires project create request replay entries after TTL"
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    const replayResponse = await fetch(`${url}/api/v1/project/create`, {
+    const replayResponse = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
@@ -2809,12 +2813,12 @@ test("visualizer server coalesces concurrent project create requests by requestI
       conflictStrategy: "init-current"
     };
     const [first, second] = await Promise.all([
-      fetch(`${url}/api/v1/project/create`, {
+      fetch(`${url}/api/v1/ogs/workspace/create`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       }),
-      fetch(`${url}/api/v1/project/create`, {
+      fetch(`${url}/api/v1/ogs/workspace/create`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
@@ -2869,12 +2873,12 @@ test("visualizer server clears pending project create entries after a failed cre
       conflictStrategy: "init-current"
     };
     const [first, second] = await Promise.all([
-      fetch(`${url}/api/v1/project/create`, {
+      fetch(`${url}/api/v1/ogs/workspace/create`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       }),
-      fetch(`${url}/api/v1/project/create`, {
+      fetch(`${url}/api/v1/ogs/workspace/create`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
@@ -2887,7 +2891,7 @@ test("visualizer server clears pending project create entries after a failed cre
     assert.ok(["PROJECT_CREATE_FAILED", "VISUALIZER_INTERNAL_ERROR"].includes(firstPayload.error.code));
     assert.equal(secondPayload.error.code, firstPayload.error.code);
 
-    const retry = await fetch(`${url}/api/v1/project/create`, {
+    const retry = await fetch(`${url}/api/v1/ogs/workspace/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
@@ -2922,7 +2926,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
   const { server, url } = started;
 
   try {
-    const startResponse = await fetch(`${url}/api/v1/runs/start`, {
+    const startResponse = await fetch(`${url}/api/v1/ogs/runs/start`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2953,7 +2957,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.equal(snapshotManifest.source.runArtifactSystemPath, "system.mmd");
     assert.match(snapshotManifest.source.sourceHash, /^[a-f0-9]{64}$/);
 
-    const runDetailResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}`);
+    const runDetailResponse = await fetch(`${url}/api/v1/ogs/runs/${startedRun.runId}`);
     assert.equal(runDetailResponse.status, 200);
     const runDetail = await runDetailResponse.json();
     assert.equal(runDetail.snapshotManifest.status, "ok");
@@ -2962,7 +2966,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
 
     let reviews;
     for (let attempt = 0; attempt < 1200; attempt += 1) {
-      const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
+      const reviewsResponse = await fetch(`${url}/api/v1/ogs/runs/${startedRun.runId}/reviews`);
       if (reviewsResponse.ok) {
         reviews = await reviewsResponse.json();
         if (reviews.latestPendingReviewId) break;
@@ -2972,7 +2976,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.ok(reviews.latestPendingReviewId);
 
     const decisionResponse = await fetch(
-      `${url}/api/v1/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
+      `${url}/api/v1/ogs/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2990,7 +2994,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     ));
     assert.notEqual(decisionRecord.actor, "qa");
 
-    const resumeResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/resume`, {
+    const resumeResponse = await fetch(`${url}/api/v1/ogs/runs/${startedRun.runId}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -3003,7 +3007,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.ok(["running", "done"].includes(resumed.status));
     let finalRunDetail;
     for (let attempt = 0; attempt < 300; attempt += 1) {
-      const detailResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}`);
+      const detailResponse = await fetch(`${url}/api/v1/ogs/runs/${startedRun.runId}`);
       finalRunDetail = await detailResponse.json();
       if (finalRunDetail.header?.status === "done") break;
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -3077,17 +3081,17 @@ test("serve sessions queue idempotent turns, create fresh runs, and fork after s
     };
     const completedFirst = await waitForTurn(firstTurn.turnId);
     assert.notEqual(completedFirst.status, "failed");
-    const reviewResponse = await fetch(`${url}/api/v1/runs/${firstTurn.runId}/reviews`);
+    const reviewResponse = await fetch(`${url}/api/v1/ogs/runs/${firstTurn.runId}/reviews`);
     assert.equal(reviewResponse.status, 200);
     const reviewQueue = await reviewResponse.json();
     assert.ok(reviewQueue.latestPendingReviewId);
-    const decisionResponse = await fetch(`${url}/api/v1/runs/${firstTurn.runId}/reviews/${encodeURIComponent(reviewQueue.latestPendingReviewId)}/decide`, {
+    const decisionResponse = await fetch(`${url}/api/v1/ogs/runs/${firstTurn.runId}/reviews/${encodeURIComponent(reviewQueue.latestPendingReviewId)}/decide`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ decision: "approve", comment: "continue this Session Turn" })
     });
     assert.equal(decisionResponse.status, 200);
-    const resumeResponse = await fetch(`${url}/api/v1/runs/${firstTurn.runId}/resume`, {
+    const resumeResponse = await fetch(`${url}/api/v1/ogs/runs/${firstTurn.runId}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ dryRun: true })
@@ -3246,7 +3250,7 @@ test("visualizer server rejects runtime override paths that escape the active wo
   const { server, url } = started;
 
   try {
-    const startResponse = await fetch(`${url}/api/v1/runs/start`, {
+    const startResponse = await fetch(`${url}/api/v1/ogs/runs/start`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -3259,7 +3263,7 @@ test("visualizer server rejects runtime override paths that escape the active wo
     assert.equal(startResponse.status, 400);
     assert.equal((await startResponse.json()).error.code, "PROJECT_PATH_OUTSIDE_WORKDIR");
 
-    const validStartResponse = await fetch(`${url}/api/v1/runs/start`, {
+    const validStartResponse = await fetch(`${url}/api/v1/ogs/runs/start`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -3274,7 +3278,7 @@ test("visualizer server rejects runtime override paths that escape the active wo
 
     let reviews;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
+      const reviewsResponse = await fetch(`${url}/api/v1/ogs/runs/${startedRun.runId}/reviews`);
       if (reviewsResponse.ok) {
         reviews = await reviewsResponse.json();
         if (reviews.latestPendingReviewId) break;
@@ -3284,7 +3288,7 @@ test("visualizer server rejects runtime override paths that escape the active wo
     assert.ok(reviews.latestPendingReviewId);
 
     const decisionResponse = await fetch(
-      `${url}/api/v1/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
+      `${url}/api/v1/ogs/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3297,7 +3301,7 @@ test("visualizer server rejects runtime override paths that escape the active wo
     );
     assert.equal(decisionResponse.status, 200);
 
-    const resumeResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/resume`, {
+    const resumeResponse = await fetch(`${url}/api/v1/ogs/runs/${startedRun.runId}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -3341,11 +3345,11 @@ test("project persistence keeps Save As and bundle import from replacing canonic
     assert.deepEqual(JSON.parse(await readFile(designPath, "utf8")), beforeSaveAs);
     assert.equal(await readFile(path.join(workdir, "system.mmd"), "utf8"), canonicalSource);
 
-    await loadProjectBundle({
+    await loadTeamPackage({
       workdir,
       bundle: {
         mode: "single-project-v1",
-        project: { systemSource: canonicalSource }
+        team: { systemSource: canonicalSource }
       }
     });
     await assert.rejects(() => stat(designPath), { code: "ENOENT" });
@@ -3397,7 +3401,7 @@ test("design apply merges stored role overrides with design model bindings", asy
     started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
 
     const source = await readFile(path.join(workdir, "system.mmd"), "utf8");
-    const importResponse = await fetch(`${started.url}/api/v1/project/design/import/mermaid`, {
+    const importResponse = await fetch(`${started.url}/api/v1/ogs/workspace/design/import/mermaid`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ systemSource: source, apply: true })
@@ -3405,7 +3409,7 @@ test("design apply merges stored role overrides with design model bindings", asy
     assert.equal(importResponse.status, 200);
     const imported = await importResponse.json();
 
-    const applyResponse = await fetch(`${started.url}/api/v1/project/design/apply`, {
+    const applyResponse = await fetch(`${started.url}/api/v1/ogs/workspace/design/apply`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

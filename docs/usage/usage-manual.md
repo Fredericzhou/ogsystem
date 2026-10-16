@@ -1235,11 +1235,11 @@ Operational notes:
 
 Current API/control-plane shape:
 
-- `GET /api/v1/project`, `/project/system`, `/project/config`, `/project/roles`
-- `GET /api/v1/runs/:runId/graph`, `/reviews`, `/reviews/:reviewId`, `/resume-diagnostics`
-- `POST /api/v1/runs/:runId/reviews/:reviewId/decide` reuses lifecycle review-decision validation and only records the decision; actual apply/reconcile still happens on resume/runtime.
-- `POST /api/v1/runs/:runId/stop` reuses the lifecycle stop-request entrypoint and records a stop request; it does not mean the run is already stopped.
-- `POST /api/v1/runs/reindex` rebuilds `runs-index.json`.
+- `GET /api/v1/ogs/workspace`, `/project/system`, `/project/config`, `/project/roles`
+- `GET /api/v1/ogs/runs/:runId/graph`, `/reviews`, `/reviews/:reviewId`, `/resume-diagnostics`
+- `POST /api/v1/ogs/runs/:runId/reviews/:reviewId/decide` reuses lifecycle review-decision validation and only records the decision; actual apply/reconcile still happens on resume/runtime.
+- `POST /api/v1/ogs/runs/:runId/stop` reuses the lifecycle stop-request entrypoint and records a stop request; it does not mean the run is already stopped.
+- `POST /api/v1/ogs/runs/reindex` rebuilds `runs-index.json`.
 - Remote execution protocol v1 defines correlated, idempotent requests with deadlines and model/profile executor bindings. The exported validators reject malformed nested bindings and results; this release does not dispatch remote workers, so ordinary runs continue to use the local engine. See [`remote-execution-contract.ts`](../../src/runtime/remote-execution-contract.ts) for the precise request and response fields.
 - The versioned HTTP surface is documented in [`schemas/openapi.yaml`](../../schemas/openapi.yaml). Check `/healthz`, `/readyz`, and `/metrics` when operating the local Visualizer API.
 

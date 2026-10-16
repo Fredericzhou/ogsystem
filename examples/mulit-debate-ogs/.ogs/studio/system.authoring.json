@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "project": {
+    "workdir": "D:\\Coder\\AAI\\ogsystem\\examples\\mulit-debate-ogs",
+    "systemPath": "D:\\Coder\\AAI\\ogsystem\\examples\\mulit-debate-ogs\\system.mmd"
+  },
+  "system": {
+    "systemId": "investment.multi-debate",
+    "systemVersion": "1.0.0",
+    "entryRoleId": "investment-proposer",
+    "entryEventType": "DEBATE_REQUEST",
+    "lawGlobalRef": "law.project.base"
+  },
+  "roles": {
+    "investment-proposer": {
+      "roleId": "investment-proposer",
+      "title": "Investment Proposal Coordinator",
+      "bindingKind": "model",
+      "backend": "codex",
+      "modelId": "gpt-6-luna",
+      "modelSelectionSource": "default",
+      "modelRef": "codex/gpt-6-luna",
+      "routingMode": "parallel_split",
+      "loopMax": 2
+    },
+    "investment-critic": {
+      "roleId": "investment-critic",
+      "title": "Investment Critic",
+      "bindingKind": "model",
+      "backend": "codex",
+      "modelId": "gpt-6-luna",
+      "modelSelectionSource": "default",
+      "modelRef": "codex/gpt-6-luna"
+    },
+    "investment-optimizer": {
+      "roleId": "investment-optimizer",
+      "title": "Investment Optimizer",
+      "bindingKind": "model",
+      "backend": "codex",
+      "modelId": "gpt-6-luna",
+      "modelSelectionSource": "default",
+      "modelRef": "codex/gpt-6-luna"
+    },
+    "debate-judge": {
+      "roleId": "debate-judge",
+      "title": "Investment Judge",
+      "bindingKind": "model",
+      "backend": "codex",
+      "modelId": "gpt-6-luna",
+      "modelSelectionSource": "default",
+      "modelRef": "codex/gpt-6-luna",
+      "joinMode": "all_of",
+      "joinSources": [
+        "investment-critic",
+        "investment-optimizer"
+      ]
+    },
+    "debate-summary": {
+      "roleId": "debate-summary",
+      "title": "Investment Decision Summary",
+      "bindingKind": "model",
+      "backend": "codex",
+      "modelId": "gpt-6-luna",
+      "modelSelectionSource": "default",
+      "modelRef": "codex/gpt-6-luna"
+    }
+  },
+  "flows": {
+    "1:investment-proposer:SEND_CRITIC:investment-critic": {
+      "flowId": "1:investment-proposer:SEND_CRITIC:investment-critic",
+      "fromRoleId": "investment-proposer",
+      "toRoleId": "investment-critic",
+      "eventType": "SEND_CRITIC",
+      "runtimeOnlyErrorFlow": false
+    },
+    "2:investment-proposer:SEND_OPTIMIZER:investment-optimizer": {
+      "flowId": "2:investment-proposer:SEND_OPTIMIZER:investment-optimizer",
+      "fromRoleId": "investment-proposer",
+      "toRoleId": "investment-optimizer",
+      "eventType": "SEND_OPTIMIZER",
+      "runtimeOnlyErrorFlow": false
+    },
+    "3:investment-critic:CRITIC_DONE:debate-judge": {
+      "flowId": "3:investment-critic:CRITIC_DONE:debate-judge",
+      "fromRoleId": "investment-critic",
+      "toRoleId": "debate-judge",
+      "eventType": "CRITIC_DONE",
+      "runtimeOnlyErrorFlow": false
+    },
+    "4:investment-optimizer:OPTIMIZER_DONE:debate-judge": {
+      "flowId": "4:investment-optimizer:OPTIMIZER_DONE:debate-judge",
+      "fromRoleId": "investment-optimizer",
+      "toRoleId": "debate-judge",
+      "eventType": "OPTIMIZER_DONE",
+      "runtimeOnlyErrorFlow": false
+    },
+    "5:debate-judge:REBUTTAL_NEEDED:investment-proposer": {
+      "flowId": "5:debate-judge:REBUTTAL_NEEDED:investment-proposer",
+      "fromRoleId": "debate-judge",
+      "toRoleId": "investment-proposer",
+      "eventType": "REBUTTAL_NEEDED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "6:debate-judge:DECISION_READY:debate-summary": {
+      "flowId": "6:debate-judge:DECISION_READY:debate-summary",
+      "fromRoleId": "debate-judge",
+      "toRoleId": "debate-summary",
+      "eventType": "DECISION_READY",
+      "runtimeOnlyErrorFlow": false
+    },
+    "7:debate-summary:SUMMARY_READY:output": {
+      "flowId": "7:debate-summary:SUMMARY_READY:output",
+      "fromRoleId": "debate-summary",
+      "toRoleId": "__system_end__",
+      "eventType": "SUMMARY_READY",
+      "runtimeOnlyErrorFlow": false
+    }
+  },
+  "layout": {
+    "nodes": {
+      "investment-proposer": {
+        "x": 390,
+        "y": 200,
+        "width": 220,
+        "height": 84
+      },
+      "investment-critic": {
+        "x": 93.5,
+        "y": 400,
+        "width": 218,
+        "height": 84
+      },
+      "investment-optimizer": {
+        "x": 429.5,
+        "y": 400,
+        "width": 220,
+        "height": 84
+      },
+      "debate-judge": {
+        "x": 92,
+        "y": 576,
+        "width": 220,
+        "height": 84
+      },
+      "debate-summary": {
+        "x": 64,
+        "y": 754,
+        "width": 220,
+        "height": 84
+      }
+    },
+    "viewport": {
+      "x": 323.4,
+      "y": -45.4,
+      "zoom": 0.7
+    }
+  }
+}

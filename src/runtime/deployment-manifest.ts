@@ -15,7 +15,7 @@ import { loadOgsSpecification } from "./ogs-spec-loader.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { resolveEffectiveLaw } from "./runtime-setup.js";
-import { loadLaws, loadRolePackages, loadRuntimeConfig } from "./runtime-loader.js";
+import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "./runtime-loader.js";
 import { pathExists } from "./run-store.js";
 import type { RunPlanFingerprint } from "./run-artifacts.js";
 
@@ -135,11 +135,14 @@ export async function generateDeploymentManifest(args: {
   const system = await loadSystemFromMermaid(resolve(workdir, args.systemPath ?? "system.mmd"));
   const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
   const roleRootDir = resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo);
-  const [rolePackagesByRoleId, lawCatalog, modelSelection, modelCatalog] = await Promise.all([
+  const [rolePackagesByRoleId, lawCatalog, modelSelection, modelCatalog, profiles, tools, userProfile] = await Promise.all([
     loadRolePackages({ system, roleRootDir }),
     loadLaws(undefined, workdir),
     loadModelSelection(resolve(workdir, ".ogs", "model-selection.json")),
-    loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json"))
+    loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json")),
+    loadProfiles(undefined, workdir),
+    loadTools(undefined, workdir),
+    loadUserProfile(undefined, workdir)
   ]);
   const resolvedModels = resolveModelSelectionForSystem({ system, selection: modelSelection, catalog: modelCatalog });
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
@@ -169,7 +172,11 @@ export async function generateDeploymentManifest(args: {
     effectiveLaw,
     contractPlan,
     compilerSnapshot: compiler.snapshot,
-    specificationDigest
+    specificationDigest,
+    runtimeConfig,
+    profiles,
+    tools,
+    userProfile
   });
   const [opencode, codex] = await Promise.all([
     getCliVersion("opencode", workdir),

@@ -15,6 +15,18 @@ Implemented scope:
 - Reliability: versioned state snapshots, CAS/idempotent commits, checkpoint replay, and runtime audit adapter ports
 - Visualizer: responsibility-seat graph projections, semantic edge labels, loop channels, modes, Join overlays, and run-state overlays
 
+Product boundaries:
+
+- Framework: runtime, parser/compiler, CLI, and `nl2mmd`.
+- Platform: Framework plus model adapters/catalog, role library, and Vis professional tooling.
+- Product Site: Platform plus the team library, projects, resources, users, and run management.
+- Team Asset: portable static OGS team definition. A Project is a Team Asset with resources,
+  task input, and run history; a Run is one execution and is shown as “运行” in the product UI.
+
+The Product Site package format is `single-project-v1`; it excludes framework code, credentials,
+model catalogs, and execution artifacts. The stable framework paths are `.ogs/`, `og-roles/`,
+`system.mmd`, and `.ogs/runs/`.
+
 Graph modeling invariant:
 
 - A node is a responsibility role/agent seat, not an event, action, task, gateway, process step, or runtime record.

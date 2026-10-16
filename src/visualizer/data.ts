@@ -9,6 +9,8 @@ import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { buildRunPlanFingerprint } from "../runtime/plan-fingerprint.js";
+import { loadProjectRunPlan } from "../runtime/project-run.js";
+import { assertProjectAssetSnapshot } from "../runtime/project-run-snapshot.js";
 import {
   inspectRun,
   loadPersistedRunsIndex,
@@ -674,10 +676,15 @@ async function computeResumeDiagnosticsCacheToken(workdir: string, runId: string
 }
 
 async function computeExpectedFingerprint(workdir: string, runDir: string): Promise<JsonRecord> {
-  const systemPath = resolve(runDir, "system.mmd");
+  const projectPlan = await loadProjectRunPlan(runDir).catch(() => undefined);
+  const projectAssetWorkdir = typeof projectPlan?.projectAssetManifestDigest === "string"
+    ? await assertProjectAssetSnapshot(runDir, projectPlan.projectAssetManifestDigest)
+    : undefined;
+  const contextWorkdir = projectAssetWorkdir ?? workdir;
+  const systemPath = resolve(projectAssetWorkdir ?? runDir, "system.mmd");
   const systemSource = await readFile(systemPath, "utf8");
   const context = await assembleProjectContextFromSource({
-    workdir,
+    workdir: contextWorkdir,
     systemPath,
     systemSource
   });
@@ -688,7 +695,11 @@ async function computeExpectedFingerprint(workdir: string, runDir: string): Prom
     resolvedModelsByRoleId: context.resolvedModelsByRoleId,
     effectiveLaw: context.effectiveLaw,
     contractPlan: context.contractPlan,
-    compilerSnapshot: context.compilerSnapshot
+    compilerSnapshot: context.compilerSnapshot,
+    runtimeConfig: context.runtimeConfig,
+    profiles: context.profiles,
+    tools: context.tools,
+    userProfile: context.userProfile
   }) as unknown as JsonRecord;
 }
 

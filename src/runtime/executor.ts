@@ -13,7 +13,8 @@ import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-exe
 import { CodexAppServerClient } from "./codex-app-server.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
 import { stringifyJson } from "./runtime-support.js";
-import { runCliTool } from "./tool-runner.js";
+import { runCliTool, ToolExecutionError } from "./tool-runner.js";
+import { getSideEffectByKey, recordSideEffect } from "./side-effect-store.js";
 import type { CliTool, ExecutionProfile, RunContext } from "./types.js";
 
 /**
@@ -123,6 +124,8 @@ export interface Executor {
   close(): Promise<void>;
 }
 
+export type SandboxToolExecutor = (request: ExecutorRequest) => Promise<ExecutorResult>;
+
 /**
  * createDefaultExecutor returns the default runtime executor.
  * It manages an optional OpenCode server for model roles while leaving profile execution local.
@@ -131,12 +134,14 @@ export interface Executor {
  */
 export function createDefaultExecutor(args: {
   dryRun?: boolean;
+  sandbox?: boolean;
   runContext: RunContext;
   targetDir: string;
   needsModelExecutor: boolean;
   modelBackends?: string[];
   toolEnvironmentPolicy?: "inherit" | "minimal";
   toolEnvAllowlist?: string[];
+  sandboxToolExecutor?: SandboxToolExecutor;
 }): Executor {
   let runClient: Awaited<ReturnType<typeof startOpencodeRunClient>> | undefined;
   let codexClient: CodexAppServerClient | undefined;
@@ -242,22 +247,86 @@ export function createDefaultExecutor(args: {
       }
 
       // CLI tool executions are isolated per request and do not rely on OpenCode state.
-      const result = await runCliTool({
-        tool: request.binding.tool,
-        vars: { prompt: request.prompt },
-        env: request.env,
-        environmentPolicy: args.toolEnvironmentPolicy,
-        envAllowlist: args.toolEnvAllowlist,
-        commandBaseDir: request.commandBaseDir ?? request.workdir,
-        workdir: request.workdir,
-        timeoutMs: request.timeoutMs,
-        maxOutputBytes: request.maxOutputBytes,
-        signal: request.signal,
-        dryRun: args.dryRun,
-        dryRunOutput: {
-          event: request.dryRunOutputEvent
+      const sideEffectKey = `${args.runContext.runId}:tool:${request.sessionKey ?? request.roleId}`;
+      if (args.sandbox && args.runContext.runDir) {
+        const prior = await getSideEffectByKey(args.runContext.runDir, sideEffectKey);
+        if (prior?.status === "completed" && prior.result && typeof prior.result === "object") {
+          return prior.result as ExecutorResult;
         }
-      });
+        if (prior?.status === "unknown" || prior?.status === "needs_review") {
+          throw new Error(`SIDE_EFFECT_TERMINAL_UNCERTAIN: ${sideEffectKey} is ${prior.status}`);
+        }
+        await recordSideEffect(args.runContext.runDir, {
+          operationId: `tool:${request.sessionKey ?? request.roleId}`,
+          idempotencyKey: sideEffectKey,
+          approvalId: null,
+          status: "requested",
+          startedAt: new Date().toISOString()
+        });
+        await recordSideEffect(args.runContext.runDir, {
+          operationId: `tool:${request.sessionKey ?? request.roleId}`,
+          idempotencyKey: sideEffectKey,
+          approvalId: null,
+          status: "running",
+          startedAt: new Date().toISOString()
+        });
+      }
+      let result: Awaited<ReturnType<typeof runCliTool>>;
+      try {
+        result = args.sandbox && args.sandboxToolExecutor
+          ? await args.sandboxToolExecutor(request)
+          : await runCliTool({
+              tool: request.binding.tool,
+              vars: { prompt: request.prompt },
+              env: request.env,
+              environmentPolicy: args.toolEnvironmentPolicy,
+              envAllowlist: args.toolEnvAllowlist,
+              commandBaseDir: request.commandBaseDir ?? request.workdir,
+              workdir: request.workdir,
+              timeoutMs: request.timeoutMs,
+              maxOutputBytes: request.maxOutputBytes,
+              signal: request.signal,
+              dryRun: args.dryRun || args.sandbox,
+              dryRunOutput: {
+                event: request.dryRunOutputEvent
+              }
+            });
+        if (result.exitCode !== 0) {
+          throw new ToolExecutionError("exit_code", `Sandbox tool exited with code ${result.exitCode}`);
+        }
+        if (args.sandbox && args.runContext.runDir) await recordSideEffect(args.runContext.runDir, {
+          operationId: `tool:${request.sessionKey ?? request.roleId}`,
+          idempotencyKey: sideEffectKey,
+          approvalId: null,
+          status: "completed",
+          completedAt: new Date().toISOString(),
+          result: { ...result, simulated: true }
+        });
+      } catch (error) {
+        if (args.sandbox && args.runContext.runDir) {
+          const status = error && typeof error === "object" && "sideEffectStatus" in error
+            ? String((error as { sideEffectStatus?: unknown }).sideEffectStatus)
+            : request.signal?.aborted || (error instanceof Error && error.name === "AbortError")
+              ? "interrupted"
+              : error instanceof ToolExecutionError && error.category === "timeout"
+                ? "timeout"
+                : error instanceof ToolExecutionError && error.category === "exit_code"
+                  ? "failed"
+                  : "unknown";
+          const acceptedStatus = ["failed", "timeout", "interrupted", "unknown", "needs_review"].includes(status)
+            ? status as "failed" | "timeout" | "interrupted" | "unknown" | "needs_review"
+            : "unknown";
+          await recordSideEffect(args.runContext.runDir, {
+            operationId: `tool:${request.sessionKey ?? request.roleId}`,
+            idempotencyKey: sideEffectKey,
+            approvalId: null,
+            status: acceptedStatus,
+            completedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+        throw error;
+      }
 
       return {
         ...result,

@@ -1,5 +1,15 @@
 /** Browser API transport helpers. Keeps timeout, abort, and error-envelope behavior uniform. */
-export function createClientApi(translate: (key: string, vars?: Record<string, unknown>, fallback?: string) => string) {
+export function createClientApi(
+  translate: (key: string, vars?: Record<string, unknown>, fallback?: string) => string,
+  projectId?: () => string
+) {
+  function scopedPath(path: string): string {
+    const id = String(projectId?.() || "").trim();
+    if (!id || !path.startsWith("/api/")) return path;
+    const url = new URL(path, window.location.origin);
+    url.searchParams.set("projectId", id);
+    return url.pathname + url.search;
+  }
   function readApiError(payload: any, fallback: string): string {
     return payload?.error?.message || fallback;
   }
@@ -34,6 +44,7 @@ export function createClientApi(translate: (key: string, vars?: Record<string, u
     let timedOut = false;
     let controller: AbortController | null = null;
     let signal = requestOptions.signal;
+    const requestPath = scopedPath(path);
     if (timeoutMs > 0) {
       controller = new AbortController();
       signal = controller.signal;
@@ -45,7 +56,7 @@ export function createClientApi(translate: (key: string, vars?: Record<string, u
     let response: Response;
     try {
       const { timeoutMs: _timeoutMs, signal: _optionSignal, ...fetchOptions } = requestOptions;
-      const fetchPromise = fetch(path, {
+      const fetchPromise = fetch(requestPath, {
         ...fetchOptions,
         headers: { accept: "application/json", ...(fetchOptions.headers || {}) },
         signal,
@@ -57,20 +68,20 @@ export function createClientApi(translate: (key: string, vars?: Record<string, u
             new Promise<Response>((_, reject) => {
               timeoutId = setTimeout(() => {
                 timedOut = true;
-                controller?.abort(createClientTimeoutError(path, timeoutMs));
-                reject(createClientTimeoutError(path, timeoutMs));
+                controller?.abort(createClientTimeoutError(requestPath, timeoutMs));
+                reject(createClientTimeoutError(requestPath, timeoutMs));
               }, timeoutMs);
             })
           ])
         : await fetchPromise;
     } catch (error) {
-      if (timedOut) throw createClientTimeoutError(path, timeoutMs);
+      if (timedOut) throw createClientTimeoutError(requestPath, timeoutMs);
       throw error;
     } finally {
       if (timeoutId !== null) clearTimeout(timeoutId);
     }
     if (signal?.aborted) {
-      if (timedOut) throw createClientTimeoutError(path, timeoutMs);
+      if (timedOut) throw createClientTimeoutError(requestPath, timeoutMs);
       if (signal.reason instanceof Error) throw signal.reason;
       const error = new Error(translate("studio.chat.cancelled", undefined, "Studio chat request cancelled.")) as Error & Record<string, any>;
       error.code = "CLIENT_REQUEST_ABORTED";

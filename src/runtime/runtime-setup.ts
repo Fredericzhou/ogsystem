@@ -19,6 +19,8 @@ import { compileSemanticIR } from "./semantic-ir-compiler.js";
 import type { SemanticIR } from "./semantic-ir.js";
 import { designDigest, designToSystemDefinition, loadSystemDesign } from "../design/index.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
+import { assertProjectAssetSnapshot, snapshotProjectAssets } from "./project-run-snapshot.js";
+import { loadProjectRunPlan } from "./project-run.js";
 import {
   loadLaws,
   loadProfiles,
@@ -228,7 +230,25 @@ export async function prepareRuntimeSetup(args: {
   workdir: string;
   targetDir?: string;
   dryRun?: boolean;
+  projectRunMode?: "dry-run" | "sandbox" | "real";
 }): Promise<RuntimeAdapterSetup> {
+  const projectRun = args.projectRunMode !== undefined;
+  const projectResume = projectRun && Boolean(args.resumeRunDir);
+  const projectResumePlan = projectResume
+    ? await loadProjectRunPlan(resolve(args.workdir, args.resumeRunDir!))
+    : undefined;
+  const projectResumeManifestDigest = typeof projectResumePlan?.projectAssetManifestDigest === "string"
+    ? projectResumePlan.projectAssetManifestDigest
+    : undefined;
+  if (projectResume && !projectResumeManifestDigest) {
+    throw new Error("RUN_SNAPSHOT_INVALID: project resume requires a manifest digest in run-plan.json.");
+  }
+  const assetWorkdir = projectResume
+    ? await assertProjectAssetSnapshot(resolve(args.workdir, args.resumeRunDir!), projectResumeManifestDigest)
+    : args.workdir;
+  const effectiveSystemPath = projectResume
+    ? resolve(assetWorkdir, "system.mmd")
+    : args.systemPath;
   const targetDir = await resolveProjectTargetDirectory({
     workdir: args.workdir,
     targetDir: args.targetDir,
@@ -237,25 +257,25 @@ export async function prepareRuntimeSetup(args: {
   let specificationSnapshot: OgsSpecificationSnapshot | undefined;
   const semanticCandidates = ["semantics.yaml", "semantics.yml", "semantics.json"];
   for (const candidate of semanticCandidates) {
-    if (await filesystemRunStore.pathExists(resolve(args.workdir, ".ogs", candidate))) {
-      specificationSnapshot = await loadOgsSpecification(args.workdir);
+    if (await filesystemRunStore.pathExists(resolve(assetWorkdir, ".ogs", candidate))) {
+      specificationSnapshot = await loadOgsSpecification(assetWorkdir);
       break;
     }
   }
-  const projectDesign = await loadSystemDesign(args.workdir);
-  const requestedProjectMermaid = resolve(args.systemPath) === resolve(args.workdir, "system.mmd");
-  const activeDesign = projectDesign && (requestedProjectMermaid || args.systemPath.endsWith("system.design.json"))
+  const projectDesign = await loadSystemDesign(assetWorkdir);
+  const requestedProjectMermaid = resolve(effectiveSystemPath) === resolve(assetWorkdir, "system.mmd");
+  const activeDesign = projectDesign && (requestedProjectMermaid || effectiveSystemPath.endsWith("system.design.json"))
     ? projectDesign
     : undefined;
   let system = activeDesign
     ? designToSystemDefinition(activeDesign)
-    : await loadSystemFromMermaid(args.systemPath);
+    : await loadSystemFromMermaid(effectiveSystemPath);
   if (!activeDesign && args.systemBaseDir && system.graph?.handoffContracts) {
-    const sourceSystem = parseSystemFromMermaidSource(await readFile(args.systemPath, "utf8"));
+    const sourceSystem = parseSystemFromMermaidSource(await readFile(effectiveSystemPath, "utf8"));
     if (sourceSystem.graph?.handoffContracts) {
       system = {
         ...system,
-        graph: { ...system.graph, handoffContracts: resolve(args.systemBaseDir, sourceSystem.graph.handoffContracts) }
+        graph: { ...system.graph, handoffContracts: resolve(projectResume ? assetWorkdir : args.systemBaseDir, sourceSystem.graph.handoffContracts) }
       };
     }
   }
@@ -269,8 +289,8 @@ export async function prepareRuntimeSetup(args: {
         `semantic files are ${specificationSnapshot.systemId}@${specificationSnapshot.systemVersion}`
     );
   }
-  const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
-  const storedModelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
+  const runtimeConfig = await loadRuntimeConfig(projectResume ? undefined : args.runtimeConfigPath, assetWorkdir);
+  const storedModelSelection = await loadModelSelection(resolve(assetWorkdir, ".ogs", "model-selection.json"));
   const designModelOverrides = activeDesign
     ? Object.fromEntries(Object.entries(activeDesign.seats).flatMap(([roleId, seat]) => {
         if (seat.binding.kind !== "model" || !seat.binding.modelRef) return [];
@@ -289,7 +309,7 @@ export async function prepareRuntimeSetup(args: {
         roles: { ...(storedModelSelection?.roles ?? {}), ...designModelOverrides }
       }
     : storedModelSelection;
-  const modelCatalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
+  const modelCatalog = await loadModelCatalog(resolve(assetWorkdir, ".ogs", "model-catalog.json"));
   const resolvedModelSelection = resolveModelSelectionForSystem({
     system: activeDesign ? { ...system, modelBinding: {} } : system,
     selection: modelSelection,
@@ -297,19 +317,19 @@ export async function prepareRuntimeSetup(args: {
   });
   const plan = createExecutionPlan(system, resolvedModelSelection.resolvedByRoleId);
   const resolvedProfilesPath = resolveOptionalProjectPath({
-    workdir: args.workdir,
-    explicitPath: args.profilesPath,
+    workdir: assetWorkdir,
+    explicitPath: projectResume ? undefined : args.profilesPath,
     defaultBasename: "profiles.json"
   });
   const resolvedToolsPath = resolveOptionalProjectPath({
-    workdir: args.workdir,
-    explicitPath: args.toolsPath,
+    workdir: assetWorkdir,
+    explicitPath: projectResume ? undefined : args.toolsPath,
     defaultBasename: "tools.json"
   });
-  const profiles = await loadProfiles(args.profilesPath, args.workdir);
-  const tools = await loadTools(args.toolsPath, args.workdir);
-  const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
-  const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
+  const profiles = await loadProfiles(projectResume ? undefined : args.profilesPath, assetWorkdir);
+  const tools = await loadTools(projectResume ? undefined : args.toolsPath, assetWorkdir);
+  const lawCatalog = await loadLaws(projectResume ? undefined : args.lawsPath, assetWorkdir);
+  const userProfile = await loadUserProfile(projectResume ? undefined : args.userProfilePath, assetWorkdir);
   const baseLaw = resolveEffectiveLaw(system, lawCatalog);
   const effectiveLaw = activeDesign
     ? {
@@ -350,7 +370,7 @@ export async function prepareRuntimeSetup(args: {
       }
     }
   }
-  const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
+  const roleRootDir = resolveProjectRoleRootDir(assetWorkdir, runtimeConfig.roleRepo);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({
         system,
@@ -408,18 +428,22 @@ export async function prepareRuntimeSetup(args: {
     contractPlan,
     compilerSnapshot: compilerResult.snapshot,
     specificationDigest: compiledSemanticIR?.digest ?? specificationSnapshot?.digest,
-    designDigest: projectDesign ? designDigest(projectDesign) : undefined
+    designDigest: projectDesign ? designDigest(projectDesign) : undefined,
+    runtimeConfig,
+    profiles,
+    tools,
+    userProfile
   });
   const resolvedConfigSnapshot: Record<string, unknown> = {
     version: 1,
     resolvedAt: new Date().toISOString(),
     sources: {
-      runtimeConfigPath: args.runtimeConfigPath ?? ".ogs/runtime.json",
+      runtimeConfigPath: projectResume ? resolve(assetWorkdir, ".ogs/runtime.json") : args.runtimeConfigPath ?? ".ogs/runtime.json",
       designPath: activeDesign ? "system.design.json" : null,
       modelSelectionPath: ".ogs/model-selection.json",
       modelCatalogPath: ".ogs/model-catalog.json",
-      userProfilePath: args.userProfilePath ?? ".ogs/user-profile.json",
-      lawsPath: args.lawsPath ?? ".ogs/laws.json",
+      userProfilePath: projectResume ? resolve(assetWorkdir, ".ogs/user-profile.json") : args.userProfilePath ?? ".ogs/user-profile.json",
+      lawsPath: projectResume ? resolve(assetWorkdir, ".ogs/laws.json") : args.lawsPath ?? ".ogs/laws.json",
       profilesPath: profiles.length > 0 ? resolvedProfilesPath ?? null : null,
       toolsPath: tools.length > 0 ? resolvedToolsPath ?? null : null
     },
@@ -462,7 +486,7 @@ export async function prepareRuntimeSetup(args: {
   };
   const runContext = await filesystemRunStore.initialize({
     system,
-    systemPath: args.systemPath,
+    systemPath: effectiveSystemPath,
     prompt: args.prompt,
     workdir: args.workdir,
     runtimeConfig,
@@ -474,6 +498,16 @@ export async function prepareRuntimeSetup(args: {
     await filesystemRunStore.persistPlanFingerprint({
       runDir: runContext.runDir,
       fingerprint: planFingerprint
+    });
+  }
+  if (projectRun && !args.resumeRunDir) {
+    await snapshotProjectAssets({
+      sourceWorkdir: args.workdir,
+      runDir: runContext.runDir,
+      runtimeConfig,
+      additionalFiles: typeof system.graph?.handoffContracts === "string"
+        ? [system.graph.handoffContracts]
+        : undefined
     });
   }
 

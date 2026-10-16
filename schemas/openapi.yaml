@@ -20,30 +20,24 @@ x-ogs-control-plane:
   anonymousPaths: [/healthz, /readyz]
   audit: Mutating run operations persist the authenticated principal with the action.
 paths:
-  /api/v1/workspace:
+  /api/v1/ogs/workspace:
     get:
       operationId: getWorkspace
       responses:
         "200": { description: Current project workspace and readiness summary. }
         "401": { $ref: "#/components/responses/ApiError" }
-  /api/v1/project:
-    get:
-      operationId: getProject
-      responses:
-        "200": { description: Current project summary. }
-        "401": { $ref: "#/components/responses/ApiError" }
-  /api/v1/project/design:
+  /api/v1/ogs/workspace/design:
     get:
       operationId: getProjectDesign
       responses:
         "200": { description: Current System Design Document and revision state. }
-  /api/v1/project/design/context:
+  /api/v1/ogs/workspace/design/context:
     get:
       operationId: getProjectDesignContext
       responses:
         "200": { description: Canonical design, runtime observations, and context-tuning capabilities. }
         "409": { $ref: "#/components/responses/ApiError" }
-  /api/v1/project/design/validate:
+  /api/v1/ogs/workspace/design/validate:
     post:
       operationId: validateProjectDesign
       requestBody:
@@ -57,7 +51,7 @@ paths:
                 design: { $ref: "#/components/schemas/SystemDesignDocument" }
       responses:
         "200": { description: Design diagnostics. }
-  /api/v1/project/design/apply:
+  /api/v1/ogs/workspace/design/apply:
     post:
       operationId: applyProjectDesignChangeSet
       requestBody:
@@ -72,7 +66,7 @@ paths:
       responses:
         "200": { description: Applied design and incremented revision. }
         "409": { $ref: "#/components/responses/ApiError" }
-  /api/v1/project/design/import/mermaid:
+  /api/v1/ogs/workspace/design/import/mermaid:
     post:
       operationId: importMermaidDesign
       requestBody:
@@ -86,7 +80,7 @@ paths:
                 systemSource: { type: string, minLength: 1 }
       responses:
         "200": { description: Validated design preview. }
-  /api/v1/project/design/export/mermaid:
+  /api/v1/ogs/workspace/design/export/mermaid:
     post:
       operationId: exportDesignMermaid
       requestBody:
@@ -100,24 +94,24 @@ paths:
                 design: { $ref: "#/components/schemas/SystemDesignDocument" }
       responses:
         "200": { description: Deterministic Mermaid export. }
-  /api/v1/project/system:
+  /api/v1/ogs/workspace/system:
     get:
       operationId: getProjectSystem
       responses:
         "200": { description: Current system source and metadata. }
-  /api/v1/project/system/validate:
+  /api/v1/ogs/workspace/system/validate:
     post:
       operationId: validateProjectSystem
       responses:
         "200": { description: Validation diagnostics. }
         "403": { $ref: "#/components/responses/ApiError" }
-  /api/v1/project/system/save:
+  /api/v1/ogs/workspace/system/save:
     post:
       operationId: saveProjectSystem
       responses:
         "200": { description: Saved system source and validation state. }
         "403": { $ref: "#/components/responses/ApiError" }
-  /api/v1/runs:
+  /api/v1/ogs/runs:
     get:
       operationId: listRuns
       responses:
@@ -188,7 +182,7 @@ paths:
           description: Resumable server-sent Session and Turn events.
           content:
             text/event-stream: {}
-  /api/v1/runs/{runId}:
+  /api/v1/ogs/runs/{runId}:
     get:
       operationId: getRun
       parameters:
@@ -198,7 +192,7 @@ paths:
           description: Run summary, current state, and projections.
         "404":
           $ref: "#/components/responses/ApiError"
-  /api/v1/runs/{runId}/events:
+  /api/v1/ogs/runs/{runId}/events:
     get:
       operationId: getRunEvents
       parameters:
@@ -209,7 +203,17 @@ paths:
       responses:
         "200":
           description: Cursor-addressed event page.
-  /api/v1/runs/{runId}/conversation:
+  /api/v1/ogs/runs/{runId}/plan:
+    get:
+      operationId: getRunPlan
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Immutable run plan, material snapshot references, and side-effect ledger.
+        "404":
+          $ref: "#/components/responses/ApiError"
+  /api/v1/ogs/runs/{runId}/conversation:
     get:
       operationId: getRunConversation
       parameters:
@@ -223,7 +227,7 @@ paths:
       responses:
         "200":
           description: Redacted step content, handoffs, joins, and optional initial user input.
-  /api/v1/runs/{runId}/stream:
+  /api/v1/ogs/runs/{runId}/stream:
     get:
       operationId: streamRunEvents
       parameters:
@@ -236,7 +240,7 @@ paths:
           description: Server-sent event stream with resumable event IDs.
           content:
             text/event-stream: {}
-  /api/v1/runs/start:
+  /api/v1/ogs/runs/start:
     post:
       operationId: startRun
       requestBody:
@@ -250,6 +254,17 @@ paths:
                 systemPath: { type: string }
                 input: { type: string }
                 dryRun: { type: boolean }
+                runMode: { type: string, enum: [dry-run, sandbox, real] }
+                materialInputs:
+                  type: array
+                  items:
+                    type: object
+                    required: [materialId, sourcePath]
+                    properties:
+                      materialId: { type: string }
+                      sourcePath: { type: string }
+                      contentType: { type: string }
+                      selectedRanges: { type: array, items: { type: object } }
       responses:
         "200":
           description: Run accepted after initialization; execution continues in the background and is observable through the run APIs and event stream.
@@ -259,7 +274,7 @@ paths:
           $ref: "#/components/responses/ApiError"
         "403":
           $ref: "#/components/responses/ApiError"
-  /api/v1/runs/{runId}/resume:
+  /api/v1/ogs/runs/{runId}/resume:
     post:
       operationId: resumeRun
       parameters:
@@ -271,7 +286,7 @@ paths:
           $ref: "#/components/responses/ApiError"
         "403":
           $ref: "#/components/responses/ApiError"
-  /api/v1/runs/{runId}/stop:
+  /api/v1/ogs/runs/{runId}/stop:
     post:
       operationId: stopRun
       parameters:
@@ -288,7 +303,7 @@ paths:
           description: Durable stop request projection.
         "403":
           $ref: "#/components/responses/ApiError"
-  /api/v1/runs/{runId}/reviews/{reviewId}/decide:
+  /api/v1/ogs/runs/{runId}/reviews/{reviewId}/decide:
     post:
       operationId: decideHumanReview
       parameters:

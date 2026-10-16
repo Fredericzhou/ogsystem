@@ -1,6 +1,6 @@
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 
 import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
@@ -701,6 +701,18 @@ export async function saveProjectSystemSource(args: {
           presentation: existingDesign.presentation
         }
       : importedDesign);
+    const attachedSiteMetaPath = resolve(args.workdir, ".site", "project.json");
+    const attachedSiteMeta = await readJsonFile(attachedSiteMetaPath).catch(() => undefined) as Record<string, unknown> | undefined;
+    if (attachedSiteMeta) {
+      await writeJsonFileAtomic(attachedSiteMetaPath, {
+        ...attachedSiteMeta,
+        projectStatus: "draft",
+        projectDigest: null,
+        confirmedAt: null,
+        invalidatedReason: "visualizer-semantic-edit",
+        updatedAt: new Date().toISOString()
+      });
+    }
   }
   invalidateProjectProjectionCache(args.workdir);
   return {
@@ -724,13 +736,123 @@ async function readOptionalJson(path: string): Promise<unknown | null> {
   return (await readJsonFile(path).catch(() => null)) ?? null;
 }
 
-export async function exportProjectBundle(workdir: string): Promise<Record<string, unknown>> {
+type PortablePackageFile = {
+  path: string;
+  content: string;
+};
+
+async function collectPortablePackageFiles(root: string, targetPrefix: string): Promise<PortablePackageFile[]> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const files: PortablePackageFile[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const sourcePath = resolve(root, entry.name);
+    const targetPath = `${targetPrefix}/${entry.name}`;
+    if (entry.isSymbolicLink()) throw new Error(`PROJECT_EXPORT_INVALID: symbolic link is not portable: ${targetPath}`);
+    if (entry.isDirectory()) files.push(...await collectPortablePackageFiles(sourcePath, targetPath));
+    else if (entry.isFile()) files.push({ path: targetPath, content: await readFile(sourcePath, "utf8") });
+  }
+  return files;
+}
+
+function assertPortablePackagePath(candidate: string): string {
+  if (!candidate || candidate.startsWith("/") || candidate.includes("\\")) {
+    throw new Error(`PROJECT_IMPORT_INVALID: unsafe artifact path: ${candidate}`);
+  }
+  const parts = candidate.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`PROJECT_IMPORT_INVALID: unsafe artifact path: ${candidate}`);
+  }
+  const forbiddenRoots = [
+    ".site",
+    ".ogs/project.json",
+    ".ogs/runs",
+    ".ogs/sessions",
+    "logs",
+    "timeline",
+    "checkpoints",
+    "reviews"
+  ];
+  if (forbiddenRoots.some((root) => candidate === root || candidate.startsWith(`${root}/`))) {
+    throw new Error(`PROJECT_IMPORT_INVALID: runtime artifact is not importable: ${candidate}`);
+  }
+  return parts.join("/");
+}
+
+async function writePortablePackageFiles(workdir: string, files: PortablePackageFile[]): Promise<string[]> {
+  const projectRoot = await realpath(workdir);
+  const loadedFiles: string[] = [];
+  for (const file of files) {
+    const safePath = assertPortablePackagePath(file.path);
+    const target = resolve(workdir, safePath);
+    if (target !== projectRoot && !target.startsWith(`${projectRoot}${sep}`)) {
+      throw new Error(`PROJECT_IMPORT_INVALID: artifact escapes project root: ${safePath}`);
+    }
+    await mkdir(dirname(target), { recursive: true });
+    const parent = await realpath(dirname(target)).catch(() => undefined);
+    if (parent && parent !== projectRoot && !parent.startsWith(`${projectRoot}${sep}`)) {
+      throw new Error(`PROJECT_IMPORT_INVALID: artifact parent escapes project root: ${safePath}`);
+    }
+    const existing = await lstat(target).catch(() => undefined);
+    if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
+      throw new Error(`PROJECT_IMPORT_INVALID: artifact target is not a regular file: ${safePath}`);
+    }
+    await writeFile(target, file.content, "utf8");
+    loadedFiles.push(safePath);
+  }
+  return loadedFiles;
+}
+
+export async function exportTeamPackage(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
   const systemSource = await readFile(resolve(workdir, "system.mmd"), "utf8");
   const projectMeta = await readOptionalJson(ogsPaths.projectPath);
   const projectRecord = asRecord(projectMeta);
   const systemHash = createHash("sha256").update(systemSource).digest("hex");
   const design = await loadSystemDesign(workdir);
+  const runtime = asRecord(await readOptionalJson(ogsPaths.runtimePath));
+  const roleRepo = asString(runtime?.roleRepo) ?? "./og-roles";
+  const roleRoot = resolveProjectRoleRootDir(workdir, roleRepo);
+  const executableFiles = [
+    ...await collectPortablePackageFiles(roleRoot, "og-roles/roles"),
+    ...await collectPortablePackageFiles(resolve(workdir, ".ogs", "contracts"), ".ogs/contracts")
+  ];
+  for (const fileName of [
+    "semantics.yaml",
+    "semantics.yml",
+    "semantics.json",
+    "models.yaml",
+    "models.yml",
+    "models.json"
+  ]) {
+    const sourcePath = resolve(workdir, ".ogs", fileName);
+    const sourceStat = await lstat(sourcePath).catch(() => undefined);
+    if (sourceStat?.isSymbolicLink()) {
+      throw new Error(`PROJECT_EXPORT_INVALID: symbolic link is not portable: .ogs/${fileName}`);
+    }
+    if (sourceStat?.isFile()) {
+      executableFiles.push({ path: `.ogs/${fileName}`, content: await readFile(sourcePath, "utf8") });
+    }
+  }
+  for (const directory of ["systems", "subsystems"]) {
+    executableFiles.push(
+      ...await collectPortablePackageFiles(
+        resolve(workdir, ".ogs", directory),
+        `.ogs/${directory}`
+      )
+    );
+  }
+  const configuredContract = parseSystemFromMermaidSource(systemSource).graph?.handoffContracts;
+  if (configuredContract) {
+    const projectRoot = await realpath(workdir);
+    const canonicalContract = await realpath(resolve(workdir, configuredContract)).catch(() => undefined);
+    if (!canonicalContract || (canonicalContract !== projectRoot && !canonicalContract.startsWith(`${projectRoot}${sep}`))) {
+      throw new Error("PROJECT_EXPORT_EXTERNAL_DEPENDENCY: configured handoff contract must be inside the project.");
+    }
+    const relativeContract = relative(workdir, canonicalContract).split(sep).join("/");
+    if (!executableFiles.some((file) => file.path === relativeContract)) {
+      executableFiles.push({ path: relativeContract, content: await readFile(canonicalContract, "utf8") });
+    }
+  }
   const generatedAt = new Date().toISOString();
   return {
     mode: "single-project-v1",
@@ -751,77 +873,66 @@ export async function exportProjectBundle(workdir: string): Promise<Record<strin
         ".ogs/user-profile.json",
         "profiles.json",
         "tools.json",
-        ".ogs/project.json"
+        ".ogs/project.json",
+        ".ogs/semantics.*",
+        ".ogs/models.*",
+        ".ogs/systems/**",
+        ".ogs/subsystems/**",
+        ".ogs/contracts/**",
+        "og-roles/roles/**"
       ],
       requiredEnv: [],
-      excludes: [".ogs/runs", "logs", "timeline", "checkpoints", "reviews"]
+      excludes: [".ogs/runs", "logs", "timeline", "checkpoints", "reviews"],
+      executableAssets: executableFiles.map((file) => file.path)
     },
-    project: {
+    team: {
       systemPath: "system.mmd",
       systemSource,
       design,
-      runtime: await readOptionalJson(ogsPaths.runtimePath),
+      runtime: runtime ? { ...runtime, roleRepo: "./og-roles" } : null,
       modelSelection: await readOptionalJson(ogsPaths.modelSelectionPath),
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
       laws: await readOptionalJson(ogsPaths.lawsPath),
       userProfile: await readOptionalJson(ogsPaths.userProfilePath),
       profiles: await readOptionalJson(resolve(workdir, "profiles.json")),
       tools: await readOptionalJson(resolve(workdir, "tools.json")),
-      project: projectMeta
+      project: projectMeta,
+      executableFiles
     }
   };
 }
 
-export async function loadProjectBundle(args: {
+export async function loadTeamPackage(args: {
   workdir: string;
   bundle: unknown;
 }): Promise<Record<string, unknown>> {
   const record = asRecord(args.bundle);
-  const project = asRecord(record?.project);
-  if (record?.mode !== "single-project-v1" || !project) {
-    throw new Error("Unsupported project bundle format; expected mode=single-project-v1.");
+  const team = asRecord(record?.team);
+  if (record?.mode !== "single-project-v1" || !team) {
+    throw new Error("Unsupported project package format; expected mode=single-project-v1.");
   }
-  const systemSource = asString(project.systemSource);
+  const systemSource = asString(team.systemSource);
   if (!systemSource) {
     throw new Error("Project bundle is missing project.systemSource.");
   }
-  const validation = await validateProjectSystemSource({
-    workdir: args.workdir,
-    systemPath: resolve(args.workdir, "system.mmd"),
-    systemSource
-  });
-  if (validation.ok !== true) {
-    return {
-      workdir: args.workdir,
-      mode: "single-project-v1",
-      loadedFiles: [],
-      validation,
-      followUpActions: [{
-        action: "fix-validation-errors",
-        label: "Imported Mermaid system must validate before the project can be rebound."
-      }]
-    };
-  }
-
   const ogsPaths = resolveOgsPaths(args.workdir);
   const writes: Array<[string, unknown, boolean]> = [
     [resolve(args.workdir, "system.mmd"), systemSource, false],
-    [ogsPaths.runtimePath, project.runtime ?? null, true],
-    [ogsPaths.modelSelectionPath, project.modelSelection ?? null, true],
-    [ogsPaths.modelCatalogPath, project.modelCatalog ?? null, true],
-    [ogsPaths.lawsPath, project.laws ?? null, true],
-    [ogsPaths.userProfilePath, project.userProfile ?? null, true],
-    [resolve(args.workdir, "profiles.json"), project.profiles ?? null, true],
-    [resolve(args.workdir, "tools.json"), project.tools ?? null, true],
-    [ogsPaths.projectPath, project.project ?? null, true]
+    [ogsPaths.runtimePath, team.runtime ?? null, true],
+    [ogsPaths.modelSelectionPath, team.modelSelection ?? null, true],
+    [ogsPaths.modelCatalogPath, team.modelCatalog ?? null, true],
+    [ogsPaths.lawsPath, team.laws ?? null, true],
+    [ogsPaths.userProfilePath, team.userProfile ?? null, true],
+    [resolve(args.workdir, "profiles.json"), team.profiles ?? null, true],
+    [resolve(args.workdir, "tools.json"), team.tools ?? null, true]
   ];
   const designPath = resolve(args.workdir, "system.design.json");
-  if (project.design === undefined || project.design === null) {
+  if (team.design === undefined || team.design === null) {
     await unlink(designPath).catch((error) => {
       if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
     });
   } else {
-    writes.splice(1, 0, [designPath, project.design, true]);
+    writes.splice(1, 0, [designPath, team.design, true]);
   }
   const loadedFiles: string[] = [];
   for (const [path, value, json] of writes) {
@@ -835,6 +946,35 @@ export async function loadProjectBundle(args: {
     }
     loadedFiles.push(relative(args.workdir, path) || ".");
   }
+  const executableFiles = Array.isArray(team.executableFiles)
+    ? team.executableFiles.map((file) => {
+        const item = asRecord(file);
+        const path = asString(item?.path);
+        const content = item?.content;
+        if (!path || typeof content !== "string") {
+          throw new Error("PROJECT_IMPORT_INVALID: executable asset must contain path and text content.");
+        }
+        return { path, content };
+      })
+    : [];
+  loadedFiles.push(...await writePortablePackageFiles(args.workdir, executableFiles));
+  const validation = await validateProjectSystemSource({
+    workdir: args.workdir,
+    systemPath: resolve(args.workdir, "system.mmd"),
+    systemSource
+  });
+  if (validation.ok !== true) {
+    return {
+      workdir: args.workdir,
+      mode: "single-project-v1",
+      loadedFiles,
+      validation,
+      followUpActions: [{
+        action: "fix-validation-errors",
+        label: "Imported Mermaid system must validate before the project can be rebound."
+      }]
+    };
+  }
   invalidateProjectProjectionCache(args.workdir);
   return {
     workdir: args.workdir,
@@ -844,7 +984,7 @@ export async function loadProjectBundle(args: {
     followUpActions: [
       {
         action: "project-rebound",
-        label: "Single-project binding was replaced in-place for the current workdir."
+        label: "Team package binding was replaced in-place for the current workdir."
       },
       {
         action: "project-cache-invalidated",
@@ -938,7 +1078,7 @@ export async function createProjectVisualization(args: {
       projectId,
       projectName,
       templateId,
-      mode: "single-project-v1",
+    mode: "single-project-v1",
       runCount: index.runs.length,
       modelCatalogPath: modelSyncResult.catalogPath,
       modelSelectionPath: modelSyncResult.selectionPath,

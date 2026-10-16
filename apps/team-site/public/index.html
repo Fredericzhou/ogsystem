@@ -14,8 +14,8 @@
     <section id="landing-view" class="landing-view hidden">
       <header class="landing-nav">
         <a class="brand" href="/" data-route="/"><span class="brand-mark">O</span><span><strong>OGSystem</strong><small>TEAM STUDIO</small></span></a>
-        <nav><a href="#teams" data-i18n="homeCases">团队协作</a><a href="/studio" data-route="/studio" data-i18n="homeStudio">在线体验</a></nav>
-        <div class="landing-actions"><div class="theme-switch" role="group" aria-label="显示模式"><button type="button" class="theme-choice" data-site-theme-choice="light">浅色</button><button type="button" class="theme-choice" data-site-theme-choice="dark">深色</button></div><button id="landing-locale" class="locale-button" type="button">EN</button><a class="primary-button" href="/studio" data-route="/studio" data-i18n="homeCta">开始体验 <span aria-hidden="true">→</span></a></div>
+        <nav><a href="#teams" data-i18n="homeCases">团队协作</a><a href="/studio" data-route="/studio" data-i18n="homeStudio">案例预览</a></nav>
+        <div class="landing-actions"><div class="theme-switch" role="group" aria-label="显示模式"><button type="button" class="theme-choice" data-site-theme-choice="light">浅色</button><button type="button" class="theme-choice" data-site-theme-choice="dark">深色</button></div><button id="landing-locale" class="locale-button" type="button">EN</button><a class="primary-button" href="/studio/new" data-route="/studio/new">创建新团队 <span aria-hidden="true">→</span></a></div>
       </header>
       <main>
         <section class="landing-hero">
@@ -48,6 +48,8 @@
           <footer class="page-footer"><span data-i18n="footerNote">公开体验会运行流程模拟，不调用模型或生成业务交付内容。</span><span>OGSystem Team Studio</span></footer>
         </div>
         <div id="case-detail-view" class="page-content alternate-view hidden"></div>
+        <div id="new-project-view" class="page-content alternate-view hidden"></div>
+        <div id="project-workspace-view" class="page-content alternate-view hidden"></div>
         <div id="history-view" class="page-content alternate-view hidden"><div class="page-heading"><div><div class="eyebrow" data-i18n="runHistoryEyebrow">最近运行</div><h1 data-i18n="historyTitle">最近运行</h1><p data-i18n="historyIntro">本机浏览器临时保存的体验记录。</p></div><button class="secondary-button" id="clear-history" type="button" data-i18n="clearHistory">清空记录</button></div><div id="history-list" class="history-list"></div></div>
         <div id="examples-view" class="page-content alternate-view hidden"><div class="page-heading"><div><div class="eyebrow" data-i18n="libraryEyebrow">典型团队协作案例</div><h1 data-i18n="libraryTitle">团队协作案例</h1><p data-i18n="libraryIntro">浏览不同协作场景的背景、分工和预期成果。</p></div></div><div id="library-grid" class="library-grid"></div></div>
       </main>

@@ -3,18 +3,15 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.project.base
 %% entry.role=investment-proposer
-%% role.mode.investment-proposer=parallel_split
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=investment-critic,investment-optimizer
+%% role.mode.investment-proposer=parallel_split
 %% loop.max.investment-proposer=2
-
-input -->|DEBATE_REQUEST| proposer[Role:investment-proposer]
-proposer[Role:investment-proposer] -->|SEND_CRITIC| critic[Role:investment-critic]
-proposer[Role:investment-proposer] -->|SEND_OPTIMIZER| optimizer[Role:investment-optimizer]
-
-critic[Role:investment-critic] -->|CRITIC_DONE| judge[Role:debate-judge]
-optimizer[Role:investment-optimizer] -->|OPTIMIZER_DONE| judge[Role:debate-judge]
-
-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| proposer[Role:investment-proposer]
-judge[Role:debate-judge] -->|DECISION_READY| summary[Role:debate-summary]
-summary[Role:debate-summary] -->|SUMMARY_READY| output
+input -->|DEBATE_REQUEST| r5[Role:investment-proposer]
+r1[Role:debate-judge] -->|DECISION_READY| r2[Role:debate-summary]
+r1[Role:debate-judge] -->|REBUTTAL_NEEDED| r5[Role:investment-proposer]
+r2[Role:debate-summary] -->|SUMMARY_READY| output
+r3[Role:investment-critic] -->|CRITIC_DONE| r1[Role:debate-judge]
+r4[Role:investment-optimizer] -->|OPTIMIZER_DONE| r1[Role:debate-judge]
+r5[Role:investment-proposer] -->|SEND_CRITIC| r3[Role:investment-critic]
+r5[Role:investment-proposer] -->|SEND_OPTIMIZER| r4[Role:investment-optimizer]

@@ -14,6 +14,7 @@ import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import { createInitialGraphState } from "../dist/runtime/graph-runtime-state.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { loadRolePackage } from "../dist/runtime/role-repo.js";
+import { loadProfiles, loadRuntimeConfig, loadTools, loadUserProfile } from "../dist/runtime/runtime-loader.js";
 import {
   ROLE_EXECUTION_OUTCOME_FILE,
   RESUME_RUN_LOCK_FILE,
@@ -73,13 +74,21 @@ async function buildRuntimeFingerprintWithPaths(system, args) {
     effectiveLaw: resolveEffectiveLaw(system, lawCatalog),
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
   }).snapshot;
+  const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
+  const profiles = await loadProfiles(args.profilesPath, args.workdir);
+  const tools = await loadTools(args.toolsPath, args.workdir);
+  const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
 
   return buildRunPlanFingerprint({
     system,
     rolePackagesByRoleId,
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     effectiveLaw: resolveEffectiveLaw(system, lawCatalog),
-    compilerSnapshot
+    compilerSnapshot,
+    runtimeConfig,
+    profiles,
+    tools,
+    userProfile
   });
 }
 
@@ -129,7 +138,8 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
   const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
     workdir: tempRoot,
     roleRootDir,
-    lawsPath
+    lawsPath,
+    runtimeConfigPath: runtimePath
   });
 
   await writeFile(path.resolve(runDir, "state.json"), JSON.stringify({ graphState }, null, 2), "utf8");
@@ -187,7 +197,12 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
-  const fingerprint = await buildRuntimeFingerprint(system);
+  const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
+    workdir: tempRoot,
+    roleRootDir: path.resolve("og-roles", "roles"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
+    runtimeConfigPath: runtimePath
+  });
   const graphState = createInitialGraphState({
     plan,
     prompt: "resume session"
@@ -284,7 +299,12 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     "utf8"
   );
   const system = parseSystemFromMermaidSource(systemSource);
-  const fingerprint = await buildRuntimeFingerprint(system);
+  const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
+    workdir: tempRoot,
+    roleRootDir: path.resolve("og-roles", "roles"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
+    runtimeConfigPath: runtimePath
+  });
   await writeFile(path.resolve(runDir, "state.json"), JSON.stringify({ graphState: { status: "running" } }), "utf8");
   await writeFile(path.resolve(runDir, "sessions.json"), JSON.stringify([], null, 2), "utf8");
   await writeFile(path.resolve(runDir, "plan-fingerprint.json"), JSON.stringify(fingerprint, null, 2), "utf8");
@@ -535,7 +555,12 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 
   const initialSystem = parseSystemFromMermaidSource(initialSystemSource);
   const plan = createExecutionPlan(initialSystem);
-  const fingerprint = await buildRuntimeFingerprint(initialSystem);
+  const fingerprint = await buildRuntimeFingerprintWithPaths(initialSystem, {
+    workdir: tempRoot,
+    roleRootDir: path.resolve("og-roles", "roles"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
+    runtimeConfigPath: runtimePath
+  });
   await writeFile(
     path.resolve(tempRoot, ".ogs", "model-selection.json"),
     JSON.stringify({ configVersion: "2", roles: { "debate-minimalist": { backend: "codex", modelId: "gpt-5.6-terra" } } }),
@@ -790,7 +815,12 @@ operator[Role:test-operator] -->|DONE| output
 
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
-  const fingerprint = await buildRuntimeFingerprint(system);
+  const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
+    workdir: tempRoot,
+    roleRootDir: path.resolve("og-roles", "roles"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
+    runtimeConfigPath: runtimePath
+  });
   const graphState = createInitialGraphState({
     plan,
     prompt: "resume checkpoint"
@@ -988,7 +1018,12 @@ operator[Role:test-operator] -->|DONE| output
 
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
-  const fingerprint = await buildRuntimeFingerprint(system);
+  const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
+    workdir: tempRoot,
+    roleRootDir: path.resolve("og-roles", "roles"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
+    runtimeConfigPath: runtimePath
+  });
   const graphState = createInitialGraphState({
     plan,
     prompt: "resume outcome"
@@ -1169,7 +1204,12 @@ operator[Role:test-operator] -->|DONE| output
 
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
-  const fingerprint = await buildRuntimeFingerprint(system);
+  const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
+    workdir: tempRoot,
+    roleRootDir: path.resolve("og-roles", "roles"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
+    runtimeConfigPath: runtimePath
+  });
   const graphState = createInitialGraphState({
     plan,
     prompt: "resume outcome backfill"

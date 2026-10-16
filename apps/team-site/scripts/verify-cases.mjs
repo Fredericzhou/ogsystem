@@ -1,5 +1,5 @@
 import { cases } from "../cases.mjs";
-import { lintCase, runCase } from "../run-engine.mjs";
+import { lintCase, runCase } from "../demo-runner.mjs";
 
 const failures = [];
 const expectedBackend = process.env.OGS_DEMO_BACKEND || "codex";

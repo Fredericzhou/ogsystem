@@ -87,12 +87,15 @@ if (buildResult.code !== 0) {
 }
 
 let temporaryPlaywrightConfig;
-let playwrightArgs = [
-  "exec",
-  "playwright",
-  "test",
+const playwrightBaseArgs = ["exec", "playwright", "test"];
+const playwrightSpecs = [
   "tests-e2e/visualizer-studio-graph.spec.ts",
   "tests-e2e/visualizer-build-layout.spec.ts"
+];
+let playwrightConfigArgs = [
+  // Each case starts a real file-backed visualizer. Serial execution keeps
+  // X6 layout paints and Windows port/process scheduling deterministic.
+  "--workers=1"
 ];
 const systemChromeCandidates = process.platform === "darwin"
   ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
@@ -103,7 +106,9 @@ const systemChromeCandidates = process.platform === "darwin"
         path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe")
       ]
     : [];
-const systemChrome = systemChromeCandidates.find((candidate) => existsSync(candidate));
+const systemChrome = process.env.OGSYSTEM_USE_SYSTEM_CHROME === "1"
+  ? systemChromeCandidates.find((candidate) => existsSync(candidate))
+  : undefined;
 if (systemChrome) {
   temporaryPlaywrightConfig = path.join(
     await mkdtemp(path.join(os.tmpdir(), "ogsystem-playwright-config-")),
@@ -127,18 +132,25 @@ if (systemChrome) {
     ].join("\n"),
     "utf8"
   );
-  playwrightArgs = [...playwrightArgs, `--config=${temporaryPlaywrightConfig}`];
+  playwrightConfigArgs = [...playwrightConfigArgs, `--config=${temporaryPlaywrightConfig}`];
 }
 if (process.env.OGSYSTEM_UPDATE_VISUALIZER_SNAPSHOTS === "1") {
-  playwrightArgs.push("--update-snapshots");
+  playwrightConfigArgs.push("--update-snapshots");
 }
 
-const playwrightResult = await runPnpm(playwrightArgs);
+let playwrightResult = { code: 0, signal: null, stdout: "", stderr: "" };
+for (const spec of playwrightSpecs) {
+  const result = await runPnpm([...playwrightBaseArgs, spec, ...playwrightConfigArgs]);
+  process.stdout.write(result.stdout);
+  process.stderr.write(result.stderr);
+  if (result.code !== 0) {
+    playwrightResult = result;
+    break;
+  }
+}
 if (temporaryPlaywrightConfig) {
   await rm(path.dirname(temporaryPlaywrightConfig), { recursive: true, force: true });
 }
-process.stdout.write(playwrightResult.stdout);
-process.stderr.write(playwrightResult.stderr);
 if (playwrightResult.code === 0) {
   process.exit(0);
 }

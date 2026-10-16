@@ -580,9 +580,8 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.match(followJsonLogs.stderr, /--json cannot be used with --follow/);
 
   const resume = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
-  assert.strictEqual(resume.code, 0);
-  const resumePayload = JSON.parse(resume.stdout);
-  assert.equal(resumePayload.status, "done");
+  assert.strictEqual(resume.code, 1);
+  assert.match(resume.stderr, /RUN_RESUME_NOT_ALLOWED|terminal|completed/i);
 
   const statePath = path.resolve(runDir, "state.json");
   const tamperedState = JSON.parse(await readFile(statePath, "utf8"));
@@ -1050,8 +1049,8 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
   const resumeAfterFailedAutoResume = await runCli([
     "run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot
   ]);
-  assert.equal(resumeAfterFailedAutoResume.code, 0, resumeAfterFailedAutoResume.stderr);
-  assert.equal(JSON.parse(resumeAfterFailedAutoResume.stdout).status, "done");
+  assert.equal(resumeAfterFailedAutoResume.code, 1);
+  assert.match(resumeAfterFailedAutoResume.stderr, /RUN_RESUME_NOT_ALLOWED|failed|terminal/i);
 });
 
 test("lifecycle cli modern run failures print modern resume hints and reject removed hidden flags", { concurrency: false }, async () => {

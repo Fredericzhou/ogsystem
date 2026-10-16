@@ -865,6 +865,7 @@ async function runAdapterCommand(args: {
   runtimeConfigPath?: string;
   userProfilePath?: string;
   resumeRunDir?: string;
+  enforceTerminalResumeGate?: boolean;
   lawsPath?: string;
   workdir: string;
   targetDir?: string;
@@ -911,6 +912,7 @@ async function runAdapterCommand(args: {
       runtimeConfigPath: args.runtimeConfigPath,
       userProfilePath: args.userProfilePath,
       resumeRunDir: args.resumeRunDir,
+      enforceTerminalResumeGate: args.enforceTerminalResumeGate,
       lawsPath: args.lawsPath,
       prompt: args.prompt,
       workdir: args.workdir,
@@ -1325,6 +1327,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
       runtimeConfigPath: asString(values.runtime),
       userProfilePath: asString(values["user-profile"]),
       resumeRunDir: resolve(runDir),
+      enforceTerminalResumeGate: asString(values.system) === undefined,
       lawsPath: asString(values.laws),
       workdir,
       targetDir: asString(values["target-dir"]),

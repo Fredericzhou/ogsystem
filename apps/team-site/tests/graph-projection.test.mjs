@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cases } from "../cases.mjs";
-import { buildCaseGraph } from "../run-engine.mjs";
+import { buildCaseGraph } from "../demo-runner.mjs";
 
 for (const locale of ["zh-CN", "en"]) {
   for (const item of cases) {

@@ -1528,21 +1528,21 @@ function createBackend(options = {}) {
       const method = request.method ?? "GET";
       this.fetchCalls.push({ method, path: `${pathname}${parsed.search}`, body: request.body ?? null });
       const getRunFixture = (requestedRunId) => runFixtures.get(requestedRunId) ?? null;
-      const runMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)$/);
-      const runEventsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/events$/);
-      const runConversationMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/conversation$/);
-      const runGraphMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/graph$/);
-      const runReviewsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/reviews$/);
-      const runReviewDetailMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/reviews\/([^/]+)$/);
-      const runReviewDecisionMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/reviews\/([^/]+)\/decide$/);
-      const runResumeMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume$/);
-      const runStopMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/stop$/);
-      const runLogsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/logs$/);
-      const runRoleIoMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/role-io$/);
-      const runFailureMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/failure$/);
-      const runReadinessMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume-readiness$/);
-      const runDiagnosticsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume-diagnostics$/);
-      if (pathname === "/api/v1/workspace") {
+      const runMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)$/);
+      const runEventsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/events$/);
+      const runConversationMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/conversation$/);
+      const runGraphMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/graph$/);
+      const runReviewsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/reviews$/);
+      const runReviewDetailMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/reviews\/([^/]+)$/);
+      const runReviewDecisionMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/reviews\/([^/]+)\/decide$/);
+      const runResumeMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/resume$/);
+      const runStopMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/stop$/);
+      const runLogsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/logs$/);
+      const runRoleIoMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/role-io$/);
+      const runFailureMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/failure$/);
+      const runReadinessMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/resume-readiness$/);
+      const runDiagnosticsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/resume-diagnostics$/);
+      if (pathname === "/api/v1/ogs/workspace") {
         if (this.workspaceFailOnce) {
           this.workspaceFailOnce = false;
           return createResponse({
@@ -1563,7 +1563,7 @@ function createBackend(options = {}) {
           controlledPathConflicts: []
         });
       }
-      if (pathname === "/api/v1/project/create" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/create" && method === "POST") {
         this.lastProjectCreateBody = JSON.parse(request.body ?? "{}");
         if (options.projectCreateDeferred) {
           const deferredResponse = await options.projectCreateDeferred.promise;
@@ -1603,7 +1603,7 @@ function createBackend(options = {}) {
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
-      if (pathname === "/api/v1/project/role-catalog") {
+      if (pathname === "/api/v1/ogs/workspace/role-catalog") {
         return createResponse(options.roleCatalog ?? {
           source: "installed",
           roles: [
@@ -1624,7 +1624,7 @@ function createBackend(options = {}) {
           ]
         });
       }
-      if (pathname === "/api/v1/project/roles/import" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/roles/import" && method === "POST") {
         this.lastRoleImportBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           workdir: "/tmp/demo",
@@ -1633,9 +1633,9 @@ function createBackend(options = {}) {
           roleCatalog: { source: "installed", roles: [] }
         });
       }
-      if (pathname === "/api/v1/project") {
+      if (pathname === "/api/v1/ogs/workspace") {
         return createResponse({
-          project: {
+          team: {
             projectName: "demo",
             projectId: "viz.project.demo",
             systemId: "viz.review.demo",
@@ -1653,10 +1653,10 @@ function createBackend(options = {}) {
           recentRuns: []
         });
       }
-      if (pathname === "/api/v1/project/system") {
+      if (pathname === "/api/v1/ogs/workspace/system") {
         return createResponse({ systemSource: "flowchart TD" });
       }
-      if (pathname === "/api/v1/project/system/workbench") {
+      if (pathname === "/api/v1/ogs/workspace/system/workbench") {
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
@@ -1676,7 +1676,7 @@ function createBackend(options = {}) {
           }
         });
       }
-      if (pathname === "/api/v1/project/system/validate" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/system/validate" && method === "POST") {
         const body = JSON.parse(request.body ?? "{}");
         const valid = !String(body.systemSource || "").includes("INVALID");
         return createResponse({
@@ -1697,7 +1697,7 @@ function createBackend(options = {}) {
             : null
         });
       }
-      if ((pathname === "/api/v1/project/system/save" || pathname === "/api/v1/project/system/save-as") && method === "POST") {
+      if ((pathname === "/api/v1/ogs/workspace/system/save" || pathname === "/api/v1/ogs/workspace/system/save-as") && method === "POST") {
         const body = JSON.parse(request.body ?? "{}");
         const valid = !String(body.systemSource || "").includes("INVALID");
         return createResponse({
@@ -1720,7 +1720,7 @@ function createBackend(options = {}) {
           followUpActions: [{ action: "refresh-project-summary", label: "Reload project and graph views to reflect the saved system." }]
         });
       }
-      if (pathname === "/api/v1/project/studio/bridge" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/studio/bridge" && method === "POST") {
         const body = JSON.parse(request.body ?? "{}");
         this.lastStudioBridgeBody = body;
         if (Array.isArray(options.studioBridgeResponses) && options.studioBridgeResponses.length) {
@@ -1797,7 +1797,7 @@ function createBackend(options = {}) {
           }
         });
       }
-      if (pathname === "/api/v1/project/studio/chat" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/studio/chat" && method === "POST") {
         this.lastStudioChatBody = JSON.parse(request.body ?? "{}");
         if (options.studioChatDeferred) {
           return options.studioChatDeferred.promise;
@@ -1936,7 +1936,7 @@ function createBackend(options = {}) {
           }
         });
       }
-      if (pathname === "/api/v1/project/studio/authoring" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/studio/authoring" && method === "POST") {
         this.lastAuthoringSaveBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           workdir: "/tmp/demo",
@@ -1945,7 +1945,7 @@ function createBackend(options = {}) {
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
-      if (pathname === "/api/v1/project/studio/authoring/generate-mmd" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/studio/authoring/generate-mmd" && method === "POST") {
         this.lastAuthoringGenerateBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           workdir: "/tmp/demo",
@@ -1954,7 +1954,7 @@ function createBackend(options = {}) {
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
-      if (pathname === "/api/v1/project/studio/authoring/apply-canvas" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/studio/authoring/apply-canvas" && method === "POST") {
         this.lastAuthoringApplyCanvasBody = JSON.parse(request.body ?? "{}");
         const authoring = this.lastAuthoringApplyCanvasBody.authoring;
         return createResponse({
@@ -1966,7 +1966,7 @@ function createBackend(options = {}) {
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
-      if (pathname === "/api/v1/project/export" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/export" && method === "POST") {
         return createResponse({
           mode: "single-project-v1",
           project: {
@@ -1981,7 +1981,7 @@ function createBackend(options = {}) {
           }
         });
       }
-      if (pathname === "/api/v1/project/config") {
+      if (pathname === "/api/v1/ogs/workspace/config") {
         return createResponse({
           modelSelectionWarnings: [],
           modelCatalog: {
@@ -1994,7 +1994,7 @@ function createBackend(options = {}) {
           tools: [{ toolRef: "tool.review", runner: "local_shell" }]
         });
       }
-      if (pathname === "/api/v1/project/execution-config" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/execution-config" && method === "POST") {
         this.lastExecutionConfigUpsertBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           workdir: "/tmp/demo",
@@ -2004,7 +2004,7 @@ function createBackend(options = {}) {
           tools: this.lastExecutionConfigUpsertBody.tools || []
         });
       }
-      if (pathname === "/api/v1/project/studio/templates") {
+      if (pathname === "/api/v1/ogs/workspace/studio/templates") {
         return createResponse({
           templates: [
             { id: "review", title: "Review", description: "Human review template" },
@@ -2012,7 +2012,7 @@ function createBackend(options = {}) {
           ]
         });
       }
-      if (pathname === "/api/v1/project/profiles" && method === "POST") {
+      if (pathname === "/api/v1/ogs/workspace/profiles" && method === "POST") {
         this.lastProfilesUpsertBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           workdir: "/tmp/demo",
@@ -2020,7 +2020,7 @@ function createBackend(options = {}) {
           profiles: this.lastProfilesUpsertBody.profiles
         });
       }
-      if (pathname === "/api/v1/project/bindings") {
+      if (pathname === "/api/v1/ogs/workspace/bindings") {
         return createResponse({
           roles: [
             {
@@ -2046,7 +2046,7 @@ function createBackend(options = {}) {
           ]
         });
       }
-      if (pathname === "/api/v1/project/contracts") {
+      if (pathname === "/api/v1/ogs/workspace/contracts") {
         return createResponse({
           flows: options.includeMissingAuditContract
             ? [
@@ -2127,7 +2127,7 @@ function createBackend(options = {}) {
           validation: { ok: true, diagnostics: [] }
         });
       }
-      if (pathname === "/api/v1/project/role-packages") {
+      if (pathname === "/api/v1/ogs/workspace/role-packages") {
         return createResponse({
           rolePackages: [
             {
@@ -2157,10 +2157,10 @@ function createBackend(options = {}) {
           ]
         });
       }
-      if (pathname === "/api/v1/project/roles") {
+      if (pathname === "/api/v1/ogs/workspace/roles") {
         return createResponse({ roles: [{ roleId: "demo-analyst", binding: { bindingKind: "model" }, review: {} }] });
       }
-      if (pathname === "/api/v1/project/ops-summary") {
+      if (pathname === "/api/v1/ogs/workspace/ops-summary") {
         return createResponse({
           summary: {
             recentFailureCount: options.includeSecondRun ? 2 : 1,
@@ -2199,7 +2199,7 @@ function createBackend(options = {}) {
           }
         });
       }
-      if (pathname === "/api/v1/project/readiness") {
+      if (pathname === "/api/v1/ogs/workspace/readiness") {
         return createResponse({
           workdir: "/tmp/ogsystem-visualizer",
           systemId: "viz.review.demo",
@@ -2239,7 +2239,7 @@ function createBackend(options = {}) {
           }
         });
       }
-      if (pathname === "/api/v1/runs") {
+      if (pathname === "/api/v1/ogs/runs") {
         return createResponse({
           runs: [...runFixtures.values()].map((fixture) => ({
             runId: fixture.runId,
@@ -2253,7 +2253,7 @@ function createBackend(options = {}) {
           }))
         });
       }
-      if (pathname === "/api/v1/runs/start" && method === "POST") {
+      if (pathname === "/api/v1/ogs/runs/start" && method === "POST") {
         this.lastStartBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           runId,
@@ -2417,7 +2417,7 @@ function createBackend(options = {}) {
           return createResponse(cloneJson(fixture.roleIo));
         }
       }
-      if (pathname === "/api/v1/runs/reindex" && method === "POST") {
+      if (pathname === "/api/v1/ogs/runs/reindex" && method === "POST") {
         this.lastReindexBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           runs: [...runFixtures.values()].map((fixture) => ({
@@ -2932,11 +2932,11 @@ test("visualizer client renders empty workspace without project API writes", asy
   assert.equal(harness.document.getElementById("resume-run").hidden, true);
   assert.equal(harness.document.getElementById("release-export").disabled, true);
   assert.equal(harness.window.location.search, "?lifecycle=design");
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/workspace"));
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/workbench"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace"));
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/legacy-project"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/system/workbench"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/start"), false);
 });
 
 test("visualizer client creates a project from the empty workspace wizard", async () => {
@@ -2975,9 +2975,9 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   await projectName.input("Empty visual");
   await template.change("minimal");
   await harness.document.getElementById("project-create-form").dispatch("submit");
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/create"));
   await waitForCondition(() => harness.document.getElementById("console-panel-build").hidden === false);
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/role-catalog"));
 
   assert.match(harness.backend.lastProjectCreateBody.requestId, /^project-create-/);
   assert.deepEqual(
@@ -2994,12 +2994,12 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   );
   assert.equal("workdir" in harness.backend.lastProjectCreateBody, false);
   assert.equal("projectId" in harness.backend.lastProjectCreateBody, false);
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"), true);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace"));
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/create"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/role-catalog"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/roles/import"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/system/save"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/start"), false);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.match(harness.document.getElementById("flash").textContent, /Project created\. Continue in Design\./);
 });
@@ -3022,7 +3022,7 @@ test("visualizer client shows staged progress while project creation is still ru
   });
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/create"));
   await waitForCondition(() => /Creating project|正在创建项目/.test(harness.document.getElementById("project-wizard").textContent));
   assert.match(harness.document.getElementById("project-wizard").textContent, /1 \/ 4/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /Scaffolding project files|writing system\.mmd|生成项目文件骨架|写入 system\.mmd/i);
@@ -3085,8 +3085,8 @@ test("visualizer client retries graph workspace warmup until graph content becom
   });
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
-  await waitForCondition(() => harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/studio/bridge").length >= 2);
-  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/studio/bridge").length >= 2, true);
+  await waitForCondition(() => harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/workspace/studio/bridge").length >= 2);
+  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/workspace/studio/bridge").length >= 2, true);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
 });
 
@@ -3218,7 +3218,7 @@ test("visualizer client keeps console and run list interactions idempotent acros
   const fetchCountAfterSecond = harness.backend.fetchCalls.length;
   assert.ok(fetchCountAfterSecond > fetchCountAfterFirst);
   assert.equal(
-    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length >= 2,
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123").length >= 2,
     true
   );
 });
@@ -3441,7 +3441,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.match(flowHtml, /--flow-role-accent-light:/);
   assert.match(flowHtml, /--flow-role-accent-dark:/);
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/role-io?")),
+    harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/role-io?")),
     false
   );
   const fullIoDisclosure = harness.document.getElementById("run-flow")
@@ -3451,7 +3451,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   fullIoDisclosure.open = true;
   await fullIoDisclosure.dispatch("toggle");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) =>
-    call.path.startsWith("/api/v1/runs/run-123/role-io?roleId=demo-analyst")
+    call.path.startsWith("/api/v1/ogs/runs/run-123/role-io?roleId=demo-analyst")
   ));
   assert.equal(Boolean(harness.document.getElementById("run-graph-disclosure").open), false);
 
@@ -3459,19 +3459,19 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
     harness.document.getElementById("review-detail").textContent.includes("Decision trail")
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/failure"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-123/failure"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/resume-readiness"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-123/resume-readiness"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/resume-diagnostics"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-123/resume-diagnostics"),
     false
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/logs")),
+    harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/logs")),
     false
   );
   const graphTab = harness.document.getElementById("operate-tabs")
@@ -3516,7 +3516,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.equal(harness.document.getElementById("resume-diagnostics-disclosure").open, true);
 
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/resume-diagnostics"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-123/resume-diagnostics"),
     true
   );
   assert.match(harness.document.getElementById("resume-diagnostics").innerHTML, /Review decisions/);
@@ -3526,23 +3526,23 @@ test("visualizer client renders config explain panels and failure next checks", 
   const harness = await createClientHarness();
 
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/ops-summary"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/ops-summary"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/readiness"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/readiness"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/bindings"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/bindings"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/contracts"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/contracts"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-packages"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/role-packages"),
     true
   );
   const designTab = harness.document.getElementById("console-tabs")
@@ -3739,8 +3739,8 @@ test("visualizer client drops run-specific route state when restoring the Design
   assert.doesNotMatch(harness.window.location.search, /[?&]logRoleId=/);
   assert.doesNotMatch(harness.window.location.search, /[?&]tail=/);
   assert.doesNotMatch(harness.window.location.search, /[?&]since=/);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/graph"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-123"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-123/graph"), false);
 });
 
 test("visualizer client renders four tabs and navigates to Design with bridge refresh", async () => {
@@ -3773,29 +3773,29 @@ test("visualizer client renders four tabs and navigates to Design with bridge re
 test("visualizer client loads logs on demand and keeps filter changes lazy until loaded", async () => {
   const harness = await createClientHarness();
 
-  const logCallsBefore = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
+  const logCallsBefore = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/logs")).length;
   assert.equal(logCallsBefore, 0);
   assert.match(harness.document.getElementById("logs").textContent, /selected run is shown/i);
 
   await harness.document.getElementById("log-tail").change("25");
   await settle();
 
-  const logCallsAfterFilterOnly = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
+  const logCallsAfterFilterOnly = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/logs")).length;
   assert.equal(logCallsAfterFilterOnly, 0);
 
   const loadLogsButton = harness.document.getElementById("load-logs");
   assert.ok(loadLogsButton);
   await loadLogsButton.click();
   await waitForCondition(() =>
-    harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length >= 1
+    harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/logs")).length >= 1
   );
 
-  const logCallsAfterLoad = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
+  const logCallsAfterLoad = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/logs")).length;
   assert.ok(logCallsAfterLoad >= 1);
   assert.match(harness.document.getElementById("logs-filters").textContent, /run-123/);
   assert.ok(
     harness.backend.fetchCalls.some((call) =>
-      call.path.startsWith("/api/v1/runs/run-123/logs") && call.path.includes("tail=25")
+      call.path.startsWith("/api/v1/ogs/runs/run-123/logs") && call.path.includes("tail=25")
     )
   );
   assert.match(harness.document.getElementById("logs").textContent, /engine and role traces|combined log stream/i);
@@ -3824,11 +3824,11 @@ test("visualizer client refreshes failure panels when switching runs", async () 
   assert.match(harness.document.getElementById("failure-summary").textContent, /CONTRACT_VIOLATION/);
   assert.match(harness.document.getElementById("failure-detail").textContent, /citation-engineer/);
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/failure"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-456/failure"),
     true
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/resume-readiness"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-456/resume-readiness"),
     true
   );
 });
@@ -3883,15 +3883,15 @@ test("visualizer client ignores stale SSE refreshes after switching runs", async
   assert.equal(initialStream.closed, true);
   assert.equal(harness.document.getElementById("timeline").innerHTML.includes("#3"), false);
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-456"),
     false
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/failure"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-456/failure"),
     false
   );
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/resume-readiness"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/run-456/resume-readiness"),
     false
   );
 });
@@ -4186,11 +4186,11 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   });
   await harness.flushTimers();
 
-  const logCallsAfter = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
-  const detailCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length;
-  const reviewCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/reviews").length;
-  const failureCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/failure").length;
-  const readinessCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/resume-readiness").length;
+  const logCallsAfter = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/ogs/runs/run-123/logs")).length;
+  const detailCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123").length;
+  const reviewCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123/reviews").length;
+  const failureCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123/failure").length;
+  const readinessCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123/resume-readiness").length;
 
   assert.ok(harness.document.getElementById("timeline").innerHTML.includes("#2"));
   assert.ok(harness.document.getElementById("failure-summary").textContent.includes("TOOL_EXECUTION_TIMEOUT"));
@@ -4210,7 +4210,7 @@ test("visualizer client requeues stream refresh plans that arrive during an in-f
   harness.backend.handle = async (url, request = {}) => {
     const parsed = new URL(url, "http://visualizer.test");
     if (
-      parsed.pathname === "/api/v1/runs/run-123" &&
+      parsed.pathname === "/api/v1/ogs/runs/run-123" &&
       (request.method ?? "GET") === "GET" &&
       blockedDetailCalls === 0
     ) {
@@ -4241,7 +4241,7 @@ test("visualizer client requeues stream refresh plans that arrive during an in-f
   });
   await harness.flushTimers();
   await waitForCondition(() =>
-    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length >= 1
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123").length >= 1
   );
 
   stream.emit({
@@ -4256,21 +4256,21 @@ test("visualizer client requeues stream refresh plans that arrive during an in-f
   });
   await settle();
 
-  const detailCallsDuringFlight = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length;
+  const detailCallsDuringFlight = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123").length;
   assert.equal(detailCallsDuringFlight, 1);
 
   refreshDeferred.resolve();
   await waitForCondition(() =>
-    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length >= 2
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123").length >= 2
   );
   await harness.flushTimers();
 
   assert.ok(harness.document.getElementById("timeline").innerHTML.includes("#3"));
   assert.ok(
-    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/reviews").length >= 1
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123/reviews").length >= 1
   );
   assert.ok(
-    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/resume-readiness").length >= 2
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/run-123/resume-readiness").length >= 2
   );
 });
 
@@ -4345,20 +4345,20 @@ test("visualizer client debounces workbench validation to the latest input", asy
 
   const editor = harness.document.getElementById("workbench-editor");
   assert.ok(editor);
-  const validateCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/system/validate").length;
+  const validateCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/workspace/system/validate").length;
 
   await editor.input("flowchart TD\nfirst");
   await editor.input("flowchart TD\nsecond");
   await editor.input("flowchart TD\nthird");
   await harness.flushTimers();
 
-  const validateCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/system/validate").length;
+  const validateCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/workspace/system/validate").length;
   assert.equal(validateCallsAfter - validateCallsBefore, 1);
 });
 
 test("visualizer client dispose clears polling intervals and pending timers", async () => {
   const harness = await createClientHarness();
-  const fetchCountBeforeTick = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs").length;
+  const fetchCountBeforeTick = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs").length;
 
   harness.dispose();
   assert.equal(harness.intervals.size, 0);
@@ -4366,7 +4366,7 @@ test("visualizer client dispose clears polling intervals and pending timers", as
   await harness.tickIntervals();
   await harness.flushTimers();
 
-  const fetchCountAfterTick = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs").length;
+  const fetchCountAfterTick = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs").length;
   assert.equal(fetchCountAfterTick, fetchCountBeforeTick);
 });
 
@@ -4391,7 +4391,7 @@ test("visualizer client applies timeline filters through the events API", async 
 
   assert.ok(
     harness.backend.fetchCalls.some((call) =>
-      call.path.includes("/api/v1/runs/run-123/events?") &&
+      call.path.includes("/api/v1/ogs/runs/run-123/events?") &&
       call.path.includes("roleId=demo-analyst") &&
       call.path.includes("type=human_review_requested") &&
       call.path.includes("channel=error")
@@ -4432,7 +4432,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   await harness.flushTimers();
 
   assert.ok(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/validate")
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/system/validate")
   );
 
   const saveButton = harness.document.getElementById("build-save");
@@ -4441,7 +4441,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   await settle();
 
   assert.ok(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save")
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/system/save")
   );
 
   await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
@@ -4457,7 +4457,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   await harness.document.getElementById("workbench-start-run").click();
   await settle();
 
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/start"));
   assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
   assert.equal(harness.backend.lastStartBody.input, "ship a smoke test");
   assert.equal(harness.backend.lastStartBody.runtimePath, ".ogs/runtime.json");
@@ -4536,7 +4536,7 @@ test("visualizer client keeps the right-side shell mounted when switching betwee
   );
 
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
-  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length, 0);
+  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/ogs/runs/start").length, 0);
 });
 
 test("visualizer client opens Studio Bridge and keeps authoring affordances on the graph shell", async () => {
@@ -4554,7 +4554,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
 
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/studio/bridge"));
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.equal(harness.document.getElementById("workbench-tabs").textContent, "");
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
@@ -4710,7 +4710,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
     )
   });
   await settle();
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring/apply-canvas"));
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/studio/authoring/apply-canvas"));
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.layout.nodes["demo-analyst"].x, 160);
   assert.equal(
     harness.document.getElementById("workbench-body").querySelector("[data-studio-canvas-shell]"),
@@ -4759,7 +4759,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(debugTabButton.getAttribute("data-studio-side-tab"), "debug");
 
   await latestEditableMount().onQuickDebugRun("run from graph toolbar");
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/start"));
   assert.equal(harness.backend.lastStartBody.input, "run from graph toolbar");
   await settle();
   await settle();
@@ -4912,11 +4912,11 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   assert.ok(roleLogButton);
   await roleLogButton.click();
   await waitForCondition(() =>
-    harness.backend.fetchCalls.some((call) => /\/api\/v1\/runs\/run-123\/role-io\?roleId=demo-analyst/.test(call.path))
+    harness.backend.fetchCalls.some((call) => /\/api\/v1\/ogs\/runs\/run-123\/role-io\?roleId=demo-analyst/.test(call.path))
   );
   assert.ok(
     harness.backend.fetchCalls.some((call) =>
-      /\/api\/v1\/runs\/run-123\/role-io\?roleId=demo-analyst&branchId=demo-analyst%401%231/.test(call.path)
+      /\/api\/v1\/ogs\/runs\/run-123\/role-io\?roleId=demo-analyst&branchId=demo-analyst%401%231/.test(call.path)
     )
   );
 });
@@ -5013,10 +5013,10 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
   assert.ok(input);
   await input.input("Add a QA review role after the analyst.");
   await harness.document.getElementById("studio-chat-send").click();
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/chat"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/studio/chat"));
 
   assert.equal(
-    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/chat/mmd"),
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/studio/chat/mmd"),
     false
   );
   assert.equal(harness.backend.lastStudioChatBody.message, "Add a QA review role after the analyst.");
@@ -5058,7 +5058,7 @@ test("visualizer client blocks chat-to-MMD apply when preview validation fails",
   const input = harness.document.getElementById("studio-chat-input");
   await input.input("Generate an invalid draft.");
   await harness.document.getElementById("studio-chat-send").click();
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/chat"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/studio/chat"));
 
   assert.equal(harness.backend.lastStudioChatBody.message, "Generate an invalid draft.");
   const applyButton = harness.document.getElementById("studio-chat-apply");
@@ -5160,8 +5160,8 @@ test("visualizer client keeps project navigation local and reindexes through inl
   assert.equal(harness.document.getElementById("project-open-form"), null);
   assert.equal(harness.document.getElementById("project-open-workdir"), null);
   assert.equal(harness.document.getElementById("project-wizard").textContent.includes("Open Project"), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/project/browse")), false);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/load"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/ogs/workspace/browse")), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/workspace/load"), false);
 
   const reindexButton = harness.document.getElementById("hero-reindex");
   assert.ok(reindexButton);
@@ -5169,9 +5169,9 @@ test("visualizer client keeps project navigation local and reindexes through inl
   await reindexButton.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("action-form-submit")));
   await harness.document.getElementById("action-form-submit").click();
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/reindex"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/reindex"));
 
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/reindex"));
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/reindex"));
   assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.confirmCalls.length, 0);
 });

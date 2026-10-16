@@ -663,6 +663,12 @@ test("resume rejects a concurrently held live lock on the same run directory", a
     "utf8"
   );
   await writeDefaultModelSelection(tempRoot);
+  await writeFile(path.resolve(tempRoot, "profiles.json"), JSON.stringify([
+    { profileId: "profile.console.print", toolRef: "tool.console.print", timeoutMs: 30000, maxOutputBytes: 65536 }
+  ], null, 2), "utf8");
+  await writeFile(path.resolve(tempRoot, "tools.json"), JSON.stringify({ tools: [
+    { toolRef: "tool.console.print", runner: "local_shell", command: "node", argsTemplate: ["scripts/console-print.mjs"], stdinMode: "text" }
+  ] }, null, 2), "utf8");
 
   const initial = await runSystemWithAdapter({
     systemPath,
