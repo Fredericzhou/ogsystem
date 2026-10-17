@@ -373,8 +373,7 @@ function setView(view) {
   $("#breadcrumb-current").textContent = nav?.textContent || copy[state.locale].navTeams;
 }
 function navigate(path) {
-  const canonicalPath = String(path).replace(/^\/studio\/project\/([a-z0-9-]+)$/, "/studio/team/$1");
-  history.pushState({}, "", canonicalPath);
+  history.pushState({}, "", String(path));
   syncRoute();
   window.scrollTo({ top: 0, behavior: "instant" });
 }
@@ -398,10 +397,9 @@ async function renderProjectCreate() {
   const options = $("#project-team-options");
   options.insertAdjacentHTML("beforebegin", '<div class="team-picker-toolbar"><label class="team-picker-search"><span class="sr-only">搜索团队</span><input id="project-team-search" type="search" placeholder="搜索团队名称或目标" autocomplete="off"></label><span id="project-team-count" class="team-picker-count">已选 0 个</span></div>');
   try {
-    const [response, casesResponse] = await Promise.all([fetch("/api/v1/team-repository"), fetch("/api/v1/cases")]); const payload = await response.json(); const casesPayload = await casesResponse.json(); if (!response.ok) throw new Error(payload.error || "无法读取团队仓库");
+    const response = await fetch("/api/v1/team-repository"); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "无法读取团队仓库");
     const teams = payload.teams || [];
-    const builtInTeams = (casesPayload.cases || []).map((item) => ({ projectId: `case:${item.id}`, name: text(item.title), intent: text(item.short), teamVersionNumber: 1, builtIn: true }));
-    const selectableTeams = [...teams, ...builtInTeams];
+    const selectableTeams = teams.filter((team) => team.teamVersionStatus === "released");
     options.innerHTML = selectableTeams.length ? selectableTeams.map((team) => `<label class="builder-choice"><input type="checkbox" name="teamVersionId" value="${esc(team.projectId)}"><strong>${esc(team.name)} · v${team.teamVersionNumber || 1}${team.builtIn ? " · 内置" : ""}</strong><span>${esc((team.intent || "").slice(0, 120))}</span></label>`).join("") : `<p class="empty-note">暂无可用团队，请先到团队仓库创建并发布团队。</p>`;
     const search = $("#project-team-search"); const count = $("#project-team-count");
     const refreshTeamPicker = () => { const query = String(search?.value || "").trim().toLocaleLowerCase(); let selectedCount = 0; options.querySelectorAll(".builder-choice").forEach((card) => { const input = card.querySelector("input"); const matches = !query || card.textContent.toLocaleLowerCase().includes(query); card.hidden = !matches; card.classList.toggle("selected", Boolean(input?.checked)); if (input?.checked) selectedCount += 1; }); if (count) count.textContent = `已选 ${selectedCount} 个`; };
@@ -416,11 +414,9 @@ async function renderNewProject() {
   const root = $("#new-project-view");
   root.innerHTML = [
     '<section class="page-heading new-team-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">创建团队 · 第 1 步</div><h1>先定义团队目标</h1><p>写下团队要完成的事情，并选择协作方式。提交后会生成草案，你可以继续调整角色与流程，再确认入库。</p></div></section>',
-    '<section class="project-builder new-team-builder"><ol class="new-team-steps" aria-label="创建团队流程"><li class="active" aria-current="step"><span>1</span><div><strong>创建草案</strong><small>填写目标与协作偏好</small></div></li><li><span>2</span><div><strong>完善并确认</strong><small>检查团队结构后入库</small></div></li><li><span>3</span><div><strong>配置项目</strong><small>添加材料并运行任务</small></div></li></ol>',
+    '<section class="project-builder new-team-builder"><ol class="new-team-steps" aria-label="创建团队流程"><li class="active" aria-current="step"><span>1</span><div><strong>创建草案</strong><small>填写目标与协作偏好</small></div></li><li><span>2</span><div><strong>完善并发布</strong><small>检查团队结构后发布版本</small></div></li></ol>',
     `<form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">团队草案</span><h2>你希望团队完成什么？</h2><p>从目标开始，名称和协作偏好之后都可以修改。</p></div><label>团队名称<input name="name" required maxlength="120" autocomplete="organization" placeholder="例如：产品研究团队"></label><label>团队目标<textarea name="intent" required maxlength="4000" rows="6" placeholder="例如：目标是分析竞品资料并提出行动建议；研究员负责资料整理，分析员负责比较，负责人汇总并审核；流程为收集材料→独立分析→汇总审核；输入包括竞品文档，输出为带依据的建议清单。"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><fieldset class="builder-choice-group"><legend>选择协作方式 <span>可选</span></legend><div class="builder-choice-grid"><button class="builder-choice" type="button" data-builder-choice="顺序接力：每个角色完成后交给下一个" aria-pressed="false"><strong>顺序接力</strong><span>适合步骤明确、需要逐步交接的任务</span></button><button class="builder-choice" type="button" data-builder-choice="独立分析后汇总：多个角色分别研究，最后统一整理" aria-pressed="false"><strong>分头分析，再汇总</strong><span>适合需要多个角度并行研究的任务</span></button><button class="builder-choice" type="button" data-builder-choice="负责人协调：由一个负责人安排和检查其他角色" aria-pressed="false"><strong>负责人协调</strong><span>适合过程中需要统筹与检查的任务</span></button></div></fieldset><div class="new-team-form-footer"><p class="form-hint">创建后可继续用自然语言调整角色、流程和输出要求。</p><div class="form-actions"><button class="primary-button" type="submit">创建团队草案 <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`
   ].join("");
-  // Team creation ends after the team draft and confirmation stages. Project setup lives in the collaboration project flow.
-  root.querySelector(".new-team-steps li:nth-child(3)")?.remove();
   const choiceLegend = root.querySelector(".builder-choice-group legend span");
   if (choiceLegend) choiceLegend.textContent = "可选，再次点击可取消";
   $$("[data-builder-choice]").forEach((choice) => choice.addEventListener("click", () => {
@@ -568,7 +564,7 @@ function teamCard(team, area) {
   const meta = teamVersionMeta(team); const id = encodeURIComponent(team.projectId); const title = esc(team.teamName || team.name);
   const actions = area === "repository"
     ? `<a class="primary-button" href="/studio/project/new?team=${id}" data-route="/studio/project/new?team=${id}">${esc(copy[state.locale].useTeam)} →</a><button class="secondary-button" type="button" data-team-action="edit" data-team-id="${id}">${esc(copy[state.locale].editAsVersion)}</button><a class="secondary-button" href="/api/v1/projects/${id}/team/export">${esc(copy[state.locale].exportAsset)}</a><button class="text-button danger-text" type="button" data-team-action="archive" data-team-id="${id}">${esc(copy[state.locale].archiveVersion)}</button>`
-    : `<a class="primary-button" href="/studio/project/${id}" data-route="/studio/project/${id}">${esc(copy[state.locale].continueEditing)} →</a><a class="secondary-button" href="${esc(professionalWorkspaceUrl(team.projectId, "design"))}" target="_self">${esc(copy[state.locale].advancedWorkspace)}</a><button class="secondary-button" type="button" data-team-action="release" data-team-id="${id}">${esc(copy[state.locale].releaseVersion)}</button>`;
+    : `<a class="primary-button" href="/studio/team/${id}" data-route="/studio/team/${id}">${esc(copy[state.locale].continueEditing)} →</a><a class="secondary-button" href="${esc(professionalWorkspaceUrl(team.projectId, "design"))}" target="_self">${esc(copy[state.locale].advancedWorkspace)}</a><button class="secondary-button" type="button" data-team-action="release" data-team-id="${id}">${esc(copy[state.locale].releaseVersion)}</button>`;
   return `<article class="project-asset-card team-version-card" data-team-status="${esc(meta.status)}"><div class="asset-card-top"><span class="asset-mark">O</span><span class="status-chip ${esc(meta.status)}">${esc(meta.label)}</span></div><div class="asset-title-row"><h2>${title}</h2><span class="version-badge">${esc(meta.version)}</span></div><p>${esc(team.intent || "")}</p><div class="asset-card-meta"><span>${esc(meta.hint)}</span><span>${team.updatedAt ? new Date(team.updatedAt).toLocaleDateString(state.locale) : ""}</span></div><div class="asset-card-actions">${actions}</div></article>`;
 }
 function bindTeamActions(root) {
@@ -999,13 +995,6 @@ function syncRoute() {
   if (teamMatch) {
     setView("project-workspace");
     void renderProjectDraftV2(teamMatch[1]).then(() => renderProjectGraph(teamMatch[1]));
-    return;
-  }
-  const projectMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)$/);
-  if (projectMatch) {
-    history.replaceState({}, "", `/studio/team/${encodeURIComponent(projectMatch[1])}`);
-    setView("project-workspace");
-    void renderProjectDraftV2(projectMatch[1]).then(() => renderProjectGraph(projectMatch[1]));
     return;
   }
   const projectRunMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)\/run$/);
