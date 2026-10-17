@@ -59,7 +59,6 @@ Status: active (post-dehydration baseline)
 
 以下方向保持延后，避免过早复杂化：
 
-- 语义兼容型 resume（宽容指纹/带损恢复）。
 - 分布式锁 provider（Redis/DB 跨主机协调）。
 - 面向共享存储多实例抢占的调度协议。
 - 超大规模 connector / service integration 矩阵。

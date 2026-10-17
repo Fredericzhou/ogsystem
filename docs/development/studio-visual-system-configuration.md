@@ -27,7 +27,7 @@ Studio 已支持图上 Role/Flow 的增删改、部分执行绑定配置，并�
 | `handoff.mode`、`handoff.contracts` | 固定 System 入口包含 Flow/Role Input 覆盖表、合同逐项表单及 Schema JSON 编辑；专用 API 限制项目真实路径并校验后原子保存 | 持续完善错误跳转和更丰富的 Schema 诊断，不扩为通用文件管理器 |
 | `context.map` Selector 语法 | 来源候选遵守 Join/普通入边规则；受限字段路径由共享 Selector 语义模块校验；Role Input Schema 提供必需字段缺失和额外字段诊断 | Schema 字段类型浏览与 Role Output Schema 联动留待有稳定摘要来源后评估 |
 | `model.bind.<roleId>` | 解析器识别，但模型选择运行时要求配置在 `.ogs/model-selection.json` | 不提供 System 图形配置；验证时提示改用项目模型选择设置 |
-| `engine` | Parser 为旧 System 保留 `langgraph` 兼容输入；它不参与运行语义 | UI 不提供该设置；Studio 导入和生成时保留此兼容元数据，避免往返丢失 |
+| `engine` | 可选执行元数据；当前支持值为 `langgraph`，不参与角色和流程语义 | UI 不提供该设置；由当前系统定义和运行配置统一管理 |
 
 `.ogs/runtime.json` 中 `runtime.error_flows.v1` 是项目/运行级功能开关，默认值为 `false`；Flow 上的 `runtimeOnlyErrorFlow` 是单条边的标记。前者决定运行时是否启用错误流路由，后者随 System 图保存。它们分属不同配置层：本方案只处理 Flow 标记，不把全局运行开关并入 `system.mmd`；运行开关继续由运行配置界面或 `.ogs/runtime.json` 管理。角色 Prompt、Role Contract 和工具实现也不属于本方案的 System 图配置。
 
@@ -37,9 +37,9 @@ Studio 已支持图上 Role/Flow 的增删改、部分执行绑定配置，并�
 
 继续以 `StudioAuthoringDocument` 作为编辑态权威模型。现有模型包含 System、Role、Flow、Join、Context Map、Review、Loop 和布局字段；补充字段或验证逻辑时，优先扩展这些类型及现有命令，不另建第二个 DSL 或通用元数据存储。
 
-图形操作更新作者模型，现有序列化器生成 Mermaid。Studio 图形编辑保存到 `.ogs/studio/system.authoring.json` 草稿，不会直接写正式 `system.mmd`；Role 模型绑定变更还会经独立校验同步到 `.ogs/model-selection.json`。正式 System 保存仍走源码编辑器的保存 API：服务端执行 Parser/Compiler 校验，校验失败不会覆盖已保存的有效 `system.mmd`。Parser 当前拒绝未知或无效元数据，因此这些内容不能作为有效 System 导入；已支持的兼容 `engine=langgraph` 元数据由作者模型保留并参与序列化。图形草稿不是正式源码保存，不应把“草稿已保存”描述为“System 已发布”。
+图形操作更新作者模型，现有序列化器生成 Mermaid。Studio 图形编辑保存到 `.ogs/studio/system.authoring.json` 草稿，不会直接写正式 `system.mmd`；Role 模型绑定变更还会经独立校验同步到 `.ogs/model-selection.json`。正式 System 保存仍走源码编辑器的保存 API：服务端执行 Parser/Compiler 校验，校验失败不会覆盖已保存的有效 `system.mmd`。Parser 拒绝未知或无效元数据，因此这些内容不能作为有效 System 导入。图形草稿不是正式源码保存，不应把“草稿已保存”描述为“System 已发布”。
 
-`engine` 不进入新的可视化表单。旧 `engine=langgraph` 仅作兼容输入，Studio 往返时保留；不要将它解释为运行时选择。`model.bind` 不进入可视化表单，模型设置仍以 `.ogs/model-selection.json` 为准。
+`engine` 不进入可视化表单；它不是用户可切换的运行时选项。`model.bind` 不进入可视化表单，模型设置仍以 `.ogs/model-selection.json` 为准。
 
 ### 页面信息架构
 
@@ -57,7 +57,7 @@ Studio 已支持图上 Role/Flow 的增删改、部分执行绑定配置，并�
 
 Selector 语法及图结构候选由 runtime 与客户端共享的纯模块提供。普通来源和 Join 来源依运行时规则过滤；Optional 只允许用于受支持的 Human Review 字段。目标字段仍是运行时支持的扁平键名。
 
-多来源回退、对象/数组组装、常量默认值、条件映射、筛选和聚合都需要新增运行语义，本次不提供 UI 或 DSL。只有基础 Selector 被真实场景证明不足后，才评估版本化类型化 AST；届时需同时实现 Parser、Compiler、投影器及迁移测试。不会把任意表达式或 JSONPath 作为短期扩展。
+多来源回退、对象/数组组装、常量默认值、条件映射、筛选和聚合都需要新增运行语义，本次不提供 UI 或 DSL。只有基础 Selector 被真实场景证明不足后，才评估版本化类型化 AST；届时需同时实现 Parser、Compiler 和投影器。不会把任意表达式或 JSONPath 作为短期扩展。
 
 ### 合同编辑工作区
 
@@ -112,7 +112,7 @@ Handoff 模式可选择关闭、`transition` 或 `strict`，并填写项目内�
 1. **基础工作区**：已交付无选择状态的 System 设置入口、Role/Flow 跳转、结构化映射行、Optional 限制、嵌套 `data` 路径、目标形状预览、Role Input 即时诊断及共享 Selector 规则。
 2. **合同编辑**：已交付覆盖表、合同清单表单、单文件 Schema JSON 编辑、候选校验、路径边界及失败不覆盖。可视化 Schema 表单、跨文件事务与 `$ref` 解析树未实现，当前没有明确用例要求增加。
 3. **验证与回归**：持续维护导入保真、共享语义、合同 API 安全、桌面与窄屏键盘 UAT；完善具体失败诊断和导航时以可复现用户流程为依据。
-4. **高级映射运行语义**：只有基础 Selector 被真实场景证明不足后，再评估有版本的 AST/DSL，并同步实现 Parser、Compiler、投影器和兼容迁移。
+4. **高级映射运行语义**：只有基础 Selector 被真实场景证明不足后，再评估有版本的 AST/DSL，并同步实现 Parser、Compiler 和投影器。
 
 上下文映射器、Role 策略和 System/Handoff 引用可以独立使用；合同正文仍由项目文件流程维护。
 
@@ -133,7 +133,7 @@ Handoff 模式可选择关闭、`transition` 或 `strict`，并填写项目内�
 ### 数据保真与安全
 
 - 对所有可视化支持的配置，导入 `system.mmd`、保存、再导入后的作者模型语义相等；序列化结果确定、稳定，不产生重复元数据键。
-- 旧 `engine=langgraph` 输入经过导入和序列化后仍存在；未知/无效元数据由 Parser 拒绝，不能被误报为已成功图形编辑。
+- 当前 `engine=langgraph` 元数据经过导入和序列化后保持一致；未知/无效元数据由 Parser 拒绝，不能被误报为已成功图形编辑。
 - 客户端校验提供及时反馈，服务端 Parser/Compiler 校验仍是最终门禁；失败时不覆盖已保存的有效 System。
 - 映射器只允许当前运行时 Selector 语法中的 `direct`、Join 入边 `source(...)` 和受支持的 `global` 来源；不开放祖先 Role 任意递归读取或隐式 Session 状态。
 
@@ -141,7 +141,7 @@ Handoff 模式可选择关闭、`transition` 或 `strict`，并填写项目内�
 
 - 单元测试覆盖嵌套 Selector 行编辑、共享语法校验、来源过滤、可选字段限制、Role Input 必需字段诊断、删除/重命名 Role 后映射和合同引用诊断。
 - 单元测试覆盖路由模式、目标顺序、Join 模式/阈值、Review 超时和返工策略的表单校验。
-- 集成测试覆盖设置导入/序列化往返、兼容 engine 保留、映射 Schema/Selector 校验、合同 `$ref` 和匹配覆盖、无效候选文件不覆盖有效文件，以及草稿与正式 `system.mmd` 保存边界。
+- 集成测试覆盖设置导入/序列化往返、engine 元数据保留、映射 Schema/Selector 校验、合同 `$ref` 和匹配覆盖、无效候选文件不覆盖有效文件，以及草稿与正式 `system.mmd` 保存边界。
 - 端到端 UAT 覆盖图形工作区、桌面和窄屏布局及运行视图；合同 API 集成用例覆盖路径越界、项目外符号链接、外部 `$ref`、无效清单/Schema 不覆盖原文件和有效候选保存。浏览器合同 UAT 覆盖窄屏键盘展开、无效 Schema 输入保留、有效 Schema 保存和合同 ID 保存；不代表覆盖了所有合同诊断和错误跳转。
 - 浏览器用例覆盖 System 无选择入口及 Role/Flow 跳转、嵌套 `direct.data` 和 Join `source(...).data` 映射保存、Join/quorum 来源门禁、可选 Human Review 来源、Schema JSON 校验失败恢复，以及窄屏合同键盘流程。
 

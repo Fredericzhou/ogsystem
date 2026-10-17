@@ -107,7 +107,7 @@ OGSystem 当前重点优化以下能力：
 
 - Node.js `>= 20`
 
-安装当前开发测试版本（源码目录）：
+安装当前稳定版本（源码目录）：
 
 ```bash
 npm install -g .
@@ -169,11 +169,7 @@ pnpm run smoke:package-install:npm
 pnpm run smoke:package-install:pnpm
 ```
 
-版本说明：`1.0.0` 是当前稳定版本，直接采用 Semantic IR v1 和当前版本化运行时合同。旧开发产物不在支持边界内；开始使用当前版本时请新建项目和 run。
-
-发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `1.0.0` 为活动发布线。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
-
-当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。当前版本不提供旧开发产物的配置、schema 或 run-data 迁移；resume 也不因配置文件可读取就获得跨版本保证。
+版本说明：`1.0.0` 是当前稳定版本，直接采用 Semantic IR v1 和当前版本化运行时合同。旧开发产物不在当前输入范围内；开始使用当前版本时请新建项目和 run。未来或未知的 config/schema 版本、格式错误的输入，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都会被拒绝，CLI 不会猜测性解释。
 
 覆盖率判读约定：
 
@@ -716,7 +712,7 @@ Required:
 - `prompt.md`
 - `output.schema.json`
 
-`role.json` is strict in the development-test release. Its contract sections are mandatory:
+`role.json` is strict in the current release. Its contract sections are mandatory:
 `purpose`, `responsibility`, `inputs`, `outputs`, `authority`, `constraints`, `failure`, and
 `audit`. The runtime rejects manifests that omit these sections; there is no legacy manifest
 fallback or application-side migration path.

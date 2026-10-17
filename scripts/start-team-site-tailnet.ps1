@@ -60,9 +60,14 @@ try {
   @{ Id = $site.Id; StartedAt = $site.StartTime.ToUniversalTime().ToString("o") } | ConvertTo-Json | Set-Content -Encoding ascii (Join-Path $stateDir "team-site.pid.json")
   @{ Id = $framework.Id; StartedAt = $framework.StartTime.ToUniversalTime().ToString("o") } | ConvertTo-Json | Set-Content -Encoding ascii (Join-Path $stateDir "framework.pid.json")
 
-  Start-Sleep -Seconds 2
-  $siteProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 10 "http://127.0.0.1:4174/"
-  $frameworkProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 10 "http://127.0.0.1:4177/"
+  $siteProbe = ""
+  $frameworkProbe = ""
+  $probeDeadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Seconds 1
+    $siteProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 3 "http://127.0.0.1:4174/"
+    $frameworkProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 3 "http://127.0.0.1:4177/"
+  } while (($siteProbe -ne "200" -or $frameworkProbe -ne "200") -and (Get-Date) -lt $probeDeadline)
   if ($siteProbe -ne "200" -or $frameworkProbe -ne "200") {
     throw "A service did not return HTTP 200. Inspect logs in $logDir."
   }

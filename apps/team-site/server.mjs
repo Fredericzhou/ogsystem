@@ -554,7 +554,7 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
-    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/studio/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+(?:\/run)?\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
+    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/studio/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+\/run\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
     }

@@ -14,12 +14,11 @@ is a versioned npm tarball and is not published to a registry.
 - Run state and audit evidence are file based. Back up the project, `.ogs/`, and promoted output as
   one unit. Retention does not remove complete run directories.
 
-## Compatibility boundary
+## Current input boundary
 
-The release uses Semantic IR v1 and the current versioned runtime contracts. It does not migrate
-`0.3.0` development-test projects, configurations, schemas, or run directories. Create a fresh
-project and new runs; retain old run data read-only when audit history is needed. Resume remains
-strict about plan fingerprints and recovery authority.
+The release uses Semantic IR v1 and the current versioned runtime contracts. Historical project
+files and run artifacts are outside the current input boundary; start a new project and new runs.
+Resume remains strict about plan fingerprints and recovery authority.
 
 ## Delivery checks
 
@@ -30,5 +29,5 @@ install, and repeated-run / Visualizer stream cleanup checks. See
 
 ## Not included
 
-Cross-host execution, multiple operators, shared network storage, automatic run-directory garbage
-collection, and migration of development-test artifacts are not supported by this release.
+Cross-host execution, multiple operators, shared network storage, and automatic run-directory
+garbage collection are not supported by this release.

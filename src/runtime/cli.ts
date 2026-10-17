@@ -133,20 +133,17 @@ async function runModelsCommand(argv: string[]): Promise<void> {
 
 function usageCompatibility(): string {
   return [
-    "OGSystem released CLI compatibility policy",
+    "OGSystem current CLI input boundary",
     "",
-    "Released support: latest two minor lines of the current major release; all patches in those lines.",
-    `Current package: ${CLI_VERSION} ${CLI_VERSION.startsWith("0.") ? "development-test; no stable release line or historical migration guarantee." : "released; see the policy document for the supported window."}`,
-    "Unsupported inputs: future/unknown config or schema versions, malformed inputs, unsupported release",
-    "lines, and resume artifacts whose plan fingerprint or recovery authority does not match.",
-    "Deprecation warnings name the replacement and planned removal release; removal is at least one minor",
-    "release and 90 days after notice, whichever is later.",
+    `Current package: ${CLI_VERSION}; historical project files and run artifacts are outside the current input boundary.`,
+    "No automatic compatibility handling or data migration is provided for older formats; start a new project.",
+    "Unsupported inputs: future/unknown config or schema versions, malformed inputs, and resume artifacts",
+    "whose plan fingerprint, semantic digest, or recovery authority does not match the current setup.",
     "",
     "Policy: docs/development/release-compatibility-policy.md",
     "Commands: ogs --version | ogs help compatibility"
   ].join("\n");
 }
-
 function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "init") {
     return [

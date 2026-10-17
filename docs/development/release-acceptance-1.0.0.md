@@ -44,4 +44,3 @@ their own distinct request inputs. No run data was removed.
   `ogs doctor --online-check` when provider connectivity should be included in readiness checks.
 - This release acceptance is for one local operator, one local project workspace, and a Visualizer
   bound to localhost. Cross-host and multi-operator operation are outside the supported profile.
-- `0.3.0` project files and run data are not migrated by this release.

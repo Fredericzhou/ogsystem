@@ -29,9 +29,9 @@
 
 ### P0-2 清理已移除的 `talent.bind` 语义
 
-现状：旧版本曾将 `talent.bind.<roleId>` 作为不参与执行的元数据保留；当前开发测试版本已移除该键族。
+现状：当前版本不接受 `talent.bind.<roleId>`，该键族不属于运行合同。
 
-决策：删除该键族及其解析、fingerprint 和生成入口。能力标签路由不属于当前开发测试版本；模型能力匹配继续由 `preferredModelTags` 和模型选择配置负责，并受 law、output schema、timeout、审计和 resume fingerprint 约束。
+决策：删除该键族及其解析、fingerprint 和生成入口。能力标签路由不属于当前版本；模型能力匹配继续由 `preferredModelTags` 和模型选择配置负责，并受 law、output schema、timeout、审计和 resume fingerprint 约束。
 
 验收：解析器、NL2MMD 字典、fingerprint 和用户文档不再把 `talent.bind` 作为当前输入；测试仅保留对该已移除键的拒绝回归。
 
@@ -71,7 +71,7 @@
 
 最小范围：把 retry/backoff/可重试错误分类放在 profile 或 runtime execution policy，不扩展 Mermaid DSL；每次 attempt 独立落盘并纳入审计/fingerprint。`ERROR*` 仍只在重试耗尽后触发。
 
-验收：model/profile 行为可分别配置；不可重试错误不重复执行；重试和 resume 均幂等，现有默认策略保持兼容。
+验收：model/profile 行为可分别配置；不可重试错误不重复执行；重试和 resume 均幂等。
 
 ## 5. P2：有数据后实现
 
@@ -102,7 +102,7 @@
 
 ## 7. 交付顺序
 
-1. 完成 P0 文档与兼容性语义收口。
+1. 完成 P0 文档与当前语义收口。
 2. 按真实长等待需求评估并实现 Human Review timeout 与 Join 分阶段等待超时；基础 Join 超时无需重复建设。
 3. 实现外部 signal 的单机文件型恢复闭环。
 4. 根据 benchmark 决定执行重试、受控并发和观测字段的具体范围。
@@ -115,5 +115,5 @@
 - P0-1 已完成：活跃文档统一将 `parallel_split` 定义为语义分叉/分支激活，明确当前 scheduler 不承诺物理并发。
 - P0-2 已完成：`talent.bind` 已从当前 DSL、解析结果和 fingerprint 中移除。
 - 基础 Join 超时已完成：`timeoutSeconds`、`failurePolicy`、`onTimeout` 已进入 IR 和运行时主路径；分阶段 `first_packet/gap` 等待继续保留为 RFC。
-- 当前开发测试版本不提供旧 DSL、配置或运行数据迁移；旧格式直接拒绝，resume 只接受当前规范版本和恢复权威集。
+- 当前版本只接受当前 DSL、配置和运行数据合同；旧格式直接拒绝，resume 只接受当前规范版本和恢复权威集。
 - 验证要求：文档漂移检查、类型/构建检查、现有测试与 `git diff --check` 必须通过；归档文档可保留当时的历史语境，不作为当前语义契约。

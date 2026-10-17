@@ -121,7 +121,7 @@ prompt persona. The contract describes the responsibility boundary and can be re
 tool, service, or human-operated integration without changing the Role identity.
 
 The current `role.json` manifest uses one flat, strict contract shape. Every section below is
-required in the development-test release:
+required in the current release:
 
 ```json
 {
@@ -185,7 +185,7 @@ The normative contract sections are:
 
 `responsibility.kind` is mandatory. `atomic` is the current executable form. A `composite` role
 must also carry the complete `composition` contract; it is parsed and validated, but nested
-execution is not implemented in this development-test release. Atomic roles must not include
+execution is not implemented in this release. Atomic roles must not include
 composition fields.
 
 Role completion is a runtime fact only after output schema, event, state-write, precondition, and
@@ -203,7 +203,7 @@ shared memory. Feedback remains an event between existing roles, for example
 4. Define preconditions, postconditions, invariants, failure behavior, idempotency, and audit
    evidence independently of the prompt text.
 5. Version and digest the contract; changes that affect recovery or routing require a new
-   compatible System build under the current strict development-test policy.
+   System build under the current strict policy.
 6. Test contracts with deterministic fixtures and adversarial invalid outputs without requiring a
    real model or network.
 

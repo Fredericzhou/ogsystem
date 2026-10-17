@@ -33,8 +33,6 @@ Engineering rules, plans, specifications, and active backlog live under `develop
 - [Release UAT checklist](development/release-uat-checklist.md): clean-install scenarios and release sign-off gates.
 - [Semantic gap implementation plan](development/semantic-gap-implementation-plan.md): current runtime gaps and priorities.
 - [Unified backlog](development/todo-backlog.md): current active backlog.
-- [Unified backlog execution plan](development/todo-backlog-execution-plan-2026-09-03.md): executable task breakdown, dependencies, acceptance gates, and evidence requirements.
-- [Released CLI compatibility policy](development/release-compatibility-policy.md): supported release lines, migrations, deprecations, and development-test boundaries.
 - [Long-term stability roadmap](development/long-term-stability-roadmap.md): durable direction.
 - [PraisonAI comparison roadmap](development/praisonai-comparison-roadmap.md): bounded capability roadmap.
 - [Runtime storage/engine roadmap](development/runtime-storage-engine-decoupling-roadmap.md): backend decoupling direction.

@@ -102,7 +102,7 @@ handoff。事件、动作、任务、网关、处理步骤、分支、运行实�
 *   **Join 可观察状态来自持久化 scope**：运行快照保留 scope 的 Join mode/minimum、预期/已到达/缺失来源、状态和 timeout policy；Visualizer 按 scope 分开展示 lineage、轮次、等待时间与 deadline。旧快照缺少可选的 mode/minimum 时，从已编译的图配置投影，不从前端猜测运行状态。
 *   **Join 失败原因保持互斥**：来源失败按 `failurePolicy` 结算时记录 `join_source_failed` 和 `GRAPH_JOIN_SOURCE_FAILED`；等待期限耗尽时记录 `join_timed_out` 和 `GRAPH_JOIN_TIMEOUT`。`failurePolicy: wait` 会继续等待到 Join timeout，不把来源失败事件伪装为 timeout。
 *   **条件路由审计不持久化比较值**：运行事件仅记录候选 flow 的 priority 与 matched 结果、选中目标或稳定失败码；state/event/role 中的实际字段值只用于运行时判定，不复制到 route decision event。
-*   **`all_of` 与 `quorum_of` 的关系是“语义特例”，不是新增模式**：`quorum_of + join.min=1` 等价“any”；`quorum_of + join.min=|sources|` 等价“all”。当前 DSL 不单独引入 `any_of`：`all_of` 保留为高频默认汇合语义（更少配置、更易审查），`any` 通过 `quorum_of + join.min=1` 表达（避免新增关键字带来的解析/测试/兼容面扩张）。
+*   **`all_of` 与 `quorum_of` 的关系是“语义特例”，不是新增模式**：`quorum_of + join.min=1` 等价“any”；`quorum_of + join.min=|sources|` 等价“all”。当前 DSL 不单独引入 `any_of`：`all_of` 保留为高频默认汇合语义（更少配置、更易审查），`any` 通过 `quorum_of + join.min=1` 表达（避免新增关键字带来的解析和测试范围扩张）。
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `input` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `input`，并要求 selector 与 source 都合法。
 *   **Flow contract 是独立的运行时合同层**：`handoff.mode` 只控制合同校验策略，`transition` 会跳过告警或缺失合同对应的 flow，`strict` 则硬失败；`handoff.contracts` 指向合同 bundle；`role_input` 只校验 `context.map` 投影后的结构化对象，不替代 runtime 内建的 prompt-input schema。
 *   **Compiler facade 是静态摘要层**：`src/runtime/compiler.ts` 会收拢 system / role / contract / effective law 的稳定摘要，生成 `CompiledExecutionSnapshot` 与 compiler digest；运行时仍保留最后防线，不把 compiler 当作唯一真相源。
@@ -125,7 +125,7 @@ handoff。事件、动作、任务、网关、处理步骤、分支、运行实�
 *   **边界边语义固定**：只允许 `input -->|EVENT| Role` 与 `Role -->|EVENT| output`。
 *   **入口语义需单值一致**：入口来自 `entry.role` 或唯一 `input` 边目标；两者冲突或存在多个 `input` 目标都会失败。
 *   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role`、`model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 以及 `review.mode/review.timeout/review.timeout.action/review.rework.target/review.rework.max/review.terminate.scope` 前缀；重复 key 与未知 key 都会失败。`runtime.error_flows.v1` 属于 `.ogs/runtime.json`，不是 Mermaid 元数据。
-*   **`engine` 仅保留兼容入口**：可省略；若声明则只能是 `langgraph`。
+*   **`engine` 是可选的执行元数据**：可省略；若声明则只能是 `langgraph`。
 *   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
 *   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。
 *   **绑定冲突会被拒绝**：同一 role 不允许同时声明 `exec.bind.<roleId>` 与项目模型选择；`system.mmd` 不承载模型绑定。

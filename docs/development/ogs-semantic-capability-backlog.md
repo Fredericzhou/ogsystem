@@ -139,7 +139,7 @@ OGS 当前语义采用行业常见的工作流设计原则：显式事件路由�
 
 **进入条件**：真实长流程需要区分首次到达时间和相邻来源到达间隔，且基础 Join 总 timeout 无法满足 SLA。
 
-**验收标准**：沿用 [Join 等待超时 RFC](ogsystem-wait-timeout-semantics-v2.md) 收敛 `first_packet`、`gap`、timeout failure envelope、WAL/resume、去重和审计合同；旧图行为保持兼容；任何 timeout 决定在恢复时最多应用一次。
+**验收标准**：沿用 [Join 等待超时 RFC](ogsystem-wait-timeout-semantics-v2.md) 收敛 `first_packet`、`gap`、timeout failure envelope、WAL/resume、去重和审计合同；当前图行为保持不变；任何 timeout 决定在恢复时最多应用一次。
 
 ## 6. Deferred：明确暂不建设
 

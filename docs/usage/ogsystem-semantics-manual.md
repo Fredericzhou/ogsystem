@@ -364,7 +364,7 @@ reviewNode[Role:review] -->|PASS| output
 
 - 当前只支持 `review.mode.<roleId>=required`，其它 review mode 会在解析期拒绝。
 - `review.timeout` 单位为秒，必须为非负整数；它当前只会被解析并持久化到 review spec，运行时不会自动计时或将 review 标记为 expired；review 的附加配置必须同时声明 `review.mode`。
-- 首轮和返工共用同一图语义；需要兼容首轮缺少审核上下文时，给 selector 末尾加 `?`。
+- 首轮和返工共用同一图语义；首轮没有审核上下文时，给 selector 末尾加 `?`。
 
 ### 7.3 角色输出合同
 

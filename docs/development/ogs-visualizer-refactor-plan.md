@@ -2,7 +2,7 @@
 
 状态：活动实施方案
 
-适用版本：OGS 开发测试版本 `0.3.x` 及后续版本
+适用版本：OGS 当前稳定版本及后续版本
 
 ## 1. 目标
 
@@ -334,7 +334,7 @@ layoutMode
 
 ## 11. GraphViewModel v2
 
-开发测试版本可直接升级为新的投影合同：
+当前版本直接采用新的投影合同：
 
 ```ts
 type GraphViewModel = {
@@ -442,7 +442,7 @@ branch、review、active edge、选中节点和运行计数变化不得使静态
 - fan-out、Join、cycle、error flow、multi-terminal fixtures；
 - 确定性和布局质量测试；
 - 复杂图性能基准；
-- 开发测试版本整体发布，不做历史布局数据迁移。
+- 新版本整体发布；不接受不符合当前布局合同的历史数据。
 
 ## 15. 测试基线
 

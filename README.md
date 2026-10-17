@@ -62,7 +62,6 @@ Product introduction:
 Detailed usage manual:
 
 - `docs/usage/usage-manual.md`
-- `docs/development/release-compatibility-policy.md`
 - `examples/README.md` (minimal training set + capability coverage)
 
 CLI installation prerequisites:
@@ -146,13 +145,7 @@ Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/`
 
 Version `1.0.0` is the current stable release. It uses Semantic IR v1 and the current versioned
 runtime contracts directly. Older development artifacts are outside the supported input boundary;
-create a fresh project when starting with this release.
-
-Released CLI compatibility policy: released versions support the latest two minor lines of the
-current major release, with documented migrations for changed config or schema contracts. The
-current `1.0.0` package is the active released line. Run `ogs help compatibility` for the
-installed CLI's summary, unsupported-input boundary, and deprecation timing; see
-`docs/development/release-compatibility-policy.md` for the full policy.
+start with a new project when using this release.
 
 OGS invokes installed CLI services using their own user-level configuration and credentials. It does not load a separate OGS credential file or manage provider credentials.
 

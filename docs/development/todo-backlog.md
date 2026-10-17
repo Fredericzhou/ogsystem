@@ -5,7 +5,8 @@ Status: active; current P1 execution plan reconciled 2026-09-03
 
 This is the only active backlog entry point. Dated plans, reviews, and checklists stay in `docs/development/archive/` and are not daily execution lists.
 
-Execution plan: `docs/development/todo-backlog-execution-plan-2026-09-03.md`.
+The dated execution record is historical; current work is tracked in this backlog and the linked
+current contracts.
 
 Contract freeze notes:
 
@@ -25,7 +26,7 @@ Contract freeze notes:
 - Visualizer product usability gate follow-up is closed in `docs/development/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md`.
 - Visualizer UX convergence is closed; the short closure summary is archived at `docs/development/archive/delivery/visualizer-refactor-closure-summary-2026-05-13.md` and the detailed execution record at `docs/development/archive/delivery/visualizer-refactor-plan-2026-05-13.md`. The current ELK.js semantic-layout implementation is tracked in the execution record below.
 - Responsibility-seat semantics review is closed and consolidated into `docs/development/ogs-visualizer-refactor-plan.md`, `docs/usage/ogsystem-orchestration-semantics-v1.md`, and `docs/usage/ogsystem-semantics-manual.md`; the review record remains historical at `docs/development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md`.
-- Semantic IR v1 foundations, state reducers, event/payload contracts, condition AST, Loop Scope, Join readiness/timeout, CAS/idempotency, runtime-native review, and ERROR* routing are closed for the current development-test baseline. Current boundaries and remaining gaps are maintained in `docs/development/semantic-gap-implementation-plan.md`.
+- Semantic IR v1 foundations, state reducers, event/payload contracts, condition AST, Loop Scope, Join readiness/timeout, CAS/idempotency, runtime-native review, and ERROR* routing are closed for the current stable baseline. Current boundaries and remaining gaps are maintained in `docs/development/semantic-gap-implementation-plan.md`.
 - Generic feedback modeling is closed: `FEEDBACK` is a transition event between existing responsibility seats, not an implicit `a-feedback`/`b-feedback` seat.
 
 ## Current P1
@@ -61,9 +62,6 @@ Contract freeze notes:
 ## Current P2
 
 - [ ] Freeze recursive responsibility composition: define the `ownerRoleId -> nestedSystem` IR contract, namespace/error/termination propagation rules, compiler diagnostics, and golden fixtures. Follow [`ogs-product-boundary-and-evolution.md`](ogs-product-boundary-and-evolution.md); keep organization, personnel, and concrete executor identity outside OGS core semantics.
-- [x] Define released CLI upgrade, compatibility-window, and deprecation policy. See
-  [`release-compatibility-policy.md`](release-compatibility-policy.md) and `ogs help compatibility`.
-- [ ] Design semantic-compatible resume with tolerant fingerprints and degraded recovery.
 - [ ] Add a distributed lock provider for Redis/DB cross-host coordination.
 - [ ] Define shared-storage multi-instance scheduling and claim protocol.
 - [ ] Advance `state/checkpoint compact` only if benchmark data proves it is needed.
@@ -74,4 +72,3 @@ Contract freeze notes:
 - A new scheduler layer.
 - Multiple persistence backends.
 - External secrets manager integration.
-- Breaking `vNext-dev` proposals.

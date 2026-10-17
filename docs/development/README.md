@@ -13,8 +13,6 @@ belong in `archive/`.
   boundaries, and generated source.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,
   shared contracts, build output, and test ownership.
-- [Released CLI compatibility policy](release-compatibility-policy.md): supported release lines,
-  migrations, deprecations, and development-test boundaries.
 - Completed engineering plans, dated execution plans, reviews, and validation records live in
   `archive/delivery/` or `archive/history/`. They are retained for traceability and are not current
   implementation instructions.

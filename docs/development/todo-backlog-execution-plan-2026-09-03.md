@@ -1,9 +1,9 @@
 # OGSystem Unified Backlog Execution Plan
 
 Date: 2026-09-03
-Status: reconciled; P2 deferred items remain explicitly gated
+Status: archived execution record; do not use as current implementation guidance
 Source backlog: [`todo-backlog.md`](todo-backlog.md)
-Scope: current mainline development-test baseline
+Scope: current mainline baseline
 
 This document turns the unified backlog into an execution sequence. The backlog remains the
 single list of active work. This file supplies task IDs, dependencies, target files, acceptance
@@ -880,55 +880,6 @@ record linked from `docs/README.md`.
 
 ## 7. P2 Policy And Deferred Work
 
-### P2-01 Released CLI upgrade and deprecation policy
-
-Status: `done`
-Owner: Codex
-Dependency: product release posture
-Targets: `README.md`, `docs/usage/usage-manual.md`, new policy section or development policy doc,
-CLI help/tests
-
-Define supported release versions, compatibility window, deprecation notice period, removal rules,
-config/schema migration behavior, and the difference between development-test and released CLI
-contracts.
-
-Acceptance:
-
-- A released CLI can identify its compatibility window and unsupported inputs.
-- Deprecation messages include replacement syntax and removal timing.
-- Current `vNext-dev` boundaries remain explicit.
-- CLI help and active docs agree; archive docs are not changed for historical accuracy.
-
-Verification:
-
-~~~bash
-pnpm run build
-node --test tests/cli-help.test.mjs
-pnpm run test:docs-command-drift
-git diff --check
-~~~
-
-Result: active policy, README, usage manual, CLI help, and focused help tests are synchronized.
-The current `0.3.0` development-test package remains outside the released compatibility window;
-no migration command or cross-version resume guarantee was added.
-
-### P2-02 Semantic-compatible resume
-
-Status: `blocked by explicit current boundary`
-Owner: TBD
-Dependency: product decision to change strict fingerprint policy
-Targets: `src/runtime/plan-fingerprint.ts`, resume validation, migration tests, semantics docs
-
-The current development-test contract is strict fail-closed resume. The semantic-gap plan explicitly
-defers tolerant fingerprints and degraded recovery. Keep this item in design-only status until a
-product decision authorizes changing that boundary.
-
-Acceptance for a future design only:
-
-- Compatibility classes, data-loss semantics, audit wording, and operator confirmation are defined.
-- No implementation weakens current resume validation implicitly.
-- Old-run migration and rollback behavior are specified before code changes.
-
 ### P2-03 Distributed lock provider
 
 Status: `blocked / out of current mainline`
@@ -975,7 +926,6 @@ The following remain outside this plan and must not be pulled in as incidental w
 - a new scheduler layer;
 - multiple persistence backends;
 - external secrets manager integration;
-- breaking `vNext-dev` proposals;
 - new DSL keywords or broader semantic expression language;
 - physical concurrency for `parallel_split` without a separate execution-policy decision.
 
