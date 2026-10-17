@@ -37,24 +37,30 @@ test("classic teams separate direct use from template editing and keep the graph
     await page.goto(url + "/cases/software-team", { waitUntil: "networkidle" });
     await page.locator("#detail-graph-stage").waitFor();
     await page.locator("[data-case-action=template]").click();
-    await page.waitForURL(/\/studio\/project\/[a-z0-9-]+$/);
+    await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
     await page.locator("#project-graph-stage").waitFor();
     assert.equal((await (await page.locator(".project-status").first()).innerText()).includes("草案"), true);
 
     await page.goto(url + "/cases/software-team", { waitUntil: "networkidle" });
     await page.locator("#detail-graph-stage").waitFor();
     await page.locator("[data-case-action=use]").click();
+    await page.waitForURL(/\/studio\/project\/new\?team=[a-z0-9-]+$/);
+    await page.locator("#collaboration-project-form").waitFor();
+    const teamId = new URL(page.url()).searchParams.get("team");
+    await page.locator("#collaboration-project-form input[name=name]").fill("Software delivery project");
+    await page.locator("#collaboration-project-form input[name=workspaceKey]").fill("software-delivery");
+    await page.locator(`#project-team-options input[value="${teamId}"]`).check();
+    await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);
-    await page.locator("#project-run-graph-stage").waitFor();
-    assert.equal(await page.locator("#material-form-v2").count(), 1);
-    assert.equal(await page.locator("#project-run-graph-stage").count(), 1);
+    await page.locator("#collaboration-task-form").waitFor();
+    assert.equal(await page.locator(".task-list-panel").count(), 1);
 
     const localizedResponse = await page.request.post(url + "/api/v1/cases/software-team/use", {
       data: { locale: "en" }
     });
     assert.equal(localizedResponse.ok(), true);
     const localizedProject = await localizedResponse.json();
-    assert.equal(localizedProject.name, "Software delivery team");
+    assert.equal(localizedProject.name, "Software delivery");
     const localizedGraphResponse = await page.request.get(url + "/api/v1/projects/" + encodeURIComponent(localizedProject.projectId) + "/team/design?locale=en");
     assert.equal(localizedGraphResponse.ok(), true);
     const localizedGraph = await localizedGraphResponse.json();

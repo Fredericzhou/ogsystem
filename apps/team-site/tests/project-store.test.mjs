@@ -72,6 +72,28 @@ test("classic team use creates a confirmed asset and runs its trusted graph", as
   }
 });
 
+test("project workspaces reuse a directory for one team and reject cross-team binding", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-workspace-binding-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?workspace-binding=" + Date.now());
+  try {
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
+    const otherTeam = await store.createClassicTeamProject({ caseId: "expert-consultation" });
+    const workspace = await store.createProjectWorkspace(team.projectId, { name: "Research project", workspaceKey: "shared-research" });
+    assert.equal(workspace.projectStatus, "confirmed");
+    assert.equal(workspace.teamProjectId, team.projectId);
+    assert.equal(workspace.workspaceKey, "shared-research");
+    const reused = await store.createProjectWorkspace(team.projectId, { name: "Renamed project", workspaceKey: "shared-research" });
+    assert.equal(reused.projectId, workspace.projectId);
+    await assert.rejects(
+      () => store.createProjectWorkspace(otherTeam.projectId, { name: "Conflict", workspaceKey: "shared-research" }),
+      /WORKSPACE_BOUND_TO_OTHER_TEAM/
+    );
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("project readiness is separate from structure confirmation and gates sandbox runs", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-readiness-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
@@ -145,7 +167,7 @@ test("confirmed projects round-trip through the project bundle and retry as a ne
     );
     const bundle = await store.exportProjectTeam(project.projectId);
     assert.equal(bundle.mode, "single-project-v1");
-    const imported = await store.importTeamPackage(bundle);
+    const imported = await store.importTeamPackage({ ...bundle, team: { ...bundle.team, project: { ...bundle.team.project, name: "Roundtrip Team Imported" } } });
     assert.equal(imported.projectStatus, "draft");
     assert.equal(imported.source, "imported");
     await assert.rejects(() => store.startProjectRun(imported.projectId, { prompt: "blocked" }), /PROJECT_NOT_CONFIRMED/);
@@ -187,7 +209,7 @@ test("project bundles carry executable role and contract assets without importin
     assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/models.json"));
     assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/systems/nested.mmd"));
     assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/subsystems/child.json"));
-    const imported = await store.importTeamPackage(bundle);
+    const imported = await store.importTeamPackage({ ...bundle, team: { ...bundle.team, project: { ...bundle.team.project, name: "Executable Team Imported" } } });
     assert.notEqual(imported.projectId, project.projectId);
     assert.equal(JSON.parse(await readFile(join(imported.workdir, ".ogs", "project.json"), "utf8")).projectId, imported.ogsProjectId);
     assert.equal(await readFile(join(imported.workdir, "og-roles", "roles", "package-role", "prompt.md"), "utf8"), "Discuss token budgets.");
@@ -319,5 +341,89 @@ test("project run resume rejects a directory that does not match the requested p
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
     await rm(outsideRoot, { recursive: true, force: true });
+  }
+});
+
+test("collaboration tasks run sequentially across teams and preserve pause/review controls", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-task-controls-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?task-controls=" + Date.now());
+  try {
+    const teamA = await store.createProject({ name: "Task Control A", intent: "Analyze input.", templateId: "empty" });
+    await store.confirmProjectTeam(teamA.projectId, { release: true });
+    const teamB = await store.createProject({ name: "Task Control B", intent: "Review output.", templateId: "empty" });
+    await store.confirmProjectTeam(teamB.projectId, { release: true });
+    const project = await store.createCollaborationProject({ name: "Task Control Project", workspaceKey: "task-control" });
+    await store.mountProjectTeam(project.projectId, teamA.projectId);
+    await store.mountProjectTeam(project.projectId, teamB.projectId);
+    const first = await store.createProjectTask(project.projectId, { input: "Analyze input", teamVersionId: teamA.projectId, idempotencyKey: "task-a" });
+    const second = await store.createProjectTask(project.projectId, { input: "Review output", teamVersionId: teamB.projectId, idempotencyKey: "task-b" });
+    const firstRun = await store.startProjectTask(project.projectId, first.taskId, { mode: "dry-run" });
+    assert.equal(firstRun.status, "completed");
+    assert.ok(firstRun.runId);
+    const secondRun = await store.startProjectTask(project.projectId, second.taskId, { mode: "dry-run" });
+    assert.equal(secondRun.status, "completed");
+    assert.ok(secondRun.runId);
+
+    const manual = await store.createProjectTask(project.projectId, { input: "Manual review step", teamVersionId: teamA.projectId, idempotencyKey: "task-manual" });
+    const running = await store.controlProjectTask(project.projectId, manual.taskId, "start");
+    assert.equal(running.status, "running");
+    const blocked = await store.createProjectTask(project.projectId, { input: "Must wait", teamVersionId: teamB.projectId, idempotencyKey: "task-blocked" });
+    await assert.rejects(() => store.controlProjectTask(project.projectId, blocked.taskId, "start"), /PROJECT_TASK_CONCURRENCY_LIMIT/);
+    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "pause")).status, "paused");
+    const reviewed = await store.reviewProjectTask(project.projectId, manual.taskId, { decision: "approve", comment: "继续处理" });
+    assert.equal(reviewed.task.status, "ready");
+    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "resume")).status, "queued");
+    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "stop")).status, "stopped");
+    assert.equal((await store.controlProjectTask(project.projectId, blocked.taskId, "start")).status, "running");
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("task controls enforce one active task, durable idempotency, and terminal boundaries", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-task-boundaries-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?task-boundaries=" + Date.now());
+  try {
+    const project = await store.createCollaborationProject({ name: "Task Boundary Project", workspaceKey: "task-boundaries" });
+    await store.mountProjectTeam(project.projectId, "case:software-team");
+    const first = await store.createProjectTask(project.projectId, { input: "First task", teamVersionId: "case:software-team", idempotencyKey: "boundary-1" });
+    const replay = await store.createProjectTask(project.projectId, { input: "First task", teamVersionId: "case:software-team", idempotencyKey: "boundary-1" });
+    assert.equal(replay.taskId, first.taskId);
+    assert.equal(replay.idempotentReplay, true);
+    await assert.rejects(
+      () => store.createProjectTask(project.projectId, { input: "Changed task", teamVersionId: "case:software-team", idempotencyKey: "boundary-1" }),
+      /IDEMPOTENCY_KEY_REUSE/
+    );
+
+    const second = await store.createProjectTask(project.projectId, { input: "Second task", teamVersionId: "case:software-team", idempotencyKey: "boundary-2" });
+    const starts = await Promise.allSettled([
+      store.controlProjectTask(project.projectId, first.taskId, "start"),
+      store.controlProjectTask(project.projectId, second.taskId, "start")
+    ]);
+    assert.equal(starts.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(starts.filter((result) => result.status === "rejected" && /PROJECT_TASK_CONCURRENCY_LIMIT|PROJECT_LOCK_CONFLICT|Project lock is active/.test(result.reason?.message || result.reason?.code || "")).length, 1);
+    const runningTask = starts.find((result) => result.status === "fulfilled").value;
+    const waitingTask = runningTask.taskId === first.taskId ? second : first;
+    const waitingKey = runningTask.taskId === first.taskId ? "boundary-2" : "boundary-1";
+    assert.equal((await store.controlProjectTask(project.projectId, runningTask.taskId, "pause")).status, "paused");
+    assert.equal((await store.reviewProjectTask(project.projectId, runningTask.taskId, { decision: "approve", comment: "人工确认后继续" })).task.status, "ready");
+    await store.controlProjectTask(project.projectId, runningTask.taskId, "resume");
+    await store.controlProjectTask(project.projectId, runningTask.taskId, "stop");
+    assert.equal((await store.controlProjectTask(project.projectId, waitingTask.taskId, "start")).status, "running");
+    await assert.rejects(() => store.controlProjectTask(project.projectId, runningTask.taskId, "resume"), /TASK_CONTROL_INVALID/);
+
+    const deleted = await store.deleteProjectTask(project.projectId, waitingTask.taskId);
+    assert.equal(deleted.status, "deleted");
+    const deletedReplay = await store.createProjectTask(project.projectId, { input: waitingTask.input, teamVersionId: "case:software-team", idempotencyKey: waitingKey });
+    assert.equal(deletedReplay.taskId, waitingTask.taskId);
+    assert.equal(deletedReplay.status, "deleted");
+
+    const builtIn = await store.createProjectTask(project.projectId, { input: "Built-in execution", teamVersionId: "case:software-team", idempotencyKey: "boundary-built-in" });
+    await assert.rejects(() => store.startProjectTask(project.projectId, builtIn.taskId), /TASK_EXECUTION_UNAVAILABLE/);
+    assert.equal((await store.getProject(project.projectId)).taskRecords.find((task) => task.taskId === builtIn.taskId).status, "queued");
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
   }
 });

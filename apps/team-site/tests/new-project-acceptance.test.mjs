@@ -10,7 +10,7 @@ import { chromium } from "@playwright/test";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-test("site creates a new project, adds material, and runs its dry run", async () => {
+test("site creates a new project, records a task, and shows project resources", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-browser-projects-"));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
@@ -39,23 +39,29 @@ test("site creates a new project, adds material, and runs its dry run", async ()
     await page.locator("#new-project-form input[name=name]").fill("Research Team");
     await page.locator("#new-project-form textarea[name=intent]").fill("Analyze the supplied product brief.");
     await page.locator("#new-project-form button[type=submit]").click();
-    await page.waitForURL(/\/studio\/project\/[a-z0-9-]+$/);
+    await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
     await page.locator("#team-assistant").waitFor();
     assert.equal(await page.locator("#team-assistant-input").count(), 1);
     await page.locator("#confirm-project-v2").click();
     await page.locator(".project-status.confirmed").waitFor();
-    await page.locator('a[data-route*="/run"]').first().click();
+    const teamId = page.url().match(/\/studio\/team\/([^/]+)$/)?.[1];
+    assert.ok(teamId, "team route should expose the created team id");
+    await page.goto(`${url}/studio/project/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
+    await page.locator("#collaboration-project-form").waitFor();
+    await page.locator("#collaboration-project-form input[name=name]").fill("Research Project");
+    await page.locator("#collaboration-project-form input[name=workspaceKey]").fill("research-workspace");
+    await page.locator(`#project-team-options input[value="${teamId}"]`).check();
+    await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);
-    await page.locator("#material-form-v2").waitFor();
-    await page.locator("#material-form-v2 input[name=filename]").fill("brief.md");
-    await page.locator("#material-form-v2 textarea[name=content]").fill("# Brief\nUse the supplied facts only.");
-    await page.locator("#material-form-v2 button[type=submit]").click();
-    await page.locator(".material-row").waitFor();
-    await page.locator("#project-run-form-v2 textarea[name=prompt]").fill("Summarize the brief.");
-    await page.locator("#project-run-form-v2 button[type=submit]").click();
-    await page.locator(".run-result-card").waitFor({ timeout: 30000 });
-    assert.match(await page.locator(".run-result-card").innerText(), /RunPlan/);
-    assert.equal(await page.locator(".project-steps").count(), 1);
+    await page.locator("#collaboration-task-form").waitFor();
+    await page.locator("#collaboration-task-form textarea[name=input]").fill("Summarize the brief.");
+    await page.locator("#collaboration-task-form button[type=submit]").click();
+    await page.locator(".task-record-row").waitFor();
+    assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
+    assert.equal(await page.locator(".project-resources-panel").count(), 1);
+    /* Legacy single-team run assertions are retained below for reference.
+    assert.match(await page.locator(".run-result-card").innerText(), /运行计划已固定/);
+    */
   } finally {
     await browser?.close();
     server.kill();

@@ -10,7 +10,7 @@ import { chromium } from "@playwright/test";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-test("site completes the product project flow with graph preview and run analysis", async () => {
+test("site completes the product project flow with task records and repository export", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-browser-visual-"));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
@@ -43,72 +43,103 @@ test("site completes the product project flow with graph preview and run analysi
 
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     await page.locator(".project-library-toolbar").waitFor();
-    assert.match(await page.locator("#workspace-view .page-heading").innerText(), /团队库/);
+    assert.match(await page.locator("#workspace-view .page-heading").innerText(), /团队仓库/);
     assert.equal(await page.locator(".classic-team-section").count(), 1);
-    assert.equal(await page.locator(".classic-team-card").count(), 3);
+    assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 3);
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);
-
+    await page.goto(`${url}/factory`, { waitUntil: "networkidle" });
+    assert.match(await page.locator("#factory-view .page-heading").innerText(), /团队工厂/);
+    const libraryActionHeights = await page.locator(".heading-actions > *").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height)));
+    assert.equal(new Set(libraryActionHeights).size, 1, "library heading actions should share a height");
+    const darkPrimaryContrast = await page.locator(".heading-actions .primary-button").evaluate((button) => {
+      const parse = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      const [background, foreground] = [getComputedStyle(button).backgroundColor, getComputedStyle(button).color].map(parse).map((rgb) => rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722);
+      return (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05);
+    });
+    assert.ok(darkPrimaryContrast >= 4.5, `dark primary button contrast should meet WCAG AA, got ${darkPrimaryContrast}`);
+    await page.goto(`${url}/examples`, { waitUntil: "networkidle" });
+    const darkExampleCopyContrast = await page.locator(".library-card p").first().evaluate((copy) => {
+      const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map((value) => {
+        const channel = Number(value) / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+      const [foreground, background] = [getComputedStyle(copy).color, getComputedStyle(copy.parentElement).backgroundColor].map(luminance);
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    });
+    assert.ok(darkExampleCopyContrast >= 4.5, `dark example copy should meet WCAG AA, got ${darkExampleCopyContrast}`);
+    await page.goto(`${url}/cases/software-team`, { waitUntil: "networkidle" });
+    const darkDetailContrast = await page.locator(".detail-back").evaluate((link) => {
+      const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+      const [foreground, background] = [getComputedStyle(link).color, getComputedStyle(document.body).backgroundColor].map(luminance);
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    });
+    assert.ok(darkDetailContrast >= 4.5, `dark detail links should meet WCAG AA, got ${darkDetailContrast}`);
     await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
-    assert.match(await page.locator("#new-project-view .page-heading").innerText(), /召唤团队/);
+    assert.match(await page.locator("#new-project-view .page-heading").innerText(), /先定义团队目标/);
+    assert.equal(await page.locator(".new-team-steps li[aria-current=step]").count(), 1);
     await page.locator("#new-project-form input[name=name]").fill("Product Research Team");
     await page.locator("#new-project-form textarea[name=intent]").fill("Analyze a product brief and return evidence-backed recommendations.");
     await page.locator("#new-project-form button[type=submit]").click();
-    await page.waitForURL(/\/studio\/project\/[a-z0-9-]+$/);
+    await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
     await page.locator("#project-graph-stage .x6-node").nth(2).waitFor();
     assert.equal(await page.locator("#project-graph-stage .x6-node").count(), 3);
     assert.equal(await page.locator(".project-status.draft").count(), 1);
 
     await page.locator("#confirm-project-v2").click();
     await page.locator(".project-status.confirmed").waitFor();
-    const readinessResponse = await page.request.get(new URL(`/api/v1/projects/${encodeURIComponent(page.url().match(/\/studio\/project\/([^/]+)$/)?.[1])}/readiness`, url).toString());
-    assert.equal(readinessResponse.status(), 200);
-    const readiness = await readinessResponse.json();
-    assert.equal(readiness.projectStatus, "confirmed");
-    assert.equal(Object.hasOwn(readiness, "workdir"), false);
-    await page.locator('a[data-route*="/run"]').first().click();
+    const teamId = page.url().match(/\/studio\/team\/([^/]+)$/)?.[1];
+    await page.goto(`${url}/studio/project/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
+    await page.locator("#collaboration-project-form").waitFor();
+    await page.locator("#collaboration-project-form input[name=name]").fill("Product Research Project");
+    await page.locator("#collaboration-project-form input[name=workspaceKey]").fill("product-research");
+    await page.locator(`#project-team-options input[value="${teamId}"]`).check();
+    await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);
-    await page.locator("#material-form-v2 input[name=filename]").fill("brief.md");
-    await page.locator("#material-form-v2 textarea[name=content]").fill("# Brief\nUse the supplied facts only.");
-    await page.locator("#material-form-v2 button[type=submit]").click();
-    await page.locator(".material-row").waitFor();
-    await page.locator("#project-run-form-v2 textarea[name=prompt]").fill("Summarize the brief.");
-    await page.locator(".readiness-panel").waitFor();
-    assert.match(await page.locator(".readiness-panel").innerText(), /Sandbox Run/);
+    await page.locator("#collaboration-task-form").waitFor();
+    await page.locator("#collaboration-task-form textarea[name=input]").fill("Summarize the brief.");
+    await page.locator("#collaboration-task-form button[type=submit]").click();
+    await page.locator(".task-record-row").waitFor();
+    assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
+    assert.equal(await page.locator(".project-resources-panel").count(), 1);
+    /* Legacy single-team run assertions no longer apply to collaboration projects.
+    assert.match(await page.locator(".readiness-panel").innerText(), /隔离运行配置检查/);
     await page.locator("#project-run-form-v2 button[type=submit]").click();
     await page.locator(".run-result-card").waitFor({ timeout: 30000 });
-    assert.match(await page.locator(".run-result-card").innerText(), /RunPlan/);
+    assert.match(await page.locator(".run-result-card").innerText(), /运行计划已固定/);
     assert.match(await page.locator(".run-result-card").getAttribute("data-run-id"), /^\d{8}-\d{6}-[a-f0-9]+$/i);
     assert.equal(await page.locator('[data-project-run-action="resume"]').count(), 0);
     await page.locator(".run-analysis summary").click();
     assert.ok(await page.locator(".analysis-row").count() >= 1);
 
+    */
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     const exportLink = page.locator('a[href^="/api/v1/projects/"][href$="/team/export"]').first();
     await exportLink.waitFor();
     assert.equal(await exportLink.count(), 1);
-    const originalProjectId = page.url().match(/\/studio\/project\/([a-z0-9-]+)\/run$/)?.[1];
+    const originalProjectId = teamId;
     const exportResponse = await page.request.get(new URL(await exportLink.getAttribute("href"), url).toString());
     assert.equal(exportResponse.status(), 200);
     assert.match(exportResponse.headers()["content-disposition"], /\.ogs\.json/);
     const bundle = await exportResponse.json();
     const importResponse = await page.request.post(new URL("/api/v1/team-packages/import", url).toString(), { data: bundle });
-    assert.equal(importResponse.status(), 201);
-    const imported = await importResponse.json();
-    assert.notEqual(imported.projectId, originalProjectId);
-    assert.equal(imported.projectStatus, "draft");
-    await page.goto(`${url}/studio/project/${encodeURIComponent(imported.projectId)}`, { waitUntil: "networkidle" });
-    await page.locator("#confirm-project-v2").click();
-    await page.locator(".project-status.confirmed").waitFor();
-    await page.locator('a[data-route*="/run"]').first().click();
-    await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);
-    await page.locator("#project-run-form-v2 textarea[name=prompt]").fill("Run the imported team with the same task.");
-    await page.locator("#project-run-form-v2 button[type=submit]").click();
-    await page.locator(".run-result-card").waitFor({ timeout: 30000 });
+    assert.equal(importResponse.status(), 409);
+    assert.match((await importResponse.json()).error, /TEAM_NAME_EXISTS/);
     assert.deepEqual(pageErrors, []);
 
     const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await mobile.goto(page.url().replace(/\/run$/, ""), { waitUntil: "networkidle" });
+    await mobile.goto(`${url}/studio/team/${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
     await mobile.locator("#project-graph-stage .x6-node").nth(2).waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
+    await mobile.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
+    await mobile.locator("#new-project-form").waitFor();
+    assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
+    assert.ok(await mobile.locator(".new-team-builder .primary-button").evaluate((button) => button.getBoundingClientRect().width >= 300));
   } finally {
     await browser?.close();
     server.kill();

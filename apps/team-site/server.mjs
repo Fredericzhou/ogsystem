@@ -1,13 +1,15 @@
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverLocalModelCatalog, isModelCatalogStale } from "../../dist/runtime/model-catalog.js";
 import { cases } from "./cases.mjs";
 import { buildCaseGraph, runCase } from "./demo-runner.mjs";
 import { eventLabels } from "./event-labels.mjs";
 import {
   addProjectMaterial,
   createProject,
+  createProjectWorkspace,
   createClassicTeamProject,
   confirmProjectTeam,
   exportProjectTeam,
@@ -19,10 +21,24 @@ import {
   getProject,
   importTeamPackage,
   listProjects,
+  listCollaborationProjects,
+  createCollaborationProject,
+  mountProjectTeam,
+  createProjectTask,
+  startProjectTask,
+  controlProjectTask,
+  reviewProjectTask,
+  deleteProjectTask,
   retryProjectRun,
   controlProjectRun,
   startProjectRun,
   updateProject
+  ,listTeamFactory
+  ,listTeamRepository
+  ,forkTeamVersion
+  ,releaseTeamVersion
+  ,archiveTeamVersion
+  ,listRecentProjectRuns
 } from "./project-repository.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -30,6 +46,9 @@ const publicRoot = join(root, "public");
 const host = process.env.HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "4173", 10);
 const visUrl = process.env.OGS_VIS_URL || "http://127.0.0.1:4177";
+const discoveryWorkdir = process.env.OGS_VIS_WORKDIR || join(process.env.LOCALAPPDATA || process.cwd(), "OGSystem", "visualizer-workspace");
+const discoveryCacheMs = 30_000;
+let discoveryCache;
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -47,11 +66,51 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function providerLabel(backend) {
+  return ({ codex: "Codex", opencode: "OpenCode", claude: "Claude", antigravity: "Antigravity", openai: "OpenAI", code2: "Code2", multidebate: "Multi Debate" })[backend] || backend;
+}
+
+async function getPlatformDiscovery(force = false) {
+  const now = Date.now();
+  if (!force && discoveryCache && now - discoveryCache.at < discoveryCacheMs) return discoveryCache.value;
+  const promise = (async () => {
+    await mkdir(discoveryWorkdir, { recursive: true });
+    const catalog = await discoverLocalModelCatalog({ workdir: discoveryWorkdir });
+    return {
+      generatedAt: catalog.generatedAt,
+      stale: isModelCatalogStale(catalog),
+      workdir: discoveryWorkdir,
+      sources: catalog.sources.map((source) => ({
+        ...source,
+        backend: source.backend,
+        name: providerLabel(source.backend)
+      })),
+      models: catalog.models.map((model) => ({
+        id: model.modelId,
+        name: model.name || model.modelId,
+        provider: model.provider || model.backend,
+        providerName: providerLabel(model.provider || model.backend),
+        status: model.status || (model.runnable ? "active" : "unavailable"),
+        runnable: Boolean(model.runnable),
+        capabilities: model.capabilities,
+        ref: model.ref
+      }))
+    };
+  })();
+  discoveryCache = { at: now, value: promise };
+  try {
+    return await promise;
+  } catch (error) {
+    if (discoveryCache?.value === promise) discoveryCache = undefined;
+    throw error;
+  }
+}
+
 function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|active|conflict/i.test(message)) return 409;
+  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|active|conflict/i.test(message)) return 409;
   if (/PROJECT_NOT_READY/i.test(message)) return 422;
-  if (/not found/i.test(message)) return 404;
+  if (/not found|TASK_NOT_FOUND/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
   return 400;
 }
@@ -71,6 +130,18 @@ function publicProject(project) {
     const { workdir: workspaceWorkdir, ...workspace } = safe.workspace;
     safe.workspace = workspace;
   }
+  if (Array.isArray(safe.taskRecords)) {
+    safe.taskRecords = safe.taskRecords.map((task) => {
+      const { requestFingerprint, ...publicTask } = task;
+      return publicTask;
+    });
+  }
+  return safe;
+}
+
+function publicTask(task) {
+  if (!task || typeof task !== "object") return task;
+  const { requestFingerprint, ...safe } = task;
   return safe;
 }
 
@@ -121,21 +192,174 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/v1/projects") {
-    sendJson(response, 200, { projects: (await listProjects()).map(publicProject) });
+    sendJson(response, 200, { projects: (await listCollaborationProjects()).map(publicProject) });
+    return;
+  }
+  if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/v1/platform/discovery") {
+    try {
+      const discovery = await getPlatformDiscovery(request.method === "POST");
+      sendJson(response, 200, discovery);
+    } catch (error) {
+      sendJson(response, 503, { error: error instanceof Error ? error.message : "Unable to discover platform tools." });
+    }
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/platform/providers") {
+    try {
+      const discovery = await getPlatformDiscovery();
+      sendJson(response, 200, { providers: discovery.sources.map(({ backend, name, status, command, detail }) => ({ id: backend, name, status, command, detail })) });
+    } catch (error) {
+      sendJson(response, 503, { error: error instanceof Error ? error.message : "Unable to discover platform providers." });
+    }
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/platform/models") {
+    try {
+      const discovery = await getPlatformDiscovery();
+      sendJson(response, 200, { models: discovery.models });
+    } catch (error) {
+      sendJson(response, 503, { error: error instanceof Error ? error.message : "Unable to discover platform models." });
+    }
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/platform/settings") {
+    sendJson(response, 200, { settings: { defaultProvider: "codex", defaultModel: "default", timeoutSeconds: 120, retryCount: 1 } });
+    return;
+  }
+  if (request.method === "PUT" && url.pathname === "/api/v1/platform/settings") {
+    try {
+      const payload = await readBody(request);
+      const settings = {
+        defaultProvider: String(payload.defaultProvider || "codex"),
+        defaultModel: String(payload.defaultModel || "default"),
+        timeoutSeconds: Math.max(10, Math.min(3600, Number(payload.timeoutSeconds || 120))),
+        retryCount: Math.max(0, Math.min(5, Number(payload.retryCount || 1)))
+      };
+      sendJson(response, 200, { settings });
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to update platform settings." });
+    }
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/team-factory") {
+    sendJson(response, 200, { teams: (await listTeamFactory()).map(publicProject) });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/team-repository") {
+    sendJson(response, 200, { teams: (await listTeamRepository()).map(publicProject) });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/runs/recent") {
+    sendJson(response, 200, { runs: await listRecentProjectRuns(Number(url.searchParams.get("limit") || 50)) });
     return;
   }
   if (request.method === "POST" && url.pathname === "/api/v1/projects") {
     try {
       const payload = await readBody(request);
-      const project = await createProject({
+      const project = await createCollaborationProject({
         name: payload.name,
         intent: payload.intent,
-        templateId: payload.templateId
+        workspaceKey: payload.workspaceKey
       });
       sendJson(response, 201, publicProject(project));
     } catch (error) {
-      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to create project." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create project." });
     }
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v1/team-factory") {
+    try {
+      const payload = await readBody(request);
+      const team = await createProject({
+        name: payload.name,
+        intent: payload.intent,
+        templateId: "empty",
+        source: "team-factory",
+        locale: payload.locale
+      });
+      sendJson(response, 201, publicProject(team));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create team draft." });
+    }
+    return;
+  }
+  const projectTeamMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/teams$/);
+  if (projectTeamMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request);
+      sendJson(response, 200, publicProject(await mountProjectTeam(projectTeamMatch[1], payload.teamVersionId || payload.teamId)));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to mount team." });
+    }
+    return;
+  }
+  const projectTaskMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks$/);
+  if (projectTaskMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request);
+      sendJson(response, 201, publicTask(await createProjectTask(projectTaskMatch[1], payload)));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create project task." });
+    }
+    return;
+  }
+  const projectTaskActionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|stop|review)$/);
+  if (projectTaskActionMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request);
+      const projectId = projectTaskActionMatch[1];
+      const taskId = projectTaskActionMatch[2];
+      const action = projectTaskActionMatch[3];
+      const result = action === "review"
+        ? await reviewProjectTask(projectId, taskId, payload)
+        : action === "start"
+          ? await startProjectTask(projectId, taskId, payload)
+          : await controlProjectTask(projectId, taskId, action);
+      sendJson(response, 200, result?.task ? { ...result, task: publicTask(result.task) } : publicTask(result));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to control project task." });
+    }
+    return;
+  }
+  const projectTaskDeleteMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)$/);
+  if (projectTaskDeleteMatch && request.method === "DELETE") {
+    try {
+      sendJson(response, 200, publicTask(await deleteProjectTask(projectTaskDeleteMatch[1], projectTaskDeleteMatch[2])));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to delete project task." });
+    }
+    return;
+  }
+  const workspaceCreateMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/workspaces$/);
+  if (workspaceCreateMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request);
+      sendJson(response, 201, publicProject(await createProjectWorkspace(workspaceCreateMatch[1], {
+        name: payload.name,
+        workspaceKey: payload.workspaceKey,
+        locale: payload.locale
+      })));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create project workspace." });
+    }
+    return;
+  }
+  const forkTeamMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/edit$/);
+  if (forkTeamMatch && request.method === "POST") {
+    try { sendJson(response, 201, publicProject(await forkTeamVersion(forkTeamMatch[1]))); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to edit team version." }); }
+    return;
+  }
+  const releaseTeamMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release$/);
+  if (releaseTeamMatch && request.method === "POST") {
+    try { sendJson(response, 200, publicProject(await releaseTeamVersion(releaseTeamMatch[1]))); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to release team version." }); }
+    return;
+  }
+  const archiveTeamMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/archive$/);
+  if (archiveTeamMatch && request.method === "POST") {
+    try { sendJson(response, 200, publicProject(await archiveTeamVersion(archiveTeamMatch[1]))); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to archive team version." }); }
     return;
   }
   if (request.method === "POST" && url.pathname === "/api/v1/team-packages/import") {
@@ -330,7 +554,7 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
-    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/studio/new" || /^\/studio\/project\/[a-z0-9-]+(?:\/run)?\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
+    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/studio/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+(?:\/run)?\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
     }

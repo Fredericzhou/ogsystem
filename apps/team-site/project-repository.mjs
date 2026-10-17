@@ -14,6 +14,8 @@ import { parseSystemFromMermaidSource } from "../../dist/runtime/parse-mermaid.j
 import { acquireActiveRunLock, acquireProjectWriteLock } from "../../dist/runtime/project-run-lock.js";
 import { applyRunControl as writeRunStateControl, loadProjectRunState, updateProjectRunState } from "../../dist/runtime/project-run-state.js";
 import { readLatestProjectRunControl, writeProjectRunControl } from "../../dist/runtime/project-run-control.js";
+import { listHumanReviews, writeHumanReviewDecision } from "../../dist/runtime/project-lifecycle.js";
+import { createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
 import { computeProjectAssetDigest } from "../../dist/runtime/project-asset-digest.js";
 import {
   createProjectVisualization,
@@ -64,6 +66,9 @@ async function writeJson(path, value) {
 
 function normalizeMeta(meta, projectId) {
   const confirmed = meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
+  const teamVersionStatus = meta?.teamVersionStatus || (confirmed ? "released" : "draft");
+  const teamId = String(meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
+  const teamVersionNumber = Number.isInteger(meta?.teamVersionNumber) && meta.teamVersionNumber > 0 ? meta.teamVersionNumber : 1;
   return {
     projectId,
     name: String(meta?.name || "New team"),
@@ -75,8 +80,21 @@ function normalizeMeta(meta, projectId) {
     createdAt: meta?.createdAt || new Date().toISOString(),
     updatedAt: meta?.updatedAt || new Date().toISOString(),
     source: meta?.source || "created",
+    teamId: teamId || undefined,
+    teamVersionId: meta?.teamVersionId || (teamId ? projectId : undefined),
+    teamVersionNumber,
+    teamVersionStatus,
+    teamName: String(meta?.teamName || meta?.name || "New team"),
+    parentTeamVersionId: meta?.parentTeamVersionId || undefined,
+    releasedAt: meta?.releasedAt || (teamVersionStatus === "released" ? meta?.confirmedAt || null : null),
+    archivedAt: meta?.archivedAt || null,
+    ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
+    ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),
     ...(meta?.caseId ? { caseId: meta.caseId } : {}),
     ...(meta?.ogsProjectId ? { ogsProjectId: meta.ogsProjectId } : {})
+    ,projectType: meta?.projectType || (meta?.teamProjectId ? "workspace" : "team")
+    ,mountedTeams: Array.isArray(meta?.mountedTeams) ? meta.mountedTeams : []
+    ,taskRecords: Array.isArray(meta?.taskRecords) ? meta.taskRecords : []
   };
 }
 
@@ -144,9 +162,16 @@ export async function listProjects() {
   return projects.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
-export async function createProject({ name, intent, templateId = "empty", caseId, source = "created", locale = "zh-CN" }) {
+export async function createProject({ name, intent, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
   await mkdir(projectsRoot, { recursive: true });
   const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
+  const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
+  const existingProjects = await listProjects();
+  const resolvedTeamName = String(teamName || normalizedName).trim().slice(0, 120) || normalizedName;
+  const isTeamAsset = source !== "collaboration-project" && source !== "workspace";
+  if (isTeamAsset && !teamId && existingProjects.some((project) => !project.teamProjectId && project.teamName.toLocaleLowerCase() === resolvedTeamName.toLocaleLowerCase() && project.teamVersionStatus !== "archived")) {
+    throw new Error("TEAM_NAME_EXISTS: a team with this name already exists.");
+  }
   const workdir = projectPath(projectId);
   await mkdir(workdir, { recursive: true });
   const created = await createProjectVisualization({
@@ -158,7 +183,13 @@ export async function createProject({ name, intent, templateId = "empty", caseId
   const now = new Date().toISOString();
   await writeJson(join(workdir, ".site", "project.json"), {
     projectId,
-    name: String(name || "New team").trim().slice(0, 120) || "New team",
+    name: normalizedName,
+    teamName: resolvedTeamName,
+    teamId: teamId || projectId,
+    teamVersionId: projectId,
+    teamVersionNumber,
+    teamVersionStatus: "draft",
+    ...(parentTeamVersionId ? { parentTeamVersionId } : {}),
     intent: String(intent || "").trim().slice(0, 4000),
     templateId,
     projectStatus: "draft",
@@ -175,12 +206,362 @@ export async function createProject({ name, intent, templateId = "empty", caseId
   return readProject(projectId);
 }
 
+export async function createCollaborationProject({ name, workspaceKey, intent = "" } = {}) {
+  const project = await createProject({
+    name: String(name || "协作项目").trim() || "协作项目",
+    intent,
+    templateId: "empty",
+    source: "collaboration-project"
+  });
+  const metaPath = join(project.workdir, ".site", "project.json");
+  const meta = await readJson(metaPath, {});
+  await writeJson(metaPath, {
+    ...meta,
+    projectType: "collaboration",
+    teamId: undefined,
+    teamVersionId: undefined,
+    teamName: undefined,
+    mountedTeams: [],
+    taskRecords: [],
+    workspaceKey: String(workspaceKey || slug(name || "collaboration-project"))
+  });
+  return readProject(project.projectId);
+}
+
+export async function mountProjectTeam(projectId, teamVersionId) {
+  return withProjectWriteLock(projectId, "project-team-mount", async () => {
+    const project = await readProject(projectId);
+    if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: only collaboration projects can mount teams.");
+    const requestedTeamId = String(teamVersionId || "");
+    let team;
+    if (requestedTeamId.startsWith("case:")) {
+      const caseId = requestedTeamId.slice(5);
+      const caseSpec = getCase(caseId);
+      if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
+      const language = "zh-CN";
+      const teamName = caseSpec.title?.[language] || caseSpec.title?.en || caseId;
+      const intent = caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "";
+      team = {
+        projectId: requestedTeamId,
+        teamId: requestedTeamId,
+        teamVersionId: requestedTeamId,
+        teamVersionNumber: 1,
+        teamName,
+        name: teamName,
+        intent,
+        teamVersionStatus: "released",
+        builtIn: true
+      };
+    } else {
+      team = await readProject(requestedTeamId);
+    }
+    if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
+    const mountedTeams = Array.isArray(project.mountedTeams) ? project.mountedTeams : [];
+    if (mountedTeams.some((item) => item.teamVersionId === team.teamVersionId)) return project;
+    const next = {
+      ...normalizeMeta(project, projectId),
+      projectType: "collaboration",
+      mountedTeams: [...mountedTeams, {
+        teamId: team.teamId || team.projectId,
+        teamVersionId: team.teamVersionId || team.projectId,
+        teamVersionNumber: team.teamVersionNumber || 1,
+        teamName: team.teamName || team.name,
+        mountedAt: new Date().toISOString(),
+        status: "ready"
+      }],
+      updatedAt: new Date().toISOString()
+    };
+    await writeJson(join(project.workdir, ".site", "project.json"), next);
+    return readProject(projectId);
+  });
+}
+
+export async function listCollaborationProjects() {
+  return (await listProjects()).filter((project) => project.projectType === "collaboration");
+}
+
+export async function createProjectTask(projectId, { input, teamVersionId, idempotencyKey } = {}) {
+  return withProjectWriteLock(projectId, "project-task-create", async () => {
+    const project = await readProject(projectId);
+    if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: only collaboration projects can create tasks.");
+    const taskInput = String(input || "").trim();
+    if (!taskInput || taskInput.length > 4000) throw new Error("Task input must contain 1 to 4,000 characters.");
+    const mountedTeams = project.mountedTeams || [];
+    const team = mountedTeams.find((item) => item.teamVersionId === teamVersionId) || mountedTeams[0];
+    if (!team) throw new Error("PROJECT_TEAM_REQUIRED: mount a team before creating a task.");
+    const requestKey = idempotencyKey ? String(idempotencyKey).trim().slice(0, 160) : "";
+    const requestFingerprint = createHash("sha256").update(JSON.stringify({
+      projectId,
+      input: taskInput,
+      teamVersionId: team.teamVersionId
+    })).digest("hex");
+    const existing = (project.taskRecords || []).find((item) => requestKey && item.idempotencyKey === requestKey);
+    if (existing) {
+      if (existing.requestFingerprint !== requestFingerprint) throw new Error("IDEMPOTENCY_KEY_REUSE: idempotency key was already used with a different task.");
+      return { ...existing, idempotentReplay: true };
+    }
+    const task = {
+      taskId: createRunId(new Date()),
+      projectId,
+      input: taskInput,
+      teamId: team.teamId,
+      teamVersionId: team.teamVersionId,
+      teamVersionNumber: team.teamVersionNumber,
+      teamName: team.teamName,
+      status: "queued",
+      idempotencyKey: requestKey || null,
+      requestFingerprint,
+      runId: null,
+      startedAt: null,
+      completedAt: null,
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+      review: null,
+      roundNumber: (project.taskRecords || []).length + 1,
+      outputSummary: "",
+      commitPlaceholder: null
+    };
+    const next = { ...normalizeMeta(project, projectId), taskRecords: [...(project.taskRecords || []), task], updatedAt: new Date().toISOString() };
+    await writeJson(join(project.workdir, ".site", "project.json"), next);
+    return task;
+  });
+}
+
+function findTask(project, taskId) {
+  const task = (project.taskRecords || []).find((item) => item.taskId === taskId);
+  if (!task || task.deletedAt) throw new Error("TASK_NOT_FOUND: task does not exist.");
+  return task;
+}
+
+const activeTaskStatuses = new Set(["running", "planning", "pause_requested", "paused", "waiting_review", "ready"]);
+
+function assertProjectTaskExecutionSlot(project, taskId) {
+  const active = (project.taskRecords || []).find((item) => item.taskId !== taskId && !item.deletedAt && activeTaskStatuses.has(item.status));
+  if (active) throw new Error(`PROJECT_TASK_CONCURRENCY_LIMIT: task ${active.taskId} is currently ${active.status}; finish or stop it before starting another task.`);
+}
+
+async function saveTaskRecord(project, taskId, update) {
+  const now = new Date().toISOString();
+  const task = findTask(project, taskId);
+  const nextTask = { ...task, ...update, updatedAt: now };
+  const taskRecords = (project.taskRecords || []).map((item) => item.taskId === taskId ? nextTask : item);
+  await writeJson(join(project.workdir, ".site", "project.json"), {
+    ...normalizeMeta(project, project.projectId),
+    taskRecords,
+    updatedAt: now
+  });
+  return nextTask;
+}
+
+export async function controlProjectTask(projectId, taskId, control) {
+  if (!["start", "pause", "resume", "stop"].includes(control)) throw new Error("TASK_CONTROL_INVALID: unsupported task control.");
+  const project = await readProject(projectId);
+  const task = findTask(project, taskId);
+  if (["completed", "failed", "stopped", "cancelled", "deleted"].includes(task.status)) {
+    if (control === "stop" && ["stopped", "cancelled"].includes(task.status)) return task;
+    throw new Error(`TASK_CONTROL_INVALID: task is already ${task.status}.`);
+  }
+  if (task.runId) {
+    if (control === "start") throw new Error("TASK_CONTROL_INVALID: task already has a run.");
+    if (control === "resume") assertProjectTaskExecutionSlot(project, taskId);
+    const runControl = control === "stop" ? "cancel" : control;
+    const result = await controlProjectRun(task.runProjectId || projectId, task.runId, runControl);
+    const status = result.state?.status || (control === "stop" ? "cancel_requested" : control === "pause" ? "pause_requested" : "running");
+    return withProjectWriteLock(projectId, "project-task-control", async () => {
+      const latest = await readProject(projectId);
+      return saveTaskRecord(latest, taskId, { status: status === "cancelled" ? "stopped" : status, runId: task.runId });
+    });
+  }
+  if (control === "start") {
+    if (task.status !== "queued") throw new Error(`TASK_START_NOT_ALLOWED: task status is ${task.status}.`);
+    assertProjectTaskExecutionSlot(project, taskId);
+    return withProjectWriteLock(projectId, "project-task-start", async () => {
+      const latest = await readProject(projectId);
+      const latestTask = findTask(latest, taskId);
+      if (latestTask.status !== "queued") throw new Error(`TASK_START_NOT_ALLOWED: task status is ${latestTask.status}.`);
+      assertProjectTaskExecutionSlot(latest, taskId);
+      return saveTaskRecord(latest, taskId, { status: "running", startedAt: new Date().toISOString() });
+    });
+  }
+  if (control === "pause") {
+    if (["paused", "pause_requested"].includes(task.status)) return task;
+    return withProjectWriteLock(projectId, "project-task-pause", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "paused" }));
+  }
+  if (control === "resume") {
+    if (!["paused", "ready"].includes(task.status)) throw new Error(`TASK_RESUME_NOT_ALLOWED: task status is ${task.status}.`);
+    return withProjectWriteLock(projectId, "project-task-resume", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "queued" }));
+  }
+  return withProjectWriteLock(projectId, "project-task-stop", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "stopped", completedAt: new Date().toISOString() }));
+}
+
+export async function startProjectTask(projectId, taskId, { mode = "dry-run" } = {}) {
+  if (!["dry-run", "sandbox"].includes(mode)) throw new Error("TASK_MODE_INVALID: unsupported task mode.");
+  let project = await readProject(projectId);
+  let task = findTask(project, taskId);
+  if (!["queued", "paused"].includes(task.status)) {
+    if (task.runId) return { task, idempotentReplay: true };
+    throw new Error(`TASK_START_NOT_ALLOWED: task status is ${task.status}.`);
+  }
+  if (task.runId) return controlProjectTask(projectId, taskId, "resume");
+  const reserved = await withProjectWriteLock(projectId, "project-task-reserve", async () => {
+    const latest = await readProject(projectId);
+    const latestTask = findTask(latest, taskId);
+    if (!["queued", "paused"].includes(latestTask.status)) {
+      if (latestTask.runId) return { project: latest, task: latestTask };
+      throw new Error(`TASK_START_NOT_ALLOWED: task status is ${latestTask.status}.`);
+    }
+    assertProjectTaskExecutionSlot(latest, taskId);
+    const nextTask = await saveTaskRecord(latest, taskId, { status: "planning", startedAt: latestTask.startedAt || new Date().toISOString(), lastError: null });
+    return { project: await readProject(projectId), task: nextTask };
+  });
+  project = reserved.project;
+  task = reserved.task;
+  if (task.runId) return task;
+  const team = (project.mountedTeams || []).find((item) => item.teamVersionId === task.teamVersionId);
+  if (!team || String(team.teamVersionId || "").startsWith("case:")) {
+    await withProjectWriteLock(projectId, "project-task-start-unavailable", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "queued", lastError: "TASK_EXECUTION_UNAVAILABLE" })).catch(() => undefined);
+    throw new Error("TASK_EXECUTION_UNAVAILABLE: copy the built-in team into a released team version before running this task.");
+  }
+  const materials = (project.materials?.materials || []).map((item) => ({
+    materialId: item.materialId,
+    sourcePath: resolve(project.workdir, item.path),
+    contentType: item.contentType
+  }));
+  let run;
+  try {
+    run = await startProjectRun(team.teamVersionId, {
+      prompt: task.input,
+      mode,
+      idempotencyKey: `task:${projectId}:${taskId}`,
+      materialInputsOverride: materials
+    });
+  } catch (error) {
+    await withProjectWriteLock(projectId, "project-task-start-failure", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "queued", lastError: error instanceof Error ? error.message : String(error) })).catch(() => undefined);
+    throw error;
+  }
+  return withProjectWriteLock(projectId, "project-task-bind-run", async () => {
+    const latest = await readProject(projectId);
+    return saveTaskRecord(latest, taskId, {
+      runId: run.runId,
+      runProjectId: team.teamVersionId,
+      status: run.state?.status || "running",
+      startedAt: task.startedAt || new Date().toISOString(),
+      completedAt: ["completed", "failed", "cancelled"].includes(run.state?.status) ? (run.state?.finishedAt || new Date().toISOString()) : null,
+      outputSummary: typeof run.result?.finalOutput === "string" ? run.result.finalOutput.slice(0, 500) : task.outputSummary
+    });
+  });
+}
+
+export async function reviewProjectTask(projectId, taskId, { decision, comment, reviewId } = {}) {
+  if (!["approve", "rework", "pause", "terminate"].includes(decision)) throw new Error("TASK_REVIEW_INVALID: unsupported review decision.");
+  const project = await readProject(projectId);
+  const task = findTask(project, taskId);
+  if (!["waiting_review", "paused", "ready"].includes(task.status) && !task.runId) throw new Error(`TASK_REVIEW_NOT_ALLOWED: task status is ${task.status}.`);
+  let reviewResult;
+  if (task.runId) {
+    const runProject = task.runProjectId ? await readProject(task.runProjectId) : project;
+    const reviewList = await listHumanReviews(runProject.workdir, task.runId).catch(() => ({ reviews: [] }));
+    const candidates = (Array.isArray(reviewList?.reviews) ? reviewList.reviews : []).filter((item) => item && ["pending", "paused"].includes(item.currentStatus));
+    const selected = reviewId ? candidates.find((item) => item.reviewId === reviewId) : candidates[0];
+    if (selected?.reviewId) {
+      reviewResult = await writeHumanReviewDecision({
+        workdir: runProject.workdir,
+        runId: task.runId,
+        reviewId: selected.reviewId,
+        decision,
+        comment,
+        principal: createLocalControlPlanePrincipal(),
+        ...(decision === "terminate" ? { scope: "run" } : {})
+      });
+    }
+  }
+  const nextStatus = decision === "approve" || decision === "rework" ? "ready" : decision === "pause" ? "paused" : "stopped";
+  const updated = await withProjectWriteLock(projectId, "project-task-review", async () => saveTaskRecord(await readProject(projectId), taskId, {
+    status: nextStatus,
+    review: { decision, comment: String(comment || "").trim().slice(0, 4000), reviewId: reviewId || reviewResult?.reviewId || null, decidedAt: new Date().toISOString() }
+  }));
+  if (reviewResult && (decision === "approve" || decision === "rework")) {
+    await controlProjectRun(task.runProjectId || projectId, task.runId, "resume").catch(() => undefined);
+  }
+  if (reviewResult && decision === "terminate") {
+    await controlProjectRun(task.runProjectId || projectId, task.runId, "cancel").catch(() => undefined);
+  }
+  return { task: updated, review: reviewResult || updated.review };
+}
+
+export async function deleteProjectTask(projectId, taskId) {
+  const project = await readProject(projectId);
+  const task = findTask(project, taskId);
+  if (["running", "planning", "waiting_review", "paused", "ready", "pause_requested"].includes(task.status)) {
+    if (task.runId) await controlProjectRun(projectId, task.runId, "cancel").catch(() => undefined);
+  }
+  return withProjectWriteLock(projectId, "project-task-delete", async () => saveTaskRecord(await readProject(projectId), taskId, {
+    status: "deleted",
+    deletedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString()
+  }));
+}
+
+export async function createProjectWorkspace(teamProjectId, { name, workspaceKey, locale = "zh-CN" } = {}) {
+  const bindingLock = await acquireProjectWriteLock(join(projectsRoot, ".workspace-binding"), "workspace-binding");
+  try {
+    const team = await readProject(teamProjectId);
+    requireConfirmed(team);
+    const key = slug(workspaceKey || name || `${team.name}-workspace`);
+    const existing = (await listProjects()).find((project) => project.workspaceKey === key);
+    if (existing) {
+      if (existing.teamProjectId === teamProjectId) return existing;
+      throw new Error("WORKSPACE_BOUND_TO_OTHER_TEAM: this work directory is already bound to another team.");
+    }
+    const project = await createProject({
+      name: name || `${team.name} 项目`,
+      intent: team.intent,
+      templateId: "empty",
+      source: "workspace",
+      locale
+    });
+    try {
+      const bundle = await exportTeamPackage(team.workdir);
+      const loaded = await loadTeamPackage({ workdir: project.workdir, bundle });
+      if (loaded.validation?.ok === false) throw new Error("PROJECT_WORKSPACE_INVALID: the selected team could not be copied.");
+      const current = await readJson(join(project.workdir, ".site", "project.json"), {});
+      await writeJson(join(project.workdir, ".site", "project.json"), {
+        ...current,
+        teamProjectId,
+        teamId: team.teamId || team.projectId,
+        teamVersionId: team.teamVersionId || team.projectId,
+        teamVersionNumber: team.teamVersionNumber || 1,
+        teamVersionStatus: team.teamVersionStatus || "released",
+        teamName: team.teamName || team.name,
+        workspaceKey: key,
+        projectStatus: "draft",
+        projectDigest: null,
+        confirmedAt: null,
+        updatedAt: new Date().toISOString()
+      });
+      await confirmProjectTeam(project.projectId, { trustedClassic: isTrustedTeamTopology(team) });
+      return readProject(project.projectId);
+    } catch (error) {
+      await rm(project.workdir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await bindingLock.release();
+  }
+}
+
 export async function createClassicTeamProject({ caseId, asTemplate = false, name, intent, locale = "zh-CN" } = {}) {
   const caseSpec = getCase(caseId);
   if (!caseSpec) throw new Error("Unknown example team.");
   const language = locale === "en" ? "en" : "zh-CN";
   const defaultName = caseSpec.title?.[language] || caseSpec.title?.["zh-CN"] || caseSpec.title?.en || caseId;
   const defaultIntent = caseSpec.detail?.scenario?.[language] || caseSpec.detail?.scenario?.["zh-CN"] || caseSpec.short?.[language] || caseSpec.short?.["zh-CN"] || "";
+  if (!asTemplate && !name) {
+    const existing = (await listProjects()).find((project) => !project.teamProjectId && project.source === "classic" && project.caseId === caseId && project.teamVersionStatus === "released");
+    if (existing) return existing;
+    const template = (await listProjects()).find((project) => !project.teamProjectId && project.source === "classic-template" && project.caseId === caseId && project.teamVersionStatus !== "archived" && String(project.name || "").toLocaleLowerCase() === defaultName.toLocaleLowerCase());
+    if (template) return confirmProjectTeam(template.projectId, { trustedClassic: true, release: true });
+  }
   const project = await createProject({
     name: name || defaultName,
     intent: intent || defaultIntent,
@@ -190,6 +571,120 @@ export async function createClassicTeamProject({ caseId, asTemplate = false, nam
     locale: language
   });
   return asTemplate ? project : confirmProjectTeam(project.projectId, { trustedClassic: true });
+}
+
+export async function listTeamFactory() {
+  return (await listProjects()).filter((project) => !project.teamProjectId && project.teamVersionStatus !== "released" && project.teamVersionStatus !== "archived");
+}
+
+export async function listTeamRepository() {
+  return (await listProjects()).filter((project) => !project.teamProjectId && project.teamVersionStatus === "released" && !project.archivedAt);
+}
+
+export async function forkTeamVersion(teamVersionId) {
+  const source = await readProject(teamVersionId);
+  if (source.teamProjectId || source.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be edited.");
+  const versions = (await listProjects()).filter((project) => !project.teamProjectId && project.teamId === source.teamId);
+  const nextVersionNumber = Math.max(...versions.map((project) => project.teamVersionNumber || 0), 0) + 1;
+  const project = await createProject({
+    name: source.name,
+    teamName: source.teamName || source.name,
+    teamId: source.teamId,
+    teamVersionNumber: nextVersionNumber,
+    parentTeamVersionId: source.teamVersionId || source.projectId,
+    intent: source.intent,
+    templateId: source.templateId,
+    source: "version-edit"
+  });
+  const bundle = await exportTeamPackage(source.workdir);
+  const loaded = await loadTeamPackage({ workdir: project.workdir, bundle });
+  if (loaded.validation?.ok === false) throw new Error("TEAM_VERSION_COPY_INVALID: the released version could not be copied.");
+  await writeJson(join(project.workdir, ".site", "project.json"), {
+    ...(await readJson(join(project.workdir, ".site", "project.json"), {})),
+    name: source.name,
+    teamName: source.teamName || source.name,
+    teamId: source.teamId,
+    teamVersionId: project.projectId,
+    teamVersionNumber: nextVersionNumber,
+    teamVersionStatus: "editing",
+    parentTeamVersionId: source.teamVersionId || source.projectId,
+    projectStatus: "draft",
+    projectDigest: null,
+    confirmedAt: null,
+    releasedAt: null,
+    updatedAt: new Date().toISOString()
+  });
+  return readProject(project.projectId);
+}
+
+export async function releaseTeamVersion(projectId) {
+  return confirmProjectTeam(projectId, { release: true });
+}
+
+export async function archiveTeamVersion(projectId) {
+  return withProjectWriteLock(projectId, "team-version-archive", async () => {
+    const project = await readProject(projectId);
+    if (project.teamProjectId) throw new Error("TEAM_VERSION_INVALID: project workspaces cannot be archived as team versions.");
+    if (project.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be archived.");
+    const projects = await listProjects();
+    if (projects.some((item) => item.teamProjectId && item.teamVersionId === project.teamVersionId)) {
+      const next = { ...normalizeMeta(project, projectId), teamVersionStatus: "archived", archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      await writeJson(join(project.workdir, ".site", "project.json"), next);
+      return readProject(projectId);
+    }
+    const next = { ...normalizeMeta(project, projectId), teamVersionStatus: "archived", archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    await writeJson(join(project.workdir, ".site", "project.json"), next);
+    return readProject(projectId);
+  });
+}
+
+export async function listRecentProjectRuns(limit = 50) {
+  const projects = await listProjects();
+  const teams = new Map((await listProjects()).filter((project) => !project.teamProjectId).map((project) => [project.teamVersionId || project.projectId, project]));
+  const runs = [];
+  for (const project of projects.filter((item) => item.teamProjectId || item.projectType === "collaboration")) {
+    if (project.projectType === "collaboration" && Array.isArray(project.taskRecords) && project.taskRecords.length) {
+      project.taskRecords.filter((task) => !task.deletedAt && task.status !== "deleted").forEach((task, index) => runs.push({
+        runId: task.runId || task.taskId,
+        taskId: task.taskId,
+        projectId: project.projectId,
+        projectName: project.name,
+        workspaceKey: project.workspaceKey || "",
+        teamId: task.teamId || project.mountedTeams?.[0]?.teamId || null,
+        teamVersionId: task.teamVersionId || project.mountedTeams?.[0]?.teamVersionId || null,
+        teamName: task.teamName || project.mountedTeams?.[0]?.teamName || "未选择团队",
+        teamVersionNumber: task.teamVersionNumber || project.mountedTeams?.[0]?.teamVersionNumber || 1,
+        roundNumber: task.roundNumber || index + 1,
+        input: task.input || "",
+        status: task.status,
+        mode: "task",
+        updatedAt: task.completedAt || task.startedAt,
+        durationMs: 0,
+        pendingReviewCount: 0
+      }));
+      continue;
+    }
+    const team = teams.get(project.teamVersionId) || teams.get(project.teamProjectId);
+    const ordered = [...(project.runs || [])].sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
+    ordered.forEach((run, index) => runs.push({
+      runId: run.runId,
+      projectId: project.projectId,
+      projectName: project.name,
+      workspaceKey: project.workspaceKey || "",
+      teamId: project.teamId || team?.teamId || project.teamProjectId,
+      teamVersionId: project.teamVersionId || team?.teamVersionId || project.teamProjectId,
+      teamName: project.teamName || team?.teamName || team?.name || "团队",
+      teamVersionNumber: project.teamVersionNumber || team?.teamVersionNumber || 1,
+      roundNumber: index + 1,
+      input: run.prompt || run.input || "",
+      status: run.status,
+      mode: run.isSimulation ? "dry-run" : "sandbox",
+      updatedAt: run.updatedAt,
+      durationMs: run.durationMs || 0,
+      pendingReviewCount: run.pendingReviewCount || 0
+    }));
+  }
+  return runs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, Math.max(1, Math.min(limit, 200)));
 }
 
 export async function updateProject(projectId, changes = {}) {
@@ -224,7 +719,7 @@ export async function invalidateProjectConfirmation(projectId, reason = "semanti
   });
 }
 
-export async function confirmProjectTeam(projectId, { trustedClassic = false } = {}) {
+export async function confirmProjectTeam(projectId, { trustedClassic = false, release = true } = {}) {
   return withProjectWriteLock(projectId, "project-confirm", async () => {
     const project = await readProject(projectId);
     const systemSource = await readFile(join(project.workdir, "system.mmd"), "utf8");
@@ -239,7 +734,8 @@ export async function confirmProjectTeam(projectId, { trustedClassic = false } =
     if (!trustedClassic && !isTrustedTeamTopology(project)) validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleId);
     const digest = await semanticProjectDigest(project);
     if (project.projectStatus === "confirmed" && project.projectDigest === digest) return project;
-    const next = { ...normalizeMeta(project, projectId), projectStatus: "confirmed", projectDigest: digest, confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const releasedAt = new Date().toISOString();
+    const next = { ...normalizeMeta(project, projectId), projectStatus: "confirmed", projectDigest: digest, confirmedAt: releasedAt, teamVersionStatus: release ? "released" : (project.teamVersionStatus || "draft"), releasedAt: release ? releasedAt : null, updatedAt: releasedAt };
     await writeJson(join(project.workdir, ".site", "project.json"), next);
     return readProject(projectId);
   });
@@ -523,6 +1019,26 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
   const state = await loadProjectRunState(runDir);
   const quality = evaluateProjectRunResult({ plan: runPlan, state });
   const response = { projectId, runId, mode, result, runPlan, state, quality, materials: materialInputs };
+  const taskRecord = {
+    taskId: runId,
+    runId,
+    projectId,
+    input,
+    status: state.status,
+    startedAt: state.startedAt || pendingLedgerEntry?.startedAt || new Date().toISOString(),
+    completedAt: state.finishedAt || new Date().toISOString(),
+    roundNumber: ((project.taskRecords || []).length || 0) + 1,
+    teamVersionId: project.teamVersionId || project.mountedTeams?.[0]?.teamVersionId || null,
+    teamName: project.teamName || project.mountedTeams?.[0]?.teamName || null,
+    outputSummary: typeof result?.finalOutput === "string" ? result.finalOutput.slice(0, 500) : "",
+    commitPlaceholder: null
+  };
+  const latestMeta = await readJson(join(project.workdir, ".site", "project.json"), {});
+  await writeJson(join(project.workdir, ".site", "project.json"), {
+    ...latestMeta,
+    taskRecords: [...(Array.isArray(latestMeta.taskRecords) ? latestMeta.taskRecords : []), taskRecord],
+    updatedAt: new Date().toISOString()
+  });
   if (requestKey) {
     const ledgerLock = writeLockReleased
       ? await acquireProjectWriteLock(initialProject.workdir, "run-ledger")

@@ -1,7 +1,7 @@
 export const cases = [
   {
     id: "software-team",
-    title: { "zh-CN": "软件研发团队", en: "Software delivery team" },
+    title: { "zh-CN": "软件研发", en: "Software delivery" },
     short: {
       "zh-CN": "把需求拆成工程、体验和质量工作流，再由负责人整合交付。",
       en: "Turn a product request into engineering, experience, and quality workstreams, then bring them together for delivery."
@@ -81,7 +81,7 @@ export const cases = [
   },
   {
     id: "expert-consultation",
-    title: { "zh-CN": "多学科专家会诊", en: "Expert consultation" },
+    title: { "zh-CN": "专家会诊", en: "Expert consultation" },
     short: {
       "zh-CN": "让不同专科独立分析，由主审汇总已收到的意见与待确认的问题。",
       en: "Gather independent specialist views, then let a lead reviewer summarize the available perspectives and open questions."
@@ -156,7 +156,7 @@ export const cases = [
   },
   {
     id: "structured-debate",
-    title: { "zh-CN": "正反方团队辩论", en: "Structured team debate" },
+    title: { "zh-CN": "正反方辩论", en: "Structured debate" },
     short: {
       "zh-CN": "正反方围绕同一议题交锋，由中立裁判审阅双方论据并限轮裁决。",
       en: "Two sides argue from a shared brief while a neutral judge reviews both and closes within a bounded number of rounds."
