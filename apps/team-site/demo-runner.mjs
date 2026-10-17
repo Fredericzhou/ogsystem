@@ -7,18 +7,19 @@ import { fileURLToPath } from "node:url";
 import { getCase } from "./cases.mjs";
 import { localizedEventLabel } from "./event-labels.mjs";
 import { parseSystemFromMermaidSource } from "../../dist/runtime/parse-mermaid.js";
-import { importSystemToAuthoring } from "../../dist/visualizer/studio-authoring.js";
+import { authoringToDesign, importSystemToAuthoring } from "../../dist/visualizer/studio-authoring.js";
 import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(process.env.OGSYSTEM_ROOT || appRoot, process.env.OGSYSTEM_ROOT ? "." : "../..");
 const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
+export const DEFAULT_DEMO_MODEL = "gpt-5.6-luna";
 
 function quote(value) {
   return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
-function buildSystem(caseSpec) {
+export function buildCaseSystem(caseSpec) {
   const lines = [
     "flowchart TD",
     `%% system.id=site.${caseSpec.id}`,
@@ -46,7 +47,7 @@ function buildSystem(caseSpec) {
 export function buildCaseGraph(caseId, locale = "zh-CN") {
   const caseSpec = getCase(caseId);
   if (!caseSpec) throw new Error("Unknown example team.");
-  const systemSource = buildSystem(caseSpec);
+  const systemSource = buildCaseSystem(caseSpec);
   const system = parseSystemFromMermaidSource(systemSource);
   const authoring = importSystemToAuthoring({
     workdir: repositoryRoot,
@@ -100,8 +101,15 @@ function roleManifest(role) {
   };
 }
 
-async function writeProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
-  const rolesRoot = join(workdir, "roles");
+export async function materializeCaseTeam(caseId, workdir, locale = "zh-CN") {
+  const caseSpec = getCase(caseId);
+  if (!caseSpec) throw new Error("Unknown example team.");
+  await writeCaseProject(caseSpec, workdir, "", "sandbox", locale);
+  return { caseSpec, systemSource: buildCaseSystem(caseSpec) };
+}
+
+async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
+  const rolesRoot = join(workdir, "team-roles", "roles");
   for (const role of caseSpec.roles) {
     const roleDir = join(rolesRoot, role.id);
     await mkdir(roleDir, { recursive: true });
@@ -121,14 +129,24 @@ async function writeProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
 
   const configDir = join(workdir, ".ogs");
   await mkdir(configDir, { recursive: true });
-  await writeFile(join(workdir, "system.mmd"), buildSystem(caseSpec));
+  const systemSource = buildCaseSystem(caseSpec);
+  await writeFile(join(workdir, "system.mmd"), systemSource);
+  const authoring = importSystemToAuthoring({
+    workdir,
+    systemPath: "system.mmd",
+    system: parseSystemFromMermaidSource(systemSource),
+    roleDisplayNames: new Map(caseSpec.roles.map((role) => [role.id, role.label[locale] || role.label["zh-CN"]]))
+  });
+  await writeFile(join(workdir, "system.design.json"), `${JSON.stringify(authoringToDesign(authoring), null, 2)}\n`);
+  const catalog = await readFile(join(repositoryRoot, ".ogs", "model-catalog.json"), "utf8").catch(() => undefined);
+  if (catalog) await writeFile(join(configDir, "model-catalog.json"), catalog);
   await writeFile(join(configDir, "laws.json"), `${JSON.stringify({ laws: [{
     lawId: `law.site.${caseSpec.id}`,
     constraints: { forbiddenToolRefs: [], maxTransitions: 32, allowNoopWithoutExecutionBinding: false }
   }] }, null, 2)}\n`);
   await writeFile(join(configDir, "runtime.json"), `${JSON.stringify({
     configVersion: "2",
-    roleRepo: ".",
+    roleRepo: "team-roles",
     runsDir: ".ogs/runs",
     redaction: { enabled: true },
     tools: { environmentPolicy: "minimal", envAllowlist: [] },
@@ -138,7 +156,7 @@ async function writeProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
     configVersion: "2",
     defaults: {
       backend: process.env.OGS_DEMO_BACKEND || "codex",
-      modelId: process.env.OGS_DEMO_MODEL || "gpt-6-luna",
+      modelId: process.env.OGS_DEMO_MODEL || DEFAULT_DEMO_MODEL,
       timeoutMs: 120000,
       maxOutputBytes: 65536
     }
@@ -216,7 +234,7 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
   const workdir = await mkdtemp(join(tmpdir(), "ogsystem-site-run-"));
   const start = Date.now();
   try {
-    await writeProject(caseSpec, workdir, prompt.trim(), mode, locale);
+    await writeCaseProject(caseSpec, workdir, prompt.trim(), mode, locale);
     const args = [
       "run", "start", "--system", "system.mmd", "--laws", ".ogs/laws.json",
       "--user-profile", ".ogs/user-profile.json", "--input", prompt.trim(),
@@ -254,7 +272,7 @@ export async function lintCase(caseId) {
   if (!caseSpec) throw new Error("Unknown example team.");
   const workdir = await mkdtemp(join(tmpdir(), "ogsystem-site-lint-"));
   try {
-    await writeProject(caseSpec, workdir, "site validation", "simulation");
+    await writeCaseProject(caseSpec, workdir, "site validation", "simulation");
     const args = ["lint", "--system", "system.mmd"];
     const result = await runCli(args, { cwd: workdir, timeoutMs: 30000 });
     return { status: "ok", output: result.stdout.trim() };

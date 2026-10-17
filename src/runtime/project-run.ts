@@ -11,7 +11,7 @@ import { basename, relative, resolve, sep } from "node:path";
 
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import type { ExecutionPlan } from "./types.js";
-import type { RunPlanFingerprint } from "./run-artifacts.js";
+import { validateResumePlanFingerprint, type RunPlanFingerprint } from "./run-artifacts.js";
 import { createProjectRunState, saveProjectRunState } from "./project-run-state.js";
 import { assertProjectAssetSnapshot, readProjectAssetManifestDigest } from "./project-run-snapshot.js";
 
@@ -332,14 +332,28 @@ export async function initializeProjectRunArtifacts(args: {
     if (args.enforceSnapshotContract === true && typeof stored.projectAssetManifestDigest !== "string") {
       throw new Error("RUN_SNAPSHOT_INVALID: stored run plan is missing the project asset manifest digest.");
     }
+    if (stored.fingerprintDigest !== runPlan.fingerprintDigest) {
+      await validateResumePlanFingerprint({
+        runDir: args.runDir,
+        expectedFingerprint: args.fingerprint
+      });
+    }
+    const { runPlanDigest: _currentRunPlanDigest, ...runPlanWithoutDigest } = runPlan;
+    const expectedStoredPlanDigest = digestRunPlan({
+      ...runPlanWithoutDigest,
+      fingerprintDigest: stored.fingerprintDigest
+    });
+    const storedPlanMatchesCurrentContract = args.enforceSnapshotContract !== false
+      ? stored.runPlanDigest === expectedStoredPlanDigest
+      : true;
     if (!stored.runPlanDigest || stored.runPlanDigest !== digestRunPlan(storedWithoutDigest) ||
-      stored.projectDigest !== runPlan.projectDigest || stored.fingerprintDigest !== runPlan.fingerprintDigest) {
+      stored.projectDigest !== runPlan.projectDigest || !storedPlanMatchesCurrentContract) {
       throw new Error("RUN_PLAN_CHANGED: the stored run plan does not match the current runtime fingerprint.");
     }
     // Project runs freeze the complete task and execution plan. The general
     // Runtime resume path may receive a refreshed prompt, but must still use
     // the persisted task snapshot rather than rewriting the run contract.
-    if (args.enforceSnapshotContract !== false && stored.runPlanDigest !== runPlan.runPlanDigest) {
+    if (args.enforceSnapshotContract !== false && stored.runPlanDigest !== expectedStoredPlanDigest) {
       throw new Error("RUN_PLAN_CHANGED: the stored run plan does not match the current runtime fingerprint.");
     }
     if (stored.runId !== runPlan.runId || stored.executionPolicy.mode !== runPlan.executionPolicy.mode) {

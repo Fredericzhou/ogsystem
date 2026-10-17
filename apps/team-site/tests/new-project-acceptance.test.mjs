@@ -35,10 +35,13 @@ test("site creates a new project, adds material, and runs its dry run", async ()
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(url + "/studio/new", { waitUntil: "networkidle" });
     await page.locator("#new-project-form").waitFor();
+    assert.equal(await page.locator("[data-builder-choice]").count(), 3);
     await page.locator("#new-project-form input[name=name]").fill("Research Team");
     await page.locator("#new-project-form textarea[name=intent]").fill("Analyze the supplied product brief.");
     await page.locator("#new-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+$/);
+    await page.locator("#team-assistant").waitFor();
+    assert.equal(await page.locator("#team-assistant-input").count(), 1);
     await page.locator("#confirm-project-v2").click();
     await page.locator(".project-status.confirmed").waitFor();
     await page.locator('a[data-route*="/run"]').first().click();

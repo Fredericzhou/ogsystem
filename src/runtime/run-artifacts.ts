@@ -566,6 +566,7 @@ function isFingerprintRecord(value: unknown): value is RunPlanFingerprint {
 function listChangedFingerprintComponents(args: {
   expected: RunPlanFingerprint;
   stored: RunPlanFingerprint;
+  storedOnly?: boolean;
 }): string[] {
   const expectedComponents =
     typeof args.expected.payload.components === "object" &&
@@ -584,14 +585,66 @@ function listChangedFingerprintComponents(args: {
     return [];
   }
 
-  const componentNames = new Set([
-    ...Object.keys(expectedComponents),
-    ...Object.keys(storedComponents)
-  ]);
+  const componentNames = args.storedOnly
+    ? new Set(Object.keys(storedComponents))
+    : new Set([
+      ...Object.keys(expectedComponents),
+      ...Object.keys(storedComponents)
+    ]);
   return Array.from(componentNames).filter(
     (componentName) =>
+      !Object.prototype.hasOwnProperty.call(expectedComponents, componentName) ||
       expectedComponents[componentName]?.digest !== storedComponents[componentName]?.digest
   );
+}
+
+function compareFingerprintCompatibility(args: {
+  expected: RunPlanFingerprint;
+  stored: RunPlanFingerprint;
+}): { compatible: boolean; changedComponents: string[] } {
+  if (
+    args.stored.version === args.expected.version &&
+    args.stored.algorithm === args.expected.algorithm &&
+    args.stored.digest === args.expected.digest
+  ) {
+    return { compatible: true, changedComponents: [] };
+  }
+  if (
+    args.stored.version >= args.expected.version ||
+    args.stored.algorithm !== args.expected.algorithm
+  ) {
+    return {
+      compatible: false,
+      changedComponents: listChangedFingerprintComponents(args)
+    };
+  }
+
+  const expectedComponents =
+    typeof args.expected.payload.components === "object" &&
+    args.expected.payload.components !== null &&
+    !Array.isArray(args.expected.payload.components)
+      ? (args.expected.payload.components as Record<string, { digest?: unknown }>)
+      : undefined;
+  const storedComponents =
+    typeof args.stored.payload.components === "object" &&
+    args.stored.payload.components !== null &&
+    !Array.isArray(args.stored.payload.components)
+      ? (args.stored.payload.components as Record<string, { digest?: unknown }>)
+      : undefined;
+  if (!expectedComponents || !storedComponents || Object.keys(storedComponents).length === 0) {
+    return { compatible: false, changedComponents: [] };
+  }
+
+  const changedComponents = listChangedFingerprintComponents({
+    ...args,
+    storedOnly: true
+  });
+  return {
+    compatible: changedComponents.length === 0 && Object.keys(storedComponents).every(
+      (name) => Object.prototype.hasOwnProperty.call(expectedComponents, name)
+    ),
+    changedComponents
+  };
 }
 
 async function restoreRoleExecutionCount(executionsDir: string): Promise<number> {
@@ -1472,15 +1525,12 @@ export async function validateResumePlanFingerprint(args: {
     });
   }
 
-  if (
-    stored.version !== args.expectedFingerprint.version ||
-    stored.algorithm !== args.expectedFingerprint.algorithm ||
-    stored.digest !== args.expectedFingerprint.digest
-  ) {
-    const changedComponents = listChangedFingerprintComponents({
-      expected: args.expectedFingerprint,
-      stored
-    });
+  const compatibility = compareFingerprintCompatibility({
+    expected: args.expectedFingerprint,
+    stored
+  });
+  if (!compatibility.compatible) {
+    const changedComponents = compatibility.changedComponents;
     const mismatchScope =
       changedComponents.length > 0
         ? ` (${changedComponents.join(", ")})`

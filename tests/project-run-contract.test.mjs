@@ -10,6 +10,7 @@ import {
   initializeProjectRunArtifacts,
   loadProjectRunPlan
 } from "../dist/runtime/project-run.js";
+import { validateResumePlanFingerprint } from "../dist/runtime/run-artifacts.js";
 import {
   applyRunControl,
   createProjectRunState,
@@ -46,6 +47,84 @@ input -->|START| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
 `));
 }
+
+test("resume accepts legacy fingerprints when every stored component is unchanged", async () => {
+  const workdir = await mkdtemp(resolve(tmpdir(), "ogs-legacy-fingerprint-"));
+  try {
+    const runDir = resolve(workdir, ".ogs", "runs", "run-legacy");
+    await mkdir(runDir, { recursive: true });
+    const expected = fingerprint("current-digest");
+    const stored = {
+      ...expected,
+      version: expected.version - 1,
+      digest: "legacy-digest",
+      payload: {
+        components: {
+          system: expected.payload.components.system,
+          design: expected.payload.components.design,
+          effectiveLaw: expected.payload.components.effectiveLaw
+        }
+      }
+    };
+    await writeFile(resolve(runDir, "plan-fingerprint.json"), JSON.stringify(stored), "utf8");
+    await assert.doesNotReject(() => validateResumePlanFingerprint({ runDir, expectedFingerprint: expected }));
+
+    await writeFile(resolve(runDir, "plan-fingerprint.json"), JSON.stringify({
+      ...stored,
+      payload: { components: { ...stored.payload.components, design: { digest: "changed-design", value: {} } } }
+    }), "utf8");
+    await assert.rejects(
+      () => validateResumePlanFingerprint({ runDir, expectedFingerprint: expected }),
+      /Resume plan fingerprint mismatch/
+    );
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("project run resume accepts a legacy fingerprint through artifact initialization", async () => {
+  const workdir = await mkdtemp(resolve(tmpdir(), "ogs-legacy-project-resume-"));
+  try {
+    const runDir = resolve(workdir, ".ogs", "runs", "run-legacy-project");
+    const expected = fingerprint("current-digest");
+    const storedFingerprint = {
+      ...expected,
+      version: expected.version - 1,
+      digest: "legacy-digest",
+      payload: {
+        components: {
+          system: expected.payload.components.system,
+          design: expected.payload.components.design,
+          effectiveLaw: expected.payload.components.effectiveLaw
+        }
+      }
+    };
+    const created = await initializeProjectRunArtifacts({
+      workdir,
+      runDir,
+      projectId: "project-legacy",
+      prompt: "resume a legacy project run",
+      plan: plan(),
+      fingerprint: storedFingerprint,
+      mode: "dry-run",
+      projectDigest: "project-digest"
+    });
+    await writeFile(resolve(runDir, "plan-fingerprint.json"), JSON.stringify(storedFingerprint), "utf8");
+    const resumed = await initializeProjectRunArtifacts({
+      workdir,
+      runDir,
+      projectId: "project-legacy",
+      prompt: "resume a legacy project run",
+      plan: plan(),
+      fingerprint: expected,
+      mode: "dry-run",
+      projectDigest: "project-digest"
+    });
+    assert.equal(resumed.runPlan.fingerprintDigest, storedFingerprint.digest);
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
 
 test("project run artifacts freeze the run plan and material content", async () => {
   const workdir = await mkdtemp(resolve(tmpdir(), "ogs-project-run-contract-"));
@@ -299,6 +378,29 @@ test("project run snapshots reject source and restored symbolic links", async ()
   } finally {
     await rm(workdir, { recursive: true, force: true });
     await rm(externalDir, { recursive: true, force: true });
+  }
+});
+
+test("project run snapshots reject files that are not declared by the manifest", async () => {
+  const workdir = await mkdtemp(resolve(tmpdir(), "ogs-project-run-unmanifested-"));
+  try {
+    const sourceDir = resolve(workdir, "assets");
+    await mkdir(resolve(sourceDir, ".ogs"), { recursive: true });
+    await writeFile(resolve(sourceDir, "system.mmd"), "flowchart TD\ninput --> output\n", "utf8");
+    await writeFile(resolve(sourceDir, ".ogs", "runtime.json"), "{}\n", "utf8");
+    const runDir = resolve(workdir, ".ogs", "runs", "run-extra-file");
+    await snapshotProjectAssets({
+      sourceWorkdir: sourceDir,
+      runDir,
+      runtimeConfig: { roleRepo: "og-roles" }
+    });
+    await writeFile(resolve(runDir, "project-assets", ".ogs", "model-catalog.json"), "{}\n", "utf8");
+    await assert.rejects(
+      () => assertProjectAssetSnapshot(runDir),
+      /unmanifested: \.ogs\/model-catalog\.json/
+    );
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
   }
 });
 

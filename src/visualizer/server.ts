@@ -306,9 +306,9 @@ function normalizePositiveInteger(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
-function readProjectRunMode(value: unknown, dryRun: boolean): ProjectRunMode | undefined {
+function readProjectRunMode(value: unknown, dryRun: boolean, hasProjectContext: boolean): ProjectRunMode | undefined {
   if (value === undefined) {
-    return dryRun ? "dry-run" : undefined;
+    return dryRun && hasProjectContext ? "dry-run" : undefined;
   }
   if (value !== "dry-run" && value !== "sandbox" && value !== "real") {
     throw new HttpError(400, "INVALID_RUN_MODE", "runMode must be dry-run, sandbox, or real.");
@@ -1693,7 +1693,11 @@ async function handleApiRunStart(
     throw new HttpError(400, "RUN_START_INPUT_REQUIRED", "systemPath and input are required.");
   }
   const dryRun = body.dryRun === true;
-  const projectRunMode = readProjectRunMode(body.runMode, dryRun);
+  const projectRunMode = readProjectRunMode(
+    body.runMode,
+    dryRun,
+    body.projectId !== undefined || body.projectDigest !== undefined
+  );
   if (projectRunMode === "real") {
     throw new HttpError(501, "REAL_RUN_UNSUPPORTED", "Real project runs are not enabled in the first phase.");
   }
@@ -1708,12 +1712,15 @@ async function handleApiRunStart(
     );
   }
   const attachedSiteMeta = await readFile(resolve(workdir, ".site", "project.json"), "utf8")
-    .then((value) => JSON.parse(value) as { projectId?: unknown; projectStatus?: unknown; projectDigest?: unknown })
+    .then((value) => JSON.parse(value) as { projectId?: unknown; projectStatus?: unknown; projectDigest?: unknown; source?: unknown })
     .catch(() => undefined);
-  if (attachedSiteMeta && attachedSiteMeta.projectStatus !== "confirmed") {
+  if (projectRunMode && attachedSiteMeta && attachedSiteMeta.projectStatus !== "confirmed") {
     throw new HttpError(409, "PROJECT_NOT_CONFIRMED", "Confirm the project asset before starting a run.");
   }
-  if (attachedSiteMeta) {
+  if (projectRunMode && !attachedSiteMeta && !asString(body.projectId)) {
+    throw new HttpError(400, "PROJECT_ID_REQUIRED", "Project runs require projectId.");
+  }
+  if (projectRunMode && attachedSiteMeta) {
     if (asString(body.projectId) !== asString(attachedSiteMeta.projectId) || asString(body.projectDigest) !== asString(attachedSiteMeta.projectDigest)) {
       throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project context and confirmation digest are required for project runs.");
     }
@@ -1740,6 +1747,7 @@ async function handleApiRunStart(
     runId,
     projectId: asString(body.projectId) ?? asString(attachedSiteMeta?.projectId),
     projectDigest: asString(body.projectDigest) ?? asString(attachedSiteMeta?.projectDigest),
+    trustedProjectTopology: attachedSiteMeta?.source === "classic" || attachedSiteMeta?.source === "classic-template",
     targetDir: asString(body.targetDir),
     dryRun,
     projectRunMode,
@@ -1811,56 +1819,61 @@ async function handleApiRunResume(
   const body = await readJsonRequest(request);
   const runDir = resolveRunDir(workdir, runId);
   const attachedSiteMeta = await readFile(resolve(workdir, ".site", "project.json"), "utf8")
-    .then((value) => JSON.parse(value) as { projectId?: unknown; projectStatus?: unknown; projectDigest?: unknown })
+    .then((value) => JSON.parse(value) as { projectId?: unknown; projectStatus?: unknown; projectDigest?: unknown; source?: unknown })
     .catch(() => undefined);
-  let projectRunMode: ProjectRunMode | undefined;
+  const loadedPlan = await loadProjectRunPlan(runDir).catch((error) => {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+    throw new HttpError(409, "RUN_SNAPSHOT_INVALID", error instanceof Error ? error.message : "Project run plan is unavailable.");
+  });
+  const plan = loadedPlan?.projectId ? loadedPlan : undefined;
+  let projectRunMode: ProjectRunMode | undefined = plan?.executionPolicy.mode;
   let projectId: string | undefined;
   let projectDigest: string | undefined;
   let materialInputs: ProjectMaterialInput[] | undefined;
   let systemPath = asString(body.systemPath) ?? resolve(runDir, "system.mmd");
   let prompt = asString(body.input);
   let onProjectRunPrepared: (() => Promise<void>) | undefined;
-  if (attachedSiteMeta) {
-    const plan = await loadProjectRunPlan(runDir).catch((error) => {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
-      throw new HttpError(409, "RUN_SNAPSHOT_INVALID", error instanceof Error ? error.message : "Project run plan is unavailable.");
-    });
-    if (plan) {
-      if (asString(body.projectId) !== asString(attachedSiteMeta.projectId)) {
-        throw new HttpError(409, "PROJECT_CONTEXT_INVALID", "Project context does not match this run.");
-      }
-      if (asString(body.projectDigest) && asString(body.projectDigest) !== plan.projectDigest) {
-        throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "The resume request digest does not match the immutable Run snapshot.");
-      }
-      const state = await loadProjectRunState(runDir);
-      if (plan.projectId !== asString(attachedSiteMeta.projectId)) throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Run snapshot belongs to another project.");
-      if (!["waiting_review", "paused", "ready"].includes(state.status)) {
-        throw new HttpError(409, "RUN_RESUME_NOT_ALLOWED", `Project run status is ${state.status}.`);
-      }
-      if (plan.executionPolicy.mode === "real") throw new HttpError(501, "REAL_RUN_UNSUPPORTED", "Real project runs are not enabled in the first phase.");
-      const task = JSON.parse(await readFile(resolve(runDir, "task.json"), "utf8")) as { prompt?: unknown };
-      if (prompt !== undefined && prompt !== String(task.prompt ?? "")) throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Project resume must use the immutable task snapshot.");
-      prompt = String(task.prompt ?? "");
-      systemPath = resolve(runDir, "system.mmd");
-      projectRunMode = plan.executionPolicy.mode;
-      projectId = asString(attachedSiteMeta.projectId);
-      projectDigest = plan.projectDigest;
-      materialInputs = (await loadProjectMaterialSnapshots(runDir)).map((item) => ({
-        materialId: item.materialId,
-        sourcePath: resolve(runDir, item.snapshotPath),
-        contentType: item.contentType,
-        selectedRanges: item.selectedRanges,
-        consumingNodeIds: item.consumingNodeIds
-      }));
-      onProjectRunPrepared = async () => { await writeProjectRunControl(runDir, "resume", "visualizer"); };
+  if (plan) {
+    if (!plan.projectId) {
+      throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Project run plan is missing projectId.");
     }
-    if (!plan && attachedSiteMeta.projectStatus !== "confirmed") {
+    if (attachedSiteMeta && plan.projectId !== asString(attachedSiteMeta.projectId)) {
+      throw new HttpError(409, "PROJECT_CONTEXT_INVALID", "Project context does not match this run.");
+    }
+    if (asString(body.projectId) && asString(body.projectId) !== plan.projectId) {
+      throw new HttpError(409, "PROJECT_CONTEXT_INVALID", "Project context does not match this run.");
+    }
+    if (asString(body.projectDigest) && asString(body.projectDigest) !== plan.projectDigest) {
+      throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "The resume request digest does not match the immutable Run snapshot.");
+    }
+    const state = await loadProjectRunState(runDir);
+    if (attachedSiteMeta && plan.projectId !== asString(attachedSiteMeta.projectId)) throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Run snapshot belongs to another project.");
+    if (!["waiting_review", "paused", "ready"].includes(state.status)) {
+      throw new HttpError(409, "RUN_RESUME_NOT_ALLOWED", `Project run status is ${state.status}.`);
+    }
+    if (plan.executionPolicy.mode === "real") throw new HttpError(501, "REAL_RUN_UNSUPPORTED", "Real project runs are not enabled in the first phase.");
+    const task = JSON.parse(await readFile(resolve(runDir, "task.json"), "utf8")) as { prompt?: unknown };
+    if (prompt !== undefined && prompt !== String(task.prompt ?? "")) throw new HttpError(409, "RUN_SNAPSHOT_INVALID", "Project resume must use the immutable task snapshot.");
+    prompt = String(task.prompt ?? "");
+    systemPath = resolve(runDir, "system.mmd");
+    projectId = plan.projectId;
+    projectDigest = plan.projectDigest;
+    materialInputs = (await loadProjectMaterialSnapshots(runDir)).map((item) => ({
+      materialId: item.materialId,
+      sourcePath: resolve(runDir, item.snapshotPath),
+      contentType: item.contentType,
+      selectedRanges: item.selectedRanges,
+      consumingNodeIds: item.consumingNodeIds
+    }));
+    onProjectRunPrepared = async () => { await writeProjectRunControl(runDir, "resume", "visualizer"); };
+  } else if (attachedSiteMeta) {
+    if (attachedSiteMeta.projectStatus !== "confirmed") {
       throw new HttpError(409, "PROJECT_NOT_CONFIRMED", "Confirm the project asset before resuming a non-project run.");
     }
-    if (!plan && (asString(body.projectId) !== asString(attachedSiteMeta.projectId) || asString(body.projectDigest) !== asString(attachedSiteMeta.projectDigest))) {
+    if (asString(body.projectId) !== asString(attachedSiteMeta.projectId) || asString(body.projectDigest) !== asString(attachedSiteMeta.projectDigest)) {
       throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project context and confirmation digest are required for project resumes.");
     }
-    if (!plan && await computeProjectAssetDigest(workdir) !== asString(attachedSiteMeta.projectDigest)) {
+    if (await computeProjectAssetDigest(workdir) !== asString(attachedSiteMeta.projectDigest)) {
       throw new HttpError(409, "PROJECT_CONFIRMATION_STALE", "Project executable assets changed; confirm the project again.");
     }
   }
@@ -1885,6 +1898,7 @@ async function handleApiRunResume(
     projectDigest,
     projectRunMode,
     materialInputs,
+    trustedProjectTopology: attachedSiteMeta?.source === "classic" || attachedSiteMeta?.source === "classic-template",
     enforceTerminalResumeGate: Boolean(projectRunMode),
     onProjectRunPrepared,
     workdir,
@@ -2212,6 +2226,20 @@ async function emitSessionEvent(workdir: string, sessionId: string, event: Recor
 
 const sessionEventLocks = new Map<string, Promise<void>>();
 
+async function readCompletedSessionTurnEvent(workdir: string, sessionId: string, turnId: string): Promise<Record<string, unknown> | undefined> {
+  const raw = await readFile(resolve(workdir, ".ogs", "sessions", sessionId, "events.ndjson"), "utf8").catch(() => "");
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line) continue;
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      if (event.type === "turn.completed" && event.turnId === turnId) return event;
+    } catch {
+      // Ignore a malformed audit line here; the event stream remains diagnostic only.
+    }
+  }
+  return undefined;
+}
+
 function sessionTurnRequestPath(workdir: string, sessionId: string, turnId: string): string {
   return resolve(workdir, ".ogs", "sessions", sessionId, "turn-requests", `${turnId}.json`);
 }
@@ -2255,12 +2283,14 @@ async function executeSessionTurn(state: VisualizationServerState, session: Serv
     });
     const status = asString(asRecord(result)?.status) ?? "unknown";
     currentSession = await readServeSession(state.workdir, session.sessionId) ?? currentSession;
-    currentSession.turns = currentSession.turns.map((item) => item.turnId === turn.turnId ? { ...turnRecord, status } : item);
     await persistServeSession(state.workdir, currentSession);
     await rebuildRunsIndex(state.workdir);
     await recordControlPlaneAudit({ workdir: state.workdir, runId: turn.runId, action: "run.start", principal });
     await writeRunSnapshotManifest({ workdir: state.workdir, runId: turn.runId, systemPath: session.systemPath });
     await emitSessionEvent(state.workdir, session.sessionId, { type: "turn.completed", turnId: turn.turnId, runId: turn.runId, status });
+    currentSession = await readServeSession(state.workdir, session.sessionId) ?? currentSession;
+    currentSession.turns = currentSession.turns.map((item) => item.turnId === turn.turnId ? { ...turnRecord, status } : item);
+    await persistServeSession(state.workdir, currentSession);
     await unlink(sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId)).catch(() => undefined);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -2285,13 +2315,21 @@ async function recoverSessionTurns(state: VisualizationServerState): Promise<voi
   for (const session of await listServeSessions(state.workdir)) {
     for (const turn of session.turns) {
       if (turn.status !== "queued" && turn.status !== "running") continue;
+      const current = await readServeSession(state.workdir, session.sessionId);
+      const persistedTurn = current?.turns.find((item) => item.turnId === turn.turnId);
+      if (!current || current.status !== "active" || !persistedTurn || (persistedTurn.status !== "queued" && persistedTurn.status !== "running")) continue;
+      const completedEvent = await readCompletedSessionTurnEvent(state.workdir, session.sessionId, turn.turnId);
+      if (completedEvent) {
+        persistedTurn.status = asString(completedEvent.status) ?? "completed";
+        await persistServeSession(state.workdir, current);
+        await unlink(sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId)).catch(() => undefined);
+        continue;
+      }
       const requestPath = sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId);
       let request: PersistedSessionTurnRequest;
       try {
         request = JSON.parse(await readFile(requestPath, "utf8")) as PersistedSessionTurnRequest;
       } catch {
-        const current = await readServeSession(state.workdir, session.sessionId);
-        const persistedTurn = current?.turns.find((item) => item.turnId === turn.turnId);
         if (current && persistedTurn && (persistedTurn.status === "queued" || persistedTurn.status === "running")) {
           persistedTurn.status = "failed";
           await persistServeSession(state.workdir, current);
@@ -2304,10 +2342,6 @@ async function recoverSessionTurns(state: VisualizationServerState): Promise<voi
         }
         continue;
       }
-      const current = await readServeSession(state.workdir, session.sessionId);
-      if (!current || current.status !== "active") continue;
-      const persistedTurn = current.turns.find((item) => item.turnId === turn.turnId);
-      if (!persistedTurn || (persistedTurn.status !== "queued" && persistedTurn.status !== "running")) continue;
       if (persistedTurn.status === "running") {
         persistedTurn.status = "queued";
         await persistServeSession(state.workdir, current);

@@ -51,6 +51,49 @@ test("site creates a persistent project, snapshots materials, and performs a dry
   }
 });
 
+test("classic team use creates a confirmed asset and runs its trusted graph", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-classic-projects-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?classic=" + Date.now());
+  try {
+    const project = await store.createClassicTeamProject({ caseId: "software-team" });
+    assert.equal(project.projectStatus, "confirmed");
+    assert.equal(project.source, "classic");
+    const run = await store.startProjectRun(project.projectId, {
+      prompt: "Prepare a concise delivery plan.",
+      mode: "dry-run",
+      idempotencyKey: "classic-dry-run"
+    });
+    assert.equal(["done", "completed"].includes(run.state.status), true);
+    assert.equal(run.runPlan.projectId, project.projectId);
+    assert.equal(run.runPlan.nodeGraph.length, 5);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("classic team templates can be confirmed and run after copying for edits", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-classic-template-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?classic-template=" + Date.now());
+  try {
+    const project = await store.createClassicTeamProject({ caseId: "software-team", asTemplate: true });
+    assert.equal(project.projectStatus, "draft");
+    assert.equal(project.source, "classic-template");
+    const confirmed = await store.confirmProjectTeam(project.projectId);
+    assert.equal(confirmed.projectStatus, "confirmed");
+    const run = await store.startProjectRun(project.projectId, {
+      prompt: "Run the copied classic team.",
+      mode: "dry-run",
+      idempotencyKey: "classic-template-dry-run"
+    });
+    assert.equal(["done", "completed"].includes(run.state.status), true);
+    assert.equal(run.runPlan.nodeGraph.length, 5);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("confirmed projects round-trip through the project bundle and retry as a new run", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-project-roundtrip-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
@@ -218,5 +261,29 @@ test("site design editing invalidates confirmation and run control rejects termi
     );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("project run resume rejects a directory that does not match the requested project and run", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-resume-path-"));
+  const outsideRoot = await mkdtemp(join(tmpdir(), "ogs-site-resume-outside-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?resume-path=" + Date.now());
+  try {
+    const project = await store.createProject({ name: "Resume Path Team", intent: "Validate resume paths.", templateId: "empty" });
+    await store.confirmProjectTeam(project.projectId);
+    const run = await store.startProjectRun(project.projectId, { prompt: "Validate this run.", mode: "dry-run" });
+    await assert.rejects(
+      () => store.startProjectRun(project.projectId, {
+        prompt: "Validate this run.",
+        mode: "dry-run",
+        resumeRunId: run.runId,
+        resumeRunDir: outsideRoot
+      }),
+      /RUN_RESUME_INVALID/
+    );
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
   }
 });

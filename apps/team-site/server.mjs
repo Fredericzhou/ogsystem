@@ -8,6 +8,7 @@ import { eventLabels } from "./event-labels.mjs";
 import {
   addProjectMaterial,
   createProject,
+  createClassicTeamProject,
   confirmProjectTeam,
   exportProjectTeam,
   getProjectGraph,
@@ -161,6 +162,25 @@ const server = createServer(async (request, response) => {
     return;
   }
   const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)(?:\/(materials|runs))?$/);
+  const teamChatMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/team\/chat$/);
+  if (teamChatMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request, 4 * 1024 * 1024);
+      const target = new URL(`/api/v1/ogs/workspace/studio/chat?projectId=${encodeURIComponent(teamChatMatch[1])}`, visUrl);
+      const headers = { "content-type": "application/json" };
+      if (process.env.OGS_VIS_USERNAME && process.env.OGS_VIS_PASSWORD) {
+        headers.authorization = `Basic ${Buffer.from(`${process.env.OGS_VIS_USERNAME}:${process.env.OGS_VIS_PASSWORD}`).toString("base64")}`;
+      }
+      const upstream = await fetch(target, { method: "POST", headers, body: JSON.stringify(payload) });
+      const text = await upstream.text();
+      let responsePayload;
+      try { responsePayload = JSON.parse(text); } catch { responsePayload = { error: text || "Visualizer response was not JSON." }; }
+      sendJson(response, upstream.status, responsePayload);
+    } catch (error) {
+      sendJson(response, 502, { error: error instanceof Error ? `TEAM_ASSISTANT_UNAVAILABLE: ${error.message}` : "TEAM_ASSISTANT_UNAVAILABLE" });
+    }
+    return;
+  }
   const projectGraphMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/team\/graph$/);
   if (projectGraphMatch && request.method === "GET") {
     try {
@@ -253,6 +273,23 @@ const server = createServer(async (request, response) => {
     return;
   }
   const graphMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/graph$/);
+  const caseActionMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/(use|template)$/);
+  if (caseActionMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request);
+      const project = await createClassicTeamProject({
+        caseId: caseActionMatch[1],
+        asTemplate: caseActionMatch[2] === "template",
+        name: payload.name,
+        intent: payload.intent,
+        locale: payload.locale
+      });
+      sendJson(response, 201, publicProject(project));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create team project." });
+    }
+    return;
+  }
   if (request.method === "GET" && graphMatch) {
     try {
       sendJson(response, 200, buildCaseGraph(graphMatch[1], url.searchParams.get("locale") || "zh-CN"));

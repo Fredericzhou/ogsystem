@@ -562,7 +562,7 @@ async function listCheckpointFiles(runDir: string): Promise<Array<{ path: string
   );
 }
 
-function compareFingerprintComponents(args: { expected: JsonRecord; stored: JsonRecord }): string[] {
+function compareFingerprintComponents(args: { expected: JsonRecord; stored: JsonRecord; storedOnly?: boolean }): string[] {
   const expectedComponents = asRecord(args.expected.payload)?.components;
   const storedComponents = asRecord(args.stored.payload)?.components;
   const expectedRecord = asRecord(expectedComponents);
@@ -570,12 +570,45 @@ function compareFingerprintComponents(args: { expected: JsonRecord; stored: Json
   if (!expectedRecord || !storedRecord) {
     return [];
   }
-  const componentNames = new Set([...Object.keys(expectedRecord), ...Object.keys(storedRecord)]);
+  const componentNames = args.storedOnly
+    ? Object.keys(storedRecord)
+    : [...new Set([...Object.keys(expectedRecord), ...Object.keys(storedRecord)])];
   return Array.from(componentNames).filter((name) => {
     const expectedDigest = asString(asRecord(expectedRecord[name])?.digest);
     const storedDigest = asString(asRecord(storedRecord[name])?.digest);
     return expectedDigest !== storedDigest;
   });
+}
+
+function compareStoredFingerprint(args: { expected: JsonRecord; stored: JsonRecord }): {
+  mismatch: boolean;
+  changedComponents: string[];
+  legacyCompatible: boolean;
+} {
+  const expectedVersion = asNumber(args.expected.version);
+  const storedVersion = asNumber(args.stored.version);
+  const isLegacy = expectedVersion !== undefined && storedVersion !== undefined && storedVersion < expectedVersion;
+  const changedComponents = compareFingerprintComponents({ ...args, storedOnly: isLegacy });
+  const expectedComponents = asRecord(asRecord(args.expected.payload)?.components);
+  const storedComponents = asRecord(asRecord(args.stored.payload)?.components);
+  if (!isLegacy || !expectedComponents || !storedComponents || Object.keys(storedComponents).length === 0) {
+    return {
+      mismatch: asString(args.expected.digest) !== asString(args.stored.digest),
+      changedComponents,
+      legacyCompatible: false
+    };
+  }
+  // Older fingerprints may omit newly introduced components. Compare the
+  // components they actually persisted, while still detecting drift in those
+  // components. The missing components cannot be inferred retroactively.
+  const legacyCompatible = changedComponents.length === 0 && Object.keys(storedComponents).every(
+    (name) => Object.prototype.hasOwnProperty.call(expectedComponents, name)
+  );
+  return {
+    mismatch: !legacyCompatible,
+    changedComponents,
+    legacyCompatible
+  };
 }
 
 function extractFingerprintComponentDigests(fingerprint: JsonRecord | undefined): Record<string, string> {
@@ -755,18 +788,16 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
 
   let fingerprintMismatch = false;
   let fingerprintChangedComponents: string[] = [];
+  let fingerprintLegacyCompatible = false;
   let expectedFingerprint: JsonRecord | undefined;
   let fingerprintExpectedError: string | undefined;
   if (storedFingerprint) {
     try {
       expectedFingerprint = await computeExpectedFingerprint(workdir, runDir);
-      fingerprintMismatch = asString(expectedFingerprint.digest) !== asString(storedFingerprint.digest);
-      fingerprintChangedComponents = fingerprintMismatch
-        ? compareFingerprintComponents({
-          expected: expectedFingerprint,
-            stored: storedFingerprint
-          })
-        : [];
+      const comparison = compareStoredFingerprint({ expected: expectedFingerprint, stored: storedFingerprint });
+      fingerprintMismatch = comparison.mismatch;
+      fingerprintChangedComponents = comparison.changedComponents;
+      fingerprintLegacyCompatible = comparison.legacyCompatible;
     } catch (error) {
       fingerprintExpectedError = error instanceof Error ? error.message : String(error);
     }
@@ -855,7 +886,9 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
         fingerprintExpectedError ??
         (fingerprintMismatch
           ? `Fingerprint mismatch${fingerprintChangedComponents.length > 0 ? ` (${fingerprintChangedComponents.join(", ")})` : ""}`
-          : "Fingerprint matches current workspace")
+          : fingerprintLegacyCompatible
+            ? "Legacy fingerprint components match current workspace"
+            : "Fingerprint matches current workspace")
     }),
     toDiagnosticCheck({
       id: "review-requests",
@@ -1018,6 +1051,9 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
       storedDigest: asString(storedFingerprint?.digest),
       expectedDigest: asString(expectedFingerprint?.digest),
       mismatch: fingerprintMismatch,
+      legacyCompatible: fingerprintLegacyCompatible,
+      storedVersion: asNumber(storedFingerprint?.version),
+      expectedVersion: asNumber(expectedFingerprint?.version),
       changedComponents: fingerprintChangedComponents,
       componentDigests: {
         stored: extractFingerprintComponentDigests(storedFingerprint),

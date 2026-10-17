@@ -136,10 +136,18 @@ async function renderGraph(item) {
 
 const graphLabels = {
   "zh-CN": {
-    viewportGroup: "图谱视图", zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布", autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局", topologyOrder: "关系顺序", enabled: "开启", disabled: "关闭", generate: "生成与运行", editGroup: "编辑图谱", minimap: "图谱导航", exportSvg: "导出 SVG", exportPng: "导出 PNG", boundaryEntry: "任务", boundaryEnd: "成果", graphReady: "图谱已载入", quickOpen: "快速定位", quickOpenPlaceholder: "搜索角色或协作关系", quickOpenEmpty: "没有匹配的角色或协作关系。", quickOpenRole: "角色", quickOpenFlow: "协作关系"
+    viewportGroup: "图谱视图", editGroup: "编辑图谱", zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布", autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局", topologyOrder: "关系顺序", enabled: "开启", disabled: "关闭", layoutSwitched: "已切换为{layout}布局", generate: "生成与运行", debugRun: "快速调试", debugAdvanced: "高级调试", debugRunNow: "立即运行", debugQuickInput: "调试输入", debugQuickHint: "在当前图谱中启动一次 Dry Run；路径覆盖等高级设置可在高级调试中完成。", debugQuickPlaceholder: "描述本次调试要验证的任务", debugQuickOpen: "打开快速调试", close: "关闭", debugRunShort: "运行", quickOpen: "快速定位", quickOpenPlaceholder: "搜索角色或协作关系", quickOpenEmpty: "没有匹配的角色或协作关系。", quickOpenRole: "角色", quickOpenFlow: "协作关系", contextEditRole: "编辑角色", contextEditFlow: "编辑关系", contextInsertRole: "插入角色", contextDelete: "删除", minimap: "图谱导航", addRole: "新增角色", addEdge: "新增关系", editSelection: "编辑所选", editRole: "编辑角色", editEdge: "编辑关系", deleteSelection: "删除所选", undo: "撤销", redo: "重做", validateWorkbench: "校验结构", saveWorkbench: "保存团队", ready: "就绪", graphUnavailable: "图谱不可用", graphReady: "图谱已载入", fixMermaidBeforeGraphEditing: "请先修复 Mermaid 诊断，再编辑图谱。", noRolesAvailable: "暂无可用角色。", selectRoleBeforeAddingEdge: "请先选择角色，再新增关系。", invalidConnection: "无效的团队关系。", entryRoleDeletionBlocked: "不能删除入口角色。", invalidEdgeEndpoints: "关系端点无效。", duplicateRoleId: "角色 ID 已存在。", invalidRoleId: "角色 ID 必须以字母开头，只能使用字母、数字、下划线或连字符。", duplicateEdge: "该关系已存在。", invalidEventType: "事件类型必须使用大写字母。", deleteRoleConfirm: "确定删除角色 {roleId} 吗？", editBlocked: "Mermaid 解析成功后才能编辑图谱。", exportSvg: "导出 SVG", exportPng: "导出 PNG", boundaryEntry: "任务", boundaryEnd: "成果"
   },
   en: {
-    viewportGroup: "Graph view", zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph", autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout", topologyOrder: "Flow order", enabled: "On", disabled: "Off", generate: "Generate and run", editGroup: "Graph editing", minimap: "Graph navigator", exportSvg: "Export SVG", exportPng: "Export PNG", boundaryEntry: "Task", boundaryEnd: "Outcome", graphReady: "Graph loaded", quickOpen: "Quick locate", quickOpenPlaceholder: "Search roles or relationships", quickOpenEmpty: "No matching roles or relationships.", quickOpenRole: "Role", quickOpenFlow: "Relationship"
+    viewportGroup: "Graph view", editGroup: "Edit graph", zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph", autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout", topologyOrder: "Flow order", enabled: "On", disabled: "Off", layoutSwitched: "Switched to {layout} layout", generate: "Generate and run", debugRun: "Quick debug", debugAdvanced: "Advanced debug", debugRunNow: "Run now", debugQuickInput: "Debug input", debugQuickHint: "Start a Dry Run from this graph; use advanced debug for path overrides.", debugQuickPlaceholder: "Describe the task to verify", debugQuickOpen: "Open quick debug", close: "Close", debugRunShort: "Run", quickOpen: "Quick locate", quickOpenPlaceholder: "Search roles or relationships", quickOpenEmpty: "No matching roles or relationships.", quickOpenRole: "Role", quickOpenFlow: "Relationship", contextEditRole: "Edit role", contextEditFlow: "Edit relationship", contextInsertRole: "Insert role", contextDelete: "Delete", minimap: "Graph navigator", addRole: "Add role", addEdge: "Add relationship", editSelection: "Edit selected", editRole: "Edit role", editEdge: "Edit relationship", deleteSelection: "Delete selected", undo: "Undo", redo: "Redo", validateWorkbench: "Validate structure", saveWorkbench: "Save team", ready: "Ready", graphUnavailable: "Graph unavailable", graphReady: "Graph loaded", fixMermaidBeforeGraphEditing: "Fix Mermaid diagnostics before editing the graph.", noRolesAvailable: "No roles available.", selectRoleBeforeAddingEdge: "Select a role before adding a relationship.", invalidConnection: "Invalid team relationship.", entryRoleDeletionBlocked: "The entry role cannot be deleted.", invalidEdgeEndpoints: "Relationship endpoints are invalid.", duplicateRoleId: "Role ID already exists.", invalidRoleId: "Role ID must start with a letter and use letters, digits, _ or -.", duplicateEdge: "This relationship already exists.", invalidEventType: "Event type must use uppercase letters.", deleteRoleConfirm: "Delete role {roleId}?", editBlocked: "Fix Mermaid diagnostics before editing the graph.", exportSvg: "Export SVG", exportPng: "Export PNG", boundaryEntry: "Task", boundaryEnd: "Outcome"
+  }
+};
+const graphFormLabels = {
+  "zh-CN": {
+    roleDialogTitle: "新增角色", edgeDialogTitle: "新增关系", editRoleDialogTitle: "编辑角色", editEdgeDialogTitle: "编辑关系", repositoryRole: "角色库", customRole: "自定义角色", rolePackage: "角色包", rolePackageSource: "从已安装的角色库导入", roleId: "角色 ID", title: "显示名称", bindingKind: "绑定方式", modelRef: "模型", profileId: "执行配置", existingProfile: "复用已有执行配置", createProfile: "创建项目执行配置", newProfileId: "生成的配置 ID", newProfileToolRef: "工具", newProfileTimeoutMs: "超时毫秒数", newProfileMaxOutputBytes: "最大输出字节数", sourceRole: "起始角色", targetRole: "目标角色", flowLabel: "关系名称", eventType: "事件类型", runtimeOnlyErrorFlow: "运行时错误关系", participatesInJoin: "参与汇总", cancel: "取消", create: "创建", save: "保存", noRepositoryRoles: "暂无角色库角色", noModels: "暂无模型", noProfiles: "暂无执行配置", noTools: "暂无工具", outputTarget: "成果"
+  },
+  en: {
+    roleDialogTitle: "Add role", edgeDialogTitle: "Add relationship", editRoleDialogTitle: "Edit role", editEdgeDialogTitle: "Edit relationship", repositoryRole: "Role library", customRole: "Custom role", rolePackage: "Role package", rolePackageSource: "Import from the installed role library", roleId: "Role ID", title: "Display name", bindingKind: "Binding", modelRef: "Model", profileId: "Execution profile", existingProfile: "Reuse existing execution config", createProfile: "Create project execution config", newProfileId: "Generated profile ID", newProfileToolRef: "Tool", newProfileTimeoutMs: "Timeout in milliseconds", newProfileMaxOutputBytes: "Maximum output bytes", sourceRole: "Source role", targetRole: "Target role", flowLabel: "Relationship name", eventType: "Event type", runtimeOnlyErrorFlow: "Runtime error relationship", participatesInJoin: "Participates in join", cancel: "Cancel", create: "Create", save: "Save", noRepositoryRoles: "No role library entries", noModels: "No models", noProfiles: "No execution profiles", noTools: "No tools", outputTarget: "Outcome"
   }
 };
 function selectCase(caseId) {
@@ -170,7 +178,62 @@ function renderDetail(item) {
       <section class="detail-roles"><span class="detail-index">05</span><div><h2>${esc(copy[state.locale].caseRoles)}</h2><div class="detail-role-grid">${item.roles.map((role, index) => `<article><span class="member-avatar member-avatar-${index % 3}">${esc(icon[item.icon] || "✦")}</span><div><h3>${esc(text(role.label))}</h3><p>${esc(text(role.description))}</p></div></article>`).join("")}</div></div></section>
     </div>`;
   $("#breadcrumb-current").textContent = text(item.title);
+  const detailRoot = $("#case-detail-view");
+  const useLink = detailRoot.querySelector("[data-use-case]");
+  if (useLink) {
+    useLink.removeAttribute("data-use-case");
+    useLink.dataset.caseAction = "use";
+    useLink.dataset.caseId = item.id;
+    useLink.href = "#";
+    useLink.innerHTML = "使用这个团队 <span aria-hidden=\"true\">→</span>";
+    useLink.insertAdjacentHTML("afterend", "<button class=\"secondary-button\" type=\"button\" data-case-action=\"template\" data-case-id=\"" + esc(item.id) + "\">使用模板，创建新团队</button>");
+  }
+  detailRoot.querySelector(".detail-content")?.insertAdjacentHTML("beforebegin", "<section class=\"detail-graph-section\"><div class=\"detail-section-heading\"><div><span class=\"section-kicker\">OGS / Mermaid</span><h2>团队协作结构</h2><p>先查看角色和交接关系，再决定直接使用，或复制为新团队进行微调。</p></div><span class=\"status-chip\">只读预览</span></div><div id=\"detail-graph-stage\" class=\"graph-stage detail-graph-stage\" role=\"img\" aria-label=\"Team collaboration graph\"></div></section>");
+  detailRoot.querySelectorAll("[data-case-action]").forEach((element) => element.addEventListener("click", (event) => {
+    event.preventDefault();
+    void createProjectFromCase(element.dataset.caseId, element.dataset.caseAction, element);
+  }));
+  void renderDetailGraph(item);
   $$('[data-use-case]').forEach((element) => element.addEventListener("click", (event) => { event.preventDefault(); selectCase(element.dataset.useCase); navigate("/studio"); }));
+}
+
+async function renderDetailGraph(item) {
+  const stage = $("#detail-graph-stage");
+  if (!stage || !window.OGSStudioGraphBundle?.mountStudioX6Bridge) return;
+  try {
+    const response = await fetch("/api/v1/cases/" + encodeURIComponent(item.id) + "/graph?locale=" + encodeURIComponent(state.locale));
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Unable to load the team graph.");
+    window.OGSStudioGraphBundle.mountStudioX6Bridge(stage, {
+      viewModel: payload,
+      readOnly: true,
+      showTopologyOrder: false,
+      showTechnicalDetails: false,
+      initialLayoutMode: "flow",
+      defaultAutoLayout: true,
+      defaultAutoLayoutRequestId: 1,
+      labels: graphLabels[state.locale],
+      onToggleFullscreen: async () => {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await stage.requestFullscreen();
+      }
+    });
+  } catch (error) {
+    stage.textContent = error.message || "Unable to load the team graph.";
+  }
+}
+
+async function createProjectFromCase(caseId, action, button) {
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("/api/v1/cases/" + encodeURIComponent(caseId) + "/" + action, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "无法创建团队项目。");
+    navigate(action === "use" ? "/studio/project/" + encodeURIComponent(payload.projectId) + "/run" : "/studio/project/" + encodeURIComponent(payload.projectId));
+  } catch (error) {
+    if (button) button.disabled = false;
+    showToast(error.message || "无法创建团队项目。");
+  }
 }
 function applyLocale() {
   document.documentElement.lang = state.locale;
@@ -210,17 +273,24 @@ function navigate(path) { history.pushState({}, "", path); syncRoute(); window.s
 async function renderNewProject() {
   const root = $("#new-project-view");
   root.innerHTML = [
-    '<section class="page-heading"><div><div class="eyebrow">创建项目草案 · 01 / 召唤团队</div><h1>用一句话召唤团队</h1><p>这里会创建一个新的项目资产，并生成可微调的 OGS 团队设计。确认前不会进入资源和运行阶段。</p></div><a class="secondary-button" href="/studio" data-route="/studio">返回项目资产库</a></section>',
-    '<section class="project-builder"><div class="project-step active"><span>01</span><div><strong>召唤团队</strong><small>输入目标后生成项目草案，可在确认前继续微调。</small></div></div><div class="project-step"><span>02</span><div><strong>配备资源</strong><small>确认团队后，为本次项目准备材料。</small></div></div><div class="project-step"><span>03</span><div><strong>执行任务</strong><small>固定快照后运行并检查结果。</small></div></div>',
-    '<form id="new-project-form" class="project-form"><label>项目名称<input name="name" required maxlength="120" placeholder="例如：产品研究团队"></label><label>团队目标<textarea name="intent" required maxlength="4000" rows="5" placeholder="例如：分析我上传的竞品资料，输出市场机会、竞品对比和产品建议。"></textarea></label><p class="form-hint">建议同时写清楚对象、目标和期望交付物。团队角色会围绕这句话生成。</p><div class="form-actions"><button class="primary-button" type="submit">创建项目草案 <span aria-hidden="true">→</span></button></div><p class="form-status" id="new-project-status"></p></form></section>'
+    '<section class="page-heading"><div><div class="eyebrow">创建团队草案 · 01 / 召唤团队</div><h1>用一句话创建团队</h1><p>先说清楚目标，再选择协作方式。系统会创建一个可继续对话完善的团队草案，确认后才进入团队库。</p></div><a class="secondary-button" href="/studio" data-route="/studio">返回团队库</a></section>',
+    '<section class="project-builder"><div class="project-step active"><span>01</span><div><strong>创建团队</strong><small>描述目标并选择协作偏好，生成团队草案。</small></div></div><div class="project-step"><span>02</span><div><strong>确认入库</strong><small>通过结构校验后保存为可复用团队资产。</small></div></div><div class="project-step"><span>03</span><div><strong>选择团队运行</strong><small>从团队库选择团队，再配置材料和任务。</small></div></div>',
+    '<form id="new-project-form" class="project-form"><label>团队名称<input name="name" required maxlength="120" placeholder="例如：产品研究团队"></label><label>你希望团队完成什么？<textarea name="intent" required maxlength="4000" rows="5" placeholder="例如：分析我上传的竞品资料，输出市场机会、竞品对比和产品建议。"></textarea></label><fieldset class="builder-choice-group"><legend>团队更适合怎样协作？</legend><div class="builder-choice-grid"><button class="builder-choice" type="button" data-builder-choice="顺序接力：每个角色完成后交给下一个" aria-pressed="false"><strong>顺序接力</strong><span>适合明确、可追踪的工作流程</span></button><button class="builder-choice" type="button" data-builder-choice="独立分析后汇总：多个角色分别研究，最后统一整理" aria-pressed="false"><strong>独立分析后汇总</strong><span>适合需要多角度判断的任务</span></button><button class="builder-choice" type="button" data-builder-choice="负责人协调：由一个负责人安排和检查其他角色" aria-pressed="false"><strong>负责人协调</strong><span>适合目标变化较多的工作</span></button></div></fieldset><p class="form-hint">创建后可以继续用自然语言完善角色、流程和输出要求；模型、工具和权限等专业配置按需展开。</p><div class="form-actions"><button class="primary-button" type="submit">创建团队草案 <span aria-hidden="true">→</span></button></div><p class="form-status" id="new-project-status"></p></form></section>'
   ].join("");
+  $$("[data-builder-choice]").forEach((choice) => choice.addEventListener("click", () => {
+    $$('[data-builder-choice]').forEach((item) => { item.classList.remove("selected"); item.setAttribute("aria-pressed", "false"); });
+    choice.classList.add("selected");
+    choice.setAttribute("aria-pressed", "true");
+  }));
   $("#new-project-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const status = $("#new-project-status");
-    status.textContent = "正在初始化项目…";
+    status.textContent = "正在创建团队草案…";
     try {
-      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), intent: form.get("intent"), templateId: "empty" }) });
+      const preference = $("[data-builder-choice].selected")?.dataset.builderChoice;
+      const intent = [String(form.get("intent") || "").trim(), preference ? `协作偏好：${preference}` : ""].filter(Boolean).join("\n\n");
+      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), intent, templateId: "empty" }) });
       const project = await response.json();
       if (!response.ok) throw new Error(project.error || "项目创建失败");
       state.projectId = project.projectId;
@@ -230,9 +300,68 @@ async function renderNewProject() {
     }
   });
 }
+
+async function renderTeamAssistant(projectId, project) {
+  const root = $("#team-assistant");
+  if (!root) return;
+  let latestDesign;
+  let latestDigest = project.projectDigest;
+  let lastResponse;
+  root.innerHTML = '<div class="panel-head"><div><span class="section-kicker">自然语言完善</span><h2>继续和团队对话</h2></div><span class="status-chip">nl2mmd</span></div><p class="panel-intro">告诉我你想增加、删除或调整什么。每次修改都会先生成预览，确认后才保存到草案。</p><div class="assistant-history" id="team-assistant-history"><div class="assistant-message"><strong>可以这样说</strong><span>增加一个事实核查角色，并让最终结论都附上来源。</span></div></div><div class="assistant-choices"><button type="button" class="builder-choice" data-assistant-choice="按顺序接力完成任务，并在最后增加人工审核"><strong>增加审核</strong><span>在最终输出前检查质量</span></button><button type="button" class="builder-choice" data-assistant-choice="减少角色，优先保证运行速度和成本"><strong>减少角色</strong><span>让流程更短、更容易运行</span></button><button type="button" class="builder-choice" data-assistant-choice="为每个关键结论增加来源引用要求"><strong>增加来源</strong><span>让结果更容易核查</span></button></div><label class="assistant-input-label"><span>告诉团队助手下一步怎么改</span><textarea id="team-assistant-input" rows="3" maxlength="4000" placeholder="例如：让研究员先分析，再让审核员检查事实依据"></textarea></label><div class="form-actions"><button class="primary-button" type="button" id="team-assistant-send">生成修改预览</button><a class="secondary-button" id="team-assistant-vis" href="#" target="_self">打开 Vis 专业编辑</a></div><p class="form-status" id="team-assistant-status"></p><div id="team-assistant-preview"></div>';
+  $("#team-assistant-vis").href = `${state.visUrl}/?projectId=${encodeURIComponent(projectId)}&panel=design`;
+  try {
+    const designResponse = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design`);
+    latestDesign = await designResponse.json();
+  } catch (error) {
+    $("#team-assistant-status").textContent = error.message || "无法读取当前团队设计";
+  }
+  const addMessage = (label, content, kind = "assistant") => {
+    $("#team-assistant-history")?.insertAdjacentHTML("beforeend", `<div class="assistant-message ${kind}"><strong>${esc(label)}</strong><span>${esc(content)}</span></div>`);
+  };
+  const send = async (message) => {
+    const text = String(message || "").trim();
+    if (!text) return;
+    const status = $("#team-assistant-status");
+    const input = $("#team-assistant-input");
+    input.value = text;
+    addMessage("你", text, "user");
+    status.textContent = "正在分析团队结构并生成预览…";
+    try {
+      const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: text, systemSource: latestDesign?.systemSource, authoring: latestDesign?.authoring }) });
+      const payload = await response.json();
+      const responseError = typeof payload.error === "string"
+        ? payload.error
+        : payload.error?.message || payload.error?.code || "团队助手暂时不可用";
+      if (!response.ok) throw new Error(responseError);
+      lastResponse = payload;
+      addMessage("团队助手", payload.summary || payload.questions?.join("\n") || "已生成下一步建议。");
+      const preview = $("#team-assistant-preview");
+      const questions = (payload.questions || []).map((question) => `<button type="button" class="assistant-question" data-assistant-choice="${esc(question)}">${esc(question)}</button>`).join("");
+      const patchReady = payload.authoringPatch?.authoring;
+      preview.innerHTML = `<div class="assistant-preview"><div class="preview-list"><div><strong>当前状态</strong><span>${esc(payload.mode || "draft")}</span></div><div><strong>待确认问题</strong><span>${payload.unresolvedItems?.length || 0}</span></div></div>${payload.assumptions?.length ? `<p class="form-hint">假设：${esc(payload.assumptions.join("；"))}</p>` : ""}${questions ? `<div class="assistant-question-list">${questions}</div>` : ""}${patchReady ? '<div class="form-actions"><button type="button" class="primary-button" id="team-assistant-apply">应用到团队草案</button></div>' : ""}</div>`;
+      preview.querySelectorAll("[data-assistant-choice]").forEach((button) => button.addEventListener("click", () => send(button.dataset.assistantChoice)));
+      $("#team-assistant-apply")?.addEventListener("click", async () => {
+        const patch = lastResponse?.authoringPatch?.authoring;
+        if (!patch) return;
+        const save = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: patch, expectedProjectDigest: latestDigest }) });
+        const saved = await save.json();
+        if (!save.ok) throw new Error(saved.error || "团队草案保存失败");
+        status.textContent = "修改已应用，团队回到草案状态，请检查后确认。";
+        await renderProjectDraftV2(projectId);
+      });
+      status.textContent = patchReady ? "预览已生成，确认后才会保存。" : "请回答团队助手的问题，继续完善团队。";
+    } catch (error) {
+      status.textContent = error.message || "团队助手暂时不可用";
+    }
+  };
+  $("#team-assistant-send")?.addEventListener("click", () => send($("#team-assistant-input").value));
+  $$("#team-assistant [data-assistant-choice]").forEach((button) => button.addEventListener("click", () => send(button.dataset.assistantChoice)));
+}
 async function renderProjectLibrary() {
   const root = $("#workspace-view");
   root.innerHTML = '<section class="page-heading library-heading"><div><div class="eyebrow">项目资产库 · OGS PROJECT LIBRARY</div><h1>召唤一支团队</h1><p>每个项目资产包含一份静态 OGS 团队、它的工作材料和运行记录。先确认团队，再选择它执行任务。</p></div><div class="heading-actions"><label class="secondary-button import-project-button">导入团队资产并创建项目<input id="project-import-file" type="file" accept="application/json" hidden></label><a class="primary-button" href="/studio/new" data-route="/studio/new">新建项目草案 →</a></div></section><section class="project-library-toolbar"><div><strong>项目资产</strong><span>团队资产是项目中的静态 OGS 结构；导入团队包会创建一个新的草案项目。</span></div><div class="project-library-filters"><label><span class="sr-only">搜索项目</span><input id="project-library-search" type="search" placeholder="搜索项目名称或目标"></label><label><span class="sr-only">筛选状态</span><select id="project-library-filter"><option value="all">全部状态</option><option value="draft">草案</option><option value="confirmed">已确认</option></select></label></div></section><div id="project-library-grid" class="project-library-grid"><div class="project-loading">正在读取项目库...</div></div>';
+  const createTeamLink = root.querySelector(".heading-actions a.primary-button");
+  if (createTeamLink) createTeamLink.textContent = "创建团队 →";
   const grid = $("#project-library-grid");
   const classicSection = `<section class="classic-team-section"><div class="section-header"><div><div class="section-kicker">经典团队</div><h2>先了解成熟的协作方式</h2><p class="section-description">这些是平台提供的静态示例，用来理解角色分工和协作路径，不会自动进入你的项目资产库。</p></div><a class="hero-link" href="/examples" data-route="/examples">查看全部案例 →</a></div><div class="classic-team-grid">${state.cases.map((item) => `<article class="classic-team-card" data-accent="${esc(item.accent)}"><div class="classic-team-card-top"><span class="asset-mark">${esc(icon[item.icon] || "✦")}</span><span class="status-chip">${esc(text(item.category))}</span></div><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="classic-team-meta"><span>${esc(item.duration?.[state.locale] || item.duration?.["zh-CN"] || "")}</span><span>${item.roles.length} 个角色</span></div><a class="secondary-button" href="/cases/${encodeURIComponent(item.id)}" data-route="/cases/${encodeURIComponent(item.id)}">查看经典团队 →</a></article>`).join("")}</div></section>`;
   grid.insertAdjacentHTML("beforebegin", classicSection);
@@ -241,6 +370,19 @@ async function renderProjectLibrary() {
     if (!response.ok) throw new Error(payload.error || "无法读取项目库");
     const projects = payload.projects || [];
     grid.innerHTML = projects.length ? projects.map((project) => `<article class="project-asset-card" data-project-status="${esc(project.projectStatus)}"><div class="asset-card-top"><span class="asset-mark">O</span><span class="status-chip ${project.projectStatus}">${project.projectStatus === "confirmed" ? "团队已确认" : "项目草案"}</span></div><h2>${esc(project.name)}</h2><p>${esc(project.intent || "还没有填写团队目标")}</p><div class="asset-card-meta"><span>${project.projectStatus === "confirmed" ? "可配置资源并运行" : "需要先确认团队"}</span><span>${new Date(project.updatedAt).toLocaleDateString()}</span></div><a class="secondary-button" href="/studio/project/${encodeURIComponent(project.projectId)}" data-route="/studio/project/${encodeURIComponent(project.projectId)}">打开项目资产 →</a></article>`).join("") : '<div class="empty-projects"><strong>还没有项目资产</strong><p>从一句话召唤团队，创建你的第一个项目草案。</p><a class="primary-button" href="/studio/new" data-route="/studio/new">召唤第一支团队</a></div>';
+    [...grid.querySelectorAll(".project-asset-card")].forEach((card, index) => {
+      const project = projects[index];
+      const primary = card.querySelector("a.secondary-button");
+      if (!primary || !project) return;
+      if (project.projectStatus === "confirmed") {
+        primary.className = "primary-button";
+        primary.href = "/studio/project/" + encodeURIComponent(project.projectId) + "/run";
+        primary.textContent = "使用团队 →";
+        primary.insertAdjacentHTML("afterend", "<a class=\"secondary-button\" href=\"/studio/project/" + encodeURIComponent(project.projectId) + "\" data-route=\"/studio/project/" + encodeURIComponent(project.projectId) + "\">编辑团队</a>");
+      } else {
+        primary.textContent = "编辑团队 →";
+      }
+    });
     $$("a[data-route]").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); navigate(link.getAttribute("href")); }));
     const filterLibrary = () => {
       const query = $("#project-library-search")?.value.trim().toLowerCase() || "";
@@ -267,13 +409,30 @@ async function renderProjectLibrary() {
   } catch (error) { grid.innerHTML = `<div class="run-error">${esc(error.message || "无法读取项目库")}</div>`; }
 }
 
-async function renderProjectGraph(projectId) {
-  const stage = $("#project-graph-stage");
+async function renderProjectGraph(projectId, stageId = "project-graph-stage", readOnly = false) {
+  const stage = $("#" + stageId);
   if (!stage || !window.OGSStudioGraphBundle?.mountStudioX6Bridge) return;
   try {
     const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design?locale=${encodeURIComponent(state.locale)}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Unable to load the project graph.");
+    if (readOnly) {
+      window.OGSStudioGraphBundle.mountStudioX6Bridge(stage, {
+        viewModel: payload.viewModel,
+        readOnly: true,
+        showTopologyOrder: false,
+        showTechnicalDetails: false,
+        initialLayoutMode: "flow",
+        defaultAutoLayout: true,
+        defaultAutoLayoutRequestId: 1,
+        labels: graphLabels[state.locale],
+        onToggleFullscreen: async () => {
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else await stage.requestFullscreen();
+        }
+      });
+      return;
+    }
     let authoring = payload.authoring;
     let canvas = payload.canvas;
     let projectDigest = payload.projectDigest;
@@ -295,6 +454,7 @@ async function renderProjectGraph(projectId) {
       defaultAutoLayoutRequestId: 1,
       canSaveWorkbench: true,
       labels: graphLabels[state.locale],
+      commandFormLabels: graphFormLabels[state.locale],
       onApplyCommand: (result) => {
         authoring = result.authoring;
         canvas = result.canvas;
@@ -347,6 +507,13 @@ function addProjectExportToolbar(projectId) {
   root.insertAdjacentHTML("afterbegin", '<div class="project-toolbar"><span>已确认团队 · 可继续准备材料或运行任务</span><a class="secondary-button" href="/api/v1/projects/' + encodeURIComponent(projectId) + '/team/export">导出团队资产</a></div>');
 }
 
+function mountRunTeamGraph(projectId) {
+  const root = $("#project-workspace-view");
+  if (!root || root.querySelector("#project-run-graph-stage")) return;
+  root.insertAdjacentHTML("beforeend", "<section class=\"project-panel project-graph-preview run-team-graph\"><div class=\"panel-head\"><div><span class=\"section-kicker\">已选团队</span><h2>团队协作结构</h2><p class=\"form-status\">只读图谱，用于确认当前运行使用的角色和交接关系。</p></div><span class=\"status-chip\">只读</span></div><div id=\"project-run-graph-stage\" class=\"graph-stage studio-graph-island\" role=\"img\" aria-label=\"Selected team collaboration graph\"></div></section>");
+  void renderProjectGraph(projectId, "project-run-graph-stage", true);
+}
+
 function projectRunStatusLabel(status) {
   return ({ waiting_review: "等待人工审核", paused: "已安全暂停", ready: "等待恢复", running: "运行中", planning: "准备运行", completed: "已完成", done: "已完成", failed: "运行失败", cancelled: "已取消" })[status] || status || "已完成";
 }
@@ -397,6 +564,8 @@ async function renderProjectDraftV2(projectId) {
     const confirmed = project.projectStatus === "confirmed";
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 项目资产库</a><div class="eyebrow">01 / 召唤团队</div><h1>${esc(project.name)}</h1><p>${esc(project.intent || "还没有填写团队目标")}</p></div><span class="project-status ${confirmed ? "confirmed" : "draft"}">${confirmed ? "团队已确认，可配置资源" : "项目草案，可继续微调"}</span></section><nav class="project-steps"><a class="project-step active" href="#team"><span>01</span><strong>召唤团队</strong><small>${confirmed ? "OGS 团队资产已确认" : "确认前可继续微调"}</small></a><a class="project-step ${confirmed ? "" : "disabled"}" href="${confirmed ? `/studio/project/${encodeURIComponent(projectId)}/run` : "#"}" data-route="${confirmed ? `/studio/project/${encodeURIComponent(projectId)}/run` : ""}"><span>02</span><strong>配备资源</strong><small>${confirmed ? "选择团队执行" : "确认后解锁"}</small></a><a class="project-step disabled" href="#"><span>03</span><strong>执行任务</strong><small>创建运行并检查结果</small></a></nav><section class="project-grid draft-grid"><article class="project-panel project-editor-panel" id="team"><div class="panel-head"><div><span class="section-kicker">项目中的团队资产</span><h2>把一句话变成可运行的团队</h2></div><span class="count-badge">${confirmed ? "OK" : "DRAFT"}</span></div><form id="project-edit-form-v2" class="compact-form"><label>项目名称<input name="name" value="${esc(project.name)}" required maxlength="120"></label><label>团队目标<textarea name="intent" rows="6" maxlength="4000" required>${esc(project.intent || "")}</textarea></label><div class="form-actions"><button class="secondary-button" type="submit">保存微调</button>${confirmed ? '<button id="reconfirm-project-v2" class="secondary-button" type="button">重新确认</button>' : '<button id="confirm-project-v2" class="primary-button" type="button">确认团队并进入下一步 →</button>'}</div><p class="form-status" id="project-edit-status-v2"></p></form></article><article class="project-panel project-preview-panel"><div class="panel-head"><div><span class="section-kicker">OGS 结构预览</span><h2>团队资产</h2></div><span class="status-chip">single-project-v1</span></div><div class="preview-list"><div><strong>项目状态</strong><span>${confirmed ? "团队已确认" : "项目草案"}</span></div><div><strong>结构来源</strong><span>OGS / Mermaid</span></div><div><strong>项目关系</strong><span>团队 + 资源 + 运行</span></div></div><p class="preview-note">团队包只包含静态 OGS 资源；项目中的材料、任务和运行记录会在下一步单独保存。</p><div class="form-actions"><a class="secondary-button" href="/api/v1/projects/${encodeURIComponent(projectId)}/team/export">导出团队资产</a>${confirmed ? `<a class="primary-button" href="/studio/project/${encodeURIComponent(projectId)}/run" data-route="/studio/project/${encodeURIComponent(projectId)}/run">选择团队执行 →</a>` : ""}</div></article></section>`;
     root.insertAdjacentHTML("beforeend", '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS / Mermaid</span><h2>团队协作结构</h2><p id="project-design-status" class="form-status">正在加载可编辑团队结构</p></div><div class="form-actions"><span class="status-chip">可视化编辑</span><a class="secondary-button" href="' + esc(state.visUrl) + '/?projectId=' + encodeURIComponent(projectId) + '&panel=design" target="_self">在 Vis 中打开专业工作台</a></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable project team graph"></div><p class="preview-note">这里提供轻量编辑和预览；模型、上下文、单步调试与运行诊断请在 Vis 专业工作台处理。</p></section>');
+    root.insertAdjacentHTML("beforeend", '<section class="project-panel team-assistant-panel" id="team-assistant"></section>');
+    void renderTeamAssistant(projectId, project);
     $$("a[data-route]").forEach((link) => link.addEventListener("click", (event) => { if (link.getAttribute("href")) { event.preventDefault(); navigate(link.getAttribute("href")); } }));
     $("#project-edit-form-v2").addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), intent: form.get("intent") }) }); const payload = await result.json(); $("#project-edit-status-v2").textContent = result.ok ? (payload.projectStatus === "draft" ? "已保存，语义修改使项目回到草案。" : "已保存。") : (payload.error || "保存失败"); if (result.ok) await renderProjectDraftV2(projectId); });
     const confirm = $("#confirm-project-v2") || $("#reconfirm-project-v2"); confirm?.addEventListener("click", async () => { const result = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/confirm`, { method: "POST" }); const payload = await result.json(); if (!result.ok) { $("#project-edit-status-v2").textContent = payload.error || "确认失败"; return; } await renderProjectDraftV2(projectId); });
@@ -442,7 +611,10 @@ function syncRoute() {
   const projectRunMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)\/run$/);
   if (projectRunMatch) {
     setView("project-workspace");
-    void renderProjectRunV2(projectRunMatch[1]).then(() => addProjectExportToolbar(projectRunMatch[1]));
+    void renderProjectRunV2(projectRunMatch[1]).then(() => {
+      addProjectExportToolbar(projectRunMatch[1]);
+      mountRunTeamGraph(projectRunMatch[1]);
+    });
     return;
   }
   if (path === "/studio" && new URLSearchParams(location.search).has("team")) {
@@ -516,7 +688,7 @@ async function init() {
   document.addEventListener("submit", (event) => {
     if (event.target?.id !== "material-form-v2") return;
     const match = location.pathname.match(/^\/studio\/project\/([a-z0-9-]+)\/run$/);
-    if (match) setTimeout(() => addProjectExportToolbar(match[1]), 100);
+    if (match) setTimeout(() => { addProjectExportToolbar(match[1]); mountRunTeamGraph(match[1]); }, 100);
   });
   window.addEventListener("popstate", syncRoute);
   $$("button.nav-item[data-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; history.pushState({}, "", `/${state.view}`); syncRoute(); }));

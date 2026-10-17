@@ -1,16 +1,16 @@
 import { cases } from "../cases.mjs";
-import { lintCase, runCase } from "../demo-runner.mjs";
+import { DEFAULT_DEMO_MODEL, lintCase, runCase } from "../demo-runner.mjs";
 
 const failures = [];
 const expectedBackend = process.env.OGS_DEMO_BACKEND || "codex";
-const expectedModel = (process.env.OGS_DEMO_MODEL || "gpt-6-luna").split("/").at(-1);
+const expectedModel = (process.env.OGS_DEMO_MODEL || DEFAULT_DEMO_MODEL).split("/").at(-1);
 for (const item of cases) {
   process.stdout.write(`\n[lint] ${item.id}\n`);
   try {
     const lint = await lintCase(item.id);
     if (lint.status && lint.status !== "ok" && lint.status !== "ready") throw new Error(JSON.stringify(lint));
     process.stdout.write("[lint] passed\n");
-    process.stdout.write(`[model-run] ${item.id} via ${expectedBackend}/${process.env.OGS_DEMO_MODEL || "gpt-6-luna"}\n`);
+    process.stdout.write(`[model-run] ${item.id} via ${expectedBackend}/${process.env.OGS_DEMO_MODEL || DEFAULT_DEMO_MODEL}\n`);
     const result = await runCase({
       caseId: item.id,
       prompt: process.env.OGS_CASE_PROMPT || "Prepare a concise, evidence-aware collaboration result for a sample task. State assumptions and uncertainty clearly.",

@@ -22,6 +22,28 @@ type SnapshotManifest = {
   files: SnapshotFile[];
 };
 
+async function listSnapshotFiles(root: string, current = root): Promise<string[]> {
+  const entries = await readdir(current, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const absolute = resolve(current, entry.name);
+    const relativePath = relative(root, absolute).split(sep).join("/");
+    if (entry.name === MANIFEST_FILE && current === root) continue;
+    if (entry.isSymbolicLink()) {
+      throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: symbolic links are not allowed in ${relativePath}`);
+    }
+    if (entry.isDirectory()) {
+      files.push(...await listSnapshotFiles(root, absolute));
+      continue;
+    }
+    if (!entry.isFile()) {
+      throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: unsupported snapshot entry ${relativePath}`);
+    }
+    files.push(relativePath);
+  }
+  return files;
+}
+
 function normalizeManifestValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((entry) => normalizeManifestValue(entry));
   if (value && typeof value === "object") {
@@ -278,6 +300,16 @@ export async function assertProjectAssetSnapshot(runDir: string, expectedManifes
     if (content.byteLength !== file.size || hash(content) !== file.sha256) {
       throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: asset hash mismatch ${relativePath}`);
     }
+  }
+  const actualFiles = await listSnapshotFiles(snapshotDir);
+  const extraFiles = actualFiles.filter((file) => !seen.has(file));
+  const missingFiles = [...seen].filter((file) => !actualFiles.includes(file));
+  if (extraFiles.length > 0 || missingFiles.length > 0) {
+    const detail = [
+      extraFiles.length > 0 ? `unmanifested: ${extraFiles.join(", ")}` : "",
+      missingFiles.length > 0 ? `missing: ${missingFiles.join(", ")}` : ""
+    ].filter(Boolean).join("; ");
+    throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: manifest does not match snapshot contents (${detail})`);
   }
   if (!seen.has("system.mmd") || !seen.has(".ogs/runtime.json")) {
     throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: required project assets are missing from ${snapshotDir}`);

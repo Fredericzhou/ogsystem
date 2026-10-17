@@ -210,6 +210,125 @@ h1, h2, p { margin-top: 0; }
 @media (max-width: 760px) {
   .project-steps, .project-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+.builder-choice-group {
+  border: 0;
+  padding: 0;
+  margin: 1.25rem 0;
+}
+
+.builder-choice-group legend,
+.assistant-input-label > span {
+  display: block;
+  margin-bottom: .6rem;
+  font-size: .86rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.builder-choice-grid,
+.assistant-choices,
+.assistant-question-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.builder-choice {
+  display: grid;
+  gap: .3rem;
+  min-height: 78px;
+  padding: .85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.builder-choice:hover,
+.builder-choice.selected,
+.builder-choice:focus-visible {
+  border-color: var(--mint);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 14%, transparent);
+}
+
+.builder-choice span,
+.assistant-message span,
+.assistant-preview .form-hint {
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.team-assistant-panel {
+  margin-top: 1rem;
+}
+
+.assistant-history {
+  display: grid;
+  gap: .6rem;
+  margin: 1rem 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.assistant-message {
+  display: grid;
+  gap: .25rem;
+  padding: .75rem .9rem;
+  border-left: 3px solid var(--mint);
+  background: var(--canvas);
+}
+
+.assistant-message.user {
+  border-left-color: var(--coral, #d97963);
+}
+
+.assistant-input-label {
+  display: block;
+  margin-top: 1rem;
+}
+
+.assistant-input-label textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.assistant-preview {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.assistant-question-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: .75rem;
+}
+
+.assistant-question {
+  padding: .65rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-question:hover,
+.assistant-question:focus-visible {
+  border-color: var(--mint);
+}
+
+@media (max-width: 760px) {
+  .builder-choice-grid,
+  .assistant-choices,
+  .assistant-question-list {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 760px) {
   .heading-actions, .project-library-filters { align-items: stretch; justify-content: stretch; width: 100%; }
   .heading-actions > *, .project-library-filters > * { flex: 1 1 auto; }
@@ -494,7 +613,8 @@ body { min-width: 0; font-size: 15px; }
 .page-footer { font-size: 12px; }
 .alternate-view .page-heading { margin-bottom: 27px; }.library-grid { gap: 15px; }.library-card { min-height: 0; padding: 0; }.library-card h3 { margin: 7px 0; }.library-card .case-card-link { min-height: 240px; padding: 19px; }
 .detail-back { color: #34745b; display: inline-block; font-size: 14px; font-weight: 700; margin-bottom: 22px; text-decoration: none; }
-.detail-heading { border-bottom: 1px solid #e1e8e2; padding: 9px 0 35px; }.detail-heading > div { align-items: center; display: flex; gap: 14px; }.detail-heading .case-icon { height: 52px; width: 52px; }.detail-heading h1 { font-size: 36px; margin: 18px 0 8px; }.detail-heading > p { color: #65796f; font-size: 17px; line-height: 1.7; margin: 0; max-width: 760px; }.detail-heading .primary-button { margin-top: 22px; }
+.detail-heading { border-bottom: 1px solid #e1e8e2; padding: 9px 0 35px; }.detail-heading > div { align-items: center; display: flex; gap: 14px; }.detail-heading .case-icon { height: 52px; width: 52px; }.detail-heading h1 { font-size: 36px; margin: 18px 0 8px; }.detail-heading > p { color: #65796f; font-size: 17px; line-height: 1.7; margin: 0; max-width: 760px; }.detail-heading .primary-button { margin-top: 22px; }.detail-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 9px; margin-top: 22px; }.detail-actions .primary-button, .detail-actions .secondary-button { margin-top: 0; }
+.detail-graph-section { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin: 22px 0 6px; overflow: hidden; padding: 17px; }.detail-section-heading { align-items: start; display: flex; justify-content: space-between; gap: 15px; margin-bottom: 13px; }.detail-section-heading h2 { font-size: 19px; margin: 5px 0 4px; }.detail-section-heading p { color: var(--muted); font-size: 12px; margin: 0; }.detail-graph-stage { height: 430px; min-width: 0; width: 100%; }
 .detail-content { max-width: 930px; }.detail-content > section { border-bottom: 1px solid #e8ede8; display: grid; gap: 19px; grid-template-columns: 42px minmax(0,1fr); padding: 25px 0; }.detail-index { color: #16805f; font: 700 13px Manrope,sans-serif; padding-top: 3px; }.detail-content h2 { font-size: 19px; margin: 0 0 8px; }.detail-content section > div > p { color: #60756a; font-size: 15px; line-height: 1.8; margin: 0; max-width: 800px; }.detail-role-grid { display: grid; gap: 0 24px; grid-template-columns: repeat(2,minmax(0,1fr)); }.detail-role-grid article { align-items: start; border-bottom: 1px solid #edf0ed; display: grid; gap: 12px; grid-template-columns: 38px 1fr; padding: 14px 0; }.detail-role-grid .member-avatar { height: 36px; width: 36px; }.detail-role-grid h3 { font-size: 15px; margin: 1px 0 4px; }.detail-role-grid p { color: #71827a; font-size: 13px; line-height: 1.6; margin: 0; }
 .history-empty { font-size: 15px; padding: 36px; }.history-row strong { font-size: 15px; }.history-row p { font-size: 13px; }.text-button { font-size: 13px; }.secondary-button { font-size: 13px; min-height: 38px; }
 .drawer-head h2 { font-size: 21px; }.run-content { padding: 21px 24px 30px; }.run-summary { padding: 17px; }.run-summary h3 { font-size: 15px; }.run-mode { font-size: 11px; }.run-metrics strong { font-size: 21px; }.run-metrics span { font-size: 11px; }.run-output { font-size: 14px; }.timeline h3 { font-size: 14px; }.timeline-copy strong { font-size: 13px; }.timeline-copy span { font-size: 11px; }.run-disclaimer { font-size: 12px; }.run-error { font-size: 14px; }

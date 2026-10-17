@@ -92,6 +92,8 @@ export async function runSystemWithAdapter(args: {
   targetDir?: string;
   dryRun?: boolean;
   projectRunMode?: ProjectRunMode;
+  /** Trusted platform-provided team graphs may use supported parallel/join semantics. */
+  trustedProjectTopology?: boolean;
   projectDigest?: string;
   projectRunLock?: boolean;
   materialInputs?: ProjectMaterialInput[];
@@ -144,7 +146,7 @@ export async function runSystemWithAdapter(args: {
         projectId: args.projectId,
         projectDigest: args.projectDigest,
         materials: args.materialInputs,
-        enforceLinearTopology: Boolean(args.projectRunMode),
+        enforceLinearTopology: Boolean(args.projectRunMode) && !args.trustedProjectTopology,
         enforceSnapshotContract: Boolean(args.projectRunMode)
       });
       if (args.onProjectRunPrepared) {

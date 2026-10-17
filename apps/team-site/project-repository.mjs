@@ -24,6 +24,8 @@ import {
 import { authoringToCanvasDocument, importMermaidToAuthoring, serializeAuthoringToMermaid } from "../../dist/visualizer/studio-authoring.js";
 import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
 import { validateProjectSystemSource, saveProjectSystemSource } from "../../dist/visualizer/project-projection.js";
+import { getCase } from "./cases.mjs";
+import { materializeCaseTeam } from "./demo-runner.mjs";
 
 const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const allowedExtensions = new Set([".md", ".txt", ".json", ".yaml", ".yml", ".csv"]);
@@ -72,6 +74,7 @@ function normalizeMeta(meta, projectId) {
     createdAt: meta?.createdAt || new Date().toISOString(),
     updatedAt: meta?.updatedAt || new Date().toISOString(),
     source: meta?.source || "created",
+    ...(meta?.caseId ? { caseId: meta.caseId } : {}),
     ...(meta?.ogsProjectId ? { ogsProjectId: meta.ogsProjectId } : {})
   };
 }
@@ -95,6 +98,10 @@ function requireConfirmed(project) {
   if (project.projectStatus !== "confirmed" || !project.projectDigest || !project.confirmedAt) {
     throw new Error("PROJECT_NOT_CONFIRMED: confirm the team design before preparing or running a task.");
   }
+}
+
+function isTrustedTeamTopology(project) {
+  return project.source === "classic" || project.source === "classic-template";
 }
 
 async function requireCurrentConfirmation(project) {
@@ -134,7 +141,7 @@ export async function listProjects() {
   return projects.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
-export async function createProject({ name, intent, templateId = "empty" }) {
+export async function createProject({ name, intent, templateId = "empty", caseId, source = "created", locale = "zh-CN" }) {
   await mkdir(projectsRoot, { recursive: true });
   const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
   const workdir = projectPath(projectId);
@@ -157,10 +164,29 @@ export async function createProject({ name, intent, templateId = "empty" }) {
     createdAt: now,
     updatedAt: now,
     ogsProjectId: created.projectId,
-    source: "created"
+    source,
+    ...(caseId ? { caseId } : {})
   });
   await writeJson(join(workdir, "workspace", "index.json"), { version: 1, materials: [] });
+  if (caseId) await materializeCaseTeam(caseId, workdir, locale === "en" ? "en" : "zh-CN");
   return readProject(projectId);
+}
+
+export async function createClassicTeamProject({ caseId, asTemplate = false, name, intent, locale = "zh-CN" } = {}) {
+  const caseSpec = getCase(caseId);
+  if (!caseSpec) throw new Error("Unknown example team.");
+  const language = locale === "en" ? "en" : "zh-CN";
+  const defaultName = caseSpec.title?.[language] || caseSpec.title?.["zh-CN"] || caseSpec.title?.en || caseId;
+  const defaultIntent = caseSpec.detail?.scenario?.[language] || caseSpec.detail?.scenario?.["zh-CN"] || caseSpec.short?.[language] || caseSpec.short?.["zh-CN"] || "";
+  const project = await createProject({
+    name: name || defaultName,
+    intent: intent || defaultIntent,
+    templateId: `classic:${caseId}`,
+    caseId,
+    source: asTemplate ? "classic-template" : "classic",
+    locale: language
+  });
+  return asTemplate ? project : confirmProjectTeam(project.projectId, { trustedClassic: true });
 }
 
 export async function updateProject(projectId, changes = {}) {
@@ -195,7 +221,7 @@ export async function invalidateProjectConfirmation(projectId, reason = "semanti
   });
 }
 
-export async function confirmProjectTeam(projectId) {
+export async function confirmProjectTeam(projectId, { trustedClassic = false } = {}) {
   return withProjectWriteLock(projectId, "project-confirm", async () => {
     const project = await readProject(projectId);
     const systemSource = await readFile(join(project.workdir, "system.mmd"), "utf8");
@@ -207,7 +233,7 @@ export async function confirmProjectTeam(projectId) {
       reviewRequired: node.review?.mode === "required",
       loopMax: node.loopMax
     }));
-    validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleId);
+    if (!trustedClassic && !isTrustedTeamTopology(project)) validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleId);
     const digest = await semanticProjectDigest(project);
     if (project.projectStatus === "confirmed" && project.projectDigest === digest) return project;
     const next = { ...normalizeMeta(project, projectId), projectStatus: "confirmed", projectDigest: digest, confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -225,10 +251,19 @@ export async function getProjectGraph(projectId, locale = "zh-CN") {
   const systemPath = join(project.workdir, "system.mmd");
   const systemSource = await readFile(systemPath, "utf8");
   const system = parseSystemFromMermaidSource(systemSource);
+  const design = await readJson(join(project.workdir, "system.design.json"), {});
+  const roleDisplayNames = new Map(
+    Object.entries(design?.seats && typeof design.seats === "object" ? design.seats : {})
+      .flatMap(([roleId, seat]) => {
+        const title = seat && typeof seat === "object" && !Array.isArray(seat) ? seat.title : undefined;
+        return typeof title === "string" && title.trim() ? [[roleId, title.trim()]] : [];
+      })
+  );
   const authoring = importMermaidToAuthoring({
     workdir: project.workdir,
     systemPath: "system.mmd",
-    systemSource
+    systemSource,
+    roleDisplayNames
   });
   const boundaryLabels = locale === "en"
     ? { input: "Task", output: "Outcome" }
@@ -328,6 +363,17 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
   let requestFingerprint;
   let pendingLedgerEntry;
   try {
+  if (resumeRunDir && !resumeRunId) throw new Error("RUN_RESUME_INVALID: resumeRunId is required when resuming a run.");
+  if (resumeRunId) assertSafeId(resumeRunId, "resumeRunId");
+  const allowedRunsDir = resolve(initialProject.workdir, ".ogs", "runs");
+  const canonicalResumeRunDir = resumeRunId ? resolve(allowedRunsDir, resumeRunId) : undefined;
+  if (canonicalResumeRunDir && !canonicalResumeRunDir.startsWith(`${allowedRunsDir}${sep}`)) {
+    throw new Error("RUN_RESUME_INVALID: resume run must belong to the requested project.");
+  }
+  if (resumeRunDir && canonicalResumeRunDir && resolve(resumeRunDir) !== canonicalResumeRunDir) {
+    throw new Error("RUN_RESUME_INVALID: resume run directory does not match resumeRunId.");
+  }
+  resumeRunDir = canonicalResumeRunDir;
   const task = resumeRunDir ? await readJson(join(resumeRunDir, "task.json"), {}) : undefined;
   const resumePlan = resumeRunDir ? await loadProjectRunPlan(resumeRunDir) : undefined;
   if (resumePlan?.projectId && resumePlan.projectId !== projectId) {
@@ -414,6 +460,7 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
     dryRun: mode === "dry-run",
     projectId,
     projectRunMode: mode,
+    trustedProjectTopology: isTrustedTeamTopology(project),
     projectDigest: resumePlan?.projectDigest ?? project.projectDigest,
     projectRunLock: false,
     materialInputs,

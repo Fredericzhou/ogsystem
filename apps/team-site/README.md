@@ -29,7 +29,7 @@ the Vis server is not running at its local default (`http://127.0.0.1:4177`).
 
 ## Verify cases with real models
 
-The release verification lints and runs every case through the installed backend/model selected by `OGS_DEMO_BACKEND` and `OGS_DEMO_MODEL` (defaults: `codex` and `gpt-6-luna`). It checks each expected role and verifies backend/model values in the audit trail. Ensure the selected CLI is authenticated before running:
+The release verification lints and runs every case through the installed backend/model selected by `OGS_DEMO_BACKEND` and `OGS_DEMO_MODEL` (defaults: `codex` and `gpt-5.6-luna`). It checks each expected role and verifies backend/model values in the audit trail. Ensure the selected CLI is authenticated before running:
 
 ```powershell
 pnpm --dir apps/team-site verify:cases
@@ -39,7 +39,7 @@ For OpenCode, the framework starts one `opencode serve` process per case run and
 
 ```powershell
 $env:OGS_DEMO_BACKEND = "opencode"
-$env:OGS_DEMO_MODEL = "multidebate/gpt-6-luna"
+$env:OGS_DEMO_MODEL = "multidebate/gpt-5.6-luna"
 pnpm --dir apps/team-site verify:cases
 ```
 

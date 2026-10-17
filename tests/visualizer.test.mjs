@@ -16,6 +16,7 @@ import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
 import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../dist/runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../dist/runtime/runtime-setup.js";
+import { computeProjectAssetDigest } from "../dist/runtime/project-asset-digest.js";
 import { isConvergedRunStatus, startVisualizationServer } from "../dist/visualizer/server.js";
 import { createBasicControlPlaneIdentityProvider } from "../dist/runtime/identity.js";
 import {
@@ -27,6 +28,7 @@ import {
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
+import { materializeCaseTeam } from "../apps/team-site/demo-runner.mjs";
 
 test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
   const parsed = parseStudioChatToMmdRequest({
@@ -49,6 +51,58 @@ test("studio chat request parsing keeps trimmed identifiers and ignores non-reco
 test("visualizer recognizes terminated runs as converged", () => {
   assert.equal(isConvergedRunStatus("terminated"), true);
   assert.equal(isConvergedRunStatus("running"), false);
+});
+
+test("visualizer project runs preserve trusted classic team topology", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-classic-project-run-"));
+  let started;
+  try {
+    await materializeCaseTeam("software-team", workdir, "en");
+    const projectDigest = await computeProjectAssetDigest(workdir);
+    await mkdir(path.resolve(workdir, ".site"), { recursive: true });
+    await writeFile(path.resolve(workdir, ".ogs", "project.json"), JSON.stringify({
+      projectId: "classic-project"
+    }), "utf8");
+    await writeFile(path.resolve(workdir, ".site", "project.json"), JSON.stringify({
+      projectId: "classic-project",
+      projectStatus: "confirmed",
+      projectDigest,
+      source: "classic"
+    }), "utf8");
+    started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+    const response = await fetch(`${started.url}/api/v1/ogs/runs/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemPath: "system.mmd",
+        input: "Prepare a delivery plan.",
+        dryRun: true,
+        runMode: "dry-run",
+        projectId: "classic-project",
+        projectDigest
+      })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(payload));
+    const runPlan = JSON.parse(await readFile(path.resolve(workdir, ".ogs", "runs", payload.runId, "run-plan.json"), "utf8"));
+    assert.equal(runPlan.nodeGraph.length, 5);
+    const stopResponse = await fetch(`${started.url}/api/v1/ogs/runs/${payload.runId}/stop`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "test cleanup" })
+    });
+    assert.equal(stopResponse.status, 200);
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const detailResponse = await fetch(`${started.url}/api/v1/ogs/runs/${payload.runId}`);
+      const detail = await detailResponse.json();
+      if (["done", "failed", "stopped", "cancelled"].includes(detail.header?.status)) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  } finally {
+    if (started) await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
+  }
 });
 
 test("visualizer health, readiness, scrape metrics, and external bind guard are available", async () => {
