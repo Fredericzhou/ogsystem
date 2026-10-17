@@ -59,6 +59,7 @@
     "test:doctor": "pnpm run run:doctor --system examples/target-model-binding-system.mmd --laws .ogs/laws.json",
     "run:adapter": "tsx src/runtime/cli.ts",
     "run:visualizer": "tsx src/visualizer/cli.ts",
+    "start:team-site:tailnet": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-team-site-tailnet.ps1",
     "run:nl2mmd": "tsx src/nl2mmd/cli.ts",
     "run:doctor": "tsx src/runtime/doctor.ts",
     "lint:system": "tsx src/runtime/lint.ts"
