@@ -20,8 +20,9 @@ Product boundaries:
 - Framework: runtime, parser/compiler, CLI, and `nl2mmd`.
 - Platform: Framework plus model adapters/catalog, role library, and Vis professional tooling.
 - Product Site: Platform plus the team library, projects, resources, users, and run management.
-- Team Asset: portable static OGS team definition. A Project is a Team Asset with resources,
-  task input, and run history; a Run is one execution and is shown as “运行” in the product UI.
+- Team Asset: portable static OGS collaboration definition. Graph members are Responsibility
+  Roles, not specific people or separately identified agents. A Project is a Team Asset with
+  resources, task input, and run history; a Run is one execution and appears as 运行 in the product UI.
 
 The Product Site package format is `single-project-v1`; it excludes framework code, credentials,
 model catalogs, and execution artifacts. The stable framework paths are `.ogs/`, `og-roles/`,
@@ -38,7 +39,7 @@ Product usage:
 
 Graph modeling invariant:
 
-- A node is a responsibility role/agent seat, not an event, action, task, gateway, process step, or runtime record.
+- A node is a Responsibility Role / seat, not a person, event, action, task, gateway, process step, or runtime record.
 - A flow is a direct role-to-role handoff after the source role completes its responsibility; edge labels carry the event or handoff outcome.
 
 Non-goals:

@@ -60,6 +60,11 @@ test("site completes the product project flow with graph preview and run analysi
 
     await page.locator("#confirm-project-v2").click();
     await page.locator(".project-status.confirmed").waitFor();
+    const readinessResponse = await page.request.get(new URL(`/api/v1/projects/${encodeURIComponent(page.url().match(/\/studio\/project\/([^/]+)$/)?.[1])}/readiness`, url).toString());
+    assert.equal(readinessResponse.status(), 200);
+    const readiness = await readinessResponse.json();
+    assert.equal(readiness.projectStatus, "confirmed");
+    assert.equal(Object.hasOwn(readiness, "workdir"), false);
     await page.locator('a[data-route*="/run"]').first().click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);
     await page.locator("#material-form-v2 input[name=filename]").fill("brief.md");
@@ -67,6 +72,8 @@ test("site completes the product project flow with graph preview and run analysi
     await page.locator("#material-form-v2 button[type=submit]").click();
     await page.locator(".material-row").waitFor();
     await page.locator("#project-run-form-v2 textarea[name=prompt]").fill("Summarize the brief.");
+    await page.locator(".readiness-panel").waitFor();
+    assert.match(await page.locator(".readiness-panel").innerText(), /Sandbox Run/);
     await page.locator("#project-run-form-v2 button[type=submit]").click();
     await page.locator(".run-result-card").waitFor({ timeout: 30000 });
     assert.match(await page.locator(".run-result-card").innerText(), /RunPlan/);

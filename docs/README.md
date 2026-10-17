@@ -11,7 +11,7 @@ Product-facing usage, runtime constitution, and operational contracts live under
 - [Product introduction](usage/product-introduction.md): capability overview for readers.
 - [Core concepts](usage/ogsystem-core-concepts.md): product boundary and normative terms for System, Role, Seat, runtime facts, and standards alignment.
 - [Product layers and assets](usage/ogs-concepts.md): Framework, Platform, Product Site, Team Asset, Project, and Run boundaries.
-- [Team Site guide](../apps/team-site/README.md): team creation, confirmation, team library, project workspace, and 运行 flow.
+- [Team Site guide](../apps/team-site/README.md): team assets, responsibility roles, structural confirmation, project workspace, and run-readiness flow.
 - [Usage manual](usage/usage-manual.md): install, CLI, run directory, operations, and Visualizer usage.
 - [OGS Multi-Agent Graph Orchestration System](usage/visualizer-console.md): role-first graph design, handoffs, dry-run review, and runtime evidence.
 - [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md): runtime semantic contract.

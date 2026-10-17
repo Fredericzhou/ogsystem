@@ -72,6 +72,40 @@ test("classic team use creates a confirmed asset and runs its trusted graph", as
   }
 });
 
+test("project readiness is separate from structure confirmation and gates sandbox runs", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-readiness-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../project-repository.mjs?readiness=" + Date.now());
+  try {
+    const project = await store.createProject({ name: "Readiness Team", intent: "Check readiness.", templateId: "empty" });
+    const roleDirs = await readdir(join(project.workdir, "og-roles", "roles"), { withFileTypes: true });
+    const roleDir = join(project.workdir, "og-roles", "roles", roleDirs.find((entry) => entry.isDirectory()).name);
+    await writeFile(join(roleDir, "role.json"), "{}", "utf8");
+    await writeFile(join(project.workdir, ".ogs", "model-catalog.json"), "{}", "utf8");
+    await store.confirmProjectTeam(project.projectId);
+    const readiness = await store.getProjectReadiness(project.projectId);
+    assert.equal(readiness.projectStatus, "confirmed");
+    assert.equal(readiness.canDryRun, false);
+    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_ROLE_PACKAGE_INVALID"));
+    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_CATALOG_INVALID"));
+    assert.equal(Object.hasOwn(readiness, "workdir"), false);
+    const issueMessages = readiness.blockers.map((issue) => issue.message).join("\n");
+    assert.equal(issueMessages.includes(project.workdir), false);
+    assert.match(issueMessages, /Check role\.json/);
+    assert.match(issueMessages, /\.ogs\/model-catalog\.json/);
+    await assert.rejects(
+      () => store.startProjectRun(project.projectId, { prompt: "Sandbox check.", mode: "sandbox" }),
+      (error) => {
+        assert.match(error.message, /PROJECT_NOT_READY/);
+        assert.equal(error.message.includes(project.workdir), false);
+        return true;
+      }
+    );
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("classic team templates can be confirmed and run after copying for edits", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-classic-template-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;

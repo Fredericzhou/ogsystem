@@ -26,10 +26,18 @@ role and does not change the process graph.
 | **Team Asset** | A portable static OGS team definition: Mermaid/design, role packages or references, execution bindings, and team metadata. | Framework code, model catalog, credentials, workspace materials, and `.ogs/runs`. |
 | **Product Site** | Platform plus team library, project/workspace management, users, materials, tasks, and runs. | A second runtime or a second Team entity. |
 
-The product site presents a Team Asset as a **team** and stores it in the team library. A
+The product site presents a Team Asset as a **team** and stores it in the team library. “Team” is a
+product metaphor for a reusable collaboration definition; the graph's Responsibility Roles are not
+specific people, personnel records, or separately identified agents. A
 **Project** is the working instance of that asset: Team Asset + resources + task input + run
 history. A **Run** is one execution of a project and remains the canonical API/code term; the
 product UI labels it **运行**. The same Runtime Core serves the product site and Vis.
+
+Team confirmation validates the static structure and supported topology and records the semantic
+asset digest. It does not certify provider connectivity or credentials. Project run readiness is a
+separate, read-only projection of static Sandbox Run blockers and warnings; online provider checks
+are not performed. Run preparation rechecks that confirmation is current, so this workflow does not require
+a second human confirmation.
 
 The portable public package format is `single-project-v1`. It contains the static team definition
 and excludes framework code, credentials, model catalogs, `.ogs/runs`, logs, checkpoints, review
@@ -40,9 +48,9 @@ records, and other execution history. The stable on-disk framework contracts rem
 
 The OGS graph is intentionally **role-first**:
 
-- A graph node is one stable Responsibility Role / Responsibility Seat. In product usage, each
-  role can be understood as an agent seat: an agent, model, person, service, or tool performs the
-  role's responsibility under its Role Contract.
+- A graph node is one stable Responsibility Role / Responsibility Seat. In product language, it
+  may be presented as a team responsibility. A configured Executor (agent, model, person, service,
+  or tool) performs that responsibility under its Role Contract.
 - A `Flow` is a direct role-to-role handoff. The source role completes its responsibility and
   hands an event, outcome, or contracted context to the target role.
 - The edge label carries the event, handoff outcome, or error route. The event is not a node.
@@ -53,7 +61,7 @@ The OGS graph is intentionally **role-first**:
 The canonical graph shape is therefore:
 
 ```text
-input -> Role/Agent A --handoff event--> Role/Agent B -> output
+input -> Responsibility A --handoff event--> Responsibility B -> output
 ```
 
 The role graph describes stable accountability and collaboration boundaries. It does not expand
@@ -65,7 +73,7 @@ distinct responsibility, capability, input/output contract, or audit boundary.
 | Term | Meaning | Is not |
 | --- | --- | --- |
 | **System** | A versioned, bounded collaboration system: roles, transitions, contracts, policies, and runtime boundary. | A host process, organization, or one run. |
-| **Responsibility Role** | A stable, unique organizational seat in a System. `roleId` identifies the seat. Exactly one current executor is bound to the seat in an effective System configuration. | A task, event, process step, gateway, runtime instance, or the executor's personal identity. |
+| **Responsibility Role** | A stable, unique responsibility seat in a System. `roleId` identifies the seat. Exactly one current executor is bound to the seat in an effective System configuration. | A person, task, event, process step, gateway, runtime instance, or the executor's personal identity. |
 | **Responsibility Seat** | The static graph position occupied by one Responsibility Role in one System. In the current graph it is the rendered role node. | A BPMN gateway/event or a runtime instance. |
 | **Executor** | The current agent bound to a Role; it may represent a person, an agent service, or a bounded System. The assignment is one-to-one within one effective System configuration. | The stable Role/seat identity. Replacing an executor does not rename or replace the Role. |
 | **Role Package** | Versioned implementation material associated with a role, such as prompt, manifest, and I/O schema. | The responsibility or executor identity. A package may change while the role identity remains stable. |
@@ -153,6 +161,6 @@ rules, or the responsibility model.
    visualizations, and documentation.
 # System and Role Contracts
 
-An OGS System is a bounded collaboration organization: it declares abstract Responsibility Roles, their collaboration routes, contracts, and policies. It is not an organization chart, team roster, or identity directory. A Role is a stable responsibility, while a Role Package is the implementation asset that realizes it for a run. An actor is a control-plane principal, not a Role assignment.
+An OGS System is a bounded collaboration system: it declares abstract Responsibility Roles, their collaboration routes, contracts, and policies. It is not an organization chart, team roster, or identity directory. A Role is a stable responsibility, while a Role Package is the implementation asset that realizes it for a run. An actor is a control-plane principal, not a Role assignment.
 
 Every `role.json` carries an OGS-owned Role Contract (`contractVersion: 1`). It defines purpose, responsibility boundaries, pre/postconditions, events, state writes, review control actions, tools, failure codes, and required audit evidence. JSON Schema 2020-12 structures payload contracts; CloudEvents and OpenTelemetry/W3C Trace Context are external event and observability projections. BPMN 2.0.2 / ISO/IEC 19510 task, event, gateway, and participant vocabulary and ISO 9001 responsibility/evidence practices are conceptual alignments only. RACI, RAPID, DACI, and DDD bounded context are practices, not OGS standards implemented by this runtime.

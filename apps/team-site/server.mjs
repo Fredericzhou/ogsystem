@@ -13,6 +13,7 @@ import {
   exportProjectTeam,
   getProjectGraph,
   getProjectDesign,
+  getProjectReadiness,
   validateProjectDesign,
   saveProjectDesign,
   getProject,
@@ -49,6 +50,7 @@ function sendJson(response, status, payload) {
 function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
   if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|active|conflict/i.test(message)) return 409;
+  if (/PROJECT_NOT_READY/i.test(message)) return 422;
   if (/not found/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
   return 400;
@@ -232,6 +234,12 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       sendJson(response, 404, { error: error instanceof Error ? error.message : "Project not found." });
     }
+    return;
+  }
+  const readinessMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/readiness$/);
+  if (readinessMatch && request.method === "GET") {
+    try { sendJson(response, 200, await getProjectReadiness(readinessMatch[1])); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to inspect project readiness." }); }
     return;
   }
   if (projectMatch && !projectMatch[2] && request.method === "PATCH") {

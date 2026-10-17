@@ -15,6 +15,48 @@ const copy = {
     workspaceName: "My workspace", workspaceType: "Guest space", navTeams: "Team workspace", navExamples: "Classic teams", navRuns: "Recent runs", runtimeReady: "Service ready", crumbHome: "Home", guestMode: "Guest preview", eyebrow: "Online team workspace", pageTitle: "Give complex work to a team with clear roles", pageIntro: "Start with a goal. Choose a team, inspect how it works, then run the complete flow.", metaLabel: "This preview", metaValue: "Complete team workflow · Reviewable results", taskLabel: "What would you like to accomplish?", taskHint: "Choose a team example or rewrite the task", taskPlaceholder: "For example: plan the first release of a bookkeeping tool", charCount: "/ 1,200", runDemo: "Run team example", chooseCase: "Choose how to collaborate", caseHeading: "Classic team examples", allExamples: "Explore team details", teamPlan: "How this team works", temporaryConfig: "Guest preview", adjustWithChat: "Edit task", membersTitle: "Team members", membersSubtitle: "Each member owns a part of the work", roleReady: "Ready", memberCompleted: "Completed", flowTitle: "Collaboration flow", flowSubtitle: "From task input to final delivery", legendRole: "Team member", legendFlow: "Work handoff", taskInputNode: "Task", deliveryNode: "Outcome", splitNote: "Members hand off work by responsibility and bring the needed information together.", capabilityKicker: "Clear · Ordered · Reviewable", capabilityTitle: "Every collaboration leaves a trail", capabilityBody: "Members hand off work by responsibility. A timeline captures progress, and you can review each result.", capabilityOne: "Clear member ownership", capabilityOneBody: "Each member has a defined scope", capabilityTwo: "Views brought together", capabilityTwoBody: "Results are assembled according to the team plan", capabilityThree: "Review the process", capabilityThreeBody: "Progress, results, and handoffs stay visible", footerNote: "The public preview demonstrates a complete team workflow. It does not call models or generate business deliverables.", libraryEyebrow: "Classic team examples", libraryTitle: "How teams work together", libraryIntro: "Explore each team's context, responsibilities, and expected outcome.", caseBackground: "Background", caseProblem: "When to use it", caseCollaboration: "How the team works", caseDeliverable: "Expected outcome", caseRoles: "Team responsibilities", openCase: "View case details", useCase: "Use this team", backCases: "All teams", detailEyebrow: "Classic team example", runHistoryEyebrow: "Recent runs", historyTitle: "Recent runs", historyIntro: "Preview history stored temporarily in this browser.", clearHistory: "Clear history", noHistory: "No run history yet. Choose a case and run the team example.", historyRestore: "View run", runPanelKicker: "Team run", runPanelTitle: "Run result", running: "Running the team workflow…", runFailed: "Run did not complete", simulation: "Workflow preview", rolesCompleted: "Role executions", transitions: "Handoffs", elapsed: "Duration", finalDelivery: "Final delivery", runResult: "Preview details", dryOutput: "This preview shows how the team divides and hands off work. It does not call role models or generate a business deliverable.", timeline: "Run timeline", noOutput: "The team returned no final delivery content.", historyDone: "Completed", selected: "Selected team", close: "Close", inputRequired: "Enter a task to run.", networkError: "The runtime is temporarily unavailable. Try again shortly.", promptCopied: "Example task loaded. You can edit it before running.", inputEvent: "Task received", outputEvent: "Workflow complete", roleStatus: "Completed", fallbackEvent: "Work updated"
   }
 };
+Object.assign(copy["zh-CN"], {
+  homeIntro: "从清晰目标开始，定义职责角色与交接方式；每项责任由配置的执行者承担，共同产出可检查的结果。",
+  promiseOne: "每个职责都有清晰边界",
+  promiseOneBody: "从目标拆解到结果整合，每项责任都在流程中明确。",
+  membersTitle: "团队职责",
+  membersSubtitle: "图中展示职责角色；实际执行者由配置决定",
+  legendRole: "职责角色",
+  splitNote: "职责角色按流程交接工作，并在汇总时整合所需信息。",
+  capabilityOne: "明确职责边界",
+  capabilityOneBody: "每个角色都有清晰的责任范围",
+  readinessTitle: "Sandbox Run 配置检查",
+  readinessReady: "静态配置检查通过。外部服务连通性和凭据会在执行时验证。",
+  readinessBlocked: "存在 {count} 个阻塞项。请先修复配置；Dry Run 仍可用于预览流程。",
+  readinessUnavailable: "暂时无法读取配置检查结果。Sandbox Run 会由服务端再次校验。",
+  sandboxBlocked: "Sandbox Run · 配置未就绪",
+  readinessStateReady: "静态检查通过",
+  readinessStateBlocked: "未就绪 · {count}",
+  readinessStateUnknown: "检查暂不可用",
+  readinessConfirmed: "结构已确认",
+  readinessUnconfirmed: "结构未确认"
+});
+Object.assign(copy.en, {
+  homeIntro: "Start with a clear goal. Define responsibility roles and handoffs; configured executors perform each responsibility and produce a reviewable outcome.",
+  promiseOne: "Every responsibility has a clear boundary",
+  promiseOneBody: "Each responsibility is explicit, from framing the task to assembling the result.",
+  membersTitle: "Team responsibilities",
+  membersSubtitle: "The graph shows responsibility roles; configured executors perform them",
+  legendRole: "Responsibility role",
+  splitNote: "Responsibility roles hand off work through the flow and bring needed information together.",
+  capabilityOne: "Clear responsibility boundaries",
+  capabilityOneBody: "Each role has a defined scope of responsibility",
+  readinessTitle: "Sandbox Run configuration check",
+  readinessReady: "Static configuration checks passed. Provider connectivity and credentials are checked during execution.",
+  readinessBlocked: "{count} blocking issues need attention. Dry Run remains available to preview the flow.",
+  readinessUnavailable: "Configuration check is unavailable. The server will validate again before Sandbox Run.",
+  sandboxBlocked: "Sandbox Run · Configuration not ready",
+  readinessStateReady: "Static checks passed",
+  readinessStateBlocked: "Not ready · {count}",
+  readinessStateUnknown: "Check unavailable",
+  readinessConfirmed: "Structure confirmed",
+  readinessUnconfirmed: "Structure not confirmed"
+});
 function syncThemeControls(theme = document.documentElement.dataset.visualizerTheme || "light") {
   const labels = state.locale === "zh-CN" ? { light: "浅色", dark: "深色" } : { light: "Light", dark: "Dark" };
   $$(".theme-switch").forEach((group) => group.setAttribute("aria-label", state.locale === "zh-CN" ? "显示模式" : "Display mode"));
@@ -565,6 +607,10 @@ async function renderProjectDraftV2(projectId) {
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队库</a><div class="eyebrow">01 / 创建团队</div><h1>${esc(project.name)}</h1><p>${esc(project.intent || "还没有填写团队目标")}</p></div><span class="project-status ${confirmed ? "confirmed" : "draft"}">${confirmed ? "团队已确认，可使用团队" : "团队草案，可继续微调"}</span></section><nav class="project-steps"><a class="project-step active" href="#team"><span>01</span><strong>创建团队</strong><small>${confirmed ? "OGS 团队资产已确认" : "确认前可继续微调"}</small></a><a class="project-step ${confirmed ? "" : "disabled"}" href="${confirmed ? `/studio/project/${encodeURIComponent(projectId)}/run` : "#"}" data-route="${confirmed ? `/studio/project/${encodeURIComponent(projectId)}/run` : ""}"><span>02</span><strong>使用团队</strong><small>${confirmed ? "创建项目工作区" : "确认后解锁"}</small></a><a class="project-step disabled" href="#"><span>03</span><strong>运行任务</strong><small>配置材料并检查结果</small></a></nav><section class="project-grid draft-grid"><article class="project-panel project-editor-panel" id="team"><div class="panel-head"><div><span class="section-kicker">团队资产</span><h2>把一句话变成可运行的团队</h2></div><span class="count-badge">${confirmed ? "OK" : "DRAFT"}</span></div><form id="project-edit-form-v2" class="compact-form"><label>团队名称<input name="name" value="${esc(project.name)}" required maxlength="120"></label><label>团队目标<textarea name="intent" rows="6" maxlength="4000" required>${esc(project.intent || "")}</textarea></label><div class="form-actions"><button class="secondary-button" type="submit">保存微调</button>${confirmed ? '<button id="reconfirm-project-v2" class="secondary-button" type="button">重新确认</button>' : '<button id="confirm-project-v2" class="primary-button" type="button">确认团队并进入团队库 →</button>'}</div><p class="form-status" id="project-edit-status-v2"></p></form></article><article class="project-panel project-preview-panel"><div class="panel-head"><div><span class="section-kicker">OGS 结构预览</span><h2>团队资产</h2></div><span class="status-chip">single-project-v1</span></div><div class="preview-list"><div><strong>资产状态</strong><span>${confirmed ? "团队已确认" : "团队草案"}</span></div><div><strong>结构来源</strong><span>OGS / Mermaid</span></div><div><strong>项目关系</strong><span>团队 + 资源 + 运行</span></div></div><p class="preview-note">团队包只包含静态 OGS 资源；使用团队后创建的项目工作区才会保存材料、任务和运行记录。</p><div class="form-actions"><a class="secondary-button" href="/api/v1/projects/${encodeURIComponent(projectId)}/team/export">导出团队资产</a>${confirmed ? `<a class="primary-button" href="/studio/project/${encodeURIComponent(projectId)}/run" data-route="/studio/project/${encodeURIComponent(projectId)}/run">使用团队 →</a>` : ""}</div></article></section>`;
     root.insertAdjacentHTML("beforeend", '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS / Mermaid</span><h2>团队协作结构</h2><p id="project-design-status" class="form-status">正在加载可编辑团队结构</p></div><div class="form-actions"><span class="status-chip">可视化编辑</span><a class="secondary-button" href="' + esc(state.visUrl) + '/?projectId=' + encodeURIComponent(projectId) + '&panel=design" target="_self">在 Vis 中打开专业工作台</a></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable project team graph"></div><p class="preview-note">这里提供轻量编辑和预览；模型、上下文、单步调试与运行诊断请在 Vis 专业工作台处理。保存语义修改后，团队会回到草案状态。</p></section>');
     root.insertAdjacentHTML("beforeend", '<section class="project-panel team-assistant-panel" id="team-assistant"></section>');
+    const confirmedStatus = root.querySelector(".page-heading .project-status");
+    if (confirmedStatus && confirmed) confirmedStatus.textContent = state.locale === "en" ? "Structure confirmed · Configure a project" : "结构已确认，可配置项目";
+    const editorTitle = root.querySelector(".project-editor-panel .panel-head h2");
+    if (editorTitle) editorTitle.textContent = state.locale === "en" ? "Define responsibilities and collaboration" : "定义职责与协作方式";
     void renderTeamAssistant(projectId, project);
     $$("a[data-route]").forEach((link) => link.addEventListener("click", (event) => { if (link.getAttribute("href")) { event.preventDefault(); navigate(link.getAttribute("href")); } }));
     $("#project-edit-form-v2").addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), intent: form.get("intent") }) }); const payload = await result.json(); $("#project-edit-status-v2").textContent = result.ok ? (payload.projectStatus === "draft" ? "已保存，语义修改使项目回到草案。" : "已保存。") : (payload.error || "保存失败"); if (result.ok) await renderProjectDraftV2(projectId); });
@@ -579,6 +625,39 @@ async function renderProjectRunV2(projectId) {
     if (project.projectStatus !== "confirmed") { navigate(`/studio/project/${encodeURIComponent(projectId)}`); return; }
     const materials = project.materials?.materials || []; const runs = project.runs || [];
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio/project/${encodeURIComponent(projectId)}" data-route="/studio/project/${encodeURIComponent(projectId)}">← 团队配置</a><div class="eyebrow">已选团队 · 项目工作区</div><h1>${esc(project.name)}</h1><p>${esc(project.intent || "")}</p></div><span class="project-status confirmed">团队已确认，可配置项目</span></section><nav class="project-steps"><a class="project-step completed" href="/studio/project/${encodeURIComponent(projectId)}" data-route="/studio/project/${encodeURIComponent(projectId)}"><span>01</span><strong>团队资产</strong><small>已确认的 OGS 团队</small></a><a class="project-step active" href="#workspace"><span>02</span><strong>配置资源</strong><small>材料会复制到运行快照</small></a><a class="project-step active" href="#task"><span>03</span><strong>运行任务</strong><small>选择模式并检查结果</small></a></nav><section class="project-grid"><article class="project-panel" id="workspace"><div class="panel-head"><div><span class="section-kicker">02 / 项目资源</span><h2>为项目准备材料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">材料属于项目工作区。开始运行时，系统会把它们复制为不可变快照，之后删除原材料也不会改变本次运行。</p><form id="material-form-v2" class="compact-form"><input name="filename" required placeholder="文件名，例如 brief.md"><textarea name="content" required rows="4" placeholder="粘贴 Markdown、文本或结构化材料"></textarea><button class="secondary-button" type="submit">添加到工作空间</button><p class="form-status" id="material-status-v2"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(item.status)} · ${item.size} bytes</span></div>`).join("") : '<p class="empty-note">还没有材料。先添加一份需求、竞品或背景资料。</p>'}</div></article><article class="project-panel" id="task"><div class="panel-head"><div><span class="section-kicker">03 / 运行</span><h2>让团队完成什么？</h2></div><select id="project-run-mode-v2" class="run-mode-select" aria-label="运行模式"><option value="dry-run">Dry Run · 结构预览</option><option value="sandbox">Sandbox Run · 隔离执行</option></select></div><p class="panel-intro">Dry Run 只检查流程和快照；Sandbox Run 会执行模型，并在隔离环境模拟工具副作用。Real Run 当前未开放。</p><form id="project-run-form-v2" class="compact-form"><textarea name="prompt" required rows="5" maxlength="4000" placeholder="例如：基于工作空间材料，输出一份结构化市场分析"></textarea><button class="primary-button" type="submit">创建运行并执行 <span aria-hidden="true">▶</span></button><p class="form-status" id="run-status-v2"></p></form><div id="project-run-result-v2"></div><div class="run-list">${runs.slice(0, 5).map((run) => `<div class="material-row"><strong>${esc(run.runId)}</strong><span>${esc(run.status || "记录")}</span></div>`).join("")}</div></article></section>`;
+    let readiness;
+    try {
+      const readinessResponse = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/readiness`);
+      if (!readinessResponse.ok) throw new Error("Readiness request failed");
+      readiness = await readinessResponse.json();
+    } catch {
+      readiness = null;
+    }
+    const readinessCopy = copy[state.locale];
+    const blockerCount = readiness?.blockers?.length ?? 0;
+    const readinessMessage = readiness
+      ? blockerCount
+        ? readinessCopy.readinessBlocked.replace("{count}", String(blockerCount))
+        : readinessCopy.readinessReady
+      : readinessCopy.readinessUnavailable;
+    const readinessIssues = readiness
+      ? [...(readiness.blockers || []), ...(readiness.warnings || [])]
+          .map((issue) => `<li class="${issue.severity === "blocker" ? "readiness-blocker" : "readiness-warning"}">${issue.roleId ? `<strong>${esc(issue.roleId)}</strong>: ` : ""}${esc(issue.message)}</li>`)
+          .join("")
+      : "";
+    const readinessState = readiness
+      ? blockerCount
+        ? readinessCopy.readinessStateBlocked.replace("{count}", String(blockerCount))
+        : readinessCopy.readinessStateReady
+      : readinessCopy.readinessStateUnknown;
+    root.insertAdjacentHTML("afterbegin", `<section class="project-panel readiness-panel" aria-live="polite"><div class="panel-head"><div><span class="section-kicker">${esc(readinessCopy.readinessTitle)}</span><h2>${esc(readinessState)}</h2></div><span class="status-chip">${esc(readiness?.projectStatus === "confirmed" ? readinessCopy.readinessConfirmed : readinessCopy.readinessUnconfirmed)}</span></div><p class="panel-intro">${esc(readinessMessage)}</p>${readinessIssues ? `<ul class="readiness-issues">${readinessIssues}</ul>` : ""}</section>`);
+    const sandboxOption = $("#project-run-mode-v2 option[value=sandbox]");
+    if (sandboxOption && readiness && !readiness.canDryRun) {
+      sandboxOption.disabled = true;
+      sandboxOption.textContent = readinessCopy.sandboxBlocked;
+    }
+    const roleHeading = root.querySelector(".project-editor-panel .panel-head h2");
+    if (roleHeading) roleHeading.textContent = state.locale === "en" ? "Define responsibilities and collaboration" : "定义职责与协作方式";
     $$("a[data-route]").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); navigate(link.getAttribute("href")); }));
     $("#material-form-v2").addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filename: form.get("filename"), content: form.get("content"), contentType: "text/plain" }) }); const payload = await result.json(); if (!result.ok) { $("#material-status-v2").textContent = payload.error || "材料添加失败"; return; } await renderProjectRunV2(projectId); });
     $("#project-run-form-v2").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const prompt = new FormData(form).get("prompt"); const mode = $("#project-run-mode-v2").value; const status = $("#run-status-v2"); const button = form.querySelector("button[type=submit]"); const idempotencyKey = crypto.randomUUID(); button.disabled = true; status.textContent = `正在创建 ${mode === "sandbox" ? "Sandbox Run" : "Dry Run"}…`; try { const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/runs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, mode, idempotencyKey }) }); const payload = await response.json(); if (!response.ok) { status.textContent = payload.error || "运行失败"; return; } status.textContent = `运行已完成：${payload.runId}`; renderProjectRunResult(projectId, payload); } catch (error) { status.textContent = error.message || "运行失败"; } finally { button.disabled = false; } });

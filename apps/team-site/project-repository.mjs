@@ -23,6 +23,7 @@ import {
 } from "../../dist/visualizer/project-projection.js";
 import { authoringToCanvasDocument, importMermaidToAuthoring, serializeAuthoringToMermaid } from "../../dist/visualizer/studio-authoring.js";
 import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
+import { inspectProjectReadiness } from "../../dist/visualizer/project-readiness.js";
 import { validateProjectSystemSource, saveProjectSystemSource } from "../../dist/visualizer/project-projection.js";
 import { getCase } from "./cases.mjs";
 import { materializeCaseTeam } from "./demo-runner.mjs";
@@ -248,6 +249,35 @@ export async function getProject(projectId) {
   return readProject(projectId);
 }
 
+export async function getProjectReadiness(projectId) {
+  const project = await readProject(projectId);
+  const readiness = await inspectProjectReadiness(project.workdir);
+  const projectIssue = (issue) => {
+    const messageByCode = {
+      READINESS_CONTRACT_BUNDLE_UNREADABLE: "Handoff contract bundle cannot be inspected. Check the configured contract file.",
+      READINESS_CONTRACT_PLAN_INVALID: "Handoff contract plan is invalid. Check the contract definitions and schemas.",
+      READINESS_MODEL_CATALOG_INVALID: "Model catalog is invalid. Repair .ogs/model-catalog.json.",
+      READINESS_ROLE_PACKAGE_INVALID: `Role package "${issue.roleId}" is invalid. Check role.json and its referenced package files.`
+    };
+    return {
+      code: issue.code,
+      severity: issue.severity,
+      ...(issue.roleId ? { roleId: issue.roleId } : {}),
+      message: messageByCode[issue.code] ?? issue.message
+    };
+  };
+  return {
+    projectId,
+    projectStatus: project.projectStatus,
+    projectDigest: project.projectDigest,
+    confirmedAt: project.confirmedAt,
+    canDryRun: readiness.canDryRun,
+    blockers: readiness.blockers.map(projectIssue),
+    warnings: readiness.warnings.map(projectIssue),
+    missingBindings: readiness.missingBindings
+  };
+}
+
 export async function getProjectGraph(projectId, locale = "zh-CN") {
   const project = await readProject(projectId);
   const systemPath = join(project.workdir, "system.mmd");
@@ -356,6 +386,13 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
   if (mode === "real") throw new Error("REAL_RUN_UNSUPPORTED: real project runs are disabled in the first phase.");
   if (mode !== "dry-run" && mode !== "sandbox") throw new Error("Unsupported project run mode.");
   const initialProject = await readProject(projectId);
+  if (mode === "sandbox") {
+    await requireCurrentConfirmation(initialProject);
+    const readiness = await inspectProjectReadiness(initialProject.workdir);
+    if (!readiness.canDryRun) {
+      throw new Error(`PROJECT_NOT_READY: resolve ${readiness.blockers.length} static readiness blocker(s) before Sandbox Run. Inspect project readiness for details.`);
+    }
+  }
   const requestKey = idempotencyKey ? String(idempotencyKey).slice(0, 160) : undefined;
   const requestPath = join(initialProject.workdir, ".site", "run-requests.json");
   let writeLock;
