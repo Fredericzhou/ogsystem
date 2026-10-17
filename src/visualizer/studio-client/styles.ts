@@ -120,25 +120,74 @@ export function injectStudioGraphStyles(): void {
     }
     @media (max-width: 720px) {
       .studio-graph-toolbar {
-        align-items: stretch;
-        flex-direction: column;
+        align-items: center;
+        flex-direction: row;
+        overflow: hidden;
+        padding: 4px;
       }
       .studio-graph-toolbar-main {
-        flex-wrap: wrap;
-        overflow: visible;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
         width: 100%;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
       }
       .studio-graph-toolbar-group {
-        flex-wrap: wrap;
-        flex: 0 1 auto;
-        max-width: 100%;
+        flex-wrap: nowrap;
+        flex: 0 0 auto;
+        max-width: none;
       }
       .studio-graph-toolbar-text {
         display: none;
       }
+      .studio-graph-toolbar button,
+      .studio-graph-toolbar select {
+        min-height: 42px;
+      }
+      .studio-graph-toolbar button {
+        min-width: 42px;
+      }
       .studio-graph-quick-debug {
         inset: auto 12px 12px 12px;
         width: auto;
+      }
+    }
+    @media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) {
+      .studio-graph-toolbar {
+        align-items: center;
+        flex-direction: row;
+        overflow: hidden;
+        padding: 3px 4px;
+      }
+      .studio-graph-toolbar-main {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        width: 100%;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+      }
+      .studio-graph-toolbar-group {
+        flex-wrap: nowrap;
+        flex: 0 0 auto;
+        max-width: none;
+      }
+      .studio-graph-toolbar button,
+      .studio-graph-toolbar select {
+        min-height: 38px;
+      }
+      .studio-graph-toolbar button {
+        min-width: 38px;
+      }
+      .studio-graph-toolbar-text {
+        display: none;
+      }
+      .studio-graph-island,
+      .studio-graph-stage,
+      .studio-graph-canvas {
+        height: 100%;
+        min-height: 0;
       }
     }
     @container (max-width: 920px) {
@@ -799,6 +848,41 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-selection-active .connection,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .connection { stroke: #1b7662 !important; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .x6-edge-label rect { stroke: #1b7662; }
+    @media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) {
+      .studio-graph-island,
+      .studio-graph-stage,
+      .studio-graph-canvas {
+        height: 100%;
+        min-height: 0;
+      }
+    }
+    /* Keep the mobile command surface inside the graph width. The command
+       groups may wrap into multiple rows; the page itself must never grow
+       horizontally just to fit editing actions. */
+    @media (max-width: 720px) {
+      .studio-graph-toolbar-main {
+        flex-wrap: wrap !important;
+        overflow: hidden !important;
+        align-content: flex-start;
+      }
+      .studio-graph-toolbar-group {
+        flex: 1 1 100% !important;
+        flex-wrap: wrap !important;
+        max-width: 100% !important;
+        overflow: hidden;
+      }
+    }
+    @media (max-width: 900px) and (orientation: landscape) {
+      .studio-graph-toolbar-main {
+        flex-wrap: wrap !important;
+        overflow: hidden !important;
+        align-content: flex-start;
+      }
+      .studio-graph-toolbar-group {
+        flex-wrap: wrap !important;
+        max-width: 100% !important;
+      }
+    }
   `;
   document.head.appendChild(style);
 }

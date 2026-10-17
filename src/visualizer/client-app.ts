@@ -394,6 +394,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
     const resolvedLocale = resolveClientLocale();
     const state = createInitialVisualizerState(resolvedLocale);
+    const mobileStudioEditor = window.matchMedia(
+      "(max-width: 480px), (max-width: 1000px) and (max-height: 520px) and (orientation: landscape)"
+    );
+    if (mobileStudioEditor.matches) {
+      state.studioInspectorCollapsed = true;
+    }
     function applyVisualizerTheme(theme) {
       const nextTheme = theme === "dark" ? "dark" : "light";
       document.documentElement.dataset.visualizerTheme = nextTheme;
@@ -2440,6 +2446,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeSelectedRoleId = nextRoleId;
       state.studioBridgeSelectedFlowKey = "";
+      state.studioInspectorCollapsed = false;
       state.studioWorkbenchSideTab = "structure";
       state.studioBridgeEditSelectionRequest += 1;
       updateStudioBridgeSelection(options?.syncGraph !== false);
@@ -2460,6 +2467,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeSelectedFlowKey = nextFlowKey;
       state.studioBridgeSelectedRoleId = "";
+      state.studioInspectorCollapsed = false;
       state.studioWorkbenchSideTab = "structure";
       state.studioBridgeEditSelectionRequest += 1;
       loadStudioFlowConfigEditor(nextFlowKey);
@@ -5109,6 +5117,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioSelectionCommandFormOpen = Boolean(formState?.open);
           state.studioSelectionCommandKind = String(formState?.kind || "");
           if (formState?.open) {
+            // Opening an editor must reveal the inspector on compact screens;
+            // otherwise the command form is mounted inside a hidden panel.
+            state.studioInspectorCollapsed = false;
             state.studioWorkbenchSideTab = "structure";
           } else if (!state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey) {
             state.studioWorkbenchSideTab = isStudioRuntimeSideTab(state.studioWorkbenchSideTab)

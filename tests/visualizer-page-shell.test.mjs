@@ -58,6 +58,9 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(styles, /--surface-panel: var\(--panel\)/);
   assert.match(styles, /--surface-section: var\(--panel-soft\)/);
   assert.match(styles, /--surface-inset: var\(--panel-deep\)/);
+  assert.match(styles, /:root\[data-visualizer-theme="dark"\] input::placeholder,[\s\S]*?color: #9eafc5; opacity: 1/);
+  assert.match(styles, /:root\[data-visualizer-theme="dark"\] \.button:disabled,[\s\S]*?color: #aab8cb;[\s\S]*?opacity: 1/);
+  assert.match(styles, /\.top-nav-utilities > \.button \{ height: var\(--control-height\); min-height: var\(--control-height\); \}/);
   assert.match(styles, /\.visualizer-theme-toggle \{[\s\S]*?width: 36px;[\s\S]*?height: 36px;/);
   assert.match(styles, /select option \{[\s\S]*?color: #e5eefb;[\s\S]*?background-color: #0f172a/);
   assert.match(styles, /\.studio-system-settings > summary,[\s\S]*?\.studio-contract-editor > summary[\s\S]*?font-size: 13px;[\s\S]*?font-weight: 600/);

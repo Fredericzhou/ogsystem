@@ -659,6 +659,7 @@ export function renderPageShellStyles(): string {
       border-radius: 11px;
       background: rgba(255, 255, 255, 0.02);
     }
+    .top-nav-utilities > .button { height: var(--control-height); min-height: var(--control-height); }
     .top-nav-utilities .locale-field {
       display: inline-flex;
       align-items: center;
@@ -3709,17 +3710,71 @@ export function renderPageShellStyles(): string {
       .studio-canvas-shell,
       .studio-canvas-shell.has-docked-selection {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(58vh, 1fr) minmax(0, auto);
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        position: relative;
+      }
+      .studio-canvas-shell.has-collapsed-selection,
+      .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      .studio-graph-column.has-design-header {
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+      }
+      .studio-canvas-shell .studio-graph-root,
+      .studio-canvas-shell.has-docked-selection .studio-graph-root {
+        grid-column: 1;
+        grid-row: 2;
+        height: 100%;
+        min-height: 0;
+        padding: 0;
+      }
+      .studio-canvas-shell .studio-selection-resize-handle {
+        display: none;
+      }
+      .studio-canvas-shell .studio-selection-expand {
+        width: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        right: 8px;
+        top: 8px;
       }
       .studio-selection-overlay,
       .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked {
-        max-height: 32vh;
-        overflow: auto;
+        position: absolute;
+        inset: auto 0 0;
+        z-index: 6;
+        width: 100%;
+        height: min(30dvh, 300px);
+        max-height: 36dvh;
+        padding: 8px;
+        border: 0;
+        overflow: hidden;
+        background: linear-gradient(180deg, rgba(7, 12, 24, 0.74), rgba(7, 12, 24, 0.96) 24%);
       }
-      .studio-selection-dialog {
+      .studio-selection-overlay .studio-selection-dialog,
+      .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked .studio-selection-dialog {
+        width: 100%;
+        height: 100%;
         min-height: 0;
-        height: auto;
-        max-height: 32vh;
+        max-height: 100%;
+        border-radius: 12px 12px 8px 8px;
+      }
+      .studio-selection-overlay .studio-selection-body {
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      .studio-selection-overlay .studio-selection-header,
+      .studio-selection-overlay .studio-selection-tabstrip {
+        flex: 0 0 auto;
+      }
+      .studio-selection-overlay .studio-selection-actions .button {
+        min-width: 40px;
+        min-height: 40px;
       }
       .run-card,
       .event,
@@ -3727,6 +3782,112 @@ export function renderPageShellStyles(): string {
       .preview,
       .editor {
         border-radius: 9px;
+      }
+      .top-nav {
+        gap: 4px;
+        padding: 6px;
+      }
+      .top-nav-row-primary {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+      }
+      .top-nav-brand {
+        align-items: center;
+        flex-wrap: nowrap;
+        min-height: 28px;
+      }
+      .brand-lockup {
+        flex-wrap: nowrap;
+        gap: 6px;
+      }
+      .brand-lockup h1 {
+        display: none;
+      }
+      .brand-lockup .project-name {
+        max-width: min(65vw, 260px);
+        font-size: 13px;
+      }
+      .top-nav-center {
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+      }
+      .top-nav-center .console-tabs {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .top-nav-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        justify-content: space-between;
+        gap: 4px;
+        width: 100%;
+        margin: 0;
+      }
+      .top-nav-utilities {
+        flex: 0 0 auto;
+        gap: 3px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
+      .top-nav-utilities .locale-field span {
+        display: none;
+      }
+      .top-nav-utilities .locale-field .select {
+        min-width: 78px;
+        min-height: 36px;
+      }
+      .top-nav .top-nav-actions > .hero-actions {
+        display: flex;
+        flex: 1 1 auto;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        gap: 4px;
+        width: auto;
+      }
+      .top-nav .top-nav-actions > .hero-actions .button {
+        min-height: 36px;
+        padding: 5px 8px;
+        white-space: nowrap;
+      }
+      .global-status {
+        min-height: 38px;
+        max-height: 42px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 3px 6px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .global-status-primary,
+      .global-status-actions {
+        flex: 0 0 auto;
+        width: auto;
+        flex-wrap: nowrap;
+      }
+      .global-status .pill {
+        max-width: 180px;
+        white-space: nowrap;
+      }
+      .studio-design-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        min-height: 58px;
+        padding: 8px 10px;
+      }
+      .studio-design-header-copy .eyebrow {
+        display: none;
+      }
+      .studio-design-header-copy h2 {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 15px;
+      }
+      .studio-design-header-actions .studio-design-revision {
+        display: none;
       }
     }
     @media (min-width: 721px) and (max-height: 760px) {
@@ -3741,6 +3902,174 @@ export function renderPageShellStyles(): string {
       .studio-design-metrics { display: none; }
       .studio-design-header-actions { grid-column: 2; grid-row: 1; flex-wrap: nowrap; align-items: center; }
       .studio-design-header-actions .button { width: auto; }
+    }
+    @media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) {
+      .shell.content {
+        grid-template-rows: auto 0 minmax(0, 1fr) auto;
+        min-height: 100dvh;
+        height: 100dvh;
+        padding: 5px 8px;
+      }
+      .top-nav {
+        padding: 4px 7px;
+      }
+      .top-nav-row-primary {
+        grid-template-columns: minmax(118px, 0.7fr) minmax(260px, 1.25fr) auto;
+        align-items: center;
+        gap: 6px;
+      }
+      .top-nav-brand,
+      .top-nav-center,
+      .top-nav-actions {
+        width: auto;
+        min-width: 0;
+      }
+      .top-nav-brand {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        min-height: 28px;
+      }
+      .brand-lockup {
+        flex-wrap: nowrap;
+      }
+      .brand-lockup .project-name {
+        max-width: 18ch;
+        font-size: 12px;
+      }
+      .top-nav-center {
+        grid-column: 2;
+        grid-row: 1;
+        flex: 0 1 auto;
+      }
+      .top-nav-actions {
+        grid-column: 3;
+        grid-row: 1;
+      }
+      .brand-lockup h1,
+      .top-nav-utilities .locale-field span {
+        display: none;
+      }
+      .top-nav-center .console-tabs {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+      }
+      .top-nav-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+        gap: 4px;
+      }
+      .top-nav-utilities {
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
+      .top-nav-utilities .locale-field .select {
+        min-width: 72px;
+      }
+      .top-nav .top-nav-actions > .hero-actions {
+        display: flex;
+        flex-wrap: nowrap;
+        width: auto;
+      }
+      .top-nav .top-nav-actions > .hero-actions .button {
+        min-height: 34px;
+        padding: 4px 7px;
+      }
+      .studio-design-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 5px;
+        min-height: 48px;
+        padding: 4px 8px;
+      }
+      .studio-design-header-copy .eyebrow,
+      .studio-design-header-copy p,
+      .studio-design-steps,
+      .studio-design-metrics,
+      .studio-design-header-actions .studio-design-revision {
+        display: none;
+      }
+      .studio-design-header-actions {
+        grid-column: 2;
+        grid-row: 1;
+        justify-content: flex-end;
+      }
+      .studio-design-header-copy h2 {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+      }
+      .studio-graph-column.has-design-header {
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+      }
+      .studio-canvas-shell,
+      .studio-canvas-shell.has-docked-selection {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        height: 100%;
+      }
+      .studio-canvas-shell.has-collapsed-selection,
+      .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      .studio-canvas-shell .studio-graph-root,
+      .studio-canvas-shell.has-docked-selection .studio-graph-root {
+        grid-column: 1;
+        grid-row: 2;
+        min-height: 0;
+        padding: 0;
+      }
+      .studio-graph-island,
+      .studio-graph-stage,
+      .studio-graph-canvas {
+        min-height: 0;
+      }
+      .studio-canvas-shell .studio-selection-resize-handle {
+        display: none;
+      }
+      .studio-canvas-shell .studio-selection-expand {
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        right: 6px;
+        top: 6px;
+      }
+      .studio-selection-overlay,
+      .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked {
+        position: absolute;
+        inset: auto 0 0;
+        width: 100%;
+        height: min(52dvh, 220px);
+        max-height: 62dvh;
+        padding: 6px;
+      }
+      .studio-selection-overlay .studio-selection-dialog,
+      .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked .studio-selection-dialog {
+        height: 100%;
+        max-height: 100%;
+        min-height: 0;
+      }
+      .global-status {
+        min-height: 28px;
+        max-height: 30px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 2px 6px;
+      }
+      .global-status-primary,
+      .global-status-actions {
+        flex: 0 0 auto;
+        width: auto;
+        flex-wrap: nowrap;
+      }
     }
     .button:focus-visible,
     .run-card:focus-visible,
@@ -3975,6 +4304,257 @@ export function renderPageShellStyles(): string {
     :root[data-visualizer-theme="dark"] .event-top .severity-info,
     :root[data-visualizer-theme="dark"] .hint.severity-info { color: #7dd3fc; }
     :root[data-visualizer-theme="dark"] .field-error { color: #fca5a5; }
+    :root[data-visualizer-theme="dark"] .hint,
+    :root[data-visualizer-theme="dark"] .field > span,
+    :root[data-visualizer-theme="dark"] .field > label,
+    :root[data-visualizer-theme="dark"] .studio-design-header-copy p,
+    :root[data-visualizer-theme="dark"] .studio-selection-title-wrap .hint,
+    :root[data-visualizer-theme="dark"] .studio-index-section-heading span,
+    :root[data-visualizer-theme="dark"] .studio-index-item small,
+    :root[data-visualizer-theme="dark"] .studio-index-item p { color: #b8c6d8; }
+    :root[data-visualizer-theme="dark"] input::placeholder,
+    :root[data-visualizer-theme="dark"] textarea::placeholder,
+    :root[data-visualizer-theme="dark"] .search::placeholder { color: #9eafc5; opacity: 1; }
+    :root[data-visualizer-theme="dark"] input,
+    :root[data-visualizer-theme="dark"] textarea,
+    :root[data-visualizer-theme="dark"] select,
+    :root[data-visualizer-theme="dark"] .field select,
+    :root[data-visualizer-theme="dark"] .studio-command-form select {
+      color: var(--text);
+      background-color: #111c2e;
+      border-color: #52657d;
+    }
+    :root[data-visualizer-theme="dark"] select option { color: #e5eefb; background-color: #111c2e; }
+    :root[data-visualizer-theme="dark"] .button:disabled,
+    :root[data-visualizer-theme="dark"] .run-card:disabled {
+      color: #aab8cb;
+      background-color: #263449;
+      border-color: #52657d;
+      opacity: 1;
+    }
+    :root[data-visualizer-theme="dark"] .studio-selection-tabstrip .button,
+    :root[data-visualizer-theme="dark"] .segmented .button,
+    :root[data-visualizer-theme="dark"] .console-tabs .button { color: #c7d3e3; }
+    :root[data-visualizer-theme="dark"] .studio-selection-tabstrip .button.active,
+    :root[data-visualizer-theme="dark"] .segmented .button.active,
+    :root[data-visualizer-theme="dark"] .console-tabs .button.active {
+      color: #e8f7ff;
+      border-color: #3285a1;
+      background: #12354b;
+    }
+    :root[data-visualizer-theme="dark"] .button:focus-visible,
+    :root[data-visualizer-theme="dark"] input:focus-visible,
+    :root[data-visualizer-theme="dark"] textarea:focus-visible,
+    :root[data-visualizer-theme="dark"] select:focus-visible {
+      outline: 2px solid #67d5ed;
+      outline-offset: 2px;
+    }
     :root .studio-index-section-heading strong { color: var(--text); }
+
+    /* Workbench layout baseline: keep the page frame stable while each editing
+       surface owns its own scroll region. These rules intentionally sit last so
+       they provide one consistent contract across the older panel variants. */
+    .shell.content {
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 0;
+    }
+    .shell.content > .top-nav,
+    .shell.content > .flash,
+    .shell.content > .main-stage { margin-bottom: 0; }
+    .top-nav {
+      border-radius: 0 0 var(--radius) var(--radius);
+      padding: 10px 14px;
+    }
+    .top-nav-row-primary {
+      grid-template-columns: minmax(180px, 0.34fr) minmax(0, 1fr) auto;
+      align-items: center;
+    }
+    .top-nav-brand,
+    .top-nav-center,
+    .top-nav-actions { min-width: 0; }
+    .top-nav-actions { align-self: stretch; align-items: center; }
+    .console-tabs { align-items: stretch; }
+    .console-tabs .button { min-height: 32px; }
+    .main-stage { overflow: auto; }
+    .stage-stack {
+      height: auto;
+      min-height: 100%;
+      padding: 14px;
+      gap: 14px;
+      align-content: start;
+      grid-auto-rows: max-content;
+      overflow: visible;
+    }
+    .card { min-width: 0; border-radius: 10px; }
+    .card > header,
+    .card > .body { min-width: 0; }
+    #console-panel-build,
+    #console-panel-build > .card,
+    #console-panel-build > .card > .body,
+    #console-panel-build .build-ide-shell,
+    #console-panel-build .build-ide-body { min-height: 0; }
+    #console-panel-build > .card > .body { overflow: visible; }
+    .build-ide-body { overflow: visible; }
+    .build-control-primary {
+      grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+      align-items: center;
+    }
+    .studio-bridge-layout { gap: 14px; }
+    .studio-design-header {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: auto auto auto;
+      gap: 12px 18px;
+      padding: 16px 18px;
+      align-items: start;
+    }
+    .studio-design-header-copy { grid-column: 1; grid-row: 1; }
+    .studio-design-header-actions {
+      grid-column: 2;
+      grid-row: 1;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .studio-design-steps {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      min-width: 0;
+    }
+    .studio-design-metrics {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      gap: 0;
+    }
+    .studio-design-metrics div { flex: 0 1 120px; min-width: 0; }
+    .studio-canvas-shell {
+      min-height: clamp(500px, 66dvh, 780px);
+      height: clamp(500px, 66dvh, 780px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-inset);
+    }
+    .studio-canvas-toolbar {
+      padding: 8px 10px;
+      background: var(--surface-section);
+    }
+    .studio-canvas-toolbar > div { min-width: 0; }
+    .studio-graph-root { padding: 10px; min-width: 0; }
+    .studio-selection-overlay { padding: 8px 8px 8px 8px; }
+    .studio-selection-dialog { border-radius: 10px; }
+    .studio-selection-header { min-height: 48px; align-items: center; padding: 8px 10px; }
+    .studio-selection-tabstrip { margin: 8px 10px 0; }
+    .studio-selection-body { padding: 8px 10px 10px; }
+
+    @media (max-width: 1180px) {
+      .top-nav-row-primary { grid-template-columns: minmax(0, 1fr) auto; }
+      .top-nav-center { grid-column: 1 / -1; grid-row: 2; }
+      .stage-stack { padding: 12px; }
+      .studio-canvas-shell { height: auto; min-height: 700px; }
+    }
+    @media (max-width: 720px) {
+      .top-nav { border-radius: 0 0 10px 10px; }
+      .top-nav-row-primary { grid-template-columns: minmax(0, 1fr); }
+      .top-nav-center,
+      .top-nav-actions { grid-column: 1; }
+      .top-nav-center { grid-row: 2; }
+      .top-nav-actions { grid-row: 3; }
+      .stage-stack { padding: 10px; gap: 10px; }
+      .build-control-primary { grid-template-columns: 1fr; }
+      .studio-design-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px 12px;
+        padding: 14px;
+      }
+      .studio-design-header-actions { grid-column: 2; grid-row: 1; }
+      .studio-design-steps { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; padding-bottom: 2px; }
+      .studio-design-metrics { grid-column: 1 / -1; grid-row: 3; }
+      .studio-canvas-shell {
+        height: min(760px, calc(100dvh - 220px));
+        min-height: 520px;
+      }
+      .studio-graph-root { padding: 6px; }
+      .studio-selection-overlay { padding: 8px; }
+    }
+    @media (max-width: 480px) {
+      .stage-stack { padding: 8px; gap: 8px; }
+      .studio-design-header-copy h2 { font-size: 19px; }
+      .studio-design-header-copy p { display: block; font-size: 12px; }
+      .studio-design-header-actions { gap: 4px; }
+      .studio-design-header-actions .studio-design-revision { max-width: 44vw; }
+      .studio-design-header-actions .studio-design-revision small { display: none; }
+      .studio-design-metrics div { flex-basis: 0; padding-right: 10px; }
+      .studio-canvas-shell {
+        height: min(700px, calc(100dvh - 190px));
+        min-height: 480px;
+      }
+      .studio-canvas-toolbar { padding: 6px; }
+      .studio-graph-selection-label { max-width: 70vw; }
+      .brand-lockup .project-name { font-size: 16px; max-width: 58vw; }
+    }
+    @media (max-width: 900px) and (orientation: landscape) {
+      .top-nav { padding: 7px 10px; }
+      .stage-stack { padding: 8px 10px; }
+      .studio-design-header { padding: 10px 12px; }
+      .studio-design-header-copy p { display: none; }
+      .studio-design-steps { padding-top: 0; }
+      .studio-design-metrics { padding-top: 7px; }
+      .studio-canvas-shell { height: calc(100dvh - 178px); min-height: 360px; }
+      .studio-selection-overlay { padding: 6px; }
+    }
+    @media (max-width: 720px) {
+      .studio-graph-toolbar-main {
+        flex-wrap: wrap;
+        overflow: hidden;
+        align-content: flex-start;
+      }
+      .studio-graph-toolbar-group {
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+        max-width: 100%;
+        overflow: hidden;
+      }
+    }
+    @media (max-width: 900px) and (orientation: landscape) {
+      .studio-graph-toolbar-main {
+        flex-wrap: wrap;
+        overflow: hidden;
+        align-content: flex-start;
+      }
+      .studio-graph-toolbar-group {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        max-width: 100%;
+      }
+    }
+    /* The design header rule above intentionally resets the shell height for
+       auto-sized cards. Restore a real canvas height after that rule, including
+       the collapsed-inspector variant used on first load. */
+    .studio-graph-column.has-design-header > .studio-canvas-shell,
+    .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+      height: clamp(500px, 66dvh, 780px);
+      min-height: clamp(500px, 66dvh, 780px);
+    }
+    @media (max-width: 720px) {
+      .studio-graph-column.has-design-header > .studio-canvas-shell,
+      .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        height: min(760px, calc(100dvh - 220px));
+        min-height: 520px;
+      }
+    }
+    @media (max-width: 480px) {
+      .studio-graph-column.has-design-header > .studio-canvas-shell,
+      .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        height: min(700px, calc(100dvh - 190px));
+        min-height: 480px;
+      }
+    }
+    @media (max-width: 900px) and (orientation: landscape) {
+      .studio-graph-column.has-design-header > .studio-canvas-shell,
+      .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        height: calc(100dvh - 178px);
+        min-height: 360px;
+      }
+    }
 `;
 }
