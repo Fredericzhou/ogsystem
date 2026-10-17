@@ -29,6 +29,10 @@ Engineering rules, plans, specifications, and active backlog live under `develop
 - [Compiler semantics](development/compiler-semantics-v1.md): compiler and diagnostics contract.
 - [OGS workflow DSL upgrade plan](development/ogs-langgraph-dsl-upgrade-plan.md): DSL, IR, reliability, and standards roadmap.
 - [OGS product boundary and evolution](development/ogs-product-boundary-and-evolution.md): core, enhancement, extension tiers and admission rules.
+- [Project/team/task-run plan](development/ogs-project-team-task-run-plan.md): domain boundaries, workspace ownership, and staged implementation plan.
+- [Team Site domain and product plan](development/team-site-domain-product-plan.md): TeamVersion, Project creation, materials, and export contract.
+- [Team Site run reliability plan](development/team-site-run-reliability-plan.md): Run reservation, asynchronous execution, control, and recovery.
+- [Team Site frontend infrastructure plan](development/team-site-frontend-infrastructure-plan.md): routing, request lifecycle, and state rendering.
 - [OGS visualizer refactor plan](development/ogs-visualizer-refactor-plan.md): semantic layout and graph interaction plan.
 - [Release UAT checklist](development/release-uat-checklist.md): clean-install scenarios and release sign-off gates.
 - [Semantic gap implementation plan](development/semantic-gap-implementation-plan.md): current runtime gaps and priorities.

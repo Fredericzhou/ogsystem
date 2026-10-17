@@ -243,16 +243,18 @@ export function buildProjectRunPlan(args: {
 
 async function snapshotMaterials(args: {
   workdir: string;
+  materialSourceRoot?: string;
   runDir: string;
   materials: ProjectMaterialInput[];
   nodeIds: string[];
 }): Promise<ProjectMaterialSnapshot[]> {
   const inputDir = resolve(args.runDir, "inputs");
+  const sourceRoot = resolve(args.materialSourceRoot ?? args.workdir);
   await mkdir(inputDir, { recursive: true });
   const output: ProjectMaterialSnapshot[] = [];
   for (const input of args.materials) {
     assertSafeId(input.materialId, "materialId");
-    const sourcePath = assertWithin(args.workdir, input.sourcePath, "material source path");
+    const sourcePath = assertWithin(sourceRoot, input.sourcePath, "material source path");
     const sourceStat = await lstat(sourcePath);
     if (sourceStat.isSymbolicLink()) throw new Error(`MATERIAL_SYMLINK_UNSUPPORTED: ${sourcePath}`);
     const source = await readFile(sourcePath);
@@ -261,7 +263,7 @@ async function snapshotMaterials(args: {
     await copyFile(sourcePath, snapshotPath);
     output.push({
       materialId: input.materialId,
-      sourcePath: relative(args.workdir, sourcePath),
+      sourcePath: relative(sourceRoot, sourcePath),
       snapshotPath: relative(args.runDir, snapshotPath),
       contentHash: createHash("sha256").update(source).digest("hex"),
       size: source.byteLength,
@@ -275,6 +277,7 @@ async function snapshotMaterials(args: {
 
 export async function initializeProjectRunArtifacts(args: {
   workdir: string;
+  materialSourceRoot?: string;
   runDir: string;
   projectId?: string;
   prompt: string;
@@ -307,6 +310,7 @@ export async function initializeProjectRunArtifacts(args: {
   } else {
     materials = await snapshotMaterials({
       workdir: args.workdir,
+      materialSourceRoot: args.materialSourceRoot,
       runDir: args.runDir,
       materials: args.materials ?? [],
       nodeIds: Array.from(args.plan.nodesByRoleId.keys())

@@ -220,15 +220,21 @@ h1, h2, p { margin-top: 0; }
 .classic-team-card[data-accent="blue"] { border-top: 3px solid var(--blue); }
 .classic-team-card[data-accent="mint"] { border-top: 3px solid var(--mint); }
 .classic-team-card-top { align-items: center; display: flex; justify-content: space-between; }
+.classic-team-preview { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 6px; display: block; min-height: 112px; overflow: hidden; position: relative; }
+.team-graph-thumbnail { display: block; height: 112px; width: 100%; }
+.team-graph-thumbnail .thumbnail-edges path { fill: none; stroke: var(--blue); stroke-width: 1.5; }
+.team-graph-thumbnail .thumbnail-nodes rect { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; }
+.team-graph-thumbnail .thumbnail-nodes text { fill: var(--ink); font-size: 8px; }
+.classic-team-arrow { align-items: center; background: var(--ink); border-radius: 50%; color: var(--surface); display: flex; font-size: 13px; height: 24px; justify-content: center; position: absolute; right: 8px; top: 8px; width: 24px; }
 .classic-team-card h3 { font-size: 15px; margin: 14px 0 6px; }
 .classic-team-card p { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 0; }
 .classic-team-meta { color: var(--soft); display: flex; font-size: 10px; justify-content: space-between; margin: auto 0 12px; padding-top: 14px; }
 .classic-team-card .secondary-button { align-self: flex-start; }
 .import-project-button { cursor: pointer; }.project-library-grid { display: grid; gap: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.project-asset-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 220px; padding: 18px; }
+.project-asset-card, .project-asset-surface { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 220px; padding: 18px; }
 .asset-card-top { align-items: center; display: flex; justify-content: space-between; }.asset-mark { align-items: center; background: var(--mint-soft); border-radius: 7px; color: var(--mint-dark); display: inline-flex; font-weight: 800; height: 32px; justify-content: center; width: 32px; }
 .status-chip { background: var(--canvas); border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; padding: 4px 8px; }.status-chip.confirmed { color: #18734f; }.status-chip.draft { color: #a36a25; }
-.project-asset-card h2 { font-size: 18px; margin: 18px 0 7px; }.project-asset-card p { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 0; min-height: 43px; }.asset-card-meta { color: var(--soft); display: flex; font-size: 11px; justify-content: space-between; margin: auto 0 14px; padding-top: 18px; }.asset-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }.asset-card-actions .secondary-button, .asset-card-actions .primary-button { align-self: flex-start; }
+.project-asset-card h2, .project-asset-surface h2 { font-size: 18px; margin: 18px 0 7px; }.project-asset-card p, .project-asset-surface p { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 0; min-height: 43px; }.asset-card-meta { color: var(--soft); display: flex; font-size: 11px; justify-content: space-between; margin: auto 0 14px; padding-top: 18px; }.asset-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }.asset-card-actions .secondary-button, .asset-card-actions .primary-button { align-self: flex-start; }
 .asset-title-row { align-items: center; display: flex; gap: 9px; justify-content: space-between; min-width: 0; }
 .asset-title-row h2 { min-width: 0; overflow-wrap: anywhere; }
 .version-badge { background: var(--mint-soft); border: 1px solid color-mix(in srgb, var(--mint), transparent 65%); border-radius: 999px; color: var(--mint-dark); display: inline-flex; flex: 0 0 auto; font-size: 10px; font-weight: 750; padding: 4px 7px; }
@@ -282,6 +288,9 @@ h1, h2, p { margin-top: 0; }
 .compact-form { margin: 15px 0; }
 .form-hint, .panel-intro { color: var(--muted); font-size: 11px; line-height: 1.6; margin: -4px 0 14px; }
 .material-list, .run-list { display: grid; gap: 6px; margin-top: 12px; }
+.material-upload-form { display: grid; gap: 6px; margin-top: 12px; }
+.material-upload-button { cursor: pointer; display: inline-flex; justify-self: start; }
+.material-upload-form small { color: var(--muted); line-height: 1.5; }
 .material-row { align-items: center; background: var(--canvas); border: 1px solid var(--line); border-radius: 5px; display: flex; font-size: 10px; justify-content: space-between; gap: 10px; padding: 9px; }
 .material-row .team-link { align-items: center; color: inherit; display: flex; flex: 1 1 auto; gap: 10px; justify-content: space-between; min-width: 0; text-decoration: none; }
 .material-row .team-link:hover strong { color: var(--mint); text-decoration: underline; }
@@ -1147,6 +1156,7 @@ body { min-width: 0; font-size: 15px; }
 :root[data-visualizer-theme="dark"] .project-panel,
 :root[data-visualizer-theme="dark"] .project-step,
 :root[data-visualizer-theme="dark"] .project-asset-card,
+:root[data-visualizer-theme="dark"] .project-asset-surface,
 :root[data-visualizer-theme="dark"] .classic-team-card,
 :root[data-visualizer-theme="dark"] .empty-projects,
 :root[data-visualizer-theme="dark"] .history-empty,

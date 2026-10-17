@@ -783,7 +783,7 @@ async function writePortablePackageFiles(workdir: string, files: PortablePackage
   const loadedFiles: string[] = [];
   for (const file of files) {
     const safePath = assertPortablePackagePath(file.path);
-    const target = resolve(workdir, safePath);
+    const target = resolve(projectRoot, safePath);
     if (target !== projectRoot && !target.startsWith(`${projectRoot}${sep}`)) {
       throw new Error(`PROJECT_IMPORT_INVALID: artifact escapes project root: ${safePath}`);
     }
@@ -848,7 +848,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
     if (!canonicalContract || (canonicalContract !== projectRoot && !canonicalContract.startsWith(`${projectRoot}${sep}`))) {
       throw new Error("PROJECT_EXPORT_EXTERNAL_DEPENDENCY: configured handoff contract must be inside the project.");
     }
-    const relativeContract = relative(workdir, canonicalContract).split(sep).join("/");
+    const relativeContract = relative(projectRoot, canonicalContract).split(sep).join("/");
     if (!executableFiles.some((file) => file.path === relativeContract)) {
       executableFiles.push({ path: relativeContract, content: await readFile(canonicalContract, "utf8") });
     }

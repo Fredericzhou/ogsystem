@@ -179,11 +179,13 @@ export async function snapshotProjectAssets(args: {
     throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: symbolic link is not portable: ${snapshotDir}`);
   }
   const files: SnapshotFile[] = [];
+  // macOS exposes temporary directories through /var while realpath returns
+  // /private/var. Use the canonical root consistently for containment checks.
   const sourceRoot = await realpath(args.sourceWorkdir);
   await mkdir(snapshotDir, { recursive: true });
 
   await copyAsset({
-    source: resolve(args.sourceWorkdir, "system.mmd"),
+    source: resolve(sourceRoot, "system.mmd"),
     sourceRoot,
     snapshotDir,
     relativePath: "system.mmd",
@@ -206,7 +208,7 @@ export async function snapshotProjectAssets(args: {
     "tools.json"
   ];
   for (const relativePath of fixedFiles) {
-    const source = resolve(args.sourceWorkdir, relativePath);
+    const source = resolve(sourceRoot, relativePath);
     if (await lstat(source).then((value) => !value.isSymbolicLink() && value.isFile()).catch(() => false)) {
       await copyAsset({ source, sourceRoot, snapshotDir, relativePath, files });
     } else if (await lstat(source).then((value) => value.isSymbolicLink()).catch(() => false)) {
@@ -214,7 +216,7 @@ export async function snapshotProjectAssets(args: {
     }
   }
 
-  const runtimePath = resolve(args.sourceWorkdir, ".ogs/runtime.json");
+  const runtimePath = resolve(sourceRoot, ".ogs/runtime.json");
   await ensureRegularFile(runtimePath, sourceRoot);
   const snapshotRuntime = { ...args.runtimeConfig, roleRepo: "./og-roles" };
   const runtimeTarget = resolve(snapshotDir, ".ogs/runtime.json");
@@ -225,7 +227,7 @@ export async function snapshotProjectAssets(args: {
 
   for (const directory of ["contracts", "systems", "subsystems"]) {
     await copyTree({
-      sourceDir: resolve(args.sourceWorkdir, ".ogs", directory),
+      sourceDir: resolve(sourceRoot, ".ogs", directory),
       sourceRoot,
       snapshotDir,
       targetPrefix: `.ogs/${directory}`,
@@ -233,7 +235,7 @@ export async function snapshotProjectAssets(args: {
     });
   }
 
-  const roleRootDir = resolveProjectRoleRootDir(args.sourceWorkdir, args.runtimeConfig.roleRepo);
+  const roleRootDir = resolveProjectRoleRootDir(sourceRoot, args.runtimeConfig.roleRepo);
   await copyTree({
     sourceDir: roleRootDir,
     sourceRoot,
@@ -243,10 +245,10 @@ export async function snapshotProjectAssets(args: {
   });
 
   for (const file of args.additionalFiles ?? []) {
-    const source = resolve(args.sourceWorkdir, file);
+    const source = resolve(sourceRoot, file);
     const realSource = await realpath(source);
     assertRealPathInside(sourceRoot, realSource, file);
-    const relativePath = relative(args.sourceWorkdir, source).split(sep).join("/");
+    const relativePath = relative(sourceRoot, source).split(sep).join("/");
     if (!files.some((item) => item.path === relativePath)) {
       await copyAsset({ source, sourceRoot, snapshotDir, relativePath, files });
     }

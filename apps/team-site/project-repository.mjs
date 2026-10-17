@@ -12,7 +12,7 @@ import { evaluateProjectRunResult } from "../../dist/runtime/project-quality.js"
 import { createExecutionPlan } from "../../dist/runtime/execution-plan.js";
 import { parseSystemFromMermaidSource } from "../../dist/runtime/parse-mermaid.js";
 import { acquireActiveRunLock, acquireProjectWriteLock } from "../../dist/runtime/project-run-lock.js";
-import { applyRunControl as writeRunStateControl, loadProjectRunState, updateProjectRunState } from "../../dist/runtime/project-run-state.js";
+import { applyRunControl as writeRunStateControl, loadProjectRunState, saveProjectRunState, updateProjectRunState } from "../../dist/runtime/project-run-state.js";
 import { readLatestProjectRunControl, writeProjectRunControl } from "../../dist/runtime/project-run-control.js";
 import { listHumanReviews, writeHumanReviewDecision } from "../../dist/runtime/project-lifecycle.js";
 import { createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
@@ -27,11 +27,13 @@ import { authoringToCanvasDocument, importMermaidToAuthoring, serializeAuthoring
 import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
 import { inspectProjectReadiness } from "../../dist/visualizer/project-readiness.js";
 import { validateProjectSystemSource, saveProjectSystemSource } from "../../dist/visualizer/project-projection.js";
-import { getCase } from "./cases.mjs";
+import { loadRunEventsSnapshot } from "../../dist/visualizer/run-query-service.js";
+import { cases, getCase } from "./cases.mjs";
 import { materializeCaseTeam } from "./demo-runner.mjs";
 
 const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const allowedExtensions = new Set([".md", ".txt", ".json", ".yaml", ".yml", ".csv"]);
+const activeTaskWorkers = new Map();
 
 function slug(value) {
   const normalized = String(value || "new-team").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -73,9 +75,12 @@ function normalizeMeta(meta, projectId) {
     projectId,
     name: String(meta?.name || "New team"),
     intent: String(meta?.intent || ""),
+    overview: String(meta?.overview ?? meta?.intent ?? ""),
     templateId: meta?.templateId || "empty",
     projectStatus: confirmed ? "confirmed" : "draft",
     projectDigest: confirmed ? meta.projectDigest : null,
+    teamCoreDigest: typeof meta?.teamCoreDigest === "string" ? meta.teamCoreDigest : null,
+    projectDefinitionDigest: typeof meta?.projectDefinitionDigest === "string" ? meta.projectDefinitionDigest : null,
     confirmedAt: confirmed ? meta.confirmedAt : null,
     createdAt: meta?.createdAt || new Date().toISOString(),
     updatedAt: meta?.updatedAt || new Date().toISOString(),
@@ -114,6 +119,46 @@ async function semanticProjectDigest(project) {
   return computeProjectAssetDigest(project.workdir);
 }
 
+function teamCorePayload(bundle) {
+  return {
+    systemSource: bundle?.team?.systemSource || "",
+    design: bundle?.team?.design || null,
+    laws: bundle?.team?.laws || null,
+    executableFiles: Array.isArray(bundle?.team?.executableFiles)
+      ? bundle.team.executableFiles.map(({ path, content }) => ({ path, content }))
+      : []
+  };
+}
+
+async function computeTeamCoreDigest(workdir) {
+  const bundle = await exportTeamPackage(workdir);
+  return createHash("sha256").update(JSON.stringify(teamCorePayload(bundle))).digest("hex");
+}
+
+function builtInTeamCoreDigest(caseSpec) {
+  return createHash("sha256").update(JSON.stringify({
+    id: caseSpec.id,
+    roles: caseSpec.roles,
+    flows: caseSpec.flows,
+    joins: caseSpec.joins,
+    entryRole: caseSpec.entryRole,
+    projections: caseSpec.projections
+  })).digest("hex");
+}
+
+function projectDefinitionPayload(project) {
+  return {
+    overview: project.overview || project.intent || "",
+    workspaceKey: project.workspaceKey || null,
+    mountedTeams: (project.mountedTeams || []).map(({ mountedAt, status, ...team }) => team),
+    materials: (project.materials?.materials || []).map(({ content, ...item }) => item)
+  };
+}
+
+function computeProjectDefinitionDigest(project) {
+  return createHash("sha256").update(JSON.stringify(projectDefinitionPayload(project))).digest("hex");
+}
+
 function requireConfirmed(project) {
   // A confirmed team is eligible for a project workspace; each run still creates its own snapshot.
   if (project.projectStatus !== "confirmed" || !project.projectDigest || !project.confirmedAt) {
@@ -140,6 +185,23 @@ async function readProject(projectId) {
   const runs = await readJson(join(workdir, ".ogs", "runs-index.json"), { runs: [] });
   const normalized = normalizeMeta(meta, projectId);
   const project = { ...normalized, workdir, workspace, materials, runs: runs.runs || [] };
+  if (project.projectType === "collaboration") {
+    project.taskRecords = await Promise.all(project.taskRecords.map(async (task) => {
+      if (!task.runId || !task.runProjectId) return task;
+      const runDir = resolve(projectPath(task.runProjectId), ".ogs", "runs", task.runId);
+      const state = await loadProjectRunState(runDir).catch(() => undefined);
+      if (!state?.status) return task;
+      if (activeTaskWorkers.has(`${project.projectId}:${task.taskId}`) && !["completed", "failed", "cancelled", "stopped", "deleted"].includes(task.status)) return task;
+      return {
+        ...task,
+        status: state.status,
+        startedAt: task.startedAt || state.startedAt || null,
+        completedAt: task.completedAt || state.finishedAt || null,
+        lastError: state.error || task.lastError || null,
+        updatedAt: state.updatedAt || task.updatedAt
+      };
+    }));
+  }
   return { ...project, projectStage: projectStage(project) };
 }
 
@@ -191,6 +253,7 @@ export async function createProject({ name, intent, templateId = "empty", caseId
     teamVersionStatus: "draft",
     ...(parentTeamVersionId ? { parentTeamVersionId } : {}),
     intent: String(intent || "").trim().slice(0, 4000),
+    overview: String(intent || "").trim().slice(0, 4000),
     templateId,
     projectStatus: "draft",
     projectDigest: null,
@@ -206,26 +269,80 @@ export async function createProject({ name, intent, templateId = "empty", caseId
   return readProject(projectId);
 }
 
-export async function createCollaborationProject({ name, workspaceKey, intent = "" } = {}) {
-  const project = await createProject({
-    name: String(name || "协作项目").trim() || "协作项目",
-    intent,
-    templateId: "empty",
-    source: "collaboration-project"
-  });
-  const metaPath = join(project.workdir, ".site", "project.json");
-  const meta = await readJson(metaPath, {});
-  await writeJson(metaPath, {
-    ...meta,
-    projectType: "collaboration",
-    teamId: undefined,
-    teamVersionId: undefined,
-    teamName: undefined,
-    mountedTeams: [],
-    taskRecords: [],
-    workspaceKey: String(workspaceKey || slug(name || "collaboration-project"))
-  });
-  return readProject(project.projectId);
+export async function createCollaborationProject({ name, workspaceKey, intent = "", overview, teamVersionIds = [] } = {}) {
+  const requestedIds = [...new Set((Array.isArray(teamVersionIds) ? teamVersionIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
+  // Preserve the legacy empty-shell API. The current project form always
+  // submits a non-empty list and uses the atomic path below.
+  const mountedTeams = [];
+  for (const requestedTeamId of requestedIds) {
+    let team;
+    if (requestedTeamId.startsWith("case:")) {
+      const caseId = requestedTeamId.slice(5);
+      const caseSpec = getCase(caseId);
+      if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
+      const language = "zh-CN";
+      team = {
+        projectId: requestedTeamId,
+        teamId: requestedTeamId,
+        teamVersionId: requestedTeamId,
+        teamVersionNumber: 1,
+        teamName: caseSpec.title?.[language] || caseSpec.title?.en || caseId,
+        name: caseSpec.title?.[language] || caseId,
+        intent: caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "",
+        teamVersionStatus: "released",
+        teamCoreDigest: builtInTeamCoreDigest(caseSpec),
+        builtIn: true
+      };
+    } else {
+      team = await readProject(requestedTeamId);
+    }
+    if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
+    mountedTeams.push({
+      teamId: team.teamId || team.projectId,
+      teamVersionId: team.teamVersionId || team.projectId,
+      teamVersionNumber: team.teamVersionNumber || 1,
+      teamName: team.teamName || team.name,
+      mountedAt: new Date().toISOString(),
+      status: "ready",
+      ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
+      ...(team.builtIn ? { builtIn: true } : {})
+    });
+  }
+  let project;
+  try {
+    const normalizedName = String(name || "协作项目").trim() || "协作项目";
+    const existingProject = (await listProjects()).find((item) => item.projectType === "collaboration" && String(item.name).trim().toLocaleLowerCase() === normalizedName.toLocaleLowerCase());
+    if (existingProject) throw new Error("PROJECT_NAME_EXISTS: a project with this name already exists.");
+    project = await createProject({
+      name: normalizedName,
+      intent: String(overview ?? intent ?? ""),
+      templateId: "empty",
+      source: "collaboration-project"
+    });
+    const metaPath = join(project.workdir, ".site", "project.json");
+    const meta = await readJson(metaPath, {});
+    const collaborationMeta = {
+      ...meta,
+      projectType: "collaboration",
+      teamId: undefined,
+      teamVersionId: undefined,
+      teamName: undefined,
+      mountedTeams,
+      taskRecords: [],
+      workspaceKey: String(workspaceKey || project.projectId)
+    };
+    await writeJson(metaPath, {
+      ...collaborationMeta,
+      projectDefinitionDigest: computeProjectDefinitionDigest({
+        ...normalizeMeta(collaborationMeta, project.projectId),
+        materials: { version: 1, materials: [] }
+      })
+    });
+    return readProject(project.projectId);
+  } catch (error) {
+    if (project?.workdir) await rm(project.workdir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function mountProjectTeam(projectId, teamVersionId) {
@@ -250,6 +367,7 @@ export async function mountProjectTeam(projectId, teamVersionId) {
         name: teamName,
         intent,
         teamVersionStatus: "released",
+        teamCoreDigest: builtInTeamCoreDigest(caseSpec),
         builtIn: true
       };
     } else {
@@ -258,17 +376,21 @@ export async function mountProjectTeam(projectId, teamVersionId) {
     if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
     const mountedTeams = Array.isArray(project.mountedTeams) ? project.mountedTeams : [];
     if (mountedTeams.some((item) => item.teamVersionId === team.teamVersionId)) return project;
+    const mounted = [...mountedTeams, {
+      teamId: team.teamId || team.projectId,
+      teamVersionId: team.teamVersionId || team.projectId,
+      teamVersionNumber: team.teamVersionNumber || 1,
+      teamName: team.teamName || team.name,
+      mountedAt: new Date().toISOString(),
+      status: "ready",
+      ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
+      ...(team.builtIn ? { builtIn: true } : {})
+    }];
     const next = {
       ...normalizeMeta(project, projectId),
       projectType: "collaboration",
-      mountedTeams: [...mountedTeams, {
-        teamId: team.teamId || team.projectId,
-        teamVersionId: team.teamVersionId || team.projectId,
-        teamVersionNumber: team.teamVersionNumber || 1,
-        teamName: team.teamName || team.name,
-        mountedAt: new Date().toISOString(),
-        status: "ready"
-      }],
+      mountedTeams: mounted,
+      projectDefinitionDigest: computeProjectDefinitionDigest({ ...project, mountedTeams: mounted }),
       updatedAt: new Date().toISOString()
     };
     await writeJson(join(project.workdir, ".site", "project.json"), next);
@@ -278,6 +400,41 @@ export async function mountProjectTeam(projectId, teamVersionId) {
 
 export async function listCollaborationProjects() {
   return (await listProjects()).filter((project) => project.projectType === "collaboration");
+}
+
+export async function getProjectRun(projectId, runId) {
+  assertSafeId(runId, "runId");
+  const project = await readProject(projectId);
+  const task = (project.taskRecords || []).find((item) => item.runId === runId && !item.deletedAt);
+  if (!task) throw new Error("RUN_NOT_FOUND: run does not belong to this project.");
+  const runProjectId = task.runProjectId || projectId;
+  const runProject = await readProject(runProjectId);
+  const runDir = resolve(runProject.workdir, ".ogs", "runs", runId);
+  const state = await loadProjectRunState(runDir);
+  const activeWorker = activeTaskWorkers.get(`${projectId}:${task.taskId}`);
+  if (activeWorker && ["completed", "failed", "cancelled"].includes(state.status)) await activeWorker.catch(() => undefined);
+  const plan = await loadProjectRunPlan(runDir).catch(() => undefined);
+  const latestProject = activeWorker ? await readProject(projectId) : project;
+  const latestTask = (latestProject.taskRecords || []).find((item) => item.taskId === task.taskId) || task;
+  return { projectId, taskId: latestTask.taskId, runId, state, plan, task: latestTask };
+}
+
+export async function getProjectTask(projectId, taskId) {
+  return findTask(await readProject(projectId), taskId);
+}
+
+export async function getProjectRunEvents(projectId, runId, options = {}) {
+  assertSafeId(runId, "runId");
+  const project = await readProject(projectId);
+  const task = (project.taskRecords || []).find((item) => item.runId === runId && !item.deletedAt);
+  if (!task) throw new Error("RUN_NOT_FOUND: run does not belong to this project.");
+  const runProject = await readProject(task.runProjectId || projectId);
+  return {
+    projectId,
+    taskId: task.taskId,
+    runId,
+    ...(await loadRunEventsSnapshot({ workdir: runProject.workdir, runId, ...options }))
+  };
 }
 
 export async function createProjectTask(projectId, { input, teamVersionId, idempotencyKey } = {}) {
@@ -427,29 +584,76 @@ export async function startProjectTask(projectId, taskId, { mode = "dry-run" } =
     sourcePath: resolve(project.workdir, item.path),
     contentType: item.contentType
   }));
-  let run;
-  try {
-    run = await startProjectRun(team.teamVersionId, {
-      prompt: task.input,
-      mode,
-      idempotencyKey: `task:${projectId}:${taskId}`,
-      materialInputsOverride: materials
-    });
-  } catch (error) {
-    await withProjectWriteLock(projectId, "project-task-start-failure", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "queued", lastError: error instanceof Error ? error.message : String(error) })).catch(() => undefined);
-    throw error;
-  }
-  return withProjectWriteLock(projectId, "project-task-bind-run", async () => {
+  const reservedRunId = createRunId(new Date());
+  const reservedTask = await withProjectWriteLock(projectId, "project-task-bind-run", async () => {
     const latest = await readProject(projectId);
+    const latestTask = findTask(latest, taskId);
+    if (latestTask.runId) return latestTask;
     return saveTaskRecord(latest, taskId, {
-      runId: run.runId,
+      runId: reservedRunId,
       runProjectId: team.teamVersionId,
-      status: run.state?.status || "running",
+      status: "planning",
       startedAt: task.startedAt || new Date().toISOString(),
-      completedAt: ["completed", "failed", "cancelled"].includes(run.state?.status) ? (run.state?.finishedAt || new Date().toISOString()) : null,
-      outputSummary: typeof run.result?.finalOutput === "string" ? run.result.finalOutput.slice(0, 500) : task.outputSummary
+      lastError: null
     });
   });
+  if (reservedTask.runId !== reservedRunId || activeTaskWorkers.has(`${projectId}:${taskId}`)) return reservedTask;
+  const runProject = await readProject(team.teamVersionId);
+  const reservedRunDir = resolve(runProject.workdir, ".ogs", "runs", reservedRunId);
+  await saveProjectRunState(reservedRunDir, {
+    version: 1,
+    runId: reservedRunId,
+    status: "planning",
+    control: { paused: false, cancelRequested: false },
+    nodes: {},
+    attempts: [],
+    reviews: [],
+    updatedAt: new Date().toISOString()
+  });
+  const workerKey = `${projectId}:${taskId}`;
+  const worker = (async () => {
+    try {
+      const run = await startProjectRun(team.teamVersionId, {
+        prompt: task.input,
+        mode,
+        requestedRunId: reservedRunId,
+        idempotencyKey: `task:${projectId}:${taskId}`,
+        materialInputsOverride: materials,
+        materialSourceRoot: project.workdir
+      });
+      await withProjectWriteLock(projectId, "project-task-finish", async () => {
+        const latest = await readProject(projectId);
+        return saveTaskRecord(latest, taskId, {
+          status: run.state?.status || "running",
+          startedAt: task.startedAt || run.state?.startedAt || new Date().toISOString(),
+          completedAt: ["completed", "failed", "cancelled"].includes(run.state?.status) ? (run.state?.finishedAt || new Date().toISOString()) : null,
+          outputSummary: typeof run.result?.finalOutput === "string" ? run.result.finalOutput.slice(0, 500) : task.outputSummary
+        });
+      });
+    } catch (error) {
+      const failureMessage = error instanceof Error ? error.message : String(error);
+      const currentState = await loadProjectRunState(reservedRunDir).catch(() => undefined);
+      if (currentState) {
+        await saveProjectRunState(reservedRunDir, {
+          ...currentState,
+          status: "failed",
+          error: failureMessage,
+          finishedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }).catch(() => undefined);
+      }
+      await withProjectWriteLock(projectId, "project-task-start-failure", async () => saveTaskRecord(await readProject(projectId), taskId, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        lastError: failureMessage
+      })).catch(() => undefined);
+    } finally {
+      activeTaskWorkers.delete(workerKey);
+    }
+  })();
+  activeTaskWorkers.set(workerKey, worker);
+  void worker.catch(() => undefined);
+  return reservedTask;
 }
 
 export async function reviewProjectTask(projectId, taskId, { decision, comment, reviewId } = {}) {
@@ -578,7 +782,22 @@ export async function listTeamFactory() {
 }
 
 export async function listTeamRepository() {
-  return (await listProjects()).filter((project) => !project.teamProjectId && project.teamVersionStatus === "released" && !project.archivedAt);
+  const released = (await listProjects()).filter((project) => !project.teamProjectId && project.teamVersionStatus === "released" && !project.archivedAt);
+  const builtIns = cases.map((item) => ({
+    projectId: `case:${item.id}`,
+    teamId: `case:${item.id}`,
+    teamVersionId: `case:${item.id}`,
+    teamVersionNumber: 1,
+    teamName: item.title?.["zh-CN"] || item.title?.en || item.id,
+    name: item.title?.["zh-CN"] || item.title?.en || item.id,
+    intent: item.detail?.scenario?.["zh-CN"] || item.short?.["zh-CN"] || "",
+    teamVersionStatus: "released",
+    teamCoreDigest: builtInTeamCoreDigest(item),
+    source: "classic",
+    builtIn: true,
+    category: item.category
+  }));
+  return [...builtIns, ...released];
 }
 
 export async function forkTeamVersion(teamVersionId) {
@@ -700,6 +919,7 @@ export async function updateProject(projectId, changes = {}) {
       intent: nextIntent,
       updatedAt: new Date().toISOString()
     };
+    if (project.projectType === "collaboration") next.projectDefinitionDigest = computeProjectDefinitionDigest({ ...project, ...next });
     if (semanticChanged) {
       next.projectStatus = "draft";
       next.projectDigest = null;
@@ -733,9 +953,10 @@ export async function confirmProjectTeam(projectId, { trustedClassic = false, re
     }));
     if (!trustedClassic && !isTrustedTeamTopology(project)) validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleId);
     const digest = await semanticProjectDigest(project);
-    if (project.projectStatus === "confirmed" && project.projectDigest === digest) return project;
+    const teamCoreDigest = await computeTeamCoreDigest(project.workdir);
+    if (project.projectStatus === "confirmed" && project.projectDigest === digest && project.teamCoreDigest === teamCoreDigest) return project;
     const releasedAt = new Date().toISOString();
-    const next = { ...normalizeMeta(project, projectId), projectStatus: "confirmed", projectDigest: digest, confirmedAt: releasedAt, teamVersionStatus: release ? "released" : (project.teamVersionStatus || "draft"), releasedAt: release ? releasedAt : null, updatedAt: releasedAt };
+    const next = { ...normalizeMeta(project, projectId), projectStatus: "confirmed", projectDigest: digest, teamCoreDigest, confirmedAt: releasedAt, teamVersionStatus: release ? "released" : (project.teamVersionStatus || "draft"), releasedAt: release ? releasedAt : null, updatedAt: releasedAt };
     await writeJson(join(project.workdir, ".site", "project.json"), next);
     return readProject(projectId);
   });
@@ -845,40 +1066,73 @@ export async function saveProjectDesign(projectId, body = {}) {
   });
 }
 
-export async function addProjectMaterial(projectId, { filename, content, contentType }) {
+function normalizeMaterialPath(filename) {
+  const normalized = String(filename || "material.txt").replace(/\\/g, "/");
+  if (normalized.startsWith("/") || normalized.split("/").some((part) => part === "..")) throw new Error("MATERIAL_PATH_INVALID: material path must stay inside the project workspace.");
+  const parts = normalized.split("/").filter((part) => part && part !== ".");
+  if (!parts.length || parts.some((part) => part.includes("\0"))) throw new Error("MATERIAL_PATH_INVALID: material path is invalid.");
+  return parts.join("/");
+}
+
+export async function addProjectMaterials(projectId, files = []) {
   return withProjectWriteLock(projectId, "material-upload", async () => {
-  const project = await readProject(projectId);
-  await requireCurrentConfirmation(project);
-  const safeName = basename(String(filename || "material.txt"));
-  const extension = extname(safeName).toLowerCase();
-  if (!allowedExtensions.has(extension)) throw new Error("Only md, txt, json, yaml, yml, and csv materials are supported.");
-  if (typeof content !== "string" || content.length > 1024 * 1024) throw new Error("Material content must be text up to 1 MB.");
-  const materialId = slug(safeName.slice(0, -extension.length)) + "-" + randomUUID().slice(0, 6);
-  const target = resolve(project.workdir, "workspace", "files", materialId + extension);
-  await mkdir(resolve(target, ".."), { recursive: true });
-  await writeFile(target, content, "utf8");
-  const entry = {
-    materialId,
-    filename: safeName,
-    path: "workspace/files/" + basename(target),
-    contentType: contentType || "text/plain",
-    size: Buffer.byteLength(content),
-    contentHash: createHash("sha256").update(content).digest("hex"),
-    status: "indexed",
-    createdAt: new Date().toISOString()
-  };
-  const index = project.materials && Array.isArray(project.materials.materials)
-    ? project.materials
-    : { version: 1, materials: [] };
-  index.materials = [...index.materials, entry];
-  await writeJson(join(project.workdir, "workspace", "index.json"), index);
-  const meta = await readJson(join(project.workdir, ".site", "project.json"), {});
-  await writeJson(join(project.workdir, ".site", "project.json"), { ...meta, updatedAt: new Date().toISOString() });
-  return entry;
+    const project = await readProject(projectId);
+    if (project.projectType !== "collaboration") await requireCurrentConfirmation(project);
+    const normalizedFiles = Array.isArray(files) ? files : [];
+    if (!normalizedFiles.length || normalizedFiles.length > 200) throw new Error("MATERIAL_BATCH_INVALID: provide between 1 and 200 files.");
+    const batchId = randomUUID();
+    const tempRoot = resolve(project.workdir, ".site", "material-upload", batchId);
+    const entries = [];
+    let totalSize = 0;
+    try {
+      for (const file of normalizedFiles) {
+        const filename = normalizeMaterialPath(file?.filename);
+        const extension = extname(filename).toLowerCase();
+        if (!allowedExtensions.has(extension)) throw new Error("Only md, txt, json, yaml, yml, and csv materials are supported.");
+        if (typeof file?.content !== "string" || file.content.length > 1024 * 1024) throw new Error("Material content must be text up to 1 MB.");
+        totalSize += Buffer.byteLength(file.content);
+        if (totalSize > 8 * 1024 * 1024) throw new Error("Material batch must be no larger than 8 MB.");
+        const materialId = slug(filename.replaceAll("/", "-").slice(0, -extension.length)) + "-" + randomUUID().slice(0, 6);
+        const tempPath = resolve(tempRoot, filename);
+        await mkdir(resolve(tempPath, ".."), { recursive: true });
+        await writeFile(tempPath, file.content, "utf8");
+        entries.push({
+          materialId,
+          filename,
+          path: `workspace/files/${batchId}/${filename}`,
+          contentType: file.contentType || "text/plain",
+          size: Buffer.byteLength(file.content),
+          contentHash: createHash("sha256").update(file.content).digest("hex"),
+          status: "indexed",
+          createdAt: new Date().toISOString()
+        });
+      }
+      const finalRoot = resolve(project.workdir, "workspace", "files", batchId);
+      await mkdir(resolve(finalRoot, ".."), { recursive: true });
+      await rename(tempRoot, finalRoot);
+      const index = project.materials && Array.isArray(project.materials.materials) ? project.materials : { version: 1, materials: [] };
+      index.materials = [...index.materials, ...entries];
+      await writeJson(join(project.workdir, "workspace", "index.json"), index);
+      const meta = await readJson(join(project.workdir, ".site", "project.json"), {});
+      await writeJson(join(project.workdir, ".site", "project.json"), {
+        ...meta,
+        projectDefinitionDigest: computeProjectDefinitionDigest({ ...project, ...meta, materials: index }),
+        updatedAt: new Date().toISOString()
+      });
+      return entries;
+    } catch (error) {
+      await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
   });
 }
 
-export async function startProjectRun(projectId, { prompt, mode = "dry-run", idempotencyKey, materialInputsOverride, resumeRunId, resumeRunDir } = {}) {
+export async function addProjectMaterial(projectId, material) {
+  const entries = await addProjectMaterials(projectId, [material]);
+  return entries[0];
+}
+
+export async function startProjectRun(projectId, { prompt, mode = "dry-run", idempotencyKey, materialInputsOverride, materialSourceRoot, resumeRunId, resumeRunDir, requestedRunId } = {}) {
   if (mode === "real") throw new Error("REAL_RUN_UNSUPPORTED: real project runs are disabled in the first phase.");
   if (mode !== "dry-run" && mode !== "sandbox") throw new Error("Unsupported project run mode.");
   const initialProject = await readProject(projectId);
@@ -894,12 +1148,13 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
   let writeLock;
   let writeLockReleased = false;
   let lock;
-  let runId;
+  let runId = requestedRunId;
   let requestFingerprint;
   let pendingLedgerEntry;
   try {
   if (resumeRunDir && !resumeRunId) throw new Error("RUN_RESUME_INVALID: resumeRunId is required when resuming a run.");
   if (resumeRunId) assertSafeId(resumeRunId, "resumeRunId");
+  if (requestedRunId) assertSafeId(requestedRunId, "requestedRunId");
   const allowedRunsDir = resolve(initialProject.workdir, ".ogs", "runs");
   const canonicalResumeRunDir = resumeRunId ? resolve(allowedRunsDir, resumeRunId) : undefined;
   if (canonicalResumeRunDir && !canonicalResumeRunDir.startsWith(`${allowedRunsDir}${sep}`)) {
@@ -999,6 +1254,7 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
     projectDigest: resumePlan?.projectDigest ?? project.projectDigest,
     projectRunLock: false,
     materialInputs,
+    materialSourceRoot,
     onProjectRunPrepared: async () => {
       if (!resumeRunDir) {
         const latest = await readProject(projectId);
@@ -1107,7 +1363,14 @@ export async function retryProjectRun(projectId, originalRunId, { mode = "dry-ru
 export async function controlProjectRun(projectId, runId, control) {
   assertSafeId(runId, "runId");
   if (!["pause", "resume", "cancel"].includes(control)) throw new Error("RUN_CONTROL_INVALID: unsupported control.");
-  const project = await readProject(projectId);
+  let project = await readProject(projectId);
+  const taskOwner = project.projectType === "collaboration"
+    ? (project.taskRecords || []).find((item) => item.runId === runId && item.runProjectId)
+    : undefined;
+  if (taskOwner?.runProjectId) {
+    projectId = taskOwner.runProjectId;
+    project = await readProject(projectId);
+  }
   const runDir = resolve(project.workdir, ".ogs", "runs", runId);
   const state = await loadProjectRunState(runDir);
   if (control === "resume") {
@@ -1147,6 +1410,40 @@ export async function exportProjectTeam(projectId) {
       project: { name: project.name, intent: project.intent, source: "exported" }
     }
   };
+}
+
+export async function exportProjectBundle(projectId) {
+  const project = await readProject(projectId);
+  const materials = [];
+  for (const item of project.materials?.materials || []) {
+    const content = await readFile(resolve(project.workdir, item.path), "utf8").catch(() => "");
+    materials.push({ ...item, content });
+  }
+  const taskRecords = (project.taskRecords || []).filter((task) => !task.deletedAt).map(({ requestFingerprint, ...task }) => task);
+  const projectDefinitionDigest = computeProjectDefinitionDigest({
+    ...project,
+    materials: {
+      version: 1,
+      materials: materials.map(({ content, ...item }) => ({
+        ...item,
+        contentHash: item.contentHash || createHash("sha256").update(content).digest("hex")
+      }))
+    }
+  });
+  const bundle = {
+    mode: "project-v1",
+    project: {
+      name: project.name,
+      overview: project.overview || project.intent || "",
+      projectDefinitionDigest,
+      mountedTeams: project.mountedTeams || [],
+      materials,
+      taskRecords,
+      runs: (project.runs || []).map((run) => ({ runId: run.runId, status: run.status, updatedAt: run.updatedAt, outputSummary: run.outputSummary || "" }))
+    }
+  };
+  const packageDigest = createHash("sha256").update(JSON.stringify(bundle)).digest("hex");
+  return { ...bundle, packageDigest };
 }
 
 export async function importTeamPackage(bundle) {

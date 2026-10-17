@@ -5,6 +5,16 @@ import { join } from "node:path";
 import test from "node:test";
 import { acquireActiveRunLock } from "../../../dist/runtime/project-run-lock.js";
 
+async function waitForTask(store, projectId, taskId) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const project = await store.getProject(projectId);
+    const task = project.taskRecords.find((item) => item.taskId === taskId);
+    if (task && ["completed", "failed", "cancelled"].includes(task.status)) return task;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("Task did not reach a terminal state in time.");
+}
+
 test("site creates a persistent project, snapshots materials, and performs a dry run", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-projects-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
@@ -359,11 +369,15 @@ test("collaboration tasks run sequentially across teams and preserve pause/revie
     const first = await store.createProjectTask(project.projectId, { input: "Analyze input", teamVersionId: teamA.projectId, idempotencyKey: "task-a" });
     const second = await store.createProjectTask(project.projectId, { input: "Review output", teamVersionId: teamB.projectId, idempotencyKey: "task-b" });
     const firstRun = await store.startProjectTask(project.projectId, first.taskId, { mode: "dry-run" });
-    assert.equal(firstRun.status, "completed");
+    assert.equal(firstRun.status, "planning");
     assert.ok(firstRun.runId);
+    const firstCompleted = await waitForTask(store, project.projectId, first.taskId);
+    assert.equal(firstCompleted.status, "completed");
     const secondRun = await store.startProjectTask(project.projectId, second.taskId, { mode: "dry-run" });
-    assert.equal(secondRun.status, "completed");
+    assert.equal(secondRun.status, "planning");
     assert.ok(secondRun.runId);
+    const secondCompleted = await waitForTask(store, project.projectId, second.taskId);
+    assert.equal(secondCompleted.status, "completed");
 
     const manual = await store.createProjectTask(project.projectId, { input: "Manual review step", teamVersionId: teamA.projectId, idempotencyKey: "task-manual" });
     const running = await store.controlProjectTask(project.projectId, manual.taskId, "start");

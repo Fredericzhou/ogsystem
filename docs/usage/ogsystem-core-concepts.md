@@ -23,14 +23,33 @@ role and does not change the process graph.
 | --- | --- | --- |
 | **Framework** | Runtime core, parser/compiler, CLI, and `nl2mmd`. | Role library, model library, Vis UI, or product-site data. |
 | **Platform** | Framework plus model adapters/catalog, installed role library, and the professional workbench. | User teams, projects, or project run history. |
-| **Team** | A reusable static collaboration definition: roles, relationships, handoffs, execution bindings, and team metadata. | Framework code, credentials, workspace materials, tasks, or `.ogs/runs`. |
-| **Collaboration Project** | One work directory, shared materials, released team versions, task inputs, and run history. | A team editor or a second team structure embedded in the project. |
+| **Team** | A reusable static collaboration definition: roles, relationships, handoffs, loops/branches, execution bindings, and team metadata. | Framework code, credentials, workspace materials, task runs, or `.ogs/runs`. |
+| **Task Run / Run** | One complete dynamic execution of one released Team version, bound to one run workspace and its inputs, state, artifacts, and audit evidence. | The static Team definition, a reusable task template, or the whole Project. |
+| **Collaboration Project** | One project work directory, shared materials, released Team versions, and many Task Runs. | A Team editor or a second Team structure embedded in the project. |
 | **Product Site** | Platform plus team repository/factory, collaboration projects, users, materials, tasks, and runs. | A second runtime. |
 
 The product site stores editable teams in the team factory and released versions in the team
-repository. A project mounts one or more released versions and keeps its own resources and task
-history. A **Run** is one execution of a task and remains the canonical API/code term; the product
-UI labels it **运行**. The same Runtime Core serves the product site and the professional workbench.
+repository. A project mounts one or more released versions and keeps its own resources and Task
+Run history. A **Task Run** is one complete execution of one Team version and remains the canonical
+API/code term `Run`; the product UI may label the record **任务** or **运行** depending on context.
+The same Runtime Core serves the product site and the professional workbench.
+
+The current product does not expose a separate reusable Task Definition. A task created in a project
+is therefore a Task Run record, initially waiting to execute and later holding its run evidence. If a
+future scheduler introduces reusable task definitions, it must model them separately from Task Runs.
+
+The domain relationships are:
+
+```text
+Project 1 -- * mounted Team versions
+Project 1 -- * Task Runs
+Task Run * -- 1 Team version
+Task Run 1 -- 1 run workspace
+Project 1 -- 1 project workspace
+```
+
+A Task Run freezes the selected Team version, project inputs, and execution fingerprint at start.
+Later Team releases or Project attachment changes must not alter the meaning of an existing Run.
 
 Team validation confirms the static structure and supported topology; it does not certify provider
 connectivity or credentials. Project readiness is a separate, read-only projection of static
@@ -76,7 +95,9 @@ distinct responsibility, capability, input/output contract, or audit boundary.
 | **Executor** | The current agent bound to a Role; it may represent a person, an agent service, or a bounded System. The assignment is one-to-one within one effective System configuration. | The stable Role/seat identity. Replacing an executor does not rename or replace the Role. |
 | **Role Package** | Versioned implementation material associated with a role, such as prompt, manifest, and I/O schema. | The responsibility or executor identity. A package may change while the role identity remains stable. |
 | **Flow / Transition** | A declared event-bearing, role-to-role handoff. The source role completes work and transfers the contracted outcome to the target role. | An event node, action node, process step, message participant, or execution instance. |
-| **Branch / Lineage** | Runtime execution identity and ancestry. `branchId` identifies one active path; `lineageId` scopes related paths. | A static role or business responsibility. |
+| **Project** | The resource and execution-history boundary that mounts Team versions and owns many Task Runs. | A Team definition or a single Run workspace. |
+| **Task Run / Run** | One dynamic execution of a Team version with a run workspace, state, artifacts, and audit evidence. | A Team graph, a reusable task template, or a Branch. |
+| **Branch / Lineage** | Runtime execution identity and ancestry inside one Task Run. `branchId` identifies one active path; `lineageId` scopes related paths. | A static role, Team, Project, or business responsibility. |
 | **Role Execution Record** | One durable record of one role activation in one run/branch/lineage/loop context. | The role definition or seat. |
 | **Control-plane principal** | An external identity recorded for an operator action, such as a human-review decision. | A Responsibility Role. It never becomes a graph node merely by being recorded in audit. |
 

@@ -97,6 +97,7 @@ export async function runSystemWithAdapter(args: {
   projectDigest?: string;
   projectRunLock?: boolean;
   materialInputs?: ProjectMaterialInput[];
+  materialSourceRoot?: string;
   cleanupExecutionHistory?: number;
   logRun?: boolean;
   engineFactory?: () => ExecutionEngineAdapter;
@@ -138,6 +139,7 @@ export async function runSystemWithAdapter(args: {
       }
       await initializeProjectRunArtifacts({
         workdir: args.workdir,
+        materialSourceRoot: args.materialSourceRoot,
         runDir: setup.runContext.runDir,
         prompt: args.prompt,
         plan: setup.plan,

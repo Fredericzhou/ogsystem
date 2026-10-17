@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, rename, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverLocalModelCatalog, isModelCatalogStale } from "../../dist/runtime/model-catalog.js";
@@ -8,11 +9,13 @@ import { buildCaseGraph, runCase } from "./demo-runner.mjs";
 import { eventLabels } from "./event-labels.mjs";
 import {
   addProjectMaterial,
+  addProjectMaterials,
   createProject,
   createProjectWorkspace,
   createClassicTeamProject,
   confirmProjectTeam,
   exportProjectTeam,
+  exportProjectBundle,
   getProjectGraph,
   getProjectDesign,
   getProjectReadiness,
@@ -31,6 +34,9 @@ import {
   deleteProjectTask,
   retryProjectRun,
   controlProjectRun,
+  getProjectRun,
+  getProjectTask,
+  getProjectRunEvents,
   startProjectRun,
   updateProject
   ,listTeamFactory
@@ -48,6 +54,9 @@ const port = Number.parseInt(process.env.PORT || "4173", 10);
 const visUrl = process.env.OGS_VIS_URL || "http://127.0.0.1:4177";
 const discoveryWorkdir = process.env.OGS_VIS_WORKDIR || join(process.env.LOCALAPPDATA || process.cwd(), "OGSystem", "visualizer-workspace");
 const discoveryCacheMs = 30_000;
+const siteProjectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
+const platformSettingsPath = join(siteProjectsRoot, ".site", "platform-settings.json");
+const defaultPlatformSettings = { defaultProvider: "codex", defaultModel: "default", timeoutSeconds: 120, retryCount: 1 };
 let discoveryCache;
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
@@ -108,7 +117,7 @@ async function getPlatformDiscovery(force = false) {
 
 function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|active|conflict/i.test(message)) return 409;
+  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|active|conflict/i.test(message)) return 409;
   if (/PROJECT_NOT_READY/i.test(message)) return 422;
   if (/not found|TASK_NOT_FOUND/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
@@ -122,6 +131,18 @@ async function readBody(request, limit = 1024 * 1024) {
     if (body.length > limit) throw new Error("Request body is too large.");
   }
   return JSON.parse(body || "{}");
+}
+
+async function readPlatformSettings() {
+  try { return { ...defaultPlatformSettings, ...JSON.parse(await readFile(platformSettingsPath, "utf8")), runtimeApplied: false }; }
+  catch { return { ...defaultPlatformSettings, runtimeApplied: false }; }
+}
+
+async function writePlatformSettings(settings) {
+  await mkdir(join(siteProjectsRoot, ".site"), { recursive: true });
+  const temp = `${platformSettingsPath}.${Date.now()}.tmp`;
+  await writeFile(temp, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  await rename(temp, platformSettingsPath);
 }
 
 function publicProject(project) {
@@ -223,18 +244,25 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/v1/platform/settings") {
-    sendJson(response, 200, { settings: { defaultProvider: "codex", defaultModel: "default", timeoutSeconds: 120, retryCount: 1 } });
+    sendJson(response, 200, { settings: await readPlatformSettings() });
     return;
   }
   if (request.method === "PUT" && url.pathname === "/api/v1/platform/settings") {
     try {
       const payload = await readBody(request);
+      const timeoutSeconds = Number(payload.timeoutSeconds);
+      const retryCount = Number(payload.retryCount);
+      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 10 || timeoutSeconds > 3600) throw new Error("timeoutSeconds must be between 10 and 3600.");
+      if (!Number.isInteger(retryCount) || retryCount < 0 || retryCount > 5) throw new Error("retryCount must be between 0 and 5.");
       const settings = {
-        defaultProvider: String(payload.defaultProvider || "codex"),
-        defaultModel: String(payload.defaultModel || "default"),
-        timeoutSeconds: Math.max(10, Math.min(3600, Number(payload.timeoutSeconds || 120))),
-        retryCount: Math.max(0, Math.min(5, Number(payload.retryCount || 1)))
+        defaultProvider: String(payload.defaultProvider || "codex").trim(),
+        defaultModel: String(payload.defaultModel || "default").trim(),
+        timeoutSeconds,
+        retryCount,
+        updatedAt: new Date().toISOString(),
+        runtimeApplied: false
       };
+      await writePlatformSettings(settings);
       sendJson(response, 200, { settings });
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to update platform settings." });
@@ -258,8 +286,9 @@ const server = createServer(async (request, response) => {
       const payload = await readBody(request);
       const project = await createCollaborationProject({
         name: payload.name,
+        overview: payload.overview,
         intent: payload.intent,
-        workspaceKey: payload.workspaceKey
+        teamVersionIds: payload.teamVersionIds
       });
       sendJson(response, 201, publicProject(project));
     } catch (error) {
@@ -303,6 +332,15 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
+  const projectTaskGetMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)$/);
+  if (projectTaskGetMatch && request.method === "GET") {
+    try {
+      sendJson(response, 200, publicTask(await getProjectTask(projectTaskGetMatch[1], projectTaskGetMatch[2])));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read project task." });
+    }
+    return;
+  }
   const projectTaskActionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|stop|review)$/);
   if (projectTaskActionMatch && request.method === "POST") {
     try {
@@ -315,7 +353,14 @@ const server = createServer(async (request, response) => {
         : action === "start"
           ? await startProjectTask(projectId, taskId, payload)
           : await controlProjectTask(projectId, taskId, action);
-      sendJson(response, 200, result?.task ? { ...result, task: publicTask(result.task) } : publicTask(result));
+      const responsePayload = action === "start"
+        ? result?.task
+          ? { ...result, task: publicTask(result.task) }
+          : { task: publicTask(result) }
+        : result?.task
+          ? { ...result, task: publicTask(result.task) }
+          : publicTask(result);
+      sendJson(response, action === "start" ? 202 : 200, responsePayload);
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to control project task." });
     }
@@ -387,6 +432,17 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
+  const projectExportMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/export$/);
+  if (projectExportMatch && request.method === "GET") {
+    try {
+      const bundle = await exportProjectBundle(projectExportMatch[1]);
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": `attachment; filename="${projectExportMatch[1]}.project.ogs.json"`, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      response.end(JSON.stringify(bundle, null, 2));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to export project." });
+    }
+    return;
+  }
   const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)(?:\/(materials|runs))?$/);
   const teamChatMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/team\/chat$/);
   if (teamChatMatch && request.method === "POST") {
@@ -442,6 +498,31 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
+  const runGetMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/runs\/([A-Za-z0-9._-]+)$/);
+  if (runGetMatch && request.method === "GET") {
+    try { sendJson(response, 200, await getProjectRun(runGetMatch[1], runGetMatch[2])); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read project run." }); }
+    return;
+  }
+  const runEventsMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/runs\/([A-Za-z0-9._-]+)\/events$/);
+  if (runEventsMatch && request.method === "GET") {
+    try {
+      const snapshot = await getProjectRunEvents(runEventsMatch[1], runEventsMatch[2], {
+        cursor: url.searchParams.has("cursor") ? Number(url.searchParams.get("cursor")) : undefined,
+        limit: url.searchParams.has("limit") ? Number(url.searchParams.get("limit")) : undefined,
+        type: url.searchParams.get("type") || undefined,
+        roleId: url.searchParams.get("roleId") || undefined,
+        branchId: url.searchParams.get("branchId") || undefined,
+        status: url.searchParams.get("status") || undefined,
+        errorCode: url.searchParams.get("errorCode") || undefined,
+        channel: url.searchParams.get("channel") || undefined
+      });
+      sendJson(response, 200, snapshot);
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read project run events." });
+    }
+    return;
+  }
   const controlMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/runs\/([A-Za-z0-9._-]+)\/(pause|resume|cancel)$/);
   if (controlMatch && request.method === "POST") {
     try {
@@ -486,9 +567,10 @@ const server = createServer(async (request, response) => {
   }
   if (projectMatch && projectMatch[2] === "materials" && request.method === "POST") {
     try {
-      const payload = await readBody(request);
-      const material = await addProjectMaterial(projectMatch[1], payload);
-      sendJson(response, 201, material);
+      const payload = await readBody(request, 10 * 1024 * 1024);
+      const batch = Array.isArray(payload.files);
+      const materials = batch ? await addProjectMaterials(projectMatch[1], payload.files) : [await addProjectMaterial(projectMatch[1], payload)];
+      sendJson(response, 201, batch ? { materials } : materials[0]);
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to add material." });
     }
