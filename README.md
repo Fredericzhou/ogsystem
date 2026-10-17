@@ -18,24 +18,26 @@ Implemented scope:
 Product boundaries:
 
 - Framework: runtime, parser/compiler, CLI, and `nl2mmd`.
-- Platform: Framework plus model adapters/catalog, role library, and Vis professional tooling.
-- Product Site: Platform plus the team library, projects, resources, users, and run management.
-- Team Asset: portable static OGS collaboration definition. Graph members are Responsibility
-  Roles, not specific people or separately identified agents. A Project is a Team Asset with
-  resources, task input, and run history; a Run is one execution and appears as 运行 in the product UI.
+- Platform: Framework plus model adapters/catalog, role library, and the professional workbench.
+- Product Site: Platform plus team repository/factory, collaboration projects, resources, users,
+  tasks, and run history.
+- Team definition: a reusable static collaboration structure. Graph members are Responsibility
+  Roles, not specific people or separately identified agents.
+- Collaboration project: a separate working space with one work directory, shared resources,
+  one or more released team versions, task inputs, and run history. A project is not a team draft.
 
-The Product Site package format is `single-project-v1`; it excludes framework code, credentials,
-model catalogs, and execution artifacts. The stable framework paths are `.ogs/`, `og-roles/`,
-`system.mmd`, and `.ogs/runs/`.
+The Product Site portable team package format is `single-project-v1`; it contains a static team
+definition and excludes framework code, credentials, model catalogs, and execution artifacts. The
+stable framework paths are `.ogs/`, `og-roles/`, `system.mmd`, and `.ogs/runs/`.
 
 Product usage:
 
-- Product Site: `apps/team-site/README.md` — team library, natural-language team creation, project
-  workspace, materials, 运行, import, and export.
-- Product concepts: `docs/usage/ogs-concepts.md` — the Framework, Platform, Team Asset, Project,
-  Product Site, and Vis boundaries.
-- Vis: `docs/usage/visualizer-console.md` — professional graph authoring, debugging, diagnostics,
-  and runtime evidence.
+- Product Site: `apps/team-site/README.md` — team repository/factory, collaboration projects,
+  task controls, model discovery, import, and export.
+- Product concepts: `docs/usage/ogs-concepts.md` — the Framework, Platform, team, project, task,
+  and run boundaries.
+- Professional workbench: `docs/usage/visualizer-console.md` — precise graph authoring, debugging,
+  diagnostics, and runtime evidence.
 
 Graph modeling invariant:
 
@@ -118,15 +120,10 @@ ogs vis --ogs-dir .
 ogs visualizer --ogs-dir .
 ```
 
-With the default bind settings, the current Visualizer is available locally at
-[`http://127.0.0.1:3337`](http://127.0.0.1:3337). This loopback address is reachable only from
-the machine running OGSystem. For phone or LAN access, use the authenticated HTTPS setup in the
-[usage manual](docs/usage/usage-manual.md#10-commands); there is no shared hosted service address.
-
-The current local project Visualizers are also available while their processes are running:
-
-- WeChat mini-program factory: [`http://127.0.0.1:3338`](http://127.0.0.1:3338)
-- Multi Debate: [`http://127.0.0.1:3339`](http://127.0.0.1:3339)
+The product site runs at [`http://127.0.0.1:4174`](http://127.0.0.1:4174). The professional workbench
+runs locally at [`http://127.0.0.1:4177`](http://127.0.0.1:4177). For phone or LAN access, use the
+Tailnet startup command in [`apps/team-site/README.md`](apps/team-site/README.md); the site is exposed
+on `http://100.66.215.15:4174/` and the workbench is published through Tailscale Serve HTTPS.
 
 Stable lifecycle command anchors:
 
@@ -147,13 +144,13 @@ ogs visualizer --ogs-dir .
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model choices live in `.ogs/model-selection.json`; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
 
-Version `1.0.0` is the first stable release. It uses Semantic IR v1 and the current versioned
-runtime contracts directly. There is no migration from the `0.3.0` development-test artifacts;
-create a fresh project and run when moving to this stable release.
+Version `1.0.0` is the current stable release. It uses Semantic IR v1 and the current versioned
+runtime contracts directly. Older development artifacts are outside the supported input boundary;
+create a fresh project when starting with this release.
 
 Released CLI compatibility policy: released versions support the latest two minor lines of the
 current major release, with documented migrations for changed config or schema contracts. The
-current `1.0.0` package is the first released line. Run `ogs help compatibility` for the
+current `1.0.0` package is the active released line. Run `ogs help compatibility` for the
 installed CLI's summary, unsupported-input boundary, and deprecation timing; see
 `docs/development/release-compatibility-policy.md` for the full policy.
 

@@ -35,6 +35,32 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 - 恢复权威集与操作员投影分层，而不是共用一份模糊状态。
 - review / stop / resume / compensate 都走同一条持久化主链，而不是旁路脚本。
 
+## 产品站点当前版本
+
+如果你通过网站使用 OGSystem，请先按下面的边界理解产品：
+
+```text
+团队工厂创建/编辑 -> 发布团队版本 -> 协作项目挂载团队 -> 记录任务 -> 执行与复盘
+```
+
+- **团队仓库**保存已发布团队版本，负责查看、导入、复制版本和资产管理。
+- **团队工厂**保存编辑中和待发布团队。创建团队默认使用自然语言对话，也支持人工微调；专业工作台只在需要精确结构、契约或调试证据时使用。
+- **协作项目**单独创建工作目录，挂载一个或多个已发布团队，集中管理资源、任务清单和运行记录。项目页面不嵌入团队结构，查看团队时进入团队建设页面。
+- **任务**必须包含明确的输入和执行团队，并显示项目轮次、状态、运行记录和人工反馈。当前同一项目最多一个任务处于准备、处理中、暂停或待人工审核状态；任务完成或终止后才能启动下一项。
+
+任务支持开始、暂停、继续、人工审核、停止和删除。暂停或待审核任务可以继续；人工审核可以通过、退回修改或终止。删除只从任务清单隐藏，运行快照与审计信息仍保留。任务创建和继续操作使用幂等键，重复请求不会重复执行。
+
+平台配置中的“模型请求超时”只限制等待**一次模型请求返回**的时间，不限制整个任务的执行时长。一个任务可能包含多个角色、多轮处理、暂停或人工审核，因此正常运行时间可以超过该值；请求超时后根据任务状态继续、停止或重新处理。
+
+网站和专业工作台的当前入口：
+
+| 服务 | 本机地址 | Tailnet 访问 |
+| --- | --- | --- |
+| Team Site | `http://127.0.0.1:4174/` | `http://100.66.215.15:4174/` |
+| 专业工作台 | `http://127.0.0.1:4177/` | 由 Tailscale Serve 提供 HTTPS 主机名 |
+
+Windows 上从仓库根目录执行 `pnpm start:team-site:tailnet` 可重启两项服务并配置 Tailnet 入口。专业工作台仍绑定本机，由 Tailscale Serve 负责 HTTPS 和身份认证；团队站点绑定 `0.0.0.0` 供 Tailnet 访问。
+
 ## Capability Snapshot
 
 OGSystem 当前重点优化以下能力：
@@ -143,11 +169,11 @@ pnpm run smoke:package-install:npm
 pnpm run smoke:package-install:pnpm
 ```
 
-版本说明：`1.0.0` 是首个稳定版本，直接采用 Semantic IR v1 和当前版本化运行时合同。`0.3.0` 开发测试版项目和运行数据不提供迁移；升级时新建项目和 run，旧 run 目录保留只读审计。
+版本说明：`1.0.0` 是当前稳定版本，直接采用 Semantic IR v1 和当前版本化运行时合同。旧开发产物不在支持边界内；开始使用当前版本时请新建项目和 run。
 
-发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `1.0.0` 为首个正式发布版本；`0.3.0` 不属于兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
+发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `1.0.0` 为活动发布线。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
 
-当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。`1.0.0` 不提供 `0.3.0` 的配置、schema 或 run-data 迁移；resume 也不因配置文件可读取就获得跨版本保证。
+当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。当前版本不提供旧开发产物的配置、schema 或 run-data 迁移；resume 也不因配置文件可读取就获得跨版本保证。
 
 覆盖率判读约定：
 
@@ -1184,15 +1210,16 @@ ogs \
 - keeps the final adapter result JSON on `stdout`
 - use `--quiet-run` when you need silent `stderr`
 
-Local visualizer:
+CLI 运行可视化（独立于网站专业工作台）：
 
 ```bash
 ogs visualizer --ogs-dir .
 ```
 
-当前稳定版本为 `1.0.0`（以 `ogs --version` 查看本机实际安装版本）。默认本机服务地址为
-[`http://127.0.0.1:3337`](http://127.0.0.1:3337)，启动后可在同一台电脑的浏览器打开；该地址不对手机或局域网其他设备开放。
-本项目没有公共托管服务地址。手机或其他设备访问时，请按下面的远程 HTTPS 配置启动，并使用证书匹配的主机名/IP。
+当前稳定版本为 `1.0.0`（以 `ogs --version` 查看本机实际安装版本）。`ogs vis` 是面向运行证据的
+独立 CLI 服务，默认本机地址为 [`http://127.0.0.1:3337`](http://127.0.0.1:3337)。它与网站的
+专业工作台 `4177` 端口不是同一服务；网站用户通常通过 `/studio/team/:id` 和项目页面完成日常操作。
+手机或其他设备访问 CLI 可视化时，请按下面的远程 HTTPS 配置启动，并使用证书匹配的主机名/IP。
 
 当前另外两个本机项目服务地址（仅在对应服务运行期间有效）：
 

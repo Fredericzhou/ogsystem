@@ -1,72 +1,75 @@
 # OGS Team Site
 
-An isolated, bilingual product experience for creating and running OGS Team Assets. The site uses
-the Platform Runtime Core and keeps team-library, project, resource, and run management here.
+OGS Team Site 是面向用户的团队与协作项目工作台。当前版本将团队建设和项目执行完全分开：
 
-The site presents a static OGS collaboration definition as a **team asset**. “Team” is a product
-metaphor: graph members are stable responsibility roles, not specific people or separately
-identified agents. Creating a team creates a draft OGS asset; structural confirmation puts it in the
-team library. Selecting a confirmed team opens a Project workspace for materials, task input, and
-execution. Confirmation does not establish provider connectivity or credentials; project readiness
-reports static blockers and warnings without probing online services. The UI calls a `Run` a
-**运行**; the API and runtime keep `project` and `run` as their canonical technical terms.
+- **团队仓库**：查看已发布的团队版本，并将可复用团队挂载到协作项目。
+- **团队工厂**：创建、对话调整、人工微调和调试团队。未发布的团队只在这里保存。
+- **协作项目**：选择一个或多个已发布团队，绑定一个工作目录，维护项目资源、任务清单和运行记录。
+- **平台配置**：查看自动发现的 Codex、OpenCode 及其模型，设置默认底座、模型请求等待时间和失败重试次数。
+- **专业工作台**：面向需要精确查看结构、契约和运行证据的用户；普通用户不需要进入这里完成日常团队建设。
 
-## Product workflow
+## 核心规则
 
-The site keeps team authoring separate from team use:
+1. 创建或编辑团队不会创建项目，也不包含工作目录、项目材料或任务。
+2. 创建项目不会创建团队。项目只能挂载已发布的团队版本；内置案例需要先复制到团队工厂并发布后才能挂载。
+3. 一个项目可以挂载多个团队，共享同一个工作目录和项目资源。
+4. 一个工作目录只能绑定一个协作项目，但该项目可以使用已挂载团队多次执行不同任务。
+5. 当前一个项目最多只有一个任务处于准备、运行、暂停或待人工审核状态。任务完成或终止后才能开始下一项。
+6. 任务输入、执行团队、项目轮次、状态和反馈会保留在运行记录中；删除任务只隐藏清单项，运行快照仍保留审计记录。
 
-1. **Team library**: create a team from a natural-language goal, choose guided options, continue
-   the conversation, or open the professional Vis editor for detailed structure and runtime work.
-2. **Team confirmation**: validate the OGS structure and supported topology, then save the confirmed
-   static team asset. This is separate from run readiness.
-3. **Project workspace**: select a confirmed team, add workspace materials, enter a task, choose
-   Dry Run or Sandbox Run, and inspect the result. Dry Run previews the flow; Sandbox Run requires
-   static readiness checks to pass. Neither readiness nor confirmation probes provider connectivity
-   or verifies CLI credentials.
+## 用户入口
 
-`/studio/new` creates a team draft. `/studio` is the team library. A project URL is the working
-instance of a selected team; it does not add a second Team entity. The site owns the ordinary-user
-flow, while Vis owns professional authoring, diagnostics, and advanced runtime inspection. Both
-surfaces call the same Runtime Core.
+| 页面 | 地址 | 用途 |
+| --- | --- | --- |
+| 首页 | `/` | 查看协作入口和典型案例摘要 |
+| 团队仓库 | `/studio` | 管理已发布团队版本、导入团队 |
+| 团队工厂 | `/factory` | 管理编辑中和待发布团队 |
+| 创建团队 | `/studio/new` | 通过自然语言创建团队草案 |
+| 团队建设 | `/studio/team/:id` | 对话微调、人工编辑、验证和发布版本 |
+| 协作项目 | `/projects` | 查看项目、工作目录、团队和任务记录 |
+| 创建项目 | `/studio/project/new` | 创建工作目录并挂载已发布团队 |
+| 项目详情 | `/studio/project/:id/run` | 记录任务、执行、暂停、继续、审核、停止和删除 |
+| 平台配置 | `/platform` | 查看底座/模型探测结果和默认执行设置 |
 
-## Run locally
+团队建设页面不会提供“导出团队”。导出属于团队仓库的资产管理操作；导入入口统一称为“导入团队”。
 
-From the repository root, build the latest committed framework CLI, then start the site:
+## 本地启动
+
+在仓库根目录执行：
 
 ```powershell
 pnpm build
 pnpm --dir apps/team-site start
 ```
 
-Open `http://127.0.0.1:4173`. The public demo endpoint executes the actual graph runtime in Dry Run
-mode with fixed site-owned role contracts. It does not make model calls.
+默认开发端口为 `4174`，打开 `http://127.0.0.1:4174/`。专业工作台默认监听本机 `4177`，打开
+`http://127.0.0.1:4177/`。站点通过 `/api/v1/config` 读取专业工作台地址，可用 `OGS_VIS_URL` 覆盖。
 
-The public site opens at `/`. The team library is at `/studio`; create-team authoring starts at
-`/studio/new`; a team can be opened from `/cases/software-team`, `/cases/expert-consultation`, or
-`/cases/structured-debate`.
+## Tailnet 访问
 
-Product APIs are under `/api/v1/projects` and `/api/v1/team-packages`. Vis owns the separate
-professional routes under `/api/v1/ogs/workspace` and `/api/v1/ogs/runs`; it is not a second product
-site or a second runtime. `GET /api/v1/projects/{projectId}/readiness` reports static blockers and
-warnings for Sandbox Run without exposing local paths or probing provider connectivity.
+Windows 上从仓库根目录执行：
 
-The site discovers the professional Vis entrypoint from `/api/v1/config`. Set `OGS_VIS_URL` when
-the Vis server is not running at its local default (`http://127.0.0.1:4177`).
+```powershell
+pnpm start:team-site:tailnet
+```
 
-## Verify cases with real models
+脚本会将网站绑定到 `0.0.0.0:4174`，因此可通过本机 Tailnet 地址访问，例如
+`http://100.66.215.15:4174/`；专业工作台仍只监听 `127.0.0.1:4177`，由 Tailscale Serve 提供 HTTPS
+入口和身份认证。脚本会输出当前节点的 HTTPS 主机名和日志目录。
 
-The release verification lints and runs every case through the installed backend/model selected by `OGS_DEMO_BACKEND` and `OGS_DEMO_MODEL` (defaults: `codex` and `gpt-5.6-luna`). It checks each expected role and verifies backend/model values in the audit trail. Ensure the selected CLI is authenticated before running:
+## 底座与模型
+
+平台配置会调用本机 CLI 的探测能力，展示已发现的 Codex、OpenCode 服务及可用模型。站点不接管这些
+CLI 的账号或凭据。模型请求超时只表示等待**单次模型请求返回**的最长时间，不限制一个任务的总执行时间；
+任务仍可能因为多角色、多轮处理或人工审核而持续更久。
+
+## 验证
+
+运行团队案例的真实底座验证前，请先完成对应 CLI 的登录：
 
 ```powershell
 pnpm --dir apps/team-site verify:cases
 ```
 
-For OpenCode, the framework starts one `opencode serve` process per case run and reuses it across that run's role sessions. On Windows, the harness also adds the Node installation's bundled OpenCode executable directory to the child process path when present.
-
-```powershell
-$env:OGS_DEMO_BACKEND = "opencode"
-$env:OGS_DEMO_MODEL = "multidebate/gpt-5.6-luna"
-pnpm --dir apps/team-site verify:cases
-```
-
-`OGSYSTEM_ROOT` can point to another OGSystem checkout. The site must be tested against the exact framework commit intended for release.
+也可以通过 `OGS_DEMO_BACKEND` 和 `OGS_DEMO_MODEL` 选择 Codex 或 OpenCode 的具体模型。Team Site 的产品
+页面测试与框架专业工作台测试应分别运行；两者共享 Runtime Core，但不共享项目数据目录。

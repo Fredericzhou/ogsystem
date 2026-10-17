@@ -1,77 +1,34 @@
-# OGSystem 产品自我介绍
+# OGSystem 产品简介
 
-## 1. 它是什么
+OGSystem 把一组有明确职责的角色组织成可执行、可恢复、可审计的协作流程。普通用户从团队和项目开始，
+工程人员可以继续使用 CLI 和专业工作台检查结构、契约和运行证据。
 
-OGSystem 是一个面向抽象责任角色协作流程的单机编排内核。它使用受限的 Mermaid `flowchart` 作为 DSL，把责任图、执行绑定、恢复语义和运行证据统一收敛到一个文件优先的运行时里。这里的角色表示稳定职责，不表示具体人员、模型、服务或一次运行实例；完整术语见 [核心概念](ogsystem-core-concepts.md)。
+## 产品如何分工
 
-它的目标不是做“平台大全”，而是把下面几件事做扎实：
+- **团队**描述“谁负责什么、如何交接、如何协作”。团队可以通过自然语言创建，再由人工或专业工作台微调，
+  发布后进入团队仓库。
+- **协作项目**描述“这次工作在哪里完成、使用哪些团队、要完成哪些任务”。一个项目绑定一个工作目录，
+  可以挂载多个团队并按任务顺序运行。
+- **任务与运行记录**描述“本次具体要做什么、由哪个团队执行、结果如何”。输入、轮次、状态、反馈和运行
+  快照都会保留，便于继续、审核和追溯。
+- **平台配置**负责发现本机的 Codex、OpenCode 和模型，并设置默认执行方式；不接管这些底座的账号和凭据。
 
-- 角色图可执行，而不是停留在设计图层。
-- 运行结果可审计、可回放、可恢复。
-- 语义边界清楚，出现漂移时能 fail fast。
-- 在不引入重型基础设施的前提下，尽量提高稳定性和可靠性。
+团队建设与项目执行是两条独立路径：编辑团队不会创建项目，创建项目也不会修改团队结构。项目只挂载已发布
+版本；需要调整团队时，应回到团队工厂另存为新版本。
 
-## 2. 它擅长什么
+## 任务控制
 
-- **图语义硬化**：`parallel_split`、`all_of/quorum_of` join、基础 Join 超时策略（`timeoutSeconds`、`failurePolicy`、`onTimeout`）、`context.map`、`loop.max`、`handoff.mode`、`handoff.contracts` 都在解析和执行两侧被明确约束。
-- **流合同分层**：`flow contract` 负责边级业务约束，`role_input` 负责接收节点的投影输入校验，runtime 内建 prompt-input schema 继续作为技术层护栏。
-- **静态编译入口**：`src/runtime/compiler.ts` 汇总 system / role / contract / law 的静态摘要，生成稳定 diagnostics 与 compiler digest，并参与 resume 指纹。
-- **文件优先恢复**：运行状态落盘到 `.ogs/runs/<run-id>/`，以 `state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/` 和 `execution-outcome.json` 组成恢复权威集。
-- **会话血缘隔离**：OpenCode 会话按 `roleId:sessionLineageId` 复用或隔离，顺序链路复用记忆，并行 sibling 不串话。
-- **Crash 自愈补偿**：角色执行先提交 durable outcome，再由图调度层写 checkpoint；恢复时自动补齐缺失的 checkpoint，而不是重跑模型。
-- **状态脱水与显式治理**：`state.json` 保持轻量摘要，完整审计走 `events.ndjson`；支持 `runtime.retention` 阈值触发的显式快照清理。
-- **语义边界清晰**：动态 fan-out 的不确定 `N` 不进入图语义；受控并发属于执行策略；`ERROR*` 异常流已按节点级 opt-in 实现并由 feature flag 控制发布面。
-- **最小但完整的工程闭环**：解析、调度、执行、审计、恢复与检查能力都收敛在同一套内核工程里。
+当前同一项目最多一个任务处于处理中、暂停或待人工审核状态。暂停可以继续，待审核可以提交通过、退回修改
+或终止意见；任务完成或终止后，才能启动下一项。任务操作采用幂等处理，重复提交不会重复执行。
 
-## 3. 架构特点
+## 运行时能力
 
-OGSystem 当前采用单一 graph runtime 路径，核心模块分工很清晰：
+框架提供受限流程结构、角色执行、分支与汇聚、循环、异常路由、人工审核、检查点恢复和审计记录。运行状态
+保存在 `.ogs/runs/<run-id>/`，恢复前会检查状态快照、会话索引和语义指纹的一致性；不一致时会拒绝猜测性恢复。
 
-- `src/runtime/adapter.ts`：组合根，负责装配配置、系统定义、角色包、模型包与运行上下文。
-- `src/runtime/parse-mermaid.ts` 与 `src/runtime/execution-plan.ts`：把受限 Mermaid DSL 编译成可执行计划。
-- `src/runtime/compiler.ts`：收拢前置静态事实，生成 compiler snapshot、diagnostics 和 resume digest。
-- `src/runtime/graph-runner.ts`：负责图级状态推进、branch/lineage 管理、checkpoint 与 resume 补偿。
-- `src/runtime/role-executor.ts`：负责单节点 prompt 渲染、执行绑定、输出修复、schema 校验与审计落盘。
-- `src/runtime/run-artifacts.ts`：负责 run 目录、会话索引、`.resume.lock`、checkpoint、execution artifacts 与 buffered append。
+详细入口：
 
-这套结构的核心特点是：
-
-- **职责分离**：调度、执行、持久化分别收敛，不靠隐式共享逻辑。
-- **实现可解释**：文档中的语义标签可以映射回明确的代码模块与产物文件。
-- **运维可观察**：每次执行的关键信息都有对应落盘证据，不依赖黑盒状态。
-
-## 4. 当前边界
-
-OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界：
-
-- 重点解决的是单机正确性、恢复能力和操作安全，不是分布式调度。
-- `.resume.lock` 只覆盖同机 `ogs run resume <run-id>` 竞争，不解决跨主机共享存储上的并发恢复。
-- 指纹校验是严格模式。只要系统定义、角色内容、模型包或 law 变化，resume 就会拒绝继续。
-- 长期运行的主要压力来自状态与产物增长，不是当前语义正确性本身。
-- `ERROR*` 异常流语义已实现，默认由 `runtime.error_flows.v1=false` 灰度控制；未声明或未开启时保持 fail-stop 行为。
-- Join 基础超时策略已实现；`join.first_packet.*`、`join.gap.*` 等分阶段等待仍属于 RFC。`review.timeout` 当前只描述审核预算，不会自动产生过期决定。
-
-这意味着它适合：
-
-- 本地或单机服务上的多角色编排实验与生产化前验证。
-- 对恢复能力、审计能力、可解释性要求较高的运行场景。
-- 希望以低复杂度方式获得“编排 + 恢复 + 证据链”的工程团队。
-
-它暂时不适合：
-
-- 需要跨机器抢占式调度的集群环境。
-- 需要“宽松兼容恢复”或“热升级恢复”的运行模式。
-- 以无限长期运行和海量历史产物为核心诉求的系统。
-
-## 5. 从哪里开始读
-
-建议按以下顺序理解项目：
-
-1. `docs/README.md`：先看文档索引与归档规则，知道什么文档是活的。
-2. `docs/usage/ogsystem-core-concepts.md`：先确认 Role、System、Seat 和运行事实的边界。
-3. `docs/usage/usage-manual.md`：把项目能力、目录约定、运行命令和恢复契约整体过一遍。
-4. `docs/usage/ogsystem-orchestration-semantics-v1.md`：确认已实现语义的精确定义。
-5. `docs/development/DECISIONS.md`：理解为什么做这些架构选择。
-6. `docs/usage/ogsystem-ebook.md`：系统阅读模块设计、原则、价值与演进方向。
-
-如果你要直接上手运行，下一站应是 `docs/usage/usage-manual.md`。如果你要评估设计是否合理，下一站应是 `docs/development/DECISIONS.md` 与 `docs/usage/ogsystem-ebook.md`。
+1. [产品概念](ogs-concepts.md)
+2. [使用手册](usage-manual.md)
+3. [核心概念](ogsystem-core-concepts.md)
+4. [专业工作台](visualizer-console.md)

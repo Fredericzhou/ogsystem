@@ -1,69 +1,63 @@
-# OGS Product Concepts
+# OGS 产品概念
 
-This is the short product vocabulary reference. The normative graph and runtime semantics remain
-in [OGSystem core concepts](ogsystem-core-concepts.md).
+本文是当前版本的产品词汇表。运行时语义仍以 [核心概念](ogsystem-core-concepts.md) 和
+[编排语义](ogsystem-orchestration-semantics-v1.md) 为准。
 
-## Boundaries
+## 四个边界
 
-| Layer | Responsibility |
-| --- | --- |
-| **Framework** | Execute OGS systems and provide parser/compiler, CLI, and `nl2mmd`. |
-| **Platform** | Add model adapters/catalog, installed role library, and Vis professional tooling. |
-| **Product Site** | Let ordinary users create team assets, attach resources, run projects, and inspect results. |
+| 概念 | 负责什么 | 不负责什么 |
+| --- | --- | --- |
+| **框架** | 解析、编译、执行、恢复、CLI 和自然语言结构生成 | 团队、项目、用户和运行记录 |
+| **平台** | 框架、底座/模型探测、角色资源和专业工作台 | 用户项目数据和团队业务记录 |
+| **团队** | 可复用的职责、角色关系、协作流程和运行规则 | 工作目录、项目材料、任务和运行历史 |
+| **协作项目** | 一个工作目录、共享资源、已挂载团队、任务和运行记录 | 创建或编辑团队结构 |
 
-The Platform is the reusable foundation. The Product Site does not fork the runtime or duplicate Vis
-semantics; it calls the same Runtime Core through its product-facing APIs.
-
-## User Flow
+## 用户流程
 
 ```text
-Create team -> Confirm team -> Team library -> Select team -> Project workspace -> 运行
+团队工厂创建/调整 -> 发布团队版本 -> 协作项目挂载团队 -> 创建任务 -> 执行与记录
 ```
 
-- **Create team** is authoring. Natural language and guided choices are the default path; Vis is
-  the optional professional path for precise graph, model, tool, context, and debugging work.
-- **Confirm team** validates and confirms the static structure and supported topology. It does not
-  certify that model, tool, credential, or provider services are ready to execute.
-- **Project workspace** is where a user adds materials and task input. Each 运行 fixes a `RunPlan`
-  and immutable input snapshots before execution.
+- **团队仓库**只展示已发布版本，提供导入、复制为新版本和资产管理。
+- **团队工厂**保存编辑中和待发布团队。创建团队默认通过自然语言对话，可随时人工微调；
+  专业工作台用于需要精确结构、契约或调试证据的场景。
+- **协作项目**单独创建工作目录并挂载一个或多个已发布团队。项目页面关注资源、任务清单和运行记录，
+  不嵌入团队结构；查看团队时再进入对应团队页面。
+- **任务**记录明确的输入、执行团队、项目轮次、状态和反馈。当前同一项目最多一个任务处于准备、运行、
+  暂停或待审核状态；完成或终止后才能开始下一项。
 
-Confirmation and run readiness are separate states. Confirmation is tied to the semantic asset
-digest and becomes stale after a semantic edit. The project workspace reports static Sandbox Run
-readiness blockers and warnings; it does not probe provider connectivity or credentials.
-Run preparation checks the current confirmation again, so a second human confirmation step is not
-required.
+## 团队版本
 
-The product site optimizes for ordinary users and result inspection. Vis optimizes for technical
-users and exposes the graph, contracts, diagnostics, and advanced runtime evidence. A link between
-the two surfaces changes the view, not the execution semantics.
+团队名称和版本号共同标识一个已发布版本。已发布团队可以复制到团队工厂进行编辑，编辑后必须另存为新
+版本；同一团队不得存在同名版本。编辑中的版本不会出现在项目挂载列表，只有发布后才能使用。
 
-## Objects
+内置案例是可复制的团队模板，不直接作为项目执行团队。复制、调整并发布后，才会成为可挂载的团队版本。
 
-```text
-Team Asset  ->  Project  ->  Run
-static          working       one execution
-portable        resources      immutable run snapshot
-```
+## 任务状态与控制
 
-- **Team Asset / team**: a reusable static OGS collaboration definition kept in the team library.
-  “Team” is the product metaphor; graph members are Responsibility Roles, not specific people or
-  separately identified agents. The asset is confirmed before it can be used, imported and exported,
-  and kept free of execution history.
-- **Project**: a selected team plus workspace materials, task input, and the project's run history.
-- **Run / 运行**: one execution created from a confirmed project. Its `RunPlan`, task, material
-  snapshots, events, checkpoints, reviews, and side-effect ledger are fixed under `.ogs/runs`.
+任务可以处于待执行、处理中、暂停、待人工审核、已完成、处理失败或已停止。用户可以：
 
-The public portable format is `single-project-v1`. It includes static role assets and project model
-selection, while excluding framework source, credentials, model catalogs, `.ogs/runs`, logs,
-checkpoints, reviews, and other runtime output. Model selection identifies the configured executor;
-it does not make the executor the identity of a Responsibility Role. Mermaid remains the team
-structure import/export and prompt-reference format, not a second runtime model.
+- 开始任务；
+- 暂停后继续；
+- 在待人工审核时提交通过、退回修改或终止意见；
+- 停止无法继续的任务；
+- 删除清单中的任务记录。删除只隐藏清单项，运行快照和审计信息仍保留。
 
-## Stable Contracts
+任务创建支持幂等键。相同幂等键和相同输入会复用原任务，输入变化会被拒绝，避免重复提交造成重复执行。
 
-Do not rename these framework contracts when reorganizing product code:
+## 请求等待时间
 
-- `.ogs/`: framework configuration and project runtime metadata;
-- `og-roles/`: role packages used by a project;
-- `system.mmd`: canonical OGS structure source;
-- `.ogs/runs/`: execution artifacts and recovery state.
+平台配置中的“模型请求超时”只限制一次请求等待模型返回的时间。它不是任务总时长限制；一个任务可能包含
+多个角色、多轮处理、暂停或人工审核，因此可以正常超过该值。请求超时后，任务记录会保留异常信息，用户可
+根据任务状态继续、停止或重新处理。
+
+## 稳定文件契约
+
+专业工作台和 CLI 使用以下稳定路径：
+
+- `.ogs/`：项目运行配置和状态；
+- `og-roles/`：角色包；
+- `system.mmd`：团队结构源文件；
+- `.ogs/runs/`：运行快照、恢复状态和审计产物。
+
+团队导入导出使用当前站点定义的团队资产包格式。资产包不包含凭据、底座目录或运行历史。
