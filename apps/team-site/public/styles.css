@@ -44,6 +44,17 @@
 .task-record-meta { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
 .task-record-actions { align-items: center; display: flex; flex: 0 1 auto; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .task-record-actions .secondary-button { min-height: 34px; padding: 7px 11px; }
+.task-run-detail { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; display: grid; gap: 7px; margin-top: 11px; padding: 9px; }
+.task-run-detail-head { align-items: center; display: flex; gap: 9px; justify-content: space-between; }
+.task-run-status { font-size: 12px; }
+.task-run-progress-label { color: var(--muted); font-size: 11px; }
+.task-run-progress { background: var(--canvas); border-radius: 999px; height: 6px; overflow: hidden; }
+.task-run-progress span { background: var(--mint); border-radius: inherit; display: block; height: 100%; transition: width .2s ease; }
+.task-run-events { color: var(--muted); display: grid; font-size: 10px; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.task-run-events li { display: flex; gap: 7px; min-width: 0; }
+.task-run-events li strong { color: var(--ink); flex: 0 0 auto; }
+.task-run-events li span { overflow-wrap: anywhere; }
+.task-run-error:empty { display: none; }
 .task-delete-button { color: var(--muted); }
 .task-review-dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 24px 70px rgba(5, 18, 28, .28); color: var(--ink); max-width: min(560px, calc(100vw - 28px)); padding: 0; width: 100%; }
 .task-review-dialog::backdrop { background: rgba(6, 17, 28, .5); }
@@ -69,6 +80,13 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 360px; min-height: 100vh; }
+body.modal-open, body.drawer-open { overflow: hidden; }
+
+.confirm-dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 24px 70px rgba(5, 18, 28, .28); color: var(--ink); max-width: min(460px, calc(100vw - 28px)); padding: 0; width: 100%; }
+.confirm-dialog::backdrop { background: rgba(6, 17, 28, .5); }
+.confirm-form { display: grid; gap: 14px; padding: 22px; }
+.confirm-form h2 { font-size: 18px; margin: 0; }
+.confirm-message { color: var(--muted); line-height: 1.6; margin: 0; }
 button, textarea { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid #74b8a5; outline-offset: 2px; }
@@ -1049,6 +1067,7 @@ body { min-width: 0; font-size: 15px; }
 .platform-settings-panel .compact-form { align-items: end; column-gap: 14px; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; }
 .platform-settings-panel .compact-form .primary-button { min-height: 42px; }
 .platform-settings-panel .compact-form .form-status { grid-column: 1 / -1; }
+.platform-runtime-status { color: var(--gold); }
 @media (max-width: 900px) { .platform-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .platform-settings-panel .compact-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) {
   .platform-config-grid { grid-template-columns: minmax(0, 1fr); }
