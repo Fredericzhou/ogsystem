@@ -14,6 +14,23 @@ in [OGSystem core concepts](ogsystem-core-concepts.md).
 The Platform is the reusable foundation. The Product Site does not fork the runtime or duplicate Vis
 semantics; it calls the same Runtime Core through its product-facing APIs.
 
+## User Flow
+
+```text
+Create team -> Confirm team -> Team library -> Select team -> Project workspace -> 运行
+```
+
+- **Create team** is authoring. Natural language and guided choices are the default path; Vis is
+  the optional professional path for precise graph, model, tool, context, and debugging work.
+- **Confirm team** is the server-side quality gate. Only a confirmed static asset can be selected
+  for a project workspace.
+- **Project workspace** is where a user adds materials and task input. Each 运行 fixes a `RunPlan`
+  and immutable input snapshots before execution.
+
+The product site optimizes for ordinary users and result inspection. Vis optimizes for technical
+users and exposes the graph, contracts, diagnostics, and advanced runtime evidence. A link between
+the two surfaces changes the view, not the execution semantics.
+
 ## Objects
 
 ```text
@@ -23,7 +40,7 @@ portable        resources      immutable run snapshot
 ```
 
 - **Team Asset / team**: a static OGS team definition kept in the team library. It is the thing
-  created by “召唤团队”, can be confirmed, imported, and exported, and contains no execution history.
+  created by “召唤团队”, confirmed before use, imported and exported, and kept free of execution history.
 - **Project**: a selected team plus workspace materials, task input, and the project's run history.
 - **Run / 运行**: one execution created from a confirmed project. Its `RunPlan`, task, material
   snapshots, events, checkpoints, reviews, and side-effect ledger are fixed under `.ogs/runs`.

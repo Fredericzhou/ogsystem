@@ -80,6 +80,7 @@ function normalizeMeta(meta, projectId) {
 }
 
 function projectStage(project) {
+  // This is a UI projection only. Authorization uses projectStatus, run state, and locks.
   if (project.projectStatus !== "confirmed") return "draft";
   if ((project.runs || []).some((run) => ["running", "planning", "waiting_review", "paused"].includes(run.status))) return "running";
   return "ready";
@@ -95,6 +96,7 @@ async function semanticProjectDigest(project) {
 }
 
 function requireConfirmed(project) {
+  // A confirmed team is eligible for a project workspace; each run still creates its own snapshot.
   if (project.projectStatus !== "confirmed" || !project.projectDigest || !project.confirmedAt) {
     throw new Error("PROJECT_NOT_CONFIRMED: confirm the team design before preparing or running a task.");
   }

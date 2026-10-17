@@ -27,6 +27,15 @@ The Product Site package format is `single-project-v1`; it excludes framework co
 model catalogs, and execution artifacts. The stable framework paths are `.ogs/`, `og-roles/`,
 `system.mmd`, and `.ogs/runs/`.
 
+Product usage:
+
+- Product Site: `apps/team-site/README.md` — team library, natural-language team creation, project
+  workspace, materials, 运行, import, and export.
+- Product concepts: `docs/usage/ogs-concepts.md` — the Framework, Platform, Team Asset, Project,
+  Product Site, and Vis boundaries.
+- Vis: `docs/usage/visualizer-console.md` — professional graph authoring, debugging, diagnostics,
+  and runtime evidence.
+
 Graph modeling invariant:
 
 - A node is a responsibility role/agent seat, not an event, action, task, gateway, process step, or runtime record.

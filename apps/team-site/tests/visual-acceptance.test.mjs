@@ -43,7 +43,7 @@ test("site completes the product project flow with graph preview and run analysi
 
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     await page.locator(".project-library-toolbar").waitFor();
-    assert.match(await page.locator("#workspace-view .page-heading").innerText(), /项目资产库/);
+    assert.match(await page.locator("#workspace-view .page-heading").innerText(), /团队库/);
     assert.equal(await page.locator(".classic-team-section").count(), 1);
     assert.equal(await page.locator(".classic-team-card").count(), 3);
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);

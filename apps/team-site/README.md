@@ -3,8 +3,25 @@
 An isolated, bilingual product experience for creating and running OGS Team Assets. The site uses
 the Platform Runtime Core and keeps team-library, project, resource, and run management here.
 
-The site calls a static OGS definition a **team**. Creating a team creates an OGS project asset in
-the team library; selecting it creates a Project workspace for materials and task execution.
+The site presents a static OGS definition as a **team asset**. Creating a team creates a draft OGS
+asset; after confirmation it appears in the team library. Selecting a confirmed team opens a
+Project workspace for materials, task input, and execution. The UI calls a `Run` a **运行**; the
+API and runtime keep `project` and `run` as their canonical technical terms.
+
+## Product workflow
+
+The site keeps team authoring separate from team use:
+
+1. **Team library**: create a team from a natural-language goal, choose guided options, continue
+   the conversation, or open the professional Vis editor for detailed structure and runtime work.
+2. **Team confirmation**: validate the OGS structure and save the confirmed static team asset.
+3. **Project workspace**: select a confirmed team, add workspace materials, enter a task, choose
+   Dry Run or Sandbox Run, and inspect the result.
+
+`/studio/new` creates a team draft. `/studio` is the team library. A project URL is the working
+instance of a selected team; it does not add a second Team entity. The site owns the ordinary-user
+flow, while Vis owns professional authoring, diagnostics, and advanced runtime inspection. Both
+surfaces call the same Runtime Core.
 
 ## Run locally
 
@@ -15,14 +32,16 @@ pnpm build
 pnpm --dir apps/team-site start
 ```
 
-Open `http://127.0.0.1:4173`. The public demo endpoint executes the actual graph runtime in dry-run mode with fixed site-owned role contracts. It does not make model calls.
+Open `http://127.0.0.1:4173`. The public demo endpoint executes the actual graph runtime in Dry Run
+mode with fixed site-owned role contracts. It does not make model calls.
 
-The public site opens at `/`. The runnable workspace is at `/studio`; bilingual case backgrounds and
-team responsibilities are available at `/cases/software-team`, `/cases/expert-consultation`, and
+The public site opens at `/`. The team library is at `/studio`; create-team authoring starts at
+`/studio/new`; a team can be opened from `/cases/software-team`, `/cases/expert-consultation`, or
 `/cases/structured-debate`.
 
 Product APIs are under `/api/v1/projects` and `/api/v1/team-packages`. Vis owns the separate
-professional routes under `/api/v1/ogs/workspace` and `/api/v1/ogs/runs`.
+professional routes under `/api/v1/ogs/workspace` and `/api/v1/ogs/runs`; it is not a second product
+site or a second runtime.
 
 The site discovers the professional Vis entrypoint from `/api/v1/config`. Set `OGS_VIS_URL` when
 the Vis server is not running at its local default (`http://127.0.0.1:4177`).
