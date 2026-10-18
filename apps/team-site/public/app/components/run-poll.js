@@ -1,4 +1,4 @@
-export const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "done", "stopped"]);
+export const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 export function isTerminalRunStatus(status) {
   return TERMINAL_RUN_STATUSES.has(String(status || "").toLowerCase());
