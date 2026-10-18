@@ -2246,7 +2246,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     const exportResponse = await fetch(`${url}/api/v1/ogs/workspace/export`, { method: "POST" });
     assert.equal(exportResponse.status, 200);
     const exported = await exportResponse.json();
-    assert.equal(exported.mode, "single-project-v1");
+    assert.equal(exported.mode, "team-v2");
     assert.equal(exported.releaseManifest.manifestVersion, 1);
     assert.equal(exported.releaseManifest.systemPath, "system.mmd");
     assert.match(exported.releaseManifest.systemHash, /^[a-f0-9]{64}$/);
@@ -3402,7 +3402,7 @@ test("project persistence keeps Save As and bundle import from replacing canonic
     await loadTeamPackage({
       workdir,
       bundle: {
-        mode: "single-project-v1",
+        mode: "team-v2",
         team: { systemSource: canonicalSource }
       }
     });

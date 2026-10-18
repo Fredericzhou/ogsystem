@@ -6,7 +6,7 @@
 
 本文只负责路由、请求生命周期、状态渲染、模块边界和用户交互治理，不实现领域去重、摘要计算或运行时状态迁移。当前版本按最新路由和字段契约工作，不保留旧入口兼容。
 
-验证证据：Playwright `1.63.0` 与 Chromium/headless shell 已安装；`pnpm build` 通过；Team Site 全量测试 `50/50` 通过；浏览器验收覆盖案例详情、SVG 图谱缩略图、`/factory/new`、`/studio/project/new`、多团队项目、资料上传、Run 轮询、平台设置、桌面端和 390px 移动端。
+验证证据：Playwright `1.63.0` 与 Chromium/headless shell 已安装；`pnpm build` 通过；Team Site 全量测试 `51/51` 通过；浏览器验收覆盖案例详情、SVG 图谱缩略图、`/factory/new`、`/studio/project/new`、多团队项目、资料上传、Run 轮询、平台设置、project-v2 跨工作区导入、桌面端和 390px 移动端。
 
 ## 已实现能力
 

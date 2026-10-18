@@ -1224,7 +1224,7 @@ export const en = {
   "release.gate": "release gate",
   "release.candidateReady": "release candidate ready",
   "release.candidateBlocked": "release candidate blocked",
-  "release.artifactContract": "Validated export candidate uses the single-project-v1 artifact contract.",
+  "release.artifactContract": "Validated export candidate uses the team-v2 artifact contract.",
   "release.sourceDigestHint": "source {path} · digests are derived from generated and exported project content",
   "release.validationReport": "validation report",
   "release.systemMmdValid": "system.mmd validates successfully",

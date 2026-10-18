@@ -832,7 +832,7 @@ export function renderReleaseGatePanel(args: {
     '<section class="release-group"><h4>' + escapeText(t("release.group.gate", undefined, "Release gate")) + '</h4><div class="run-graph-summary-grid">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.gate", undefined, "release gate")) + '</span><span class="status ' + escapeText(canExport ? "done" : "failed") + '">' +
       escapeText(canExport ? t("release.candidateReady", undefined, "release candidate ready") : t("release.candidateBlocked", undefined, "release candidate blocked")) +
-      '</span></div><strong>' + escapeText(t("release.artifactContract", undefined, "Validated export candidate uses the single-project-v1 artifact contract.")) +
+      '</span></div><strong>' + escapeText(t("release.artifactContract", undefined, "Validated export candidate uses the team-v2 artifact contract.")) +
       '</strong><div class="hint">' + escapeText(t("release.sourceDigestHint", {
         path: args.workbenchSavedPath || "system.mmd"
       }, "source " + (args.workbenchSavedPath || "system.mmd") + " · digests are derived from generated and exported project content")) + '</div></div>',
@@ -922,7 +922,7 @@ export function renderReleaseGatePanel(args: {
       escapeText(args.lastDryRunId ? t("common.captured", undefined, "captured") : t("common.missing", undefined, "missing")) +
       '</span></div><strong>' + escapeText(args.lastDryRunId || t("release.noDryRunYet", undefined, "No dry-run has been launched from this Studio session yet.")) +
       '</strong><div class="hint">' + escapeText(t("release.dryRunHint", undefined, "Debug mode remains inside Build and does not change runtime execution semantics.")) + '</div></div>',
-    '<div class="event"><div class="event-top"><span>' + escapeText(t("release.exportArtifact", undefined, "export artifact")) + '</span><span>single-project-v1</span></div><strong>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("release.exportArtifact", undefined, "export artifact")) + '</span><span>team-v2</span></div><strong>' +
       escapeText(t("release.exportBoundary", undefined, "Export excludes .ogs/runs, logs, timeline, checkpoints, and review artifacts.")) +
       '</strong><div class="hint">' + escapeText(t("release.exportTraceability", undefined, "Traceability is anchored to source project metadata, system.mmd, role packages, bindings, and model/profile config.")) + '</div></div>',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.gate", undefined, "release gate")) + '</span><span>' + escapeText(canExport ? t("common.ready", undefined, "ready") : t("common.blocked", undefined, "blocked")) + '</span></div><strong>' + escapeText(canExport ? t("release.exportReadyNow", undefined, "Export can proceed with the current saved source.") : t("release.exportBlockedNow", undefined, "Export is still blocked by unsaved source, diagnostics, or readiness issues.")) + '</strong><div class="hint">' + escapeText(t("release.exportDecisionHint", undefined, "This panel keeps the final export decision anchored to saved graph source and release evidence.")) + '</div></div>',

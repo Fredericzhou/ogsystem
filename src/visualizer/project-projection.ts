@@ -886,10 +886,10 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
   }
   const generatedAt = new Date().toISOString();
   return {
-    mode: "single-project-v1",
+    mode: "team-v2",
     releaseManifest: {
       manifestVersion: 1,
-      packageMode: "single-project-v1",
+      packageMode: "team-v2",
       generatedAt,
       projectId: asString(projectRecord?.projectId),
       systemPath: "system.mmd",
@@ -939,8 +939,8 @@ export async function loadTeamPackage(args: {
 }): Promise<Record<string, unknown>> {
   const record = asRecord(args.bundle);
   const team = asRecord(record?.team);
-  if (record?.mode !== "single-project-v1" || !team) {
-    throw new Error("Unsupported project package format; expected mode=single-project-v1.");
+  if (record?.mode !== "team-v2" || !team) {
+    throw new Error("PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected mode=team-v2.");
   }
   const systemSource = asString(team.systemSource);
   if (!systemSource) {
@@ -1009,7 +1009,7 @@ export async function loadTeamPackage(args: {
   if (validation.ok !== true) {
     return {
       workdir: args.workdir,
-      mode: "single-project-v1",
+      mode: "team-v2",
       loadedFiles,
       validation,
       followUpActions: [{
@@ -1021,7 +1021,7 @@ export async function loadTeamPackage(args: {
   invalidateProjectProjectionCache(args.workdir);
   return {
     workdir: args.workdir,
-    mode: "single-project-v1",
+    mode: "team-v2",
     loadedFiles,
     validation,
     followUpActions: [
@@ -1121,7 +1121,7 @@ export async function createProjectVisualization(args: {
       projectId,
       projectName,
       templateId,
-    mode: "single-project-v1",
+      mode: "team-v2",
       runCount: index.runs.length,
       modelCatalogPath: modelSyncResult.catalogPath,
       modelSelectionPath: modelSyncResult.selectionPath,

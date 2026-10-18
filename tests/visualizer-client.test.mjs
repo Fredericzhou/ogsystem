@@ -1968,7 +1968,7 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/ogs/workspace/export" && method === "POST") {
         return createResponse({
-          mode: "single-project-v1",
+          mode: "team-v2",
           project: {
             systemPath: "system.mmd",
             systemSource: "flowchart TD",

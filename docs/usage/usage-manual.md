@@ -434,7 +434,7 @@ Visualizer 的 Run 页面默认显示“流转”：按实际执行顺序查看�
 
 “运维”页先显示运维摘要，再显示当前运行的失败概览、恢复就绪状态和评审队列。失败详情、根因检查、运行健康、近期失败明细、恢复诊断、评审详情，以及“日志与产物”均默认折叠，按需展开。桌面会按可用宽度分栏，窄屏自动改为单列。输入与执行明细来自脱敏后的 conversation 投影；未采集到的上游输入会明确标为不可用，不会用推测内容填充。
 
-Release 页面将角色契约和输出 schema 标为必配，将 Flow contract 覆盖按 `handoff.mode` 区分：不设置模式时是选配且不强制校验；`transition` 需要配置契约包，未覆盖的交接作为 readiness warning；`strict` 要求每条适用交接都有契约，缺口会阻断发布。源码未保存、校验失败、其他 readiness blockers、未解析绑定或角色包不完整仍会阻止候选导出。导出的 `single-project-v1` 不包含 `.ogs/runs`、日志、checkpoint 或审核运行产物。
+Release 页面将角色契约和输出 schema 标为必配，将 Flow contract 覆盖按 `handoff.mode` 区分：不设置模式时是选配且不强制校验；`transition` 需要配置契约包，未覆盖的交接作为 readiness warning；`strict` 要求每条适用交接都有契约，缺口会阻断发布。源码未保存、校验失败、其他 readiness blockers、未解析绑定或角色包不完整仍会阻止候选导出。团队导出使用 `team-v2`，协作项目导出使用 `project-v2`；两者都不包含 `.ogs/runs`、日志、checkpoint 或审核运行产物。
 
 ## 1. Runtime Status
 

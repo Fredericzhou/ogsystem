@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,22 +10,14 @@ const systemSource = await readFile(new URL("../../../examples/target-model-bind
 
 function bundle(executableFiles = [], extraTeam = {}) {
   return {
-    mode: "single-project-v1",
+    mode: "team-v2",
     team: { systemSource, executableFiles, ...extraTeam }
   };
 }
 
-function withPackageDigest(value) {
+function withoutPackageDigest(value) {
   const { packageDigest: _packageDigest, ...withoutDigest } = value;
-  const digestPayload = { ...withoutDigest };
-  if (digestPayload.team && typeof digestPayload.team === "object") {
-    const { project: _project, ...teamWithoutIdentity } = digestPayload.team;
-    digestPayload.team = teamWithoutIdentity;
-  }
-  const payload = digestPayload.releaseManifest && typeof digestPayload.releaseManifest === "object"
-    ? { ...digestPayload, releaseManifest: { ...digestPayload.releaseManifest, generatedAt: null } }
-    : digestPayload;
-  return { ...withoutDigest, packageDigest: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+  return withoutDigest;
 }
 
 async function createImportRoot() {
@@ -140,21 +131,21 @@ test("identical team cores remain distinct imports while preserving the same tea
     await store.confirmProjectTeam(source.projectId, { release: true });
     const exported = await store.exportProjectTeam(source.projectId);
     await assert.rejects(
-      () => store.importTeamPackage(withPackageDigest({ ...exported, teamCoreDigest: "0".repeat(64) })),
+      () => store.importTeamPackage({ ...withoutPackageDigest(exported), teamCoreDigest: "0".repeat(64) }),
       /TEAM_IMPORT_DIGEST_MISMATCH/
     );
     await assert.rejects(
       () => store.importTeamPackage({ ...exported, team: { ...exported.team, systemSource: `${exported.team.systemSource}\n tampered` } }),
       /TEAM_IMPORT_DIGEST_MISMATCH/
     );
-    const importedA = await store.importTeamPackage(withPackageDigest({
-      ...exported,
+    const importedA = await store.importTeamPackage({
+      ...withoutPackageDigest(exported),
       team: { ...exported.team, project: { ...exported.team.project, name: "Digest Import A" } }
-    }));
-    const importedB = await store.importTeamPackage(withPackageDigest({
-      ...exported,
+    });
+    const importedB = await store.importTeamPackage({
+      ...withoutPackageDigest(exported),
       team: { ...exported.team, project: { ...exported.team.project, name: "Digest Import B" } }
-    }));
+    });
     const confirmedA = await store.confirmProjectTeam(importedA.projectId, { release: true });
     const confirmedB = await store.confirmProjectTeam(importedB.projectId, { release: true });
 
@@ -165,7 +156,7 @@ test("identical team cores remain distinct imports while preserving the same tea
   }
 });
 
-test("packageDigest is stable for the same project package and changes with run history without changing projectDefinitionDigest", async () => {
+test("packageDigest is stable across run history without changing projectDefinitionDigest", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-digest-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import(`../project-repository.mjs?package-digest=${Date.now()}`);
@@ -194,7 +185,7 @@ test("packageDigest is stable for the same project package and changes with run 
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     const afterRun = await store.exportProjectBundle(project.projectId);
-    assert.notEqual(afterRun.packageDigest, first.packageDigest);
+    assert.equal(afterRun.packageDigest, first.packageDigest);
     assert.equal(afterRun.project.projectDefinitionDigest, first.project.projectDefinitionDigest);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });

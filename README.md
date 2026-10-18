@@ -26,9 +26,10 @@ Product boundaries:
 - Collaboration project: a separate working space with one work directory, shared resources,
   one or more released team versions, task inputs, and run history. A project is not a team draft.
 
-The Product Site portable team package format is `single-project-v1`; it contains a static team
-definition and excludes framework code, credentials, model catalogs, and execution artifacts. The
-stable framework paths are `.ogs/`, `og-roles/`, `system.mmd`, and `.ogs/runs/`.
+The Product Site portable team package format is `team-v2`; it contains a static released team
+definition and excludes framework code, credentials, model catalogs, and execution artifacts.
+Collaboration project exports use `project-v2` and embed their released `team-v2` dependencies.
+The stable framework paths are `.ogs/`, `og-roles/`, `system.mmd`, and `.ogs/runs/`.
 
 Product usage:
 

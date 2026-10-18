@@ -176,8 +176,9 @@ test("confirmed projects round-trip through the project bundle and retry as a ne
       /IDEMPOTENCY_KEY_REUSE/
     );
     const bundle = await store.exportProjectTeam(project.projectId);
-    assert.equal(bundle.mode, "single-project-v1");
-    const imported = await store.importTeamPackage({ ...bundle, team: { ...bundle.team, project: { ...bundle.team.project, name: "Roundtrip Team Imported" } } });
+    assert.equal(bundle.mode, "team-v2");
+    const { packageDigest: _roundtripDigest, ...roundtripWithoutDigest } = bundle;
+    const imported = await store.importTeamPackage({ ...roundtripWithoutDigest, team: { ...bundle.team, project: { ...bundle.team.project, name: "Roundtrip Team Imported" } } });
     assert.equal(imported.projectStatus, "draft");
     assert.equal(imported.source, "imported");
     await assert.rejects(() => store.startProjectRun(imported.projectId, { prompt: "blocked" }), /PROJECT_NOT_CONFIRMED/);
@@ -219,7 +220,8 @@ test("project bundles carry executable role and contract assets without importin
     assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/models.json"));
     assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/systems/nested.mmd"));
     assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/subsystems/child.json"));
-    const imported = await store.importTeamPackage({ ...bundle, team: { ...bundle.team, project: { ...bundle.team.project, name: "Executable Team Imported" } } });
+    const { packageDigest: _assetsDigest, ...assetsWithoutDigest } = bundle;
+    const imported = await store.importTeamPackage({ ...assetsWithoutDigest, team: { ...bundle.team, project: { ...bundle.team.project, name: "Executable Team Imported" } } });
     assert.notEqual(imported.projectId, project.projectId);
     assert.equal(JSON.parse(await readFile(join(imported.workdir, ".ogs", "project.json"), "utf8")).projectId, imported.ogsProjectId);
     assert.equal(await readFile(join(imported.workdir, "og-roles", "roles", "package-role", "prompt.md"), "utf8"), "Discuss token budgets.");
@@ -288,7 +290,7 @@ test("project asset digest detects role package changes and credential validatio
       /PROJECT_CONFIRMATION_STALE/
     );
     const bundle = {
-      mode: "single-project-v1",
+      mode: "team-v2",
       team: {
         systemSource: await readFile(join(project.workdir, "system.mmd"), "utf8"),
         project: { name: "Imported", overview: "Discuss token budgets and password policy." }

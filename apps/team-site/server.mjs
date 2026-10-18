@@ -424,9 +424,7 @@ const server = createServer(async (request, response) => {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
       const { conflictStrategy, ...bundle } = payload || {};
-      const imported = bundle.mode === "project-v1"
-        ? await importProjectBundle(bundle, { conflictStrategy: conflictStrategy || "reject" })
-        : await importTeamPackage(bundle, { conflictStrategy: conflictStrategy || "reject" });
+      const imported = await importTeamPackage(bundle, { conflictStrategy: conflictStrategy || "reject" });
       sendJson(response, 201, publicProject(imported));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to import project." });
@@ -436,7 +434,7 @@ const server = createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/v1/team-packages/preview") {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
-      sendJson(response, 200, payload?.mode === "project-v1" ? await previewProjectBundle(payload) : await previewTeamPackage(payload));
+      sendJson(response, 200, await previewTeamPackage(payload));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to preview package." });
     }

@@ -41,7 +41,7 @@ test("collaboration project creation, batch materials, export, and async run res
     assert.ok(materials.every((item) => item.path.startsWith("workspace/files/")));
 
     const bundle = await store.exportProjectBundle(project.projectId);
-    assert.equal(bundle.mode, "project-v1");
+    assert.equal(bundle.mode, "project-v2");
     assert.equal(bundle.project.materials.length, 2);
     assert.equal(typeof bundle.project.projectDefinitionDigest, "string");
     assert.equal(bundle.packageDigest.length, 64);

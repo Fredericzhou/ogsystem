@@ -7670,8 +7670,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         anchor.click();
         URL.revokeObjectURL(anchor.href);
         setFlash("success", t("release.exportGenerated", {
-          mode: payload.mode || "single-project-v1"
-        }, "Release candidate export generated (" + (payload.mode || "single-project-v1") + "). It excludes runtime artifacts."));
+          mode: payload.mode || "team-v2"
+        }, "Release candidate export generated (" + (payload.mode || "team-v2") + "). It excludes runtime artifacts."));
       });
     }
 

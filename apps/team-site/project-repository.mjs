@@ -35,6 +35,8 @@ import { ACTIVE_RUN_STATUSES, assertLatestProjectOverview } from "./domain/contr
 const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const stagingRoot = resolve(projectsRoot, ".staging");
 const allowedExtensions = new Set([".md", ".txt", ".json", ".yaml", ".yml", ".csv"]);
+const TEAM_PACKAGE_MODE = "team-v2";
+const PROJECT_PACKAGE_MODE = "project-v2";
 const activeTaskWorkers = new Map();
 const activeProjectCreations = new Set();
 
@@ -179,10 +181,19 @@ function builtInTeamCoreDigest(caseSpec) {
 
 function projectDefinitionPayload(project) {
   return {
+    name: String(project.name || ""),
     overview: project.overview,
-    workspaceKey: project.workspaceKey || null,
-    mountedTeams: (project.mountedTeams || []).map(({ mountedAt, status, ...team }) => team),
-    materials: (project.materials?.materials || []).map(({ content, ...item }) => item)
+    mountedTeams: (project.mountedTeams || []).map((team) => ({
+      teamName: String(team.teamName || team.name || ""),
+      teamVersionNumber: Number(team.teamVersionNumber || 1),
+      teamCoreDigest: team.teamCoreDigest || null,
+      builtIn: Boolean(team.builtIn)
+    })),
+    materials: (project.materials?.materials || []).map((item) => ({
+      filename: String(item.filename || ""),
+      contentType: String(item.contentType || "text/plain"),
+      contentHash: item.contentHash || (typeof item.content === "string" ? createHash("sha256").update(item.content).digest("hex") : null)
+    })).sort((left, right) => left.filename.localeCompare(right.filename))
   };
 }
 
@@ -191,15 +202,18 @@ function computeProjectDefinitionDigest(project) {
 }
 
 function packageDigestPayload(bundle) {
-  const { packageDigest: _packageDigest, ...withoutDigest } = bundle || {};
-  if (withoutDigest.team && typeof withoutDigest.team === "object") {
-    const { project: _project, ...teamWithoutIdentity } = withoutDigest.team;
-    withoutDigest.team = teamWithoutIdentity;
-  }
-  if (withoutDigest.releaseManifest && typeof withoutDigest.releaseManifest === "object") {
-    withoutDigest.releaseManifest = { ...withoutDigest.releaseManifest, generatedAt: null };
-  }
-  return withoutDigest;
+  const identityFields = new Set([
+    "packageDigest", "generatedAt", "projectId", "teamId", "teamRootId", "teamVersionId",
+    "mountedAt", "workspaceKey", "source", "runId", "taskId", "requestFingerprint", "taskRecords", "runs"
+  ]);
+  const canonicalize = (value) => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !identityFields.has(key))
+      .map(([key, child]) => [key, canonicalize(child)]));
+  };
+  return canonicalize(bundle || {});
 }
 
 function computePackageDigest(bundle) {
@@ -311,31 +325,24 @@ export async function listProjects() {
   return projects.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
-export async function createProject({ name, overview, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
-  await mkdir(projectsRoot, { recursive: true });
-  const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
+async function createProjectAt(workdir, { projectId, name, overview, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamRootId, teamVersionId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
   const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
   const resolvedTeamName = String(teamName || normalizedName).trim().slice(0, 120) || normalizedName;
   const isTeamAsset = source !== "collaboration-project" && source !== "workspace";
-  if (isTeamAsset) await assertTeamNameAvailable(resolvedTeamName, { teamRootId: teamId || undefined });
-  const workdir = projectPath(projectId);
-  const stagingWorkdir = join(stagingRoot, projectId);
-  activeProjectCreations.add(stagingWorkdir);
-  try {
-    await mkdir(stagingWorkdir, { recursive: true });
-    const created = await createProjectVisualization({
-      currentWorkdir: stagingWorkdir,
-      projectName: slug(name),
-      templateId: templateId === "minimal" ? "minimal" : "empty",
-      conflictStrategy: "reject"
-    });
-    const now = new Date().toISOString();
-    await writeJson(join(stagingWorkdir, ".site", "project.json"), {
+  await mkdir(workdir, { recursive: true });
+  const created = await createProjectVisualization({
+    currentWorkdir: workdir,
+    projectName: slug(name),
+    templateId: templateId === "minimal" ? "minimal" : "empty",
+    conflictStrategy: "reject"
+  });
+  const now = new Date().toISOString();
+  const metadata = {
       projectId,
       name: normalizedName,
       teamName: resolvedTeamName,
-      teamId: teamId || projectId,
-      teamVersionId: projectId,
+      teamId: teamId || (isTeamAsset ? projectId : undefined),
+      teamVersionId: teamVersionId || (isTeamAsset ? projectId : undefined),
       teamVersionNumber,
       teamVersionStatus: "draft",
       ...(parentTeamVersionId ? { parentTeamVersionId } : {}),
@@ -348,12 +355,28 @@ export async function createProject({ name, overview, templateId = "empty", case
       updatedAt: now,
       ogsProjectId: created.projectId,
       source,
-      ...(isTeamAsset ? { teamRootId: teamId || projectId } : {}),
+      ...(isTeamAsset ? { teamRootId: teamRootId || teamId || projectId } : {}),
       ...(caseId ? { caseId } : {})
-    });
-    await writeJson(join(stagingWorkdir, "workspace", "index.json"), { version: 1, materials: [] });
-    await writeTeamReferenceFiles(stagingWorkdir, await readJson(join(stagingWorkdir, ".site", "project.json"), {}));
-    if (caseId) await materializeCaseTeam(caseId, stagingWorkdir, locale === "en" ? "en" : "zh-CN");
+    };
+  await writeJson(join(workdir, ".site", "project.json"), metadata);
+  await writeJson(join(workdir, "workspace", "index.json"), { version: 1, materials: [] });
+  await writeTeamReferenceFiles(workdir, metadata);
+  if (caseId) await materializeCaseTeam(caseId, workdir, locale === "en" ? "en" : "zh-CN");
+  return { projectId, workdir };
+}
+
+export async function createProject({ name, overview, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
+  await mkdir(projectsRoot, { recursive: true });
+  const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
+  const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
+  const resolvedTeamName = String(teamName || normalizedName).trim().slice(0, 120) || normalizedName;
+  const isTeamAsset = source !== "collaboration-project" && source !== "workspace";
+  if (isTeamAsset) await assertTeamNameAvailable(resolvedTeamName, { teamRootId: teamId || undefined });
+  const workdir = projectPath(projectId);
+  const stagingWorkdir = join(stagingRoot, projectId);
+  activeProjectCreations.add(stagingWorkdir);
+  try {
+    await createProjectAt(stagingWorkdir, { projectId, name: normalizedName, overview, templateId, caseId, source, locale, teamId, teamName, teamVersionNumber, parentTeamVersionId });
     await rename(stagingWorkdir, workdir);
     return readProject(projectId);
   } catch (error) {
@@ -1605,15 +1628,80 @@ export async function exportProjectTeam(projectId) {
   const project = await readProject(projectId);
   const bundle = await exportTeamPackage(project.workdir);
   const exported = {
-    mode: "single-project-v1",
-    releaseManifest: bundle.releaseManifest,
-    teamCoreDigest: bundle.teamCoreDigest || await computeTeamCoreDigest(project.workdir),
+    ...bundle,
     team: {
-      ...(bundle.team || {}),
-      project: { name: project.name, overview: project.overview, source: "exported" }
-    }
+      ...bundle.team,
+      project: {
+        ...(bundle.team?.project || {}),
+        name: project.teamName || project.name,
+        teamName: project.teamName || project.name,
+        overview: project.overview,
+        teamVersionStatus: project.teamVersionStatus,
+        teamVersionNumber: project.teamVersionNumber,
+        projectId: project.projectId,
+        teamRootId: project.teamRootId || project.teamId || project.projectId,
+        teamVersionId: project.teamVersionId || project.projectId
+      }
+    },
+    teamCoreDigest: bundle.teamCoreDigest || await computeTeamCoreDigest(project.workdir)
   };
   return { ...exported, packageDigest: computePackageDigest(exported) };
+}
+
+async function exportMountedTeamPackage(project, mountedTeam) {
+  const teamVersionId = String(mountedTeam.teamVersionId || "");
+  let teamPackage;
+  let team;
+  if (teamVersionId.startsWith("case:")) {
+    const caseId = teamVersionId.slice(5);
+    if (!getCase(caseId)) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
+    await mkdir(stagingRoot, { recursive: true });
+    const temporaryTeamRoot = await mkdtemp(join(stagingRoot, "export-team-"));
+    try {
+      await materializeCaseTeam(caseId, temporaryTeamRoot, "zh-CN");
+      teamPackage = await exportTeamPackage(temporaryTeamRoot);
+      team = await readJson(join(temporaryTeamRoot, ".site", "project.json"), {});
+    } finally {
+      await rm(temporaryTeamRoot, { recursive: true, force: true });
+    }
+  } else {
+    team = await readProject(teamVersionId);
+    if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be exported.");
+    teamPackage = await exportTeamPackage(team.workdir);
+  }
+  teamPackage = {
+    ...teamPackage,
+    team: {
+      ...teamPackage.team,
+      project: {
+        ...(teamPackage.team?.project || {}),
+        name: team.teamName || team.name,
+        teamName: team.teamName || team.name,
+        overview: team.overview,
+        teamVersionStatus: team.teamVersionStatus || "released",
+        teamVersionNumber: team.teamVersionNumber || mountedTeam.teamVersionNumber || 1,
+        projectId: team.projectId || teamVersionId,
+        teamRootId: team.teamRootId || team.teamId || teamVersionId,
+        teamVersionId: team.teamVersionId || teamVersionId
+      }
+    }
+  };
+  const teamCoreDigest = mountedTeam.teamCoreDigest || team.teamCoreDigest || createHash("sha256").update(JSON.stringify(teamCorePayload(teamPackage))).digest("hex");
+  return {
+    teamVersionId,
+    teamRootId: team.teamRootId || team.teamId || teamVersionId,
+    teamVersionNumber: team.teamVersionNumber || mountedTeam.teamVersionNumber || 1,
+    teamName: team.teamName || team.name || mountedTeam.teamName,
+    teamCoreDigest,
+    builtIn: Boolean(mountedTeam.builtIn),
+    source: {
+      sourceWorkspaceId: String(process.env.OGS_WORKSPACE_ID || "team-site-local"),
+      sourceProjectId: team.projectId || teamVersionId,
+      sourceTeamRootId: team.teamRootId || team.teamId || teamVersionId,
+      sourceTeamVersionId: team.teamVersionId || teamVersionId
+    },
+    teamPackage
+  };
 }
 
 export async function exportProjectBundle(projectId) {
@@ -1623,9 +1711,17 @@ export async function exportProjectBundle(projectId) {
     const content = await readFile(resolve(project.workdir, item.path), "utf8").catch(() => "");
     materials.push({ ...item, content });
   }
-  const taskRecords = (project.taskRecords || []).filter((task) => !task.deletedAt).map(({ requestFingerprint, ...task }) => task);
+  const mountedTeams = [];
+  const seenTeamVersions = new Set();
+  for (const mountedTeam of project.mountedTeams || []) {
+    const teamVersionId = String(mountedTeam.teamVersionId || "");
+    if (seenTeamVersions.has(teamVersionId)) continue;
+    seenTeamVersions.add(teamVersionId);
+    mountedTeams.push(await exportMountedTeamPackage(project, mountedTeam));
+  }
   const projectDefinitionDigest = computeProjectDefinitionDigest({
     ...project,
+    mountedTeams,
     materials: {
       version: 1,
       materials: materials.map(({ content, ...item }) => ({
@@ -1635,24 +1731,42 @@ export async function exportProjectBundle(projectId) {
     }
   });
   const bundle = {
-    mode: "project-v1",
+    mode: PROJECT_PACKAGE_MODE,
+    packageVersion: 2,
+    source: {
+      sourceWorkspaceId: String(process.env.OGS_WORKSPACE_ID || "team-site-local"),
+      sourceProjectId: project.projectId
+    },
     project: {
       name: project.name,
       overview: project.overview,
-      workspaceKey: project.workspaceKey || null,
       projectDefinitionDigest,
-      mountedTeams: project.mountedTeams || [],
-      materials,
-      taskRecords,
-      runs: (project.runs || []).map((run) => ({ runId: run.runId, status: run.status, updatedAt: run.updatedAt, outputSummary: run.outputSummary || "" }))
+      mountedTeams,
+      materials
+    },
+    projectSummary: {
+      name: project.name,
+      overview: project.overview,
+      teamCount: mountedTeams.length,
+      materialCount: materials.length,
+      projectDefinitionDigest
+    },
+    packageSummary: {
+      mode: PROJECT_PACKAGE_MODE,
+      teamCount: mountedTeams.length,
+      materialCount: materials.length,
+      projectDefinitionDigest
     }
   };
   return { ...bundle, packageDigest: computePackageDigest(bundle) };
 }
 
 async function validateTeamPackage(bundle) {
-  if (!bundle || bundle.mode !== "single-project-v1" || !bundle.team || typeof bundle.team.systemSource !== "string") {
-    throw new Error("Unsupported project package format; expected mode=single-project-v1.");
+  if (!bundle || bundle.mode !== TEAM_PACKAGE_MODE) {
+    throw new Error(`PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected mode=${TEAM_PACKAGE_MODE}.`);
+  }
+  if (!bundle.team || typeof bundle.team.systemSource !== "string") {
+    throw new Error("TEAM_IMPORT_INVALID: team package is missing systemSource.");
   }
   const manifestPaths = bundle.releaseManifest?.artifactScope || bundle.team.releaseManifest?.artifactScope || [];
   if (!Array.isArray(manifestPaths) || manifestPaths.some((path) => {
@@ -1691,8 +1805,9 @@ async function validateTeamPackage(bundle) {
   };
 }
 
-function validateProjectBundle(bundle) {
-  if (!bundle || bundle.mode !== "project-v1" || !bundle.project || typeof bundle.project !== "object") throw new Error("Unsupported project package format; expected mode=project-v1.");
+async function validateProjectBundle(bundle) {
+  if (!bundle || bundle.mode !== PROJECT_PACKAGE_MODE) throw new Error(`PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected mode=${PROJECT_PACKAGE_MODE}.`);
+  if (!bundle.project || typeof bundle.project !== "object") throw new Error("PROJECT_IMPORT_INVALID: project package is missing project contents.");
   if (bundle.packageDigest && bundle.packageDigest !== computePackageDigest(bundle)) throw new Error("PROJECT_IMPORT_DIGEST_MISMATCH: packageDigest does not match package contents.");
   const materials = Array.isArray(bundle.project.materials) ? bundle.project.materials : [];
   if (materials.length > 200) throw new Error("PROJECT_IMPORT_INVALID: project package contains too many materials.");
@@ -1705,7 +1820,16 @@ function validateProjectBundle(bundle) {
   }
   if (totalSize > 8 * 1024 * 1024) throw new Error("PROJECT_IMPORT_INVALID: material content exceeds the package limit.");
   if (!Array.isArray(bundle.project.mountedTeams)) throw new Error("PROJECT_IMPORT_INVALID: mountedTeams must be an array.");
-  const project = { ...bundle.project, materials };
+  const mountedTeams = [];
+  for (const mountedTeam of bundle.project.mountedTeams) {
+    if (!mountedTeam || typeof mountedTeam !== "object" || !mountedTeam.teamPackage) throw new Error("PROJECT_IMPORT_INVALID: mounted team package is missing.");
+    const checkedTeam = await validateTeamPackage(mountedTeam.teamPackage);
+    if (mountedTeam.teamCoreDigest && mountedTeam.teamCoreDigest !== checkedTeam.teamCoreDigest) throw new Error("PROJECT_IMPORT_DIGEST_MISMATCH: teamCoreDigest does not match nested team contents.");
+    const teamMeta = checkedTeam.bundle.team?.project || {};
+    if (teamMeta.teamVersionStatus && teamMeta.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only released team versions can be mounted.");
+    mountedTeams.push({ ...mountedTeam, teamCoreDigest: checkedTeam.teamCoreDigest, teamPackage: checkedTeam.bundle });
+  }
+  const project = { ...bundle.project, mountedTeams, materials };
   const expectedDefinitionDigest = computeProjectDefinitionDigest({
     ...project,
     materials: {
@@ -1738,14 +1862,13 @@ function uniqueImportedName(name, existing, prefix = "Imported", scope = "projec
 }
 
 export async function previewTeamPackage(bundle) {
-  if (bundle?.mode === "project-v1") return previewProjectBundle(bundle);
   const checked = await validateTeamPackage(bundle);
   const teams = await listTeamRepository();
   const metadataName = String(checked.metadata.name || "Imported team").trim() || "Imported team";
   const duplicate = teams.find((team) => team.teamCoreDigest === checked.teamCoreDigest);
   const nameConflict = teams.find((team) => String(team.teamName || team.name).trim().toLocaleLowerCase() === metadataName.toLocaleLowerCase() && team.teamCoreDigest !== checked.teamCoreDigest);
   return {
-    mode: "single-project-v1",
+    mode: TEAM_PACKAGE_MODE,
     packageDigest: checked.packageDigest,
     teamCoreDigest: checked.teamCoreDigest,
     name: metadataName,
@@ -1756,16 +1879,33 @@ export async function previewTeamPackage(bundle) {
 }
 
 export async function previewProjectBundle(bundle) {
-  const checked = validateProjectBundle(bundle);
+  const checked = await validateProjectBundle(bundle);
   const projects = (await listProjects()).filter((project) => project.projectType === "collaboration");
+  const allProjects = await listProjects();
+  const teams = allProjects.filter((project) => !project.teamProjectId && project.projectType !== "collaboration");
   const projectName = String(checked.project.name || "Imported project").trim() || "Imported project";
   const duplicate = projects.find((project) => project.projectDefinitionDigest === checked.project.projectDefinitionDigest && checked.project.projectDefinitionDigest);
   const nameConflict = projects.find((project) => String(project.name).trim().toLocaleLowerCase() === projectName.toLocaleLowerCase() && project.projectId !== duplicate?.projectId);
+  const teamDependencies = checked.project.mountedTeams.map((dependency) => {
+    const match = teams.find((team) => team.teamCoreDigest === dependency.teamCoreDigest);
+    const sameName = teams.find((team) => String(team.teamName || team.name).trim().toLocaleLowerCase() === String(dependency.teamName || "").trim().toLocaleLowerCase());
+    return {
+      sourceTeamVersionId: dependency.teamVersionId || null,
+      teamCoreDigest: dependency.teamCoreDigest,
+      name: dependency.teamName,
+      sameDigestVersion: match ? { teamVersionId: match.teamVersionId || match.projectId, name: match.teamName || match.name } : null,
+      nameConflict: sameName && sameName.teamCoreDigest !== dependency.teamCoreDigest ? { teamVersionId: sameName.teamVersionId || sameName.projectId, name: sameName.teamName || sameName.name } : null,
+      action: match ? "reuse" : "create-new"
+    };
+  });
   return {
-    mode: "project-v1",
+    mode: PROJECT_PACKAGE_MODE,
     project: checked.project,
     packageDigest: checked.packageDigest,
     projectDefinitionDigest: checked.project.projectDefinitionDigest || null,
+    teamDependencies,
+    missingItems: teamDependencies.filter((dependency) => !dependency.sameDigestVersion).map((dependency) => dependency.name),
+    idMappingPlan: teamDependencies.map((dependency) => ({ sourceTeamVersionId: dependency.sourceTeamVersionId, action: dependency.action })),
     name: projectName,
     duplicate: duplicate ? { projectId: duplicate.projectId, name: duplicate.name } : null,
     conflicts: nameConflict ? [{ type: "name", projectId: nameConflict.projectId, name: nameConflict.name }] : [],
@@ -1783,12 +1923,12 @@ export async function importTeamPackage(bundle, { conflictStrategy = "create-new
     }
     if (strategy === "reject") {
       if (preview.duplicate.name?.trim().toLocaleLowerCase() === preview.name.trim().toLocaleLowerCase()) throw new Error("TEAM_NAME_EXISTS: an identical team version already exists.");
-      throw new Error("TEAM_IMPORT_CONFLICT: an identical team version already exists.");
+      throw new Error("TEAM_NAME_EXISTS: an identical team version already exists.");
     }
   }
   if (preview.conflicts.length && strategy === "reject") throw new Error("TEAM_IMPORT_CONFLICT: the imported team name is already in use.");
-  if (!bundle || bundle.mode !== "single-project-v1" || !bundle.team || typeof bundle.team.systemSource !== "string") {
-    throw new Error("Unsupported project package format; expected mode=single-project-v1.");
+  if (!bundle || bundle.mode !== TEAM_PACKAGE_MODE || !bundle.team || typeof bundle.team.systemSource !== "string") {
+    throw new Error(`PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected mode=${TEAM_PACKAGE_MODE}.`);
   }
   const manifestPaths = bundle.releaseManifest?.artifactScope || bundle.team.releaseManifest?.artifactScope || [];
   if (!Array.isArray(manifestPaths) || manifestPaths.some((path) => {
@@ -1850,6 +1990,72 @@ export async function importTeamPackage(bundle, { conflictStrategy = "create-new
   }
 }
 
+async function stageImportedTeamPackage(transactionRoot, bundle, name) {
+  const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
+  const teamRootId = `team-${randomUUID().slice(0, 12)}`;
+  const workdir = join(transactionRoot, "teams", projectId);
+  await createProjectAt(workdir, {
+    projectId,
+    name,
+    teamName: name,
+    overview: bundle.team?.project?.overview || "",
+    source: "imported",
+    teamId: teamRootId,
+    teamRootId,
+    teamVersionId: projectId
+  });
+  const loaded = await loadTeamPackage({ workdir, bundle });
+  if (loaded.validation?.ok === false) throw new Error("PROJECT_IMPORT_INVALID: imported Mermaid system failed validation.");
+  const now = new Date().toISOString();
+  const teamCoreDigest = createHash("sha256").update(JSON.stringify(teamCorePayload(bundle))).digest("hex");
+  const current = await readJson(join(workdir, ".site", "project.json"), {});
+  const next = {
+    ...current,
+    name,
+    teamName: name,
+    projectType: "team",
+    teamId: teamRootId,
+    teamRootId,
+    teamVersionId: projectId,
+    teamVersionStatus: "released",
+    projectStatus: "confirmed",
+    projectDigest: await computeProjectAssetDigest(workdir),
+    teamCoreDigest,
+    confirmedAt: now,
+    releasedAt: now,
+    source: "imported",
+    updatedAt: now
+  };
+  await writeJson(join(workdir, ".site", "project.json"), next);
+  await writeTeamReferenceFiles(workdir, next);
+  return { projectId, workdir, teamRootId, teamVersionNumber: 1, teamName: name, teamCoreDigest };
+}
+
+async function stageProjectMaterials(workdir, materials = []) {
+  const entries = [];
+  const batchId = randomUUID();
+  const root = resolve(workdir, "workspace", "files", batchId);
+  for (const material of materials) {
+    const filename = normalizeMaterialPath(material.filename);
+    const target = resolve(root, filename);
+    await mkdir(resolve(target, ".."), { recursive: true });
+    await writeFile(target, material.content, "utf8");
+    entries.push({
+      materialId: slug(filename.replaceAll("/", "-").slice(0, -extname(filename).length)) + "-" + randomUUID().slice(0, 6),
+      filename,
+      path: `workspace/files/${batchId}/${filename}`,
+      contentType: material.contentType || "text/plain",
+      size: Buffer.byteLength(material.content),
+      contentHash: createHash("sha256").update(material.content).digest("hex"),
+      status: "indexed",
+      createdAt: new Date().toISOString()
+    });
+  }
+  const index = { version: 1, materials: entries };
+  await writeJson(join(workdir, "workspace", "index.json"), index);
+  return index;
+}
+
 export async function importProjectBundle(bundle, { conflictStrategy = "create-new" } = {}) {
   const preview = await previewProjectBundle(bundle);
   const strategy = ["reject", "reuse", "create-new"].includes(conflictStrategy) ? conflictStrategy : "reject";
@@ -1861,21 +2067,87 @@ export async function importProjectBundle(bundle, { conflictStrategy = "create-n
   const existing = await listProjects();
   const projectName = strategy === "create-new" ? uniqueImportedName(preview.name, existing, "Imported project", "project") : preview.name;
   const source = preview.project;
-  const project = await createCollaborationProject({
-    name: projectName,
-    overview: source.overview || "",
-    teamVersionIds: source.mountedTeams.map((team) => team.teamVersionId || team.teamId).filter(Boolean)
-  });
+  const transactionRoot = join(stagingRoot, `project-import-${randomUUID()}`);
+  const committed = [];
+  const stagedTeams = [];
   try {
-    if (source.materials.length) await addProjectMaterials(project.projectId, source.materials.map((material) => ({
-      filename: material.filename,
-      content: material.content,
-      contentType: material.contentType
-    })));
-    return getProject(project.projectId);
+    await mkdir(join(transactionRoot, "teams"), { recursive: true });
+    const existingTeams = existing.filter((item) => !item.teamProjectId && item.projectType !== "collaboration");
+    const stagedNames = [];
+    const mountedTeams = [];
+    for (const dependency of source.mountedTeams) {
+      const teamMeta = dependency.teamPackage.team?.project || {};
+      const sourceName = String(dependency.teamName || teamMeta.teamName || teamMeta.name || "Imported team").trim() || "Imported team";
+      const digestMatch = existingTeams.find((item) => item.teamCoreDigest === dependency.teamCoreDigest);
+      const nameMatch = existingTeams.find((item) => String(item.teamName || item.name).trim().toLocaleLowerCase() === sourceName.toLocaleLowerCase() && item.teamCoreDigest !== dependency.teamCoreDigest);
+      if (digestMatch && strategy === "reuse") {
+        mountedTeams.push({
+          teamId: digestMatch.teamId || digestMatch.teamRootId || digestMatch.projectId,
+          teamVersionId: digestMatch.teamVersionId || digestMatch.projectId,
+          teamVersionNumber: digestMatch.teamVersionNumber || dependency.teamVersionNumber || 1,
+          teamName: digestMatch.teamName || digestMatch.name || sourceName,
+          teamCoreDigest: dependency.teamCoreDigest,
+          status: "available",
+          source: dependency.source
+        });
+        continue;
+      }
+      if ((digestMatch || nameMatch) && strategy === "reject") {
+        throw new Error(digestMatch ? "TEAM_IMPORT_CONFLICT: an identical team version already exists." : "TEAM_NAME_EXISTS: an imported team name is already in use.");
+      }
+      const importedName = strategy === "create-new"
+        ? uniqueImportedName(sourceName, [...existingTeams, ...stagedNames.map((name) => ({ name, projectType: "team" }))], "Imported team", "team")
+        : sourceName;
+      stagedNames.push(importedName);
+      const stagedTeam = await stageImportedTeamPackage(transactionRoot, dependency.teamPackage, importedName);
+      stagedTeams.push(stagedTeam);
+      mountedTeams.push({
+        teamId: stagedTeam.teamRootId,
+        teamVersionId: stagedTeam.projectId,
+        teamVersionNumber: stagedTeam.teamVersionNumber,
+        teamName: stagedTeam.teamName,
+        teamCoreDigest: stagedTeam.teamCoreDigest,
+        status: "available",
+        source: dependency.source
+      });
+    }
+    const projectId = slug(projectName) + "-" + randomUUID().slice(0, 8);
+    const projectStage = join(transactionRoot, "project", projectId);
+    await createProjectAt(projectStage, {
+      projectId,
+      name: projectName,
+      overview: source.overview || "",
+      source: "collaboration-project"
+    });
+    const projectMeta = await readJson(join(projectStage, ".site", "project.json"), {});
+    const materialIndex = await stageProjectMaterials(projectStage, source.materials);
+    const nextProjectMeta = {
+      ...projectMeta,
+      projectType: "collaboration",
+      teamId: undefined,
+      teamVersionId: undefined,
+      teamName: undefined,
+      mountedTeams,
+      taskRecords: [],
+      workspaceKey: projectId,
+      projectDefinitionDigest: computeProjectDefinitionDigest({ ...projectMeta, projectType: "collaboration", name: projectName, overview: source.overview || "", mountedTeams, materials: materialIndex })
+    };
+    await writeJson(join(projectStage, ".site", "project.json"), nextProjectMeta);
+    const finalTargets = [...stagedTeams.map((team) => ({ source: team.workdir, target: projectPath(team.projectId) })), { source: projectStage, target: projectPath(projectId) }];
+    for (const target of finalTargets) {
+      if (await readJson(join(target.target, ".site", "project.json"))) throw new Error("PROJECT_IMPORT_CONFLICT: an imported target identity already exists.");
+    }
+    for (const target of finalTargets) {
+      await mkdir(resolve(target.target, ".."), { recursive: true });
+      await rename(target.source, target.target);
+      committed.push(target.target);
+    }
+    return readProject(projectId);
   } catch (error) {
-    await rm(project.workdir, { recursive: true, force: true }).catch(() => undefined);
+    for (const target of committed.reverse()) await rm(target, { recursive: true, force: true }).catch(() => undefined);
     throw new Error(`PROJECT_IMPORT_FAILED: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await rm(transactionRoot, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 

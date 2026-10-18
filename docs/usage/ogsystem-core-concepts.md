@@ -56,9 +56,10 @@ connectivity or credentials. Project readiness is a separate, read-only projecti
 execution blockers and warnings. Current project scheduling allows at most one task in preparation,
 execution, pause, or human-review state at a time.
 
-The portable team package format is `single-project-v1`. It contains the static team definition
+The portable team package format is `team-v2`. It contains the static released team definition
 and excludes framework code, credentials, model catalogs, `.ogs/runs`, logs, checkpoints, review
-records, and other execution history. The stable on-disk framework contracts remain `.ogs/`,
+records, and other execution history. Collaboration project packages use `project-v2` and embed
+their released `team-v2` dependencies. The stable on-disk framework contracts remain `.ogs/`,
 `og-roles/`, `system.mmd`, and `.ogs/runs/`.
 
 ## Role-first Graph Contract

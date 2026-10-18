@@ -731,7 +731,7 @@ test("client lifecycle state factory keeps Design Run Release active across expl
 });
 
 test("visualizer dto project views normalize the supported artifact mode", () => {
-  assert.equal(mapProjectTransferView({ mode: "unexpected", team: {} }).mode, "single-project-v1");
+  assert.equal(mapProjectTransferView({ mode: "unexpected", team: {} }).mode, "team-v2");
 });
 
 test("visualizer dto guards preserve finite numbers and booleans after helper consolidation", () => {

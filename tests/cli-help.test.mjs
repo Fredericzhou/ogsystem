@@ -50,10 +50,9 @@ test("ogs help command surfaces layered guidance", async () => {
 
   const compatibilityHelp = await runNodeCli(runtimeCliPath, ["help", "compatibility"]);
   assert.strictEqual(compatibilityHelp.code, 0);
-  assert.match(compatibilityHelp.stdout, /latest two minor lines of the current major release/);
-  assert.match(compatibilityHelp.stdout, /released; see the policy document/);
+  assert.match(compatibilityHelp.stdout, /current CLI input boundary/);
+  assert.match(compatibilityHelp.stdout, /No automatic compatibility handling or data migration is provided for older formats/);
   assert.match(compatibilityHelp.stdout, /future\/unknown config or schema versions/);
-  assert.match(compatibilityHelp.stdout, /replacement and planned removal release/);
   assert.match(compatibilityHelp.stdout, /docs\/development\/release-compatibility-policy\.md/);
 
   const doctorHelp = await runNodeCli(runtimeCliPath, ["doctor", "--help"]);

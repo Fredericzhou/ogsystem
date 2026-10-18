@@ -7,7 +7,7 @@ import {
 } from "./json-guards.js";
 import type { ControlPlanePrincipal } from "../runtime/identity.js";
 
-const SINGLE_PROJECT_V1_MODE = "single-project-v1";
+const TEAM_PACKAGE_MODE = "team-v2";
 
 function mapPrincipal(value: unknown): ControlPlanePrincipal | undefined {
   const record = asRecord(value);
@@ -88,7 +88,7 @@ export type WorkbenchSaveView = {
 };
 
 export type ProjectTransferView = {
-  mode: "single-project-v1";
+  mode: "team-v2";
   releaseManifest?: unknown;
   team: {
     systemPath: string;
@@ -106,7 +106,7 @@ export type ProjectTransferView = {
 
 export type ProjectLoadView = {
   workdir: string;
-  mode: "single-project-v1";
+  mode: "team-v2";
   loadedFiles: string[];
   validation: WorkbenchValidationView;
   followUpActions: FollowUpActionView[];
@@ -798,7 +798,7 @@ export function mapProjectTransferView(value: unknown): ProjectTransferView {
   const record = asRecord(value) ?? {};
   const project = asRecord(record.team) ?? {};
   return {
-    mode: SINGLE_PROJECT_V1_MODE,
+    mode: TEAM_PACKAGE_MODE,
     releaseManifest: record.releaseManifest,
     team: {
       systemPath: asString(project.systemPath) ?? "system.mmd",
@@ -822,7 +822,7 @@ export function mapProjectLoadView(value: unknown): ProjectLoadView {
     .filter((item): item is string => Boolean(item)) ?? [];
   return {
     workdir: asString(record.workdir) ?? "",
-    mode: SINGLE_PROJECT_V1_MODE,
+    mode: TEAM_PACKAGE_MODE,
     loadedFiles,
     validation: mapWorkbenchValidationView(record.validation),
     followUpActions: mapFollowUpActions(record.followUpActions)
