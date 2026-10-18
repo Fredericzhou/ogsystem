@@ -433,8 +433,13 @@ test("task controls enforce one active task, durable idempotency, and terminal b
     assert.equal(deletedReplay.status, "deleted");
 
     const builtIn = await store.createProjectTask(project.projectId, { input: "Built-in execution", teamVersionId: "case:software-team", idempotencyKey: "boundary-built-in" });
-    await assert.rejects(() => store.startProjectTask(project.projectId, builtIn.taskId), /TASK_EXECUTION_UNAVAILABLE/);
-    assert.equal((await store.getProject(project.projectId)).taskRecords.find((task) => task.taskId === builtIn.taskId).status, "queued");
+    const builtInRun = await store.startProjectTask(project.projectId, builtIn.taskId);
+    assert.equal(builtInRun.status, "planning");
+    assert.ok(builtInRun.runId);
+    const builtInCompleted = await waitForTask(store, project.projectId, builtIn.taskId);
+    assert.equal(builtInCompleted.status, "completed");
+    const builtInTeam = (await store.getProject(project.projectId)).mountedTeams.find((team) => team.teamVersionId === builtInCompleted.teamVersionId);
+    assert.ok(builtInTeam && !String(builtInTeam.teamVersionId).startsWith("case:"));
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }

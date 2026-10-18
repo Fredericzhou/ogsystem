@@ -392,51 +392,86 @@ export async function createProject({ name, overview, templateId = "empty", case
   }
 }
 
-async function resolveMountableTeam(teamVersionId) {
+async function resolveMountableTeam(teamVersionId, { createdTeamVersions = [] } = {}) {
   const requestedTeamId = String(teamVersionId || "").trim();
   if (!requestedTeamId) throw new Error("TEAM_VERSION_REQUIRED: a team version is required.");
   if (requestedTeamId.startsWith("case:")) {
     const caseId = requestedTeamId.slice(5);
     const caseSpec = getCase(caseId);
     if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
-    const language = "zh-CN";
-    const teamName = caseSpec.title?.[language] || caseSpec.title?.en || caseId;
-    return {
-      projectId: requestedTeamId,
-      teamId: requestedTeamId,
-      teamVersionId: requestedTeamId,
-      teamVersionNumber: 1,
-      teamName,
-      name: teamName,
-      overview: caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "",
-      teamVersionStatus: "released",
-      teamCoreDigest: builtInTeamCoreDigest(caseSpec),
-      builtIn: true
-    };
+    const projects = await listProjects();
+    const existing = projects.find((project) => !project.teamProjectId
+      && project.source === "classic"
+      && project.caseId === caseId
+      && project.teamVersionStatus === "released");
+    const materialized = existing || await createClassicTeamProject({ caseId });
+    if (!existing && materialized?.projectId && !projects.some((project) => project.projectId === materialized.projectId)) {
+      createdTeamVersions.push(materialized.projectId);
+    }
+    return materialized;
   }
   return readProject(requestedTeamId);
 }
 
-async function resolveMountedTeams(teamVersionIds, previous = []) {
+async function resolveMountedTeams(teamVersionIds, previous = [], options = {}) {
   assertProjectHasTeams(teamVersionIds);
   const requestedIds = [...new Set(teamVersionIds.map((value) => String(value || "").trim()).filter(Boolean))];
   const previousById = new Map(previous.map((team) => [team.teamVersionId, team]));
   const mountedTeams = [];
   for (const requestedTeamId of requestedIds) {
-    const team = await resolveMountableTeam(requestedTeamId);
+    const team = await resolveMountableTeam(requestedTeamId, options);
     assertReleasedTeamVersion(team);
     mountedTeams.push(createMountedTeamRecord(team, previousById.get(team.teamVersionId || team.projectId)));
   }
   return mountedTeams;
 }
 
+async function materializeLegacyMountedTeam(project, teamVersionId) {
+  const requestedId = String(teamVersionId || "").trim();
+  if (!requestedId.startsWith("case:")) return { project, team: (project.mountedTeams || []).find((item) => item.teamVersionId === requestedId) };
+  const createdTeamVersions = [];
+  try {
+    const materialized = await resolveMountableTeam(requestedId, { createdTeamVersions });
+    assertReleasedTeamVersion(materialized);
+    const nextProject = await withProjectWriteLock(project.projectId, "materialize-legacy-team", async () => {
+      const latest = await readProject(project.projectId);
+      const latestMountedTeams = (latest.mountedTeams || []).map((mounted) => mounted.teamVersionId === requestedId
+        ? createMountedTeamRecord(materialized, mounted)
+        : mounted);
+      const latestTaskRecords = (latest.taskRecords || []).map((task) => task.teamVersionId === requestedId
+        ? {
+            ...task,
+            teamId: materialized.teamId || materialized.projectId,
+            teamVersionId: materialized.teamVersionId || materialized.projectId,
+            teamVersionNumber: materialized.teamVersionNumber || task.teamVersionNumber || 1,
+            teamName: materialized.teamName || materialized.name || task.teamName
+          }
+        : task);
+      const next = {
+        ...normalizeMeta(latest, latest.projectId),
+        mountedTeams: latestMountedTeams,
+        taskRecords: latestTaskRecords,
+        projectDefinitionDigest: computeProjectDefinitionDigest({ ...latest, mountedTeams: latestMountedTeams }),
+        updatedAt: new Date().toISOString()
+      };
+      await writeJson(join(latest.workdir, ".site", "project.json"), next);
+      return readProject(latest.projectId);
+    });
+    return { project: nextProject, team: (nextProject.mountedTeams || []).find((item) => item.teamVersionId === materialized.teamVersionId) };
+  } catch (error) {
+    for (const teamVersionIdToRemove of createdTeamVersions) await rm(projectPath(teamVersionIdToRemove), { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function createCollaborationProject({ name, overview = "", teamVersionIds = [] } = {}) {
-  const mountedTeams = await resolveMountedTeams(teamVersionIds);
+  const normalizedName = String(name || "协作项目").trim() || "协作项目";
+  const existingProject = (await listProjects()).find((item) => item.projectType === "collaboration" && String(item.name).trim().toLocaleLowerCase() === normalizedName.toLocaleLowerCase());
+  if (existingProject) throw new Error("PROJECT_NAME_EXISTS: a project with this name already exists.");
+  const createdTeamVersions = [];
   let project;
   try {
-    const normalizedName = String(name || "协作项目").trim() || "协作项目";
-    const existingProject = (await listProjects()).find((item) => item.projectType === "collaboration" && String(item.name).trim().toLocaleLowerCase() === normalizedName.toLocaleLowerCase());
-    if (existingProject) throw new Error("PROJECT_NAME_EXISTS: a project with this name already exists.");
+    const mountedTeams = await resolveMountedTeams(teamVersionIds, [], { createdTeamVersions });
     project = await createProject({
       name: normalizedName,
       overview: String(overview),
@@ -464,6 +499,7 @@ export async function createCollaborationProject({ name, overview = "", teamVers
     return readProject(project.projectId);
   } catch (error) {
     if (project?.workdir) await rm(project.workdir, { recursive: true, force: true }).catch(() => undefined);
+    for (const teamVersionId of createdTeamVersions) await rm(projectPath(teamVersionId), { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
 }
@@ -482,21 +518,27 @@ export async function replaceProjectTeams(projectId, teamVersionIds = []) {
   const current = await readProject(projectId);
   assertCollaborationProject(current);
   assertProjectTeamMutationAllowed(current);
-  return withProjectWriteLock(projectId, "project-team-replace", async () => {
-    const project = await readProject(projectId);
-    assertCollaborationProject(project);
-    assertProjectTeamMutationAllowed(project);
-    const mountedTeams = await resolveMountedTeams(teamVersionIds, project.mountedTeams || []);
-    const next = {
-      ...normalizeMeta(project, projectId),
-      projectType: "collaboration",
-      mountedTeams,
-      projectDefinitionDigest: computeProjectDefinitionDigest({ ...project, mountedTeams }),
-      updatedAt: new Date().toISOString()
-    };
-    await writeJson(join(project.workdir, ".site", "project.json"), next);
-    return readProject(projectId);
-  });
+  const createdTeamVersions = [];
+  try {
+    return await withProjectWriteLock(projectId, "project-team-replace", async () => {
+      const project = await readProject(projectId);
+      assertCollaborationProject(project);
+      assertProjectTeamMutationAllowed(project);
+      const mountedTeams = await resolveMountedTeams(teamVersionIds, project.mountedTeams || [], { createdTeamVersions });
+      const next = {
+        ...normalizeMeta(project, projectId),
+        projectType: "collaboration",
+        mountedTeams,
+        projectDefinitionDigest: computeProjectDefinitionDigest({ ...project, mountedTeams }),
+        updatedAt: new Date().toISOString()
+      };
+      await writeJson(join(project.workdir, ".site", "project.json"), next);
+      return readProject(projectId);
+    });
+  } catch (error) {
+    for (const teamVersionId of createdTeamVersions) await rm(projectPath(teamVersionId), { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function listCollaborationProjects() {
@@ -545,8 +587,20 @@ export async function createProjectTask(projectId, { input, teamVersionId, idemp
     const taskInput = String(input || "").trim();
     if (!taskInput || taskInput.length > 4000) throw new Error("Task input must contain 1 to 4,000 characters.");
     const mountedTeams = project.mountedTeams || [];
-    const team = mountedTeams.find((item) => item.teamVersionId === teamVersionId) || mountedTeams[0];
-    if (!team) throw new Error("PROJECT_TEAM_REQUIRED: mount a team before creating a task.");
+    if (!mountedTeams.length) throw new Error("PROJECT_TEAM_REQUIRED: mount a team before creating a task.");
+    const requestedTeamVersionId = String(teamVersionId || "").trim();
+    if (!requestedTeamVersionId) throw new Error("TEAM_VERSION_REQUIRED: select a team for this task.");
+    const exactTeam = mountedTeams.find((item) => item.teamVersionId === requestedTeamVersionId);
+    const aliasedTeam = !exactTeam && requestedTeamVersionId.startsWith("case:")
+      ? (() => {
+          const caseSpec = getCase(requestedTeamVersionId.slice(5));
+          const caseName = caseSpec?.title?.["zh-CN"] || caseSpec?.title?.en;
+          return mountedTeams.find((item) => item.builtIn && item.teamVersionId === requestedTeamVersionId)
+            || (caseName && mountedTeams.find((item) => String(item.teamName || item.name).trim() === caseName));
+        })()
+      : undefined;
+    const team = exactTeam || aliasedTeam;
+    if (!team) throw new Error("TEAM_VERSION_NOT_MOUNTED: the selected team is not mounted in this project.");
     const requestKey = idempotencyKey ? String(idempotencyKey).trim().slice(0, 160) : "";
     const requestFingerprint = createHash("sha256").update(JSON.stringify({
       projectId,
@@ -647,6 +701,12 @@ export async function startProjectTask(projectId, taskId, { mode = "dry-run" } =
   if (!["dry-run", "sandbox"].includes(mode)) throw new Error("TASK_MODE_INVALID: unsupported task mode.");
   let project = await readProject(projectId);
   let task = findTask(project, taskId);
+  const legacyTeam = (project.mountedTeams || []).find((item) => item.teamVersionId === task.teamVersionId);
+  if (legacyTeam?.teamVersionId?.startsWith("case:")) {
+    const materialized = await materializeLegacyMountedTeam(project, task.teamVersionId);
+    project = materialized.project;
+    task = findTask(project, taskId);
+  }
   if (!["queued", "paused"].includes(task.status)) {
     if (task.runId) return { task, idempotentReplay: true };
     throw new Error(`TASK_START_NOT_ALLOWED: task status is ${task.status}.`);
@@ -667,9 +727,9 @@ export async function startProjectTask(projectId, taskId, { mode = "dry-run" } =
   task = reserved.task;
   if (task.runId) return task;
   const team = (project.mountedTeams || []).find((item) => item.teamVersionId === task.teamVersionId);
-  if (!team || String(team.teamVersionId || "").startsWith("case:")) {
+  if (!team) {
     await withProjectWriteLock(projectId, "project-task-start-unavailable", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "queued", lastError: "TASK_EXECUTION_UNAVAILABLE" })).catch(() => undefined);
-    throw new Error("TASK_EXECUTION_UNAVAILABLE: copy the built-in team into a released team version before running this task.");
+    throw new Error("TASK_EXECUTION_UNAVAILABLE: the selected team version is unavailable for execution.");
   }
   const materials = (project.materials?.materials || []).map((item) => ({
     materialId: item.materialId,
@@ -1835,10 +1895,10 @@ function uniqueImportedName(name, existing, prefix = "Imported", scope = "projec
   throw new Error("IMPORT_NAME_CONFLICT: unable to allocate a unique imported name.");
 }
 
-export async function previewTeamPackage(bundle) {
+export async function previewTeamPackage(bundle, { name } = {}) {
   const checked = await validateTeamPackage(bundle);
   const teams = await listTeamRepository();
-  const metadataName = String(checked.metadata.name || "Imported team").trim() || "Imported team";
+  const metadataName = String(name || checked.metadata.name || "Imported team").trim() || "Imported team";
   const duplicate = teams.find((team) => team.teamCoreDigest === checked.teamCoreDigest);
   const nameConflict = teams.find((team) => String(team.teamName || team.name).trim().toLocaleLowerCase() === metadataName.toLocaleLowerCase() && team.teamCoreDigest !== checked.teamCoreDigest);
   return {
@@ -1887,8 +1947,8 @@ export async function previewProjectBundle(bundle) {
   };
 }
 
-export async function importTeamPackage(bundle, { conflictStrategy = "create-new" } = {}) {
-  const preview = await previewTeamPackage(bundle);
+export async function importTeamPackage(bundle, { conflictStrategy = "create-new", name } = {}) {
+  const preview = await previewTeamPackage(bundle, { name });
   const strategy = ["reject", "reuse", "create-new"].includes(conflictStrategy) ? conflictStrategy : "reject";
   if (preview.duplicate) {
     if (strategy === "reuse") {
@@ -1942,7 +2002,10 @@ export async function importTeamPackage(bundle, { conflictStrategy = "create-new
   const credentialPath = findCredentialField(bundle);
   if (credentialPath) throw new Error(`PROJECT_IMPORT_INVALID: credential field is not accepted: ${credentialPath}.`);
   const metadata = bundle.team.project || {};
-  const importName = strategy === "create-new" ? uniqueImportedName(metadata.name || "Imported team", await listProjects(), "Imported", "team") : (metadata.name || "Imported team");
+  const requestedName = String(name || "").trim();
+  const importName = strategy === "create-new"
+    ? uniqueImportedName(requestedName || metadata.name || "Imported team", await listProjects(), "Imported", "team")
+    : (requestedName || metadata.name || "Imported team");
   const libraryLock = await acquireProjectWriteLock(projectsRoot, "project-import");
   let project;
   try {

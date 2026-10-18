@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverLocalModelCatalog, isModelCatalogStale } from "../../dist/runtime/model-catalog.js";
+import { isDirectModelRef } from "../../dist/runtime/model-selection.js";
 import { cases } from "./cases.mjs";
 import { buildCaseGraph, runCase } from "./demo-runner.mjs";
 import { eventLabels } from "./event-labels.mjs";
@@ -51,6 +52,7 @@ import {
 } from "./project-repository.mjs";
 import { recoverOrphanedRuns } from "./run-service.mjs";
 import { createVisualizerAdapter } from "./capabilities/visualizer-adapter.mjs";
+import { resolveTeamStudioModelRef } from "./capabilities/team-studio-model.mjs";
 import { handleProjectRoutes } from "./api/project-routes.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -405,8 +407,8 @@ const server = createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/v1/team-packages/import") {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
-      const { conflictStrategy, ...bundle } = payload || {};
-      const imported = await importTeamPackage(bundle, { conflictStrategy: conflictStrategy || "reject" });
+      const { conflictStrategy, teamName, ...bundle } = payload || {};
+      const imported = await importTeamPackage(bundle, { conflictStrategy: conflictStrategy || "reject", name: teamName });
       sendJson(response, 201, publicProject(imported));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to import project." });
@@ -472,7 +474,11 @@ const server = createServer(async (request, response) => {
   if (teamChatMatch && request.method === "POST") {
     try {
       const payload = await readBody(request, 4 * 1024 * 1024);
-      const upstream = await visualizer.chat({ projectId: teamChatMatch[1], payload });
+      const settings = await readPlatformSettings();
+      const discovery = await getPlatformDiscovery();
+      const modelRef = isDirectModelRef(payload.modelRef) ? payload.modelRef : resolveTeamStudioModelRef(discovery, settings);
+      if (!modelRef) throw new Error("TEAM_ASSISTANT_MODEL_UNAVAILABLE: configure an active OpenCode model in Platform settings and refresh discovery.");
+      const upstream = await visualizer.chat({ projectId: teamChatMatch[1], payload: { ...payload, modelRef } });
       sendJson(response, upstream.status, upstream.body);
     } catch (error) {
       sendJson(response, 502, { error: error instanceof Error ? `TEAM_ASSISTANT_UNAVAILABLE: ${error.message}` : "TEAM_ASSISTANT_UNAVAILABLE" });

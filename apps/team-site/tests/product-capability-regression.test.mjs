@@ -74,6 +74,43 @@ test("team package preview exposes fingerprint conflicts and explicit reuse does
   }
 });
 
+test("team import distinguishes identical content from same-name different content", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-import-name-conflict-capability-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import(`../project-repository.mjs?capability-import-name-conflict=${Date.now()}`);
+  try {
+    const source = await store.createProject({ name: "Imported Team Source", overview: "Original content.", templateId: "minimal" });
+    await store.confirmProjectTeam(source.projectId, { release: true });
+    const exported = await store.exportProjectTeam(source.projectId);
+
+    const sameContentPreview = await store.previewTeamPackage(exported);
+    assert.equal(sameContentPreview.duplicate.projectId, source.projectId);
+    assert.equal(sameContentPreview.conflicts.length, 0);
+    assert.equal((await store.importTeamPackage(exported, { conflictStrategy: "reuse" })).projectId, source.projectId);
+
+    const differentContent = {
+      ...exported,
+      packageDigest: undefined,
+      teamCoreDigest: undefined,
+      team: { ...exported.team, systemSource: exported.team.systemSource.replace("system.version=1.0.0", "system.version=1.0.1") }
+    };
+    const renamedSource = await store.createProject({ name: "Different Content Team", overview: "Conflicting name.", templateId: "minimal" });
+    await store.confirmProjectTeam(renamedSource.projectId, { release: true });
+    const renamedBundle = {
+      ...differentContent,
+      team: { ...differentContent.team, project: { ...differentContent.team.project, name: renamedSource.name, teamName: renamedSource.name } }
+    };
+    const preview = await store.previewTeamPackage(renamedBundle);
+    assert.equal(preview.duplicate, null);
+    assert.equal(preview.conflicts[0].name, renamedSource.name);
+    await assert.rejects(() => store.importTeamPackage(renamedBundle, { conflictStrategy: "reject" }), /TEAM_IMPORT_CONFLICT/);
+    const imported = await store.importTeamPackage(renamedBundle, { conflictStrategy: "reject", name: "Different Content Team (导入)" });
+    assert.equal(imported.name, "Different Content Team (导入)");
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("project package preview and reuse preserve the existing collaboration project", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;

@@ -38,6 +38,15 @@ async function waitForTerminal(store, projectId, runId) {
   throw new Error("Run did not reach a terminal state in time.");
 }
 
+async function waitForTaskTerminal(store, projectId, taskId) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const task = await store.getProjectTask(projectId, taskId);
+    if (["completed", "failed", "cancelled", "deleted"].includes(task.status)) return task;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("Task did not reach a terminal state in time.");
+}
+
 test("teamCoreDigest ignores team metadata and run files", async () => {
   await withStore("digest-stability", async (store) => {
     const team = await createReleasedTeam(store, "Digest Stability Team");
@@ -175,6 +184,7 @@ test("project team replacement updates the existing project and locks during an 
     );
     await store.controlProjectTask(project.projectId, task.taskId, "cancel");
     await waitForTerminal(store, project.projectId, (await store.getProjectTask(project.projectId, task.taskId)).runId);
+    await waitForTaskTerminal(store, project.projectId, task.taskId);
     const afterCancel = await store.replaceProjectTeams(project.projectId, [firstTeam.projectId]);
     assert.deepEqual(afterCancel.mountedTeams.map((team) => team.teamVersionId), [firstTeam.projectId]);
   });
