@@ -755,7 +755,7 @@ async function collectPortablePackageFiles(root: string, targetPrefix: string): 
 }
 
 function assertPortablePackagePath(candidate: string): string {
-  if (!candidate || candidate.startsWith("/") || candidate.includes("\\")) {
+  if (!candidate || candidate.startsWith("/") || candidate.includes("\\") || /^[A-Za-z]:/.test(candidate)) {
     throw new Error(`PROJECT_IMPORT_INVALID: unsafe artifact path: ${candidate}`);
   }
   const parts = candidate.split("/");
@@ -778,24 +778,55 @@ function assertPortablePackagePath(candidate: string): string {
   return parts.join("/");
 }
 
+async function lstatIfPresent(path: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function assertImportTargetSafe(projectRoot: string, targetPath: string, displayPath: string): Promise<void> {
+  const target = resolve(targetPath);
+  if (target !== projectRoot && !target.startsWith(`${projectRoot}${sep}`)) {
+    throw new Error(`PROJECT_IMPORT_INVALID: artifact escapes project root: ${displayPath}`);
+  }
+  const relativeTarget = relative(projectRoot, target);
+  const parts = relativeTarget.split(sep).filter(Boolean);
+  let current = projectRoot;
+  for (const part of parts.slice(0, -1)) {
+    current = resolve(current, part);
+    const entry = await lstatIfPresent(current);
+    if (entry?.isSymbolicLink()) {
+      throw new Error(`PROJECT_IMPORT_INVALID: artifact path component is a symbolic link: ${displayPath}`);
+    }
+    if (entry && !entry.isDirectory()) {
+      throw new Error(`PROJECT_IMPORT_INVALID: artifact parent is not a directory: ${displayPath}`);
+    }
+  }
+  const existing = await lstatIfPresent(target);
+  if (existing?.isSymbolicLink()) {
+    throw new Error(`PROJECT_IMPORT_INVALID: artifact target is a symbolic link: ${displayPath}`);
+  }
+  if (existing && !existing.isFile()) {
+    throw new Error(`PROJECT_IMPORT_INVALID: artifact target is not a regular file: ${displayPath}`);
+  }
+}
+
 async function writePortablePackageFiles(workdir: string, files: PortablePackageFile[]): Promise<string[]> {
   const projectRoot = await realpath(workdir);
   const loadedFiles: string[] = [];
   for (const file of files) {
     const safePath = assertPortablePackagePath(file.path);
     const target = resolve(projectRoot, safePath);
-    if (target !== projectRoot && !target.startsWith(`${projectRoot}${sep}`)) {
-      throw new Error(`PROJECT_IMPORT_INVALID: artifact escapes project root: ${safePath}`);
-    }
+    await assertImportTargetSafe(projectRoot, target, safePath);
     await mkdir(dirname(target), { recursive: true });
     const parent = await realpath(dirname(target)).catch(() => undefined);
     if (parent && parent !== projectRoot && !parent.startsWith(`${projectRoot}${sep}`)) {
       throw new Error(`PROJECT_IMPORT_INVALID: artifact parent escapes project root: ${safePath}`);
     }
-    const existing = await lstat(target).catch(() => undefined);
-    if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
-      throw new Error(`PROJECT_IMPORT_INVALID: artifact target is not a regular file: ${safePath}`);
-    }
+    await assertImportTargetSafe(projectRoot, target, safePath);
     await writeFile(target, file.content, "utf8");
     loadedFiles.push(safePath);
   }
@@ -915,36 +946,21 @@ export async function loadTeamPackage(args: {
   if (!systemSource) {
     throw new Error("Project bundle is missing project.systemSource.");
   }
-  const ogsPaths = resolveOgsPaths(args.workdir);
+  const projectRoot = await realpath(args.workdir);
+  const ogsPaths = resolveOgsPaths(projectRoot);
   const writes: Array<[string, unknown, boolean]> = [
-    [resolve(args.workdir, "system.mmd"), systemSource, false],
+    [resolve(projectRoot, "system.mmd"), systemSource, false],
     [ogsPaths.runtimePath, team.runtime ?? null, true],
     [ogsPaths.modelSelectionPath, team.modelSelection ?? null, true],
     [ogsPaths.modelCatalogPath, team.modelCatalog ?? null, true],
     [ogsPaths.lawsPath, team.laws ?? null, true],
     [ogsPaths.userProfilePath, team.userProfile ?? null, true],
-    [resolve(args.workdir, "profiles.json"), team.profiles ?? null, true],
-    [resolve(args.workdir, "tools.json"), team.tools ?? null, true]
+    [resolve(projectRoot, "profiles.json"), team.profiles ?? null, true],
+    [resolve(projectRoot, "tools.json"), team.tools ?? null, true]
   ];
-  const designPath = resolve(args.workdir, "system.design.json");
-  if (team.design === undefined || team.design === null) {
-    await unlink(designPath).catch((error) => {
-      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
-    });
-  } else {
+  const designPath = resolve(projectRoot, "system.design.json");
+  if (team.design !== undefined && team.design !== null) {
     writes.splice(1, 0, [designPath, team.design, true]);
-  }
-  const loadedFiles: string[] = [];
-  for (const [path, value, json] of writes) {
-    if (value === null || value === undefined) {
-      continue;
-    }
-    if (json) {
-      await writeJsonFileAtomic(path, value);
-    } else {
-      await writeFile(path, String(value), "utf8");
-    }
-    loadedFiles.push(relative(args.workdir, path) || ".");
   }
   const executableFiles = Array.isArray(team.executableFiles)
     ? team.executableFiles.map((file) => {
@@ -957,10 +973,37 @@ export async function loadTeamPackage(args: {
         return { path, content };
       })
     : [];
-  loadedFiles.push(...await writePortablePackageFiles(args.workdir, executableFiles));
+  for (const [path, value] of writes) {
+    if (value !== null && value !== undefined) {
+      await assertImportTargetSafe(projectRoot, path, relative(projectRoot, path) || ".");
+    }
+  }
+  await assertImportTargetSafe(projectRoot, designPath, relative(projectRoot, designPath) || ".");
+  for (const file of executableFiles) {
+    const safePath = assertPortablePackagePath(file.path);
+    await assertImportTargetSafe(projectRoot, resolve(projectRoot, safePath), safePath);
+  }
+  const loadedFiles: string[] = [];
+  if (team.design === undefined || team.design === null) {
+    await unlink(designPath).catch((error) => {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    });
+  }
+  for (const [path, value, json] of writes) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    if (json) {
+      await writeJsonFileAtomic(path, value);
+    } else {
+      await writeTextFileAtomic(path, String(value));
+    }
+    loadedFiles.push(relative(projectRoot, path) || ".");
+  }
+  loadedFiles.push(...await writePortablePackageFiles(projectRoot, executableFiles));
   const validation = await validateProjectSystemSource({
-    workdir: args.workdir,
-    systemPath: resolve(args.workdir, "system.mmd"),
+    workdir: projectRoot,
+    systemPath: resolve(projectRoot, "system.mmd"),
     systemSource
   });
   if (validation.ok !== true) {

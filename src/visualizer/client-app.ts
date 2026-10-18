@@ -394,10 +394,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
     const resolvedLocale = resolveClientLocale();
     const state = createInitialVisualizerState(resolvedLocale);
-    const mobileStudioEditor = window.matchMedia(
-      "(max-width: 480px), (max-width: 1000px) and (max-height: 520px) and (orientation: landscape)"
-    );
-    if (mobileStudioEditor.matches) {
+    const mobileStudioEditor = typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 480px), (max-width: 1000px) and (max-height: 520px) and (orientation: landscape)")
+      : null;
+    if (mobileStudioEditor?.matches) {
       state.studioInspectorCollapsed = true;
     }
     function applyVisualizerTheme(theme) {

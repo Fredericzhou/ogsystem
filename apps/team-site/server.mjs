@@ -23,6 +23,10 @@ import {
   saveProjectDesign,
   getProject,
   importTeamPackage,
+  importProjectBundle,
+  previewTeamPackage,
+  previewProjectBundle,
+  simulateTeamVersion,
   listProjects,
   listCollaborationProjects,
   createCollaborationProject,
@@ -41,6 +45,7 @@ import {
   updateProject
   ,listTeamFactory
   ,listTeamRepository
+  ,queryTeamRepository
   ,forkTeamVersion
   ,releaseTeamVersion
   ,archiveTeamVersion
@@ -117,7 +122,7 @@ async function getPlatformDiscovery(force = false) {
 
 function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|active|conflict/i.test(message)) return 409;
+  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|IMPORT_CONFLICT|active|conflict/i.test(message)) return 409;
   if (/PROJECT_NOT_READY/i.test(message)) return 422;
   if (/not found|TASK_NOT_FOUND/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
@@ -274,7 +279,15 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/v1/team-repository") {
-    sendJson(response, 200, { teams: (await listTeamRepository()).map(publicProject) });
+    const result = await queryTeamRepository({
+      query: url.searchParams.get("query") || "",
+      category: url.searchParams.get("category") || "",
+      status: url.searchParams.get("status") || "released",
+      sort: url.searchParams.get("sort") || "updated",
+      page: url.searchParams.get("page") || 1,
+      pageSize: url.searchParams.get("pageSize") || 12
+    });
+    sendJson(response, 200, { ...result, teams: result.teams.map(publicProject) });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/v1/runs/recent") {
@@ -410,9 +423,40 @@ const server = createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/v1/team-packages/import") {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
-      sendJson(response, 201, publicProject(await importTeamPackage(payload)));
+      const { conflictStrategy, ...bundle } = payload || {};
+      const imported = bundle.mode === "project-v1"
+        ? await importProjectBundle(bundle, { conflictStrategy: conflictStrategy || "reject" })
+        : await importTeamPackage(bundle, { conflictStrategy: conflictStrategy || "reject" });
+      sendJson(response, 201, publicProject(imported));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to import project." });
+    }
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v1/team-packages/preview") {
+    try {
+      const payload = await readBody(request, 8 * 1024 * 1024);
+      sendJson(response, 200, payload?.mode === "project-v1" ? await previewProjectBundle(payload) : await previewTeamPackage(payload));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to preview package." });
+    }
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v1/project-packages/import") {
+    try {
+      const payload = await readBody(request, 8 * 1024 * 1024);
+      const { conflictStrategy, ...bundle } = payload || {};
+      sendJson(response, 201, publicProject(await importProjectBundle(bundle, { conflictStrategy: conflictStrategy || "reject" })));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to import project." });
+    }
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v1/project-packages/preview") {
+    try {
+      sendJson(response, 200, await previewProjectBundle(await readBody(request, 8 * 1024 * 1024)));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to preview project package." });
     }
     return;
   }
@@ -619,6 +663,16 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, result);
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : "Run failed." });
+    }
+    return;
+  }
+  const simulateTeamMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9:-]+)\/simulate$/);
+  if (simulateTeamMatch && request.method === "POST") {
+    try {
+      const payload = await readBody(request);
+      sendJson(response, 200, await simulateTeamVersion(simulateTeamMatch[1], payload));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to simulate team." });
     }
     return;
   }
