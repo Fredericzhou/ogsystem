@@ -8,6 +8,7 @@ import {
   MODEL_CATALOG_STALE_AFTER_MS,
   ModelDiscoveryError,
   isModelCatalogStale,
+  loadModelCatalog,
   refreshModelCatalog
 } from "../dist/runtime/model-catalog.js";
 import {
@@ -112,6 +113,19 @@ test("catalog freshness is explicit and does not rewrite the pinned selection", 
   });
   const loadedSelection = await loadModelSelection(path.join(workdir, ".ogs", "model-selection.json"));
   assert.equal(loadedSelection.defaults.modelId, selection.defaults.modelId);
+});
+
+test("catalog loading preserves canonical provider refs for OpenCode models", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-ref-"));
+  const catalogPath = path.join(workdir, "model-catalog.json");
+  await writeFile(catalogPath, JSON.stringify(catalog([{
+    ...model("google/gemini-3-flash-preview"),
+    backend: "opencode",
+    modelId: "google/gemini-3-flash-preview",
+    ref: "google/gemini-3-flash-preview"
+  }])), "utf8");
+  const loaded = await loadModelCatalog(catalogPath);
+  assert.equal(loaded?.models[0].ref, "google/gemini-3-flash-preview");
 });
 
 test("per-role model selection overrides the project default", () => {

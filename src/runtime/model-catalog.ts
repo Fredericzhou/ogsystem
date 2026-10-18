@@ -106,11 +106,15 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
     const rawValue = modelRecord.raw;
     const rawRecord =
       rawValue === undefined ? undefined : asRecord(rawValue, filePath, `$.models[${index}].raw`);
+    const backend = asString(modelRecord.backend, filePath, `$.models[${index}].backend`);
+    const modelId = asString(modelRecord.modelId, filePath, `$.models[${index}].modelId`);
     return {
-      backend: asString(modelRecord.backend, filePath, `$.models[${index}].backend`),
+      backend,
       runnable: modelRecord.runnable === true,
-      modelId: asString(modelRecord.modelId, filePath, `$.models[${index}].modelId`),
-      ref: `${asString(modelRecord.backend, filePath, `$.models[${index}].backend`)}/${asString(modelRecord.modelId, filePath, `$.models[${index}].modelId`)}`,
+      modelId,
+      ref: modelRecord.ref === undefined
+        ? `${backend}/${modelId}`
+        : asString(modelRecord.ref, filePath, `$.models[${index}].ref`),
       provider: asString(modelRecord.provider, filePath, `$.models[${index}].provider`),
       model: asString(modelRecord.model, filePath, `$.models[${index}].model`),
       name: asOptionalString(modelRecord.name, filePath, `$.models[${index}].name`),
