@@ -1,6 +1,7 @@
-export function createRouter({ syncRoute, canLeave = () => true }) {
+export function createRouter({ syncRoute, canLeave = () => true, onRouteChange = () => {} }) {
   let currentPath = `${location.pathname}${location.search}${location.hash}`;
   let pending = false;
+  const readPath = () => `${location.pathname}${location.search}${location.hash}`;
   const navigate = async (path) => {
     const nextPath = String(path);
     if (nextPath === currentPath || pending) return false;
@@ -8,7 +9,8 @@ export function createRouter({ syncRoute, canLeave = () => true }) {
     try {
       if (!await canLeave(nextPath)) return false;
       history.pushState({}, "", nextPath);
-      currentPath = `${location.pathname}${location.search}${location.hash}`;
+      currentPath = readPath();
+      onRouteChange(currentPath);
       syncRoute();
       window.scrollTo({ top: 0, behavior: "instant" });
       return true;
@@ -30,6 +32,7 @@ export function createRouter({ syncRoute, canLeave = () => true }) {
       try {
         if (await canLeave(nextPath)) {
           currentPath = nextPath;
+          onRouteChange(currentPath);
           syncRoute();
         } else {
           history.pushState({}, "", currentPath);
@@ -39,5 +42,9 @@ export function createRouter({ syncRoute, canLeave = () => true }) {
       }
     });
   };
-  return { install, navigate };
+  const syncCurrentPath = () => {
+    currentPath = readPath();
+    return currentPath;
+  };
+  return { install, navigate, syncCurrentPath };
 }

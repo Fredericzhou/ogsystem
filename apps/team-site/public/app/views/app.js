@@ -363,7 +363,7 @@ function setView(view) {
   const nav = $(`.nav-item[data-view="${view}"] [data-i18n]`);
   $("#breadcrumb-current").textContent = nav?.textContent || copy[state.locale].navTeams;
 }
-const router = createRouter({ syncRoute, canLeave: confirmRouteLeave });
+const router = createRouter({ syncRoute, canLeave: confirmRouteLeave, onRouteChange: closeActiveDialogs });
 function navigate(path) { router.navigate(path); }
 
 async function confirmRouteLeave() {
@@ -875,7 +875,7 @@ function taskActionMarkup(task) {
   if (["waiting_review", "paused", "ready"].includes(task.status)) actions.push(`<button class="secondary-button" type="button" data-task-action="review" data-task-id="${esc(task.taskId)}">人工审核</button>`);
   if (["queued", "running", "planning", "pause_requested", "waiting_review", "paused", "ready"].includes(task.status)) actions.push(`<button class="secondary-button danger-button" type="button" data-task-action="stop" data-task-id="${esc(task.taskId)}">停止</button>`);
   if (task.status !== "deleted") actions.push(`<button class="text-button task-delete-button" type="button" data-task-action="delete" data-task-id="${esc(task.taskId)}">删除</button>`);
-  return actions.join("");
+  return `${actions.join("")}<p class="form-status task-action-status" role="status" aria-live="polite"></p>`;
 }
 
 async function openTaskReview(projectId, taskId) {
@@ -892,7 +892,13 @@ async function openTaskReview(projectId, taskId) {
     releaseScroll?.();
     if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     dialog.remove();
+    if (activeTaskReviewClose === closeDialog) activeTaskReviewClose = null;
   };
+  const closeDialog = (returnValue = "cancel") => {
+    if (dialog.open) dialog.close(returnValue);
+    else cleanup();
+  };
+  activeTaskReviewClose = closeDialog;
   dialog.showModal();
   releaseScroll = lockBodyScroll();
   releaseTrap = trapFocus(dialog, { initial: "select", onEscape: () => dialog.close("cancel") });
@@ -914,6 +920,12 @@ async function openTaskReview(projectId, taskId) {
     }
   });
   dialog.addEventListener("close", cleanup, { once: true });
+}
+
+let activeTaskReviewClose = null;
+function closeActiveDialogs() {
+  closeDrawer();
+  activeTaskReviewClose?.("route");
 }
 
 async function renderCollaborationProject(projectId, project, pageRequest = state.activeRequest) {
@@ -957,8 +969,59 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       await renderProjectRunV2(projectId, pageRequest);
     } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "资料上传失败"; }
   });
-  collaborationTaskForm?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const status = $("#collaboration-task-status"); const payload = Object.fromEntries(new FormData(form).entries()); payload.idempotencyKey = crypto.randomUUID(); const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }); const result = await response.json(); if (!isCurrentRequest(pageRequest)) return; if (!response.ok) { status.textContent = result.error || "任务创建失败"; return; } clearDirty("collaboration-task-form"); status.textContent = "任务已加入清单"; await renderProjectRunV2(projectId, pageRequest); });
-  root.querySelectorAll("[data-task-action]").forEach((button) => button.addEventListener("click", async () => { const action = button.dataset.taskAction; const taskId = button.dataset.taskId; if (action === "review") { await openTaskReview(projectId, taskId); return; } if (action === "delete") { const confirmed = await confirmAction({ title: "删除任务记录？", message: "删除后任务将从清单隐藏，运行快照仍会保留。", confirmLabel: "删除", cancelLabel: "取消" }); if (!confirmed) return; } button.disabled = true; const endpoint = action === "delete" ? `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}` : `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/${action}`; const response = await pageFetch(endpoint, { method: action === "delete" ? "DELETE" : "POST", headers: { "content-type": "application/json" }, body: action === "delete" ? undefined : "{}" }); const result = await response.json(); if (!isCurrentRequest(pageRequest)) return; if (!response.ok) showToast(result.error || "任务操作失败"); await renderProjectRunV2(projectId, pageRequest); }));
+  collaborationTaskForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const status = $("#collaboration-task-status");
+    const submit = form.querySelector("button[type=submit]");
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.idempotencyKey = crypto.randomUUID();
+    submit.disabled = true;
+    try {
+      const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await response.json();
+      if (!isCurrentRequest(pageRequest)) return;
+      if (!response.ok) { status.textContent = result.error || "任务创建失败"; return; }
+      clearDirty("collaboration-task-form");
+      status.textContent = "任务已加入清单";
+      await renderProjectRunV2(projectId, pageRequest);
+    } catch (error) {
+      if (isAbort(error)) return;
+      if (isCurrentRequest(pageRequest)) status.textContent = error.message || "任务创建失败";
+    } finally {
+      if (submit.isConnected) submit.disabled = false;
+    }
+  });
+  root.querySelectorAll("[data-task-action]").forEach((button) => button.addEventListener("click", async () => {
+    const action = button.dataset.taskAction;
+    const taskId = button.dataset.taskId;
+    if (action === "review") { await openTaskReview(projectId, taskId); return; }
+    if (action === "delete") {
+      const confirmed = await confirmAction({ title: "删除任务记录？", message: "删除后任务将从清单隐藏，运行快照仍会保留。", confirmLabel: "删除", cancelLabel: "取消" });
+      if (!confirmed) return;
+    }
+    button.disabled = true;
+    const rowStatus = button.closest(".task-record-row")?.querySelector(".task-action-status");
+    try {
+      const endpoint = action === "delete" ? `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}` : `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/${action}`;
+      const response = await pageFetch(endpoint, { method: action === "delete" ? "DELETE" : "POST", headers: { "content-type": "application/json" }, body: action === "delete" ? undefined : "{}" });
+      const result = await response.json();
+      if (!isCurrentRequest(pageRequest)) return;
+      if (!response.ok) {
+        if (rowStatus) rowStatus.textContent = result.error || "任务操作失败";
+        return;
+      }
+      await renderProjectRunV2(projectId, pageRequest);
+    } catch (error) {
+      if (isAbort(error)) return;
+      if (isCurrentRequest(pageRequest)) {
+        if (rowStatus) rowStatus.textContent = error.message || "任务操作失败";
+        else showToast(error.message || "任务操作失败");
+      }
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  }));
 }
 
 async function renderProjectRunV2(projectId, pageRequest = state.activeRequest) {
@@ -985,7 +1048,7 @@ function syncRoute() {
   if (detailMatch) {
     const item = state.cases.find((entry) => entry.id === detailMatch[1]);
     if (item) { $("#workspace-view").classList.add("hidden"); $("#examples-view").classList.add("hidden"); $("#history-view").classList.add("hidden"); $("#case-detail-view").classList.remove("hidden"); state.selected = item.id; renderDetail(item); return; }
-    history.replaceState({}, "", "/studio"); syncRoute(); return;
+    history.replaceState({}, "", "/studio"); router.syncCurrentPath(); syncRoute(); return;
   }
   if (path === "/studio/new") {
     setView("new-project");
@@ -1020,7 +1083,7 @@ function syncRoute() {
   else if (path === "/examples") state.view = "examples";
   else if (path === "/history") { state.view = "history"; void renderHistory(pageRequest); }
   setView(state.view);
-  if (!["/projects", "/studio", "/factory", "/platform", "/examples", "/history"].includes(path) && !detailMatch && !teamMatch && !projectRunMatch && path !== "/studio/new" && path !== "/studio/project/new") { history.replaceState({}, "", "/projects"); syncRoute(); }
+  if (!["/projects", "/studio", "/factory", "/platform", "/examples", "/history"].includes(path) && !detailMatch && !teamMatch && !projectRunMatch && path !== "/studio/new" && path !== "/studio/project/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
 let drawerReleaseTrap;
 let drawerReleaseScroll;

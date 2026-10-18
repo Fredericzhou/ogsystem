@@ -98,6 +98,28 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/start`, { data: { mode: "dry-run" } });
     await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/pause`, { data: {} });
     await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error));
+    await page.locator("#collaboration-task-form textarea[name=input]").fill("Abort this task mutation");
+    let taskMutationStarted;
+    const taskMutationRequest = new Promise((resolveRequest) => { taskMutationStarted = resolveRequest; });
+    let releaseTaskMutation;
+    const delayedTaskMutation = new Promise((resolveResponse) => { releaseTaskMutation = resolveResponse; });
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks`, async (route) => {
+      taskMutationStarted();
+      await delayedTaskMutation;
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ taskId: "aborted-task", status: "queued" }) });
+    });
+    await page.locator("#collaboration-task-form button[type=submit]").click();
+    await taskMutationRequest;
+    await page.locator('a[data-route="/projects"]').first().click();
+    await page.locator(".confirm-dialog").getByRole("button", { name: "放弃并离开" }).click();
+    await page.locator("#projects-view .page-heading").waitFor();
+    releaseTaskMutation();
+    await page.waitForTimeout(100);
+    assert.deepEqual(pageErrors, [], "aborted task mutation must not create an unhandled rejection");
+
+    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
     const reviewButton = page.locator('[data-task-action="review"]').first();
     await reviewButton.waitFor();
     await reviewButton.focus();
@@ -109,6 +131,20 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     assert.equal(await page.locator(".task-review-dialog").evaluate((dialog) => dialog.contains(document.activeElement)), true);
     await page.keyboard.press("Tab");
     assert.equal(await page.locator(".task-review-dialog").evaluate((dialog) => dialog.contains(document.activeElement)), true);
+    await page.goBack();
+    await page.locator("#projects-view .page-heading").waitFor();
+    assert.equal(await page.locator(".task-review-dialog").count(), 0, "route changes must close review dialogs");
+    assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("modal-open")), false, "route changes must release modal scroll lock");
+
+    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
+    const reopenedReviewButton = page.locator('[data-task-action="review"]').first();
+    await reopenedReviewButton.waitFor();
+    await reopenedReviewButton.focus();
+    await page.evaluate(async ({ projectId, taskId }) => {
+      const { openTaskReview } = await import("/app/views/app.js");
+      await openTaskReview(projectId, taskId);
+    }, { projectId: project.projectId, taskId: task.taskId });
+    await page.locator(".task-review-dialog[open]").waitFor();
     await page.locator(".task-review-dialog select").selectOption("approve");
     await page.locator(".task-review-dialog textarea").fill("error operation area");
     let reviewHit = false;

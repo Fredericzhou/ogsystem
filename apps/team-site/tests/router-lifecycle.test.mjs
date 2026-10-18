@@ -94,6 +94,10 @@ test("router delegates navigation once and cancels stale page requests", async (
     });
     assert.match(page.url(), /\/projects$/);
     await page.locator("#projects-view .page-heading").waitFor();
+    await page.evaluate(() => { window.__routerPushes = []; });
+    await page.locator('a[data-route="/projects"]').first().click();
+    await page.locator("#projects-view .page-heading").waitFor();
+    assert.deepEqual(await page.evaluate(() => window.__routerPushes), [], "canonical redirect must update router history state");
   } finally {
     await browser?.close();
     server.kill();

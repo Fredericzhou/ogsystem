@@ -43,6 +43,7 @@
 .task-record-main p { color: var(--ink); line-height: 1.55; margin: 7px 0 10px; overflow-wrap: anywhere; }
 .task-record-meta { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
 .task-record-actions { align-items: center; display: flex; flex: 0 1 auto; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.task-action-status { flex-basis: 100%; margin: 0; text-align: right; }
 .task-record-actions .secondary-button { min-height: 34px; padding: 7px 11px; }
 .task-run-detail { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; display: grid; gap: 7px; margin-top: 11px; padding: 9px; }
 .task-run-detail-head { align-items: center; display: flex; gap: 9px; justify-content: space-between; }
