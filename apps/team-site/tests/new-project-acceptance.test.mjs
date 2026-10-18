@@ -42,7 +42,7 @@ test("site creates a new project, records a task, and shows project resources", 
     await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
     await page.locator("#team-assistant").waitFor();
     assert.equal(await page.locator("#team-assistant-input").count(), 1);
-    await page.locator("#confirm-project-v2").click();
+    await page.locator("#confirm-project").click();
     await page.locator(".project-status.confirmed").waitFor();
     const teamId = page.url().match(/\/studio\/team\/([^/]+)$/)?.[1];
     assert.ok(teamId, "team route should expose the created team id");
@@ -59,9 +59,6 @@ test("site creates a new project, records a task, and shows project resources", 
     await page.locator(".task-record-row").waitFor();
     assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
-    /* Legacy single-team run assertions are retained below for reference.
-    assert.match(await page.locator(".run-result-card").innerText(), /运行计划已固定/);
-    */
   } finally {
     await browser?.close();
     server.kill();

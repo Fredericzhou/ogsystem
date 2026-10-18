@@ -91,7 +91,7 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator("#project-graph-stage .x6-node").count(), 3);
     assert.equal(await page.locator(".project-status.draft").count(), 1);
 
-    await page.locator("#confirm-project-v2").click();
+    await page.locator("#confirm-project").click();
     await page.locator(".project-status.confirmed").waitFor();
     const teamId = page.url().match(/\/studio\/team\/([^/]+)$/)?.[1];
     await page.goto(`${url}/studio/project/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
@@ -107,17 +107,6 @@ test("site completes the product project flow with task records and repository e
     await page.locator(".task-record-row").waitFor();
     assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
-    /* Legacy single-team run assertions no longer apply to collaboration projects.
-    assert.match(await page.locator(".readiness-panel").innerText(), /隔离运行配置检查/);
-    await page.locator("#project-run-form-v2 button[type=submit]").click();
-    await page.locator(".run-result-card").waitFor({ timeout: 30000 });
-    assert.match(await page.locator(".run-result-card").innerText(), /运行计划已固定/);
-    assert.match(await page.locator(".run-result-card").getAttribute("data-run-id"), /^\d{8}-\d{6}-[a-f0-9]+$/i);
-    assert.equal(await page.locator('[data-project-run-action="resume"]').count(), 0);
-    await page.locator(".run-analysis summary").click();
-    assert.ok(await page.locator(".analysis-row").count() >= 1);
-
-    */
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     const exportLink = page.locator('a[href^="/api/v1/projects/"][href$="/team/export"]').first();
     await exportLink.waitFor();

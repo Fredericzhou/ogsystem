@@ -572,8 +572,7 @@ export async function createProjectTask(projectId, { input, teamVersionId, idemp
       deletedAt: null,
       review: null,
       roundNumber: (project.taskRecords || []).length + 1,
-      outputSummary: "",
-      commitPlaceholder: null
+      outputSummary: ""
     };
     const next = { ...normalizeMeta(project, projectId), taskRecords: [...(project.taskRecords || []), task], updatedAt: new Date().toISOString() };
     await writeJson(join(project.workdir, ".site", "project.json"), next);
@@ -1489,8 +1488,7 @@ export async function startProjectRun(projectId, { prompt, mode = "dry-run", ide
     roundNumber: ((project.taskRecords || []).length || 0) + 1,
     teamVersionId: project.teamVersionId || project.mountedTeams?.[0]?.teamVersionId || null,
     teamName: project.teamName || project.mountedTeams?.[0]?.teamName || null,
-    outputSummary: typeof result?.finalOutput === "string" ? result.finalOutput.slice(0, 500) : "",
-    commitPlaceholder: null
+    outputSummary: typeof result?.finalOutput === "string" ? result.finalOutput.slice(0, 500) : ""
   };
   const latestMeta = await readJson(join(project.workdir, ".site", "project.json"), {});
   await writeJson(join(project.workdir, ".site", "project.json"), {

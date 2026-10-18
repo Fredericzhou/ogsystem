@@ -498,7 +498,7 @@ async function renderTeamAssistant(projectId, project, pageRequest = state.activ
         if (!save.ok) throw new Error(saved.error || "团队草案保存失败");
         clearDirty("team-assistant");
         status.textContent = "修改已应用，团队回到草案状态，请检查后确认。";
-        await renderProjectDraftV2(projectId, pageRequest);
+        await renderProjectDraft(projectId, pageRequest);
       });
       status.textContent = patchReady ? "预览已生成，确认后才会保存。" : "请回答团队助手的问题，继续完善团队。";
     } catch (error) { if (isAbort(error)) return;
@@ -731,7 +731,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         dirty = false;
         clearDirty("project-graph");
         setEditorState("已保存，项目已回到草案状态");
-        await renderProjectDraftV2(projectId, pageRequest);
+        await renderProjectDraft(projectId, pageRequest);
         await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
       },
       onToggleFullscreen: async () => {
@@ -756,7 +756,7 @@ function projectRunStatusLabel(status) {
 }
 
 function renderProjectRunResult(projectId, payload) {
-  const result = $("#project-run-result-v2");
+  const result = $("#project-run-result");
   if (!result || !payload?.runId) return;
   const runId = payload.runId;
   const stateStatus = payload.state?.status || payload.result?.status || "completed";
@@ -774,12 +774,12 @@ function renderProjectRunResult(projectId, payload) {
     const action = button.dataset.projectRunAction;
     if (action === "advanced") return;
     button.disabled = true;
-    const status = $("#run-status-v2");
+    const status = $("#run-status");
     try {
       const endpoint = action === "retry"
         ? `/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/retry`
         : `/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/${action}`;
-      const response = await pageFetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: action === "retry" ? JSON.stringify({ mode: $("#project-run-mode-v2")?.value || "dry-run" }) : "{}" });
+      const response = await pageFetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: action === "retry" ? JSON.stringify({ mode: $("#project-run-mode")?.value || "dry-run" }) : "{}" });
       const next = await response.json();
       if (!response.ok) throw new Error(next.error || "运行控制失败");
       if (action === "retry") {
@@ -796,13 +796,13 @@ function renderProjectRunResult(projectId, payload) {
   }));
 }
 
-async function renderProjectDraftV2(projectId, pageRequest = state.activeRequest) {
+async function renderProjectDraft(projectId, pageRequest = state.activeRequest) {
   if (pageRequest && !isCurrentRequest(pageRequest)) return;
   const root = $("#project-workspace-view"); root.innerHTML = '<div class="project-loading">正在读取团队项目...</div>';
   try {
     const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`); const project = await response.json(); if (!response.ok) throw new Error(project.error || "项目不存在");
     const confirmed = project.projectStatus === "confirmed";
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">01 / 团队建设</div><h1>${esc(project.name)} <span class="version-badge">v${project.teamVersionNumber || 1}</span></h1><p>${esc(project.overview || "还没有填写团队目标")}</p></div><span class="project-status ${confirmed ? "confirmed" : "draft"}">${confirmed ? "团队版本已发布" : "团队草案，可继续微调"}</span></section><nav class="project-steps team-only"><a class="project-step active" href="#team"><span>01</span><strong>团队建设</strong><small>${confirmed ? "已发布版本" : "编辑和调试中"}</small></a></nav><section class="project-grid draft-grid"><article class="project-panel project-editor-panel" id="team"><div class="panel-head"><div><span class="section-kicker">团队建设</span><h2>定义职责与协作方式</h2></div><span class="count-badge">${confirmed ? "RELEASED" : "DRAFT"}</span></div><form id="project-edit-form-v2" class="compact-form"><label>团队名称<input name="name" value="${esc(project.name)}" required maxlength="120"></label><label>团队目标与流程<textarea name="overview" rows="7" maxlength="4000" required>${esc(project.overview || "")}</textarea><span class="field-hint">${esc(copy[state.locale].targetHint)}</span></label><div class="form-actions"><button class="secondary-button" type="submit">保存微调</button>${confirmed ? '<button id="reconfirm-project-v2" class="secondary-button" type="button">另存为新版本</button>' : `<button id="confirm-project-v2" class="primary-button" type="button">${esc(copy[state.locale].releaseTeam)}</button>`}</div><p class="form-status" id="project-edit-status-v2"></p></form></article><article class="project-panel project-preview-panel"><div class="panel-head"><div><span class="section-kicker">团队方案预览</span><h2>团队版本</h2></div><span class="status-chip">${confirmed ? "已发布" : (project.teamVersionStatus === "editing" ? "编辑中" : "草案")}</span></div><div class="preview-list"><div><strong>版本状态</strong><span>${confirmed ? "已发布，可用于创建项目" : "未发布，只在团队工厂中可见"}</span></div><div><strong>方案内容</strong><span>职责、角色关系、协作流程和运行规则</span></div></div><p class="preview-note">团队只负责结构和协作方式；材料、任务和运行记录在项目工作区中单独管理。</p></article></section>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">01 / 团队建设</div><h1>${esc(project.name)} <span class="version-badge">v${project.teamVersionNumber || 1}</span></h1><p>${esc(project.overview || "还没有填写团队目标")}</p></div><span class="project-status ${confirmed ? "confirmed" : "draft"}">${confirmed ? "团队版本已发布" : "团队草案，可继续微调"}</span></section><nav class="project-steps team-only"><a class="project-step active" href="#team"><span>01</span><strong>团队建设</strong><small>${confirmed ? "已发布版本" : "编辑和调试中"}</small></a></nav><section class="project-grid draft-grid"><article class="project-panel project-editor-panel" id="team"><div class="panel-head"><div><span class="section-kicker">团队建设</span><h2>定义职责与协作方式</h2></div><span class="count-badge">${confirmed ? "RELEASED" : "DRAFT"}</span></div><form id="project-edit-form" class="compact-form"><label>团队名称<input name="name" value="${esc(project.name)}" required maxlength="120"></label><label>团队目标与流程<textarea name="overview" rows="7" maxlength="4000" required>${esc(project.overview || "")}</textarea><span class="field-hint">${esc(copy[state.locale].targetHint)}</span></label><div class="form-actions"><button class="secondary-button" type="submit">保存微调</button>${confirmed ? '<button id="reconfirm-project" class="secondary-button" type="button">另存为新版本</button>' : `<button id="confirm-project" class="primary-button" type="button">${esc(copy[state.locale].releaseTeam)}</button>`}</div><p class="form-status" id="project-edit-status"></p></form></article><article class="project-panel project-preview-panel"><div class="panel-head"><div><span class="section-kicker">团队方案预览</span><h2>团队版本</h2></div><span class="status-chip">${confirmed ? "已发布" : (project.teamVersionStatus === "editing" ? "编辑中" : "草案")}</span></div><div class="preview-list"><div><strong>版本状态</strong><span>${confirmed ? "已发布，可用于创建项目" : "未发布，只在团队工厂中可见"}</span></div><div><strong>方案内容</strong><span>职责、角色关系、协作流程和运行规则</span></div></div><p class="preview-note">团队只负责结构和协作方式；材料、任务和运行记录在项目工作区中单独管理。</p></article></section>`;
         const previewVersion = root.querySelector(".project-preview-panel .preview-list > div:first-child span");
     if (previewVersion) previewVersion.textContent = confirmed ? "已发布版本" : "未发布，仅在团队工厂中可见";
     const previewNote = root.querySelector(".project-preview-panel .preview-note");
@@ -821,11 +821,11 @@ async function renderProjectDraftV2(projectId, pageRequest = state.activeRequest
     const editorTitle = root.querySelector(".project-editor-panel .panel-head h2");
     if (editorTitle) editorTitle.textContent = state.locale === "en" ? "Define responsibilities and collaboration" : "定义职责与协作方式";
     void renderTeamAssistant(projectId, project, pageRequest);
-    const projectEditForm = $("#project-edit-form-v2");
+    const projectEditForm = $("#project-edit-form");
     bindDirtyForm(projectEditForm, () => setDirty("project-form"));
-    projectEditForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview") }) }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; $("#project-edit-status-v2").textContent = result.ok ? (payload.projectStatus === "draft" ? "已保存，团队回到草案状态。" : "已保存。") : (payload.error || "保存失败"); if (result.ok) { clearDirty("project-form"); await renderProjectDraftV2(projectId, pageRequest); } });
-    const confirm = $("#confirm-project-v2"); confirm?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/release`, { method: "POST" }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; if (!result.ok) { $("#project-edit-status-v2").textContent = payload.error || "发布失败"; return; } clearDirty("project-form"); await renderProjectDraftV2(projectId, pageRequest); });
-    $("#reconfirm-project-v2")?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/edit`, { method: "POST" }); const payload = await result.json(); if (!result.ok) { $("#project-edit-status-v2").textContent = payload.error || "新版本创建失败"; return; } clearDirty("project-form"); navigate(`/studio/team/${encodeURIComponent(payload.projectId)}`); });
+    projectEditForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview") }) }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; $("#project-edit-status").textContent = result.ok ? (payload.projectStatus === "draft" ? "已保存，团队回到草案状态。" : "已保存。") : (payload.error || "保存失败"); if (result.ok) { clearDirty("project-form"); await renderProjectDraft(projectId, pageRequest); } });
+    const confirm = $("#confirm-project"); confirm?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/release`, { method: "POST" }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; if (!result.ok) { $("#project-edit-status").textContent = payload.error || "发布失败"; return; } clearDirty("project-form"); await renderProjectDraft(projectId, pageRequest); });
+    $("#reconfirm-project")?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/edit`, { method: "POST" }); const payload = await result.json(); if (!result.ok) { $("#project-edit-status").textContent = payload.error || "新版本创建失败"; return; } clearDirty("project-form"); navigate(`/studio/team/${encodeURIComponent(payload.projectId)}`); });
   } catch (error) { if (isAbort(error)) return; root.innerHTML = `<div class="run-error">${esc(error.message || "项目读取失败")}</div>`; }
 }
 
@@ -913,7 +913,7 @@ async function openTaskReview(projectId, taskId) {
       const result = await response.json();
       if (!response.ok) { status.textContent = result.error || "审核提交失败"; return; }
       dialog.close("submit");
-      if (isCurrentRequest(pageRequest)) await renderProjectRunV2(projectId, pageRequest);
+      if (isCurrentRequest(pageRequest)) await renderProjectRun(projectId, pageRequest);
     } catch (error) {
       if (isAbort(error)) return;
       status.textContent = error.message || "审核提交失败";
@@ -966,7 +966,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "资料上传失败");
       clearDirty("project-materials");
-      await renderProjectRunV2(projectId, pageRequest);
+      await renderProjectRun(projectId, pageRequest);
     } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "资料上传失败"; }
   });
   collaborationTaskForm?.addEventListener("submit", async (event) => {
@@ -984,7 +984,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       if (!response.ok) { status.textContent = result.error || "任务创建失败"; return; }
       clearDirty("collaboration-task-form");
       status.textContent = "任务已加入清单";
-      await renderProjectRunV2(projectId, pageRequest);
+      await renderProjectRun(projectId, pageRequest);
     } catch (error) {
       if (isAbort(error)) return;
       if (isCurrentRequest(pageRequest)) status.textContent = error.message || "任务创建失败";
@@ -1011,7 +1011,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
         if (rowStatus) rowStatus.textContent = result.error || "任务操作失败";
         return;
       }
-      await renderProjectRunV2(projectId, pageRequest);
+      await renderProjectRun(projectId, pageRequest);
     } catch (error) {
       if (isAbort(error)) return;
       if (isCurrentRequest(pageRequest)) {
@@ -1024,7 +1024,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   }));
 }
 
-async function renderProjectRunV2(projectId, pageRequest = state.activeRequest) {
+async function renderProjectRun(projectId, pageRequest = state.activeRequest) {
   if (pageRequest && !isCurrentRequest(pageRequest)) return;
   const root = $("#project-workspace-view"); root.innerHTML = '<div class="project-loading">正在读取运行工作区...</div>';
   try {
@@ -1063,13 +1063,13 @@ function syncRoute() {
   const teamMatch = path.match(/^\/studio\/team\/([a-z0-9-]+)$/);
   if (teamMatch) {
     setView("project-workspace");
-    void renderProjectDraftV2(teamMatch[1], pageRequest).then(() => renderProjectGraph(teamMatch[1], "project-graph-stage", false, pageRequest));
+    void renderProjectDraft(teamMatch[1], pageRequest).then(() => renderProjectGraph(teamMatch[1], "project-graph-stage", false, pageRequest));
     return;
   }
   const projectRunMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)\/run$/);
   if (projectRunMatch) {
     setView("project-workspace");
-    void renderProjectRunV2(projectRunMatch[1], pageRequest);
+    void renderProjectRun(projectRunMatch[1], pageRequest);
     return;
   }
   if (path === "/studio" && new URLSearchParams(location.search).has("team")) {

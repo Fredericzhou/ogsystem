@@ -5,9 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 test("team repository supports stable filtering, sorting, pagination, and statistics", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-repository-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-repository-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-repository=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-repository=${Date.now()}`);
   try {
     const first = await store.queryTeamRepository({ page: 1, pageSize: 2, sort: "name" });
     assert.equal(first.pagination.page, 1);
@@ -24,9 +24,9 @@ test("team repository supports stable filtering, sorting, pagination, and statis
 });
 
 test("team repository queries include unreleased versions and forks refresh reference metadata", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-repository-status-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-repository-status-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-repository-status=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-repository-status=${Date.now()}`);
   try {
     const draft = await store.createProject({ name: "Status Draft Team", overview: "Draft status query.", templateId: "empty" });
     const released = await store.confirmProjectTeam(draft.projectId, { release: true });
@@ -45,11 +45,11 @@ test("team repository queries include unreleased versions and forks refresh refe
 });
 
 test("team package preview exposes fingerprint conflicts and explicit reuse does not create a project", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-import-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-import-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-import=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-import=${Date.now()}`);
   try {
-    const source = await store.createProject({ name: "Phase 2 Source", overview: "Import preview.", templateId: "minimal" });
+    const source = await store.createProject({ name: "Capability Source", overview: "Import preview.", templateId: "minimal" });
     await store.confirmProjectTeam(source.projectId, { release: true });
     const exported = await store.exportProjectTeam(source.projectId);
     const preview = await store.previewTeamPackage(exported);
@@ -66,13 +66,13 @@ test("team package preview exposes fingerprint conflicts and explicit reuse does
 });
 
 test("project package preview and reuse preserve the existing collaboration project", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-project=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-project=${Date.now()}`);
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team" });
-    const project = await store.createCollaborationProject({ name: "Phase 2 Project", overview: "Project import.", teamVersionIds: [team.projectId] });
-    await store.addProjectMaterial(project.projectId, { filename: "brief.md", content: "phase two", contentType: "text/markdown" });
+    const project = await store.createCollaborationProject({ name: "Capability Project", overview: "Project import.", teamVersionIds: [team.projectId] });
+    await store.addProjectMaterial(project.projectId, { filename: "brief.md", content: "capability regression", contentType: "text/markdown" });
     const exported = await store.exportProjectBundle(project.projectId);
     const preview = await store.previewProjectBundle(exported);
     assert.equal(preview.duplicate.projectId, project.projectId);
@@ -85,9 +85,9 @@ test("project package preview and reuse preserve the existing collaboration proj
 });
 
 test("project package validation normalizes materials and verifies its definition digest", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-validation-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-validation-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-project-validation=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-project-validation=${Date.now()}`);
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team" });
     const project = await store.createCollaborationProject({ name: "Validation Project", overview: "Validate imported definitions.", teamVersionIds: [team.projectId] });
@@ -121,9 +121,9 @@ test("project package validation normalizes materials and verifies its definitio
 });
 
 test("imported Team and Project names only conflict within their own scope", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-import-name-scope-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-import-name-scope-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-import-name-scope=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-import-name-scope=${Date.now()}`);
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team", name: "Source Team" });
     const project = await store.createCollaborationProject({ name: "Cross Scope Name", overview: "Cross-scope project." });
@@ -147,9 +147,9 @@ test("imported Team and Project names only conflict within their own scope", asy
 });
 
 test("team simulation uses a temporary workspace and leaves no project or run behind", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-phase2-"));
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?phase2-simulation=${Date.now()}`);
+  const store = await import(`../project-repository.mjs?capability-simulation=${Date.now()}`);
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team" });
     const before = (await store.listProjects()).map((project) => project.projectId).sort();
