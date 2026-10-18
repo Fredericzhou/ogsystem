@@ -30,6 +30,7 @@ import { validateProjectSystemSource, saveProjectSystemSource } from "../../dist
 import { loadRunEventsSnapshot } from "../../dist/visualizer/run-query-service.js";
 import { cases, getCase } from "./cases.mjs";
 import { materializeCaseTeam, runCase } from "./demo-runner.mjs";
+import { ACTIVE_RUN_STATUSES, assertLatestProjectOverview } from "./domain/contracts.mjs";
 
 const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const stagingRoot = resolve(projectsRoot, ".staging");
@@ -84,6 +85,7 @@ async function cleanupProjectStaging() {
 }
 
 function normalizeMeta(meta, projectId) {
+  assertLatestProjectOverview(meta);
   const confirmed = meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
   const teamVersionStatus = meta?.teamVersionStatus || (confirmed ? "released" : "draft");
   const teamRootId = String(meta?.teamRootId || meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
@@ -92,8 +94,7 @@ function normalizeMeta(meta, projectId) {
   return {
     projectId,
     name: String(meta?.name || "New team"),
-    intent: String(meta?.intent || ""),
-    overview: String(meta?.overview ?? meta?.intent ?? ""),
+    overview: String(meta.overview),
     templateId: meta?.templateId || "empty",
     projectStatus: confirmed ? "confirmed" : "draft",
     projectDigest: confirmed ? meta.projectDigest : null,
@@ -126,7 +127,7 @@ function projectStage(project) {
   // This is a UI projection only. Authorization uses projectStatus, run state, and locks.
   if (project.projectStatus !== "confirmed") return "draft";
   if ((project.runs || []).some((run) => ["running", "planning", "waiting_review", "paused"].includes(run.status))) return "running";
-  return "ready";
+  return "idle";
 }
 
 async function withProjectWriteLock(projectId, operation, action) {
@@ -178,7 +179,7 @@ function builtInTeamCoreDigest(caseSpec) {
 
 function projectDefinitionPayload(project) {
   return {
-    overview: project.overview || project.intent || "",
+    overview: project.overview,
     workspaceKey: project.workspaceKey || null,
     mountedTeams: (project.mountedTeams || []).map(({ mountedAt, status, ...team }) => team),
     materials: (project.materials?.materials || []).map(({ content, ...item }) => item)
@@ -276,7 +277,7 @@ async function readProject(projectId) {
       const runDir = resolve(projectPath(task.runProjectId), ".ogs", "runs", task.runId);
       const state = await loadProjectRunState(runDir).catch(() => undefined);
       if (!state?.status) return task;
-      if (activeTaskWorkers.has(`${project.projectId}:${task.taskId}`) && !["completed", "failed", "cancelled", "stopped", "deleted"].includes(task.status)) return task;
+      if (activeTaskWorkers.has(`${project.projectId}:${task.taskId}`) && !["completed", "failed", "cancelled", "deleted"].includes(task.status)) return task;
       return {
         ...task,
         status: state.status,
@@ -310,7 +311,7 @@ export async function listProjects() {
   return projects.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
-export async function createProject({ name, intent, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
+export async function createProject({ name, overview, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
   await mkdir(projectsRoot, { recursive: true });
   const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
   const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
@@ -338,8 +339,7 @@ export async function createProject({ name, intent, templateId = "empty", caseId
       teamVersionNumber,
       teamVersionStatus: "draft",
       ...(parentTeamVersionId ? { parentTeamVersionId } : {}),
-      intent: String(intent || "").trim().slice(0, 4000),
-      overview: String(intent || "").trim().slice(0, 4000),
+      overview: String(overview || "").trim().slice(0, 4000),
       templateId,
       projectStatus: "draft",
       projectDigest: null,
@@ -366,10 +366,10 @@ export async function createProject({ name, intent, templateId = "empty", caseId
   }
 }
 
-export async function createCollaborationProject({ name, workspaceKey, intent = "", overview, teamVersionIds = [] } = {}) {
+export async function createCollaborationProject({ name, workspaceKey, overview = "", teamVersionIds = [] } = {}) {
   const requestedIds = [...new Set((Array.isArray(teamVersionIds) ? teamVersionIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
-  // Preserve the legacy empty-shell API. The current project form always
-  // submits a non-empty list and uses the atomic path below.
+  // An empty collaboration shell remains valid for the project workspace API;
+  // the current project form submits its team list through this atomic path.
   const mountedTeams = [];
   for (const requestedTeamId of requestedIds) {
     let team;
@@ -385,7 +385,7 @@ export async function createCollaborationProject({ name, workspaceKey, intent = 
         teamVersionNumber: 1,
         teamName: caseSpec.title?.[language] || caseSpec.title?.en || caseId,
         name: caseSpec.title?.[language] || caseId,
-        intent: caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "",
+        overview: caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "",
         teamVersionStatus: "released",
         teamCoreDigest: builtInTeamCoreDigest(caseSpec),
         builtIn: true
@@ -400,7 +400,7 @@ export async function createCollaborationProject({ name, workspaceKey, intent = 
       teamVersionNumber: team.teamVersionNumber || 1,
       teamName: team.teamName || team.name,
       mountedAt: new Date().toISOString(),
-      status: "ready",
+      status: "available",
       ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
       ...(team.builtIn ? { builtIn: true } : {})
     });
@@ -412,7 +412,7 @@ export async function createCollaborationProject({ name, workspaceKey, intent = 
     if (existingProject) throw new Error("PROJECT_NAME_EXISTS: a project with this name already exists.");
     project = await createProject({
       name: normalizedName,
-      intent: String(overview ?? intent ?? ""),
+      overview: String(overview),
       templateId: "empty",
       source: "collaboration-project"
     });
@@ -454,7 +454,7 @@ export async function mountProjectTeam(projectId, teamVersionId) {
       if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
       const language = "zh-CN";
       const teamName = caseSpec.title?.[language] || caseSpec.title?.en || caseId;
-      const intent = caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "";
+      const overview = caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "";
       team = {
         projectId: requestedTeamId,
         teamId: requestedTeamId,
@@ -462,7 +462,7 @@ export async function mountProjectTeam(projectId, teamVersionId) {
         teamVersionNumber: 1,
         teamName,
         name: teamName,
-        intent,
+        overview,
         teamVersionStatus: "released",
         teamCoreDigest: builtInTeamCoreDigest(caseSpec),
         builtIn: true
@@ -479,7 +479,7 @@ export async function mountProjectTeam(projectId, teamVersionId) {
       teamVersionNumber: team.teamVersionNumber || 1,
       teamName: team.teamName || team.name,
       mountedAt: new Date().toISOString(),
-      status: "ready",
+      status: "available",
       ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
       ...(team.builtIn ? { builtIn: true } : {})
     }];
@@ -587,11 +587,11 @@ function findTask(project, taskId) {
   return task;
 }
 
-const activeTaskStatuses = new Set(["running", "planning", "pause_requested", "paused", "waiting_review", "ready"]);
+const activeTaskStatuses = ACTIVE_RUN_STATUSES;
 
 function assertProjectTaskExecutionSlot(project, taskId) {
   const active = (project.taskRecords || []).find((item) => item.taskId !== taskId && !item.deletedAt && activeTaskStatuses.has(item.status));
-  if (active) throw new Error(`PROJECT_TASK_CONCURRENCY_LIMIT: task ${active.taskId} is currently ${active.status}; finish or stop it before starting another task.`);
+  if (active) throw new Error(`PROJECT_TASK_CONCURRENCY_LIMIT: task ${active.taskId} is currently ${active.status}; finish or cancel it before starting another task.`);
 }
 
 async function saveTaskRecord(project, taskId, update) {
@@ -608,22 +608,21 @@ async function saveTaskRecord(project, taskId, update) {
 }
 
 export async function controlProjectTask(projectId, taskId, control) {
-  if (!["start", "pause", "resume", "stop"].includes(control)) throw new Error("TASK_CONTROL_INVALID: unsupported task control.");
+  if (!["start", "pause", "resume", "cancel"].includes(control)) throw new Error("TASK_CONTROL_INVALID: unsupported task control.");
   const project = await readProject(projectId);
   const task = findTask(project, taskId);
-  if (["completed", "failed", "stopped", "cancelled", "deleted"].includes(task.status)) {
-    if (control === "stop" && ["stopped", "cancelled"].includes(task.status)) return task;
+  if (["completed", "failed", "cancelled", "deleted"].includes(task.status)) {
     throw new Error(`TASK_CONTROL_INVALID: task is already ${task.status}.`);
   }
   if (task.runId) {
     if (control === "start") throw new Error("TASK_CONTROL_INVALID: task already has a run.");
     if (control === "resume") assertProjectTaskExecutionSlot(project, taskId);
-    const runControl = control === "stop" ? "cancel" : control;
+    const runControl = control === "cancel" ? "cancel" : control;
     const result = await controlProjectRun(task.runProjectId || projectId, task.runId, runControl);
-    const status = result.state?.status || (control === "stop" ? "cancel_requested" : control === "pause" ? "pause_requested" : "running");
+    const status = result.state?.status || (control === "cancel" ? "cancel_requested" : control === "pause" ? "pause_requested" : "running");
     return withProjectWriteLock(projectId, "project-task-control", async () => {
       const latest = await readProject(projectId);
-      return saveTaskRecord(latest, taskId, { status: status === "cancelled" ? "stopped" : status, runId: task.runId });
+      return saveTaskRecord(latest, taskId, { status, runId: task.runId });
     });
   }
   if (control === "start") {
@@ -642,10 +641,10 @@ export async function controlProjectTask(projectId, taskId, control) {
     return withProjectWriteLock(projectId, "project-task-pause", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "paused" }));
   }
   if (control === "resume") {
-    if (!["paused", "ready"].includes(task.status)) throw new Error(`TASK_RESUME_NOT_ALLOWED: task status is ${task.status}.`);
+    if (task.status !== "paused") throw new Error(`TASK_RESUME_NOT_ALLOWED: task status is ${task.status}.`);
     return withProjectWriteLock(projectId, "project-task-resume", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "queued" }));
   }
-  return withProjectWriteLock(projectId, "project-task-stop", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "stopped", completedAt: new Date().toISOString() }));
+  return withProjectWriteLock(projectId, "project-task-cancel", async () => saveTaskRecord(await readProject(projectId), taskId, { status: "cancelled", completedAt: new Date().toISOString() }));
 }
 
 export async function startProjectTask(projectId, taskId, { mode = "dry-run" } = {}) {
@@ -757,7 +756,7 @@ export async function reviewProjectTask(projectId, taskId, { decision, comment, 
   if (!["approve", "rework", "pause", "terminate"].includes(decision)) throw new Error("TASK_REVIEW_INVALID: unsupported review decision.");
   const project = await readProject(projectId);
   const task = findTask(project, taskId);
-  if (!["waiting_review", "paused", "ready"].includes(task.status) && !task.runId) throw new Error(`TASK_REVIEW_NOT_ALLOWED: task status is ${task.status}.`);
+  if (!["waiting_review", "paused"].includes(task.status) && !task.runId) throw new Error(`TASK_REVIEW_NOT_ALLOWED: task status is ${task.status}.`);
   let reviewResult;
   if (task.runId) {
     const runProject = task.runProjectId ? await readProject(task.runProjectId) : project;
@@ -776,7 +775,7 @@ export async function reviewProjectTask(projectId, taskId, { decision, comment, 
       });
     }
   }
-  const nextStatus = decision === "approve" || decision === "rework" ? "ready" : decision === "pause" ? "paused" : "stopped";
+  const nextStatus = decision === "approve" || decision === "rework" ? "queued" : decision === "pause" ? "paused" : "cancelled";
   const updated = await withProjectWriteLock(projectId, "project-task-review", async () => saveTaskRecord(await readProject(projectId), taskId, {
     status: nextStatus,
     review: { decision, comment: String(comment || "").trim().slice(0, 4000), reviewId: reviewId || reviewResult?.reviewId || null, decidedAt: new Date().toISOString() }
@@ -793,7 +792,7 @@ export async function reviewProjectTask(projectId, taskId, { decision, comment, 
 export async function deleteProjectTask(projectId, taskId) {
   const project = await readProject(projectId);
   const task = findTask(project, taskId);
-  if (["running", "planning", "waiting_review", "paused", "ready", "pause_requested"].includes(task.status)) {
+  if (["running", "planning", "waiting_review", "paused", "pause_requested", "cancel_requested"].includes(task.status)) {
     if (task.runId) await controlProjectRun(projectId, task.runId, "cancel").catch(() => undefined);
   }
   return withProjectWriteLock(projectId, "project-task-delete", async () => saveTaskRecord(await readProject(projectId), taskId, {
@@ -816,7 +815,7 @@ export async function createProjectWorkspace(teamProjectId, { name, workspaceKey
     }
     const project = await createProject({
       name: name || `${team.name} 项目`,
-      intent: team.intent,
+      overview: team.overview,
       templateId: "empty",
       source: "workspace",
       locale
@@ -851,7 +850,7 @@ export async function createProjectWorkspace(teamProjectId, { name, workspaceKey
   }
 }
 
-export async function createClassicTeamProject({ caseId, asTemplate = false, name, intent, locale = "zh-CN" } = {}) {
+export async function createClassicTeamProject({ caseId, asTemplate = false, name, overview, locale = "zh-CN" } = {}) {
   const caseSpec = getCase(caseId);
   if (!caseSpec) throw new Error("Unknown example team.");
   const language = locale === "en" ? "en" : "zh-CN";
@@ -865,7 +864,7 @@ export async function createClassicTeamProject({ caseId, asTemplate = false, nam
   }
   const project = await createProject({
     name: name || defaultName,
-    intent: intent || defaultIntent,
+    overview: overview || defaultIntent,
     templateId: `classic:${caseId}`,
     caseId,
     source: asTemplate ? "classic-template" : "classic",
@@ -890,7 +889,7 @@ export async function listTeamRepository({ includeUnreleased = false } = {}) {
     teamVersionNumber: 1,
     teamName: item.title?.["zh-CN"] || item.title?.en || item.id,
     name: item.title?.["zh-CN"] || item.title?.en || item.id,
-    intent: item.detail?.scenario?.["zh-CN"] || item.short?.["zh-CN"] || "",
+    overview: item.detail?.scenario?.["zh-CN"] || item.short?.["zh-CN"] || "",
     teamVersionStatus: "released",
     teamCoreDigest: builtInTeamCoreDigest(item),
     source: "classic",
@@ -908,7 +907,7 @@ export async function queryTeamRepository({ query = "", category = "", status = 
   const filtered = allTeams.filter((team) => {
     const teamStatus = String(team.teamVersionStatus || "released").toLocaleLowerCase();
     const teamCategory = typeof team.category === "object" ? (team.category["zh-CN"] || team.category.en || "") : (team.category || "");
-    const haystack = [team.teamName, team.name, team.intent, teamCategory].join(" ").toLocaleLowerCase();
+    const haystack = [team.teamName, team.name, team.overview, teamCategory].join(" ").toLocaleLowerCase();
     return (!normalizedQuery || haystack.includes(normalizedQuery))
       && (!normalizedCategory || String(teamCategory).toLocaleLowerCase() === normalizedCategory)
       && (!normalizedStatus || normalizedStatus === "all" || teamStatus === normalizedStatus);
@@ -1003,7 +1002,7 @@ export async function forkTeamVersion(teamVersionId) {
     teamId: source.teamId,
     teamVersionNumber: nextVersionNumber,
     parentTeamVersionId: source.teamVersionId || source.projectId,
-    intent: source.intent,
+    overview: source.overview,
     templateId: source.templateId,
     source: "version-edit"
   });
@@ -1107,17 +1106,17 @@ export async function updateProject(projectId, changes = {}) {
   return withProjectWriteLock(projectId, "project-edit", async () => {
     const project = await readProject(projectId);
     const nextName = changes.name === undefined ? project.name : String(changes.name).trim().slice(0, 120);
-    const nextIntent = changes.intent === undefined ? project.intent : String(changes.intent).trim().slice(0, 4000);
+    const nextOverview = changes.overview === undefined ? project.overview : String(changes.overview).trim().slice(0, 4000);
     if (!nextName) throw new Error("Project name is required.");
     if (changes.name !== undefined && project.projectType === "team") {
       await assertTeamNameAvailable(nextName, { excludeProjectId: projectId, teamRootId: project.teamRootId });
     }
-    const semanticChanged = nextIntent !== project.intent || changes.semanticChanged === true;
+    const semanticChanged = nextOverview !== project.overview || changes.semanticChanged === true;
     const next = {
       ...normalizeMeta(project, projectId),
       name: nextName,
       ...(project.projectType === "team" && changes.name !== undefined ? { teamName: nextName } : {}),
-      intent: nextIntent,
+      overview: nextOverview,
       updatedAt: new Date().toISOString()
     };
     if (project.projectType === "collaboration") next.projectDefinitionDigest = computeProjectDefinitionDigest({ ...project, ...next });
@@ -1582,7 +1581,7 @@ export async function controlProjectRun(projectId, runId, control) {
       if (latestControl?.action === "cancel") {
         throw new Error("RUN_RESUME_NOT_ALLOWED: cancellation has already been requested.");
       }
-      if (!["waiting_review", "paused", "ready"].includes(state.status)) {
+      if (!["waiting_review", "paused"].includes(state.status)) {
         throw new Error(`RUN_RESUME_NOT_ALLOWED: run status is ${state.status}.`);
       }
       const plan = await loadProjectRunPlan(runDir);
@@ -1597,7 +1596,7 @@ export async function controlProjectRun(projectId, runId, control) {
   const request = await writeProjectRunControl(runDir, control);
   const safeCancelled = await updateProjectRunState(runDir, (currentState) => {
     const next = writeRunStateControl(currentState, control);
-    return control === "cancel" && ["waiting_review", "paused", "ready"].includes(currentState.status)
+    return control === "cancel" && ["waiting_review", "paused"].includes(currentState.status)
       ? { ...next, status: "cancelled", updatedAt: new Date().toISOString() }
       : next;
   });
@@ -1613,7 +1612,7 @@ export async function exportProjectTeam(projectId) {
     teamCoreDigest: bundle.teamCoreDigest || await computeTeamCoreDigest(project.workdir),
     team: {
       ...(bundle.team || {}),
-      project: { name: project.name, intent: project.intent, source: "exported" }
+      project: { name: project.name, overview: project.overview, source: "exported" }
     }
   };
   return { ...exported, packageDigest: computePackageDigest(exported) };
@@ -1641,7 +1640,7 @@ export async function exportProjectBundle(projectId) {
     mode: "project-v1",
     project: {
       name: project.name,
-      overview: project.overview || project.intent || "",
+      overview: project.overview,
       workspaceKey: project.workspaceKey || null,
       projectDefinitionDigest,
       mountedTeams: project.mountedTeams || [],
@@ -1835,7 +1834,7 @@ export async function importTeamPackage(bundle, { conflictStrategy = "create-new
   const libraryLock = await acquireProjectWriteLock(projectsRoot, "project-import");
   let project;
   try {
-    project = await createProject({ name: importName, teamName: importName, intent: metadata.intent || "", templateId: "empty", source: "imported" });
+    project = await createProject({ name: importName, teamName: importName, overview: metadata.overview || "", templateId: "empty", source: "imported" });
     const loaded = await loadTeamPackage({ workdir: project.workdir, bundle });
     if (loaded.validation?.ok === false) throw new Error("PROJECT_IMPORT_INVALID: imported Mermaid system failed validation.");
     await withProjectWriteLock(project.projectId, "project-import", async () => {
