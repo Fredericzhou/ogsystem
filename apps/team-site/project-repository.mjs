@@ -30,7 +30,10 @@ import { validateProjectSystemSource, saveProjectSystemSource } from "../../dist
 import { loadRunEventsSnapshot } from "../../dist/visualizer/run-query-service.js";
 import { cases, getCase } from "./cases.mjs";
 import { materializeCaseTeam, runCase } from "./demo-runner.mjs";
-import { ACTIVE_RUN_STATUSES, assertLatestProjectOverview } from "./domain/contracts.mjs";
+import { assertLatestProjectOverview } from "./domain/contracts.mjs";
+import { assertCollaborationProject, assertProjectHasTeams, assertProjectTeamMutationAllowed } from "./domain/project.mjs";
+import { assertReleasedTeamVersion, createMountedTeamRecord } from "./domain/team.mjs";
+import { assertTaskExecutionSlot, isTerminalTaskStatus } from "./domain/task.mjs";
 
 const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const stagingRoot = resolve(projectsRoot, ".staging");
@@ -291,7 +294,7 @@ async function readProject(projectId) {
       const runDir = resolve(projectPath(task.runProjectId), ".ogs", "runs", task.runId);
       const state = await loadProjectRunState(runDir).catch(() => undefined);
       if (!state?.status) return task;
-      if (activeTaskWorkers.has(`${project.projectId}:${task.taskId}`) && !["completed", "failed", "cancelled", "deleted"].includes(task.status)) return task;
+      if (activeTaskWorkers.has(`${project.projectId}:${task.taskId}`) && !isTerminalTaskStatus(task.status)) return task;
       return {
         ...task,
         status: state.status,
@@ -389,45 +392,46 @@ export async function createProject({ name, overview, templateId = "empty", case
   }
 }
 
-export async function createCollaborationProject({ name, workspaceKey, overview = "", teamVersionIds = [] } = {}) {
-  const requestedIds = [...new Set((Array.isArray(teamVersionIds) ? teamVersionIds : []).map((value) => String(value || "").trim()).filter(Boolean))];
-  // An empty collaboration shell remains valid for the project workspace API;
-  // the current project form submits its team list through this atomic path.
+async function resolveMountableTeam(teamVersionId) {
+  const requestedTeamId = String(teamVersionId || "").trim();
+  if (!requestedTeamId) throw new Error("TEAM_VERSION_REQUIRED: a team version is required.");
+  if (requestedTeamId.startsWith("case:")) {
+    const caseId = requestedTeamId.slice(5);
+    const caseSpec = getCase(caseId);
+    if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
+    const language = "zh-CN";
+    const teamName = caseSpec.title?.[language] || caseSpec.title?.en || caseId;
+    return {
+      projectId: requestedTeamId,
+      teamId: requestedTeamId,
+      teamVersionId: requestedTeamId,
+      teamVersionNumber: 1,
+      teamName,
+      name: teamName,
+      overview: caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "",
+      teamVersionStatus: "released",
+      teamCoreDigest: builtInTeamCoreDigest(caseSpec),
+      builtIn: true
+    };
+  }
+  return readProject(requestedTeamId);
+}
+
+async function resolveMountedTeams(teamVersionIds, previous = []) {
+  assertProjectHasTeams(teamVersionIds);
+  const requestedIds = [...new Set(teamVersionIds.map((value) => String(value || "").trim()).filter(Boolean))];
+  const previousById = new Map(previous.map((team) => [team.teamVersionId, team]));
   const mountedTeams = [];
   for (const requestedTeamId of requestedIds) {
-    let team;
-    if (requestedTeamId.startsWith("case:")) {
-      const caseId = requestedTeamId.slice(5);
-      const caseSpec = getCase(caseId);
-      if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
-      const language = "zh-CN";
-      team = {
-        projectId: requestedTeamId,
-        teamId: requestedTeamId,
-        teamVersionId: requestedTeamId,
-        teamVersionNumber: 1,
-        teamName: caseSpec.title?.[language] || caseSpec.title?.en || caseId,
-        name: caseSpec.title?.[language] || caseId,
-        overview: caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "",
-        teamVersionStatus: "released",
-        teamCoreDigest: builtInTeamCoreDigest(caseSpec),
-        builtIn: true
-      };
-    } else {
-      team = await readProject(requestedTeamId);
-    }
-    if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
-    mountedTeams.push({
-      teamId: team.teamId || team.projectId,
-      teamVersionId: team.teamVersionId || team.projectId,
-      teamVersionNumber: team.teamVersionNumber || 1,
-      teamName: team.teamName || team.name,
-      mountedAt: new Date().toISOString(),
-      status: "available",
-      ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
-      ...(team.builtIn ? { builtIn: true } : {})
-    });
+    const team = await resolveMountableTeam(requestedTeamId);
+    assertReleasedTeamVersion(team);
+    mountedTeams.push(createMountedTeamRecord(team, previousById.get(team.teamVersionId || team.projectId)));
   }
+  return mountedTeams;
+}
+
+export async function createCollaborationProject({ name, overview = "", teamVersionIds = [] } = {}) {
+  const mountedTeams = await resolveMountedTeams(teamVersionIds);
   let project;
   try {
     const normalizedName = String(name || "协作项目").trim() || "协作项目";
@@ -448,8 +452,7 @@ export async function createCollaborationProject({ name, workspaceKey, overview 
       teamVersionId: undefined,
       teamName: undefined,
       mountedTeams,
-      taskRecords: [],
-      workspaceKey: String(workspaceKey || project.projectId)
+      taskRecords: []
     };
     await writeJson(metaPath, {
       ...collaborationMeta,
@@ -465,52 +468,30 @@ export async function createCollaborationProject({ name, workspaceKey, overview 
   }
 }
 
-export async function mountProjectTeam(projectId, teamVersionId) {
-  return withProjectWriteLock(projectId, "project-team-mount", async () => {
+export async function listProjectTeams(projectId) {
+  const project = await readProject(projectId);
+  assertCollaborationProject(project);
+  return {
+    projectId: project.projectId,
+    projectDefinitionDigest: project.projectDefinitionDigest,
+    mountedTeams: project.mountedTeams || []
+  };
+}
+
+export async function replaceProjectTeams(projectId, teamVersionIds = []) {
+  const current = await readProject(projectId);
+  assertCollaborationProject(current);
+  assertProjectTeamMutationAllowed(current);
+  return withProjectWriteLock(projectId, "project-team-replace", async () => {
     const project = await readProject(projectId);
-    if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: only collaboration projects can mount teams.");
-    const requestedTeamId = String(teamVersionId || "");
-    let team;
-    if (requestedTeamId.startsWith("case:")) {
-      const caseId = requestedTeamId.slice(5);
-      const caseSpec = getCase(caseId);
-      if (!caseSpec) throw new Error("TEAM_NOT_FOUND: the selected built-in team does not exist.");
-      const language = "zh-CN";
-      const teamName = caseSpec.title?.[language] || caseSpec.title?.en || caseId;
-      const overview = caseSpec.detail?.scenario?.[language] || caseSpec.short?.[language] || "";
-      team = {
-        projectId: requestedTeamId,
-        teamId: requestedTeamId,
-        teamVersionId: requestedTeamId,
-        teamVersionNumber: 1,
-        teamName,
-        name: teamName,
-        overview,
-        teamVersionStatus: "released",
-        teamCoreDigest: builtInTeamCoreDigest(caseSpec),
-        builtIn: true
-      };
-    } else {
-      team = await readProject(requestedTeamId);
-    }
-    if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
-    const mountedTeams = Array.isArray(project.mountedTeams) ? project.mountedTeams : [];
-    if (mountedTeams.some((item) => item.teamVersionId === team.teamVersionId)) return project;
-    const mounted = [...mountedTeams, {
-      teamId: team.teamId || team.projectId,
-      teamVersionId: team.teamVersionId || team.projectId,
-      teamVersionNumber: team.teamVersionNumber || 1,
-      teamName: team.teamName || team.name,
-      mountedAt: new Date().toISOString(),
-      status: "available",
-      ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
-      ...(team.builtIn ? { builtIn: true } : {})
-    }];
+    assertCollaborationProject(project);
+    assertProjectTeamMutationAllowed(project);
+    const mountedTeams = await resolveMountedTeams(teamVersionIds, project.mountedTeams || []);
     const next = {
       ...normalizeMeta(project, projectId),
       projectType: "collaboration",
-      mountedTeams: mounted,
-      projectDefinitionDigest: computeProjectDefinitionDigest({ ...project, mountedTeams: mounted }),
+      mountedTeams,
+      projectDefinitionDigest: computeProjectDefinitionDigest({ ...project, mountedTeams }),
       updatedAt: new Date().toISOString()
     };
     await writeJson(join(project.workdir, ".site", "project.json"), next);
@@ -609,13 +590,6 @@ function findTask(project, taskId) {
   return task;
 }
 
-const activeTaskStatuses = ACTIVE_RUN_STATUSES;
-
-function assertProjectTaskExecutionSlot(project, taskId) {
-  const active = (project.taskRecords || []).find((item) => item.taskId !== taskId && !item.deletedAt && activeTaskStatuses.has(item.status));
-  if (active) throw new Error(`PROJECT_TASK_CONCURRENCY_LIMIT: task ${active.taskId} is currently ${active.status}; finish or cancel it before starting another task.`);
-}
-
 async function saveTaskRecord(project, taskId, update) {
   const now = new Date().toISOString();
   const task = findTask(project, taskId);
@@ -633,12 +607,12 @@ export async function controlProjectTask(projectId, taskId, control) {
   if (!["start", "pause", "resume", "cancel"].includes(control)) throw new Error("TASK_CONTROL_INVALID: unsupported task control.");
   const project = await readProject(projectId);
   const task = findTask(project, taskId);
-  if (["completed", "failed", "cancelled", "deleted"].includes(task.status)) {
+  if (isTerminalTaskStatus(task.status)) {
     throw new Error(`TASK_CONTROL_INVALID: task is already ${task.status}.`);
   }
   if (task.runId) {
     if (control === "start") throw new Error("TASK_CONTROL_INVALID: task already has a run.");
-    if (control === "resume") assertProjectTaskExecutionSlot(project, taskId);
+    if (control === "resume") assertTaskExecutionSlot(project, taskId);
     const runControl = control === "cancel" ? "cancel" : control;
     const result = await controlProjectRun(task.runProjectId || projectId, task.runId, runControl);
     const status = result.state?.status || (control === "cancel" ? "cancel_requested" : control === "pause" ? "pause_requested" : "running");
@@ -649,12 +623,12 @@ export async function controlProjectTask(projectId, taskId, control) {
   }
   if (control === "start") {
     if (task.status !== "queued") throw new Error(`TASK_START_NOT_ALLOWED: task status is ${task.status}.`);
-    assertProjectTaskExecutionSlot(project, taskId);
+    assertTaskExecutionSlot(project, taskId);
     return withProjectWriteLock(projectId, "project-task-start", async () => {
       const latest = await readProject(projectId);
       const latestTask = findTask(latest, taskId);
       if (latestTask.status !== "queued") throw new Error(`TASK_START_NOT_ALLOWED: task status is ${latestTask.status}.`);
-      assertProjectTaskExecutionSlot(latest, taskId);
+      assertTaskExecutionSlot(latest, taskId);
       return saveTaskRecord(latest, taskId, { status: "running", startedAt: new Date().toISOString() });
     });
   }
@@ -685,7 +659,7 @@ export async function startProjectTask(projectId, taskId, { mode = "dry-run" } =
       if (latestTask.runId) return { project: latest, task: latestTask };
       throw new Error(`TASK_START_NOT_ALLOWED: task status is ${latestTask.status}.`);
     }
-    assertProjectTaskExecutionSlot(latest, taskId);
+    assertTaskExecutionSlot(latest, taskId);
     const nextTask = await saveTaskRecord(latest, taskId, { status: "planning", startedAt: latestTask.startedAt || new Date().toISOString(), lastError: null });
     return { project: await readProject(projectId), task: nextTask };
   });

@@ -49,7 +49,6 @@ test("site creates a new project, records a task, and shows project resources", 
     await page.goto(`${url}/studio/project/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
     await page.locator("#collaboration-project-form").waitFor();
     await page.locator("#collaboration-project-form input[name=name]").fill("Research Project");
-    await page.locator("#collaboration-project-form input[name=workspaceKey]").fill("research-workspace");
     await page.locator(`#project-team-options input[value="${teamId}"]`).check();
     await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);

@@ -5,7 +5,7 @@ import { bindDirtyForm, confirmAction, lockBodyScroll, trapFocus } from "../comp
 import { createRunPoller } from "../components/run-poll.js";
 import { labelEvent as localizedEventLabel, taskExample, text } from "../i18n.js";
 import { createRouter } from "../router.js";
-function professionalWorkspaceUrl(projectId, panel = "design", runId = "") {
+function professionalWorkspaceUrl(projectId, panel = "diagnosis", runId = "") {
   try {
     const url = new URL(String(state.visUrl || ""));
     if (!/^https?:$/.test(url.protocol)) return "";
@@ -13,22 +13,14 @@ function professionalWorkspaceUrl(projectId, panel = "design", runId = "") {
     if (runId) url.searchParams.set("runId", runId);
     if (panel) url.searchParams.set("panel", panel);
     return url.toString();
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
-function bindProfessionalWorkspaceLink(link, projectId, panel = "design", runId = "") {
+function bindProfessionalWorkspaceLink(link, projectId, panel = "diagnosis", runId = "") {
   if (!link) return;
   const href = professionalWorkspaceUrl(projectId, panel, runId);
-  if (href) {
-    link.href = href;
-    return;
-  }
-  link.href = "#";
-  link.addEventListener("click", (event) => {
-    event.preventDefault();
-    showToast(state.locale === "en" ? "The advanced workspace is temporarily unavailable." : "高级工作台暂时不可用");
-  });
+  if (href) { link.href = href; link.target = "_blank"; link.rel = "noopener"; return; }
+  link.removeAttribute("href");
+  link.addEventListener("click", (event) => { event.preventDefault(); showToast(state.locale === "en" ? "The technical workspace is temporarily unavailable." : "技术运行工作台暂时不可用"); });
 }
 const themeStorageKey = "ogs.visualizer.theme";
 const copy = {
@@ -156,7 +148,7 @@ Object.assign(copy["zh-CN"], {
   historyIntro: "按项目轮次查看团队运行结果。清理只影响本机缓存，不会删除项目记录。",
   noHistory: "还没有项目运行记录。完成一次项目运行后，这里会显示团队、版本和轮次。",
   targetHint: "请包含目标、角色关系、大致流程、输入材料和期望输出，便于自动生成团队结构。",
-  releaseTeam: "发布团队版本 →", advancedWorkspace: "打开专业工作台"
+    releaseTeam: "发布团队版本 →", advancedWorkspace: "查看技术运行诊断"
 });
 Object.assign(copy.en, {
   navTeams: "Team repository", navExamples: "Team factory", libraryEyebrow: "Team repository", libraryTitle: "Released team versions",
@@ -170,7 +162,7 @@ Object.assign(copy.en, {
   historyIntro: "Review team runs by project round. Clearing only affects this browser cache, not project records.",
   noHistory: "No project runs yet. Complete a project run to see its team, version, and round here.",
   targetHint: "Include the goal, role relationships, rough workflow, inputs, and expected outputs so the team structure can be generated accurately.",
-  releaseTeam: "Release team version →", advancedWorkspace: "Open professional workspace"
+    releaseTeam: "Release team version →", advancedWorkspace: "View technical run diagnostics"
 });
 
 function labelEvent(event) { return localizedEventLabel(event, copy); }
@@ -352,7 +344,8 @@ function isProjectRoute() {
     || path === "/factory"
     || path === "/studio/project/new"
     || path === "/factory/new"
-    || /^\/studio\/(?:project|team)\/[a-z0-9-]+(?:\/run)?$/.test(path);
+    || /^\/studio\/project\/[a-z0-9-]+\/(?:run|teams)$/.test(path)
+    || /^\/studio\/team\/[a-z0-9-]+$/.test(path);
 }
 function setView(view) {
   state.view = view;
@@ -388,12 +381,9 @@ function materialStatusLabel(status) {
   if (state.locale === "en") return ({ indexed: "Ready", pending: "Processing", failed: "Needs attention" })[status] || status || "Ready";
   return ({ indexed: "已就绪", pending: "处理中", failed: "需要处理" })[status] || status || "已就绪";
 }
-function normalizeWorkspaceKey(value) {
-  return String(value || "workspace").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "workspace";
-}
 async function renderProjectCreate() {
   const root = $("#new-project-view");
-  root.innerHTML = `<section class="page-heading project-create-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">创建协作项目</div><h1>先建立项目，再安排团队</h1><p>项目共享一个自动创建的工作目录。选择至少一个已发布团队，之后可以继续添加团队并运行不同任务。</p></div></section><section class="project-builder project-create-builder"><form id="collaboration-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目基础信息</span><h2>项目名称与概述</h2><p>项目工作目录会自动创建，后续任务和团队共享这里的材料。</p></div><label>项目名称<input name="name" required maxlength="120" placeholder="例如：新产品上市项目"></label><label>工作目录标识（可选）<input name="workspaceKey" maxlength="80" placeholder="例如：product-launch"></label><label>项目概述（选填）<textarea name="overview" rows="4" maxlength="4000" placeholder="描述项目要完成的事情、阶段目标和预期成果"></textarea></label><fieldset class="builder-choice-group"><legend>挂载团队 <span>至少选择一个</span></legend><div id="project-team-options" class="builder-choice-grid"><span class="project-loading">正在读取团队仓库...</span></div></fieldset><div class="new-team-form-footer"><p class="form-hint">团队版本发布后才能挂载到项目；资料可在项目工作区中继续添加。</p><div class="form-actions"><a class="secondary-button" href="/projects" data-route="/projects">取消</a><button class="primary-button" type="submit">创建</button></div></div><p class="form-status" id="collaboration-project-status" role="status" aria-live="polite"></p></form></section>`;
+  root.innerHTML = `<section class="page-heading project-create-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">创建协作项目</div><h1>先建立项目，再安排团队</h1><p>项目会自动准备共享资料空间。选择至少一个已发布团队，之后可以继续添加团队并运行不同任务。</p></div></section><section class="project-builder project-create-builder"><form id="collaboration-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目基础信息</span><h2>项目名称与概述</h2><p>项目资料和团队会在这里统一管理。</p></div><label>项目名称<input name="name" required maxlength="120" placeholder="例如：新产品上市项目"></label><label>项目概述（选填）<textarea name="overview" rows="4" maxlength="4000" placeholder="描述项目要完成的事情、阶段目标和预期成果"></textarea></label><fieldset class="builder-choice-group"><legend>挂载团队 <span>至少选择一个</span></legend><div id="project-team-options" class="builder-choice-grid"><span class="project-loading">正在读取团队仓库...</span></div></fieldset><div class="new-team-form-footer"><p class="form-hint">只有已发布的团队版本可以挂载到项目；项目创建后可以在项目内管理团队。</p><div class="form-actions"><a class="secondary-button" href="/projects" data-route="/projects">取消</a><button class="primary-button" type="submit">创建项目</button></div></div><p class="form-status" id="collaboration-project-status" role="status" aria-live="polite"></p></form></section>`;
   const options = $("#project-team-options");
   options.insertAdjacentHTML("beforebegin", '<div class="team-picker-toolbar"><label class="team-picker-search"><span class="sr-only">搜索团队</span><input id="project-team-search" type="search" placeholder="搜索团队名称或目标" autocomplete="off"></label><span id="project-team-count" class="team-picker-count">已选 0 个</span></div>');
   try {
@@ -409,14 +399,14 @@ async function renderProjectCreate() {
     refreshTeamPicker();
     const collaborationProjectForm = $("#collaboration-project-form");
     bindDirtyForm(collaborationProjectForm, () => setDirty("collaboration-project-form"));
-    collaborationProjectForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const selected = form.getAll("teamVersionId"); const status = $("#collaboration-project-status"); const submit = event.currentTarget.querySelector("button[type=submit]"); if (!selected.length) { status.textContent = "请至少选择一个团队。"; return; } submit.disabled = true; status.textContent = "正在创建项目..."; try { const createResponse = await pageFetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), workspaceKey: normalizeWorkspaceKey(form.get("workspaceKey")), overview: form.get("overview"), teamVersionIds: selected }) }); const project = await createResponse.json(); if (!createResponse.ok) throw new Error(project.error || "项目创建失败"); clearDirty("collaboration-project-form"); navigate(`/studio/project/${encodeURIComponent(project.projectId)}/run`); } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "项目创建失败"; submit.disabled = false; } });
+    collaborationProjectForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const selected = form.getAll("teamVersionId"); const status = $("#collaboration-project-status"); const submit = event.currentTarget.querySelector("button[type=submit]"); if (!selected.length) { status.textContent = "请至少选择一个团队。"; return; } submit.disabled = true; status.textContent = "正在创建项目..."; try { const createResponse = await pageFetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), teamVersionIds: selected }) }); const project = await createResponse.json(); if (!createResponse.ok) throw new Error(project.error || "项目创建失败"); clearDirty("collaboration-project-form"); navigate(`/studio/project/${encodeURIComponent(project.projectId)}/run`); } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "项目创建失败"; submit.disabled = false; } });
   } catch (error) { if (isAbort(error)) return; if (error?.name !== "AbortError") options.innerHTML = `<p class="run-error">${esc(error.message || "无法读取团队仓库")}</p>`; }
 }
 async function renderNewProject() {
   const root = $("#new-project-view");
   root.innerHTML = [
-    '<section class="page-heading new-team-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">创建团队 · 第 1 步</div><h1>先定义团队目标</h1><p>写下团队要完成的事情，并选择协作方式。提交后会生成草案，你可以继续调整角色与流程，再确认入库。</p></div></section>',
-    '<section class="project-builder new-team-builder"><ol class="new-team-steps" aria-label="创建团队流程"><li class="active" aria-current="step"><span>1</span><div><strong>创建草案</strong><small>填写目标与协作偏好</small></div></li><li><span>2</span><div><strong>完善并发布</strong><small>检查团队结构后发布版本</small></div></li></ol>',
+    '<section class="page-heading new-team-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">Team Studio · Natural</div><h1>先说清团队要完成什么</h1><p>提交目标后，团队助手会先整理你的意图，再通过对话完善职责、协作关系和交付结果。</p></div></section>',
+    '<section class="project-builder new-team-builder">',
     `<form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">团队草案</span><h2>你希望团队完成什么？</h2><p>从目标开始，名称和协作偏好之后都可以修改。</p></div><label>团队名称<input name="name" required maxlength="120" autocomplete="organization" placeholder="例如：产品研究团队"></label><label>团队目标<textarea name="overview" required maxlength="4000" rows="6" placeholder="例如：目标是分析竞品资料并提出行动建议；研究员负责资料整理，分析员负责比较，负责人汇总并审核；流程为收集材料→独立分析→汇总审核；输入包括竞品文档，输出为带依据的建议清单。"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><fieldset class="builder-choice-group"><legend>选择协作方式 <span>可选</span></legend><div class="builder-choice-grid"><button class="builder-choice" type="button" data-builder-choice="顺序接力：每个角色完成后交给下一个" aria-pressed="false"><strong>顺序接力</strong><span>适合步骤明确、需要逐步交接的任务</span></button><button class="builder-choice" type="button" data-builder-choice="独立分析后汇总：多个角色分别研究，最后统一整理" aria-pressed="false"><strong>分头分析，再汇总</strong><span>适合需要多个角度并行研究的任务</span></button><button class="builder-choice" type="button" data-builder-choice="负责人协调：由一个负责人安排和检查其他角色" aria-pressed="false"><strong>负责人协调</strong><span>适合过程中需要统筹与检查的任务</span></button></div></fieldset><div class="new-team-form-footer"><p class="form-hint">创建后可继续用自然语言调整角色、流程和输出要求。</p><div class="form-actions"><button class="primary-button" type="submit">创建团队草案 <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`
   ].join("");
   const choiceLegend = root.querySelector(".builder-choice-group legend span");
@@ -456,8 +446,8 @@ async function renderTeamAssistant(projectId, project, pageRequest = state.activ
   let latestDesign;
   let latestDigest = project.projectDigest;
   let lastResponse;
-  root.innerHTML = '<div class="panel-head"><div><span class="section-kicker">对话完善</span><h2>继续和团队对话</h2></div><span class="status-chip">可随时微调</span></div><p class="panel-intro">告诉我你想增加、删除或调整什么。每次修改都会先生成预览，确认后才保存到草案。</p><div class="assistant-history" id="team-assistant-history"><div class="assistant-message"><strong>可以这样说</strong><span>增加一个事实核查角色，并让最终结论都附上来源。</span></div></div><div class="assistant-choices"><button type="button" class="builder-choice" data-assistant-choice="按顺序接力完成任务，并在最后增加人工审核"><strong>增加审核</strong><span>在最终输出前检查质量</span></button><button type="button" class="builder-choice" data-assistant-choice="减少角色，优先保证运行速度和成本"><strong>减少角色</strong><span>让流程更短、更容易运行</span></button><button type="button" class="builder-choice" data-assistant-choice="为每个关键结论增加来源引用要求"><strong>增加来源</strong><span>让结果更容易核查</span></button></div><label class="assistant-input-label"><span>告诉团队助手下一步怎么改</span><textarea id="team-assistant-input" rows="3" maxlength="4000" placeholder="例如：让研究员先分析，再让审核员检查事实依据"></textarea></label><div class="form-actions"><button class="primary-button" type="button" id="team-assistant-send">生成修改预览</button><a class="secondary-button" id="team-assistant-vis" href="#" target="_self">打开高级工作台</a></div><p class="form-status" id="team-assistant-status"></p><div id="team-assistant-preview"></div>';
-  bindProfessionalWorkspaceLink($("#team-assistant-vis"), projectId, "design");
+  let sending = false;
+  root.innerHTML = `<div class="panel-head"><div><span class="section-kicker">Team Studio · Natural</span><h2>用对话完善团队</h2></div><span class="status-chip">先预览，再保存</span></div><p class="panel-intro">告诉团队助手你想增加、删除或调整什么。团队助手会先生成结构化预览，确认后才保存到草案。</p><div class="assistant-history" id="team-assistant-history"><div class="assistant-message"><strong>当前目标</strong><span>${esc(project.overview || "还没有填写团队目标")}</span></div><div class="assistant-message"><strong>可以这样说</strong><span>增加一个事实核查角色，并让最终结论都附上来源。</span></div></div><div class="assistant-choices"><button type="button" class="builder-choice" data-assistant-choice="按顺序接力完成任务，并在最后增加人工审核"><strong>增加审核</strong><span>在最终输出前检查质量</span></button><button type="button" class="builder-choice" data-assistant-choice="减少角色，优先保证运行速度和成本"><strong>减少角色</strong><span>让流程更短、更容易运行</span></button><button type="button" class="builder-choice" data-assistant-choice="为每个关键结论增加来源引用要求"><strong>增加来源</strong><span>让结果更容易核查</span></button></div><label class="assistant-input-label"><span>告诉团队助手下一步怎么改</span><textarea id="team-assistant-input" rows="3" maxlength="4000" placeholder="例如：让研究员先分析，再让审核员检查事实依据"></textarea></label><div class="form-actions"><button class="primary-button" type="button" id="team-assistant-send">生成修改预览</button></div><p class="form-status" id="team-assistant-status"></p><div id="team-assistant-preview"></div>`;
   try {
     const designResponse = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design`);
     latestDesign = await designResponse.json();
@@ -470,8 +460,12 @@ async function renderTeamAssistant(projectId, project, pageRequest = state.activ
   const send = async (message) => {
     const text = String(message || "").trim();
     if (!text) return;
+    if (sending) return;
     const status = $("#team-assistant-status");
     const input = $("#team-assistant-input");
+    const sendButton = $("#team-assistant-send");
+    sending = true;
+    if (sendButton) sendButton.disabled = true;
     input.value = text;
     addMessage("你", text, "user");
     status.textContent = "正在分析团队结构并生成预览…";
@@ -490,23 +484,39 @@ async function renderTeamAssistant(projectId, project, pageRequest = state.activ
       if (patchReady) setDirty("team-assistant");
       preview.innerHTML = `<div class="assistant-preview"><div class="preview-list"><div><strong>当前状态</strong><span>${esc(payload.mode || "draft")}</span></div><div><strong>待确认问题</strong><span>${payload.unresolvedItems?.length || 0}</span></div></div>${payload.assumptions?.length ? `<p class="form-hint">假设：${esc(payload.assumptions.join("；"))}</p>` : ""}${questions ? `<div class="assistant-question-list">${questions}</div>` : ""}${patchReady ? '<div class="form-actions"><button type="button" class="primary-button" id="team-assistant-apply">应用到团队草案</button></div>' : ""}</div>`;
       preview.querySelectorAll("[data-assistant-choice]").forEach((button) => button.addEventListener("click", () => send(button.dataset.assistantChoice)));
-      $("#team-assistant-apply")?.addEventListener("click", async () => {
+      $("#team-assistant-apply")?.addEventListener("click", async (event) => {
         const patch = lastResponse?.authoringPatch?.authoring;
         if (!patch) return;
-        const save = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: patch, expectedProjectDigest: latestDigest }) });
-        const saved = await save.json();
-        if (!save.ok) throw new Error(saved.error || "团队草案保存失败");
-        clearDirty("team-assistant");
-        status.textContent = "修改已应用，团队回到草案状态，请检查后确认。";
-        await renderProjectDraft(projectId, pageRequest);
+        const applyButton = event.currentTarget;
+        applyButton.disabled = true;
+        status.textContent = "正在保存团队草案…";
+        try {
+          const save = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: patch, expectedProjectDigest: latestDigest }) });
+          const saved = await save.json();
+          if (!save.ok) throw new Error(saved.error || "团队草案保存失败");
+          latestDigest = saved.projectDigest || latestDigest;
+          latestDesign = saved;
+          clearDirty("team-assistant");
+          status.textContent = "修改已应用，团队回到草案状态，请检查后确认。";
+          await renderProjectDraft(projectId, pageRequest);
+          await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
+        } catch (error) {
+          if (isAbort(error)) return;
+          status.textContent = error.message || "团队草案保存失败";
+          applyButton.disabled = false;
+        }
       });
       status.textContent = patchReady ? "预览已生成，确认后才会保存。" : "请回答团队助手的问题，继续完善团队。";
     } catch (error) { if (isAbort(error)) return;
       status.textContent = error.message || "团队助手暂时不可用";
+    } finally {
+      sending = false;
+      if (sendButton?.isConnected) sendButton.disabled = false;
     }
   };
   $("#team-assistant-send")?.addEventListener("click", () => send($("#team-assistant-input").value));
   $$("#team-assistant [data-assistant-choice]").forEach((button) => button.addEventListener("click", () => send(button.dataset.assistantChoice)));
+  if (latestDesign && String(project.overview || "").trim()) void send(project.overview);
 }
 function teamVersionMeta(team) {
   const status = team.teamVersionStatus || (team.projectStatus === "confirmed" ? "released" : "draft");
@@ -520,7 +530,7 @@ function teamCard(team, area) {
   const meta = teamVersionMeta(team); const id = encodeURIComponent(team.projectId); const title = esc(team.teamName || team.name);
   const actions = area === "repository"
     ? `<a class="primary-button" href="/studio/project/new?team=${id}" data-route="/studio/project/new?team=${id}">${esc(copy[state.locale].useTeam)} →</a><button class="secondary-button" type="button" data-team-action="edit" data-team-id="${id}">${esc(copy[state.locale].editAsVersion)}</button><a class="secondary-button" href="/api/v1/projects/${id}/team/export">${esc(copy[state.locale].exportAsset)}</a><button class="text-button danger-text" type="button" data-team-action="archive" data-team-id="${id}">${esc(copy[state.locale].archiveVersion)}</button>`
-    : `<a class="primary-button" href="/studio/team/${id}" data-route="/studio/team/${id}">${esc(copy[state.locale].continueEditing)} →</a><a class="secondary-button" href="${esc(professionalWorkspaceUrl(team.projectId, "design"))}" target="_self">${esc(copy[state.locale].advancedWorkspace)}</a><button class="secondary-button" type="button" data-team-action="release" data-team-id="${id}">${esc(copy[state.locale].releaseVersion)}</button>`;
+    : `<a class="primary-button" href="/studio/team/${id}" data-route="/studio/team/${id}">${esc(copy[state.locale].continueEditing)} →</a><button class="secondary-button" type="button" data-team-action="release" data-team-id="${id}">${esc(copy[state.locale].releaseVersion)}</button>`;
   return `<article class="team-version-card project-asset-surface" data-team-status="${esc(meta.status)}"><div class="asset-card-top"><span class="asset-mark">O</span><span class="status-chip ${esc(meta.status)}">${esc(meta.label)}</span></div><div class="asset-title-row"><h2>${title}</h2><span class="version-badge">${esc(meta.version)}</span></div><p>${esc(team.overview || "")}</p><div class="asset-card-meta"><span>${esc(meta.hint)}</span><span>${team.updatedAt ? new Date(team.updatedAt).toLocaleDateString(state.locale) : ""}</span></div><div class="asset-card-actions">${actions}</div></article>`;
 }
 function caseGraphThumbnail(item) {
@@ -574,14 +584,70 @@ async function renderProjectLibrary() {
 }
 async function renderCollaborationProjects() {
   const root = $("#projects-view");
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">协作项目</div><h1>按任务推进项目</h1><p>一个项目共享工作目录，可以挂载多个团队并按任务重复运行。</p></div><div class="heading-actions"><a class="primary-button" href="/studio/project/new" data-route="/studio/project/new">创建协作项目</a></div></section><div id="collaboration-project-grid" class="project-library-grid"><div class="project-loading">正在读取协作项目...</div></div>`;
+  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">协作项目</div><h1>按任务推进项目</h1><p>一个项目可以挂载多个团队，统一管理资料、任务和运行结果。</p></div><div class="heading-actions"><a class="primary-button" href="/studio/project/new" data-route="/studio/project/new">创建协作项目</a></div></section><div id="collaboration-project-grid" class="project-library-grid"><div class="project-loading">正在读取协作项目...</div></div>`;
   const grid = $("#collaboration-project-grid");
   try {
     const response = await pageFetch("/api/v1/projects"); const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法读取协作项目");
     const projects = payload.projects || [];
-    grid.innerHTML = projects.length ? projects.map((project) => { const teams = project.mountedTeams || []; const taskCount = project.taskRecords?.length || 0; return `<article class="project-asset-card collaboration-project-card"><div class="asset-card-top"><span class="asset-mark">⌘</span><span class="status-chip ${esc(project.projectStatus || "draft")}">${esc(taskCount ? "进行中" : "待开始")}</span></div><div class="asset-title-row"><h2>${esc(project.name)}</h2><span class="version-badge">${teams.length} 个团队</span></div><p>${esc(project.overview || "共享工作目录，按任务记录项目进展")}</p><div class="asset-card-meta"><span>${esc(project.workspaceKey || "未设置工作目录")}</span><span>${taskCount} 个任务</span></div><div class="asset-card-actions"><a class="primary-button" href="/studio/project/${encodeURIComponent(project.projectId)}/run" data-route="/studio/project/${encodeURIComponent(project.projectId)}/run">打开项目 →</a></div></article>`; }).join("") : `<div class="empty-projects"><strong>还没有协作项目</strong><p>先创建项目，再挂载团队并开始任务。</p><a class="primary-button" href="/studio/project/new" data-route="/studio/project/new">创建协作项目 →</a></div>`;
+    grid.innerHTML = projects.length ? projects.map((project) => { const teams = project.mountedTeams || []; const taskCount = project.taskRecords?.length || 0; return `<article class="project-asset-card collaboration-project-card"><div class="asset-card-top"><span class="asset-mark">⌘</span><span class="status-chip ${esc(project.projectStatus || "draft")}">${esc(taskCount ? "进行中" : "待开始")}</span></div><div class="asset-title-row"><h2>${esc(project.name)}</h2><span class="version-badge">${teams.length} 个团队</span></div><p>${esc(project.overview || "共享资料，按任务记录项目进展")}</p><div class="asset-card-meta"><span>${teams.length ? "已配置团队" : "待配置团队"}</span><span>${taskCount} 个任务</span></div><div class="asset-card-actions"><a class="primary-button" href="/studio/project/${encodeURIComponent(project.projectId)}/run" data-route="/studio/project/${encodeURIComponent(project.projectId)}/run">打开项目 →</a></div></article>`; }).join("") : `<div class="empty-projects"><strong>还没有协作项目</strong><p>先创建项目，再挂载团队并开始任务。</p><a class="primary-button" href="/studio/project/new" data-route="/studio/project/new">创建协作项目 →</a></div>`;
   } catch (error) { if (isAbort(error)) return; grid.innerHTML = `<div class="run-error">${esc(error.message || "无法读取协作项目")}</div>`; }
+}
+
+async function renderProjectTeams(projectId, pageRequest = state.activeRequest) {
+  if (pageRequest && !isCurrentRequest(pageRequest)) return;
+  const root = $("#project-workspace-view");
+  root.innerHTML = '<div class="project-loading">正在读取项目团队...</div>';
+  try {
+    const [projectResponse, mountedResponse, repositoryResponse] = await Promise.all([
+      pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`),
+      pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/teams`),
+      pageFetch("/api/v1/team-repository")
+    ]);
+    const project = await projectResponse.json();
+    const mountedPayload = await mountedResponse.json();
+    const repositoryPayload = await repositoryResponse.json();
+    if (!projectResponse.ok) throw new Error(project.error || "项目不存在");
+    if (!mountedResponse.ok) throw new Error(mountedPayload.error || "无法读取项目团队");
+    if (!repositoryResponse.ok) throw new Error(repositoryPayload.error || "无法读取团队仓库");
+    if (!isCurrentRequest(pageRequest)) return;
+    const mounted = mountedPayload.mountedTeams || project.mountedTeams || [];
+    const known = new Map((repositoryPayload.teams || []).map((team) => [team.projectId || team.teamVersionId, team]));
+    mounted.forEach((team) => {
+      const id = team.teamVersionId;
+      if (id && !known.has(id)) known.set(id, { projectId: id, name: team.teamName, teamName: team.teamName, teamVersionId: id, teamVersionNumber: team.teamVersionNumber, teamVersionStatus: "released", builtIn: team.builtIn });
+    });
+    const teams = [...known.values()].filter((team) => team.teamVersionStatus === "released");
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio/project/${encodeURIComponent(projectId)}/run" data-route="/studio/project/${encodeURIComponent(projectId)}/run">← 返回项目</a><div class="eyebrow">协作项目 · 团队管理</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "选择项目要使用的已发布团队")}</p></div><span class="project-status confirmed">${mounted.length} 个团队</span></section><section class="project-builder project-team-manager"><form id="project-team-management-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目团队</span><h2>管理挂载团队</h2><p>这里修改的是当前项目，不会创建新项目。运行中的任务完成后才能调整团队。</p></div><fieldset class="builder-choice-group"><legend>已发布团队 <span>至少选择一个</span></legend><div id="project-managed-team-options" class="builder-choice-grid">${teams.length ? teams.map((team) => { const id = team.projectId || team.teamVersionId; const selected = mounted.some((item) => item.teamVersionId === id); return `<label class="builder-choice${selected ? " selected" : ""}"><input type="checkbox" name="teamVersionId" value="${esc(id)}"${selected ? " checked" : ""}><strong>${esc(team.teamName || team.name)} · v${team.teamVersionNumber || 1}${team.builtIn ? " · 内置" : ""}</strong><span>${esc((team.overview || "").slice(0, 140))}</span></label>`; }).join("") : '<p class="empty-note">暂无可用的已发布团队。</p>'}</div></fieldset><div class="new-team-form-footer"><p class="form-hint" id="project-team-management-hint">保存后会更新项目定义摘要；当前运行不会被改变。</p><div class="form-actions"><a class="secondary-button" href="/studio/project/${encodeURIComponent(projectId)}/run" data-route="/studio/project/${encodeURIComponent(projectId)}/run">取消</a><button class="primary-button" type="submit">保存团队配置</button></div></div><p class="form-status" id="project-team-management-status" role="status" aria-live="polite"></p></form></section>`;
+    const form = $("#project-team-management-form");
+    const options = $("#project-managed-team-options");
+    const refreshSelection = () => options?.querySelectorAll(".builder-choice").forEach((card) => card.classList.toggle("selected", Boolean(card.querySelector("input")?.checked)));
+    options?.querySelectorAll("input[type=checkbox]").forEach((input) => input.addEventListener("change", refreshSelection));
+    bindDirtyForm(form, () => setDirty("project-team-management-form"));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = $("#project-team-management-status");
+      const submit = form.querySelector("button[type=submit]");
+      const selected = new FormData(form).getAll("teamVersionId");
+      if (!selected.length) { status.textContent = "请至少保留一个团队。"; return; }
+      submit.disabled = true;
+      status.textContent = "正在保存团队配置…";
+      try {
+        const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/teams`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamVersionIds: selected }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "团队配置保存失败");
+        clearDirty("project-team-management-form");
+        navigate(`/studio/project/${encodeURIComponent(projectId)}/run`);
+      } catch (error) {
+        if (isAbort(error)) return;
+        status.textContent = error.message || "团队配置保存失败";
+        submit.disabled = false;
+      }
+    });
+  } catch (error) {
+    if (isAbort(error)) return;
+    root.innerHTML = `<div class="run-error">${esc(error.message || "无法读取项目团队")}</div>`;
+  }
 }
 
 async function renderPlatformConfig() {
@@ -807,8 +873,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     if (previewVersion) previewVersion.textContent = confirmed ? "已发布版本" : "未发布，仅在团队工厂中可见";
     const previewNote = root.querySelector(".project-preview-panel .preview-note");
     if (previewNote) previewNote.textContent = "团队只负责结构、角色和协作方式。";
-    root.insertAdjacentHTML("beforeend", '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">团队协作结构</span><h2>团队协作结构</h2><p id="project-design-status" class="form-status">正在加载可编辑团队结构</p></div><span class="status-chip">可视化编辑</span></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable project team graph"></div><p class="preview-note">这里提供轻量编辑和预览；保存结构修改后，团队会回到草案状态。</p><details class="team-professional-mode"><summary><span><strong>专业模式</strong><small>结构编辑、团队调试和运行诊断</small></span><span class="status-chip">默认收起</span></summary><div class="professional-mode-content"><p>需要更细的模型、上下文、单步调试或运行诊断时，再打开高级工作台。</p><a class="secondary-button" id="project-advanced-workspace" href="#" target="_self">打开高级工作台</a></div></details></section>');
-    bindProfessionalWorkspaceLink($("#project-advanced-workspace"), projectId, "design");
+    root.insertAdjacentHTML("beforeend", '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">Team Studio · Professional</span><h2>专业编辑</h2><p id="project-design-status" class="form-status">正在加载可编辑团队结构</p></div><span class="status-chip">与 Natural 共用团队设计</span></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable team collaboration graph"></div><p class="preview-note">可以直接调整角色和协作关系；保存后会重新校验团队草案。</p></section>');
     root.insertAdjacentHTML("beforeend", '<section class="project-panel team-assistant-panel" id="team-assistant"></section>');
     const confirmedStatus = root.querySelector(".page-heading .project-status");
     if (confirmedStatus) {
@@ -936,7 +1001,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   const teams = project.mountedTeams || [];
   const tasks = (project.taskRecords || []).filter((task) => !task.deletedAt && task.status !== "deleted");
   const materials = project.materials?.materials || [];
-  root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "共享工作目录，按任务推进")}</p></div><span class="project-status confirmed">${teams.length} 个团队 · ${tasks.length} 个任务</span></section><section class="project-grid collaboration-project-grid"><article class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">项目资源</span><h2>当前工作目录</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">${esc(project.workspaceKey || "尚未设置工作目录")}，所有已挂载团队共享这里的项目材料。</p><form id="project-material-form" class="material-upload-form"><label class="secondary-button material-upload-button">添加资料<input id="project-material-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><small>支持选择文件夹；推荐格式：MD、TXT、JSON、YAML、CSV，单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有项目材料，可以在任务开始前补充需求、背景或附件。</p>'}</div></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">执行团队</span><h2>已挂载团队</h2></div><span class="count-badge">${teams.length}</span></div><div class="material-list">${teams.length ? teams.map((team) => { const teamHref = String(team.teamVersionId || "").startsWith("case:") ? `/cases/${encodeURIComponent(String(team.teamVersionId).slice(5))}` : `/studio/team/${encodeURIComponent(team.teamVersionId)}`; return `<div class="material-row"><a class="team-link" href="${teamHref}" data-route="${teamHref}"><strong>${esc(team.teamName)}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></a></div>`; }).join("") : '<p class="empty-note">还没有挂载团队。</p>'}</div><a class="secondary-button" href="/studio/project/new" data-route="/studio/project/new">管理挂载团队</a></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">安排工作</span><h2>创建下一项任务</h2></div></div>${teams.length ? `<form id="collaboration-task-form" class="compact-form"><label><span>执行团队</span><select name="teamVersionId">${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label><span>任务内容</span><textarea name="input" required rows="4" maxlength="4000" placeholder="描述这次要完成的具体工作"></textarea></label><button class="primary-button" type="submit">记录任务</button><p class="form-status" id="collaboration-task-status"></p></form>` : '<p class="empty-note">请先挂载至少一个已发布团队。</p>'}</article><article class="project-panel task-list-panel"><div class="panel-head"><div><span class="section-kicker">任务清单与运行记录</span><h2>按任务追踪交付</h2></div><span class="count-badge">${tasks.length}</span></div><p class="panel-intro">每条任务保留输入内容、执行团队、项目轮次和处理结果。暂停后可以继续，待审核时可提交反馈。</p><div class="material-list">${tasks.length ? tasks.slice().reverse().map((task) => `<div class="material-row task-record-row"><div class="task-record-main"><strong>第 ${task.roundNumber || 1} 轮 · ${esc(task.teamName || "团队")}</strong><p>${esc(task.input || "")}</p><div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.runId ? `<span>运行 ${esc(task.runId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.runId ? `<div class="task-run-detail" data-run-id="${esc(task.runId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。先描述一项具体工作。</p>'}</div></article></section>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length} 个团队 · ${tasks.length} 个任务</span></section><section class="project-grid collaboration-project-grid"><article class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">项目资料</span><h2>共享资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">所有已挂载团队共享这里的资料。</p><form id="project-material-form" class="material-upload-form"><label class="secondary-button material-upload-button">添加资料<input id="project-material-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><small>支持选择文件夹；推荐格式：MD、TXT、JSON、YAML、CSV，单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有项目材料，可以在任务开始前补充需求、背景或附件。</p>'}</div></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">执行团队</span><h2>已挂载团队</h2></div><span class="count-badge">${teams.length}</span></div><div class="material-list">${teams.length ? teams.map((team) => { const teamHref = String(team.teamVersionId || "").startsWith("case:") ? `/cases/${encodeURIComponent(String(team.teamVersionId).slice(5))}` : `/studio/team/${encodeURIComponent(team.teamVersionId)}`; return `<div class="material-row"><a class="team-link" href="${teamHref}" data-route="${teamHref}"><strong>${esc(team.teamName)}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></a></div>`; }).join("") : '<p class="empty-note">还没有挂载团队。</p>'}</div><a class="secondary-button" href="/studio/project/${encodeURIComponent(projectId)}/teams" data-route="/studio/project/${encodeURIComponent(projectId)}/teams">管理挂载团队</a></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">安排工作</span><h2>创建下一项任务</h2></div></div>${teams.length ? `<form id="collaboration-task-form" class="compact-form"><label><span>执行团队</span><select name="teamVersionId">${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label><span>任务内容</span><textarea name="input" required rows="4" maxlength="4000" placeholder="描述这次要完成的具体工作"></textarea></label><button class="primary-button" type="submit">记录任务</button><p class="form-status" id="collaboration-task-status"></p></form>` : '<p class="empty-note">请先挂载至少一个已发布团队。</p>'}</article><article class="project-panel task-list-panel"><div class="panel-head"><div><span class="section-kicker">任务清单与运行记录</span><h2>按任务追踪交付</h2></div><span class="count-badge">${tasks.length}</span></div><p class="panel-intro">每条任务保留输入内容、执行团队、项目轮次和处理结果。暂停后可以继续，待审核时可提交反馈。</p><div class="material-list">${tasks.length ? tasks.slice().reverse().map((task) => `<div class="material-row task-record-row"><div class="task-record-main"><strong>第 ${task.roundNumber || 1} 轮 · ${esc(task.teamName || "团队")}</strong><p>${esc(task.input || "")}</p><div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.runId ? `<span>运行 ${esc(task.runId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.runId ? `<div class="task-run-detail" data-run-id="${esc(task.runId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。先描述一项具体工作。</p>'}</div></article></section>`;
   for (const task of tasks.filter((item) => item.runId)) {
     const detail = root.querySelector(`[data-run-id="${CSS.escape(String(task.runId))}"]`);
     const stop = createRunPoller({
@@ -1066,6 +1131,12 @@ function syncRoute() {
     void renderProjectDraft(teamMatch[1], pageRequest).then(() => renderProjectGraph(teamMatch[1], "project-graph-stage", false, pageRequest));
     return;
   }
+  const projectTeamsMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)\/teams$/);
+  if (projectTeamsMatch) {
+    setView("project-workspace");
+    void renderProjectTeams(projectTeamsMatch[1], pageRequest);
+    return;
+  }
   const projectRunMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)\/run$/);
   if (projectRunMatch) {
     setView("project-workspace");
@@ -1083,7 +1154,7 @@ function syncRoute() {
   else if (path === "/examples") state.view = "examples";
   else if (path === "/history") { state.view = "history"; void renderHistory(pageRequest); }
   setView(state.view);
-  if (!["/projects", "/studio", "/factory", "/platform", "/examples", "/history"].includes(path) && !detailMatch && !teamMatch && !projectRunMatch && path !== "/factory/new" && path !== "/studio/project/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
+  if (!["/projects", "/studio", "/factory", "/platform", "/examples", "/history"].includes(path) && !detailMatch && !teamMatch && !projectRunMatch && !projectTeamsMatch && path !== "/factory/new" && path !== "/studio/project/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
 let drawerReleaseTrap;
 let drawerReleaseScroll;
@@ -1149,7 +1220,7 @@ async function renderHistory() {
     root.innerHTML = state.recentRuns.map((run) => {
       const mode = run.mode === "sandbox" ? (state.locale === "en" ? "Isolated run" : "隔离运行") : (state.locale === "en" ? "Preview" : "流程预览");
       const status = projectRunStatusLabel(run.status || "记录");
-      return `<article class="history-row"><span class="history-icon">O</span><div class="history-main"><div class="history-title-line"><strong>${esc(run.teamName || "团队")} <span class="version-badge">v${run.teamVersionNumber || 1}</span></strong><span class="history-status">${esc(status)}</span></div><p><span class="history-tag">${esc(run.projectName || "项目")}</span><span class="history-tag">${esc((copy[state.locale].runRound || "第 {round} 轮").replace("{round}", String(run.roundNumber || 1)))}</span><span class="history-tag">${esc(run.workspaceKey || "工作目录未命名")}</span><span class="history-tag">${esc(mode)}</span></p><small>${run.updatedAt ? new Date(run.updatedAt).toLocaleString(state.locale) : ""}</small></div><div class="history-actions"><a class="text-button" href="/studio/project/${encodeURIComponent(run.projectId)}/run" data-route="/studio/project/${encodeURIComponent(run.projectId)}/run">${esc(copy[state.locale].historyRestore)}</a><a class="text-button" href="${esc(professionalWorkspaceUrl(run.projectId, "diagnosis", run.runId))}" target="_self">${esc(copy[state.locale].advancedWorkspace)}</a></div></article>`;
+      return `<article class="history-row"><span class="history-icon">O</span><div class="history-main"><div class="history-title-line"><strong>${esc(run.teamName || "团队")} <span class="version-badge">v${run.teamVersionNumber || 1}</span></strong><span class="history-status">${esc(status)}</span></div><p><span class="history-tag">${esc(run.projectName || "项目")}</span><span class="history-tag">${esc((copy[state.locale].runRound || "第 {round} 轮").replace("{round}", String(run.roundNumber || 1)))}</span><span class="history-tag">${esc(mode)}</span></p><small>${run.updatedAt ? new Date(run.updatedAt).toLocaleString(state.locale) : ""}</small></div><div class="history-actions"><a class="text-button" href="/studio/project/${encodeURIComponent(run.projectId)}/run" data-route="/studio/project/${encodeURIComponent(run.projectId)}/run">${esc(copy[state.locale].historyRestore)}</a><a class="text-button" href="${esc(professionalWorkspaceUrl(run.projectId, "diagnosis", run.runId))}" target="_blank" rel="noopener">${esc(copy[state.locale].advancedWorkspace)}</a></div></article>`;
     }).join("");
   } catch (error) { if (isAbort(error)) return; root.innerHTML = `<div class="run-error">${esc(error.message || "无法读取运行记录")}</div>`; }
 }

@@ -9,6 +9,8 @@ belong in `archive/`.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
 - [Decisions](DECISIONS.md): accepted architecture decisions and current boundaries.
 - [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.
+- [Team Collaboration product UX fix plan](team-collaboration-product-ux-fix-plan.md): current user flows, canonical routes, interaction rules, and product acceptance gates.
+- [Team Collaboration module refactor plan](team-collaboration-module-refactor-plan.md): layered boundaries for Team Studio, Team Operations, Visualizer capabilities, and infrastructure.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
   boundaries, and generated source.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,

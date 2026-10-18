@@ -365,9 +365,8 @@ test("collaboration tasks run sequentially across teams and preserve pause/revie
     await store.confirmProjectTeam(teamA.projectId, { release: true });
     const teamB = await store.createProject({ name: "Task Control B", overview: "Review output.", templateId: "empty" });
     await store.confirmProjectTeam(teamB.projectId, { release: true });
-    const project = await store.createCollaborationProject({ name: "Task Control Project", workspaceKey: "task-control" });
-    await store.mountProjectTeam(project.projectId, teamA.projectId);
-    await store.mountProjectTeam(project.projectId, teamB.projectId);
+    const project = await store.createCollaborationProject({ name: "Task Control Project", workspaceKey: "task-control", teamVersionIds: [teamA.projectId] });
+    await store.replaceProjectTeams(project.projectId, [teamA.projectId, teamB.projectId]);
     const first = await store.createProjectTask(project.projectId, { input: "Analyze input", teamVersionId: teamA.projectId, idempotencyKey: "task-a" });
     const second = await store.createProjectTask(project.projectId, { input: "Review output", teamVersionId: teamB.projectId, idempotencyKey: "task-b" });
     const firstRun = await store.startProjectTask(project.projectId, first.taskId, { mode: "dry-run" });
@@ -401,8 +400,7 @@ test("task controls enforce one active task, durable idempotency, and terminal b
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?task-boundaries=" + Date.now());
   try {
-    const project = await store.createCollaborationProject({ name: "Task Boundary Project", workspaceKey: "task-boundaries" });
-    await store.mountProjectTeam(project.projectId, "case:software-team");
+    const project = await store.createCollaborationProject({ name: "Task Boundary Project", workspaceKey: "task-boundaries", teamVersionIds: ["case:software-team"] });
     const first = await store.createProjectTask(project.projectId, { input: "First task", teamVersionId: "case:software-team", idempotencyKey: "boundary-1" });
     const replay = await store.createProjectTask(project.projectId, { input: "First task", teamVersionId: "case:software-team", idempotencyKey: "boundary-1" });
     assert.equal(replay.taskId, first.taskId);

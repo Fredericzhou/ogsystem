@@ -35,6 +35,12 @@ test("site completes the product project flow with task records and repository e
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.addInitScript(() => {
+      window.__ogsUnhandledRejections = [];
+      window.addEventListener("unhandledrejection", (event) => {
+        window.__ogsUnhandledRejections.push(String(event.reason?.message || event.reason || "unhandled rejection"));
+      });
+    });
 
     await page.goto(`${url}/`, { waitUntil: "networkidle" });
     assert.equal(await page.locator("#landing-view").isVisible(), true);
@@ -81,8 +87,8 @@ test("site completes the product project flow with task records and repository e
     });
     assert.ok(darkDetailContrast >= 4.5, `dark detail links should meet WCAG AA, got ${darkDetailContrast}`);
     await page.goto(`${url}/factory/new`, { waitUntil: "networkidle" });
-    assert.match(await page.locator("#new-project-view .page-heading").innerText(), /先定义团队目标/);
-    assert.equal(await page.locator(".new-team-steps li[aria-current=step]").count(), 1);
+    assert.match(await page.locator("#new-project-view .page-heading").innerText(), /先说清团队要完成什么/);
+    assert.equal(await page.locator(".new-team-steps").count(), 0);
     await page.locator("#new-project-form input[name=name]").fill("Product Research Team");
     await page.locator("#new-project-form textarea[name=overview]").fill("Analyze a product brief and return evidence-backed recommendations.");
     await page.locator("#new-project-form button[type=submit]").click();
@@ -97,10 +103,23 @@ test("site completes the product project flow with task records and repository e
     await page.goto(`${url}/studio/project/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
     await page.locator("#collaboration-project-form").waitFor();
     await page.locator("#collaboration-project-form input[name=name]").fill("Product Research Project");
-    await page.locator("#collaboration-project-form input[name=workspaceKey]").fill("product-research");
     await page.locator(`#project-team-options input[value="${teamId}"]`).check();
     await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);
+    const secondTeam = await page.request.post(`${url}/api/v1/team-factory`, { data: { name: "Product Review Team", overview: "Review the product research output.", locale: "zh-CN" } }).then((response) => response.json());
+    await page.request.post(`${url}/api/v1/team-versions/${encodeURIComponent(secondTeam.projectId)}/release`);
+    const projectId = page.url().match(/\/studio\/project\/([^/]+)\/run$/)?.[1];
+    await page.goto(`${url}/studio/project/${projectId}/teams`, { waitUntil: "networkidle" });
+    await page.locator("#project-team-management-form").waitFor();
+    await page.locator(`#project-managed-team-options input[value="${secondTeam.projectId}"]`).check();
+    await page.locator("#project-team-management-form button[type=submit]").click();
+    await page.waitForURL(new RegExp(`/studio/project/${projectId}/run$`));
+    assert.equal(await page.locator(".project-status.confirmed").innerText(), "2 个团队 · 0 个任务");
+    await page.goto(`${url}/studio/project/${projectId}/teams`, { waitUntil: "networkidle" });
+    await page.locator(`#project-managed-team-options input[value="${secondTeam.projectId}"]`).uncheck();
+    await page.locator("#project-team-management-form button[type=submit]").click();
+    await page.waitForURL(new RegExp(`/studio/project/${projectId}/run$`));
+    assert.equal(await page.locator(".project-status.confirmed").innerText(), "1 个团队 · 0 个任务");
     await page.locator("#collaboration-task-form").waitFor();
     await page.locator("#collaboration-task-form textarea[name=input]").fill("Summarize the brief.");
     await page.locator("#collaboration-task-form button[type=submit]").click();
@@ -120,6 +139,7 @@ test("site completes the product project flow with task records and repository e
     assert.equal(importResponse.status(), 409);
     assert.match((await importResponse.json()).error, /TEAM_NAME_EXISTS/);
     assert.deepEqual(pageErrors, []);
+    assert.deepEqual(await page.evaluate(() => window.__ogsUnhandledRejections), []);
 
     const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await mobile.goto(`${url}/studio/team/${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });

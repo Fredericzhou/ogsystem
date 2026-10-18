@@ -48,7 +48,6 @@ test("classic teams separate direct use from template editing and keep the graph
     await page.locator("#collaboration-project-form").waitFor();
     const teamId = new URL(page.url()).searchParams.get("team");
     await page.locator("#collaboration-project-form input[name=name]").fill("Software delivery project");
-    await page.locator("#collaboration-project-form input[name=workspaceKey]").fill("software-delivery");
     await page.locator(`#project-team-options input[value="${teamId}"]`).check();
     await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/project\/[a-z0-9-]+\/run$/);

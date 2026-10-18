@@ -108,7 +108,7 @@ test("same-name Team and collaboration Project coexist, while same-scope duplica
       /TEAM_NAME_EXISTS/
     );
     await assert.rejects(
-      () => store.createCollaborationProject({ name: sharedName, overview: "Duplicate project name." }),
+      () => store.createCollaborationProject({ name: sharedName, overview: "Duplicate project name.", teamVersionIds: [team.projectId] }),
       /PROJECT_NAME_EXISTS/
     );
   });
@@ -144,6 +144,39 @@ test("multi-team creation mounts all teams and rolls back when the second team f
     assert.equal(projects.some((item) => item.projectType === "collaboration" && item.name === "Rolled Back Project"), false);
     const entries = await readdir(projectsRoot);
     assert.equal(entries.some((entry) => entry.startsWith("rolled-back-project-")), false);
+  });
+});
+
+test("project team replacement updates the existing project and locks during an active run", async () => {
+  await withStore("project-team-replacement", async (store) => {
+    const firstTeam = await createReleasedTeam(store, "Replacement Team A");
+    const secondTeam = await createReleasedTeam(store, "Replacement Team B");
+    const project = await store.createCollaborationProject({
+      name: "Replace Project Teams",
+      overview: "Manage teams without creating another project.",
+      teamVersionIds: [firstTeam.projectId]
+    });
+
+    const replaced = await store.replaceProjectTeams(project.projectId, [secondTeam.projectId]);
+    assert.equal(replaced.projectId, project.projectId);
+    assert.deepEqual(replaced.mountedTeams.map((team) => team.teamVersionId), [secondTeam.projectId]);
+    assert.notEqual(replaced.projectDefinitionDigest, project.projectDefinitionDigest);
+    assert.equal((await store.listCollaborationProjects()).filter((item) => item.name === project.name).length, 1);
+
+    const task = await store.createProjectTask(project.projectId, {
+      input: "Keep the project definition stable while running.",
+      teamVersionId: secondTeam.projectId,
+      idempotencyKey: "replacement-active-run"
+    });
+    await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
+    await assert.rejects(
+      () => store.replaceProjectTeams(project.projectId, [firstTeam.projectId]),
+      /PROJECT_TEAM_UPDATE_LOCKED/
+    );
+    await store.controlProjectTask(project.projectId, task.taskId, "cancel");
+    await waitForTerminal(store, project.projectId, (await store.getProjectTask(project.projectId, task.taskId)).runId);
+    const afterCancel = await store.replaceProjectTeams(project.projectId, [firstTeam.projectId]);
+    assert.deepEqual(afterCancel.mountedTeams.map((team) => team.teamVersionId), [firstTeam.projectId]);
   });
 });
 

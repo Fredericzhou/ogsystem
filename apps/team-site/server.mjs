@@ -29,8 +29,6 @@ import {
   simulateTeamVersion,
   listProjects,
   listCollaborationProjects,
-  createCollaborationProject,
-  mountProjectTeam,
   createProjectTask,
   startProjectTask,
   controlProjectTask,
@@ -52,12 +50,19 @@ import {
   ,listRecentProjectRuns
 } from "./project-repository.mjs";
 import { recoverOrphanedRuns } from "./run-service.mjs";
+import { createVisualizerAdapter } from "./capabilities/visualizer-adapter.mjs";
+import { handleProjectRoutes } from "./api/project-routes.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const publicRoot = join(root, "public");
 const host = process.env.HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "4173", 10);
 const visUrl = process.env.OGS_VIS_URL || "http://127.0.0.1:4177";
+const visualizer = createVisualizerAdapter({
+  baseUrl: visUrl,
+  username: process.env.OGS_VIS_USERNAME,
+  password: process.env.OGS_VIS_PASSWORD
+});
 const discoveryWorkdir = process.env.OGS_VIS_WORKDIR || join(process.env.LOCALAPPDATA || process.cwd(), "OGSystem", "visualizer-workspace");
 const discoveryCacheMs = 30_000;
 const siteProjectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
@@ -123,7 +128,7 @@ async function getPlatformDiscovery(force = false) {
 
 function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|IMPORT_CONFLICT|active|conflict/i.test(message)) return 409;
+  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|PROJECT_TEAM_UPDATE_LOCKED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|IMPORT_CONFLICT|active|conflict/i.test(message)) return 409;
   if (/PROJECT_NOT_READY/i.test(message)) return 422;
   if (/not found|TASK_NOT_FOUND/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
@@ -295,20 +300,7 @@ const server = createServer(async (request, response) => {
     sendJson(response, 200, { runs: await listRecentProjectRuns(Number(url.searchParams.get("limit") || 50)) });
     return;
   }
-  if (request.method === "POST" && url.pathname === "/api/v1/projects") {
-    try {
-      const payload = await readBody(request);
-      const project = await createCollaborationProject({
-        name: payload.name,
-        overview: payload.overview,
-        teamVersionIds: payload.teamVersionIds
-      });
-      sendJson(response, 201, publicProject(project));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create project." });
-    }
-    return;
-  }
+  if (await handleProjectRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject })) return;
   if (request.method === "POST" && url.pathname === "/api/v1/team-factory") {
     try {
       const payload = await readBody(request);
@@ -322,16 +314,6 @@ const server = createServer(async (request, response) => {
       sendJson(response, 201, publicProject(team));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create team draft." });
-    }
-    return;
-  }
-  const projectTeamMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/teams$/);
-  if (projectTeamMatch && request.method === "POST") {
-    try {
-      const payload = await readBody(request);
-      sendJson(response, 200, publicProject(await mountProjectTeam(projectTeamMatch[1], payload.teamVersionId || payload.teamId)));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to mount team." });
     }
     return;
   }
@@ -490,16 +472,8 @@ const server = createServer(async (request, response) => {
   if (teamChatMatch && request.method === "POST") {
     try {
       const payload = await readBody(request, 4 * 1024 * 1024);
-      const target = new URL(`/api/v1/ogs/workspace/studio/chat?projectId=${encodeURIComponent(teamChatMatch[1])}`, visUrl);
-      const headers = { "content-type": "application/json" };
-      if (process.env.OGS_VIS_USERNAME && process.env.OGS_VIS_PASSWORD) {
-        headers.authorization = `Basic ${Buffer.from(`${process.env.OGS_VIS_USERNAME}:${process.env.OGS_VIS_PASSWORD}`).toString("base64")}`;
-      }
-      const upstream = await fetch(target, { method: "POST", headers, body: JSON.stringify(payload) });
-      const text = await upstream.text();
-      let responsePayload;
-      try { responsePayload = JSON.parse(text); } catch { responsePayload = { error: text || "Visualizer response was not JSON." }; }
-      sendJson(response, upstream.status, responsePayload);
+      const upstream = await visualizer.chat({ projectId: teamChatMatch[1], payload });
+      sendJson(response, upstream.status, upstream.body);
     } catch (error) {
       sendJson(response, 502, { error: error instanceof Error ? `TEAM_ASSISTANT_UNAVAILABLE: ${error.message}` : "TEAM_ASSISTANT_UNAVAILABLE" });
     }
@@ -688,7 +662,7 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
-    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/factory/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+\/run\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
+    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/factory/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+\/(?:run|teams)\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
     }

@@ -201,7 +201,7 @@ test("imported Team and Project names only conflict within their own scope", asy
   const store = await import(`../project-repository.mjs?capability-import-name-scope=${Date.now()}`);
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team", name: "Cross Scope Name" });
-    const project = await store.createCollaborationProject({ name: team.name, overview: "Cross-scope project." });
+    const project = await store.createCollaborationProject({ name: team.name, overview: "Cross-scope project.", teamVersionIds: [team.projectId] });
     const projectBundle = await store.exportProjectBundle(project.projectId);
     const importedProject = await store.importProjectBundle({
       ...projectBundle
@@ -210,7 +210,7 @@ test("imported Team and Project names only conflict within their own scope", asy
 
     const teamBundle = await store.exportProjectTeam(team.projectId);
     const importedTeam = await store.importTeamPackage(teamBundle, { conflictStrategy: "create-new" });
-    assert.match(importedTeam.name, new RegExp(`^${project.name} \\(2\\)$`));
+    assert.match(importedTeam.name, new RegExp(`^${project.name} \\(3\\)$`));
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }
