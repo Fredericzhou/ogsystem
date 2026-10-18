@@ -23,7 +23,7 @@ async function withStore(prefix, callback) {
 async function createReleasedTeam(store, name) {
   const team = await store.createProject({
     name,
-    intent: "Validate the domain contract.",
+    overview: "Validate the domain contract.",
     templateId: "empty"
   });
   return store.confirmProjectTeam(team.projectId, { release: true });
@@ -104,7 +104,7 @@ test("same-name Team and collaboration Project coexist, while same-scope duplica
     assert.equal(project.projectType, "collaboration");
 
     await assert.rejects(
-      () => store.createProject({ name: sharedName, intent: "Duplicate team name.", templateId: "empty" }),
+      () => store.createProject({ name: sharedName, overview: "Duplicate team name.", templateId: "empty" }),
       /TEAM_NAME_EXISTS/
     );
     await assert.rejects(
@@ -129,7 +129,7 @@ test("multi-team creation mounts all teams and rolls back when the second team f
 
     const draftTeam = await store.createProject({
       name: "Unreleased Second Team",
-      intent: "This team must not be mounted.",
+      overview: "This team must not be mounted.",
       templateId: "empty"
     });
     await assert.rejects(

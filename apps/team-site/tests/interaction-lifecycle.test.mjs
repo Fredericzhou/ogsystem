@@ -38,14 +38,14 @@ test("dirty forms guard route changes and beforeunload", async () => {
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
-    await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
-    await page.locator("#new-project-form textarea[name=intent]").fill("Unsaved intent");
+    await page.goto(`${url}/factory/new`, { waitUntil: "networkidle" });
+    await page.locator("#new-project-form textarea[name=overview]").fill("Unsaved intent");
     await page.locator('.detail-back[data-route="/studio"]').click();
     await page.locator(".confirm-dialog").waitFor();
-    assert.match(page.url(), /\/studio\/new$/);
+    assert.match(page.url(), /\/factory\/new$/);
     await page.keyboard.press("Escape");
     await page.locator(".confirm-dialog").waitFor({ state: "detached" });
-    assert.match(page.url(), /\/studio\/new$/);
+    assert.match(page.url(), /\/factory\/new$/);
     const unload = await page.evaluate(() => {
       const event = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(event);
@@ -91,10 +91,14 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
       await page.locator("#run-drawer.open").waitFor({ state: "hidden" });
     });
     assert.equal(await page.evaluate(() => document.activeElement?.id), "drawer-test-trigger");
-    const team = await page.request.post(`${url}/api/v1/team-factory`, { data: { name: "Review UI Team", intent: "Review UI test", locale: "zh-CN" } }).then((response) => response.json());
+    const team = await page.request.post(`${url}/api/v1/team-factory`, { data: { name: "Review UI Team", overview: "Review UI test", locale: "zh-CN" } }).then((response) => response.json());
     await page.request.post(`${url}/api/v1/team-versions/${encodeURIComponent(team.projectId)}/release`);
     const project = await page.request.post(`${url}/api/v1/projects`, { data: { name: "Review UI Project", workspaceKey: "review-ui", teamVersionIds: [team.projectId] } }).then((response) => response.json());
     const task = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, { data: { input: "Review focus", teamVersionId: team.projectId, idempotencyKey: "review-focus" } }).then((response) => response.json());
+    const cancelTask = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, { data: { input: "Cancel focus", teamVersionId: team.projectId, idempotencyKey: "cancel-focus" } }).then((response) => response.json());
+    const cancelResponse = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${cancelTask.taskId}/cancel`, { data: {} });
+    assert.equal(cancelResponse.status(), 200);
+    assert.equal((await cancelResponse.json()).status, "cancelled");
     await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/start`, { data: { mode: "dry-run" } });
     await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/pause`, { data: {} });
     await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });

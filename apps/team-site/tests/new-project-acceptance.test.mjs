@@ -33,11 +33,11 @@ test("site creates a new project, records a task, and shows project resources", 
     assert.ok(url, "site server did not start: " + output);
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.goto(url + "/studio/new", { waitUntil: "networkidle" });
+    await page.goto(url + "/factory/new", { waitUntil: "networkidle" });
     await page.locator("#new-project-form").waitFor();
     assert.equal(await page.locator("[data-builder-choice]").count(), 3);
     await page.locator("#new-project-form input[name=name]").fill("Research Team");
-    await page.locator("#new-project-form textarea[name=intent]").fill("Analyze the supplied product brief.");
+    await page.locator("#new-project-form textarea[name=overview]").fill("Analyze the supplied product brief.");
     await page.locator("#new-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
     await page.locator("#team-assistant").waitFor();

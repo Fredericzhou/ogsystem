@@ -18,7 +18,7 @@ test("collaboration project creation, batch materials, export, and async run res
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import(`../project-repository.mjs?contract-test=${Date.now()}`);
   try {
-    const team = await store.createProject({ name: "Contract Team", intent: "Review a brief.", templateId: "empty" });
+    const team = await store.createProject({ name: "Contract Team", overview: "Review a brief.", templateId: "empty" });
     await store.confirmProjectTeam(team.projectId, { release: true });
     const releasedTeam = await store.getProject(team.projectId);
     assert.match(releasedTeam.teamCoreDigest, /^[a-f0-9]{64}$/);
@@ -60,6 +60,10 @@ test("collaboration project creation, batch materials, export, and async run res
     await waitForTerminal(store, project.projectId, reserved.runId);
     assert.equal((await store.getProjectTask(project.projectId, task.taskId)).runId, reserved.runId);
     assert.ok(Array.isArray((await store.getProjectRunEvents(project.projectId, reserved.runId)).events));
+    await assert.rejects(
+      () => store.controlProjectTask(project.projectId, task.taskId, "stop"),
+      /TASK_CONTROL_INVALID/
+    );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }

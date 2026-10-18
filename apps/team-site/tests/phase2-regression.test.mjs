@@ -28,7 +28,7 @@ test("team repository queries include unreleased versions and forks refresh refe
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import(`../project-repository.mjs?phase2-repository-status=${Date.now()}`);
   try {
-    const draft = await store.createProject({ name: "Status Draft Team", intent: "Draft status query.", templateId: "empty" });
+    const draft = await store.createProject({ name: "Status Draft Team", overview: "Draft status query.", templateId: "empty" });
     const released = await store.confirmProjectTeam(draft.projectId, { release: true });
     const fork = await store.forkTeamVersion(released.projectId);
     const reference = JSON.parse(await readFile(join(fork.workdir, ".site", "team-version.json"), "utf8"));
@@ -49,7 +49,7 @@ test("team package preview exposes fingerprint conflicts and explicit reuse does
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import(`../project-repository.mjs?phase2-import=${Date.now()}`);
   try {
-    const source = await store.createProject({ name: "Phase 2 Source", intent: "Import preview.", templateId: "minimal" });
+    const source = await store.createProject({ name: "Phase 2 Source", overview: "Import preview.", templateId: "minimal" });
     await store.confirmProjectTeam(source.projectId, { release: true });
     const exported = await store.exportProjectTeam(source.projectId);
     const preview = await store.previewTeamPackage(exported);

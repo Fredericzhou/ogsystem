@@ -22,7 +22,7 @@ test("site creates a persistent project, snapshots materials, and performs a dry
   try {
     const project = await store.createProject({
       name: "Research Team",
-      intent: "Analyze the supplied brief.",
+      overview: "Analyze the supplied brief.",
       templateId: "empty"
     });
     assert.match(project.projectId, /^research-team-/);
@@ -36,9 +36,9 @@ test("site creates a persistent project, snapshots materials, and performs a dry
     assert.equal(typeof confirmed.projectDigest, "string");
     const confirmedAgain = await store.confirmProjectTeam(project.projectId);
     assert.equal(confirmedAgain.confirmedAt, confirmed.confirmedAt);
-    const renamed = await store.updateProject(project.projectId, { name: "Renamed Team", intent: confirmed.intent });
+    const renamed = await store.updateProject(project.projectId, { name: "Renamed Team", overview: confirmed.overview });
     assert.equal(renamed.projectStatus, "confirmed");
-    const changed = await store.updateProject(project.projectId, { intent: "A changed objective." });
+    const changed = await store.updateProject(project.projectId, { overview: "A changed objective." });
     assert.equal(changed.projectStatus, "draft");
     await store.confirmProjectTeam(project.projectId);
     const material = await store.addProjectMaterial(project.projectId, {
@@ -109,7 +109,7 @@ test("project readiness is separate from structure confirmation and gates sandbo
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?readiness=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Readiness Team", intent: "Check readiness.", templateId: "empty" });
+    const project = await store.createProject({ name: "Readiness Team", overview: "Check readiness.", templateId: "empty" });
     const roleDirs = await readdir(join(project.workdir, "og-roles", "roles"), { withFileTypes: true });
     const roleDir = join(project.workdir, "og-roles", "roles", roleDirs.find((entry) => entry.isDirectory()).name);
     await writeFile(join(roleDir, "role.json"), "{}", "utf8");
@@ -165,7 +165,7 @@ test("confirmed projects round-trip through the project bundle and retry as a ne
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?roundtrip=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Roundtrip Team", intent: "Produce a concise brief.", templateId: "empty" });
+    const project = await store.createProject({ name: "Roundtrip Team", overview: "Produce a concise brief.", templateId: "empty" });
     await store.confirmProjectTeam(project.projectId);
     await store.addProjectMaterial(project.projectId, { filename: "brief.md", content: "facts", contentType: "text/markdown" });
     const run = await store.startProjectRun(project.projectId, { prompt: "Summarize facts.", mode: "dry-run", idempotencyKey: "same-request" });
@@ -196,7 +196,7 @@ test("project bundles carry executable role and contract assets without importin
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?package-assets=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Executable Team", intent: "Package executable assets.", templateId: "empty" });
+    const project = await store.createProject({ name: "Executable Team", overview: "Package executable assets.", templateId: "empty" });
     const roleDir = join(project.workdir, "og-roles", "roles", "package-role");
     await mkdir(roleDir, { recursive: true });
     await writeFile(join(roleDir, "role.json"), JSON.stringify({ roleId: "package-role", roleVersion: "1.0.0" }), "utf8");
@@ -237,7 +237,7 @@ test("running controls write durable intent without acquiring the active run loc
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?control-intent=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Control Intent Team", intent: "Test controls.", templateId: "empty" });
+    const project = await store.createProject({ name: "Control Intent Team", overview: "Test controls.", templateId: "empty" });
     await store.confirmProjectTeam(project.projectId);
     const run = await store.startProjectRun(project.projectId, { prompt: "Run the control test.", mode: "dry-run" });
     const statePath = join(project.workdir, ".ogs", "runs", run.runId, "control", "state.json");
@@ -272,7 +272,7 @@ test("project asset digest detects role package changes and credential validatio
   const store = await import("../project-repository.mjs?digest-import=" + Date.now());
     const { computeProjectAssetDigest } = await import("../../../dist/runtime/project-asset-digest.js?digest-import=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Digest Team", intent: "Check package assets.", templateId: "empty" });
+    const project = await store.createProject({ name: "Digest Team", overview: "Check package assets.", templateId: "empty" });
     const confirmed = await store.confirmProjectTeam(project.projectId);
     const digestBeforeSemanticEdit = await computeProjectAssetDigest(project.workdir);
     await writeFile(join(project.workdir, ".ogs", "semantics.yaml"), "version: 1\nsystem:\n  systemId: digest-team\n  systemVersion: 1.0.0\n", "utf8");
@@ -291,7 +291,7 @@ test("project asset digest detects role package changes and credential validatio
       mode: "single-project-v1",
       team: {
         systemSource: await readFile(join(project.workdir, "system.mmd"), "utf8"),
-        project: { name: "Imported", intent: "Discuss token budgets and password policy." }
+        project: { name: "Imported", overview: "Discuss token budgets and password policy." }
       }
     };
     const imported = await store.importTeamPackage(bundle);
@@ -311,7 +311,7 @@ test("site design editing invalidates confirmation and run control rejects termi
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?design-control=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Editable Team", intent: "Edit structure", templateId: "minimal" });
+    const project = await store.createProject({ name: "Editable Team", overview: "Edit structure", templateId: "minimal" });
     const design = await store.getProjectDesign(project.projectId);
     assert.equal(design.authoring.version, 1);
     const saved = await store.saveProjectDesign(project.projectId, {
@@ -336,7 +336,7 @@ test("project run resume rejects a directory that does not match the requested p
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?resume-path=" + Date.now());
   try {
-    const project = await store.createProject({ name: "Resume Path Team", intent: "Validate resume paths.", templateId: "empty" });
+    const project = await store.createProject({ name: "Resume Path Team", overview: "Validate resume paths.", templateId: "empty" });
     await store.confirmProjectTeam(project.projectId);
     const run = await store.startProjectRun(project.projectId, { prompt: "Validate this run.", mode: "dry-run" });
     await assert.rejects(
@@ -359,9 +359,9 @@ test("collaboration tasks run sequentially across teams and preserve pause/revie
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import("../project-repository.mjs?task-controls=" + Date.now());
   try {
-    const teamA = await store.createProject({ name: "Task Control A", intent: "Analyze input.", templateId: "empty" });
+    const teamA = await store.createProject({ name: "Task Control A", overview: "Analyze input.", templateId: "empty" });
     await store.confirmProjectTeam(teamA.projectId, { release: true });
-    const teamB = await store.createProject({ name: "Task Control B", intent: "Review output.", templateId: "empty" });
+    const teamB = await store.createProject({ name: "Task Control B", overview: "Review output.", templateId: "empty" });
     await store.confirmProjectTeam(teamB.projectId, { release: true });
     const project = await store.createCollaborationProject({ name: "Task Control Project", workspaceKey: "task-control" });
     await store.mountProjectTeam(project.projectId, teamA.projectId);
@@ -386,9 +386,8 @@ test("collaboration tasks run sequentially across teams and preserve pause/revie
     await assert.rejects(() => store.controlProjectTask(project.projectId, blocked.taskId, "start"), /PROJECT_TASK_CONCURRENCY_LIMIT/);
     assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "pause")).status, "paused");
     const reviewed = await store.reviewProjectTask(project.projectId, manual.taskId, { decision: "approve", comment: "继续处理" });
-    assert.equal(reviewed.task.status, "ready");
-    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "resume")).status, "queued");
-    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "stop")).status, "stopped");
+    assert.equal(reviewed.task.status, "queued");
+    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "cancel")).status, "cancelled");
     assert.equal((await store.controlProjectTask(project.projectId, blocked.taskId, "start")).status, "running");
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
@@ -422,9 +421,8 @@ test("task controls enforce one active task, durable idempotency, and terminal b
     const waitingTask = runningTask.taskId === first.taskId ? second : first;
     const waitingKey = runningTask.taskId === first.taskId ? "boundary-2" : "boundary-1";
     assert.equal((await store.controlProjectTask(project.projectId, runningTask.taskId, "pause")).status, "paused");
-    assert.equal((await store.reviewProjectTask(project.projectId, runningTask.taskId, { decision: "approve", comment: "人工确认后继续" })).task.status, "ready");
-    await store.controlProjectTask(project.projectId, runningTask.taskId, "resume");
-    await store.controlProjectTask(project.projectId, runningTask.taskId, "stop");
+    assert.equal((await store.reviewProjectTask(project.projectId, runningTask.taskId, { decision: "approve", comment: "人工确认后继续" })).task.status, "queued");
+    await store.controlProjectTask(project.projectId, runningTask.taskId, "cancel");
     assert.equal((await store.controlProjectTask(project.projectId, waitingTask.taskId, "start")).status, "running");
     await assert.rejects(() => store.controlProjectTask(project.projectId, runningTask.taskId, "resume"), /TASK_CONTROL_INVALID/);
 

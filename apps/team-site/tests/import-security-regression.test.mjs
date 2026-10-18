@@ -136,7 +136,7 @@ test("identical team cores remain distinct imports while preserving the same tea
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import(`../project-repository.mjs?import-digest=${Date.now()}`);
   try {
-    const source = await store.createProject({ name: "Digest Source", intent: "Import identity test.", templateId: "minimal" });
+    const source = await store.createProject({ name: "Digest Source", overview: "Import identity test.", templateId: "minimal" });
     await store.confirmProjectTeam(source.projectId, { release: true });
     const exported = await store.exportProjectTeam(source.projectId);
     await assert.rejects(
@@ -170,7 +170,7 @@ test("packageDigest is stable for the same project package and changes with run 
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = await import(`../project-repository.mjs?package-digest=${Date.now()}`);
   try {
-    const team = await store.createProject({ name: "Package Digest Team", intent: "Package identity source.", templateId: "minimal" });
+    const team = await store.createProject({ name: "Package Digest Team", overview: "Package identity source.", templateId: "minimal" });
     await store.confirmProjectTeam(team.projectId, { release: true });
     const project = await store.createCollaborationProject({
       name: "Package Digest Project",

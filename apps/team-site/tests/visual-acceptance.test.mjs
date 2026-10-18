@@ -80,11 +80,11 @@ test("site completes the product project flow with task records and repository e
       return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
     });
     assert.ok(darkDetailContrast >= 4.5, `dark detail links should meet WCAG AA, got ${darkDetailContrast}`);
-    await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/factory/new`, { waitUntil: "networkidle" });
     assert.match(await page.locator("#new-project-view .page-heading").innerText(), /先定义团队目标/);
     assert.equal(await page.locator(".new-team-steps li[aria-current=step]").count(), 1);
     await page.locator("#new-project-form input[name=name]").fill("Product Research Team");
-    await page.locator("#new-project-form textarea[name=intent]").fill("Analyze a product brief and return evidence-backed recommendations.");
+    await page.locator("#new-project-form textarea[name=overview]").fill("Analyze a product brief and return evidence-backed recommendations.");
     await page.locator("#new-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
     await page.locator("#project-graph-stage .x6-node").nth(2).waitFor();
@@ -136,7 +136,7 @@ test("site completes the product project flow with task records and repository e
     await mobile.goto(`${url}/studio/team/${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
     await mobile.locator("#project-graph-stage .x6-node").nth(2).waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
-    await mobile.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
+    await mobile.goto(`${url}/factory/new`, { waitUntil: "networkidle" });
     await mobile.locator("#new-project-form").waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
     assert.ok(await mobile.locator(".new-team-builder .primary-button").evaluate((button) => button.getBoundingClientRect().width >= 300));
