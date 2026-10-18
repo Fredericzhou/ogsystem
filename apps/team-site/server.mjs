@@ -51,6 +51,7 @@ import {
   ,archiveTeamVersion
   ,listRecentProjectRuns
 } from "./project-repository.mjs";
+import { recoverOrphanedRuns } from "./run-service.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const publicRoot = join(root, "public");
@@ -300,7 +301,6 @@ const server = createServer(async (request, response) => {
       const project = await createCollaborationProject({
         name: payload.name,
         overview: payload.overview,
-        intent: payload.intent,
         teamVersionIds: payload.teamVersionIds
       });
       sendJson(response, 201, publicProject(project));
@@ -314,7 +314,7 @@ const server = createServer(async (request, response) => {
       const payload = await readBody(request);
       const team = await createProject({
         name: payload.name,
-        intent: payload.intent,
+        overview: payload.overview,
         templateId: "empty",
         source: "team-factory",
         locale: payload.locale
@@ -354,7 +354,7 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
-  const projectTaskActionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|stop|review)$/);
+  const projectTaskActionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|cancel|review)$/);
   if (projectTaskActionMatch && request.method === "POST") {
     try {
       const payload = await readBody(request);
@@ -639,7 +639,7 @@ const server = createServer(async (request, response) => {
         caseId: caseActionMatch[1],
         asTemplate: caseActionMatch[2] === "template",
         name: payload.name,
-        intent: payload.intent,
+        overview: payload.overview,
         locale: payload.locale
       });
       sendJson(response, 201, publicProject(project));
@@ -690,7 +690,7 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
-    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/studio/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+\/run\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
+    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/factory/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+\/run\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
     }
@@ -700,10 +700,15 @@ const server = createServer(async (request, response) => {
   sendJson(response, 405, { error: "Method not allowed" });
 });
 
-server.listen(port, host, () => {
-  const address = server.address();
-  const boundPort = address && typeof address === "object" ? address.port : port;
-  process.stdout.write(`OGSystem Team Studio is ready at http://${host}:${boundPort}\n`);
+recoverOrphanedRuns().then(() => {
+  server.listen(port, host, () => {
+    const address = server.address();
+    const boundPort = address && typeof address === "object" ? address.port : port;
+    process.stdout.write(`OGSystem Team Studio is ready at http://${host}:${boundPort}\n`);
+  });
+}).catch((error) => {
+  process.stderr.write(`Unable to recover Team Site runs: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 });
 
 function close() {
