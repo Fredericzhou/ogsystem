@@ -1,5 +1,7 @@
 # Team Site 运行可靠性实施方案
 
+> Status: completed delivery record, archived 2026-10-18. The state list and examples record the implementation at delivery time and are not the current Run state contract. Current Task/Run semantics and transition requirements are defined by [the active refactor plan](../../team-collaboration-module-refactor-plan.md) and [OGS product concepts](../../../usage/ogs-concepts.md).
+
 ## 状态
 
 最新方案：已实现；发布验收：通过。

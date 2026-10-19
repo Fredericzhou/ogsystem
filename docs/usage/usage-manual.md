@@ -11,8 +11,8 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 - `.ogs/runs/<run-id>/` 不是临时日志目录，而是运行时的数据平面与恢复依据。
 - Resume 的前提不是“目录还在”，而是“语义指纹、状态快照、会话索引和 checkpoint/WAL 仍然一致”。
 
-产品术语上，项目负责资源和运行历史，团队负责静态协作结构，任务运行负责一次动态执行。产品界面通常把
-任务运行简称为“任务”；在 CLI、API 和运行时实现中，规范名称是 `Run`。
+Runtime 术语中，`Run` 表示一次动态执行尝试，CLI、API 和运行时实现均使用此名称。OGS Projects 在此基础上
+另有业务对象 `Task`，表示用户提交的工作请求；一个 Task 可以先排队，并关联零次或多次 Run 尝试。Projects 页面上的“任务”指 Task，不等同于 Runtime 的 Run。
 
 ## Why This Runtime Stays Trustworthy
 
@@ -24,6 +24,8 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 
 - 长流程不中断：
   运行中的 graph frontier、branch 状态、session 索引、checkpoint 序号都持续落在 `.ogs/runs/<run-id>/` 下。即使进程退出，只要恢复权威集还一致，`ogs run resume <run-id>` 就能从已知 frontier 继续，而不是从头再来。
+- 中断后继续：
+  语义上类似 LangGraph 的 interrupt/resume：暂停或人工审核等待的是原执行线；继续时沿用原 `runId`、Run 目录和已提交 checkpoint，不创建新的 Run。OGS 以自己的控制记录、检查点 WAL 和恢复对账合同管理这条执行线，不把 LangGraph API 暴露为产品数据模型。
 - 出事能恢复：
   角色执行先写 durable `execution-outcome.json`，再由 graph runner 追加 checkpoint。若在这两步之间崩溃，resume 会先回放 checkpoint WAL，再对账“已落 outcome 但未入 checkpoint”的窗口，避免重复执行已经成功提交的节点。
 - 审计可追：
@@ -40,29 +42,33 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 
 ## 产品站点当前版本
 
-如果你通过网站使用 OGSystem，请先按下面的边界理解产品：
+如果你通过网站使用 OGSystem，请先按下面的边界理解产品。OGS Projects 面向业务用户，OGS Studio 面向专业团队开发；两者共享平台配置和 Runtime 能力：
 
 ```text
-团队工厂创建/编辑 -> 发布团队版本 -> 协作项目挂载团队版本 -> 创建任务运行 -> 执行与复盘
+OGS Studio 创建/专业编辑 -> 发布 TeamVersion -> OGS Projects 挂载版本 -> 创建 Task -> 创建并执行 Run -> 复盘
 ```
 
 - **团队仓库**保存已发布团队版本，负责查看、导入、复制版本和资产管理。
-- **团队工厂**保存编辑中和待发布团队。创建团队默认使用自然语言对话，也支持人工微调；专业工作台只在需要精确结构、契约或调试证据时使用。
+- **OGS Studio**保存编辑中和待发布团队，负责专业编辑、调试、运行诊断和平台模型配置。Projects 可发起自然语言创建或调整；调整会进入 Studio 草稿，检查并发布后需回 Projects 明确挂载新版本。
 - **协作项目**单独创建工作目录，挂载一个或多个已发布团队，集中管理资源、任务清单和运行记录。项目页面不嵌入团队结构，查看团队时进入团队建设页面。
-- **任务运行**必须包含明确的输入和执行团队版本，并显示项目轮次、状态、运行记录和人工反馈。当前同一项目最多一个任务运行处于准备、处理中、暂停或待人工审核状态；任务运行完成或终止后才能启动下一项。
+- **Task** 保存明确的工作请求和执行团队版本，并显示任务序号、状态、关联 Run 和人工反馈。当前同一项目至多一个 Task 的 Run 处于准备、处理中、暂停或待人工审核状态；该 Run 完成或终止后才能启动下一项。
 
-任务支持开始、暂停、继续、人工审核、停止和删除。暂停或待审核任务可以继续；人工审核可以通过、退回修改或终止。删除只从任务清单隐藏，运行快照与审计信息仍保留。任务创建和继续操作使用幂等键，重复请求不会重复执行。
+任务支持开始、暂停、继续、人工审核、停止、失败重试和删除。Task 创建时固定绑定 TeamVersion，项目内递增的 `taskNumber` 用于页面和审计展示，`taskId` 用于系统关联。一次 Run 成功完成并满足适用验收条件后，Task 即成功，不自动重复运行；失败或异常后才从 Task 发起新的 Run 重试。暂停、待审核和符合恢复契约的中断通过原 checkpoint 继续同一个 Run。尝试历史按序保留，历史 Run 只读。OGS Projects 服务重启时会把遗留活动 Run 收敛为失败，之后重试将创建新 Run；Runtime 的直接 resume 能力不改变这项 Projects 产品行为。删除只从任务清单隐藏，运行快照与审计信息仍保留。相同幂等键和请求会去重 Task/Run 预留；这不承诺任意外部副作用恰好一次。readiness 阻塞时任务保持排队，不产生 Run。
+
+每个 Run 的 `.ogs/runs/<run-id>/` 工作目录隔离运行状态、快照和审计文件，但不自动隔离对项目代码目录或外部系统的写入。per-Run Git worktree 隔离、项目归档和 Run 结果显式发布是规划能力，OGS Projects 当前尚未实现；数据库、远程 API、网络、凭据和 worktree 外写入仍需额外沙箱策略。
+
+运行记录列表只返回结果摘要。打开某次 Run 后，可按需读取经 Runtime 凭据脱敏的完整结果；如果完整结果尚未生成或不可用，页面会说明当前只显示摘要。
 
 平台配置中的“模型请求超时”只限制等待**一次模型请求返回**的时间，不限制整个任务的执行时长。一个任务可能包含多个角色、多轮处理、暂停或人工审核，因此正常运行时间可以超过该值；请求超时后根据任务状态继续、停止或重新处理。
 
-网站和专业工作台的当前入口：
+OGS Projects 与 OGS Studio 的当前入口：
 
 | 服务 | 本机地址 | Tailnet 访问 |
 | --- | --- | --- |
-| Team Site | `http://127.0.0.1:4174/` | `http://100.66.215.15:4174/` |
-| 专业工作台 | `http://127.0.0.1:4177/` | 由 Tailscale Serve 提供 HTTPS 主机名 |
+| OGS Projects | `http://127.0.0.1:4174/` | `http://100.66.215.15:4174/` |
+| OGS Studio | `http://127.0.0.1:4177/` | 由 Tailscale Serve 提供 HTTPS 主机名 |
 
-Windows 上从仓库根目录执行 `pnpm start:team-site:tailnet` 可重启两项服务并配置 Tailnet 入口。专业工作台仍绑定本机，由 Tailscale Serve 负责 HTTPS 和身份认证；团队站点绑定 `0.0.0.0` 供 Tailnet 访问。
+Windows 上从仓库根目录执行 `pnpm start:team-site:tailnet` 可重启两项服务并配置 Tailnet 入口。OGS Studio 仍绑定本机，由 Tailscale Serve 负责 HTTPS 和身份认证；OGS Projects 绑定 `0.0.0.0` 供 Tailnet 访问。
 
 ## Capability Snapshot
 

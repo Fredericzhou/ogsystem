@@ -1,5 +1,7 @@
 # Team Collaboration 产品逻辑优化与修复方案
 
+> Status: completed delivery record, archived 2026-10-18. This document records the UX acceptance at delivery time. Current Team/TeamVersion/Project/Task/Run semantics and architecture gates are defined by [the active refactor plan](../../team-collaboration-module-refactor-plan.md), product terms by [OGS product concepts](../../../usage/ogs-concepts.md), and current user-facing behavior by [the Team Site guide](../../../../apps/team-site/README.md).
+
 ## 状态
 
 当前版本：产品流程修复方案（已落地并通过验收）。
@@ -26,6 +28,8 @@
 - Project 是团队应用的业务上下文，负责资料和团队组合。
 - Task 是一次工作请求。
 - Run 是一次执行和审计记录。
+- 一个 Task 可关联多次 Run 尝试；重试创建新 Run 并保持原 Task 关联。
+- Task 的业务生命周期与 Run 的执行状态分别管理；绑定 Run 后 Task 状态只作为便于查询的投影。
 - 普通用户不需要离开 Team Site 才能完成核心流程。
 - 不兼容旧路由、旧字段、旧状态或历史数据迁移。
 

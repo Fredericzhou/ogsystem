@@ -29,9 +29,8 @@ Engineering rules, plans, specifications, and active backlog live under `develop
 - [Compiler semantics](development/compiler-semantics-v1.md): compiler and diagnostics contract.
 - [OGS workflow DSL upgrade plan](development/ogs-langgraph-dsl-upgrade-plan.md): DSL, IR, reliability, and standards roadmap.
 - [OGS product boundary and evolution](development/ogs-product-boundary-and-evolution.md): core, enhancement, extension tiers and admission rules.
-- [Project/team/task-run plan](development/ogs-project-team-task-run-plan.md): domain boundaries, workspace ownership, and staged implementation plan.
-- [Team Site domain and product plan](development/team-site-domain-product-plan.md): TeamVersion, Project creation, materials, and export contract.
-- [Team Site run reliability plan](development/team-site-run-reliability-plan.md): Run reservation, asynchronous execution, control, and recovery.
+- [Team Collaboration refactor plan](development/team-collaboration-module-refactor-plan.md): current Team/TeamVersion/Project/Task/Run contract, architecture target, and acceptance gates.
+- [Archived project/team/task-run plan](development/archive/ogs-project-team-task-run-plan.md): earlier Runtime terminology and workspace notes; Team Site Task/Run semantics are superseded by the current refactor plan.
 - [Team Site frontend infrastructure plan](development/team-site-frontend-infrastructure-plan.md): routing, request lifecycle, and state rendering.
 - [OGS visualizer refactor plan](development/ogs-visualizer-refactor-plan.md): semantic layout and graph interaction plan.
 - [Release UAT checklist](development/release-uat-checklist.md): clean-install scenarios and release sign-off gates.
@@ -55,6 +54,9 @@ Use these recent archive records to understand implementation context:
 - [Canvas-centered Visualizer architecture roadmap 2026-05-03](development/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md)
 - [Visualizer responsibility-seat semantic review 2026-09-02](development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md)
 - [Unified backlog execution delivery 2026-09-03](development/archive/delivery/todo-backlog-execution-2026-09-03.md)
+- [Team Site domain/product delivery 2026-10-18](development/archive/delivery/team-site-domain-product-plan-2026-10-18.md)
+- [Team Site run reliability delivery 2026-10-18](development/archive/delivery/team-site-run-reliability-plan-2026-10-18.md)
+- [Team Collaboration UX delivery 2026-10-18](development/archive/delivery/team-collaboration-product-ux-fix-plan-2026-10-18.md)
 
 The full development archive lives under `docs/development/archive/delivery/` and `docs/development/archive/history/`; the usage archive is at `docs/usage/archive/`. Do not maintain a duplicated full file list here; use `rg` or browse by date when historical context is needed.
 

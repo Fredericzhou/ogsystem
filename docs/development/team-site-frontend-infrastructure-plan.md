@@ -2,11 +2,12 @@
 
 ## 状态
 
-最新方案：已实现；发布验收：通过。
+状态：前端基础设施切片已交付的历史验收记录。Team/TeamVersion/Project/Task/Run 当前领域契约、重构状态和剩余验收
+以[模块重构方案](team-collaboration-module-refactor-plan.md)为准；本文不作为当前领域语义或整体发布通过的证明。
 
 本文只负责路由、请求生命周期、状态渲染、模块边界和用户交互治理，不实现领域去重、摘要计算或运行时状态迁移。当前版本按最新路由和字段契约工作，不保留旧入口兼容。
 
-验证证据：Playwright `1.63.0` 与 Chromium/headless shell 已安装；`pnpm build` 通过；Team Site 全量测试 `51/51` 通过；浏览器验收覆盖案例详情、SVG 图谱缩略图、`/factory/new`、`/studio/project/new`、多团队项目、资料上传、Run 轮询、平台设置、project-v2 跨工作区导入、桌面端和 390px 移动端。
+历史验证证据：Playwright `1.63.0` 与 Chromium/headless shell 已安装；当时 `pnpm build` 通过、Team Site 测试 `51/51` 通过；浏览器验收覆盖案例详情、SVG 图谱缩略图、`/factory/new`、`/studio/project/new`、多团队项目、资料上传、Run 轮询、平台设置、project-v2 跨工作区导入、桌面端和 390px 移动端。该记录不代表当前完整重构已验收。
 
 ## 已实现能力
 
@@ -18,7 +19,7 @@
 - 项目创建页使用已发布团队列表，通过一次接口提交多个团队；项目页支持批量资料与文件夹相对路径上传。
 - 经典团队卡片展示 SVG 图谱缩略图并进入 `/cases/:caseId`；团队详情、协作项目和 Run 页面均有明确加载、错误和空状态。
 - `app.js` 保留稳定 bootstrap 入口，业务实现拆分到 `public/app/` 的 state、router、api、i18n、views 和 components 模块。
-- Run 页面通过 TaskRecord/Run/events 查询接口轮询，终态自动停止；不新增或伪造 SSE。
+- Run 页面通过 Task、Run 和 events 查询接口轮询，终态自动停止；不新增或伪造 SSE。
 - 脏页离开确认、`beforeunload`、弹窗焦点恢复、Escape、键盘操作和滚动锁已接入。
 - 平台设置保存后明确显示服务端返回的 `runtimeApplied: false`。
 

@@ -72,3 +72,11 @@ Contract freeze notes:
 - A new scheduler layer.
 - Multiple persistence backends.
 - External secrets manager integration.
+
+## OGS Projects Product Planning (Not Implemented)
+
+- [ ] Per-Run Git worktree isolation: use a fixed base commit, reuse the same worktree when resuming a Run, create a new worktree for a failed Task retry, and merge only after review. Git does not isolate network access, credentials, external services, or writes outside the worktree.
+- [ ] Project lifecycle: add active and archived states. Archived projects are read-only and retain history; cleanup or deletion requires explicit management.
+- [ ] Explicit Run result publication: Run outputs remain Run-scoped unless a user explicitly publishes or copies selected results into project deliverables.
+
+These are product planning items only. They are not part of the current OGS Projects or OGS Studio implementation.

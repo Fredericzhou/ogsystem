@@ -1,5 +1,7 @@
 # Team Site 领域与产品能力实施方案
 
+> Status: completed delivery record, archived 2026-10-18. Its schemas, package behavior, and acceptance notes describe the delivered implementation at that time. Current domain semantics are defined by [the active refactor plan](../../team-collaboration-module-refactor-plan.md) and [OGS product concepts](../../../usage/ogs-concepts.md); current user-facing behavior is documented in [the Team Site guide](../../../../apps/team-site/README.md).
+
 ## 状态
 
 最新方案：已实现；发布验收：通过。
@@ -12,7 +14,8 @@
 
 - `Team` 是逻辑团队根对象；`TeamVersion` 是可编辑、可发布、可挂载的不可变版本。
 - `Project` 负责项目目录、资源和团队挂载关系。
-- `TaskRecord` 是站点任务入口和显示投影，不拥有运行状态。
+- `Task` 是用户的一次业务工作请求，保存输入、所选 TeamVersion 和任务生命周期。
+- `Run` 是该 Task 的一次执行尝试；一次 Task 可关联多次 Run。Run 状态文件权威，Task 状态在绑定 Run 后是列表查询投影。
 - `Run` 的权威状态位于 `.ogs/runs/<runId>/control/state.json`；`.site/project.json` 和运行索引只保存引用或投影。
 - TeamVersion 状态为 `draft -> editing -> released -> archived`；结构校验结果是派生信息。
 - 项目元数据使用 `overview`；`intent` 不属于当前输入契约。
@@ -29,6 +32,7 @@
 ## 已实现能力
 
 - 发布团队后才允许项目挂载；项目创建一次完成工作目录和多个团队挂载。
+- 保存团队草稿不创建新发布版本；发布生成不可变 TeamVersion，项目引用固定到所挂载的版本。
 - 项目创建使用 staging 和原子完成策略；任一团队校验、写入或 HTTP 流程失败都不会留下半成品，服务启动还会清理遗留 staging。
 - 项目请求使用 `name`、`overview`、`teamVersionIds`；工作目录由服务端自动创建并返回。
 - 资料接口支持批量文件和文件夹选择，保留文件夹相对路径；服务端拒绝路径穿越、绝对路径、符号链接和非法格式，并限制单批数量与大小。
