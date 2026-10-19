@@ -768,8 +768,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     const clientApi = createClientApi(t, () => state.projectId);
-    const requestJson = clientApi.requestJson;
-    const requestAction = clientApi.requestAction;
+    const rawRequestJson = clientApi.requestJson;
+    const requestJson = (path, options = {}) => {
+      const method = String(options.method || "GET").toUpperCase();
+      if (state.projectsDiagnostic && method !== "GET" && method !== "HEAD") {
+        throw new Error(t("diagnostic.projectsReadOnly", undefined, "This OGS Projects diagnostic view is read-only. Run controls remain in OGS Projects."));
+      }
+      return rawRequestJson(path, options);
+    };
+    const requestAction = (...args) => {
+      if (state.projectsDiagnostic) {
+        throw new Error(t("diagnostic.projectsReadOnly", undefined, "This OGS Projects diagnostic view is read-only. Run controls remain in OGS Projects."));
+      }
+      return clientApi.requestAction(...args);
+    };
     const isAbortError = clientApi.isAbortError;
 
     function setLive(mode, label) {
@@ -824,6 +836,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         } else if (isReleaseConsoleTab() && blockers.length) {
           globalStatusDiagnosticsEl.textContent = String(blockers[0]?.message || t("release.resolveBlockers", undefined, "Resolve release blockers."));
           globalStatusDiagnosticsEl.className = "global-status-diagnostics hint warn";
+        } else if (state.projectsDiagnostic) {
+          globalStatusDiagnosticsEl.textContent = t("diagnostic.projectsReadOnly", undefined, "This OGS Projects diagnostic view is read-only. Run controls remain in OGS Projects.");
+          globalStatusDiagnosticsEl.className = "global-status-diagnostics hint warn";
         } else {
           globalStatusDiagnosticsEl.textContent = "";
           globalStatusDiagnosticsEl.className = "global-status-diagnostics hint";
@@ -842,6 +857,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function writeRouteToLocation() {
       const params = new URLSearchParams(buildRouteSearch({
         projectId: state.projectId,
+        projectsDiagnostic: state.projectsDiagnostic,
         projectHome: state.projectHome,
         lifecycle: state.consoleTab,
         selectedRunId: state.selectedRunId,
@@ -2084,27 +2100,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const stopVisible = runActive && canRequestStop();
       const resumeVisible = runActive && !stopVisible;
       if (heroValidateButton) {
-        heroValidateButton.hidden = !designActive;
+        heroValidateButton.hidden = state.projectsDiagnostic || !designActive;
       }
       if (heroSaveButton) {
-        heroSaveButton.hidden = !designActive;
+        heroSaveButton.hidden = state.projectsDiagnostic || !designActive;
       }
       if (resumeRunButton) {
-        resumeRunButton.hidden = !resumeVisible;
+        resumeRunButton.hidden = state.projectsDiagnostic || !resumeVisible;
         resumeRunButton.disabled = !state.selectedRunId;
       }
       if (stopRunButton) {
-        stopRunButton.hidden = !stopVisible;
+        stopRunButton.hidden = state.projectsDiagnostic || !stopVisible;
         stopRunButton.disabled = !state.selectedRunId;
       }
       if (heroReindexButton) {
-        heroReindexButton.hidden = !runActive;
+        heroReindexButton.hidden = state.projectsDiagnostic || !runActive;
       }
       if (heroReleaseExportButton) {
-        heroReleaseExportButton.hidden = !releaseActive;
+        heroReleaseExportButton.hidden = state.projectsDiagnostic || !releaseActive;
       }
       if (releaseExportButton) {
-        releaseExportButton.hidden = false;
+        releaseExportButton.hidden = state.projectsDiagnostic;
       }
     }
 
@@ -6290,7 +6306,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const detail = state.reviewDetail;
       reviewDetailEl.innerHTML = renderReviewDetailPanel(detail, t, formatTime);
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
-      reviewActionsEl.innerHTML = actionable
+      reviewActionsEl.innerHTML = actionable && !state.projectsDiagnostic
         ? [
           '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button>',
           '<button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button>',
@@ -8689,6 +8705,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     renderConsoleTabs();
 
     const initialRoute = readRouteStateFromSearch(window.location.search);
+    state.projectsDiagnostic = initialRoute.projectsDiagnostic;
     state.consoleTab = normalizeLifecycleView(
       initialRoute.lifecycle,
       initialRoute.view

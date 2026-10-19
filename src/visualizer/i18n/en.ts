@@ -1305,6 +1305,7 @@ export const en = {
   "studio.participatesInJoin": "participates in join.sources",
   "studio.notJoinSource": "not a join source",
   "studio.noParseCompileDiagnostics": "No parse or compile diagnostics.",
+  "diagnostic.projectsReadOnly": "This OGS Projects diagnostic view is read-only. Run controls remain in OGS Projects.",
   "studio.readinessReady": "readiness ready",
   "studio.readinessBlockers": "{count} readiness blockers",
   "resume.diagnosticCheck": "diagnostic check",

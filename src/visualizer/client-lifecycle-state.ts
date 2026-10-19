@@ -139,6 +139,7 @@ export function createBuildStateSlice() {
 export function createOperateStateSlice() {
   return {
     consoleTab: "design",
+    projectsDiagnostic: false,
     runGraphSelectedRoleId: "",
     runGraphSelectedFlowKey: "",
     graphReadingMode: "all",

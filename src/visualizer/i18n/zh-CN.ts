@@ -1309,6 +1309,7 @@ export const zhCN = {
   "studio.participatesInJoin": "参与 join.sources",
   "studio.notJoinSource": "不是汇合来源",
   "studio.noParseCompileDiagnostics": "没有解析或编译诊断。",
+  "diagnostic.projectsReadOnly": "这是 OGS Projects 的只读诊断视图。运行控制请返回 OGS Projects 操作。",
   "studio.readinessReady": "就绪度通过",
   "studio.readinessBlockers": "{count} 个就绪度阻塞项",
   "resume.diagnosticCheck": "诊断检查",

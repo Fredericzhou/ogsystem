@@ -2487,8 +2487,37 @@ async function handleVisualizationRequest(
     const attachedMeta = await readFile(resolve(requestedWorkdir, ".site", "project.json"), "utf8")
       .then((value) => JSON.parse(value) as Record<string, unknown>)
       .catch(() => undefined);
-    if (!attachedMeta) throw new HttpError(404, "PROJECT_NOT_FOUND", `Project asset not found: ${requestedProjectId}`);
-    state = { ...state, workdir: requestedWorkdir };
+    if (url.searchParams.get("diagnostic") === "projects") {
+      const collaborationProjectId = url.searchParams.get("collaborationProjectId") || "";
+      const taskId = url.searchParams.get("taskId") || "";
+      const runId = url.searchParams.get("runId") || "";
+      const collaborationRoot = resolve(projectsRoot, collaborationProjectId);
+      const collaborationMeta = /^[a-z0-9][a-z0-9-]{0,80}$/.test(collaborationProjectId)
+        ? await readFile(resolve(collaborationRoot, ".site", "project.json"), "utf8")
+          .then((value) => JSON.parse(value) as Record<string, unknown>)
+          .catch(() => undefined)
+        : undefined;
+      const teamVersion = await readFile(resolve(requestedWorkdir, ".site", "team-version.json"), "utf8")
+        .then((value) => JSON.parse(value) as Record<string, unknown>)
+        .catch(() => undefined);
+      const task = Array.isArray(collaborationMeta?.taskRecords)
+        ? collaborationMeta.taskRecords.find((record) => {
+          if (!record || typeof record !== "object") return false;
+          const item = record as Record<string, unknown>;
+          const runIds = Array.isArray(item.runIds) ? item.runIds : item.currentRunId ? [item.currentRunId] : [];
+          return !item.deletedAt && item.taskId === taskId && item.teamVersionId === requestedProjectId && runIds.includes(runId)
+            && (item.runProjectId || item.teamVersionId) === requestedProjectId;
+        })
+        : undefined;
+      if (!teamVersion || teamVersion.teamVersionId !== requestedProjectId || !task) {
+        throw new HttpError(404, "PROJECT_NOT_FOUND", `Project asset not found: ${requestedProjectId}`);
+      }
+      state = { ...state, workdir: requestedWorkdir };
+    } else if (attachedMeta) {
+      state = { ...state, workdir: requestedWorkdir };
+    } else {
+      throw new HttpError(404, "PROJECT_NOT_FOUND", `Project asset not found: ${requestedProjectId}`);
+    }
   }
   if (pathname === "/healthz" || pathname === "/readyz") {
     await handleHealthRequest(pathname, state.workdir, response);

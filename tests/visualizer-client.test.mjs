@@ -2720,6 +2720,7 @@ test("visualizer client route helpers round-trip query state", () => {
     "lifecycle=run&runId=run-123&reviewId=review-1&logRoleId=alpha&tail=25&since=2026-04-23T10%3A11"
   );
   assert.deepEqual(readRouteStateFromSearch(`?${search}`), {
+    projectsDiagnostic: false,
     view: "",
     lifecycle: "run",
     runId: "run-123",
@@ -2756,6 +2757,7 @@ test("visualizer client route helpers round-trip query state", () => {
     "lifecycle=design"
   );
   assert.deepEqual(readRouteStateFromSearch("?lifecycle=design"), {
+    projectsDiagnostic: false,
     view: "",
     lifecycle: "design",
     runId: "",

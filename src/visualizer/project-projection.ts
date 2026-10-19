@@ -1039,6 +1039,7 @@ export async function loadTeamPackage(args: {
 
 export async function createProjectVisualization(args: {
   currentWorkdir: string;
+  projectId?: unknown;
   projectName?: unknown;
   templateId?: unknown;
   conflictStrategy?: unknown;
@@ -1048,7 +1049,11 @@ export async function createProjectVisualization(args: {
   const targetWorkdir = resolve(args.currentWorkdir);
   const templateId = normalizeProjectTemplateId(args.templateId);
   const projectName = assertProjectName(args.projectName) ?? basename(targetWorkdir);
-  const projectId = deriveProjectId(projectName);
+  const requestedProjectId = asString(args.projectId);
+  if (requestedProjectId && !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(requestedProjectId)) {
+    throw new Error("INVALID_PROJECT_ID");
+  }
+  const projectId = requestedProjectId || deriveProjectId(projectName);
   const conflictStrategy = asString(args.conflictStrategy) ?? "reject";
   const workspace = await inspectProjectWorkspace(targetWorkdir);
   if (workspace.isDirectory !== true) {

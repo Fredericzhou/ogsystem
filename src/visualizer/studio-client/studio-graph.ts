@@ -152,6 +152,7 @@ export type StudioGraphBridgeOptions = {
     blockedCode?: string;
   }) => void | Promise<void>;
   onChatGenerate?: () => void | Promise<void>;
+  onQuickDebugOpen?: () => void | Promise<void>;
   historyEvent?: { id?: number; kind?: "push-before-replace"; label?: string } | null;
   onToggleFullscreen?: () => void;
   onValidateWorkbench?: () => void | Promise<void>;
@@ -743,7 +744,10 @@ export class StudioGraphIsland {
       if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 32, preserveDimensions: true });
       if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
-      if (action === "debug-run") this.toggleQuickDebug();
+      if (action === "debug-run") {
+        if (this.options.onQuickDebugOpen) void this.options.onQuickDebugOpen();
+        else this.toggleQuickDebug();
+      }
       if (action === "validate") void this.options.onValidateWorkbench?.();
       if (action === "save") void this.options.onSaveWorkbench?.();
       if (this.isReadOnly()) return;

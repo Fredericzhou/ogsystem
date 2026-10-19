@@ -35,6 +35,7 @@ export function normalizeGraphViewport(value: Partial<Record<keyof GraphViewport
 
 export type RouteState = {
   projectId?: string;
+  projectsDiagnostic: boolean;
   view: string;
   lifecycle: string;
   runId: string;
@@ -78,6 +79,7 @@ export function readRouteStateFromSearch(search: string): RouteState {
   const projectId = bounded(params.get("projectId"));
   return {
     ...(projectId ? { projectId } : {}),
+    projectsDiagnostic: params.get("diagnostic") === "projects",
     view: params.get("view") || "",
     lifecycle: params.get("lifecycle") || (panel === "design" ? "design" : panel ? "run" : ""),
     runId: params.get("runId") || "",
@@ -141,6 +143,7 @@ export function normalizeLifecycleView(
 
 export function buildRouteSearch(args: {
   projectId?: string;
+  projectsDiagnostic?: boolean;
   lifecycle?: string;
   projectHome: boolean;
   selectedRunId: string;
@@ -177,6 +180,7 @@ export function buildRouteSearch(args: {
   if (args.projectId && bounded(args.projectId)) {
     params.set("projectId", bounded(args.projectId));
   }
+  if (args.projectsDiagnostic) params.set("diagnostic", "projects");
   let lifecycle = args.lifecycle || "";
   switch (lifecycle) {
     case "project":

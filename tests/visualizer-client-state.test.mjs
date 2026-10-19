@@ -10,6 +10,7 @@ import {
 test("graph reading route state is bounded, validated, and round-trips", () => {
   const search = buildRouteSearch({
     lifecycle: "run",
+    projectsDiagnostic: true,
     projectHome: false,
     selectedRunId: "run-1",
     selectedReviewId: "",
@@ -30,6 +31,7 @@ test("graph reading route state is bounded, validated, and round-trips", () => {
     timelineChannel: "error"
   });
   assert.deepEqual(readRouteStateFromSearch(search), {
+    projectsDiagnostic: true,
     view: "",
     lifecycle: "run",
     runId: "run-1",
@@ -231,6 +233,7 @@ class FakeQueryRoot {
 
 test("client route state helpers parse and serialize lifecycle query state", () => {
   assert.deepEqual(readRouteStateFromSearch(""), {
+    projectsDiagnostic: false,
     view: "",
     lifecycle: "",
     runId: "",
@@ -288,6 +291,7 @@ test("client route state helpers parse and serialize lifecycle query state", () 
   assert.deepEqual(
     readRouteStateFromSearch("?lifecycle=run&runId=run-1&reviewId=review-2&logRoleId=qa&tail=50&since=2026-05-03T09%3A00"),
     {
+      projectsDiagnostic: false,
       view: "",
       lifecycle: "run",
       runId: "run-1",
