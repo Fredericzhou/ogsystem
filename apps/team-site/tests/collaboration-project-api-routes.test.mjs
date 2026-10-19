@@ -96,6 +96,17 @@ test("team graph, design validation, and chat routes preserve locale, body limit
   assert.equal(await chatHarness.invoke("POST", "/api/v1/projects/proj-2/team/chat", { prompt: "Review", modelRef: "direct:test" }), true);
   assert.deepEqual(chatHarness.calls[1], ["chat", "proj-2", { prompt: "Review", modelRef: "direct:test" }]);
   assert.deepEqual(chatHarness.sent[0], { status: 202, payload: { accepted: true } });
+
+  const unavailableChat = routeHarness({
+    chatTeamAssistant: async () => { throw new Error("fetch failed"); }
+  }, { visualizerUrl: "http://127.0.0.1:4177/" });
+  assert.equal(await unavailableChat.invoke("POST", "/api/v1/projects/proj-2/team/chat", { prompt: "Review" }), true);
+  assert.deepEqual(unavailableChat.sent[0], {
+    status: 502,
+    payload: {
+      error: "TEAM_ASSISTANT_UNAVAILABLE: fetch failed. Visualizer upstream: http://127.0.0.1:4177. Configure OGS_VIS_URL when starting Team Site."
+    }
+  });
 });
 
 test("Project Team adjustment creates a source-linked Studio draft and validates errors", async () => {

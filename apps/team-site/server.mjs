@@ -435,12 +435,12 @@ const server = createServer(async (request, response) => {
   })) return;
   if (await handleCollaborationProjectRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
+    visualizerUrl: visUrl,
     useCases: {
       ...teamLifecycleUseCases, ...projectDesignProjectionUseCases, ...projectDesignValidationUseCases,
       ...projectReadinessUseCases, ...projectMaterialUseCases,
       startProjectRun: projectRunUseCases.startProjectRun, getProject, ...projectUpdateUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
-      visualizerUrl: visUrl,
       ...teamAdjustmentUseCases
     },
   })) return;
