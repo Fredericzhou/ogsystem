@@ -718,16 +718,23 @@ async function renderPlatformConfig() {
       : (state.locale === "en"
         ? "Runnable Codex and OpenCode models are available. Select a discovered model when configuring each team role; Team Assistant uses OpenCode."
         : "已发现可运行的 Codex 和 OpenCode 模型。可为团队角色配置已发现的模型；团队助手对话使用 OpenCode。");
-    $("#platform-models").insertAdjacentHTML("afterbegin", `<p class="form-hint" role="status">${esc(requirementMessage)}</p>`);
+    $("#platform-models .platform-model-requirement")?.remove();
+    $("#platform-models").insertAdjacentHTML("afterbegin", `<p class="form-hint platform-model-requirement" role="status">${esc(requirementMessage)}</p>`);
     $("#platform-discovery-meta").textContent = `上次检查：${formatDiscoveryTime(discovery.generatedAt)}${discovery.stale ? " · 建议刷新" : ""}`;
-    const modelSelect = document.querySelector("#platform-settings-form select[name=defaultModel]");
-    if (modelSelect) {
-      const runnableModels = models.filter((item) => item.runnable);
-      modelSelect.innerHTML = `<option value="default">跟随默认底座</option>${runnableModels.map((item) => `<option value="${esc(item.id)}">${esc(item.name || item.id)}</option>`).join("")}`;
-      modelSelect.value = settings?.defaultModel && [...modelSelect.options].some((option) => option.value === settings.defaultModel) ? settings.defaultModel : "default";
-    }
     const providerSelect = document.querySelector("#platform-settings-form select[name=defaultProvider]");
     if (providerSelect && settings?.defaultProvider) providerSelect.value = settings.defaultProvider;
+    const modelSelect = document.querySelector("#platform-settings-form select[name=defaultModel]");
+    if (modelSelect) {
+      const backend = providerSelect?.value || settings?.defaultProvider || "codex";
+      const runnableModels = models.filter((item) => item.runnable && item.backend === backend);
+      modelSelect.innerHTML = `<option value="default">自动选择</option>${runnableModels.map((item) => {
+        const ref = item.ref || `${item.backend}/${item.id}`;
+        return `<option value="${esc(ref)}">${esc(item.name || item.id)} · ${esc(ref)}</option>`;
+      }).join("")}`;
+      const savedModel = settings?.defaultModel;
+      const selectedModel = runnableModels.find((item) => item.ref === savedModel || item.id === savedModel);
+      modelSelect.value = selectedModel ? (selectedModel.ref || `${selectedModel.backend}/${selectedModel.id}`) : "default";
+    }
     if (settings) {
       const timeout = document.querySelector("#platform-settings-form input[name=timeoutSeconds]");
       const retry = document.querySelector("#platform-settings-form input[name=retryCount]");
@@ -752,6 +759,12 @@ async function renderPlatformConfig() {
     const discovery = await discoveryResponse.json(); const settingsPayload = await settingsResponse.json();
     if (!discoveryResponse.ok) throw new Error(discovery.error || "无法读取运行底座");
     renderDiscovery(discovery, settingsPayload.settings);
+    $("#platform-settings-form select[name=defaultProvider]")?.addEventListener("change", () => {
+      const form = document.querySelector("#platform-settings-form");
+      const current = Object.fromEntries(new FormData(form).entries());
+      current.defaultModel = "default";
+      renderDiscovery(discovery, current);
+    });
     $("#platform-settings-form")?.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const response = await pageFetch("/api/v1/platform/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(form.entries())) }); const result = await response.json(); if (!isCurrentRequest(state.activeRequest)) return; $("#platform-settings-status").textContent = response.ok ? "设置已保存" : (result.error || "保存失败"); if (response.ok) renderDiscovery(discovery, result.settings); });
   } catch (error) { if (isAbort(error)) return; $("#platform-providers").innerHTML = `<div class="platform-empty">${esc(error.message || "无法读取平台配置")}</div>`; $("#platform-models").innerHTML = `<div class="platform-empty">请检查运行服务后重试</div>`; }
 }
@@ -976,8 +989,8 @@ async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest
     return confirmAction({
       title: state.locale === "en" ? "Some team roles may not run" : "部分团队角色可能无法执行",
       message: state.locale === "en"
-        ? `${issues.join("\n")}\nConfigure these roles in Team Studio, or continue and review the simulation/run result.`
-        : `${issues.join("\n")}\n可返回 Team Studio 配置角色模型，或继续并检查运行结果。`,
+        ? `${issues.join("\n")}\nPlatform default model is not automatically assigned to roles. Configure each role in Team Studio, or continue and review the simulation/run result.`
+        : `${issues.join("\n")}\n平台默认模型不会自动绑定到角色。请返回 Team Studio 为角色配置模型，或继续并检查运行结果。`,
       confirmLabel: state.locale === "en" ? "Continue anyway" : "仍然继续",
       cancelLabel: state.locale === "en" ? "Return to configure" : "返回配置"
     });
@@ -1097,6 +1110,9 @@ function teamStudioErrorMarkup(message) {
   const detail = String(message || "团队操作暂时不可用");
   if (detail.includes("TEAM_ASSISTANT_MODEL_UNAVAILABLE")) {
     return '部署环境尚未发现可运行的 OpenCode 模型。请确认 OpenCode 已安装并登录，再到<a href="/platform" data-route="/platform">平台设置</a>刷新底座与模型后重试。';
+  }
+  if (detail.includes("TEAM_ASSISTANT_UNAVAILABLE") || /fetch failed/i.test(detail)) {
+    return `团队助手服务请求失败。请检查 Visualizer 服务是否运行、平台设置中的服务地址是否可访问，再重试。<br><small>${esc(detail)}</small> <a href="/platform" data-route="/platform">查看平台设置</a>`;
   }
   return esc(detail);
 }
