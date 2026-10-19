@@ -20,7 +20,7 @@ test("router delegates navigation once and cancels stale page requests", async (
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-router-"));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });

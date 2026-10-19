@@ -5,6 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
+import { createProjectPackageOperations, createTeamPackageOperations } from "./package-test-helpers.mjs";
+import { withTeamLifecycleUseCases } from "./team-lifecycle-test-helpers.mjs";
+import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
 
 const systemSource = await readFile(new URL("../../../examples/target-model-binding-system.mmd", import.meta.url), "utf8");
 
@@ -125,24 +128,25 @@ test("team package import rejects symlinked fixed project files before any packa
 test("identical team cores remain distinct imports while preserving the same teamCoreDigest", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-import-digest-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?import-digest=${Date.now()}`);
+  const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?import-digest=${Date.now()}`));
+  const packages = createTeamPackageOperations(store);
   try {
     const source = await store.createProject({ name: "Digest Source", overview: "Import identity test.", templateId: "minimal" });
     await store.confirmProjectTeam(source.projectId, { release: true });
-    const exported = await store.exportProjectTeam(source.projectId);
+    const exported = await packages.exportTeamPackage(source.projectId);
     await assert.rejects(
-      () => store.importTeamPackage({ ...withoutPackageDigest(exported), teamCoreDigest: "0".repeat(64) }),
+      () => packages.importTeamPackage({ ...withoutPackageDigest(exported), teamCoreDigest: "0".repeat(64) }),
       /TEAM_IMPORT_DIGEST_MISMATCH/
     );
     await assert.rejects(
-      () => store.importTeamPackage({ ...exported, team: { ...exported.team, systemSource: `${exported.team.systemSource}\n tampered` } }),
+      () => packages.importTeamPackage({ ...exported, team: { ...exported.team, systemSource: `${exported.team.systemSource}\n tampered` } }),
       /TEAM_IMPORT_DIGEST_MISMATCH/
     );
-    const importedA = await store.importTeamPackage({
+    const importedA = await packages.importTeamPackage({
       ...withoutPackageDigest(exported),
       team: { ...exported.team, project: { ...exported.team.project, name: "Digest Import A" } }
     });
-    const importedB = await store.importTeamPackage({
+    const importedB = await packages.importTeamPackage({
       ...withoutPackageDigest(exported),
       team: { ...exported.team, project: { ...exported.team.project, name: "Digest Import B" } }
     });
@@ -159,32 +163,34 @@ test("identical team cores remain distinct imports while preserving the same tea
 test("packageDigest is stable across run history without changing projectDefinitionDigest", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-import-digest-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?package-digest=${Date.now()}`);
+  const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?package-digest=${Date.now()}`));
+  const runQueries = withRunQueryUseCases(store, projectsRoot);
+  const packages = createProjectPackageOperations(store);
   try {
     const team = await store.createProject({ name: "Package Digest Team", overview: "Package identity source.", templateId: "minimal" });
     await store.confirmProjectTeam(team.projectId, { release: true });
-    const project = await store.createCollaborationProject({
+    const project = await runQueries.createCollaborationProject({
       name: "Package Digest Project",
       overview: "Package identity test.",
       teamVersionIds: [team.projectId]
     });
-    const first = await store.exportProjectBundle(project.projectId);
-    const repeat = await store.exportProjectBundle(project.projectId);
+    const first = await packages.exportProjectBundle(project.projectId);
+    const repeat = await packages.exportProjectBundle(project.projectId);
     assert.equal(repeat.packageDigest, first.packageDigest);
     assert.equal(repeat.project.projectDefinitionDigest, first.project.projectDefinitionDigest);
 
-    const task = await store.createProjectTask(project.projectId, {
+    const task = await runQueries.createProjectTask(project.projectId, {
       input: "Create a package digest test run.",
       teamVersionId: team.projectId,
       idempotencyKey: "package-digest-run"
     });
     const started = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
     for (let attempt = 0; attempt < 200; attempt += 1) {
-      const observed = await store.getProjectRun(project.projectId, started.runId);
+      const observed = await runQueries.getProjectRun(project.projectId, started.currentRunId);
       if (["completed", "failed", "cancelled"].includes(observed.state.status)) break;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    const afterRun = await store.exportProjectBundle(project.projectId);
+    const afterRun = await packages.exportProjectBundle(project.projectId);
     assert.equal(afterRun.packageDigest, first.packageDigest);
     assert.equal(afterRun.project.projectDefinitionDigest, first.project.projectDefinitionDigest);
   } finally {

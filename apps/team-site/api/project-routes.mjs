@@ -1,14 +1,18 @@
-import {
-  createCollaborationProject,
-  listProjectTeams,
-  replaceProjectTeams
-} from "../project-repository.mjs";
+export async function handleProjectRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
+  if (request.method === "GET" && url.pathname === "/api/v1/projects") {
+    try {
+      const projects = await useCases.listCollaborationProjects();
+      sendJson(response, 200, { projects: projects.map(publicProject) });
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to list projects." });
+    }
+    return true;
+  }
 
-export async function handleProjectRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject }) {
   if (request.method === "POST" && url.pathname === "/api/v1/projects") {
     try {
       const payload = await readBody(request);
-      const project = await createCollaborationProject({
+      const project = await useCases.createCollaborationProject({
         name: payload.name,
         overview: payload.overview,
         teamVersionIds: payload.teamVersionIds
@@ -25,12 +29,12 @@ export async function handleProjectRoutes({ request, response, url, readBody, se
 
   try {
     if (request.method === "GET") {
-      sendJson(response, 200, await listProjectTeams(projectTeamMatch[1]));
+      sendJson(response, 200, await useCases.listProjectTeams(projectTeamMatch[1]));
       return true;
     }
     if (request.method === "PUT") {
       const payload = await readBody(request);
-      sendJson(response, 200, publicProject(await replaceProjectTeams(projectTeamMatch[1], payload.teamVersionIds)));
+      sendJson(response, 200, publicProject(await useCases.replaceProjectTeams(projectTeamMatch[1], payload.teamVersionIds)));
       return true;
     }
   } catch (error) {

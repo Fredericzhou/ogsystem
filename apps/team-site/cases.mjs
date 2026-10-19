@@ -190,7 +190,7 @@ export const cases = [
     semantics: ["parallel_split", "all_of", "loop.max"],
     entryRole: "debate-host",
     joins: [{ roleId: "neutral-judge", mode: "all_of", sources: ["proponent", "opponent"] }],
-    loopBudgets: [{ roleId: "debate-host", max: 3 }],
+    loopBudgets: [{ roleId: "debate-host", max: 2 }],
     projections: [
       ["neutral-judge", "pro_argument", "source(proponent).content"],
       ["neutral-judge", "con_argument", "source(opponent).content"],
@@ -215,7 +215,7 @@ export const cases = [
       {
         id: "neutral-judge", label: { "zh-CN": "中立裁判", en: "Neutral judge" },
         purpose: "Evaluate both arguments against shared criteria and decide whether one bounded rebuttal is needed.", events: ["REBUTTAL_REQUESTED", "DECISION_READY"],
-        prompt: "Evaluate both sides fairly against the stated criteria. On round 1, request one rebuttal only when a material unresolved issue remains; otherwise decide. On round 2, always issue a decision. Explain the strongest point on each side, uncertainty, and the reason for your decision. Return valid JSON with event REBUTTAL_REQUESTED or DECISION_READY and your reasoning as content."
+        prompt: "Evaluate both sides fairly against the stated criteria. Request at most one rebuttal, and only when a material issue could change the decision. After receiving a rebuttal, always issue DECISION_READY; do not request another round. If a material issue remains unresolved, state it as uncertainty in the decision. Explain the strongest point on each side and your reasoning. Return valid JSON with event REBUTTAL_REQUESTED or DECISION_READY and your reasoning as content."
       },
       {
         id: "debate-reporter", label: { "zh-CN": "辩论记录员", en: "Debate reporter" },

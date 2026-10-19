@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ test("site completes the product project flow with task records and repository e
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-browser-visual-"));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -54,7 +54,7 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 3);
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);
     await page.goto(`${url}/factory`, { waitUntil: "networkidle" });
-    assert.match(await page.locator("#factory-view .page-heading").innerText(), /团队工厂/);
+    assert.match(await page.locator("#factory-view .page-heading").innerText(), /OGS Studio/);
     const libraryActionHeights = await page.locator(".heading-actions > *").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height)));
     assert.equal(new Set(libraryActionHeights).size, 1, "library heading actions should share a height");
     const darkPrimaryContrast = await page.locator(".heading-actions .primary-button").evaluate((button) => {
@@ -126,6 +126,61 @@ test("site completes the product project flow with task records and repository e
     await page.locator(".task-record-row").waitFor();
     assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
+    await page.locator('.task-record-row [data-task-action="start"]').click();
+    await page.waitForFunction(() => {
+      const status = document.querySelector(".task-record-row .status-chip");
+      return status?.classList.contains("completed") || status?.classList.contains("failed");
+    }, null, { timeout: 30000 });
+    assert.equal(await page.locator(".task-record-row .status-chip").evaluate((status) => status.classList.contains("completed")), true);
+    assert.equal(await page.locator(".task-record-row .status-chip").evaluate((status) => status.classList.contains("completed")), true);
+    assert.ok(await page.locator(".task-record-row [data-run-id]").count() >= 1);
+    const collaboration = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
+    const task = collaboration.taskRecords[0];
+    const originalRunId = task.currentRunId;
+    const originalRunDir = join(projectsRoot, task.runProjectId, ".ogs", "runs", originalRunId);
+    const runStatePath = join(originalRunDir, "control", "state.json");
+    const runState = JSON.parse(await readFile(runStatePath, "utf8"));
+    await writeFile(runStatePath, `${JSON.stringify({ ...runState, status: "failed", error: "UAT retry fixture", finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
+    const projectMetaPath = join(projectsRoot, projectId, ".site", "project.json");
+    const projectMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
+    projectMeta.taskRecords = projectMeta.taskRecords.map((record) => record.taskId === task.taskId
+      ? { ...record, status: "failed", lastError: "UAT retry fixture" }
+      : record);
+    await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
+    await page.reload({ waitUntil: "networkidle" });
+    const retryButton = page.locator('.task-record-row [data-task-action="retry"]');
+    await retryButton.waitFor();
+    const retryRequests = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/retry")) retryRequests.push(request.url());
+    });
+    const retryResponsePromise = page.waitForResponse((response) => {
+      const pathname = new URL(response.url()).pathname;
+      return pathname.startsWith("/api/v1/projects/") && pathname.endsWith("/retry");
+    }, { timeout: 5000 });
+    await retryButton.click();
+    let retryResponse;
+    try {
+      retryResponse = await retryResponsePromise;
+    } catch (error) {
+      throw new Error(`${error.message}; retry requests: ${retryRequests.join(", ") || "none"}; server: ${output}`);
+    }
+    const retryPayload = await retryResponse.json();
+    assert.equal(retryResponse.ok(), true, retryPayload.error || `retry returned ${retryResponse.status()}`);
+    await page.waitForFunction(() => {
+      const status = document.querySelector(".task-record-row .status-chip");
+      return status?.classList.contains("completed") || status?.classList.contains("failed");
+    }, null, { timeout: 30000 });
+    const retriedProject = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
+    const retriedTask = retriedProject.taskRecords.find((record) => record.taskId === task.taskId);
+    assert.equal(retriedProject.taskRecords.length, 1);
+    assert.equal(retriedTask.runIds.length, 2);
+    assert.equal(retriedTask.runIds[0], originalRunId);
+    assert.notEqual(retriedTask.runIds[1], originalRunId);
+    assert.equal(retriedTask.currentRunId, retriedTask.runIds[1]);
+    await page.locator(".task-attempt-timeline li").nth(0).waitFor();
+    assert.equal(await page.locator(".task-attempt-timeline li").count(), 2);
+    assert.match(await page.locator(".task-attempt-timeline").innerText(), /历史尝试[\s\S]*当前尝试/);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     const exportLink = page.locator('a[href^="/api/v1/projects/"][href$="/team/export"]').first();
     await exportLink.waitFor();
@@ -149,10 +204,43 @@ test("site completes the product project flow with task records and repository e
     await mobile.locator("#new-project-form").waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
     assert.ok(await mobile.locator(".new-team-builder .primary-button").evaluate((button) => button.getBoundingClientRect().width >= 300));
+    await mobile.goto(`${url}/studio/project/${encodeURIComponent(projectId)}/run`, { waitUntil: "domcontentloaded" });
+    await mobile.locator("#project-workspace-view").waitFor({ state: "visible", timeout: 5000 });
+    const taskLayout = await mobile.waitForFunction(() => {
+      const root = document.querySelector("#project-workspace-view");
+      const row = root?.querySelector(".task-record-row");
+      const main = row?.querySelector(".task-record-main");
+      const actions = row?.querySelector(".task-record-actions");
+      const mainRect = main?.getBoundingClientRect();
+      const actionRect = actions?.getBoundingClientRect();
+      if (!root || root.querySelector(".project-loading") || !row?.isConnected
+        || !mainRect?.width || !mainRect.height || !actionRect?.width || !actionRect.height) return false;
+      const rect = (element) => {
+        const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
+      };
+      const actionButtons = [...actions.querySelectorAll("button")];
+      const timeline = row.querySelector(".task-attempt-timeline");
+      return {
+        main: rect(main),
+        actions: rect(actions),
+        buttons: actionButtons.map(rect),
+        timeline: timeline ? rect(timeline) : null,
+        viewportWidth: document.documentElement.clientWidth,
+        documentWidth: document.documentElement.scrollWidth
+      };
+    }, null, { timeout: 10000 }).then((handle) => handle.jsonValue());
+    assert.ok(taskLayout.documentWidth <= taskLayout.viewportWidth + 1, "project page should not overflow horizontally at 390px");
+    assert.ok(taskLayout.actions.top >= taskLayout.main.bottom - 1, "mobile task actions should follow task content without overlap");
+    assert.ok(taskLayout.buttons.length > 0, "mobile task actions should remain available");
+    assert.ok(taskLayout.buttons.every((button) => button.left >= 0 && button.right <= taskLayout.viewportWidth + 1 && button.width >= 44 && button.height >= 44), `mobile task controls should stay inside the viewport and meet the 44px touch target: ${JSON.stringify(taskLayout)}`);
+    assert.ok(taskLayout.timeline && taskLayout.timeline.left >= 0 && taskLayout.timeline.right <= taskLayout.viewportWidth + 1, "mobile attempt timeline should remain within the viewport");
   } finally {
     await browser?.close();
-    server.kill();
-    await once(server, "exit").catch(() => undefined);
+    if (server.exitCode === null && server.signalCode === null) {
+      server.kill();
+      await once(server, "exit").catch(() => undefined);
+    }
     await rm(projectsRoot, { recursive: true, force: true });
   }
 });

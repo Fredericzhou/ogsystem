@@ -3,12 +3,21 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
+import { createProjectDesignProjectionUseCases } from "../application/project-design-projection-use-cases.mjs";
+import { createProjectDesignValidationUseCases } from "../application/project-design-validation-use-cases.mjs";
+import { createVisualizerProjectDesignProjector } from "../infrastructure/visualizer-project-design-projector.mjs";
+import { createVisualizerProjectDesignValidator } from "../infrastructure/visualizer-project-design-validator.mjs";
+import { createVisualizerProjectDesignStore } from "../infrastructure/visualizer-project-design-store.mjs";
+import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
+import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 
 async function withStore(prefix, callback) {
   const projectsRoot = await mkdtemp(join(tmpdir(), `ogs-site-${prefix}-`));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?product-logic=${prefix}-${Date.now()}-${Math.random()}`);
+  const repository = await import(`../infrastructure/file-project-store.mjs?product-logic=${prefix}-${Date.now()}-${Math.random()}`);
+  const store = withProjectMaterialUseCases(withRunQueryUseCases(repository, projectsRoot));
   try {
     return await callback(store, projectsRoot);
   } finally {
@@ -32,13 +41,39 @@ async function waitForTerminal(store, projectId, runId) {
   throw new Error("Run did not reach a terminal state in time.");
 }
 
+test("built-in provisioning creates stable persisted TeamVersion identities", async () => {
+  await withStore("builtin-provisioning", async (store) => {
+    const first = await store.provisionBuiltInTeamVersions();
+    const listed = await store.listTeamRepository();
+    assert.ok(first.length > 0);
+    assert.ok(first.every((team) => team.teamVersionId === team.projectId && !team.teamVersionId.startsWith("case:")));
+    assert.equal(listed.filter((team) => team.builtIn).length, first.length);
+    assert.equal(new Set(listed.filter((team) => team.builtIn).map((team) => team.teamVersionId)).size, first.length);
+
+    const second = await store.provisionBuiltInTeamVersions();
+    assert.deepEqual(second.map((team) => team.teamVersionId), first.map((team) => team.teamVersionId));
+  });
+});
+
 test("Natural and Professional design paths share one validated, publishable team definition", async () => {
   await withStore("team-design", async (store) => {
     const draft = await store.createProject({ name: "Shared Design Team", overview: "Turn a brief into a reviewed recommendation.", templateId: "minimal" });
-    const naturalDesign = await store.getProjectDesign(draft.projectId);
-    assert.equal((await store.validateProjectDesign(draft.projectId, { authoring: naturalDesign.authoring })).ok, true);
+    const designValidator = createVisualizerProjectDesignValidator();
+    const designProjection = createProjectDesignProjectionUseCases({
+      getProject: store.getProject,
+      withProjectWriteLock: store.withProjectWriteLock,
+      designStore: createVisualizerProjectDesignStore(),
+      designProjector: createVisualizerProjectDesignProjector(),
+      designSerializer: { serialize: serializeAuthoringToMermaid }
+    });
+    const naturalDesign = await designProjection.getProjectDesign(draft.projectId);
+    const validation = createProjectDesignValidationUseCases({
+      getProject: store.getProject,
+      designValidator
+    });
+    assert.equal((await validation.validateProjectDesign(draft.projectId, { authoring: naturalDesign.authoring })).ok, true);
 
-    const professionalSave = await store.saveProjectDesign(draft.projectId, {
+    const professionalSave = await designProjection.saveProjectDesign(draft.projectId, {
       authoring: naturalDesign.authoring,
       expectedProjectDigest: naturalDesign.projectDigest
     });
@@ -105,25 +140,34 @@ test("batch project materials are all-or-nothing and preserve relative paths", a
   });
 });
 
-test("a persisted pre-materialization built-in mount is repaired before the first task run", async () => {
-  await withStore("legacy-built-in", async (store) => {
-    const project = await store.createCollaborationProject({ name: "Persisted Built-in Project", teamVersionIds: ["case:software-team"] });
+test("project metadata with a case alias is rejected by the latest identity contract", async () => {
+  await withStore("invalid-built-in-identity", async (store) => {
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
+    const project = await store.createCollaborationProject({ name: "Canonical Built-in Project", teamVersionIds: [team.teamVersionId] });
     const projectMetaPath = join(project.workdir, ".site", "project.json");
     const metadata = JSON.parse(await readFile(projectMetaPath, "utf8"));
-    const legacyMount = { ...metadata.mountedTeams[0], teamVersionId: "case:software-team", teamId: "case:software-team", builtIn: true };
-    await writeFile(projectMetaPath, JSON.stringify({ ...metadata, mountedTeams: [legacyMount] }, null, 2) + "\n", "utf8");
-    const task = await store.createProjectTask(project.projectId, {
-      input: "Run the persisted built-in team.",
-      teamVersionId: "case:software-team",
-      idempotencyKey: "legacy-built-in-run"
-    });
+    await writeFile(projectMetaPath, JSON.stringify({
+      ...metadata,
+      mountedTeams: [{ ...metadata.mountedTeams[0], teamVersionId: "case:software-team" }]
+    }, null, 2) + "\n", "utf8");
+    await assert.rejects(() => store.getProject(project.projectId), /TEAM_VERSION_ID_INVALID/);
+  });
+});
 
-    const started = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
-    assert.equal(started.status, "planning");
-    const repaired = await store.getProject(project.projectId);
-    const repairedTask = repaired.taskRecords.find((item) => item.taskId === task.taskId);
-    assert.ok(repairedTask && !repairedTask.teamVersionId.startsWith("case:"));
-    assert.ok(repaired.mountedTeams.every((item) => !item.teamVersionId.startsWith("case:")));
-    await waitForTerminal(store, project.projectId, started.runId);
+test("all persisted Team and Task workspace references reject noncanonical identities", async () => {
+  await withStore("invalid-root-identity", async (store) => {
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
+    const project = await store.createCollaborationProject({ name: "Canonical Identity Project", teamVersionIds: [team.teamVersionId] });
+    const projectMetaPath = join(project.workdir, ".site", "project.json");
+    const metadata = JSON.parse(await readFile(projectMetaPath, "utf8"));
+    for (const invalidField of ["teamId", "teamRootId", "parentTeamVersionId"]) {
+      await writeFile(projectMetaPath, JSON.stringify({ ...metadata, [invalidField]: "case:software-team" }, null, 2) + "\n", "utf8");
+      await assert.rejects(() => store.getProject(project.projectId), /TEAM_VERSION_ID_INVALID/, invalidField);
+    }
+    await writeFile(projectMetaPath, JSON.stringify({
+      ...metadata,
+      taskRecords: [{ taskId: "identity-task", teamVersionId: team.teamVersionId, runProjectId: "case:software-team" }]
+    }, null, 2) + "\n", "utf8");
+    await assert.rejects(() => store.getProject(project.projectId), /TEAM_VERSION_ID_INVALID/, "runProjectId");
   });
 });

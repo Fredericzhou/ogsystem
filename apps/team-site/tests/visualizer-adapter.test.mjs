@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVisualizerAdapter } from "../capabilities/visualizer-adapter.mjs";
+import { createVisualizerAdapter } from "../infrastructure/visualizer-adapter.mjs";
 
 test("Visualizer adapter owns the upstream chat protocol and preserves structured errors", async () => {
   const calls = [];

@@ -14,7 +14,7 @@ export function createVisualizerAdapter({ baseUrl, username, password, fetchImpl
       const response = await fetchImpl(target, { method: "POST", headers, body: JSON.stringify(payload) });
       const text = await response.text();
       let body;
-      try { body = JSON.parse(text); } catch { body = { error: text || "Visualizer response was not JSON." }; }
+      try { body = JSON.parse(text); } catch { body = { error: text || "Studio response was not JSON." }; }
       return { status: response.status, body };
     }
   };

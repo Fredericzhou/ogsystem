@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 async function startServer(projectsRoot) {
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -99,8 +99,12 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     const cancelResponse = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${cancelTask.taskId}/cancel`, { data: {} });
     assert.equal(cancelResponse.status(), 200);
     assert.equal((await cancelResponse.json()).status, "cancelled");
-    await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/start`, { data: { mode: "dry-run" } });
-    await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/pause`, { data: {} });
+    const projectMetaPath = join(projectsRoot, project.projectId, ".site", "project.json");
+    const projectMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
+    projectMeta.taskRecords = projectMeta.taskRecords.map((record) => record.taskId === task.taskId
+      ? { ...record, status: "paused", currentRunId: null, runIds: [] }
+      : record);
+    await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
     await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error));
@@ -161,6 +165,75 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     await page.keyboard.press("Escape");
     await page.locator(".task-review-dialog").waitFor({ state: "detached" });
     assert.equal(await page.evaluate(() => document.activeElement?.dataset.taskAction), "review");
+    await page.unroute(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`);
+    await page.locator('[data-task-action="review"]').first().click();
+    await page.locator(".task-review-dialog[open]").waitFor();
+    await page.locator(".task-review-dialog select").selectOption("approve");
+    await page.locator(".task-review-dialog textarea").fill("Reviewed and approved.");
+    await page.locator('.task-review-dialog button[value="submit"]').click();
+    await page.locator(".task-review-dialog").waitFor({ state: "detached" });
+    const reviewedProject = await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((response) => response.json());
+    assert.equal(reviewedProject.taskRecords.find((record) => record.taskId === task.taskId)?.status, "queued");
+    assert.equal(await page.locator(`.task-record-row:has([data-task-id="${task.taskId}"]) .status-chip`).evaluate((status) => status === document.activeElement), true);
+
+    const lifecycleTasks = await Promise.all(["rework", "pause", "terminate", "resume", "cancel"].map(async (action) => ({
+      action,
+      task: await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, {
+        data: { input: `UI lifecycle ${action}`, teamVersionId: team.projectId, idempotencyKey: `ui-lifecycle-${action}` }
+      }).then((response) => response.json())
+    })));
+    const lifecycleMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
+    lifecycleMeta.taskRecords = lifecycleMeta.taskRecords.map((record) =>
+      lifecycleTasks.some(({ task: item, action }) => item.taskId === record.taskId && action !== "cancel")
+        ? { ...record, status: "paused", currentRunId: null, runIds: [] }
+        : record
+    );
+    await writeFile(projectMetaPath, `${JSON.stringify(lifecycleMeta, null, 2)}\n`, "utf8");
+    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
+
+    for (const decision of ["rework", "terminate"]) {
+      const taskId = lifecycleTasks.find((item) => item.action === decision).task.taskId;
+      const row = page.locator(`.task-record-row:has([data-task-id="${taskId}"])`);
+      await row.locator('[data-task-action="review"]').click();
+      await page.locator(".task-review-dialog[open]").waitFor();
+      await page.locator(".task-review-dialog select[name=decision]").selectOption(decision);
+      await page.locator(".task-review-dialog textarea[name=comment]").fill(`Decision ${decision}`);
+      const responsePromise = page.waitForResponse((response) => response.url().endsWith(`/tasks/${taskId}/review`));
+      await page.locator('.task-review-dialog button[value="submit"]').click();
+      const response = await responsePromise;
+      assert.equal(response.status(), 200, `${decision} review should be accepted`);
+      await page.locator(".task-review-dialog").waitFor({ state: "detached" });
+      const expectedStatus = decision === "terminate" ? "cancelled" : "queued";
+      await page.waitForFunction(({ taskId, expectedStatus }) => {
+        const row = [...document.querySelectorAll(".task-record-row")].find((item) => item.querySelector(`[data-task-id="${taskId}"]`));
+        return row?.querySelector(".status-chip")?.classList.contains(expectedStatus);
+      }, { taskId, expectedStatus });
+      const persisted = await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((result) => result.json());
+      const record = persisted.taskRecords.find((item) => item.taskId === taskId);
+      assert.equal(record.status, expectedStatus);
+      assert.equal(record.review.decision, decision);
+      assert.equal(record.review.comment, `Decision ${decision}`);
+    }
+
+    const resumeTaskId = lifecycleTasks.find((item) => item.action === "resume").task.taskId;
+    const resumeRow = page.locator(`.task-record-row:has([data-task-id="${resumeTaskId}"])`);
+    await resumeRow.locator('[data-task-action="resume"]').click();
+    await page.waitForFunction((taskId) => {
+      const row = [...document.querySelectorAll(".task-record-row")].find((item) => item.querySelector(`[data-task-id="${taskId}"]`));
+      return row?.querySelector(".status-chip")?.classList.contains("queued");
+    }, resumeTaskId);
+    assert.equal((await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((result) => result.json())).taskRecords.find((item) => item.taskId === resumeTaskId).status, "queued");
+
+    const queuedCancelId = lifecycleTasks.find((item) => item.action === "cancel").task.taskId;
+    const queuedCancelRow = page.locator(`.task-record-row:has([data-task-id="${queuedCancelId}"])`);
+    await queuedCancelRow.locator('[data-task-action="cancel"]').click();
+    await page.waitForFunction((taskId) => {
+      const row = [...document.querySelectorAll(".task-record-row")].find((item) => item.querySelector(`[data-task-id="${taskId}"]`));
+      return row?.querySelector(".status-chip")?.classList.contains("cancelled");
+    }, queuedCancelId);
+    assert.equal((await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((result) => result.json())).taskRecords.find((item) => item.taskId === queuedCancelId).status, "cancelled");
+    assert.equal(await queuedCancelRow.locator('[data-task-action="start"]').count(), 0, "cancelled Tasks must not offer start");
+    assert.equal(await queuedCancelRow.locator('[data-task-action="cancel"]').count(), 0, "cancelled Tasks must not offer cancel");
   } finally {
     await browser?.close();
     server.kill();

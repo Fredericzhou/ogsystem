@@ -3,6 +3,10 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
+import { withCollaborationProjectUseCases } from "./collaboration-project-test-helpers.mjs";
+import { createProjectPackageOperations } from "./package-test-helpers.mjs";
+import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 
 async function waitForTerminal(store, projectId, runId) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -16,7 +20,8 @@ async function waitForTerminal(store, projectId, runId) {
 test("collaboration project creation, batch materials, export, and async run reservation", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-contract-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?contract-test=${Date.now()}`);
+  const repository = await import(`../infrastructure/file-project-store.mjs?contract-test=${Date.now()}`);
+  const store = withProjectMaterialUseCases(withRunQueryUseCases(repository, projectsRoot));
   try {
     const team = await store.createProject({ name: "Contract Team", overview: "Review a brief.", templateId: "empty" });
     await store.confirmProjectTeam(team.projectId, { release: true });
@@ -40,7 +45,7 @@ test("collaboration project creation, batch materials, export, and async run res
     assert.deepEqual(materials.map((item) => item.filename), ["brief/notes.md", "data.json"]);
     assert.ok(materials.every((item) => item.path.startsWith("workspace/files/")));
 
-    const bundle = await store.exportProjectBundle(project.projectId);
+    const bundle = await createProjectPackageOperations(store).exportProjectBundle(project.projectId);
     assert.equal(bundle.mode, "project-v2");
     assert.equal(bundle.project.materials.length, 2);
     assert.equal(typeof bundle.project.projectDefinitionDigest, "string");
@@ -54,12 +59,17 @@ test("collaboration project creation, batch materials, export, and async run res
     });
     const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
     assert.equal(reserved.status, "planning");
-    assert.ok(reserved.runId);
-    const observed = await store.getProjectRun(project.projectId, reserved.runId);
+    assert.ok(reserved.currentRunId);
+    const observed = await store.getProjectRun(project.projectId, reserved.currentRunId);
     assert.equal(observed.state.status, "planning");
-    await waitForTerminal(store, project.projectId, reserved.runId);
-    assert.equal((await store.getProjectTask(project.projectId, task.taskId)).runId, reserved.runId);
-    assert.ok(Array.isArray((await store.getProjectRunEvents(project.projectId, reserved.runId)).events));
+    assert.equal(observed.collaborationProjectId, project.projectId);
+    assert.equal(Object.hasOwn(observed, "projectId"), false);
+    await waitForTerminal(store, project.projectId, reserved.currentRunId);
+    assert.equal((await store.getProjectTask(project.projectId, task.taskId)).currentRunId, reserved.currentRunId);
+    const events = await store.getProjectRunEvents(project.projectId, reserved.currentRunId);
+    assert.ok(Array.isArray(events.events));
+    assert.equal(events.collaborationProjectId, project.projectId);
+    assert.equal(Object.hasOwn(events, "projectId"), false);
     await assert.rejects(
       () => store.controlProjectTask(project.projectId, task.taskId, "stop"),
       /TASK_CONTROL_INVALID/
@@ -72,7 +82,7 @@ test("collaboration project creation, batch materials, export, and async run res
 test("invalid atomic project creation does not create a project directory", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-atomic-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = await import(`../project-repository.mjs?atomic-test=${Date.now()}`);
+  const store = withCollaborationProjectUseCases(await import(`../infrastructure/file-project-store.mjs?atomic-test=${Date.now()}`));
   try {
     await assert.rejects(
       () => store.createCollaborationProject({ name: "Should Roll Back", teamVersionIds: ["missing-team"] }),

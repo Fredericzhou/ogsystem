@@ -1,5 +1,6 @@
 export const RUN_STATUSES = Object.freeze([
   "planning",
+  "ready",
   "running",
   "pause_requested",
   "paused",
@@ -13,6 +14,7 @@ export const RUN_STATUSES = Object.freeze([
 export const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 export const ACTIVE_RUN_STATUSES = new Set([
   "planning",
+  "ready",
   "running",
   "pause_requested",
   "paused",

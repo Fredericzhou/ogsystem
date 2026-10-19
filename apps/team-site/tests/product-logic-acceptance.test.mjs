@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 async function startServer(projectsRoot) {
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -109,8 +109,14 @@ test("Natural assistant failures are visible and successful previews can be appl
       }) });
     });
     await page.goto(`${url}/studio/team/${team.projectId}`, { waitUntil: "networkidle" });
-    await page.locator("#team-assistant").waitFor();
-    await page.waitForFunction(() => document.querySelector("#team-assistant-status")?.textContent.includes("TEAM_ASSISTANT_UNAVAILABLE"));
+    await page.locator("#team-assistant").waitFor({ state: "attached" });
+    assert.equal(await page.locator("#team-assistant-input").count(), 0, "the assistant should load only after opening its dialog");
+    await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
+    await page.locator("#team-studio-dialog[open]").waitFor();
+    await page.locator("#team-assistant-input").waitFor();
+    await page.locator("#team-assistant-input").fill("增加一个最终审核角色，确保结果有依据。");
+    await page.locator("#team-assistant-send").click();
+    await page.locator("#team-assistant-status").getByText("TEAM_ASSISTANT_UNAVAILABLE: test upstream failure").waitFor();
     mode = "success";
     await page.locator("#team-assistant-input").fill("增加一个最终审核角色，确保结果有依据。");
     await page.locator("#team-assistant-send").click();
@@ -122,6 +128,44 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator("#team-assistant-apply").click();
     assert.equal((await saveResponse).status(), 200);
     await page.locator("#team-assistant").waitFor();
+    await page.locator("[data-team-studio-close]").click();
+    await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').click();
+    await page.getByText("结构校验通过", { exact: true }).waitFor();
+    const checkedDesign = await page.request.get(`${url}/api/v1/projects/${team.projectId}/team/design`).then((response) => response.json());
+    assert.equal(checkedDesign.projectStatus, "draft", "validation must not publish or confirm the draft");
+    const runRoot = join(projectsRoot, team.projectId, ".ogs", "runs");
+    await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
+    await page.locator("#team-studio-dialog[open]").waitFor();
+    await page.locator('#team-studio-tab-run[aria-selected="true"]').waitFor();
+    const simulationPrompt = "Preview the software delivery handoffs.";
+    await page.locator("#team-simulation-input").fill(simulationPrompt);
+    const simulationResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${team.projectId}/simulate`));
+    await page.locator("#team-simulation-run").click();
+    const simulationResponse = await simulationResponsePromise;
+    assert.equal(simulationResponse.status(), 200);
+    const simulation = await simulationResponse.json();
+    assert.equal(simulation.teamVersionId, team.projectId);
+    assert.equal(simulation.mode, "simulation");
+    assert.equal(simulation.persisted, false);
+    assert.equal(await page.locator("[data-studio-graph-quick-debug]").isHidden(), true);
+    await page.locator("#team-simulation-result .team-simulation-result").waitFor();
+    assert.match(await page.locator("#team-simulation-result").innerText(), /未写入运行历史/);
+    assert.ok((await page.locator("#team-simulation-result pre").innerText()).trim().length > 0);
+    const simulationRuns = await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
+    assert.deepEqual(simulationRuns, [], "Studio quick simulation must not create Run history");
+    await page.locator("[data-team-studio-close]").click();
+    await page.locator("#confirm-project").click();
+    await page.locator(".project-status.confirmed").waitFor();
+    const released = await page.request.get(`${url}/api/v1/projects/${team.projectId}`).then((response) => response.json());
+    assert.equal(released.teamVersionStatus, "released");
+    assert.equal(released.teamVersionNumber, 1);
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    const releasedCard = page.locator(`#project-library-grid .team-version-card`).filter({ hasText: "Natural Product Team" });
+    await releasedCard.waitFor();
+    assert.equal(await releasedCard.getAttribute("data-team-status"), "released");
+    await releasedCard.getByRole("link", { name: /使用团队创建项目/ }).click();
+    await page.waitForURL(new RegExp(`/studio/project/new\\?team=${team.projectId}$`));
+    await page.locator(`#project-team-options input[value="${team.projectId}"]`).waitFor();
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(await page.evaluate(() => window.__productUnhandled), []);
   } finally {

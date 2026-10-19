@@ -14,7 +14,7 @@ test("site creates a new project, records a task, and shows project resources", 
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-browser-projects-"));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -40,8 +40,12 @@ test("site creates a new project, records a task, and shows project resources", 
     await page.locator("#new-project-form textarea[name=overview]").fill("Analyze the supplied product brief.");
     await page.locator("#new-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/team\/[a-z0-9-]+$/);
-    await page.locator("#team-assistant").waitFor();
+    await page.locator("#team-assistant").waitFor({ state: "attached" });
+    assert.equal(await page.locator("#team-studio-dialog").count(), 1);
+    assert.equal(await page.locator("#team-assistant-input").count(), 0);
+    await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
     assert.equal(await page.locator("#team-assistant-input").count(), 1);
+    await page.locator("[data-team-studio-close]").click();
     await page.locator("#confirm-project").click();
     await page.locator(".project-status.confirmed").waitFor();
     const teamId = page.url().match(/\/studio\/team\/([^/]+)$/)?.[1];

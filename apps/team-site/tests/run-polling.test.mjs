@@ -76,7 +76,7 @@ test("platform settings clearly report runtimeApplied false after read and save"
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-platform-settings-"));
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });

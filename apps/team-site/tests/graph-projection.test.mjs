@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cases } from "../cases.mjs";
-import { buildCaseGraph } from "../demo-runner.mjs";
+import { buildCaseGraph, buildCaseSystem } from "../demo-runner.mjs";
 
 for (const locale of ["zh-CN", "en"]) {
   for (const item of cases) {
@@ -28,3 +28,11 @@ for (const locale of ["zh-CN", "en"]) {
     });
   }
 }
+
+test("structured debate permits one bounded rebuttal before the judge must decide", () => {
+  const debate = cases.find((item) => item.id === "structured-debate");
+  assert.equal(debate.loopBudgets.find((loop) => loop.roleId === "debate-host")?.max, 2);
+  assert.match(debate.roles.find((role) => role.id === "neutral-judge").prompt, /at most one rebuttal/i);
+  assert.match(debate.roles.find((role) => role.id === "neutral-judge").prompt, /always issue DECISION_READY/i);
+  assert.match(buildCaseSystem(debate), /loop\.max\.debate-host=2/);
+});
