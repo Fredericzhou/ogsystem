@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, readdir, rm, rename, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
 
@@ -23,8 +23,8 @@ const originalRename = fs.promises.rename.bind(fs.promises);
 const markerPath = process.env.OGS_TEST_ACTIVE_RUN_MARKER;
 let held = false;
 fs.promises.rename = async (source, target, ...args) => {
-  const targetPath = String(target);
-  if (!held && markerPath && /[\\/]control[\\/]state\\.json$/.test(targetPath)) {
+  const targetPath = String(target).replaceAll("\\\\", "/");
+  if (!held && markerPath && targetPath.endsWith("/control/state.json")) {
     let state;
     try { state = JSON.parse(fs.readFileSync(String(source), "utf8")); } catch { state = undefined; }
     const result = await originalRename(source, target, ...args);
@@ -45,7 +45,8 @@ import { syncBuiltinESMExports } from "node:module";
 const originalRename = fs.promises.rename.bind(fs.promises);
 let remaining = Number(process.env.OGS_TEST_CONTROL_RENAME_FAULT_COUNT || 0);
 fs.promises.rename = async (source, target, ...args) => {
-  if (remaining > 0 && /[\\/]control[\\/]requests[\\/]/.test(String(target))) {
+  const targetPath = String(target).replaceAll("\\\\", "/");
+  if (remaining > 0 && targetPath.includes("/control/requests/")) {
     remaining -= 1;
     const error = new Error("Injected control request write failure.");
     error.code = "EIO";
@@ -75,7 +76,7 @@ async function waitForServer(server, getOutput) {
 
 async function spawnServer(projectsRoot, { preloadPath, controlWriteFault = false, activeRunMarker } = {}) {
   let output = "";
-  const args = [...(preloadPath ? ["--import", preloadPath] : []), "server.mjs"];
+  const args = [...(preloadPath ? ["--import", pathToFileURL(preloadPath).href] : []), "server.mjs"];
   const server = spawn(process.execPath, args, {
     cwd: appRoot,
     env: {

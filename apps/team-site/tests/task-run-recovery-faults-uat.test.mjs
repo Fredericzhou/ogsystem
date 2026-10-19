@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
 
@@ -30,8 +30,9 @@ const taskId = process.env.OGS_TEST_RENAME_FAULT_TASK_ID || "";
 const taskStatus = process.env.OGS_TEST_RENAME_FAULT_TASK_STATUS || "";
 
 fs.promises.rename = async (source, target, ...args) => {
-  const targetPath = resolve(String(target));
-  let shouldFail = remaining > 0 && targetSuffix && targetPath.endsWith(targetSuffix);
+  const targetPath = resolve(String(target)).replaceAll("\\\\", "/");
+  const normalizedSuffix = targetSuffix.replaceAll("\\\\", "/");
+  let shouldFail = remaining > 0 && normalizedSuffix && targetPath.endsWith(normalizedSuffix);
   if (shouldFail && taskId) {
     try {
       const metadata = JSON.parse(readFileSync(String(source), "utf8"));
@@ -64,7 +65,7 @@ async function waitForServer(server, getOutput) {
 
 async function spawnServer({ projectsRoot, platformConfigRoot = projectsRoot, preloadPath, fault = {}, runtimeFailure = false }) {
   let output = "";
-  const server = spawn(process.execPath, ["--import", preloadPath, "server.mjs"], {
+  const server = spawn(process.execPath, ["--import", pathToFileURL(preloadPath).href, "server.mjs"], {
     cwd: appRoot,
     env: {
       ...process.env,

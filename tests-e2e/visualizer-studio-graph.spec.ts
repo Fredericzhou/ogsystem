@@ -1738,6 +1738,7 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     await page.getByRole("tab", { name: designTabName }).click();
     await setWorkbenchView(page, "bridge");
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Show right panel" }).click();
     const systemSettings = page.locator(".studio-system-settings");
     await expect(systemSettings).toBeVisible();
     await systemSettings.locator("summary").focus();

@@ -45,7 +45,7 @@ require_command() {
 
 extract_run_id() {
   local output="$1"
-  printf '%s\n' "$output" | sed -n 's/^\[run:start\] run=\([^ ]*\) .*/\1/p' | tail -n 1
+  printf '%s\n' "$output" | grep -Eo '[0-9]{8}-[0-9]{6}-[[:xdigit:]]+' | tail -n 1
 }
 
 run_start_case() {

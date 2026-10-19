@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import path from "node:path";
 import { createVisualizerProjectDesignValidator } from "../infrastructure/visualizer-project-design-validator.mjs";
 
 test("Visualizer project design validator prefers explicit Mermaid source", async () => {
@@ -15,7 +16,7 @@ test("Visualizer project design validator prefers explicit Mermaid source", asyn
   assert.deepEqual(calls, [{
     workdir: project.workdir,
     systemSource: "flowchart TD\n A-->B",
-    systemPath: "/workspace/project/system.mmd"
+    systemPath: path.join(project.workdir, "system.mmd")
   }]);
 });
 
@@ -44,11 +45,11 @@ test("Visualizer project design validator reads stored Mermaid source by default
 
   await validator.validate({ workdir: "/workspace/project" });
   assert.deepEqual(calls, [
-    ["read", "/workspace/project/system.mmd", "utf8"],
+    ["read", path.join("/workspace/project", "system.mmd"), "utf8"],
     ["validate", {
       workdir: "/workspace/project",
       systemSource: "stored Mermaid",
-      systemPath: "/workspace/project/system.mmd"
+      systemPath: path.join("/workspace/project", "system.mmd")
     }]
   ]);
 });

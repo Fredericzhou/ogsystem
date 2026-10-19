@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import path from "node:path";
 import { createVisualizerProjectDesignProjector } from "../infrastructure/visualizer-project-design-projector.mjs";
 
 test("Visualizer design projector reads source, maps display titles, and applies locale labels", async () => {
@@ -28,10 +29,10 @@ test("Visualizer design projector reads source, maps display titles, and applies
     canvas: { canvas: true },
     viewModel
   });
-  assert.deepEqual(calls[0], ["read", "/workspace/project/system.mmd"]);
+  assert.deepEqual(calls[0], ["read", path.join(project.workdir, "system.mmd")]);
   assert.deepEqual(calls[1], ["parse", "flowchart TD\n A-->B"]);
   assert.deepEqual(calls[2][0], "read");
-  assert.equal(calls[2][1], "/workspace/project/system.design.json");
+  assert.equal(calls[2][1], path.join(project.workdir, "system.design.json"));
   assert.equal(calls[3][0], "authoring");
   assert.deepEqual([...calls[3][1].roleDisplayNames], [["planner", "Planner title"]]);
   assert.deepEqual(calls[4], ["canvas", authoring]);
