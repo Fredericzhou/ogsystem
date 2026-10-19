@@ -72,6 +72,18 @@ export async function loadModelSelection(path: string): Promise<ModelSelectionCo
   return validateModelSelection(await readJsonFile(path), path);
 }
 
+export function withDefaultModelSelection(
+  selection: ModelSelectionConfig | undefined,
+  defaults: ModelSelectionDefaults | undefined
+): ModelSelectionConfig | undefined {
+  if (!defaults) return selection;
+  return {
+    configVersion: "2",
+    defaults: { ...defaults, ...selection?.defaults },
+    roles: selection?.roles
+  };
+}
+
 export type ResolvedModelRuntimeConfig = {
   backend: ModelBackend;
   modelId: string;

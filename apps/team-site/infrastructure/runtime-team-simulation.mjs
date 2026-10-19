@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
 
-export function createRuntimeTeamSimulation({ run = runSystemWithAdapter } = {}) {
+export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
     async simulate(team, { prompt }) {
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
@@ -15,6 +15,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter } = {})
         const bundle = await exportTeamPackage(team.workdir);
         const loaded = await loadTeamPackage({ workdir, bundle });
         if (loaded.validation?.ok === false) throw new Error("TEAM_SIMULATION_INVALID: team version failed validation.");
+        const modelConfig = await getDefaultModelSelection();
         const result = await run({
           systemPath: resolve(workdir, "system.mmd"),
           prompt,
@@ -24,6 +25,9 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter } = {})
           projectRunMode: "dry-run",
           projectId: `preview:${team.teamVersionId}`,
           trustedProjectTopology: team.source === "classic" || team.source === "classic-template",
+          modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
+          modelCatalogModels: modelConfig?.modelCatalogModels,
+          modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
           projectDigest: team.projectDigest,
           projectRunLock: false,
           logRun: false

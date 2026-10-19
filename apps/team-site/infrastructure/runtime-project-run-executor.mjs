@@ -1,12 +1,13 @@
 import { resolve } from "node:path";
 import { runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 
-export function createRuntimeProjectRunExecutor({ execute = runSystemWithAdapter } = {}) {
+export function createRuntimeProjectRunExecutor({ execute = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
     async execute(project, {
       prompt, mode, runId, resumeRunDir, resumeProjectDigest, materialInputs,
       materialSourceRoot, onPrepared
     }) {
+      const modelConfig = resumeRunDir ? undefined : await getDefaultModelSelection();
       return execute({
         systemPath: resolve(project.workdir, "system.mmd"),
         prompt,
@@ -21,6 +22,9 @@ export function createRuntimeProjectRunExecutor({ execute = runSystemWithAdapter
         projectRunLock: false,
         materialInputs,
         materialSourceRoot,
+        modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
+        modelCatalogModels: modelConfig?.modelCatalogModels,
+        modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
         onProjectRunPrepared: onPrepared,
         logRun: false
       });

@@ -13,7 +13,8 @@ import {
 } from "../dist/runtime/model-catalog.js";
 import {
   loadModelSelection,
-  resolveModelSelectionForSystem
+  resolveModelSelectionForSystem,
+  withDefaultModelSelection
 } from "../dist/runtime/model-selection.js";
 import { syncProjectModels } from "../dist/runtime/project-lifecycle.js";
 
@@ -143,6 +144,29 @@ test("per-role model selection overrides the project default", () => {
   assert.equal(result.resolvedByRoleId.get("mapped").backend, "codex");
   assert.equal(result.resolvedByRoleId.get("mapped").modelId, "gpt-5.6-sol");
   assert.equal(result.resolvedByRoleId.has("label"), false);
+});
+
+test("platform model defaults fill unbound roles without overriding project or role selections", () => {
+  const selection = withDefaultModelSelection({
+    configVersion: "2",
+    roles: { pinned: { backend: "codex", modelId: "gpt-5.6-sol" } }
+  }, { backend: "codex", modelId: "platform-default" });
+  const result = resolveModelSelectionForSystem({
+    system: system(["platform", "pinned"]),
+    selection,
+    catalog: catalog([
+      { ...model("codex/platform-default"), backend: "codex", modelId: "platform-default" },
+      { ...model("codex/gpt-5.6-sol"), backend: "codex", modelId: "gpt-5.6-sol" }
+    ])
+  });
+
+  assert.equal(result.resolvedByRoleId.get("platform").modelId, "platform-default");
+  assert.equal(result.resolvedByRoleId.get("pinned").modelId, "gpt-5.6-sol");
+  const projectSelection = withDefaultModelSelection({
+    configVersion: "2",
+    defaults: { backend: "opencode", modelId: "provider/project" }
+  }, { backend: "codex", modelId: "platform-default" });
+  assert.equal(projectSelection?.defaults?.modelId, "provider/project");
 });
 
 test("fresh discovery fails closed for unavailable and incapable pinned models", () => {

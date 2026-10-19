@@ -744,7 +744,7 @@ async function renderPlatformConfig() {
     const runtimeStatus = $("#platform-runtime-status");
     if (runtimeStatus) {
       runtimeStatus.textContent = settings?.runtimeApplied === false
-        ? "设置已持久化；运行时尚未应用，将在后续运行生效。"
+        ? "设置已持久化；默认模型用于未单独绑定模型的角色，超时与重试等运行时设置将在后续运行生效。"
         : settings?.runtimeApplied === true ? "设置已应用到当前运行时。" : "";
     }
   };
@@ -959,25 +959,42 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
 
 async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest = state.activeRequest) {
   try {
-    const [discoveryResponse, designResponse] = await Promise.all([
+    const [discoveryResponse, designResponse, settingsResponse] = await Promise.all([
       pageFetch("/api/v1/platform/discovery", { method: "POST" }),
-      authoring ? Promise.resolve(undefined) : pageFetch(`/api/v1/projects/${encodeURIComponent(teamVersionId)}/team/design`)
+      authoring ? Promise.resolve(undefined) : pageFetch(`/api/v1/projects/${encodeURIComponent(teamVersionId)}/team/design`),
+      pageFetch("/api/v1/platform/settings")
     ]);
     const discovery = await discoveryResponse.json();
     if (!discoveryResponse.ok) throw new Error(discovery.error || "Unable to discover runtime models.");
     const design = designResponse ? await designResponse.json() : undefined;
     if (designResponse && !designResponse.ok) throw new Error(design.error || "Unable to read the team model bindings.");
+    const settingsPayload = await settingsResponse.json();
+    if (!settingsResponse.ok) throw new Error(settingsPayload.error || "Unable to read the default model setting.");
     if (pageRequest && !isCurrentRequest(pageRequest)) return false;
     const roles = (authoring || design?.authoring)?.roles || {};
     const models = discovery.models || [];
+    const settings = settingsPayload.settings || {};
+    const configuredDefault = String(settings.defaultModel || "default");
+    const defaultModel = configuredDefault === "default"
+      ? models.find((item) => item.backend === settings.defaultProvider && item.runnable)
+      : models.find((item) => item.runnable && (item.ref === configuredDefault || (item.backend === settings.defaultProvider && item.id === configuredDefault)));
     const issues = [];
+    const inheritedRoles = [];
     for (const [roleId, role] of Object.entries(roles)) {
       if (role.bindingKind === "exec" || (role.profileId && role.bindingKind !== "model")) continue;
       if (role.bindingKind !== "model") {
+        if (defaultModel) {
+          inheritedRoles.push(roleId);
+          continue;
+        }
         issues.push(`${roleId}: ${state.locale === "en" ? "no model or execution profile is configured" : "未配置模型或执行配置"}`);
         continue;
       }
       const modelRef = role.modelRef || (role.backend && role.modelId ? `${role.backend}/${role.modelId}` : "");
+      if (!modelRef && defaultModel) {
+        inheritedRoles.push(roleId);
+        continue;
+      }
       const backend = role.backend || modelRef.split("/", 1)[0];
       const modelId = role.modelId || modelRef.slice(backend ? backend.length + 1 : 0);
       const model = models.find((item) => item.backend === backend && item.runnable && (item.ref === modelRef || item.id === modelId || item.ref === `${backend}/${modelId}`));
@@ -985,12 +1002,14 @@ async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest
         issues.push(`${roleId}: ${state.locale === "en" ? `runnable model ${modelRef || "is not selected"} was not discovered` : `未发现可运行模型 ${modelRef || "（尚未选择）"}`}`);
       }
     }
-    if (!issues.length) return true;
+    if (!issues.length && !inheritedRoles.length) return true;
     return confirmAction({
-      title: state.locale === "en" ? "Some team roles may not run" : "部分团队角色可能无法执行",
+      title: issues.length
+        ? (state.locale === "en" ? "Some team roles may not run" : "部分团队角色可能无法执行")
+        : (state.locale === "en" ? "Use the platform default model?" : "使用平台默认模型运行？"),
       message: state.locale === "en"
-        ? `${issues.join("\n")}\nPlatform default model is not automatically assigned to roles. Configure each role in Team Studio, or continue and review the simulation/run result.`
-        : `${issues.join("\n")}\n平台默认模型不会自动绑定到角色。请返回 Team Studio 为角色配置模型，或继续并检查运行结果。`,
+        ? `${issues.length ? `${issues.join("\n")}\n` : ""}${inheritedRoles.length ? `Unbound roles: ${inheritedRoles.join(", ")}\n` : ""}Unbound roles use the selected platform default. Explicit role and project model settings keep priority.`
+        : `${issues.length ? `${issues.join("\n")}\n` : ""}${inheritedRoles.length ? `未绑定模型：${inheritedRoles.join("、")}\n` : ""}未绑定角色会使用平台默认模型；角色和项目中已配置的模型优先。`,
       confirmLabel: state.locale === "en" ? "Continue anyway" : "仍然继续",
       cancelLabel: state.locale === "en" ? "Return to configure" : "返回配置"
     });

@@ -10,7 +10,7 @@ import {
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
 import { loadModelCatalog } from "./model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
+import { loadModelSelection, resolveModelSelectionForSystem, withDefaultModelSelection } from "./model-selection.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { filesystemRunStore } from "./run-store.js";
@@ -39,6 +39,8 @@ import type {
   LawCatalog,
   LawSpec,
   LoadedRolePackage,
+  ModelCatalogEntry,
+  ModelSelectionDefaults,
   RuntimeConfig,
   RunContext,
   SystemDefinition,
@@ -224,6 +226,9 @@ export async function prepareRuntimeSetup(args: {
   lawsPath?: string;
   runtimeConfigPath?: string;
   userProfilePath?: string;
+  modelSelectionDefaults?: ModelSelectionDefaults;
+  modelCatalogModels?: ModelCatalogEntry[];
+  modelCatalogGeneratedAt?: string;
   resumeRunDir?: string;
   runId?: string;
   prompt: string;
@@ -291,6 +296,7 @@ export async function prepareRuntimeSetup(args: {
   }
   const runtimeConfig = await loadRuntimeConfig(projectResume ? undefined : args.runtimeConfigPath, assetWorkdir);
   const storedModelSelection = await loadModelSelection(resolve(assetWorkdir, ".ogs", "model-selection.json"));
+  const effectiveModelSelection = withDefaultModelSelection(storedModelSelection, args.modelSelectionDefaults);
   const designModelOverrides = activeDesign
     ? Object.fromEntries(Object.entries(activeDesign.seats).flatMap(([roleId, seat]) => {
         if (seat.binding.kind !== "model" || !seat.binding.modelRef) return [];
@@ -305,11 +311,22 @@ export async function prepareRuntimeSetup(args: {
   const modelSelection = activeDesign && Object.keys(designModelOverrides).length
     ? {
         configVersion: "2" as const,
-        defaults: storedModelSelection?.defaults,
-        roles: { ...(storedModelSelection?.roles ?? {}), ...designModelOverrides }
+        defaults: effectiveModelSelection?.defaults,
+        roles: { ...(effectiveModelSelection?.roles ?? {}), ...designModelOverrides }
       }
-    : storedModelSelection;
-  const modelCatalog = await loadModelCatalog(resolve(assetWorkdir, ".ogs", "model-catalog.json"));
+    : effectiveModelSelection;
+  const storedModelCatalog = await loadModelCatalog(resolve(assetWorkdir, ".ogs", "model-catalog.json"));
+  const modelCatalog = args.modelCatalogModels?.length
+    ? {
+        catalogVersion: "2" as const,
+        generatedAt: args.modelCatalogGeneratedAt ?? storedModelCatalog?.generatedAt ?? new Date().toISOString(),
+        sources: storedModelCatalog?.sources ?? [],
+        models: [
+          ...(storedModelCatalog?.models ?? []).filter((item) => !args.modelCatalogModels?.some((fallback) => fallback.backend === item.backend && fallback.modelId === item.modelId)),
+          ...args.modelCatalogModels
+        ]
+      }
+    : storedModelCatalog;
   const resolvedModelSelection = resolveModelSelectionForSystem({
     system: activeDesign ? { ...system, modelBinding: {} } : system,
     selection: modelSelection,

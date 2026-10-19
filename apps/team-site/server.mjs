@@ -108,7 +108,7 @@ const visualizer = createVisualizerAdapter({
 });
 const discoveryWorkdir = process.env.OGS_VIS_WORKDIR || join(process.env.LOCALAPPDATA || process.cwd(), "OGSystem", "visualizer-workspace");
 const siteProjectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
-const platformConfigRoot = resolve(process.env.OGS_PLATFORM_CONFIG_DIR || join(homedir(), ".ogsystem", "projects", ".site"));
+const platformConfigRoot = resolve(process.env.OGS_PLATFORM_CONFIG_DIR || join(siteProjectsRoot, ".site"));
 const taskAttemptStore = createFileRecentRunStore({ projectsRoot: siteProjectsRoot });
 const projectQueryUseCases = createProjectQueryUseCases({
   projectStore: { getProject: readProject },
@@ -130,6 +130,7 @@ const projectCreationUseCases = createProjectCreationUseCases({
 });
 const createProject = projectCreationUseCases.createProject;
 const platformSettingsPath = join(platformConfigRoot, "platform-settings.json");
+const platformSettingsStore = createFilePlatformSettings({ path: platformSettingsPath });
 const teamPackageValidationUseCases = createTeamPackageValidationUseCases({
   packageIntegrity: { computePackageDigest, computeTeamPackageCoreDigest }
 });
@@ -164,7 +165,7 @@ const collaborationProjectUseCases = createCollaborationProjectUseCases({
 const taskExecutionReadiness = createRuntimeTaskExecutionReadiness();
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
-  runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor() },
+  runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor({ getDefaultModelSelection: getPlatformDefaultModelSelection }) },
   readiness: taskExecutionReadiness,
   identifiers: createTaskExecutionIdentifiers(),
   evaluateResult: evaluateProjectRunResult
@@ -231,9 +232,35 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
-const platformSettingsStore = createFilePlatformSettings({ path: platformSettingsPath });
 const modelCatalog = createModelCatalog({ workdir: discoveryWorkdir });
 const platformUseCases = createPlatformUseCases({ platformSettingsStore, modelCatalog });
+async function getPlatformDefaultModelSelection() {
+  const [settings, discovery] = await Promise.all([
+    platformUseCases.readPlatformSettings(),
+    platformUseCases.getPlatformDiscovery()
+  ]);
+  const models = (discovery.models || []).filter((model) => model.runnable);
+  const configured = String(settings.defaultModel || "default");
+  const selected = configured === "default"
+    ? models.find((model) => model.backend === settings.defaultProvider)
+    : models.find((model) => model.ref === configured || model.id === configured && model.backend === settings.defaultProvider);
+  return selected ? {
+    modelSelectionDefaults: { backend: selected.backend, modelId: selected.id },
+    modelCatalogGeneratedAt: discovery.generatedAt,
+    modelCatalogModels: models.map((model) => ({
+      backend: model.backend,
+      modelId: model.id,
+      ref: model.ref || `${model.backend}/${model.id}`,
+      provider: model.provider || model.backend,
+      model: model.id,
+      name: model.name,
+      status: model.status || "active",
+      runnable: true,
+      capabilities: model.capabilities || { textInput: true, textOutput: true, toolcall: false },
+      variants: []
+    }))
+  } : undefined;
+}
 const teamCatalog = createFileTeamCatalog({ projectsRoot: siteProjectsRoot });
 const teamCatalogUseCases = createTeamCatalogUseCases({ teamCatalog });
 const projectUpdateUseCases = createProjectUpdateUseCases({
@@ -241,7 +268,10 @@ const projectUpdateUseCases = createProjectUpdateUseCases({
   teamCatalog,
   computeProjectDefinitionDigest
 });
-const teamSimulationUseCases = createTeamSimulationUseCases({ teamCatalog, simulationRunner: createRuntimeTeamSimulation() });
+const teamSimulationUseCases = createTeamSimulationUseCases({
+  teamCatalog,
+  simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection })
+});
 const projectReadinessUseCases = createProjectReadinessUseCases({
   getProject,
   readinessInspector: createRuntimeProjectReadinessInspector()
