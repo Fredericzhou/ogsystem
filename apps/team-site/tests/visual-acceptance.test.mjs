@@ -127,6 +127,9 @@ test("site completes the product project flow with task records and repository e
     assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
     await page.locator('.task-record-row [data-task-action="start"]').click();
+    const runtimeWarning = page.locator(".confirm-dialog");
+    await runtimeWarning.waitFor();
+    await runtimeWarning.locator('button[value="confirm"]').click();
     await page.waitForFunction(() => {
       const status = document.querySelector(".task-record-row .status-chip");
       return status?.classList.contains("completed") || status?.classList.contains("failed");
@@ -159,6 +162,9 @@ test("site completes the product project flow with task records and repository e
       return pathname.startsWith("/api/v1/projects/") && pathname.endsWith("/retry");
     }, { timeout: 5000 });
     await retryButton.click();
+    const retryWarning = page.locator(".confirm-dialog");
+    await retryWarning.waitFor();
+    await retryWarning.locator('button[value="confirm"]').click();
     let retryResponse;
     try {
       retryResponse = await retryResponsePromise;

@@ -119,6 +119,9 @@ test("classic teams separate direct use from template editing and keep the graph
     await writeFile(modelCatalogPath, "{}\n", "utf8");
     await taskRow.locator("[data-task-mode]").selectOption("sandbox");
     await taskRow.locator('[data-task-action="start"]').click();
+    const firstRuntimeWarning = page.locator(".confirm-dialog");
+    await firstRuntimeWarning.waitFor();
+    await firstRuntimeWarning.locator('button[value="confirm"]').click();
     await page.waitForFunction(() => document.querySelector(".task-action-status")?.textContent.includes("未通过运行就绪检查"));
     const blockedTask = (await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json())).taskRecords[0];
     assert.equal(blockedTask.status, "queued");
@@ -127,6 +130,9 @@ test("classic teams separate direct use from template editing and keep the graph
     await writeFile(modelCatalogPath, modelCatalog);
     await taskRow.locator("[data-task-mode]").selectOption("dry-run");
     await taskRow.locator('[data-task-action="start"]').click();
+    const secondRuntimeWarning = page.locator(".confirm-dialog");
+    await secondRuntimeWarning.waitFor();
+    await secondRuntimeWarning.locator('button[value="confirm"]').click();
     await page.waitForFunction(() => {
       const row = document.querySelector(".task-record-row");
       return row?.querySelector(".status-chip")?.classList.contains("completed")
@@ -257,6 +263,9 @@ test("classic teams separate direct use from template editing and keep the graph
     await page.reload({ waitUntil: "networkidle" });
     const retryResponsePromise = page.waitForResponse((response) => response.url().includes(`/api/v1/projects/${projectId}/tasks/${queuedTask.taskId}/retry`));
     await page.locator('.task-record-row [data-task-action="retry"]').click();
+    const retryWarning = page.locator(".confirm-dialog");
+    await retryWarning.waitFor();
+    await retryWarning.locator('button[value="confirm"]').click();
     const retryResponse = await retryResponsePromise;
     const retryResponseBody = await retryResponse.json();
     assert.equal(retryResponse.ok(), true, retryResponseBody.error || "Task retry request failed");

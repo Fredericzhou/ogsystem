@@ -502,8 +502,7 @@ async function renderTeamAssistant(projectId, project, pageRequest = state.activ
           latestDesign = saved;
           clearDirty("team-assistant");
           status.textContent = "修改已应用，团队回到草案状态，请检查后确认。";
-          await renderProjectDraft(projectId, pageRequest);
-          await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
+          await renderProjectStudio(projectId, pageRequest);
           state.teamStudioDialog?.("assistant");
           const refreshedStatus = $("#team-assistant-status");
           if (refreshedStatus) refreshedStatus.textContent = status.textContent;
@@ -709,6 +708,17 @@ async function renderPlatformConfig() {
     const models = discovery.models || [];
     $("#platform-providers").innerHTML = providers.length ? providers.map((item) => `<div class="platform-source-row"><div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.name || item.backend)}</strong><span class="status-chip ${statusClass(item.status)}">${statusText(item.status)}</span></div><span class="platform-row-detail">${esc(sourceDetail(item))}</span><code>${esc(item.command || "自动检查")}</code></div></div>`).join("") : `<div class="platform-empty">暂未发现运行底座</div>`;
     $("#platform-models").innerHTML = models.length ? models.map((item) => { const capabilities = capabilityLabels(item.capabilities); return `<div class="platform-model-row"><div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.name || item.id)}</strong><span class="status-chip ${statusClass(item.status)}">${item.runnable ? "可运行" : "不可运行"}</span></div><span class="platform-row-detail">${esc(item.providerName || item.provider || "未知底座")} · ${esc(item.id)}</span><div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`; }).join("") : `<div class="platform-empty">暂未发现可用模型，请先安装并登录运行底座</div>`;
+    const hasCodexModel = models.some((item) => item.backend === "codex" && item.runnable);
+    const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && item.runnable);
+    const missingBackends = [!hasCodexModel && "Codex", !hasOpenCodeModel && "OpenCode"].filter(Boolean);
+    const requirementMessage = missingBackends.length
+      ? (state.locale === "en"
+        ? `No runnable ${missingBackends.join(" or ")} model was discovered. Install and sign in to the tool in the deployment environment, then refresh discovery. Team Assistant requires OpenCode.`
+        : `尚未发现可运行的 ${missingBackends.join(" 或 ")} 模型。请在部署环境安装并登录对应工具，再刷新发现结果。团队助手对话需要 OpenCode。`)
+      : (state.locale === "en"
+        ? "Runnable Codex and OpenCode models are available. Select a discovered model when configuring each team role; Team Assistant uses OpenCode."
+        : "已发现可运行的 Codex 和 OpenCode 模型。可为团队角色配置已发现的模型；团队助手对话使用 OpenCode。");
+    $("#platform-models").insertAdjacentHTML("afterbegin", `<p class="form-hint" role="status">${esc(requirementMessage)}</p>`);
     $("#platform-discovery-meta").textContent = `上次检查：${formatDiscoveryTime(discovery.generatedAt)}${discovery.stale ? " · 建议刷新" : ""}`;
     const modelSelect = document.querySelector("#platform-settings-form select[name=defaultModel]");
     if (modelSelect) {
@@ -761,7 +771,17 @@ async function renderTeamFactory() {
 async function renderProjectGraph(projectId, stageId = "project-graph-stage", readOnly = false, pageRequest = state.activeRequest) {
   if (pageRequest && !isCurrentRequest(pageRequest)) return;
   const stage = $("#" + stageId);
-  if (!stage || !window.OGSStudioGraphBundle?.mountStudioX6Bridge) return;
+  if (!stage) return;
+  const setEditorState = (message) => {
+    const status = $("#project-design-status");
+    if (status) status.textContent = message;
+  };
+  if (!window.OGSStudioGraphBundle?.mountStudioX6Bridge) {
+    const message = state.locale === "en" ? "Graph editor is unavailable. Reload the page and try again." : "图谱编辑器不可用，请刷新页面后重试。";
+    stage.textContent = message;
+    setEditorState(message);
+    return;
+  }
   try {
     const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/team/design?locale=${encodeURIComponent(state.locale)}`);
     const payload = await response.json();
@@ -787,10 +807,6 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     let canvas = payload.canvas;
     let projectDigest = payload.projectDigest;
     let dirty = false;
-    const setEditorState = (message) => {
-      const status = $("#project-design-status");
-      if (status) status.textContent = message;
-    };
     const simulateTeam = async (input) => {
       const prompt = String(input || "").trim();
       if (!prompt) {
@@ -799,6 +815,12 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       }
       if (dirty) {
         setEditorState("请先保存未提交的图谱修改，再运行模拟");
+        return false;
+      }
+      setEditorState(state.locale === "en" ? "Checking role model readiness…" : "正在检查角色模型配置…");
+      const ready = await confirmTeamRuntimeReadiness(projectId, authoring, pageRequest);
+      if (!ready) {
+        if (isCurrentRequest(pageRequest)) setEditorState(state.locale === "en" ? "Simulation cancelled; configure the listed roles and retry." : "已取消模拟；请配置提示中的角色后重试。");
         return false;
       }
       const result = $("#team-simulation-result");
@@ -813,15 +835,37 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const payload = await response.json();
         if (!isCurrentRequest(pageRequest)) return false;
         if (!response.ok) throw new Error(payload.error || "团队模拟失败");
-        const roleRows = (payload.auditTrail || []).map((item) => `<li><strong>${esc(item.roleId || "角色")}</strong><span>${esc(item.status || "已执行")}${item.failure ? ` · ${esc(item.failure)}` : ""}</span></li>`).join("");
-        const succeeded = !["failed", "error"].includes(String(payload.status || "").toLowerCase());
-        const statusLabel = succeeded
-          ? (state.locale === "en" ? "Not saved" : "未写入运行历史")
-          : (state.locale === "en" ? "Simulation failed" : "模拟失败");
-        if (result) result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Simulation result" : "模拟结果"}</strong><span class="status-chip${succeeded ? "" : " warning"}">${statusLabel}</span></div>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(payload.finalOutput || payload.error || "模拟没有返回结果")}</pre></div>`;
-        setEditorState(succeeded
-          ? (state.locale === "en" ? "Simulation completed; no Project or Run history was written." : "模拟完成；未写入项目或运行历史")
-          : (state.locale === "en" ? "Simulation failed; review the role details and retry." : "模拟失败；请检查角色执行信息后重试"));
+        const auditTrail = payload.auditTrail || [];
+        const noopRoles = auditTrail.filter((item) => String(item.status || "").toLowerCase() === "noop");
+        const failed = ["failed", "error"].includes(String(payload.status || "").toLowerCase()) || auditTrail.some((item) => String(item.status || "").toLowerCase() === "failed");
+        const hasOutput = typeof payload.finalOutput === "string" && Boolean(payload.finalOutput.trim());
+        const succeeded = !failed && hasOutput;
+        const roleRows = auditTrail.map((item) => {
+          const status = String(item.status || "").toLowerCase();
+          const label = status === "noop"
+            ? (state.locale === "en" ? "Not run: no model or execution profile" : "未执行：未配置模型或执行配置")
+            : (item.status || (state.locale === "en" ? "Executed" : "已执行"));
+          return `<li><strong>${esc(item.roleId || (state.locale === "en" ? "Role" : "角色"))}</strong><span>${esc(label)}${item.failure ? ` · ${esc(item.failure)}` : ""}</span></li>`;
+        }).join("");
+        const statusLabel = failed
+          ? (state.locale === "en" ? "Simulation failed" : "模拟失败")
+          : !hasOutput
+            ? (state.locale === "en" ? "No result produced" : "未产出结果")
+            : noopRoles.length
+              ? (state.locale === "en" ? "Partial result" : "部分完成")
+              : (state.locale === "en" ? "Simulation complete" : "模拟完成");
+        const persistenceLabel = state.locale === "en" ? "Temporary preview · not saved to run history" : "临时预览 · 未写入运行历史";
+        const emptyMessage = noopRoles.length
+          ? (state.locale === "en" ? "No result was produced because one or more roles have no execution binding. Configure a model or execution profile for the listed roles, then retry." : "角色尚未配置执行绑定，因此没有生成结果。请为上方角色配置模型或执行配置后重试。")
+          : (state.locale === "en" ? "The simulation returned no final result." : "模拟未返回最终结果。");
+        if (result) result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Simulation result" : "模拟结果"}</strong><span class="status-chip${succeeded && !noopRoles.length ? "" : " warning"}">${statusLabel}</span></div><p class="form-hint">${persistenceLabel}</p>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(hasOutput ? payload.finalOutput : payload.error || emptyMessage)}</pre></div>`;
+        setEditorState(failed
+          ? (state.locale === "en" ? "Simulation failed; review the role details and retry." : "模拟失败；请检查角色执行信息后重试。")
+          : !hasOutput
+            ? emptyMessage
+            : noopRoles.length
+              ? (state.locale === "en" ? "A partial result was produced; some roles were not run." : "已生成部分结果；仍有角色未执行。")
+              : (state.locale === "en" ? "Simulation completed; no Project or Run history was written." : "模拟完成；未写入项目或运行历史。"));
         return succeeded;
       } catch (error) {
         if (isAbort(error)) return false;
@@ -885,8 +929,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         dirty = false;
         clearDirty("project-graph");
         setEditorState("已保存，项目已回到草案状态");
-        await renderProjectDraft(projectId, pageRequest);
-        await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
+        await renderProjectStudio(projectId, pageRequest);
       },
       onQuickDebugRun: simulateTeam,
       onToggleFullscreen: async () => {
@@ -894,9 +937,68 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         else await stage.requestFullscreen();
       }
     });
+    setEditorState(state.locale === "en" ? "Team graph loaded and ready to edit." : "团队结构已加载，可以编辑。");
   } catch (error) { if (isAbort(error)) return;
     stage.textContent = error.message || "Unable to load the project graph.";
+    setEditorState(error.message || (state.locale === "en" ? "Unable to load the project graph." : "团队结构加载失败。"));
   }
+}
+
+async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest = state.activeRequest) {
+  try {
+    const [discoveryResponse, designResponse] = await Promise.all([
+      pageFetch("/api/v1/platform/discovery", { method: "POST" }),
+      authoring ? Promise.resolve(undefined) : pageFetch(`/api/v1/projects/${encodeURIComponent(teamVersionId)}/team/design`)
+    ]);
+    const discovery = await discoveryResponse.json();
+    if (!discoveryResponse.ok) throw new Error(discovery.error || "Unable to discover runtime models.");
+    const design = designResponse ? await designResponse.json() : undefined;
+    if (designResponse && !designResponse.ok) throw new Error(design.error || "Unable to read the team model bindings.");
+    if (pageRequest && !isCurrentRequest(pageRequest)) return false;
+    const roles = (authoring || design?.authoring)?.roles || {};
+    const models = discovery.models || [];
+    const issues = [];
+    for (const [roleId, role] of Object.entries(roles)) {
+      if (role.bindingKind === "exec" || (role.profileId && role.bindingKind !== "model")) continue;
+      if (role.bindingKind !== "model") {
+        issues.push(`${roleId}: ${state.locale === "en" ? "no model or execution profile is configured" : "未配置模型或执行配置"}`);
+        continue;
+      }
+      const modelRef = role.modelRef || (role.backend && role.modelId ? `${role.backend}/${role.modelId}` : "");
+      const backend = role.backend || modelRef.split("/", 1)[0];
+      const modelId = role.modelId || modelRef.slice(backend ? backend.length + 1 : 0);
+      const model = models.find((item) => item.backend === backend && item.runnable && (item.ref === modelRef || item.id === modelId || item.ref === `${backend}/${modelId}`));
+      if (!model) {
+        issues.push(`${roleId}: ${state.locale === "en" ? `runnable model ${modelRef || "is not selected"} was not discovered` : `未发现可运行模型 ${modelRef || "（尚未选择）"}`}`);
+      }
+    }
+    if (!issues.length) return true;
+    return confirmAction({
+      title: state.locale === "en" ? "Some team roles may not run" : "部分团队角色可能无法执行",
+      message: state.locale === "en"
+        ? `${issues.join("\n")}\nConfigure these roles in Team Studio, or continue and review the simulation/run result.`
+        : `${issues.join("\n")}\n可返回 Team Studio 配置角色模型，或继续并检查运行结果。`,
+      confirmLabel: state.locale === "en" ? "Continue anyway" : "仍然继续",
+      cancelLabel: state.locale === "en" ? "Return to configure" : "返回配置"
+    });
+  } catch (error) {
+    if (isAbort(error)) return false;
+    if (pageRequest && !isCurrentRequest(pageRequest)) return false;
+    return confirmAction({
+      title: state.locale === "en" ? "Model readiness could not be checked" : "暂时无法确认模型状态",
+      message: state.locale === "en"
+        ? "Refresh Codex and OpenCode discovery in Platform settings, or continue without a readiness check."
+        : "可到平台设置刷新 Codex 和 OpenCode 的发现结果，或跳过检查继续运行。",
+      confirmLabel: state.locale === "en" ? "Continue without check" : "跳过检查并继续",
+      cancelLabel: state.locale === "en" ? "Cancel" : "取消"
+    });
+  }
+}
+
+async function renderProjectStudio(projectId, pageRequest = state.activeRequest) {
+  await renderProjectDraft(projectId, pageRequest);
+  if (pageRequest && !isCurrentRequest(pageRequest)) return;
+  await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
 }
 
 function mountRunTeamGraph(projectId) {
@@ -980,8 +1082,8 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     });
     const projectEditForm = $("#project-edit-form");
     bindDirtyForm(projectEditForm, () => setDirty("project-form"));
-    projectEditForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview") }) }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; $("#project-edit-status").textContent = result.ok ? (payload.projectStatus === "draft" ? "已保存，团队回到草案状态。" : "已保存。") : (payload.error || "保存失败"); if (result.ok) { clearDirty("project-form"); await renderProjectDraft(projectId, pageRequest); } });
-    const confirm = $("#confirm-project"); confirm?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/release`, { method: "POST" }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; if (!result.ok) { $("#project-edit-status").textContent = payload.error || "发布失败"; return; } clearDirty("project-form"); if (collaborationProjectId) navigate(`/studio/project/${encodeURIComponent(collaborationProjectId)}/teams?addVersion=${encodeURIComponent(projectId)}`); else await renderProjectDraft(projectId, pageRequest); });
+    projectEditForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview") }) }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; $("#project-edit-status").textContent = result.ok ? (payload.projectStatus === "draft" ? "已保存，团队回到草案状态。" : "已保存。") : (payload.error || "保存失败"); if (result.ok) { clearDirty("project-form"); await renderProjectStudio(projectId, pageRequest); } });
+    const confirm = $("#confirm-project"); confirm?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/release`, { method: "POST" }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; if (!result.ok) { $("#project-edit-status").textContent = payload.error || "发布失败"; return; } clearDirty("project-form"); if (collaborationProjectId) navigate(`/studio/project/${encodeURIComponent(collaborationProjectId)}/teams?addVersion=${encodeURIComponent(projectId)}`); else await renderProjectStudio(projectId, pageRequest); });
     $("#reconfirm-project")?.addEventListener("click", async () => { const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/edit`, { method: "POST" }); const payload = await result.json(); if (!result.ok) { $("#project-edit-status").textContent = payload.error || "新版本创建失败"; return; } clearDirty("project-form"); navigate(`/studio/team/${encodeURIComponent(payload.projectId)}`); });
     if (collaborationProjectId && adjustmentParams.get("adjust") === "1") state.teamStudioDialog?.("assistant");
   } catch (error) { if (isAbort(error)) return; root.innerHTML = `<div class="run-error">${esc(error.message || "项目读取失败")}</div>`; }
@@ -994,7 +1096,7 @@ function projectTaskStatusLabel(status) {
 function teamStudioErrorMarkup(message) {
   const detail = String(message || "团队操作暂时不可用");
   if (detail.includes("TEAM_ASSISTANT_MODEL_UNAVAILABLE")) {
-    return '尚未配置可用的 OpenCode 模型。请在<a href="/platform" data-route="/platform">平台设置</a>中选择活跃模型并刷新底座与模型，再重试。';
+    return '部署环境尚未发现可运行的 OpenCode 模型。请确认 OpenCode 已安装并登录，再到<a href="/platform" data-route="/platform">平台设置</a>刷新底座与模型后重试。';
   }
   return esc(detail);
 }
@@ -1275,6 +1377,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   root.querySelectorAll("[data-task-action]").forEach((button) => button.addEventListener("click", async () => {
     const action = button.dataset.taskAction;
     const taskId = button.dataset.taskId;
+    const task = tasks.find((item) => item.taskId === taskId);
     if (action === "review") { await openTaskReview(projectId, taskId); return; }
     if (action === "delete") {
       const confirmed = await confirmAction({ title: "删除任务记录？", message: "删除后任务将从清单隐藏，运行快照仍会保留。", confirmLabel: "删除", cancelLabel: "取消" });
@@ -1283,6 +1386,13 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     button.disabled = true;
     const rowStatus = button.closest(".task-record-row")?.querySelector(".task-action-status");
     try {
+      if (["start", "retry"].includes(action)) {
+        const ready = await confirmTeamRuntimeReadiness(task?.teamVersionId, undefined, pageRequest);
+        if (!ready) {
+          if (rowStatus && isCurrentRequest(pageRequest)) rowStatus.textContent = state.locale === "en" ? "Run cancelled; review the team role model bindings before retrying." : "已取消运行；请检查团队角色模型配置后重试。";
+          return;
+        }
+      }
       const endpoint = action === "delete"
         ? `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`
         : action === "retry"
@@ -1353,7 +1463,7 @@ function syncRoute() {
   const teamMatch = path.match(/^\/studio\/team\/([a-z0-9-]+)$/);
   if (teamMatch) {
     setView("project-workspace");
-    void renderProjectDraft(teamMatch[1], pageRequest).then(() => renderProjectGraph(teamMatch[1], "project-graph-stage", false, pageRequest));
+    void renderProjectStudio(teamMatch[1], pageRequest);
     return;
   }
   const projectTeamsMatch = path.match(/^\/studio\/project\/([a-z0-9-]+)\/teams$/);

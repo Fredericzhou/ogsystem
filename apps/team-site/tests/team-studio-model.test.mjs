@@ -18,7 +18,7 @@ test("Team Studio chooses a canonical OpenCode provider/model reference", () => 
 test("Team Studio accepts OpenCode models from non-opencode provider namespaces", () => {
   const discovery = {
     models: [
-      { id: "openai/gpt-5", backend: "opencode", provider: "openai", ref: "openai/gpt-5", runnable: true },
+      { id: "openai/gpt-5", backend: "opencode", provider: "openai", providerName: "OpenAI", ref: "openai/gpt-5", runnable: true },
       { id: "codex/gpt-5.6-sol", backend: "codex", provider: "codex", ref: "codex/gpt-5.6-sol", runnable: true }
     ]
   };

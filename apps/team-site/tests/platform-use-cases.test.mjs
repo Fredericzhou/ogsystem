@@ -36,7 +36,7 @@ test("platform application validates updates and model catalog caches and refres
       return {
         generatedAt: `generation-${calls}`,
         sources: [{ backend: "codex", status: "ready", command: "codex", detail: "local" }],
-        models: [{ modelId: "model-a", backend: "codex", runnable: true, ref: "codex/model-a" }]
+        models: [{ modelId: "model-a", backend: "codex", provider: "openai", runnable: true, ref: "codex/model-a" }]
       };
     },
     isStale: () => false
@@ -50,7 +50,10 @@ test("platform application validates updates and model catalog caches and refres
   assert.equal(calls, 1);
   assert.equal((await useCases.listPlatformProviders()).providers[0].name, "Codex");
   assert.equal(calls, 1);
-  assert.equal((await useCases.listPlatformModels()).models[0].id, "model-a");
+  const discoveredModel = (await useCases.listPlatformModels()).models[0];
+  assert.equal(discoveredModel.id, "model-a");
+  assert.equal(discoveredModel.backend, "codex", "the execution backend must survive the public catalog projection");
+  assert.equal(discoveredModel.provider, "openai", "provider namespace is distinct from the execution backend");
   assert.equal(calls, 1);
   await useCases.getPlatformDiscovery(true);
   assert.equal(calls, 2);

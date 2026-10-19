@@ -18,6 +18,7 @@ export function createModelCatalog({ workdir, cacheMs = 30_000, discover = disco
       sources: catalog.sources.map((source) => ({ ...source, backend: source.backend, name: providerLabel(source.backend) })),
       models: catalog.models.map((model) => ({
         id: model.modelId,
+        backend: model.backend,
         name: model.name || model.modelId,
         provider: model.provider || model.backend,
         providerName: providerLabel(model.provider || model.backend),

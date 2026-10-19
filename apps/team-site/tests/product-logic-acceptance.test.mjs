@@ -97,7 +97,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.route(`**/api/v1/projects/${team.projectId}/team/chat`, async (route) => {
       latestChatPayload = JSON.parse(route.request().postData() || "{}");
       if (mode === "failure") {
-        await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "TEAM_ASSISTANT_UNAVAILABLE: test upstream failure" }) });
+        await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "TEAM_ASSISTANT_MODEL_UNAVAILABLE: test model discovery failure" }) });
         return;
       }
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
@@ -116,7 +116,8 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator("#team-assistant-input").waitFor();
     await page.locator("#team-assistant-input").fill("增加一个最终审核角色，确保结果有依据。");
     await page.locator("#team-assistant-send").click();
-    await page.locator("#team-assistant-status").getByText("TEAM_ASSISTANT_UNAVAILABLE: test upstream failure").waitFor();
+    await page.locator("#team-assistant-status").getByText("部署环境尚未发现可运行的 OpenCode 模型。", { exact: false }).waitFor();
+    await page.locator('#team-assistant-status a[href="/platform"]').waitFor();
     mode = "success";
     await page.locator("#team-assistant-input").fill("增加一个最终审核角色，确保结果有依据。");
     await page.locator("#team-assistant-send").click();
@@ -139,8 +140,18 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator('#team-studio-tab-run[aria-selected="true"]').waitFor();
     const simulationPrompt = "Preview the software delivery handoffs.";
     await page.locator("#team-simulation-input").fill(simulationPrompt);
+    await page.route("**/api/v1/platform/discovery", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ models: [], sources: [] }) });
+    });
+    await page.locator("#team-simulation-run").click();
+    const firstReadinessDialog = page.locator(".confirm-dialog");
+    await firstReadinessDialog.waitFor();
+    assert.match(await firstReadinessDialog.innerText(), /部分团队角色可能无法执行/);
+    await firstReadinessDialog.locator('button[value="cancel"]').click();
     const simulationResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${team.projectId}/simulate`));
     await page.locator("#team-simulation-run").click();
+    await firstReadinessDialog.waitFor();
+    await firstReadinessDialog.locator('button[value="confirm"]').click();
     const simulationResponse = await simulationResponsePromise;
     assert.equal(simulationResponse.status(), 200);
     const simulation = await simulationResponse.json();
@@ -153,9 +164,45 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.ok((await page.locator("#team-simulation-result pre").innerText()).trim().length > 0);
     const simulationRuns = await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
     assert.deepEqual(simulationRuns, [], "Studio quick simulation must not create Run history");
+    let simulationScenario = "no-output";
+    await page.route(`**/api/v1/team-versions/${team.projectId}/simulate`, async (route) => {
+      const partial = simulationScenario === "partial";
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        mode: "simulation",
+        persisted: false,
+        status: "completed",
+        finalOutput: partial ? "Partial team result" : "",
+        auditTrail: [
+          { roleId: "demo-analyst", status: "noop" },
+          ...(partial ? [{ roleId: "demo-reviewer", status: "ok" }] : [])
+        ]
+      }) });
+    });
+    await page.locator("#team-simulation-run").click();
+    const readinessDialog = page.locator(".confirm-dialog");
+    await readinessDialog.waitFor();
+    await readinessDialog.locator('button[value="confirm"]').click();
+    await page.locator("#team-simulation-result .status-chip").getByText("未产出结果", { exact: true }).waitFor();
+    assert.match(await page.locator("#team-simulation-result").innerText(), /demo-analyst[\s\S]*未执行：未配置模型或执行配置/);
+    assert.match(await page.locator("#team-simulation-result pre").innerText(), /请为上方角色配置模型或执行配置后重试/);
+    simulationScenario = "partial";
+    await page.locator("#team-simulation-run").click();
+    await readinessDialog.waitFor();
+    await readinessDialog.locator('button[value="confirm"]').click();
+    await page.locator("#team-simulation-result .status-chip").getByText("部分完成", { exact: true }).waitFor();
+    assert.match(await page.locator("#team-simulation-result").innerText(), /临时预览 · 未写入运行历史/);
+    assert.match(await page.locator("#team-simulation-result pre").innerText(), /Partial team result/);
+    assert.deepEqual(await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error)), [], "noop previews must remain outside Run history");
     await page.locator("[data-team-studio-close]").click();
+    const overview = page.locator('#project-edit-form textarea[name="overview"]');
+    await overview.fill(await overview.inputValue());
+    await page.locator('#project-edit-form button[type="submit"]').click();
+    await page.locator("#project-design-status").getByText("团队结构已加载，可以编辑。", { exact: true }).waitFor();
+    await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').waitFor({ state: "visible" });
     await page.locator("#confirm-project").click();
     await page.locator(".project-status.confirmed").waitFor();
+    await page.locator("#project-design-status").getByText("团队结构已加载，可以编辑。", { exact: true }).waitFor();
+    await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').waitFor({ state: "visible" });
     const released = await page.request.get(`${url}/api/v1/projects/${team.projectId}`).then((response) => response.json());
     assert.equal(released.teamVersionStatus, "released");
     assert.equal(released.teamVersionNumber, 1);
