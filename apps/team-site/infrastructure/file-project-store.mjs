@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { acquireProjectWriteLock } from "../../../dist/runtime/project-run-lock.js";
 import { assertLatestProjectOverview } from "../domain/contracts.mjs";
 import { assertCanonicalTeamVersionId } from "../domain/team.mjs";
-import { computeProjectDefinitionDigest } from "./package-integrity.mjs";
 import { createFileTeamCatalog } from "./file-team-catalog.mjs";
 import { createFileTeamLifecycleLocks } from "./file-team-lifecycle-locks.mjs";
 
@@ -255,7 +254,10 @@ export async function createProject({ name, overview, templateId = "empty", case
   });
 }
 
-export async function initializeCollaborationProject(projectId, { mountedTeams = [] } = {}) {
+export async function initializeCollaborationProject(projectId, { mountedTeams = [], projectDefinitionDigest } = {}) {
+  if (typeof projectDefinitionDigest !== "string" || !/^[a-f0-9]{64}$/.test(projectDefinitionDigest)) {
+    throw new TypeError("Collaboration Project initialization requires an Application-computed definition digest.");
+  }
   const project = await readProject(projectId);
   const metaPath = join(project.workdir, ".site", "project.json");
   const meta = await readJson(metaPath, {});
@@ -272,13 +274,7 @@ export async function initializeCollaborationProject(projectId, { mountedTeams =
     taskRecords: [],
     nextTaskNumber: 1
   };
-  await writeJson(metaPath, {
-    ...collaborationMeta,
-    projectDefinitionDigest: computeProjectDefinitionDigest({
-      ...normalizeMeta(collaborationMeta, project.projectId),
-      materials: { version: 1, materials: [] }
-    })
-  });
+  await writeJson(metaPath, { ...collaborationMeta, projectDefinitionDigest });
   return readProject(project.projectId);
 }
 

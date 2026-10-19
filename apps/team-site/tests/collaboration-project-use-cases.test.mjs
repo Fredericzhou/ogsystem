@@ -20,7 +20,7 @@ function makeUseCases({ project, teams = [], onSave } = {}) {
     },
     async initializeCollaborationProject(projectId, input) {
       calls.push(["initialize", projectId, input]);
-      Object.assign(current, { projectId, projectType: "collaboration", ...input });
+      Object.assign(current, { projectId, projectType: "collaboration", projectDefinitionDigest: input.projectDefinitionDigest, ...input });
     },
     async removeProject(projectId) { calls.push(["remove", projectId]); },
     async withProjectWriteLock(projectId, operation, action) {
@@ -83,6 +83,7 @@ test("Collaboration Project creation validates canonical released teams and init
     name: "Product Launch", overview: "Plan launch", templateId: "empty", source: "collaboration-project"
   });
   assert.equal(calls.find(([kind]) => kind === "initialize")[2].mountedTeams[0].teamVersionId, "team-1");
+  assert.equal(calls.find(([kind]) => kind === "initialize")[2].projectDefinitionDigest, "digest:team-1");
 });
 
 test("Collaboration Project creation compensates failed initialization and rejects duplicate names", async () => {

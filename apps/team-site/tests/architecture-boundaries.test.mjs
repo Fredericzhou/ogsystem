@@ -63,6 +63,8 @@ test("Project file store performs persistence only and contains no application o
     "Visualizer workspace operations and case materialization belong to Application use cases and dedicated adapters");
   assert.doesNotMatch(source, /assertTaskTransition|loadProjectRunPlan|loadProjectRunState|redactText/,
     "Run projections and Task transitions belong outside the file store");
+  assert.doesNotMatch(source, /computeProjectDefinitionDigest|computeTeamPackageCoreDigest|computePackageDigest/,
+    "definition and package digest rules belong in Application use cases");
   assert.doesNotMatch(source, /runAttempts\s*:|currentState|from\s+["']\.\.\/demo-runner/,
     "Task/Run query projection and case execution services must stay outside the file store");
   assert.doesNotMatch(source, /activeTaskWorkers|waitForActiveTaskWorker|taskWorkers|isTerminalTaskStatus/,

@@ -55,7 +55,14 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
             templateId: "empty",
             source: "collaboration-project"
           });
-          await projectStore.initializeCollaborationProject(project.projectId, { mountedTeams });
+          const collaborationProject = {
+            ...project,
+            projectType: "collaboration",
+            mountedTeams,
+            materials: { version: 1, materials: [] }
+          };
+          const projectDefinitionDigest = computeProjectDefinitionDigest(collaborationProject);
+          await projectStore.initializeCollaborationProject(project.projectId, { mountedTeams, projectDefinitionDigest });
           return await projectStore.getProject(project.projectId);
         } catch (error) {
           if (project?.projectId) await projectStore.removeProject(project.projectId).catch(() => undefined);

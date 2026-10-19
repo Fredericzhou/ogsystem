@@ -62,7 +62,7 @@ async function waitForServer(server, getOutput) {
   throw new Error(`Team Site server did not become ready: ${getOutput()}`);
 }
 
-async function spawnServer({ projectsRoot, preloadPath, fault = {}, runtimeFailure = false }) {
+async function spawnServer({ projectsRoot, platformConfigRoot = projectsRoot, preloadPath, fault = {}, runtimeFailure = false }) {
   let output = "";
   const server = spawn(process.execPath, ["--import", preloadPath, "server.mjs"], {
     cwd: appRoot,
@@ -70,7 +70,7 @@ async function spawnServer({ projectsRoot, preloadPath, fault = {}, runtimeFailu
       ...process.env,
       PORT: "0",
       OGS_SITE_PROJECTS_DIR: projectsRoot,
-      OGS_PLATFORM_CONFIG_DIR: projectsRoot,
+      OGS_PLATFORM_CONFIG_DIR: platformConfigRoot,
       [forceRuntimeError]: runtimeFailure ? "1" : "",
       OGS_TEST_RENAME_FAULT_COUNT: String(fault.count || 0),
       OGS_TEST_RENAME_FAULT_SUFFIX: fault.suffix || "",
@@ -282,6 +282,44 @@ test("Task Run reservation write failure leaves no Run artifacts and permits a l
       taskStateAfterRetry: completedTask.status,
       tempRootCleaned: true
     });
+  } finally {
+    await stopServer(running?.server);
+    await rm(testRoot, { recursive: true, force: true });
+    await assert.rejects(readFile(testRoot), { code: "ENOENT" });
+  }
+});
+
+test("partial Run state initialization failure removes the reserved directory", { timeout: 90000 }, async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "ogs-task-run-state-init-fault-"));
+  const projectsRoot = join(testRoot, "projects");
+  const preloadPath = join(testRoot, "rename-fault.mjs");
+  await writeFile(preloadPath, renameFaultPreload, "utf8");
+  const { project, task, team } = await createTaskFixture(projectsRoot);
+  let running;
+
+  try {
+    running = await spawnServer({ projectsRoot, preloadPath, fault: { suffix: "control/state.json", count: 1 } });
+    const startPath = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/start`;
+    const failedResponse = await fetch(startPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "dry-run", idempotencyKey: "run-state-init-fault" })
+    });
+    const failure = await failedResponse.json();
+    assert.notEqual(failedResponse.status, 202, JSON.stringify(failure));
+    assert.match(failure.error, /Injected one-shot filesystem rename failure/);
+
+    const taskAfterFailure = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}`).then((response) => response.json());
+    assert.equal(taskAfterFailure.status, "queued");
+    assert.equal(taskAfterFailure.currentRunId, null);
+    assert.deepEqual(taskAfterFailure.runIds, []);
+    const runDirectories = await readdir(join(team.workdir, ".ogs", "runs"), { withFileTypes: true }).catch(() => []);
+    assert.deepEqual(runDirectories.filter((entry) => entry.isDirectory()).map((entry) => entry.name), []);
+
+    const started = await startTask(running.baseUrl, project.projectId, task.taskId, "run-state-init-retry");
+    const completed = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "completed");
+    assert.equal(completed.currentRunId, started.currentRunId);
+    assert.deepEqual(completed.runIds, [started.currentRunId]);
   } finally {
     await stopServer(running?.server);
     await rm(testRoot, { recursive: true, force: true });

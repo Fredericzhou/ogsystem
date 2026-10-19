@@ -40,19 +40,19 @@ export function createFileTaskExecutionStore({ projectStore }) {
         };
         if (!runWorkdir) throw new TypeError("Task Run reservation requires its Runtime workspace.");
         const runDir = resolve(runWorkdir, ".ogs", "runs", runId);
-        await saveProjectRunState(runDir, {
-        version: 1,
-        runId,
-        attemptNumber,
-        status: "planning",
-        taskReservation: { kind: "task-attempt", collaborationProjectId: projectId, taskId, runId, attemptKey },
-        control: { paused: false, cancelRequested: false },
-        nodes: {},
-        attempts: [],
-        reviews: [],
-          updatedAt: startedAt
-        });
         try {
+          await saveProjectRunState(runDir, {
+            version: 1,
+            runId,
+            attemptNumber,
+            status: "planning",
+            taskReservation: { kind: "task-attempt", collaborationProjectId: projectId, taskId, runId, attemptKey },
+            control: { paused: false, cancelRequested: false },
+            nodes: {},
+            attempts: [],
+            reviews: [],
+            updatedAt: startedAt
+          });
           const reservedTask = await projectStore.saveTaskRecord(project, taskId, {
             currentRunId: runId,
             runIds: [...(task.runIds || []), runId],
