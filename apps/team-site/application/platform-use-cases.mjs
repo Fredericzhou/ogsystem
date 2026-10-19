@@ -1,4 +1,4 @@
-export function createPlatformUseCases({ platformSettingsStore, modelCatalog }) {
+export function createPlatformUseCases({ platformSettingsStore, modelCatalog, probeModelAvailability = async () => { throw new Error("Model availability probe is unavailable."); } }) {
   if (!platformSettingsStore || typeof platformSettingsStore.read !== "function" || typeof platformSettingsStore.write !== "function") {
     throw new TypeError("Platform use cases require a settings store.");
   }
@@ -8,6 +8,12 @@ export function createPlatformUseCases({ platformSettingsStore, modelCatalog }) 
 
   return Object.freeze({
     getPlatformDiscovery: (forceRefresh = false) => modelCatalog.discover({ forceRefresh }),
+    async probeModelAvailability(modelRef) {
+      const discovery = await modelCatalog.discover();
+      const model = discovery.models.find((item) => item.ref === modelRef && item.runnable);
+      if (!model) throw new Error(`Model "${modelRef}" is not currently discovered as runnable. Refresh model discovery and try again.`);
+      return probeModelAvailability(model);
+    },
     async listPlatformProviders() {
       const discovery = await modelCatalog.discover();
       return { providers: discovery.sources.map(({ backend, name, status, command, detail }) => ({ id: backend, name, status, command, detail })) };

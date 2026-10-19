@@ -211,7 +211,7 @@ export async function main(): Promise<void> {
     if (!isDirectModelRef(nextModelRef)) {
       throw new Error(`Invalid model ref "${nextModelRef}". Expected provider/model.`);
     }
-    conversation?.close();
+    await conversation?.close();
     conversation = undefined;
     modelRef = nextModelRef;
   }
@@ -382,7 +382,7 @@ export async function main(): Promise<void> {
       rl.close();
     }
   } finally {
-    conversation?.close();
+    await conversation?.close();
   }
 }
 

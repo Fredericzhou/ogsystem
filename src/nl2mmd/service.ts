@@ -141,8 +141,8 @@ export async function createNl2MmdConversation(args: {
     workdir: args.workdir,
     sessionId: undefined,
     runClient,
-    close() {
-      runClient.close();
+    async close() {
+      await runClient.close();
     }
   };
 

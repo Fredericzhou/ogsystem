@@ -190,18 +190,18 @@ export function parseStudioChatToMmdRequest(body: Record<string, unknown>): Stud
   };
 }
 
-export function pruneStudioChatToMmdSessions(args: {
+export async function pruneStudioChatToMmdSessions(args: {
   sessions: StudioChatToMmdSessionMap;
   ttlMs?: number;
   maxSize?: number;
   nowMs?: number;
-}): void {
+}): Promise<void> {
   const ttlMs = args.ttlMs ?? DEFAULT_STUDIO_CHAT_SESSION_TTL_MS;
   const maxSize = args.maxSize ?? DEFAULT_STUDIO_CHAT_SESSION_MAX_SIZE;
   const nowMs = args.nowMs ?? Date.now();
   for (const [sessionId, session] of args.sessions.entries()) {
     if (nowMs - session.updatedAtMs > ttlMs) {
-      session.conversation.close();
+      await session.conversation.close();
       args.sessions.delete(sessionId);
     }
   }
@@ -210,7 +210,7 @@ export function pruneStudioChatToMmdSessions(args: {
     if (!oldestSessionId) {
       break;
     }
-    args.sessions.get(oldestSessionId)?.conversation.close();
+    await args.sessions.get(oldestSessionId)?.conversation.close();
     args.sessions.delete(oldestSessionId);
   }
 }
@@ -569,7 +569,7 @@ async function getOrCreateSession(args: {
   request: StudioChatToMmdRequest;
   sessions: StudioChatToMmdSessionMap;
 }): Promise<{ sessionId: string; session: StudioChatToMmdSession }> {
-  pruneStudioChatToMmdSessions({ sessions: args.sessions });
+  await pruneStudioChatToMmdSessions({ sessions: args.sessions });
   const existingSessionId = args.request.sessionId;
   const existing = existingSessionId ? args.sessions.get(existingSessionId) : undefined;
   if (existing && existing.workdir === args.workdir) {
@@ -590,7 +590,7 @@ async function getOrCreateSession(args: {
     updatedAtMs: Date.now()
   };
   args.sessions.set(sessionId, session);
-  pruneStudioChatToMmdSessions({ sessions: args.sessions });
+  await pruneStudioChatToMmdSessions({ sessions: args.sessions });
   return { sessionId, session };
 }
 
@@ -627,7 +627,7 @@ export async function runStudioChatToMmdTurn(args: {
       session.preflightOk = true;
       session.updatedAtMs = Date.now();
     } catch (error) {
-      session.conversation.close();
+      await session.conversation.close();
       args.sessions.delete(sessionId);
       throw toNl2MmdDependencyError(error);
     }

@@ -8,11 +8,14 @@
  * - Does not mutate graph state or persist run artifacts.
  */
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 
 import { listJsonSchemaIssues } from "./json-schema.js";
 import { ToolExecutionError } from "./tool-runner.js";
+import { hasExited, terminateChildProcessTree, waitForChildExit } from "./child-process-lifecycle.js";
 import type { LoadedModelPackage } from "./types.js";
 
 /**
@@ -742,12 +745,13 @@ async function startServer(args: {
   timeoutMs: number;
   env?: Record<string, string>;
 }): Promise<StartedServer> {
-  const child = spawn("opencode", ["serve", "--hostname=127.0.0.1", "--port=0"], {
-    env: {
-      ...process.env,
-      ...args.env
-    },
-    stdio: ["ignore", "pipe", "pipe"]
+  const sourceRuntime = import.meta.url.endsWith(".ts");
+  const hostPath = fileURLToPath(new URL(sourceRuntime ? "./opencode-server-host.ts" : "./opencode-server-host.js", import.meta.url));
+  const hostArgs = sourceRuntime ? ["--import", "tsx", hostPath] : [hostPath];
+  const child = spawn(process.execPath, hostArgs, {
+    env: { ...process.env, ...args.env, OGS_OPENCODE_SERVER_TIMEOUT_MS: String(args.timeoutMs) },
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true
   });
 
   // stdout/stderr monitored so we can extract the listening URL and avoid waiting forever.
@@ -774,31 +778,9 @@ async function startServer(args: {
         url,
         pid: child.pid,
         async close() {
-          if (child.exitCode !== null || child.signalCode !== null) {
-            return;
-          }
-          await new Promise<void>((resolveClose) => {
-            let resolved = false;
-            const finish = () => {
-              if (resolved) {
-                return;
-              }
-              resolved = true;
-              clearTimeout(forceKillTimer);
-              resolveClose();
-            };
-            const onExit = () => finish();
-            const forceKillTimer = setTimeout(() => {
-              if (!child.killed) {
-                child.kill("SIGKILL");
-              }
-            }, 3000);
-            child.once("exit", onExit);
-            child.once("error", onExit);
-            if (!child.killed) {
-              child.kill("SIGTERM");
-            }
-          });
+          if (hasExited(child)) return;
+          child.stdin.write("close\n");
+          if (!await waitForChildExit(child, 5000)) await terminateChildProcessTree(child);
         },
         getOutput() {
           return output.trim();
@@ -807,38 +789,22 @@ async function startServer(args: {
     };
 
     const timer = setTimeout(() => {
-      if (!child.killed) {
-        child.kill("SIGKILL");
-      }
+      void terminateChildProcessTree(child).catch(() => undefined);
       finishReject(
         new ToolExecutionError("timeout", `OpenCode server startup timeout after ${args.timeoutMs}ms`)
       );
-    }, args.timeoutMs);
+    }, args.timeoutMs + 5000);
 
-    const parseOutput = (chunk: Buffer) => {
-      output += chunk.toString("utf8");
-      const lines = output.split("\n");
-      for (const line of lines) {
-        if (!line.startsWith("opencode server listening")) {
-          continue;
-        }
-        const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-        if (!match) {
-          if (!child.killed) {
-            child.kill("SIGKILL");
-          }
-          finishReject(
-            new ToolExecutionError("spawn", `Failed to parse OpenCode server url from output: ${line}`)
-          );
-          return;
-        }
-        finishResolve(match[1]);
-        return;
-      }
-    };
-
-    child.stdout.on("data", parseOutput);
-    child.stderr.on("data", parseOutput);
+    const lines = createInterface({ input: child.stdout });
+    lines.on("line", (line) => {
+      output += `${line}\n`;
+      try {
+        const message = JSON.parse(line) as { type?: string; url?: string; error?: string };
+        if (message.type === "ready" && message.url) finishResolve(message.url);
+        if (message.type === "error") finishReject(new ToolExecutionError("spawn", message.error || "OpenCode server host failed"));
+      } catch { /* Ignore non-protocol stdout from the host. */ }
+    });
+    child.stderr.on("data", (chunk) => { output += chunk.toString("utf8"); });
     child.on("error", (error) => {
       finishReject(new ToolExecutionError("spawn", error.message));
     });
@@ -1340,6 +1306,6 @@ export async function executeOpencodeModelRole(
     }
     throw error;
   } finally {
-    ownRunClient?.close();
+    await ownRunClient?.close();
   }
 }

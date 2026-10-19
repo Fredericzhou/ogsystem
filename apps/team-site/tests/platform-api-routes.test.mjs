@@ -82,6 +82,14 @@ test("site config route exposes only the configured Visualizer URL", async () =>
   assert.deepEqual(h.sent[0], { status: 200, payload: { visUrl: "http://visualizer.test" } });
 });
 
+test("model probe route returns a model availability result", async () => {
+  const h = harness({ useCases: {
+    probeModelAvailability: async (modelRef) => ({ modelRef, status: "available", durationMs: 42 })
+  } });
+  assert.equal(await invoke(h, "POST", "/api/v1/platform/models/probe", { modelRef: "codex/gpt-6-luna" }), true);
+  assert.deepEqual(h.sent[0], { status: 200, payload: { result: { modelRef: "codex/gpt-6-luna", status: "available", durationMs: 42 } } });
+});
+
 test("discovery failures keep route-specific 503 responses", async () => {
   const h = harness({ useCases: {
     getPlatformDiscovery: async () => { throw new Error("catalog unavailable"); },

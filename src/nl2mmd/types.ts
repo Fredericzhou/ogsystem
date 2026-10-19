@@ -151,5 +151,5 @@ export type Nl2MmdConversation = {
   maxOutputBytes: number;
   workdir: string;
   sessionId?: string;
-  close(): void;
+  close(): Promise<void>;
 };

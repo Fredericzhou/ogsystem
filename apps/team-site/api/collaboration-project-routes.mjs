@@ -6,6 +6,7 @@ export async function handleCollaborationProjectRoutes({
   sendJson,
   errorStatus,
   publicProject,
+  visualizerUrl,
   useCases,
 }) {
   const workspaceMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/workspaces$/);
@@ -47,7 +48,12 @@ export async function handleCollaborationProjectRoutes({
       const upstream = await useCases.chatTeamAssistant(chatMatch[1], payload);
       sendJson(response, upstream.status, upstream.body);
     } catch (error) {
-      sendJson(response, 502, { error: error instanceof Error ? `TEAM_ASSISTANT_UNAVAILABLE: ${error.message}` : "TEAM_ASSISTANT_UNAVAILABLE" });
+      const detail = error instanceof Error ? error.message : "Request failed.";
+      const address = String(visualizerUrl || "").replace(/\/$/, "");
+      const hint = /fetch failed|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH/i.test(detail) && address
+        ? ` Visualizer upstream: ${address}. Configure OGS_VIS_URL when starting Team Site.`
+        : "";
+      sendJson(response, 502, { error: `TEAM_ASSISTANT_UNAVAILABLE: ${detail}.${hint}` });
     }
     return true;
   }

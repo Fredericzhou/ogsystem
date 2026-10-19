@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { hasExited, terminateChildProcessTree, waitForChildExit } from "./child-process-lifecycle.js";
 
 type JsonRecord = Record<string, unknown>;
 type PendingRequest = { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout };
@@ -200,18 +201,8 @@ export class CodexAppServerClient {
     if (this.closed) return;
     this.closed = true;
     this.failAll(new Error("Codex app-server closed"));
-    if (process.platform === "win32" && this.child.pid) {
-      const killer = spawn("taskkill", ["/pid", String(this.child.pid), "/T", "/F"], { stdio: "ignore" });
-      await new Promise<void>((resolve) => killer.once("close", () => resolve()));
-    } else {
-      this.child.kill();
-    }
-    await new Promise<void>((resolve) => {
-      if (this.child.exitCode !== null || this.child.signalCode !== null) resolve();
-      else {
-        const timer = setTimeout(resolve, 1500);
-        this.child.once("exit", () => { clearTimeout(timer); resolve(); });
-      }
-    });
+    if (hasExited(this.child)) return;
+    this.child.stdin.end();
+    if (!await waitForChildExit(this.child, 3000)) await terminateChildProcessTree(this.child);
   }
 }

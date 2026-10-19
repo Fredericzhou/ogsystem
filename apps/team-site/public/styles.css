@@ -1117,6 +1117,8 @@ body { min-width: 0; font-size: 15px; }
 .platform-settings-panel .compact-form { align-items: end; column-gap: 14px; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; }
 .platform-settings-panel .compact-form .primary-button { min-height: 42px; }
 .platform-settings-panel .compact-form .form-status { grid-column: 1 / -1; }
+.platform-model-probe { display: flex; align-items: center; gap: 10px; min-height: 42px; flex-wrap: wrap; }
+.platform-model-probe .form-status { min-height: 0; overflow-wrap: anywhere; }
 .platform-runtime-status { color: var(--gold); }
 @media (max-width: 900px) { .platform-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .platform-settings-panel .compact-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) {

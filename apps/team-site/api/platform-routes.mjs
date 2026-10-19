@@ -21,6 +21,17 @@ export async function handlePlatformRoutes({
     return true;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/v1/platform/models/probe") {
+    try {
+      const payload = await readBody(request);
+      const result = await useCases.probeModelAvailability(String(payload.modelRef || ""));
+      sendJson(response, 200, { result });
+    } catch (error) {
+      sendJson(response, 200, { result: { status: "failed", message: error instanceof Error ? error.message : "Model availability probe failed." } });
+    }
+    return true;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/v1/platform/providers") {
     try {
       sendJson(response, 200, await useCases.listPlatformProviders());

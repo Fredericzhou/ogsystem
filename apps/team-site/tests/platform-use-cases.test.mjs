@@ -69,3 +69,19 @@ test("platform application validates updates and model catalog caches and refres
   });
   assert.deepEqual(writes, [settings]);
 });
+
+test("platform model probe only invokes the live probe for a discovered runnable model", async () => {
+  const probed = [];
+  const useCases = createPlatformUseCases({
+    platformSettingsStore: { read: async () => ({}), write: async () => undefined },
+    modelCatalog: { discover: async () => ({ models: [
+      { ref: "codex/gpt-6-luna", backend: "codex", id: "gpt-6-luna", runnable: true },
+      { ref: "codex/disabled", backend: "codex", id: "disabled", runnable: false }
+    ] }) },
+    probeModelAvailability: async (model) => (probed.push(model.ref), { status: "available", modelRef: model.ref })
+  });
+
+  assert.deepEqual(await useCases.probeModelAvailability("codex/gpt-6-luna"), { status: "available", modelRef: "codex/gpt-6-luna" });
+  await assert.rejects(useCases.probeModelAvailability("codex/disabled"), /not currently discovered as runnable/);
+  assert.deepEqual(probed, ["codex/gpt-6-luna"]);
+});

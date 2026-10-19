@@ -697,7 +697,7 @@ async function renderProjectTeams(projectId, pageRequest = state.activeRequest) 
 
 async function renderPlatformConfig() {
   const root = $("#platform-view");
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">平台配置</div><h1>运行底座与默认设置</h1><p>自动检查可用的运行底座和模型，为团队角色选择稳定的默认执行方式。</p></div><div class="heading-actions"><button id="platform-discovery-refresh" class="secondary-button" type="button">刷新底座与模型</button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list">正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list">正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option></select></label><label>默认模型<select name="defaultModel"><option value="default">跟随默认底座</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button" type="submit">保存设置</button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
+  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">平台配置</div><h1>运行底座与默认设置</h1><p>自动检查可用的运行底座和模型，为团队角色选择稳定的默认执行方式。</p></div><div class="heading-actions"><button id="platform-discovery-refresh" class="secondary-button" type="button">刷新底座与模型</button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list">正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list">正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option></select></label><label>默认模型<select name="defaultModel"><option value="default">跟随默认底座</option></select></label><div class="platform-model-probe"><button id="platform-model-probe" class="secondary-button" type="button">探测模型可用性</button><span id="platform-model-probe-status" class="form-status" role="status" aria-live="polite"></span></div><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button" type="submit">保存设置</button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
   const statusText = (status) => status === "available" || status === "active" ? "可用" : "未发现";
   const statusClass = (status) => status === "available" || status === "active" ? "confirmed" : "warning";
   const capabilityLabels = (capabilities = {}) => [capabilities.textInput && "文本输入", capabilities.textOutput && "文本输出", capabilities.toolcall && "工具调用"].filter(Boolean);
@@ -748,6 +748,32 @@ async function renderPlatformConfig() {
         : settings?.runtimeApplied === true ? "设置已应用到当前运行时。" : "";
     }
   };
+  const probeButton = $("#platform-model-probe");
+  probeButton?.addEventListener("click", async () => {
+    const modelRef = document.querySelector("#platform-settings-form select[name=defaultModel]")?.value;
+    const status = $("#platform-model-probe-status");
+    if (!modelRef || modelRef === "default") {
+      status.textContent = "请先选择具体模型。";
+      return;
+    }
+    probeButton.disabled = true;
+    status.textContent = "正在发送测试请求...";
+    try {
+      const response = await pageFetch("/api/v1/platform/models/probe", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ modelRef })
+      });
+      const payload = await response.json();
+      const result = payload.result || {};
+      status.textContent = result.status === "available"
+        ? `可用 · ${Math.round(result.durationMs)} ms`
+        : `不可用 · ${result.message || "模型请求失败"}`;
+    } catch (error) {
+      if (isAbort(error)) return;
+      status.textContent = error.message || "模型探测失败。";
+    } finally {
+      probeButton.disabled = false;
+    }
+  });
   $("#platform-discovery-refresh")?.addEventListener("click", async (event) => {
     const button = event.currentTarget; const currentSettings = Object.fromEntries(new FormData(document.querySelector("#platform-settings-form") || document.createElement("form")).entries()); button.disabled = true; button.textContent = "正在刷新...";
     try { const response = await pageFetch("/api/v1/platform/discovery", { method: "POST" }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "刷新失败"); renderDiscovery(payload, currentSettings); button.textContent = "已刷新"; setTimeout(() => { button.textContent = "刷新底座与模型"; }, 1500); }
@@ -1131,7 +1157,7 @@ function teamStudioErrorMarkup(message) {
     return '部署环境尚未发现可运行的 OpenCode 模型。请确认 OpenCode 已安装并登录，再到<a href="/platform" data-route="/platform">平台设置</a>刷新底座与模型后重试。';
   }
   if (detail.includes("TEAM_ASSISTANT_UNAVAILABLE") || /fetch failed/i.test(detail)) {
-    return `团队助手服务请求失败。请检查 Visualizer 服务是否运行、平台设置中的服务地址是否可访问，再重试。<br><small>${esc(detail)}</small> <a href="/platform" data-route="/platform">查看平台设置</a>`;
+    return `团队助手无法连接 Visualizer。请启动 Visualizer，或在启动 Team Site 时将 OGS_VIS_URL 配置为可访问的服务地址。<br><small>${esc(detail)}</small> <a href="/platform" data-route="/platform">检查运行底座与模型</a>`;
   }
   return esc(detail);
 }

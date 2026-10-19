@@ -50,6 +50,7 @@ import { createFileTeamVersionLifecycle } from "./infrastructure/file-team-versi
 import { createPlatformUseCases } from "./application/platform-use-cases.mjs";
 import { createFilePlatformSettings } from "./infrastructure/file-platform-settings.mjs";
 import { createModelCatalog } from "./infrastructure/model-catalog.mjs";
+import { createModelAvailabilityProbe } from "./infrastructure/model-availability-probe.mjs";
 import { createTeamCatalogUseCases } from "./application/team-catalog-use-cases.mjs";
 import { createFileTeamCatalog } from "./infrastructure/file-team-catalog.mjs";
 import { createRunResultUseCases } from "./application/run-result-use-cases.mjs";
@@ -233,7 +234,11 @@ function sendJson(response, status, payload) {
 }
 
 const modelCatalog = createModelCatalog({ workdir: discoveryWorkdir });
-const platformUseCases = createPlatformUseCases({ platformSettingsStore, modelCatalog });
+const platformUseCases = createPlatformUseCases({
+  platformSettingsStore,
+  modelCatalog,
+  probeModelAvailability: createModelAvailabilityProbe()
+});
 async function getPlatformDefaultModelSelection() {
   const [settings, discovery] = await Promise.all([
     platformUseCases.readPlatformSettings(),
@@ -435,6 +440,7 @@ const server = createServer(async (request, response) => {
       ...projectReadinessUseCases, ...projectMaterialUseCases,
       startProjectRun: projectRunUseCases.startProjectRun, getProject, ...projectUpdateUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
+      visualizerUrl: visUrl,
       ...teamAdjustmentUseCases
     },
   })) return;
