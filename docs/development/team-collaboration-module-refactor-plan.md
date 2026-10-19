@@ -9,7 +9,7 @@
 
 ## 当前进度
 
-本轮最终 Mac 自动化验证（2026-10-19；代码提交 `617af33`、`0787b9a`）：Team Site 全量 `pnpm --dir apps/team-site test --test-concurrency=1` 为 225/225；`pnpm test` 为 656 项通过、0 项失败、1 项 Windows PowerShell/CMD smoke 按平台条件跳过；`pnpm run test:visualizer` 通过，Studio 主测试 198 项、布局 49/49；构建通过。经典团队 Playwright UAT 点击“查看全流程”打开真实 Studio 服务，验证关联 TeamVersion 工作区可读、错误 Task 关联被拒绝、运行中继续/停止/重索引/审核控件不可见且不可点击，并核对操作前后 Projects Task/Run API 状态不变。既有浏览器路径还覆盖 readiness 阻塞、运行、结果展开、重试、历史尝试与结果隔离，以及桌面、390px 手机和 768px 平板布局。故障注入与恢复覆盖预留失败、计划创建失败、终态 Task 投影写失败、控制写失败、Run 状态缺失/陈旧投影，以及真实活动 Run 中 SIGKILL 后启动恢复；逐项核对持久化、API 读数、Task/Run 关联、重试、清理和恢复幂等性。最终文档更新后的 `pnpm run test:docs-command-drift` 与 `git diff --check` 均通过。Windows、人工 UAT 和真实设备验收不包含在此自动化摘要中。
+此前 Mac 自动化验证（2026-10-19；代码提交 `617af33`、`0787b9a`）：Team Site 全量 `pnpm --dir apps/team-site test --test-concurrency=1` 为 225/225；`pnpm test` 为 656 项通过、0 项失败、1 项 Windows PowerShell/CMD smoke 按平台条件跳过；`pnpm run test:visualizer` 通过，Studio 主测试 198 项、布局 49/49；构建通过。经典团队 Playwright UAT 点击“查看全流程”打开真实 Studio 服务，验证关联 TeamVersion 工作区可读、错误 Task 关联被拒绝、运行中继续/停止/重索引/审核控件不可见且不可点击，并核对操作前后 Projects Task/Run API 状态不变。既有浏览器路径还覆盖 readiness 阻塞、运行、结果展开、重试、历史尝试与结果隔离，以及桌面、390px 手机和 768px 平板布局。故障注入与恢复当时覆盖预留失败、计划创建失败、终态 Task 投影写失败、控制写失败、Run 状态缺失/陈旧投影，以及真实活动 Run 中 SIGKILL 后启动恢复；逐项核对持久化、API 读数、Task/Run 关联、重试、清理和恢复幂等性。Windows、人工 UAT 和真实设备验收不包含在该自动化记录中。
 
 2026-10-19 后续缺口修复验证：Run 状态初始化现位于 Task/Run 预留清理保护范围内；对 `control/state.json` 原子落盘注入失败，确认 Run 目录被清理、Task 仍为 queued 且之后可启动。协作 Project 定义摘要改由 Application 计算并交给文件 Store 持久化，架构测试禁止 Store 调用摘要计算。新增服务级配置根回归：先在独立平台配置根保存模型设置，更换 `OGS_SITE_PROJECTS_DIR` 后仍能读取同一设置。针对性测试通过；Team Site 全量 `227/227`，构建通过，Visualizer 主测试 `198/198`、布局 `49/49`，`pnpm test:docs-command-drift` 通过，仓库全量 `656` 项通过、`0` 失败、`1` 项 Windows 专属 smoke 跳过，`git diff --check` 通过。Team Site 全量包含现有 Playwright 页面交互验收；Windows 实测、八项人工 Release UAT、真实设备无障碍和产品负责人签收状态不变。
 
@@ -19,7 +19,7 @@
 
 Task/Run 使用 `currentRunId`、有序 `runIds`、单调 `attemptNumber` 和按请求指纹校验的幂等键；readiness 在预留前检查；重试从 Task 发起；历史 Run 只读；完整结果按需读取并脱敏。经典团队浏览器回归覆盖项目化、排队、运行、事件与结果、readiness 阻塞、刷新和重试，以及 390px 手机和 768px 平板的溢出、遮挡与控件可达检查。自动化也覆盖 Run 失败持久化、进程重启恢复和后续 Task 重试。
 
-此前完整本机验证（2026-10-19 09:04 CST）早于移除旧 `Task.runId` 兼容逻辑，结果为 Team Site 208/208、Visualizer 198/198、布局 49/49、仓库 656 项通过且 Windows smoke 跳过。该次记录对应 HEAD `d54d97d76cb464a746089d0f96a12fdd7925d3f7` 和当时工作区 SHA-256 `81874419132af88a11b21fbb137327681e2b1b9b865650e36487d36fd165daa8`，仅作为历史背景；本轮最终状态以本节首段的 220/220 与当前验收清单为准。此前 npm 与 pnpm 隔离包安装 smoke 均通过，但不替代本轮 Release UAT。
+此前完整本机验证（2026-10-19 09:04 CST）早于移除旧 `Task.runId` 兼容逻辑，结果为 Team Site 208/208、Visualizer 198/198、布局 49/49、仓库 656 项通过且 Windows smoke 跳过。该次记录对应 HEAD `d54d97d76cb464a746089d0f96a12fdd7925d3f7` 和当时工作区 SHA-256 `81874419132af88a11b21fbb137327681e2b1b9b865650e36487d36fd165daa8`，仅作为历史背景；当前权威状态以本节“当前进度”和下方验收清单为准。此前 npm 与 pnpm 隔离包安装 smoke 均通过，但不替代本轮 Release UAT。
 
 下方按切片的日期记录保留实施过程，只表示各自记录时的状态，不能代替本轮最终验证或当前验收状态。涉及 `project-repository.mjs` 的迁移前记录均已被后续实现取代；当前权威状态以上述验证与验收清单为准。
 
@@ -339,6 +339,7 @@ planning | ready | running | pause_requested | paused | waiting_review | cancel_
 
 | 注入点 | 本轮实际结果 | 自动化证据 |
 | --- | --- | --- |
+| Run 状态初始化部分写入失败 | 在 Run 目录及 `control/` 已创建后，对 `control/state.json` 原子 rename 注入一次 EIO。初始化失败后 Run 目录被删除；Task 磁盘/API 保持 `queued`、`currentRunId=null`、`runIds=[]`；后续同一 Task 启动并完成。 | `task-run-recovery-faults-uat.test.mjs`: `partial Run state initialization failure removes the reserved directory`。 |
 | Task Run 预留写入失败 | 对 `project.json` 原子 rename 注入一次 EIO。Project `recovery-fault-project-1a2933b3` 的 Task `20261019-085608-7a2f20f2` 在故障后磁盘/API 均为 `queued`，`currentRunId=null`、`runIds=[]`，Run 目录为空；同一 Task 后续创建 Run `20261019-085609-84973639` 并完成。测试 `finally` 清理临时根目录并断言其已删除。 | `task-run-recovery-faults-uat.test.mjs`: `Task Run reservation write failure leaves no Run artifacts and permits a later start`；保留原 use case 单测。 |
 | Run 计划创建失败 | 对 `run-plan.json` 原子 rename 注入一次 EIO。Project `recovery-fault-project-5fd583d4`、Task `20261019-085535-fe94dc0a` 的失败 Run `20261019-085537-08901054` 在磁盘和 API 均为 failed、计划缺失；retry Run `20261019-085607-c4c082a7` 完成，旧 Run 状态不变。测试 `finally` 清理临时根目录并断言其已删除。 | `task-run-recovery-faults-uat.test.mjs`: `Task Run plan creation failure is persisted, queryable, and safely retryable`。 |
 | 执行中进程退出 | Project `live-process-recovery-project-d4c16732`、Task `20261019-085500-b9c0626b` 的真实 Run `20261019-085500-7464e8d8` 在 running 状态落盘后挂起 worker 并 SIGKILL Team Site。重启后磁盘、Task/Run API 与 events 一致收敛到 failed/RUNNER_RESTARTED；retry Run `20261019-085533-ef06a0f5` 完成并保留旧 Run；再次启动后 metadata 和两份 Run state 字节不变。测试 `finally` 清理临时根目录并断言其已删除。 | `task-run-control-and-recovery-boundaries.test.mjs`: `process termination during a live Run is recovered from durable state, queryable, retryable, and idempotent`。 |
