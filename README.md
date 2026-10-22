@@ -18,9 +18,11 @@ Implemented scope:
 Product boundaries:
 
 - Framework: Runtime, parser/compiler, CLI, and `nl2mmd`.
-- Shared Platform: model discovery, default execution settings, reusable tool/storage metadata,
-  immutable dataset snapshots, and the Runtime/Harness adapters. Platform resources do not own
-  Team, Task, Run, or Deliverable records.
+- Shared Platform: model/tool discovery, shared defaults, reusable tool/storage metadata, immutable
+  dataset snapshots, and shared execution infrastructure including Runtime/Harness adapters.
+  TeamVersion owns the selected model references and role-specific `profiles.json`/`tools.json`
+  execution definitions; platform catalogs describe available resources and do not own Team, Task,
+  Run, or Deliverable records.
 - OGS Studio: Team and TeamVersion authoring, role templates, graph design, Simulation evidence,
   diagnostics, and release.
 - OGS Projects: Collaboration Projects, Materials, Tasks, Project Run evidence, Reviews, and

@@ -50,6 +50,7 @@ OGS Studio 创建/专业编辑 -> 发布 TeamVersion -> OGS Projects 挂载版�
 
 - **团队仓库**展示已发布版本，提供导入、复制为新版本和资产管理，可从 `/teams` 进入。
 - **OGS Studio**保存编辑中和待发布团队，负责图谱结构、系统法则、入口与交接模式、角色模型/执行配置绑定、Join/Loop/Review 策略、Context Map、角色资产包（`agent.md`、`prompt.md`、`role.json`、`output.schema.json`）、流程条件与 Flow Contract/Schema 编辑，并提供静态校验、Simulation 调试与回放、发布门禁和版本管理。专业配置与角色资产保存到 TeamVersion 草稿；发布版本不可原地修改，需先另存为新草稿。模型绑定从 Platform 发现的可运行模型中选择，并以 backend/model 引用保存在草稿；CLI Profile 和本地工具定义保存在 TeamVersion 的 `profiles.json`、`tools.json`，可在角色检查器中创建或编辑。共享 `/platform/tools` 目录是可复用能力元数据，不会自动变成运行命令；凭据解析仍由本机 Harness 管理。Simulation/Project Run 启动时服务端会重新检查绑定可用性，页面静态状态不代表外部网络或凭据已连通。Projects 可发起自然语言创建或调整；调整会进入团队草稿，检查并发布后需在项目中明确挂载新版本。
+- **Simulation 与发布证明**：普通 Studio Simulation 以 `dry-run` 快速验证流程并提供调试回放，不代表真实 Sandbox 可运行，也不满足发布门禁。发布前需要为当前 TeamVersion 保存必跑基线场景，并逐个以隔离 `sandbox` 模式实际执行；服务端核对版本 digest、场景版本、必跑角色、结构化输出和 Schema 断言。只有当前版本所有必跑场景的有效证据才可通过门禁，父版本或普通 Simulation 结果不能替代。
 - **协作项目**单独创建工作目录，只挂载一个已发布团队版本，集中管理资源、任务清单和运行记录。项目页面不创建或组合团队；团队设计、调试和发布由 OGS Studio 负责。项目可在任务未运行时切换所用版本，已有 Task 继续绑定原版本。
 - **Task** 保存明确的工作请求和执行团队版本，并显示任务序号、状态、关联 Run 和人工反馈。当前同一项目至多一个 Task 的 Run 处于准备、处理中、暂停或待人工审核状态；该 Run 完成或终止后才能启动下一项。
 

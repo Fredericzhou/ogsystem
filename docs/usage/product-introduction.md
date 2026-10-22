@@ -2,7 +2,7 @@
 
 OGSystem 把一组有明确职责的角色组织成可执行、可恢复、可审计的协作流程。产品由两个对等工作台和共享平台能力组成：OGS Studio 负责团队工程资产的设计、Simulation 调试、诊断和发布；OGS Projects 负责业务项目、Materials、Task、Review 和 Deliverables。两个工作台共用 Team Site Origin、Runtime 能力和平台配置，但各自拥有不同的运行数据与查询 API。工程人员也可以继续使用 CLI。
 
-OGS Studio 提供团队草稿、图谱设计、角色执行与编排属性、Context Map、角色资产包、Flow Contract/Schema 编辑、Simulation 调试与回放，以及发布门禁。模型选项来自共享平台的发现目录；CLI Profile 与可执行工具定义保存在 TeamVersion 草稿中。共享平台工具目录只登记能力元数据，不会自动成为运行时命令。自动化已覆盖部分专业字段保存和回读；完整字段矩阵及设计到发布的人工 UAT 尚未签收。
+OGS Studio 提供团队草稿、图谱设计、角色执行与编排属性、Context Map、角色资产包、Flow Contract/Schema 编辑、Simulation 调试与回放，以及发布门禁。模型选项来自共享平台的发现目录；CLI Profile 与可执行工具定义保存在 TeamVersion 草稿中。共享平台工具目录只登记能力元数据，不会自动成为运行时命令。普通 Simulation 使用 `dry-run`，用于快速调试和回放，不能作为发布证明；发布门禁要求当前 TeamVersion 的每个必跑基线场景以隔离 `sandbox` 实际执行，并通过场景断言、预期角色和输出 Schema 校验。自动化已覆盖部分专业字段保存和回读；完整字段矩阵及设计到发布的人工 UAT 尚未签收。
 
 ## 产品如何分工
 
@@ -16,7 +16,7 @@ OGS Studio 提供团队草稿、图谱设计、角色执行与编排属性、Con
   同一项业务请求。
 - **Run**描述 Task 的一次执行尝试，以及本次尝试的状态、事件、审核、结果和审计证据。每次 Run 使用自己的运行工作目录；
   重试由 Task 发起并创建新的 Run，`currentRunId` 指向最新尝试，历史 Run 保持只读。
-- **Studio Simulation**用于验证某个 TeamVersion 的设计，不创建业务 Task 或 Project Run。Simulation 输入、状态和事件会持久保存并可在 Studio 中回放，与 Projects 的运行历史分开。
+- **Studio Simulation**用于验证某个 TeamVersion 的设计，不创建业务 Task 或 Project Run。普通 `dry-run` Simulation 用于快速调试，不能满足发布门禁；发布证明来自该 TeamVersion 指定基线场景的隔离 `sandbox` 实跑及服务端断言校验。两类 Simulation 的输入、状态和事件均持久保存并可在 Studio 回放，与 Projects 的运行历史分开。
 - **Deliverable**是用户从成功 Project Run 显式归档的独立结果快照，保留来源 Task、Run 和 attempt 标识；它与项目 Materials 分开管理。
 - **平台配置**负责发现本机的 Codex、OpenCode 和模型，并设置默认执行方式；不接管这些底座的账号和凭据。
 

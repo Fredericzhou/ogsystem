@@ -19,21 +19,26 @@
 
 ```text
 Platform
-  共享模型目录与探测、Harness Adapter、工具执行配置、脱敏策略、审计事件格式
+  模型与工具能力目录、探测、默认设置、脱敏策略、审计事件格式
           │                         │
           ▼                         ▼
 Studio（团队工程台）            Projects（业务协作台）
 Team / Draft / TeamVersion      Collaboration Project / Materials
 Studio Simulation               Task / Project Run / Human Review
 设计、仿真、诊断、发布          Deliverable / 业务审计
+
+TeamVersion 固定团队自己的 profiles.json、tools.json、模型引用与执行策略
+Runtime / Harness Adapter 按调用方提供的配置执行，不拥有产品业务记录
 ```
 
 | 领域 | 拥有的数据 | 主要职责 | 明确不拥有 |
 | --- | --- | --- | --- |
-| Platform | 模型目录、可用性探测结果、Harness 配置、工具配置、共享脱敏与审计格式 | 给 Studio 和 Projects 提供共享基础能力 | Team、Project、Task、Run 或 Deliverable 业务记录 |
+| Platform | 模型与工具能力目录、可用性探测结果、共享默认设置、脱敏策略与审计格式 | 发现和描述可复用资源，提供共享默认值与基础设施能力 | TeamVersion 的团队专属 profiles.json、tools.json、模型选择与执行策略；Team、Project、Task、Run 或 Deliverable 业务记录 |
 | Studio | Team、Draft、不可变 TeamVersion、Studio Simulation | 团队拓扑和角色工程、仿真调试、运行诊断、发布门禁 | 项目材料、业务 Task、项目执行槽位、Deliverable |
 | Projects | Collaboration Project、Materials、Task、Project Run、Human Review、Deliverable | 业务协作、任务运行、审核与交付 | 直接修改已发布 TeamVersion 的图谱、提示词或角色资产 |
-| Runtime | 一次执行的通用调度、状态机、checkpoint、审计事件和 Harness 调用 | 执行调用方提供的不可变输入并写入调用方指定的证据命名空间 | 决定运行属于哪个业务领域或将不同领域的数据合并 |
+| Runtime / Harness Adapter | 通用调度、状态机、checkpoint、审计事件和执行适配器 | 使用调用方固定的 TeamVersion/Project 输入及执行配置，写入调用方指定的证据命名空间 | 拥有团队或项目配置、决定运行业务归属，或合并不同领域的数据 |
+
+Platform 的资源目录提供发现、元数据和共享默认值，不直接成为团队运行配置。Studio 将选定的模型引用和角色所需的 CLI Profile、工具定义及执行策略保存在 TeamVersion 草稿中；发布后这些配置随版本冻结并参与版本完整性校验。Runtime/Harness Adapter 负责解析并执行该版本配置，凭据由运行环境安全解析，不把密钥写入 TeamVersion 或 digest。
 
 ### 2.1 运行类型语义
 
@@ -196,6 +201,13 @@ Studio Simulation 由 Studio 用例生成 `simulationId`，以 TeamVersion ID �
 - `GET /api/v1/teams/:teamId/versions/:teamVersionId/simulations/:simulationId/events`：仿真事件回放。
 
 Simulation API 只能定位 `.studio/simulations/<teamVersionId>/<simulationId>`；Project API 不查询这个命名空间，Studio API 也不查询 Project Run 目录。
+
+### 7.1 普通调试与发布基线
+
+- 普通 Studio Simulation 默认使用 `dry-run`，用于快速检查流程、配置和可回放诊断；它不能作为发布门禁证明。
+- 发布基线是 TeamVersion 自有、版本化的场景资产。标记为发布必跑的场景必须以 `sandbox` 模式隔离实跑，并由服务端按当前 TeamVersion digest、场景版本、预期执行角色、结构化输出及 Schema 校验结果逐项验证。
+- 发布门禁只接受当前 TeamVersion 自身所有必跑场景的有效 Sandbox Simulation 证据。普通 Simulation、旧 digest 证据、父版本证据、带路径覆盖的调试运行或仅返回 `completed` 但未满足场景断言的结果均不构成证明。
+- Simulation 记录必须保存 `mode`、基线场景 ID/版本（若适用）、TeamVersion digest、实际解析的模型与工具身份、执行状态和验证结果，以便区分调试记录与发布证明。
 
 ### 8.3 Run Evidence DTO
 
