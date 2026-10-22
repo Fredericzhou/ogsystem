@@ -14,7 +14,7 @@ import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
-import type { Flow, ModelCatalog, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
+import type { Flow, ModelCatalog, ModelCatalogEntry, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
 import {
   createEmptySystemDesign,
   loadSystemDesign,
@@ -146,6 +146,8 @@ type ValidateStudioSystemSource = (args: {
   workdir: string;
   systemPath: string;
   systemSource: string;
+  modelCatalogModels?: ModelCatalogEntry[];
+  modelCatalogGeneratedAt?: string;
 }) => Promise<StudioSystemValidation>;
 
 export type StudioBridgeDraft = {
@@ -685,7 +687,7 @@ export async function saveStudioAuthoringDraft(args: {
   let generatedMermaid: string | undefined;
   let validation: StudioSystemValidation | undefined;
   let nextSelection: ModelSelectionConfig | undefined;
-  let semanticCandidate: { path: string; source: string } | undefined;
+  let semanticCandidate: { path: string; source: string; stateSchemaPath?: string; stateSchemaSource?: string } | undefined;
   let design: SystemDesignDocument | undefined;
   if (
     typeof args.authoring === "object" &&
@@ -708,6 +710,8 @@ export async function saveStudioAuthoringDraft(args: {
       const candidates = ["semantics.yaml", "semantics.yml", "semantics.json"];
       let semanticsPath: string | undefined;
       let semanticsValue: Record<string, unknown> | undefined;
+      let creatingSemanticSpec = false;
+      const system = parseSystemFromMermaidSource(generatedMermaid);
       for (const name of candidates) {
         const path = resolve(args.workdir, ".ogs", name);
         try {
@@ -722,9 +726,17 @@ export async function saveStudioAuthoringDraft(args: {
         }
       }
       if (!semanticsPath || !semanticsValue) {
-        if (conditionedFlows.length) throw new Error("[IR_SEMANTIC_SPEC_REQUIRED] Conditional routes require an existing .ogs/semantics.yaml Semantic IR specification.");
-      } else {
-      const system = parseSystemFromMermaidSource(generatedMermaid);
+        if (conditionedFlows.length) {
+          creatingSemanticSpec = true;
+          semanticsPath = resolve(args.workdir, ".ogs", "semantics.yaml");
+          semanticsValue = {
+            version: 1,
+            system: { systemId: system.systemId, systemVersion: system.systemVersion },
+            state: { schema: ".ogs/contracts/state.json" }
+          };
+        }
+      }
+      if (semanticsPath && semanticsValue) {
       const topology = new Set(system.flows.map((flow) => `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`));
       const rawRoutes = semanticsValue.routes ?? semanticsValue.transitions;
       const existingRoutes = Array.isArray(rawRoutes) ? rawRoutes : rawRoutes && typeof rawRoutes === "object" ? Object.values(rawRoutes as Record<string, unknown>) : [];
@@ -749,12 +761,23 @@ export async function saveStudioAuthoringDraft(args: {
       const nextSemanticSource = semanticsPath.endsWith(".json")
         ? `${JSON.stringify(semanticsValue, null, 2)}\n`
         : stringifyYaml(semanticsValue);
-      const snapshot = await loadOgsSpecification(args.workdir);
+      const snapshot: Awaited<ReturnType<typeof loadOgsSpecification>> = creatingSemanticSpec
+        ? { specVersion: "1", systemId: system.systemId, systemVersion: system.systemVersion, sources: {}, digest: "studio-candidate" }
+        : await loadOgsSpecification(args.workdir);
       const semanticSourceEntry = Object.entries(snapshot.sources).find(([path]) => path.endsWith("/" + semanticsPath!.split(/[\\/]/).at(-1)));
-      if (!semanticSourceEntry) throw new Error("[IR_SEMANTIC_SPEC_INVALID] Semantic specification could not be loaded.");
-      snapshot.sources[semanticSourceEntry[0]] = { digest: "studio-candidate", value: parseYaml(nextSemanticSource) };
+      if (!semanticSourceEntry) {
+        snapshot.sources[semanticsPath.replaceAll("\\", "/")] = { digest: "studio-candidate", value: parseYaml(nextSemanticSource) };
+      } else {
+        snapshot.sources[semanticSourceEntry[0]] = { digest: "studio-candidate", value: parseYaml(nextSemanticSource) };
+      }
+      const stateSchemaPath = resolve(args.workdir, ".ogs", "contracts", "state.json");
+      let stateSchemaSource: string | undefined;
+      if (!Object.keys(snapshot.sources).some((path) => path.endsWith("/.ogs/contracts/state.json") || path.endsWith("/contracts/state.json"))) {
+        stateSchemaSource = `${JSON.stringify({ type: "object", properties: {} }, null, 2)}\n`;
+        snapshot.sources[stateSchemaPath.replaceAll("\\", "/")] = { digest: "studio-candidate", value: JSON.parse(stateSchemaSource) };
+      }
       compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 100 });
-      semanticCandidate = { path: semanticsPath, source: nextSemanticSource };
+      semanticCandidate = { path: semanticsPath, source: nextSemanticSource, ...(stateSchemaSource ? { stateSchemaPath, stateSchemaSource } : {}) };
       }
     }
     const selectionPath = resolve(args.workdir, ".ogs", "model-selection.json");
@@ -786,6 +809,10 @@ export async function saveStudioAuthoringDraft(args: {
   }
   await mkdir(dirname(draftPath), { recursive: true });
   if (semanticCandidate) {
+    if (semanticCandidate.stateSchemaPath && semanticCandidate.stateSchemaSource) {
+      await mkdir(dirname(semanticCandidate.stateSchemaPath), { recursive: true });
+      await writeJsonFileAtomic(semanticCandidate.stateSchemaPath, JSON.parse(semanticCandidate.stateSchemaSource));
+    }
     const tempPath = `${semanticCandidate.path}.studio-tmp`;
     await writeFile(tempPath, semanticCandidate.source, "utf8");
     await rename(tempPath, semanticCandidate.path);

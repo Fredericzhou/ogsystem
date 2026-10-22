@@ -6,10 +6,9 @@ export function assertCollaborationProject(project) {
   }
 }
 
-export function assertProjectHasTeams(teamVersionIds) {
-  if (!Array.isArray(teamVersionIds) || !teamVersionIds.some((value) => String(value || "").trim())) {
-    throw new Error("PROJECT_TEAM_REQUIRED: a collaboration project must have at least one team.");
-  }
+export function assertProjectHasSingleTeam(teamVersionIds) {
+  const selected = Array.isArray(teamVersionIds) ? [...new Set(teamVersionIds.map((value) => String(value || "").trim()).filter(Boolean))] : [];
+  if (selected.length !== 1) throw new Error("PROJECT_SINGLE_TEAM_REQUIRED: a collaboration project must use exactly one released TeamVersion.");
 }
 
 export function assertProjectTeamMutationAllowed(project) {

@@ -56,6 +56,7 @@ export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.
             parentTeamVersionId: next.parentTeamVersionId || null,
             status: next.teamVersionStatus,
             teamCoreDigest: next.teamCoreDigest || null,
+            teamDigestVersion: Number.isInteger(next.teamDigestVersion) ? next.teamDigestVersion : null,
             createdAt: next.createdAt,
             updatedAt: next.updatedAt,
             releasedAt: next.releasedAt || null,

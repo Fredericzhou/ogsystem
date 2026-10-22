@@ -40,7 +40,7 @@ import {
   asRecord,
   asString
 } from "./json-guards.js";
-import type { SystemDefinition } from "../runtime/types.js";
+import type { ModelCatalogEntry, SystemDefinition } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
 import { loadSystemDesign, saveSystemDesign, systemDefinitionToDesign } from "../design/index.js";
@@ -595,12 +595,16 @@ export async function validateProjectSystemSource(args: {
   workdir: string;
   systemPath?: string;
   systemSource: string;
+  modelCatalogModels?: ModelCatalogEntry[];
+  modelCatalogGeneratedAt?: string;
 }): Promise<Record<string, unknown>> {
   try {
     const context = await assembleProjectContextFromSource({
       workdir: args.workdir,
       systemPath: args.systemPath,
-      systemSource: args.systemSource
+      systemSource: args.systemSource,
+      modelCatalogModels: args.modelCatalogModels,
+      modelCatalogGeneratedAt: args.modelCatalogGeneratedAt
     });
     return {
       ok: true,
@@ -653,6 +657,8 @@ export async function saveProjectSystemSource(args: {
   workdir: string;
   systemSource: string;
   saveAsPath?: string;
+  modelCatalogModels?: ModelCatalogEntry[];
+  modelCatalogGeneratedAt?: string;
 }): Promise<Record<string, unknown>> {
   const savedPath = assertPathWithinWorkdir(
     args.workdir,
@@ -661,7 +667,9 @@ export async function saveProjectSystemSource(args: {
   const validation = await validateProjectSystemSource({
     workdir: args.workdir,
     systemPath: savedPath,
-    systemSource: args.systemSource
+    systemSource: args.systemSource,
+    modelCatalogModels: args.modelCatalogModels,
+    modelCatalogGeneratedAt: args.modelCatalogGeneratedAt
   });
   if (validation.ok !== true) {
     return {
@@ -902,6 +910,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
         ".ogs/model-catalog.json",
         ".ogs/laws.json",
         ".ogs/user-profile.json",
+        ".ogs/release-baselines.json",
         "profiles.json",
         "tools.json",
         ".ogs/project.json",
@@ -925,8 +934,10 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
       laws: await readOptionalJson(ogsPaths.lawsPath),
       userProfile: await readOptionalJson(ogsPaths.userProfilePath),
+      releaseBaselineScenarios: await readOptionalJson(resolve(workdir, ".ogs", "release-baselines.json")),
       profiles: await readOptionalJson(resolve(workdir, "profiles.json")),
       tools: await readOptionalJson(resolve(workdir, "tools.json")),
+      digestVersion: 3,
       project: projectMeta,
       executableFiles
     }
@@ -955,6 +966,7 @@ export async function loadTeamPackage(args: {
     [ogsPaths.modelCatalogPath, team.modelCatalog ?? null, true],
     [ogsPaths.lawsPath, team.laws ?? null, true],
     [ogsPaths.userProfilePath, team.userProfile ?? null, true],
+    [resolve(projectRoot, ".ogs", "release-baselines.json"), team.releaseBaselineScenarios ?? null, true],
     [resolve(projectRoot, "profiles.json"), team.profiles ?? null, true],
     [resolve(projectRoot, "tools.json"), team.tools ?? null, true]
   ];
@@ -982,6 +994,19 @@ export async function loadTeamPackage(args: {
   for (const file of executableFiles) {
     const safePath = assertPortablePackagePath(file.path);
     await assertImportTargetSafe(projectRoot, resolve(projectRoot, safePath), safePath);
+  }
+  const existingSystem = await lstatIfPresent(resolve(projectRoot, "system.mmd"));
+  const existingBundle = existingSystem ? asRecord(await exportTeamPackage(projectRoot)) : undefined;
+  const existingManifest = asRecord(existingBundle?.releaseManifest);
+  const incomingAssetPaths = new Set(executableFiles.map((file) => assertPortablePackagePath(file.path)));
+  const staleAssetPaths = Array.isArray(existingManifest?.executableAssets)
+    ? existingManifest.executableAssets
+      .filter((path): path is string => typeof path === "string")
+      .map(assertPortablePackagePath)
+      .filter((path) => !incomingAssetPaths.has(path))
+    : [];
+  for (const stalePath of staleAssetPaths) {
+    await assertImportTargetSafe(projectRoot, resolve(projectRoot, stalePath), stalePath);
   }
   const loadedFiles: string[] = [];
   if (team.design === undefined || team.design === null) {
@@ -1017,6 +1042,13 @@ export async function loadTeamPackage(args: {
         label: "Imported Mermaid system must validate before the project can be rebound."
       }]
     };
+  }
+  for (const stalePath of staleAssetPaths) {
+    const target = resolve(projectRoot, stalePath);
+    await assertImportTargetSafe(projectRoot, target, stalePath);
+    await unlink(target).catch((error) => {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    });
   }
   invalidateProjectProjectionCache(args.workdir);
   return {

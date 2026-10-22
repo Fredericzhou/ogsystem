@@ -637,11 +637,11 @@ export async function executeRoleNode(args: {
       roleId: args.roleId
     });
 
-    prompt = renderRolePrompt({
+    prompt = [renderRolePrompt({
       promptTemplate: rolePackage.promptTemplate,
       agent: rolePackage.agent,
       values: promptInput
-    });
+    }), "Runtime execution context:", `loop_iteration: ${loopIteration} (the first activation is 1; re-entry increments this value).`].join("\n\n");
 
     resolvedBinding = resolveExecutionBinding({
       roleId: args.roleId,

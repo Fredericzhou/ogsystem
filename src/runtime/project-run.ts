@@ -12,7 +12,7 @@ import { basename, relative, resolve, sep } from "node:path";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import type { ExecutionPlan } from "./types.js";
 import { validateResumePlanFingerprint, type RunPlanFingerprint } from "./run-artifacts.js";
-import { createProjectRunState, saveProjectRunState } from "./project-run-state.js";
+import { createProjectRunState, saveProjectRunState, type ProjectTaskReservation } from "./project-run-state.js";
 import { assertProjectAssetSnapshot, readProjectAssetManifestDigest } from "./project-run-snapshot.js";
 
 export type ProjectRunMode = "dry-run" | "sandbox" | "real";
@@ -42,6 +42,12 @@ export type ProjectInputRef = {
   contentHash: string;
   selectedRanges: Array<{ start?: number; end?: number }>;
   consumingNodeIds: string[];
+};
+
+export type ProjectMaterialSnapshotPolicy = {
+  kind: "project_current" | "source_run_snapshot" | "current_project_fallback";
+  sourceRunId?: string;
+  reason?: "source_run_state_missing";
 };
 
 export type ProjectNodePlan = {
@@ -77,6 +83,7 @@ export type ProjectRunPlan = {
     requiredNodeIds: string[];
   };
   inputRefs: ProjectInputRef[];
+  materialSnapshotPolicy: ProjectMaterialSnapshotPolicy;
   runPlanDigest: string;
 };
 
@@ -185,6 +192,7 @@ export function buildProjectRunPlan(args: {
   projectDigest?: string;
   projectAssetManifestDigest?: string | null;
   materialSnapshot?: ProjectMaterialSnapshot[];
+  materialSnapshotPolicy?: ProjectMaterialSnapshotPolicy;
   enforceLinearTopology?: boolean;
 }): ProjectRunPlan {
   const materials = args.materialSnapshot ?? [];
@@ -236,7 +244,8 @@ export function buildProjectRunPlan(args: {
       contentHash: item.contentHash,
       selectedRanges: item.selectedRanges,
       consumingNodeIds: item.consumingNodeIds
-    }))
+    })),
+    materialSnapshotPolicy: args.materialSnapshotPolicy ?? { kind: "project_current" }
   };
   return { ...plan, runPlanDigest: digestRunPlan(plan) };
 }
@@ -288,6 +297,8 @@ export async function initializeProjectRunArtifacts(args: {
   materials?: ProjectMaterialInput[];
   enforceLinearTopology?: boolean;
   enforceSnapshotContract?: boolean;
+  taskReservation?: ProjectTaskReservation;
+  materialSnapshotPolicy?: ProjectMaterialSnapshotPolicy;
 }): Promise<ProjectRunArtifacts> {
   if (args.enforceSnapshotContract === true && !args.projectId) {
     throw new Error("PROJECT_ID_REQUIRED: project execution must identify its project asset.");
@@ -328,6 +339,7 @@ export async function initializeProjectRunArtifacts(args: {
     projectDigest: args.projectDigest,
     projectAssetManifestDigest,
     materialSnapshot: materials,
+    materialSnapshotPolicy: args.materialSnapshotPolicy,
     enforceLinearTopology: args.enforceLinearTopology
   });
   if (await fileExists(runPlanPath)) {
@@ -371,7 +383,7 @@ export async function initializeProjectRunArtifacts(args: {
       }
     }
     if (!(await fileExists(resolve(args.runDir, "control", "state.json")))) {
-      await saveProjectRunState(args.runDir, createProjectRunState(stored));
+      await saveProjectRunState(args.runDir, createProjectRunState(stored, args.taskReservation));
     }
     return { runPlan: stored, materials, taskPath, runPlanPath, materialsPath };
   }
@@ -383,7 +395,7 @@ export async function initializeProjectRunArtifacts(args: {
     createdAt: runPlan.createdAt
   });
   await writeJsonFileAtomic(runPlanPath, runPlan);
-  await saveProjectRunState(args.runDir, createProjectRunState(runPlan));
+  await saveProjectRunState(args.runDir, createProjectRunState(runPlan, args.taskReservation));
   return { runPlan, materials, taskPath, runPlanPath, materialsPath };
 }
 

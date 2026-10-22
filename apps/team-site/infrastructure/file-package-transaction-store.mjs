@@ -56,7 +56,8 @@ export function createFilePackageTransactionStore({
           teamVersionNumber: project.teamVersionNumber,
           projectId: project.projectId,
           teamRootId: project.teamRootId || project.teamId || project.projectId,
-          teamVersionId: project.teamVersionId || project.projectId
+          teamVersionId: project.teamVersionId || project.projectId,
+          teamDigestVersion: project.teamDigestVersion || 3
         }
       },
       teamCoreDigest: bundle.teamCoreDigest || await computeTeamCoreDigest(project.workdir)
@@ -83,7 +84,8 @@ export function createFilePackageTransactionStore({
           teamVersionNumber: team.teamVersionNumber || mountedTeam.teamVersionNumber || 1,
           projectId: team.projectId || teamVersionId,
           teamRootId: team.teamRootId || team.teamId || teamVersionId,
-          teamVersionId: team.teamVersionId || teamVersionId
+          teamVersionId: team.teamVersionId || teamVersionId,
+          teamDigestVersion: team.teamDigestVersion || 3
         }
       }
     };
@@ -94,6 +96,7 @@ export function createFilePackageTransactionStore({
       teamVersionNumber: team.teamVersionNumber || mountedTeam.teamVersionNumber || 1,
       teamName: team.teamName || team.name || mountedTeam.teamName,
       teamCoreDigest,
+      teamDigestVersion: Number(teamPackage.team?.digestVersion || mountedTeam.teamDigestVersion || 3),
       builtIn: Boolean(mountedTeam.builtIn),
       source: {
         sourceWorkspaceId: String(process.env.OGS_WORKSPACE_ID || "team-site-local"),

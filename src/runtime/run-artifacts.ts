@@ -19,7 +19,7 @@ import {
 } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { basename, resolve } from "node:path";
+import { basename, isAbsolute, resolve, sep } from "node:path";
 import { arch, hostname, platform } from "node:os";
 import { createInterface } from "node:readline";
 
@@ -566,7 +566,6 @@ function isFingerprintRecord(value: unknown): value is RunPlanFingerprint {
 function listChangedFingerprintComponents(args: {
   expected: RunPlanFingerprint;
   stored: RunPlanFingerprint;
-  storedOnly?: boolean;
 }): string[] {
   const expectedComponents =
     typeof args.expected.payload.components === "object" &&
@@ -585,12 +584,10 @@ function listChangedFingerprintComponents(args: {
     return [];
   }
 
-  const componentNames = args.storedOnly
-    ? new Set(Object.keys(storedComponents))
-    : new Set([
-      ...Object.keys(expectedComponents),
-      ...Object.keys(storedComponents)
-    ]);
+  const componentNames = new Set([
+    ...Object.keys(expectedComponents),
+    ...Object.keys(storedComponents)
+  ]);
   return Array.from(componentNames).filter(
     (componentName) =>
       !Object.prototype.hasOwnProperty.call(expectedComponents, componentName) ||
@@ -598,7 +595,7 @@ function listChangedFingerprintComponents(args: {
   );
 }
 
-function compareFingerprintCompatibility(args: {
+function comparePlanFingerprints(args: {
   expected: RunPlanFingerprint;
   stored: RunPlanFingerprint;
 }): { compatible: boolean; changedComponents: string[] } {
@@ -609,41 +606,9 @@ function compareFingerprintCompatibility(args: {
   ) {
     return { compatible: true, changedComponents: [] };
   }
-  if (
-    args.stored.version >= args.expected.version ||
-    args.stored.algorithm !== args.expected.algorithm
-  ) {
-    return {
-      compatible: false,
-      changedComponents: listChangedFingerprintComponents(args)
-    };
-  }
-
-  const expectedComponents =
-    typeof args.expected.payload.components === "object" &&
-    args.expected.payload.components !== null &&
-    !Array.isArray(args.expected.payload.components)
-      ? (args.expected.payload.components as Record<string, { digest?: unknown }>)
-      : undefined;
-  const storedComponents =
-    typeof args.stored.payload.components === "object" &&
-    args.stored.payload.components !== null &&
-    !Array.isArray(args.stored.payload.components)
-      ? (args.stored.payload.components as Record<string, { digest?: unknown }>)
-      : undefined;
-  if (!expectedComponents || !storedComponents || Object.keys(storedComponents).length === 0) {
-    return { compatible: false, changedComponents: [] };
-  }
-
-  const changedComponents = listChangedFingerprintComponents({
-    ...args,
-    storedOnly: true
-  });
   return {
-    compatible: changedComponents.length === 0 && Object.keys(storedComponents).every(
-      (name) => Object.prototype.hasOwnProperty.call(expectedComponents, name)
-    ),
-    changedComponents
+    compatible: false,
+    changedComponents: listChangedFingerprintComponents(args)
   };
 }
 
@@ -782,6 +747,8 @@ export async function initializeRunContext(args: {
   resolvedConfigSnapshot?: Record<string, unknown>;
   resumeRunDir?: string;
   runId?: string;
+  /** Optional owner workspace; evidence is stored in its configured runs directory. */
+  runEvidenceRoot?: string;
 }): Promise<RunContext> {
   // Fresh runs and resumed runs share the same directory contract. Initialization therefore
   // prefers idempotent setup and write-if-missing files so resume never overwrites evidence.
@@ -795,13 +762,28 @@ export async function initializeRunContext(args: {
     });
   }
   const createdAt = new Date();
-  const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : args.runId ?? createRunId(createdAt);
+  const runRoot = args.runEvidenceRoot
+    ? resolve(args.runEvidenceRoot, ".ogs/runs")
+    : resolve(args.workdir, args.runtimeConfig.runsDir);
+  const requestedResumeDir = args.resumeRunDir
+    ? resolve(isAbsolute(args.resumeRunDir) ? args.resumeRunDir : resolve(runRoot, args.resumeRunDir))
+    : undefined;
+  if (requestedResumeDir && args.runEvidenceRoot
+    && requestedResumeDir !== runRoot
+    && !requestedResumeDir.startsWith(`${runRoot}${sep}`)) {
+    throw createRuntimeError({
+      errorCode: "RUNTIME_INVALID_RUN_PATH",
+      errorCategory: "input",
+      message: `Resume path is outside the owner evidence directory: ${args.resumeRunDir}`,
+      retryable: false,
+      stage: "resume"
+    });
+  }
+  const runId = requestedResumeDir ? basename(requestedResumeDir) : args.runId ?? createRunId(createdAt);
   const runCreatedAt = args.resumeRunDir
     ? parseCreatedAtFromRunId(runId) ?? createdAt.toISOString()
     : createdAt.toISOString();
-  const runDir = args.resumeRunDir
-    ? resolve(args.workdir, args.resumeRunDir)
-    : resolve(args.workdir, args.runtimeConfig.runsDir, runId);
+  const runDir = requestedResumeDir ?? resolve(runRoot, runId);
   const auditDir = resolve(runDir, "audit");
   const logsDir = resolve(runDir, "logs");
   const roleLogsDir = resolve(logsDir, "roles");
@@ -1525,7 +1507,7 @@ export async function validateResumePlanFingerprint(args: {
     });
   }
 
-  const compatibility = compareFingerprintCompatibility({
+  const compatibility = comparePlanFingerprints({
     expected: args.expectedFingerprint,
     stored
   });

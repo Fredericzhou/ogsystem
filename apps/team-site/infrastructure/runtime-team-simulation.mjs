@@ -5,14 +5,21 @@ import { join, resolve } from "node:path";
 import { runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
 
+function normalizeRuntimeStatus(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "done" || value === "ok") return "completed";
+  if (value === "error") return "failed";
+  return value;
+}
+
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run" }) {
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
       const runId = `simulation-${randomUUID()}`;
       try {
         await mkdir(join(workdir, ".ogs"), { recursive: true });
-        const bundle = await exportTeamPackage(team.workdir);
+        const bundle = teamPackageBundle || await exportTeamPackage(team.workdir);
         const loaded = await loadTeamPackage({ workdir, bundle });
         if (loaded.validation?.ok === false) throw new Error("TEAM_SIMULATION_INVALID: team version failed validation.");
         const modelConfig = await getDefaultModelSelection();
@@ -21,32 +28,32 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           prompt,
           workdir,
           runId,
-          dryRun: true,
-          projectRunMode: "dry-run",
-          projectId: `preview:${team.teamVersionId}`,
+          dryRun: mode === "dry-run",
+          executionMode: mode,
+          runKind: "studio_simulation",
           trustedProjectTopology: team.source === "classic" || team.source === "classic-template",
           modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
           modelCatalogModels: modelConfig?.modelCatalogModels,
           modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
-          projectDigest: team.projectDigest,
-          projectRunLock: false,
           logRun: false
         });
         return {
           teamVersionId: team.teamVersionId,
-          mode: "simulation",
+          mode,
           persisted: false,
-          status: result.status,
+          status: normalizeRuntimeStatus(result.status),
           finalRoleId: result.finalRoleId,
           finalOutput: result.finalOutput,
           stages: Array.isArray(result.stages) ? result.stages : [],
           auditTrail: Array.isArray(result.auditTrail) ? result.auditTrail.map((item) => ({
             roleId: item.roleId,
             selectedEvent: item.selectedEvent,
-            status: item.status,
+            status: normalizeRuntimeStatus(item.status),
             durationMs: item.durationMs,
             backend: item.backend,
             modelId: item.modelId,
+            profileId: item.profileId,
+            toolRef: item.toolRef,
             failure: item.error
           })) : [],
           summary: result.runSummary || {},

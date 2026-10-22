@@ -1,6 +1,7 @@
 /** Immutable executable project assets captured for a project Run. */
 import { createHash } from "node:crypto";
-import { copyFile, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { copyFile, lstat, mkdir, open, readdir, readFile, realpath } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
 import { writeJsonFileAtomic } from "./json-file.js";
@@ -67,6 +68,27 @@ function safeRelativePath(value: string): string {
 
 function hash(content: Buffer): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+async function readVerifiedRegularFile(path: string, root?: string): Promise<Buffer> {
+  if (root) await assertNoSymlinkComponents(root, path);
+  const before = await lstat(path);
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: unsafe file ${path}`);
+  const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+  const handle = await open(path, constants.O_RDONLY | noFollow);
+  try {
+    const opened = await handle.stat();
+    const after = await lstat(path);
+    if (root) await assertNoSymlinkComponents(root, path);
+    if (!opened.isFile() || after.isSymbolicLink()
+      || before.dev !== opened.dev || before.ino !== opened.ino || before.mode !== opened.mode
+      || opened.dev !== after.dev || opened.ino !== after.ino || opened.mode !== after.mode) {
+      throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: file changed while being read ${path}`);
+    }
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
 }
 
 function manifestDigest(manifest: SnapshotManifest): string {
@@ -272,7 +294,7 @@ export async function assertProjectAssetSnapshot(runDir: string, expectedManifes
   }
   let manifest: SnapshotManifest;
   try {
-    const parsed = JSON.parse(await readFile(resolve(snapshotDir, MANIFEST_FILE), "utf8")) as Partial<SnapshotManifest>;
+    const parsed = JSON.parse((await readVerifiedRegularFile(resolve(snapshotDir, MANIFEST_FILE), snapshotDir)).toString("utf8")) as Partial<SnapshotManifest>;
     if (parsed.version !== 1 || parsed.algorithm !== "sha256" || !Array.isArray(parsed.files)) throw new Error("invalid manifest");
     manifest = parsed as SnapshotManifest;
   } catch {
@@ -298,7 +320,7 @@ export async function assertProjectAssetSnapshot(runDir: string, expectedManifes
     await ensureRegularFile(path).catch(() => {
       throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: missing or unsafe asset ${relativePath}`);
     });
-    const content = await readFile(path);
+    const content = await readVerifiedRegularFile(path, snapshotDir);
     if (content.byteLength !== file.size || hash(content) !== file.sha256) {
       throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: asset hash mismatch ${relativePath}`);
     }
@@ -325,7 +347,7 @@ export async function readProjectAssetManifestDigest(runDir: string): Promise<st
   if (!manifestStat || manifestStat.isSymbolicLink() || !manifestStat.isFile()) {
     throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: missing or unsafe manifest in ${snapshotDir}`);
   }
-  const parsed = JSON.parse(await readFile(resolve(snapshotDir, MANIFEST_FILE), "utf8")) as Partial<SnapshotManifest>;
+  const parsed = JSON.parse((await readVerifiedRegularFile(resolve(snapshotDir, MANIFEST_FILE), snapshotDir)).toString("utf8")) as Partial<SnapshotManifest>;
   if (parsed.version !== 1 || parsed.algorithm !== "sha256" || !Array.isArray(parsed.files)) {
     throw new Error(`PROJECT_RUN_SNAPSHOT_INVALID: missing or invalid manifest in ${snapshotDir}`);
   }

@@ -11,9 +11,8 @@ export function createProjectQueryUseCases({ projectStore, taskAttemptStore, wai
     if (project.projectType !== "collaboration") return project;
     const taskRecords = await Promise.all((project.taskRecords || []).map(async (task) => {
       const runIds = Array.isArray(task.runIds) ? task.runIds : [];
-      const runtimeProjectId = task.runProjectId || task.teamVersionId || project.projectId;
       const attemptData = await Promise.all(runIds.map(async (runId, index) => {
-        const attempt = await taskAttemptStore.readAttempt(runtimeProjectId, runId).catch(() => ({}));
+        const attempt = await taskAttemptStore.readAttempt(projectId, task.taskId, runId).catch(() => ({}));
         return { runId, index, attempt };
       }));
       const runAttempts = attemptData.map(({ runId, index, attempt }) => ({

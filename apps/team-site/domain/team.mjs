@@ -1,3 +1,5 @@
+export const TEAM_CORE_DIGEST_VERSION = 3;
+
 export function assertReleasedTeamVersion(team) {
   if (!team || team.teamProjectId || team.teamVersionStatus !== "released") {
     throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
@@ -24,6 +26,7 @@ export function createMountedTeamRecord(team, previous) {
     mountedAt: previous?.mountedAt || new Date().toISOString(),
     status: "available",
     ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
+    ...(Number.isInteger(team.teamDigestVersion) ? { teamDigestVersion: team.teamDigestVersion } : {}),
     ...(team.builtIn ? { builtIn: true } : {})
   };
 }

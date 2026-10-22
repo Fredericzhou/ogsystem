@@ -63,6 +63,7 @@ type StudioGraphLabelKey =
   | "layoutModeCompact"
   | "layoutModeStacked"
   | "topologyOrder"
+  | "technicalDetails"
   | "enabled"
   | "disabled"
   | "layoutSwitched"
@@ -309,10 +310,26 @@ export class StudioGraphIsland {
   private layoutMode: StudioGraphLayoutMode = "flow";
   // Flow order is useful for reading a graph and should be visible on first render.
   private showTopologyOrder = true;
+  private showTechnicalDetails = true;
   private syncingSccGroupDrag = false;
   private currentLayoutProjection: LayoutProjection | null = null;
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
+  private readonly rootKeydownListener = (event: KeyboardEvent) => this.handleRootKeydown(event);
+  private readonly contextPointerDownListener = (event: PointerEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest("[data-studio-graph-context-menu]")) this.hideContextMenu();
+  };
+  private readonly contextPointerUpListener = () => this.schedulePendingEdgeCleanup();
+  private readonly contextPointerLeaveListener = () => this.schedulePendingEdgeCleanup();
+  private readonly rootContextMenuListener = (event: MouseEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("[data-studio-graph-context-menu]")) {
+      event.preventDefault();
+      return;
+    }
+    if (!target?.closest(".x6-node, .x6-edge")) this.hideContextMenu();
+  };
   private readonly themeChangeListener = () => {
     if (!this.currentViewModel || !this.currentLayoutProjection) return;
     this.applying = true;
@@ -332,6 +349,7 @@ export class StudioGraphIsland {
   constructor(private root: HTMLElement, initialOptions: StudioGraphBridgeOptions = {}) {
     this.options = initialOptions;
     this.showTopologyOrder = initialOptions.showTopologyOrder !== false;
+    this.showTechnicalDetails = initialOptions.showTechnicalDetails !== false;
     if (initialOptions.initialLayoutMode) {
       this.layoutMode = initialOptions.initialLayoutMode;
     }
@@ -352,6 +370,8 @@ export class StudioGraphIsland {
       '<option value="stacked">' + this.escapeHtml(this.label("layoutModeStacked")) + '</option>' +
       '</select>',
       this.toolbarButton("topology-order", "topologyOrder", "#"),
+      this.toolbarButton("technical-details", "technicalDetails", "i"),
+      this.toolbarButton("quick-open", "quickOpen", "/"),
       this.toolbarButton("export-svg", "exportSvg", "⇩", "SVG"),
       this.toolbarButton("export-png", "exportPng", "⇩", "PNG"),
       '</div>',
@@ -442,7 +462,7 @@ export class StudioGraphIsland {
     this.bindQuickOpen();
     this.bindQuickDebug();
     this.bindResizeObserver();
-    this.root.addEventListener("keydown", (event) => this.handleRootKeydown(event));
+    this.root.addEventListener("keydown", this.rootKeydownListener);
     document.addEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     // Command forms can be mounted in a sibling host outside `root`, so use a document-level
     // submit fallback to prevent accidental native navigation during rapid host swaps.
@@ -585,6 +605,12 @@ export class StudioGraphIsland {
     }
     document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
     document.removeEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
+    this.root.removeEventListener("keydown", this.rootKeydownListener);
+    this.root.removeEventListener("pointerdown", this.contextPointerDownListener);
+    this.root.removeEventListener("pointerup", this.contextPointerUpListener);
+    this.root.removeEventListener("pointercancel", this.contextPointerUpListener);
+    this.root.removeEventListener("mouseleave", this.contextPointerLeaveListener);
+    this.root.removeEventListener("contextmenu", this.rootContextMenuListener);
     this.quickDebugBusy = false;
     this.graph.dispose();
     this.root.innerHTML = "";
@@ -719,6 +745,11 @@ export class StudioGraphIsland {
   }
 
   private bindToolbar(): void {
+    const technicalDetails = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="technical-details"]');
+    if (technicalDetails) {
+      technicalDetails.setAttribute("aria-pressed", this.showTechnicalDetails ? "true" : "false");
+      technicalDetails.title = this.label("technicalDetails") + " · " + this.label(this.showTechnicalDetails ? "enabled" : "disabled");
+    }
     const layoutSelect = this.toolbar.querySelector<HTMLSelectElement>("[data-studio-graph-layout]");
     layoutSelect?.addEventListener("change", () => {
       const mode = layoutSelect.value as StudioGraphLayoutMode;
@@ -741,6 +772,13 @@ export class StudioGraphIsland {
         this.renderCurrentProjection();
         this.updateToolbarState();
       }
+      if (action === "technical-details") {
+        this.showTechnicalDetails = !this.showTechnicalDetails;
+        this.renderCurrentProjection();
+        this.updateToolbarState();
+      }
+      if (action === "quick-open") this.toggleQuickOpen();
+      if (action === "quick-open") this.toggleQuickOpen();
       if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 32, preserveDimensions: true });
       if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
@@ -758,15 +796,14 @@ export class StudioGraphIsland {
       if (action === "delete") void this.deleteSelection();
       if (action === "add-role") this.openCommandForm("add-role");
       if (action === "add-edge") {
-        const selectedRoleId = this.selectedRoleId();
-        if (selectedRoleId) {
-          this.openCommandForm("add-edge", {
-            sourceRoleId: selectedRoleId,
-            targetRoleId: "__system_end__"
-          });
-        } else {
-          this.toast("error", this.label("selectRoleBeforeAddingEdge"));
+        const roleIds = Object.keys(this.options.authoring?.roles || {});
+        const selectedRoleId = this.selectedRoleId() || roleIds[0];
+        const targetRoleId = roleIds.find((roleId) => roleId !== selectedRoleId) || "__system_end__";
+        if (!selectedRoleId) {
+          this.toast("error", this.label("noRolesAvailable"));
+          return;
         }
+        this.openCommandForm("add-edge", { sourceRoleId: selectedRoleId, targetRoleId });
       }
     });
   }
@@ -782,26 +819,11 @@ export class StudioGraphIsland {
       void this.handleContextMenuAction(action);
       this.hideContextMenu();
     });
-    this.root.addEventListener("pointerdown", (event) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-studio-graph-context-menu]")) {
-        return;
-      }
-      this.hideContextMenu();
-    });
-    this.root.addEventListener("pointerup", () => this.schedulePendingEdgeCleanup());
-    this.root.addEventListener("pointercancel", () => this.schedulePendingEdgeCleanup());
-    this.root.addEventListener("mouseleave", () => this.schedulePendingEdgeCleanup());
-    this.root.addEventListener("contextmenu", (event) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-studio-graph-context-menu]")) {
-        event.preventDefault();
-        return;
-      }
-      if (!target?.closest(".x6-node, .x6-edge")) {
-        this.hideContextMenu();
-      }
-    });
+    this.root.addEventListener("pointerdown", this.contextPointerDownListener);
+    this.root.addEventListener("pointerup", this.contextPointerUpListener);
+    this.root.addEventListener("pointercancel", this.contextPointerUpListener);
+    this.root.addEventListener("mouseleave", this.contextPointerLeaveListener);
+    this.root.addEventListener("contextmenu", this.rootContextMenuListener);
   }
 
   private bindGraphEvents(): void {
@@ -1795,7 +1817,9 @@ export class StudioGraphIsland {
           nodes: this.currentViewModel.nodes,
           edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined }))
         };
-    renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
+    renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection, {
+      showTechnicalDetails: this.showTechnicalDetails
+    });
   }
 
   private nextLayoutMode(current: StudioGraphLayoutMode): StudioGraphLayoutMode {

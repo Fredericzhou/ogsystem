@@ -5,7 +5,7 @@ export function createTeamCatalogUseCases({ teamCatalog }) {
 
   return Object.freeze({
     listTeamFactory: () => teamCatalog.listTeamFactory(),
-    async queryTeamRepository({ query = "", category = "", status = "released", sort = "updated", page = 1, pageSize = 12 } = {}) {
+    async queryTeamRepository({ query = "", category = "", status = "all", sort = "updated", page = 1, pageSize = 12 } = {}) {
       const allTeams = await teamCatalog.listTeamRepository({ includeUnreleased: true });
       const normalizedQuery = String(query || "").trim().toLocaleLowerCase();
       const normalizedCategory = String(category || "").trim().toLocaleLowerCase();

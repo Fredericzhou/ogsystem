@@ -1610,6 +1610,84 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return true;
     }
 
+    function captureDisclosureState(root) {
+      const occurrences = new Map();
+      return Array.from(root?.querySelectorAll?.("details") || []).map((disclosure) => {
+        const summary = Array.from(disclosure.children || []).find((child) => child.tagName === "SUMMARY");
+        const label = String(summary?.textContent || "").trim().replace(/\s+/g, " ");
+        const occurrence = occurrences.get(label) || 0;
+        occurrences.set(label, occurrence + 1);
+        return { key: JSON.stringify([label, occurrence]), open: disclosure.open };
+      });
+    }
+
+    function restoreDisclosureState(root, states) {
+      const openByKey = new Map(states.map((state) => [state.key, state.open]));
+      const occurrences = new Map();
+      for (const disclosure of Array.from(root?.querySelectorAll?.("details") || [])) {
+        const summary = Array.from(disclosure.children || []).find((child) => child.tagName === "SUMMARY");
+        const label = String(summary?.textContent || "").trim().replace(/\s+/g, " ");
+        const occurrence = occurrences.get(label) || 0;
+        occurrences.set(label, occurrence + 1);
+        const key = JSON.stringify([label, occurrence]);
+        if (openByKey.has(key)) disclosure.open = openByKey.get(key);
+      }
+    }
+
+    function captureBlankContextMapRows(root) {
+      return Array.from(root?.querySelectorAll?.("[data-role-config-editor]") || []).map((editor) => ({
+        roleId: editor.getAttribute("data-role-config-editor") || "",
+        rows: Array.from(editor.querySelectorAll("[data-context-map-row]") || [])
+          .map((row) => ({
+            target: String(row.querySelector("[data-context-map-target]")?.value || "").trim(),
+            selector: String(row.querySelector("[data-context-map-selector]")?.value || ""),
+            path: String(row.querySelector("[data-context-map-path]")?.value || ""),
+            optional: row.querySelector("[data-context-map-optional]")?.checked === true
+          }))
+          .filter((row) => !row.target)
+      }));
+    }
+
+    function restoreBlankContextMapRows(root, editors) {
+      for (const snapshot of editors) {
+        if (!snapshot.roleId || !snapshot.rows.length) continue;
+        const editor = Array.from(root?.querySelectorAll?.("[data-role-config-editor]") || [])
+          .find((candidate) => candidate.getAttribute("data-role-config-editor") === snapshot.roleId);
+        const rows = editor?.querySelector("[data-context-map-rows]");
+        const template = editor?.querySelector("[data-context-map-row-template]");
+        if (!rows || !template) continue;
+        let blankRows = Array.from(rows.querySelectorAll("[data-context-map-row]"))
+          .filter((row) => !String(row.querySelector("[data-context-map-target]")?.value || "").trim());
+        for (const rowSnapshot of snapshot.rows) {
+          let row = blankRows.shift();
+          if (!row) {
+            row = template.content?.firstElementChild?.cloneNode(true);
+            if (!row) continue;
+            rows.appendChild(row);
+          }
+          const target = row.querySelector("[data-context-map-target]");
+          const selector = row.querySelector("[data-context-map-selector]");
+          const path = row.querySelector("[data-context-map-path]");
+          const optional = row.querySelector("[data-context-map-optional]");
+          if (target) target.value = rowSnapshot.target;
+          if (selector) selector.value = rowSnapshot.selector;
+          if (path) path.value = rowSnapshot.path;
+          if (optional) optional.checked = rowSnapshot.optional;
+        }
+      }
+    }
+
+    function setStudioStructureHtml(element, html) {
+      const disclosures = captureDisclosureState(element);
+      const blankContextRows = captureBlankContextMapRows(element);
+      const changed = setInnerHtmlIfChanged(element, html);
+      if (changed) {
+        restoreDisclosureState(element, disclosures);
+        restoreBlankContextMapRows(element, blankContextRows);
+      }
+      return changed;
+    }
+
     function queryAll(selector, root) {
       if (root && typeof root.querySelectorAll === "function") {
         return Array.from(root.querySelectorAll(selector));
@@ -2298,7 +2376,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         root.classList.add("studio-graph-root");
       }
       root.setAttribute("data-workbench-root-mode", "bridge");
-      const structureChanged = setInnerHtmlIfChanged(structureContent, args.selectionStructureHtml || "");
+      const structureChanged = setStudioStructureHtml(structureContent, args.selectionStructureHtml || "");
       updateStudioBridgeSelection(false);
       syncStudioBridgeFullscreenChrome();
       if (structureChanged) {
@@ -3238,6 +3316,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (disclosureStates.has(key)) disclosure.open = disclosureStates.get(key);
         }
       };
+      const setRolePackageHtml = (html) => {
+        const states = Array.from(rolePackage.querySelectorAll?.("details") || []).map((disclosure) => disclosure.open);
+        if (rolePackage.innerHTML === html) return;
+        rolePackage.innerHTML = html;
+        Array.from(rolePackage.querySelectorAll?.("details") || []).forEach((disclosure, index) => {
+          if (index < states.length) disclosure.open = states[index];
+        });
+      };
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
       const selectedFlowKeyValue = state.studioBridgeSelectedFlowKey || "";
       const selectionKind = selectedRoleIdValue
@@ -3272,7 +3358,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       overlay.hidden = false;
       overlay.classList.toggle("is-collapsed", collapsed);
       shell.classList.toggle("has-collapsed-selection", collapsed);
-      const structureChanged = setInnerHtmlIfChanged(structureContent, structureHtml);
+      const structureChanged = setStudioStructureHtml(structureContent, structureHtml);
       const showInlineEditor = activeTab === "structure";
       inlineEditor.hidden = !showInlineEditor;
       structurePanel.hidden = activeTab !== "structure";
@@ -3322,7 +3408,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const showDirtyRoleWarning = hasDirtyStudioRolePackageEditor() && dirtyRoleId && dirtyRoleId !== selectedRoleIdValue;
         const dirtyConfigRoleId = String(state.studioRoleConfigEditor?.roleId || "");
         const showDirtyConfigWarning = hasDirtyStudioRoleConfigEditor() && dirtyConfigRoleId && dirtyConfigRoleId !== selectedRoleIdValue;
-        rolePackage.innerHTML = [
+        setRolePackageHtml([
           '<button type="button" class="button subtle" data-studio-open-system-settings>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</button>',
           renderStudioRoleSemanticSummary({ role: selectedRoleForSummary, t }),
           showDirtyConfigWarning
@@ -3368,7 +3454,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             }),
             open: false
           })
-        ].join("");
+        ].join(""));
         setDebugPanelHtml(renderStudioDebugWorkspaceContent());
       } else if (activeTab === "structure" && selectionKind === "flow") {
         const editorFlowKey = studioFlowConfigEditorFlowKeyForSelectionDialog();
@@ -3398,7 +3484,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 },
                 draft: null
               };
-          rolePackage.innerHTML = [
+          setRolePackageHtml([
             '<button type="button" class="button subtle" data-studio-open-system-settings>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</button>',
             showDirtyFlowWarning
               ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
@@ -3412,19 +3498,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               projectRoles: projectRolesForStudioDisplay(),
               t
             })
-          ].join("");
+          ].join(""));
         } else {
-          rolePackage.innerHTML = '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>";
+          setRolePackageHtml('<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>");
         }
         setDebugPanelHtml(renderStudioDebugWorkspaceContent());
       } else if (activeTab === "debug") {
-        rolePackage.innerHTML = "";
+        setRolePackageHtml("");
         setDebugPanelHtml(renderStudioDebugWorkspaceContent());
       } else {
-        rolePackage.innerHTML = [
+        setRolePackageHtml([
           renderStudioSystemSettingsEditor({ projectConfig: state.project?.config || null, authoring: state.studioBridge?.authoring || null, t }),
           renderStudioContractEditor({ contracts: state.contracts, t })
-        ].join("");
+        ].join(""));
         setDebugPanelHtml("");
       }
       let roleIoModalRoot = workbenchBodyEl.querySelector("[data-studio-role-io-modal-root]");
@@ -8706,10 +8792,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     const initialRoute = readRouteStateFromSearch(window.location.search);
     state.projectsDiagnostic = initialRoute.projectsDiagnostic;
-    state.consoleTab = normalizeLifecycleView(
-      initialRoute.lifecycle,
-      initialRoute.view
-    );
+    state.consoleTab = normalizeLifecycleView(initialRoute.lifecycle);
     state.projectId = initialRoute.projectId;
     if (!initialRoute.lifecycle && (initialRoute.runId || initialRoute.reviewId || initialRoute.logRoleId || initialRoute.tail || initialRoute.since)) {
       state.consoleTab = runConsoleTab();

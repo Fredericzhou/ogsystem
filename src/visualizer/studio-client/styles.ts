@@ -126,17 +126,14 @@ export function injectStudioGraphStyles(): void {
         padding: 4px;
       }
       .studio-graph-toolbar-main {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        overflow-y: hidden;
+        flex-wrap: wrap;
+        overflow: visible;
         width: 100%;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
       }
       .studio-graph-toolbar-group {
-        flex-wrap: nowrap;
-        flex: 0 0 auto;
-        max-width: none;
+        flex-wrap: wrap;
+        flex: 1 1 auto;
+        max-width: 100%;
       }
       .studio-graph-toolbar-text {
         display: none;
@@ -147,6 +144,11 @@ export function injectStudioGraphStyles(): void {
       }
       .studio-graph-toolbar button {
         min-width: 42px;
+        flex: 1 0 42px;
+      }
+      .studio-graph-toolbar select {
+        flex: 1 1 120px;
+        max-width: 100%;
       }
       .studio-graph-quick-debug {
         inset: auto 12px 12px 12px;
@@ -854,33 +856,6 @@ export function injectStudioGraphStyles(): void {
       .studio-graph-canvas {
         height: 100%;
         min-height: 0;
-      }
-    }
-    /* Keep the mobile command surface inside the graph width. The command
-       groups may wrap into multiple rows; the page itself must never grow
-       horizontally just to fit editing actions. */
-    @media (max-width: 720px) {
-      .studio-graph-toolbar-main {
-        flex-wrap: wrap !important;
-        overflow: hidden !important;
-        align-content: flex-start;
-      }
-      .studio-graph-toolbar-group {
-        flex: 1 1 100% !important;
-        flex-wrap: wrap !important;
-        max-width: 100% !important;
-        overflow: hidden;
-      }
-    }
-    @media (max-width: 900px) and (orientation: landscape) {
-      .studio-graph-toolbar-main {
-        flex-wrap: wrap !important;
-        overflow: hidden !important;
-        align-content: flex-start;
-      }
-      .studio-graph-toolbar-group {
-        flex-wrap: wrap !important;
-        max-width: 100% !important;
       }
     }
   `;

@@ -1,3 +1,4 @@
+import { TEAM_CORE_DIGEST_VERSION } from "../domain/team.mjs";
 const TEAM_PACKAGE_MODE = "team-v2";
 const credentialFields = new Set([
   "apikey", "accesstoken", "refreshtoken", "password", "clientsecret",
@@ -38,6 +39,13 @@ export function createTeamPackageValidationUseCases({ packageIntegrity }) {
     if (!bundle.team || typeof bundle.team.systemSource !== "string") {
       throw new Error("TEAM_IMPORT_INVALID: team package is missing systemSource.");
     }
+    const declaredDigestVersion = Number(bundle.team.digestVersion
+      || bundle.team.project?.teamDigestVersion
+      || bundle.teamDigestVersion
+      || TEAM_CORE_DIGEST_VERSION);
+    if (declaredDigestVersion !== TEAM_CORE_DIGEST_VERSION) {
+      throw new Error(`TEAM_DIGEST_VERSION_UNSUPPORTED: expected v${TEAM_CORE_DIGEST_VERSION}, received v${declaredDigestVersion}. Rebuild and simulate this TeamVersion before release.`);
+    }
     const manifestPaths = bundle.releaseManifest?.artifactScope || bundle.team.releaseManifest?.artifactScope || [];
     if (!Array.isArray(manifestPaths) || manifestPaths.some((path) => {
       if (typeof path !== "string" || path.startsWith("/") || path.includes("\\") || path.includes("\0")) return true;
@@ -59,6 +67,7 @@ export function createTeamPackageValidationUseCases({ packageIntegrity }) {
       bundle,
       metadata: bundle.team.project || {},
       teamCoreDigest: bundle.teamCoreDigest || calculatedTeamCoreDigest,
+      teamDigestVersion: declaredDigestVersion,
       packageDigest: bundle.packageDigest || calculatedPackageDigest
     };
   }

@@ -5,7 +5,7 @@ const validId = (value) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(String(valu
 
 export function createRunRecoveryUseCases({ recoveryStore, now = () => new Date().toISOString() }) {
   for (const operation of [
-    "listProjectIds", "listRunIds", "readRunState", "updateRunState",
+    "listProjectIds", "listRunIds", "readRunState", "readRunOwner", "updateRunState",
     "removeRunDirectory", "readProjectMetadata", "writeProjectMetadata"
   ]) {
     if (typeof recoveryStore?.[operation] !== "function") {
@@ -24,44 +24,55 @@ export function createRunRecoveryUseCases({ recoveryStore, now = () => new Date(
         const metadata = await recoveryStore.readProjectMetadata(projectId);
         metadataByProject.set(projectId, metadata);
         if (!metadata) continue;
-        if (metadata.projectType === "collaboration" && !Array.isArray(metadata.taskRecords)) {
+        if (metadata.projectType !== "collaboration") continue;
+        if (!Array.isArray(metadata.taskRecords)) {
           throw new Error(`RUN_RECOVERY_METADATA_INVALID: Task history is unreadable for Project ${projectId}.`);
         }
         for (const task of Array.isArray(metadata.taskRecords) ? metadata.taskRecords : []) {
           if (!task || typeof task !== "object") continue;
-          const runtimeProjectId = task.runProjectId || task.teamVersionId || projectId;
           const runIds = new Set([
             ...(Array.isArray(task.runIds) ? task.runIds : []),
             ...(task.currentRunId ? [task.currentRunId] : []),
             ...Object.values(task.attemptRequests || {}).map((attempt) => attempt?.runId).filter(Boolean)
           ]);
           for (const runId of runIds) {
-            taskRunReferences.add(`${projectId}:${task.taskId}:${runtimeProjectId}:${runId}`);
+            taskRunReferences.add(`${projectId}:${task.taskId}:${projectId}:${runId}`);
           }
         }
       }
 
       for (const projectId of projectIds) {
         if (!validId(projectId)) continue;
+        if (metadataByProject.get(projectId)?.projectType !== "collaboration") continue;
         for (const runId of await recoveryStore.listRunIds(projectId)) {
           if (!validId(runId)) continue;
+          const owner = await recoveryStore.readRunOwner(projectId, runId);
+          if (owner?.runKind !== "project_task") continue;
           const state = await recoveryStore.readRunState(projectId, runId);
           if (!state || !ACTIVE_RUN_STATUSES.has(state.status)) continue;
           const reservation = state.taskReservation;
-          if (reservation?.kind === "task-attempt") {
-            const referenceKey = `${reservation.collaborationProjectId}:${reservation.taskId}:${projectId}:${runId}`;
-            if (!taskRunReferences.has(referenceKey)
-              && state.status === "planning"
-              && !state.startedAt
-              && !state.finishedAt
-              && !state.error
-              && Object.keys(state.nodes || {}).length === 0
-              && (state.attempts || []).length === 0
-              && (state.reviews || []).length === 0) {
-              await recoveryStore.removeRunDirectory(projectId, runId);
-              recovered.push({ projectId, runId, action: "removed-uncommitted-task-reservation" });
-              continue;
-            }
+          if (reservation?.kind !== "task-attempt") continue;
+          if (owner?.kind && owner.kind !== "project_task"
+            || owner.projectId !== projectId
+            || owner.taskId !== reservation.taskId
+            || owner.teamVersionId !== reservation.teamVersionId
+            || owner.runId !== runId
+            || reservation.projectId !== projectId
+            || reservation.runId !== runId) {
+            throw new Error(`RUN_RECOVERY_OWNER_INVALID: Run ${runId} owner does not match its Task reservation.`);
+          }
+          const referenceKey = `${projectId}:${reservation.taskId}:${projectId}:${runId}`;
+          if (!taskRunReferences.has(referenceKey)
+            && state.status === "planning"
+            && !state.startedAt
+            && !state.finishedAt
+            && !state.error
+            && Object.keys(state.nodes || {}).length === 0
+            && (state.attempts || []).length === 0
+            && (state.reviews || []).length === 0) {
+            await recoveryStore.removeRunDirectory(projectId, runId);
+            recovered.push({ projectId, runId, action: "removed-uncommitted-task-reservation" });
+            continue;
           }
           const timestamp = now();
           await recoveryStore.updateRunState(projectId, runId, (current) => {
@@ -82,7 +93,7 @@ export function createRunRecoveryUseCases({ recoveryStore, now = () => new Date(
       for (const projectId of projectIds) {
         if (!validId(projectId)) continue;
         const metadata = metadataByProject.get(projectId);
-        if (!metadata || !Array.isArray(metadata.taskRecords)) continue;
+        if (!metadata || metadata.projectType !== "collaboration" || !Array.isArray(metadata.taskRecords)) continue;
         let changed = false;
         const timestamp = now();
         const taskRecords = await Promise.all(metadata.taskRecords.map(async (storedTask) => {
@@ -90,17 +101,27 @@ export function createRunRecoveryUseCases({ recoveryStore, now = () => new Date(
           const task = storedTask;
           const currentRunId = task.currentRunId || null;
           if (!currentRunId) return task;
-          const runProjectId = task.runProjectId || task.teamVersionId || projectId;
-          if (!validId(runProjectId) || !validId(currentRunId)) {
+          if (!validId(projectId) || !validId(currentRunId)) {
             if (!ACTIVE_RUN_STATUSES.has(task.status)) return task;
             changed = true;
             return { ...task, status: "failed", lastError: "RUN_RESERVATION_INVALID: the reserved Run identifier is invalid.", completedAt: timestamp, updatedAt: timestamp };
           }
-          const state = await recoveryStore.readRunState(runProjectId, currentRunId);
+          const state = await recoveryStore.readRunState(projectId, currentRunId);
           if (!state?.status) {
             if (!ACTIVE_RUN_STATUSES.has(task.status)) return task;
             changed = true;
             return { ...task, status: "failed", lastError: "RUN_STATE_MISSING: the reserved Run has no durable state after service restart.", completedAt: timestamp, updatedAt: timestamp };
+          }
+          if (state.taskReservation?.kind !== "task-attempt") return task;
+          const owner = await recoveryStore.readRunOwner(projectId, currentRunId);
+          if (owner?.runKind !== "project_task" || owner?.projectId !== projectId || owner?.taskId !== task.taskId
+            || owner?.teamVersionId !== task.teamVersionId
+            || owner?.runId !== currentRunId
+            || state.taskReservation.projectId !== projectId
+            || state.taskReservation.taskId !== task.taskId
+            || state.taskReservation.teamVersionId !== task.teamVersionId
+            || state.taskReservation.runId !== currentRunId) {
+            throw new Error(`RUN_RECOVERY_OWNER_INVALID: Run ${currentRunId} owner does not match Task ${task.taskId}.`);
           }
           if (task.status === state.status && (task.lastError || null) === (state.error || null)) return task;
           changed = true;

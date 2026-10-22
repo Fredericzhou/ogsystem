@@ -44,8 +44,7 @@ async function retryFromTask(project, task, { projectId, taskId, mode, idempoten
     throw new Error("TASK_RETRY_UNSUPPORTED: only a Task with a failed current Run can be retried.");
   }
 
-  const runProject = await projectStore.getProject(task.runProjectId || task.teamVersionId);
-  const originalRunState = await runStore.readRunState(runProject.workdir, originalRunId).catch((error) => {
+  const originalRunState = await runStore.readRunState(projectId, taskId, originalRunId).catch((error) => {
     if (error?.code === "ENOENT" || /^RUN_STATE_MISSING:/.test(error instanceof Error ? error.message : String(error))) return undefined;
     throw error;
   });
@@ -56,22 +55,29 @@ async function retryFromTask(project, task, { projectId, taskId, mode, idempoten
 
   let retryInputs;
   let retrySourceRoot;
+  let materialSnapshotPolicy;
   if (missingRunState) {
     retryInputs = (project.materials?.materials || []).map((item) => ({
       materialId: item.materialId,
-      sourcePath: runStore.resolveMaterialPath(project.workdir, item.path),
+      sourcePath: runStore.resolveMaterialPath(projectId, item.path),
       contentType: item.contentType
     }));
     retrySourceRoot = project.workdir;
+    materialSnapshotPolicy = {
+      kind: "current_project_fallback",
+      sourceRunId: originalRunId,
+      reason: "source_run_state_missing"
+    };
   } else {
-    const snapshots = await runStore.loadMaterialSnapshots(runProject.workdir, originalRunId);
-    retryInputs = snapshots.map((item) => ({
+    const snapshots = await runStore.loadMaterialSnapshots(projectId, taskId, originalRunId);
+    retryInputs = await Promise.all(snapshots.map(async (item) => ({
       materialId: item.materialId,
-      sourcePath: runStore.resolveRunArtifactPath(runProject.workdir, originalRunId, item.snapshotPath),
+      sourcePath: await runStore.resolveRunArtifactPath(projectId, taskId, originalRunId, item.snapshotPath),
       contentType: item.contentType,
       selectedRanges: item.selectedRanges,
       consumingNodeIds: item.consumingNodeIds
-    }));
+    })));
+    materialSnapshotPolicy = { kind: "source_run_snapshot", sourceRunId: originalRunId };
   }
 
   return taskStore.startTask(projectId, taskId, {
@@ -79,6 +85,7 @@ async function retryFromTask(project, task, { projectId, taskId, mode, idempoten
     retrySourceRunId: originalRunId,
     retryInputs,
     retrySourceRoot,
+    materialSnapshotPolicy,
     idempotencyKey
   });
 }

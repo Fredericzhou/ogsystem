@@ -80,6 +80,7 @@ function normalizeMeta(meta, projectId) {
     projectStatus: confirmed ? "confirmed" : "draft",
     projectDigest: confirmed ? meta.projectDigest : null,
     teamCoreDigest: typeof meta?.teamCoreDigest === "string" ? meta.teamCoreDigest : null,
+    teamDigestVersion: Number.isInteger(meta?.teamDigestVersion) ? meta.teamDigestVersion : null,
     projectDefinitionDigest: typeof meta?.projectDefinitionDigest === "string" ? meta.projectDefinitionDigest : null,
     confirmedAt: confirmed ? meta.confirmedAt : null,
     createdAt: meta?.createdAt || new Date().toISOString(),
@@ -111,23 +112,27 @@ function normalizeMeta(meta, projectId) {
   for (const mountedTeam of normalized.mountedTeams) assertCanonicalTeamVersionId(mountedTeam?.teamVersionId);
   for (const task of normalized.taskRecords) {
     if (task?.teamVersionId) assertCanonicalTeamVersionId(task.teamVersionId);
-    if (task?.runProjectId) assertCanonicalTeamVersionId(task.runProjectId);
   }
   return normalized;
 }
 
 export async function withProjectWriteLock(projectId, operation, action) {
+  const debugLock = process.env.OGS_DEBUG_PROJECT_WRITE_LOCK === "1";
   const previous = projectWriteQueues.get(projectId) || Promise.resolve();
   let releaseQueue;
   const turn = new Promise((resolveTurn) => { releaseQueue = resolveTurn; });
   const queued = previous.then(() => turn);
   projectWriteQueues.set(projectId, queued);
+  if (debugLock) process.stderr.write(`[project-lock] queued ${operation} ${projectId}\n`);
   await previous;
+  if (debugLock) process.stderr.write(`[project-lock] entering ${operation} ${projectId}\n`);
   let lock;
   try {
     lock = await acquireProjectWriteLock(projectPath(projectId), operation);
+    if (debugLock) process.stderr.write(`[project-lock] acquired ${operation} ${projectId}\n`);
     return await action();
   } finally {
+    if (debugLock) process.stderr.write(`[project-lock] releasing ${operation} ${projectId}\n`);
     await lock?.release();
     releaseQueue();
     if (projectWriteQueues.get(projectId) === queued) projectWriteQueues.delete(projectId);
@@ -154,6 +159,7 @@ async function writeTeamReferenceFiles(workdir, meta) {
     parentTeamVersionId: meta.parentTeamVersionId || null,
     status: meta.teamVersionStatus || "draft",
     teamCoreDigest: meta.teamCoreDigest || null,
+    teamDigestVersion: Number.isInteger(meta.teamDigestVersion) ? meta.teamDigestVersion : null,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     releasedAt: meta.releasedAt || null,

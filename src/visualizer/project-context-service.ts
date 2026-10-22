@@ -5,7 +5,7 @@ import { compileExecutionSnapshot } from "../runtime/compiler.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
 import { loadFlowContractPlan } from "../runtime/flow-contract.js";
 import { readJsonFile } from "../runtime/json-file.js";
-import { loadModelCatalog } from "../runtime/model-catalog.js";
+import { loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "../runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
@@ -18,6 +18,7 @@ import type {
   ExecutionProfile,
   LoadedRolePackage,
   RuntimeConfig,
+  ModelCatalogEntry,
   SystemDefinition,
   UserProfile
 } from "../runtime/types.js";
@@ -193,13 +194,20 @@ export async function assembleProjectContextFromSource(args: {
   workdir: string;
   systemPath?: string;
   systemSource: string;
+  modelCatalogModels?: ModelCatalogEntry[];
+  modelCatalogGeneratedAt?: string;
 }): Promise<ProjectContext> {
   const paths = resolveOgsPaths(args.workdir);
   const systemPath = args.systemPath ?? resolve(args.workdir, "system.mmd");
   const system = parseSystemFromMermaidSource(args.systemSource);
   const runtimeConfig = await loadRuntimeConfig(undefined, args.workdir);
   const modelSelection = await loadModelSelection(paths.modelSelectionPath);
-  const modelCatalog = await loadModelCatalog(paths.modelCatalogPath);
+  const storedModelCatalog = await loadModelCatalog(paths.modelCatalogPath);
+  const modelCatalog = mergeModelCatalogWithLiveSnapshot(
+    storedModelCatalog,
+    args.modelCatalogModels,
+    args.modelCatalogGeneratedAt
+  );
   const resolvedModelSelection = resolveModelSelectionForSystem({ system, selection: modelSelection, catalog: modelCatalog });
   const laws = await loadLaws(undefined, args.workdir);
   const userProfile = await loadUserProfile(undefined, args.workdir);

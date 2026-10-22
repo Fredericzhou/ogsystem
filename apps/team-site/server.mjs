@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -19,7 +20,8 @@ import {
   saveProjectMetadata,
   saveTaskRecord,
   removeProjectData,
-  listProjects
+  listProjects,
+  fileProjectStoreInternals
 } from "./infrastructure/file-project-store.mjs";
 import { createFilePackageStore } from "./infrastructure/file-package-store.mjs";
 import { createVisualizerAdapter } from "./infrastructure/visualizer-adapter.mjs";
@@ -28,9 +30,11 @@ import { handleProjectRoutes } from "./api/project-routes.mjs";
 import { handleTaskRoutes } from "./api/task-routes.mjs";
 import { handleRunRoutes } from "./api/run-routes.mjs";
 import { handleTeamRoutes } from "./api/team-routes.mjs";
+import { handleStudioSimulationRoutes } from "./api/studio-simulation-routes.mjs";
 import { handlePackageRoutes } from "./api/package-routes.mjs";
 import { handleCollaborationProjectRoutes } from "./api/collaboration-project-routes.mjs";
 import { handlePlatformRoutes } from "./api/platform-routes.mjs";
+import { handleSharedResourceRoutes } from "./api/shared-resource-routes.mjs";
 import { handleCaseRoutes } from "./api/case-routes.mjs";
 import { createTeamStudioUseCases } from "./application/team-studio-use-cases.mjs";
 import { createTeamVersionLifecycleUseCases } from "./application/team-version-lifecycle-use-cases.mjs";
@@ -38,23 +42,29 @@ import { createTeamLifecycleUseCases } from "./application/team-lifecycle-use-ca
 import { createTeamAdjustmentUseCases } from "./application/team-adjustment-use-cases.mjs";
 import { createFileTeamLifecycleLocks } from "./infrastructure/file-team-lifecycle-locks.mjs";
 import { createRuntimeTeamConfirmation } from "./infrastructure/runtime-team-confirmation.mjs";
-import { createTeamSimulationUseCases } from "./application/team-simulation-use-cases.mjs";
+import { createStudioSimulationUseCases } from "./application/studio-simulation-use-cases.mjs";
 import { createRuntimeTeamSimulation } from "./infrastructure/runtime-team-simulation.mjs";
+import { createFileStudioSimulationStore } from "./infrastructure/file-studio-simulation-store.mjs";
 import { createProjectReadinessUseCases } from "./application/project-readiness-use-cases.mjs";
 import { createRuntimeProjectReadinessInspector } from "./infrastructure/runtime-project-readiness.mjs";
-import { createProjectDesignValidationUseCases } from "./application/project-design-validation-use-cases.mjs";
 import { createVisualizerProjectDesignValidator } from "./infrastructure/visualizer-project-design-validator.mjs";
-import { createProjectDesignProjectionUseCases } from "./application/project-design-projection-use-cases.mjs";
 import { createVisualizerProjectDesignProjector } from "./infrastructure/visualizer-project-design-projector.mjs";
+import { createTeamDesignUseCases } from "./application/team-design-use-cases.mjs";
+import { createFileTeamDesignAssetStore } from "./infrastructure/file-team-design-asset-store.mjs";
 import { createFileTeamVersionLifecycle } from "./infrastructure/file-team-version-lifecycle.mjs";
 import { createPlatformUseCases } from "./application/platform-use-cases.mjs";
+import { createSharedResourceUseCases } from "./application/shared-resource-use-cases.mjs";
 import { createFilePlatformSettings } from "./infrastructure/file-platform-settings.mjs";
+import { createFileSharedResourceStore } from "./infrastructure/file-shared-resource-store.mjs";
 import { createModelCatalog } from "./infrastructure/model-catalog.mjs";
 import { createModelAvailabilityProbe } from "./infrastructure/model-availability-probe.mjs";
 import { createTeamCatalogUseCases } from "./application/team-catalog-use-cases.mjs";
 import { createFileTeamCatalog } from "./infrastructure/file-team-catalog.mjs";
 import { createRunResultUseCases } from "./application/run-result-use-cases.mjs";
 import { createFileRunResultStore } from "./infrastructure/file-run-result-store.mjs";
+import { createFileDeliverableStore } from "./infrastructure/file-deliverable-store.mjs";
+import { createDeliverableUseCases } from "./application/deliverable-use-cases.mjs";
+import { handleDeliverableRoutes } from "./api/deliverable-routes.mjs";
 import { createRunQueryUseCases } from "./application/run-query-use-cases.mjs";
 import { createFileRunQueryStore } from "./infrastructure/file-run-query-store.mjs";
 import { createRecentRunUseCases } from "./application/recent-run-use-cases.mjs";
@@ -64,7 +74,7 @@ import { createProjectPackageUseCases } from "./application/project-package-use-
 import { createCollaborationProjectUseCases } from "./application/collaboration-project-use-cases.mjs";
 import { createFileCollaborationProjectStore } from "./infrastructure/file-collaboration-project-store.mjs";
 import { normalizeMaterialPath } from "./domain/material-path.mjs";
-import { computeContentDigest, computePackageDigest, computeProjectDefinitionDigest, computeTeamPackageCoreDigest } from "./infrastructure/package-integrity.mjs";
+import { computeContentDigest, computePackageDigest, computeProjectDefinitionDigest, computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "./infrastructure/package-integrity.mjs";
 import { createTeamPackageValidationUseCases } from "./application/team-package-validation-use-cases.mjs";
 import { createVisualizerProjectDesignStore } from "./infrastructure/visualizer-project-design-store.mjs";
 import { createTaskRetryUseCases } from "./application/task-retry-use-cases.mjs";
@@ -89,6 +99,7 @@ import { createTaskLifecycleUseCases } from "./application/task-lifecycle-use-ca
 import { createFileTaskLifecycleStore } from "./infrastructure/file-task-lifecycle-store.mjs";
 import { createRunRecoveryUseCases } from "./application/run-recovery-use-cases.mjs";
 import { createProjectQueryUseCases } from "./application/project-query-use-cases.mjs";
+import { ACTIVE_RUN_STATUSES } from "./domain/contracts.mjs";
 import { projectVisualizerStore } from "./infrastructure/project-visualizer-store.mjs";
 import { caseTeamMaterializer } from "./infrastructure/case-team-materializer.mjs";
 import { createProjectCreationUseCases } from "./application/project-creation-use-cases.mjs";
@@ -119,7 +130,12 @@ const projectQueryUseCases = createProjectQueryUseCases({
 });
 const getProject = projectQueryUseCases.getProject;
 const getProjectTask = projectQueryUseCases.getProjectTask;
-const filePackageStore = createFilePackageStore();
+const filePackageStore = createFilePackageStore({
+  projectStore: fileProjectStoreInternals,
+  visualizer: projectVisualizerStore,
+  packageIntegrity: { computeTeamPackageCoreDigest },
+  normalizeMaterialPath
+});
 const projectCreationUseCases = createProjectCreationUseCases({
   projectStore: { createProject: createFileProjectRecord, saveProjectMetadata, removeProjectData },
   workspaceStore: {
@@ -166,6 +182,7 @@ const collaborationProjectUseCases = createCollaborationProjectUseCases({
 const taskExecutionReadiness = createRuntimeTaskExecutionReadiness();
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
+  teamStore: { getTeamVersion: getProject },
   runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor({ getDefaultModelSelection: getPlatformDefaultModelSelection }) },
   readiness: taskExecutionReadiness,
   identifiers: createTaskExecutionIdentifiers(),
@@ -186,7 +203,7 @@ const taskExecutionUseCases = createTaskExecutionUseCases({
   identifiers: createTaskExecutionIdentifiers()
 });
 const projectRunControlUseCases = createProjectRunControlUseCases({
-  projectStore: { getProject },
+  projectStore: { getProject, withProjectWriteLock },
   runControlStore: createFileProjectRunControlStore(),
   startProjectRun: projectRunUseCases.startProjectRun
 });
@@ -239,6 +256,9 @@ const platformUseCases = createPlatformUseCases({
   modelCatalog,
   probeModelAvailability: createModelAvailabilityProbe()
 });
+const sharedResourceUseCases = createSharedResourceUseCases({
+  store: createFileSharedResourceStore({ root: join(platformConfigRoot, "shared-resources") })
+});
 async function getPlatformDefaultModelSelection() {
   const [settings, discovery] = await Promise.all([
     platformUseCases.readPlatformSettings(),
@@ -249,8 +269,8 @@ async function getPlatformDefaultModelSelection() {
   const selected = configured === "default"
     ? models.find((model) => model.backend === settings.defaultProvider)
     : models.find((model) => model.ref === configured || model.id === configured && model.backend === settings.defaultProvider);
-  return selected ? {
-    modelSelectionDefaults: { backend: selected.backend, modelId: selected.id },
+  return selected || models.length ? {
+    ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.id } } : {}),
     modelCatalogGeneratedAt: discovery.generatedAt,
     modelCatalogModels: models.map((model) => ({
       backend: model.backend,
@@ -273,25 +293,33 @@ const projectUpdateUseCases = createProjectUpdateUseCases({
   teamCatalog,
   computeProjectDefinitionDigest
 });
-const teamSimulationUseCases = createTeamSimulationUseCases({
+const studioSimulationStore = createFileStudioSimulationStore({ projectsRoot: siteProjectsRoot });
+const teamDesignAssetStore = createFileTeamDesignAssetStore();
+const studioSimulationUseCases = createStudioSimulationUseCases({
   teamCatalog,
-  simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection })
+  teamPackageReader: projectVisualizerStore,
+  packageIntegrity: { computeTeamPackageCoreDigest, computeReleaseBaselineDigest },
+  simulationStore: studioSimulationStore,
+  simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection }),
+  identifiers: { simulationId: randomUUID },
+  baselineStore: teamDesignAssetStore,
+  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock
 });
 const projectReadinessUseCases = createProjectReadinessUseCases({
   getProject,
-  readinessInspector: createRuntimeProjectReadinessInspector()
+  readinessInspector: createRuntimeProjectReadinessInspector({ getRuntimeModelConfig: getPlatformDefaultModelSelection })
 });
-const projectDesignValidator = createVisualizerProjectDesignValidator();
-const projectDesignValidationUseCases = createProjectDesignValidationUseCases({
-  getProject,
-  designValidator: projectDesignValidator
-});
-const projectDesignProjectionUseCases = createProjectDesignProjectionUseCases({
-  getProject,
-  withProjectWriteLock,
-  designStore: createVisualizerProjectDesignStore(),
+const projectDesignValidator = createVisualizerProjectDesignValidator({ getRuntimeModelConfig: getPlatformDefaultModelSelection });
+const teamDesignUseCases = createTeamDesignUseCases({
+  teamCatalog,
+  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
+  teamMetadataStore: { saveTeamMetadata: saveProjectMetadata },
+  designStore: createVisualizerProjectDesignStore({ getRuntimeModelConfig: getPlatformDefaultModelSelection }),
   designProjector: createVisualizerProjectDesignProjector(),
-  designSerializer: { serialize: serializeAuthoringToMermaid }
+  designSerializer: { serialize: serializeAuthoringToMermaid },
+  designValidator: projectDesignValidator,
+  designAssetStore: teamDesignAssetStore,
+  packageIntegrity: { computeReleaseBaselineDigest }
 });
 const runQueryUseCases = createRunQueryUseCases({
   getProject,
@@ -301,6 +329,12 @@ const runQueryUseCases = createRunQueryUseCases({
 const runResultUseCases = createRunResultUseCases({
   getRun: runQueryUseCases.getProjectRun,
   runResultStore: createFileRunResultStore({ projectsRoot: siteProjectsRoot })
+});
+const deliverableUseCases = createDeliverableUseCases({
+  getProject,
+  getRun: runQueryUseCases.getProjectRun,
+  runResultStore: createFileRunResultStore({ projectsRoot: siteProjectsRoot }),
+  deliverableStore: createFileDeliverableStore()
 });
 const recentRunUseCases = createRecentRunUseCases({
   listProjects,
@@ -312,9 +346,9 @@ const runRecoveryUseCases = createRunRecoveryUseCases({
 
 function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|PROJECT_TEAM_UPDATE_LOCKED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|IMPORT_CONFLICT|active|conflict/i.test(message)) return 409;
-  if (/PROJECT_NOT_READY/i.test(message)) return 422;
-  if (/not found|TASK_NOT_FOUND/i.test(message)) return 404;
+  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_SINGLE_TEAM_REQUIRED|PROJECT_TEAM_UPDATE_LOCKED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|TEAM_VERSION_IMMUTABLE|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|IMPORT_CONFLICT|active|conflict/i.test(message)) return 409;
+  if (/PROJECT_NOT_READY|DELIVERABLE_RUN_NOT_SUCCESSFUL|DELIVERABLE_RESULT_UNAVAILABLE/i.test(message)) return 422;
+  if (/not found|NOT_FOUND|TASK_NOT_FOUND|TEAM_VERSION_NOT_FOUND|DELIVERABLE_NOT_FOUND/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
   return 400;
 }
@@ -351,6 +385,7 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
   packageStore: { exportTeamPackage, loadTeamPackage },
   locks: teamLifecycleLocks,
   confirmation: createRuntimeTeamConfirmation(),
+  releaseEvidence: studioSimulationUseCases,
   caseCatalog: { getCase: (caseId) => cases.find((item) => item.id === caseId), listCases: () => cases },
   assertTrustedTeamTopology: (team) => ["classic", "classic-template"].includes(team.source) && Boolean(team.caseId)
 });
@@ -370,6 +405,19 @@ function publicProject(project) {
       const { requestFingerprint, attemptRequests, ...publicTask } = task;
       return publicTask;
     });
+  }
+  if (safe.projectType === "collaboration" && Array.isArray(safe.taskRecords)) {
+    const activeTasks = safe.taskRecords
+      .filter((task) => !task.deletedAt && ACTIVE_RUN_STATUSES.has(task.status))
+      .map((task) => ({ taskId: task.taskId, taskNumber: task.taskNumber, status: task.status }));
+    const capacity = 1;
+    safe.taskCapacity = {
+      capacity,
+      used: Math.min(capacity, activeTasks.length),
+      available: Math.max(0, capacity - activeTasks.length),
+      activeTasks
+    };
+    safe.executionSlot = safe.taskCapacity;
   }
   return safe;
 }
@@ -405,14 +453,26 @@ async function serveStatic(pathname, response) {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
-  if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, visUrl, useCases: platformUseCases })) return;
+  if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases })) return;
+  if (await handleSharedResourceRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: sharedResourceUseCases })) return;
   if (await handleProjectRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
     useCases: collaborationProjectUseCases
   })) return;
+  if (await handleStudioSimulationRoutes({
+    request, response, url, readBody, sendJson, errorStatus,
+    useCases: studioSimulationUseCases
+  })) return;
   if (await handleTeamRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
-    useCases: { ...teamCatalogUseCases, ...teamLifecycleUseCases, archiveTeamVersion: teamVersionLifecycleUseCases.archiveTeamVersion, ...teamSimulationUseCases }
+    useCases: {
+      ...teamCatalogUseCases,
+      ...teamLifecycleUseCases,
+      ...teamDesignUseCases,
+      chatTeamAssistant: teamStudioUseCases.chat,
+      getTeamVersion: teamCatalog.getTeamVersion,
+      archiveTeamVersion: teamVersionLifecycleUseCases.archiveTeamVersion
+    }
   })) return;
   if (await handlePackageRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
@@ -433,13 +493,16 @@ const server = createServer(async (request, response) => {
     request, response, url, readBody, sendJson, errorStatus,
     useCases: { ...runQueryUseCases, ...runResultUseCases, listRecentProjectRuns: recentRunUseCases.listRecentProjectRuns }
   })) return;
+  if (await handleDeliverableRoutes({
+    request, response, url, sendJson, errorStatus,
+    useCases: deliverableUseCases
+  })) return;
   if (await handleCollaborationProjectRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
-    visualizerUrl: visUrl,
     useCases: {
-      ...teamLifecycleUseCases, ...projectDesignProjectionUseCases, ...projectDesignValidationUseCases,
+      ...teamLifecycleUseCases,
       ...projectReadinessUseCases, ...projectMaterialUseCases,
-      startProjectRun: projectRunUseCases.startProjectRun, getProject, ...projectUpdateUseCases,
+      getProject, ...projectUpdateUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
       ...teamAdjustmentUseCases
     },
@@ -449,6 +512,11 @@ const server = createServer(async (request, response) => {
     cases, eventLabels, buildCaseGraph, runCase, createClassicTeamProject: teamLifecycleUseCases.createClassicTeamProject
   })) return;
   if (request.method === "GET") {
+    if (url.pathname === "/") {
+      response.writeHead(302, { location: "/projects", "cache-control": "no-store" });
+      response.end();
+      return;
+    }
     if (url.pathname === "/assets/ogs-studio-graph.js") {
       try {
         response.writeHead(200, {
@@ -462,7 +530,13 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
-    if (url.pathname === "/" || url.pathname === "/studio" || url.pathname === "/projects" || url.pathname === "/platform" || url.pathname === "/factory" || url.pathname === "/factory/new" || url.pathname === "/studio/project/new" || /^\/studio\/project\/[a-z0-9-]+\/(?:run|teams)\/?$/.test(url.pathname) || /^\/studio\/team\/[a-z0-9-]+\/?$/.test(url.pathname) || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
+    const isStudioRoute = url.pathname === "/studio"
+      || url.pathname === "/studio/new"
+      || url.pathname === "/studio/roles"
+      || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+)?|release|simulations)\/?$/.test(url.pathname)
+      || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
+    const isPlatformRoute = ["/platform", "/platform/models", "/platform/data", "/platform/tools", "/platform/storage"].includes(url.pathname);
+    if (url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
     }
@@ -472,7 +546,14 @@ const server = createServer(async (request, response) => {
   sendJson(response, 405, { error: "Method not allowed" });
 });
 
-teamLifecycleUseCases.provisionBuiltInTeamVersions().then(() => runRecoveryUseCases.recoverOrphanedRuns()).then(() => {
+const studioSimulationRetentionDays = Number.parseInt(process.env.OGS_STUDIO_SIMULATION_RETENTION_DAYS || "", 10);
+teamLifecycleUseCases.provisionBuiltInTeamTemplates()
+  .then(() => runRecoveryUseCases.recoverOrphanedRuns())
+  .then(() => studioSimulationUseCases.recoverInterruptedSimulations())
+  .then(() => Number.isFinite(studioSimulationRetentionDays) && studioSimulationRetentionDays > 0
+    ? studioSimulationUseCases.cleanupExpiredSimulations({ retentionDays: studioSimulationRetentionDays })
+    : undefined)
+  .then(() => {
   server.listen(port, host, () => {
     const address = server.address();
     const boundPort = address && typeof address === "object" ? address.port : port;

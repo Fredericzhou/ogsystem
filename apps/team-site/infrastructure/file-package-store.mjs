@@ -1,21 +1,28 @@
 import { createFilePackageTransactionStore } from "./file-package-transaction-store.mjs";
-import { projectVisualizerStore } from "./project-visualizer-store.mjs";
-import { computeTeamPackageCoreDigest } from "./package-integrity.mjs";
-import { normalizeMaterialPath } from "../domain/material-path.mjs";
-import { fileProjectStoreInternals as projectStore } from "./file-project-store.mjs";
 
-async function computeTeamCoreDigest(workdir) {
-  const bundle = await projectVisualizerStore.exportTeamPackage(workdir);
-  return computeTeamPackageCoreDigest(bundle);
-}
+export function createFilePackageStore({ projectStore, visualizer, packageIntegrity, normalizeMaterialPath } = {}) {
+  const dependencies = { projectStore, visualizer, packageIntegrity, normalizeMaterialPath };
+  for (const [name, implementation] of Object.entries(dependencies)) {
+    if (!implementation) throw new TypeError(`File package store requires ${name}.`);
+  }
+  if (typeof visualizer.exportTeamPackage !== "function"
+    || typeof visualizer.loadTeamPackage !== "function"
+    || typeof visualizer.createWorkspace !== "function") {
+    throw new TypeError("File package store requires Team Package and workspace operations.");
+  }
+  if (typeof packageIntegrity.computeTeamPackageCoreDigest !== "function") {
+    throw new TypeError("File package store requires package integrity operations.");
+  }
 
-export function createFilePackageStore(projectStorePorts = projectStore) {
+  const computeTeamCoreDigest = async (workdir) =>
+    packageIntegrity.computeTeamPackageCoreDigest(await visualizer.exportTeamPackage(workdir));
+
   return createFilePackageTransactionStore({
-    ...projectStorePorts,
+    ...projectStore,
     computeTeamCoreDigest,
-    exportTeamPackage: projectVisualizerStore.exportTeamPackage,
-    loadTeamPackage: projectVisualizerStore.loadTeamPackage,
-    createWorkspace: projectVisualizerStore.createWorkspace,
+    exportTeamPackage: visualizer.exportTeamPackage,
+    loadTeamPackage: visualizer.loadTeamPackage,
+    createWorkspace: visualizer.createWorkspace,
     normalizeMaterialPath
   });
 }

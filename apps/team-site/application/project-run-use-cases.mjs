@@ -1,21 +1,21 @@
 const REPLAY_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "paused", "waiting_review"]);
 
-function publicRunDto(collaborationProjectId, runtimeProjectId, teamVersionId, run) {
+function publicRunDto(collaborationProjectId, teamVersionId, run) {
   const { projectId: _projectId, ...safe } = run || {};
   const { projectId: _stateProjectId, ...state } = safe.state || {};
   const { projectId: _planProjectId, ...runPlan } = safe.runPlan || {};
+  const owner = safe.owner;
   return {
     ...safe,
-    collaborationProjectId,
-    taskId: null,
+    runKind: safe.runKind || owner?.kind,
+    ...(owner ? { owner, taskId: owner.taskId || null } : {}),
     teamVersionId,
-    runtimeProjectId,
     ...(safe.state ? { state } : {}),
     ...(safe.runPlan ? { runPlan } : {})
   };
 }
 
-export function createProjectRunUseCases({ projectStore, runStore, readiness, identifiers, evaluateResult, now = () => new Date().toISOString() }) {
+export function createProjectRunUseCases({ projectStore, teamStore, runStore, readiness, identifiers, evaluateResult, now = () => new Date().toISOString() }) {
   for (const [name, port, operations] of [
     ["Project", projectStore, ["getProject"]],
     ["Run", runStore, ["validateResume", "readLedger", "writeLedger", "acquireProjectWriteLock", "acquireRunLock", "writeResumeControl", "materialInputs", "execute", "rebuildIndex", "readSnapshot", "recordTask"]],
@@ -39,14 +39,62 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
       resumeRunDir,
       requestedRunId,
       recordTask = true,
-      readinessChecked = false
+      readinessChecked = false,
+      runKind,
+      taskId,
+      taskNumber,
+      attemptNumber,
+      teamVersionId,
+      materialSnapshotPolicy
     } = {}) {
       if (mode === "real") throw new Error("REAL_RUN_UNSUPPORTED: real project runs are disabled in the first phase.");
       if (mode !== "dry-run" && mode !== "sandbox") throw new Error("Unsupported project run mode.");
-      const initialProject = await projectStore.getProject(projectId);
+      const collaborationProject = await projectStore.getProject(projectId);
+      if (runKind !== "project_task" || !taskId || !teamVersionId || typeof teamStore?.getTeamVersion !== "function") {
+        throw new Error("PROJECT_RUN_OWNER_INVALID: Run starts require an existing Collaboration Project Task and TeamVersion owner.");
+      }
+      if (collaborationProject.projectType !== "collaboration") {
+        throw new Error("PROJECT_RUN_OWNER_INVALID: Task Runs are owned by Collaboration Projects.");
+      }
+      const projectTask = (collaborationProject.taskRecords || []).find((item) => item.taskId === taskId && !item.deletedAt);
+      const boundRunId = resumeRunId || requestedRunId;
+      const taskRunIds = Array.isArray(projectTask?.runIds) ? projectTask.runIds : [];
+      const persistedAttemptNumber = boundRunId ? taskRunIds.indexOf(boundRunId) + 1 : 0;
+      if (!projectTask || !boundRunId || projectTask.currentRunId !== boundRunId || !taskRunIds.includes(boundRunId)
+        || projectTask.teamVersionId !== teamVersionId
+        || persistedAttemptNumber <= 0) {
+        throw new Error("PROJECT_RUN_OWNER_INVALID: Run identity does not match the existing Collaboration Project Task.");
+      }
+      if (taskNumber !== projectTask.taskNumber) {
+        throw new Error("PROJECT_RUN_OWNER_INVALID: Task number does not match the persisted Task.");
+      }
+      if (attemptNumber !== persistedAttemptNumber) {
+        throw new Error("PROJECT_RUN_OWNER_INVALID: attempt number does not match the persisted Task Run.");
+      }
+      const assetProject = await teamStore.getTeamVersion(teamVersionId);
+      if (!assetProject) throw new Error("TEAM_VERSION_NOT_FOUND: the selected TeamVersion does not exist.");
+      const taskOwnedRun = true;
+      const teamCoreDigest = assetProject.teamCoreDigest || assetProject.projectDigest;
+      const makeExecutionProject = (currentProject) => taskOwnedRun
+        ? {
+            ...assetProject,
+            ...currentProject,
+            projectId: currentProject.projectId,
+            workdir: currentProject.workdir,
+            assetWorkdir: assetProject.workdir,
+            trustedClassicTopology: Boolean(assetProject.trustedClassicTopologyDigest)
+              || assetProject.source === "classic"
+              || assetProject.source === "classic-template",
+            projectDigest: assetProject.projectDigest || teamCoreDigest,
+            teamVersionId,
+            teamCoreDigest,
+            teamDigestVersion: assetProject.teamDigestVersion
+          }
+        : currentProject;
+      const initialProject = makeExecutionProject(collaborationProject);
       if (mode === "sandbox") {
-        await readiness.requireCurrentConfirmation(initialProject);
-        if (!readinessChecked) {
+        if (!taskOwnedRun) await readiness.requireCurrentConfirmation(initialProject);
+        if (!taskOwnedRun && !readinessChecked) {
           const status = await readiness.inspect(initialProject.workdir);
           if (!status.canDryRun) {
             throw new Error(`PROJECT_NOT_READY: resolve ${status.blockers.length} static readiness blocker(s) before Sandbox Run. Inspect project readiness for details.`);
@@ -64,14 +112,15 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
       try {
         const resume = await runStore.validateResume(initialProject, resumeRunId, resumeRunDir, requestedRunId);
         resumeRunId = resume?.runId;
-        resumeRunDir = resume?.runDir;
+        const resumeEvidenceDir = resume?.runDir;
+        resumeRunDir = resume?.runId;
         const input = String(prompt || resume?.task?.prompt || "").trim();
         if (!input || input.length > 4000) throw new Error("Task must contain 1 to 4,000 characters.");
         requestFingerprint = identifiers.fingerprint({
-              collaborationProjectId: null,
-              taskId: null,
-              runtimeProjectId: projectId,
-              teamVersionId: initialProject.teamVersionId || null,
+          collaborationProjectId: projectId,
+          taskId: projectTask.taskId,
+          runId: boundRunId,
+          teamVersionId,
           prompt: input,
           mode,
           materialInputsOverride: materialInputsOverride ?? null,
@@ -79,8 +128,8 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
         });
 
         writeLock = await runStore.acquireProjectWriteLock(initialProject, "run-snapshot");
-        let project = await projectStore.getProject(projectId);
-        if (!resumeRunDir) await readiness.requireCurrentConfirmation(project);
+        let project = makeExecutionProject(await projectStore.getProject(projectId));
+        if (!resumeRunDir && !taskOwnedRun) await readiness.requireCurrentConfirmation(project);
         const requestLedger = await runStore.readLedger(project);
         if (requestKey && requestLedger[requestKey]) {
           const prior = requestLedger[requestKey];
@@ -90,7 +139,7 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
           if (prior.status === "running" && prior.runId) {
             const priorSnapshot = await runStore.readSnapshot(project, prior.runId, { allowMissing: true });
             if (priorSnapshot.state && priorSnapshot.plan && REPLAY_TERMINAL_STATUSES.has(priorSnapshot.state.status)) {
-              return publicRunDto(null, projectId, initialProject.teamVersionId || null, {
+              return publicRunDto(projectId, initialProject.teamVersionId || null, {
                 runId: prior.runId,
                 mode: prior.mode,
                 runPlan: priorSnapshot.plan,
@@ -102,9 +151,9 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
               });
             }
             if (!priorSnapshot.plan && !priorSnapshot.state) runId = prior.runId;
-            else return publicRunDto(null, projectId, initialProject.teamVersionId || null, { ...(prior.response || prior), idempotentReplay: true });
+            else return publicRunDto(projectId, initialProject.teamVersionId || null, { ...(prior.response || prior), idempotentReplay: true });
           } else {
-            return publicRunDto(null, projectId, initialProject.teamVersionId || null, { ...(prior.response || prior), idempotentReplay: true });
+            return publicRunDto(projectId, initialProject.teamVersionId || null, { ...(prior.response || prior), idempotentReplay: true });
           }
         }
 
@@ -121,20 +170,31 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
 
         // Keep the Project lock until the Runtime has created its immutable Run files.
         runLock = await runStore.acquireRunLock(initialProject, runId);
-        if (resumeRunDir) await runStore.writeResumeControl(resumeRunDir);
+        if (resumeEvidenceDir) await runStore.writeResumeControl(resumeEvidenceDir);
         const materialInputs = runStore.materialInputs(project, materialInputsOverride);
         const result = await runStore.execute(project, {
           prompt: input,
           mode,
           runId,
+          runKind: taskOwnedRun ? "project_task" : runKind,
+          owner: taskOwnedRun ? {
+            kind: "project_task",
+            projectId,
+            taskId,
+            taskNumber,
+            attemptNumber,
+            teamVersionId,
+            teamCoreDigest
+          } : undefined,
           resumeRunDir,
           resumeProjectDigest: resume?.plan?.projectDigest,
+          materialSnapshotPolicy: materialSnapshotPolicy || resume?.plan?.materialSnapshotPolicy || { kind: "project_current" },
           materialInputs,
           materialSourceRoot,
           onPrepared: async () => {
             if (!resumeRunDir) {
-              const latest = await projectStore.getProject(projectId);
-              await readiness.requireCurrentConfirmation(latest);
+              const latest = makeExecutionProject(await projectStore.getProject(projectId));
+              if (!taskOwnedRun) await readiness.requireCurrentConfirmation(latest);
               if (latest.projectDigest !== project.projectDigest) {
                 throw new Error("PROJECT_CONFIRMATION_CHANGED: project confirmation changed while preparing the run.");
               }
@@ -147,8 +207,18 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
         await runStore.rebuildIndex(project);
         const { plan: runPlan, state } = await runStore.readSnapshot(project, runId);
         const quality = evaluateResult({ plan: runPlan, state });
-        const response = publicRunDto(null, projectId, initialProject.teamVersionId || null, {
-          runId, mode, result, runPlan, state, quality, materials: materialInputs
+        const response = publicRunDto(projectId, initialProject.teamVersionId || null, {
+          runId, mode, result, runPlan, state, quality, materials: materialInputs,
+          runKind: "project_task",
+          owner: {
+            kind: "project_task",
+            projectId,
+            taskId: taskOwnedRun ? taskId : null,
+            ...(taskOwnedRun ? { taskNumber, attemptNumber } : {}),
+            teamVersionId: initialProject.teamVersionId || null,
+            teamCoreDigest,
+            teamDigestVersion: initialProject.teamDigestVersion
+          }
         });
         if (recordTask) {
           await runStore.recordTask(project, {
@@ -185,7 +255,7 @@ export function createProjectRunUseCases({ projectStore, runStore, readiness, id
             await runStore.writeLedger(initialProject, {
               ...currentLedger,
               [requestKey]: {
-              ...(pendingLedgerEntry || {}), runtimeProjectId: projectId, runId, mode, status: "failed", requestFingerprint,
+              ...(pendingLedgerEntry || {}), projectId, runId, mode, status: "failed", requestFingerprint,
                 error: error instanceof Error ? error.message : String(error)
               }
             });

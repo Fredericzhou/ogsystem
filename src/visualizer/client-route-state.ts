@@ -36,7 +36,6 @@ export function normalizeGraphViewport(value: Partial<Record<keyof GraphViewport
 export type RouteState = {
   projectId?: string;
   projectsDiagnostic: boolean;
-  view: string;
   lifecycle: string;
   runId: string;
   reviewId: string;
@@ -70,7 +69,6 @@ export function readRouteStateFromSearch(search: string): RouteState {
     ? value as RouteState["timelineChannel"]
     : "";
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  const panel = params.get("panel");
   const graphViewport = normalizeGraphViewport({
     x: params.get("graphX"),
     y: params.get("graphY"),
@@ -80,8 +78,7 @@ export function readRouteStateFromSearch(search: string): RouteState {
   return {
     ...(projectId ? { projectId } : {}),
     projectsDiagnostic: params.get("diagnostic") === "projects",
-    view: params.get("view") || "",
-    lifecycle: params.get("lifecycle") || (panel === "design" ? "design" : panel ? "run" : ""),
+    lifecycle: params.get("lifecycle") || "",
     runId: params.get("runId") || "",
     reviewId: params.get("reviewId") || "",
     logRoleId: params.get("logRoleId") || "",
@@ -104,41 +101,19 @@ export function readRouteStateFromSearch(search: string): RouteState {
 }
 
 export function normalizeLifecycleView(
-  lifecycle: string | undefined,
-  legacyView: string | undefined
+  lifecycle: string | undefined
 ): string {
   switch (lifecycle) {
     case "project":
       return "project";
     case "design":
-    case "build":
       return "design";
     case "run":
-    case "legacy":
       return "run";
     case "release":
-    case "validate-release":
       return "release";
-    case "operate":
-      return "run";
   }
-  switch (legacyView) {
-    case "project":
-      return "project";
-    case "design":
-    case "build":
-      return "design";
-    case "run":
-    case "legacy":
-      return "run";
-    case "release":
-    case "validate-release":
-      return "release";
-    case "operate":
-      return "run";
-    default:
-      return "project";
-  }
+  return "project";
 }
 
 export function buildRouteSearch(args: {
@@ -181,22 +156,9 @@ export function buildRouteSearch(args: {
     params.set("projectId", bounded(args.projectId));
   }
   if (args.projectsDiagnostic) params.set("diagnostic", "projects");
-  let lifecycle = args.lifecycle || "";
-  switch (lifecycle) {
-    case "project":
-    case "build":
-      lifecycle = "design";
-      break;
-    case "validate-release":
-      lifecycle = "release";
-      break;
-    case "operate":
-    case "legacy":
-      lifecycle = "run";
-      break;
-    default:
-      break;
-  }
+  const lifecycle = ["project", "design", "run", "release"].includes(args.lifecycle ?? "")
+    ? args.lifecycle ?? ""
+    : "";
   if (lifecycle) {
     params.set("lifecycle", lifecycle);
   }

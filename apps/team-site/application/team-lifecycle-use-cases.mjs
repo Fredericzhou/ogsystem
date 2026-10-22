@@ -4,6 +4,7 @@ export function createTeamLifecycleUseCases({
   caseCatalog,
   locks,
   confirmation,
+  releaseEvidence,
   assertTrustedTeamTopology = () => false
 }) {
   for (const operation of ["getProject", "listProjects", "createProject", "saveProjectMetadata", "removeProject"]) {
@@ -38,10 +39,24 @@ export function createTeamLifecycleUseCases({
     const projects = await projectStore.listProjects();
     const classicVersions = projects.filter((project) => !project.teamProjectId && project.source === "classic" && project.caseId === caseId && project.teamVersionStatus === "released");
     const existingClassic = classicVersions.sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0))[0];
+    if (asTemplate) {
+      const existingTemplate = projects.find((project) => !project.teamProjectId
+        && project.source === "classic-template"
+        && project.caseId === caseId
+        && project.teamVersionStatus !== "archived"
+        && String(project.name || "").toLocaleLowerCase() === String(name || defaultName).toLocaleLowerCase());
+      if (existingTemplate) return existingTemplate;
+    }
     if (!asTemplate && !name) {
       if (existingClassic) return existingClassic;
       const template = projects.find((project) => !project.teamProjectId && project.source === "classic-template" && project.caseId === caseId && project.teamVersionStatus !== "archived" && String(project.name || "").toLocaleLowerCase() === defaultName.toLocaleLowerCase());
-      if (template) return confirmProjectTeam(template.projectId, { trustedClassic: true, release: true });
+      if (template) {
+        if (typeof releaseEvidence?.prepareBuiltInTeamVersion !== "function") {
+          throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: built-in TeamVersions require current Sandbox evidence.");
+        }
+        await releaseEvidence.prepareBuiltInTeamVersion(template, { caseId, prompt: defaultIntent });
+        return confirmProjectTeam(template.projectId, { trustedClassic: true, release: true });
+      }
     }
     const project = await projectStore.createProject({
       name: name || defaultName,
@@ -56,16 +71,32 @@ export function createTeamLifecycleUseCases({
         parentTeamVersionId: existingClassic.teamVersionId
       } : {})
     });
-    return asTemplate ? project : confirmProjectTeam(project.projectId, { trustedClassic: true });
+    if (asTemplate) return project;
+    if (typeof releaseEvidence?.prepareBuiltInTeamVersion !== "function") {
+      throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: built-in TeamVersions require current Sandbox evidence.");
+    }
+    await releaseEvidence.prepareBuiltInTeamVersion(project, { caseId, prompt: defaultIntent });
+    return confirmProjectTeam(project.projectId, { trustedClassic: true, release: true });
   }
 
   async function confirmProjectTeam(projectId, options = {}) {
-    return projectStore.withProjectWriteLock(projectId, "project-confirm", async () => {
+    const initial = await projectStore.getProject(projectId);
+    if (!initial || initial.teamProjectId) throw new Error("TEAM_VERSION_NOT_FOUND: the requested TeamVersion does not exist.");
+    const teamLockId = initial.teamRootId || initial.teamId || initial.projectId;
+    return locks.withTeamVersionLock(teamLockId, () => projectStore.withProjectWriteLock(projectId, "project-confirm", async () => {
       const project = await projectStore.getProject(projectId);
-      const { projectDigest, teamCoreDigest } = await confirmation.computeDigests(project);
+      const { projectDigest, teamCoreDigest, teamDigestVersion } = await confirmation.computeDigests(project);
+      const topologyDigest = typeof confirmation.computeTopologyDigest === "function"
+        ? await confirmation.computeTopologyDigest(project)
+        : teamCoreDigest;
+      const releasing = options.release === true;
+      if (releasing) {
+        if (typeof releaseEvidence?.validateReleaseEvidence !== "function") throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: release evidence validation is not configured.");
+        await releaseEvidence.validateReleaseEvidence(project.teamVersionId || projectId, teamCoreDigest);
+      }
       const inheritedClassicTopology = Boolean(project.caseId
         && project.trustedClassicTopologyDigest
-        && project.trustedClassicTopologyDigest === teamCoreDigest);
+        && project.trustedClassicTopologyDigest === topologyDigest);
       await confirmation.validateTopology(project, {
         ...options,
         trustedClassic: Boolean(options.trustedClassic || inheritedClassicTopology)
@@ -77,16 +108,39 @@ export function createTeamLifecycleUseCases({
         projectStatus: "confirmed",
         projectDigest,
         teamCoreDigest,
+        teamDigestVersion,
         confirmedAt,
         teamVersionStatus: options.release === false ? (project.teamVersionStatus || "draft") : "released",
         releasedAt: options.release === false ? null : confirmedAt,
-        trustedClassicTopologyDigest: null,
+        trustedClassicTopologyDigest: inheritedClassicTopology || options.trustedClassic ? topologyDigest : null,
         updatedAt: confirmedAt
       });
-    });
+    }));
   }
 
   return Object.freeze({
+    async getTeamReleaseReadiness(projectId) {
+      const initial = await projectStore.getProject(projectId);
+      if (!initial || initial.teamProjectId) throw new Error("TEAM_VERSION_NOT_FOUND: the requested TeamVersion does not exist.");
+      const teamLockId = initial.teamRootId || initial.teamId || initial.projectId;
+      return locks.withTeamVersionLock(teamLockId, () => projectStore.withProjectWriteLock(projectId, "team-release-readiness", async () => {
+        const project = await projectStore.getProject(projectId);
+        if (!project || project.teamProjectId) throw new Error("TEAM_VERSION_NOT_FOUND: the requested TeamVersion does not exist.");
+        const { teamCoreDigest, teamDigestVersion } = await confirmation.computeDigests(project);
+        try {
+          const evidence = await releaseEvidence.validateReleaseEvidence(project.teamVersionId || projectId, teamCoreDigest);
+          return { ...evidence, teamVersionId: project.teamVersionId || projectId, teamCoreDigest, teamDigestVersion, ready: true, proof: "baseline-sandbox" };
+        } catch (error) {
+          return {
+            teamVersionId: project.teamVersionId || projectId,
+            teamCoreDigest,
+            teamDigestVersion,
+            ready: false,
+            reason: error instanceof Error ? error.message : "TEAM_RELEASE_BASELINE_EVIDENCE_REQUIRED"
+          };
+        }
+      }));
+    },
     async createTeamDraft({ name, overview = "", locale = "zh-CN" } = {}) {
       const normalizedName = String(name || "").trim().slice(0, 120);
       if (!normalizedName) throw new Error("TEAM_NAME_REQUIRED: enter a name for the Team draft.");
@@ -99,52 +153,16 @@ export function createTeamLifecycleUseCases({
       });
     },
 
-    async createProjectWorkspace(teamProjectId, { name, workspaceKey, locale = "zh-CN" } = {}) {
-      return locks.withWorkspaceBindingLock(async () => {
-      const team = await projectStore.getProject(teamProjectId);
-      if (team.projectStatus !== "confirmed") throw new Error("TEAM_NOT_CONFIRMED: only a confirmed team can create a workspace.");
-      const key = String(workspaceKey || name || `${team.name}-workspace`).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "workspace";
-      const existing = (await projectStore.listProjects()).find((project) => project.workspaceKey === key);
-      if (existing) {
-        if (existing.teamProjectId === teamProjectId) return existing;
-        throw new Error("WORKSPACE_BOUND_TO_OTHER_TEAM: this work directory is already bound to another team.");
-      }
-      const project = await projectStore.createProject({
-        name: name || `${team.name} 项目`, overview: team.overview, templateId: "empty", source: "workspace", locale
-      });
-      try {
-        const bundle = await packageStore.exportTeamPackage(team.workdir);
-        const loaded = await packageStore.loadTeamPackage({ workdir: project.workdir, bundle });
-        if (loaded.validation?.ok === false) throw new Error("PROJECT_WORKSPACE_INVALID: the selected team could not be copied.");
-        const current = await projectStore.getProject(project.projectId);
-        await projectStore.saveProjectMetadata(project.projectId, {
-          ...current,
-          teamProjectId,
-          teamId: team.teamId || team.projectId,
-          teamVersionId: team.teamVersionId || team.projectId,
-          teamVersionNumber: team.teamVersionNumber || 1,
-          teamVersionStatus: team.teamVersionStatus || "released",
-          teamName: team.teamName || team.name,
-          workspaceKey: key,
-          projectStatus: "draft",
-          projectDigest: null,
-          confirmedAt: null,
-          updatedAt: new Date().toISOString()
-        });
-        return confirmProjectTeam(project.projectId, { trustedClassic: assertTrustedTeamTopology(team) });
-      } catch (error) {
-        await projectStore.removeProject(project.projectId).catch(() => undefined);
-        throw error;
-      }
-      });
-    },
-
     async createClassicTeamProject(input) {
       return createClassicTeamProject(input);
     },
 
     async provisionBuiltInTeamVersions() {
       return Promise.all(caseCatalog.listCases().map((item) => createClassicTeamProject({ caseId: item.id })));
+    },
+
+    async provisionBuiltInTeamTemplates() {
+      return Promise.all(caseCatalog.listCases().map((item) => createClassicTeamProject({ caseId: item.id, asTemplate: true })));
     },
 
     async forkTeamVersion(teamVersionId) {
@@ -161,7 +179,7 @@ export function createTeamLifecycleUseCases({
         teamVersionNumber: nextVersionNumber,
         parentTeamVersionId: source.teamVersionId || source.projectId,
         overview: source.overview,
-        templateId: source.templateId,
+        templateId: "empty",
         source: "version-edit"
       });
       const bundle = await packageStore.exportTeamPackage(source.workdir);
@@ -171,15 +189,22 @@ export function createTeamLifecycleUseCases({
         throw new Error("TEAM_VERSION_COPY_INVALID: the released version could not be copied.");
       }
       const current = await projectStore.getProject(project.projectId);
-      const trustedClassicTopologyDigest = source.source === "classic" || source.source === "classic-template"
-        ? (await confirmation.computeDigests(current)).teamCoreDigest
-        : null;
+      let trustedClassicTopologyDigest = null;
+      if (source.caseId && (source.source === "classic" || source.source === "classic-template" || source.trustedClassicTopologyDigest)) {
+        const currentTopologyDigest = typeof confirmation.computeTopologyDigest === "function"
+          ? await confirmation.computeTopologyDigest(current)
+          : (await confirmation.computeDigests(current)).teamCoreDigest;
+        if (!source.trustedClassicTopologyDigest || source.trustedClassicTopologyDigest === currentTopologyDigest) {
+          trustedClassicTopologyDigest = currentTopologyDigest;
+        }
+      }
       const next = {
         ...current,
         name: source.name,
         teamName: source.teamName || source.name,
         teamId: source.teamId,
         teamRootId: source.teamRootId || source.teamId,
+        templateId: source.templateId || "empty",
         teamVersionId: project.projectId,
         teamVersionNumber: nextVersionNumber,
         teamVersionStatus: "editing",

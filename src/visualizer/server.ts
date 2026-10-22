@@ -1698,6 +1698,9 @@ async function handleApiRunStart(
     dryRun,
     body.projectId !== undefined || body.projectDigest !== undefined
   );
+  if (projectRunMode) {
+    throw new HttpError(409, "PROJECT_TASK_API_REQUIRED", "Business task runs must be started through the Projects Task API.");
+  }
   if (projectRunMode === "real") {
     throw new HttpError(501, "REAL_RUN_UNSUPPORTED", "Real project runs are not enabled in the first phase.");
   }
@@ -1750,7 +1753,6 @@ async function handleApiRunStart(
     trustedProjectTopology: attachedSiteMeta?.source === "classic" || attachedSiteMeta?.source === "classic-template",
     targetDir: asString(body.targetDir),
     dryRun,
-    projectRunMode,
     materialInputs,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
     logRun: false,
@@ -1826,6 +1828,9 @@ async function handleApiRunResume(
     throw new HttpError(409, "RUN_SNAPSHOT_INVALID", error instanceof Error ? error.message : "Project run plan is unavailable.");
   });
   const plan = loadedPlan?.projectId ? loadedPlan : undefined;
+  if (isProjectTaskRunPlan(plan)) {
+    throw new HttpError(409, "PROJECT_TASK_API_REQUIRED", "Business task runs must be resumed through the Projects Task API.");
+  }
   let projectRunMode: ProjectRunMode | undefined = plan?.executionPolicy.mode;
   let projectId: string | undefined;
   let projectDigest: string | undefined;
@@ -1896,7 +1901,6 @@ async function handleApiRunResume(
     resumeRunDir: runDir,
     projectId,
     projectDigest,
-    projectRunMode,
     materialInputs,
     trustedProjectTopology: attachedSiteMeta?.source === "classic" || attachedSiteMeta?.source === "classic-template",
     enforceTerminalResumeGate: Boolean(projectRunMode),
@@ -1976,6 +1980,10 @@ async function handleApiRunResume(
       ]
     })
   );
+}
+
+function isProjectTaskRunPlan(plan: Awaited<ReturnType<typeof loadProjectRunPlan>> | undefined): boolean {
+  return Boolean(plan?.projectId);
 }
 
 async function handleApiRunReviewDecision(
@@ -2505,8 +2513,7 @@ async function handleVisualizationRequest(
           if (!record || typeof record !== "object") return false;
           const item = record as Record<string, unknown>;
           const runIds = Array.isArray(item.runIds) ? item.runIds : item.currentRunId ? [item.currentRunId] : [];
-          return !item.deletedAt && item.taskId === taskId && item.teamVersionId === requestedProjectId && runIds.includes(runId)
-            && (item.runProjectId || item.teamVersionId) === requestedProjectId;
+          return !item.deletedAt && item.taskId === taskId && item.teamVersionId === requestedProjectId && runIds.includes(runId);
         })
         : undefined;
       if (!teamVersion || teamVersion.teamVersionId !== requestedProjectId || !task) {

@@ -8,7 +8,6 @@ const FIXED_ASSETS = [
   "system.design.json",
   ".ogs/runtime.json",
   ".ogs/model-selection.json",
-  ".ogs/model-catalog.json",
   ".ogs/laws.json",
   ".ogs/user-profile.json",
   "profiles.json",

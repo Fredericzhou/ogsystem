@@ -1,14 +1,63 @@
 import { createHash } from "node:crypto";
+import { TEAM_CORE_DIGEST_VERSION } from "../domain/team.mjs";
+export { TEAM_CORE_DIGEST_VERSION } from "../domain/team.mjs";
 
 export function computeContentDigest(content) {
   return createHash("sha256").update(content).digest("hex");
 }
 
+const secretValueKey = /(?:secret|token|password|credential|api[_-]?key)(?!ref$)/i;
+const volatileMetadataKeys = new Set(["createdAt", "updatedAt", "modifiedAt", "generatedAt", "probedAt", "refreshedAt"]);
+
+function canonicalTeamValue(value, key = "") {
+  if (secretValueKey.test(key)) return undefined;
+  if (typeof value === "string") return value.replace(/\r\n?/g, "\n");
+  if (Array.isArray(value)) return value.map((item) => canonicalTeamValue(item)).filter((item) => item !== undefined);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().flatMap((childKey) => {
+    if (volatileMetadataKeys.has(childKey)) return [];
+    const child = canonicalTeamValue(value[childKey], childKey);
+    return child === undefined ? [] : [[childKey, child]];
+  }));
+}
+
+const RELEASE_BASELINE_FIELDS = [
+  "scenarioId", "name", "revision", "prompt", "materials", "expectedRoleIds",
+  "outputSchema", "requiredForRelease"
+];
+
+export function releaseBaselinePayload(scenario) {
+  return Object.fromEntries(RELEASE_BASELINE_FIELDS
+    .filter((key) => scenario?.[key] !== undefined)
+    .map((key) => [key, canonicalTeamValue(scenario[key])]));
+}
+
+export function computeReleaseBaselineDigest(scenario) {
+  return computeContentDigest(JSON.stringify(releaseBaselinePayload(scenario)));
+}
+
+function canonicalReleaseBaselines(scenarios) {
+  return (Array.isArray(scenarios) ? scenarios : []).map((scenario) => ({
+    ...releaseBaselinePayload(scenario),
+    scenarioDigest: computeReleaseBaselineDigest(scenario)
+  }));
+}
+
+function canonicalExecutableFiles(files) {
+  return (Array.isArray(files) ? files : []).map((item) => ({
+    path: String(item?.path || "").replaceAll("\\", "/"),
+    content: typeof item?.content === "string" ? item.content.replace(/\r\n?/g, "\n") : ""
+  })).sort((left, right) => left.path.localeCompare(right.path));
+}
+
 export function teamCorePayload(bundle) {
   const design = bundle?.team?.design;
+  const runtime = bundle?.team?.runtime;
+  const { runsDir: _runsDir, sharedDir: _sharedDir, ...runtimeExecution } = runtime && typeof runtime === "object" ? runtime : {};
   return {
-    systemSource: bundle?.team?.systemSource || "",
-    design: design && typeof design === "object" ? {
+    digestVersion: TEAM_CORE_DIGEST_VERSION,
+    systemSource: String(bundle?.team?.systemSource || "").replace(/\r\n?/g, "\n"),
+    design: design && typeof design === "object" ? canonicalTeamValue({
       schemaVersion: design.schemaVersion,
       intent: design.intent,
       system: design.system,
@@ -18,11 +67,15 @@ export function teamCorePayload(bundle) {
       contracts: design.contracts,
       policies: design.policies,
       bindings: design.bindings
-    } : null,
-    laws: bundle?.team?.laws || null,
-    executableFiles: Array.isArray(bundle?.team?.executableFiles)
-      ? bundle.team.executableFiles.map(({ path, content }) => ({ path, content }))
-      : []
+    }) : null,
+    laws: canonicalTeamValue(bundle?.team?.laws || null),
+    runtime: canonicalTeamValue(runtimeExecution),
+    modelSelection: canonicalTeamValue(bundle?.team?.modelSelection || null),
+    teamDefaults: canonicalTeamValue(bundle?.team?.userProfile || null),
+    profiles: canonicalTeamValue(bundle?.team?.profiles || []),
+    tools: canonicalTeamValue(bundle?.team?.tools || { tools: [] }),
+    releaseBaselineScenarios: canonicalReleaseBaselines(bundle?.team?.releaseBaselineScenarios || []),
+    executableFiles: canonicalExecutableFiles(bundle?.team?.executableFiles)
   };
 }
 

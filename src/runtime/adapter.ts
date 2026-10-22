@@ -8,14 +8,15 @@ import { runSystemWithGraphRunner } from "./graph-runner.js";
 import { LangGraphEngineAdapter } from "./langgraph-engine-adapter.js";
 import type { LangGraphEngineAdapterOptions } from "./langgraph-engine-adapter.js";
 import type { ExecutionEngineAdapter, RuntimeExecutionServices } from "./engine-adapter.js";
-import { createInitialGraphState } from "./graph-runtime-state.js";
+import { createInitialGraphState, projectStateSnapshot } from "./graph-runtime-state.js";
 import { RunControl } from "@langchain/langgraph";
 import { createRuntimeError, normalizeRuntimeError, RuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
 import { reconcileHumanReviewTimeouts } from "./project-lifecycle.js";
 import { prepareRuntimeSetup, type RuntimeAdapterSetup } from "./runtime-setup.js";
 import type { AdapterRunResult, GraphState } from "./types.js";
-import { assertResumeAllowed, markResumeFailure } from "./run-artifacts.js";
+import { assertResumeAllowed, markResumeFailure, writeAtomicFile } from "./run-artifacts.js";
+import { stringifyJson } from "./runtime-support.js";
 import { initializeProjectRunArtifacts } from "./project-run.js";
 import type { ProjectMaterialInput, ProjectRunMode } from "./project-run.js";
 import { applyRunControl, projectRunStateFromResult, updateProjectRunState } from "./project-run-state.js";
@@ -85,19 +86,39 @@ export async function runSystemWithAdapter(args: {
   enforceTerminalResumeGate?: boolean;
   runId?: string;
   projectId?: string;
+  /** Immutable TeamVersion asset directory used to resolve the graph and role configuration. */
+  assetSource?: string;
+  /** Optional owner-controlled directory containing this run's evidence. */
+  runEvidenceRoot?: string;
   onRunInitialized?: (run: { runId: string; runDir: string }) => void | Promise<void>;
   onProjectRunPrepared?: (run: { runId: string; runDir: string }) => void | Promise<void>;
   prompt: string;
   workdir: string;
   targetDir?: string;
   dryRun?: boolean;
-  projectRunMode?: ProjectRunMode;
+  executionMode?: ProjectRunMode;
+  runKind?: "project_task" | "studio_simulation";
+  owner?: {
+    kind: "project_task";
+    projectId: string;
+    taskId: string;
+    taskNumber: number;
+    attemptNumber: number;
+    runId: string;
+    teamVersionId: string;
+    teamCoreDigest?: string;
+  };
   /** Trusted platform-provided team graphs may use supported parallel/join semantics. */
   trustedProjectTopology?: boolean;
   projectDigest?: string;
   projectRunLock?: boolean;
   materialInputs?: ProjectMaterialInput[];
   materialSourceRoot?: string;
+  materialSnapshotPolicy?: {
+    kind: "project_current" | "source_run_snapshot" | "current_project_fallback";
+    sourceRunId?: string;
+    reason?: "source_run_state_missing";
+  };
   cleanupExecutionHistory?: number;
   logRun?: boolean;
   engineFactory?: () => ExecutionEngineAdapter;
@@ -107,6 +128,27 @@ export async function runSystemWithAdapter(args: {
     initialState: GraphState;
   }) => RuntimeExecutionServices | Promise<RuntimeExecutionServices>;
 }): Promise<AdapterRunResult> {
+  const projectTaskRun = args.runKind === "project_task";
+  if (projectTaskRun && !args.executionMode) throw new Error("PROJECT_RUN_MODE_REQUIRED: Project Task Runtime requires an explicit execution mode.");
+  if (args.runKind === "studio_simulation" && args.executionMode && !["dry-run", "sandbox"].includes(args.executionMode)) {
+    throw new Error("STUDIO_SIMULATION_MODE_INVALID: Studio Simulation supports dry-run or isolated sandbox execution.");
+  }
+  if (projectTaskRun && (!args.owner || args.owner.kind !== "project_task"
+    || !args.projectId || args.owner.projectId !== args.projectId
+    || !args.owner.taskId || !args.owner.teamVersionId
+    || !args.runId || args.owner.runId !== args.runId)) {
+    throw new Error("PROJECT_RUN_OWNER_INVALID: Project Task Runtime requires a matching explicit owner.");
+  }
+  const taskReservation = projectTaskRun ? {
+    kind: "task-attempt" as const,
+    projectId: args.owner!.projectId,
+    taskId: args.owner!.taskId,
+    teamVersionId: args.owner!.teamVersionId,
+    runId: args.owner!.runId
+  } : undefined;
+  const trace = (phase: string) => {
+    if (process.env.OGS_RUNTIME_TRACE === "1") process.stderr.write(`[runtime-trace] ${phase} run=${args.runId ?? "pending"}\n`);
+  };
   let runContextForCleanup: RuntimeAdapterSetup["runContext"] | undefined;
   let executionError: unknown;
   let result: AdapterRunResult | undefined;
@@ -121,19 +163,21 @@ export async function runSystemWithAdapter(args: {
       // competing worker cannot leave a partial run directory behind.
       const preparedRunId = args.resumeRunDir
         ? args.resumeRunDir.split(/[\\/]/).pop()
-        : args.runId ?? (args.projectRunMode ? createRunId(new Date()) : undefined);
-      if (args.projectRunMode && args.projectRunLock !== false) {
+        : args.runId ?? (projectTaskRun ? createRunId(new Date()) : undefined);
+      if (projectTaskRun && args.projectRunLock !== false) {
         if (!preparedRunId) throw new Error("PROJECT_RUN_ID_REQUIRED: project runs must have a stable run id.");
-        const activeLock = await acquireActiveRunLock(args.workdir, preparedRunId);
+        const activeLock = await acquireActiveRunLock(args.runEvidenceRoot ?? args.workdir, preparedRunId);
         releaseProjectRunLock = activeLock.release;
       }
+      trace("setup:start");
       setup = await prepareRuntimeSetup({
         ...args,
-        projectRunMode: args.projectRunMode,
+        runKind: args.runKind,
         ...(preparedRunId ? { runId: preparedRunId } : {})
       });
+      trace("setup:complete");
       runContextForCleanup = setup.runContext;
-      if (args.resumeRunDir && (args.enforceTerminalResumeGate === true || args.projectRunMode)) {
+      if (args.resumeRunDir && (args.enforceTerminalResumeGate === true || projectTaskRun)) {
         const resumeState = await filesystemRunStore.loadResumeState({ runDir: setup.runContext.runDir });
         assertResumeAllowed({ runDir: setup.runContext.runDir, state: resumeState });
       }
@@ -144,17 +188,33 @@ export async function runSystemWithAdapter(args: {
         prompt: args.prompt,
         plan: setup.plan,
         fingerprint: setup.planFingerprint,
-        mode: args.projectRunMode ?? (args.dryRun ? "dry-run" : "real"),
+        mode: args.executionMode ?? (args.dryRun ? "dry-run" : "real"),
         projectId: args.projectId,
         projectDigest: args.projectDigest,
         materials: args.materialInputs,
-        enforceLinearTopology: Boolean(args.projectRunMode) && !args.trustedProjectTopology,
-        enforceSnapshotContract: Boolean(args.projectRunMode)
+        materialSnapshotPolicy: args.materialSnapshotPolicy,
+        enforceLinearTopology: projectTaskRun && !args.trustedProjectTopology,
+        enforceSnapshotContract: projectTaskRun,
+        taskReservation
       });
-      if (args.onProjectRunPrepared) {
-        await args.onProjectRunPrepared({ runId: setup.runContext.runId, runDir: setup.runContext.runDir });
+      if (!args.resumeRunDir) {
+        const initialState = createInitialGraphState({ plan: setup.plan, prompt: args.prompt });
+        const snapshot = projectStateSnapshot({ state: initialState, plan: setup.plan });
+        await writeAtomicFile(
+          setup.runContext.statePath,
+          stringifyJson(taskReservation ? {
+            ...snapshot,
+            taskReservation: { ...taskReservation, runId: setup.runContext.runId }
+          } : snapshot)
+        );
       }
-      if (args.projectRunMode) {
+      trace("artifacts:complete");
+      if (args.onProjectRunPrepared) {
+        trace("prepared-callback:start");
+        await args.onProjectRunPrepared({ runId: setup.runContext.runId, runDir: setup.runContext.runDir });
+        trace("prepared-callback:complete");
+      }
+      if (projectTaskRun) {
         await updateProjectRunState(setup.runContext.runDir, (currentState) =>
           !currentState.control.cancelRequested && !currentState.control.paused
             ? applyRunControl(currentState, "resume")
@@ -163,6 +223,7 @@ export async function runSystemWithAdapter(args: {
       }
       if (args.resumeRunDir) await reconcileHumanReviewTimeouts(setup.runContext.runDir);
     } catch (error) {
+      trace(`preparation:failed error=${error instanceof Error ? error.message : String(error)}`);
       executionError = createRuntimeError(
         normalizeRuntimeError(error, {
           errorCode: "RUNTIME_SETUP_FAILED",
@@ -186,7 +247,7 @@ export async function runSystemWithAdapter(args: {
       });
     }
 
-    if (setup) {
+    if (setup && !executionError) {
       if (args.onRunInitialized) {
         try {
           await args.onRunInitialized({
@@ -210,7 +271,7 @@ export async function runSystemWithAdapter(args: {
 
       const executor = createDefaultExecutor({
         dryRun: args.dryRun,
-        sandbox: args.projectRunMode === "sandbox",
+        sandbox: args.executionMode === "sandbox",
         runContext: setup.runContext,
         targetDir: setup.targetDir,
         needsModelExecutor:
@@ -222,6 +283,7 @@ export async function runSystemWithAdapter(args: {
       });
 
       try {
+        trace("executor:start");
         if (args.resumeRunDir) {
           await maybeHoldResumeLockForTest();
         }
@@ -252,13 +314,13 @@ export async function runSystemWithAdapter(args: {
         const runControl = new RunControl();
         let projectControlPoll: ReturnType<typeof setInterval> | undefined;
         const pollProjectControl = async (): Promise<void> => {
-          if (!args.projectRunMode) return;
+          if (!projectTaskRun) return;
           const control = await readLatestProjectRunControl(setup!.runContext.runDir);
           if (control?.action === "cancel" || control?.action === "pause") {
             runControl.requestDrain(`project-${control.action}-requested`);
           }
         };
-        if (args.projectRunMode) {
+        if (projectTaskRun) {
           await pollProjectControl();
           projectControlPoll = setInterval(() => { void pollProjectControl(); }, 100);
           projectControlPoll.unref?.();
@@ -396,6 +458,7 @@ export async function runSystemWithAdapter(args: {
           errorCode: envelope?.errorCode ?? "RUNTIME_RESUME_FAILED",
           message: envelope?.message ?? (executionError instanceof Error ? executionError.message : String(executionError))
         });
+        trace("executor:complete");
       } catch (markError) {
         process.stderr.write(`[warn] failed to persist resume failure for ${args.resumeRunDir}: ${markError instanceof Error ? markError.message : String(markError)}\n`);
       }
@@ -412,7 +475,7 @@ export async function runSystemWithAdapter(args: {
 
   if (setup && result) {
     await updateProjectRunState(setup.runContext.runDir, async (currentState) => {
-      const latestProjectControl = args.projectRunMode
+      const latestProjectControl = projectTaskRun
         ? await readLatestProjectRunControl(setup.runContext.runDir)
         : undefined;
       const controlledState = latestProjectControl?.action === "cancel"

@@ -4,14 +4,8 @@ export async function handlePlatformRoutes({
   url,
   readBody,
   sendJson,
-  visUrl,
   useCases
 }) {
-  if (request.method === "GET" && url.pathname === "/api/v1/config") {
-    sendJson(response, 200, { visUrl });
-    return true;
-  }
-
   if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/v1/platform/discovery") {
     try {
       sendJson(response, 200, await useCases.getPlatformDiscovery(request.method === "POST"));

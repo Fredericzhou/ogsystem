@@ -5,15 +5,22 @@ export function createRunResultUseCases({ getRun, runResultStore }) {
   }
 
   return Object.freeze({
-    async getProjectRunResult(projectId, runId) {
-      const run = await getRun(projectId, runId);
+    async getProjectRunResult(projectId, taskId, runId) {
+      const run = await getRun(projectId, taskId, runId);
       const finalOutput = await runResultStore.readFinalOutput(run);
       const identity = {
-        collaborationProjectId: projectId,
-        runtimeProjectId: run.runtimeProjectId,
+        runKind: "project_task",
+        runId,
+        owner: {
+          kind: "project_task",
+          projectId,
+          taskId: run.taskId,
+          taskNumber: run.owner?.taskNumber,
+          attemptNumber: run.attemptNumber,
+          teamVersionId: run.teamVersionId
+        },
         teamVersionId: run.teamVersionId,
         taskId: run.taskId,
-        runId,
         attemptNumber: run.attemptNumber
       };
       if (typeof finalOutput !== "string" || !finalOutput.trim()) {

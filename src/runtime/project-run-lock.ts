@@ -1,9 +1,9 @@
 import { hostname } from "node:os";
-import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { lstat, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { parse, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
-export type ProjectLockKind = "write" | "active-run";
+export type ProjectLockKind = "write" | "active-run" | "deliverable-index";
 
 export type ProjectLockMetadata = {
   kind: ProjectLockKind;
@@ -18,14 +18,53 @@ export type ProjectLockMetadata = {
 
 export class ProjectLockError extends Error {
   readonly code = "PROJECT_LOCK_CONFLICT";
-  constructor(message: string, public readonly metadata?: ProjectLockMetadata) {
+  constructor(message: string, public readonly metadata?: ProjectLockMetadata, public readonly retryable = false) {
     super(message);
     this.name = "ProjectLockError";
   }
 }
 
 function lockPath(workdir: string, kind: ProjectLockKind): string {
-  return resolve(workdir, ".site", kind === "write" ? "project-write.lock" : "active-run.lock");
+  const filename = kind === "write"
+    ? "project-write.lock"
+    : kind === "active-run"
+      ? "active-run.lock"
+      : "deliverable-index.lock";
+  return resolve(workdir, ".site", filename);
+}
+
+async function ensureSafeLockDirectory(workdir: string): Promise<void> {
+  const root = resolve(workdir);
+  const filesystemRoot = parse(root).root;
+  let current = filesystemRoot;
+  for (const segment of relative(filesystemRoot, root).split(sep).filter(Boolean)) {
+    current = resolve(current, segment);
+    let stats = await lstat(current).catch((error) => {
+      if (error?.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!stats) {
+      await mkdir(current, { recursive: false }).catch((error) => {
+        if (error?.code !== "EEXIST") throw error;
+      });
+      stats = await lstat(current);
+    }
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new ProjectLockError(`Project lock directory must be a real directory: ${current}`);
+    }
+  }
+  const metadataDir = resolve(root, ".site");
+  let metadataStat = await lstat(metadataDir).catch((error) => {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!metadataStat) {
+    await mkdir(metadataDir, { recursive: false }).catch((error) => {
+      if (error?.code !== "EEXIST") throw error;
+    });
+    metadataStat = await lstat(metadataDir);
+  }
+  if (metadataStat.isSymbolicLink() || !metadataStat.isDirectory()) throw new ProjectLockError(`Project metadata directory must be a real directory: ${metadataDir}`);
 }
 
 async function readLock(path: string): Promise<ProjectLockMetadata | undefined> {
@@ -53,7 +92,7 @@ function processIsAlive(pid: number): boolean | undefined {
 async function clearStaleLock(path: string, metadata: ProjectLockMetadata): Promise<void> {
   const heartbeat = Date.parse(metadata.heartbeatAt || metadata.createdAt);
   const expired = !Number.isFinite(heartbeat) || Date.now() - heartbeat > 30_000;
-  if (!expired) throw new ProjectLockError(`Project lock is active: ${path}`, metadata);
+  if (!expired) throw new ProjectLockError(`Project lock is active: ${path}`, metadata, true);
   if (metadata.host !== hostname()) {
     throw new ProjectLockError(`Project lock ownership is uncertain on another host: ${path}`, metadata);
   }
@@ -72,8 +111,8 @@ export async function acquireProjectLock(args: {
   runId?: string;
   operation?: string;
 }): Promise<{ metadata: ProjectLockMetadata; release: () => Promise<void> }> {
+  await ensureSafeLockDirectory(args.workdir);
   const path = lockPath(args.workdir, args.kind);
-  await mkdir(dirname(path), { recursive: true });
   const metadata: ProjectLockMetadata = {
     kind: args.kind,
     lockId: randomUUID(),

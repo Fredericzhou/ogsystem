@@ -15,7 +15,6 @@ function normalizeTeamMeta(meta, projectId) {
   for (const mountedTeam of meta?.mountedTeams || []) assertCanonicalTeamVersionId(mountedTeam?.teamVersionId);
   for (const task of meta?.taskRecords || []) {
     if (task?.teamVersionId) assertCanonicalTeamVersionId(task.teamVersionId);
-    if (task?.runProjectId) assertCanonicalTeamVersionId(task.runProjectId);
   }
   const confirmed = meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
   const teamVersionStatus = meta?.teamVersionStatus || (confirmed ? "released" : "draft");
@@ -30,6 +29,7 @@ function normalizeTeamMeta(meta, projectId) {
     projectStatus: confirmed ? "confirmed" : "draft",
     projectDigest: confirmed ? meta.projectDigest : null,
     teamCoreDigest: typeof meta?.teamCoreDigest === "string" ? meta.teamCoreDigest : null,
+    teamDigestVersion: Number.isInteger(meta?.teamDigestVersion) ? meta.teamDigestVersion : null,
     projectDefinitionDigest: typeof meta?.projectDefinitionDigest === "string" ? meta.projectDefinitionDigest : null,
     confirmedAt: confirmed ? meta.confirmedAt : null,
     createdAt: meta?.createdAt || new Date().toISOString(),
@@ -47,7 +47,7 @@ function normalizeTeamMeta(meta, projectId) {
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),
     ...(meta?.caseId ? { caseId: meta.caseId } : {}),
-    ...(meta?.source === "classic" && meta?.caseId ? { builtIn: true, category: getCase(meta.caseId)?.category } : {}),
+    ...((meta?.source === "classic" || meta?.source === "classic-template") && meta?.caseId ? { builtIn: true, category: getCase(meta.caseId)?.category } : {}),
     ...(meta?.ogsProjectId ? { ogsProjectId: meta.ogsProjectId } : {}),
     projectType: meta?.projectType || (meta?.teamProjectId ? "workspace" : "team"),
     mountedTeams: Array.isArray(meta?.mountedTeams) ? meta.mountedTeams : [],

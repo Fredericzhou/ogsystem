@@ -23,7 +23,7 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
         const project = await projectStore.getProject(projectId);
         assertCollaborationProject(project);
         const mountedTeams = project.mountedTeams || [];
-        if (!mountedTeams.length) throw new Error("PROJECT_TEAM_REQUIRED: mount a team before creating a task.");
+        if (mountedTeams.length !== 1) throw new Error("PROJECT_SINGLE_TEAM_REQUIRED: a project must have exactly one mounted TeamVersion before creating a task.");
         const team = mountedTeams.find((item) => item.teamVersionId === requestedTeamVersionId);
         if (!team) throw new Error("TEAM_VERSION_NOT_MOUNTED: the selected team is not mounted in this project.");
 
@@ -53,6 +53,8 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
           teamId: team.teamId,
           teamVersionId: team.teamVersionId,
           teamVersionNumber: team.teamVersionNumber,
+          teamCoreDigest: team.teamCoreDigest,
+          teamDigestVersion: team.teamDigestVersion,
           teamName: team.teamName,
           status: "queued",
           idempotencyKey: requestKey || null,

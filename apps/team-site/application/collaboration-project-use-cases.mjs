@@ -1,4 +1,4 @@
-import { assertCollaborationProject, assertProjectHasTeams, assertProjectTeamMutationAllowed } from "../domain/project.mjs";
+import { assertCollaborationProject, assertProjectHasSingleTeam, assertProjectTeamMutationAllowed } from "../domain/project.mjs";
 import { assertCanonicalTeamVersionId, assertReleasedTeamVersion, createMountedTeamRecord } from "../domain/team.mjs";
 
 export function createCollaborationProjectUseCases({ projectStore, teamStore, computeProjectDefinitionDigest }) {
@@ -22,7 +22,7 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
   }
 
   async function resolveMountedTeams(teamVersionIds, previous = []) {
-    assertProjectHasTeams(teamVersionIds);
+    assertProjectHasSingleTeam(teamVersionIds);
     const requestedIds = [...new Set(teamVersionIds.map((value) => String(value || "").trim()).filter(Boolean))];
     const previousById = new Map(previous.map((team) => [team.teamVersionId, team]));
     const mountedTeams = [];
@@ -85,7 +85,7 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
       const current = await projectStore.getProject(projectId);
       assertCollaborationProject(current);
       assertProjectTeamMutationAllowed(current);
-      assertProjectHasTeams(teamVersionIds);
+      assertProjectHasSingleTeam(teamVersionIds);
 
       return projectStore.withProjectWriteLock(projectId, "project-team-replace", async () => {
         const project = await projectStore.getProject(projectId);

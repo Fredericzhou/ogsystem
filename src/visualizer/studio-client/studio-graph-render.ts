@@ -694,11 +694,13 @@ function scheduleStudioEdgeLabelPosition(
   let attempts = 0;
   const run = (): void => {
     if (studioLabelPassByGraph.get(graph) !== pass) return;
-    positionStudioEdgeLabels(graph, edges, showTechnicalDetails);
-    if (!studioEdgeLabelsReady(graph, edges) && attempts < 5) {
+    if (!studioEdgeLabelsReady(graph, edges)) {
+      if (attempts >= 5) return;
       attempts += 1;
       setTimeout(run, 40);
+      return;
     }
+    positionStudioEdgeLabels(graph, edges, showTechnicalDetails);
   };
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -807,12 +809,13 @@ function findStudioEdgeLabelPosition(
   const label = view?.container.querySelector<SVGGElement>(`.x6-edge-label[data-index="${labelIndex}"]`);
   const matrix = path?.getScreenCTM();
   if (!view || !path || !label || !matrix) return undefined;
+  (view as unknown as { updateLabelPositions?: () => void }).updateLabelPositions?.();
   const length = path.getTotalLength();
   if (length <= 1) return undefined;
   const labelSize = label.getBoundingClientRect();
+  const currentLabels = cell.getLabels();
+  const currentPosition = currentLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
   const width = labelSize.width + 4;
-  // Long labels are more sensitive to SVG rounding at node boundaries. Keep the
-  // existing placement for short labels and add a small clearance only here.
   const nodeClearance = width > 80 ? 6 : 0;
   const collisionObstacles = obstacles.map((obstacle) => ({
     left: obstacle.left - nodeClearance,
@@ -827,6 +830,7 @@ function findStudioEdgeLabelPosition(
   const summaryWidth = estimateStudioEdgeSummaryLabelWidth(inlineTopology ? `${inlineTopology} ${summaryText}` : summaryText);
   const summaryHeight = Math.ceil(summaryWidth / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) * 20 + 12;
   const height = Math.max(labelSize.height, summaryHeight) + 8;
+  const preferredFraction = Number.isFinite(currentPosition?.distance) ? currentPosition.distance : 0.5;
   const fractions = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95, 0.02, 0.98];
   // Keep labels attached to their route. Long-range offsets avoid collisions
   // visually, but make a flow label read as if it belongs to another edge.
@@ -845,20 +849,20 @@ function findStudioEdgeLabelPosition(
     const before = path.getPointAtLength(Math.max(0, distance - 2));
     const after = path.getPointAtLength(Math.min(length, distance + 2));
     const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
-    const screenBefore = new DOMPoint(before.x, before.y).matrixTransform(matrix);
-    const screenAfter = new DOMPoint(after.x, after.y).matrixTransform(matrix);
-    const tangentLength = Math.hypot(screenAfter.x - screenBefore.x, screenAfter.y - screenBefore.y) || 1;
-    const normal = {
-      x: -(screenAfter.y - screenBefore.y) / tangentLength,
-      y: (screenAfter.x - screenBefore.x) / tangentLength
+    const tangentLength = Math.hypot(after.x - before.x, after.y - before.y) || 1;
+    // X6 positive offsets follow the path-local tangent rotated by +90 degrees.
+    // Map that local normal through the screen CTM exactly once for collision scoring.
+    const localNormal = {
+      x: -(after.y - before.y) / tangentLength,
+      y: (after.x - before.x) / tangentLength
     };
-    const normalScale = Math.hypot(
-      matrix.a * normal.x + matrix.c * normal.y,
-      matrix.b * normal.x + matrix.d * normal.y
-    ) || 1;
+    const screenNormal = {
+      x: matrix.a * localNormal.x + matrix.c * localNormal.y,
+      y: matrix.b * localNormal.x + matrix.d * localNormal.y
+    };
     return offsets.map((offset) => {
-      const x = screenPoint.x + normal.x * offset * normalScale;
-      const y = screenPoint.y + normal.y * offset * normalScale;
+      const x = screenPoint.x + screenNormal.x * offset;
+      const y = screenPoint.y + screenNormal.y * offset;
       return {
         position: { distance: fraction, offset },
         bounds: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 },
@@ -867,15 +871,33 @@ function findStudioEdgeLabelPosition(
       };
     });
   });
+  const currentCandidate = currentPosition && candidates.find((candidate) =>
+    candidate.position.distance === currentPosition.distance && candidate.position.offset === currentPosition.offset
+  );
+  const liveBounds = label.getBoundingClientRect();
+  const calibration = currentCandidate && liveBounds.width > 0 && liveBounds.height > 0
+    ? {
+        x: liveBounds.left + liveBounds.width / 2 - (currentCandidate.bounds.left + currentCandidate.bounds.right) / 2,
+        y: liveBounds.top + liveBounds.height / 2 - (currentCandidate.bounds.top + currentCandidate.bounds.bottom) / 2
+      }
+    : { x: 0, y: 0 };
+  const calibratedCandidates = candidates.map((candidate) => ({
+    ...candidate,
+    bounds: {
+      left: candidate.bounds.left + calibration.x,
+      right: candidate.bounds.right + calibration.x,
+      top: candidate.bounds.top + calibration.y,
+      bottom: candidate.bounds.bottom + calibration.y
+    }
+  }));
   const intersects = (left: StudioLabelRect, right: StudioLabelRect) =>
     left.left < right.right && right.left < left.right && left.top < right.bottom && right.top < left.bottom;
-  const predictedScore = (candidate: typeof candidates[number]) =>
+  const predictedScore = (candidate: typeof calibratedCandidates[number]) =>
      collisionObstacles.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 10000 +
     reserved.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 1000 +
     (candidate.bounds.left < viewport.left || candidate.bounds.right > viewport.right ||
       candidate.bounds.top < viewport.top || candidate.bounds.bottom > viewport.bottom ? 10000 : 0) +
-    Math.abs(candidate.fraction - 0.5) * 10 + Math.abs(candidate.offset - preferredOffset) * 0.01;
-  const currentLabels = cell.getLabels();
+       Math.abs(candidate.fraction - preferredFraction) * 10 + Math.abs(candidate.offset - preferredOffset) * 0.01;
   const currentTopology = currentLabels[0]?.position as StudioEdgeLabelPosition | undefined;
   const currentSummary = currentLabels[formatStudioEdgeTopologyLabel(edge) ? 1 : 0]?.position as StudioEdgeLabelPosition | undefined;
   const setPosition = (position: StudioEdgeLabelPosition): void => {
@@ -889,14 +911,14 @@ function findStudioEdgeLabelPosition(
     const livePosition = liveLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
     if (livePosition?.distance === position.distance && livePosition.offset === position.offset) return;
     cell.setLabels(nextLabels);
+    const updatedView = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
+    (updatedView as unknown as { updateLabelPositions?: () => void } | null)?.updateLabelPositions?.();
   };
   const currentLabel = (): SVGGElement | null => {
     const currentView = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
     return currentView?.container.querySelector<SVGGElement>(`.x6-edge-label[data-index="${labelIndex}"]`) ?? null;
   };
   const actualBounds = (): StudioLabelRect => {
-    // X6 may replace the edge view synchronously after setLabels(). Always
-    // measure the current node instead of retaining a detached SVG label.
     const measured = (currentLabel() ?? label).getBoundingClientRect();
     return {
       left: measured.left,
@@ -906,14 +928,17 @@ function findStudioEdgeLabelPosition(
     };
   };
   const actualScore = (bounds: StudioLabelRect): number =>
-     collisionObstacles.filter((obstacle) => intersects(bounds, obstacle)).length * 10000 +
+    collisionObstacles.filter((obstacle) => intersects(bounds, obstacle)).length * 10000 +
     reserved.filter((obstacle) => intersects(bounds, obstacle)).length * 1000 +
     (bounds.left < viewport.left || bounds.right > viewport.right ||
       bounds.top < viewport.top || bounds.bottom > viewport.bottom ? 10000 : 0);
-  const rankedCandidates = candidates.slice().sort((left, right) => predictedScore(left) - predictedScore(right));
+  const rankedCandidates = calibratedCandidates.slice().sort((left, right) => predictedScore(left) - predictedScore(right));
   if (!rankedCandidates.length) return undefined;
   const firstCandidate = rankedCandidates[0];
   setPosition(firstCandidate.position);
+  if (width > 80) {
+    return { position: firstCandidate.position, bounds: firstCandidate.bounds };
+  }
   const firstBounds = actualBounds();
   const firstScore = actualScore(firstBounds);
   if (firstScore === 0) return { position: firstCandidate.position, bounds: firstBounds };
@@ -922,8 +947,6 @@ function findStudioEdgeLabelPosition(
     bounds: firstBounds,
     score: firstScore
   };
-  // Only retry the most promising candidates. Each X6 label write causes an
-  // SVG view update, so evaluating every route fraction creates visible churn.
   for (const candidate of rankedCandidates.slice(1, 16)) {
     setPosition(candidate.position);
     const bounds = actualBounds();

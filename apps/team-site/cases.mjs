@@ -65,7 +65,7 @@ export const cases = [
       {
         id: "delivery-lead", label: { "zh-CN": "交付负责人", en: "Delivery lead" },
         purpose: "Integrate engineering, experience, and quality plans into one delivery proposal.", events: ["DELIVERY_READY"],
-        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Return valid JSON with event DELIVERY_READY and the integrated proposal as content."
+        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Set content to a JSON object with keys summary, implementationSlices, dependencies, acceptanceChecks, risks, and openQuestions. Return valid JSON with event DELIVERY_READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
       }
     ],
     flows: [
@@ -140,7 +140,7 @@ export const cases = [
       {
         id: "chief-reviewer", label: { "zh-CN": "主审专家", en: "Lead reviewer" },
         purpose: "Synthesize available specialist reviews into a cautious consultation summary.", events: ["CONSULTATION_READY"],
-        prompt: "Synthesize the specialist reviews that are available. Note agreement, disagreement, uncertainty, urgent escalation signals, and reasonable next steps. Do not claim that absent specialists agreed. This is decision support, not a diagnosis. Return valid JSON with event CONSULTATION_READY and the synthesis as content."
+        prompt: "Synthesize the specialist reviews that are available. Note agreement, disagreement, uncertainty, urgent escalation signals, and reasonable next steps. Do not claim that absent specialists agreed. This is decision support, not a diagnosis. Set content to a JSON object with keys summary, riskSignals, missingInformation, nextSteps, and uncertainty. Return valid JSON with event CONSULTATION_READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
       }
     ],
     flows: [
@@ -215,12 +215,12 @@ export const cases = [
       {
         id: "neutral-judge", label: { "zh-CN": "中立裁判", en: "Neutral judge" },
         purpose: "Evaluate both arguments against shared criteria and decide whether one bounded rebuttal is needed.", events: ["REBUTTAL_REQUESTED", "DECISION_READY"],
-        prompt: "Evaluate both sides fairly against the stated criteria. Request at most one rebuttal, and only when a material issue could change the decision. After receiving a rebuttal, always issue DECISION_READY; do not request another round. If a material issue remains unresolved, state it as uncertainty in the decision. Explain the strongest point on each side and your reasoning. Return valid JSON with event REBUTTAL_REQUESTED or DECISION_READY and your reasoning as content."
+        prompt: "Evaluate both sides fairly against the stated criteria. You may request at most one rebuttal, and only when a material issue could change the decision. Use the Runtime execution context: on loop_iteration 1 this is the initial review; when loop_iteration is greater than 1, always issue DECISION_READY and never request another round. If an issue remains unresolved, state it as uncertainty. Explain each side's strongest point and your reasoning. Return valid JSON with event REBUTTAL_REQUESTED or DECISION_READY and your reasoning as content."
       },
       {
         id: "debate-reporter", label: { "zh-CN": "辩论记录员", en: "Debate reporter" },
         purpose: "Present the judge's final decision and the strongest reasoning from both sides.", events: ["DEBATE_SUMMARY_READY"],
-        prompt: "Prepare a balanced final report from the judge's decision. Include the decision, strongest argument for each side, key uncertainty, and follow-up question. Do not introduce new evidence. Return valid JSON with event DEBATE_SUMMARY_READY and the report as content."
+        prompt: "Prepare a balanced final report from the judge's decision. Include the decision, strongest argument for each side, key uncertainty, and follow-up question. Do not introduce new evidence. Set content to a JSON object with keys decision (string), propositionCase (object with strongestPoint and reasoning strings), oppositionCase (object with strongestPoint and reasoning strings), judgeReasoning (string), uncertainty (array of strings), and followUpQuestions (array of strings). Return valid JSON with event DEBATE_SUMMARY_READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
       }
     ],
     flows: [

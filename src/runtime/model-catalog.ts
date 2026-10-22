@@ -463,6 +463,22 @@ export async function loadModelCatalog(path: string): Promise<ModelCatalog | und
   return validateModelCatalog(await readJsonFile(path), path);
 }
 
+export function mergeModelCatalogWithLiveSnapshot(
+  stored: ModelCatalog | undefined,
+  liveModels: ModelCatalogEntry[] | undefined,
+  generatedAt?: string
+): ModelCatalog | undefined {
+  if (!Array.isArray(liveModels) || liveModels.length === 0) return stored;
+  const models = new Map((stored?.models ?? []).map((model) => [`${model.backend}/${model.modelId}`, model]));
+  for (const model of liveModels) models.set(`${model.backend}/${model.modelId}`, model);
+  return {
+    catalogVersion: "2",
+    generatedAt: generatedAt || stored?.generatedAt || new Date().toISOString(),
+    sources: stored?.sources ?? [],
+    models: [...models.values()]
+  };
+}
+
 export function chooseDefaultModelFromCatalog(catalog: ModelCatalog): ModelCatalogEntry | undefined {
   return catalog.models.find(
     (model) =>

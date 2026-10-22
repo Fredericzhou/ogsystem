@@ -14,7 +14,7 @@ import {
   loadFlowContractPlan
 } from "../runtime/flow-contract.js";
 import { readJsonFile } from "../runtime/json-file.js";
-import { isModelCatalogStale, loadModelCatalog } from "../runtime/model-catalog.js";
+import { isModelCatalogStale, loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "../runtime/model-catalog.js";
 import {
   inspectResolvedModelCatalogEntry,
   loadModelSelection,
@@ -69,6 +69,11 @@ type RoleRepoHealthItem = {
   files: RoleRepoFileHealth;
   missingFiles: string[];
   error?: string;
+};
+
+type RoleReadinessInspection = RoleRepoHealthItem & {
+  declaredEvents?: string[];
+  outputSchemaValue?: unknown;
 };
 
 type ContractCoverageItem = {
@@ -579,7 +584,7 @@ function buildModelCapabilityChecks(args: {
 async function inspectRoleHealth(args: {
   roleId: string;
   roleRootDir: string;
-}): Promise<RoleRepoHealthItem> {
+}): Promise<RoleReadinessInspection> {
   const resolvedPath = resolve(args.roleRootDir, args.roleId);
   const manifestPath = resolve(resolvedPath, "role.json");
   const files: RoleRepoFileHealth = {
@@ -590,10 +595,13 @@ async function inspectRoleHealth(args: {
     source: await pathExists(resolve(resolvedPath, "source.json"))
   };
   let error: string | undefined;
+  let declaredEvents: string[] | undefined;
+  let outputSchemaValue: unknown;
 
   if (files.roleJson) {
     try {
       const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
+      declaredEvents = manifest.outputs.events;
       const promptTemplate = asNonEmptyString(manifest.promptTemplate);
       const outputSchema = asNonEmptyString(manifest.outputSchema);
       files.promptTemplate = promptTemplate
@@ -602,6 +610,9 @@ async function inspectRoleHealth(args: {
       files.outputSchema = outputSchema
         ? await pathExists(resolve(resolvedPath, outputSchema))
         : false;
+      if (files.outputSchema && outputSchema) {
+        outputSchemaValue = await readJsonFile(resolve(resolvedPath, outputSchema));
+      }
       if (manifest.roleId !== args.roleId) {
         error = `role.json roleId mismatch: expected "${args.roleId}"`;
       }
@@ -626,12 +637,94 @@ async function inspectRoleHealth(args: {
     resolvedPath,
     files,
     missingFiles,
-    error
+    error,
+    declaredEvents,
+    outputSchemaValue
   };
 }
 
+function collectCodexStrictSchemaIssues(schema: unknown, path = "$", issues: string[] = [], visited = new Set<object>()): string[] {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema) || visited.has(schema)) return issues;
+  visited.add(schema);
+  const record = schema as Record<string, unknown>;
+  if (record.type === "object" || record.properties && typeof record.properties === "object") {
+    const properties = record.properties && typeof record.properties === "object" && !Array.isArray(record.properties)
+      ? Object.keys(record.properties as Record<string, unknown>)
+      : [];
+    if (record.additionalProperties !== false) issues.push(`${path}.additionalProperties must be false`);
+    const required = Array.isArray(record.required) ? record.required.filter((item): item is string => typeof item === "string") : [];
+    const missingRequired = properties.filter((property) => !required.includes(property));
+    if (missingRequired.length) issues.push(`${path}.required must include ${missingRequired.join(", ")}`);
+  }
+
+  const schemaMapKeywords = ["properties", "patternProperties", "$defs", "definitions"];
+  for (const keyword of schemaMapKeywords) {
+    const children = record[keyword];
+    if (children && typeof children === "object" && !Array.isArray(children)) {
+      for (const [key, child] of Object.entries(children as Record<string, unknown>)) {
+        collectCodexStrictSchemaIssues(child, `${path}.${keyword}.${key}`, issues, visited);
+      }
+    }
+  }
+  for (const keyword of ["items", "additionalProperties", "contains", "propertyNames", "not", "if", "then", "else"]) {
+    collectCodexStrictSchemaIssues(record[keyword], `${path}.${keyword}`, issues, visited);
+  }
+  for (const keyword of ["allOf", "anyOf", "oneOf"]) {
+    const children = record[keyword];
+    if (Array.isArray(children)) children.forEach((child, index) => collectCodexStrictSchemaIssues(child, `${path}.${keyword}[${index}]`, issues, visited));
+  }
+  return issues;
+}
+
+function validateRoleEventContracts(args: {
+  system: SystemDefinition;
+  roles: RoleReadinessInspection[];
+  blockers: ReadinessIssue[];
+}): void {
+  const rolesById = new Map(args.roles.map((role) => [role.roleId, role]));
+  for (const roleId of args.system.roleIds) {
+    const role = rolesById.get(roleId);
+    if (!role || role.status !== "ok" || !role.declaredEvents) continue;
+    const graphEvents = [...new Set(args.system.flows
+      .filter((flow) => flow.fromRoleId === roleId && !isRuntimeOnlyErrorEvent(flow.eventType))
+      .map((flow) => flow.eventType))].sort();
+    const declaredEvents = [...new Set(role.declaredEvents)].sort();
+    if (graphEvents.length !== declaredEvents.length || graphEvents.some((event, index) => event !== declaredEvents[index])) {
+      args.blockers.push(createIssue({
+        code: "READINESS_ROLE_EVENTS_MISMATCH",
+        message: `Role "${roleId}" declares output events [${declaredEvents.join(", ")}] but its normal outgoing flows are [${graphEvents.join(", ")}].`,
+        severity: "blocker",
+        roleId,
+        detail: { declaredEvents, graphEvents }
+      }));
+    }
+  }
+}
+
+function validateCodexOutputSchemas(args: {
+  roles: RoleReadinessInspection[];
+  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>;
+  blockers: ReadinessIssue[];
+}): void {
+  for (const role of args.roles) {
+    const model = args.resolvedModelsByRoleId.get(role.roleId);
+    if (!model || model.backend !== "codex" || role.status !== "ok") continue;
+    const issues = collectCodexStrictSchemaIssues(role.outputSchemaValue);
+    if (issues.length) {
+      args.blockers.push(createIssue({
+        code: "READINESS_CODEX_OUTPUT_SCHEMA_INVALID",
+        message: `Role "${role.roleId}" output schema is incompatible with Codex structured output: ${issues.join("; ")}`,
+        severity: "blocker",
+        roleId: role.roleId,
+        detail: { modelRef: model.modelRef, issues }
+      }));
+    }
+  }
+}
+
 export async function inspectProjectReadiness(
-  workdir: string
+  workdir: string,
+  options: { modelCatalogModels?: ModelCatalogEntry[]; modelCatalogGeneratedAt?: string } = {}
 ): Promise<ProjectReadinessProjection> {
   const blockers: ReadinessIssue[] = [];
   const warnings: ReadinessIssue[] = [];
@@ -681,19 +774,27 @@ export async function inspectProjectReadiness(
   const roleRepoRoot = resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo);
   const roleRootDir = resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo);
   const modelSelection = await loadModelSelection(ogsPaths.modelSelectionPath);
-  let modelCatalog: ModelCatalog | undefined;
+  const hasLiveModelCatalog = Array.isArray(options.modelCatalogModels) && options.modelCatalogModels.length > 0;
+  let storedModelCatalog: ModelCatalog | undefined;
   try {
-    modelCatalog = await loadModelCatalog(ogsPaths.modelCatalogPath);
+    storedModelCatalog = await loadModelCatalog(ogsPaths.modelCatalogPath);
   } catch (error) {
-    blockers.push(
+    (hasLiveModelCatalog ? warnings : blockers).push(
       createIssue({
         code: "READINESS_MODEL_CATALOG_INVALID",
-        message: `Model catalog cannot be used: ${errorMessage(error)}`,
-        severity: "blocker",
+        message: hasLiveModelCatalog
+          ? `The local model catalog is invalid and was ignored in favor of the current Platform catalog: ${errorMessage(error)}`
+          : `Model catalog cannot be used: ${errorMessage(error)}`,
+        severity: hasLiveModelCatalog ? "warning" : "blocker",
         path: ogsPaths.modelCatalogPath
       })
     );
   }
+  const modelCatalog = mergeModelCatalogWithLiveSnapshot(
+    storedModelCatalog,
+    options.modelCatalogModels,
+    options.modelCatalogGeneratedAt
+  );
   const resolvedModelSelection = resolveModelSelectionForReadiness({
     system,
     selection: modelSelection,
@@ -781,12 +882,12 @@ export async function inspectProjectReadiness(
     }
   }
 
-  const roleHealth = await Promise.all(
+  const roleInspections = await Promise.all(
     [...system.roleIds]
       .sort((left, right) => left.localeCompare(right))
       .map((roleId) => inspectRoleHealth({ roleId, roleRootDir }))
   );
-  for (const role of roleHealth) {
+  for (const role of roleInspections) {
     if (role.status !== "ok") {
       blockers.push(
         createIssue({
@@ -816,6 +917,13 @@ export async function inspectProjectReadiness(
     warnings
   });
 
+  validateRoleEventContracts({ system, roles: roleInspections, blockers });
+  validateCodexOutputSchemas({
+    roles: roleInspections,
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
+    blockers
+  });
+
   const contractCoverage = await buildContractCoverage({
     system,
     blockers,
@@ -832,7 +940,7 @@ export async function inspectProjectReadiness(
     contractCoverage,
     roleRepoHealth: {
       roleRepoRoot,
-      roles: roleHealth
+      roles: roleInspections.map(({ declaredEvents: _declaredEvents, outputSchemaValue: _outputSchemaValue, ...role }) => role)
     },
     modelCapabilityChecks,
     providerHealth: buildProviderHealth(resolvedModelSelection.resolvedByRoleId)

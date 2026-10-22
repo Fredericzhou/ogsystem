@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { resolveProjectRoleRootDir } from "./bundled-repos.js";
@@ -9,7 +10,7 @@ import {
 } from "./compiler.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
-import { loadModelCatalog } from "./model-catalog.js";
+import { loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "./model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem, withDefaultModelSelection } from "./model-selection.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
@@ -20,7 +21,6 @@ import type { SemanticIR } from "./semantic-ir.js";
 import { designDigest, designToSystemDefinition, loadSystemDesign } from "../design/index.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import { assertProjectAssetSnapshot, snapshotProjectAssets } from "./project-run-snapshot.js";
-import { loadProjectRunPlan } from "./project-run.js";
 import {
   loadLaws,
   loadProfiles,
@@ -46,6 +46,53 @@ import type {
   SystemDefinition,
   UserProfile
 } from "./types.js";
+
+const PROJECT_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function sameEvidenceFile(left: Awaited<ReturnType<typeof lstat>>, right: Awaited<ReturnType<typeof lstat>>): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode
+    && left.size === right.size && left.mtimeMs === right.mtimeMs;
+}
+
+async function assertProjectRunPath(projectRoot: string, runId: string): Promise<string> {
+  if (!PROJECT_RUN_ID.test(runId)) throw new Error("RUN_RESUME_INVALID: Project Run resume requires a relative Run ID.");
+  let current = resolve(projectRoot);
+  const rootInfo = await lstat(current);
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+    throw new Error("RUN_EVIDENCE_PATH_INVALID: Project Run root must be a real directory.");
+  }
+  for (const segment of [".ogs", "runs", runId]) {
+    current = resolve(current, segment);
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      throw new Error("RUN_EVIDENCE_PATH_INVALID: Project Run path contains a linked or non-directory component.");
+    }
+  }
+  return current;
+}
+
+async function readProjectRunEvidenceFile(projectRoot: string, runId: string, name: string): Promise<string> {
+  if (!new Set(["run-owner.json", "run-plan.json", "task.json"]).has(name)) {
+    throw new Error("RUN_EVIDENCE_PATH_INVALID: unsupported Project Run evidence file.");
+  }
+  const runDir = await assertProjectRunPath(projectRoot, runId);
+  const path = resolve(runDir, name);
+  const before = await lstat(path);
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error("RUN_EVIDENCE_PATH_INVALID: Project Run evidence must be a regular file.");
+  const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+  const handle = await open(path, constants.O_RDONLY | noFollow);
+  try {
+    const opened = await handle.stat();
+    const after = await lstat(path);
+    await assertProjectRunPath(projectRoot, runId);
+    if (!opened.isFile() || after.isSymbolicLink() || !sameEvidenceFile(before, opened) || !sameEvidenceFile(opened, after)) {
+      throw new Error("RUN_EVIDENCE_RACE: Project Run evidence changed while it was opened.");
+    }
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
+  }
+}
 
 function resolveOptionalProjectPath(args: {
   workdir: string;
@@ -231,17 +278,61 @@ export async function prepareRuntimeSetup(args: {
   modelCatalogGeneratedAt?: string;
   resumeRunDir?: string;
   runId?: string;
+  projectId?: string;
   prompt: string;
   workdir: string;
+  assetSource?: string;
+  runEvidenceRoot?: string;
   targetDir?: string;
   dryRun?: boolean;
-  projectRunMode?: "dry-run" | "sandbox" | "real";
+  executionMode?: "dry-run" | "sandbox" | "real";
+  runKind?: "project_task" | "studio_simulation";
+  owner?: {
+    kind: "project_task";
+    projectId: string;
+    taskId: string;
+    taskNumber: number;
+    attemptNumber: number;
+    runId: string;
+    teamVersionId: string;
+    teamCoreDigest?: string;
+    teamDigestVersion?: number;
+  };
 }): Promise<RuntimeAdapterSetup> {
-  const projectRun = args.projectRunMode !== undefined;
+  const projectRun = args.runKind === "project_task";
+  if (projectRun && !args.executionMode) throw new Error("PROJECT_RUN_MODE_REQUIRED: Project Task Runtime requires an explicit execution mode.");
+  if (projectRun && (!args.owner || args.owner.kind !== "project_task"
+    || args.owner.projectId !== args.projectId || !args.owner.taskId
+    || args.owner.runId !== args.runId || !args.owner.teamVersionId)) {
+    throw new Error("PROJECT_RUN_OWNER_INVALID: Runtime setup requires a matching Project Task owner.");
+  }
   const projectResume = projectRun && Boolean(args.resumeRunDir);
-  const projectResumePlan = projectResume
-    ? await loadProjectRunPlan(resolve(args.workdir, args.resumeRunDir!))
+  const runEvidenceRoot = args.runEvidenceRoot
+    ? resolve(args.runEvidenceRoot)
     : undefined;
+  if (projectRun && !runEvidenceRoot) throw new Error("PROJECT_RUN_EVIDENCE_ROOT_REQUIRED: Project Task Runtime requires the owning Project root.");
+  const resumeRoot = runEvidenceRoot
+    ? resolve(runEvidenceRoot, ".ogs", "runs")
+    : args.workdir;
+  let projectResumePlan;
+  if (projectResume) {
+    const resumeRunId = args.resumeRunDir!;
+    if (resumeRunId !== args.owner!.runId) throw new Error("RUN_RESUME_INVALID: resume Run ID does not match its owner.");
+    await assertProjectRunPath(runEvidenceRoot!, resumeRunId);
+    const persistedOwner = JSON.parse(await readProjectRunEvidenceFile(runEvidenceRoot!, resumeRunId, "run-owner.json"));
+    const owner = args.owner!;
+    if (persistedOwner?.version !== 1 || persistedOwner.runKind !== "project_task"
+      || persistedOwner.projectId !== args.projectId || persistedOwner.projectId !== owner.projectId
+      || persistedOwner.taskId !== owner.taskId || persistedOwner.taskNumber !== owner.taskNumber
+      || persistedOwner.attemptNumber !== owner.attemptNumber || persistedOwner.runId !== resumeRunId
+      || persistedOwner.teamVersionId !== owner.teamVersionId
+      || (owner.teamCoreDigest && persistedOwner.teamCoreDigest !== owner.teamCoreDigest)
+      || (owner.teamDigestVersion !== undefined && persistedOwner.teamDigestVersion !== owner.teamDigestVersion)) {
+      throw new Error("RUN_RESUME_INVALID: persisted Run owner does not match the Project Task owner.");
+    }
+    projectResumePlan = JSON.parse(await readProjectRunEvidenceFile(runEvidenceRoot!, resumeRunId, "run-plan.json"));
+    if (!projectResumePlan || typeof projectResumePlan !== "object") throw new Error("RUN_RESUME_INVALID: Run plan is invalid.");
+  }
   const projectResumeManifestDigest = typeof projectResumePlan?.projectAssetManifestDigest === "string"
     ? projectResumePlan.projectAssetManifestDigest
     : undefined;
@@ -249,8 +340,8 @@ export async function prepareRuntimeSetup(args: {
     throw new Error("RUN_SNAPSHOT_INVALID: project resume requires a manifest digest in run-plan.json.");
   }
   const assetWorkdir = projectResume
-    ? await assertProjectAssetSnapshot(resolve(args.workdir, args.resumeRunDir!), projectResumeManifestDigest)
-    : args.workdir;
+    ? await assertProjectAssetSnapshot(resolve(resumeRoot, args.resumeRunDir!), projectResumeManifestDigest)
+    : resolve(args.assetSource ?? args.workdir);
   const effectiveSystemPath = projectResume
     ? resolve(assetWorkdir, "system.mmd")
     : args.systemPath;
@@ -316,17 +407,11 @@ export async function prepareRuntimeSetup(args: {
       }
     : effectiveModelSelection;
   const storedModelCatalog = await loadModelCatalog(resolve(assetWorkdir, ".ogs", "model-catalog.json"));
-  const modelCatalog = args.modelCatalogModels?.length
-    ? {
-        catalogVersion: "2" as const,
-        generatedAt: args.modelCatalogGeneratedAt ?? storedModelCatalog?.generatedAt ?? new Date().toISOString(),
-        sources: storedModelCatalog?.sources ?? [],
-        models: [
-          ...(storedModelCatalog?.models ?? []).filter((item) => !args.modelCatalogModels?.some((fallback) => fallback.backend === item.backend && fallback.modelId === item.modelId)),
-          ...args.modelCatalogModels
-        ]
-      }
-    : storedModelCatalog;
+  const modelCatalog = mergeModelCatalogWithLiveSnapshot(
+    storedModelCatalog,
+    args.modelCatalogModels,
+    args.modelCatalogGeneratedAt
+  );
   const resolvedModelSelection = resolveModelSelectionForSystem({
     system: activeDesign ? { ...system, modelBinding: {} } : system,
     selection: modelSelection,
@@ -477,7 +562,9 @@ export async function prepareRuntimeSetup(args: {
         ])
       ),
       advisoryWarnings: resolvedModelSelection.warnings,
-      runsDir: resolve(args.workdir, runtimeConfig.runsDir),
+      runsDir: projectRun
+        ? resolve(runEvidenceRoot!, ".ogs/runs")
+        : resolve(runEvidenceRoot ?? args.workdir, runtimeConfig.runsDir),
       workdir: args.workdir,
       targetDir,
       compiler: {
@@ -501,15 +588,19 @@ export async function prepareRuntimeSetup(args: {
       } : undefined
     }
   };
+  const runRuntimeConfig = projectRun
+    ? { ...runtimeConfig, runsDir: ".ogs/runs", sharedDir: undefined }
+    : runtimeConfig;
   const runContext = await filesystemRunStore.initialize({
     system,
     systemPath: effectiveSystemPath,
     prompt: args.prompt,
     workdir: args.workdir,
-    runtimeConfig,
+    runtimeConfig: runRuntimeConfig,
     resolvedConfigSnapshot,
     resumeRunDir: args.resumeRunDir,
-    runId: args.runId
+    runId: args.runId,
+    runEvidenceRoot
   });
   if (!args.resumeRunDir) {
     await filesystemRunStore.persistPlanFingerprint({
@@ -519,7 +610,7 @@ export async function prepareRuntimeSetup(args: {
   }
   if (projectRun && !args.resumeRunDir) {
     await snapshotProjectAssets({
-      sourceWorkdir: args.workdir,
+      sourceWorkdir: assetWorkdir,
       runDir: runContext.runDir,
       runtimeConfig,
       additionalFiles: typeof system.graph?.handoffContracts === "string"

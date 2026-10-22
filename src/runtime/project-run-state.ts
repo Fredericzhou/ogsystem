@@ -28,6 +28,14 @@ export type ProjectRunControl = {
   cancelRequested: boolean;
 };
 
+export type ProjectTaskReservation = {
+  kind: "task-attempt";
+  projectId: string;
+  taskId: string;
+  teamVersionId: string;
+  runId: string;
+};
+
 export type ProjectNodeState = {
   nodeId: string;
   status: "pending" | "ready" | "running" | "waiting_review" | "completed" | "failed" | "cancelled";
@@ -59,12 +67,13 @@ export type ProjectRunState = {
   nodes: Record<string, ProjectNodeState>;
   attempts: ProjectAttemptState[];
   reviews: ProjectReviewState[];
+  taskReservation?: ProjectTaskReservation;
   updatedAt: string;
 };
 
 export const PROJECT_RUN_STATE_FILE = "control/state.json";
 
-export function createProjectRunState(plan: ProjectRunPlan): ProjectRunState {
+export function createProjectRunState(plan: ProjectRunPlan, taskReservation?: ProjectTaskReservation): ProjectRunState {
   const nodes = Object.fromEntries(plan.nodeGraph.map((node) => [node.nodeId, {
     nodeId: node.nodeId,
     status: node.nodeId === plan.entryNodeId ? "ready" : "pending"
@@ -77,6 +86,7 @@ export function createProjectRunState(plan: ProjectRunPlan): ProjectRunState {
     nodes,
     attempts: [],
     reviews: [],
+    ...(taskReservation ? { taskReservation } : {}),
     updatedAt: new Date().toISOString()
   };
 }
@@ -165,6 +175,16 @@ export async function saveProjectRunState(runDir: string, state: ProjectRunState
   await writeJsonFileAtomic(resolve(runDir, PROJECT_RUN_STATE_FILE), state);
 }
 
+export async function updateProjectRunStateWithHeldLock(
+  runDir: string,
+  update: (state: ProjectRunState) => ProjectRunState | Promise<ProjectRunState>
+): Promise<ProjectRunState> {
+  const current = await loadProjectRunState(runDir);
+  const next = await update(current);
+  await saveProjectRunState(runDir, next);
+  return next;
+}
+
 export async function updateProjectRunState(
   runDir: string,
   update: (state: ProjectRunState) => ProjectRunState | Promise<ProjectRunState>
@@ -175,10 +195,7 @@ export async function updateProjectRunState(
     try {
       const lock = await acquireProjectWriteLock(workdir, "project-run-state");
       try {
-        const current = await loadProjectRunState(runDir);
-        const next = await update(current);
-        await saveProjectRunState(runDir, next);
-        return next;
+        return await updateProjectRunStateWithHeldLock(runDir, update);
       } finally {
         await lock.release();
       }

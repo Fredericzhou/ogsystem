@@ -1,8 +1,37 @@
 import { resolve } from "node:path";
-import { rm } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { saveProjectRunState, loadProjectRunState } from "../../../dist/runtime/project-run-state.js";
 import { assertTaskExecutionSlot } from "../domain/task.mjs";
 import { assertRunTransition } from "../domain/run.mjs";
+import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
+
+async function ensureRunDirectory(projectWorkdir, runId) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(String(runId || ""))) {
+    throw new Error("TASK_RUN_RESERVATION_INVALID: Run ID is invalid.");
+  }
+  const root = resolve(projectWorkdir);
+  await assertSafeEvidencePath(root, [], { kind: "directory", label: "Project workspace" });
+  for (const segment of [".ogs", "runs"]) {
+    const parentSegments = segment === ".ogs" ? [] : [".ogs"];
+    const target = resolve(root, ...parentSegments, segment);
+    try {
+      await assertSafeEvidencePath(root, [...parentSegments, segment], { kind: "directory", label: "Run evidence" });
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      await mkdir(target).catch((mkdirError) => {
+        if (mkdirError?.code !== "EEXIST") throw mkdirError;
+      });
+      await assertSafeEvidencePath(root, [...parentSegments, segment], { kind: "directory", label: "Run evidence" });
+    }
+  }
+  const runDir = resolve(root, ".ogs", "runs", runId);
+  await mkdir(runDir).catch((error) => {
+    if (error?.code === "EEXIST") throw new Error("TASK_RUN_RESERVATION_CONFLICT: Run evidence already exists.");
+    throw error;
+  });
+  await assertSafeEvidencePath(root, [".ogs", "runs", runId], { kind: "directory", label: "Run evidence" });
+  return runDir;
+}
 
 export function createFileTaskExecutionStore({ projectStore }) {
   if (typeof projectStore?.getProject !== "function"
@@ -19,7 +48,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
   }
 
   return Object.freeze({
-    async reserveAttempt({ projectId, taskId, retrySourceRunId, attemptKey, attemptFingerprint, runId, mode, startedAt, runProjectId, runWorkdir }) {
+    async reserveAttempt({ projectId, taskId, retrySourceRunId, materialSnapshotPolicy, attemptKey, attemptFingerprint, runId, mode, startedAt, teamVersionId, teamCoreDigest, teamDigestVersion }) {
       return projectStore.withProjectWriteLock(projectId, "project-task-bind-run", async () => {
         const { project, task } = await taskAt(projectId, taskId);
         if (!(retrySourceRunId ? ["queued", "failed"].includes(task.status) : task.status === "queued")) {
@@ -36,17 +65,36 @@ export function createFileTaskExecutionStore({ projectStore }) {
         const attemptNumber = (task.runIds || []).length + 1;
         const attemptRequests = {
           ...(task.attemptRequests || {}),
-          [attemptKey]: { requestFingerprint: attemptFingerprint, runId, attemptNumber, mode, sourceRunId: retrySourceRunId || null }
+          [attemptKey]: { requestFingerprint: attemptFingerprint, runId, attemptNumber, mode, sourceRunId: retrySourceRunId || null, materialSnapshotPolicy }
         };
-        if (!runWorkdir) throw new TypeError("Task Run reservation requires its Runtime workspace.");
-        const runDir = resolve(runWorkdir, ".ogs", "runs", runId);
+        if (!teamVersionId || teamVersionId !== task.teamVersionId) throw new Error("TASK_TEAM_VERSION_INVALID: Run owner must use the Task's fixed TeamVersion.");
+        let runDir;
         try {
+          runDir = await ensureRunDirectory(project.workdir, runId);
+          const owner = {
+            version: 1,
+            runKind: "project_task",
+            projectId,
+            taskId,
+            taskNumber: task.taskNumber,
+            runId,
+            attemptNumber,
+            teamVersionId,
+            ...(teamCoreDigest ? { teamCoreDigest } : {}),
+            ...(Number.isInteger(teamDigestVersion) ? { teamDigestVersion } : {}),
+            materialSnapshotPolicy,
+            createdAt: startedAt
+          };
+          const ownerPath = resolve(runDir, "run-owner.json");
+          const ownerTempPath = `${ownerPath}.${process.pid}.tmp`;
+          await writeFile(ownerTempPath, `${JSON.stringify(owner, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+          await rename(ownerTempPath, ownerPath);
           await saveProjectRunState(runDir, {
             version: 1,
             runId,
             attemptNumber,
             status: "planning",
-            taskReservation: { kind: "task-attempt", collaborationProjectId: projectId, taskId, runId, attemptKey },
+            taskReservation: { kind: "task-attempt", projectId, taskId, teamVersionId, runId, attemptKey },
             control: { paused: false, cancelRequested: false },
             nodes: {},
             attempts: [],
@@ -57,18 +105,19 @@ export function createFileTaskExecutionStore({ projectStore }) {
             currentRunId: runId,
             runIds: [...(task.runIds || []), runId],
             attemptRequests,
-            runProjectId,
             status: "planning",
             completedAt: null,
             startedAt,
             lastError: null,
-            outputSummary: ""
+            outputSummary: "",
+            review: null,
+            reviewTransition: null
           });
           return { project, task: reservedTask, attemptNumber };
         } catch (error) {
           const latest = await taskAt(projectId, taskId).catch(() => undefined);
           const wasCommitted = latest?.task.currentRunId === runId || latest?.task.runIds?.includes(runId);
-          if (!wasCommitted) await rm(runDir, { recursive: true, force: true }).catch(() => undefined);
+          if (!wasCommitted && runDir) await rm(runDir, { recursive: true, force: true }).catch(() => undefined);
           throw error;
         }
       });
@@ -87,9 +136,10 @@ export function createFileTaskExecutionStore({ projectStore }) {
       });
     },
 
-    async failAttempt({ projectId, taskId, runProject, runId, error, now }) {
+    async failAttempt({ projectId, taskId, runId, error, now }) {
       const failureMessage = error instanceof Error ? error.message : String(error);
-      const runDir = resolve(runProject.workdir, ".ogs", "runs", runId);
+      const project = await projectStore.getProject(projectId);
+      const runDir = resolve(project.workdir, ".ogs", "runs", runId);
       const currentState = await loadProjectRunState(runDir).catch(() => undefined);
       if (currentState) {
         if (currentState.status !== "failed") assertRunTransition(currentState.status, "failed");
