@@ -66,7 +66,7 @@ Release UAT 本轮已由框架开发者完成 clean install、真实 Codex sandb
 
 本轮验证：`pnpm --dir apps/team-site test --test-concurrency=1` 108/108 通过；`pnpm build` 通过；`pnpm run test:docs-command-drift` 通过；`pnpm run test:visualizer` 通过（主测试 198/198、布局测试 49/49）；`pnpm test` 657 项中 656 项通过、1 项 Windows 专属测试在 macOS 跳过；`git diff --check` 通过。经典团队浏览器路径验证了规范 TeamVersion 复用、模板分叉、项目化 Task、readiness 阻塞、流程预览完整结果、刷新和 390px/768px 页面边界；另有一次真实 Codex sandbox 项目化 Run 完成五角色执行。以上仍不表示 Application/Infrastructure 完整迁移或审核成功、操作者中断/恢复及真实设备无障碍 UAT 全部完成。
 
-本轮边界收敛（2026-10-18）：Team Studio Simulation 已从 `project-repository.mjs` 迁入 Application 用例和 Runtime adapter；只接受规范且已发布的 TeamVersion，删除临时 `case:*` Simulation 入口。Simulation 在独立临时工作区导入团队快照、执行 dry-run，并在成功或 Runtime 异常时清理；浏览器路径验证 `persisted=false`，且不新增 Collaboration Project、Task 或 TeamVersion Run。持久化身份校验扩展到 `teamId`、`teamRootId`、父版本、挂载 TeamVersion 和 Task 的运行工作区引用；Team Catalog 拒绝目录名与显式 TeamVersion ID 不一致的记录。
+历史边界记录（2026-10-18）：当时 Team Studio Simulation 使用独立临时工作区，完成后清理且 `persisted=false`。当前产品契约已由 [Studio/Projects 运行数据隔离实施方案](ogs-studio-project-run-isolation-plan.md) 更新：Simulation 持久化到共享数据根 `.studio/simulations/<teamVersionId>/<simulationId>/`，可在 Studio 历史回放，并使用独立保留策略；不得把本段旧行为作为当前实现说明。持久化身份校验覆盖 `teamId`、`teamRootId`、父版本、挂载 TeamVersion 和 Task 的运行工作区引用；Team Catalog 拒绝目录名与显式 TeamVersion ID 不一致的记录。
 
 本轮验证（2026-10-18）：`pnpm build` 通过；Team Site 全量测试 113/113 通过；`pnpm run test:docs-command-drift` 通过；`pnpm run test:visualizer` 主测试与布局测试通过（布局 49/49）；`pnpm test` 657 项中 656 项通过、1 项 Windows 专属用例在 macOS 跳过。经典团队浏览器 UAT 覆盖直接使用、模板编辑、TeamVersion Simulation 不持久化、项目化 Task、readiness 阻塞、流程预览完整结果、刷新恢复、Task 重试及 390px/768px 页面布局和控件可达性。模拟 Runtime 失败临时目录清理、规范身份拒绝和完整结果脱敏均有自动化覆盖。审核成功和中断后的人工恢复/重试、真实设备键盘与屏幕阅读器 UAT 尚未完成；`project-repository.mjs` 的 Project、Task/Run、Package 与 Studio 设计持久化职责迁移仍未完成，方案验收清单保持未通过。
 
@@ -101,13 +101,13 @@ Team Site 现由 Application 用例编排业务规则，`domain/` 持有领域�
 - **Collaboration Project**：业务项目，保存项目定义、材料、挂载的 TeamVersion 和 Task 列表。
 - **Task**：项目中的一次业务工作请求，明确选择一个已挂载 TeamVersion；Task 可在 Run 创建前排队或删除。一次 Run 成功完成并满足适用验收条件后即完成 Task；失败或异常时的重试仍属于原 Task。
 - **Run**：Task 的一次执行尝试，保存执行快照、控制、状态、事件、审核和结果。Task 仅在失败或异常后的重新执行需要时关联多个 Run；暂停、审核等待和有效 checkpoint 中断恢复沿用同一 Run。
-- **Studio Simulation**：对草稿或 TeamVersion 的临时调试，不创建正式 Collaboration Project Task 历史。
+- **Studio Simulation**：对草稿或 TeamVersion 的独立调试记录，不创建正式 Collaboration Project Task 历史；当前记录可持久化回放，详见隔离实施方案。
 
 Team、TeamVersion、Project、Task、Run 是不同实体。禁止使用含义重叠的 `project` 表达 Team 或 Collaboration Project，也禁止把 Task 状态和 Run 执行状态当成同一个状态机。
 
-Run 查询 DTO 以 `collaborationProjectId` 表示业务项目，以 `runtimeProjectId` 表示 Run artifacts 所属 Runtime 工作区；不得额外返回含义不明的 `projectId`。最近运行列表和详情、事件及结果查询使用相同身份命名；独立 Workspace Run 的 `collaborationProjectId` 为 `null`。
+Run 查询 DTO 以 `runKind` 和 discriminated `owner` 表达领域归属。Project Task Run 的 owner 必须包含 `projectId`、`taskId`、`taskNumber`、`attemptNumber` 和 `teamVersionId`；证据文件存放在项目自己的 `.ogs/runs/<runId>/`。资产版本标识不得复用为运行证据目录标识。
 
-Projects 的 Studio 诊断链接保留 `projectId=runtimeProjectId`，并附带 `collaborationProjectId`、`taskId` 和 `runId`。Visualizer 只有在协作项目 Task 记录引用该 Run/Runtime 工作区，且 Runtime 工作区 TeamVersion 元数据匹配时才打开该工作区；缺少或不匹配的关联返回 `PROJECT_NOT_FOUND`。Projects 诊断页隐藏运行与审核控制，Task 控制仍由 Projects 页面发起。
+Projects 的运行诊断在统一应用 Origin 内通过 `projectId + taskId + runId` 打开；服务器校验 Task 记录、Run owner 文件与请求路径一致后读取项目证据。诊断页面只读，运行与审核控制仍由 Projects Task 页面发起。
 
 版本边界是发布不可变性和执行可复现性的实现工具，不等于要求用户维护复杂的版本分支。产品默认编辑当前草稿并在发布时生成可挂载快照；只在用户需要比较或选择稳定发布内容时呈现版本信息。
 
@@ -319,12 +319,12 @@ planning | ready | running | pause_requested | paused | waiting_review | cancel_
 
 ### 产品全流程
 
-- [x] 浏览器流程覆盖创建团队草稿、Natural 理解/生成、Professional 编辑、校验、模拟、发布及目录展示。
-- [x] 浏览器和 API 流程覆盖创建协作项目、挂载多个 TeamVersion、替换团队、添加材料、创建任务、运行、查看事件与结果。
+- [x] 独立浏览器流程覆盖创建团队草稿、Natural 理解/生成、专业属性与资产编辑、校验、模拟、发布及目录展示；Professional 检查器验收覆盖角色模型绑定、Context Map、Prompt、Flow Contract/Schema 持久化和 1440/1024/768/390px 布局。
+- [x] 浏览器和 API 流程覆盖创建协作项目、挂载一个已发布 TeamVersion、切换所用版本、添加材料、创建任务、运行、查看事件与结果。单个 Project 不组合多个 TeamVersion。
 - [x] “经典团队 -> 协作项目 -> Task -> Run -> 交付结果”浏览器 UAT 按上述步骤通过，刷新后关系和结果保持一致。
 - [x] Task 流程覆盖排队、启动、并发拒绝、暂停、恢复、等待审核、批准/返工/终止、取消、失败、重试、删除和幂等重放。
 - [x] Studio Simulation 不污染正式 Project、Task、Run 历史；Operations Run 保存完整且可查询的执行快照。
-- [x] 导入导出覆盖成功往返、无效 schema、digest 篡改、路径穿越、冲突策略及多团队包。
+- [x] 导入导出覆盖成功往返、无效 schema、digest 篡改、路径穿越、冲突策略及单 TeamVersion Project 包。
 - [x] 所有关键错误在 UI 中可理解、可恢复；重复提交、慢响应、请求取消和页面切换不导致重复写入或未处理异常。
 
 ### 并发、恢复与安全

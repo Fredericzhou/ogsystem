@@ -30,8 +30,10 @@ Engineering rules, plans, specifications, and active backlog live under `develop
 - [OGS workflow DSL upgrade plan](development/ogs-langgraph-dsl-upgrade-plan.md): DSL, IR, reliability, and standards roadmap.
 - [OGS product boundary and evolution](development/ogs-product-boundary-and-evolution.md): core, enhancement, extension tiers and admission rules.
 - [Team Collaboration refactor plan](development/team-collaboration-module-refactor-plan.md): current Team/TeamVersion/Project/Task/Run contract, architecture target, and acceptance gates.
+- [Studio and Projects isolation plan](development/ogs-studio-project-run-isolation-plan.md): TeamVersion release evidence, Project Run and Studio Simulation ownership, persistence, recovery, and security invariants.
+- [Studio and Projects test/UAT report](development/ogs-studio-project-run-isolation-validation-report.md): latest automated results, recorded real-run evidence, and remaining release gates.
+- [Shared resource architecture](development/shared-resource-architecture.md): platform resource ownership, adapter boundaries, and current integration limits.
 - [Archived project/team/task-run plan](development/archive/ogs-project-team-task-run-plan.md): earlier Runtime terminology and workspace notes; Team Site Task/Run semantics are superseded by the current refactor plan.
-- [Team Site frontend infrastructure plan](development/team-site-frontend-infrastructure-plan.md): routing, request lifecycle, and state rendering.
 - [OGS visualizer refactor plan](development/ogs-visualizer-refactor-plan.md): semantic layout and graph interaction plan.
 - [Release UAT checklist](development/release-uat-checklist.md): clean-install scenarios and release sign-off gates.
 - [Semantic gap implementation plan](development/semantic-gap-implementation-plan.md): current runtime gaps and priorities.
@@ -57,6 +59,7 @@ Use these recent archive records to understand implementation context:
 - [Team Site domain/product delivery 2026-10-18](development/archive/delivery/team-site-domain-product-plan-2026-10-18.md)
 - [Team Site run reliability delivery 2026-10-18](development/archive/delivery/team-site-run-reliability-plan-2026-10-18.md)
 - [Team Collaboration UX delivery 2026-10-18](development/archive/delivery/team-collaboration-product-ux-fix-plan-2026-10-18.md)
+- [Team Site frontend infrastructure delivery 2026-10-22](development/archive/delivery/team-site-frontend-infrastructure-plan-2026-10-22.md)
 
 The full development archive lives under `docs/development/archive/delivery/` and `docs/development/archive/history/`; the usage archive is at `docs/usage/archive/`. Do not maintain a duplicated full file list here; use `rg` or browse by date when historical context is needed.
 

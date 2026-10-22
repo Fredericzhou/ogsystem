@@ -10,6 +10,9 @@ belong in `archive/`.
 - [Decisions](DECISIONS.md): accepted architecture decisions and current boundaries.
 - [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.
 - [Team Collaboration module refactor plan](team-collaboration-module-refactor-plan.md): single current engineering contract for Team/TeamVersion/Project/Task/Run, architecture boundaries, and acceptance gates.
+- [Studio and Projects isolation plan](ogs-studio-project-run-isolation-plan.md): storage ownership, immutable TeamVersion proof, Runtime inputs, and recovery/security requirements.
+- [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): current verification and release acceptance status; historical attempts are dated within the report.
+- [Shared resource architecture](shared-resource-architecture.md): shared Platform resource ownership and adapter boundaries.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
   boundaries, and generated source.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,

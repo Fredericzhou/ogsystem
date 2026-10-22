@@ -17,14 +17,19 @@ Implemented scope:
 
 Product boundaries:
 
-- Framework: runtime, parser/compiler, CLI, and `nl2mmd`.
-- Platform: Framework plus model adapters/catalog, role library, and the professional workbench.
-- Product Site: Platform plus team repository/factory, collaboration projects, resources, users,
-  tasks, and run history.
+- Framework: Runtime, parser/compiler, CLI, and `nl2mmd`.
+- Shared Platform: model discovery, default execution settings, reusable tool/storage metadata,
+  immutable dataset snapshots, and the Runtime/Harness adapters. Platform resources do not own
+  Team, Task, Run, or Deliverable records.
+- OGS Studio: Team and TeamVersion authoring, role templates, graph design, Simulation evidence,
+  diagnostics, and release.
+- OGS Projects: Collaboration Projects, Materials, Tasks, Project Run evidence, Reviews, and
+  Deliverables. Each Project mounts one released TeamVersion; different Projects may mount
+  different versions.
 - Team definition: a reusable static collaboration structure. Graph members are Responsibility
   Roles, not specific people or separately identified agents.
-- Collaboration project: a separate working space with one work directory, shared resources,
-  one or more released team versions, task inputs, and run history. A project is not a team draft.
+- Project Run and Studio Simulation use the same execution base but have separate owners, storage,
+  APIs, and lifecycles.
 
 The Product Site portable team package format is `team-v2`; it contains a static released team
 definition and excludes framework code, credentials, model catalogs, and execution artifacts.
@@ -33,8 +38,8 @@ The stable framework paths are `.ogs/`, `og-roles/`, `system.mmd`, and `.ogs/run
 
 Product usage:
 
-- Product Site: `apps/team-site/README.md` — team repository/factory, collaboration projects,
-  task controls, model discovery, import, and export.
+- Product Site: `apps/team-site/README.md` — OGS Studio and OGS Projects, shared resource menus,
+  task controls, model discovery, and product boundaries.
 - Product concepts: `docs/usage/ogs-concepts.md` — the Framework, Platform, team, project, task,
   and run boundaries.
 - Professional workbench: `docs/usage/visualizer-console.md` — precise graph authoring, debugging,
@@ -120,10 +125,11 @@ ogs vis --ogs-dir .
 ogs visualizer --ogs-dir .
 ```
 
-The product site runs at [`http://127.0.0.1:4174`](http://127.0.0.1:4174). The professional workbench
-runs locally at [`http://127.0.0.1:4177`](http://127.0.0.1:4177). For phone or LAN access, use the
-Tailnet startup command in [`apps/team-site/README.md`](apps/team-site/README.md); the site is exposed
-on `http://100.66.215.15:4174/` and the workbench is published through Tailscale Serve HTTPS.
+The product site, including Projects, team design, platform settings, and run diagnostics, uses one
+Team Site origin. Local development defaults to [`http://127.0.0.1:4173/projects`](http://127.0.0.1:4173/projects).
+For Tailnet access, use the startup command in [`apps/team-site/README.md`](apps/team-site/README.md); the site is
+exposed on `http://100.66.215.15:4174/projects`. The Visualizer service on port `4177` is a server-side upstream,
+not a separate product URL. The standalone `ogs vis` command remains available for operator diagnostics.
 
 Stable lifecycle command anchors:
 

@@ -2,8 +2,9 @@
 
 ## 状态
 
-状态：前端基础设施切片已交付的历史验收记录。Team/TeamVersion/Project/Task/Run 当前领域契约、重构状态和剩余验收
-以[模块重构方案](team-collaboration-module-refactor-plan.md)为准；本文不作为当前领域语义或整体发布通过的证明。
+状态：已归档的前端基础设施交付记录（2026-10-22）。本文中的路由和多团队项目行为属于历史实现，不代表当前产品契约。
+
+Superseded by: [Team Collaboration module refactor plan](../../team-collaboration-module-refactor-plan.md), [Studio/Projects isolation plan](../../ogs-studio-project-run-isolation-plan.md), and [current usage manual](../../../usage/usage-manual.md).
 
 本文只负责路由、请求生命周期、状态渲染、模块边界和用户交互治理，不实现领域去重、摘要计算或运行时状态迁移。当前版本按最新路由和字段契约工作，不保留旧入口兼容。
 
@@ -26,20 +27,21 @@
 ## 路由
 
 ```text
-/
-/examples
-/cases/:caseId
-/studio
+/projects
+/projects/new
+/projects/:projectId
+/projects/:projectId/teams
+/projects/:projectId/runs/:runId
+/teams
+/teams/:teamVersionId/design
 /factory
 /factory/new
-/studio/team/:id
-/projects
-/studio/project/new
-/studio/project/:id/run
 /platform
+/examples
+/history
 ```
 
-非法路由使用 `history.replaceState` 并同步 Router 当前路径，不增加重复历史记录。
+`/` 进入 `/projects`。非法路由使用 `history.replaceState` 并同步 Router 当前路径，不增加重复历史记录。旧 `/studio/project/*`、`/studio/team/*` 页面路由不再提供 alias。
 
 ## 页面状态
 
@@ -68,7 +70,7 @@ type PageState = {
 
 ## 非目标与边界
 
-- 不支持 `/studio/new`；团队创建入口为 `/factory/new`，协作项目创建入口为 `/studio/project/new`。
+- 团队创建入口为 `/factory/new`，协作项目创建入口为 `/projects/new`；团队设计与运行诊断在统一 Shell 内按需加载。
 - 不保留旧字段或旧状态兼容；前端不迁移数据。
 - 运行状态采用可取消轮询；SSE 属于后续独立能力，不在当前版本宣称完成。
 

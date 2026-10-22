@@ -42,33 +42,39 @@ Runtime 术语中，`Run` 表示一次动态执行尝试，CLI、API 和运行�
 
 ## 产品站点当前版本
 
-如果你通过网站使用 OGSystem，请先按下面的边界理解产品。OGS Projects 面向业务用户，OGS Studio 面向专业团队开发；两者共享平台配置和 Runtime 能力：
+如果你通过网站使用 OGSystem，Projects 和 Studio 是同一产品 Shell 中面向不同工作的区域：Projects 处理业务项目和 Task；Studio 处理团队设计、Simulation 调试、诊断及发布。两者共用 Team Site Origin、Runtime 能力和独立的 Platform 配置页面：
 
 ```text
 OGS Studio 创建/专业编辑 -> 发布 TeamVersion -> OGS Projects 挂载版本 -> 创建 Task -> 创建并执行 Run -> 复盘
 ```
 
-- **团队仓库**保存已发布团队版本，负责查看、导入、复制版本和资产管理。
-- **OGS Studio**保存编辑中和待发布团队，负责专业编辑、调试、运行诊断和平台模型配置。Projects 可发起自然语言创建或调整；调整会进入 Studio 草稿，检查并发布后需回 Projects 明确挂载新版本。
-- **协作项目**单独创建工作目录，挂载一个或多个已发布团队，集中管理资源、任务清单和运行记录。项目页面不嵌入团队结构，查看团队时进入团队建设页面。
+- **团队仓库**展示已发布版本，提供导入、复制为新版本和资产管理，可从 `/teams` 进入。
+- **OGS Studio**保存编辑中和待发布团队，负责图谱结构、系统法则、入口与交接模式、角色模型/执行配置绑定、Join/Loop/Review 策略、Context Map、角色资产包（`agent.md`、`prompt.md`、`role.json`、`output.schema.json`）、流程条件与 Flow Contract/Schema 编辑，并提供静态校验、Simulation 调试与回放、发布门禁和版本管理。专业配置与角色资产保存到 TeamVersion 草稿；发布版本不可原地修改，需先另存为新草稿。模型绑定从 Platform 发现的可运行模型中选择，并以 backend/model 引用保存在草稿；CLI Profile 和本地工具定义保存在 TeamVersion 的 `profiles.json`、`tools.json`，可在角色检查器中创建或编辑。共享 `/platform/tools` 目录是可复用能力元数据，不会自动变成运行命令；凭据解析仍由本机 Harness 管理。Simulation/Project Run 启动时服务端会重新检查绑定可用性，页面静态状态不代表外部网络或凭据已连通。Projects 可发起自然语言创建或调整；调整会进入团队草稿，检查并发布后需在项目中明确挂载新版本。
+- **协作项目**单独创建工作目录，只挂载一个已发布团队版本，集中管理资源、任务清单和运行记录。项目页面不创建或组合团队；团队设计、调试和发布由 OGS Studio 负责。项目可在任务未运行时切换所用版本，已有 Task 继续绑定原版本。
 - **Task** 保存明确的工作请求和执行团队版本，并显示任务序号、状态、关联 Run 和人工反馈。当前同一项目至多一个 Task 的 Run 处于准备、处理中、暂停或待人工审核状态；该 Run 完成或终止后才能启动下一项。
 
 任务支持开始、暂停、继续、人工审核、停止、失败重试和删除。Task 创建时固定绑定 TeamVersion，项目内递增的 `taskNumber` 用于页面和审计展示，`taskId` 用于系统关联。一次 Run 成功完成并满足适用验收条件后，Task 即成功，不自动重复运行；失败或异常后才从 Task 发起新的 Run 重试。暂停、待审核和符合恢复契约的中断通过原 checkpoint 继续同一个 Run。尝试历史按序保留，历史 Run 只读。OGS Projects 服务重启时会把遗留活动 Run 收敛为失败，之后重试将创建新 Run；Runtime 的直接 resume 能力不改变这项 Projects 产品行为。删除只从任务清单隐藏，运行快照与审计信息仍保留。相同幂等键和请求会去重 Task/Run 预留；这不承诺任意外部副作用恰好一次。readiness 阻塞时任务保持排队，不产生 Run。
 
-每个 Run 的 `.ogs/runs/<run-id>/` 工作目录隔离运行状态、快照和审计文件，但不自动隔离对项目代码目录或外部系统的写入。per-Run Git worktree 隔离、项目归档和 Run 结果显式发布是规划能力，OGS Projects 当前尚未实现；数据库、远程 API、网络、凭据和 worktree 外写入仍需额外沙箱策略。
+每个 Project Run 使用项目自己的 `.ogs/runs/<runId>/` 保存冻结的 TeamVersion 与 Materials 快照、运行状态和审计文件；TeamVersion 发布目录保持只读。重试沿用 Task 固定的 TeamVersion，并优先复用源 Attempt 的材料快照；源 Run 状态缺失时如回退使用当前项目材料，系统会把该策略和原因记录在新 Attempt 元数据中。成功 Run 可显式归档为 Deliverable：索引保存在 `.site/deliverables.json`，内容是 `workspace/deliverables/<deliverableId>/` 下独立只读快照。Run 目录隔离状态和证据，但不自动隔离角色对项目代码目录或外部系统的写入；数据库、远程 API、网络、凭据和 worktree 外写入仍需额外沙箱策略。
 
-运行记录列表只返回结果摘要。打开某次 Run 后，可按需读取经 Runtime 凭据脱敏的完整结果；如果完整结果尚未生成或不可用，页面会说明当前只显示摘要。
+运行记录列表只返回结果摘要。打开某次 Run 后，可按需读取经 Runtime 凭据脱敏的完整结果；如果完整结果尚未生成或不可用，页面会说明当前只显示摘要。项目详情中的“归档成果”列表读取 Deliverable 索引，打开内容时会重新校验快照 digest；相同 Run 重复归档保持幂等，同一 Task 的不同成功 Attempt 可以分别归档。
 
 平台配置中的“模型请求超时”只限制等待**一次模型请求返回**的时间，不限制整个任务的执行时长。一个任务可能包含多个角色、多轮处理、暂停或人工审核，因此正常运行时间可以超过该值；请求超时后根据任务状态继续、停止或重新处理。
 
-OGS Projects 与 OGS Studio 的当前入口：
+Team Site 的当前入口：
 
-| 服务 | 本机地址 | Tailnet 访问 |
+| 区域 | 本机地址 | Tailnet 访问 |
 | --- | --- | --- |
-| OGS Projects | `http://127.0.0.1:4174/` | `http://100.66.215.15:4174/` |
-| OGS Studio | `http://127.0.0.1:4177/` | 由 Tailscale Serve 提供 HTTPS 主机名 |
+| 项目工作台 | `http://127.0.0.1:4173/projects` | `http://100.66.215.15:4174/projects` |
+| OGS Studio 团队工程 | `/studio`（团队仓库）、`/studio/new`（团队创建）、`/studio/teams/:id/info`、`/studio/teams/:id/design`、`/studio/teams/:id/run`、`/studio/teams/:id/release` | 同一 Team Site Origin |
+| OGS Projects 与项目运行历史 | `/projects`、`/projects/:id`、`/history` | 同一 Team Site Origin |
+| 平台配置 | `/platform` | 同一 Team Site Origin |
 
-Windows 上从仓库根目录执行 `pnpm start:team-site:tailnet` 可重启两项服务并配置 Tailnet 入口。OGS Studio 仍绑定本机，由 Tailscale Serve 负责 HTTPS 和身份认证；OGS Projects 绑定 `0.0.0.0` 供 Tailnet 访问。
+主导航按“业务协作、团队工程、共享平台”分组。普通模式默认展示 Projects；切换到专业模式可访问 OGS Studio、项目运行历史和 Platform。Studio 设计与 Simulation 历史为独立页面，不嵌入协作项目的窄面板。静态结构检查不验证外部网络或 Harness 凭据；隔离运行会由服务端再次检查。
+
+本地 Team Site 默认监听 `4173`，可通过 `PORT` 覆盖。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 使用，
+不是另一个面向用户的 Origin；可通过 `OGS_VIS_URL` 配置上游服务地址。Windows 上从仓库根目录执行
+`pnpm start:team-site:tailnet` 可启动 Team Site 并提供 Tailnet 入口。浏览器中的产品页面始终从 Team Site 地址打开。
 
 ## Capability Snapshot
 
@@ -1215,15 +1221,15 @@ ogs \
 - keeps the final adapter result JSON on `stdout`
 - use `--quiet-run` when you need silent `stderr`
 
-CLI 运行可视化（独立于网站专业工作台）：
+独立 CLI 运行可视化（供操作人员诊断 Runtime 证据）：
 
 ```bash
 ogs visualizer --ogs-dir .
 ```
 
-当前稳定版本为 `1.0.0`（以 `ogs --version` 查看本机实际安装版本）。`ogs vis` 是面向运行证据的
-独立 CLI 服务，默认本机地址为 [`http://127.0.0.1:3337`](http://127.0.0.1:3337)。它与网站的
-专业工作台 `4177` 端口不是同一服务；网站用户通常通过 `/studio/team/:id` 和项目页面完成日常操作。
+当前稳定版本为 `1.0.0`（以 `ogs --version` 查看本机实际安装版本）。`ogs vis` 是给操作人员独立启动的
+运行证据诊断 CLI 服务，默认本机地址为 [`http://127.0.0.1:3337`](http://127.0.0.1:3337)；它不属于 Team Site
+产品导航。网站用户在同一个 Team Site Shell 中通过 `/studio/teams/:id/design` 编辑团队，在 `/studio/teams/:teamVersionId/run` 查看 Studio Simulation 历史，并从 Projects Task Run 页面查看业务运行证据。两类记录共享只读诊断呈现能力，但 API 与数据所有权分离。
 手机或其他设备访问 CLI 可视化时，请按下面的远程 HTTPS 配置启动，并使用证书匹配的主机名/IP。
 
 当前另外两个本机项目服务地址（仅在对应服务运行期间有效）：
@@ -1250,7 +1256,7 @@ Open `https://<server-hostname-or-ip>:3337`. Use a certificate trusted by the cl
 
 The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
 
-Studio Bridge is available from the Project view. Its graph editor is the real isolated `@antv/x6` Studio Graph Island: drag role nodes for layout, drag from a role output port to another role input port to create a flow, and use undo/redo to replay authoring/canvas snapshots back through the draft apply path. X6 cells are never the project truth; generated Mermaid and saved source still come from the Studio authoring document.
+The Team Site Studio design page is available at `/studio/teams/:id/design`. Its graph editor is the isolated `@antv/x6` Studio Graph Island: drag role nodes for layout, drag from a role output port to another role input port to create a flow, and use undo/redo to replay authoring/canvas snapshots through the draft apply path. X6 cells are never the team definition; generated Mermaid and saved source still come from the Studio authoring document. The property inspector edits system and role execution settings, role package files, Context Map, flow conditions, and Flow Contract/Schema assets on the TeamVersion draft. Saving writes edited assets for the draft's submitted role set before validating and persisting the design; this also permits assets for newly added roles. Design and multi-file asset writes are not one filesystem transaction. If asset writing fails, the page reports that design was not saved and that asset files may be partial. If design validation or persistence fails after assets were written, the page reports the saved assets and incomplete design save; some draft files may also have been written. Keep the page open and retry after resolving the error. Release validation and runtime readiness remain separate checks; model discovery and shared execution defaults are managed by Platform.
 
 The optional topology-order overlay assigns stable sequence badges to flows. Automatic routing reserves extra clearance around roles and boundaries so loop-flow labels have room beside their paths. The overlay affects graph presentation only and can be toggled from the graph toolbar.
 

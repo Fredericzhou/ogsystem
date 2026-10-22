@@ -24,7 +24,7 @@
 
 ## Theme Consolidation
 
-- Team Site current terminology and architecture are maintained in `../team-collaboration-module-refactor-plan.md`, `../../usage/ogs-concepts.md`, and `../../../apps/team-site/README.md`. Completed UX, domain/product, and run reliability delivery plans dated 2026-10-18 are historical evidence; they may describe implementation details that the current refactor contract has since tightened.
+- Team Site current terminology and architecture are maintained in `../team-collaboration-module-refactor-plan.md`, `../ogs-studio-project-run-isolation-plan.md`, `../../usage/ogs-concepts.md`, and `../../../apps/team-site/README.md`. Completed UX, frontend infrastructure, domain/product, and run reliability delivery plans are historical evidence; they may describe routes or implementation details that the current contract has since replaced.
 - Completed Visualizer UX convergence is preserved in `delivery/visualizer-refactor-plan-2026-05-13.md` and its closure summary; unfinished semantic-layout/ELK work remains active in `docs/development/ogs-visualizer-refactor-plan.md`.
 - Responsibility-seat review conclusions are preserved in `delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md` and copied into the active semantics and visualizer documents.
 - Completed semantic hardening is summarized in the active semantics manuals and tracked as closed work in `docs/development/todo-backlog.md`; future gaps remain in `docs/development/semantic-gap-implementation-plan.md`.

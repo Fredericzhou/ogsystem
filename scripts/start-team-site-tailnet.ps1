@@ -52,7 +52,7 @@ try {
 
   $env:HOST = "0.0.0.0"
   $env:PORT = "4174"
-  $env:OGS_VIS_URL = "https://$tailnetHost"
+  $env:OGS_VIS_URL = "http://127.0.0.1:4177"
   $env:OGS_VIS_WORKDIR = $frameworkWorkdir
   $site = Start-Process -FilePath $node -ArgumentList @("server.mjs") -WorkingDirectory (Join-Path $repoRoot "apps/team-site") -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "team-site.log") -RedirectStandardError (Join-Path $logDir "team-site.err.log")
   $framework = Start-Process -FilePath $node -ArgumentList @("node_modules/tsx/dist/cli.mjs", "src/visualizer/cli.ts", "--ogs-dir", $frameworkWorkdir, "--host", "127.0.0.1", "--port", "4177") -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "framework.log") -RedirectStandardError (Join-Path $logDir "framework.err.log")
@@ -74,16 +74,16 @@ try {
 
   $serveLog = Join-Path $logDir "tailscale-serve.log"
   $serveErrorLog = Join-Path $logDir "tailscale-serve.err.log"
-  $serveProcess = Start-Process -FilePath $tailscale -ArgumentList @("serve", "--bg", "http://127.0.0.1:4177") -WindowStyle Hidden -PassThru -RedirectStandardOutput $serveLog -RedirectStandardError $serveErrorLog
+  $serveProcess = Start-Process -FilePath $tailscale -ArgumentList @("serve", "--bg", "http://127.0.0.1:4174") -WindowStyle Hidden -PassThru -RedirectStandardOutput $serveLog -RedirectStandardError $serveErrorLog
   $serveCompleted = $serveProcess.WaitForExit(10000)
   if (-not $serveCompleted) { Stop-Process -Id $serveProcess.Id -Force -ErrorAction SilentlyContinue }
   $serveStatus = (& $tailscale serve status 2>$null | Out-String)
-  $serveConfigured = ($serveCompleted -and $serveProcess.ExitCode -eq 0) -or ($serveStatus -match "proxy http://127\.0\.0\.1:4177")
+  $serveConfigured = ($serveCompleted -and $serveProcess.ExitCode -eq 0) -or ($serveStatus -match "proxy http://127\.0\.0\.1:4174")
   Write-Output "Team site: http://${tailnetIp}:4174/"
   if ($serveConfigured) {
-    Write-Output "Framework: https://${tailnetHost}/"
+    Write-Output "Tailnet product entry: https://${tailnetHost}/"
   } else {
-    Write-Warning "Framework is running locally at http://127.0.0.1:4177/. Enable Tailscale Serve in the admin console to publish https://${tailnetHost}/."
+    Write-Warning "Team Site is running locally at http://127.0.0.1:4174/. Enable Tailscale Serve in the admin console to publish https://${tailnetHost}/."
     if (Test-Path $serveErrorLog) { Get-Content $serveErrorLog }
     if (Test-Path $serveLog) { Get-Content $serveLog }
   }

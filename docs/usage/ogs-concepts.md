@@ -3,8 +3,8 @@
 本文是当前版本的产品词汇表。运行时语义仍以 [核心概念](ogsystem-core-concepts.md) 和
 [编排语义](ogsystem-orchestration-semantics-v1.md) 为准。
 
-本页区分通用 Runtime 与网站产品模型：OGS Projects 面向业务用户，管理项目、材料和 Task；OGS Studio
-面向专业团队开发，负责团队编辑、调试、运行诊断和平台模型配置。Runtime 的一次动态执行称为 `Run`；Projects
+本页区分通用 Runtime 与网站产品模型：Projects 面向业务用户，管理项目、材料和 Task；Studio 是同一 Team Site
+Shell 中面向专业团队的区域，负责团队编辑、调试和运行诊断。Runtime 的一次动态执行称为 `Run`；Projects
 中的 `Task` 是用户工作请求，可先排队并关联零个或多个 Run 尝试。页面中的任务指 Task，运行详情指一条 Run。
 
 ## 四个边界
@@ -33,15 +33,17 @@ Run 是某个团队版本的一次执行尝试，并绑定一个运行工作目�
 
 在 OGS Projects 中，每个 Task 创建时固定绑定一个不可变 TeamVersion；项目挂载列表只决定新 Task 可选版本，后续卸载或归档不得破坏已有 Task 的启动、重试和历史查询。项目内递增的 `taskNumber` 用于页面和审计展示，稳定不透明的 `taskId` 用于 API 与关联。Task 可以先排队；readiness 在预留 Run 前检查，阻塞时 Task 仍为 queued 且没有 Run。执行失败会保留失败 Run；从同一 Task 重试沿用 Task ID 并创建新的 Run ID。`currentRunId` 指向最新尝试，每个 Run 有单调递增的 `attemptNumber`，历史 Run 状态、结果和事件只读。暂停、人工审核或有效检查点上的中断恢复继续使用原 Run，不增加尝试。Task 状态是当前尝试的查询投影，Run 状态是执行事实。相同幂等键和相同请求可去重重复提交，但这不构成对任意外部副作用的恰好一次保证。通用 Runtime 本身不定义 Projects 的 Task 实体。
 
+Studio Simulation 是团队工程调试记录，以 TeamVersion ID 和摘要固定输入资产，存储调试输入、状态与审计事件，并可在 Studio 历史页回放。它与 Projects Task Run 使用不同的 owner、存储目录和 API，不创建业务 Task、不占项目执行槽、不进入项目运行历史或 Deliverable。
+
 ### 项目：资源与运行的聚合范围
 
-项目描述“在哪些资源上工作、可以使用哪些团队、提交了哪些工作请求”。一个项目可以挂载多个已发布
-团队版本，也可以有多个 Task；同一 Task 可关联多个 Run 尝试。项目不复制或嵌入团队结构；用户可从 Projects 发起自然语言团队调整，Studio 创建新草稿，用户检查并发布后，再回 Projects 明确挂载新版本。已有关联继续引用原版本。
+项目描述“在哪些资源上工作、使用哪个团队、提交了哪些工作请求”。一个项目只挂载一个已发布
+团队版本，也可以有多个 Task；同一 Task 可关联多个 Run 尝试。不同项目可以使用不同团队版本。项目不复制或嵌入团队结构；用户可从 Projects 发起自然语言团队调整，Studio 创建新草稿，用户检查并发布后，再回 Projects 明确切换版本。已有关联继续引用原版本。
 
 ## 关系与基数
 
 ```text
-项目 1 ── * TeamVersion 挂载
+项目 1 ── 1 TeamVersion 挂载
 项目 1 ── * Task
 Task 1 ── 0..* Run 尝试
 Task * ── 1 TeamVersion
@@ -54,7 +56,9 @@ Run 1 ── 1 Runtime 工作区
 每个 Task/Run 必须绑定一个确定的团队版本。团队发布新版本或项目重新挂载团队，不得改变既有 Task/Run 的版本引用；
 历史运行应继续使用其已冻结的团队/系统指纹和输入快照。
 
-Projects Run DTO 使用 `collaborationProjectId`、`taskId`、`teamVersionId` 和 `runtimeProjectId` 分别表达业务项目、任务、团队版本和 Runtime 工作区。不适用时返回 `null`；不使用含义模糊的 `projectId` 作为公开字段。运行数据仍存储在 Runtime 工作区，业务归属不改变现有运行目录。
+Projects Run DTO 使用 `runKind` 和 `owner` 明确运行领域及归属。Project Task Run 以 `owner.projectId + owner.taskId + runId` 定位，`owner.teamVersionId` 表示不可变团队资产版本。状态、事件、检查点和输出存放在项目自己的 `.ogs/runs/<runId>/`；TeamVersion 只作为资产来源，不接收业务 Run 写入。
+
+成功 Project Run 可由用户归档为 Deliverable。归档会复制出独立只读快照并计算 digest，记录来源 `taskId`、`runId`、`attemptNumber` 和时间；Deliverable 索引位于 `.site/deliverables.json`，内容位于 `workspace/deliverables/<deliverableId>/`。归档不修改 Run 证据，也不改变 Materials。
 
 ## 工作目录边界
 
@@ -63,7 +67,7 @@ Projects Run DTO 使用 `collaborationProjectId`、`taskId`、`teamVersionId` �
 - **外部编程工作目录**可以通过项目配置或 `--workspace-dir` 绑定；它是角色工具实际操作的目标，不改变项目对
   团队定义和运行证据的所有权。
 
-项目资源可以被 Run 读取，但运行开始后应通过快照、摘要或指纹固定本次执行所依赖的输入。独立的 Run 工作目录隔离运行状态和审计产物，不自动隔离角色对共享项目目录、外部目标目录、服务或 API 的写入。对 Git 管理的代码目录，可采用每个 Run 一个 worktree/分支、固定基准 commit、恢复时复用原 worktree、失败重试时从相同基准创建新 worktree，并在检查后显式合并的方案；当前 OGS Projects 尚未提供这一自动化能力。Git worktree 也不限制网络、凭据或 worktree 外写入，需要时仍须使用操作系统或容器沙箱。运行结果默认归属于该 Run；需要提升为项目级资源时，必须经过明确的产物发布/复制操作。
+项目资源可以被 Run 读取；每次 Attempt 在启动时固定 Materials 快照，重试优先复用源 Attempt 的快照。源 Run 状态缺失而按当前项目材料回退时，系统会将回退原因和策略写入新 Attempt 元数据。Project Run 的工作区位于项目自己的 `.ogs/runs/<runId>/`，其中包含 TeamVersion 资产快照、Materials 快照、Runtime 状态和审计证据。它隔离运行状态和审计产物，不自动隔离角色对共享项目目录、外部目标目录、服务或 API 的写入。对 Git 管理的代码目录，可采用每个 Run 一个 worktree/分支、固定基准 commit、恢复时复用原 worktree、失败重试时从相同基准创建新 worktree，并在检查后显式合并的方案；当前 OGS Projects 尚未提供这一自动化能力。Git worktree 也不限制网络、凭据或 worktree 外写入，需要时仍须使用操作系统或容器沙箱。
 
 ## 用户流程
 
@@ -72,13 +76,13 @@ OGS Studio 创建/专业调整 -> 发布 TeamVersion -> OGS Projects 挂载版�
 ```
 
 - **团队仓库**只展示已发布版本，提供导入、复制为新版本和资产管理。
-- **OGS Studio**保存编辑中和待发布团队，负责专业结构编辑、调试、运行诊断与平台模型配置。Projects 可用自然语言发起调整，但草稿发布仍由用户在 Studio 检查并完成。
-- **协作项目**单独创建工作目录并挂载一个或多个已发布团队。项目页面关注资源、任务清单和运行记录，
+- **OGS Studio**保存编辑中和待发布团队，负责图谱结构、系统与角色配置、角色资产包、Context Map、Flow Contract、静态校验、Simulation 调试与发布。专业配置保存到 TeamVersion 草稿，发布版本不可原地修改。Platform 管理共享模型目录与默认执行设置；Projects 可发起团队调整并在 Studio 完成检查和发布，再显式挂载新版本。TeamVersion 查询、元数据及设计操作使用 TeamVersion API；Project API 管理业务项目及其 TeamVersion 挂载关系。
+- **协作项目**单独创建工作目录并挂载一个已发布团队版本。项目页面关注资源、任务清单和运行记录，
   不嵌入团队结构；查看团队时再进入对应团队页面。
 - **Task**记录明确的工作输入和执行团队版本。启动后创建 Run；当前同一项目最多一个 Task 的 Run 处于任一活动状态，
   包括计划创建、就绪、运行、控制请求待收敛、暂停或待审核；进入终态后才能开始下一项。
 
-Run 隔离工作区、项目归档生命周期和结果显式发布是产品规划，当前版本尚未实现。Run 工作区当前只隔离 Runtime 状态与证据，不保证隔离共享目录、网络、凭据或外部服务；Run 结果也不会自动转为项目交付物。
+Project Run 与 Studio Simulation 使用独立持久化命名空间：Project Run 证据位于项目 `.ogs/runs/<runId>/`；Studio Simulation 位于共享数据根 `.studio/simulations/<teamVersionId>/<simulationId>/`，并按独立保留策略清理。两类记录通过各自 API 和 owner 校验查询，不能交叉读取。成功 Run 可由用户显式归档为 Deliverable；归档不改写 Run 证据。运行目录隔离状态和证据，但不保证隔离共享代码目录、网络、凭据或外部服务。
 
 当前版本只接受最新业务数据格式，不提供旧 schema/API 字段兼容或自动迁移。运行方须在升级前显式准备新的数据根或清理旧数据；应用不会在启动时自动删除用户数据。
 
