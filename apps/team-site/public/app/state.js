@@ -6,7 +6,6 @@ export const state = {
   view: "workspace",
   history: [],
   projectId: null,
-  visUrl: "http://127.0.0.1:4177",
   recentRuns: [],
   requestVersion: 0,
   activeRequest: null,

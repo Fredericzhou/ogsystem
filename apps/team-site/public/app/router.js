@@ -1,9 +1,14 @@
 export function createRouter({ syncRoute, canLeave = () => true, onRouteChange = () => {} }) {
+  const canonicalize = (value) => {
+    const url = new URL(String(value), location.origin);
+    const path = url.pathname.replace(/\/$/, "") || "/";
+    return `${path}${url.search}${url.hash}`;
+  };
   let currentPath = `${location.pathname}${location.search}${location.hash}`;
   let pending = false;
   const readPath = () => `${location.pathname}${location.search}${location.hash}`;
   const navigate = async (path) => {
-    const nextPath = String(path);
+    const nextPath = canonicalize(path);
     if (nextPath === currentPath || pending) return false;
     pending = true;
     try {
@@ -19,6 +24,14 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
     }
   };
   const install = () => {
+    const initial = readPath();
+    const canonical = canonicalize(initial === "/" ? "/projects" : initial);
+    if (canonical !== initial) {
+      history.replaceState({}, "", canonical);
+      currentPath = canonical;
+      onRouteChange(currentPath);
+      syncRoute();
+    }
     document.addEventListener("click", (event) => {
       const link = event.target.closest("a[data-route]");
       if (!link) return;
@@ -27,6 +40,13 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
     });
     window.addEventListener("popstate", async () => {
       const nextPath = `${location.pathname}${location.search}${location.hash}`;
+      const canonical = canonicalize(nextPath);
+      if (canonical !== nextPath) {
+        history.replaceState({}, "", canonical);
+        currentPath = canonical;
+        syncRoute();
+        return;
+      }
       if (pending) return;
       pending = true;
       try {
