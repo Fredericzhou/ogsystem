@@ -110,6 +110,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error));
+    await page.locator("[data-open-task-dialog]").click();
     await page.locator("#collaboration-task-form textarea[name=input]").fill("Abort this task mutation");
     let taskMutationStarted;
     const taskMutationRequest = new Promise((resolveRequest) => { taskMutationStarted = resolveRequest; });
@@ -122,6 +123,8 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     });
     await page.locator("#collaboration-task-form button[type=submit]").click();
     await taskMutationRequest;
+    await page.keyboard.press("Escape");
+    await page.locator("#collaboration-task-dialog[open]").waitFor({ state: "hidden" });
     await page.locator('.app-shell a[data-route="/projects"]:visible').first().click();
     await page.locator(".confirm-dialog").getByRole("button", { name: "放弃并离开" }).click();
     await page.locator("#projects-view .page-heading").waitFor();
@@ -138,13 +141,13 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
       await openTaskReview(projectId, taskId);
     }, { projectId: project.projectId, taskId: task.taskId });
     await page.locator(".task-review-dialog[open]").waitFor();
-    assert.equal(await page.locator(".task-review-dialog").evaluate((dialog) => dialog.contains(document.activeElement)), true);
+    assert.equal(await page.locator(".task-review-dialog.focus-scope").evaluate((dialog) => dialog.contains(document.activeElement)), true);
     assert.equal(await page.locator('.task-review-dialog button[value="submit"]').isDisabled(), true, "review decisions require an active Run request");
     await page.keyboard.press("Tab");
-    assert.equal(await page.locator(".task-review-dialog").evaluate((dialog) => dialog.contains(document.activeElement)), true);
+    assert.equal(await page.locator(".task-review-dialog.focus-scope").evaluate((dialog) => dialog.contains(document.activeElement)), true);
     await page.goBack();
     await page.locator("#projects-view .page-heading").waitFor();
-    assert.equal(await page.locator(".task-review-dialog").count(), 0, "route changes must close review dialogs");
+    assert.equal(await page.locator(".task-review-dialog.focus-scope").count(), 0, "route changes must close review dialogs");
     assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("modal-open")), false, "route changes must release modal scroll lock");
 
     await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
@@ -179,7 +182,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     assert.equal(await reviewDecisionSelect.isDisabled(), true);
     assert.equal(await reviewSubmit.isDisabled(), true);
     await page.keyboard.press("Escape");
-    await page.locator(".task-review-dialog").waitFor({ state: "detached" });
+    await page.locator(".task-review-dialog.focus-scope").waitFor({ state: "detached" });
     assert.equal(await page.evaluate(() => document.activeElement?.dataset.taskAction), "review");
 
     let recoveryPayload;
@@ -211,7 +214,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     assert.equal(await recoveryComment.isDisabled(), true);
     assert.equal(await page.locator('.task-review-dialog button[value="submit"]').isDisabled(), false);
     await page.locator('.task-review-dialog button[value="submit"]').click();
-    await page.waitForFunction(() => document.querySelector(".task-review-dialog") === null);
+    await page.waitForFunction(() => document.querySelector(".task-review-dialog.focus-scope") === null);
     assert.deepEqual(recoveryPayload, { reviewId: "review-recovery", decision: "approve", comment: "ship after checks" });
 
     const lifecycleTasks = [];

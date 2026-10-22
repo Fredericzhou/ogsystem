@@ -166,7 +166,7 @@ test("project package preview and reuse preserve the existing collaboration proj
   }
 });
 
-test("project-v2 imports one nested released team into a clean workspace transaction", async () => {
+test("project-v2 imports multiple nested released teams into a clean workspace transaction", async () => {
   const sourceRoot = await mkdtemp(join(tmpdir(), "ogs-project-v2-source-"));
   const targetRoot = await mkdtemp(join(tmpdir(), "ogs-project-v2-target-"));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
@@ -180,7 +180,7 @@ test("project-v2 imports one nested released team into a clean workspace transac
     const sourceProject = await sourceStore.createCollaborationProject({
       name: "Project v2 Source",
       overview: "Cross-workspace project definition.",
-      teamVersionIds: [firstTeam.projectId]
+      teamVersionIds: [firstTeam.projectId, secondTeam.projectId]
     });
     await sourceStore.addProjectMaterial(sourceProject.projectId, { filename: "brief/source.md", content: "source material", contentType: "text/markdown" });
     const bundle = await createProjectPackageOperations(sourceStore).exportProjectBundle(sourceProject.projectId);
@@ -191,11 +191,11 @@ test("project-v2 imports one nested released team into a clean workspace transac
         packageDigest: undefined,
         project: { ...bundle.project, mountedTeams: [...bundle.project.mountedTeams, bundle.project.mountedTeams[0]] }
       }),
-      /PROJECT_SINGLE_TEAM_REQUIRED/
+      /unique identities/
     );
 
     assert.equal(bundle.mode, "project-v2");
-    assert.equal(bundle.project.mountedTeams.length, 1);
+    assert.equal(bundle.project.mountedTeams.length, 2);
     assert.equal(bundle.project.mountedTeams.every((team) => team.teamPackage.mode === "team-v2"), true);
     assert.equal("taskRecords" in bundle.project, false);
     assert.equal("runs" in bundle.project, false);
@@ -215,18 +215,18 @@ test("project-v2 imports one nested released team into a clean workspace transac
       /PROJECT_PACKAGE_VERSION_UNSUPPORTED/
     );
     const preview = await projectPackages.previewProjectBundle(bundle);
-    assert.equal(preview.teamDependencies.length, 1);
+    assert.equal(preview.teamDependencies.length, 2);
     assert.deepEqual((await readdir(targetRoot)).filter((entry) => entry !== ".staging"), []);
 
     const imported = await projectPackages.importProjectBundle(bundle, { conflictStrategy: "create-new" });
     assert.equal(imported.projectType, "collaboration");
-    assert.equal(imported.mountedTeams.length, 1);
+    assert.equal(imported.mountedTeams.length, 2);
     assert.equal(imported.mountedTeams.every((team) => team.status === "available"), true);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === firstTeam.projectId), false);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === secondTeam.projectId), false);
     assert.equal(imported.projectDefinitionDigest, bundle.project.projectDefinitionDigest);
     const importedTeams = (await targetStore.listProjects()).filter((project) => project.projectType === "team");
-    assert.equal(importedTeams.length, 1);
+    assert.equal(importedTeams.length, 2);
     assert.equal(importedTeams.every((team) => team.teamVersionStatus === "released"), true);
     const task = await targetStore.createProjectTask(imported.projectId, {
       input: "Run the imported project.",

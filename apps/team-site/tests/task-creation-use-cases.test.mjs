@@ -35,6 +35,7 @@ test("Task creation records a queued Task with no Run and a normalized request",
   assert.equal(task.input, "Plan the first release.");
   assert.equal(task.currentRunId, null);
   assert.deepEqual(task.runIds, []);
+  assert.ok(Number.isFinite(Date.parse(task.createdAt)));
   assert.equal(current.taskRecords.length, 1);
 });
 
@@ -68,5 +69,22 @@ test("Task creation requires a mounted canonical TeamVersion and valid input", a
   await assert.rejects(() => useCases.createProjectTask("project-1", { input: "Request", teamVersionId: "team-2" }), /TEAM_VERSION_NOT_MOUNTED/);
   await assert.rejects(() => useCases.createProjectTask("project-1", { input: "Request", teamVersionId: "case:software-team" }), /TEAM_VERSION_ID_INVALID/);
   const { useCases: empty } = setup({ project: { projectId: "project-1", projectType: "collaboration", mountedTeams: [], taskRecords: [] } });
-  await assert.rejects(() => empty.createProjectTask("project-1", { input: "Request", teamVersionId: "team-1" }), /PROJECT_SINGLE_TEAM_REQUIRED/);
+  await assert.rejects(() => empty.createProjectTask("project-1", { input: "Request", teamVersionId: "team-1" }), /PROJECT_TEAM_REQUIRED/);
+});
+
+test("Task creation binds each task to the selected mounted team version", async () => {
+  const { useCases } = setup({ project: {
+    projectId: "project-1",
+    projectType: "collaboration",
+    nextTaskNumber: 1,
+    mountedTeams: [
+      { teamId: "team-1", teamVersionId: "team-1", teamVersionNumber: 1, teamName: "Software Team" },
+      { teamId: "team-2", teamVersionId: "team-2-v3", teamVersionNumber: 3, teamName: "Research Team" }
+    ],
+    taskRecords: []
+  } });
+  const task = await useCases.createProjectTask("project-1", { input: "Research the market", teamVersionId: "team-2-v3" });
+  assert.equal(task.teamId, "team-2");
+  assert.equal(task.teamVersionId, "team-2-v3");
+  assert.equal(task.teamVersionNumber, 3);
 });

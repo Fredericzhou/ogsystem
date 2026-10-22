@@ -57,7 +57,7 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.equal(await page.locator('.nav-item[data-view="projects"]').isVisible(), true, "Projects should remain available in normal mode");
     assert.equal(await page.locator('.nav-item[href="/teams"]').count(), 0, "the team repository should not duplicate Studio in primary navigation");
     assert.equal(await page.locator('.nav-item[data-view="studio"]').isVisible(), true, "Studio remains a peer product in normal mode");
-    assert.equal(await page.locator('.nav-item[href="/studio/new"]').count(), 1, "team creation should have its own Studio navigation entry");
+    assert.equal(await page.locator('.nav-item[href="/studio/new"]').count(), 0, "team creation is available from the team repository, not a duplicate Studio navigation entry");
     await page.locator('button[data-product-mode="professional"]').click();
     assert.equal(await page.evaluate(() => localStorage.getItem("ogs.product-mode")), "professional");
     await page.locator('.nav-item[data-view="studio"]').click();

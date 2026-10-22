@@ -160,12 +160,13 @@ test("site completes the product project flow with task records and repository e
     await page.locator(`#project-managed-team-options input[value="${secondTeam.projectId}"]`).check();
     await page.locator("#project-team-management-form button[type=submit]").click();
     await page.waitForURL(new RegExp(`/projects/${projectId}$`));
-    assert.equal(await page.locator(".project-status.confirmed").innerText(), "1 个团队版本 · 0 个任务");
+    assert.equal(await page.locator(".project-status.confirmed").innerText(), "2 个团队版本 · 0 个任务");
     await page.goto(`${url}/projects/${projectId}/teams`, { waitUntil: "networkidle" });
     await page.locator(`#project-managed-team-options input[value="${teamId}"]`).check();
     await page.locator("#project-team-management-form button[type=submit]").click();
     await page.waitForURL(new RegExp(`/projects/${projectId}$`));
-    assert.equal(await page.locator(".project-status.confirmed").innerText(), "1 个团队版本 · 0 个任务");
+    assert.equal(await page.locator(".project-status.confirmed").innerText(), "2 个团队版本 · 0 个任务");
+    await page.locator("[data-open-task-dialog]").click();
     await page.locator("#collaboration-task-form").waitFor();
     await page.locator("#collaboration-task-form textarea[name=input]").fill("Summarize the brief.");
     await page.locator("#collaboration-task-form button[type=submit]").click();

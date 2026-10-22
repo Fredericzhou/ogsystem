@@ -107,7 +107,11 @@ async function recoverSnapshots(root, indexPath, index) {
       const record = JSON.parse(metadataBytes.toString("utf8"));
       if (record.deliverableId !== entry.name || !record.runId || !/^[a-f0-9]{64}$/.test(record.digest || "")) continue;
       if (createHash("sha256").update(content).digest("hex") !== record.digest) continue;
-      recoveredItems.set(entry.name, record);
+      recoveredItems.set(entry.name, {
+        ...record,
+        summary: record.summary || content.toString("utf8").trim().replace(/\s+/g, " ").slice(0, 500),
+        outputPath: record.outputPath || `workspace/deliverables/${entry.name}/content.txt`
+      });
     } catch (error) {
       if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
     }
@@ -158,7 +162,14 @@ export function createFileDeliverableStore() {
           const temporaryPath = join(deliverablesRoot, `.${deliverableId}.tmp`);
           const finalPath = join(deliverablesRoot, deliverableId);
           const digest = createHash("sha256").update(content, "utf8").digest("hex");
-          const record = { ...metadata, deliverableId, digest, createdAt: new Date().toISOString() };
+          const record = {
+            ...metadata,
+            deliverableId,
+            digest,
+            summary: metadata.summary || content.trim().replace(/\s+/g, " ").slice(0, 500),
+            outputPath: `workspace/deliverables/${deliverableId}/content.txt`,
+            createdAt: new Date().toISOString()
+          };
           try {
             await mkdir(temporaryPath);
             await writeFile(join(temporaryPath, "content.txt"), content, { encoding: "utf8", flag: "wx" });

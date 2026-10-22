@@ -108,10 +108,11 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     await page.locator(`#project-team-options input[value="${teamVersionId}"]`).check();
     await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/projects\/[a-z0-9-]+$/);
+    await page.locator("[data-open-task-dialog]").click();
     await page.locator("#collaboration-task-form").waitFor();
     assert.equal(await page.locator(".task-list-panel").count(), 1);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
-    assert.equal(await page.locator(".team-link").innerText().then((text) => text.includes("软件研发")), true);
+    assert.equal(await page.locator(".team-mount-row").innerText().then((text) => text.includes("软件研发")), true);
 
     const projectId = new URL(page.url()).pathname.match(/\/projects\/([a-z0-9-]+)$/)?.[1];
     assert.ok(projectId, "classic team use should open a collaboration project");

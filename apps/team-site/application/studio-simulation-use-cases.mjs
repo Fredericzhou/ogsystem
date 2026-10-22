@@ -202,19 +202,29 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         });
         if (baseline) assertBaselineResult(result, baseline);
         const completedAt = now();
-        const status = String(result?.status || "completed");
+        const rawStatus = String(result?.status || "unknown").toLowerCase();
+        const status = ["done", "ok", "completed"].includes(rawStatus) ? "completed" : "failed";
         const auditTrail = Array.isArray(result?.auditTrail) ? result.auditTrail : [];
-        const events = auditTrail.map((item) => ({
-          type: "role.completed",
-          at: completedAt,
-          roleId: item.roleId,
-          selectedEvent: item.selectedEvent,
-          status: item.status,
-          durationMs: item.durationMs,
-          failure: item.failure
-        }));
+        const events = auditTrail.map((item) => {
+          const rawRoleStatus = String(item.status || (item.failure || item.error ? "failed" : "unknown")).toLowerCase();
+          const roleStatus = ["done", "ok"].includes(rawRoleStatus) ? "completed" : rawRoleStatus;
+          const failed = ["failed", "error"].includes(roleStatus) || Boolean(item.failure || item.error);
+          const skipped = ["noop", "no-op", "skipped"].includes(roleStatus) || item.noop === true;
+          const roleEvent = {
+            type: `role.${failed ? "failed" : skipped ? "skipped" : roleStatus === "completed" ? "completed" : "unknown"}`,
+            roleId: item.roleId,
+            selectedEvent: item.selectedEvent,
+            status: failed ? "failed" : skipped ? "skipped" : roleStatus,
+            durationMs: item.durationMs,
+            failure: item.failure || item.error
+          };
+          const eventTime = item.at || item.timestamp || item.startedAt || item.completedAt || item.finishedAt;
+          if (eventTime) roleEvent.at = eventTime;
+          return roleEvent;
+        });
         const state = redactStudioSimulationValue({
           status,
+          runtimeStatus: rawStatus,
           mode: baseline ? "sandbox" : "dry-run",
           baselineScenarioId: baseline?.scenarioId || null,
           baselineRevision: baseline?.revision || null,
@@ -225,7 +235,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           summary: result?.summary || {},
           durationMs: result?.durationMs
         });
-        const failed = ["failed", "error"].includes(status.toLowerCase());
+        const failed = status !== "completed";
         const output = typeof result?.finalOutput === "string" ? redactStudioSimulationText(result.finalOutput) : "";
         const updated = await simulationStore.updateSimulation(teamVersionId, simulationId, {
           metadata: {
@@ -233,7 +243,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
             completedAt,
             durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
             outputSummary: output.slice(0, 320),
-                failureSummary: failed ? redactStudioSimulationText(String(result?.error || output || "Simulation failed.")).slice(0, 500) : null
+            failureSummary: failed ? redactStudioSimulationText(String(result?.error || output || `Simulation returned status ${rawStatus}.`)).slice(0, 500) : null
           },
           state,
           events: [...events, { type: failed ? "simulation.failed" : "simulation.completed", at: completedAt }]

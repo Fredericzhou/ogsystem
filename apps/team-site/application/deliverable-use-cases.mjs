@@ -18,7 +18,8 @@ export function createDeliverableUseCases({ getProject, getRun, runResultStore, 
         taskId: run.taskId,
         runId: run.runId,
         teamVersionId: run.teamVersionId,
-        attemptNumber: run.attemptNumber
+        attemptNumber: run.attemptNumber,
+        summary: content.trim().replace(/\s+/g, " ").slice(0, 500)
       }, content);
       return { projectId, deliverable: record };
     },

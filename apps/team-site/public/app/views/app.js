@@ -8,6 +8,19 @@ import { createRouter } from "../router.js";
 import { renderSharedResourcePage } from "./shared-resources.js";
 let studioGraphLoad;
 const mountedStudioGraphs = new Set();
+let fallbackUuidCounter = 0;
+function createUuid() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    return [...bytes].map((byte, index) => `${[4, 6, 8, 10].includes(index) ? "-" : ""}${byte.toString(16).padStart(2, "0")}`).join("");
+  }
+  fallbackUuidCounter += 1;
+  return `fallback-${Date.now().toString(36)}-${fallbackUuidCounter.toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
 function ensureStudioGraphBundle() {
   if (window.OGSStudioGraphBundle?.mountStudioX6Bridge) return Promise.resolve();
   if (!studioGraphLoad) studioGraphLoad = new Promise((resolve, reject) => {
@@ -244,10 +257,10 @@ async function renderGraph(item) {
 
 const graphLabels = {
   "zh-CN": {
-    viewportGroup: "图谱视图", editGroup: "编辑图谱", zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布", autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局", topologyOrder: "关系顺序", enabled: "开启", disabled: "关闭", layoutSwitched: "已切换为{layout}布局", generate: "生成与运行", debugRun: "快速调试", debugAdvanced: "高级调试", debugRunNow: "立即运行", debugQuickInput: "调试输入", debugQuickHint: "在当前图谱中启动一次流程预览；路径覆盖等高级设置可在高级工作台完成。", debugQuickPlaceholder: "描述本次调试要验证的任务", debugQuickOpen: "打开快速调试", close: "关闭", debugRunShort: "运行", quickOpen: "快速定位", quickOpenPlaceholder: "搜索角色或协作关系", quickOpenEmpty: "没有匹配的角色或协作关系。", quickOpenRole: "角色", quickOpenFlow: "协作关系", contextEditRole: "编辑角色", contextEditFlow: "编辑关系", contextInsertRole: "插入角色", contextDelete: "删除", minimap: "图谱导航", addRole: "新增角色", addEdge: "新增关系", editSelection: "编辑所选", editRole: "编辑角色", editEdge: "编辑关系", deleteSelection: "删除所选", undo: "撤销", redo: "重做", validateWorkbench: "校验结构", saveWorkbench: "保存团队", ready: "就绪", graphUnavailable: "图谱不可用", graphReady: "图谱已载入", fixMermaidBeforeGraphEditing: "请先修复结构诊断，再编辑图谱。", noRolesAvailable: "暂无可用角色。", selectRoleBeforeAddingEdge: "请先选择角色，再新增关系。", invalidConnection: "无效的团队关系。", entryRoleDeletionBlocked: "不能删除入口角色。", invalidEdgeEndpoints: "关系端点无效。", duplicateRoleId: "角色 ID 已存在。", invalidRoleId: "角色 ID 必须以字母开头，只能使用字母、数字、下划线或连字符。", duplicateEdge: "该关系已存在。", invalidEventType: "事件类型必须使用大写字母。", deleteRoleConfirm: "确定删除角色 {roleId} 吗？", editBlocked: "结构校验通过后才能编辑图谱。", exportSvg: "导出 SVG", exportPng: "导出 PNG", boundaryEntry: "任务", boundaryEnd: "成果"
+    viewportGroup: "图谱视图", editGroup: "编辑图谱", teamAssets: "角色 / 流程", connectFromSelectedRole: "从已选角色的输出链接桩拖到目标角色，创建关系。", zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布", autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局", topologyOrder: "关系顺序", enabled: "开启", disabled: "关闭", layoutSwitched: "已切换为{layout}布局", generate: "生成与运行", debugRun: "快速调试", debugAdvanced: "高级调试", debugRunNow: "立即运行", debugQuickInput: "调试输入", debugQuickHint: "在当前图谱中启动一次流程预览；路径覆盖等高级设置可在高级工作台完成。", debugQuickPlaceholder: "描述本次调试要验证的任务", debugQuickOpen: "打开快速调试", close: "关闭", debugRunShort: "运行", quickOpen: "快速定位", quickOpenPlaceholder: "搜索角色或协作关系", quickOpenEmpty: "没有匹配的角色或协作关系。", quickOpenRole: "角色", quickOpenFlow: "协作关系", contextEditRole: "编辑角色", contextEditFlow: "编辑关系", contextInsertRole: "插入角色", contextDelete: "删除", minimap: "图谱导航", addRole: "新增角色", addEdge: "新增关系", editSelection: "编辑所选", editRole: "编辑角色", editEdge: "编辑关系", deleteSelection: "删除所选", undo: "撤销", redo: "重做", validateWorkbench: "校验结构", saveWorkbench: "保存团队", ready: "就绪", graphUnavailable: "图谱不可用", graphReady: "图谱已载入", fixMermaidBeforeGraphEditing: "请先修复结构诊断，再编辑图谱。", noRolesAvailable: "请先选择一个角色，再新增关系。", selectRoleBeforeAddingEdge: "请先选择角色，再新增关系。", invalidConnection: "无效的团队关系。", entryRoleDeletionBlocked: "不能删除入口角色。", invalidEdgeEndpoints: "关系端点无效。", duplicateRoleId: "角色 ID 已存在。", invalidRoleId: "角色 ID 必须以字母开头，只能使用字母、数字、下划线或连字符。", duplicateEdge: "该关系已存在。", invalidEventType: "事件类型必须使用大写字母。", deleteRoleConfirm: "确定删除角色 {roleId} 吗？", editBlocked: "结构校验通过后才能编辑图谱。", exportSvg: "导出 SVG", exportPng: "导出 PNG", boundaryEntry: "任务", boundaryEnd: "成果"
   },
   en: {
-    viewportGroup: "Graph view", editGroup: "Edit graph", zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph", autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout", topologyOrder: "Flow order", enabled: "On", disabled: "Off", layoutSwitched: "Switched to {layout} layout", generate: "Generate and run", debugRun: "Quick debug", debugAdvanced: "Advanced debug", debugRunNow: "Run now", debugQuickInput: "Debug input", debugQuickHint: "Start a flow preview from this graph; use advanced settings for path overrides.", debugQuickPlaceholder: "Describe the task to verify", debugQuickOpen: "Open quick debug", close: "Close", debugRunShort: "Run", quickOpen: "Quick locate", quickOpenPlaceholder: "Search roles or relationships", quickOpenEmpty: "No matching roles or relationships.", quickOpenRole: "Role", quickOpenFlow: "Relationship", contextEditRole: "Edit role", contextEditFlow: "Edit relationship", contextInsertRole: "Insert role", contextDelete: "Delete", minimap: "Graph navigator", addRole: "Add role", addEdge: "Add relationship", editSelection: "Edit selected", editRole: "Edit role", editEdge: "Edit relationship", deleteSelection: "Delete selected", undo: "Undo", redo: "Redo", validateWorkbench: "Validate structure", saveWorkbench: "Save team", ready: "Ready", graphUnavailable: "Graph unavailable", graphReady: "Graph loaded", fixMermaidBeforeGraphEditing: "Fix the structure diagnostics before editing the graph.", noRolesAvailable: "No roles available.", selectRoleBeforeAddingEdge: "Select a role before adding a relationship.", invalidConnection: "Invalid team relationship.", entryRoleDeletionBlocked: "The entry role cannot be deleted.", invalidEdgeEndpoints: "Relationship endpoints are invalid.", duplicateRoleId: "Role ID already exists.", invalidRoleId: "Role ID must start with a letter and use letters, digits, _ or -.", duplicateEdge: "This relationship already exists.", invalidEventType: "Event type must use uppercase letters.", deleteRoleConfirm: "Delete role {roleId}?", editBlocked: "Pass structure validation before editing the graph.", exportSvg: "Export SVG", exportPng: "Export PNG", boundaryEntry: "Task", boundaryEnd: "Outcome"
+    viewportGroup: "Graph view", editGroup: "Edit graph", teamAssets: "Roles / flows", connectFromSelectedRole: "Drag from the selected role’s output port to a target role to create a relationship.", zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph", autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout", topologyOrder: "Flow order", enabled: "On", disabled: "Off", layoutSwitched: "Switched to {layout} layout", generate: "Generate and run", debugRun: "Quick debug", debugAdvanced: "Advanced debug", debugRunNow: "Run now", debugQuickInput: "Debug input", debugQuickHint: "Start a flow preview from this graph; use advanced settings for path overrides.", debugQuickPlaceholder: "Describe the task to verify", debugQuickOpen: "Open quick debug", close: "Close", debugRunShort: "Run", quickOpen: "Quick locate", quickOpenPlaceholder: "Search roles or relationships", quickOpenEmpty: "No matching roles or relationships.", quickOpenRole: "Role", quickOpenFlow: "Relationship", contextEditRole: "Edit role", contextEditFlow: "Edit relationship", contextInsertRole: "Insert role", contextDelete: "Delete", minimap: "Graph navigator", addRole: "Add role", addEdge: "Add relationship", editSelection: "Edit selected", editRole: "Edit role", editEdge: "Edit relationship", deleteSelection: "Delete selected", undo: "Undo", redo: "Redo", validateWorkbench: "Validate structure", saveWorkbench: "Save team", ready: "Ready", graphUnavailable: "Graph unavailable", graphReady: "Graph loaded", fixMermaidBeforeGraphEditing: "Fix the structure diagnostics before editing the graph.", noRolesAvailable: "Select a role before adding a relationship.", selectRoleBeforeAddingEdge: "Select a role before adding a relationship.", invalidConnection: "Invalid team relationship.", entryRoleDeletionBlocked: "The entry role cannot be deleted.", invalidEdgeEndpoints: "Relationship endpoints are invalid.", duplicateRoleId: "Role ID already exists.", invalidRoleId: "Role ID must start with a letter and use letters, digits, _ or -.", duplicateEdge: "This relationship already exists.", invalidEventType: "Event type must use uppercase letters.", deleteRoleConfirm: "Delete role {roleId}?", editBlocked: "Pass structure validation before editing the graph.", exportSvg: "Export SVG", exportPng: "Export PNG", boundaryEntry: "Task", boundaryEnd: "Outcome"
   }
 };
 graphLabels["zh-CN"].technicalDetails = "流程技术详情";
@@ -427,14 +440,14 @@ function materialStatusLabel(status) {
 }
 async function renderProjectCreate() {
   const root = $("#new-project-view");
-  root.innerHTML = `<section class="page-heading project-create-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">OGS Projects · 业务协作</div><h1>创建协作项目</h1><p>项目管理业务资料、任务和真实运行。团队请先在 OGS Studio 创建、调试并发布，再为项目选择一个已发布版本。</p></div></section><section class="project-builder project-create-builder"><form id="collaboration-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目基础信息</span><h2>项目名称与概述</h2><p>项目与团队分别管理；每个项目固定使用一个已发布团队版本。</p></div><label>项目名称<input name="name" required maxlength="120" placeholder="例如：新产品上市项目"></label><label>项目概述（选填）<textarea name="overview" rows="4" maxlength="4000" placeholder="描述项目要完成的事情、阶段目标和预期成果"></textarea></label><fieldset class="builder-choice-group"><legend>选择已发布团队 <span>选择一个</span></legend><div id="project-team-options" class="builder-choice-grid"><span class="project-loading">正在读取团队仓库...</span></div></fieldset><div class="new-team-form-footer"><p class="form-hint">团队设计、调试和发布由 OGS Studio 负责。创建后可切换项目所用版本，但不能在项目中创建或组合多个团队。</p><div class="form-actions"><a class="secondary-button" href="/projects" data-route="/projects">取消</a><button class="primary-button" type="submit">创建项目</button></div></div><p class="form-status" id="collaboration-project-status" role="status" aria-live="polite"></p></form></section>`;
+  root.innerHTML = `<section class="page-heading project-create-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">OGS Projects · 业务协作</div><h1>创建协作项目</h1><p>项目管理生产资料、任务和成果。先在 OGS Studio 发布团队，再为项目选择团队版本。</p></div></section><section class="project-builder project-create-builder"><form id="collaboration-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目基础信息</span><h2>项目名称与概述</h2><p>项目与团队分别管理；每项任务会选择一个已挂载团队。</p></div><label>项目名称<input name="name" required maxlength="120" placeholder="例如：新产品上市项目"></label><label>项目概述（选填）<textarea name="overview" rows="4" maxlength="4000" placeholder="描述项目要完成的事情、阶段目标和预期成果"></textarea></label><fieldset class="builder-choice-group"><legend>选择已发布团队 <span>至少选择一个</span></legend><div id="project-team-options" class="builder-choice-grid"><span class="project-loading">正在读取团队仓库...</span></div></fieldset><div class="new-team-form-footer"><p class="form-hint">团队设计、仿真和发布由 OGS Studio 负责。每项任务固定使用其选择的团队版本。</p><div class="form-actions"><a class="secondary-button" href="/projects" data-route="/projects">取消</a><button class="primary-button" type="submit">创建项目</button></div></div><p class="form-status" id="collaboration-project-status" role="status" aria-live="polite"></p></form></section>`;
   const options = $("#project-team-options");
   options.insertAdjacentHTML("beforebegin", '<div class="team-picker-toolbar"><label class="team-picker-search"><span class="sr-only">搜索团队</span><input id="project-team-search" type="search" placeholder="搜索团队名称或目标" autocomplete="off"></label><span id="project-team-count" class="team-picker-count">已选 0 个</span></div>');
   try {
     const response = await pageFetch("/api/v1/team-repository"); const payload = await response.json(); if (!isCurrentRequest(state.activeRequest)) return; if (!response.ok) throw new Error(payload.error || "无法读取团队仓库");
     const teams = payload.teams || [];
     const selectableTeams = teams.filter((team) => team.teamVersionStatus === "released");
-    options.innerHTML = selectableTeams.length ? selectableTeams.map((team) => `<label class="builder-choice"><input type="radio" name="teamVersionId" value="${esc(team.projectId)}" required><strong>${esc(team.name)} · v${team.teamVersionNumber || 1}${team.builtIn ? " · 内置" : ""}</strong><span>${esc((team.overview || "").slice(0, 120))}</span></label>`).join("") : `<p class="empty-note">暂无已发布团队。请先到 OGS Studio 创建、调试并发布团队。</p>`;
+    options.innerHTML = selectableTeams.length ? selectableTeams.map((team) => `<label class="builder-choice"><input type="checkbox" name="teamVersionIds" value="${esc(team.projectId)}"><strong>${esc(team.name)} · v${team.teamVersionNumber || 1}${team.builtIn ? " · 内置" : ""}</strong><span>${esc((team.overview || "").slice(0, 120))}</span></label>`).join("") : `<p class="empty-note">暂无已发布团队。请先到 OGS Studio 创建、调试并发布团队。</p>`;
     const search = $("#project-team-search"); const count = $("#project-team-count");
     const refreshTeamPicker = () => { const query = String(search?.value || "").trim().toLocaleLowerCase(); let selectedCount = 0; options.querySelectorAll(".builder-choice").forEach((card) => { const input = card.querySelector("input"); const matches = !query || card.textContent.toLocaleLowerCase().includes(query); card.hidden = !matches; card.classList.toggle("selected", Boolean(input?.checked)); if (input?.checked) selectedCount += 1; }); if (count) count.textContent = `已选 ${selectedCount} 个`; };
     search?.addEventListener("input", refreshTeamPicker); options.querySelectorAll("input[type=checkbox]").forEach((input) => input.addEventListener("change", refreshTeamPicker));
@@ -443,24 +456,20 @@ async function renderProjectCreate() {
     refreshTeamPicker();
     const collaborationProjectForm = $("#collaboration-project-form");
     bindDirtyForm(collaborationProjectForm, () => setDirty("collaboration-project-form"));
-    collaborationProjectForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const teamVersionId = form.get("teamVersionId"); const status = $("#collaboration-project-status"); const submit = event.currentTarget.querySelector("button[type=submit]"); if (!teamVersionId) { status.textContent = "请选择一个已发布团队版本。"; return; } submit.disabled = true; status.textContent = "正在创建项目..."; try { const createResponse = await pageFetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), teamVersionIds: [teamVersionId] }) }); const project = await createResponse.json(); if (!createResponse.ok) throw new Error(project.error || "项目创建失败"); clearDirty("collaboration-project-form"); navigate(`/projects/${encodeURIComponent(project.projectId)}`); } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "项目创建失败"; submit.disabled = false; } });
+    collaborationProjectForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const teamVersionIds = form.getAll("teamVersionIds").map(String); const status = $("#collaboration-project-status"); const submit = event.currentTarget.querySelector("button[type=submit]"); if (!teamVersionIds.length) { status.textContent = "请至少选择一个已发布团队版本。"; return; } submit.disabled = true; status.textContent = "正在创建项目..."; try { const createResponse = await pageFetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), teamVersionIds }) }); const project = await createResponse.json(); if (!createResponse.ok) throw new Error(project.error || "项目创建失败"); clearDirty("collaboration-project-form"); navigate(`/projects/${encodeURIComponent(project.projectId)}`); } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "项目创建失败"; submit.disabled = false; } });
   } catch (error) { if (isAbort(error)) return; if (error?.name !== "AbortError") options.innerHTML = `<p class="run-error">${esc(error.message || "无法读取团队仓库")}</p>`; }
 }
 async function renderNewProject() {
   const root = $("#new-project-view");
-  root.innerHTML = [
-    '<section class="page-heading new-team-heading"><div><a class="detail-back" href="/teams" data-route="/teams">← 团队仓库</a><div class="eyebrow">Team Studio · Natural</div><h1>先说清团队要完成什么</h1><p>提交目标后，团队助手会先整理你的意图，再通过对话完善职责、协作关系和交付结果。</p></div></section>',
-    '<section class="project-builder new-team-builder">',
-    `<form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">团队草案</span><h2>你希望团队完成什么？</h2><p>从目标开始，名称和协作偏好之后都可以修改。</p></div><label>团队名称<input name="name" required maxlength="120" autocomplete="organization" placeholder="例如：产品研究团队"></label><label>团队目标<textarea name="overview" required maxlength="4000" rows="6" placeholder="例如：目标是分析竞品资料并提出行动建议；研究员负责资料整理，分析员负责比较，负责人汇总并审核；流程为收集材料→独立分析→汇总审核；输入包括竞品文档，输出为带依据的建议清单。"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><fieldset class="builder-choice-group"><legend>选择协作方式 <span>可选</span></legend><div class="builder-choice-grid"><button class="builder-choice" type="button" data-builder-choice="顺序接力：每个角色完成后交给下一个" aria-pressed="false"><strong>顺序接力</strong><span>适合步骤明确、需要逐步交接的任务</span></button><button class="builder-choice" type="button" data-builder-choice="独立分析后汇总：多个角色分别研究，最后统一整理" aria-pressed="false"><strong>分头分析，再汇总</strong><span>适合需要多个角度并行研究的任务</span></button><button class="builder-choice" type="button" data-builder-choice="负责人协调：由一个负责人安排和检查其他角色" aria-pressed="false"><strong>负责人协调</strong><span>适合过程中需要统筹与检查的任务</span></button></div></fieldset><div class="new-team-form-footer"><p class="form-hint">创建后可继续用自然语言调整角色、流程和输出要求。</p><div class="form-actions"><button class="primary-button" type="submit">创建团队草案 <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`
-  ].join("");
+  const english = state.locale === "en";
+  const t = (en, zh) => english ? en : zh;
+  root.innerHTML = `<section class="page-heading new-team-heading"><div><a class="detail-back" href="/teams" data-route="/teams">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">Team Studio · ${t("Create", "创建")}</div><h1>${t("Describe the team’s goal", "先说清团队要完成什么")}</h1><p>${t("The assistant will turn your goal into a draft team design that you can review and refine.", "提交目标后，团队助手会先整理你的意图，再通过对话完善职责、协作关系和交付结果。")}</p></div></section><section class="project-builder new-team-builder"><form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">${t("Team draft", "团队草案")}</span><h2>${t("What should this team accomplish?", "你希望团队完成什么？")}</h2><p>${t("Start with the goal. You can change the name and collaboration preference later.", "从目标开始，名称和协作偏好之后都可以修改。")}</p></div><label>${t("Team name", "团队名称")}<input name="name" required maxlength="120" autocomplete="organization" placeholder="${t("For example: Product research team", "例如：产品研究团队")}"></label><label>${t("Team goal", "团队目标")}<textarea name="overview" required maxlength="4000" rows="6" placeholder="${t("For example: compare competitor research and produce evidence-based recommendations; researchers collect sources, analysts compare findings, and a lead reviews the result.", "例如：目标是分析竞品资料并提出行动建议；研究员负责资料整理，分析员负责比较，负责人汇总并审核；流程为收集材料、独立分析、汇总审核；输入包括竞品文档，输出为带依据的建议清单。")}"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><fieldset class="builder-choice-group"><legend>${t("Collaboration preference", "选择协作方式")} <span>${t("Optional", "可选")}</span></legend><div class="builder-choice-grid"><button class="builder-choice" type="button" data-builder-choice="${t("Sequential handoff: each role passes work to the next", "顺序接力：每个角色完成后交给下一个")}" aria-pressed="false"><strong>${t("Sequential handoff", "顺序接力")}</strong><span>${t("For tasks with clear steps and handoffs", "适合步骤明确、需要逐步交接的任务")}</span></button><button class="builder-choice" type="button" data-builder-choice="${t("Parallel analysis followed by synthesis", "独立分析后汇总：多个角色分别研究，最后统一整理")}" aria-pressed="false"><strong>${t("Parallel analysis and synthesis", "分头分析，再汇总")}</strong><span>${t("For tasks that benefit from multiple viewpoints", "适合需要多个角度并行研究的任务")}</span></button><button class="builder-choice" type="button" data-builder-choice="${t("Coordinator-led delegation and review", "负责人协调：由一个负责人安排和检查其他角色")}" aria-pressed="false"><strong>${t("Coordinator-led", "负责人协调")}</strong><span>${t("For work that needs coordination and review", "适合过程中需要统筹与检查的任务")}</span></button></div></fieldset><div class="new-team-form-footer"><p class="form-hint">${t("After creation, refine roles, workflow, and output requirements with the assistant.", "创建后可继续用自然语言调整角色、流程和输出要求。")}</p><div class="form-actions"><button class="primary-button" type="submit">${t("Create team draft", "创建团队草案")} <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`;
   const studioCreateBack = root.querySelector(".new-team-heading .detail-back");
   if (studioCreateBack) {
     studioCreateBack.href = "/studio";
     studioCreateBack.dataset.route = "/studio";
     studioCreateBack.textContent = state.locale === "en" ? "Back to OGS Studio" : "返回 OGS Studio";
   }
-  const choiceLegend = root.querySelector(".builder-choice-group legend span");
-  if (choiceLegend) choiceLegend.textContent = "可选，再次点击可取消";
   $$("[data-builder-choice]").forEach((choice) => choice.addEventListener("click", () => {
     const wasSelected = choice.getAttribute("aria-pressed") === "true";
     $$('[data-builder-choice]').forEach((item) => { item.classList.remove("selected"); item.setAttribute("aria-pressed", "false"); });
@@ -473,10 +482,14 @@ async function renderNewProject() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const status = $("#new-project-status");
-    status.textContent = "正在创建团队草案…";
+    const submit = newProjectForm.querySelector('button[type="submit"]');
+    const originalLabel = submit.textContent;
+    submit.disabled = true;
+    submit.textContent = state.locale === "en" ? "Creating team draft…" : "正在创建团队草案…";
+    status.textContent = state.locale === "en" ? "Creating team draft…" : "正在创建团队草案…";
     try {
       const preference = $("[data-builder-choice].selected")?.dataset.builderChoice;
-      const overview = [String(form.get("overview") || "").trim(), preference ? `协作偏好：${preference}` : ""].filter(Boolean).join("\n\n");
+      const overview = [String(form.get("overview") || "").trim(), preference ? `${t("Collaboration preference", "协作偏好")}: ${preference}` : ""].filter(Boolean).join("\n\n");
       const response = await pageFetch("/api/v1/team-factory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview, locale: state.locale }) });
       const project = await response.json();
       if (!response.ok) throw new Error(project.error || "项目创建失败");
@@ -484,7 +497,12 @@ async function renderNewProject() {
       state.projectId = project.projectId;
       navigate("/studio/teams/" + encodeURIComponent(project.projectId) + "/design");
     } catch (error) { if (isAbort(error)) return;
-      status.textContent = error.message || "项目创建失败";
+      status.textContent = error.message || t("Team draft creation failed.", "团队草案创建失败。");
+    } finally {
+      if (submit?.isConnected) {
+        submit.disabled = false;
+        submit.textContent = originalLabel;
+      }
     }
   });
 }
@@ -678,7 +696,7 @@ async function renderCollaborationProjects() {
     const response = await pageFetch("/api/v1/projects"); const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法读取协作项目");
     const projects = payload.projects || [];
-    grid.innerHTML = projects.length ? projects.map((project) => { const teams = project.mountedTeams || []; const taskCount = project.taskRecords?.length || 0; const team = teams[0]; return `<article class="project-asset-card collaboration-project-card"><div class="asset-card-top"><span class="asset-mark">⌘</span><span class="status-chip ${esc(project.projectStatus || "draft")}">${esc(taskCount ? "进行中" : "待开始")}</span></div><div class="asset-title-row"><h2>${esc(project.name)}</h2><span class="version-badge">${team ? "1 个团队版本" : "待选团队"}</span></div><p>${esc(project.overview || "共享资料，按任务记录项目进展")}</p><div class="asset-card-meta"><span>${team ? `${esc(team.teamName)} · v${team.teamVersionNumber || 1}` : "需要挂载已发布团队"}</span><span>${taskCount} 个任务</span></div><div class="asset-card-actions"><a class="primary-button" href="/projects/${encodeURIComponent(project.projectId)}" data-route="/projects/${encodeURIComponent(project.projectId)}">打开项目 →</a></div></article>`; }).join("") : `<div class="empty-projects"><strong>还没有协作项目</strong><p>创建项目后，可挂载一个已发布团队并开始任务。</p></div>`;
+    grid.innerHTML = projects.length ? projects.map((project) => { const teams = project.mountedTeams || []; const taskCount = (project.taskRecords || []).filter((task) => !task.deletedAt && task.status !== "deleted").length; const teamSummary = teams.map((team) => `${team.teamName} · v${team.teamVersionNumber || 1}`).join("、"); return `<article class="project-asset-card collaboration-project-card"><div class="asset-card-top"><span class="asset-mark">⌘</span><span class="status-chip ${esc(project.projectStatus || "draft")}">${esc(taskCount ? "进行中" : "待开始")}</span></div><div class="asset-title-row"><h2>${esc(project.name)}</h2><span class="version-badge">${teams.length} 个团队</span></div><p>${esc(project.overview || "共享生产资料，按任务记录项目进展")}</p><div class="asset-card-meta"><span>${esc(teamSummary || "需要挂载已发布团队")}</span><span>${taskCount} 个任务</span></div><div class="asset-card-actions"><a class="primary-button" href="/projects/${encodeURIComponent(project.projectId)}" data-route="/projects/${encodeURIComponent(project.projectId)}">打开项目 →</a></div></article>`; }).join("") : `<div class="empty-projects"><strong>还没有协作项目</strong><p>创建项目后，可挂载已发布团队并开始任务。</p></div>`;
   } catch (error) { if (isAbort(error)) return; grid.innerHTML = `<div class="run-error">${esc(error.message || "无法读取协作项目")}</div>`; }
 }
 
@@ -706,35 +724,37 @@ async function renderProjectTeams(projectId, pageRequest = state.activeRequest) 
       if (id && !known.has(id)) known.set(id, { projectId: id, name: team.teamName, teamName: team.teamName, teamVersionId: id, teamVersionNumber: team.teamVersionNumber, teamVersionStatus: "released", builtIn: team.builtIn });
     });
     const teams = [...known.values()].filter((team) => team.teamVersionStatus === "released");
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects/${encodeURIComponent(projectId)}" data-route="/projects/${encodeURIComponent(projectId)}">← 返回项目</a><div class="eyebrow">OGS Projects · 项目配置</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "选择项目所使用的已发布团队版本")}</p></div><span class="project-status confirmed">${mounted.length === 1 ? "1 个团队版本" : "团队配置异常"}</span></section><section class="project-builder project-team-manager"><form id="project-team-management-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目团队版本</span><h2>切换执行团队</h2><p>Studio 负责创建和发布团队；此处只为项目选择一个版本，不会创建团队。运行中的任务完成后才能切换。</p></div><fieldset class="builder-choice-group"><legend>已发布团队 <span>选择一个</span></legend><div id="project-managed-team-options" class="builder-choice-grid">${teams.length ? teams.map((team) => { const id = team.projectId || team.teamVersionId; const selected = mounted[0]?.teamVersionId === id; return `<label class="builder-choice${selected ? " selected" : ""}"><input type="radio" name="teamVersionId" value="${esc(id)}"${selected ? " checked" : ""} required><strong>${esc(team.teamName || team.name)} · v${team.teamVersionNumber || 1}${team.builtIn ? " · 内置" : ""}</strong><span>${esc((team.overview || "").slice(0, 140))}</span></label>`; }).join("") : '<p class="empty-note">暂无可用的已发布团队。</p>'}</div></fieldset><div class="new-team-form-footer"><p class="form-hint" id="project-team-management-hint">保存后只替换项目当前团队版本；既有任务继续引用创建时绑定的版本。</p><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}" data-route="/projects/${encodeURIComponent(projectId)}">取消</a><button class="primary-button" type="submit">保存团队版本</button></div></div><p class="form-status" id="project-team-management-status" role="status" aria-live="polite"></p></form></section>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects/${encodeURIComponent(projectId)}" data-route="/projects/${encodeURIComponent(projectId)}">← 返回项目</a><div class="eyebrow">OGS Projects · 项目配置</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "选择项目使用的已发布团队版本")}</p></div><span class="project-status confirmed">${mounted.length} 个团队版本</span></section><section class="project-builder project-team-manager"><form id="project-team-management-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">项目团队版本</span><h2>管理执行团队</h2><p>项目可以挂载多个已发布团队。每项任务选择一个团队；运行中的任务完成后才能修改挂载配置。</p></div><fieldset class="builder-choice-group"><legend>已发布团队 <span>至少选择一个</span></legend><div id="project-managed-team-options" class="builder-choice-grid">${teams.length ? teams.map((team) => { const id = team.projectId || team.teamVersionId; const selected = mounted.some((item) => item.teamVersionId === id); return `<label class="builder-choice${selected ? " selected" : ""}"><input type="checkbox" name="teamVersionIds" data-team-id="${esc(team.teamId || id)}" value="${esc(id)}"${selected ? " checked" : ""}><strong>${esc(team.teamName || team.name)} · v${team.teamVersionNumber || 1}${team.builtIn ? " · 内置" : ""}</strong><span>${esc((team.overview || "").slice(0, 140))}</span></label>`; }).join("") : '<p class="empty-note">暂无可用的已发布团队。</p>'}</div></fieldset><div class="new-team-form-footer"><p class="form-hint" id="project-team-management-hint">已创建的任务仍固定使用其原团队版本。移除挂载不会改写任务记录。</p><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}" data-route="/projects/${encodeURIComponent(projectId)}">取消</a><button class="primary-button" type="submit">保存团队版本</button></div></div><p class="form-status" id="project-team-management-status" role="status" aria-live="polite"></p></form></section>`;
     const form = $("#project-team-management-form");
     const options = $("#project-managed-team-options");
     const addVersion = new URLSearchParams(window.location.search).get("addVersion");
     if (addVersion) {
       const candidate = options?.querySelector(`input[value="${CSS.escape(addVersion)}"]`);
       if (candidate) {
+        const sourceTeamId = candidate.dataset.teamId;
+        options.querySelectorAll(`input[data-team-id="${CSS.escape(sourceTeamId)}"]`).forEach((input) => { input.checked = input === candidate; });
         candidate.checked = true;
         candidate.closest(".builder-choice")?.classList.add("selected");
         const message = document.createElement("p");
         message.className = "form-hint";
         message.setAttribute("role", "status");
-        message.textContent = "新发布的团队版本已预选；保存后才会挂载到项目。";
+        message.textContent = "新发布的团队版本已预选，并会替换同一团队的旧挂载版本；保存后生效。";
         form.querySelector(".new-team-form-heading")?.append(message);
       }
     }
     const refreshSelection = () => options?.querySelectorAll(".builder-choice").forEach((card) => card.classList.toggle("selected", Boolean(card.querySelector("input")?.checked)));
-    options?.querySelectorAll("input[type=radio]").forEach((input) => input.addEventListener("change", refreshSelection));
+    options?.querySelectorAll("input[type=checkbox]").forEach((input) => input.addEventListener("change", refreshSelection));
     bindDirtyForm(form, () => setDirty("project-team-management-form"));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const status = $("#project-team-management-status");
       const submit = form.querySelector("button[type=submit]");
-      const selectedTeamVersionId = new FormData(form).get("teamVersionId");
-      if (!selectedTeamVersionId) { status.textContent = "请选择一个已发布团队版本。"; return; }
+      const selectedTeamVersionIds = new FormData(form).getAll("teamVersionIds").map(String);
+      if (!selectedTeamVersionIds.length) { status.textContent = "请至少选择一个已发布团队版本。"; return; }
       submit.disabled = true;
       status.textContent = "正在保存团队配置…";
       try {
-        const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/teams`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamVersionIds: [selectedTeamVersionId] }) });
+        const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/teams`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamVersionIds: selectedTeamVersionIds }) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "团队配置保存失败");
         clearDirty("project-team-management-form");
@@ -877,9 +897,20 @@ async function renderStudioOverview() {
 
 function studioSimulationStatus(status) {
   const labels = state.locale === "en"
-    ? { running: "Running", completed: "Completed", failed: "Failed" }
-    : { running: "运行中", completed: "已完成", failed: "失败" };
+    ? { running: "Running", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
+    : { running: "运行中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
   return labels[status] || status || (state.locale === "en" ? "Unknown" : "未知");
+}
+
+function studioSimulationEventTime(event) {
+  if (event.at) {
+    const date = new Date(event.at);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleTimeString(state.locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  if (Number.isFinite(Number(event.durationMs))) {
+    return state.locale === "en" ? `${Math.max(0, Number(event.durationMs))} ms` : `耗时 ${Math.max(0, Number(event.durationMs))} 毫秒`;
+  }
+  return "";
 }
 
 function studioWorkspaceNav(teamVersionId, active) {
@@ -987,7 +1018,8 @@ async function renderStudioSimulationList(teamVersionId, pageRequest = state.act
 
 async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
-  root.innerHTML = '<div class="project-loading">正在读取团队仿真...</div>';
+  const english = state.locale === "en";
+  root.innerHTML = `<div class="project-loading">${english ? "Loading team simulations…" : "正在读取团队仿真…"}</div>`;
   try {
     const teamResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`);
     const team = await teamResponse.json();
@@ -1000,25 +1032,27 @@ async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequ
     const history = simulations.length ? simulations.map((simulation) => {
       const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId)}`;
       return `<a class="material-row studio-simulation-row" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div></div><span>→</span></a>`;
-    }).join("") : '<p class="empty-note">此团队版本还没有仿真记录。</p>';
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>运行与仿真</h1><p>启动独立的 Studio Simulation 并回放证据。此处不会创建项目 Task 或 Project Run。</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="studio-run-layout"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">Studio Simulation</span><h2>调试当前团队版本</h2></div></div><form id="studio-simulation-form" class="compact-form"><label>调试输入<textarea name="prompt" rows="5" maxlength="1200" required placeholder="描述本次要验证的任务"></textarea></label><p class="panel-intro">仿真使用当前 TeamVersion 快照，不读取项目资料，也不会创建 Project Run。</p><p class="form-status" id="studio-simulation-status" role="status" aria-live="polite"></p><button class="primary-button" type="submit">开始仿真</button></form></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">历史记录</span><h2>历史仿真</h2></div><span class="count-badge">${simulations.length}</span></div><div class="material-list studio-simulation-list">${history}</div></article></section>`;
+    }).join("") : `<p class="empty-note">${english ? "No simulations for this TeamVersion yet." : "此团队版本还没有仿真记录。"}</p>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${english ? "Team repository" : "团队仓库"}</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>${english ? "Run and simulations" : "运行与仿真"}</h1><p>${english ? "Run an isolated Studio Simulation and review its evidence. It does not create a Project Task or Run." : "启动独立的 Studio Simulation 并回放证据。此处不会创建项目 Task 或 Project Run。"}</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="studio-run-layout"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">Studio Simulation</span><h2>${english ? "Debug this TeamVersion" : "调试当前团队版本"}</h2></div></div><form id="studio-simulation-form" class="compact-form"><label>${english ? "Simulation input" : "调试输入"}<textarea name="prompt" rows="5" maxlength="1200" required placeholder="${english ? "Describe the task to validate" : "描述本次要验证的任务"}"></textarea></label><p class="panel-intro">${english ? "Simulation uses the saved TeamVersion snapshot. It does not read Project materials or create a Project Run." : "仿真使用当前 TeamVersion 快照，不读取项目资料，也不会创建 Project Run。"}</p><p class="form-status" id="studio-simulation-status" role="status" aria-live="polite"></p><button class="primary-button" type="submit">${english ? "Start simulation" : "开始仿真"}</button></form></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "History" : "历史记录"}</span><h2>${english ? "Simulations" : "历史仿真"}</h2></div><span class="count-badge">${simulations.length}</span></div><div class="material-list studio-simulation-list">${history}</div></article></section>`;
     $("#studio-simulation-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
       const submit = form.querySelector('button[type="submit"]');
       const status = $("#studio-simulation-status");
       const prompt = String(new FormData(form).get("prompt") || "").trim();
+      const originalLabel = submit.textContent;
       submit.disabled = true;
-      status.textContent = "正在检查团队配置…";
+      submit.textContent = english ? "Starting…" : "正在启动…";
+      status.textContent = english ? "Checking TeamVersion configuration…" : "正在检查团队配置…";
       try {
         const designResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design`);
         const design = await designResponse.json();
         if (!designResponse.ok) throw new Error(design.error || "无法读取团队设计");
         if (!await confirmTeamRuntimeReadiness(teamVersionId, design.authoring, pageRequest)) {
-          status.textContent = "已取消仿真。";
+          status.textContent = english ? "Simulation cancelled." : "已取消仿真。";
           return;
         }
-        status.textContent = "正在运行 Studio Simulation…";
+        status.textContent = english ? "Studio Simulation is running…" : "正在运行 Studio Simulation…";
         const runResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, locale: state.locale }) });
         const result = await runResponse.json();
         if (!runResponse.ok) throw new Error(result.error || "Studio 仿真失败");
@@ -1027,7 +1061,7 @@ async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequ
       } catch (error) {
         if (isAbort(error)) return;
         status.textContent = studioSimulationErrorText(error.message);
-      } finally { if (submit?.isConnected) submit.disabled = false; }
+      } finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = originalLabel; } }
     });
   } catch (error) {
     if (isAbort(error)) return;
@@ -1062,7 +1096,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     const stateData = detail.state || {};
     const evidenceText = stateData.finalOutput || studioSimulationErrorText(stateData.error || simulation.failureSummary || simulation.outputSummary);
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Simulation history" : "模拟记录"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Studio Simulation" : "Studio 模拟"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Simulation request" : "模拟任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Read-only evidence" : "只读证据"}</h2></div></div><pre>${esc(evidenceText)}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation timeline" : "模拟时间线"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(event.at || "")}</time><strong>${esc(event.type || "event")}</strong>${event.roleId ? `<span>${esc(event.roleId)}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio Simulations are isolated from Project Runs. Evidence is read-only." : "Studio 模拟与项目 Run 隔离保存，证据为只读。"}</p>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Simulation history" : "模拟记录"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Studio Simulation" : "Studio 模拟"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Simulation request" : "模拟任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Read-only evidence" : "只读证据"}</h2></div></div><pre>${esc(evidenceText)}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "仿真事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(event.roleId)}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio Simulations are isolated from Project Runs. Evidence is read-only." : "Studio 模拟与项目 Run 隔离保存，证据为只读。"}</p>`;
   } catch (error) {
     if (isAbort(error)) return;
     root.innerHTML = `<div class="run-error">${esc(studioSimulationErrorText(error.message))}</div>`;
@@ -1106,30 +1140,43 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
     const collaborationProjectId = adjustmentParams.get("collaborationProjectId");
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/design${location.search}`;
     const diagnostics = (validation.diagnostics || []).map((item) => `<li>${esc(item.message || item.code || item)}</li>`).join("");
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${english ? "Team design" : "团队设计"}</a><div class="eyebrow">OGS Studio · v${team.teamVersionNumber || 1}</div><h1>${english ? "Release gate" : "发布检查"}</h1><p>${esc(team.name || "")}</p></div><span class="status-chip ${released ? "released" : passed ? "completed" : "warning"}">${released ? (english ? "Released" : "已发布") : passed ? (english ? "Validation passed" : "静态校验通过") : (english ? "Needs changes" : "需要修改")}</span></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Static configuration check" : "静态配置检查"}</span><h2>${passed ? (english ? "TeamVersion is structurally valid" : "团队版本结构有效") : (english ? "Resolve the reported issues" : "请先处理以下问题")}</h2></div></div><p class="panel-intro">${english ? "This check covers the saved graph and role bindings. It does not verify external network access or credentials; isolated execution checks those at runtime." : "此检查覆盖已保存的图结构和角色绑定，不验证外部网络或凭据是否连通；隔离运行时会再次检查实际可用性。"}</p>${diagnostics ? `<ul class="studio-event-list">${diagnostics}</ul>` : `<p class="form-status" role="status">${english ? "No static configuration issues were reported." : "未发现静态配置问题。"}</p>`}<p class="form-status" id="studio-release-status" role="status" aria-live="polite"></p><div class="form-actions">${released ? `<span class="form-hint">${english ? "This TeamVersion is already released and remains immutable." : "此团队版本已发布且不可变。"}</span>` : `<button class="primary-button" id="studio-release-button" type="button" ${passed ? "" : "disabled"}>${english ? "Release TeamVersion" : "发布团队版本"}</button>`}</div></section>`;
+    const releaseBlocker = !passed
+      ? (english ? "Fix the static configuration issues above before release." : "请先修复上方的结构校验问题，再发布团队版本。")
+      : !baselineEvidenceReady
+        ? (english ? "Run every required Sandbox baseline for this exact TeamVersion before release." : "请先为当前团队版本运行全部必跑 Sandbox 基线场景，再发布。")
+        : "";
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${english ? "Team design" : "团队设计"}</a><div class="eyebrow">OGS Studio · v${team.teamVersionNumber || 1}</div><h1>${english ? "Release gate" : "发布检查"}</h1><p>${esc(team.name || "")}</p></div><span class="status-chip ${released ? "released" : passed ? "completed" : "warning"}">${released ? (english ? "Released" : "已发布") : passed ? (english ? "Validation passed" : "静态校验通过") : (english ? "Needs changes" : "需要修改")}</span></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Static configuration check" : "静态配置检查"}</span><h2>${passed ? (english ? "TeamVersion is structurally valid" : "团队版本结构有效") : (english ? "Resolve the reported issues" : "请先处理以下问题")}</h2></div></div><p class="panel-intro">${english ? "This check covers the saved graph and role bindings. It does not verify external network access or credentials; isolated execution checks those at runtime." : "此检查覆盖已保存的图结构和角色绑定，不验证外部网络或凭据是否连通；隔离运行时会再次检查实际可用性。"}</p>${diagnostics ? `<ul class="studio-event-list">${diagnostics}</ul>` : `<p class="form-status" role="status">${english ? "No static configuration issues were reported." : "未发现静态配置问题。"}</p>`}${releaseBlocker ? `<p class="form-status" role="status">${releaseBlocker}</p>` : ""}<p class="form-status" id="studio-release-status" role="status" aria-live="polite"></p><div class="form-actions">${released ? `<span class="form-hint">${english ? "This TeamVersion is already released and remains immutable." : "此团队版本已发布且不可变。"}</span>` : `<button class="primary-button" id="studio-release-button" type="button" ${passed ? "" : "disabled"}>${english ? "Release TeamVersion" : "发布团队版本"}</button>`}</div></section>`;
     const releaseButtonState = $("#studio-release-button");
     if (releaseButtonState && !released && (!passed || !baselineEvidenceReady)) releaseButtonState.disabled = true;
-    root.insertAdjacentHTML("beforeend", `<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Release baselines</span><h2>发布基线场景</h2></div></div><p class="panel-intro">每条必跑场景都需要当前 TeamVersion 的 Sandbox 证据通过。场景更新会递增版本并使旧证据失效。</p><div class="material-list">${baselines.map((scenario) => { const evidence = simulations.some((item) => item.status === "completed" && item.mode === "sandbox" && item.runKind === "studio_simulation" && item.teamVersionId === teamVersionId && item.teamDigestVersion === 3 && item.teamCoreDigest === readiness.teamCoreDigest && item.baselineScenarioId === scenario.scenarioId && item.baselineRevision === scenario.revision && item.baselineScenarioDigest === scenario.scenarioDigest); return `<div class="material-row"><div><strong>${esc(scenario.name)} · r${scenario.revision}</strong><div class="task-record-meta"><span>${esc(scenario.scenarioId)}</span><span>${scenario.requiredForRelease !== false ? "必跑" : "可选"}</span><span>${scenario.expectedRoleIds.length} 个必跑角色</span><span>${evidence ? "Sandbox 已通过" : "待运行"}</span></div></div><button class="secondary-button" type="button" data-run-baseline="${esc(scenario.scenarioId)}" ${released ? "disabled" : ""}>运行基线</button></div>`; }).join("") || `<p class="empty-note">尚未配置发布基线。</p>`}</div>${released ? "" : `<form id="studio-baseline-form" class="compact-form"><label>场景 ID<input name="scenarioId" pattern="[a-z0-9][a-z0-9-]{0,63}" required></label><label>场景名称<input name="name" maxlength="120" required></label><label>固定任务输入<textarea name="prompt" maxlength="4000" required></textarea></label><label>必跑角色 ID（逗号分隔）<input name="roles" required placeholder="analyst, reviewer"></label><label class="field checkbox"><input name="requiredForRelease" type="checkbox" checked><span>作为发布必跑场景</span></label><label>输出 JSON Schema<textarea name="schema" rows="5" required>{"type":"object"}</textarea></label><label>材料快照 JSON<textarea name="materials" rows="4">[]</textarea></label><button class="secondary-button" type="submit">保存基线场景</button></form>`}</section>`);
+    const t = (en, zh) => english ? en : zh;
+    root.insertAdjacentHTML("beforeend", `<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Release baselines", "发布基线")}</span><h2>${t("Required scenarios", "必跑场景")}</h2></div></div><p class="panel-intro">${t("Each required scenario needs passing Sandbox evidence for this TeamVersion. Editing a scenario creates a new revision and invalidates its previous evidence.", "每条必跑场景都需要当前 TeamVersion 的 Sandbox 证据通过。修改场景会生成新版本，并使旧证据失效。")}</p><div class="material-list">${baselines.map((scenario) => { const evidence = simulations.some((item) => item.status === "completed" && item.mode === "sandbox" && item.runKind === "studio_simulation" && item.teamVersionId === teamVersionId && item.teamDigestVersion === readiness.teamDigestVersion && item.teamCoreDigest === readiness.teamCoreDigest && item.baselineScenarioId === scenario.scenarioId && item.baselineRevision === scenario.revision && item.baselineScenarioDigest === scenario.scenarioDigest); return `<div class="material-row"><div><strong>${esc(scenario.name)} · r${scenario.revision}</strong><div class="task-record-meta"><span>${esc(scenario.scenarioId)}</span><span>${scenario.requiredForRelease !== false ? t("Required", "必跑") : t("Optional", "可选")}</span><span>${t("Required roles", "必跑角色")}: ${scenario.expectedRoleIds.length}</span><span>${evidence ? t("Sandbox passed", "Sandbox 已通过") : t("Pending run", "待运行")}</span></div></div><button class="secondary-button" type="button" data-run-baseline="${esc(scenario.scenarioId)}" ${released ? "disabled" : ""}>${t("Run baseline", "运行基线")}</button></div>`; }).join("") || `<p class="empty-note">${t("No release baselines configured.", "尚未配置发布基线。")}</p>`}</div>${released ? "" : `<form id="studio-baseline-form" class="compact-form"><label>${t("Scenario ID", "场景 ID")}<input name="scenarioId" pattern="[a-z0-9][a-z0-9-]{0,63}" required></label><label>${t("Scenario name", "场景名称")}<input name="name" maxlength="120" required></label><label>${t("Fixed task input", "固定任务输入")}<textarea name="prompt" maxlength="4000" required></textarea></label><label>${t("Required role IDs (comma-separated)", "必跑角色 ID（逗号分隔）")}<input name="roles" required placeholder="analyst, reviewer"></label><label class="field checkbox"><input name="requiredForRelease" type="checkbox" checked><span>${t("Require this scenario for release", "作为发布必跑场景")}</span></label><label>${t("Output JSON Schema", "输出 JSON Schema")}<textarea name="schema" rows="5" required>{"type":"object"}</textarea></label><label>${t("Materials snapshot JSON", "材料快照 JSON")}<textarea name="materials" rows="4">[]</textarea></label><button class="secondary-button" type="submit">${t("Save baseline", "保存基线场景")}</button></form>`}</section>`);
     root.querySelectorAll("[data-run-baseline]").forEach((button) => button.addEventListener("click", async () => {
       button.disabled = true;
       const scenario = baselines.find((item) => item.scenarioId === button.dataset.runBaseline);
       try {
+        $("#studio-release-status").textContent = t("Running Sandbox baseline…", "正在运行 Sandbox 基线…");
         const response = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: scenario.prompt, baselineScenarioId: scenario.scenarioId }) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Baseline Sandbox failed.");
         await renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) { if (!isAbort(error)) { $("#studio-release-status").textContent = error.message; button.disabled = false; } }
+      } catch (error) { if (!isAbort(error)) { $("#studio-release-status").textContent = studioSimulationErrorText(error.message); button.disabled = false; } }
     }));
     root.querySelector("#studio-baseline-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const form = new FormData(event.currentTarget);
+      const formElement = event.currentTarget;
+      const submit = formElement.querySelector('button[type="submit"]');
+      const originalLabel = submit.textContent;
+      const form = new FormData(formElement);
+      submit.disabled = true;
+      submit.textContent = t("Saving…", "正在保存…");
       try {
         const next = { scenarioId: String(form.get("scenarioId")), name: String(form.get("name")), prompt: String(form.get("prompt")), expectedRoleIds: String(form.get("roles")).split(",").map((item) => item.trim()).filter(Boolean), requiredForRelease: form.get("requiredForRelease") === "on", outputSchema: JSON.parse(String(form.get("schema") || "{}")), materials: JSON.parse(String(form.get("materials") || "[]")) };
         const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenarios: [...baselines.filter((item) => item.scenarioId !== next.scenarioId), next] }) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Unable to save baseline.");
         await renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) { if (!isAbort(error)) $("#studio-release-status").textContent = error.message || "Invalid baseline JSON."; }
+      } catch (error) { if (!isAbort(error)) $("#studio-release-status").textContent = error.message || t("Invalid baseline JSON.", "基线场景 JSON 格式无效。"); }
+      finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = originalLabel; } }
     });
     addStudioWorkspaceNav(root, teamVersionId, "release");
     const releaseButton = $("#studio-release-button");
@@ -1306,13 +1353,49 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     let dirty = false;
     let selection = { roleId: "", flowKey: "", assets: { roles: {}, contracts: "" } };
     const workbench = stage.closest(".studio-design-workbench");
-    const inspectorToggle = workbench?.querySelector("#studio-inspector-toggle");
     const inspector = $("#studio-property-inspector");
+    const assetDrawer = workbench?.querySelector("#studio-asset-drawer");
+    const assetToggle = () => workbench?.querySelector("[data-studio-graph-action='assets']");
+    const assetListView = assetDrawer?.querySelector("#studio-assets-list-view");
+    const propertyView = assetDrawer?.querySelector("#studio-assets-property-view");
+    const assetBack = assetDrawer?.querySelector("[data-studio-assets-back]");
+    let assetPanelView = "list";
+    let commandDismissRequest = 0;
+    const showAssetPanel = (view = "list") => {
+      if (!assetDrawer) return;
+      assetDrawer.classList.add("is-open");
+      assetPanelView = view;
+      assetToggle()?.setAttribute("aria-expanded", "true");
+      assetDrawer.setAttribute("aria-hidden", "false");
+      const showProperties = view === "properties";
+      if (assetListView) assetListView.hidden = showProperties;
+      if (propertyView) propertyView.hidden = !showProperties;
+      if (assetBack) assetBack.hidden = !showProperties;
+      if (showProperties) inspector?.querySelector("input,select,textarea,button")?.focus({ preventScroll: true });
+    };
+    workbench?.addEventListener("studio-assets-show", (event) => showAssetPanel(event.detail?.view || "list"));
+    workbench?.addEventListener("studio-command-dismiss", () => {
+      updateStudioGraph?.update({ dismissCommandFormRequest: ++commandDismissRequest });
+    });
     const pendingRoleAssets = new Set();
     const pendingContractSchemas = new Set();
     let contractsDirty = false;
     let executionConfigDirty = false;
     let modelSelectionDirty = false;
+    let editorHistoryRevision = 0;
+    let editorHistoryFieldActive = false;
+    const captureEditorHistoryContext = () => JSON.parse(JSON.stringify({
+      assets: selection.assets,
+      pendingRoleAssets: [...pendingRoleAssets],
+      pendingContractSchemas: [...pendingContractSchemas],
+      contractsDirty,
+      executionConfigDirty,
+      modelSelectionDirty
+    }));
+    const recordEditorHistory = () => updateStudioGraph?.update({
+      historyContext: captureEditorHistoryContext(),
+      historyEvent: { id: ++editorHistoryRevision, kind: "push-before-replace", label: "Edit team properties" }
+    });
     const assetsResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design/assets`);
     const designAssets = await assetsResponse.json();
     if (!assetsResponse.ok) throw new Error(designAssets.error || "Unable to load TeamVersion role assets.");
@@ -1397,10 +1480,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           updateStudioGraph?.update({ selectedRoleId: selection.roleId, selectedFlowKey: selection.flowKey });
           renderInspector();
           renderAssetNavigator();
-          if (workbench.classList.contains("is-inspector-collapsed")) {
-            workbench.classList.remove("is-inspector-collapsed");
-            inspectorToggle?.setAttribute("aria-expanded", "true");
-          }
+          showAssetPanel("properties");
         }));
         list.querySelector(".studio-asset-search input")?.addEventListener("input", (event) => {
           const query = event.currentTarget.value.trim().toLocaleLowerCase();
@@ -1417,6 +1497,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     const markDesignDirty = (message) => {
       dirty = true;
       setDirty("project-graph");
+      updateStudioGraph?.update({ historyContext: captureEditorHistoryContext() });
       setEditorState(message);
     };
     const readJsonField = (element, emptyValue) => {
@@ -1628,9 +1709,16 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       return true;
     };
     renderInspector();
+    inspector?.addEventListener("focusout", () => { editorHistoryFieldActive = false; });
+    const recordInspectorEdit = () => {
+      if (editorHistoryFieldActive) return;
+      editorHistoryFieldActive = true;
+      recordEditorHistory();
+    };
     inspector?.addEventListener("input", (event) => {
       const element = event.target;
       if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) return;
+      recordInspectorEdit();
       if (element.dataset.studioContractField) return;
       if (element.dataset.studioProfileField === "profileId" || element.dataset.studioRoleField === "profileId") return;
       if (element.closest("[data-studio-context-row]")) {
@@ -1644,6 +1732,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     inspector?.addEventListener("change", (event) => {
       const element = event.target;
       if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) return;
+      recordInspectorEdit();
       const contractField = element.dataset.studioContractField;
       if (contractField && selection.flowId) {
         const flow = Object.values(authoring.flows || {}).find((item) => item.flowId === selection.flowId);
@@ -1691,6 +1780,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         return;
       }
       if (event.target.closest("[data-studio-role-input-contract-add]")) {
+        recordEditorHistory();
         if (!authoring.system.handoffMode) {
           setEditorState(state.locale === "en" ? "Choose a handoff mode before adding a contract." : "添加契约前，请先选择交接模式。");
           return;
@@ -1727,6 +1817,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         return;
       }
       if (event.target.closest("[data-studio-context-add]")) {
+        recordEditorHistory();
         const role = authoring.roles[selection.roleId];
         if (!role) return;
         role.contextMap ||= {};
@@ -1832,16 +1923,29 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       defaultAutoLayout: true,
       defaultAutoLayoutRequestId: 1,
       canSaveWorkbench: true,
+      historyContext: captureEditorHistoryContext(),
       rolePackages: studioRolePackages,
       labels: graphLabels[state.locale],
       commandFormLabels: graphFormLabels[state.locale],
-      onSelectRole: (roleId) => { selection = { ...selection, roleId, flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); },
+      commandFormHost: workbench?.querySelector("#studio-command-form-host"),
+      onCommandFormStateChange: ({ open }) => {
+        const commandHost = workbench?.querySelector("#studio-command-form-host");
+        if (open) showAssetPanel("properties");
+        if (commandHost) commandHost.hidden = !open;
+        if (inspector) inspector.hidden = open;
+        if (assetBack) assetBack.hidden = open || assetPanelView !== "properties";
+        const editorActions = assetDrawer?.querySelector(".studio-asset-editor-actions");
+        if (editorActions) editorActions.hidden = open;
+      },
+      onSelectRole: (roleId) => { selection = { ...selection, roleId, flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); showAssetPanel("properties"); },
       onSelectFlow: (flowKey) => {
         const flow = Object.values(authoring.flows || {}).find((item) => studioAuthoringFlowKey(item) === flowKey);
         selection = { ...selection, roleId: "", flowKey, flowId: flow?.flowId || "" };
         renderInspector();
         syncAssetNavigatorSelection();
+        showAssetPanel("properties");
       },
+      onOpenTeamAssets: () => showAssetPanel("list"),
       onClearSelection: () => { selection = { ...selection, roleId: "", flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); },
       onChatGenerate: () => state.teamStudioDialog?.("assistant"),
       onQuickDebugOpen: () => state.teamStudioDialog?.("run"),
@@ -1855,6 +1959,21 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       onApplyCommand: async (result) => {
         authoring = result.authoring;
         canvas = result.canvas;
+        if (result.historyContext) {
+          const history = result.historyContext;
+          selection.assets = history.assets || selection.assets;
+          pendingRoleAssets.clear();
+          for (const key of history.pendingRoleAssets || []) pendingRoleAssets.add(key);
+          pendingContractSchemas.clear();
+          for (const path of history.pendingContractSchemas || []) pendingContractSchemas.add(path);
+          contractsDirty = Boolean(history.contractsDirty);
+          executionConfigDirty = Boolean(history.executionConfigDirty);
+          modelSelectionDirty = Boolean(history.modelSelectionDirty);
+        }
+        const selectedFlow = result.selectedFlowKey
+          ? Object.values(authoring.flows || {}).find((flow) => studioAuthoringFlowKey(flow) === result.selectedFlowKey)
+          : null;
+        selection = { ...selection, roleId: result.selectedRoleId || "", flowKey: result.selectedFlowKey || "", flowId: selectedFlow?.flowId || "" };
         if (result.repositoryRoleId) {
           const template = studioRoleTemplatesByCommandId.get(result.repositoryRoleId);
           if (template && result.selectedRoleId) {
@@ -1871,18 +1990,21 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           canvas,
           viewModel: undefined,
           selectedRoleId: result.selectedRoleId || "",
-          selectedFlowKey: result.selectedFlowKey || ""
+          selectedFlowKey: result.selectedFlowKey || "",
+          historyContext: result.historyContext || captureEditorHistoryContext()
         });
+        renderInspector();
         renderAssetNavigator();
         dirty = true;
         setDirty("project-graph");
-        setEditorState("有未保存的结构修改");
+        setEditorState(state.locale === "en" ? "Unsaved structure changes." : "有未保存的结构修改");
+        if (result.selectedRoleId || result.selectedFlowKey) showAssetPanel("properties");
       },
       onApplyCanvas: (nextCanvas) => {
         canvas = nextCanvas;
         dirty = true;
         setDirty("project-graph");
-        setEditorState("有未保存的布局修改");
+        setEditorState(state.locale === "en" ? "Unsaved layout changes." : "有未保存的布局修改");
       },
       onValidateWorkbench: async () => {
         const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design/validate`, {
@@ -1891,13 +2013,14 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const validation = await result.json();
         if (!isCurrentRequest(pageRequest)) return;
         if (!result.ok || validation.ok === false) {
-          setEditorState(validation.error || validation.diagnostics?.map((item) => item.message).join("; ") || "结构校验失败");
+          setEditorState(validation.error || validation.diagnostics?.map((item) => item.message).join("; ") || (state.locale === "en" ? "Structure validation failed." : "结构校验失败"));
           return;
         }
-        setEditorState("结构校验通过");
+        setEditorState(state.locale === "en" ? "Structure validation passed." : "结构校验通过");
       },
       onSaveWorkbench: async () => {
-        if (!dirty) { setEditorState("没有待保存的修改"); return; }
+        if (!dirty) { setEditorState(state.locale === "en" ? "There are no unsaved changes." : "没有待保存的修改"); return; }
+        setEditorState(state.locale === "en" ? "Saving TeamVersion design…" : "正在保存团队设计…");
         let assetsSavedBeforeDesign = false;
         const savePendingAssets = async () => {
         if (pendingRoleAssets.size || contractsDirty || pendingContractSchemas.size || executionConfigDirty || modelSelectionDirty) {
@@ -1961,7 +2084,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (!await savePendingAssets()) return;
         dirty = false;
         clearDirty("project-graph");
-        setEditorState("已保存，项目已回到草案状态");
+        setEditorState(state.locale === "en" ? "Saved. The TeamVersion is now a draft." : "已保存，团队版本已回到草案状态。");
         await renderProjectStudio(projectId, pageRequest);
       },
       onQuickDebugRun: simulateTeam,
@@ -2128,7 +2251,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     const previewNote = root.querySelector(".project-preview-panel .preview-note");
     if (previewNote) previewNote.textContent = "团队只负责结构、角色和协作方式。";
     if (collaborationProjectId) root.querySelector(".page-heading")?.insertAdjacentHTML("afterend", '<p class="form-hint" role="status">此草稿来自 OGS Projects 项目调整。检查并发布后返回项目显式挂载新版本。</p>');
-    const graphMarkup = '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS Studio · 架构编排</span><h2>团队协作图谱</h2><p id="project-design-status" class="form-status" role="status" aria-live="polite">正在加载可编辑团队结构</p></div><div class="studio-canvas-actions"><span class="status-chip">可视化编辑</span><button type="button" class="secondary-button" id="studio-inspector-toggle" aria-controls="studio-property-inspector" aria-expanded="true">收起属性</button></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable team collaboration graph"></div><p class="preview-note">此处编辑团队拓扑；选择角色或流程可打开对应属性。静态校验不代表模型服务或凭据已连通。</p></section>';
+    const graphMarkup = '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS Studio · 架构编排</span><h2>团队协作图谱</h2><p id="project-design-status" class="form-status" role="status" aria-live="polite">正在加载可编辑团队结构</p></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable team collaboration graph"></div><p class="preview-note">此处编辑团队拓扑；选择角色或流程可打开对应属性。静态校验不代表模型服务或凭据已连通。</p></section>';
     if (state.studioRoute) root.querySelector("#studio-workbench-host")?.insertAdjacentHTML("beforeend", graphMarkup);
     else root.querySelector(".project-grid")?.insertAdjacentHTML("beforebegin", graphMarkup);
     const graphPanel = root.querySelector(".project-graph-preview");
@@ -2144,27 +2267,32 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       if (state.studioRoute) root.querySelector("#studio-workbench-host")?.append(workbench);
       else graphPanel.before(workbench);
       workbench.append(graphPanel);
-      workbench.insertAdjacentHTML("beforeend", '<aside class="project-panel studio-property-inspector" id="studio-property-inspector" aria-label="Studio properties"></aside>');
-      workbench.insertAdjacentHTML("afterbegin", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="Team assets"><div class="studio-asset-drawer-head"><strong>Team assets</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="Close team assets">×</button></div><div class="studio-asset-tabs" role="tablist" aria-label="Team assets"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">Roles</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">Flows</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section></aside>');
+      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="Team assets" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="Drag team assets panel"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="Back to team assets">←</button><strong>Team assets</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="Close team assets">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="Team assets"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">Roles</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">Flows</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="Studio properties"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队草稿</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside>');
       const inspector = workbench.querySelector("#studio-property-inspector");
-      const toggle = workbench.querySelector("#studio-inspector-toggle");
-      const actions = graphPanel.querySelector(".studio-canvas-actions");
-      actions?.insertAdjacentHTML("afterbegin", '<button type="button" class="secondary-button" id="studio-assets-toggle" aria-controls="studio-asset-drawer" aria-expanded="false">Roles / flows</button>');
       const assetDrawer = workbench.querySelector("#studio-asset-drawer");
-      const assetToggle = workbench.querySelector("#studio-assets-toggle");
+      const assetToggle = graphPanel.querySelector('[data-studio-graph-action="assets"]');
       if (assetDrawer) assetDrawer.querySelector(".studio-asset-drawer-head strong").textContent = state.locale === "en" ? "Team assets" : "团队资产";
-      if (assetToggle) assetToggle.textContent = state.locale === "en" ? "Roles / flows" : "角色 / 流程";
+      if (assetToggle) assetToggle.setAttribute("aria-expanded", "false");
       assetDrawer?.querySelector("#studio-assets-roles-tab")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Roles" : "角色"));
       assetDrawer?.querySelector("#studio-assets-flows-tab")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Flows" : "流程"));
       assetDrawer?.querySelector("#studio-asset-drawer-close")?.setAttribute("aria-label", state.locale === "en" ? "Close team assets" : "关闭团队资产");
-      assetToggle?.addEventListener("click", () => {
-        const open = assetDrawer?.classList.toggle("is-open") || false;
-        assetToggle.setAttribute("aria-expanded", String(open));
-      });
+      assetDrawer?.querySelector(".studio-asset-back")?.setAttribute("aria-label", state.locale === "en" ? "Back to team assets" : "返回团队资产");
+      assetDrawer?.querySelector(".studio-asset-drawer-head")?.setAttribute("aria-label", state.locale === "en" ? "Drag team assets panel. Use arrow keys to move." : "拖动团队资产面板；也可使用方向键移动。");
+      assetDrawer?.querySelector(".studio-asset-editor-actions .form-hint")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Saves the current TeamVersion draft." : "保存会写入当前团队草稿"));
+      assetDrawer?.querySelector("[data-studio-save-workspace]")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Save team" : "保存团队"));
       workbench.querySelector("#studio-asset-drawer-close")?.addEventListener("click", () => {
+        workbench.dispatchEvent(new CustomEvent("studio-command-dismiss"));
         assetDrawer?.classList.remove("is-open");
-        assetToggle?.setAttribute("aria-expanded", "false");
-        assetToggle?.focus();
+        assetDrawer?.setAttribute("aria-hidden", "true");
+        workbench.querySelector('[data-studio-graph-action="assets"]')?.setAttribute("aria-expanded", "false");
+        workbench.querySelector('[data-studio-graph-action="assets"]')?.focus();
+      });
+      assetDrawer?.querySelector("[data-studio-assets-back]")?.addEventListener("click", () => {
+        workbench.dispatchEvent(new CustomEvent("studio-assets-show", { detail: { view: "list" } }));
+        assetDrawer?.querySelector('#studio-assets-roles [data-studio-asset-role], #studio-assets-flows [data-studio-asset-flow]')?.focus({ preventScroll: true });
+      });
+      assetDrawer?.querySelector("[data-studio-save-workspace]")?.addEventListener("click", () => {
+        graphPanel.querySelector('[data-studio-graph-action="save"]')?.click();
       });
       const assetTabs = [...workbench.querySelectorAll('.studio-asset-tabs [role="tab"]')];
       assetTabs.forEach((tab, index) => {
@@ -2181,23 +2309,44 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
           next.click();
         });
       });
-      const inspectorPreference = localStorage.getItem("ogs.studio.inspector-collapsed");
-      const collapsed = state.studioRoute && (inspectorPreference === null
-        ? window.matchMedia("(max-width: 1100px)").matches
-        : inspectorPreference === "true");
-      workbench.classList.toggle("is-inspector-collapsed", collapsed);
-      if (toggle) {
-        toggle.setAttribute("aria-expanded", String(!collapsed));
-        toggle.textContent = collapsed ? "显示属性" : "收起属性";
-        toggle.addEventListener("click", () => {
-          const nextCollapsed = !workbench.classList.contains("is-inspector-collapsed");
-          workbench.classList.toggle("is-inspector-collapsed", nextCollapsed);
-          toggle.setAttribute("aria-expanded", String(!nextCollapsed));
-          toggle.textContent = nextCollapsed ? "显示属性" : "收起属性";
-          localStorage.setItem("ogs.studio.inspector-collapsed", String(nextCollapsed));
-          if (!nextCollapsed) inspector?.querySelector("input,select,textarea,button")?.focus({ preventScroll: true });
-        });
-      }
+      assetDrawer?.setAttribute("aria-hidden", "true");
+      const dragHandle = assetDrawer?.querySelector(".studio-asset-drawer-head");
+      let dragState = null;
+      const moveAssetPanel = (left, top) => {
+        if (!assetDrawer || !workbench) return;
+        const host = workbench.getBoundingClientRect();
+        const panel = assetDrawer.getBoundingClientRect();
+        const maxLeft = Math.max(0, host.width - panel.width);
+        const maxTop = Math.max(0, host.height - panel.height);
+        assetDrawer.style.left = `${Math.min(maxLeft, Math.max(0, left))}px`;
+        assetDrawer.style.top = `${Math.min(maxTop, Math.max(0, top))}px`;
+        assetDrawer.style.right = "auto";
+      };
+      dragHandle?.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("button")) return;
+        const host = workbench.getBoundingClientRect();
+        const panel = assetDrawer.getBoundingClientRect();
+        dragState = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: panel.left - host.left, top: panel.top - host.top };
+        dragHandle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      dragHandle?.addEventListener("pointermove", (event) => {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        moveAssetPanel(dragState.left + event.clientX - dragState.x, dragState.top + event.clientY - dragState.y);
+      });
+      const finishDrag = (event) => { if (dragState?.pointerId === event.pointerId) dragState = null; };
+      dragHandle?.addEventListener("pointerup", finishDrag);
+      dragHandle?.addEventListener("pointercancel", finishDrag);
+      dragHandle?.addEventListener("keydown", (event) => {
+        if (event.target.closest("button")) return;
+        const delta = event.shiftKey ? 48 : 16;
+        const moves = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
+        if (!moves[event.key]) return;
+        event.preventDefault();
+        const host = workbench.getBoundingClientRect();
+        const panel = assetDrawer.getBoundingClientRect();
+        moveAssetPanel(panel.left - host.left + moves[event.key][0], panel.top - host.top + moves[event.key][1]);
+      });
     }
     root.insertAdjacentHTML("beforeend", '<dialog id="team-studio-dialog" class="team-studio-dialog" aria-labelledby="team-studio-title"><div class="team-studio-dialog-content"><header class="team-studio-dialog-head"><div><span class="section-kicker">Team Studio</span><h2 id="team-studio-title">生成与运行</h2></div><button class="close-button" type="button" data-team-studio-close aria-label="关闭">×</button></header><div class="team-studio-tabs" role="tablist" aria-label="团队工作台操作"><button type="button" role="tab" id="team-studio-tab-assistant" aria-controls="team-studio-panel-assistant" aria-selected="true" data-team-studio-tab="assistant">完善团队</button><button type="button" role="tab" id="team-studio-tab-run" aria-controls="team-studio-panel-run" aria-selected="false" data-team-studio-tab="run">运行调试</button></div><section id="team-studio-panel-assistant" class="team-studio-panel" role="tabpanel" aria-labelledby="team-studio-tab-assistant"><section id="team-assistant" class="team-assistant-panel"></section></section><section id="team-studio-panel-run" class="team-studio-panel" role="tabpanel" aria-labelledby="team-studio-tab-run" hidden><label class="assistant-input-label"><span>调试输入</span><textarea id="team-simulation-input" rows="4" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><p class="form-hint">Studio 模拟会单独保留记录，不会创建项目 Run。</p><div class="form-actions"><button class="primary-button" id="team-simulation-run" type="button">开始模拟</button></div><div id="team-simulation-result" aria-live="polite"></div></section></div></dialog>');
     root.querySelectorAll(".team-studio-dialog .section-kicker").forEach((element) => { element.textContent = "OGS Studio"; });
@@ -2263,10 +2412,15 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         const currentResponse = await pageFetch(`/api/v1/projects/${encodeURIComponent(collaborationProjectId)}/teams`);
         const current = await currentResponse.json();
         if (!currentResponse.ok) throw new Error(current.error || "无法读取项目团队配置");
+        const sourceTeamId = team.teamId || team.teamRootId || teamVersionId;
+        const nextTeamVersionIds = (current.mountedTeams || [])
+          .filter((item) => (item.teamId || item.teamVersionId) !== sourceTeamId)
+          .map((item) => item.teamVersionId);
+        nextTeamVersionIds.push(teamVersionId);
         const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(collaborationProjectId)}/teams`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ teamVersionIds: [projectId] })
+          body: JSON.stringify({ teamVersionIds: nextTeamVersionIds })
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "挂载失败");
@@ -2526,6 +2680,8 @@ let activeTaskReviewClose = null;
 function closeActiveDialogs() {
   closeDrawer();
   activeTaskReviewClose?.("route");
+  document.querySelector("#collaboration-task-dialog[open]")?.close();
+  document.querySelector("[data-deliverable-viewer][open]")?.close();
 }
 
 async function renderCollaborationProject(projectId, project, pageRequest = state.activeRequest) {
@@ -2535,21 +2691,22 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   const root = $("#project-workspace-view");
   const teams = project.mountedTeams || [];
   const tasks = (project.taskRecords || []).filter((task) => !task.deletedAt && task.status !== "deleted");
+  const orderedTasks = tasks.slice().sort((left, right) => {
+    const leftTime = Date.parse(left.createdAt || "") || 0;
+    const rightTime = Date.parse(right.createdAt || "") || 0;
+    return rightTime - leftTime || Number(right.taskNumber || 0) - Number(left.taskNumber || 0);
+  });
   const taskCapacity = project.taskCapacity || { capacity: 1, used: 0, available: 1, activeTasks: [] };
   const materials = project.materials?.materials || [];
   const terminalRefreshes = pageRequest?.terminalRunRefreshes || (pageRequest ? (pageRequest.terminalRunRefreshes = new Set()) : new Set());
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length === 1 ? "1 个团队版本" : "团队配置异常"} · ${tasks.length} 个任务</span></section><section class="project-grid collaboration-project-grid"><article class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">项目资料</span><h2>项目资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">这里的资料属于当前项目，供已挂载团队使用。</p><form id="project-material-form" class="material-upload-form"><div class="form-actions"><label class="secondary-button material-upload-button">上传文件<input id="project-material-file-input" type="file" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><label class="secondary-button material-upload-button">导入文件夹<input id="project-material-folder-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label></div><small>支持批量文件和文件夹导入，保留文件夹相对路径；单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有项目资料，可以在任务开始前补充需求、背景或附件。</p>'}</div></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">执行团队</span><h2>当前团队版本</h2></div><span class="count-badge">${teams.length}</span></div><div class="material-list">${teams.length ? teams.map((team) => { const teamHref = String(team.teamVersionId || "").startsWith("case:") ? `/cases/${encodeURIComponent(String(team.teamVersionId).slice(5))}` : `/studio/teams/${encodeURIComponent(team.teamVersionId)}/design`; return `<div class="material-row"><a class="team-link" href="${teamHref}" data-route="${teamHref}"><strong>${esc(team.teamName)}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></a></div>`; }).join("") : '<p class="empty-note">还没有挂载团队。</p>'}</div><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}/teams" data-route="/projects/${encodeURIComponent(projectId)}/teams">切换团队版本</a></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">安排工作</span><h2>创建下一项任务</h2></div></div>${teams.length ? `<form id="collaboration-task-form" class="compact-form"><label><span>当前执行团队</span><strong>${esc(teams[0].teamName)} · v${teams[0].teamVersionNumber || 1}</strong><input name="teamVersionId" type="hidden" value="${esc(teams[0].teamVersionId)}"></label><label><span>任务内容</span><textarea name="input" required rows="4" maxlength="4000" placeholder="描述这次要完成的具体工作"></textarea></label><button class="primary-button" type="submit">记录任务</button><p class="form-status" id="collaboration-task-status"></p></form>` : '<p class="empty-note">请先挂载一个已发布团队。</p>'}</article><article class="project-panel task-list-panel"><div class="panel-head"><div><span class="section-kicker">任务清单与运行记录</span><h2>按任务追踪交付</h2></div><span class="count-badge">${tasks.length}</span></div><p class="panel-intro">每条任务保留输入内容、执行团队、任务序号和处理结果。暂停后可以继续，待审核时可提交反馈。</p><div class="material-list">${tasks.length ? tasks.slice().reverse().map((task) => `<div class="material-row task-record-row"><div class="task-record-main"><strong>任务 #${esc(task.taskNumber)} · ${esc(task.teamName || "团队")}</strong><p>${esc(task.input || "")}</p><div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.currentRunId ? `<span>运行 ${esc(task.currentRunId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.status === "failed" && task.lastError ? `<p class="task-run-last-error" role="status">${esc(task.lastError)}</p>` : ""}${task.currentRunId ? `<div class="task-run-detail" data-run-id="${esc(task.currentRunId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。先描述一项具体工作。</p>'}</div></article></section>`;
+  root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length} 个团队版本 · ${tasks.length} 个任务</span></section><div class="project-detail-sections collaboration-project-grid"><section class="project-panel project-info-panel"><div class="panel-head"><div><span class="section-kicker">01 · 项目概况</span><h2>项目信息</h2></div></div><p class="project-overview-text">${esc(project.overview || "尚未填写项目概要。")}</p><div class="project-readiness-panel"><div class="panel-head"><div><span class="section-kicker">运行检查</span><h3>团队就绪情况</h3></div></div><div data-project-readiness><p class="empty-note">正在检查已挂载团队...</p></div></div><div class="panel-head project-team-heading"><div><span class="section-kicker">执行团队</span><h3>已挂载版本</h3></div><span class="count-badge">${teams.length}</span></div><div class="material-list project-team-list">${teams.length ? teams.map((team) => `<div class="material-row team-mount-row"><div><strong>${esc(team.teamName || "团队")}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></div><button class="text-button" type="button" data-team-adjust="${esc(team.teamVersionId)}">编辑团队</button></div>`).join("") : '<p class="empty-note">尚未挂载团队。</p>'}</div><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}/teams" data-route="/projects/${encodeURIComponent(projectId)}/teams">管理团队版本</a></div><p class="panel-intro">编辑会从当前已发布版本创建团队草稿，发布后再将新版本挂载到项目。</p></section><section class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">02 · 项目文件</span><h2>生产资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">生产资料属于当前项目，供任务执行时使用。</p><form id="project-material-form" class="material-upload-form"><div class="form-actions"><label class="secondary-button material-upload-button">上传文件<input id="project-material-file-input" type="file" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><label class="secondary-button material-upload-button">导入文件夹<input id="project-material-folder-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label></div><small>支持批量文件和文件夹导入，保留文件夹相对路径；单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有生产资料。</p>'}</div></section><section class="project-panel task-list-panel project-run-panel"><div class="panel-head"><div><span class="section-kicker">03 · 任务与运行</span><h2>运行信息</h2></div><button class="primary-button" type="button" data-open-task-dialog ${teams.length ? "" : "disabled"}>新增任务</button></div><p class="panel-intro">每项任务绑定一个团队版本；同一项目一次运行一个任务，其他任务可先加入清单。</p><div class="task-capacity-summary" data-task-capacity></div><div class="material-list project-task-list">${orderedTasks.length ? orderedTasks.map((task) => `<div class="material-row task-record-row" data-task-record="${esc(task.taskId)}"><div class="task-record-main"><div class="task-title-line"><strong>任务 #${esc(task.taskNumber)} · ${esc(task.teamName || "团队")}</strong><time datetime="${esc(task.createdAt || "")}">${esc(task.createdAt ? new Date(task.createdAt).toLocaleString(state.locale) : `任务 #${task.taskNumber}`)}</time></div><p>${esc(task.input || "")}</p>${task.outputSummary ? `<p class="task-output-summary"><strong>输出摘要：</strong>${esc(task.outputSummary)}</p>` : ""}<div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.currentRunId ? `<span>Run ${esc(task.currentRunId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.status === "failed" && task.lastError ? `<p class="task-run-last-error" role="status">${esc(task.lastError)}</p>` : ""}${task.currentRunId ? `<div class="task-run-detail" data-run-id="${esc(task.currentRunId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。</p>'}</div><dialog class="task-review-dialog" id="collaboration-task-dialog"><form id="collaboration-task-form" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">新增任务</span><h2>安排一项工作</h2></div><button class="text-button" type="button" data-close-task-dialog aria-label="关闭">关闭</button></div><label>执行团队<select name="teamVersionId" required>${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label>任务内容<textarea name="input" required rows="5" maxlength="4000" placeholder="描述这次需要完成的具体工作"></textarea></label><p class="form-status" id="collaboration-task-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" type="button" data-close-task-dialog>取消</button><button class="primary-button" type="submit">添加到清单</button></div></form></dialog></section></div>`;
     root.querySelectorAll('.team-link[data-route^="/teams/"]').forEach((link) => link.setAttribute("data-pro-only", ""));
   const collaborationGrid = root.querySelector(".collaboration-project-grid");
   if (collaborationGrid) {
-    const readinessPanel = document.createElement("article");
-    readinessPanel.className = "project-panel project-readiness-panel";
-    const readinessTitle = state.locale === "en" ? "Static configuration check" : "静态配置检查";
     const boundary = state.locale === "en"
       ? "This check does not verify external network access or credentials. Sandbox Run checks again on the server."
       : "此检查不代表外部网络或凭据已连通。隔离运行启动时服务端会重新检查。";
-    readinessPanel.innerHTML = '<div class="panel-head"><div><span class="section-kicker">Readiness</span><h2>' + readinessTitle + '</h2></div></div><div data-project-readiness><p class="empty-note">Checking mounted teams...</p></div><p class="panel-intro">' + boundary + '</p>';
-    collaborationGrid.prepend(readinessPanel);
+    const readinessPanel = collaborationGrid.querySelector(".project-readiness-panel");
     pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/readiness`).then((response) => response.json().then((payload) => ({ response, payload }))).then(({ response, payload }) => {
       if (!isCurrentRequest(pageRequest) || !readinessPanel.isConnected) return;
       const target = readinessPanel.querySelector("[data-project-readiness]");
@@ -2557,9 +2714,9 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       const issues = [...(payload.blockers || []), ...(payload.warnings || [])];
       const stateLabel = payload.canDryRun ? (state.locale === "en" ? "Ready" : "可运行") : (state.locale === "en" ? "Blocked" : "存在阻塞");
       target.innerHTML = '<p class="status-chip ' + (payload.canDryRun ? "completed" : "failed") + '">' + stateLabel + '</p>' + (issues.length
-        ? '<ul>' + issues.map((issue) => '<li>' + esc(issue.teamVersionId ? `${issue.teamVersionId}: ` : "") + esc(issue.message || issue.code) + '</li>').join("") + '</ul>'
-        : '<p>Mounted TeamVersions pass static checks.</p>');
-    }).catch((error) => { if (isCurrentRequest(pageRequest) && !isAbort(error)) readinessPanel.querySelector("[data-project-readiness]").textContent = error.message; });
+        ? '<ul>' + issues.map((issue) => { const team = teams.find((item) => item.teamVersionId === issue.teamVersionId); return '<li>' + esc(team ? `${team.teamName} · v${team.teamVersionNumber || 1}: ` : "") + esc(issue.message || issue.code) + '</li>'; }).join("") + '</ul>'
+        : '<p>所有已挂载团队均通过静态配置检查。</p>') + '<p class="panel-intro">' + boundary + '</p>';
+    }).catch((error) => { if (isCurrentRequest(pageRequest) && !isAbort(error) && readinessPanel) readinessPanel.querySelector("[data-project-readiness]").textContent = error.message; });
 
     const activeTask = taskCapacity.activeTasks?.[0];
     const capacityNotice = document.createElement("p");
@@ -2568,43 +2725,18 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     capacityNotice.textContent = taskCapacity.available > 0
       ? `执行槽位 ${taskCapacity.used}/${taskCapacity.capacity}，可开始排队任务。`
       : `执行槽位已满，由任务 #${activeTask?.taskNumber ?? "?"}（${activeTask?.status ?? "处理中"}）占用。`;
-    collaborationGrid.querySelector(".task-list-panel .panel-head")?.after(capacityNotice);
+    collaborationGrid.querySelector("[data-task-capacity]")?.replaceChildren(capacityNotice);
     if (taskCapacity.available <= 0) {
       collaborationGrid.querySelectorAll('[data-task-action="start"], [data-task-action="retry"]').forEach((button) => {
         button.disabled = true;
         button.title = "项目执行槽位正被占用";
       });
     }
-    const taskList = collaborationGrid.querySelector(".task-list-panel .material-list");
-    if (taskList && tasks.length) {
-      const groups = [
-        { key: "active", label: state.locale === "en" ? "Active" : "进行中", statuses: new Set(["planning", "ready", "running", "pause_requested", "paused", "waiting_review", "cancel_requested"]) },
-        { key: "queued", label: state.locale === "en" ? "Queued" : "排队中", statuses: new Set(["queued"]) },
-        { key: "history", label: state.locale === "en" ? "History" : "历史", statuses: null }
-      ];
-      const rows = [...taskList.querySelectorAll(".task-record-row")];
-      taskList.replaceChildren();
-      for (const group of groups) {
-        const groupTasks = tasks.filter((task) => group.statuses ? group.statuses.has(task.status) : !groups.slice(0, 2).some((item) => item.statuses.has(task.status)));
-        if (!groupTasks.length) continue;
-        const groupRoot = document.createElement("section");
-        groupRoot.className = `task-group task-group-${group.key}`;
-        const heading = document.createElement("h3");
-        heading.className = "section-kicker";
-        heading.textContent = `${group.label} · ${groupTasks.length}`;
-        groupRoot.append(heading);
-        for (const task of groupTasks.slice().reverse()) {
-          const row = rows.find((item) => item.querySelector(`[data-task-id="${CSS.escape(task.taskId)}"]`));
-          if (row) groupRoot.append(row);
-        }
-        taskList.append(groupRoot);
-      }
-    }
   }
   if (collaborationGrid) {
     const section = document.createElement("article");
     section.className = "project-panel project-deliverables-panel";
-    section.innerHTML = `<div class="panel-head"><div><span class="section-kicker">Deliverables</span><h2>${state.locale === "en" ? "Archived results" : "已归档成果"}</h2></div><span class="count-badge" data-deliverable-count>0</span></div><div class="material-list" data-deliverable-list><p class="empty-note">${state.locale === "en" ? "Loading archived results…" : "正在读取归档成果..."}</p></div><pre class="task-run-output" data-deliverable-content hidden></pre>`;
+    section.innerHTML = `<div class="panel-head"><div><span class="section-kicker">04 · 项目交付</span><h2>项目成果</h2></div><span class="count-badge" data-deliverable-count>0</span></div><div class="material-list" data-deliverable-list><p class="empty-note">正在读取归档成果...</p></div><dialog class="task-review-dialog deliverable-viewer" data-deliverable-viewer><div class="task-review-form"><div class="panel-head"><div><span class="section-kicker">成果预览</span><h3 data-deliverable-title></h3></div><button class="text-button" type="button" data-close-deliverable>关闭</button></div><p class="panel-intro" data-deliverable-path></p><pre class="task-run-output" data-deliverable-content></pre><div class="form-actions"><button class="primary-button" type="button" data-download-deliverable>下载成果</button></div></div></dialog>`;
     collaborationGrid.append(section);
     const list = section.querySelector("[data-deliverable-list]");
     pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/deliverables`).then(async (response) => {
@@ -2621,18 +2753,31 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
         button.disabled = true;
         button.textContent = state.locale === "en" ? `Run ${button.dataset.archiveRun} archived` : `Run ${button.dataset.archiveRun} 已归档`;
       });
-      list.innerHTML = deliverables.length ? deliverables.slice().reverse().map((item) => `<div class="material-row"><div><strong>Task ${esc(item.taskId)} · Run ${esc(item.runId)}</strong><span>Attempt ${esc(item.attemptNumber)} · ${esc(item.createdAt || "")}</span></div><button class="text-button" type="button" data-open-deliverable="${esc(item.deliverableId)}">${state.locale === "en" ? "Open snapshot" : "查看快照"}</button></div>`).join("") : `<p class="empty-note">${state.locale === "en" ? "No archived results yet." : "尚无归档成果。"}</p>`;
+      list.innerHTML = deliverables.length ? deliverables.slice().reverse().map((item) => `<div class="material-row deliverable-row"><div><strong>任务 ${esc(item.taskId)} · Run ${esc(item.runId)}</strong><p>${esc(item.summary || "暂无结果摘要")}</p><span>尝试 ${esc(item.attemptNumber)} · ${esc(item.createdAt || "")}</span><code>${esc(item.outputPath || "")}</code></div><button class="secondary-button" type="button" data-open-deliverable="${esc(item.deliverableId)}">打开成果</button></div>`).join("") : '<p class="empty-note">尚无已归档成果。完成任务后可从运行记录归档。</p>';
       list.querySelectorAll("[data-open-deliverable]").forEach((button) => button.addEventListener("click", async () => {
-        const output = section.querySelector("[data-deliverable-content]");
+        const dialog = section.querySelector("[data-deliverable-viewer]");
+        const output = dialog.querySelector("[data-deliverable-content]");
         try {
           const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(button.dataset.openDeliverable)}/content`);
           const result = await response.json();
           if (!isCurrentRequest(pageRequest)) return;
           if (!response.ok) throw new Error(result.error || "Unable to read deliverable.");
           output.textContent = result.content || result.error || "";
-          output.hidden = false;
+          dialog.querySelector("[data-deliverable-title]").textContent = `任务 ${item.taskId} · Run ${item.runId}`;
+          dialog.querySelector("[data-deliverable-path]").textContent = item.outputPath || "";
+          const download = dialog.querySelector("[data-download-deliverable]");
+          download.onclick = () => {
+            const url = URL.createObjectURL(new Blob([result.content || ""], { type: "text/plain;charset=utf-8" }));
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `task-${item.taskId}-run-${item.runId}.txt`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+          };
+          dialog.showModal();
         } catch (error) { if (!isAbort(error)) showToast(error.message || "Unable to read deliverable."); }
       }));
+      section.querySelector("[data-close-deliverable]")?.addEventListener("click", () => section.querySelector("[data-deliverable-viewer]").close());
     }).catch((error) => { if (isCurrentRequest(pageRequest) && !isAbort(error)) list.innerHTML = `<p class="run-error">${esc(error.message)}</p>`; });
     for (const task of tasks) {
       const row = collaborationGrid.querySelector(`.task-record-row:has([data-task-id="${CSS.escape(task.taskId)}"])`);
@@ -2663,7 +2808,6 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     }
   }
   if (collaborationGrid && teams.length) {
-    collaborationGrid.insertAdjacentHTML("afterbegin", `<article class="project-panel team-adjustment-panel"><div class="panel-head"><div><span class="section-kicker">团队优化</span><h2>调整执行团队</h2></div></div><p class="panel-intro">从当前版本创建 Studio 草稿。检查并发布后，再回到项目明确挂载新版本。</p><div class="team-adjustment-actions">${teams.map((team) => `<button class="secondary-button" type="button" data-team-adjust="${esc(team.teamVersionId)}">调整 ${esc(team.teamName)} · v${team.teamVersionNumber || 1}</button>`).join("")}</div></article>`);
     collaborationGrid.querySelectorAll("[data-team-adjust]").forEach((button) => button.addEventListener("click", async () => {
       button.disabled = true;
       try {
@@ -2753,7 +2897,10 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     pageRequest?.runPollers?.add(stop);
   }
   const collaborationTaskForm = $("#collaboration-task-form");
+  const collaborationTaskDialog = $("#collaboration-task-dialog");
   bindDirtyForm(collaborationTaskForm, () => setDirty("collaboration-task-form"));
+  root.querySelector("[data-open-task-dialog]")?.addEventListener("click", () => collaborationTaskDialog?.showModal());
+  collaborationTaskDialog?.querySelectorAll("[data-close-task-dialog]").forEach((button) => button.addEventListener("click", () => collaborationTaskDialog.close()));
   const uploadMaterials = async (event) => {
     const input = event.currentTarget;
     const files = [...(input.files || [])];
@@ -2780,15 +2927,17 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     const status = $("#collaboration-task-status");
     const submit = form.querySelector("button[type=submit]");
     const payload = Object.fromEntries(new FormData(form).entries());
-    payload.idempotencyKey = crypto.randomUUID();
+    payload.idempotencyKey = createUuid();
     submit.disabled = true;
+    status.textContent = "正在添加任务...";
     try {
       const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json();
       if (!isCurrentRequest(pageRequest)) return;
       if (!response.ok) { status.textContent = result.error || "任务创建失败"; return; }
       clearDirty("collaboration-task-form");
-      status.textContent = "任务已加入清单";
+      collaborationTaskDialog.close();
+      form.reset();
       await renderProjectRun(projectId, pageRequest);
     } catch (error) {
       if (isAbort(error)) return;
@@ -2826,7 +2975,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
         method: action === "delete" ? "DELETE" : "POST",
         headers: { "content-type": "application/json" },
         body: action === "delete" ? undefined : ["start", "retry"].includes(action)
-          ? JSON.stringify({ mode: requestedMode, idempotencyKey: crypto.randomUUID() })
+          ? JSON.stringify({ mode: requestedMode, idempotencyKey: createUuid() })
           : "{}"
       });
       const result = await response.json();
@@ -3002,7 +3151,7 @@ function closeDrawer() {
   drawer._trigger = null;
   if (trigger?.isConnected) trigger.focus({ preventScroll: true });
 }
-function openRun(result, item, prompt, id = crypto.randomUUID()) {
+function openRun(result, item, prompt, id = createUuid()) {
   const audit = result.auditTrail || [];
   const finalOutput = result.finalOutput;
   const dryRun = typeof finalOutput === "string" && finalOutput.startsWith("[dry-run]");

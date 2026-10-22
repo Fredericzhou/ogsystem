@@ -47,7 +47,11 @@ export function createProjectPackageUseCases({
     }
     if (totalSize > 8 * 1024 * 1024) throw new Error("PROJECT_IMPORT_INVALID: material content exceeds the package limit.");
     if (!Array.isArray(bundle.project.mountedTeams)) throw new Error("PROJECT_IMPORT_INVALID: mountedTeams must be an array.");
-    if (bundle.project.mountedTeams.length !== 1) throw new Error("PROJECT_SINGLE_TEAM_REQUIRED: a project package must contain exactly one mounted TeamVersion.");
+    if (!bundle.project.mountedTeams.length) throw new Error("PROJECT_TEAM_REQUIRED: a project package must contain at least one mounted TeamVersion.");
+    const mountedIds = bundle.project.mountedTeams.map((team) => team?.teamVersionId).filter(Boolean);
+    if (mountedIds.length !== bundle.project.mountedTeams.length || new Set(mountedIds).size !== mountedIds.length) {
+      throw new Error("PROJECT_IMPORT_INVALID: mounted TeamVersions must have unique identities.");
+    }
     const mountedTeams = [];
     for (const mountedTeam of bundle.project.mountedTeams) {
       if (!mountedTeam || typeof mountedTeam !== "object" || !mountedTeam.teamPackage) {

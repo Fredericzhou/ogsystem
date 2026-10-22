@@ -18,6 +18,8 @@ test("Deliverable snapshots publish atomically and archive each Run idempotently
     const second = await store.archive(project, { ...metadata, runId: "run-2", attemptNumber: 2 }, "second result");
     assert.equal(replay.deliverableId, first.deliverableId);
     assert.equal(replay.idempotentReplay, true);
+    assert.equal(first.summary, "first result");
+    assert.equal(first.outputPath, `workspace/deliverables/${first.deliverableId}/content.txt`);
     assert.equal(await store.readContent(project, first.deliverableId), "first result");
     assert.equal(await store.readContent(project, second.deliverableId), "second result");
     assert.equal((await store.list(project)).length, 2);
@@ -57,6 +59,8 @@ test("archive recovers a complete published snapshot and removes interrupted tem
 
     assert.equal(replay.deliverableId, orphanId);
     assert.equal(replay.idempotentReplay, true);
+    assert.equal(replay.summary, "complete result");
+    assert.equal(replay.outputPath, `workspace/deliverables/${orphanId}/content.txt`);
     assert.equal(await store.readContent(project, orphanId), "complete result");
     assert.deepEqual(await readdir(root), [orphanId]);
     assert.deepEqual(await readdir(join(workdir, ".site")), ["deliverables.json"]);

@@ -1,6 +1,6 @@
 import { hostname } from "node:os";
-import { lstat, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { parse, relative, resolve, sep } from "node:path";
+import { lstat, mkdir, open, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, parse, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 export type ProjectLockKind = "write" | "active-run" | "deliverable-index";
@@ -33,8 +33,22 @@ function lockPath(workdir: string, kind: ProjectLockKind): string {
   return resolve(workdir, ".site", filename);
 }
 
+async function resolveCanonicalPath(path: string): Promise<string> {
+  const target = resolve(path);
+  try {
+    return await realpath(target);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+    if (code !== "ENOENT") throw error;
+  }
+  const parent = dirname(target);
+  if (parent === target) return target;
+  const canonicalParent = await resolveCanonicalPath(parent);
+  return resolve(canonicalParent, target.slice(parent.length + 1));
+}
+
 async function ensureSafeLockDirectory(workdir: string): Promise<void> {
-  const root = resolve(workdir);
+  const root = await resolveCanonicalPath(workdir);
   const filesystemRoot = parse(root).root;
   let current = filesystemRoot;
   for (const segment of relative(filesystemRoot, root).split(sep).filter(Boolean)) {

@@ -69,7 +69,7 @@ test("project package preview detects duplicate definition and preserves its sin
   assert.deepEqual(calls, ["catalog"]);
 });
 
-test("project package preview maps one mounted TeamVersion digest and name conflict", async () => {
+test("project package preview maps mounted TeamVersion digests and name conflicts", async () => {
   const { useCases } = createOperations({
     projects: [
       { projectId: "same", teamVersionId: "same", teamName: "Dependency A", teamCoreDigest: "digest-a" },
@@ -90,10 +90,14 @@ test("project package preview maps one mounted TeamVersion digest and name confl
     action: "create-new"
   }]);
   assert.deepEqual(preview.missingItems, ["Dependency B"]);
-  await assert.rejects(() => useCases.previewProjectBundle(bundle({ mountedTeams: [
+  const multiTeamPreview = await useCases.previewProjectBundle(bundle({ mountedTeams: [
     ...project.project.mountedTeams,
-    { teamVersionId: "source-a", teamName: "Dependency A", teamCoreDigest: "digest-a", teamPackage: { team: { project: { teamVersionStatus: "released" } } } }
-  ] })), /PROJECT_SINGLE_TEAM_REQUIRED/);
+    { teamVersionId: "source-a", teamName: "Dependency A", teamCoreDigest: "digest-a", teamPackage: { teamCoreDigest: "digest-a", team: { project: { teamVersionStatus: "released" } } } }
+  ] }));
+  assert.deepEqual(multiTeamPreview.teamDependencies.map((team) => team.sourceTeamVersionId), ["source-b", "source-a"]);
+  await assert.rejects(() => useCases.previewProjectBundle(bundle({ mountedTeams: [
+    project.project.mountedTeams[0], project.project.mountedTeams[0]
+  ] })), /unique identities/);
 });
 
 test("project package validation checks nested released teams before catalog reads", async () => {
@@ -104,7 +108,7 @@ test("project package validation checks nested released teams before catalog rea
       return { bundle: { team: { project: { teamVersionStatus: teamBundle.teamVersionStatus } } }, teamCoreDigest: "nested-digest" };
     }
   });
-  const project = bundle({ mountedTeams: [{ teamPackage: { teamVersionStatus: "draft" }, teamCoreDigest: "nested-digest" }] });
+  const project = bundle({ mountedTeams: [{ teamVersionId: "draft-team-v1", teamPackage: { teamVersionStatus: "draft" }, teamCoreDigest: "nested-digest" }] });
 
   await assert.rejects(() => useCases.previewProjectBundle(project), /TEAM_VERSION_NOT_RELEASED/);
   assert.deepEqual(calls, ["draft"]);

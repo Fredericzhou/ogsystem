@@ -301,17 +301,15 @@ test("concurrent same-name Collaboration Project creation commits exactly one wo
   });
 });
 
-test("collaboration projects reject multiple teams and roll back invalid creation", async () => {
+test("collaboration projects mount multiple released teams and roll back invalid creation", async () => {
   await withStore("multi-team-atomicity", async (store, projectsRoot) => {
     const firstTeam = await createReleasedTeam(store, "First Mounted Team");
     const secondTeam = await createReleasedTeam(store, "Second Mounted Team");
-    await assert.rejects(
-      () => store.createCollaborationProject({
-        name: "All Teams Project",
-        teamVersionIds: [firstTeam.projectId, secondTeam.projectId]
-      }),
-      /PROJECT_SINGLE_TEAM_REQUIRED/
-    );
+    const project = await store.createCollaborationProject({
+      name: "All Teams Project",
+      teamVersionIds: [firstTeam.projectId, secondTeam.projectId]
+    });
+    assert.deepEqual(project.mountedTeams.map((team) => team.teamVersionId), [firstTeam.projectId, secondTeam.projectId]);
 
     const draftTeam = await store.createProject({
       name: "Unreleased Second Team",
@@ -327,7 +325,7 @@ test("collaboration projects reject multiple teams and roll back invalid creatio
     );
 
     const projects = await store.listProjects();
-    assert.equal(projects.some((item) => item.projectType === "collaboration" && item.name === "All Teams Project"), false);
+    assert.equal(projects.some((item) => item.projectType === "collaboration" && item.name === "All Teams Project"), true);
     assert.equal(projects.some((item) => item.projectType === "collaboration" && item.name === "Rolled Back Project"), false);
     const entries = await readdir(projectsRoot);
     assert.equal(entries.some((entry) => entry.startsWith("rolled-back-project-")), false);

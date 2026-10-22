@@ -352,7 +352,7 @@ test("Project Run resume requires a persisted Task owner before validating a sna
   }
 });
 
-test("collaboration tasks run sequentially on their single mounted TeamVersion and preserve controls", async () => {
+test("collaboration tasks run sequentially on their bound TeamVersion and preserve controls", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-task-controls-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withTaskCreationUseCases(withCollaborationProjectUseCases(await import("../infrastructure/file-project-store.mjs?task-controls=" + Date.now())));
@@ -438,10 +438,8 @@ test("task controls enforce one active task, durable idempotency, and terminal b
 
     const builtInDraft = await store.createProject({ name: "Task Boundary Built In", overview: "A linear graph for the execution boundary.", templateId: "empty" });
     const builtInTeam = await store.confirmProjectTeam(builtInDraft.projectId, { release: true });
-    await assert.rejects(
-      () => store.replaceProjectTeams(project.projectId, [teamVersionId, builtInTeam.teamVersionId]),
-      /PROJECT_SINGLE_TEAM_REQUIRED/
-    );
+    const expanded = await store.replaceProjectTeams(project.projectId, [teamVersionId, builtInTeam.teamVersionId]);
+    assert.deepEqual(expanded.mountedTeams.map((team) => team.teamVersionId), [teamVersionId, builtInTeam.teamVersionId]);
     const builtIn = await store.createProjectTask(project.projectId, { input: "Mounted TeamVersion execution", teamVersionId, idempotencyKey: "boundary-built-in" });
     const builtInRun = await store.startProjectTask(project.projectId, builtIn.taskId);
     assert.equal(builtInRun.status, "planning");
@@ -450,8 +448,8 @@ test("task controls enforce one active task, durable idempotency, and terminal b
     assert.equal(builtInCompleted.status, "completed");
     await waitForActiveTaskWorker(project.projectId, builtIn.taskId);
     const mountedTeam = (await store.getProject(project.projectId)).mountedTeams;
-    assert.equal(mountedTeam.length, 1);
-    assert.equal(mountedTeam[0].teamVersionId, builtInCompleted.teamVersionId);
+    assert.equal(mountedTeam.length, 2);
+    assert.equal(mountedTeam.some((team) => team.teamVersionId === builtInCompleted.teamVersionId), true);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }

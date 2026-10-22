@@ -53,6 +53,7 @@ import { validateStudioConnectionCells } from "./studio-graph-rules.js";
 type StudioGraphLabelKey =
   | "viewportGroup"
   | "editGroup"
+  | "teamAssets"
   | "zoomOut"
   | "zoomIn"
   | "resetView"
@@ -129,6 +130,7 @@ export type StudioGraphBridgeOptions = {
   validation?: { ok?: unknown; diagnostics?: unknown } | null;
   selectedRoleId?: string;
   selectedFlowKey?: string;
+  historyContext?: unknown;
   editSelectionRequest?: number;
   defaultAutoLayout?: boolean;
   showTopologyOrder?: boolean;
@@ -141,6 +143,7 @@ export type StudioGraphBridgeOptions = {
   projectConfig?: unknown;
   onSelectRole?: (roleId: string) => void;
   onSelectFlow?: (flowKey: string) => void;
+  onOpenTeamAssets?: () => void;
   onClearSelection?: () => void;
   viewport?: StudioCanvasSnapshot["viewport"];
   onViewportChange?: (viewport: NonNullable<StudioCanvasSnapshot["viewport"]>) => void;
@@ -150,6 +153,7 @@ export type StudioGraphBridgeOptions = {
     canvas: StudioCanvasSnapshot;
     selectedRoleId?: string;
     selectedFlowKey?: string;
+    historyContext?: unknown;
     blockedCode?: string;
   }) => void | Promise<void>;
   onChatGenerate?: () => void | Promise<void>;
@@ -181,6 +185,7 @@ type StudioGraphSnapshot = {
   canvas: StudioCanvasSnapshot;
   selectedRoleId?: string;
   selectedFlowKey?: string;
+  historyContext?: unknown;
 };
 
 type StudioGraphHistoryEntry =
@@ -294,6 +299,8 @@ export class StudioGraphIsland {
   private minimapRefreshFrame: number | null = null;
   private commandForm: StudioCommandFormState | null = null;
   private pendingEdgePreview: PendingStudioEdgePreview | null = null;
+  private relationshipSourceRoleId = "";
+  private pendingRolePlaceholderId = "";
   private pendingRoleInsertion: PendingStudioRoleInsertion | null = null;
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
   private contextMenuState: StudioGraphContextMenuState | null = null;
@@ -382,7 +389,7 @@ export class StudioGraphIsland {
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
       this.toolbarButton("add-role", "addRole", "+R"),
       this.toolbarButton("add-edge", "addEdge", "+E"),
-      this.toolbarButton("edit", "editSelection", "✎"),
+      this.toolbarButton("assets", "teamAssets", "▤"),
       this.toolbarButton("delete", "deleteSelection", "⌫"),
       this.toolbarButton("undo", "undo", "↶"),
       this.toolbarButton("redo", "redo", "↷"),
@@ -778,7 +785,6 @@ export class StudioGraphIsland {
         this.updateToolbarState();
       }
       if (action === "quick-open") this.toggleQuickOpen();
-      if (action === "quick-open") this.toggleQuickOpen();
       if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 32, preserveDimensions: true });
       if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
@@ -788,22 +794,23 @@ export class StudioGraphIsland {
       }
       if (action === "validate") void this.options.onValidateWorkbench?.();
       if (action === "save") void this.options.onSaveWorkbench?.();
+      if (action === "assets") this.options.onOpenTeamAssets?.();
       if (this.isReadOnly()) return;
       if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();
       if (action === "redo") void this.semanticRedo();
       if (action === "edit") this.openSelectedEditor();
       if (action === "delete") void this.deleteSelection();
-      if (action === "add-role") this.openCommandForm("add-role");
+      if (action === "add-role") this.beginAddRoleDraft();
       if (action === "add-edge") {
-        const roleIds = Object.keys(this.options.authoring?.roles || {});
-        const selectedRoleId = this.selectedRoleId() || roleIds[0];
-        const targetRoleId = roleIds.find((roleId) => roleId !== selectedRoleId) || "__system_end__";
+        const selectedRoleId = this.selectedRoleId();
         if (!selectedRoleId) {
           this.toast("error", this.label("noRolesAvailable"));
           return;
         }
-        this.openCommandForm("add-edge", { sourceRoleId: selectedRoleId, targetRoleId });
+        this.relationshipSourceRoleId = selectedRoleId;
+        this.options.onStatusChange?.(this.label("connectFromSelectedRole"));
+        this.updateToolbarState();
       }
     });
   }
@@ -828,7 +835,11 @@ export class StudioGraphIsland {
 
   private bindGraphEvents(): void {
     this.graph.on("node:click", ({ node }) => {
-      const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
+      const data = node.getData() as { studioNode?: { kind?: string; roleId?: string }; studioPendingRole?: boolean } | undefined;
+      if (data?.studioPendingRole) {
+        this.openCommandForm("add-role");
+        return;
+      }
       if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
         this.selectRoleById(data.studioNode.roleId, node);
       }
@@ -836,7 +847,7 @@ export class StudioGraphIsland {
     this.graph.on("node:dblclick", ({ node }) => {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
       if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
-        this.openEditRoleForm(data.studioNode.roleId);
+        this.selectRoleById(data.studioNode.roleId, node);
       }
     });
     this.graph.on("node:contextmenu", ({ node, e }) => {
@@ -866,7 +877,7 @@ export class StudioGraphIsland {
     this.graph.on("edge:dblclick", ({ edge }) => {
       const data = this.edgeRecordFromCell(edge);
       if (data?.studioEdge) {
-        this.openEditEdgeForm(data.studioEdge);
+        this.selectEdge(data.studioEdge, edge);
       }
     });
     this.graph.on("edge:contextmenu", ({ edge, e }) => {
@@ -892,6 +903,7 @@ export class StudioGraphIsland {
         return;
       }
       this.graph.cleanSelection();
+      this.relationshipSourceRoleId = "";
       this.options.onClearSelection?.();
       this.lastEditSelectionSignature = "";
       this.closeCommandForm();
@@ -987,6 +999,11 @@ export class StudioGraphIsland {
         this.toast("error", this.label("invalidConnection"));
         return;
       }
+      if (this.relationshipSourceRoleId && source !== this.relationshipSourceRoleId) {
+        this.toast("error", this.label("connectFromSelectedRole"));
+        return;
+      }
+      this.relationshipSourceRoleId = "";
       this.openCommandForm("add-edge", {
         sourceRoleId: source,
         targetRoleId: target
@@ -1031,6 +1048,38 @@ export class StudioGraphIsland {
       priority: defaults.priority
     });
     this.renderCommandForm();
+  }
+
+  private beginAddRoleDraft(): void {
+    if (this.isReadOnly()) return;
+    this.removePendingRolePlaceholder();
+    const viewport = this.canvasEl.getBoundingClientRect();
+    const center = this.graph.clientToLocal(viewport.left + viewport.width / 2, viewport.top + viewport.height / 2);
+    const dark = document.documentElement.dataset.visualizerTheme === "dark";
+    const node = this.graph.addNode({
+      id: "__studio_pending_role__",
+      shape: "rect",
+      x: center.x - 90,
+      y: center.y - 42,
+      width: 180,
+      height: 84,
+      zIndex: 10,
+      data: { studioPendingRole: true },
+      attrs: {
+        body: { fill: dark ? "#10221f" : "#f3f8f6", stroke: dark ? "#66c8b5" : "#258779", strokeWidth: 1.5, strokeDasharray: "6 4", rx: 6, ry: 6 },
+        label: { text: this.label("addRole"), fill: dark ? "#b6e8df" : "#245d55", fontSize: 13, fontWeight: 600 }
+      }
+    });
+    this.pendingRolePlaceholderId = node.id;
+    this.graph.cleanSelection();
+    this.graph.select(node);
+    this.options.onStatusChange?.(this.label("addRole"));
+  }
+
+  private removePendingRolePlaceholder(): void {
+    if (!this.pendingRolePlaceholderId) return;
+    this.graph.getCellById(this.pendingRolePlaceholderId)?.remove();
+    this.pendingRolePlaceholderId = "";
   }
 
   private openEditRoleForm(roleId: string): void {
@@ -1101,21 +1150,23 @@ export class StudioGraphIsland {
       studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean };
     } | undefined;
     if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
-      this.openEditRoleForm(data.studioNode.roleId);
+      this.selectRoleById(data.studioNode.roleId, selected?.isNode() ? selected : undefined);
       return;
     }
     if (data?.studioEdge) {
-      this.openEditEdgeForm(data.studioEdge);
+      this.selectEdge(data.studioEdge, selected?.isEdge() ? selected : undefined);
     }
   }
 
   private closeCommandForm(): void {
     if (!this.commandForm && this.dialogEl.hidden) {
+      this.removePendingRolePlaceholder();
       return;
     }
     this.pendingEdgePreview = null;
     this.pendingRoleInsertion = null;
     this.commandForm = null;
+    this.removePendingRolePlaceholder();
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
     this.syncPendingEdgePreview();
@@ -2152,7 +2203,8 @@ export class StudioGraphIsland {
         authoring: snapshot.authoring,
         canvas: snapshot.canvas,
         selectedRoleId: snapshot.selectedRoleId,
-        selectedFlowKey: snapshot.selectedFlowKey
+        selectedFlowKey: snapshot.selectedFlowKey,
+        historyContext: snapshot.historyContext
       });
     } finally {
       this.applying = false;
@@ -2213,7 +2265,8 @@ export class StudioGraphIsland {
       authoring: this.cloneJson(this.options.authoring),
       canvas: this.cloneJson(this.options.canvas),
       selectedRoleId: this.options.selectedRoleId,
-      selectedFlowKey: this.options.selectedFlowKey
+      selectedFlowKey: this.options.selectedFlowKey,
+      historyContext: this.options.historyContext === undefined ? undefined : this.cloneJson(this.options.historyContext)
     };
   }
 
@@ -2258,15 +2311,14 @@ export class StudioGraphIsland {
       debugRun.hidden = readOnly;
       debugRun.disabled = this.busy || readOnly || this.quickDebugBusy || typeof this.options.onQuickDebugRun !== "function";
     }
-    for (const action of ["layout", "add-role", "add-edge", "edit", "delete", "validate", "save"]) {
+    for (const action of ["layout", "add-role", "add-edge", "delete", "validate", "save"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
       if (button) button.disabled = this.busy || readOnly;
     }
     const addEdge = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="add-edge"]');
-    const edit = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="edit"]');
     const deleteButton = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="delete"]');
     if (addEdge) addEdge.disabled = this.busy || readOnly || !selectedRole;
-    if (edit) edit.disabled = this.busy || readOnly || !selectedEditable;
+    if (addEdge) addEdge.setAttribute("aria-pressed", this.relationshipSourceRoleId && selectedRole ? "true" : "false");
     if (deleteButton) deleteButton.disabled = this.busy || readOnly || !selectedEditable;
     const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
     const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
@@ -2354,6 +2406,11 @@ export class StudioGraphIsland {
   }
 
   private handleRootKeydown(event: KeyboardEvent): void {
+    if (this.pendingRolePlaceholderId && event.key === "Escape" && !this.commandForm) {
+      event.preventDefault();
+      this.removePendingRolePlaceholder();
+      return;
+    }
     if (!this.contextMenuEl.hidden && event.key === "Escape") {
       event.preventDefault();
       this.hideContextMenu();
@@ -2425,8 +2482,9 @@ export class StudioGraphIsland {
 
   private toolbarButton(action: string, key: StudioGraphLabelKey, icon: string, shortLabel?: string): string {
     const label = this.label(key);
+    const expanded = action === "assets" ? ' aria-expanded="false" aria-controls="studio-asset-drawer"' : "";
     return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
-      this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '"><span class="studio-graph-toolbar-icon" aria-hidden="true">' +
+      this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '"' + expanded + '><span class="studio-graph-toolbar-icon" aria-hidden="true">' +
       this.escapeHtml(icon) + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
   }
 
@@ -2694,6 +2752,7 @@ export class StudioGraphIsland {
     }
     // Once the user interacts, a delayed first-fit must not move the graph underneath the selection.
     this.clearPendingInitialFit();
+    if (this.relationshipSourceRoleId && this.relationshipSourceRoleId !== roleId) this.relationshipSourceRoleId = "";
     this.options.selectedRoleId = roleId;
     this.options.selectedFlowKey = "";
     this.graph.cleanSelection();
@@ -2714,6 +2773,7 @@ export class StudioGraphIsland {
       return;
     }
     this.clearPendingInitialFit();
+    this.relationshipSourceRoleId = "";
     this.options.selectedRoleId = "";
     this.options.selectedFlowKey = studioEdgeFlowKey(edgeData);
     this.graph.cleanSelection();
@@ -2782,7 +2842,7 @@ export class StudioGraphIsland {
     }
     if (state.kind === "role") {
       if (action === "edit") {
-        this.openEditRoleForm(state.roleId);
+        this.selectRoleById(state.roleId);
         return;
       }
       if (action === "delete") {
@@ -2791,7 +2851,7 @@ export class StudioGraphIsland {
       return;
     }
     if (action === "edit") {
-      this.openEditEdgeForm(state.edge);
+      this.selectEdge(state.edge);
       return;
     }
     if (action === "delete") {

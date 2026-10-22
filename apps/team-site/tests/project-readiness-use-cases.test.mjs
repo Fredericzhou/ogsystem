@@ -61,3 +61,29 @@ test("Project Readiness preserves missing project and Runtime inspection failure
   assert.equal(projectReadiness.blockers[0].code, "PROJECT_TEAM_VERSION_UNAVAILABLE");
   await assert.rejects(inspectUseCases.getTeamVersionReadiness("team", "version"), (error) => error === failure);
 });
+
+test("Project Readiness aggregates checks for every mounted TeamVersion", async () => {
+  const inspected = [];
+  const useCases = createProjectReadinessUseCases({
+    getProject: async (id) => id === "project"
+      ? { projectType: "collaboration", projectId: id, projectStatus: "confirmed", mountedTeams: [
+        { teamId: "team-a", teamVersionId: "team-a-v2" },
+        { teamId: "team-b", teamVersionId: "team-b-v1" }
+      ] }
+      : {
+        projectType: "team", workdir: `/teams/${id}`, teamId: id.startsWith("team-a") ? "team-a" : "team-b",
+        teamVersionId: id, teamVersionStatus: "released"
+      },
+    readinessInspector: { inspect: async (workdir) => {
+      inspected.push(workdir);
+      const blocked = workdir.endsWith("team-b-v1");
+      return { canDryRun: !blocked, blockers: blocked ? [{ code: "MODEL_MISSING", severity: "blocker", message: "Add a model." }] : [], warnings: [], missingBindings: [] };
+    } }
+  });
+  const result = await useCases.getProjectReadiness("project");
+  assert.deepEqual(inspected.sort(), ["/teams/team-a-v2", "/teams/team-b-v1"]);
+  assert.deepEqual(result.mountedTeamVersionIds, ["team-a-v2", "team-b-v1"]);
+  assert.deepEqual(result.teams.map((team) => team.canDryRun), [true, false]);
+  assert.deepEqual(result.blockers, [{ code: "MODEL_MISSING", severity: "blocker", message: "Add a model.", teamVersionId: "team-b-v1" }]);
+  assert.equal(result.canDryRun, false);
+});

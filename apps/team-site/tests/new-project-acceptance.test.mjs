@@ -35,8 +35,11 @@ test("site creates a new project, records a task, and shows project resources", 
     assert.ok(url, "site server did not start: " + output);
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    page.on("console", (message) => console.log("browser console", message.type(), message.text()));
-    page.on("pageerror", (error) => console.log("browser error", error.stack));
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(Crypto.prototype, "randomUUID", { configurable: true, value: undefined });
+    });
     const team = await page.request.post(`${url}/api/v1/cases/software-team/use`, { data: { locale: "zh-CN" } }).then((response) => response.json());
     const teamId = team.projectId;
     assert.ok(teamId, "the published classic TeamVersion should expose its id");
@@ -46,12 +49,14 @@ test("site creates a new project, records a task, and shows project resources", 
     await page.locator(`#project-team-options input[value="${teamId}"]`).check();
     await page.locator("#collaboration-project-form button[type=submit]").click();
     await page.waitForURL(/\/projects\/[a-z0-9-]+$/);
+    await page.locator("[data-open-task-dialog]").click();
     await page.locator("#collaboration-task-form").waitFor();
     await page.locator("#collaboration-task-form textarea[name=input]").fill("Summarize the brief.");
     await page.locator("#collaboration-task-form button[type=submit]").click();
     await page.locator(".task-record-row").waitFor();
     assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
+    assert.deepEqual(pageErrors, [], "project task creation should work without crypto.randomUUID");
   } finally {
     await browser?.close();
     server.kill();

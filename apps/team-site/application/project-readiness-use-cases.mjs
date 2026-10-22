@@ -54,7 +54,7 @@ export function createProjectReadinessUseCases({ getProject, readinessInspector 
       }
       const mountedTeams = Array.isArray(project.mountedTeams) ? project.mountedTeams : [];
       const blockers = [];
-      if (mountedTeams.length !== 1) blockers.push({ code: "PROJECT_SINGLE_TEAM_REQUIRED", severity: "blocker", message: "Mount exactly one released TeamVersion before running this project." });
+      if (!mountedTeams.length) blockers.push({ code: "PROJECT_TEAM_REQUIRED", severity: "blocker", message: "Mount at least one released TeamVersion before running this project." });
       const versions = await Promise.all(mountedTeams.map(async (team) => {
         try {
           const readiness = await inspectTeamVersion(team.teamId, team.teamVersionId);

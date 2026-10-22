@@ -23,6 +23,7 @@ test("Deliverable archive requires a completed Run and stores an independent sna
   assert.equal(second.deliverable.attemptNumber, 2);
   assert.equal(archives.length, 2);
   assert.equal(archives[0].content, "final output");
+  assert.equal(archives[0].metadata.summary, "final output");
 });
 
 test("archive API reports created snapshots and idempotent replays with distinct statuses", async () => {
