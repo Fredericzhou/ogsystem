@@ -20,6 +20,10 @@ class FakeAppServerProcess extends EventEmitter {
       this.input = lines.pop() ?? "";
       for (const line of lines) this.onRequest(JSON.parse(line));
       callback();
+    },
+    final: (callback) => {
+      callback();
+      queueMicrotask(() => this.kill());
     }
   });
 

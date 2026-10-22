@@ -59,7 +59,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
     prompt: "resume prompt",
     workdir,
     runtimeConfig,
-    resumeRunDir: ".ogs/runs/resume-run"
+    resumeRunDir: "resume-run"
   });
   const rolePackage = await loadRolePackage({
     roleId: "test-operator",
@@ -206,7 +206,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     prompt: "resume branch prompt",
     workdir,
     runtimeConfig,
-    resumeRunDir: ".ogs/runs/resume-branch-run"
+    resumeRunDir: "resume-branch-run"
   });
   const summaryRolePackage = await loadRolePackage({
     roleId: "debate-summary",

@@ -929,13 +929,13 @@ test("visualizer data normalizes reviews and resume diagnostics", async () => {
   assert.ok(diagnostics.recommendations.some((item) => item.action === "inspect-project"));
 });
 
-test("visualizer diagnostics compare legacy fingerprints using their stored schema", async () => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-legacy-fingerprint-"));
+test("visualizer diagnostics reject fingerprints from older contract versions", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-old-fingerprint-"));
   await seedProjectFixture(workdir);
   const { runId, runDir } = await createWaitingReviewRun(workdir);
   const current = await inspectRunResumeDiagnostics(workdir, runId);
   const expectedComponents = current.fingerprint.componentDigests.expected;
-  const legacyComponents = Object.fromEntries(
+  const oldComponents = Object.fromEntries(
     Object.entries(expectedComponents)
       .filter(([name]) => name !== "runtimeAssets")
       .map(([name, digest]) => [name, { digest, value: {} }])
@@ -945,36 +945,26 @@ test("visualizer diagnostics compare legacy fingerprints using their stored sche
     JSON.stringify({
       version: 6,
       algorithm: "sha256",
-      digest: "legacy-digest",
+      digest: "old-contract-digest",
       payload: {
-        components: legacyComponents
+        components: oldComponents
       }
     }, null, 2),
     "utf8"
   );
   const diagnostics = await inspectRunResumeDiagnostics(workdir, runId);
-  assert.equal(diagnostics.fingerprint.mismatch, false);
-  assert.equal(diagnostics.fingerprint.legacyCompatible, true);
-  assert.notEqual(diagnostics.status, "mismatch");
+  assert.equal(diagnostics.fingerprint.mismatch, true);
+  assert.equal(diagnostics.fingerprint.legacyCompatible, undefined);
+  assert.equal(diagnostics.status, "mismatch");
 
-  const changedLegacy = { ...legacyComponents, system: { digest: "changed-legacy-digest", value: {} } };
+  const changedOld = { ...oldComponents, system: { digest: "changed-old-digest", value: {} } };
   await writeFile(
     path.resolve(runDir, "plan-fingerprint.json"),
-    JSON.stringify({ version: 6, algorithm: "sha256", digest: "legacy-digest", payload: { components: changedLegacy } }, null, 2),
+    JSON.stringify({ version: 6, algorithm: "sha256", digest: "old-contract-digest", payload: { components: changedOld } }, null, 2),
     "utf8"
   );
   const changedDiagnostics = await inspectRunResumeDiagnostics(workdir, runId);
   assert.equal(changedDiagnostics.fingerprint.mismatch, true);
-  assert.equal(changedDiagnostics.fingerprint.legacyCompatible, false);
-
-  const unknownLegacy = { ...legacyComponents, unknownComponent: { digest: "unknown-digest", value: {} } };
-  await writeFile(
-    path.resolve(runDir, "plan-fingerprint.json"),
-    JSON.stringify({ version: 6, algorithm: "sha256", digest: "legacy-digest", payload: { components: unknownLegacy } }, null, 2),
-    "utf8"
-  );
-  const unknownDiagnostics = await inspectRunResumeDiagnostics(workdir, runId);
-  assert.equal(unknownDiagnostics.fingerprint.mismatch, true);
 });
 
 test("visualizer data projects failure triage and resume readiness", async () => {

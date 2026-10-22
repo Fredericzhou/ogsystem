@@ -2721,7 +2721,6 @@ test("visualizer client route helpers round-trip query state", () => {
   );
   assert.deepEqual(readRouteStateFromSearch(`?${search}`), {
     projectsDiagnostic: false,
-    view: "",
     lifecycle: "run",
     runId: "run-123",
     reviewId: "review-1",
@@ -2741,9 +2740,9 @@ test("visualizer client route helpers round-trip query state", () => {
     timelineErrorCode: "",
     timelineChannel: ""
   });
-  assert.equal(normalizeLifecycleView("build", ""), "design");
-  assert.equal(normalizeLifecycleView("", "project"), "project");
-  assert.equal(normalizeLifecycleView("", ""), "project");
+  assert.equal(normalizeLifecycleView("build"), "project");
+  assert.equal(normalizeLifecycleView("project"), "project");
+  assert.equal(normalizeLifecycleView(""), "project");
   assert.equal(
     buildRouteSearch({
       lifecycle: "design",
@@ -2758,7 +2757,6 @@ test("visualizer client route helpers round-trip query state", () => {
   );
   assert.deepEqual(readRouteStateFromSearch("?lifecycle=design"), {
     projectsDiagnostic: false,
-    view: "",
     lifecycle: "design",
     runId: "",
     reviewId: "",
@@ -3417,14 +3415,14 @@ test("visualizer client language switch stores locale and refreshes with lang qu
 
 test("visualizer client redirects stored locale into the URL to keep server shell consistent", async () => {
   const harness = await createClientHarness({
-    search: "?view=project",
+    search: "?lifecycle=project",
     storage: {
       "ogs.visualizer.lang": "zh-CN"
     }
   });
 
   assert.match(harness.window.location.href, /^\//);
-  assert.match(harness.window.location.href, /[?&]view=project/);
+  assert.match(harness.window.location.href, /[?&]lifecycle=project/);
   assert.match(harness.window.location.href, /[?&]lang=zh-CN/);
 });
 
@@ -3705,21 +3703,17 @@ test("visualizer client sidebar toggle exposes expanded state", async () => {
   assert.equal(sidebarToggle.getAttribute("aria-expanded"), "false");
 });
 
-test("visualizer client normalizes legacy lifecycle deep links onto the Run shell", async () => {
+test("visualizer client defaults an unsupported lifecycle query to the Project shell", async () => {
   const harness = await createClientHarness({ search: "?lifecycle=legacy" });
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
-  const runTab = tabs.find((button) => button.getAttribute("data-console-tab") === "run");
-  const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
-  assert.ok(runTab);
-  assert.equal(legacyTab, undefined);
-  assert.match(harness.window.location.search, /[?&]lifecycle=run/);
-  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
-  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
-  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
+  const projectTab = tabs.find((button) => button.getAttribute("data-console-tab") === "project");
+  assert.ok(projectTab);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
 });
 
-test("visualizer client normalizes build deep links onto the Design shell", async () => {
-  const harness = await createClientHarness({ search: "?lifecycle=build" });
+test("visualizer client restores the canonical Design lifecycle route", async () => {
+  const harness = await createClientHarness({ search: "?lifecycle=design" });
 
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);

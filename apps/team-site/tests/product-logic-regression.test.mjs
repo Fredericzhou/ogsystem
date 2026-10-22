@@ -3,12 +3,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
-import { createProjectDesignProjectionUseCases } from "../application/project-design-projection-use-cases.mjs";
-import { createProjectDesignValidationUseCases } from "../application/project-design-validation-use-cases.mjs";
-import { createVisualizerProjectDesignProjector } from "../infrastructure/visualizer-project-design-projector.mjs";
-import { createVisualizerProjectDesignValidator } from "../infrastructure/visualizer-project-design-validator.mjs";
-import { createVisualizerProjectDesignStore } from "../infrastructure/visualizer-project-design-store.mjs";
+import { createTeamDesignUseCasesForStore } from "./team-design-test-helpers.mjs";
 import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 
@@ -34,7 +29,10 @@ async function createReleasedTeam(store, name) {
 
 async function waitForTerminal(store, projectId, runId) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const run = await store.getProjectRun(projectId, runId);
+    const project = await store.getProject(projectId);
+    const task = project.taskRecords.find((record) => record.currentRunId === runId || record.runIds?.includes(runId));
+    assert.ok(task, `Task owner not found for Run ${runId}`);
+    const run = await store.getProjectRun(projectId, task.taskId, runId);
     if (["completed", "failed", "cancelled"].includes(run.state.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -58,27 +56,26 @@ test("built-in provisioning creates stable persisted TeamVersion identities", as
 test("Natural and Professional design paths share one validated, publishable team definition", async () => {
   await withStore("team-design", async (store) => {
     const draft = await store.createProject({ name: "Shared Design Team", overview: "Turn a brief into a reviewed recommendation.", templateId: "minimal" });
-    const designValidator = createVisualizerProjectDesignValidator();
-    const designProjection = createProjectDesignProjectionUseCases({
-      getProject: store.getProject,
-      withProjectWriteLock: store.withProjectWriteLock,
-      designStore: createVisualizerProjectDesignStore(),
-      designProjector: createVisualizerProjectDesignProjector(),
-      designSerializer: { serialize: serializeAuthoringToMermaid }
-    });
-    const naturalDesign = await designProjection.getProjectDesign(draft.projectId);
-    const validation = createProjectDesignValidationUseCases({
-      getProject: store.getProject,
-      designValidator
-    });
-    assert.equal((await validation.validateProjectDesign(draft.projectId, { authoring: naturalDesign.authoring })).ok, true);
+    const designUseCases = createTeamDesignUseCasesForStore(store);
+    const naturalDesign = await designUseCases.getTeamDesign(draft.projectId);
+    assert.equal((await designUseCases.validateTeamDesign(draft.projectId, { authoring: naturalDesign.authoring })).ok, true);
 
-    const professionalSave = await designProjection.saveProjectDesign(draft.projectId, {
-      authoring: naturalDesign.authoring,
-      expectedProjectDigest: naturalDesign.projectDigest
+    const roleId = Object.keys(naturalDesign.authoring.roles)[0];
+    const authoredDraft = {
+      ...naturalDesign.authoring,
+      roles: {
+        ...naturalDesign.authoring.roles,
+        [roleId]: { ...naturalDesign.authoring.roles[roleId], title: "Round-trip role title", contextMap: { brief: "global.task" } }
+      }
+    };
+    const professionalSave = await designUseCases.saveTeamDesign(draft.projectId, {
+      authoring: authoredDraft,
+      expectedTeamVersionDigest: naturalDesign.teamVersionDigest
     });
     assert.equal(professionalSave.projectStatus, "draft");
-    assert.equal(professionalSave.authoring.version, naturalDesign.authoring.version);
+    assert.equal(professionalSave.authoring.roles[roleId].title, "Round-trip role title");
+    assert.deepEqual(professionalSave.authoring.roles[roleId].contextMap, { brief: "global.task" });
+    assert.equal((await designUseCases.getTeamDesign(draft.projectId)).authoring.roles[roleId].title, "Round-trip role title");
 
     const released = await store.confirmProjectTeam(draft.projectId, { release: true });
     assert.equal(released.teamVersionStatus, "released");
@@ -166,8 +163,8 @@ test("all persisted Team and Task workspace references reject noncanonical ident
     }
     await writeFile(projectMetaPath, JSON.stringify({
       ...metadata,
-      taskRecords: [{ taskId: "identity-task", teamVersionId: team.teamVersionId, runProjectId: "case:software-team" }]
+      taskRecords: [{ taskId: "identity-task", teamVersionId: "case:software-team" }]
     }, null, 2) + "\n", "utf8");
-    await assert.rejects(() => store.getProject(project.projectId), /TEAM_VERSION_ID_INVALID/, "runProjectId");
+    await assert.rejects(() => store.getProject(project.projectId), /TEAM_VERSION_ID_INVALID/, "teamVersionId");
   });
 });

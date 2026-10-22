@@ -235,6 +235,22 @@ test("Studio conditional route editing persists a validated Semantic IR route an
   await assert.rejects(() => saveStudioAuthoringDraft({ workdir, authoring: invalid }), /IR_INVALID_CONDITION/);
 });
 
+test("Studio creates the missing Semantic IR files when adding the first conditional route", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-first-condition-"));
+  try {
+    const authoring = importMermaidToAuthoring({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source });
+    const flow = Object.values(authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+    flow.condition = { op: "equals", args: [{ kind: "literal", value: "ready" }, { kind: "literal", value: "ready" }] };
+    await saveStudioAuthoringDraft({ workdir, authoring });
+    const semantics = await readFile(path.resolve(workdir, ".ogs/semantics.yaml"), "utf8");
+    const stateSchema = JSON.parse(await readFile(path.resolve(workdir, ".ogs/contracts/state.json"), "utf8"));
+    assert.match(semantics, /when:/);
+    assert.deepEqual(stateSchema, { type: "object", properties: {} });
+  } finally {
+    await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
+  }
+});
+
 test("Studio bridge restores a compatible saved authoring layout and rejects stale drafts", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-bridge-draft-"));
   const systemPath = path.join(workdir, "system.mmd");

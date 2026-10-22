@@ -103,7 +103,7 @@ test("Runtime failure is queryable on Run and Task and retry preserves the faile
     const failedRunId = failedTask.currentRunId;
     assert.ok(failedRunId);
 
-    const runPath = `/api/v1/projects/${project.projectId}/runs/${failedRunId}`;
+    const runPath = `/api/v1/projects/${project.projectId}/tasks/${taskId}/runs/${failedRunId}`;
     const failedRunResponse = await api.run("GET", runPath);
     assert.equal(failedRunResponse.status, 200);
     assert.equal(failedRunResponse.payload.state.status, "failed");

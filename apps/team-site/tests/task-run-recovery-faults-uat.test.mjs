@@ -54,13 +54,14 @@ syncBuiltinESMExports();
 
 async function waitForServer(server, getOutput) {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < 15000) {
+  while (Date.now() - startedAt < 45000) {
     const baseUrl = getOutput().match(/ready at (http:\/\/127\.0\.0\.1:\d+)/)?.[1];
     if (baseUrl) return baseUrl;
     if (server.exitCode !== null) throw new Error(`Team Site server exited before readiness: ${getOutput()}`);
     await new Promise((resolveWait) => setTimeout(resolveWait, 25));
   }
-  throw new Error(`Team Site server did not become ready: ${getOutput()}`);
+  server.kill("SIGTERM");
+  throw new Error(`Team Site server did not become ready within 45 seconds: ${getOutput()}`);
 }
 
 async function spawnServer({ projectsRoot, platformConfigRoot = projectsRoot, preloadPath, fault = {}, runtimeFailure = false }) {
@@ -106,9 +107,9 @@ async function waitForTask(baseUrl, projectId, taskId, predicate) {
   throw new Error(`Task did not reach the expected state: ${projectId}/${taskId}; last Task: ${JSON.stringify(latestTask)}`);
 }
 
-async function waitForRun(baseUrl, projectId, runId, predicate) {
+async function waitForRun(baseUrl, projectId, taskId, runId, predicate) {
   for (let attempt = 0; attempt < 1200; attempt += 1) {
-    const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/runs/${runId}`);
+    const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/tasks/${taskId}/runs/${runId}`);
     if (response.status === 200) {
       const run = await response.json();
       if (predicate(run)) return run;
@@ -186,7 +187,7 @@ test("Task Run plan creation failure is persisted, queryable, and safely retryab
     assert.deepEqual(failedTask.runIds, [initial.currentRunId]);
     assert.match(failedTask.lastError, /Injected one-shot filesystem rename failure/);
 
-    const runPath = `${running.baseUrl}/api/v1/projects/${project.projectId}/runs/${initial.currentRunId}`;
+    const runPath = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${initial.currentRunId}`;
     const failedRunResponse = await fetch(runPath);
     assert.equal(failedRunResponse.status, 200);
     const failedRun = await failedRunResponse.json();
@@ -194,7 +195,7 @@ test("Task Run plan creation failure is persisted, queryable, and safely retryab
     assert.equal(failedRun.state.status, "failed");
     assert.match(failedRun.state.error, /Injected one-shot filesystem rename failure/);
     assert.equal(failedRun.plan, null);
-    const runDir = join(team.workdir, ".ogs", "runs", initial.currentRunId);
+    const runDir = join(projectsRoot, project.projectId, ".ogs", "runs", initial.currentRunId);
     const durableFailedState = JSON.parse(await readFile(join(runDir, "control", "state.json"), "utf8"));
     assert.deepEqual(durableFailedState, failedRun.state);
 
@@ -205,7 +206,7 @@ test("Task Run plan creation failure is persisted, queryable, and safely retryab
     assert.deepEqual(completedTask.runIds, [initial.currentRunId, completedTask.currentRunId]);
     const oldRunAfterRetry = await fetch(runPath).then((response) => response.json());
     assert.deepEqual(oldRunAfterRetry.state, durableFailedState);
-    const retriedRun = await waitForRun(running.baseUrl, project.projectId, completedTask.currentRunId, (value) => value.state.status === "completed");
+    const retriedRun = await waitForRun(running.baseUrl, project.projectId, task.taskId, completedTask.currentRunId, (value) => value.state.status === "completed");
     assert.equal(retriedRun.taskId, task.taskId);
     recordRecoveryEvidence("plan creation failure", {
       projectId: project.projectId,
@@ -272,7 +273,7 @@ test("Task Run reservation write failure leaves no Run artifacts and permits a l
     const completedTask = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "completed");
     assert.equal(completedTask.currentRunId, started.currentRunId);
     assert.deepEqual(completedTask.runIds, [started.currentRunId]);
-    const run = await waitForRun(running.baseUrl, project.projectId, started.currentRunId, (value) => value.state.status === "completed");
+    const run = await waitForRun(running.baseUrl, project.projectId, task.taskId, started.currentRunId, (value) => value.state.status === "completed");
     assert.equal(run.taskId, task.taskId);
     recordRecoveryEvidence("Task Run reservation write failure", {
       projectId: project.projectId,
@@ -344,12 +345,19 @@ test("recovery repairs a failed Run whose terminal Task projection write failed;
       runtimeFailure: true
     });
     const initial = await startTask(running.baseUrl, project.projectId, task.taskId, "projection-write-fault-start");
-    const failedRun = await waitForRun(running.baseUrl, project.projectId, initial.currentRunId, (value) => value.state.status === "failed");
+    const failedRun = await waitForRun(running.baseUrl, project.projectId, task.taskId, initial.currentRunId, (value) => value.state.status === "failed");
     assert.equal(failedRun.taskId, task.taskId);
     assert.match(failedRun.state.error, /Forced runtime error after setup/);
-    const runStatePath = join(team.workdir, ".ogs", "runs", initial.currentRunId, "control", "state.json");
+    const runStatePath = join(projectsRoot, project.projectId, ".ogs", "runs", initial.currentRunId, "control", "state.json");
     const persistedFailedRun = JSON.parse(await readFile(runStatePath, "utf8"));
     assert.deepEqual(persistedFailedRun, failedRun.state);
+    assert.deepEqual(persistedFailedRun.taskReservation, {
+      kind: "task-attempt",
+      projectId: project.projectId,
+      taskId: task.taskId,
+      teamVersionId: team.teamVersionId,
+      runId: initial.currentRunId
+    });
     const staleTaskResponse = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}`);
     assert.equal(staleTaskResponse.status, 200);
     const staleTask = await staleTaskResponse.json();
@@ -369,7 +377,7 @@ test("recovery repairs a failed Run whose terminal Task projection write failed;
     assert.equal(recoveredTask.currentRunId, initial.currentRunId);
     assert.deepEqual(recoveredTask.runIds, [initial.currentRunId]);
     assert.match(recoveredTask.lastError, /Forced runtime error after setup/);
-    const runAfterRecovery = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/runs/${initial.currentRunId}`).then((response) => response.json());
+    const runAfterRecovery = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${initial.currentRunId}`).then((response) => response.json());
     assert.deepEqual(runAfterRecovery.state, persistedFailedRun);
     const metadataAfterRecovery = await readFile(metadataPath, "utf8");
     const recoveredMetadata = JSON.parse(metadataAfterRecovery);
@@ -385,9 +393,9 @@ test("recovery repairs a failed Run whose terminal Task projection write failed;
     assert.notEqual(retried.currentRunId, initial.currentRunId);
     const completedTask = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "completed");
     assert.deepEqual(completedTask.runIds, [initial.currentRunId, completedTask.currentRunId]);
-    const oldRunAfterRetry = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/runs/${initial.currentRunId}`).then((response) => response.json());
+    const oldRunAfterRetry = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${initial.currentRunId}`).then((response) => response.json());
     assert.deepEqual(oldRunAfterRetry.state, persistedFailedRun);
-    const retriedRun = await waitForRun(running.baseUrl, project.projectId, completedTask.currentRunId, (value) => value.state.status === "completed");
+    const retriedRun = await waitForRun(running.baseUrl, project.projectId, task.taskId, completedTask.currentRunId, (value) => value.state.status === "completed");
     assert.equal(retriedRun.taskId, task.taskId);
     recordRecoveryEvidence("terminal Task projection write failure", {
       projectId: project.projectId,

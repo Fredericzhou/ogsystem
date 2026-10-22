@@ -57,7 +57,7 @@ test("Task domain rejects lifecycle jumps that bypass Run and review decisions",
   }
 });
 
-test("service restart converts an active run state into a durable failure", async () => {
+test("service restart ignores legacy non-Project Run evidence", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-recovery-"));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
@@ -72,16 +72,14 @@ test("service restart converts an active run state into a durable failure", asyn
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
     await writeFile(metadataPath, JSON.stringify({
       ...metadata,
-      taskRecords: [{ taskId: "recovery-task", currentRunId: "recovery-run", runIds: ["recovery-run"], runProjectId: project.projectId, status: "planning" }]
+      taskRecords: [{ taskId: "recovery-task", currentRunId: "recovery-run", runIds: ["recovery-run"], status: "planning" }]
     }), "utf8");
     const recovered = await runRecovery.recoverOrphanedRuns();
-    assert.deepEqual(recovered, [{ projectId: project.projectId, runId: "recovery-run" }]);
+    assert.deepEqual(recovered, []);
     const state = JSON.parse(await readFile(join(runDir, "control", "state.json"), "utf8"));
-    assert.equal(state.status, "failed");
-    assert.match(state.error, /^RUNNER_RESTARTED:/);
+    assert.equal(state.status, "running");
     const recoveredMetadata = JSON.parse(await readFile(metadataPath, "utf8"));
-    assert.equal(recoveredMetadata.taskRecords[0].status, "failed");
-    assert.match(recoveredMetadata.taskRecords[0].lastError, /^RUNNER_RESTARTED:/);
+    assert.equal(recoveredMetadata.taskRecords[0].status, "planning");
   } finally {
     if (previousRoot === undefined) delete process.env.OGS_SITE_PROJECTS_DIR;
     else process.env.OGS_SITE_PROJECTS_DIR = previousRoot;
@@ -89,7 +87,7 @@ test("service restart converts an active run state into a durable failure", asyn
   }
 });
 
-test("service restart fails a reserved task whose Run state was never created", async () => {
+test("service restart ignores non-Project task metadata with a missing Run state", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-missing-run-state-"));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
@@ -101,12 +99,11 @@ test("service restart fails a reserved task whose Run state was never created", 
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
     await writeFile(metadataPath, JSON.stringify({
       ...metadata,
-      taskRecords: [{ taskId: "reserved-task", currentRunId: "reserved-run", runIds: ["reserved-run"], runProjectId: project.projectId, status: "planning" }]
+      taskRecords: [{ taskId: "reserved-task", currentRunId: "reserved-run", runIds: ["reserved-run"], status: "planning" }]
     }), "utf8");
-    await runRecovery.recoverOrphanedRuns();
+    assert.deepEqual(await runRecovery.recoverOrphanedRuns(), []);
     const recoveredMetadata = JSON.parse(await readFile(metadataPath, "utf8"));
-    assert.equal(recoveredMetadata.taskRecords[0].status, "failed");
-    assert.match(recoveredMetadata.taskRecords[0].lastError, /^RUN_STATE_MISSING:/);
+    assert.equal(recoveredMetadata.taskRecords[0].status, "planning");
   } finally {
     if (previousRoot === undefined) delete process.env.OGS_SITE_PROJECTS_DIR;
     else process.env.OGS_SITE_PROJECTS_DIR = previousRoot;
@@ -114,7 +111,7 @@ test("service restart fails a reserved task whose Run state was never created", 
   }
 });
 
-test("service restart repairs a stale Task projection from a terminal Run in another workspace idempotently", async () => {
+test("service restart repairs a stale Task projection from a Project-owned Run idempotently", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-cross-workspace-recovery-"));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
@@ -133,10 +130,30 @@ test("service restart repairs a stale Task projection from a terminal Run in ano
       teamVersionId: team.teamVersionId
     });
     const runId = "cross-workspace-recovery-run";
-    const runDir = join(team.workdir, ".ogs", "runs", runId);
+    const runDir = join(project.workdir, ".ogs", "runs", runId);
     await mkdir(join(runDir, "control"), { recursive: true });
+    await writeFile(join(runDir, "run-owner.json"), JSON.stringify({
+      version: 1,
+      runKind: "project_task",
+      projectId: project.projectId,
+      taskId: task.taskId,
+      taskNumber: task.taskNumber,
+      runId,
+      attemptNumber: 1,
+      teamVersionId: team.teamVersionId,
+      teamCoreDigest: task.teamCoreDigest
+    }), "utf8");
     await writeFile(join(runDir, "control", "state.json"), JSON.stringify({
       status: "failed",
+      runId,
+      attemptNumber: 1,
+      taskReservation: {
+        kind: "task-attempt",
+        projectId: project.projectId,
+        taskId: task.taskId,
+        teamVersionId: team.teamVersionId,
+        runId
+      },
       error: "RUNNER_RESTARTED: simulated process exit after Run state commit.",
       updatedAt: "2026-10-18T00:00:00.000Z",
       finishedAt: "2026-10-18T00:00:00.000Z"
@@ -147,7 +164,7 @@ test("service restart repairs a stale Task projection from a terminal Run in ano
     await writeFile(metadataPath, JSON.stringify({
       ...metadata,
       taskRecords: metadata.taskRecords.map((record) => record.taskId === task.taskId
-        ? { ...record, currentRunId: runId, runIds: [runId], runProjectId: team.projectId, status: "planning" }
+        ? { ...record, currentRunId: runId, runIds: [runId], status: "planning" }
         : record)
     }), "utf8");
 

@@ -72,3 +72,12 @@ test("Project file store performs persistence only and contains no application o
   assert.match(source, /export async function removeProjectData\(/,
     "project compensation should expose a persistence-only deletion primitive to the Application use case");
 });
+
+test("package store receives persistence, design, and integrity ports from its composition root", async () => {
+  const source = await readFile(new URL("infrastructure/file-package-store.mjs", root), "utf8");
+  assert.match(source, /createFilePackageStore\(\{\s*projectStore,\s*visualizer,\s*packageIntegrity,\s*normalizeMaterialPath/);
+  assert.doesNotMatch(source, /from\s+["']\.\/(?:file-project-store|project-visualizer-store|package-integrity)/,
+    "package persistence must not select singleton project, design, or integrity adapters");
+  assert.match(source, /createFilePackageTransactionStore\(/,
+    "the package store should remain an adapter over the persistence transaction implementation");
+});

@@ -33,6 +33,8 @@ test("structured debate permits one bounded rebuttal before the judge must decid
   const debate = cases.find((item) => item.id === "structured-debate");
   assert.equal(debate.loopBudgets.find((loop) => loop.roleId === "debate-host")?.max, 2);
   assert.match(debate.roles.find((role) => role.id === "neutral-judge").prompt, /at most one rebuttal/i);
-  assert.match(debate.roles.find((role) => role.id === "neutral-judge").prompt, /always issue DECISION_READY/i);
+  assert.match(debate.roles.find((role) => role.id === "neutral-judge").prompt, /loop_iteration is greater than 1/i);
+  assert.match(debate.roles.find((role) => role.id === "debate-reporter").prompt, /JSON object serialized as the content string/i);
+  assert.match(debate.roles.find((role) => role.id === "debate-reporter").prompt, /propositionCase \(object with strongestPoint and reasoning strings\)/i);
   assert.match(buildCaseSystem(debate), /loop\.max\.debate-host=2/);
 });

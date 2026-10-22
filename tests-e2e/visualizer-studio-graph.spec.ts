@@ -366,20 +366,24 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await browseFilter.fill("demo");
     await page.locator('[data-studio-role-id="demo-analyst"]').click();
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
-    await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="demo-analyst"]')).toBeVisible();
+    const roleEditor = page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="demo-analyst"]');
+    await expect(roleEditor).toBeVisible();
     await expect(page.locator("[data-flow-config-field='targetContextMap']")).toHaveCount(0);
-    await page.locator("[data-context-map-add]").click();
-    await page.locator("[data-context-map-target]").last().fill("request");
-    await page.locator("[data-context-map-selector]").last().selectOption("global.task");
-    await expect(page.locator("[data-context-map-optional]").last()).toBeDisabled();
-    await expect(page.locator("[data-context-map-optional]").last()).toHaveCSS("width", "16px");
-    await expect(page.locator("[data-context-map-optional]").last()).toHaveCSS("height", "16px");
-    await expect(page.locator("[data-context-map-optional]").last()).toHaveCSS("accent-color", "rgb(56, 189, 248)");
-    await page.locator("[data-context-map-add]").click();
-    await page.locator("[data-context-map-target]").last().fill("reviewNote");
-    await page.locator("[data-context-map-selector]").last().selectOption("global.human_review.current.comment");
-    await expect(page.locator("[data-context-map-optional]").last()).toBeEnabled();
-    await page.locator("[data-context-map-optional]").last().check();
+    const contextRows = roleEditor.locator("[data-context-map-row]");
+    await roleEditor.locator("[data-context-map-add]").click();
+    await expect(contextRows).toHaveCount(1);
+    await roleEditor.locator("[data-context-map-target]").last().fill("request");
+    await roleEditor.locator("[data-context-map-selector]").last().selectOption("global.task");
+    await expect(roleEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await expect(roleEditor.locator("[data-context-map-optional]").last()).toHaveCSS("width", "16px");
+    await expect(roleEditor.locator("[data-context-map-optional]").last()).toHaveCSS("height", "16px");
+    await expect(roleEditor.locator("[data-context-map-optional]").last()).toHaveCSS("accent-color", "rgb(56, 189, 248)");
+    await roleEditor.locator("[data-context-map-add]").click();
+    await expect(contextRows).toHaveCount(2);
+    await roleEditor.locator("[data-context-map-target]").last().fill("reviewNote");
+    await roleEditor.locator("[data-context-map-selector]").last().selectOption("global.human_review.current.comment");
+    await expect(roleEditor.locator("[data-context-map-optional]").last()).toBeEnabled();
+    await roleEditor.locator("[data-context-map-optional]").last().check();
     await expect(page.locator("[data-role-config-save='demo-analyst']")).toHaveAttribute("data-bound-role-config-save", "true");
     await page.locator("[data-role-config-save='demo-analyst']").click();
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
@@ -476,11 +480,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(roleListSection).not.toHaveAttribute("open", "");
     await expect(flowListSection).not.toHaveAttribute("open", "");
     const roleSummary = roleListSection.locator("summary");
-    const roleSummaryBox = await roleSummary.boundingBox();
-    expect(roleSummaryBox).toBeTruthy();
-    if (roleSummaryBox) {
-      await page.mouse.click(roleSummaryBox.x + 8, roleSummaryBox.y + roleSummaryBox.height / 2);
-    }
+    await expect(roleSummary).toBeVisible();
+    await roleSummary.click();
     await expect(roleListSection).toHaveAttribute("open", "");
     await expect(roleListSection.locator("[data-studio-role-id]").first()).toBeVisible();
     await flowListSection.locator("summary").click();
@@ -957,9 +958,13 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
       const summary = graph.locator(".x6-edge-label text").filter({ hasText: "PROPOSAL_READY" }).last();
       await expect(summary).toBeVisible();
       await expect(summary).toContainText("PROPOSAL_READY_WITH_REVIEW_AND_COMPLIANCE_VALIDATION");
+      await expect.poll(async () => {
+        const bounds = await summary.boundingBox();
+        return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+      }).toBe(true);
       const labelWidth = await summary.evaluate((label) => label.getBoundingClientRect().width);
       expect(labelWidth).toBeLessThanOrEqual(112);
-      const distanceFromFlow = await summary.evaluate((label) => {
+      const measureDistanceFromFlow = () => summary.evaluate((label) => {
         // X6 renders labels in a separate SVG layer after layout updates. Use
         // the stable business edge id instead of relying on label DOM nesting.
         const path = document.querySelector<SVGPathElement>(
@@ -978,7 +983,7 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
         }
         return { distance: minimum, center, transform: label.getAttribute("transform"), path: path.getAttribute("d") };
       });
-      expect(distanceFromFlow.distance, JSON.stringify(distanceFromFlow)).toBeLessThanOrEqual(40);
+      await expect.poll(async () => (await measureDistanceFromFlow()).distance).toBeLessThanOrEqual(40);
       await expect.poll(() => graph.evaluate((root) => {
         const labels = Array.from(root.querySelectorAll<SVGGElement>(".x6-edge-label"))
           .filter((label) => label.textContent?.trim());
@@ -1775,8 +1780,9 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
       .then((content) => content.trim()).catch(() => ""))
       .toBe(validSchema);
     await expect.poll(() => schemaInput.inputValue().then((content) => content.trim())).toBe(validSchema);
-    await contractEditor.locator("summary").first().focus();
-    await page.keyboard.press("Enter");
+    if (await contractEditor.getAttribute("open") === null) {
+      await contractEditor.locator("summary").first().press("Enter");
+    }
     await expect(contractEditor).toHaveAttribute("open", "");
     const contractId = contractEditor.locator('[data-contract-property="id"]');
     await contractId.fill("analyst.input.v2");
@@ -1785,13 +1791,17 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     await expect.poll(async () => readFile(path.resolve(workdir, ".ogs/contracts/handoff.contracts.json"), "utf8")
       .then(JSON.parse).then((manifest) => manifest.contracts[0].id).catch(() => ""))
       .toBe("analyst.input.v2");
+    await expect(contractId).toHaveValue("analyst.input.v2");
     await expect(contractEditor).toContainText("0 / 1 eligible flows covered");
-    if (!(await contractEditor.getAttribute("open"))) {
-      await contractEditor.locator("summary").first().focus();
-      await page.keyboard.press("Enter");
+    if (await contractEditor.getAttribute("open") === null) {
+      await contractEditor.locator("summary").first().press("Enter");
     }
-    await contractEditor.locator("[data-contract-add]").focus();
-    await page.keyboard.press("Enter");
+    const contractRows = contractEditor.locator("[data-contract-row]");
+    const contractCountBeforeAdd = await contractRows.count();
+    const addContractButton = contractEditor.locator("[data-contract-add]");
+    await expect(addContractButton).toHaveAttribute("data-bound-contract-add", "true");
+    await addContractButton.click();
+    await expect(contractRows).toHaveCount(contractCountBeforeAdd + 1);
     const flowContract = contractEditor.locator("[data-contract-row]").last();
     await flowContract.locator('[data-contract-property="id"]').fill("analyst-to-intake.v1");
     await flowContract.locator('[data-contract-property="fromRoleId"]').fill("demo-analyst");
@@ -1804,27 +1814,27 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
       .then(JSON.parse).then((manifest) => manifest.contracts.map((entry: { id: string }) => entry.id)).catch(() => []))
       .toEqual(["analyst.input.v2", "analyst-to-intake.v1"]);
     await expect(contractEditor).toContainText("1 / 1 eligible flows covered");
-    if (!(await contractEditor.getAttribute("open"))) {
+    if (await contractEditor.getAttribute("open") === null) {
       await contractEditor.locator("summary").first().focus();
       await page.keyboard.press("Enter");
     }
     const roleTargetButton = contractEditor.locator('[data-studio-contract-target-kind="role"][data-studio-contract-target-id="demo-analyst"]');
-    await roleTargetButton.focus();
-    await page.keyboard.press("Enter");
+    await expect(roleTargetButton).toBeVisible();
+    await roleTargetButton.press("Enter");
     await expect(page.locator("#studio-graph-root")).toHaveAttribute("data-selected-role-id", "demo-analyst");
     const openSystemSettings = page.locator("[data-studio-open-system-settings]");
     await openSystemSettings.focus();
     await page.keyboard.press("Enter");
     const reopenedContractEditor = page.locator(".studio-contract-editor");
-    if (!(await reopenedContractEditor.getAttribute("open"))) {
+    if (await reopenedContractEditor.getAttribute("open") === null) {
       await reopenedContractEditor.locator("summary").first().focus();
       await page.keyboard.press("Enter");
     }
     const flowTargetButton = reopenedContractEditor.locator('[data-studio-contract-target-kind="flow"]').first();
     const targetFlowKey = await flowTargetButton.getAttribute("data-studio-contract-target-id");
     expect(targetFlowKey).toBeTruthy();
-    await flowTargetButton.focus();
-    await page.keyboard.press("Enter");
+    await expect(flowTargetButton).toBeVisible();
+    await flowTargetButton.press("Enter");
     await expect(page.locator("#studio-graph-root")).toHaveAttribute("data-selected-flow-key", targetFlowKey!);
     const workspaceWidth = await page.locator("#studio-graph-root").evaluate((element) => ({
       client: element.clientWidth,
@@ -1850,7 +1860,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
     const rolesSection = page.locator("[data-studio-role-list-section]");
-    if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
+    if (await rolesSection.getAttribute("open") === null) await rolesSection.locator("summary").click();
     await page.locator('[data-studio-role-id="demo-analyst"]').click();
     const analystEditor = page.locator('[data-role-config-editor="demo-analyst"]');
     await expect(analystEditor).toBeVisible();
@@ -1903,7 +1913,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
       roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id?" } } }
     });
     await page.locator('[data-studio-selection-back]').click();
-    if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
+    if (await rolesSection.getAttribute("open") === null) await rolesSection.locator("summary").click();
     await page.locator('[data-studio-role-id="test-operator"]').click();
     const reviewerEditor = page.locator('[data-role-config-editor="test-operator"]');
     await expect(reviewerEditor).toBeVisible();
@@ -1960,7 +1970,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     await page.reload();
     await page.getByRole("tab", { name: designTabName }).click();
     await setWorkbenchView(page, "bridge");
-    if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
+    if (await rolesSection.getAttribute("open") === null) await rolesSection.locator("summary").click();
     await page.locator('[data-studio-role-id="test-operator"]').click();
     const reloadedReviewerEditor = page.locator('[data-role-config-editor="test-operator"]');
     await expect(reloadedReviewerEditor.locator('[data-role-setting="joinMode"]')).toHaveValue("quorum_of");
@@ -1993,9 +2003,10 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
     const roleMarkerText = roleNode.locator("text").first();
     await expect(roleMarker).toBeVisible();
     await expect(roleMarkerText).toBeVisible();
+    const flowLabel = graph.locator(".x6-edge-label text").filter({ hasText: "ANALYSIS_DONE" }).first();
+    await expect.poll(async () => Boolean(await flowLabel.boundingBox())).toBe(true);
     const markerBounds = await roleMarker.boundingBox();
     const markerTextBounds = await roleMarkerText.boundingBox();
-    const flowLabel = graph.locator(".x6-edge-label text").filter({ hasText: "ANALYSIS_DONE" }).first();
     const flowLabelBounds = await flowLabel.boundingBox();
     expect(markerBounds).toBeTruthy();
     expect(markerTextBounds).toBeTruthy();
@@ -2293,7 +2304,7 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
 
   await page.locator('[data-studio-side-tab="structure"]').click();
   const rolesSection = page.locator("[data-studio-role-list-section]");
-  if (!(await rolesSection.getAttribute("open"))) {
+  if (await rolesSection.getAttribute("open") === null) {
     await rolesSection.locator("summary").click();
   }
   const roleId = await rolesSection.locator("[data-studio-role-id]").first().getAttribute("data-studio-role-id");

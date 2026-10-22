@@ -86,9 +86,9 @@ test("Run routes expose read operations only and keep controls and retry on Task
   const calls = [];
   const harness = routeHarness({
     listRecentProjectRuns: async (limit) => (calls.push(["recent", limit]), [{ runId: "recent-run" }]),
-    getProjectRun: async (...args) => (calls.push(["get", ...args]), { collaborationProjectId: null, taskId: null, teamVersionId: null, runtimeProjectId: "workspace-1", runId: "run-1" }),
-    getProjectRunResult: async (...args) => (calls.push(["result", ...args]), { collaborationProjectId: null, taskId: null, teamVersionId: null, runtimeProjectId: "workspace-1", available: false, result: null }),
-    getProjectRunEvents: async (...args) => (calls.push(["events", ...args]), { collaborationProjectId: null, taskId: null, teamVersionId: null, runtimeProjectId: "workspace-1", events: [] })
+    getProjectRun: async (...args) => (calls.push(["get", ...args]), { runKind: "project_task", owner: { kind: "project_task", projectId: "project-1", taskId: "task-1", teamVersionId: "team-1" }, runId: "run-1" }),
+    getProjectRunResult: async (...args) => (calls.push(["result", ...args]), { runKind: "project_task", owner: { kind: "project_task", projectId: "project-1", taskId: "task-1", teamVersionId: "team-1" }, runId: "run-1", available: false, result: null }),
+    getProjectRunEvents: async (...args) => (calls.push(["events", ...args]), { runKind: "project_task", owner: { kind: "project_task", projectId: "project-1", taskId: "task-1", teamVersionId: "team-1" }, runId: "run-1", events: [] })
   });
   const invoke = (method, path, body = {}) => handleRunRoutes({
     ...harness.dependencies,
@@ -96,21 +96,23 @@ test("Run routes expose read operations only and keep controls and retry on Task
     url: new URL(`http://site.test${path}`),
     readBody: async () => body
   });
-  assert.equal(await invoke("GET", "/api/v1/runs/recent?limit=25"), true);
+  assert.equal(await invoke("GET", "/api/v1/projects/runs/recent?limit=25"), true);
   assert.deepEqual(calls[0], ["recent", 25]);
-  assert.equal(await invoke("GET", "/api/v1/projects/project-1/runs/run-1"), true);
-  assert.deepEqual(calls[1], ["get", "project-1", "run-1"]);
-  assert.deepEqual(harness.sent[1].payload, { collaborationProjectId: null, taskId: null, teamVersionId: null, runtimeProjectId: "workspace-1", runId: "run-1" });
-  assert.equal(await invoke("GET", "/api/v1/projects/project-1/runs/run-1/events?cursor=3&limit=10&type=review"), true);
-  assert.deepEqual(calls[2], ["events", "project-1", "run-1", {
+  assert.equal(await invoke("GET", "/api/v1/runs/recent?limit=25"), false, "the mixed global history route is removed");
+  assert.equal(await invoke("GET", "/api/v1/projects/project-1/tasks/task-1/runs/run-1"), true);
+  assert.deepEqual(calls[1], ["get", "project-1", "task-1", "run-1"]);
+  assert.deepEqual(harness.sent[1].payload, { runKind: "project_task", owner: { kind: "project_task", projectId: "project-1", taskId: "task-1", teamVersionId: "team-1" }, runId: "run-1" });
+  assert.equal(await invoke("GET", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/events?cursor=3&limit=10&type=review"), true);
+  assert.deepEqual(calls[2], ["events", "project-1", "task-1", "run-1", {
     cursor: 3, limit: 10, type: "review", roleId: undefined, branchId: undefined,
     status: undefined, errorCode: undefined, channel: undefined
   }]);
-  assert.equal(await invoke("POST", "/api/v1/projects/project-1/runs/run-1/retry"), false);
-  assert.equal(await invoke("POST", "/api/v1/projects/project-1/runs/run-1/pause"), false);
-  assert.equal(await invoke("POST", "/api/v1/projects/project-1/runs/run-1/resume"), false);
-  assert.equal(await invoke("POST", "/api/v1/projects/project-1/runs/run-1/cancel"), false);
-  assert.equal(await invoke("GET", "/api/v1/projects/project-1/runs/run-1/result"), true);
-  assert.deepEqual(calls[3], ["result", "project-1", "run-1"]);
-  assert.deepEqual(harness.sent[3].payload, { collaborationProjectId: null, taskId: null, teamVersionId: null, runtimeProjectId: "workspace-1", available: false, result: null });
+  assert.equal(await invoke("GET", "/api/v1/projects/project-1/runs/run-1"), false, "the old Project/Run route is not retained");
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/retry"), false);
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/pause"), false);
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/resume"), false);
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/cancel"), false);
+  assert.equal(await invoke("GET", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/result"), true);
+  assert.deepEqual(calls[3], ["result", "project-1", "task-1", "run-1"]);
+  assert.deepEqual(harness.sent[3].payload, { runKind: "project_task", owner: { kind: "project_task", projectId: "project-1", taskId: "task-1", teamVersionId: "team-1" }, runId: "run-1", available: false, result: null });
 });

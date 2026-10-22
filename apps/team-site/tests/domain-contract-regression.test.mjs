@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
@@ -45,7 +45,10 @@ async function createReleasedTeam(store, name) {
 
 async function waitForTerminal(store, projectId, runId) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const run = await store.getProjectRun(projectId, runId);
+    const project = await store.getProject(projectId);
+    const task = project.taskRecords.find((record) => record.currentRunId === runId || record.runIds?.includes(runId));
+    assert.ok(task, `Task owner not found for Run ${runId}`);
+    const run = await store.getProjectRun(projectId, task.taskId, runId);
     if (["completed", "failed", "cancelled"].includes(run.state.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -126,8 +129,20 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
       idempotencyKey: "task-run-retry"
     });
     const originalRunId = "failed-attempt";
-    const originalRunDir = join(team.workdir, ".ogs", "runs", originalRunId);
+    const originalRunDir = join(project.workdir, ".ogs", "runs", originalRunId);
     await mkdir(join(originalRunDir, "control"), { recursive: true });
+    await writeFile(join(originalRunDir, "run-owner.json"), JSON.stringify({
+      version: 1,
+      runKind: "project_task",
+      projectId: project.projectId,
+      taskId: task.taskId,
+      taskNumber: task.taskNumber,
+      runId: originalRunId,
+      attemptNumber: 1,
+      teamVersionId: team.teamVersionId,
+      teamCoreDigest: task.teamCoreDigest,
+      teamDigestVersion: task.teamDigestVersion
+    }), "utf8");
     await writeFile(join(originalRunDir, "task.json"), JSON.stringify({ prompt: task.input }), "utf8");
     await writeFile(join(originalRunDir, "control", "materials.json"), "[]\n", "utf8");
     await writeFile(join(originalRunDir, "control", "state.json"), JSON.stringify({ status: "failed", error: "fixture failure" }), "utf8");
@@ -135,7 +150,7 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     const projectMetaPath = join(project.workdir, ".site", "project.json");
     const projectMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
     projectMeta.taskRecords = projectMeta.taskRecords.map((record) => record.taskId === task.taskId
-      ? { ...record, currentRunId: originalRunId, runIds: [originalRunId], runProjectId: team.projectId, status: "failed", lastError: "fixture failure" }
+      ? { ...record, currentRunId: originalRunId, runIds: [originalRunId], status: "failed", lastError: "fixture failure" }
       : record);
     await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
 
@@ -148,13 +163,13 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     const retriedTask = await waitForTaskTerminal(store, project.projectId, task.taskId);
     assert.deepEqual(retriedTask.runIds, [originalRunId, retry.currentRunId]);
     assert.equal(retriedTask.currentRunId, retry.currentRunId);
-    const originalRun = await store.getProjectRun(project.projectId, originalRunId);
-    const retriedRun = await store.getProjectRun(project.projectId, retry.currentRunId);
+    const originalRun = await store.getProjectRun(project.projectId, task.taskId, originalRunId);
+    const retriedRun = await store.getProjectRun(project.projectId, task.taskId, retry.currentRunId);
     assert.equal(originalRun.isCurrent, false);
     assert.equal(originalRun.attemptNumber, 1);
     assert.equal(retriedRun.attemptNumber, 2);
     for (const run of [originalRun, retriedRun]) {
-      assert.equal(run.collaborationProjectId, project.projectId);
+      assert.equal(run.owner.projectId, project.projectId);
       assert.equal(Object.hasOwn(run, "projectId"), false);
     }
     const recentRunUseCases = createRecentRunUseCases({
@@ -164,23 +179,24 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     const recentAttempts = (await recentRunUseCases.listRecentProjectRuns(50)).filter((run) => run.taskId === task.taskId);
     assert.deepEqual(recentAttempts.map((run) => run.attemptNumber).sort(), [1, 2]);
     assert.equal(recentAttempts.filter((run) => run.isCurrent).length, 1);
-    const statePath = join(team.workdir, ".ogs", "runs", retry.currentRunId, "state.json");
+    const statePath = join(project.workdir, ".ogs", "runs", retry.currentRunId, "state.json");
     const runSnapshot = JSON.parse(await readFile(statePath, "utf8"));
     runSnapshot.graphState = { ...(runSnapshot.graphState || {}), finalOutput: "Authorization: Bearer abcdefghijklmnop" };
     await writeFile(statePath, `${JSON.stringify(runSnapshot, null, 2)}\n`, "utf8");
     const resultUseCases = createRunResultUseCases({
-      getRun: store.getProjectRun,
+      getRun: (projectId, taskId, runId) => store.getProjectRun(projectId, taskId, runId),
       runResultStore: createFileRunResultStore({ projectsRoot })
     });
-    const result = await resultUseCases.getProjectRunResult(project.projectId, retry.currentRunId);
+    const result = await resultUseCases.getProjectRunResult(project.projectId, task.taskId, retry.currentRunId);
     assert.equal(result.available, true);
     assert.match(result.result.finalOutput, /\[REDACTED\]/);
     assert.doesNotMatch(result.result.finalOutput, /abcdefghijklmnop/);
-    assert.equal((await store.getProjectRun(project.projectId, originalRunId)).taskId, task.taskId);
+    assert.equal((await store.getProjectRun(project.projectId, task.taskId, originalRunId)).taskId, task.taskId);
     assert.equal(Object.hasOwn(result, "projectId"), false);
 
     const teamMeta = JSON.parse(await readFile(join(team.workdir, ".site", "project.json"), "utf8"));
     assert.equal((teamMeta.taskRecords || []).some((record) => record.taskId === retry.currentRunId), false);
+    await assert.rejects(access(join(team.workdir, ".ogs", "runs", originalRunId)), { code: "ENOENT" });
   });
 });
 
@@ -204,7 +220,6 @@ test("a reserved Task with a missing Run state can be retried after recovery", a
           ...record,
           currentRunId: missingRunId,
           runIds: [missingRunId],
-          runProjectId: team.teamVersionId,
           status: "failed",
           lastError: "RUN_STATE_MISSING: reserved Run state was not created."
         }
@@ -220,7 +235,7 @@ test("a reserved Task with a missing Run state can be retried after recovery", a
     const completed = await waitForTaskTerminal(store, project.projectId, task.taskId);
     assert.equal(completed.status, "completed");
     assert.deepEqual(completed.runIds, [missingRunId, retry.currentRunId]);
-    assert.equal((await store.getProjectRun(project.projectId, retry.currentRunId)).attemptNumber, 2);
+    assert.equal((await store.getProjectRun(project.projectId, task.taskId, retry.currentRunId)).attemptNumber, 2);
   });
 });
 
@@ -286,17 +301,16 @@ test("concurrent same-name Collaboration Project creation commits exactly one wo
   });
 });
 
-test("multi-team creation mounts all teams and rolls back when the second team fails", async () => {
+test("collaboration projects reject multiple teams and roll back invalid creation", async () => {
   await withStore("multi-team-atomicity", async (store, projectsRoot) => {
     const firstTeam = await createReleasedTeam(store, "First Mounted Team");
     const secondTeam = await createReleasedTeam(store, "Second Mounted Team");
-    const project = await store.createCollaborationProject({
-      name: "All Teams Project",
-      teamVersionIds: [firstTeam.projectId, secondTeam.projectId]
-    });
-    assert.deepEqual(
-      project.mountedTeams.map((team) => team.teamVersionId),
-      [firstTeam.projectId, secondTeam.projectId]
+    await assert.rejects(
+      () => store.createCollaborationProject({
+        name: "All Teams Project",
+        teamVersionIds: [firstTeam.projectId, secondTeam.projectId]
+      }),
+      /PROJECT_SINGLE_TEAM_REQUIRED/
     );
 
     const draftTeam = await store.createProject({
@@ -307,12 +321,13 @@ test("multi-team creation mounts all teams and rolls back when the second team f
     await assert.rejects(
       () => store.createCollaborationProject({
         name: "Rolled Back Project",
-        teamVersionIds: [firstTeam.projectId, draftTeam.projectId]
+        teamVersionIds: [draftTeam.projectId]
       }),
       /TEAM_VERSION_NOT_RELEASED/
     );
 
     const projects = await store.listProjects();
+    assert.equal(projects.some((item) => item.projectType === "collaboration" && item.name === "All Teams Project"), false);
     assert.equal(projects.some((item) => item.projectType === "collaboration" && item.name === "Rolled Back Project"), false);
     const entries = await readdir(projectsRoot);
     assert.equal(entries.some((entry) => entry.startsWith("rolled-back-project-")), false);

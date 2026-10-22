@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { chromium } from "@playwright/test";
+import { seedReleasedClassicTeam } from "./classic-team-fixtures.mjs";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -38,14 +39,14 @@ test("dirty forms guard route changes and beforeunload", async () => {
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
-    await page.goto(`${url}/factory/new`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
     await page.locator("#new-project-form textarea[name=overview]").fill("Unsaved intent");
     await page.locator('.detail-back[data-route="/studio"]').click();
     await page.locator(".confirm-dialog").waitFor();
-    assert.match(page.url(), /\/factory\/new$/);
+    assert.match(page.url(), /\/studio\/new$/);
     await page.keyboard.press("Escape");
     await page.locator(".confirm-dialog").waitFor({ state: "detached" });
-    assert.match(page.url(), /\/factory\/new$/);
+    assert.match(page.url(), /\/studio\/new$/);
     const unload = await page.evaluate(() => {
       const event = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(event);
@@ -55,7 +56,7 @@ test("dirty forms guard route changes and beforeunload", async () => {
     assert.ok(unload.returnValue === "" || unload.returnValue === false);
     await page.locator('.detail-back[data-route="/studio"]').click();
     await page.locator(".confirm-dialog").getByRole("button", { name: "放弃并离开" }).click();
-    await page.locator("#workspace-view .page-heading").waitFor();
+    await page.locator("#studio-view .page-heading").waitFor();
     assert.match(page.url(), /\/studio$/);
   } finally {
     await browser?.close();
@@ -67,12 +68,14 @@ test("dirty forms guard route changes and beforeunload", async () => {
 
 test("run drawer and task review dialog manage focus, Escape, and keyboard errors", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-interaction-modal-"));
+  await seedReleasedClassicTeam(projectsRoot);
   const { server, url } = await startServer(projectsRoot);
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/teams`, { waitUntil: "networkidle" });
+    await page.locator('[data-product-mode="professional"]').click();
     await page.evaluate(async () => {
       const { openDrawer } = await import("/app/views/app.js");
       const trigger = document.createElement("button");
@@ -91,8 +94,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
       await page.locator("#run-drawer.open").waitFor({ state: "hidden" });
     });
     assert.equal(await page.evaluate(() => document.activeElement?.id), "drawer-test-trigger");
-    const team = await page.request.post(`${url}/api/v1/team-factory`, { data: { name: "Review UI Team", overview: "Review UI test", locale: "zh-CN" } }).then((response) => response.json());
-    await page.request.post(`${url}/api/v1/team-versions/${encodeURIComponent(team.projectId)}/release`);
+    const team = await page.request.post(`${url}/api/v1/cases/software-team/use`, { data: { locale: "zh-CN" } }).then((response) => response.json());
     const project = await page.request.post(`${url}/api/v1/projects`, { data: { name: "Review UI Project", workspaceKey: "review-ui", teamVersionIds: [team.projectId] } }).then((response) => response.json());
     const task = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, { data: { input: "Review focus", teamVersionId: team.projectId, idempotencyKey: "review-focus" } }).then((response) => response.json());
     const cancelTask = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, { data: { input: "Cancel focus", teamVersionId: team.projectId, idempotencyKey: "cancel-focus" } }).then((response) => response.json());
@@ -105,7 +107,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
       ? { ...record, status: "paused", currentRunId: null, runIds: [] }
       : record);
     await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
-    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error));
     await page.locator("#collaboration-task-form textarea[name=input]").fill("Abort this task mutation");
@@ -120,14 +122,14 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     });
     await page.locator("#collaboration-task-form button[type=submit]").click();
     await taskMutationRequest;
-    await page.locator('a[data-route="/projects"]').first().click();
+    await page.locator('.app-shell a[data-route="/projects"]:visible').first().click();
     await page.locator(".confirm-dialog").getByRole("button", { name: "放弃并离开" }).click();
     await page.locator("#projects-view .page-heading").waitFor();
     releaseTaskMutation();
     await page.waitForTimeout(100);
     assert.deepEqual(pageErrors, [], "aborted task mutation must not create an unhandled rejection");
 
-    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
     const reviewButton = page.locator('[data-task-action="review"]').first();
     await reviewButton.waitFor();
     await reviewButton.focus();
@@ -137,6 +139,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     }, { projectId: project.projectId, taskId: task.taskId });
     await page.locator(".task-review-dialog[open]").waitFor();
     assert.equal(await page.locator(".task-review-dialog").evaluate((dialog) => dialog.contains(document.activeElement)), true);
+    assert.equal(await page.locator('.task-review-dialog button[value="submit"]').isDisabled(), true, "review decisions require an active Run request");
     await page.keyboard.press("Tab");
     assert.equal(await page.locator(".task-review-dialog").evaluate((dialog) => dialog.contains(document.activeElement)), true);
     await page.goBack();
@@ -144,76 +147,90 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     assert.equal(await page.locator(".task-review-dialog").count(), 0, "route changes must close review dialogs");
     assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("modal-open")), false, "route changes must release modal scroll lock");
 
-    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
     const reopenedReviewButton = page.locator('[data-task-action="review"]').first();
     await reopenedReviewButton.waitFor();
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`, async (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ projectId: project.projectId, taskId: task.taskId, runId: "run-review-context", reviews: [
+        { reviewId: "review-first", roleId: "first-reviewer", currentStatus: "pending", allowedDecisions: ["approve"] },
+        { reviewId: "review-second", roleId: "second-reviewer", currentStatus: "pending", allowedDecisions: ["rework", "terminate"] },
+        { reviewId: "review-locked", roleId: "locked-reviewer", currentStatus: "pending", allowedDecisions: [] }
+      ] })
+    }));
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/run-review-context/events?limit=100`, async (route) => route.fulfill({
+      status: 200, contentType: "application/json", body: JSON.stringify({ events: [] })
+    }));
     await reopenedReviewButton.focus();
     await page.evaluate(async ({ projectId, taskId }) => {
       const { openTaskReview } = await import("/app/views/app.js");
       await openTaskReview(projectId, taskId);
     }, { projectId: project.projectId, taskId: task.taskId });
     await page.locator(".task-review-dialog[open]").waitFor();
-    await page.locator(".task-review-dialog select").selectOption("approve");
-    await page.locator(".task-review-dialog textarea").fill("error operation area");
-    let reviewHit = false;
-    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`, async (route) => { reviewHit = true; await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "review rejected" }) }); });
-    await page.locator('.task-review-dialog button[value="submit"]').click();
-    await page.locator("#task-review-status").waitFor();
-    assert.equal(reviewHit, true);
-    await page.waitForFunction(() => document.querySelector("#task-review-status")?.textContent === "review rejected");
-    assert.equal(await page.locator("#task-review-status").innerText(), "review rejected");
+    const reviewRequestSelect = page.locator('.task-review-dialog select[name="reviewId"]');
+    const reviewDecisionSelect = page.locator('.task-review-dialog select[name="decision"]');
+    const reviewSubmit = page.locator('.task-review-dialog button[value="submit"]');
+    assert.deepEqual(await reviewDecisionSelect.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["approve"]);
+    await reviewRequestSelect.selectOption("review-second");
+    assert.deepEqual(await reviewDecisionSelect.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["rework", "terminate"]);
+    assert.equal(await reviewSubmit.isDisabled(), false);
+    await reviewRequestSelect.selectOption("review-locked");
+    assert.equal(await reviewDecisionSelect.isDisabled(), true);
+    assert.equal(await reviewSubmit.isDisabled(), true);
     await page.keyboard.press("Escape");
     await page.locator(".task-review-dialog").waitFor({ state: "detached" });
     assert.equal(await page.evaluate(() => document.activeElement?.dataset.taskAction), "review");
-    await page.unroute(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`);
-    await page.locator('[data-task-action="review"]').first().click();
-    await page.locator(".task-review-dialog[open]").waitFor();
-    await page.locator(".task-review-dialog select").selectOption("approve");
-    await page.locator(".task-review-dialog textarea").fill("Reviewed and approved.");
-    await page.locator('.task-review-dialog button[value="submit"]').click();
-    await page.locator(".task-review-dialog").waitFor({ state: "detached" });
-    const reviewedProject = await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((response) => response.json());
-    assert.equal(reviewedProject.taskRecords.find((record) => record.taskId === task.taskId)?.status, "queued");
-    assert.equal(await page.locator(`.task-record-row:has([data-task-id="${task.taskId}"]) .status-chip`).evaluate((status) => status === document.activeElement), true);
 
-    const lifecycleTasks = await Promise.all(["rework", "pause", "terminate", "resume", "cancel"].map(async (action) => ({
-      action,
-      task: await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, {
+    let recoveryPayload;
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`, async (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ projectId: project.projectId, taskId: task.taskId, runId: "run-review-context", reviews: [
+            { reviewId: "review-recovery", roleId: "reviewer", currentStatus: "resolved", allowedDecisions: [], recoveryDecision: "approve", recoveryComment: "ship after checks" }
+          ] })
+        });
+      }
+      if (route.request().method() !== "POST") return route.fallback();
+      recoveryPayload = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ task: { taskId: task.taskId, status: "running" }, review: { reviewId: "review-recovery", decision: "approve" } }) });
+    });
+    await reopenedReviewButton.focus();
+    await page.evaluate(async ({ projectId, taskId }) => {
+      const { openTaskReview } = await import("/app/views/app.js");
+      await openTaskReview(projectId, taskId);
+    }, { projectId: project.projectId, taskId: task.taskId });
+    await page.locator(".task-review-dialog[open]").waitFor();
+    const recoveryDecision = page.locator('.task-review-dialog select[name="decision"]');
+    const recoveryComment = page.locator('.task-review-dialog textarea[name="comment"]');
+    assert.equal(await recoveryDecision.inputValue(), "approve");
+    assert.equal(await recoveryDecision.isDisabled(), true);
+    assert.equal(await recoveryComment.inputValue(), "ship after checks");
+    assert.equal(await recoveryComment.isDisabled(), true);
+    assert.equal(await page.locator('.task-review-dialog button[value="submit"]').isDisabled(), false);
+    await page.locator('.task-review-dialog button[value="submit"]').click();
+    await page.waitForFunction(() => document.querySelector(".task-review-dialog") === null);
+    assert.deepEqual(recoveryPayload, { reviewId: "review-recovery", decision: "approve", comment: "ship after checks" });
+
+    const lifecycleTasks = [];
+    for (const action of ["resume", "cancel"]) {
+      const response = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, {
         data: { input: `UI lifecycle ${action}`, teamVersionId: team.projectId, idempotencyKey: `ui-lifecycle-${action}` }
-      }).then((response) => response.json())
-    })));
+      });
+      const task = await response.json();
+      assert.equal(response.status(), 201, task.error || "Task creation should succeed.");
+      lifecycleTasks.push({ action, task });
+    }
     const lifecycleMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
     lifecycleMeta.taskRecords = lifecycleMeta.taskRecords.map((record) =>
-      lifecycleTasks.some(({ task: item, action }) => item.taskId === record.taskId && action !== "cancel")
+      lifecycleTasks.some(({ task: item, action }) => item.taskId === record.taskId && action === "resume")
         ? { ...record, status: "paused", currentRunId: null, runIds: [] }
         : record
     );
     await writeFile(projectMetaPath, `${JSON.stringify(lifecycleMeta, null, 2)}\n`, "utf8");
-    await page.goto(`${url}/studio/project/${project.projectId}/run`, { waitUntil: "networkidle" });
-
-    for (const decision of ["rework", "terminate"]) {
-      const taskId = lifecycleTasks.find((item) => item.action === decision).task.taskId;
-      const row = page.locator(`.task-record-row:has([data-task-id="${taskId}"])`);
-      await row.locator('[data-task-action="review"]').click();
-      await page.locator(".task-review-dialog[open]").waitFor();
-      await page.locator(".task-review-dialog select[name=decision]").selectOption(decision);
-      await page.locator(".task-review-dialog textarea[name=comment]").fill(`Decision ${decision}`);
-      const responsePromise = page.waitForResponse((response) => response.url().endsWith(`/tasks/${taskId}/review`));
-      await page.locator('.task-review-dialog button[value="submit"]').click();
-      const response = await responsePromise;
-      assert.equal(response.status(), 200, `${decision} review should be accepted`);
-      await page.locator(".task-review-dialog").waitFor({ state: "detached" });
-      const expectedStatus = decision === "terminate" ? "cancelled" : "queued";
-      await page.waitForFunction(({ taskId, expectedStatus }) => {
-        const row = [...document.querySelectorAll(".task-record-row")].find((item) => item.querySelector(`[data-task-id="${taskId}"]`));
-        return row?.querySelector(".status-chip")?.classList.contains(expectedStatus);
-      }, { taskId, expectedStatus });
-      const persisted = await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((result) => result.json());
-      const record = persisted.taskRecords.find((item) => item.taskId === taskId);
-      assert.equal(record.status, expectedStatus);
-      assert.equal(record.review.decision, decision);
-      assert.equal(record.review.comment, `Decision ${decision}`);
-    }
+    await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
 
     const resumeTaskId = lifecycleTasks.find((item) => item.action === "resume").task.taskId;
     const resumeRow = page.locator(`.task-record-row:has([data-task-id="${resumeTaskId}"])`);

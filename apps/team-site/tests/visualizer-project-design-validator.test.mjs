@@ -53,3 +53,21 @@ test("Visualizer project design validator reads stored Mermaid source by default
     }]
   ]);
 });
+
+test("Studio design validation receives the current shared Platform model catalog", async () => {
+  const modelCatalogModels = [{ backend: "codex", modelId: "gpt-6-luna", runnable: true }];
+  const calls = [];
+  const validator = createVisualizerProjectDesignValidator({
+    getRuntimeModelConfig: async () => ({ modelCatalogModels, modelCatalogGeneratedAt: "2026-10-22T00:00:00.000Z" }),
+    validate: async (input) => (calls.push(input), { ok: true })
+  });
+
+  await validator.validate({ workdir: "/teams/team-v1" }, { systemSource: "flowchart TD" });
+  assert.deepEqual(calls[0], {
+    workdir: "/teams/team-v1",
+    systemSource: "flowchart TD",
+    systemPath: path.join("/teams/team-v1", "system.mmd"),
+    modelCatalogModels,
+    modelCatalogGeneratedAt: "2026-10-22T00:00:00.000Z"
+  });
+});

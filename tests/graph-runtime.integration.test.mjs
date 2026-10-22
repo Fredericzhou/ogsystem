@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { createHash } from "node:crypto";
 import { cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 
 import { createFilesystemRuntimeServices, runSystemWithAdapter, semanticIRDigest } from "../dist/runtime/adapter.js";
@@ -145,13 +144,15 @@ splitter[Role:splitter] -->|DONE| output
   assert.equal(result.auditTrail[0].selectedEvent, "DONE");
 });
 
-test("project-mode adapter resumes a legacy fingerprint through the full runtime path", async () => {
+test("project-mode adapter resumes a current fingerprint through the full runtime path", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-project-legacy-resume-"));
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
   const systemPath = path.resolve(tempRoot, "system.mmd");
+  const projectWorkdir = path.resolve(tempRoot, "project-evidence");
   try {
     await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+    await mkdir(projectWorkdir, { recursive: true });
     await cp(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), { recursive: true });
     await cp(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), { recursive: true });
     for (const file of ["runtime.json", "laws.json", "user-profile.json"]) {
@@ -184,55 +185,115 @@ writer[Role:writer] -->|DONE| output
       systemPath,
       prompt: "resume a legacy project run",
       workdir: tempRoot,
+      runId: "legacy-resume-run",
+      runEvidenceRoot: projectWorkdir,
       projectId: "project-legacy",
       projectDigest: "project-digest",
-      projectRunMode: "dry-run",
+      runKind: "project_task",
+      executionMode: "dry-run",
+      owner: { kind: "project_task", projectId: "project-legacy", taskId: "legacy-task", taskNumber: 1, attemptNumber: 1, runId: "legacy-resume-run", teamVersionId: "team-version-1" },
       dryRun: true
     });
     assert.equal(firstRun.status, "stopped");
 
-    const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs"))).find((entry) => entry !== ".project-run.lock");
+    const runId = (await readdir(path.resolve(projectWorkdir, ".ogs/runs"))).find((entry) => entry !== ".project-run.lock");
     assert.ok(runId);
-    const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
+    const runDir = path.resolve(projectWorkdir, ".ogs/runs", runId);
     const fingerprintPath = path.resolve(runDir, "plan-fingerprint.json");
-    const currentFingerprint = JSON.parse(await readFile(fingerprintPath, "utf8"));
-    const legacyFingerprint = {
-      ...currentFingerprint,
-      version: currentFingerprint.version - 1,
-      digest: "legacy-project-fingerprint",
-      payload: { components: currentFingerprint.payload.components }
-    };
-    await writeFile(fingerprintPath, JSON.stringify(legacyFingerprint), "utf8");
-    const currentRunPlan = JSON.parse(await readFile(path.resolve(runDir, "run-plan.json"), "utf8"));
-    const { runPlanDigest: _runPlanDigest, createdAt: _createdAt, ...legacyPlanWithoutDigest } = {
-      ...currentRunPlan,
-      fingerprintDigest: legacyFingerprint.digest
-    };
-    await writeFile(path.resolve(runDir, "run-plan.json"), JSON.stringify({
-      ...legacyPlanWithoutDigest,
-      createdAt: currentRunPlan.createdAt,
-      runPlanDigest: createHash("sha256").update(JSON.stringify(legacyPlanWithoutDigest)).digest("hex")
+    await writeFile(path.resolve(runDir, "run-owner.json"), JSON.stringify({
+      version: 1,
+      runKind: "project_task",
+      projectId: "project-legacy",
+      taskId: "legacy-task",
+      taskNumber: 1,
+      attemptNumber: 1,
+      runId,
+      teamVersionId: "team-version-1"
     }), "utf8");
     await writeHumanReviewDecision({
-      workdir: tempRoot,
+      workdir: projectWorkdir,
       runId,
       reviewId: "review.writer@1#1.r1",
       decision: "approve",
       principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
-      comment: "Approve the legacy resume test."
+      comment: "Approve the current-contract resume test."
     });
 
     const resumed = await runSystemWithAdapter({
       systemPath,
       prompt: "resume a legacy project run",
-      workdir: tempRoot,
+      workdir: projectWorkdir,
+      runEvidenceRoot: projectWorkdir,
       projectId: "project-legacy",
       projectDigest: "project-digest",
-      projectRunMode: "dry-run",
-      resumeRunDir: `.ogs/runs/${runId}`,
+      runKind: "project_task",
+      executionMode: "dry-run",
+      runId,
+      owner: { kind: "project_task", projectId: "project-legacy", taskId: "legacy-task", taskNumber: 1, attemptNumber: 1, runId, teamVersionId: "team-version-1" },
+      resumeRunDir: runId,
       dryRun: true
     });
     assert.equal(resumed.status, "done");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("project-mode adapter stores run evidence under its owner while loading assets from the TeamVersion", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-project-owned-evidence-"));
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const projectWorkdir = path.resolve(tempRoot, "collaboration-project");
+  try {
+    await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+    await mkdir(projectWorkdir, { recursive: true });
+    await cp(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), { recursive: true });
+    await cp(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), { recursive: true });
+    for (const file of ["runtime.json", "laws.json", "user-profile.json"]) {
+      await cp(path.resolve(repoRoot, ".ogs", file), path.resolve(tempRoot, ".ogs", file));
+    }
+    await writeFile(path.resolve(tempRoot, "profiles.json"), JSON.stringify([
+      { profileId: "profile.fixture", toolRef: "tool.fixture" }
+    ]), "utf8");
+    await writeFile(path.resolve(tempRoot, "tools.json"), JSON.stringify({ tools: [
+      { toolRef: "tool.fixture", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }
+    ] }), "utf8");
+    await writeModelBoundRole({ rolesRoot, roleId: "writer", allowedEvents: ["DONE"] });
+    await writeFile(systemPath, `flowchart TD
+%% system.id=test.project.owned.evidence
+%% system.version=1.0.0
+%% law.global=law.minimal.base
+%% entry.role=writer
+%% exec.bind.writer=profile.fixture
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`, "utf8");
+
+    const result = await runSystemWithAdapter({
+      systemPath,
+      prompt: "store evidence with the Collaboration Project",
+      workdir: tempRoot,
+      runId: "owned-evidence-run",
+      runEvidenceRoot: projectWorkdir,
+      projectId: "collaboration-project",
+      projectDigest: "team-version-digest",
+      runKind: "project_task",
+      executionMode: "dry-run",
+      owner: { kind: "project_task", projectId: "collaboration-project", taskId: "task-1", taskNumber: 1, attemptNumber: 1, runId: "owned-evidence-run", teamVersionId: "team-version-1" },
+      dryRun: true
+    });
+    assert.equal(result.status, "done");
+    const projectRunsDir = path.resolve(projectWorkdir, ".ogs", "runs");
+    const projectRunIds = await readdir(projectRunsDir);
+    assert.equal(projectRunIds.length, 1);
+    const projectRunDir = path.resolve(projectRunsDir, projectRunIds[0]);
+    assert.equal((await lstat(projectRunDir)).isDirectory(), true);
+    assert.equal((await lstat(path.resolve(projectRunDir, "project-assets", "manifest.json"))).isFile(), true);
+    assert.deepEqual(await readdir(path.resolve(tempRoot, ".ogs", "runs")).catch((error) => {
+      if (error?.code === "ENOENT") return [];
+      throw error;
+    }), []);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -446,7 +507,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
     userProfilePath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "user-profile.json"),
     prompt: "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？",
     workdir: tempRoot,
-    resumeRunDir: path.relative(tempRoot, runDir),
+    resumeRunDir: path.basename(runDir),
     dryRun: true
   });
   assert.strictEqual(resumed.status, "done");
@@ -716,7 +777,7 @@ writer[Role:writer] -->|DONE| output
     systemPath,
     prompt: "wait for human review",
     workdir: tempRoot,
-    resumeRunDir: `.ogs/runs/${runId}`,
+    resumeRunDir: runId,
     dryRun: true
   });
   assert.equal(expired.status, "stopped");
@@ -805,7 +866,7 @@ writer[Role:writer] -->|DONE| output
     systemPath,
     prompt: "先停在人工审核",
     workdir: tempRoot,
-    resumeRunDir: `.ogs/runs/${runId}`,
+    resumeRunDir: runId,
     dryRun: true
   });
 
@@ -905,7 +966,7 @@ writer[Role:writer] -->|DONE| output
     systemPath,
     prompt: "先停在人工审核",
     workdir: tempRoot,
-    resumeRunDir: `.ogs/runs/${runId}`,
+    resumeRunDir: runId,
     dryRun: true
   });
   assert.strictEqual(resumed.status, "done");
@@ -926,7 +987,7 @@ writer[Role:writer] -->|DONE| output
     systemPath,
     prompt: "先停在人工审核",
     workdir: tempRoot,
-    resumeRunDir: `.ogs/runs/${runId}`,
+    resumeRunDir: runId,
     dryRun: true
   });
   assert.strictEqual(resumedAgain.status, "done");
@@ -1169,7 +1230,7 @@ review[Role:review] -->|DONE| output
     userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
     prompt: "quorum projection prompt",
     workdir: tempRoot,
-    resumeRunDir: path.relative(tempRoot, runDir)
+    resumeRunDir: path.basename(runDir)
   });
   assert.strictEqual(resumed.status, "done");
 

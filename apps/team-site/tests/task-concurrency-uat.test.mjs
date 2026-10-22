@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -55,9 +55,10 @@ test("concurrent idempotent Task creation and start reserve one Task and one Run
     const completed = await waitForTerminalTask(store, project.projectId, created[0].taskId);
     assert.equal(completed.runIds.length, 1);
     assert.equal(completed.currentRunId, completed.runIds[0]);
-    const runRoot = join(team.workdir, ".ogs", "runs");
+    const runRoot = join(project.workdir, ".ogs", "runs");
     const runDirectories = await readdir(runRoot);
     assert.equal(runDirectories.filter((runId) => runId === completed.currentRunId).length, 1);
+    await assert.rejects(access(join(team.workdir, ".ogs", "runs", completed.currentRunId)), { code: "ENOENT" });
 
     await assert.rejects(
       () => store.startProjectTask(project.projectId, created[0].taskId, { mode: "sandbox", idempotencyKey: "same-attempt" }),

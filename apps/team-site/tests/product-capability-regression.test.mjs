@@ -19,7 +19,10 @@ function createTeamCatalog(projectsRoot) {
 
 async function waitForTerminal(store, projectId, runId) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const run = await store.getProjectRun(projectId, runId);
+    const project = await store.getProject(projectId);
+    const task = project.taskRecords.find((record) => record.currentRunId === runId || record.runIds?.includes(runId));
+    assert.ok(task, `Task owner not found for Run ${runId}`);
+    const run = await store.getProjectRun(projectId, task.taskId, runId);
     if (["completed", "failed", "cancelled"].includes(run.state.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -163,7 +166,7 @@ test("project package preview and reuse preserve the existing collaboration proj
   }
 });
 
-test("project-v2 imports nested released teams into a clean workspace transaction", async () => {
+test("project-v2 imports one nested released team into a clean workspace transaction", async () => {
   const sourceRoot = await mkdtemp(join(tmpdir(), "ogs-project-v2-source-"));
   const targetRoot = await mkdtemp(join(tmpdir(), "ogs-project-v2-target-"));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
@@ -177,13 +180,22 @@ test("project-v2 imports nested released teams into a clean workspace transactio
     const sourceProject = await sourceStore.createCollaborationProject({
       name: "Project v2 Source",
       overview: "Cross-workspace project definition.",
-      teamVersionIds: [firstTeam.projectId, secondTeam.projectId, secondTeam.projectId]
+      teamVersionIds: [firstTeam.projectId]
     });
     await sourceStore.addProjectMaterial(sourceProject.projectId, { filename: "brief/source.md", content: "source material", contentType: "text/markdown" });
     const bundle = await createProjectPackageOperations(sourceStore).exportProjectBundle(sourceProject.projectId);
 
+    await assert.rejects(
+      () => createProjectPackageOperations(sourceStore).previewProjectBundle({
+        ...bundle,
+        packageDigest: undefined,
+        project: { ...bundle.project, mountedTeams: [...bundle.project.mountedTeams, bundle.project.mountedTeams[0]] }
+      }),
+      /PROJECT_SINGLE_TEAM_REQUIRED/
+    );
+
     assert.equal(bundle.mode, "project-v2");
-    assert.equal(bundle.project.mountedTeams.length, 2);
+    assert.equal(bundle.project.mountedTeams.length, 1);
     assert.equal(bundle.project.mountedTeams.every((team) => team.teamPackage.mode === "team-v2"), true);
     assert.equal("taskRecords" in bundle.project, false);
     assert.equal("runs" in bundle.project, false);
@@ -203,18 +215,18 @@ test("project-v2 imports nested released teams into a clean workspace transactio
       /PROJECT_PACKAGE_VERSION_UNSUPPORTED/
     );
     const preview = await projectPackages.previewProjectBundle(bundle);
-    assert.equal(preview.teamDependencies.length, 2);
+    assert.equal(preview.teamDependencies.length, 1);
     assert.deepEqual((await readdir(targetRoot)).filter((entry) => entry !== ".staging"), []);
 
     const imported = await projectPackages.importProjectBundle(bundle, { conflictStrategy: "create-new" });
     assert.equal(imported.projectType, "collaboration");
-    assert.equal(imported.mountedTeams.length, 2);
+    assert.equal(imported.mountedTeams.length, 1);
     assert.equal(imported.mountedTeams.every((team) => team.status === "available"), true);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === firstTeam.projectId), false);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === secondTeam.projectId), false);
     assert.equal(imported.projectDefinitionDigest, bundle.project.projectDefinitionDigest);
     const importedTeams = (await targetStore.listProjects()).filter((project) => project.projectType === "team");
-    assert.equal(importedTeams.length, 2);
+    assert.equal(importedTeams.length, 1);
     assert.equal(importedTeams.every((team) => team.teamVersionStatus === "released"), true);
     const task = await targetStore.createProjectTask(imported.projectId, {
       input: "Run the imported project.",
@@ -308,11 +320,38 @@ test("team simulation uses a temporary workspace and leaves no project or run be
     });
     const result = await useCases.simulateTeamVersion(team.projectId, { prompt: "Preview the software delivery workflow." });
     assert.equal(result.persisted, false);
-    assert.equal(result.mode, "simulation");
+    assert.equal(result.mode, "dry-run");
     assert.ok(Array.isArray(result.auditTrail));
     assert.deepEqual((await store.listProjects()).map((project) => project.projectId).sort(), before);
     const runEntries = await readdir(join(team.workdir, ".ogs", "runs"), { withFileTypes: true }).catch(() => []);
     assert.equal(runEntries.length, 0);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("Studio Simulation maps Runtime done and ok into canonical completion evidence", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-status-contract-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?capability-simulation-status=${Date.now()}`));
+  const { createRuntimeTeamSimulation } = await import("../infrastructure/runtime-team-simulation.mjs");
+  try {
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
+    const bundle = await createTeamPackageOperations(store).exportTeamPackage(team.projectId);
+    const runner = createRuntimeTeamSimulation({
+      run: async () => ({
+        status: "done",
+        finalOutput: JSON.stringify({ event: "DONE" }),
+        auditTrail: [{ roleId: "delivery-coordinator", status: "ok", backend: "opencode", modelId: "model-a", profileId: "profile-a", toolRef: "tool.task.execute" }]
+      })
+    });
+    const result = await runner.simulate(team, { prompt: "baseline probe", teamPackageBundle: bundle, mode: "sandbox" });
+    assert.equal(result.status, "completed");
+    assert.equal(result.auditTrail[0].status, "completed");
+    assert.deepEqual(
+      { backend: result.auditTrail[0].backend, modelId: result.auditTrail[0].modelId, profileId: result.auditTrail[0].profileId, toolRef: result.auditTrail[0].toolRef },
+      { backend: "opencode", modelId: "model-a", profileId: "profile-a", toolRef: "tool.task.execute" }
+    );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }

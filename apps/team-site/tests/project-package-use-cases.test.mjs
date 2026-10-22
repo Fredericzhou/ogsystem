@@ -29,14 +29,19 @@ function bundle(overrides = {}) {
       name: "Imported Project",
       overview: "Package preview",
       projectDefinitionDigest: "definition",
-      mountedTeams: [],
+      mountedTeams: [{
+        teamVersionId: "team-version-1",
+        teamName: "Released Team",
+        teamCoreDigest: "team-digest",
+        teamPackage: { teamCoreDigest: "team-digest", team: { project: { teamVersionStatus: "released" } } }
+      }],
       materials: [],
       ...overrides
     }
   };
 }
 
-test("project package preview detects duplicate definition and returns stable empty dependency plans", async () => {
+test("project package preview detects duplicate definition and preserves its single TeamVersion dependency", async () => {
   const { useCases, calls } = createOperations({
     projects: [{ projectId: "existing", projectType: "collaboration", name: "Existing", projectDefinitionDigest: "definition" }]
   });
@@ -46,9 +51,16 @@ test("project package preview detects duplicate definition and returns stable em
     project: bundle().project,
     packageDigest: "package",
     projectDefinitionDigest: "definition",
-    teamDependencies: [],
-    missingItems: [],
-    idMappingPlan: [],
+    teamDependencies: [{
+      sourceTeamVersionId: "team-version-1",
+      teamCoreDigest: "team-digest",
+      name: "Released Team",
+      sameDigestVersion: null,
+      nameConflict: null,
+      action: "create-new"
+    }],
+    missingItems: ["Released Team"],
+    idMappingPlan: [{ sourceTeamVersionId: "team-version-1", action: "create-new" }],
     name: "Imported Project",
     duplicate: { projectId: "existing", name: "Existing" },
     conflicts: [],
@@ -57,7 +69,7 @@ test("project package preview detects duplicate definition and returns stable em
   assert.deepEqual(calls, ["catalog"]);
 });
 
-test("project package preview maps mounted TeamVersion digest and name conflicts", async () => {
+test("project package preview maps one mounted TeamVersion digest and name conflict", async () => {
   const { useCases } = createOperations({
     projects: [
       { projectId: "same", teamVersionId: "same", teamName: "Dependency A", teamCoreDigest: "digest-a" },
@@ -65,30 +77,23 @@ test("project package preview maps mounted TeamVersion digest and name conflicts
     ]
   });
   const project = bundle({ mountedTeams: [
-    { teamVersionId: "source-a", teamName: "Dependency A", teamCoreDigest: "digest-a", teamPackage: { teamCoreDigest: "digest-a", team: { project: { teamVersionStatus: "released" } } } },
     { teamVersionId: "source-b", teamName: "Dependency B", teamCoreDigest: "digest-b", teamPackage: { teamCoreDigest: "digest-b", team: { project: { teamVersionStatus: "released" } } } }
   ] });
 
   const preview = await useCases.previewProjectBundle(project);
-  assert.deepEqual(preview.teamDependencies, [
-    {
-      sourceTeamVersionId: "source-a",
-      teamCoreDigest: "digest-a",
-      name: "Dependency A",
-      sameDigestVersion: { teamVersionId: "same", name: "Dependency A" },
-      nameConflict: null,
-      action: "reuse"
-    },
-    {
-      sourceTeamVersionId: "source-b",
-      teamCoreDigest: "digest-b",
-      name: "Dependency B",
-      sameDigestVersion: null,
-      nameConflict: { teamVersionId: "conflict", name: "Dependency B" },
-      action: "create-new"
-    }
-  ]);
+  assert.deepEqual(preview.teamDependencies, [{
+    sourceTeamVersionId: "source-b",
+    teamCoreDigest: "digest-b",
+    name: "Dependency B",
+    sameDigestVersion: null,
+    nameConflict: { teamVersionId: "conflict", name: "Dependency B" },
+    action: "create-new"
+  }]);
   assert.deepEqual(preview.missingItems, ["Dependency B"]);
+  await assert.rejects(() => useCases.previewProjectBundle(bundle({ mountedTeams: [
+    ...project.project.mountedTeams,
+    { teamVersionId: "source-a", teamName: "Dependency A", teamCoreDigest: "digest-a", teamPackage: { team: { project: { teamVersionStatus: "released" } } } }
+  ] })), /PROJECT_SINGLE_TEAM_REQUIRED/);
 });
 
 test("project package validation checks nested released teams before catalog reads", async () => {
@@ -111,7 +116,7 @@ test("project package validation rejects invalid material paths, formats, and de
   await assert.rejects(() => useCases.previewProjectBundle(bundle({ materials: [{ filename: "../escape.md", content: "x" }] })), /MATERIAL_PATH_INVALID/);
   await assert.rejects(() => useCases.previewProjectBundle(bundle({ materials: [{ filename: "notes.exe", content: "x" }] })), /unsupported material format/);
   const wrongDigest = createProjectPackageUseCases({
-    validateTeamPackage: async () => ({}),
+    validateTeamPackage: async () => ({ bundle: { teamCoreDigest: "team-digest" }, teamCoreDigest: "team-digest" }),
     packageIntegrity: {
       computePackageDigest: () => "package",
       computeProjectDefinitionDigest: () => "wrong",

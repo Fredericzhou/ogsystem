@@ -68,5 +68,5 @@ test("Task creation requires a mounted canonical TeamVersion and valid input", a
   await assert.rejects(() => useCases.createProjectTask("project-1", { input: "Request", teamVersionId: "team-2" }), /TEAM_VERSION_NOT_MOUNTED/);
   await assert.rejects(() => useCases.createProjectTask("project-1", { input: "Request", teamVersionId: "case:software-team" }), /TEAM_VERSION_ID_INVALID/);
   const { useCases: empty } = setup({ project: { projectId: "project-1", projectType: "collaboration", mountedTeams: [], taskRecords: [] } });
-  await assert.rejects(() => empty.createProjectTask("project-1", { input: "Request", teamVersionId: "team-1" }), /PROJECT_TEAM_REQUIRED/);
+  await assert.rejects(() => empty.createProjectTask("project-1", { input: "Request", teamVersionId: "team-1" }), /PROJECT_SINGLE_TEAM_REQUIRED/);
 });

@@ -230,6 +230,56 @@ test("project readiness exposes doctor skipped health per resolved model without
   });
 });
 
+test("project readiness blocks role contracts whose declared events differ from normal graph flows", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.role.events.mismatch",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% exec.bind.planner=profile.profile.planner",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|PLANNED| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+    const issue = readiness.blockers.find((item) => item.code === "READINESS_ROLE_EVENTS_MISMATCH");
+
+    assert.equal(readiness.canDryRun, false);
+    assert.deepEqual(issue?.detail, { declaredEvents: ["DONE"], graphEvents: ["PLANNED"] });
+  });
+});
+
+test("project readiness blocks Codex output schemas outside the strict structured-output subset", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.codex.schema.invalid",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=opencode/gpt-5-nano",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| output"
+    ]);
+    await writeFile(
+      path.join(workdir, ".ogs", "model-selection.json"),
+      JSON.stringify({ configVersion: "2", roles: { planner: { backend: "codex", modelId: "gpt-5.6-luna" } } }),
+      "utf8"
+    );
+
+    const readiness = await inspectProjectReadiness(workdir);
+    const issue = readiness.blockers.find((item) => item.code === "READINESS_CODEX_OUTPUT_SCHEMA_INVALID");
+
+    assert.equal(readiness.canDryRun, false);
+    assert.equal(issue?.roleId, "planner");
+    assert.match(issue?.message ?? "", /properties\.data\.additionalProperties must be false/);
+  });
+});
+
 test("project readiness keeps missing catalog distinct from skipped provider health", async () => {
   await withTempProject(async (workdir) => {
     await writeRolePackage(workdir, "planner");
@@ -249,6 +299,42 @@ test("project readiness keeps missing catalog distinct from skipped provider hea
     assert.equal(readiness.providerHealth[0].code, "DOCTOR_PROVIDER_ONLINE_SKIPPED");
     assert.ok(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_CATALOG_MISSING"));
     assert.equal(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_SELECTION_UNRESOLVED"), false);
+  });
+});
+
+test("project readiness resolves TeamVersion model bindings from the shared Platform catalog", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.shared-platform-catalog",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=opencode/pinned-model",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir, {
+      modelCatalogGeneratedAt: new Date().toISOString(),
+      modelCatalogModels: [{
+        backend: "opencode",
+        modelId: "pinned-model",
+        ref: "opencode/pinned-model",
+        provider: "opencode",
+        model: "pinned-model",
+        name: "Pinned model",
+        status: "active",
+        runnable: true,
+        capabilities: { textInput: true, textOutput: true, toolcall: true },
+        variants: []
+      }]
+    });
+
+    assert.equal(readiness.canDryRun, true);
+    assert.equal(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_SELECTION_UNRESOLVED"), false);
+    assert.equal(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_CATALOG_MISSING"), false);
   });
 });
 

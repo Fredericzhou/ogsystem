@@ -8,13 +8,24 @@ import {
   computeProjectDefinitionDigest,
   computeTeamPackageCoreDigest
 } from "../infrastructure/package-integrity.mjs";
+import { projectVisualizerStore } from "../infrastructure/project-visualizer-store.mjs";
+import { createFilePackageStore } from "../infrastructure/file-package-store.mjs";
+
+function packageStoreFor(repository) {
+  return repository.filePackageStore || createFilePackageStore({
+    projectStore: repository.fileProjectStoreInternals,
+    visualizer: projectVisualizerStore,
+    packageIntegrity: { computeTeamPackageCoreDigest },
+    normalizeMaterialPath
+  });
+}
 
 const { validateTeamPackage } = createTeamPackageValidationUseCases({
   packageIntegrity: { computePackageDigest, computeTeamPackageCoreDigest }
 });
 
 export function createTeamPackageOperations(repository) {
-  const packageStore = repository.filePackageStore || createFilePackageStore(repository.fileProjectStoreInternals);
+  const packageStore = packageStoreFor(repository);
   const useCases = createTeamPackagePreviewUseCases({
     validateTeamPackage,
     teamCatalog: { listTeamRepository: repository.listTeamRepository },
@@ -28,7 +39,7 @@ export function createTeamPackageOperations(repository) {
 }
 
 export function createProjectPackageOperations(repository) {
-  const packageStore = repository.filePackageStore || createFilePackageStore(repository.fileProjectStoreInternals);
+  const packageStore = packageStoreFor(repository);
   const useCases = createProjectPackageUseCases({
     validateTeamPackage,
     packageIntegrity: { computeContentDigest, computePackageDigest, computeProjectDefinitionDigest },
@@ -42,4 +53,3 @@ export function createProjectPackageOperations(repository) {
     exportProjectBundle: useCases.exportProjectBundle
   };
 }
-import { createFilePackageStore } from "../infrastructure/file-package-store.mjs";

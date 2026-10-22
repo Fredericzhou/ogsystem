@@ -31,6 +31,7 @@ test("run polling updates state, stops at terminal status, and protects stale re
   const requests = [];
   const stop = createRunPoller({
     projectId: "project-1",
+    taskId: "task-1",
     runId: "run-1",
     intervalMs: 5,
     request: async (url, options) => {
@@ -58,6 +59,7 @@ test("run polling updates state, stops at terminal status, and protects stale re
   const staleUpdates = [];
   const staleStop = createRunPoller({
     projectId: "project-old",
+    taskId: "task-old",
     runId: "run-old",
     request: async (_url, options) => {
       staleRequestSignal = options.signal;

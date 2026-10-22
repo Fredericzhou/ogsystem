@@ -243,7 +243,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: ".ogs/runs/existing-run",
+    resumeRunDir: "existing-run",
     prompt: "resume session",
     dryRun: true
   });
@@ -316,7 +316,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: runtimePath,
         lawsPath: path.resolve(".ogs", "laws.json"),
         workdir: tempRoot,
-        resumeRunDir: ".ogs/runs/broken-run",
+        resumeRunDir: "broken-run",
         prompt: "resume corrupted",
         dryRun: true
       }),
@@ -506,7 +506,7 @@ for (const resumeStateMutationCase of [
           runtimeConfigPath: fixture.runtimePath,
           lawsPath: path.resolve(".ogs", "laws.json"),
           workdir: fixture.tempRoot,
-          resumeRunDir: `.ogs/runs/${fixture.runId}`,
+          resumeRunDir: fixture.runId,
           prompt: resumeStateMutationCase.prompt,
           dryRun: true
         }),
@@ -582,7 +582,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: runtimePath,
         lawsPath: path.resolve(".ogs", "laws.json"),
         workdir: tempRoot,
-        resumeRunDir: ".ogs/runs/mismatch-run",
+        resumeRunDir: "mismatch-run",
         prompt: "resume mismatch",
         dryRun: true
       }),
@@ -638,7 +638,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: altRuntimePath,
     lawsPath: altLawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: ".ogs/runs/path-stable-run",
+    resumeRunDir: "path-stable-run",
     prompt: "resume path stable",
     dryRun: true
   });
@@ -681,7 +681,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: ".ogs/runs/role-drift-run",
+        resumeRunDir: "role-drift-run",
         prompt: "resume role drift",
         dryRun: true
       }),
@@ -721,7 +721,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: fixture.runtimePath,
     lawsPath: fixture.lawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: ".ogs/runs/model-drift-run",
+    resumeRunDir: "model-drift-run",
     prompt: "resume model drift",
     dryRun: true
   });
@@ -759,7 +759,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: ".ogs/runs/law-drift-run",
+    resumeRunDir: "law-drift-run",
         prompt: "resume law drift",
         dryRun: true
       }),
@@ -871,7 +871,7 @@ operator[Role:test-operator] -->|DONE| output
     prompt: "resume checkpoint",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: ".ogs/runs/checkpoint-run"
+    resumeRunDir: "checkpoint-run"
   });
 
   await persistRuntimeCheckpoint({
@@ -957,7 +957,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: ".ogs/runs/checkpoint-run",
+    resumeRunDir: "checkpoint-run",
     prompt: "resume checkpoint",
     dryRun: true
   });
@@ -1116,7 +1116,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: ".ogs/runs/outcome-run",
+    resumeRunDir: "outcome-run",
     prompt: "resume outcome",
     dryRun: true
   });
@@ -1145,7 +1145,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: ".ogs/runs/outcome-run",
+    resumeRunDir: "outcome-run",
     prompt: "resume outcome",
     dryRun: true
   });
@@ -1311,7 +1311,7 @@ operator[Role:test-operator] -->|DONE| output
     prompt: "resume outcome backfill",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: ".ogs/runs/outcome-backfill-run"
+    resumeRunDir: "outcome-backfill-run"
   });
 
   await persistRuntimeCheckpoint({
@@ -1397,7 +1397,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: ".ogs/runs/outcome-backfill-run",
+    resumeRunDir: "outcome-backfill-run",
     prompt: "resume outcome backfill",
     dryRun: true
   });
@@ -1461,7 +1461,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: ".ogs/runs/lock-active-run",
+        resumeRunDir: "lock-active-run",
         prompt: "resume lock active",
         dryRun: true
       }),
@@ -1523,7 +1523,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: fixture.runtimePath,
     lawsPath: fixture.lawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: ".ogs/runs/lock-stale-run",
+    resumeRunDir: "lock-stale-run",
     prompt: "resume lock stale",
     dryRun: true
   });
@@ -1575,7 +1575,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: ".ogs/runs/lock-setup-failure-run",
+        resumeRunDir: "lock-setup-failure-run",
         prompt: "resume lock setup failure",
         dryRun: true
       }),
@@ -1608,7 +1608,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: fixture.runtimePath,
     lawsPath: fixture.lawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: ".ogs/runs/lock-setup-failure-run",
+        resumeRunDir: "lock-setup-failure-run",
     prompt: "resume lock setup failure",
     dryRun: true
   });

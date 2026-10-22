@@ -11,13 +11,14 @@ export function withProjectRunUseCases(repository) {
   const readiness = createRuntimeTaskExecutionReadiness();
   const projectRunUseCases = createProjectRunUseCases({
     projectStore: { getProject: repository.getProject },
+    teamStore: { getTeamVersion: repository.getProject },
     runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor() },
     readiness,
     identifiers: createTaskExecutionIdentifiers(),
     evaluateResult: evaluateProjectRunResult
   });
   const projectRunControlUseCases = createProjectRunControlUseCases({
-    projectStore: { getProject: repository.getProject },
+    projectStore: { getProject: repository.getProject, withProjectWriteLock: repository.withProjectWriteLock },
     runControlStore: createFileProjectRunControlStore(),
     startProjectRun: projectRunUseCases.startProjectRun
   });

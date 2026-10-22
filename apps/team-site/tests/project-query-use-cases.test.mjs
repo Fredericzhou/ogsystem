@@ -11,14 +11,14 @@ test("Project query composes Run attempt history and projects the current Run st
           projectType: "collaboration",
           taskRecords: [{
             taskId: "task-1", taskNumber: 4, status: "planning", currentRunId: "run-2",
-            runIds: ["run-1", "run-2"], runProjectId: "team-version-1", teamVersionId: "team-version-1",
+            runIds: ["run-1", "run-2"], teamVersionId: "team-version-1",
             startedAt: null, completedAt: null, updatedAt: "stored", outputSummary: "stored summary"
           }]
         };
       }
     },
     taskAttemptStore: {
-      async readAttempt(_runtimeProjectId, runId) {
+      async readAttempt(_projectId, _taskId, runId) {
         return runId === "run-1"
           ? { state: { status: "failed", attemptNumber: 1, error: "transient", updatedAt: "old" }, plan: { executionPolicy: { mode: "dry-run" } }, outputSummary: "old summary" }
           : { state: { status: "completed", attemptNumber: 2, startedAt: "started", finishedAt: "finished", updatedAt: "latest" }, plan: { executionPolicy: { mode: "sandbox" } }, outputSummary: "latest summary" };

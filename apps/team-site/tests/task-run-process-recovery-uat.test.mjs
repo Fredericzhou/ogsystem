@@ -80,11 +80,19 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
     }
     assert.equal(completedFixture.status, "completed", completedFixture.lastError || "fixture Run should complete");
     const strandedRunId = completedFixture.currentRunId;
-    const runStatePath = join(team.workdir, ".ogs", "runs", strandedRunId, "control", "state.json");
+    const runStatePath = join(project.workdir, ".ogs", "runs", strandedRunId, "control", "state.json");
     const runState = JSON.parse(await readFile(runStatePath, "utf8"));
+    assert.deepEqual(runState.taskReservation, {
+      kind: "task-attempt",
+      projectId: project.projectId,
+      taskId: task.taskId,
+      teamVersionId: team.teamVersionId,
+      runId: strandedRunId
+    });
     await writeJsonAtomic(runStatePath, {
       ...runState,
       status: "running",
+      taskReservation: { kind: "task-attempt", projectId: project.projectId, taskId: task.taskId, teamVersionId: team.teamVersionId, runId: strandedRunId },
       error: undefined,
       finishedAt: undefined,
       updatedAt: new Date().toISOString()
@@ -93,9 +101,10 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
     const projectMetadataPath = join(project.workdir, ".site", "project.json");
     const metadata = JSON.parse(await readFile(projectMetadataPath, "utf8"));
     metadata.taskRecords = metadata.taskRecords.map((record) => record.taskId === task.taskId
-      ? { ...record, status: "running", currentRunId: strandedRunId, runIds: [strandedRunId], runProjectId: team.teamVersionId, lastError: null, completedAt: null }
+      ? { ...record, status: "running", currentRunId: strandedRunId, runIds: [strandedRunId], lastError: null, completedAt: null }
       : record);
     await writeJsonAtomic(projectMetadataPath, metadata);
+    await assert.rejects(access(join(team.workdir, ".ogs", "runs", strandedRunId)), { code: "ENOENT" });
 
     server = spawn(process.execPath, ["server.mjs"], {
       cwd: appRoot,
@@ -114,7 +123,7 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
     assert.equal(failedTask.currentRunId, strandedRunId);
     assert.match(failedTask.lastError, /RUNNER_RESTARTED/);
 
-    const runPath = `${baseUrl}/api/v1/projects/${project.projectId}/runs/${strandedRunId}`;
+    const runPath = `${baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${strandedRunId}`;
     const failedRunResponse = await fetch(runPath);
     assert.equal(failedRunResponse.status, 200);
     const failedRunBeforeRetry = await failedRunResponse.json();
@@ -139,7 +148,7 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
 
     const oldRunAfterRetry = await fetch(runPath).then((response) => response.json());
     assert.deepEqual(oldRunAfterRetry.state, failedRunBeforeRetry.state);
-    const newRunResponse = await fetch(`${baseUrl}/api/v1/projects/${project.projectId}/runs/${retriedTask.currentRunId}`);
+    const newRunResponse = await fetch(`${baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${retriedTask.currentRunId}`);
     assert.equal(newRunResponse.status, 200);
     assert.equal((await newRunResponse.json()).state.status, "completed");
   } finally {
@@ -164,20 +173,39 @@ test("server startup removes a Task Run initialized before its Task reservation 
     const project = await store.createCollaborationProject({ name: "Uncommitted Recovery Project", overview: "Task reservation remains uncommitted.", teamVersionIds: [team.teamVersionId] });
     const task = await store.createProjectTask(project.projectId, { input: "Start after orphan cleanup.", teamVersionId: team.teamVersionId });
     const orphanRunId = "orphan-precommit-run";
-    const orphanRunDir = join(team.workdir, ".ogs", "runs", orphanRunId);
+    const orphanRunDir = join(project.workdir, ".ogs", "runs", orphanRunId);
     await mkdir(join(orphanRunDir, "control"), { recursive: true });
     await writeJsonAtomic(join(orphanRunDir, "control", "state.json"), {
       version: 1,
       runId: orphanRunId,
       attemptNumber: 1,
       status: "planning",
-      taskReservation: { kind: "task-attempt", collaborationProjectId: project.projectId, taskId: task.taskId, runId: orphanRunId, attemptKey: "crashed-before-commit" },
+      taskReservation: { kind: "task-attempt", projectId: project.projectId, taskId: task.taskId, teamVersionId: team.teamVersionId, runId: orphanRunId, attemptKey: "crashed-before-commit" },
       control: { paused: false, cancelRequested: false },
       nodes: {},
       attempts: [],
       reviews: [],
       updatedAt: new Date().toISOString()
     });
+    await writeJsonAtomic(join(orphanRunDir, "run-owner.json"), {
+      version: 1,
+      runKind: "project_task",
+      projectId: project.projectId,
+      taskId: task.taskId,
+      teamVersionId: team.teamVersionId,
+      runId: orphanRunId,
+      attemptNumber: 1
+    });
+    const orphanState = JSON.parse(await readFile(join(orphanRunDir, "control", "state.json"), "utf8"));
+    assert.deepEqual(orphanState.taskReservation, {
+      kind: "task-attempt",
+      projectId: project.projectId,
+      taskId: task.taskId,
+      teamVersionId: team.teamVersionId,
+      runId: orphanRunId,
+      attemptKey: "crashed-before-commit"
+    });
+    await assert.rejects(access(join(team.workdir, ".ogs", "runs", orphanRunId)), { code: "ENOENT" });
 
     const startServer = async () => {
       output = "";

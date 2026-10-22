@@ -70,18 +70,6 @@ test("discovery routes preserve forced refresh and response projections", async 
   assert.deepEqual(h.sent[3], { status: 200, payload: { models: [{ id: "model-1" }] } });
 });
 
-test("site config route exposes only the configured Visualizer URL", async () => {
-  const h = harness();
-  const handled = await handlePlatformRoutes({
-    ...h.dependencies,
-    request: { method: "GET" },
-    url: new URL("http://site.test/api/v1/config"),
-    visUrl: "http://visualizer.test"
-  });
-  assert.equal(handled, true);
-  assert.deepEqual(h.sent[0], { status: 200, payload: { visUrl: "http://visualizer.test" } });
-});
-
 test("model probe route returns a model availability result", async () => {
   const h = harness({ useCases: {
     probeModelAvailability: async (modelRef) => ({ modelRef, status: "available", durationMs: 42 })

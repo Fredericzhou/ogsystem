@@ -26,8 +26,8 @@ test("Team Catalog use cases delegate the factory collection and query the compl
   assert.equal(result.stats.total, 4);
   assert.equal(result.stats.builtIn, 1);
   assert.equal(result.stats.custom, 3);
-  assert.equal(result.pagination.total, 2);
-  assert.equal(result.teams[0].projectId, "custom-v2");
+  assert.equal(result.pagination.total, 4);
+  assert.equal(result.teams[0].projectId, "custom-draft");
 });
 
 test("Team Catalog filters by localized category and query and supports explicit statuses", async () => {

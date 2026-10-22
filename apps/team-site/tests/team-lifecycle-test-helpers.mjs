@@ -15,6 +15,10 @@ export function withTeamLifecycleUseCases(repository) {
       packageStore: { exportTeamPackage, loadTeamPackage },
       locks: createFileTeamLifecycleLocks(),
       confirmation: createRuntimeTeamConfirmation(),
+      releaseEvidence: {
+        async validateReleaseEvidence() {},
+        async prepareBuiltInTeamVersion() {}
+      },
       caseCatalog: { getCase, listCases: () => cases },
       assertTrustedTeamTopology: (team) => ["classic", "classic-template"].includes(team.source) && Boolean(team.caseId)
     })

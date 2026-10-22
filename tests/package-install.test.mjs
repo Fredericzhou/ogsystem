@@ -95,13 +95,17 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   const installNodeModulesDir = path.resolve(installDir, "node_modules");
   const installedPackageDir = path.resolve(installNodeModulesDir, "ogsystem");
   await mkdir(installedPackageDir, { recursive: true });
-  const unpackResult = await runCommand("tar", [
-    "-xzf",
-    tarballPath,
-    "-C",
-    installedPackageDir,
-    "--strip-components=1"
-  ]);
+  const unpackResult = await runCommand(
+    "tar",
+    [
+      "-xzf",
+      tarballName,
+      "-C",
+      installedPackageDir,
+      "--strip-components=1"
+    ],
+    { cwd: packDir }
+  );
   assert.equal(unpackResult.code, 0, unpackResult.stderr);
 
   // Mirror runtime dependencies into an installation-like node_modules layout without registry access.

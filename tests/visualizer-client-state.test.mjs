@@ -32,7 +32,6 @@ test("graph reading route state is bounded, validated, and round-trips", () => {
   });
   assert.deepEqual(readRouteStateFromSearch(search), {
     projectsDiagnostic: true,
-    view: "",
     lifecycle: "run",
     runId: "run-1",
     reviewId: "",
@@ -234,7 +233,6 @@ class FakeQueryRoot {
 test("client route state helpers parse and serialize lifecycle query state", () => {
   assert.deepEqual(readRouteStateFromSearch(""), {
     projectsDiagnostic: false,
-    view: "",
     lifecycle: "",
     runId: "",
     reviewId: "",
@@ -254,15 +252,13 @@ test("client route state helpers parse and serialize lifecycle query state", () 
     timelineErrorCode: "",
     timelineChannel: ""
   });
-  assert.equal(normalizeLifecycleView("operate", ""), "run");
-  assert.equal(normalizeLifecycleView("unknown", "project"), "project");
-  assert.equal(normalizeLifecycleView("", "operate"), "run");
-  assert.equal(normalizeLifecycleView("unknown", "legacy"), "run");
-  assert.equal(normalizeLifecycleView("project", ""), "project");
-  assert.equal(normalizeLifecycleView("design", ""), "design");
-  assert.equal(normalizeLifecycleView("build", ""), "design");
-  assert.equal(normalizeLifecycleView("validate-release", ""), "release");
-  assert.equal(normalizeLifecycleView("legacy", ""), "run");
+  assert.equal(normalizeLifecycleView("operate"), "project");
+  assert.equal(normalizeLifecycleView("unknown"), "project");
+  assert.equal(normalizeLifecycleView("project"), "project");
+  assert.equal(normalizeLifecycleView("design"), "design");
+  assert.equal(normalizeLifecycleView("build"), "project");
+  assert.equal(normalizeLifecycleView("validate-release"), "project");
+  assert.equal(normalizeLifecycleView("legacy"), "project");
 
   assert.equal(
     buildRouteSearch({
@@ -292,7 +288,6 @@ test("client route state helpers parse and serialize lifecycle query state", () 
     readRouteStateFromSearch("?lifecycle=run&runId=run-1&reviewId=review-2&logRoleId=qa&tail=50&since=2026-05-03T09%3A00"),
     {
       projectsDiagnostic: false,
-      view: "",
       lifecycle: "run",
       runId: "run-1",
       reviewId: "review-2",
@@ -344,21 +339,20 @@ test("graph viewport route state is bounded and rounded", () => {
   assert.equal(readRouteStateFromSearch("?lifecycle=run&graphX=0&graphY=0&graphZoom=9").graphViewport, undefined);
 });
 
-test("client route state helpers normalize Design Run Release lifecycle aliases", () => {
-  assert.equal(normalizeLifecycleView("build", ""), "design");
-  assert.equal(normalizeLifecycleView("operate", ""), "run");
-  assert.equal(normalizeLifecycleView("validate-release", ""), "release");
-  assert.equal(normalizeLifecycleView("unknown", "project"), "project");
-  assert.equal(normalizeLifecycleView("project", ""), "project");
-  assert.equal(normalizeLifecycleView("legacy", ""), "run");
-  assert.equal(normalizeLifecycleView("", ""), "project");
-  assert.equal(normalizeLifecycleView("", "build"), "design");
-  assert.equal(normalizeLifecycleView("", "run"), "run");
-  assert.equal(normalizeLifecycleView("", "release"), "release");
+test("client route state helpers accept only canonical lifecycle views", () => {
+  assert.equal(normalizeLifecycleView("build"), "project");
+  assert.equal(normalizeLifecycleView("operate"), "project");
+  assert.equal(normalizeLifecycleView("validate-release"), "project");
+  assert.equal(normalizeLifecycleView("unknown"), "project");
+  assert.equal(normalizeLifecycleView("project"), "project");
+  assert.equal(normalizeLifecycleView("legacy"), "project");
+  assert.equal(normalizeLifecycleView(""), "project");
+  assert.equal(normalizeLifecycleView("run"), "run");
+  assert.equal(normalizeLifecycleView("release"), "release");
 
   assert.equal(
     buildRouteSearch({
-      lifecycle: "design",
+      lifecycle: "project",
       projectHome: true,
       selectedRunId: "run-1",
       selectedReviewId: "review-2",
@@ -366,7 +360,7 @@ test("client route state helpers normalize Design Run Release lifecycle aliases"
       logTail: "50",
       logSince: "2026-05-03T09:00"
     }),
-    "lifecycle=design"
+    "lifecycle=project"
   );
   assert.equal(
     buildRouteSearch({

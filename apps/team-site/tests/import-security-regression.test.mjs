@@ -186,7 +186,7 @@ test("packageDigest is stable across run history without changing projectDefinit
     });
     const started = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
     for (let attempt = 0; attempt < 200; attempt += 1) {
-      const observed = await runQueries.getProjectRun(project.projectId, started.currentRunId);
+      const observed = await runQueries.getProjectRun(project.projectId, task.taskId, started.currentRunId);
       if (["completed", "failed", "cancelled"].includes(observed.state.status)) break;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }

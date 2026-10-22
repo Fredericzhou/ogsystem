@@ -36,7 +36,10 @@ test("platform application validates updates and model catalog caches and refres
       return {
         generatedAt: `generation-${calls}`,
         sources: [{ backend: "codex", status: "ready", command: "codex", detail: "local" }],
-        models: [{ modelId: "model-a", backend: "codex", provider: "openai", runnable: true, ref: "codex/model-a" }]
+        models: [
+          { modelId: "model-a", backend: "codex", provider: "openai", runnable: true, ref: "codex/model-a" },
+          { modelId: "opencode/model-b", backend: "opencode", provider: "opencode", runnable: true, ref: "opencode/model-b" }
+        ]
       };
     },
     isStale: () => false
@@ -54,6 +57,8 @@ test("platform application validates updates and model catalog caches and refres
   assert.equal(discoveredModel.id, "model-a");
   assert.equal(discoveredModel.backend, "codex", "the execution backend must survive the public catalog projection");
   assert.equal(discoveredModel.provider, "openai", "provider namespace is distinct from the execution backend");
+  const openCodeModel = (await useCases.listPlatformModels()).models.find((item) => item.backend === "opencode");
+  assert.equal(openCodeModel.selectionRef, "opencode/opencode/model-b", "Studio bindings keep adapter and provider/model identity separate");
   assert.equal(calls, 1);
   await useCases.getPlatformDiscovery(true);
   assert.equal(calls, 2);

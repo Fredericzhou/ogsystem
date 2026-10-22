@@ -11,6 +11,8 @@ import { projectVisualizerStore } from "../infrastructure/project-visualizer-sto
 import { caseTeamMaterializer } from "../infrastructure/case-team-materializer.mjs";
 import { waitForActiveTaskWorker } from "../infrastructure/in-memory-task-workers.mjs";
 import { createFilePackageStore } from "../infrastructure/file-package-store.mjs";
+import { computeTeamPackageCoreDigest } from "../infrastructure/package-integrity.mjs";
+import { normalizeMaterialPath } from "../domain/material-path.mjs";
 
 const projectCreationComposed = Symbol.for("ogs.team-site.test.project-creation-composed");
 
@@ -40,7 +42,12 @@ export function withTaskExecutionUseCases(repository) {
     [projectCreationComposed]: true,
     getProject: projectQueries.getProject,
     getProjectTask: projectQueries.getProjectTask,
-    filePackageStore: createFilePackageStore(repository.fileProjectStoreInternals)
+    filePackageStore: createFilePackageStore({
+      projectStore: repository.fileProjectStoreInternals,
+      visualizer: projectVisualizerStore,
+      packageIntegrity: { computeTeamPackageCoreDigest },
+      normalizeMaterialPath
+    })
   };
   repository = withProjectRunUseCases(repository);
   return {

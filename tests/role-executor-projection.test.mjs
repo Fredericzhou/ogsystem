@@ -1441,6 +1441,7 @@ reviewer[Role:reviewer] -->|DONE| output
   const reviewerDir = path.resolve(fixture.runContext.runDir, "roles", "reviewer");
   const promptText = await readFile(path.resolve(reviewerDir, "prompt.md"), "utf8");
   const audit = JSON.parse(await readFile(path.resolve(reviewerDir, "audit.json"), "utf8"));
+  assert.match(promptText, /loop_iteration: 1 \(the first activation is 1; re-entry increments this value\)/);
   assert.match(promptText, /\[REDACTED\]/);
   assert.match(JSON.stringify(audit), /\[REDACTED\]/);
 });

@@ -352,7 +352,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     prompt: "benchmark replay",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: `.ogs/runs/${runId}`
+    resumeRunDir: runId
   });
   const allCheckpoints = await loadPendingRuntimeCheckpoints({
     context: reconstructionContext,
@@ -389,7 +389,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     prompt: "benchmark replay",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: `.ogs/runs/${runId}`
+    resumeRunDir: runId
   });
 
   const checkpointLoadStart = performance.now();
@@ -407,7 +407,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     lawsPath,
     prompt: "benchmark replay",
     workdir: tempRoot,
-    resumeRunDir: `.ogs/runs/${runId}`,
+    resumeRunDir: runId,
     dryRun: true
   });
   const resumeTotalMs = performance.now() - resumeStart;

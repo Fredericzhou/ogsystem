@@ -10,7 +10,10 @@ import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs
 
 async function waitForTerminal(store, projectId, runId) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const run = await store.getProjectRun(projectId, runId);
+    const project = await store.getProject(projectId);
+    const task = project.taskRecords.find((record) => record.currentRunId === runId || record.runIds?.includes(runId));
+    assert.ok(task, `Task owner not found for Run ${runId}`);
+    const run = await store.getProjectRun(projectId, task.taskId, runId);
     if (["completed", "failed", "cancelled"].includes(run.state.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -60,15 +63,17 @@ test("collaboration project creation, batch materials, export, and async run res
     const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
     assert.equal(reserved.status, "planning");
     assert.ok(reserved.currentRunId);
-    const observed = await store.getProjectRun(project.projectId, reserved.currentRunId);
+    const observed = await store.getProjectRun(project.projectId, task.taskId, reserved.currentRunId);
     assert.equal(observed.state.status, "planning");
-    assert.equal(observed.collaborationProjectId, project.projectId);
+    assert.equal(observed.runKind, "project_task");
+    assert.equal(observed.owner.projectId, project.projectId);
     assert.equal(Object.hasOwn(observed, "projectId"), false);
     await waitForTerminal(store, project.projectId, reserved.currentRunId);
     assert.equal((await store.getProjectTask(project.projectId, task.taskId)).currentRunId, reserved.currentRunId);
-    const events = await store.getProjectRunEvents(project.projectId, reserved.currentRunId);
+    const events = await store.getProjectRunEvents(project.projectId, task.taskId, reserved.currentRunId);
     assert.ok(Array.isArray(events.events));
-    assert.equal(events.collaborationProjectId, project.projectId);
+    assert.equal(events.runKind, "project_task");
+    assert.equal(events.owner.projectId, project.projectId);
     assert.equal(Object.hasOwn(events, "projectId"), false);
     await assert.rejects(
       () => store.controlProjectTask(project.projectId, task.taskId, "stop"),

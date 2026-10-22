@@ -5,7 +5,7 @@ import path from "node:path";
 import http from "node:http";
 import https from "node:https";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, cp, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -53,7 +53,7 @@ test("visualizer recognizes terminated runs as converged", () => {
   assert.equal(isConvergedRunStatus("running"), false);
 });
 
-test("visualizer project runs preserve trusted classic team topology", async () => {
+test("visualizer rejects direct business Runs so Projects Tasks own execution", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-classic-project-run-"));
   let started;
   try {
@@ -83,22 +83,9 @@ test("visualizer project runs preserve trusted classic team topology", async () 
       })
     });
     const payload = await response.json();
-    assert.equal(response.status, 200, JSON.stringify(payload));
-    const runPlan = JSON.parse(await readFile(path.resolve(workdir, ".ogs", "runs", payload.runId, "run-plan.json"), "utf8"));
-    assert.equal(runPlan.nodeGraph.length, 5);
-    const stopResponse = await fetch(`${started.url}/api/v1/ogs/runs/${payload.runId}/stop`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "test cleanup" })
-    });
-    assert.equal(stopResponse.status, 200);
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      const detailResponse = await fetch(`${started.url}/api/v1/ogs/runs/${payload.runId}`);
-      const detail = await detailResponse.json();
-      if (["done", "failed", "stopped", "cancelled"].includes(detail.header?.status)) break;
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(response.status, 409, JSON.stringify(payload));
+    assert.equal(payload.error.code, "PROJECT_TASK_API_REQUIRED");
+    assert.deepEqual(await readdir(path.resolve(workdir, ".ogs", "runs")).catch(() => []), []);
   } finally {
     if (started) await new Promise((resolve) => started.server.close(resolve));
     await rm(workdir, { recursive: true, force: true });
@@ -353,6 +340,10 @@ async function seedProjectFixture(workdir) {
   ]) {
     await cp(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
+  const modelCatalogPath = path.resolve(workdir, ".ogs", "model-catalog.json");
+  const modelCatalog = JSON.parse(await readFile(modelCatalogPath, "utf8"));
+  modelCatalog.generatedAt = new Date().toISOString();
+  await writeFile(modelCatalogPath, JSON.stringify(modelCatalog, null, 2), "utf8");
   await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
     JSON.stringify(
@@ -1255,7 +1246,8 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(projectReadinessResponse.status, 200);
     const projectReadiness = await projectReadinessResponse.json();
     assert.equal(projectReadiness.systemId, "viz.project.demo");
-    assert.equal(projectReadiness.canDryRun, true);
+    assert.equal(projectReadiness.canDryRun, false);
+    assert.equal(projectReadiness.blockers[0]?.code, "READINESS_CODEX_OUTPUT_SCHEMA_INVALID");
     assert.equal(projectReadiness.roleRepoHealth.roles[0].status, "ok");
 
     const projectBindingsResponse = await fetch(`${url}/api/v1/ogs/workspace/bindings`);
@@ -3393,6 +3385,8 @@ test("project persistence keeps Save As and bundle import from replacing canonic
     await saveProjectSystemSource({ workdir, systemSource: canonicalSource });
     const designPath = path.join(workdir, "system.design.json");
     const beforeSaveAs = JSON.parse(await readFile(designPath, "utf8"));
+    const staleRoleAssetPath = path.join(workdir, "og-roles", "roles", "demo-analyst", "agent.md");
+    await stat(staleRoleAssetPath);
 
     const copySource = canonicalSource.replace("system.version=1.0.0", "system.version=2.0.0");
     await saveProjectSystemSource({ workdir, systemSource: copySource, saveAsPath: "drafts/system-copy.mmd" });
@@ -3403,10 +3397,11 @@ test("project persistence keeps Save As and bundle import from replacing canonic
       workdir,
       bundle: {
         mode: "team-v2",
-        team: { systemSource: canonicalSource }
+        team: { systemSource: canonicalSource, executableFiles: [] }
       }
     });
     await assert.rejects(() => stat(designPath), { code: "ENOENT" });
+    await assert.rejects(() => stat(staleRoleAssetPath), { code: "ENOENT" });
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }

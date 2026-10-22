@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createRecentRunUseCases } from "../application/recent-run-use-cases.mjs";
 
-test("recent Run query projects Task attempts, sorts newest first, and bounds the result", async () => {
+test("recent Project Run query lists only Collaboration Project Task attempts", async () => {
   const useCases = createRecentRunUseCases({
     listProjects: async () => [
       {
@@ -10,7 +10,7 @@ test("recent Run query projects Task attempts, sorts newest first, and bounds th
         projectType: "collaboration",
         name: "Project",
         taskRecords: [{
-          taskId: "task-1", taskNumber: 17, input: "Prepare report", runProjectId: "team-version-1",
+          taskId: "task-1", taskNumber: 17, input: "Prepare report",
           teamId: "team-1", teamVersionId: "team-version-1", teamName: "Research",
           currentRunId: "run-2", runIds: ["run-1", "run-2"], status: "completed",
           updatedAt: "2026-01-01T00:00:00Z", outputSummary: "Done"
@@ -25,27 +25,25 @@ test("recent Run query projects Task attempts, sorts newest first, and bounds th
       }
     ],
     runArtifactStore: {
-      async readRunArtifacts(_projectId, runId) {
+      async readRunArtifacts(_projectId, _taskId, runId) {
         return { state: { status: "completed", attemptNumber: runId === "run-1" ? 1 : 2, updatedAt: `2026-01-0${runId === "run-1" ? 1 : 2}T00:00:00Z` }, plan: { executionPolicy: { mode: "dry-run" } } };
       }
     }
   });
 
   const runs = await useCases.listRecentProjectRuns(2);
-  assert.deepEqual(runs.map((run) => run.runId), ["run-3", "run-2"]);
-  assert.equal(runs[0].collaborationProjectId, null);
-  assert.equal(runs[0].taskId, null);
-  assert.equal(runs[0].runtimeProjectId, "workspace");
-  assert.equal(Object.hasOwn(runs[0], "projectId"), false);
-  const retry = runs[1];
+  assert.deepEqual(runs.map((run) => run.runId), ["run-2", "run-1"]);
+  const retry = runs[0];
   assert.equal(retry.taskId, "task-1");
   assert.equal(retry.taskNumber, 17);
-  assert.equal(retry.collaborationProjectId, "collaboration");
-  assert.equal(retry.runtimeProjectId, "team-version-1");
+  assert.equal(retry.runKind, "project_task");
+  assert.equal(retry.owner.projectId, "collaboration");
+  assert.equal(retry.owner.teamVersionId, "team-version-1");
   assert.equal(Object.hasOwn(retry, "projectId"), false);
   assert.equal(retry.attemptNumber, 2);
   assert.equal(retry.isCurrent, true);
   assert.equal(retry.mode, "dry-run");
   assert.equal(retry.outputSummary, "Done");
+  assert.equal(runs[1].isCurrent, false);
   assert.equal(Object.hasOwn(retry, "roundNumber"), false);
 });

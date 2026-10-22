@@ -260,7 +260,7 @@ test("buffered append recovery replays content after a partial write failure", a
     prompt: "buffer fault",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: path.relative(tempRoot, runContext.runDir)
+    resumeRunDir: path.basename(runContext.runDir)
   });
 
   const content = await readFile(failingPath, "utf8");

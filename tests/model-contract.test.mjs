@@ -9,6 +9,7 @@ import {
   ModelDiscoveryError,
   isModelCatalogStale,
   loadModelCatalog,
+  mergeModelCatalogWithLiveSnapshot,
   refreshModelCatalog
 } from "../dist/runtime/model-catalog.js";
 import {
@@ -43,6 +44,21 @@ function catalog(models, generatedAt = new Date().toISOString()) {
     models
   };
 }
+
+test("live Platform models override stale catalog entries without discarding unrelated local models", () => {
+  const stored = catalog([
+    model("opencode/refreshable"),
+    model("opencode/local-only")
+  ], "2026-01-01T00:00:00.000Z");
+  const refreshed = mergeModelCatalogWithLiveSnapshot(stored, [
+    { ...model("opencode/refreshable"), name: "Current model" }
+  ], "2026-06-01T00:00:00.000Z");
+
+  assert.equal(refreshed.generatedAt, "2026-06-01T00:00:00.000Z");
+  assert.equal(refreshed.models.find((item) => item.modelId === "opencode/refreshable").name, "Current model");
+  assert.equal(refreshed.models.some((item) => item.modelId === "opencode/local-only"), true);
+  assert.equal(mergeModelCatalogWithLiveSnapshot(stored, []), stored);
+});
 
 function system(roleIds, modelBinding = {}) {
   return {
