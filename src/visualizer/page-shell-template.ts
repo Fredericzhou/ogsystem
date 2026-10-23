@@ -15,6 +15,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
   <div class="app">
     <div class="shell content">
       <aside id="sidebar" class="sidebar">
+        <button id="sidebar-toggle" class="button subtle sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="${escapeHtml(t("hero.runs"))}" title="${escapeHtml(t("hero.runs"))}"><span aria-hidden="true">↔</span></button>
         <div class="stack">
           <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" aria-label="${escapeHtml(t("search.placeholder"))}" />
           <div id="run-list" class="run-list"></div>
@@ -29,7 +30,6 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               <span>${escapeHtml(t("app.local"))}</span>
             </div>
             <div class="top-nav-meta">
-              <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
               <span id="workdir" hidden>${escapeHtml(workdir)}</span>
             </div>
           </div>
@@ -38,26 +38,20 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </div>
           <div class="top-nav-actions">
             <div class="hero-utilities top-nav-utilities">
-              <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
+              <button id="refresh" class="button subtle" title="${escapeHtml(t("action.refresh"))}" aria-label="${escapeHtml(t("action.refresh"))}">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+              </button>
               <button type="button" class="button subtle visualizer-theme-toggle" data-visualizer-theme-toggle aria-label="${escapeHtml(t("theme.switchToDark"))}" title="${escapeHtml(t("theme.switchToDark"))}" aria-pressed="false">
                 <svg data-theme-icon="moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.6 8.6 0 1 0 20.2 15.1Z" /></svg>
                 <svg data-theme-icon="sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>
               </button>
-              <label class="field locale-field">
-                <span>${escapeHtml(t("app.locale"))}</span>
-                <select id="locale-select" class="select">
-                  <option value="en"${locale === "en" ? " selected" : ""}>English</option>
-                  <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
-                </select>
-              </label>
-            </div>
-            <div class="actions hero-actions hero-actions-primary">
-              <button id="hero-validate" class="button primary">${escapeHtml(t("action.validate"))}</button>
-              <button id="hero-save" class="button subtle">${escapeHtml(t("action.save"))}</button>
-              <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
-              <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
-              <button id="hero-reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
-              <button id="hero-release-export" class="button primary">${escapeHtml(t("action.exportProject"))}</button>
+              <button id="locale-toggle" type="button" class="button subtle locale-toggle-button" aria-label="${escapeHtml(t("app.locale"))}" title="${escapeHtml(t("app.locale"))}">
+                ${locale === "zh-CN" ? "中" : "EN"}
+              </button>
+              <select id="locale-select" class="select" hidden aria-hidden="true">
+                <option value="en"${locale === "en" ? " selected" : ""}>English</option>
+                <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
+              </select>
             </div>
           </div>
         </div>
@@ -83,6 +77,17 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </section>
           <section id="console-panel-build" class="console-panel grid" data-console-panel="build" role="tabpanel" aria-labelledby="console-tab-design" hidden>
               <article class="card span-12">
+                <header class="workbench-card-header">
+                  <div class="toolbar-row">
+                    <div class="header-copy">
+                      <h3>${escapeHtml(t("section.mermaidWorkbench"))}</h3>
+                    </div>
+                    <div class="actions">
+                      <button id="hero-validate" class="button primary" type="button">${escapeHtml(t("action.validate"))}</button>
+                      <button id="hero-save" class="button subtle" type="button">${escapeHtml(t("action.save"))}</button>
+                    </div>
+                  </div>
+                </header>
                 <div class="body">
                   <div class="workbench-state-cache" hidden aria-hidden="true">
                     <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
@@ -103,7 +108,14 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
             </article>
           </section>
           <section id="console-panel-debug" class="console-panel grid operate-workspace" data-console-panel="debug" role="presentation" hidden>
-            <div id="operate-tabs" class="segmented operate-tabs span-12" role="tablist" aria-label="${escapeHtml(t("operate.tablist"))}"></div>
+            <div class="operate-toolbar-row span-12">
+              <div id="operate-tabs" class="segmented operate-tabs" role="tablist" aria-label="${escapeHtml(t("operate.tablist"))}"></div>
+              <div class="actions operate-header-actions">
+                <button id="resume-run" class="button" type="button">${escapeHtml(t("action.resumeSelected"))}</button>
+                <button id="hero-reindex" class="button subtle" type="button">${escapeHtml(t("action.reindex"))}</button>
+                <button id="stop-run" class="button warn" type="button">${escapeHtml(t("action.requestStop"))}</button>
+              </div>
+            </div>
             <div id="review-pending-banner" class="span-12" hidden></div>
           <section id="operate-tabpanel-overview" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-overview">
               <div id="operate-empty-state" class="operate-empty-state span-12" hidden>
@@ -237,6 +249,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                   </div>
                   <div class="actions">
                     <button id="release-export" class="button primary">${escapeHtml(t("action.exportProject"))}</button>
+                    <button id="hero-release-export" class="button primary" hidden aria-hidden="true">${escapeHtml(t("action.exportProject"))}</button>
                   </div>
                 </div>
               </header>

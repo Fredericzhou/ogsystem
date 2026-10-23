@@ -34,7 +34,7 @@ export function renderPageShellStyles(): string {
       --control-bg-strong: rgba(255, 255, 255, 0.055);
       --control-border-strong: rgba(148, 163, 184, 0.24);
       --control-height: 36px;
-      --control-radius: 8px;
+      --control-radius: 6px;
       --control-focus-ring: rgba(56, 189, 248, 0.2);
       --tab-active-bg: linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.1));
       --tab-active-border: rgba(56, 189, 248, 0.4);
@@ -92,9 +92,39 @@ export function renderPageShellStyles(): string {
       color: var(--text);
       background-color: var(--control-bg);
     }
+    :root[data-visualizer-theme="light"] select {
+      color-scheme: light;
+    }
+    :root[data-visualizer-theme="light"] .button {
+      background: rgba(0, 0, 0, 0.035);
+      border-color: var(--control-border);
+      color: var(--text);
+    }
+    :root[data-visualizer-theme="light"] .button:hover {
+      background: rgba(27, 118, 98, 0.08);
+      border-color: var(--accent);
+    }
+    :root[data-visualizer-theme="light"] .button.subtle {
+      background: rgba(0, 0, 0, 0.025);
+      color: var(--muted);
+    }
+    :root[data-visualizer-theme="light"] .button.primary {
+      background: linear-gradient(180deg, rgba(27, 118, 98, 0.16), rgba(27, 118, 98, 0.08));
+      border-color: rgba(27, 118, 98, 0.45);
+      color: var(--text);
+    }
+    :root[data-visualizer-theme="light"] .sidebar {
+      background: rgba(255, 255, 255, 0.88);
+    }
+    :root[data-visualizer-theme="light"] .global-status {
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 -4px 18px rgba(35, 67, 56, 0.08);
+    }
     select option {
+      color: var(--text);
       color: #e5eefb;
       background-color: #0f172a;
+      background-color: var(--panel);
     }
     textarea {
       font: 500 14px/1.6 "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
@@ -196,7 +226,7 @@ export function renderPageShellStyles(): string {
       width: 100%;
       min-width: 0;
       min-height: var(--control-height);
-      padding: 7px 11px;
+      padding: 6px 11px;
       border: 1px solid var(--control-border-strong);
       border-radius: var(--control-radius);
       background: var(--control-bg);
@@ -209,6 +239,12 @@ export function renderPageShellStyles(): string {
       border-color: rgba(56, 189, 248, 0.48);
       background: var(--control-bg-strong);
     }
+    :root[data-visualizer-theme="light"] .search:hover,
+    :root[data-visualizer-theme="light"] .select:hover,
+    :root[data-visualizer-theme="light"] .search:focus,
+    :root[data-visualizer-theme="light"] .select:focus {
+      border-color: rgba(27, 118, 98, 0.5);
+    }
     select.select,
     .field select,
     .studio-command-form select,
@@ -216,18 +252,20 @@ export function renderPageShellStyles(): string {
     .studio-bridge-index-controls > select {
       appearance: none;
       box-sizing: border-box;
-      min-height: 32px;
+      height: var(--control-height);
+      min-height: var(--control-height);
       border: 1px solid var(--control-border-strong);
       border-radius: var(--control-radius);
       background-color: var(--control-bg);
       color: var(--text);
-      padding: 5px 34px 5px 9px;
+      padding: 0 32px 0 10px;
+      line-height: normal;
       background-image:
         linear-gradient(45deg, transparent 50%, var(--muted) 50%),
         linear-gradient(135deg, var(--muted) 50%, transparent 50%);
       background-position:
-        calc(100% - 14px) 50%,
-        calc(100% - 9px) 50%;
+        calc(100% - 15px) 50%,
+        calc(100% - 10px) 50%;
       background-size: 5px 5px, 5px 5px;
       background-repeat: no-repeat;
     }
@@ -273,12 +311,37 @@ export function renderPageShellStyles(): string {
     .select:focus-visible,
     .field input:focus-visible,
     .field select:focus-visible,
-    .field textarea:focus-visible {
+    .field textarea:focus-visible,
+    #project-create-form input:focus-visible,
+    #project-create-form select:focus-visible,
+    #project-create-form textarea:focus-visible,
+    #action-form input:focus-visible,
+    #action-form select:focus-visible,
+    #action-form textarea:focus-visible {
       outline: none;
       border-color: rgba(56, 189, 248, 0.72);
       box-shadow: 0 0 0 3px var(--control-focus-ring);
     }
-    .search::placeholder { color: #6d7c9b; }
+    :root[data-visualizer-theme="light"] .button:focus-visible,
+    :root[data-visualizer-theme="light"] .search:focus-visible,
+    :root[data-visualizer-theme="light"] .select:focus-visible,
+    :root[data-visualizer-theme="light"] .field input:focus-visible,
+    :root[data-visualizer-theme="light"] .field select:focus-visible,
+    :root[data-visualizer-theme="light"] .field textarea:focus-visible,
+    :root[data-visualizer-theme="light"] #project-create-form input:focus-visible,
+    :root[data-visualizer-theme="light"] #project-create-form select:focus-visible,
+    :root[data-visualizer-theme="light"] #project-create-form textarea:focus-visible,
+    :root[data-visualizer-theme="light"] #action-form input:focus-visible,
+    :root[data-visualizer-theme="light"] #action-form select:focus-visible,
+    :root[data-visualizer-theme="light"] #action-form textarea:focus-visible {
+      border-color: rgba(27, 118, 98, 0.72);
+    }
+    .search::placeholder,
+    .select::placeholder,
+    input.select::placeholder {
+      color: var(--muted);
+      opacity: 0.75;
+    }
     .truncate {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -361,14 +424,30 @@ export function renderPageShellStyles(): string {
     .shell.content { row-gap: 0; }
     .shell.content > .sidebar {
       grid-column: 1;
-      grid-row: 1 / 5;
+      grid-row: 3;
     }
-    .shell.content > .top-nav,
-    .shell.content > .flash,
-    .shell.content > .main-stage,
-    .shell.content > .status-bar {
-      grid-column: 2;
+    .shell.content > .top-nav {
+      grid-column: 1 / -1;
+      grid-row: 1;
       min-width: 0;
+    }
+    .shell.content > .flash {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      min-width: 0;
+    }
+    .shell.content > .main-stage {
+      grid-column: 2;
+      grid-row: 3;
+      min-width: 0;
+    }
+    .shell.content > .status-bar {
+      grid-column: 1 / -1;
+      grid-row: 4;
+      min-width: 0;
+    }
+    body:not(.show-run-sidebar) .shell.content > .main-stage {
+      grid-column: 1 / -1;
     }
     .run-card .meta {
       gap: 3px 8px;
@@ -466,31 +545,32 @@ export function renderPageShellStyles(): string {
       z-index: 12;
       display: grid;
       gap: 6px;
-      padding: 8px 10px;
+      padding: 6px 12px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background:
-        linear-gradient(180deg, rgba(56, 189, 248, 0.08), rgba(56, 189, 248, 0) 28%),
-        linear-gradient(180deg, rgba(7, 12, 24, 0.96), rgba(7, 12, 24, 0.9));
+        linear-gradient(180deg, rgba(56, 189, 248, 0.05), rgba(56, 189, 248, 0) 28%),
+        linear-gradient(180deg, rgba(7, 12, 24, 0.96), rgba(7, 12, 24, 0.92));
       backdrop-filter: blur(20px);
       box-shadow: var(--shadow);
     }
     .top-nav-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 10px;
+      gap: 8px 12px;
       align-items: center;
       min-width: 0;
     }
     .top-nav-row-primary {
       display: grid;
       grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-      gap: 8px;
+      gap: 12px;
+      align-items: center;
     }
     .top-nav-brand {
       display: flex;
       align-items: center;
-      gap: 5px 8px;
+      gap: 8px 12px;
       flex: 0 1 auto;
       flex-wrap: wrap;
       min-width: 0;
@@ -502,12 +582,11 @@ export function renderPageShellStyles(): string {
       flex-wrap: wrap;
     }
     .top-nav-center {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 8px;
-      align-items: start;
-      flex: 1 1 460px;
-      min-width: min(100%, 360px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex: 1 1 auto;
+      min-width: min(100%, 320px);
     }
     .top-nav-meta .pill {
       max-width: min(24vw, 260px);
@@ -547,14 +626,14 @@ export function renderPageShellStyles(): string {
     }
     .brand-lockup .project-name {
       color: var(--accent);
-      font-size: 16px;
-      font-weight: 750;
+      font-size: 15px;
+      font-weight: 700;
     }
     .top-nav-actions {
       display: flex;
       flex: 0 0 auto;
       flex-wrap: wrap;
-      gap: 5px 6px;
+      gap: 6px 8px;
       align-items: center;
       justify-content: flex-end;
       margin-left: auto;
@@ -640,9 +719,13 @@ export function renderPageShellStyles(): string {
       grid-column: auto;
     }
     .hero-actions-primary .button {
-      min-height: 32px;
-      padding: 5px 8px;
-      font-size: 11px;
+      height: var(--control-height);
+      min-height: var(--control-height);
+      padding: 0 10px;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .hero-utilities {
       display: flex;
@@ -654,27 +737,66 @@ export function renderPageShellStyles(): string {
     }
     .top-nav-utilities {
       justify-self: end;
-      padding: 4px;
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 11px;
-      background: rgba(255, 255, 255, 0.02);
-    }
-    .top-nav-utilities > .button { height: var(--control-height); min-height: var(--control-height); }
-    .top-nav-utilities .locale-field {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 0 2px;
+      padding: 0;
+      border: none;
+      background: transparent;
     }
-    .top-nav-utilities .locale-field span {
-      white-space: nowrap;
-      font-size: 11px;
+    .top-nav-utilities > .button { height: var(--control-height); min-height: var(--control-height); }
+    .top-nav-utilities > .button,
+    .top-nav-utilities #refresh,
+    .top-nav-utilities .visualizer-theme-toggle,
+    .top-nav-utilities .locale-toggle-button {
+      height: var(--control-height);
+      min-height: var(--control-height);
+      min-width: 34px;
+      padding: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      border: 1px solid var(--control-border);
+      background: var(--control-bg);
+      border-radius: var(--control-radius);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
     }
-    .top-nav-utilities .locale-field .select {
-      min-width: 92px;
-      width: auto;
-      min-height: 32px;
-      padding: 5px 34px 5px 10px;
+    .top-nav-utilities > .button:hover,
+    .top-nav-utilities #refresh:hover,
+    .top-nav-utilities .visualizer-theme-toggle:hover,
+    .top-nav-utilities .locale-toggle-button:hover {
+      background: var(--control-bg-hover);
+      border-color: var(--control-border-strong);
+    }
+    .workbench-card-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    }
+    .operate-toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 11;
+      padding: 6px 0;
+      background: var(--surface-panel);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .operate-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
     }
     .actions {
       display: flex;
@@ -684,18 +806,23 @@ export function renderPageShellStyles(): string {
       justify-content: flex-end;
     }
     .button {
+      box-sizing: border-box;
       border: 1px solid var(--control-border-strong);
       background: rgba(255, 255, 255, 0.045);
       color: var(--text);
       border-radius: var(--control-radius);
-      padding: 6px 11px;
-      min-height: 34px;
+      padding: 0 12px;
+      height: var(--control-height);
+      min-height: var(--control-height);
       min-width: 0;
       white-space: nowrap;
       cursor: pointer;
       font-size: 12px;
       font-weight: 600;
-      line-height: 1.2;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
     }
     .button:hover {
@@ -840,21 +967,24 @@ export function renderPageShellStyles(): string {
       background: var(--surface-panel);
       box-shadow: var(--shadow);
       overflow: hidden;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
     }
     .card header {
-      padding: 8px 10px 0;
+      padding: 10px 14px 6px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.08);
     }
     .card h3 {
       margin: 0;
-      font-size: 13px;
-      letter-spacing: 0.02em;
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: #c9d6ec;
+      color: var(--muted);
     }
     .card .body {
-      padding: 9px 10px 10px;
+      padding: 12px 14px 14px;
       display: grid;
-      gap: 8px;
+      gap: 10px;
       min-width: 0;
     }
     .span-4 { grid-column: span 4; }
@@ -874,7 +1004,7 @@ export function renderPageShellStyles(): string {
       width: 100%;
       max-width: 100%;
       padding: 5px 0;
-      background: rgba(7, 12, 24, 0.94);
+      background: var(--surface-panel);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
     }
@@ -909,7 +1039,8 @@ export function renderPageShellStyles(): string {
       min-width: 16px;
       min-height: 16px;
       margin: 0;
-      accent-color: var(--warn);
+      accent-color: var(--accent);
+      cursor: pointer;
     }
     #action-form label.field.checkbox span { line-height: 1.4; }
     .operate-main {
@@ -1375,28 +1506,74 @@ export function renderPageShellStyles(): string {
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
     .console-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
+      display: inline-flex;
+      align-items: center;
       min-width: 0;
-      width: 100%;
-      padding: 4px;
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.02);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     }
-    .console-tabs .button {
-      flex: 1 1 112px;
+    .lifecycle-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px;
+      border-radius: 9999px;
+      border: 1px solid var(--control-border);
+      background: var(--control-bg);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+    .lifecycle-tabs .nav-tab {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
       justify-content: center;
-      width: auto;
-      border-color: transparent;
+      box-sizing: border-box;
+      height: 28px;
+      min-height: 28px;
+      padding: 0 14px;
+      border: 1px solid transparent;
+      border-radius: 9999px;
       background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      outline: none;
+      transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
     }
-    .console-tabs .button.active {
-      background: var(--tab-active-bg);
-      border-color: var(--tab-active-border);
-      color: #b5ecff;
+    .lifecycle-tabs .nav-tab:hover {
+      color: var(--text);
+      background: var(--control-bg-hover);
+    }
+    .lifecycle-tabs .nav-tab.active {
+      color: #fff;
+      font-weight: 600;
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.16));
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+    .lifecycle-tabs .nav-tab:focus-visible {
+      box-shadow: 0 0 0 2px var(--focus-ring, rgba(56, 189, 248, 0.5));
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs {
+      background: rgba(0, 0, 0, 0.04);
+      border-color: rgba(0, 0, 0, 0.08);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs .nav-tab {
+      color: var(--muted);
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs .nav-tab:hover {
+      color: var(--text);
+      background: rgba(0, 0, 0, 0.04);
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs .nav-tab.active {
+      color: var(--text);
+      font-weight: 600;
+      background: #ffffff;
+      border-color: rgba(0, 0, 0, 0.1);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.06);
     }
     .console-panel[hidden] {
       display: none;
@@ -2834,17 +3011,104 @@ export function renderPageShellStyles(): string {
       color: var(--muted);
       font-size: 12px;
     }
-    .field textarea,
-    .field input {
+    .field input,
+    #project-create-form input,
+    #action-form input:not([type="checkbox"]):not([type="radio"]) {
       width: 100%;
       min-width: 0;
-      min-height: 36px;
-      padding: 7px 10px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      background: var(--surface-inset);
+      height: var(--control-height);
+      min-height: var(--control-height);
+      padding: 0 10px;
+      font-size: 13px;
+      line-height: normal;
+      border: 1px solid var(--control-border-strong);
+      border-radius: var(--control-radius);
+      background: var(--control-bg);
       color: var(--text);
       outline: none;
+      box-sizing: border-box;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+    .field textarea,
+    #action-form textarea {
+      width: 100%;
+      min-width: 0;
+      min-height: 80px;
+      padding: 8px 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      border: 1px solid var(--control-border-strong);
+      border-radius: var(--control-radius);
+      background: var(--control-bg);
+      color: var(--text);
+      outline: none;
+      box-sizing: border-box;
+      resize: vertical;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+    .field textarea:hover,
+    .field input:hover,
+    #project-create-form input:hover,
+    #action-form input:not([type="checkbox"]):not([type="radio"]):hover,
+    #action-form textarea:hover {
+      border-color: rgba(56, 189, 248, 0.48);
+      background: var(--control-bg-strong);
+    }
+    #project-create-form label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    #project-create-form label > span,
+    #action-form label:not(.checkbox) > span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+    #project-create-form select,
+    #action-form select {
+      appearance: none;
+      box-sizing: border-box;
+      width: 100%;
+      height: var(--control-height);
+      min-height: var(--control-height);
+      border: 1px solid var(--control-border-strong);
+      border-radius: var(--control-radius);
+      background-color: var(--control-bg);
+      color: var(--text);
+      font-size: 13px;
+      padding: 0 32px 0 10px;
+      line-height: normal;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position:
+        calc(100% - 15px) 50%,
+        calc(100% - 10px) 50%;
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+    #project-create-form select:hover,
+    #action-form select:hover {
+      border-color: rgba(56, 189, 248, 0.48);
+      background-color: var(--control-bg-strong);
+    }
+    #project-create-form select:focus,
+    #action-form select:focus {
+      outline: none;
+      border-color: rgba(56, 189, 248, 0.72);
+      box-shadow: 0 0 0 3px var(--control-focus-ring);
+    }
+    #project-create-form .hint,
+    .field .hint {
+      margin-top: 2px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
     }
     .select,
     .field select,
@@ -4554,6 +4818,87 @@ export function renderPageShellStyles(): string {
       .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
         height: calc(100dvh - 178px);
         min-height: 360px;
+      }
+    }
+    /* Let each design workspace row shrink to the status bar boundary. */
+    body.show-build-workspace .main-stage,
+    body.show-build-workspace .stage-stack,
+    body.show-build-workspace #console-panel-build,
+    body.show-build-workspace #console-panel-build > article,
+    body.show-build-workspace #console-panel-build > article > .body,
+    body.show-build-workspace .build-ide-shell,
+    body.show-build-workspace .build-ide-body {
+      min-height: 0;
+      height: 100%;
+    }
+    body.show-build-workspace .stage-stack {
+      grid-template-rows: minmax(0, 1fr);
+      padding: 0;
+      overflow: hidden;
+    }
+    body.show-build-workspace .main-stage { overflow: hidden; }
+    body.show-build-workspace #console-panel-build,
+    body.show-build-workspace #console-panel-build > article,
+    body.show-build-workspace #console-panel-build > article > .body {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    body.show-build-workspace #console-panel-build > article {
+      grid-template-rows: auto minmax(0, 1fr);
+      border-radius: 0;
+    }
+    body.show-build-workspace #console-panel-build > article > .body {
+      overflow: hidden;
+      padding: 0;
+    }
+    body.show-build-workspace .build-ide-body { overflow: hidden; }
+    body.show-build-workspace .studio-graph-column:not(.has-design-header) {
+      grid-template-rows: minmax(0, 1fr);
+    }
+    body.show-build-workspace .studio-graph-column > .studio-canvas-shell {
+      height: 100%;
+      min-height: 0;
+    }
+    body.show-build-workspace .studio-graph-column.has-design-header { gap: 4px; }
+    body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell,
+    body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+      height: 100%;
+      min-height: 0;
+    }
+    .sidebar-toggle { display: none; }
+    @media (max-width: 1180px) {
+      .sidebar-toggle {
+        display: inline-grid;
+        place-items: center;
+        position: absolute;
+        z-index: 2;
+        top: 14px;
+        right: -22px;
+        width: 28px;
+        min-width: 28px;
+        height: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-radius: 0 7px 7px 0;
+        font-size: 20px;
+        line-height: 1;
+      }
+      .sidebar {
+        display: block;
+        transform: translateX(calc(-100% + 22px));
+        transition: transform 180ms ease;
+      }
+      body.drawer-open .sidebar { transform: translateX(0); }
+      body:not(.show-run-sidebar) .sidebar { display: none; }
+    }
+    @media (max-width: 720px) {
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell,
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        min-height: 360px;
+      }
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell,
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        height: 100%;
       }
     }
 `;

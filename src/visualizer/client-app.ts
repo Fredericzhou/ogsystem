@@ -515,6 +515,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
     const localeSelectEl = document.getElementById("locale-select");
+    const localeToggleEl = document.getElementById("locale-toggle");
     const OPERATE_DEBUG_PANEL_IDS = ["overview", "recovery", "reviews"];
 
     function joinIdRefs(...ids) {
@@ -617,14 +618,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         [releaseExportButton, "action.exportProject"],
         [resumeRunButton, "action.resumeSelected"],
         [stopRunButton, "action.requestStop"],
-        [refreshButton, "action.refresh"],
         [timelineApplyButton, "action.applyFilters"],
         [timelineClearButton, "action.clearFilters"]
       ];
       for (const [element, key] of textTargets) {
         if (element) {
-          element.textContent = t(key);
+          if (element === sidebarToggleButton) {
+            element.setAttribute("aria-label", t(key));
+            element.setAttribute("title", t(key));
+          } else {
+            element.textContent = t(key);
+          }
         }
+      }
+      if (refreshButton) {
+        refreshButton.setAttribute("title", t("action.refresh"));
+        refreshButton.setAttribute("aria-label", t("action.refresh"));
+      }
+      if (localeToggleEl) {
+        localeToggleEl.textContent = state.locale === "zh-CN" ? "中" : "EN";
+        localeToggleEl.setAttribute("title", t("app.locale"));
+        localeToggleEl.setAttribute("aria-label", t("app.locale"));
       }
       if (searchEl) searchEl.placeholder = t("search.placeholder");
       if (timelineTypeEl) timelineTypeEl.placeholder = t("timeline.eventType");
@@ -2194,7 +2208,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         heroReindexButton.hidden = state.projectsDiagnostic || !runActive;
       }
       if (heroReleaseExportButton) {
-        heroReleaseExportButton.hidden = state.projectsDiagnostic || !releaseActive;
+        heroReleaseExportButton.hidden = true;
       }
       if (releaseExportButton) {
         releaseExportButton.hidden = state.projectsDiagnostic;
@@ -2215,6 +2229,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         consoleTab: state.consoleTab,
         operateTab: state.operateTab
       }));
+      document.body.classList.toggle("show-build-workspace", visiblePanelIds.has("build"));
       renderConsolePanels(visiblePanelIds);
       const showRunSidebar = shouldShowRunSidebar(state.consoleTab);
       document.body.classList.toggle("show-run-sidebar", showRunSidebar);
@@ -8890,6 +8905,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       localeSelectEl.value = state.locale;
       localeSelectEl.addEventListener("change", (event) => {
         setLocaleFromControl(event.target.value || "");
+      });
+    }
+
+    if (localeToggleEl) {
+      localeToggleEl.addEventListener("click", () => {
+        const nextLocale = state.locale === "zh-CN" ? "en" : "zh-CN";
+        setLocaleFromControl(nextLocale);
       });
     }
 
