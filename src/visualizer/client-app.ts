@@ -619,7 +619,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ];
       for (const [element, key] of textTargets) {
         if (element) {
-          element.textContent = t(key);
+          if (element === sidebarToggleButton) {
+            element.setAttribute("aria-label", t(key));
+            element.setAttribute("title", t(key));
+          } else {
+            element.textContent = t(key);
+          }
         }
       }
       if (refreshButton) {
@@ -2147,6 +2152,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         consoleTab: state.consoleTab,
         operateTab: state.operateTab
       }));
+      document.body.classList.toggle("show-build-workspace", visiblePanelIds.has("build"));
       renderConsolePanels(visiblePanelIds);
       const showRunSidebar = shouldShowRunSidebar(state.consoleTab);
       document.body.classList.toggle("show-run-sidebar", showRunSidebar);

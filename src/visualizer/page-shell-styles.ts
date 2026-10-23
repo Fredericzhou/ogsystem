@@ -4820,5 +4820,86 @@ export function renderPageShellStyles(): string {
         min-height: 360px;
       }
     }
+    /* Let each design workspace row shrink to the status bar boundary. */
+    body.show-build-workspace .main-stage,
+    body.show-build-workspace .stage-stack,
+    body.show-build-workspace #console-panel-build,
+    body.show-build-workspace #console-panel-build > article,
+    body.show-build-workspace #console-panel-build > article > .body,
+    body.show-build-workspace .build-ide-shell,
+    body.show-build-workspace .build-ide-body {
+      min-height: 0;
+      height: 100%;
+    }
+    body.show-build-workspace .stage-stack {
+      grid-template-rows: minmax(0, 1fr);
+      padding: 0;
+      overflow: hidden;
+    }
+    body.show-build-workspace .main-stage { overflow: hidden; }
+    body.show-build-workspace #console-panel-build,
+    body.show-build-workspace #console-panel-build > article,
+    body.show-build-workspace #console-panel-build > article > .body {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    body.show-build-workspace #console-panel-build > article {
+      grid-template-rows: auto minmax(0, 1fr);
+      border-radius: 0;
+    }
+    body.show-build-workspace #console-panel-build > article > .body {
+      overflow: hidden;
+      padding: 0;
+    }
+    body.show-build-workspace .build-ide-body { overflow: hidden; }
+    body.show-build-workspace .studio-graph-column:not(.has-design-header) {
+      grid-template-rows: minmax(0, 1fr);
+    }
+    body.show-build-workspace .studio-graph-column > .studio-canvas-shell {
+      height: 100%;
+      min-height: 0;
+    }
+    body.show-build-workspace .studio-graph-column.has-design-header { gap: 4px; }
+    body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell,
+    body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+      height: 100%;
+      min-height: 0;
+    }
+    .sidebar-toggle { display: none; }
+    @media (max-width: 1180px) {
+      .sidebar-toggle {
+        display: inline-grid;
+        place-items: center;
+        position: absolute;
+        z-index: 2;
+        top: 14px;
+        right: -22px;
+        width: 28px;
+        min-width: 28px;
+        height: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-radius: 0 7px 7px 0;
+        font-size: 20px;
+        line-height: 1;
+      }
+      .sidebar {
+        display: block;
+        transform: translateX(calc(-100% + 22px));
+        transition: transform 180ms ease;
+      }
+      body.drawer-open .sidebar { transform: translateX(0); }
+      body:not(.show-run-sidebar) .sidebar { display: none; }
+    }
+    @media (max-width: 720px) {
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell,
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        min-height: 360px;
+      }
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell,
+      body.show-build-workspace .studio-graph-column.has-design-header > .studio-canvas-shell.has-collapsed-selection {
+        height: 100%;
+      }
+    }
 `;
 }

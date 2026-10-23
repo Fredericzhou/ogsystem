@@ -15,6 +15,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
   <div class="app">
     <div class="shell content">
       <aside id="sidebar" class="sidebar">
+        <button id="sidebar-toggle" class="button subtle sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="${escapeHtml(t("hero.runs"))}" title="${escapeHtml(t("hero.runs"))}"><span aria-hidden="true">↔</span></button>
         <div class="stack">
           <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" aria-label="${escapeHtml(t("search.placeholder"))}" />
           <div id="run-list" class="run-list"></div>
@@ -29,7 +30,6 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               <span>${escapeHtml(t("app.local"))}</span>
             </div>
             <div class="top-nav-meta">
-              <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
               <span id="workdir" hidden>${escapeHtml(workdir)}</span>
             </div>
           </div>
