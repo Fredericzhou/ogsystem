@@ -384,6 +384,19 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
     await browseFilter.fill("demo");
     await page.locator('[data-studio-role-id="demo-analyst"]').click();
+    const selectedRoleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]');
+    await expect(selectedRoleNode).toHaveClass(/is-selection-active/);
+    await expect.poll(() => selectedRoleNode.locator(".studio-node-body").evaluate((body) => ({
+      stroke: getComputedStyle(body).stroke,
+      strokeWidth: getComputedStyle(body).strokeWidth
+    }))).toEqual({ stroke: "rgb(21, 128, 61)", strokeWidth: "4.5px" });
+    await page.evaluate(() => { document.documentElement.dataset.visualizerTheme = "dark"; });
+    await expect.poll(() => selectedRoleNode.locator(".studio-node-body").evaluate((body) => ({
+      stroke: getComputedStyle(body).stroke,
+      fill: getComputedStyle(body).fill,
+      strokeWidth: getComputedStyle(body).strokeWidth
+    }))).toEqual({ stroke: "rgb(74, 222, 128)", fill: "rgb(18, 59, 39)", strokeWidth: "4.5px" });
+    await page.evaluate(() => { document.documentElement.dataset.visualizerTheme = "light"; });
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
     const roleEditor = page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="demo-analyst"]');
     await expect(roleEditor).toBeVisible();
@@ -1619,6 +1632,16 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await page.keyboard.press("Enter");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeHidden();
     await expectStudioCellPulse(page, "demo-analyst");
+    await page.evaluate(() => {
+      const root = document.getElementById("studio-graph-direct-root");
+      const mount = (window as any).OGSVisualizerClient.mountStudioX6Bridge;
+      const { authoring, canvas } = (window as any).__studioDirectOptions;
+      mount(root, { authoring, canvas, mode: "product-edit", defaultAutoLayout: false });
+    });
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-action="quick-open"]')).toBeHidden();
+    await page.locator("#studio-graph-direct-root").click();
+    await page.keyboard.press(quickOpenShortcut);
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeHidden();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

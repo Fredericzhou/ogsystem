@@ -39,7 +39,10 @@ test("Visualizer design projector reads source, maps display titles, and applies
   assert.deepEqual([...calls[4][1].roleDisplayNames], [["planner", "Planner title"]]);
   assert.deepEqual(calls[4][1].modelSelection, { seats: { planner: { title: "Planner title" }, empty: { title: " " }, ignored: "not an object" } });
   assert.deepEqual(calls[5], ["canvas", authoring]);
-  assert.deepEqual(calls[6][1].presentation.boundaryLabels, { start: "Start", end: "End" });
+  assert.deepEqual(calls[6][1].presentation, {
+    boundaryLabels: { start: "Start", end: "End" },
+    edgeLabels: {}
+  });
 });
 
 test("Visualizer design projector defaults to Chinese labels and tolerates missing optional design metadata", async () => {
@@ -56,7 +59,31 @@ test("Visualizer design projector defaults to Chinese labels and tolerates missi
   });
 
   await projector.project({ workdir: "/workspace/project" });
-  assert.deepEqual(graphOptions.presentation.boundaryLabels, { start: "开始", end: "结束" });
+  assert.deepEqual(graphOptions.presentation, {
+    boundaryLabels: { start: "开始", end: "结束" },
+    edgeLabels: {}
+  });
+});
+
+test("Visualizer design projector uses business flow names or localized event labels", async () => {
+  let graphOptions;
+  const authoring = { version: 1, flows: {
+    named: { flowId: "flow.named", eventType: "DONE", label: "方案已确认" },
+    localized: { flowId: "flow.localized", eventType: "SOFTWARE_REQUEST", label: " " }
+  } };
+  const projector = createVisualizerProjectDesignProjector({
+    read: async (file) => file.endsWith("system.mmd") ? "flowchart TD" : "{}",
+    parseSystem: () => undefined,
+    importAuthoring: () => authoring,
+    toCanvas: () => ({}),
+    buildViewModel: (options) => (graphOptions = options, {})
+  });
+
+  await projector.project({ workdir: "/workspace/project" }, "zh-CN");
+  assert.deepEqual(graphOptions.presentation.edgeLabels, {
+    "flow.named": "方案已确认",
+    "flow.localized": "研发需求"
+  });
 });
 
 test("Visualizer design projector prefers the persisted authoring document for complete round trips", async () => {

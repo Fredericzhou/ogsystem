@@ -10,7 +10,7 @@ import type {
   StudioAuthoringDocument,
   StudioGraphSnapshot as StudioCanvasSnapshot
 } from "../studio-contracts.js";
-import { buildGraphViewModel } from "../graph-view-model.js";
+import { buildGraphViewModel, type BuildGraphViewModelArgs } from "../graph-view-model.js";
 import {
   commandFromStudioCommandFormState,
   createDefaultStudioCommandFormState,
@@ -47,6 +47,7 @@ import {
 } from "./semantic-layout-projection.js";
 import {
   deriveStudioRuntimeVisualState,
+  type StudioRuntimeProgressEvent,
   type StudioRuntimeVisualState
 } from "./studio-graph-runtime.js";
 import { validateStudioConnectionCells } from "./studio-graph-rules.js";
@@ -122,6 +123,7 @@ export type StudioGraphBridgeOptions = {
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasSnapshot | null;
   viewModel?: GraphViewModel | null;
+  presentation?: BuildGraphViewModelArgs["presentation"];
   validation?: { ok?: unknown; diagnostics?: unknown } | null;
   selectedRoleId?: string;
   selectedFlowKey?: string;
@@ -297,6 +299,7 @@ export class StudioGraphIsland {
   private pendingRoleDraftPosition: { x: number; y: number } | null = null;
   private pendingRoleInsertion: PendingStudioRoleInsertion | null = null;
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
+  private runtimeProgressEvents: StudioRuntimeProgressEvent[] = [];
   private contextMenuState: StudioGraphContextMenuState | null = null;
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
@@ -370,7 +373,7 @@ export class StudioGraphIsland {
       '<option value="stacked">' + this.escapeHtml(this.label("layoutModeStacked")) + '</option>' +
       '</select>',
       this.toolbarButton("technical-details", "technicalDetails", "i"),
-      this.toolbarButton("quick-open", "quickOpen", "/"),
+      this.options.mode === "product-edit" ? "" : this.toolbarButton("quick-open", "quickOpen", "/"),
       this.toolbarButton("export-svg", "exportSvg", "⇩", "SVG"),
       this.toolbarButton("export-png", "exportPng", "⇩", "PNG"),
       '</div>',
@@ -466,6 +469,7 @@ export class StudioGraphIsland {
     this.handleDismissCommandFormRequest(options.dismissCommandFormRequest);
     let viewModel = options.viewModel ?? buildGraphViewModel({
       authoring: options.authoring,
+      presentation: options.presentation,
       validation: options.validation
         ? {
             ok: options.validation.ok,
@@ -532,7 +536,8 @@ export class StudioGraphIsland {
       this.runtimeVisualState = deriveStudioRuntimeVisualState({
         authoring: options.authoring,
         viewModel,
-        readOnly: options.readOnly === true
+        readOnly: options.readOnly === true,
+        progressEvents: this.runtimeProgressEvents
       });
       this.syncGraphViewportSize();
       const autoLayoutApplied = await this.applyDefaultAutoLayout(updateGeneration);
@@ -559,6 +564,18 @@ export class StudioGraphIsland {
     }
     this.setStatus(this.label("graphReady"));
     this.setBusy(Boolean(options.busy));
+  }
+
+  setRuntimeProgress(events: readonly StudioRuntimeProgressEvent[]): void {
+    this.runtimeProgressEvents = [...events];
+    if (!this.currentViewModel) return;
+    this.runtimeVisualState = deriveStudioRuntimeVisualState({
+      authoring: this.options.authoring,
+      viewModel: this.currentViewModel,
+      readOnly: this.options.readOnly === true,
+      progressEvents: this.runtimeProgressEvents
+    });
+    this.applyRuntimeOverlay();
   }
 
   dispose(): void {
@@ -691,11 +708,11 @@ export class StudioGraphIsland {
       return false;
     });
     graph.on("scale", () => {
-      this.renderMinimap();
+      this.scheduleMinimapRefresh();
       this.emitViewportChange();
     });
     graph.on("translate", () => {
-      this.renderMinimap();
+      this.scheduleMinimapRefresh();
       this.emitViewportChange();
     });
     return graph;
@@ -708,7 +725,7 @@ export class StudioGraphIsland {
     this.resizeObserver = new ResizeObserver(() => {
       this.syncGraphViewportSize();
       this.flushPendingInitialFit();
-      this.renderMinimap();
+      this.scheduleMinimapRefresh();
     });
     this.resizeObserver.observe(this.root);
     this.resizeObserver.observe(this.stageEl);
@@ -1240,6 +1257,9 @@ export class StudioGraphIsland {
   }
 
   private toggleQuickOpen(): void {
+    if (this.options.mode === "product-edit") {
+      return;
+    }
     if (this.quickOpenEl.hidden) {
       this.quickOpenSelectedIndex = 0;
       this.quickOpenEl.hidden = false;
@@ -2226,6 +2246,10 @@ export class StudioGraphIsland {
   private updateToolbarState(): void {
     this.updateConnectionPortPresentation();
     const readOnly = this.isReadOnly();
+    const quickOpen = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="quick-open"]');
+    if (quickOpen) {
+      quickOpen.hidden = this.options.mode === "product-edit";
+    }
     const selected = this.graph.getSelectedCells()[0];
     const selectedData = selected?.getData() as {
       studioNode?: { kind?: string; roleId?: string };
@@ -2991,6 +3015,7 @@ export class StudioGraphIsland {
       }
       const nodeState = runtime?.nodeStates.get(node.id);
       container.classList.toggle("is-runtime-active", Boolean(nodeState?.active));
+      container.classList.toggle("is-runtime-completed", nodeState?.status === "done");
       container.classList.toggle("is-runtime-waiting-review", Boolean(nodeState?.waitingReview));
       container.classList.toggle("has-human-gate", Boolean(nodeState?.humanGateConfigured));
       container.classList.toggle("has-loop-count", Boolean((nodeState?.loopCount || 0) > 1));
@@ -3019,6 +3044,7 @@ export class StudioGraphIsland {
       container.classList.toggle("is-pending-preview", this.isPendingEdgePreviewCell(edge));
       const edgeState = runtime?.edgeStates.get(edge.id);
       container.classList.toggle("is-runtime-active", Boolean(edgeState?.active));
+      container.classList.toggle("is-runtime-completed", Boolean(edgeState?.completed));
       container.classList.toggle("is-runtime-error", Boolean(edgeState?.error));
       container.classList.toggle("is-loop-back", Boolean(edgeState?.loopBack));
     }
@@ -3109,9 +3135,10 @@ export class StudioGraphIsland {
     const maxY = Math.max(...metrics.map((item) => item.y + item.height));
     const totalWidth = Math.max(maxX - minX, 1);
     const totalHeight = Math.max(maxY - minY, 1);
+    const metricsById = new Map(metrics.map((item) => [item.id, item]));
     const edgeLines = this.graph.getEdges().filter((edge) => !isStudioLayoutBundleEdge(edge)).map((edge) => {
-      const sourceNode = metrics.find((m) => m.id === edge.getSourceCellId());
-      const targetNode = metrics.find((m) => m.id === edge.getTargetCellId());
+      const sourceNode = metricsById.get(edge.getSourceCellId() || "");
+      const targetNode = metricsById.get(edge.getTargetCellId() || "");
       if (!sourceNode || !targetNode) return "";
       const x1 = ((sourceNode.x + sourceNode.width - minX) / totalWidth) * 100;
       const y1 = ((sourceNode.y + sourceNode.height / 2 - minY) / totalHeight) * 100;

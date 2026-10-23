@@ -481,7 +481,7 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
     zIndex: 2,
     shape: "rect",
     markup: [
-      { tagName: "rect", selector: "body" },
+      { tagName: "rect", selector: "body", className: "studio-node-body" },
       { tagName: "title", selector: "nodeTitle" },
       { tagName: "rect", selector: "roleMarkerBadge", className: "studio-role-marker-badge" },
       { tagName: "text", selector: "roleMarkerText", className: "studio-role-marker-text" },

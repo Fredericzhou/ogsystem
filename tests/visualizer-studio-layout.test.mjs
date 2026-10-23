@@ -17,6 +17,53 @@ import { formatStudioEdgeLabel } from "../src/visualizer/studio-edge-semantics.t
 import { studioRoleMarkerVisible, studioRoleMonogram } from "../src/visualizer/studio-client/studio-role-marker.ts";
 import { studioSccGroupGeometry } from "../src/visualizer/studio-client/studio-graph-render.ts";
 import { buildGraphViewModel } from "../src/visualizer/graph-view-model.ts";
+import { deriveStudioRuntimeVisualState } from "../src/visualizer/studio-client/studio-graph-runtime.ts";
+
+test("Studio runtime progress marks boundary and role flow states across concurrent branches", () => {
+  const source = [
+    "flowchart TD",
+    "%% system.id=test.runtime.progress",
+    "%% system.version=1.0.0",
+    "%% law.global=law.minimal.base",
+    "start[开始] -->|START| dispatch[Role:dispatch]",
+    "dispatch[Role:dispatch] -->|WORK| worker[Role:worker]",
+    "worker[Role:worker] -->|DONE| end[结束]",
+    ""
+  ].join("\n");
+  const system = parseSystemFromMermaidSource(source);
+  const authoring = importSystemToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    system,
+    systemSource: source
+  });
+  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
+  const entryFlow = viewModel.edges.find((edge) => edge.source === "__system_start__" && edge.target === "dispatch");
+  const workFlow = viewModel.edges.find((edge) => edge.source === "dispatch" && edge.target === "worker");
+  assert.ok(entryFlow && workFlow);
+
+  const state = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "flow.activated", fromRoleId: "__system_start__", toRoleId: "dispatch", eventType: "START", branchId: "entry-1" },
+      { type: "role.started", roleId: "dispatch", branchId: "entry-1", executionId: "dispatch-1" },
+      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "worker-1" },
+      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "worker-2" },
+      { type: "flow.activated", fromRoleId: "worker", toRoleId: "__system_end__", eventType: "DONE", branchId: "worker-1" },
+      { type: "role.completed", roleId: "worker", branchId: "worker-1", executionId: "worker-1" },
+      { type: "role.started", roleId: "worker", branchId: "worker-2", executionId: "worker-2" }
+    ]
+  });
+
+  assert.equal(state.nodeStates.get("dispatch").active, true);
+  assert.equal(state.nodeStates.get("worker").active, true);
+  assert.equal(state.edgeStates.get(entryFlow.id).active, true);
+  assert.equal(state.edgeStates.get(workFlow.id).active, true, "one still-running branch keeps its shared flow highlighted");
+  assert.equal(state.nodeStates.get("__system_end__").status, "running", "End remains active while aggregation is pending");
+  assert.equal(state.nodeStates.get("__system_end__").active, true);
+  assert.equal(state.activeNodeCount, 3);
+});
 
 test("SCC frames keep compact padding clear of neighboring role and boundary nodes", () => {
   const geometry = studioSccGroupGeometry({

@@ -76,7 +76,7 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
         calls.push(["run", selectedTeam.teamVersionId, options]);
         if (runError) throw runError;
         const result = runResult || { status: "completed", finalOutputsByRoleId: { analyst: [{ content: "result" }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] };
-        for (const item of result.auditTrail || []) await options.onAuditEvent?.({ type: "audit", ...item });
+        for (const item of result.auditTrail || []) await options.onRuntimeEvent?.({ type: "audit", ...item });
         return result;
       }
     },
@@ -123,14 +123,14 @@ test("interactive Studio Simulation returns running immediately and persists rol
       getSimulationEvidence: async (_versionId, simulationId) => deferred.records.get(simulationId),
       listVersionSimulations: async () => [...deferred.records.values()].map((record) => record.simulation)
     },
-    simulationRunner: { simulate: async (_team, options) => { await options.onAuditEvent({ roleId: "analyst", status: "running", inputContext: { task: "Inspect" } }); return pending; } },
+    simulationRunner: { simulate: async (_team, options) => { await options.onRuntimeEvent({ type: "role.started", roleId: "analyst", branchId: "analyst:1", executionId: "analyst-1" }); await options.onRuntimeEvent({ type: "role.input_ready", roleId: "analyst", branchId: "analyst:1", executionId: "analyst-1", inputContext: { task: "Inspect" } }); return pending; } },
     identifiers: { simulationId: () => "sim-1" },
     baselineStore: { readReleaseBaselineScenarios: async () => [], saveReleaseBaselineScenarios: async () => [] }
   });
 
   const started = await deferred.useCases.createSimulation("team-root", "team-v1", { prompt: "Inspect", awaitCompletion: false });
   assert.equal(started.simulation.status, "running");
-  assert.deepEqual((await deferred.useCases.getTeamVersionSimulationEvents("team-root", "team-v1", "sim-1")).events.map((event) => event.type), ["simulation.started", "role.running"]);
+  assert.deepEqual((await deferred.useCases.getTeamVersionSimulationEvents("team-root", "team-v1", "sim-1")).events.map((event) => event.type), ["simulation.started", "role.started", "role.input_ready"]);
   resolveRun({ status: "completed", finalOutputsByRoleId: { analyst: [{ content: "done" }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "running" }] });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal((await deferred.useCases.getTeamVersionSimulation("team-root", "team-v1", "sim-1")).simulation.status, "completed");

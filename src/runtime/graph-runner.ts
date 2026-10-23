@@ -74,6 +74,7 @@ import {
 } from "./transition-planner.js";
 import type { TransitionPlan } from "./transition-planner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
+import { SYSTEM_START_ROLE_ID } from "./types.js";
 import type {
   AdapterRunResult,
   AuditRecord,
@@ -1028,9 +1029,21 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   }
   const logger = createRunConsoleLogger(args.logRun);
   const runControl = args.runControl ?? new RunControl();
-  let runtimeIndexes = buildRuntimeIndexes(
-    args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt, runId: args.runContext.runId })
-  );
+  const initialState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt, runId: args.runContext.runId });
+  let runtimeIndexes = buildRuntimeIndexes(initialState);
+  if (initialState.stateVersion === 0) {
+    for (const roleId of initialState.selectedEntryRoleIds) {
+      await appendEvent(args.runContext, {
+        type: "flow.activated",
+        at: new Date().toISOString(),
+        fromRoleId: SYSTEM_START_ROLE_ID,
+        toRoleId: roleId,
+        eventType: "START",
+        branchId: Object.values(initialState.branchRecords).find((branch) => branch.roleId === roleId)?.branchId,
+        loopIteration: 1
+      });
+    }
+  }
   const graphBuilder = new StateGraph(GraphStateAnnotation) as StateGraph<
     typeof GraphStateAnnotation.spec,
     GraphState,
@@ -1206,6 +1219,35 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       workingState = stateCommit?.snapshot.state ?? applyGraphUpdate(workingState, effectiveUpdate);
       runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, effectiveUpdate);
       combinedUpdate = mergeGraphUpdates(combinedUpdate, effectiveUpdate);
+
+      for (const activated of Object.values(effectiveUpdate.branchRecords ?? {})) {
+        if (activated.status !== "active" || activated.activatedByRoleId !== roleId) continue;
+        await appendEvent(args.runContext, {
+          type: "flow.activated",
+          at: new Date().toISOString(),
+          fromRoleId: roleId,
+          toRoleId: activated.roleId,
+          eventType: activated.activatedByEvent,
+          branchId: activated.branchId,
+          loopIteration: activated.loopIteration
+        });
+      }
+      const reachedEnd = Object.hasOwn(transitionPlan.update.finalOutputsByRoleId ?? {}, roleId);
+      if (reachedEnd) {
+        for (const flow of node.outgoing) {
+          const selectedEvent = result.status === "failed" ? undefined : result.selectedEvent;
+          if (flow.toRoleId !== SYSTEM_END_ROLE_ID || (selectedEvent && flow.eventType !== selectedEvent)) continue;
+          await appendEvent(args.runContext, {
+            type: "flow.activated",
+            at: new Date().toISOString(),
+            fromRoleId: roleId,
+            toRoleId: SYSTEM_END_ROLE_ID,
+            eventType: flow.eventType,
+            branchId: branch.branchId,
+            loopIteration: branch.loopIteration
+          });
+        }
+      }
 
       if (workingState.status === "running") {
         // Trade-off: stop requests are honored as soon as we see them but still let the current

@@ -101,6 +101,7 @@ test("GraphViewModel exposes explicit Start and End roles and their editable flo
   assert.ok(view.edges.some((edge) => edge.source === "review" && edge.target === "__system_end__"));
 });
 
+
 test("GraphViewModel projects Semantic IR modes, loop scopes, and edge routing metadata", () => {
   const authoring = buildAuthoringFixture();
   const semanticIR = {

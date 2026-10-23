@@ -17,8 +17,21 @@ export type StudioRuntimeNodeState = {
 
 export type StudioRuntimeEdgeState = {
   active: boolean;
+  completed: boolean;
   error: boolean;
   loopBack: boolean;
+};
+
+export type StudioRuntimeProgressEvent = {
+  type: string;
+  at?: string;
+  roleId?: string;
+  fromRoleId?: string;
+  toRoleId?: string;
+  eventType?: string;
+  branchId?: string;
+  loopIteration?: number;
+  status?: string;
 };
 
 export type StudioRuntimeVisualState = {
@@ -187,6 +200,7 @@ export function deriveStudioRuntimeEdgeState(args: {
 }): StudioRuntimeEdgeState {
   return {
     active: Boolean(args.readOnly && args.edge.runtime?.recentlyActivated === true),
+    completed: false,
     error: Boolean(args.edge.runtimeOnlyErrorFlow || args.edge.diagnostic?.severity === "error"),
     loopBack: args.edge.source === args.edge.target
       || args.edge.channel === "loop"
@@ -199,6 +213,7 @@ export function deriveStudioRuntimeVisualState(args: {
   authoring?: StudioAuthoringDocument | null;
   viewModel: GraphViewModel;
   readOnly?: boolean;
+  progressEvents?: readonly StudioRuntimeProgressEvent[];
 }): StudioRuntimeVisualState {
   const nodeStates = new Map<string, StudioRuntimeNodeState>();
   const edgeStates = new Map<string, StudioRuntimeEdgeState>();
@@ -225,12 +240,94 @@ export function deriveStudioRuntimeVisualState(args: {
     }
   }
 
+  if (args.progressEvents?.length) {
+    const activeExecutions = new Map<string, string>();
+    const successfulRoles = new Set<string>();
+    const failedRoles = new Set<string>();
+    const selectedEntryRoles = new Set<string>();
+    let hasEndArrival = false;
+    const flowStateByBranch = new Map<string, { edgeId: string; targetRoleId: string; active: boolean }>();
+    let runStatus = "running";
+    const activationKey = (event: StudioRuntimeProgressEvent) =>
+      String(event.branchId || `${event.roleId || ""}:${event.loopIteration || 1}`);
+
+    for (const event of args.progressEvents) {
+      if (event.type === "flow.activated") {
+        const edge = args.viewModel.edges.find((candidate) =>
+          candidate.source === event.fromRoleId
+          && candidate.target === event.toRoleId
+          && candidate.eventType === event.eventType
+        );
+        if (edge) {
+          const key = activationKey(event);
+          flowStateByBranch.set(key, {
+            edgeId: edge.id,
+            targetRoleId: String(event.toRoleId || ""),
+            active: event.toRoleId !== "__system_end__"
+          });
+          if (event.fromRoleId === "__system_start__" && event.toRoleId) selectedEntryRoles.add(event.toRoleId);
+          if (event.toRoleId === "__system_end__") hasEndArrival = true;
+        }
+      } else if (event.type === "role.started") {
+        const key = activationKey(event);
+        activeExecutions.set(key, String(event.roleId || ""));
+        failedRoles.delete(String(event.roleId || ""));
+        for (const flow of flowStateByBranch.values()) {
+          if (flow.targetRoleId === event.roleId) flow.active = true;
+        }
+      } else if (["role.completed", "role.skipped", "role.failed"].includes(event.type)) {
+        const key = activationKey(event);
+        activeExecutions.delete(key);
+        if (event.type === "role.failed") failedRoles.add(String(event.roleId || ""));
+        else successfulRoles.add(String(event.roleId || ""));
+        for (const [branchKey, flow] of flowStateByBranch) {
+          if (branchKey === key) flow.active = false;
+        }
+      } else if (event.type === "simulation.completed" || event.type === "simulation.failed") {
+        runStatus = event.type === "simulation.completed" ? "completed" : "failed";
+        for (const flow of flowStateByBranch.values()) flow.active = false;
+      }
+    }
+
+    for (const node of args.viewModel.nodes) {
+      const state = nodeStates.get(node.id);
+      if (!state) continue;
+      if (node.id === "__system_start__") {
+        state.active = false;
+        state.status = selectedEntryRoles.size ? "done" : undefined;
+      } else if (node.id === "__system_end__") {
+        state.status = runStatus === "completed" ? "done" : runStatus === "failed" ? "failed" : hasEndArrival ? "running" : undefined;
+        state.active = runStatus === "running" && hasEndArrival;
+      } else {
+        const isActive = Array.from(activeExecutions.values()).includes(node.roleId);
+        state.active = isActive;
+        state.status = isActive ? "running" : failedRoles.has(node.roleId) ? "failed" : successfulRoles.has(node.roleId) ? "done" : undefined;
+      }
+    }
+    const activeByEdge = new Map<string, boolean>();
+    const seenByEdge = new Set<string>();
+    for (const flow of flowStateByBranch.values()) {
+      seenByEdge.add(flow.edgeId);
+      activeByEdge.set(flow.edgeId, Boolean(activeByEdge.get(flow.edgeId) || flow.active));
+    }
+    for (const edgeId of seenByEdge) {
+      const edgeState = edgeStates.get(edgeId);
+      if (!edgeState) continue;
+      edgeState.active = Boolean(activeByEdge.get(edgeId));
+      edgeState.completed = !edgeState.active;
+    }
+    activeNodeCount = Array.from(nodeStates.values()).filter((state) => state.active).length;
+    activeEdgeCount = Array.from(edgeStates.values()).filter((state) => state.active).length;
+    waitingReviewCount = Array.from(nodeStates.values()).filter((state) => state.waitingReview).length;
+  }
+
   const hasRuntimeSignals = activeNodeCount > 0
     || waitingReviewCount > 0
     || activeEdgeCount > 0
     || Array.from(nodeStates.values()).some((state) => Boolean(state.errorCode))
     || Array.from(nodeStates.values()).some((state) => Boolean(state.humanGateConfigured))
-    || Array.from(nodeStates.values()).some((state) => Boolean(state.loopCount && state.loopCount > 1));
+    || Array.from(nodeStates.values()).some((state) => Boolean(state.loopCount && state.loopCount > 1))
+    || args.progressEvents?.length > 0;
 
   return {
     hasRuntimeSignals,

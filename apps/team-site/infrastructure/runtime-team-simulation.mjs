@@ -14,7 +14,7 @@ function normalizeRuntimeStatus(status) {
 
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", onAuditEvent }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", onRuntimeEvent }) {
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
       const runId = `simulation-${randomUUID()}`;
       try {
@@ -43,14 +43,16 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
               irDigest: runtimeArgs.plan.irDigest,
               runtimeDigest: runtimeArgs.plan.planFingerprint
             });
-            if (typeof onAuditEvent !== "function") return services;
+            if (typeof onRuntimeEvent !== "function") return services;
             return {
               ...services,
               audit: {
                 ...services.audit,
                 append: async (event) => {
                   await services.audit.append(event);
-                  if (event.type === "audit") await onAuditEvent(event);
+                  if (event.type === "audit" || ["role.started", "role.input_ready", "flow.activated"].includes(event.type)) {
+                    await onRuntimeEvent(event);
+                  }
                 }
               }
             };

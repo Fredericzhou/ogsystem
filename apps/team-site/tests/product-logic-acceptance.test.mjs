@@ -61,7 +61,9 @@ test("released Team global settings show stable identifiers as read-only values"
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
-    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').waitFor();
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').waitFor({ timeout: 10000 }).catch(async () => {
+      assert.fail(`Studio graph toolbar did not mount: ${await page.locator("#project-design-status").innerText().catch(() => "no design status")} | ${await page.locator("#project-graph-stage").innerText().catch(() => "no stage")}`);
+    });
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-assets-global-tab").click();
     await page.locator("#studio-assets-global .studio-readonly-value").first().waitFor();
@@ -196,7 +198,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator("#team-assistant").waitFor();
     await page.locator("[data-team-build-close]").click();
     await page.locator("#studio-simulation-run-open").click();
-    await page.locator("#team-debug-dialog[open]").waitFor();
+    await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
     await page.locator("[data-team-debug-close]").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').click();
     await page.getByText("结构校验通过", { exact: true }).waitFor();
@@ -204,7 +206,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.equal(checkedDesign.projectStatus, "draft", "validation must not publish or confirm the draft");
     const runRoot = join(projectsRoot, team.projectId, ".ogs", "runs");
     await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
-    await page.locator("#team-debug-dialog[open]").waitFor();
+    await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
     const simulationPrompt = "Preview the software delivery handoffs.";
     await page.locator("#team-simulation-input").fill(simulationPrompt);
     await page.route("**/api/v1/platform/discovery", async (route) => {
@@ -235,9 +237,10 @@ test("Natural assistant failures are visible and successful previews can be appl
     const simulationRuns = await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
     assert.deepEqual(simulationRuns, [], "Studio quick simulation must not create Run history");
     let simulationScenario = "no-output";
+    let mockedSimulationEvidence;
     await page.route(`**${simulationEndpoint}`, async (route) => {
       const partial = simulationScenario === "partial";
-      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({
+      mockedSimulationEvidence = {
         simulation: {
           simulationId: `mock-${simulationScenario}`,
           runKind: "studio_simulation",
@@ -256,7 +259,15 @@ test("Natural assistant failures are visible and successful previews can be appl
           ]
         },
         events: []
-      }) });
+      };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(mockedSimulationEvidence) });
+    });
+    await page.route(`**${simulationEndpoint}/**`, async (route) => {
+      if (route.request().url().endsWith("/events") || route.request().url().includes("/events?")) {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ events: [], cursor: 0, done: true }) });
+      } else {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify(mockedSimulationEvidence) });
+      }
     });
     await page.locator("#team-simulation-run").click();
     const readinessDialog = page.locator(".confirm-dialog");
@@ -405,6 +416,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(await contextSource.evaluate((element) => getComputedStyle(element).minHeight), "34px");
     assert.equal(await contextSource.evaluate((element) => getComputedStyle(element).borderRadius), "4px");
     assert.match(await contextSource.locator('option[value="global.task"]').first().innerText(), /本次任务/);
+    await inspector.getByText("角色资产包", { exact: true }).click();
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Review source material and return cited findings.");
     const joinRoleId = "delivery-lead";
     await page.locator("#studio-asset-drawer-close").click();
@@ -420,6 +432,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-role-field="reviewTarget"]').selectOption("backend-planner");
     await inspector.locator('[data-studio-role-field="reviewReworkMax"]').fill("2");
     await inspector.locator('[data-studio-role-field="reviewTerminateScope"]').selectOption("branch");
+    await inspector.getByText("角色资产包", { exact: true }).click();
     const reviewRoleDefinition = JSON.parse(await inspector.locator('[data-studio-role-asset="role.json"]').inputValue());
     reviewRoleDefinition.authority ||= {};
     reviewRoleDefinition.authority.controlActions = [...new Set([...(reviewRoleDefinition.authority.controlActions || []), "approve", "rework", "terminate"])];
@@ -445,6 +458,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.locator("#studio-asset-drawer-close").click();
     await page.locator(`#project-graph-stage .x6-node[data-cell-id="${execRoleId}"]`).click();
     await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("exec");
+    await inspector.getByText("执行配置与本地工具", { exact: true }).click();
     await inspector.locator('[data-studio-profile-field="profileId"]').fill("review-cli-profile");
     await inspector.locator('[data-studio-profile-field="toolRef"]').fill("review-cli-tool");
     await inspector.locator('[data-studio-tool-field="command"]').fill("node");
@@ -465,13 +479,14 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
       assert.equal(await inspector.locator('[data-studio-role-field="modelRef"]').inputValue(), selectionRef);
     }
     await page.locator("#studio-asset-drawer-close").click();
-    await page.locator(`#project-graph-stage .x6-node[data-cell-id="${roleId}"]`).click();
-    await page.locator("#project-graph-stage [data-studio-graph-quick-open]").evaluate((element) => { element.hidden = false; });
-    const quickOpen = page.locator("#project-graph-stage [data-studio-graph-quick-open-input]");
-    await quickOpen.fill(flow.eventType);
-    await page.locator('#project-graph-stage [data-studio-graph-quick-open-item][data-item-kind="flow"]').first().click();
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-assets-flows-tab").click();
+    await page.locator("#studio-assets-flows input[type='search']").fill(design.authoring.roles[flow.fromRoleId].title);
+    const flowAssetKey = `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`;
+    await page.locator(`#studio-assets-flows [data-studio-asset-flow="${flowAssetKey}"]`).click();
     await inspector.locator('[data-studio-flow-field="label"]').fill("Review completed");
     await inspector.locator('[data-studio-flow-field="priority"]').fill("7");
+    await inspector.getByText("流转契约", { exact: true }).click();
     await inspector.locator('[data-studio-contract-field="id"]').fill("review-handoff");
     await inspector.locator('[data-studio-contract-field="onViolation"]').selectOption("WARN");
     const schemaPath = `schemas/${String(flow.flowId).replace(/[^a-zA-Z0-9_.-]/g, "-")}.json`;
@@ -559,9 +574,10 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await assetsToggle.click();
     assert.equal(await assetsToggle.getAttribute("aria-expanded"), "true");
     assert.ok(await page.locator("#studio-assets-roles [data-studio-asset-role]").count() > 0, "the Studio asset panel should list roles");
-    assert.ok(await page.locator("#studio-assets-roles .studio-role-swatch").evaluateAll((swatches) => new Set(swatches.map((swatch) => swatch.style.getPropertyValue("--role-accent"))).size) > 1, "roles should have distinct color identifiers");
+    assert.ok(await page.locator("#studio-assets-roles .studio-role-avatar").evaluateAll((avatars) => new Set(avatars.map((avatar) => avatar.style.getPropertyValue("--role-accent"))).size) > 1, "role avatars should retain distinct role colors");
     const dragHandle = page.locator(".studio-asset-drawer-head");
     const originalPanelBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    assert.ok(originalPanelBounds.width <= 382, `asset panel default width should stay compact: ${JSON.stringify(originalPanelBounds)}`);
     const handleBounds = await dragHandle.boundingBox();
     await page.mouse.move(handleBounds.x + 90, handleBounds.y + 20);
     await page.mouse.down();
@@ -569,8 +585,64 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.mouse.up();
     const movedPanelBounds = await page.locator("#studio-asset-drawer").boundingBox();
     assert.ok(movedPanelBounds.x > originalPanelBounds.x, "the asset panel can be moved by its header");
+    const assetDragBackStart = await dragHandle.boundingBox();
+    await page.mouse.move(assetDragBackStart.x + 100, assetDragBackStart.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(assetDragBackStart.x + 20, assetDragBackStart.y + 20, { steps: 4 });
+    await page.mouse.up();
+    const assetResizeControl = page.locator("#studio-asset-drawer .studio-panel-resize-handle");
+    await assetResizeControl.scrollIntoViewIfNeeded();
+    const resizeWorkbenchBounds = await page.locator(".studio-design-workbench").boundingBox();
+    const assetResizeHandle = await assetResizeControl.boundingBox();
+    const assetPanelAtResizeStart = await page.locator("#studio-asset-drawer").boundingBox();
+    await page.mouse.move(assetResizeHandle.x + assetResizeHandle.width / 2, assetResizeHandle.y + assetResizeHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(assetResizeHandle.x + assetResizeHandle.width / 2 + 36, assetResizeHandle.y + assetResizeHandle.height / 2 + 30, { steps: 4 });
+    await page.mouse.up();
+    const resizedAssetBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    assert.ok(resizedAssetBounds.width > movedPanelBounds.width + 20, `the asset panel can be resized wider: ${JSON.stringify({ movedPanelBounds, resizedAssetBounds, assetResizeHandle })}`);
+    assert.ok(resizedAssetBounds.y + resizedAssetBounds.height <= resizeWorkbenchBounds.y + resizeWorkbenchBounds.height + 1, `resizing keeps the panel within its work area: ${JSON.stringify({ resizeWorkbenchBounds, resizedAssetBounds })}`);
+    assert.ok(Math.abs(resizedAssetBounds.x - assetPanelAtResizeStart.x) < 1 && Math.abs(resizedAssetBounds.y - assetPanelAtResizeStart.y) < 3, `resizing keeps the panel top-left fixed: ${JSON.stringify({ assetPanelAtResizeStart, resizedAssetBounds })}`);
+    const assetWorkbenchBounds = await page.locator(".studio-design-workbench").boundingBox();
+    const assetDockStart = await page.locator("#studio-asset-drawer").boundingBox();
+    const graphBeforeAssetDock = await page.locator(".project-graph-preview").boundingBox();
+    const assetDockDrag = await dragHandle.boundingBox();
+    const assetDockTargetLeft = assetWorkbenchBounds.x + assetWorkbenchBounds.width - assetDockStart.width - 4;
+    await page.mouse.move(assetDockDrag.x + 100, assetDockDrag.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(assetDockDrag.x + 100 + assetDockTargetLeft - assetDockStart.x, assetDockDrag.y + 20, { steps: 5 });
+    await page.mouse.up();
+    await page.locator(".studio-design-workbench.is-asset-docked").waitFor();
+    const graphAfterAssetDock = await page.locator(".project-graph-preview").boundingBox();
+    assert.ok(graphAfterAssetDock.width < graphBeforeAssetDock.width - 250, "docking team assets reserves a right sidebar on desktop");
+    assert.ok(await page.locator("#studio-assets-roles [data-studio-asset-role]").count() > 0, "auto docking keeps the asset list laid out and visible");
+    const dockedResizeHandle = await page.locator("#studio-asset-drawer .studio-panel-resize-handle").boundingBox();
+    const dockedWidthBefore = (await page.locator("#studio-asset-drawer").boundingBox()).width;
+    await page.mouse.move(dockedResizeHandle.x + dockedResizeHandle.width / 2, dockedResizeHandle.y + dockedResizeHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dockedResizeHandle.x + dockedResizeHandle.width / 2 - 36, dockedResizeHandle.y + dockedResizeHandle.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForFunction((width) => document.querySelector("#studio-asset-drawer")?.getBoundingClientRect().width > width + 20, dockedWidthBefore, { timeout: 1500 }).catch(() => undefined);
+    const dockedWidthAfter = (await page.locator("#studio-asset-drawer").boundingBox()).width;
+    assert.ok(dockedWidthAfter > dockedWidthBefore + 20, `resizing a docked sidebar adjusts its grid column without shifting panel content: ${JSON.stringify({ dockedWidthBefore, dockedWidthAfter, dockWidth: await page.locator(".studio-design-workbench").evaluate((element) => getComputedStyle(element).getPropertyValue("--studio-panel-dock-width")) })}`);
+    await page.locator("#studio-asset-drawer-close").click();
+    await assetsToggle.click();
+    await page.locator(".studio-design-workbench.is-asset-docked").waitFor();
+    assert.equal(await page.locator("#studio-asset-drawer").getAttribute("aria-hidden"), "false", "team assets remembers its docked state after closing and reopening within the page session");
+    const dockedPanelBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    const dockedHeaderBounds = await dragHandle.boundingBox();
+    const graphCanvasBounds = await page.locator(".project-graph-preview").boundingBox();
+    await page.mouse.move(dockedHeaderBounds.x + 90, dockedHeaderBounds.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(graphCanvasBounds.x + graphCanvasBounds.width / 2, dockedHeaderBounds.y + 20, { steps: 6 });
+    await page.mouse.up();
+    await page.locator(".studio-design-workbench:not(.is-asset-docked)").waitFor();
+    const restoredAssetBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    const restoredAssetWorkbench = await page.locator(".studio-design-workbench").boundingBox();
+    assert.ok(restoredAssetBounds.x + restoredAssetBounds.width / 2 < restoredAssetWorkbench.x + restoredAssetWorkbench.width - dockedPanelBounds.width, `dragging a docked panel into the graph restores it as a floating window: ${JSON.stringify({ restoredAssetBounds, restoredAssetWorkbench, dockedPanelBounds })}`);
     await page.locator("#studio-assets-flows-tab").click();
     assert.ok(await page.locator("#studio-assets-flows [data-studio-asset-flow]").count() > 0, "the asset panel should list flows");
+    assert.equal(await page.locator("#studio-assets-flows .studio-flow-contract-icon").count(), await page.locator("#studio-assets-flows [data-studio-asset-flow]").count(), "each flow should have a contract icon");
     const expectedFlowEndpoints = Object.values(design.authoring.flows).map((item) => {
       const from = item.fromRoleId === "__system_start__" ? "开始" : design.authoring.roles[item.fromRoleId]?.title;
       const to = item.toRoleId === "__system_end__" ? "结束" : design.authoring.roles[item.toRoleId]?.title;
@@ -588,7 +660,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-assets-roles-tab").click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
-    assert.equal(await inspector.locator(".studio-inspector-heading code").innerText(), roleId, "selecting a role from the list should open its editor");
+    assert.equal(await inspector.locator(".studio-inspector-heading h2").innerText(), design.authoring.roles[roleId].title, "selecting a role from the list should open its editor");
     await page.locator("[data-studio-assets-back]").click();
     assert.equal(await page.locator("#studio-assets-list-view").isVisible(), true);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -600,6 +672,17 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     const mobileWorkbench = await page.locator(".studio-design-workbench").boundingBox();
     assert.ok(mobilePanel.x >= mobileWorkbench.x && mobilePanel.x + mobilePanel.width <= mobileWorkbench.x + mobileWorkbench.width, `mobile asset panel stays inside the workbench: ${JSON.stringify({ mobilePanel, mobileWorkbench })}`);
     assert.ok(mobilePanel.y >= mobileWorkbench.y && mobilePanel.y + mobilePanel.height <= mobileWorkbench.y + mobileWorkbench.height, `mobile asset panel stays inside the workbench: ${JSON.stringify({ mobilePanel, mobileWorkbench })}`);
+    const mobileDragHandle = await page.locator(".studio-asset-drawer-head").boundingBox();
+    const mobileDockPanel = await page.locator("#studio-asset-drawer").boundingBox();
+    const mobileDockTargetLeft = mobileWorkbench.x + mobileWorkbench.width - mobileDockPanel.width - 4;
+    await page.mouse.move(mobileDragHandle.x + 100, mobileDragHandle.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(mobileDragHandle.x + 100 + mobileDockTargetLeft - mobileDockPanel.x, mobileDragHandle.y + 20, { steps: 5 });
+    await page.mouse.up();
+    await page.locator(".studio-design-workbench.is-asset-docked").waitFor();
+    const mobileDockBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    assert.ok(mobileDockBounds.x + mobileDockBounds.width <= mobileWorkbench.x + mobileWorkbench.width, `mobile right dock stays in workbench: ${JSON.stringify({ mobileDockBounds, mobileWorkbench })}`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "mobile right dock does not create horizontal page overflow");
     await page.setViewportSize({ width: 1440, height: 960 });
     assert.deepEqual(await page.evaluate(() => window.__productUnhandled || []), []);
 
@@ -611,6 +694,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
         await route.continue();
       }
     });
+    await inspector.getByText("角色资产包", { exact: true }).click();
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Updated prompt with a simulated asset-store failure.");
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
     await assert.doesNotReject(() => page.getByText(/设计尚未保存；角色资产写入未完成/).waitFor());
@@ -626,6 +710,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
 
     if (await assetsToggle.getAttribute("aria-expanded") !== "true") await assetsToggle.click();
     await page.locator(`#project-graph-stage .x6-node[data-cell-id="${roleId}"]`).click();
+    await inspector.getByText("角色资产包", { exact: true }).click();
     await page.route(`**/api/v1/team-versions/${team.projectId}/design`, async (route) => {
       if (route.request().method() === "PUT") {
         await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "TEAM_VERSION_DIGEST_CONFLICT" }) });
@@ -661,6 +746,8 @@ test("Studio saves all four package files for a newly created role in one author
       flow.toRoleId !== "__system_end__" && flow.fromRoleId in initialDesign.authoring.roles && !flow.fromRoleId.startsWith("__boundary__")
     );
     assert.ok(incomingFlow, "fixture team should include a reachable role flow");
+    const expectedFlowLabel = initialDesign.viewModel.edges.find((edge) => edge.id === incomingFlow.flowId)?.label;
+    assert.ok(expectedFlowLabel && expectedFlowLabel !== incomingFlow.eventType, "the fixture flow should have a localized business label");
     const sourceRoleId = incomingFlow.fromRoleId;
     const relationshipEventType = incomingFlow.eventType;
     await page.locator('[data-studio-graph-action="validate"]').click();
@@ -689,14 +776,17 @@ test("Studio saves all four package files for a newly created role in one author
     await page.waitForTimeout(300);
     const newRoleNode = page.locator('#project-graph-stage .x6-node[data-cell-id="new-auditor"]');
     assert.equal(await newRoleNode.count(), 1, JSON.stringify({ dialog: await dialog.innerText().catch(() => "closed"), status: await page.locator("#project-design-status").innerText().catch(() => ""), inspector: await inspector.innerText().catch(() => ""), nodes: await page.locator("#project-graph-stage .x6-node").evaluateAll((elements) => elements.map((element) => ({ id: element.getAttribute("data-cell-id"), text: element.textContent }))) }));
+    await page.waitForTimeout(250);
+    const renderedFlowLabels = await page.locator("#project-graph-stage .x6-edge-label text").allTextContents();
+    assert.ok(renderedFlowLabels.some((label) => label.includes(expectedFlowLabel)), `rebuilding the graph after an authoring edit should preserve localized flow labels: ${JSON.stringify({ expectedFlowLabel, renderedFlowLabels })}`);
     const sourceCell = page.locator(`#project-graph-stage .x6-node[data-cell-id="${sourceRoleId}"]`);
     const sourcePort = sourceCell.locator('[data-studio-port="out"]').first();
     const newRoleInput = newRoleNode.locator('[data-studio-port="in"]').first();
     const initialEdgeCount = await page.locator("#project-graph-stage .x6-edge").count();
+    await page.locator("#studio-asset-drawer-close").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${sourceRoleId}"]`).click();
-    await page.locator('#project-graph-stage [data-studio-graph-action="add-edge"]').click();
-    assert.equal(await page.locator('#project-graph-stage [data-studio-graph-action="add-edge"]').getAttribute("aria-pressed"), "true", "relationship creation should arm from the selected role");
+    await page.locator("#studio-asset-drawer-close").click();
     const sourceBounds = await sourcePort.boundingBox();
     const targetBounds = await newRoleInput.boundingBox();
     await page.mouse.move(sourceBounds.x + sourceBounds.width / 2, sourceBounds.y + sourceBounds.height / 2);
@@ -721,6 +811,7 @@ test("Studio saves all four package files for a newly created role in one author
     await assert.doesNotReject(() => page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.value === expected, { selector: '#studio-property-inspector [data-studio-role-field="loopMax"]', expected: previousLoopMax }));
     await page.locator('#project-graph-stage [data-studio-graph-action="redo"]').click();
     await assert.doesNotReject(() => page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.value === expected, { selector: '#studio-property-inspector [data-studio-role-field="loopMax"]', expected: nextLoopMax }));
+    await inspector.getByText("角色资产包", { exact: true }).click();
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Audit the generated result and cite evidence.");
     await inspector.locator('[data-studio-role-asset="agent.md"]').fill("You are the new auditor. Verify the output and cite evidence.");
     await inspector.locator('[data-studio-role-asset="role.json"]').fill(JSON.stringify({

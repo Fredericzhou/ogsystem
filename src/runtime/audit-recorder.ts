@@ -99,6 +99,7 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
 export async function appendAuditRecord(args: {
   runContext: RunContext;
   audit: AuditRecord;
+  executionId?: string;
   append?: (event: RuntimeAuditEvent) => Promise<void>;
 }): Promise<void> {
   const redactedAudit: AuditRecord = {
@@ -114,7 +115,7 @@ export async function appendAuditRecord(args: {
   // Failure window: if appending the transition markdown fails after the event is written,
   // the runtime can still rely on the persistent event log.
   if (args.append) {
-    await args.append({ type: "audit", ...redactedAudit });
+    await args.append({ type: "audit", ...(args.executionId ? { executionId: args.executionId } : {}), ...redactedAudit });
   } else {
     await filesystemArtifactStore.appendEvent(args.runContext, { type: "audit", ...redactedAudit });
   }

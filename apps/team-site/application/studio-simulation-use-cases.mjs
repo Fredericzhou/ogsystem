@@ -200,19 +200,24 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           prompt: materialPrompt, locale, simulationId, teamPackageBundle: bundle, teamCoreDigest,
           mode: baseline ? "sandbox" : "dry-run",
           materials: baseline?.materials || [],
-          onAuditEvent: async (audit) => {
-            const event = redactStudioSimulationValue({
-              type: `role.${String(audit.status || "running").toLowerCase()}`,
-              at: audit.at || now(),
-              roleId: audit.roleId,
-              selectedEvent: audit.selectedEvent,
-              status: audit.status,
-              durationMs: audit.durationMs,
-              inputContext: audit.inputContext,
-              stdoutPreview: audit.stdoutPreview,
-              failure: audit.error,
-              errorEnvelope: audit.errorEnvelope
-            });
+          onRuntimeEvent: async (runtimeEvent) => {
+            const event = runtimeEvent.type === "audit"
+              ? redactStudioSimulationValue({
+                  type: `role.${runtimeEvent.status === "failed" ? "failed" : runtimeEvent.status === "noop" ? "skipped" : "completed"}`,
+                  at: runtimeEvent.at || now(),
+                  roleId: runtimeEvent.roleId,
+                  branchId: runtimeEvent.branchId,
+                  loopIteration: runtimeEvent.loopIteration,
+                  executionId: runtimeEvent.executionId,
+                  selectedEvent: runtimeEvent.selectedEvent,
+                  status: runtimeEvent.status === "failed" ? "failed" : runtimeEvent.status === "noop" ? "skipped" : "completed",
+                  durationMs: runtimeEvent.durationMs,
+                  inputContext: runtimeEvent.inputContext,
+                  stdoutPreview: runtimeEvent.stdoutPreview,
+                  failure: runtimeEvent.error,
+                  errorEnvelope: runtimeEvent.errorEnvelope
+                })
+              : redactStudioSimulationValue(runtimeEvent);
             if (typeof simulationStore.appendSimulationEvents === "function") {
               await simulationStore.appendSimulationEvents(teamVersionId, simulationId, event);
             } else {
@@ -242,6 +247,8 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           const roleEvent = {
             type: `role.${failed ? "failed" : skipped ? "skipped" : roleStatus === "completed" ? "completed" : "unknown"}`,
             roleId: item.roleId,
+            branchId: item.branchId,
+            loopIteration: item.loopIteration,
             selectedEvent: item.selectedEvent,
             status: failed ? "failed" : skipped ? "skipped" : roleStatus,
             durationMs: item.durationMs,

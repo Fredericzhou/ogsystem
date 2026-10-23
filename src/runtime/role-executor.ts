@@ -429,6 +429,14 @@ export async function executeRoleNode(args: {
     branchId,
     loopIteration
   });
+  await args.auditAppend?.({
+    type: "role.started",
+    at: new Date().toISOString(),
+    roleId: args.roleId,
+    branchId,
+    loopIteration,
+    executionId: execution.executionId
+  });
   const compilerDigest = args.compilerSnapshot?.digest;
   // Invariant: each allocation increments the per-role execution counter and uses a unique directory so retries/replays never clobber prior evidence.
   const maxTransitions = args.effectiveLaw.maxTransitions;
@@ -489,7 +497,7 @@ export async function executeRoleNode(args: {
       branch: currentBranch,
       result
     });
-    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
+    await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
     return result;
   }
 
@@ -531,7 +539,7 @@ export async function executeRoleNode(args: {
       branch: currentBranch,
       result
     });
-    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
+    await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
     return result;
   }
 
@@ -585,6 +593,15 @@ export async function executeRoleNode(args: {
       userProfile: args.userProfile
     });
     inputContextForAudit = sanitizeRoleInputContext(promptInput.input);
+    await args.auditAppend?.({
+      type: "role.input_ready",
+      at: new Date().toISOString(),
+      roleId: args.roleId,
+      branchId,
+      loopIteration,
+      executionId: execution.executionId,
+      inputContext: inputContextForAudit
+    });
     for (const condition of rolePackage.manifest.inputs.preconditions) {
       if (!evaluateCondition(condition, {
         state: args.state.businessState ?? {},
@@ -746,7 +763,7 @@ export async function executeRoleNode(args: {
         selectedEvent,
         durationMs: audit.durationMs
       });
-      await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
+      await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
       return result;
     }
 
@@ -915,7 +932,7 @@ export async function executeRoleNode(args: {
       selectedEvent,
       durationMs: audit.durationMs
     });
-    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
+    await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1002,7 +1019,7 @@ export async function executeRoleNode(args: {
       durationMs: audit.durationMs,
       errorCode: failure.errorCode
     });
-    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
+    await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
     return result;
   }
 }

@@ -104,7 +104,8 @@ export async function recordRoleSession(args: Parameters<typeof filesystemArtifa
 export async function recordAudit(args: {
   context: RunContext;
   audit: AuditRecord;
+  executionId?: string;
   append?: (event: RuntimeAuditEvent) => Promise<void>;
 }): Promise<void> {
-  await appendAuditRecord({ runContext: args.context, audit: args.audit, append: args.append });
+  await appendAuditRecord({ runContext: args.context, audit: args.audit, executionId: args.executionId, append: args.append });
 }

@@ -260,6 +260,10 @@ export function injectStudioGraphStyles(): void {
       filter: drop-shadow(0 0 0.55rem rgba(56, 189, 248, 0.22));
       animation: studio-node-active-pulse 2400ms ease-in-out infinite;
     }
+    .studio-graph-canvas .x6-node.is-runtime-completed rect,
+    .studio-graph-canvas .x6-node.is-runtime-completed path:first-of-type {
+      filter: drop-shadow(0 0 0.22rem rgba(52, 211, 153, 0.2));
+    }
     .studio-graph-canvas .x6-node[data-runtime-status="failed"] rect,
     .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type {
       animation: studio-node-error-shake 400ms ease-out 1;
@@ -304,6 +308,10 @@ export function injectStudioGraphStyles(): void {
       stroke-dasharray: 10 10;
       filter: drop-shadow(0 0 0.32rem rgba(56, 189, 248, 0.24));
       animation: studio-edge-flow 680ms linear infinite;
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-completed .connection {
+      stroke: #34d399 !important;
+      stroke-width: 2px !important;
     }
     .studio-graph-canvas .x6-edge.is-runtime-error .connection {
       stroke-dasharray: 7 5;
@@ -803,11 +811,20 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="dark"] .studio-command-dialog::-webkit-scrollbar-thumb { border-color: #111c2e; background: #475569; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover rect,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover path:first-of-type { stroke: #84b9a0; }
-    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node.is-selection-active rect,
-    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node.is-selection-active path:first-of-type { stroke: #1b7662; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-selection-active .connection,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .connection { stroke: #1b7662 !important; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .x6-edge-label rect { stroke: #1b7662; }
+    .studio-graph-canvas .x6-node.is-selection-active .studio-node-body {
+      fill: #dcfce7 !important;
+      filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 10px rgba(22, 163, 74, 0.75));
+      stroke: #15803d !important;
+      stroke-width: 4.5px !important;
+    }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .x6-node.is-selection-active .studio-node-body {
+      fill: #123b27 !important;
+      filter: drop-shadow(0 0 2px rgba(15, 23, 42, 0.95)) drop-shadow(0 0 11px rgba(74, 222, 128, 0.95));
+      stroke: #4ade80 !important;
+    }
     @media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) {
       .studio-graph-island,
       .studio-graph-stage,

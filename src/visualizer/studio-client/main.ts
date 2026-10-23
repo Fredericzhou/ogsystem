@@ -1,6 +1,7 @@
 import { StudioGraphIsland, type StudioGraphBridgeOptions } from "./studio-graph.js";
 import { applyStudioAuthoringCommand } from "./studio-graph-commands.js";
 import { injectStudioGraphStyles } from "./styles.js";
+import type { StudioRuntimeProgressEvent } from "./studio-graph-runtime.js";
 
 declare global {
   interface Window {
@@ -31,9 +32,14 @@ export function disposeStudioX6Bridge(root: HTMLElement): void {
   mounted.delete(root);
 }
 
+export function setStudioX6RuntimeProgress(root: HTMLElement, events: readonly StudioRuntimeProgressEvent[]): void {
+  mounted.get(root)?.setRuntimeProgress(events);
+}
+
 window.OGSVisualizerClient = window.OGSVisualizerClient || {};
 Object.assign(window.OGSVisualizerClient, {
   mountStudioX6Bridge,
   disposeStudioX6Bridge,
+  setStudioX6RuntimeProgress,
   applyStudioAuthoringCommand
 });

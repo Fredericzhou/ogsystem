@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parseSystemFromMermaidSource } from "../../../dist/runtime/parse-mermaid.js";
 import { authoringToCanvasDocument, importMermaidToAuthoring, loadStudioAuthoringDraft, serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
 import { buildGraphViewModel } from "../../../dist/visualizer/graph-view-model.js";
+import { localizedEventLabel } from "../event-labels.mjs";
 
 async function readJson(path, read) {
   try { return JSON.parse(await read(path, "utf8")); } catch { return {}; }
@@ -53,6 +54,10 @@ export function createVisualizerProjectDesignProjector({
       const boundaryLabels = locale === "en"
         ? { start: "Start", end: "End" }
         : { start: "开始", end: "结束" };
+      const edgeLabels = Object.fromEntries(Object.values(authoring.flows || {}).map((flow) => [
+        flow.flowId,
+        flow.label?.trim() || localizedEventLabel(flow.eventType, locale)
+      ]).filter(([flowId]) => typeof flowId === "string" && flowId));
       return {
         projectId: project.projectId,
         projectDigest: project.projectDigest,
@@ -62,7 +67,7 @@ export function createVisualizerProjectDesignProjector({
         viewModel: buildViewModel({
           authoring,
           mode: "design",
-          presentation: { boundaryLabels }
+          presentation: { boundaryLabels, edgeLabels }
         })
       };
     }
