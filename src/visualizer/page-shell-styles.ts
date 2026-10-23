@@ -1508,30 +1508,72 @@ export function renderPageShellStyles(): string {
     .console-tabs {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
       min-width: 0;
+    }
+    .lifecycle-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
       padding: 3px;
-      border: 1px solid rgba(148, 163, 184, 0.16);
-      border-radius: var(--control-radius);
-      background: rgba(255, 255, 255, 0.025);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      border-radius: 9999px;
+      border: 1px solid var(--control-border);
+      background: var(--control-bg);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
     }
-    .console-tabs .button {
-      flex: 0 0 auto;
+    .lifecycle-tabs .nav-tab {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
       justify-content: center;
-      width: auto;
-      height: 26px;
-      min-height: 26px;
-      padding: 0 12px;
-      font-size: 12px;
-      border-radius: calc(var(--control-radius) - 2px);
-      border-color: transparent;
+      box-sizing: border-box;
+      height: 28px;
+      min-height: 28px;
+      padding: 0 14px;
+      border: 1px solid transparent;
+      border-radius: 9999px;
       background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      outline: none;
+      transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
     }
-    .console-tabs .button.active {
-      background: var(--tab-active-bg);
-      border-color: var(--tab-active-border);
-      color: #b5ecff;
+    .lifecycle-tabs .nav-tab:hover {
+      color: var(--text);
+      background: var(--control-bg-hover);
+    }
+    .lifecycle-tabs .nav-tab.active {
+      color: #fff;
+      font-weight: 600;
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.16));
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+    .lifecycle-tabs .nav-tab:focus-visible {
+      box-shadow: 0 0 0 2px var(--focus-ring, rgba(56, 189, 248, 0.5));
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs {
+      background: rgba(0, 0, 0, 0.04);
+      border-color: rgba(0, 0, 0, 0.08);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs .nav-tab {
+      color: var(--muted);
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs .nav-tab:hover {
+      color: var(--text);
+      background: rgba(0, 0, 0, 0.04);
+    }
+    :root[data-visualizer-theme="light"] .lifecycle-tabs .nav-tab.active {
+      color: var(--text);
+      font-weight: 600;
+      background: #ffffff;
+      border-color: rgba(0, 0, 0, 0.1);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.06);
     }
     .console-panel[hidden] {
       display: none;
@@ -2969,7 +3011,6 @@ export function renderPageShellStyles(): string {
       color: var(--muted);
       font-size: 12px;
     }
-    .field textarea,
     .field input,
     #project-create-form input,
     #action-form input:not([type="checkbox"]):not([type="radio"]) {
@@ -2988,10 +3029,28 @@ export function renderPageShellStyles(): string {
       box-sizing: border-box;
       transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
     }
+    .field textarea,
+    #action-form textarea {
+      width: 100%;
+      min-width: 0;
+      min-height: 80px;
+      padding: 8px 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      border: 1px solid var(--control-border-strong);
+      border-radius: var(--control-radius);
+      background: var(--control-bg);
+      color: var(--text);
+      outline: none;
+      box-sizing: border-box;
+      resize: vertical;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
     .field textarea:hover,
     .field input:hover,
     #project-create-form input:hover,
-    #action-form input:not([type="checkbox"]):not([type="radio"]):hover {
+    #action-form input:not([type="checkbox"]):not([type="radio"]):hover,
+    #action-form textarea:hover {
       border-color: rgba(56, 189, 248, 0.48);
       background: var(--control-bg-strong);
     }

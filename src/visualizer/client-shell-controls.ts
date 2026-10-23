@@ -34,7 +34,7 @@ export function renderConsoleTabsHtml(args: {
   const lifecycleHtml = '<div class="lifecycle-tabs" data-lifecycle-tabs role="tablist" aria-label="' +
     escapeText(t("nav.lifecycle.tablist", undefined, "Lifecycle views")) +
     '">' + lifecycleTabs.map(([id, panelId, label, hint]) =>
-    '<button class="button subtle ' + (consoleTab === id ? "active" : "") +
+    '<button class="nav-tab ' + (consoleTab === id ? "active" : "") +
     '" id="console-tab-' + escapeText(id) +
     '" data-console-tab="' + escapeText(id) +
     '" role="tab" aria-controls="' + escapeText(panelId) +
@@ -42,7 +42,7 @@ export function renderConsoleTabsHtml(args: {
     '" aria-pressed="' + escapeText(String(consoleTab === id)) +
     '" tabindex="' + escapeText(consoleTab === id ? "0" : "-1") +
     '" title="' + escapeText(hint) +
-    '">' + escapeText(label) + '</button>'
+    '"><span class="nav-tab-label">' + escapeText(label) + '</span></button>'
   ).join("") + "</div>";
   return lifecycleHtml;
 }

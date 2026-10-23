@@ -2126,7 +2126,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         heroReindexButton.hidden = state.projectsDiagnostic || !runActive;
       }
       if (heroReleaseExportButton) {
-        heroReleaseExportButton.hidden = state.projectsDiagnostic || !releaseActive;
+        heroReleaseExportButton.hidden = true;
       }
       if (releaseExportButton) {
         releaseExportButton.hidden = state.projectsDiagnostic;
