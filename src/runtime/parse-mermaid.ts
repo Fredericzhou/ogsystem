@@ -17,7 +17,7 @@ import {
   collectCycleComponents,
   summarizeContextSelector
 } from "./static-semantics.js";
-import { SYSTEM_END_ROLE_ID } from "./types.js";
+import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "./types.js";
 import type {
   Flow,
   GraphJoinMode,
@@ -45,8 +45,9 @@ type ParsedNodeToken =
       roleId: string;
     }
   | {
-      kind: "boundary";
-      boundary: "input" | "output";
+      kind: "special-role";
+      roleId: typeof SYSTEM_START_ROLE_ID | typeof SYSTEM_END_ROLE_ID;
+      special: "start" | "end";
     };
 
 type TokenizedEdge = {
@@ -84,9 +85,7 @@ type ParsedSystemGraph = {
   roleByNode: Map<string, string>;
   nodeByRole: Map<string, string>;
   flows: Flow[];
-  inputEntryCandidates: Set<string>;
-  inputEntryEventType?: string;
-  hasOutputTransition: boolean;
+  startFlows: Flow[];
 };
 
 // Fail-fast guard: runtime aborts parsing/validation on the first invariant violation.
@@ -110,8 +109,11 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   systemId: string;
   systemVersion: string;
   globalLawRef: string;
-  entryRoleId: string;
-  entryEventType: string;
+  entryRoleIds: string[];
+  startDispatch: { mode: "all" } | { mode: "random_n"; count: number };
+  startEventType: string;
+  endJoin: { mode: "all_of" | "quorum_of"; min?: number };
+  terminalRoleOrder: string[];
   roleIds: string[];
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
@@ -278,32 +280,34 @@ function validateContextSelector(args: {
 function parseNodeToken(token: string, lineNumber?: number): ParsedNodeToken {
   const trimmed = token.trim();
   const normalized = trimmed.toLowerCase();
-  if (trimmed === "input") {
+  if (trimmed === "start[开始]") {
     return {
-      kind: "boundary",
-      boundary: "input"
+      kind: "special-role",
+      roleId: SYSTEM_START_ROLE_ID,
+      special: "start"
     };
   }
-  if (trimmed === "output") {
+  if (trimmed === "end[结束]") {
     return {
-      kind: "boundary",
-      boundary: "output"
+      kind: "special-role",
+      roleId: SYSTEM_END_ROLE_ID,
+      special: "end"
     };
   }
-  if (normalized === "start" || normalized === "end" || normalized === "done") {
+  if (normalized === "start" || normalized === "end") {
     failMermaid({
       stage: "parse",
       errorCode: "MERMAID_UNSUPPORTED_BOUNDARY_TOKEN",
-      message: `Unsupported boundary token "${trimmed}". Use input/output as the only System boundary tokens.`,
+      message: `Unsupported system node "${trimmed}". Use explicit start[开始] and end[结束] special roles.`,
       lineNumber
     });
   }
-  const match = trimmed.match(/^([A-Za-z0-9._:-]+)\[Role:([A-Za-z0-9._:-]+)\]$/);
+  const match = trimmed.match(/^([A-Za-z0-9._:-]+)\[Role:([A-Za-z][A-Za-z0-9._:-]*)\]$/);
   if (!match) {
     failMermaid({
       stage: "parse",
       errorCode: "MERMAID_INVALID_NODE_TOKEN",
-      message: `Invalid node token "${token}". Expected strict format: nodeId[Role:roleId] or boundary token input/output`,
+      message: `Invalid node token "${token}". Expected nodeId[Role:roleId], start[开始], or end[结束].`,
       lineNumber
     });
   }
@@ -457,16 +461,12 @@ function tokenizeMermaidSource(source: string): TokenizedMermaid {
 }
 
 function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
-  // Boundary edges are normalized into the same role-flow model the runtime uses, so later
-  // validation and planning only need to reason about one graph shape.
   const metadata = new Map<string, string>();
   const metadataLineByKey = new Map<string, number>();
   const roleByNode = new Map<string, string>();
   const nodeByRole = new Map<string, string>();
   const flows: Flow[] = [];
-  const inputEntryCandidates = new Set<string>();
-  let inputEntryEventType: string | undefined;
-  let hasOutputTransition = false;
+  const startFlows: Flow[] = [];
   const fallbackErrorLineByFromRole = new Map<string, number>();
   const typedErrorLineByFromRole = new Map<string, Map<string, number>>();
 
@@ -523,25 +523,24 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
       nodeByRole.set(node.roleId, node.nodeId);
     }
 
-    if (edge.from.kind === "boundary") {
-      if (edge.from.boundary !== "input" || edge.to.kind !== "role") {
+    if (edge.from.kind === "special-role") {
+      if (edge.from.special !== "start" || edge.to.kind !== "role") {
         failMermaid({
           stage: "parse",
-          errorCode: "MERMAID_INVALID_BOUNDARY_EDGE",
-          message: `Boundary edge "${edge.line}" is invalid. Only input -->|EVENT| Role is allowed.`,
+          errorCode: "MERMAID_INVALID_SPECIAL_ROLE_FLOW",
+          message: `Special-role flow "${edge.line}" is invalid. Start can only connect to business roles.`,
           lineNumber: edge.lineNumber
         });
       }
-      if (parsedErrorEvent.kind !== "none") {
+      if (parsedErrorEvent.kind !== "none" || edge.eventType !== "START") {
         failMermaid({
           stage: "validate",
-          errorCode: "MERMAID_INPUT_ERROR_EDGE_NOT_ALLOWED",
-          message: `input boundary cannot declare ${edge.eventType} edges. ERROR* edges are role-only.`,
+          errorCode: "MERMAID_START_EVENT_INVALID",
+          message: `All Start flows must use the shared structural event START.`,
           lineNumber: edge.lineNumber
         });
       }
-      inputEntryCandidates.add(edge.to.roleId);
-      inputEntryEventType = edge.eventType;
+      startFlows.push({ fromRoleId: SYSTEM_START_ROLE_ID, toRoleId: edge.to.roleId, eventType: "START" });
       continue;
     }
 
@@ -575,12 +574,12 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
       typedErrorLineByFromRole.set(edge.from.roleId, seenCodes);
     }
 
-    if (edge.to.kind === "boundary") {
-      if (edge.to.boundary !== "output" || edge.from.kind !== "role") {
+    if (edge.to.kind === "special-role") {
+      if (edge.to.special !== "end" || edge.from.kind !== "role") {
         failMermaid({
           stage: "parse",
-          errorCode: "MERMAID_INVALID_BOUNDARY_EDGE",
-          message: `Boundary edge "${edge.line}" is invalid. Only Role -->|EVENT| output is allowed.`,
+          errorCode: "MERMAID_INVALID_SPECIAL_ROLE_FLOW",
+          message: `Special-role flow "${edge.line}" is invalid. Only business roles can connect to End.`,
           lineNumber: edge.lineNumber
         });
       }
@@ -589,17 +588,11 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
         toRoleId: SYSTEM_END_ROLE_ID,
         eventType: edge.eventType
       });
-      hasOutputTransition = true;
       continue;
     }
 
     if (edge.from.kind !== "role" || edge.to.kind !== "role") {
-      failMermaid({
-        stage: "parse",
-        errorCode: "MERMAID_UNSUPPORTED_EDGE_FORM",
-        message: `Unsupported edge form: "${edge.line}"`,
-        lineNumber: edge.lineNumber
-      });
+      failMermaid({ stage: "parse", errorCode: "MERMAID_INVALID_SPECIAL_ROLE_FLOW", message: `Invalid special-role flow "${edge.line}".`, lineNumber: edge.lineNumber });
     }
 
     flows.push({
@@ -615,9 +608,7 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
     roleByNode,
     nodeByRole,
     flows,
-    inputEntryCandidates,
-    inputEntryEventType,
-    hasOutputTransition
+    startFlows
   };
 }
 
@@ -627,20 +618,12 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
  */
 function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGraph {
   const metadataLine = (key: string): number | undefined => graph.metadataLineByKey.get(key);
-  const engineValue = graph.metadata.get("engine");
-  if (engineValue !== undefined && engineValue !== "langgraph") {
-    failMermaid({
-      stage: "validate",
-      errorCode: "MERMAID_UNSUPPORTED_ENGINE",
-      message: `Unsupported engine "${engineValue}". Expected "langgraph".`,
-      lineNumber: metadataLine("engine")
-    });
-  }
-
   const systemId = graph.metadata.get("system.id");
   const systemVersion = graph.metadata.get("system.version");
   const globalLawRef = graph.metadata.get("law.global");
-  let entryRoleId = graph.metadata.get("entry.role");
+  const entryRoleIds = Array.from(new Set(graph.startFlows.map((flow) => flow.toRoleId)));
+  let endJoinMode: "all_of" | "quorum_of" = "all_of";
+  let endJoinMin: number | undefined;
 
   if (!systemId || !systemVersion || !globalLawRef) {
     failMermaid({
@@ -650,33 +633,26 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     });
   }
 
-  // Enforcing a single input transition keeps runtime recovery deterministic.
-  if (graph.inputEntryCandidates.size > 1) {
-    failMermaid({
-      stage: "validate",
-      errorCode: "MERMAID_MULTIPLE_INPUT_TARGETS",
-      message: "Multiple input boundary targets are not allowed"
-    });
-  }
-  if (graph.inputEntryCandidates.size === 1) {
-    const [inputEntryRoleId] = Array.from(graph.inputEntryCandidates);
-    if (entryRoleId && entryRoleId !== inputEntryRoleId) {
-      failMermaid({
-        stage: "validate",
-        errorCode: "MERMAID_ENTRY_ROLE_CONFLICT",
-        message: `entry.role "${entryRoleId}" conflicts with input boundary target "${inputEntryRoleId}"`,
-        lineNumber: metadataLine("entry.role")
-      });
-    }
-    entryRoleId = inputEntryRoleId;
-  }
-  if (!entryRoleId) {
+  if (entryRoleIds.length === 0) {
     failMermaid({
       stage: "validate",
       errorCode: "MERMAID_MISSING_ENTRY_ROLE",
-      message:
-        "Missing entry role. Provide entry.role metadata or input -->|EVENT| <Role> boundary edge."
+      message: "Missing entry role. Connect start[开始] to one or more roles."
     });
+  }
+  const startDispatchMode = graph.metadata.get("start.dispatch.mode") ?? "all";
+  const startDispatchCountValue = graph.metadata.get("start.dispatch.count");
+  let startDispatch: ValidatedSystemGraph["startDispatch"] = { mode: "all" };
+  if (startDispatchMode === "random_n") {
+    const count = Number(startDispatchCountValue);
+    if (!Number.isInteger(count) || count < 1 || count > entryRoleIds.length) {
+      failMermaid({ stage: "validate", errorCode: "MERMAID_INVALID_START_DISPATCH_COUNT", message: `start.dispatch.count must be within [1, ${entryRoleIds.length}] when start.dispatch.mode=random_n.`, lineNumber: metadataLine("start.dispatch.count") });
+    }
+    startDispatch = { mode: "random_n", count };
+  } else if (startDispatchMode !== "all") {
+    failMermaid({ stage: "validate", errorCode: "MERMAID_UNSUPPORTED_START_DISPATCH_MODE", message: `Unsupported start.dispatch.mode "${startDispatchMode}". Expected "all" or "random_n".`, lineNumber: metadataLine("start.dispatch.mode") });
+  } else if (startDispatchCountValue !== undefined) {
+    failMermaid({ stage: "validate", errorCode: "MERMAID_START_COUNT_REQUIRES_RANDOM", message: "start.dispatch.count is only valid when start.dispatch.mode=random_n.", lineNumber: metadataLine("start.dispatch.count") });
   }
 
   const executionBinding: Record<string, string> = {};
@@ -696,7 +672,29 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   const reviewTerminateScopeByRoleId: Record<string, HumanReviewSpec["terminateScope"]> = {};
   let handoffMode: HandoffMode | undefined;
   let handoffContracts: string | undefined;
-  const exactMetadataKeys = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
+  const exactMetadataKeys = new Set(["system.id", "system.version", "law.global", "start.dispatch.mode", "start.dispatch.count", "end.join.mode", "end.join.min"]);
+
+  const declaredEndJoinMode = graph.metadata.get("end.join.mode");
+  if (declaredEndJoinMode !== undefined) {
+    if (declaredEndJoinMode !== "all_of" && declaredEndJoinMode !== "quorum_of") {
+      failMermaid({ stage: "validate", errorCode: "MERMAID_UNSUPPORTED_END_JOIN_MODE", message: `Unsupported end.join.mode "${declaredEndJoinMode}". Expected "all_of" or "quorum_of".`, lineNumber: metadataLine("end.join.mode") });
+    }
+    endJoinMode = declaredEndJoinMode;
+  }
+  const declaredEndJoinMin = graph.metadata.get("end.join.min");
+  if (declaredEndJoinMin !== undefined) {
+    const parsed = Number(declaredEndJoinMin);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      failMermaid({ stage: "validate", errorCode: "MERMAID_INVALID_END_JOIN_MIN", message: "end.join.min must be a positive integer.", lineNumber: metadataLine("end.join.min") });
+    }
+    endJoinMin = parsed;
+  }
+  if (endJoinMode === "quorum_of" && endJoinMin === undefined) {
+    failMermaid({ stage: "validate", errorCode: "MERMAID_MISSING_END_JOIN_MIN", message: "end.join.min is required when end.join.mode=quorum_of.", lineNumber: metadataLine("end.join.mode") });
+  }
+  if (endJoinMode !== "quorum_of" && endJoinMin !== undefined) {
+    failMermaid({ stage: "validate", errorCode: "MERMAID_END_JOIN_MIN_REQUIRES_QUORUM", message: "end.join.min requires end.join.mode=quorum_of.", lineNumber: metadataLine("end.join.min") });
+  }
 
   for (const [key, value] of graph.metadata.entries()) {
     if (key === "handoff.mode") {
@@ -960,44 +958,34 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   }
 
   const roleIds = Array.from(graph.nodeByRole.keys());
-  if (!roleIds.includes(entryRoleId)) {
-    failMermaid({
-      stage: "validate",
-      errorCode: "MERMAID_ENTRY_ROLE_MISSING",
-      message: `entry.role "${entryRoleId}" does not exist in role graph`,
-      lineNumber: metadataLine("entry.role")
-    });
+  for (const entryRoleId of entryRoleIds) {
+    if (!roleIds.includes(entryRoleId)) {
+      failMermaid({ stage: "validate", errorCode: "MERMAID_ENTRY_ROLE_MISSING", message: `Start role target "${entryRoleId}" does not exist in role graph` });
+    }
   }
 
-  const reservedRoles = new Set(["input", "output", "start", "end", "done"]);
+  const reservedRoles = new Set(["start", "end"]);
   for (const roleId of roleIds) {
     if (reservedRoles.has(roleId.toLowerCase())) {
       failMermaid({
         stage: "validate",
         errorCode: "MERMAID_RESERVED_ROLE_ID",
-        message: `Reserved role id "${roleId}" is not allowed. Use entry.role for input and terminal roles without outgoing edges (or output boundary) for completion.`
+        message: `Reserved business role id "${roleId}" is not allowed. Use the explicit Start and End structural roles.`
       });
     }
   }
 
-  const outDegree = new Map<string, number>();
-  for (const roleId of roleIds) {
-    outDegree.set(roleId, 0);
+  const terminalRoleOrder = Array.from(new Set(graph.flows
+    .filter((flow) => flow.toRoleId === SYSTEM_END_ROLE_ID)
+    .map((flow) => flow.fromRoleId)));
+  if (endJoinMin !== undefined && endJoinMin > terminalRoleOrder.length) {
+    failMermaid({ stage: "validate", errorCode: "MERMAID_END_JOIN_MIN_OUT_OF_RANGE", message: `end.join.min must be within [1, ${terminalRoleOrder.length}].`, lineNumber: metadataLine("end.join.min") });
   }
-  for (const flow of graph.flows) {
-    if (flow.toRoleId === SYSTEM_END_ROLE_ID) {
-      continue;
-    }
-    outDegree.set(flow.fromRoleId, (outDegree.get(flow.fromRoleId) ?? 0) + 1);
-  }
-
-  const terminalRoles = roleIds.filter((roleId) => (outDegree.get(roleId) ?? 0) === 0);
-  if (terminalRoles.length === 0 && !graph.hasOutputTransition) {
+  if (terminalRoleOrder.length === 0) {
     failMermaid({
       stage: "validate",
       errorCode: "MERMAID_MISSING_TERMINAL",
-      message:
-        "At least one terminal role (without outgoing role-edge) or Role -->|EVENT| output transition is required"
+      message: "Connect at least one business role to end[结束]."
     });
   }
 
@@ -1377,8 +1365,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     systemId,
     systemVersion,
     globalLawRef,
-    entryRoleId,
-    entryEventType: graph.inputEntryEventType ?? "START",
+    entryRoleIds,
+    startDispatch,
+    startEventType: "START",
+    startFlows: graph.startFlows,
+    endJoin: { mode: endJoinMode, ...(endJoinMin !== undefined ? { min: endJoinMin } : {}) },
+    terminalRoleOrder,
     roleIds,
     executionBinding,
     modelBinding,
@@ -1390,8 +1382,11 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
   return {
     systemId: graph.systemId,
     systemVersion: graph.systemVersion,
-    entryRoleId: graph.entryRoleId,
-    entryEventType: graph.entryEventType,
+    entryRoleIds: graph.entryRoleIds,
+    startDispatch: graph.startDispatch,
+    startEventType: graph.startEventType,
+    startFlows: graph.startFlows,
+    endJoin: graph.endJoin,
     roleIds: graph.roleIds,
     flows: graph.flows,
     lawBinding: { globalLawRef: graph.globalLawRef },

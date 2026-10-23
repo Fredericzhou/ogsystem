@@ -42,16 +42,25 @@ export function createRunPoller({
       const runResponse = await request(base, { signal: controller.signal });
       const run = await runResponse.json();
       if (stopped || pollVersion !== version || !isCurrent()) return;
-      if (!runResponse.ok) throw new Error(run.error || "无法读取运行状态");
+      if (!runResponse.ok) {
+        const error = new Error(run.error || "无法读取运行状态");
+        error.status = runResponse.status;
+        throw error;
+      }
       const eventsResponse = await request(`${base}/events?limit=20`, { signal: controller.signal });
       const events = await eventsResponse.json();
       if (stopped || pollVersion !== version || !isCurrent()) return;
-      if (!eventsResponse.ok) throw new Error(events.error || "无法读取运行事件");
+      if (!eventsResponse.ok) {
+        const error = new Error(events.error || "无法读取运行事件");
+        error.status = eventsResponse.status;
+        throw error;
+      }
       onUpdate({ run, events });
       if (!isTerminalRunStatus(run.state?.status || run.status)) timer = setTimeout(poll, intervalMs);
     } catch (error) {
       if (stopped || pollVersion !== version || !isCurrent() || isAbortError(error)) return;
       onError?.(error);
+      if (error?.status === 404) return;
       timer = setTimeout(poll, intervalMs);
     } finally {
       if (activeController === controller) activeController = null;

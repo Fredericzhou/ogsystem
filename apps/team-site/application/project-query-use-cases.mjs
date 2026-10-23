@@ -19,6 +19,7 @@ export function createProjectQueryUseCases({ projectStore, taskAttemptStore, wai
         runId,
         attemptNumber: attempt.state?.attemptNumber || index + 1,
         isCurrent: task.currentRunId === runId,
+        evidenceAvailable: Boolean(attempt.state?.status),
         status: attempt.state?.status || "unknown",
         mode: attempt.plan?.executionPolicy?.mode || "unknown",
         error: attempt.state?.error || null,
@@ -26,12 +27,15 @@ export function createProjectQueryUseCases({ projectStore, taskAttemptStore, wai
         updatedAt: attempt.state?.updatedAt || null
       }));
       const currentAttempt = attemptData.find(({ runId }) => runId === task.currentRunId)?.attempt;
-      if (!currentAttempt) return { ...task, runAttempts };
+      const terminalStoredStatus = ["completed", "failed", "cancelled"].includes(task.status);
+      const runEvidenceMissing = Boolean(task.currentRunId && terminalStoredStatus && !currentAttempt?.state?.status);
+      if (!currentAttempt) return { ...task, runAttempts, runEvidenceMissing };
       const state = currentAttempt.state;
-      if (!state?.status) return { ...task, runAttempts };
+      if (!state?.status) return { ...task, runAttempts, runEvidenceMissing };
       return {
         ...task,
         runAttempts,
+        runEvidenceMissing: false,
         status: state.status,
         startedAt: task.startedAt || state.startedAt || null,
         completedAt: task.completedAt || state.finishedAt || null,

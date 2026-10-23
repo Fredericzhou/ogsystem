@@ -558,8 +558,8 @@ export function renderProjectSummaryPanel(args: {
       escapeText(t("project.systemVersionEntry", {
         systemId: String(summary.systemId ?? "n/a"),
         version: String(summary.systemVersion ?? "n/a"),
-        entryRoleId: String(summary.entryRoleId ?? "n/a")
-      }, "system " + String(summary.systemId ?? "n/a") + " · version " + String(summary.systemVersion ?? "n/a") + " · entry " + String(summary.entryRoleId ?? "n/a"))) +
+        entryRoleIds: Array.isArray(summary.entryRoleIds) ? summary.entryRoleIds.join(", ") : "n/a"
+      }, "system " + String(summary.systemId ?? "n/a") + " · version " + String(summary.systemVersion ?? "n/a") + " · entries " + (Array.isArray(summary.entryRoleIds) ? summary.entryRoleIds.join(", ") : "n/a"))) +
       "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(t("project.structure", undefined, "structure")) + '</span><span>' + escapeText(summary.roleCount ?? 0) + " " + escapeText(t("common.roles", undefined, "roles")) + '</span></div><strong>' +
       escapeText(t("project.roleFlowWorkbench", {
@@ -970,8 +970,8 @@ export function renderStudioBridgeInspector(args: {
     : '<div class="hint">' + escapeText(t("studio.selectRole", undefined, "Select a role to inspect metadata.")) + '</div>';
   const flowInspector = selectedFlow
     ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
-      '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
-      escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
+      '</span></div><strong>' + escapeText(selectedFlow.fromRoleId === "__system_start__" ? t("studio.boundaryStart", undefined, "Start") : String(selectedFlow.fromRoleId ?? "")) + ' → ' +
+      escapeText(selectedFlow.toRoleId === "__system_end__" || selectedFlow.toRoleId === "output" ? t("studio.boundaryEnd", undefined, "End") : String(selectedFlow.toRoleId ?? "")) + '</strong><div class="hint">' +
       escapeText(t("studio.flowDisplayIdentity", {
         label: flowDisplayLabel(selectedFlow),
         eventType: String(selectedFlow.eventType ?? "")
@@ -989,7 +989,7 @@ export function renderStudioBridgeInspector(args: {
     : "";
   return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
       '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry", undefined, "entry")) + " " +
-      escapeText(String(extracted.entryRoleId ?? "n/a")) + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
+      escapeText(Array.isArray(extracted.entryRoleIds) ? extracted.entryRoleIds.join(", ") : "n/a") + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
       roleInspector + packageEditor + flowInspector;
 }
 
@@ -1051,7 +1051,6 @@ export function renderStudioSystemSettingsEditor(args: {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const authoring = asRecord(args.authoring) ?? {};
   const system = asRecord(authoring.system) ?? {};
-  const roles = asRecord(authoring.roles) ?? {};
   const lawCatalog = asRecord(args.projectConfig?.laws) ?? {};
   const laws = Array.isArray(lawCatalog.laws) ? lawCatalog.laws.map(asRecord).filter((entry): entry is JsonRecord => Boolean(entry)) : [];
   const lawRef = String(system.lawGlobalRef ?? "");
@@ -1059,8 +1058,50 @@ export function renderStudioSystemSettingsEditor(args: {
     ...(lawRef && !laws.some((law) => law.lawId === lawRef) ? [{ lawId: lawRef, label: t("studio.systemLawUnavailable", { lawId: lawRef }, "{lawId} (unavailable)") }] : []),
     ...laws.map((law) => ({ lawId: String(law.lawId ?? ""), label: String(law.lawId ?? "") }))
   ].filter((law) => law.lawId).map((law) => '<option value="' + escapeText(law.lawId) + '"' + (law.lawId === lawRef ? " selected" : "") + '>' + escapeText(law.label) + '</option>').join("");
-  const entryRoleOptions = Object.keys(roles).sort((left, right) => left.localeCompare(right)).map((id) => '<option value="' + escapeText(id) + '"' + (id === system.entryRoleId ? " selected" : "") + '>' + escapeText(id) + '</option>').join("");
-  return '<details class="studio-system-settings"><summary>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</summary><div class="form-grid"><label class="field"><span>' + escapeText(t("studio.systemId", undefined, "System ID")) + '</span><input data-system-setting="systemId" value="' + escapeText(String(system.systemId ?? "")) + '"></label><label class="field"><span>' + escapeText(t("studio.systemVersion", undefined, "Version")) + '</span><input data-system-setting="systemVersion" value="' + escapeText(String(system.systemVersion ?? "")) + '"></label><label class="field"><span>' + escapeText(t("studio.globalLaw", undefined, "Global law")) + '</span><select data-system-setting="lawGlobalRef">' + lawOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.entryRole", undefined, "Entry role")) + '</span><select data-system-setting="entryRoleId">' + entryRoleOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.entryEvent", undefined, "Entry event")) + '</span><input data-system-setting="entryEventType" value="' + escapeText(String(system.entryEventType ?? "START")) + '"></label><label class="field"><span>' + escapeText(t("studio.handoffMode", undefined, "Handoff mode")) + '</span><select data-system-setting="handoffMode"><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option><option value="transition"' + (system.handoffMode === "transition" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeTransition", undefined, "Transition")) + '</option><option value="strict"' + (system.handoffMode === "strict" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeStrict", undefined, "Strict")) + '</option></select></label><label class="field full"><span>' + escapeText(t("studio.handoffContractsFile", undefined, "Handoff contracts file")) + '</span><input data-system-setting="handoffContracts" value="' + escapeText(String(system.handoffContracts ?? "")) + '"></label></div><button type="button" class="button primary" data-system-settings-save>' + escapeText(t("studio.saveSystemSettings", undefined, "Save system settings")) + '</button></details>';
+  return '<details class="studio-system-settings"><summary>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</summary><div class="form-grid"><label class="field"><span>' + escapeText(t("studio.systemId", undefined, "System ID")) + '</span><input data-system-setting="systemId" value="' + escapeText(String(system.systemId ?? "")) + '"></label><label class="field"><span>' + escapeText(t("studio.systemVersion", undefined, "Version")) + '</span><input data-system-setting="systemVersion" value="' + escapeText(String(system.systemVersion ?? "")) + '"></label><label class="field"><span>' + escapeText(t("studio.globalLaw", undefined, "Global law")) + '</span><select data-system-setting="lawGlobalRef">' + lawOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.handoffMode", undefined, "Handoff mode")) + '</span><select data-system-setting="handoffMode"><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option><option value="transition"' + (system.handoffMode === "transition" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeTransition", undefined, "Transition")) + '</option><option value="strict"' + (system.handoffMode === "strict" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeStrict", undefined, "Strict")) + '</option></select></label><label class="field full"><span>' + escapeText(t("studio.handoffContractsFile", undefined, "Handoff contracts file")) + '</span><input data-system-setting="handoffContracts" value="' + escapeText(String(system.handoffContracts ?? "")) + '"></label></div><button type="button" class="button primary" data-system-settings-save>' + escapeText(t("studio.saveSystemSettings", undefined, "Save system settings")) + '</button></details>';
+}
+
+export function renderStudioBoundaryConfigEditor(args: {
+  kind: "start" | "end";
+  authoring?: JsonRecord | null | undefined;
+  draft?: JsonRecord | null | undefined;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const authoring = asRecord(args.authoring) ?? {};
+  const system = asRecord(authoring.system) ?? {};
+  const draft = asRecord(args.draft) ?? {};
+  const flows = Object.values(asRecord(authoring.flows) ?? {}).map(asRecord).filter((flow): flow is JsonRecord => Boolean(flow));
+  const isStart = args.kind === "start";
+  const connectedRoleIds = Array.from(new Set(flows
+    .filter((flow) => isStart ? flow.fromRoleId === "__system_start__" : flow.toRoleId === "__system_end__")
+    .map((flow) => String(isStart ? flow.toRoleId : flow.fromRoleId ?? "").trim())
+    .filter(Boolean)));
+  const count = connectedRoleIds.length;
+  if (isStart) {
+    const dispatch = asRecord(system.startDispatch) ?? { mode: "all" };
+    const modeValue = draft.kind === "start" ? draft.mode : dispatch.mode;
+    const mode = modeValue === "random_n" ? "random_n" : "all";
+    const selectedCount = Math.min(count, Math.max(1, Number(draft.kind === "start" ? draft.count : dispatch.count) || 1));
+    return '<div class="event studio-boundary-config-editor" data-boundary-config-editor="start">' +
+      '<div class="event-top"><span>' + escapeText(t("studio.startDispatch", undefined, "Start dispatch")) + '</span><span>' + escapeText(t("studio.connectedRoles", { count: String(count) }, "{count} connected roles")) + '</span></div>' +
+      '<div class="hint">' + escapeText(t("studio.startDispatchHint", undefined, "The Start role distributes the same task to its directly connected roles. It does not split the task into business work items.")) + '</div>' +
+      '<div class="form-grid"><label class="field"><span>' + escapeText(t("studio.dispatchMode", undefined, "Dispatch mode")) + '</span><select data-boundary-setting="startMode"' + (count ? "" : " disabled") + '><option value="all"' + (mode === "all" ? " selected" : "") + '>' + escapeText(t("studio.dispatchAll", undefined, "All connected roles")) + '</option><option value="random_n"' + (mode === "random_n" ? " selected" : "") + (count ? "" : " disabled") + '>' + escapeText(t("studio.dispatchRandom", undefined, "Random number")) + '</option></select></label>' +
+      '<label class="field" data-boundary-count-field' + (mode === "random_n" ? "" : " hidden") + '><span>' + escapeText(t("studio.dispatchCount", undefined, "Number to select")) + '</span><input type="number" min="1" max="' + Math.max(1, count) + '" step="1" data-boundary-setting="startCount" value="' + escapeText(String(selectedCount)) + '"' + (count ? "" : " disabled") + '></label></div>' +
+      (count ? "" : '<div class="hint">' + escapeText(t("studio.startNeedsFlows", undefined, "Connect Start to at least one role before configuring dispatch.")) + '</div>') +
+      '<div class="actions compact"><button type="button" class="button primary" data-boundary-settings-save="start"' + (count ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button></div></div>';
+  }
+  const join = asRecord(system.endJoin) ?? { mode: "all_of" };
+  const modeValue = draft.kind === "end" ? draft.mode : join.mode;
+  const mode = modeValue === "quorum_of" ? "quorum_of" : "all_of";
+  const min = Math.min(count, Math.max(1, Number(draft.kind === "end" ? draft.count : join.min) || count || 1));
+  return '<div class="event studio-boundary-config-editor" data-boundary-config-editor="end">' +
+    '<div class="event-top"><span>' + escapeText(t("studio.endAggregation", undefined, "End aggregation")) + '</span><span>' + escapeText(t("studio.connectedRoles", { count: String(count) }, "{count} connected roles")) + '</span></div>' +
+    '<div class="hint">' + escapeText(t("studio.endAggregationHint", undefined, "Only distinct roles directly connected to End are included in the aggregation threshold.")) + '</div>' +
+    '<div class="form-grid"><label class="field"><span>' + escapeText(t("studio.aggregationMode", undefined, "Aggregation mode")) + '</span><select data-boundary-setting="endMode"' + (count ? "" : " disabled") + '><option value="all_of"' + (mode === "all_of" ? " selected" : "") + '>' + escapeText(t("studio.aggregationAll", undefined, "Wait for all connected roles")) + '</option><option value="quorum_of"' + (mode === "quorum_of" ? " selected" : "") + (count ? "" : " disabled") + '>' + escapeText(t("studio.aggregationQuorum", undefined, "Wait for a number")) + '</option></select></label>' +
+    '<label class="field" data-boundary-count-field' + (mode === "quorum_of" ? "" : " hidden") + '><span>' + escapeText(t("studio.aggregationMinimum", undefined, "Minimum arrivals")) + '</span><input type="number" min="1" max="' + Math.max(1, count) + '" step="1" data-boundary-setting="endMin" value="' + escapeText(String(min)) + '"' + (count ? "" : " disabled") + '></label></div>' +
+    (count ? "" : '<div class="hint">' + escapeText(t("studio.endNeedsFlows", undefined, "Connect at least one role to End before configuring aggregation.")) + '</div>') +
+    '<div class="actions compact"><button type="button" class="button primary" data-boundary-settings-save="end"' + (count ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button></div></div>';
 }
 
 export function renderStudioContractEditor(args: {
@@ -1403,18 +1444,23 @@ export function renderStudioFlowConfigEditor(args: {
   const conditionJson = String(draft.conditionJson ?? (data.condition ? JSON.stringify(data.condition, null, 2) : ""));
   const priority = String(draft.priority ?? data.priority ?? 0);
   const disabled = saving ? " disabled" : "";
+  const sourceIsStart = sourceRoleId === "__system_start__";
+  const targetIsEnd = targetRoleId === "output" || targetRoleId === "__system_end__";
   const sourceProjection = projectRoleProjectionSummary(args.projectRoles, sourceRoleId);
   const targetProjection = projectRoleProjectionSummary(args.projectRoles, targetRoleId);
-  const sourceOptions = roles.map((roleId) =>
+  const sourceOptions = [
+    '<option value="__system_start__"' + (sourceIsStart ? " selected" : "") + ">" + escapeText(t("studio.boundaryStart", undefined, "Start")) + "</option>",
+    ...roles.map((roleId) =>
     '<option value="' + escapeText(roleId) + '"' + (roleId === sourceRoleId ? " selected" : "") + ">" +
     escapeText(roleId) + "</option>"
-  ).join("");
+    )
+  ].join("");
   const targetOptions = [
     ...roles.map((roleId) =>
       '<option value="' + escapeText(roleId) + '"' + (roleId === targetRoleId ? " selected" : "") + ">" +
       escapeText(roleId) + "</option>"
     ),
-    '<option value="output"' + (targetRoleId === "output" ? " selected" : "") + ">" + escapeText(t("studio.form.outputTarget", undefined, "Output")) + "</option>"
+    '<option value="output"' + (targetIsEnd ? " selected" : "") + ">" + escapeText(t("studio.boundaryEnd", undefined, "End")) + "</option>"
   ].join("");
   const diagnosticsHtml = diagnostics.length
     ? '<div class="studio-flow-config-diagnostics">' + diagnostics.map((diagnostic) =>
@@ -1443,20 +1489,20 @@ export function renderStudioFlowConfigEditor(args: {
   return [
     '<div class="event studio-flow-config-editor" data-flow-config-editor="' + escapeText(args.flowKey) + '">',
     '<div class="event-top"><span>' + escapeText(t("studio.flowConfig", undefined, "flow config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : t("common.ready", undefined, "ready")) + '</span></div>',
-    '<strong><code>' + escapeText(String(data.sourceRoleId ?? "")) + '</code> -> <code>' + escapeText(String(data.targetRoleId ?? "")) + '</code></strong>',
+    '<strong>' + escapeText(sourceIsStart ? t("studio.boundaryStart", undefined, "Start") : String(data.sourceRoleId ?? "")) + ' → ' + escapeText(targetIsEnd ? t("studio.boundaryEnd", undefined, "End") : String(data.targetRoleId ?? "")) + '</strong>',
     '<div class="hint">' + escapeText(t("studio.flowConfigHint", undefined, "Edit flow identity and handoff behavior here. Context mapping is configured on the target role.")) + '</div>',
     error ? '<div class="hint severity-warning">' + escapeText(error) + '</div>' : "",
     diagnosticsHtml,
-    '<div class="actions compact"><button class="button primary" data-flow-config-save="' + escapeText(args.flowKey) + '"' + (saving ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-flow-config-revert="' + escapeText(args.flowKey) + '"' + (saving || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revert", undefined, "Revert")) + "</button></div>",
+    '<div class="actions compact"><button class="button primary" data-flow-config-save="' + escapeText(args.flowKey) + '"' + (saving ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-flow-config-revert="' + escapeText(args.flowKey) + '"' + (saving || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revert", undefined, "Revert")) + '</button><button class="button danger" data-flow-config-delete="' + escapeText(args.flowKey) + '"' + (saving ? " disabled" : "") + '>' + escapeText(t("action.delete", undefined, "Delete")) + "</button></div>",
     '<div class="form-grid">' +
       '<label class="field"><span>' + escapeText(t("studio.form.sourceRole", undefined, "Source role")) + '</span><select data-flow-config-field="sourceRoleId"' + disabled + ">" + sourceOptions + '</select></label>' +
       '<label class="field"><span>' + escapeText(t("studio.form.targetRole", undefined, "Target role")) + '</span><select data-flow-config-field="targetRoleId"' + disabled + ">" + targetOptions + '</select></label>' +
-      '<label class="field"><span>' + escapeText(t("studio.form.eventType", undefined, "Event type")) + '</span><input data-flow-config-field="eventType" value="' + escapeText(eventType) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowEventHint", undefined, "Uppercase event token used by authoring and validation.")) + '</div></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.eventType", undefined, "Event type")) + '</span><input data-flow-config-field="eventType" value="' + escapeText(eventType) + '"' + (sourceIsStart ? " readonly" : disabled) + '><div class="hint">' + escapeText(sourceIsStart ? t("studio.startFlowEventFixed", undefined, "Start flows share the fixed START event.") : t("studio.flowEventHint", undefined, "Uppercase event token used by authoring and validation.")) + '</div></label>' +
       '<label class="field"><span>' + escapeText(t("studio.form.flowLabel", undefined, "Display name")) + '</span><input data-flow-config-field="label" value="' + escapeText(label) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowLabelHint", undefined, "Optional display label. Empty falls back to the event type.")) + '</div></label>' +
-      '<label class="field checkbox"><input type="checkbox" data-flow-config-field="runtimeOnlyErrorFlow"' + (runtimeOnlyErrorFlow ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow")) + '</span></label>' +
-      '<label class="field checkbox"><input type="checkbox" data-flow-config-field="participatesInJoin"' + (participatesInJoin ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.participatesInJoin", undefined, "Join source")) + '</span></label>' +
-      '<label class="field full"><span>Condition AST (JSON, optional)</span><textarea rows="7" spellcheck="false" data-flow-config-field="conditionJson"' + disabled + '>' + escapeText(conditionJson) + '</textarea><div class="hint">Restricted AST; paths are limited to state, loop, event, and role. Empty means unconditional.</div></label>' +
-      '<label class="field"><span>Priority</span><input type="number" min="0" step="1" data-flow-config-field="priority" value="' + escapeText(priority) + '"' + disabled + '></label>' +
+      (sourceIsStart ? "" : '<label class="field checkbox"><input type="checkbox" data-flow-config-field="runtimeOnlyErrorFlow"' + (runtimeOnlyErrorFlow ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow")) + '</span></label>') +
+      (targetIsEnd || sourceIsStart ? "" : '<label class="field checkbox"><input type="checkbox" data-flow-config-field="participatesInJoin"' + (participatesInJoin ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.participatesInJoin", undefined, "Join source")) + '</span></label>') +
+      (sourceIsStart ? "" : '<label class="field full"><span>Condition AST (JSON, optional)</span><textarea rows="7" spellcheck="false" data-flow-config-field="conditionJson"' + disabled + '>' + escapeText(conditionJson) + '</textarea><div class="hint">Restricted AST; paths are limited to state, loop, event, and role. Empty means unconditional.</div></label>') +
+      (sourceIsStart ? "" : '<label class="field"><span>Priority</span><input type="number" min="0" step="1" data-flow-config-field="priority" value="' + escapeText(priority) + '"' + disabled + '></label>') +
     "</div>",
     projectionCardsHtml ? '<div class="studio-flow-projection-grid">' + projectionCardsHtml + '</div>' : "",
     (targetRoleId && targetRoleId !== "output"
@@ -1518,10 +1564,12 @@ export function renderStudioBridgeStructureHtml(args: {
         const key = flowKeyOf(flow);
         const active = selectedFlow && flowKeyOf(selectedFlow) === key ? " active" : "";
         const displayLabel = flowDisplayLabel(flow);
+        const sourceLabel = flow.fromRoleId === "__system_start__" ? t("studio.boundaryStart", undefined, "Start") : String(flow.fromRoleId ?? "");
+        const targetLabel = flow.toRoleId === "__system_end__" || flow.toRoleId === "output" ? t("studio.boundaryEnd", undefined, "End") : String(flow.toRoleId ?? "");
         return (
           '<button class="run-card studio-flow-contract' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
-          '<div class="studio-flow-contract-route"><code>' + escapeText(String(flow.fromRoleId ?? "")) + '</code><span aria-hidden="true">&#8594;</span><code>' +
-          escapeText(String(flow.toRoleId ?? "")) + '</code></div><div class="studio-flow-contract-event"><span>' + escapeText(String(flow.eventType ?? "")) +
+          '<div class="studio-flow-contract-route"><span>' + escapeText(sourceLabel) + '</span><span aria-hidden="true">&#8594;</span><span>' +
+          escapeText(targetLabel) + '</span></div><div class="studio-flow-contract-event"><span>' + escapeText(String(flow.eventType ?? "")) +
           '</span><strong>' + escapeText(displayLabel) + '</strong></div><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? t("studio.runtimeErrorFlow", undefined, "runtime error flow") : t("studio.designFlow", undefined, "design flow")) +
           '</span><span>' + escapeText(flow.participatesInJoin ? t("studio.joinSource", undefined, "join source") : t("studio.standard", undefined, "standard")) + "</span></div></button>"
         );
@@ -2476,7 +2524,7 @@ export function renderRunStatePanel(args: {
     if (!keys.length) {
       return ['<div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span>' + escapeText(t("common.empty", undefined, "empty")) + '</span></div><strong>' + escapeText(t("common.noFields", undefined, "no fields")) + '</strong></div>'];
     }
-    const executionKeys = new Set(["status", "mode", "runMode", "transitionCount", "totalTransitions", "okCount", "failedCount", "noopCount", "lastExecutedRoleId", "finalRoleId", "currentRoleId", "nextRoleId"]);
+    const executionKeys = new Set(["status", "mode", "runMode", "transitionCount", "totalTransitions", "okCount", "failedCount", "noopCount", "lastExecutedRoleId", "finalRoleIds", "currentRoleId", "nextRoleId"]);
     const branchReviewKeys = new Set(["activeBranches", "completedBranches", "branches", "branchStatuses", "pendingReviewCount", "reviews", "review", "humanReviews"]);
     const controlKeys = new Set(["stopRequest", "stopOutcome", "metrics", "artifacts", "errors", "error", "failure", "auditSummary"]);
     const executionCards: string[] = [];
@@ -2687,8 +2735,8 @@ export function renderRunStatePanel(args: {
       escapeText(t("state.flowsCount", { count: graphEdges }, `flows ${graphEdges}`)) +
       '</strong><div class="hint">' + escapeText(t("state.lastFinalRole", {
         lastRoleId: String(header.lastExecutedRoleId ?? t("common.notAvailable", undefined, "n/a")),
-        finalRoleId: String(header.finalRoleId ?? t("common.notAvailable", undefined, "n/a"))
-      }, "last role " + String(header.lastExecutedRoleId ?? "n/a") + " · final role " + String(header.finalRoleId ?? "n/a"))) + "</div></div>",
+        finalRoleIds: Array.isArray(header.finalRoleIds) ? header.finalRoleIds.join(", ") || t("common.notAvailable", undefined, "n/a") : t("common.notAvailable", undefined, "n/a")
+      }, "last role " + String(header.lastExecutedRoleId ?? "n/a") + " · final roles " + (Array.isArray(header.finalRoleIds) ? header.finalRoleIds.join(", ") || "n/a" : "n/a"))) + "</div></div>",
     "</div>",
     '<div class="run-graph-summary-grid run-graph-summary-rail">',
     renderSummaryListSection({

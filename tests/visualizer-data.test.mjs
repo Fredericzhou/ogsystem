@@ -89,15 +89,14 @@ async function seedProjectFixture(workdir) {
       "%% system.id=viz.project.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
       "%% review.rework.target.demo-analyst=demo-analyst",
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -115,13 +114,12 @@ async function seedStrictContractProjectFixture(workdir) {
       "%% system.id=viz.project.contract.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
       "%% handoff.mode=strict",
       `%% handoff.contracts=${contractBundlePath}`,
       "%% context.map.diagnosis-dispatch.content=direct.content",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| tracker[Role:diagnosis-dispatch]",
-      "tracker[Role:diagnosis-dispatch] -->|DONE| output",
+      "tracker[Role:diagnosis-dispatch] -->|DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -248,8 +246,9 @@ async function createSimulationRun(workdir) {
         },
         loopIterations: {},
         selectedEventByBranchId: {},
-        finalOutput: "",
-        finalRoleId: "",
+        finalOutputsByRoleId: {},
+        finalOutputRoleOrder: [],
+        finalRoleIds: [],
         lastExecutedRoleId: "alpha",
         nextBranchSequence: 2,
         lastCheckpointSequence: 3
@@ -271,7 +270,7 @@ async function createSimulationRun(workdir) {
         transitionCount: 5,
         durationMs: 42,
         lastRoleId: "alpha",
-        finalRoleId: "alpha",
+        finalRoleIds: ["alpha"],
         executionDirCount: 1,
         okCount: 1,
         failedCount: 0,
@@ -307,9 +306,8 @@ async function createSimulationRun(workdir) {
       "%% system.id=viz.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=alpha",
-      "input -->|ENTER| alpha[Role:alpha]",
-      "alpha[Role:alpha] -->|DONE| output",
+      "start[开始] -->|START| alpha[Role:alpha]",
+      "alpha[Role:alpha] -->|DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -328,14 +326,13 @@ function buildLargeSystemSource(nodeCount = 700) {
     "%% system.id=viz.large.demo",
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
-    "%% entry.role=alpha",
-    "input -->|ENTER| alpha[Role:alpha]"
+    "start[开始] -->|START| alpha[Role:alpha]"
   ];
   for (let index = 0; index < nodeCount; index += 1) {
     const roleId = `role-${index}`;
     lines.push(`alpha[Role:alpha] -->|STEP_${index}| ${roleId}[Role:${roleId}]`);
   }
-  lines.push("alpha[Role:alpha] -->|DONE| output", "");
+  lines.push("alpha[Role:alpha] -->|DONE| end[结束]", "");
   return lines.join("\n");
 }
 
@@ -562,8 +559,9 @@ async function createWaitingReviewRun(workdir, options = {}) {
         },
         loopIterations: { "demo-analyst": 1 },
         selectedEventByBranchId: {},
-        finalOutput: "",
-        finalRoleId: "",
+        finalOutputsByRoleId: {},
+        finalOutputRoleOrder: [],
+        finalRoleIds: [],
         lastExecutedRoleId: "demo-analyst",
         nextBranchSequence: 2,
         lastCheckpointSequence: 1
@@ -622,9 +620,8 @@ async function createWaitingReviewRun(workdir, options = {}) {
       "%% system.id=viz.review.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
-      "input -->|GO| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -811,8 +808,9 @@ async function createJoinRun(workdir) {
         },
         loopIterations: {},
         selectedEventByBranchId: {},
-        finalOutput: "",
-        finalRoleId: "",
+        finalOutputsByRoleId: {},
+        finalOutputRoleOrder: [],
+        finalRoleIds: [],
         lastExecutedRoleId: "test-branch-a",
         nextBranchSequence: 4,
         lastCheckpointSequence: 0
@@ -829,16 +827,15 @@ async function createJoinRun(workdir) {
       "%% system.id=viz.join.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-intake",
       "%% role.mode.demo-intake=parallel_split",
       "%% join.mode.test-operator=all_of",
       "%% join.sources.test-operator=test-branch-a,test-branch-b",
-      "input -->|TASK_IN| intake[Role:demo-intake]",
+      "start[开始] -->|START| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
       "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
       "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
       "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
-      "testop[Role:test-operator] -->|RESULT_READY| output",
+      "testop[Role:test-operator] -->|RESULT_READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"

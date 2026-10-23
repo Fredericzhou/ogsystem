@@ -31,7 +31,7 @@ These are related, but they are not the same problem and should not be solved wi
 #### 1. LangGraph is a hard execution dependency
 
 - `src/runtime/graph-runner.ts` directly imports and constructs `StateGraph`.
-- `src/runtime/parse-mermaid.ts` only accepts `engine=langgraph`.
+- `src/runtime/parse-mermaid.ts` rejects the removed `engine` metadata; the backend is an implementation detail.
 
 Result:
 - OGSystem semantics are partially independent.

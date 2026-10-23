@@ -42,15 +42,14 @@ async function seedOpsProject(workdir) {
     "%% system.id=viz.ops.demo",
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
-    "%% entry.role=demo-analyst",
     "%% review.mode.demo-analyst=required",
     "%% review.timeout.demo-analyst=3600",
     "%% review.timeout.action.demo-analyst=pause",
     "%% review.rework.target.demo-analyst=demo-analyst",
     "%% review.rework.max.demo-analyst=2",
     "%% review.terminate.scope.demo-analyst=branch",
-    "input -->|GO| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|DONE| output",
+    "start[开始] -->|START| analyst[Role:demo-analyst]",
+    "analyst[Role:demo-analyst] -->|DONE| end[结束]",
     ""
   ].join("\n");
   await writeFile(path.resolve(workdir, "system.mmd"), systemSource, "utf8");
@@ -147,8 +146,9 @@ async function seedOpsRun(workdir, systemSource) {
         },
         loopIterations: { "demo-analyst": 2 },
         selectedEventByBranchId: {},
-        finalOutput: "",
-        finalRoleId: "",
+        finalOutputsByRoleId: {},
+        finalOutputRoleOrder: [],
+        finalRoleIds: [],
         lastExecutedRoleId: "demo-analyst",
         nextBranchSequence: 3,
         lastCheckpointSequence: 1

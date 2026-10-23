@@ -53,3 +53,23 @@ test("Task detail waits for a terminal worker before returning the projected att
   assert.equal(waited, true);
   assert.equal(reads, 2);
 });
+
+test("Project query marks a terminal task whose Run evidence is missing", async () => {
+  const useCases = createProjectQueryUseCases({
+    projectStore: {
+      async getProject() {
+        return {
+          projectType: "collaboration",
+          projectId: "project-1",
+          taskRecords: [{ taskId: "task-1", status: "completed", currentRunId: "run-missing", runIds: ["run-missing"] }]
+        };
+      }
+    },
+    taskAttemptStore: { async readAttempt() { return {}; } },
+    waitForActiveTaskWorker: async () => false
+  });
+
+  const [task] = (await useCases.getProject("project-1")).taskRecords;
+  assert.equal(task.runEvidenceMissing, true);
+  assert.equal(task.runAttempts[0].evidenceAvailable, false);
+});

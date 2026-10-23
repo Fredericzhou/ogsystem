@@ -3,7 +3,7 @@ import type { GraphViewModelEdge, GraphViewModelNode } from "./studio-contracts.
 type TopologyEdgeOrderArgs = {
   nodes: readonly GraphViewModelNode[];
   edges: readonly GraphViewModelEdge[];
-  entryRoleId?: string;
+  entryNodeId?: string;
 };
 
 export function topologyComponentIds(args: TopologyEdgeOrderArgs): ReadonlyMap<string, string> {
@@ -120,7 +120,7 @@ export function addTopologyFlowOrder(args: TopologyEdgeOrderArgs): GraphViewMode
   }
 
   const componentName = (componentIndex: number): string => components[componentIndex]?.[0] ?? "";
-  const entryComponent = componentByNode.get(args.entryRoleId ?? "input");
+  const entryComponent = componentByNode.get(args.entryNodeId ?? "input");
   const componentDistance = new Map<number, number>();
   if (entryComponent !== undefined) {
     componentDistance.set(entryComponent, 0);

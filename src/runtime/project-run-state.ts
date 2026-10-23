@@ -76,7 +76,7 @@ export const PROJECT_RUN_STATE_FILE = "control/state.json";
 export function createProjectRunState(plan: ProjectRunPlan, taskReservation?: ProjectTaskReservation): ProjectRunState {
   const nodes = Object.fromEntries(plan.nodeGraph.map((node) => [node.nodeId, {
     nodeId: node.nodeId,
-    status: node.nodeId === plan.entryNodeId ? "ready" : "pending"
+    status: plan.entryNodeIds.includes(node.nodeId) ? "ready" : "pending"
   }] as const));
   return {
     version: 1,

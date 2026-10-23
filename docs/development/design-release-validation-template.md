@@ -59,11 +59,11 @@ Result:
 - Pass / Fail:
 - Notes:
 
-## 3. Quick Debug Workflow
+## 3. AI Build And Debug Workflow
 
 Check:
 
-1. Trigger graph-toolbar `快捷调试 / Quick debug`.
+1. Trigger graph-toolbar `AI构建 / AI Build` and verify its dialog is independent from `调试 / Debug`.
 2. Enter run input and confirm.
 3. Verify the modal closes after launch succeeds.
 4. Verify the right-side surface stays usable for rerun.

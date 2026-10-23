@@ -86,7 +86,7 @@ The OGS graph is intentionally **role-first**:
 The canonical graph shape is therefore:
 
 ```text
-input -> Responsibility A --handoff event--> Responsibility B -> output
+start[开始] -> Responsibility A --handoff event--> Responsibility B -> end[结束]
 ```
 
 The role graph describes stable accountability and collaboration boundaries. It does not expand

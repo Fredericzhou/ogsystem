@@ -149,7 +149,6 @@ flowchart TD
 %% system.id=demo.context.map
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=review
 %% join.mode.review=all_of
 %% join.sources.review=writer_a,writer_b
 %% context.map.review.a_content=source(writer_a).content

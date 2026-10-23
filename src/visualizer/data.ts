@@ -289,7 +289,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
       createdAt: asString(asRecord(context.projectMeta)?.createdAt),
       systemId: context.system.systemId,
       systemVersion: context.system.systemVersion,
-      entryRoleId: context.system.entryRoleId,
+      entryRoleIds: context.system.entryRoleIds,
       roleCount: context.system.roleIds.length,
       roleIds: context.system.roleIds,
       flowCount: context.system.flows.length,

@@ -115,11 +115,10 @@ test("project readiness reports missing execution bindings", async () => {
       "%% system.id=readiness.missing.binding",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/gpt-5-nano",
-      "input -->|ENTER| planner[Role:planner]",
+      "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|DONE| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| output"
+      "writer[Role:writer] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -162,10 +161,9 @@ test("project readiness warns when a profile tool drops role input", async () =>
       "%% system.id=readiness.input.dropped",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% exec.bind.planner=profile.profile.planner",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -199,12 +197,11 @@ test("project readiness exposes doctor skipped health per resolved model without
       "%% system.id=readiness.provider.skipped",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/offline-planner",
       "%% model.bind.writer=opencode/offline-writer",
-      "input -->|ENTER| planner[Role:planner]",
+      "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|DONE| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| output"
+      "writer[Role:writer] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -238,10 +235,9 @@ test("project readiness blocks role contracts whose declared events differ from 
       "%% system.id=readiness.role.events.mismatch",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% exec.bind.planner=profile.profile.planner",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|PLANNED| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|PLANNED| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -260,10 +256,9 @@ test("project readiness blocks Codex output schemas outside the strict structure
       "%% system.id=readiness.codex.schema.invalid",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/gpt-5-nano",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
     await writeFile(
       path.join(workdir, ".ogs", "model-selection.json"),
@@ -288,10 +283,9 @@ test("project readiness keeps missing catalog distinct from skipped provider hea
       "%% system.id=readiness.provider.catalog-missing",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/pinned-model",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -310,10 +304,9 @@ test("project readiness resolves TeamVersion model bindings from the shared Plat
       "%% system.id=readiness.shared-platform-catalog",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/pinned-model",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir, {
@@ -346,9 +339,8 @@ test("project readiness distinguishes an unbound role from missing provider cata
       "%% system.id=readiness.provider.selection-unresolved",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -372,10 +364,9 @@ test("project readiness reports missing required role package files", async () =
       "%% system.id=readiness.role.health",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/gpt-5-nano",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -401,10 +392,9 @@ test("project readiness rejects a role manifest without the current contract", a
       "%% system.id=readiness.role.contract",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/gpt-5-nano",
-      "input -->|ENTER| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| output"
+      "start[开始] -->|START| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -432,14 +422,13 @@ test("project readiness reports strict handoff missing contract coverage", async
       "%% system.id=readiness.strict.contract",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% handoff.mode=strict",
       `%% handoff.contracts=${path.join(contractsDir, "handoff.contracts.json")}`,
       "%% model.bind.planner=opencode/gpt-5-nano",
       "%% model.bind.writer=opencode/gpt-5-nano",
-      "input -->|ENTER| planner[Role:planner]",
+      "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|HANDOFF| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| output"
+      "writer[Role:writer] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -493,12 +482,11 @@ test("project readiness blocks model capability mismatches and warns on missing 
       "%% system.id=readiness.model.capability",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% model.bind.planner=opencode/textless",
       "%% model.bind.writer=opencode/no-tools",
-      "input -->|ENTER| planner[Role:planner]",
+      "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|DONE| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| output"
+      "writer[Role:writer] -->|DONE| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);

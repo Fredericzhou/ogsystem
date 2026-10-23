@@ -448,7 +448,7 @@ joins:
 
 Join `timeoutSeconds` 必须为正整数；`failurePolicy: wait` 只表示在超时前等待，不能表示无限等待。达到超时后必须执行 `onTimeout`，并记录 expected/ready/missing sources、超时时刻和最终动作。`onTimeout: quorum_continue` 只允许声明在 `quorum_of` Join 上；运行时若尚未达到 `min`，必须转为 `fail` 或按显式的 `failurePolicy` 处理，不能强行继续。
 
-上述是当前已实现的基础 Join 超时合同。`join.first_packet.*`、`join.gap.*` 等分阶段等待窗口仍属于 [RFC](./ogsystem-wait-timeout-semantics-v2.md)，不应在当前 DSL 或产品能力说明中标记为已实现。
+上述是当前已实现的基础 Join 超时合同。`join.first_packet.*`、`join.gap.*` 等分阶段等待窗口暂不支持，不属于当前 DSL 或产品能力。
 
 Join readiness 默认以结构化 `JoinScopeKey` 判定，而不是以目标节点当前分支数量判定：
 

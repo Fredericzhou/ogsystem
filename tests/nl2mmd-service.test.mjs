@@ -132,7 +132,7 @@ test("nl2mmd service preflight creates one session and turn reuses it", async ()
     conversation,
     input: {
       message: "请用 @debate-judge 汇总，并检查未知的 @not-found-role 是否存在",
-      validationErrors: ["missing entry.role"],
+      validationErrors: ["missing input connection to a role"],
       validationWarnings: ["using inferred model binding"]
     }
   });
@@ -144,7 +144,7 @@ test("nl2mmd service preflight creates one session and turn reuses it", async ()
     promptCalls[1].parts[0].text,
     /Mentions: @debate-judge:resolved, @not-found-role:missing/
   );
-  assert.match(promptCalls[1].parts[0].text, /Errors: missing entry\.role/);
+  assert.match(promptCalls[1].parts[0].text, /Errors: missing input connection to a role/);
   assert.match(promptCalls[1].parts[0].text, /Warnings: using inferred model binding/);
   assert.strictEqual(result.mode, "ask");
   assert.strictEqual(result.validation, undefined);

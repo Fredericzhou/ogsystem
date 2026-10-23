@@ -17,8 +17,7 @@ import path from "node:path";
 
 function baseDesign() {
   const design = createEmptySystemDesign({
-    systemId: "test.design",
-    entrySeatId: "intake"
+    systemId: "test.design"
   });
   design.seats.intake = {
     seatId: "intake",
@@ -26,6 +25,8 @@ function baseDesign() {
     binding: { kind: "noop" }
   };
   design.bindings.intake = structuredClone(design.seats.intake.binding);
+  design.transitions.push({ transitionId: "start-intake", fromSeatId: "__system_start__", toSeatId: "intake", eventType: "START" });
+  design.transitions.push({ transitionId: "intake-end", fromSeatId: "intake", toSeatId: "__system_end__", eventType: "DONE" });
   return design;
 }
 
@@ -55,7 +56,8 @@ test("System Design validates the role-seat graph and exports deterministic Merm
   const source = exportDesignToMermaid(design);
   assert.match(source, /system\.id=test\.design/);
   assert.match(source, /intake.*DONE.*review/);
-  assert.match(source, /review.*APPROVED.*output/);
+  assert.match(source, /start\[开始\].*START.*intake/);
+  assert.match(source, /review.*APPROVED.*end\[结束\]/);
 });
 
 test("ChangeSet application is revisioned and rejects stale proposals", () => {
@@ -170,19 +172,23 @@ test("design preserves a non-matching role package ref through runtime loading",
   assert.equal(roundTripped.seats.intake.rolePackageRef, "demo-intake");
 });
 
-test("Mermaid entry boundary event survives parse and design export", () => {
+test("Mermaid special role flows survive design import and export", () => {
   const system = parseSystemFromMermaidSource(`flowchart TD
 %% system.id=test.entry
 %% system.version=1.0.0
 %% law.global=law.global
-input -->|ENTER_REQUEST| intake[Role:intake]
-intake[Role:intake] -->|DONE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|DONE| end[结束]
 `);
 
-  assert.equal(system.entryEventType, "ENTER_REQUEST");
+  assert.equal(system.startEventType, "START");
   const design = systemDefinitionToDesign(system);
-  assert.equal(design.system.entryEventType, "ENTER_REQUEST");
-  assert.match(exportDesignToMermaid(design), /input -->\|ENTER_REQUEST\|/);
+  assert.deepEqual(design.transitions.map(({ fromSeatId, toSeatId, eventType }) => ({ fromSeatId, toSeatId, eventType })), [
+    { fromSeatId: "__system_start__", toSeatId: "intake", eventType: "START" },
+    { fromSeatId: "intake", toSeatId: "__system_end__", eventType: "DONE" }
+  ]);
+  assert.match(exportDesignToMermaid(design), /start\[开始\] -->\|START\|/);
+  assert.match(exportDesignToMermaid(design), /end\[结束\]/);
 });
 
 test("design diff applies state, contracts, policies, and bindings without drift", () => {

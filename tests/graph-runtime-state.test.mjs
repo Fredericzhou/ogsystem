@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import {
   createInitialState,
+  createInitialGraphState,
   findRoleResult,
   listActiveBranches,
   getTargetLoopIteration,
@@ -27,7 +28,6 @@ const source = `flowchart TD
 %% system.id=graph.helpers
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
@@ -37,19 +37,18 @@ const source = `flowchart TD
 %% exec.bind.worker_b=profile.worker
 %% exec.bind.review=profile.review
 
-input -->|ENTER| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
 workerA[Role:worker_a] -->|A_DONE| review[Role:review]
 workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `;
 
 const quorumSource = `flowchart TD
 %% system.id=graph.helpers.quorum
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
@@ -60,33 +59,32 @@ const quorumSource = `flowchart TD
 %% exec.bind.worker_c=profile.worker
 %% exec.bind.review=profile.review
 
-input -->|ENTER| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
 dispatch[Role:dispatch] -->|TO_C| workerC[Role:worker_c]
 workerA[Role:worker_a] -->|A_DONE| review[Role:review]
 workerB[Role:worker_b] -->|B_DONE| review[Role:review]
 workerC[Role:worker_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `;
 
 const parallelErrorFilterSource = `flowchart TD
 %% system.id=graph.helpers.parallel.error.filter
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% exec.bind.dispatch=profile.dispatch
 %% exec.bind.worker_a=profile.worker
 %% exec.bind.compensate=profile.comp
 
-input -->|ENTER| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_A_DUP| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|ERROR| compensate[Role:compensate]
 dispatch[Role:dispatch] -->|ERROR.TOOL_EXECUTION_SPAWN| compensate[Role:compensate]
-workerA[Role:worker_a] -->|DONE| output
-compensate[Role:compensate] -->|COMP_DONE| output
+workerA[Role:worker_a] -->|DONE| end[结束]
+compensate[Role:compensate] -->|COMP_DONE| end[结束]
 `;
 
 test("graph runtime helpers cover loop budget, join readiness, and state projection", () => {
@@ -197,6 +195,32 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
   const snapshot = projectStateSnapshot({ state, plan });
   assert.equal(snapshot.status, "running");
   assert.ok(Array.isArray(snapshot.activeBranches));
+});
+
+test("random start dispatch is fixed by Run ID and persisted in initial graph state", () => {
+  const randomSystem = parseSystemFromMermaidSource(`flowchart TD
+%% system.id=graph.helpers.random-entry
+%% system.version=1.0.0
+%% law.global=law.test
+%% start.dispatch.mode=random_n
+%% start.dispatch.count=2
+start[开始] -->|START| alpha[Role:alpha]
+start[开始] -->|START| beta[Role:beta]
+start[开始] -->|START| gamma[Role:gamma]
+alpha[Role:alpha] -->|DONE| end[结束]
+beta[Role:beta] -->|DONE| end[结束]
+gamma[Role:gamma] -->|DONE| end[结束]
+`);
+  const plan = createExecutionPlan(randomSystem);
+  const first = createInitialGraphState({ plan, prompt: "same task", runId: "run-fixed" });
+  const resumed = createInitialGraphState({ plan, prompt: "same task", runId: "run-fixed" });
+  const anotherRun = createInitialGraphState({ plan, prompt: "same task", runId: "run-other" });
+
+  assert.equal(first.selectedEntryRoleIds.length, 2);
+  assert.deepEqual(resumed.selectedEntryRoleIds, first.selectedEntryRoleIds);
+  assert.deepEqual(Object.values(first.branchRecords).map((branch) => branch.roleId), first.selectedEntryRoleIds);
+  assert.equal(anotherRun.selectedEntryRoleIds.length, 2);
+  assert.ok(first.selectedEntryRoleIds.every((roleId) => ["alpha", "beta", "gamma"].includes(roleId)));
 });
 
 test("graph runtime helpers evaluate quorum_of readiness by unique completed sources", () => {

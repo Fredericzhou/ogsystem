@@ -64,7 +64,7 @@ function system(roleIds, modelBinding = {}) {
   return {
     systemId: "model.contract",
     systemVersion: "1.0.0",
-    entryRoleId: roleIds[0],
+    entryRoleIds: [roleIds[0]],
     roleIds,
     flows: [],
     lawBinding: { globalLawRef: "law.test" },

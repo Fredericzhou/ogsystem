@@ -70,12 +70,11 @@ async function createProject() {
       "%% system.id=cache.context",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=planner",
       "%% handoff.mode=strict",
       `%% handoff.contracts=${contractPath}`,
-      "input -->|ENTER| plannerNode[Role:planner]",
+      "start[开始] -->|START| plannerNode[Role:planner]",
       "plannerNode[Role:planner] -->|DONE| writerNode[Role:writer]",
-      "writerNode[Role:writer] -->|DONE| output"
+      "writerNode[Role:writer] -->|DONE| end[结束]"
     ].join("\n"),
     "utf8"
   );

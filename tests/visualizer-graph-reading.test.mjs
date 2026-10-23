@@ -6,13 +6,13 @@ import { projectGraphReadingViewModel } from "../dist/visualizer/graph-view-mode
 const view = {
   version: 1,
   mode: "edit",
-  nodes: ["input", "a", "b", "c", "output"].map((id) => ({
+  nodes: ["__system_start__", "a", "b", "c", "__system_end__"].map((id) => ({
     id,
     roleId: id,
-    kind: id === "input" || id === "output" ? "boundary" : "roleSeat",
-    entityKind: id === "input" || id === "output" ? "boundary" : "responsibility_seat",
-    roleSeat: id !== "input" && id !== "output",
-    executionScope: id === "input" || id === "output" ? "boundary" : "roleAggregate",
+    kind: id === "__system_start__" || id === "__system_end__" ? "specialRole" : "roleSeat",
+    entityKind: id === "__system_start__" || id === "__system_end__" ? "special_role" : "responsibility_seat",
+    roleSeat: id !== "__system_start__" && id !== "__system_end__",
+    executionScope: id === "__system_start__" || id === "__system_end__" ? "boundary" : "roleAggregate",
     label: id,
     badges: [],
     structure: {},

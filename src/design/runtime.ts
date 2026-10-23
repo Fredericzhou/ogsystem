@@ -1,4 +1,5 @@
 import type { SystemDefinition, HumanReviewSpec, GraphMetadata } from "../runtime/types.js";
+import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "../runtime/types.js";
 import type { SystemDesignDocument } from "./types.js";
 
 /** Compile the canonical design document into the small graph contract consumed by the runtime. */
@@ -60,10 +61,13 @@ export function designToSystemDefinition(design: SystemDesignDocument): SystemDe
   return {
     systemId: design.system.systemId,
     systemVersion: design.system.systemVersion,
-    entryRoleId: design.system.entrySeatId,
-    entryEventType: design.system.entryEventType ?? "START",
+    entryRoleIds: design.transitions.filter((transition) => transition.fromSeatId === SYSTEM_START_ROLE_ID).map((transition) => transition.toSeatId),
+    startDispatch: design.system.startDispatch ?? { mode: "all" },
+    startEventType: "START",
+    startFlows: design.transitions.filter((transition) => transition.fromSeatId === SYSTEM_START_ROLE_ID).map((transition) => ({ fromRoleId: SYSTEM_START_ROLE_ID, toRoleId: transition.toSeatId, eventType: "START" })),
+    endJoin: design.system.endJoin ?? { mode: "all_of" },
     roleIds: Object.keys(design.seats),
-    flows: design.transitions.map((transition) => ({
+    flows: design.transitions.filter((transition) => transition.fromSeatId !== SYSTEM_START_ROLE_ID).map((transition) => ({
       fromRoleId: transition.fromSeatId,
       toRoleId: transition.toSeatId,
       eventType: transition.eventType

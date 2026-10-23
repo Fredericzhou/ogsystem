@@ -1,4 +1,5 @@
 export const STUDIO_SYSTEM_END_ROLE_ID = "__system_end__";
+export const STUDIO_SYSTEM_START_ROLE_ID = "__system_start__";
 
 export type StudioConditionValueRef =
   | { kind: "literal"; value: string | number | boolean | null }
@@ -27,9 +28,8 @@ export type StudioAuthoringDocument = {
   system: {
     systemId: string;
     systemVersion: string;
-    legacyEngine?: "langgraph";
-    entryRoleId: string;
-    entryEventType?: string;
+    startDispatch: { mode: "all" } | { mode: "random_n"; count: number };
+    endJoin?: { mode: "all_of" | "quorum_of"; min?: number };
     lawGlobalRef: string;
     handoffMode?: string;
     handoffContracts?: string;
@@ -84,7 +84,7 @@ export type StudioGraphSnapshot = {
     height: number;
     label: string;
     badges: string[];
-    bindingKind: StudioAuthoringRole["bindingKind"];
+    bindingKind: StudioAuthoringRole["bindingKind"] | "boundary";
   }>;
   edges: Array<{
     id?: string;
@@ -123,6 +123,8 @@ export type GraphViewModelLayout = {
 };
 
 export type GraphViewModelNodeStructure = {
+  startDispatch?: StudioAuthoringDocument["system"]["startDispatch"];
+  endJoin?: StudioAuthoringDocument["system"]["endJoin"];
   routingMode?: StudioAuthoringRole["routingMode"];
   routeOrder?: string[];
   joinMode?: StudioAuthoringRole["joinMode"];
@@ -214,16 +216,17 @@ export type ResponsibilitySeatNode = GraphViewModelNodeBase & {
   bindingKind: StudioAuthoringRole["bindingKind"];
 };
 
-/** A synthetic graph boundary; it can never be edited or treated as a role execution seat. */
-export type BoundaryNode = GraphViewModelNodeBase & {
-  kind: "boundary";
-  entityKind: "boundary";
+/** A structural role in the graph with no business execution binding. */
+export type SpecialRoleNode = GraphViewModelNodeBase & {
+  kind: "specialRole";
+  entityKind: "special_role";
   roleSeat: false;
   executionScope: "boundary";
   bindingKind: "boundary";
+  specialRole: "start" | "end";
 };
 
-export type GraphViewModelNode = ResponsibilitySeatNode | BoundaryNode;
+export type GraphViewModelNode = ResponsibilitySeatNode | SpecialRoleNode;
 
 export type GraphViewModelEdgeRuntime = {
   recentlyActivated: boolean;
@@ -276,15 +279,15 @@ export type GraphReadingState = {
 };
 
 export function normalizeStudioGraphTargetRoleId(roleId: unknown): string {
-  const value = String(roleId ?? "");
-  return value === STUDIO_SYSTEM_END_ROLE_ID ? "output" : value;
+  return String(roleId ?? "");
 }
 
 export function normalizeStudioGraphStoredRoleId(roleId: unknown): string {
-  const value = String(roleId ?? "");
-  return value === "output" ? STUDIO_SYSTEM_END_ROLE_ID : value;
+  return String(roleId ?? "");
 }
 
 export function studioFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "eventType" | "toRoleId">): string {
-  return `${flow.fromRoleId}:${flow.eventType}:${normalizeStudioGraphTargetRoleId(flow.toRoleId)}`;
+  const source = flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
+  const target = flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "end" : normalizeStudioGraphTargetRoleId(flow.toRoleId);
+  return `${source}:${flow.eventType}:${target}`;
 }

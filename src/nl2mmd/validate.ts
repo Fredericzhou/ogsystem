@@ -200,7 +200,7 @@ export async function validateNl2MmdCandidate(args: {
     system: {
       systemId: system.systemId,
       systemVersion: system.systemVersion,
-      entryRoleId: system.entryRoleId,
+      entryRoleIds: system.entryRoleIds,
       lawRef: system.lawBinding.globalLawRef,
       roleIds: system.roleIds
     },

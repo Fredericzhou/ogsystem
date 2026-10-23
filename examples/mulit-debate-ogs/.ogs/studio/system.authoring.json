@@ -7,7 +7,7 @@
   "system": {
     "systemId": "investment.multi-debate",
     "systemVersion": "1.0.0",
-    "entryRoleId": "investment-proposer",
+    "entryRoleIds": ["investment-proposer"],
     "entryEventType": "DEBATE_REQUEST",
     "lawGlobalRef": "law.project.base"
   },

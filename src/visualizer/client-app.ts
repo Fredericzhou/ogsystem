@@ -35,6 +35,7 @@ import {
   renderStudioBridgePanel,
   renderStudioRoleSemanticSummary,
   renderStudioSystemSettingsEditor,
+  renderStudioBoundaryConfigEditor,
   renderStudioContractEditor,
   renderStudioRoleConfigEditor,
   renderStudioExecutionConfigEditor,
@@ -144,6 +145,7 @@ import {
 } from "./studio-client/studio-graph-validation.js";
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
+  STUDIO_SYSTEM_START_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
   normalizeStudioGraphTargetRoleId
 } from "./studio-contracts.js";
@@ -285,6 +287,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const summarizeContextSelector = ${summarizeContextSelector.toString()};
     const listContextSelectorCandidates = ${listContextSelectorCandidates.toString()};
     const renderStudioSystemSettingsEditor = ${renderStudioSystemSettingsEditor.toString()};
+    const renderStudioBoundaryConfigEditor = ${renderStudioBoundaryConfigEditor.toString()};
     const renderStudioContractEditor = ${renderStudioContractEditor.toString()};
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
@@ -296,6 +299,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const normalizeStudioGraphStoredRoleId = ${normalizeStudioGraphStoredRoleId.toString()};
     const normalizeStudioGraphTargetRoleId = ${normalizeStudioGraphTargetRoleId.toString()};
     const STUDIO_SYSTEM_END_ROLE_ID = "${STUDIO_SYSTEM_END_ROLE_ID}";
+    const STUDIO_SYSTEM_START_ROLE_ID = "${STUDIO_SYSTEM_START_ROLE_ID}";
     const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_:-]*$/;
     function asTrimmedStringOrEmpty(value) { return typeof value === "string" ? value.trim() : ""; }
     const roleIdOf = ${roleIdOf.toString()};
@@ -1023,7 +1027,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const incoming = flows.filter((flow) => String(flow?.toRoleId || "") === roleId);
           const outgoing = flows.filter((flow) => String(flow?.fromRoleId || "") === roleId);
           const badges = [
-            authoring?.system?.entryRoleId === roleId ? "entry" : "",
+            flows.some((flow) => flow?.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID && flow?.toRoleId === roleId) ? "entry" : "",
             role?.bindingKind === "model" ? "M" : "",
             role?.bindingKind === "exec" ? "E" : "",
             role?.routingMode === "parallel_split" ? "P" : "",
@@ -1265,13 +1269,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return {
         ...viewModel,
         nodes: nextNodes.map((node) => {
-          if (node?.kind === "boundary" && node?.id === "input") {
+          if (node?.kind === "specialRole" && node?.roleId === STUDIO_SYSTEM_START_ROLE_ID) {
             return {
               ...node,
               layout: { ...node.layout, x: minX - 260, y: baseY }
             };
           }
-          if (node?.kind === "boundary" && (node?.id === "output" || node?.roleId === "__system_end__")) {
+          if (node?.kind === "specialRole" && (node?.id === STUDIO_SYSTEM_END_ROLE_ID || node?.roleId === STUDIO_SYSTEM_END_ROLE_ID)) {
             return {
               ...node,
               layout: { ...node.layout, x: maxX + 90, y: baseY }
@@ -1323,15 +1327,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         topologyOrder: t("studio.graph.topologyOrder", undefined, "Topology order"),
         enabled: t("studio.graph.enabled", undefined, "on"),
         disabled: t("studio.graph.disabled", undefined, "off"),
+        technicalDetails: t("studio.graph.technicalDetails", undefined, "Technical details"),
         layoutSwitched: t("studio.graph.layoutSwitched", undefined, "Layout switched to {layout}."),
         generate: t("studio.graph.generate", undefined, "Chat / Generate"),
-        debugRun: t("studio.graph.debugRun", undefined, "Quick debug"),
-        debugAdvanced: t("studio.graph.debugAdvanced", undefined, "Advanced debug"),
-        debugRunNow: t("studio.graph.debugRunNow", undefined, "Run now"),
-        debugQuickInput: t("studio.graph.debugQuickInput", undefined, "Run input"),
-        debugQuickHint: t("studio.graph.debugQuickHint", undefined, "Start a dry run without leaving the graph. Open advanced debug for path overrides."),
-        debugQuickPlaceholder: t("studio.graph.debugQuickPlaceholder", undefined, "Describe the request for this dry run"),
-        debugQuickOpen: t("studio.graph.debugQuickOpen", undefined, "Open quick debug"),
+        debugRun: t("studio.graph.debugRun", undefined, "Debug"),
         close: t("action.close", undefined, "Close"),
         debugRunShort: t("studio.graph.debugRunShort", undefined, "Run"),
         quickOpen: t("studio.graph.quickOpen", undefined, "Quick open"),
@@ -3326,11 +3325,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
       const selectedFlowKeyValue = state.studioBridgeSelectedFlowKey || "";
-      const selectionKind = selectedRoleIdValue
-        ? "role"
-        : selectedFlowKeyValue
-          ? "flow"
-          : "";
+      const selectionKind = selectedRoleIdValue === STUDIO_SYSTEM_START_ROLE_ID
+        ? "start"
+        : selectedRoleIdValue === STUDIO_SYSTEM_END_ROLE_ID
+          ? "end"
+          : selectedRoleIdValue
+            ? "role"
+            : selectedFlowKeyValue
+              ? "flow"
+              : "";
       const activeTab = state.studioWorkbenchSideTab === "debug" ? "debug" : "structure";
       const structureHtml = renderStudioBridgeStructureHtml({
         bridge: resolveStudioBridgeForDisplay(),
@@ -3379,7 +3382,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         title.textContent = selectedRoleIdValue || state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else if (activeTab === "structure") {
         kindLabel.textContent = selectionKind ? t("studio.retrievalTab", undefined, "Configuration") : t("workbench.structure", undefined, "Structure");
-        title.textContent = selectedRoleIdValue || selectedFlowKeyValue || state.studioSelectionCommandKind || t("studio.graphWorkspace", undefined, "Graph workspace");
+        title.textContent = selectionKind === "start"
+          ? t("studio.boundaryStart", undefined, "Start")
+          : selectionKind === "end"
+            ? t("studio.boundaryEnd", undefined, "End")
+            : selectedRoleIdValue || selectedFlowKeyValue || state.studioSelectionCommandKind || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else {
         kindLabel.textContent = t("studio.graphWorkspace", undefined, "Graph workspace");
         title.textContent = t("studio.selectRole", undefined, "Select a role to inspect metadata.");
@@ -3398,7 +3405,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         collapseButton.title = collapseButton.getAttribute("aria-label");
       }
 
-      if (activeTab === "structure" && selectionKind === "role") {
+      if (activeTab === "structure" && (selectionKind === "start" || selectionKind === "end")) {
+        const boundaryTitle = selectionKind === "start"
+          ? t("studio.boundaryStart", undefined, "Start")
+          : t("studio.boundaryEnd", undefined, "End");
+        setRolePackageHtml([
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.specialRole", undefined, "Special role")) + '</span><span>' + escapeText(boundaryTitle) + '</span></div><strong>' + escapeText(selectionKind === "start" ? t("studio.startRoleDescription", undefined, "Distributes the original task") : t("studio.endRoleDescription", undefined, "Collects terminal role results")) + '</strong></div>',
+          renderStudioBoundaryConfigEditor({
+            kind: selectionKind,
+            authoring: state.studioBridge?.authoring || null,
+            draft: state.studioBoundaryConfigDraft,
+            t
+          })
+        ].join(""));
+        setDebugPanelHtml(renderStudioDebugWorkspaceContent());
+      } else if (activeTab === "structure" && selectionKind === "role") {
         ensureStudioRoleConfigEditor(selectedRoleIdValue);
         ensureStudioExecutionConfigEditor(selectedRoleIdValue);
         const selectedRoleForSummary = (resolveStudioBridgeForDisplay()?.extracted?.roles || [])
@@ -4048,8 +4069,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           for (const field of Array.from(workbenchBodyEl.querySelectorAll("[data-system-setting]"))) {
             settings[field.getAttribute("data-system-setting")] = String(field.value || "").trim();
           }
-          if (!settings.systemId || !settings.systemVersion || !settings.lawGlobalRef || !settings.entryRoleId || !settings.entryEventType) {
-            setFlash("error", t("studio.systemSettingsRequired", undefined, "System ID, version, Law, entry role and entry event are required."));
+          if (!settings.systemId || !settings.systemVersion || !settings.lawGlobalRef) {
+            setFlash("error", t("studio.systemSettingsRequired", undefined, "System ID, version and Law are required."));
             return;
           }
           if (settings.handoffContracts && !settings.handoffMode) {
@@ -4065,6 +4086,53 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await applyStudioGraphAuthoringCommand(result, {
             successMessage: t("studio.systemSettingsSaved", undefined, "System settings saved."),
             afterApply: () => loadStudioRoleConfigEditor(selectedRole, { force: true })
+          });
+        });
+      }
+      for (const select of Array.from(workbenchBodyEl.querySelectorAll('[data-boundary-setting="startMode"], [data-boundary-setting="endMode"]'))) {
+        bindOnce(select, "change", "boundary-mode-change", () => {
+          const kind = select.getAttribute("data-boundary-setting") === "startMode" ? "start" : "end";
+          const countField = select.closest(".studio-boundary-config-editor")?.querySelector("[data-boundary-count-field]");
+          if (countField) countField.hidden = select.value === "all" || select.value === "all_of";
+          const countFieldName = kind === "start" ? "startCount" : "endMin";
+          const count = Number(select.closest(".studio-boundary-config-editor")?.querySelector('[data-boundary-setting="' + countFieldName + '"]')?.value || 1);
+          state.studioBoundaryConfigDraft = { kind, mode: select.value, count };
+        });
+      }
+      for (const input of Array.from(workbenchBodyEl.querySelectorAll('[data-boundary-setting="startCount"], [data-boundary-setting="endMin"]'))) {
+        bindOnce(input, "input", "boundary-count-input", () => {
+          const kind = input.getAttribute("data-boundary-setting") === "startCount" ? "start" : "end";
+          const modeFieldName = kind === "start" ? "startMode" : "endMode";
+          const mode = String(input.closest(".studio-boundary-config-editor")?.querySelector('[data-boundary-setting="' + modeFieldName + '"]')?.value || (kind === "start" ? "all" : "all_of"));
+          state.studioBoundaryConfigDraft = { kind, mode, count: Number(input.value || 1) };
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-boundary-settings-save]"))) {
+        bindOnce(button, "click", "boundary-settings-save", async () => {
+          const kind = button.getAttribute("data-boundary-settings-save") === "end" ? "end" : "start";
+          const root = button.closest("[data-boundary-config-editor]");
+          const authoring = state.studioBridge?.authoring;
+          if (!root || !authoring) return;
+          const connectedIds = Array.from(new Set(Object.values(authoring.flows || {})
+            .filter((flow) => kind === "start" ? flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID : flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID)
+            .map((flow) => String(kind === "start" ? flow.toRoleId : flow.fromRoleId || "").trim())
+            .filter(Boolean)));
+          const mode = String(root.querySelector('[data-boundary-setting="' + (kind === "start" ? "startMode" : "endMode") + '"]')?.value || (kind === "start" ? "all" : "all_of"));
+          const rawCount = Number(root.querySelector('[data-boundary-setting="' + (kind === "start" ? "startCount" : "endMin") + '"]')?.value || 1);
+          if (!connectedIds.length || ((kind === "start" && mode === "random_n") || (kind === "end" && mode === "quorum_of")) && (!Number.isInteger(rawCount) || rawCount < 1 || rawCount > connectedIds.length)) {
+            setFlash("error", t("studio.boundaryCountInvalid", { count: String(connectedIds.length) }, "The configured count must be between 1 and the {count} connected roles."));
+            return;
+          }
+          const system = kind === "start"
+            ? { startDispatch: mode === "random_n" ? { mode: "random_n", count: rawCount } : { mode: "all" } }
+            : { endJoin: mode === "quorum_of" ? { mode: "quorum_of", min: rawCount } : { mode: "all_of" } };
+          const result = applyStudioAuthoringCommand({ authoring, command: { type: "update-system", system } });
+          state.studioBoundaryConfigDraft = null;
+          result.selectedRoleId = kind === "start" ? STUDIO_SYSTEM_START_ROLE_ID : STUDIO_SYSTEM_END_ROLE_ID;
+          await applyStudioGraphAuthoringCommand(result, {
+            successMessage: kind === "start"
+              ? t("studio.startDispatchSaved", undefined, "Start dispatch settings saved.")
+              : t("studio.endAggregationSaved", undefined, "End aggregation settings saved.")
           });
         });
       }
@@ -4605,6 +4673,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           loadStudioFlowConfigEditor(button.getAttribute("data-flow-config-revert") || selectedStudioFlowKey(), { force: true });
         });
       }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-delete]"))) {
+        bindOnce(button, "click", "flow-config-delete", () => {
+          void deleteStudioFlowConfigEditor(button.getAttribute("data-flow-config-delete") || selectedStudioFlowKey());
+        });
+      }
       const handleFieldEdit = (event) => {
         const target = event.target;
         const field = target?.closest?.("[data-flow-config-field]");
@@ -4656,6 +4729,29 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(element, "input", "flow-config-field", handleFieldEdit);
         bindOnce(element, "change", "flow-config-field-change", handleFieldEdit);
       }
+    }
+
+    async function deleteStudioFlowConfigEditor(flowKey) {
+      const flow = resolveSelectedStudioFlowByKey(flowKey);
+      if (!flow || !state.studioBridge?.authoring) return;
+      const result = applyStudioAuthoringCommand({
+        authoring: state.studioBridge.authoring,
+        command: {
+          type: "delete-edge",
+          flowId: flow.flowId,
+          sourceRoleId: flow.fromRoleId,
+          targetRoleId: flow.toRoleId,
+          eventType: flow.eventType
+        }
+      });
+      await applyStudioGraphAuthoringCommand(result, {
+        successMessage: t("studio.flowConfigDeleted", undefined, "Flow deleted."),
+        afterApply: () => {
+          state.studioBridgeSelectedFlowKey = "";
+          state.studioFlowConfigEditor = null;
+          renderStudioSelectionDialog();
+        }
+      });
     }
 
     async function loadStudioRolePackageEditor(roleId, options) {
@@ -5251,7 +5347,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onSaveWorkbench: async () => {
           await saveWorkbench();
         },
-        onQuickDebugRun: async (input) => {
+        onDebugRunInput: async (input) => {
           const trimmedInput = String(input || "").trim();
           if (!trimmedInput) {
             setFlash("error", t("run.inputRequired", undefined, "Run input is required."));
@@ -5411,11 +5507,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
         ? t("workbench.immutableRunMeta")
         : t("workbench.defaultMeta");
-      const entryRoleId = structure?.entryRoleId || state.project?.summary?.project?.entryRoleId || "";
+      const entryRoleIds = structure?.entryRoleIds || [];
       const lastDryRunId = state.studioBridgeLastDryRunId || "";
       setInnerHtmlIfChanged(workbenchStatusEl, renderWorkbenchStatusHtml({
         dirty,
-        entryRoleId,
+        entryRoleIds,
         lastDryRunId,
         validation,
         diagnostics,
@@ -5519,9 +5615,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             "%% system.id=workspace.draft",
             "%% system.version=0.0.1",
             "%% law.global=law.minimal.base",
-            "%% entry.role=demo-analyst",
-            "input -->|START| analyst[Role:demo-analyst]",
-            "analyst[Role:demo-analyst] -->|DONE| output",
+            "start[开始] -->|START| analyst[Role:demo-analyst]",
+            "analyst[Role:demo-analyst] -->|DONE| end[结束]",
             ""
           ].join("\\n");
           state.workbenchView = "source";
@@ -5578,7 +5673,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         runDir: header.runDir,
         status: header.status,
         transitionCount: header.transitionCount,
-        finalRoleId: header.finalRoleId,
+        finalRoleIds: header.finalRoleIds,
         lastExecutedRoleId: header.lastExecutedRoleId,
         updatedAt: header.updatedAt,
         pendingReviewCount: header.pendingReviewCount,
@@ -5971,7 +6066,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const validationOk = state.workbench?.validation?.ok === true;
         const projectReadinessHtml = renderProjectReadinessPanel({ readiness: state.projectReadiness, t });
         const recentRunsHtml = recentRuns.length
-          ? recentRuns.map((run) => '<div class="event"><div class="event-top"><span><code>' + escapeText(run.runId || "n/a") + '</code></span><span>' + escapeText(displayUiToken(run.status || "unknown", t)) + '</span></div><strong>' + escapeText(run.lastExecutedRoleId || run.finalRoleId || t("common.notAvailable", undefined, "n/a")) + '</strong><div class="hint">' + escapeText(run.startedAt ? formatTime(run.startedAt) : t("common.notAvailable", undefined, "n/a")) + '</div></div>').join("")
+          ? recentRuns.map((run) => '<div class="event"><div class="event-top"><span><code>' + escapeText(run.runId || "n/a") + '</code></span><span>' + escapeText(displayUiToken(run.status || "unknown", t)) + '</span></div><strong>' + escapeText(run.lastExecutedRoleId || (run.finalRoleIds || []).join(", ") || t("common.notAvailable", undefined, "n/a")) + '</strong><div class="hint">' + escapeText(run.startedAt ? formatTime(run.startedAt) : t("common.notAvailable", undefined, "n/a")) + '</div></div>').join("")
           : '<div class="hint">' + escapeText(t("project.noRunsYet", undefined, "No runs recorded yet.")) + '</div>';
         const infoItems = [
           [t("project.structure", undefined, "structure"), t("project.structureSummary", { roles: String(summary.roleCount ?? state.project?.roles?.roles?.length ?? 0), flows: String(summary.flowCount ?? 0) }, "{roles} roles · {flows} flows")],
@@ -6275,13 +6370,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter((node) => node?.roleSeat) : [];
       const edges = Array.isArray(graph.edges) ? graph.edges.filter((edge) => edge?.source !== "input") : [];
       const systemId = authoring?.system?.systemId || state.detail?.header?.systemId || state.selectedRunId || t("common.unknown");
-      const entryRoleId = authoring?.system?.entryRoleId || t("common.notAvailable");
+      const entryRoleIds = Object.values(authoring?.flows || {})
+        .filter((flow) => flow?.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID)
+        .map((flow) => {
+          const roleId = String(flow.toRoleId || "");
+          return String(authoring?.roles?.[roleId]?.title || roleId);
+        })
+        .filter(Boolean)
+        .join(", ") || t("common.notAvailable");
       const existingRoot = document.getElementById("run-graph-root");
       if (existingRoot) {
         const summaryEl = graphViewEl.querySelector("[data-run-graph-summary]");
         if (summaryEl) {
           summaryEl.innerHTML = '<strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
-            entryRoleId,
+            entryRoleIds,
             roleCount: nodes.length || 0,
             flowCount: edges.length || 0
           })) + '</div>';
@@ -6292,7 +6394,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } else {
         graphViewEl.innerHTML = [
           '<div class="event" data-run-graph-summary><strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
-            entryRoleId,
+            entryRoleIds,
             roleCount: nodes.length || 0,
             flowCount: edges.length || 0
           })) + "</div></div>",
@@ -7051,6 +7153,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.studioBridgeSelectedFlowKey = args.selectedFlowKey || "";
         state.studioBridgeSelectedRoleId = "";
       }
+      if (args.selectedRoleId || args.selectedFlowKey) {
+        state.studioInspectorCollapsed = false;
+        state.studioWorkbenchSideTab = "structure";
+      }
       state.workbench = {
         ...(state.workbench || {}),
         validation: payload.validation || state.workbench?.validation
@@ -7115,7 +7221,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           runtimeContext: state.selectedRunId ? {
             runId: state.selectedRunId,
             status: state.detail?.header?.status,
-            finalRoleId: state.detail?.header?.finalRoleId,
+            finalRoleIds: state.detail?.header?.finalRoleIds,
             lastErrorCode: state.detail?.header?.lastErrorCode,
             transitionCount: state.detail?.header?.transitionCount,
             failureSummary: state.failure?.summary

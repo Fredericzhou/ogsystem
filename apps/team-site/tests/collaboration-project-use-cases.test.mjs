@@ -75,6 +75,21 @@ test("Project team listing returns the collaboration Project mount projection", 
   });
 });
 
+test("deleting a Collaboration Project is locked, type checked, and blocked while a Task is active", async () => {
+  const { useCases, calls } = makeUseCases();
+  assert.deepEqual(await useCases.deleteCollaborationProject("project-1"), { projectId: "project-1", deleted: true });
+  assert.ok(calls.some(([kind, id, operation]) => kind === "lock" && id === "project-1" && operation === "project-delete"));
+  assert.deepEqual(calls.at(-1), ["remove", "project-1"]);
+
+  const active = makeUseCases({ project: { projectId: "project-1", projectType: "collaboration", taskRecords: [{ taskId: "task-1", status: "waiting_review" }] } });
+  await assert.rejects(() => active.useCases.deleteCollaborationProject("project-1"), /PROJECT_DELETE_LOCKED/);
+  assert.ok(!active.calls.some(([kind]) => kind === "remove"));
+
+  const teamWorkspace = makeUseCases({ project: { projectId: "project-1", projectType: "team" } });
+  await assert.rejects(() => teamWorkspace.useCases.deleteCollaborationProject("project-1"), /PROJECT_TYPE_INVALID/);
+  assert.ok(!teamWorkspace.calls.some(([kind]) => kind === "remove"));
+});
+
 test("Collaboration Project creation validates canonical released teams and initializes through the store", async () => {
   const { useCases, calls } = makeUseCases({ teams: [releasedTeam] });
   const project = await useCases.createCollaborationProject({ name: "  Product Launch  ", overview: "Plan launch", teamVersionIds: ["team-1"] });

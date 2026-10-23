@@ -2,7 +2,6 @@ flowchart TD
 %% system.id=ogs.gstacklike
 %% system.version=1.0.0
 %% law.global=law.gstacklike.base
-%% entry.role=office-hours
 %% loop.max.office-hours=3
 %% exec.bind.office-hours=profile.office-hours
 %% exec.bind.review=profile.review
@@ -24,14 +23,14 @@ flowchart TD
 %% context.map.retro.deploy_result=direct.data
 %% context.map.learn.retrospective=direct.data.retrospective
 
-input -->|REQUEST_IN| office-hours[Role:office-hours]
+start[开始] -->|START| office-hours[Role:office-hours]
 office-hours[Role:office-hours] -->|READY_FOR_REVIEW| review[Role:review]
-office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| output
-office-hours[Role:office-hours] -->|REJECTED| output
+office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| end[结束]
+office-hours[Role:office-hours] -->|REJECTED| end[结束]
 
 review[Role:review] -->|APPROVED| qa[Role:qa]
 review[Role:review] -->|CHANGES_REQUIRED| office-hours[Role:office-hours]
-review[Role:review] -->|BLOCKED| output
+review[Role:review] -->|BLOCKED| end[结束]
 
 qa[Role:qa] -->|QA_PASS| ship[Role:ship]
 qa[Role:qa] -->|QA_FAIL| office-hours[Role:office-hours]
@@ -44,8 +43,8 @@ ship-deploy[Role:ship-deploy] -->|SHIPPED| retro[Role:retro]
 ship-deploy[Role:ship-deploy] -->|ERROR| error-handler-base[Role:error-handler-base]
 
 error-handler-base[Role:error-handler-base] -->|COMPENSATED| review[Role:review]
-error-handler-base[Role:error-handler-base] -->|ESCALATED| output
-error-handler-base[Role:error-handler-base] -->|ABORTED| output
+error-handler-base[Role:error-handler-base] -->|ESCALATED| end[结束]
+error-handler-base[Role:error-handler-base] -->|ABORTED| end[结束]
 
 retro[Role:retro] -->|RETRO_DONE| learn[Role:learn]
-learn[Role:learn] -->|LEARNED| output
+learn[Role:learn] -->|LEARNED| end[结束]

@@ -55,11 +55,17 @@ export function createFileRecentRunStore({ projectsRoot }) {
         readJson(join(runDir, "run-plan.json"))
       ]);
       const output = await readJson(join(runDir, "state.json"));
-      const finalOutput = output?.graphState?.finalOutput;
+      const graphState = output?.graphState;
+      const outputMap = graphState?.finalOutputsByRoleId;
+      const roleOrder = Array.isArray(graphState?.finalOutputRoleOrder) ? graphState.finalOutputRoleOrder : [];
+      const outputSummary = outputMap && typeof outputMap === "object"
+        ? roleOrder.flatMap((roleId) => (Array.isArray(outputMap[roleId]) ? outputMap[roleId] : [])
+          .map((item) => typeof item?.content === "string" && item.content.startsWith("[dry-run]") ? item.content : `${roleId}: ${item?.content || JSON.stringify(item?.data || {})}`)).join(" | ")
+        : "";
       return {
         state,
         plan,
-        outputSummary: typeof finalOutput === "string" ? redactText(finalOutput, { enabled: true }).slice(0, 500) : ""
+        outputSummary: redactText(outputSummary, { enabled: true }).slice(0, 500)
       };
   }
 

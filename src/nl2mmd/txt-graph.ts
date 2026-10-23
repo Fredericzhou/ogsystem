@@ -10,7 +10,7 @@
 type ParsedNodeToken =
   | {
       kind: "boundary";
-      value: "input" | "output";
+      value: "开始" | "结束";
     }
   | {
       kind: "role";
@@ -27,14 +27,15 @@ type ParsedTxtGraph = {
   metadata: Map<string, string>;
   edges: ParsedEdge[];
   roleIds: string[];
+  entryRoleIds: string[];
 };
 
 function parseNodeToken(token: string): ParsedNodeToken {
   const trimmed = token.trim();
-  if (trimmed === "input" || trimmed === "output") {
+  if (trimmed === "start[开始]" || trimmed === "end[结束]") {
     return {
       kind: "boundary",
-      value: trimmed
+      value: trimmed === "start[开始]" ? "开始" : "结束"
     };
   }
   const match = trimmed.match(/^[A-Za-z0-9._:-]+\[Role:([A-Za-z0-9._:-]+)\]$/);
@@ -51,6 +52,7 @@ function parseMermaidForTxtGraph(source: string): ParsedTxtGraph {
   const metadata = new Map<string, string>();
   const edges: ParsedEdge[] = [];
   const roleIds = new Set<string>();
+  const entryRoleIds = new Set<string>();
 
   for (const rawLine of source.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -78,6 +80,7 @@ function parseMermaidForTxtGraph(source: string): ParsedTxtGraph {
     if (to.kind === "role") {
       roleIds.add(to.roleId);
     }
+    if (from.kind === "boundary" && from.value === "开始" && to.kind === "role") entryRoleIds.add(to.roleId);
     edges.push({
       from,
       to,
@@ -88,7 +91,8 @@ function parseMermaidForTxtGraph(source: string): ParsedTxtGraph {
   return {
     metadata,
     edges,
-    roleIds: Array.from(roleIds)
+    roleIds: Array.from(roleIds),
+    entryRoleIds: Array.from(entryRoleIds)
   };
 }
 
@@ -134,7 +138,7 @@ export function renderTxtGraphFromMermaidSource(source: string): string {
   const lines = [
     `SYSTEM ${parsed.metadata.get("system.id") ?? "(unknown)"} v${parsed.metadata.get("system.version") ?? "(unknown)"}`,
     `LAW ${parsed.metadata.get("law.global") ?? "(unknown)"}`,
-    `ENTRY ${parsed.metadata.get("entry.role") ?? "(infer-from-input)"}`,
+    `ENTRIES ${parsed.entryRoleIds.join(",") || "(none)"}`,
     ""
   ];
 
@@ -156,7 +160,7 @@ export function renderTxtGraphFromMermaidSource(source: string): string {
   }
 
   for (const key of Array.from(grouped.keys()).sort()) {
-    const header = key === "input" || key === "output" ? `[${key}]` : `[${key}]`;
+    const header = `[${key}]`;
     lines.push(header);
     for (const edge of grouped.get(key) ?? []) {
       lines.push(`  --${edge.eventType}--> ${renderToken(edge.to, parsed.metadata)}`);

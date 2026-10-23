@@ -38,24 +38,23 @@ flowchart TD
 %% system.id=demo.basic
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=planner
 plannerNode[Role:planner] -->|TO_WRITER| writerNode[Role:writer]
-writerNode[Role:writer] -->|DONE| output
+writerNode[Role:writer] -->|DONE| end[结束]
 ```
 
 #### 含义
 
 - 第一行必须是 `flowchart TD` 或 `flowchart LR`。
-- 节点必须是 `nodeId[Role:roleId]`，系统边界仅允许 `input` 和 `output`。
+- 业务节点使用 `nodeId[Role:roleId]`；`start[开始]` 与 `end[结束]` 是显式结构角色，必须通过 Flow 连接。
 - 边必须是 `from -->|EVENT| to`，每条边必须有非空事件名。
 - 必填元数据：`system.id`、`system.version`、`law.global`。
-- 入口必须唯一：`entry.role` 或单一 `input -->|...| Role`。
+- 开始角色的候选范围仅由 `start[开始] -->|START| Role` Flow 定义；分发策略为全部或按 Run 固定随机选择 N 个。结束汇聚只统计直接连接 `end[结束]` 的不同角色。多入口、结束汇聚和结果顺序见[多入口与多终值](multi-entry-and-terminal-output.md)。
 
 #### 注意事项
 
-- `input/output` 仅可作为 boundary token；`input/output/start/end/done` 一律禁止作为角色 ID（解析期硬拒绝）。
+- `start[开始]` 与 `end[结束]` 是无业务执行的特殊角色；`start/end` 一律禁止作为业务角色 ID（解析期硬拒绝）。
 - 不在白名单中的元数据键会被直接拒绝。
-- 至少需要一个“终点”：无出边角色，或存在 `Role -->|...| output`。
+- 至少需要一个业务角色直接连接 `end[结束]`；没有结束连线的孤立角色不会计入结束汇聚。
 
 ### 2.2 元数据键白名单
 
@@ -63,7 +62,7 @@ writerNode[Role:writer] -->|DONE| output
 
 当前仅支持以下键族：
 
-- 精确键：`engine`、`system.id`、`system.version`、`law.global`、`entry.role`
+- 精确键：`engine`、`system.id`、`system.version`、`law.global`、`end.join.mode`、`end.join.min`
 - 工具执行绑定键：`exec.bind.<roleId>`；Agent backend/model 位于 `.ogs/model-selection.json`
 - 图语义键：`role.mode.<roleId>`、`join.mode.<roleId>`、`join.min.<roleId>`、`join.sources.<roleId>`
 - 上下文键：`context.map.<roleId>.<field>`
@@ -94,11 +93,10 @@ flowchart TD
 %% system.id=demo.event.route
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=judge
 judgeNode[Role:judge] -->|PASS| passNode[Role:pass_node]
 judgeNode[Role:judge] -->|REJECT| rejectNode[Role:reject_node]
-passNode[Role:pass_node] -->|DONE| output
-rejectNode[Role:reject_node] -->|DONE| output
+passNode[Role:pass_node] -->|DONE| end[结束]
+rejectNode[Role:reject_node] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -120,7 +118,6 @@ flowchart LR
 %% system.id=demo.parallel.split
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=dispatcher
 %% role.mode.dispatcher=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=dev,qa
@@ -128,7 +125,7 @@ dispatcherNode[Role:dispatcher] -->|TO_DEV| devNode[Role:dev]
 dispatcherNode[Role:dispatcher] -->|TO_QA| qaNode[Role:qa]
 devNode[Role:dev] -->|DEV_DONE| mergeNode[Role:merge]
 qaNode[Role:qa] -->|QA_DONE| mergeNode[Role:merge]
-mergeNode[Role:merge] -->|DONE| output
+mergeNode[Role:merge] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -168,7 +165,6 @@ flowchart TD
 %% system.id=demo.join.allof
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=splitter
 %% role.mode.splitter=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=a,b
@@ -176,7 +172,7 @@ splitterNode[Role:splitter] -->|TO_A| nodeA[Role:a]
 splitterNode[Role:splitter] -->|TO_B| nodeB[Role:b]
 nodeA[Role:a] -->|A_DONE| mergeNode[Role:merge]
 nodeB[Role:b] -->|B_DONE| mergeNode[Role:merge]
-mergeNode[Role:merge] -->|DONE| output
+mergeNode[Role:merge] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -198,7 +194,6 @@ flowchart TD
 %% system.id=demo.join.quorum
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=dispatcher
 %% role.mode.dispatcher=parallel_split
 %% join.mode.judge=quorum_of
 %% join.sources.judge=expert_a,expert_b,expert_c
@@ -209,7 +204,7 @@ dispatcherNode[Role:dispatcher] -->|TO_C| expertCNode[Role:expert_c]
 expertANode[Role:expert_a] -->|A_DONE| judgeNode[Role:judge]
 expertBNode[Role:expert_b] -->|B_DONE| judgeNode[Role:judge]
 expertCNode[Role:expert_c] -->|C_DONE| judgeNode[Role:judge]
-judgeNode[Role:judge] -->|DONE| output
+judgeNode[Role:judge] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -230,7 +225,7 @@ judgeNode[Role:judge] -->|DONE| output
 - 超时会记录 expected、ready、missing sources、Join scope、超时时刻和最终动作，并纳入 checkpoint/resume 对账。
 - 同一 Join scope 只处理一次；迟到 source 不会二次激活 Join。
 - Join 的 readiness 作用域由 `runId`、Join 角色、`lineageId` 和 `loopIteration` 组成；UI 用的 `joinId` 只是显示标识，不能替代内部作用域键。
-- `join.first_packet.*`、`join.gap.*` 等分阶段等待窗口尚未实现，详见 [Join 等待超时 RFC](../development/ogsystem-wait-timeout-semantics-v2.md)。
+- `join.first_packet.*`、`join.gap.*` 等分阶段等待窗口尚未实现，属于延期能力；当前 Join 只使用单一总等待期限。
 
 ---
 
@@ -247,13 +242,12 @@ flowchart TD
 %% system.id=demo.context.direct
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=planner
 %% context.map.writer.goal=global.task
 %% context.map.writer.profile=global.user_profile
 %% context.map.writer.brief=direct.content
 %% context.map.writer.outline=direct.data.outline
 plannerNode[Role:planner] -->|PLAN_DONE| writerNode[Role:writer]
-writerNode[Role:writer] -->|DONE| output
+writerNode[Role:writer] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -277,7 +271,6 @@ flowchart TD
 %% system.id=demo.context.join
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=splitter
 %% role.mode.splitter=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=left,right
@@ -288,7 +281,7 @@ splitterNode[Role:splitter] -->|TO_LEFT| leftNode[Role:left]
 splitterNode[Role:splitter] -->|TO_RIGHT| rightNode[Role:right]
 leftNode[Role:left] -->|LEFT_DONE| mergeNode[Role:merge]
 rightNode[Role:right] -->|RIGHT_DONE| mergeNode[Role:merge]
-mergeNode[Role:merge] -->|DONE| output
+mergeNode[Role:merge] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -316,11 +309,10 @@ flowchart TD
 %% system.id=demo.loop.max
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=draft
 %% loop.max.draft=3
 draftNode[Role:draft] -->|SUBMIT| reviewNode[Role:review]
 reviewNode[Role:review] -->|REWRITE| draftNode[Role:draft]
-reviewNode[Role:review] -->|PASS| output
+reviewNode[Role:review] -->|PASS| end[结束]
 ```
 
 #### 含义
@@ -363,7 +355,7 @@ reviewNode[Role:review] -->|PASS| output
 #### 注意事项
 
 - 当前只支持 `review.mode.<roleId>=required`，其它 review mode 会在解析期拒绝。
-- `review.timeout` 单位为秒，必须为非负整数；它当前只会被解析并持久化到 review spec，运行时不会自动计时或将 review 标记为 expired；review 的附加配置必须同时声明 `review.mode`。
+- `review.timeout` 单位为秒，必须为非负整数；status、inspect、review list 和 resume 会惰性检查到期时间，不运行后台计时服务。到期后只创建一次超时 decision 和审计事件：`pause` 将 review 标记为 expired 并保留可操作的暂停状态，之后仍可显式 approve/rework/terminate；`terminate` 按 `review.terminate.scope` 终止分支或整个运行。resume 会幂等应用已持久化的 decision。review 的附加配置必须同时声明 `review.mode`。
 - 首轮和返工共用同一图语义；首轮没有审核上下文时，给 selector 末尾加 `?`。
 
 ### 7.3 角色输出合同
@@ -391,12 +383,11 @@ flowchart TD
 %% system.id=demo.error.edge
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=worker
-workerNode[Role:worker] -->|OK| output
+workerNode[Role:worker] -->|OK| end[结束]
 workerNode[Role:worker] -->|ERROR.IO_TIMEOUT| retryNode[Role:retry_handler]
 workerNode[Role:worker] -->|ERROR| fallbackNode[Role:fallback_handler]
-retryNode[Role:retry_handler] -->|DONE| output
-fallbackNode[Role:fallback_handler] -->|DONE| output
+retryNode[Role:retry_handler] -->|DONE| end[结束]
+fallbackNode[Role:fallback_handler] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -410,7 +401,8 @@ fallbackNode[Role:fallback_handler] -->|DONE| output
 - `ERROR*` 语义受 `runtime.error_flows.v1` 控制，默认 `false`。
 - 未开启或无匹配时保持 fail-stop。
 - 同一来源角色最多一个 `ERROR` 兜底边；同一 `ERROR.<code>` 不可重复。
-- `input` 边界不允许声明 `ERROR*`。
+- `start[开始]` 只能通过统一事件 `START` 连接业务角色；异常流只能从业务角色发出。
+- Team Site 的团队结构与经典案例均用显式 `start[开始]`、`end[结束]` 特殊角色及其 Flow 表达边界；不使用 `entry.role` 或 `input`/`output` 伪节点。
 
 ---
 
@@ -439,7 +431,7 @@ fallbackNode[Role:fallback_handler] -->|DONE| output
 #### 说明（运行细节，不是角色图）
 
 ```text
-Static graph: input -> Role:role -> output
+Static graph: start[开始] -> Role:role -> end[结束]
 Runtime evidence: role activation -> execution-outcome.json -> checkpoint WAL -> state.json
 ```
 
@@ -464,7 +456,7 @@ Runtime evidence: role activation -> execution-outcome.json -> checkpoint WAL ->
 | 场景 | 典型触发 | 处理建议 |
 | :--- | :--- | :--- |
 | 头部非法 | 首行不是 `flowchart TD/LR` | 改为严格头部，删除多余前置文本 |
-| 元数据冲突 | `entry.role` 与 `input` 目标不一致 | 保留一个单一入口定义 |
+| 入口来源 | 不使用独立入口元数据 | 使用一个或多个 `start[开始] -->|START| Role` Flow |
 | join 不一致 | `join.sources` 与入边角色不完全相同 | 以 Mermaid 入边为准，双向对齐 |
 | quorum 参数错误 | 缺 `join.min` 或超范围 | 补齐并限制到 `[1, sources]` |
 | selector 非法 | join 用了 `direct.*` 或路径不存在 | 换成 `source(...)`，并补齐数据路径 |
@@ -534,7 +526,7 @@ I -->|满足且未激活| I3[激活一次 join 分支]
 
 | 主题 | 优先级/顺序 | 取舍说明 |
 | :--- | :--- | :--- |
-| 入口角色决定 | `input` 边界目标 与 `entry.role` 二选一且必须一致 | 入口冲突直接拒绝，避免恢复时入口漂移 |
+| 入口角色决定 | `start[开始]` 的直接连线目标是唯一候选来源；按全部或固定随机 N 个分发 | 开始事件固定为 `START`；随机选择随 Run 持久化并写入审计 |
 | 节点绑定 | 从模型选择、exec profile 或受 law 控制的 noop 解析执行方式 | Mermaid 只描述 role 与 flow，不承载模型配置 |
 | 上下文来源 | `context.map` > `join 默认命名空间` > `direct 上游内容` | 显式映射优先，防止隐式 context 漂移 |
 | 成功路由 | `routingMode handler`（如 `parallel_split`）> 默认事件匹配 | 扩展模式优先，默认模式兜底 |
@@ -551,7 +543,6 @@ flowchart LR
 %% system.id=demo.combined.quorum
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.judge=quorum_of
 %% join.sources.judge=a,b,c
@@ -564,7 +555,7 @@ dispatch[Role:dispatch] -->|TO_C| c[Role:c]
 a[Role:a] -->|DONE_A| judge[Role:judge]
 b[Role:b] -->|DONE_B| judge[Role:judge]
 c[Role:c] -->|DONE_C| judge[Role:judge]
-judge[Role:judge] -->|DONE| output
+judge[Role:judge] -->|DONE| end[结束]
 ```
 
 #### 含义
@@ -588,12 +579,11 @@ flowchart TD
 %% system.id=demo.combined.error-loop
 %% system.version=1.0.0
 %% law.global=law.default
-%% entry.role=worker
 %% loop.max.recover=1
 worker[Role:worker] -->|ERROR.IO| recover[Role:recover]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
 recover[Role:recover] -->|RETRY| worker[Role:worker]
-fallback[Role:fallback] -->|DONE| output
+fallback[Role:fallback] -->|DONE| end[结束]
 ```
 
 #### 含义

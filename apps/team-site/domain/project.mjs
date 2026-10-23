@@ -15,3 +15,8 @@ export function assertProjectTeamMutationAllowed(project) {
   const activeTask = (project?.taskRecords || []).find((task) => !task.deletedAt && ACTIVE_RUN_STATUSES.has(task.status));
   if (activeTask) throw new Error(`PROJECT_TEAM_UPDATE_LOCKED: active task ${activeTask.taskId} is ${activeTask.status}.`);
 }
+
+export function assertProjectDeletionAllowed(project) {
+  const activeTask = (project?.taskRecords || []).find((task) => !task.deletedAt && ACTIVE_RUN_STATUSES.has(task.status));
+  if (activeTask) throw new Error(`PROJECT_DELETE_LOCKED: active task ${activeTask.taskId} is ${activeTask.status}.`);
+}

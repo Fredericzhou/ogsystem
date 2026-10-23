@@ -1579,7 +1579,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
               : summary?.stopOutcome ?? null,
           lastErrorCode: summary?.lastErrorCode ?? null,
           lastRoleId: summary?.lastRoleId ?? null,
-          finalRoleId: summary?.finalRoleId ?? null,
+          finalRoleIds: summary?.finalRoleIds ?? null,
           stopRequest: detail.stopRequest ?? null,
           stopOutcome: detail.stopOutcome ?? null,
           summary: detail.summary ?? null

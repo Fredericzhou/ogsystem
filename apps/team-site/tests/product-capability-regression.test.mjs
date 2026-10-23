@@ -62,7 +62,16 @@ test("team repository queries include unreleased versions and forks refresh refe
     assert.equal(fork.name, released.name);
     assert.equal(fork.teamId, released.teamId);
     const lifecycle = createTeamVersionLifecycleUseCases({
-      teamVersions: { ...createFileTeamVersionLifecycle({ projectsRoot, getTeamVersion: store.getProject }), getTeamVersion: store.getProject }
+      teamVersions: {
+        ...createFileTeamVersionLifecycle({
+          projectsRoot,
+          getTeamVersion: store.getProject,
+          listProjects: store.listProjects,
+          removeProjectData: store.removeProjectData
+        }),
+        getTeamVersion: store.getProject
+      },
+      withTeamVersionLock: async (_id, action) => action()
     });
     const reference = JSON.parse(await readFile(join(fork.workdir, ".site", "team-version.json"), "utf8"));
     assert.equal(reference.teamVersionId, fork.teamVersionId);
@@ -72,6 +81,58 @@ test("team repository queries include unreleased versions and forks refresh refe
     assert.ok((await catalog.queryTeamRepository({ status: "editing", pageSize: 50 })).teams.some((team) => team.projectId === fork.projectId));
     assert.ok((await catalog.queryTeamRepository({ status: "archived", pageSize: 50 })).teams.some((team) => team.projectId === released.projectId));
     assert.ok((await catalog.queryTeamRepository({ status: "all", pageSize: 50 })).teams.some((team) => team.projectId === draft.projectId));
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("custom Team deletion removes its unused version lineage from persistent storage", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-delete-capability-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?capability-team-delete=${Date.now()}`));
+  try {
+    const root = await store.createProject({ name: "Disposable Team", overview: "Delete the full version lineage." });
+    const released = await store.confirmProjectTeam(root.projectId, { release: true });
+    const fork = await store.forkTeamVersion(released.projectId);
+    const persistence = createFileTeamVersionLifecycle({
+      projectsRoot,
+      getTeamVersion: store.getProject,
+      listProjects: store.listProjects,
+      removeProjectData: store.removeProjectData
+    });
+    const locks = (await import("../infrastructure/file-team-lifecycle-locks.mjs")).createFileTeamLifecycleLocks({ projectsRoot });
+    const lifecycle = createTeamVersionLifecycleUseCases({
+      teamVersions: { ...persistence, getTeamVersion: store.getProject },
+      withTeamVersionLock: locks.withTeamVersionLock
+    });
+    const deleted = await lifecycle.deleteTeam(root.projectId);
+    assert.deepEqual(new Set(deleted.deletedTeamVersionIds), new Set([root.projectId, fork.projectId]));
+    await assert.rejects(() => store.getProject(root.projectId), /not found/i);
+    await assert.rejects(() => store.getProject(fork.projectId), /not found/i);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("Collaboration Project deletion removes the workspace and retains the active Task guard", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-project-delete-capability-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = withCollaborationProjectUseCases(await import(`../infrastructure/file-project-store.mjs?capability-project-delete=${Date.now()}`));
+  try {
+    const team = await store.createProject({ name: "Project Delete Team", overview: "Available for a test Project.", templateId: "minimal" });
+    const released = await store.confirmProjectTeam(team.projectId, { release: true });
+    const project = await store.createCollaborationProject({ name: "Disposable Project", teamVersionIds: [released.projectId] });
+    assert.deepEqual(await store.deleteCollaborationProject(project.projectId), { projectId: project.projectId, deleted: true });
+    await assert.rejects(() => store.getProject(project.projectId), /not found/i);
+
+    const activeProject = await store.createCollaborationProject({ name: "Protected Project", teamVersionIds: [released.projectId] });
+    const current = await store.getProject(activeProject.projectId);
+    await store.saveProjectMetadata(activeProject.projectId, {
+      ...current,
+      taskRecords: [{ taskId: "task-1", status: "waiting_review" }]
+    });
+    await assert.rejects(() => store.deleteCollaborationProject(activeProject.projectId), /PROJECT_DELETE_LOCKED/);
+    assert.equal((await store.getProject(activeProject.projectId)).projectId, activeProject.projectId);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }
@@ -341,7 +402,8 @@ test("Studio Simulation maps Runtime done and ok into canonical completion evide
     const runner = createRuntimeTeamSimulation({
       run: async () => ({
         status: "done",
-        finalOutput: JSON.stringify({ event: "DONE" }),
+        finalOutputsByRoleId: { analyst: [{ content: JSON.stringify({ event: "DONE" }) }] },
+        finalOutputRoleOrder: ["analyst"],
         auditTrail: [{ roleId: "delivery-coordinator", status: "ok", backend: "opencode", modelId: "model-a", profileId: "profile-a", toolRef: "tool.task.execute" }]
       })
     });

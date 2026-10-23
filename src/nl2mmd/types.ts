@@ -92,7 +92,7 @@ export type Nl2MmdContext = {
     digest: string;
     systemId: string;
     systemVersion: string;
-    entrySeatId: string;
+    entryRoleIds: string[];
     seatIds: string[];
     transitions: Array<{ fromSeatId: string; toSeatId: string; eventType: string }>;
     stateRef?: string;
@@ -103,7 +103,7 @@ export type Nl2MmdContext = {
 
 export type Nl2MmdValidationResult = {
   status: "ok" | "failed";
-  system?: Pick<SystemDefinition, "systemId" | "systemVersion" | "entryRoleId" | "roleIds"> & {
+  system?: Pick<SystemDefinition, "systemId" | "systemVersion" | "entryRoleIds" | "roleIds"> & {
     lawRef: string;
   };
   errors: string[];

@@ -2,8 +2,7 @@ flowchart TD
 %% system.id=project.example.minimal
 %% system.version=1.0.0
 %% law.global=law.project.base
-%% entry.role=demo-analyst
 
-input -->|ENTER| analyst[Role:demo-analyst]
-analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
+start[开始] -->|START| analyst[Role:demo-analyst]
+analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]
 

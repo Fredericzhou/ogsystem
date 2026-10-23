@@ -22,11 +22,21 @@ export type Flow = {
   eventType: string;
 };
 
+export const SYSTEM_START_ROLE_ID = "__system_start__";
 export const SYSTEM_END_ROLE_ID = "__system_end__";
+
+export type SystemStartDispatch =
+  | { mode: "all" }
+  | { mode: "random_n"; count: number };
 
 export type GraphRoutingMode = "parallel_split";
 
 export type GraphJoinMode = "all_of" | "quorum_of";
+
+export type SystemEndJoin = {
+  mode: GraphJoinMode;
+  min?: number;
+};
 
 export type HandoffMode = "strict" | "transition";
 
@@ -111,9 +121,14 @@ export type LawBinding = {
 export type SystemDefinition = {
   systemId: string;
   systemVersion: string;
-  entryRoleId: string;
-  /** Event carried by the input boundary; older callers default to START. */
-  entryEventType?: string;
+  /** Derived from explicit Start -> Role flows. */
+  entryRoleIds: string[];
+  startDispatch: SystemStartDispatch;
+  startEventType: string;
+  /** Explicit Start -> Role flows are kept separate from executable role flows. */
+  startFlows: Flow[];
+  endJoin?: SystemEndJoin;
+  terminalRoleOrder?: string[];
   roleIds: string[];
   flows: Flow[];
   lawBinding: LawBinding;
@@ -186,7 +201,13 @@ export type ExecutionPlan = {
   systemId: string;
   systemVersion: string;
   lawBinding: LawBinding;
-  entryRoleId: string;
+  /** All candidate roles connected directly from Start. */
+  entryRoleIds: string[];
+  startDispatch: SystemStartDispatch;
+  startEventType: string;
+  endJoin: SystemEndJoin;
+  /** Only roles with a direct Role -> End flow, in graph order. */
+  terminalRoleOrder: string[];
   roleIds: string[];
   flows: Flow[];
   nodesByRoleId: Map<string, ExecutionPlanNode>;
@@ -553,7 +574,7 @@ export type BranchRecord = {
   parentBranchId?: string;
   activatedByRoleId?: string;
   activatedByEvent?: string;
-  status: "active" | "waiting_review" | "completed";
+  status: "active" | "waiting_review" | "completed" | "cancelled";
 };
 
 export type StoredRoleResult = {
@@ -640,6 +661,7 @@ export type GraphState = {
   stateVersion: number;
   lastEventId?: string;
   userPrompt: string;
+  selectedEntryRoleIds: string[];
   /** User/business state governed by Semantic IR reducers; runtime metadata stays separate. */
   businessState?: Record<string, unknown>;
   status: GraphRunStatus;
@@ -663,8 +685,9 @@ export type GraphState = {
   roleActivationsByScope?: Record<string, number>;
   joinScopes?: Record<string, JoinScopeState>;
   selectedEventByBranchId: Record<string, string>;
-  finalOutput: string;
-  finalRoleId: string;
+  finalOutputsByRoleId: Record<string, Array<{ content?: string; data?: Record<string, unknown> }>>;
+  finalOutputRoleOrder: string[];
+  finalRoleIds: string[];
   lastExecutedRoleId: string;
   nextBranchSequence: number;
   lastCheckpointSequence: number;
@@ -762,14 +785,15 @@ export type SystemStateSnapshot = {
   status: GraphRunStatus;
   currentRoleId: string;
   nextRoleId?: string;
-  finalRoleId?: string;
+  finalRoleIds?: string[];
   transitionCount: number;
   totalTransitions: number;
   okCount: number;
   failedCount: number;
   noopCount: number;
   failureCountsByErrorCode: Record<string, number>;
-  lastOutput?: string;
+  finalOutputsByRoleId?: GraphState["finalOutputsByRoleId"];
+  finalOutputRoleOrder?: string[];
   error?: string;
   errorEnvelope?: RuntimeErrorEnvelope;
   pendingReviewCount?: number;
@@ -822,8 +846,9 @@ export type AdapterRunResult = {
   systemVersion: string;
   lawRef: string;
   status: "done" | "failed" | "stopped" | "terminated";
-  finalRoleId?: string;
-  finalOutput?: string;
+  finalRoleIds?: string[];
+  finalOutputsByRoleId?: GraphState["finalOutputsByRoleId"];
+  finalOutputRoleOrder?: string[];
   systemState: SystemStateSnapshot;
   runSummary: RunSummarySnapshot;
   stages: StageSnapshot[];

@@ -1,6 +1,6 @@
-import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, join, parse, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 const ID = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const ROLE_FILES = new Set(["agent.md", "prompt.md", "role.json", "output.schema.json"]);
@@ -16,10 +16,16 @@ async function publishJson(path, value) {
 }
 
 async function ensureSafeDirectory(path) {
-  const absolute = resolve(path);
-  const root = parse(absolute).root;
-  const segments = absolute.slice(root.length).split(/[\\/]+/).filter(Boolean);
-  let current = root;
+  const requested = resolve(path);
+  let parent;
+  try { parent = await realpath(dirname(requested)); }
+  catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    parent = await ensureSafeDirectory(dirname(requested));
+  }
+  const absolute = join(parent, basename(requested));
+  let current = parent;
+  const segments = [basename(absolute)];
   for (const segment of segments) {
     current = join(current, segment);
     try {

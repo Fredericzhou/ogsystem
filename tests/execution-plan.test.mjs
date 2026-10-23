@@ -8,7 +8,6 @@ const source = `flowchart TD
 %% system.id=plan.demo
 %% system.version=1.0.0
 %% law.global=law.plan
-%% entry.role=dispatch
 %% route.order.dispatch=worker_b,worker_a
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
@@ -25,13 +24,13 @@ const source = `flowchart TD
 %% loop.max.dispatch=2
 %% exec.bind.worker_a=profile.a
 
-input -->|ENTER| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
 workerA[Role:worker_a] -->|A_DONE| review[Role:review]
 workerB[Role:worker_b] -->|B_DONE| review[Role:review]
 review[Role:review] -->|RETRY| dispatch[Role:dispatch]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `;
 
 test("execution plan normalizes graph semantics and bindings", () => {
@@ -43,7 +42,7 @@ test("execution plan normalizes graph semantics and bindings", () => {
   ]));
 
   assert.strictEqual(plan.systemId, "plan.demo");
-  assert.strictEqual(plan.entryRoleId, "dispatch");
+  assert.deepStrictEqual(plan.entryRoleIds, ["dispatch"]);
   assert.deepStrictEqual(plan.roleIds, ["dispatch", "worker_a", "worker_b", "review"]);
 
   const dispatch = plan.nodesByRoleId.get("dispatch");
@@ -98,5 +97,5 @@ test("execution plan normalizes graph semantics and bindings", () => {
     reworkMax: 3,
     terminateScope: "run"
   });
-  assert.strictEqual(review.isTerminal, false);
+  assert.strictEqual(review.isTerminal, true);
 });

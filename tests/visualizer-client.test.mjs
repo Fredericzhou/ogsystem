@@ -20,6 +20,7 @@ import {
   renderStudioRoleConfigEditor,
   renderStudioRoleSemanticSummary,
   renderStudioSystemSettingsEditor,
+  renderStudioBoundaryConfigEditor,
   renderStudioContractEditor,
   renderContractPanel,
   renderStudioBridgeInspector,
@@ -411,7 +412,7 @@ test("Studio Bridge renderers display and filter flow labels separately from eve
     extracted: {
       systemId: "demo.system",
       systemVersion: "1.0.0",
-      entryRoleId: "requirements_analyst",
+      entryRoleIds: ["requirements_analyst"],
       lawGlobal: "law.minimal",
       roles: [
         {
@@ -1259,7 +1260,7 @@ function buildRunFixture({
         runDir: `/tmp/${runId}`,
         status: runStatus,
         transitionCount: 1,
-        finalRoleId: "",
+        finalRoleIds: [],
         lastExecutedRoleId: roleId,
         updatedAt: "2026-04-23T09:15:01.000Z",
         activeBranches: 0,
@@ -1310,7 +1311,7 @@ function buildRunFixture({
       simulation: { mode: "runtime" },
       graph: {
         systemId: "viz.review.demo",
-        entryRoleId: roleId,
+        entryRoleIds: [roleId],
         roleCount: 2,
         flowCount: 1,
         nodes: [
@@ -1640,7 +1641,7 @@ function createBackend(options = {}) {
             projectId: "viz.project.demo",
             systemId: "viz.review.demo",
             systemVersion: "1.0.0",
-            entryRoleId: "demo-analyst",
+            entryRoleIds: ["demo-analyst"],
             roleCount: 1,
             roleIds: ["demo-analyst"],
             flowCount: 1,
@@ -1660,14 +1661,14 @@ function createBackend(options = {}) {
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
-          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\ninput -->|GO| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| output\n",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| end[结束]\n",
           validation: {
             ok: true,
             diagnostics: [],
             structure: {
               systemId: "viz.review.demo",
               systemVersion: "1.0.0",
-              entryRoleId: "demo-analyst",
+              entryRoleIds: ["demo-analyst"],
               roleCount: 1,
               flowCount: 1,
               roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
@@ -1688,7 +1689,7 @@ function createBackend(options = {}) {
             ? {
                 systemId: "viz.review.demo",
                 systemVersion: "1.0.0",
-                entryRoleId: "demo-analyst",
+                entryRoleIds: ["demo-analyst"],
                 roleCount: 1,
                 flowCount: 1,
                 roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
@@ -1710,7 +1711,7 @@ function createBackend(options = {}) {
             structure: valid ? {
               systemId: "viz.review.demo",
               systemVersion: "1.0.0",
-              entryRoleId: "demo-analyst",
+              entryRoleIds: ["demo-analyst"],
               roleCount: 1,
               flowCount: 1,
               roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
@@ -1736,7 +1737,7 @@ function createBackend(options = {}) {
             structure: {
               systemId: "viz.review.demo",
               systemVersion: "1.0.0",
-              entryRoleId: "demo-analyst",
+              entryRoleIds: ["demo-analyst"],
               roleCount: 1,
               flowCount: 1,
               roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
@@ -1749,7 +1750,7 @@ function createBackend(options = {}) {
             system: {
               systemId: "viz.review.demo",
               systemVersion: "1.0.0",
-              entryRoleId: "demo-analyst",
+              entryRoleIds: ["demo-analyst"],
               lawGlobalRef: "law.minimal.base"
             },
             roles: {
@@ -1773,7 +1774,7 @@ function createBackend(options = {}) {
           extracted: {
             systemId: "viz.review.demo",
             systemVersion: "1.0.0",
-            entryRoleId: "demo-analyst",
+            entryRoleIds: ["demo-analyst"],
             lawGlobal: "law.minimal.base",
             roles: [{
               roleId: "demo-analyst",
@@ -1855,7 +1856,7 @@ function createBackend(options = {}) {
         const nextAuthoring = cloneJson(this.lastStudioChatBody.authoring);
         nextAuthoring.system = {
           ...(nextAuthoring.system || {}),
-          entryRoleId: "demo-analyst"
+          entryRoleIds: ["demo-analyst"]
         };
         nextAuthoring.roles = {
           ...(nextAuthoring.roles || {}),
@@ -1895,10 +1896,9 @@ function createBackend(options = {}) {
             "%% system.id=viz.review.demo",
             "%% system.version=1.0.0",
             "%% law.global=law.minimal.base",
-            "%% entry.role=demo-analyst",
-            "input -->|GO| analyst[Role:demo-analyst]",
+            "start[开始] -->|START| analyst[Role:demo-analyst]",
             "analyst[Role:demo-analyst] -->|REVIEW| reviewer[Role:qa-reviewer]",
-            "reviewer[Role:qa-reviewer] -->|DONE| output",
+            "reviewer[Role:qa-reviewer] -->|DONE| end[结束]",
             ""
           ].join("\n"),
           validation: {
@@ -1950,7 +1950,7 @@ function createBackend(options = {}) {
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
-          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\nr1[Role:demo-analyst] -->|DONE| output\n",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| r1[Role:demo-analyst]\nr1[Role:demo-analyst] -->|DONE| end[结束]\n",
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
@@ -1962,7 +1962,7 @@ function createBackend(options = {}) {
           systemPath: "/tmp/demo/system.mmd",
           authoring,
           canvas: authoringToCanvasDocument(authoring),
-          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\nr1[Role:demo-analyst] -->|DONE| output\n",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| r1[Role:demo-analyst]\nr1[Role:demo-analyst] -->|DONE| end[结束]\n",
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
@@ -3056,8 +3056,8 @@ test("visualizer client retries graph workspace warmup until graph content becom
         systemPath: "/tmp/demo/system.mmd",
         systemSource: "flowchart TD\n",
         validation: { ok: true, diagnostics: [], structure: { roleCount: 1, flowCount: 1 } },
-        authoring: { version: 1, project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" }, system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleId: "demo-analyst", lawGlobalRef: "law.minimal.base" }, roles: {}, flows: {}, layout: { nodes: {} } },
-        extracted: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleId: "demo-analyst", lawGlobal: "law.minimal.base", roles: [], flows: [] }
+        authoring: { version: 1, project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" }, system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleIds: ["demo-analyst"], lawGlobalRef: "law.minimal.base" }, roles: {}, flows: {}, layout: { nodes: {} } },
+        extracted: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleIds: ["demo-analyst"], lawGlobal: "law.minimal.base", roles: [], flows: [] }
       }),
       createResponse({
         workdir: "/tmp/demo",
@@ -3067,7 +3067,7 @@ test("visualizer client retries graph workspace warmup until graph content becom
         authoring: {
           version: 1,
           project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" },
-          system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleId: "demo-analyst", lawGlobalRef: "law.minimal.base" },
+          system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleIds: ["demo-analyst"], lawGlobalRef: "law.minimal.base" },
           roles: { "demo-analyst": { roleId: "demo-analyst", bindingKind: "model" } },
           flows: { "1:demo-analyst:DONE:output": { flowId: "1:demo-analyst:DONE:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "DONE" } },
           layout: { nodes: { "demo-analyst": { x: 120, y: 120 } } }
@@ -3075,7 +3075,7 @@ test("visualizer client retries graph workspace warmup until graph content becom
         extracted: {
           systemId: "viz.review.demo",
           systemVersion: "1.0.0",
-          entryRoleId: "demo-analyst",
+          entryRoleIds: ["demo-analyst"],
           lawGlobal: "law.minimal.base",
           roles: [{ roleId: "demo-analyst", bindingKind: "model", incomingFlowCount: 0, outgoingFlowCount: 1, allowedEvents: ["DONE"], badges: ["entry", "M"] }],
           flows: [{ flowId: "1:demo-analyst:DONE:output", flowKey: "demo-analyst:DONE:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "DONE", runtimeOnlyErrorFlow: false, participatesInJoin: false }]
@@ -3097,14 +3097,14 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
       createResponse({
         workdir: "/tmp/demo",
         systemPath: "/tmp/demo/system.mmd",
-        systemSource: "flowchart TD\n%% entry.role=demo-analyst\ninput -->|GO| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| output\n",
+        systemSource: "flowchart TD\nstart[开始] -->|START| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| end[结束]\n",
         validation: {
           ok: true,
           diagnostics: [],
           structure: {
             systemId: "viz.review.demo",
             systemVersion: "1.0.0",
-            entryRoleId: "demo-analyst",
+            entryRoleIds: ["demo-analyst"],
             roleCount: 1,
             flowCount: 1,
             roles: [{ roleId: "demo-analyst", bindingKind: "model" }],
@@ -3117,8 +3117,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
           system: {
             systemId: "viz.review.demo",
             systemVersion: "1.0.0",
-            entryRoleId: "demo-analyst",
-            entryEventType: "GO",
+            entryRoleIds: ["demo-analyst"],
             lawGlobalRef: "law.minimal.base"
           },
           roles: {
@@ -3146,7 +3145,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
         extracted: {
           systemId: "viz.review.demo",
           systemVersion: "1.0.0",
-          entryRoleId: "demo-analyst",
+          entryRoleIds: ["demo-analyst"],
           lawGlobal: "law.minimal.base",
           roles: [],
           flows: []
@@ -3273,7 +3272,7 @@ test("visualizer client surfaces invalid project diagnostics and disables editin
         diagnostics: [
           {
             code: "PROJECT_SYSTEM_PARSE_FAILED",
-            message: "entry.role is missing or invalid",
+            message: "input boundary role is missing or invalid",
             severity: "error",
             stage: "parse"
           }
@@ -3285,7 +3284,7 @@ test("visualizer client surfaces invalid project diagnostics and disables editin
   await settle();
 
   assert.match(harness.document.getElementById("project-wizard").textContent, /invalid project|无效项目/i);
-  assert.match(harness.document.getElementById("project-wizard").textContent, /entry\.role is missing or invalid/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /input boundary role is missing or invalid/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /fix the project diagnostics|请先修复项目诊断问题/i);
   assert.equal(harness.document.getElementById("resume-run").disabled, true);
   assert.equal(harness.document.getElementById("build-validate"), null);
@@ -4317,9 +4316,8 @@ test("visualizer client keeps the workbench editor visible with source intact du
       "%% system.id=viz.review.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
-      "input -->|GO| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| end[结束]",
       ""
     ].join("\n")
   );
@@ -4419,9 +4417,8 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
       "%% system.id=viz.review.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
-      "input -->|GO| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| end[结束]",
       ""
     ].join("\n")
   );
@@ -4578,13 +4575,13 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.ok(latestEditableMount().commandFormLabels);
   assert.equal(typeof latestEditableMount().onValidateWorkbench, "function");
   assert.equal(typeof latestEditableMount().onSaveWorkbench, "function");
-  assert.equal(typeof latestEditableMount().onQuickDebugRun, "function");
+  assert.equal(typeof latestEditableMount().onDebugRunInput, "function");
   assert.equal(typeof latestEditableMount().onFocusDebugInput, "function");
   assert.equal(latestEditableMount().defaultAutoLayout, true);
   assert.equal(latestEditableMount().labels.viewportGroup, "Viewport");
   assert.equal(latestEditableMount().labels.editGroup, "Edit graph");
   assert.equal(latestEditableMount().labels.fullscreen, "Fullscreen");
-  assert.equal(latestEditableMount().labels.debugRun, "Quick debug");
+  assert.equal(latestEditableMount().labels.debugRun, "Debug");
   latestEditableMount().onSelectRole("demo-analyst");
   await settle();
   assert.equal(
@@ -4754,7 +4751,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.ok(debugTabButton);
   assert.equal(debugTabButton.getAttribute("data-studio-side-tab"), "debug");
 
-  await latestEditableMount().onQuickDebugRun("run from graph toolbar");
+  await latestEditableMount().onDebugRunInput("run from graph toolbar");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/ogs/runs/start"));
   assert.equal(harness.backend.lastStartBody.input, "run from graph toolbar");
   await settle();
@@ -4812,14 +4809,44 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   assert.doesNotMatch(roleConfigHtml, /data-system-setting=/);
   const systemSettingsHtml = renderStudioSystemSettingsEditor({
     authoring: {
-      system: { systemId: "test.system", systemVersion: "1.0.0", entryRoleId: "demo-analyst", entryEventType: "START" },
+      system: { systemId: "test.system", systemVersion: "1.0.0", startDispatch: { mode: "all" } },
       roles: { "demo-analyst": { roleId: "demo-analyst" } }
     },
     projectConfig: { laws: { laws: [{ lawId: "law.base" }] } },
     t: testTranslator
   });
-  assert.match(systemSettingsHtml, /data-system-setting="entryRoleId"/);
+  assert.doesNotMatch(systemSettingsHtml, /demo-analyst/);
   assert.match(systemSettingsHtml, /data-system-setting="handoffMode"/);
+  const startBoundaryHtml = renderStudioBoundaryConfigEditor({
+    kind: "start",
+    authoring: {
+      system: { startDispatch: { mode: "random_n", count: 2 } },
+      flows: {
+        a: { fromRoleId: "__system_start__", toRoleId: "a" },
+        b: { fromRoleId: "__system_start__", toRoleId: "b" },
+        c: { fromRoleId: "a", toRoleId: "__system_end__" }
+      }
+    },
+    t: testTranslator
+  });
+  assert.match(startBoundaryHtml, /data-boundary-setting="startMode"/);
+  assert.match(startBoundaryHtml, /data-boundary-setting="startCount" value="2"/);
+  assert.match(startBoundaryHtml, /max="2"/);
+  const endBoundaryHtml = renderStudioBoundaryConfigEditor({
+    kind: "end",
+    authoring: {
+      system: { endJoin: { mode: "quorum_of", min: 1 } },
+      flows: {
+        a: { fromRoleId: "a", toRoleId: "__system_end__" },
+        b: { fromRoleId: "b", toRoleId: "__system_end__" },
+        c: { fromRoleId: "__system_start__", toRoleId: "b" }
+      }
+    },
+    t: testTranslator
+  });
+  assert.match(endBoundaryHtml, /data-boundary-setting="endMode"/);
+  assert.match(endBoundaryHtml, /data-boundary-setting="endMin" value="1"/);
+  assert.match(endBoundaryHtml, /max="2"/);
   const contractEditorHtml = renderStudioContractEditor({
     contracts: {
       manifest: { path: "contracts/handoff.json", content: JSON.stringify({ version: 1, contracts: [{ id: "input.demo", kind: "role_input", match: { roleId: "demo-analyst" }, schema: "schemas/input.json" }] }) },
@@ -4897,6 +4924,17 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   assert.doesNotMatch(flowConfigHtml, /data-flow-config-field="targetContextMap"/);
   assert.match(flowConfigHtml, /data-studio-open-role-config="reviewer"/);
   assert.match(flowConfigHtml, /writer\.output\.summary/);
+  const startFlowConfigHtml = renderStudioFlowConfigEditor({
+    flowKey: "start:START:worker",
+    editor: { flowKey: "start:START:worker", data: { sourceRoleId: "__system_start__", targetRoleId: "worker", eventType: "START", label: "任务分发", runtimeOnlyErrorFlow: false } },
+    authoring: { roles: { worker: { roleId: "worker" } } },
+    t: testTranslator
+  });
+  assert.match(startFlowConfigHtml, /option value="__system_start__" selected>Start/);
+  assert.match(startFlowConfigHtml, /data-flow-config-field="eventType" value="START" readonly/);
+  assert.doesNotMatch(startFlowConfigHtml, /data-flow-config-field="conditionJson"/);
+  assert.doesNotMatch(startFlowConfigHtml, /data-flow-config-field="runtimeOnlyErrorFlow"/);
+  assert.match(startFlowConfigHtml, /<strong>Start → worker<\/strong>/);
 
   const harness = await createClientHarness();
   await openDesignTab(harness);

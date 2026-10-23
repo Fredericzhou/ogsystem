@@ -42,9 +42,8 @@ function plan() {
 %% system.id=project.run.contract
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
-input -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `));
 }
 
@@ -87,9 +86,8 @@ test("Project Task evidence stays under its managed run directory when TeamVersi
 %% system.id=project.run.path
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
-input -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `),
       systemPath: resolve(assetWorkdir, "system.mmd"),
       prompt: "keep evidence in project",
@@ -432,7 +430,7 @@ test("run control state separates pause from node execution facts", () => {
     workspaceDigest: "w",
     taskDigest: "t",
     fingerprintDigest: "f",
-    entryNodeId: "writer",
+    entryNodeIds: ["writer"],
     backend: [],
     nodeGraph: [
       { nodeId: "writer", incoming: [], outgoing: [], reviewRequired: false }
@@ -474,7 +472,7 @@ test("concurrent project control updates merge under the project write lock", as
     workspaceDigest: "w",
     taskDigest: "t",
     fingerprintDigest: "f",
-    entryNodeId: "writer",
+    entryNodeIds: ["writer"],
     backend: [],
     nodeGraph: [{ nodeId: "writer", incoming: [], outgoing: [], reviewRequired: false }],
     executionPolicy: { mode: "dry-run", dryRun: true, singleWorker: true, allowExternalSideEffects: false },
@@ -498,7 +496,7 @@ test("project quality checks are deterministic and do not rely on model self-eva
   const plan = {
     version: 1, runId: "run-quality", createdAt: "2026-01-01T00:00:00.000Z",
     designDigest: "d", workspaceDigest: "w", taskDigest: "t", fingerprintDigest: "f",
-    entryNodeId: "writer", backend: [],
+    entryNodeIds: ["writer"], backend: [],
     nodeGraph: [{ nodeId: "writer", incoming: [], outgoing: [{ to: "output", event: "DONE" }], reviewRequired: false }],
     executionPolicy: { mode: "dry-run", dryRun: true, singleWorker: true, allowExternalSideEffects: false },
     reviewPolicy: { requiredNodeIds: [] }

@@ -49,7 +49,7 @@ OGS Studio 创建/专业编辑 -> 发布 TeamVersion -> OGS Projects 挂载版�
 ```
 
 - **团队仓库**展示已发布版本，提供导入、复制为新版本和资产管理，可从 `/teams` 进入。
-- **OGS Studio**保存编辑中和待发布团队，负责图谱结构、系统法则、入口与交接模式、角色模型/执行配置绑定、Join/Loop/Review 策略、Context Map、角色资产包（`agent.md`、`prompt.md`、`role.json`、`output.schema.json`）、流程条件与 Flow Contract/Schema 编辑，并提供静态校验、Simulation 调试与回放、发布门禁和版本管理。专业配置与角色资产保存到 TeamVersion 草稿；发布版本不可原地修改，需先另存为新草稿。模型绑定从 Platform 发现的可运行模型中选择，并以 backend/model 引用保存在草稿；CLI Profile 和本地工具定义保存在 TeamVersion 的 `profiles.json`、`tools.json`，可在角色检查器中创建或编辑。共享 `/platform/tools` 目录是可复用能力元数据，不会自动变成运行命令；凭据解析仍由本机 Harness 管理。Simulation/Project Run 启动时服务端会重新检查绑定可用性，页面静态状态不代表外部网络或凭据已连通。Projects 可发起自然语言创建或调整；调整会进入团队草稿，检查并发布后需在项目中明确挂载新版本。
+- **OGS Studio**保存编辑中和待发布团队，负责图谱结构、全局配置、Start 分发与 End 汇聚、角色模型/执行配置绑定、Join/Loop/Review 策略、Context Map、角色资产包（`agent.md`、`prompt.md`、`role.json`、`output.schema.json`）、流程条件与 Flow Contract/Schema 编辑，并提供静态校验、Simulation 调试与回放、发布门禁和版本管理。图谱工具栏的“AI 构建”与“调试”使用独立弹窗；调试使用当前 TeamVersion 快照，后台运行并逐角色保存审计事件，弹窗关闭不取消运行。调试历史保留运行输入、逐角色执行流水、最终结果和失败诊断；详细输入/输出未被 Runtime 采集时会明确标示。历史清理只删除已结束的交互式调试记录，运行中的记录和发布 Sandbox 证明受保护。团队资产弹框中的“全局”标签用于配置团队身份、全局法则与流转契约；Start/End 是无业务执行的特殊角色，其连线仍是普通 Flow。专业配置与角色资产保存到 TeamVersion 草稿；发布版本不可原地修改，需先另存为新草稿。模型绑定从 Platform 发现的可运行模型中选择，并以 backend/model 引用保存在草稿；CLI Profile 和本地工具定义保存在 TeamVersion 的 `profiles.json`、`tools.json`，可在角色检查器中创建或编辑。共享 `/platform/tools` 目录是可复用能力元数据，不会自动变成运行命令；凭据解析仍由本机 Harness 管理。Simulation/Project Run 启动时服务端会重新检查绑定可用性，页面静态状态不代表外部网络或凭据已连通。Projects 可发起自然语言创建或调整；调整会进入团队草稿，检查并发布后需在项目中明确挂载新版本。
 - **Simulation 与发布证明**：普通 Studio Simulation 以 `dry-run` 快速验证流程并提供调试回放，不代表真实 Sandbox 可运行，也不满足发布门禁。发布前需要为当前 TeamVersion 保存必跑基线场景，并逐个以隔离 `sandbox` 模式实际执行；服务端核对版本 digest、场景版本、必跑角色、结构化输出和 Schema 断言。只有当前版本所有必跑场景的有效证据才可通过门禁，父版本或普通 Simulation 结果不能替代。
 - **协作项目**单独创建工作目录，只挂载一个已发布团队版本，集中管理资源、任务清单和运行记录。项目页面不创建或组合团队；团队设计、调试和发布由 OGS Studio 负责。项目可在任务未运行时切换所用版本，已有 Task 继续绑定原版本。
 - **Task** 保存明确的工作请求和执行团队版本，并显示任务序号、状态、关联 Run 和人工反馈。当前同一项目至多一个 Task 的 Run 处于准备、处理中、暂停或待人工审核状态；该 Run 完成或终止后才能启动下一项。
@@ -609,11 +609,10 @@ flowchart TD
 %% system.id=demo.target.model.binding
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]
+start[开始] -->|START| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
-judge[Role:debate-judge] -->|DECISION_READY| output
+judge[Role:debate-judge] -->|DECISION_READY| end[结束]
 ```
 
 Local-shell execution example:
@@ -623,11 +622,10 @@ flowchart TD
 %% system.id=demo.console
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=demo-analyst
 %% exec.bind.demo-analyst=exec.console.codex.v1
 
-input -->|ENTER| analyst[Role:demo-analyst]
-analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
+start[开始] -->|START| analyst[Role:demo-analyst]
+analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]
 ```
 
 Graph execution example (debate domain fixture; these role IDs, events, and laws are example-owned and are not OGS platform keywords):
@@ -637,20 +635,19 @@ flowchart TD
 %% system.id=architecture.debate.current
 %% system.version=1.0.0
 %% law.global=law.debate.base
-%% entry.role=debate-moderator
 %% role.mode.debate-moderator=parallel_split
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
 %% loop.max.debate-moderator=2
 
-input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
+start[开始] -->|START| debate-moderator[Role:debate-moderator]
 debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
 debate-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
 debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
 debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
 debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debate-moderator]
 debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
-debate-summary[Role:debate-summary] -->|SUMMARY_READY| output
+debate-summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
 ```
 
 Orchestration semantics contract:

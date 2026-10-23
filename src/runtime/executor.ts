@@ -17,11 +17,55 @@ import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { getSideEffectByKey, recordSideEffect } from "./side-effect-store.js";
 import type { CliTool, ExecutionProfile, RunContext } from "./types.js";
 
+type JsonSchemaShape = {
+  type?: string;
+  enum?: unknown[];
+  const?: unknown;
+  properties?: Record<string, JsonSchemaShape>;
+  required?: string[];
+  items?: JsonSchemaShape;
+  minItems?: number;
+  minLength?: number;
+  minimum?: number;
+};
+
+function minimumSchemaValue(schema: JsonSchemaShape): unknown {
+  if (schema.const !== undefined) return schema.const;
+  if (schema.enum?.length) return schema.enum[0];
+  if (schema.type === "object") {
+    const value: Record<string, unknown> = {};
+    for (const key of schema.required ?? []) {
+      const child = schema.properties?.[key];
+      if (child) value[key] = minimumSchemaValue(child);
+    }
+    return value;
+  }
+  if (schema.type === "array") {
+    return Array.from({ length: schema.minItems ?? 0 }, () => minimumSchemaValue(schema.items ?? {}));
+  }
+  if (schema.type === "string") return "x".repeat(schema.minLength ?? 0);
+  if (schema.type === "number" || schema.type === "integer") return schema.minimum ?? 0;
+  if (schema.type === "boolean") return false;
+  if (schema.type === "null") return null;
+  return null;
+}
+
+function buildDryRunRoleOutput(schema: unknown, event: string | undefined, content: string): Record<string, unknown> {
+  const shape = schema && typeof schema === "object" ? schema as JsonSchemaShape : {};
+  const output = minimumSchemaValue(shape);
+  const result = output && typeof output === "object" && !Array.isArray(output)
+    ? output as Record<string, unknown>
+    : {};
+  if (shape.properties?.event) result.event = event ?? minimumSchemaValue(shape.properties.event);
+  if (shape.properties?.content) result.content = content;
+  return result;
+}
+
 /**
  * Acts as the bridge between runtime role planning and actual execution engines.
  * Responsibilities: manage the OpenCode server lifecycle, route model/profile bindings,
- * and surface deterministic outputs for auditing. Boundaries: does not inspect schema outputs
- * itself, it only orchestrates either OpenCode SDK or CLI tool runs.
+ * and surface deterministic outputs for auditing. Dry-run responses use the role schema's
+ * required fields so simulations exercise the same output contract as live execution.
  */
 
 /**
@@ -188,7 +232,7 @@ export function createDefaultExecutor(args: {
         if (request.binding.backend === "codex") {
           if (!args.dryRun && !codexClient) throw new Error(`Codex app-server missing for role "${request.roleId}"`);
           const result = args.dryRun || !codexClient
-            ? { sessionId: request.sessionId ?? `dryrun-codex-${request.sessionKey ?? request.roleId}`, stdout: JSON.stringify({ event: request.dryRunOutputEvent, content: "[dry-run] codex-app-server" }) }
+            ? { sessionId: request.sessionId ?? `dryrun-codex-${request.sessionKey ?? request.roleId}`, stdout: JSON.stringify(buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "[dry-run] codex-app-server")) }
             : await codexClient.execute({
                 roleId: request.roleId, prompt: request.prompt, schema: request.schema,
                 modelId: request.binding.modelId, cwd: request.directory, timeoutMs: request.timeoutMs,
@@ -213,10 +257,7 @@ export function createDefaultExecutor(args: {
           args.dryRun || !runClient
             ? {
                 exitCode: 0,
-                stdout: JSON.stringify({
-                  event: request.dryRunOutputEvent,
-                  content: "[dry-run] opencode-sdk"
-                }),
+                stdout: JSON.stringify(buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "[dry-run] opencode-sdk")),
                 stderr: "",
                 args: [] as string[],
                 sessionId: request.sessionId ?? `dryrun-session-${request.sessionKey ?? request.roleId}`,
@@ -288,7 +329,8 @@ export function createDefaultExecutor(args: {
               signal: request.signal,
               dryRun: args.dryRun || args.sandbox,
               dryRunOutput: {
-                event: request.dryRunOutputEvent
+                event: request.dryRunOutputEvent,
+                output: buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "")
               }
             });
         if (result.exitCode !== 0) {

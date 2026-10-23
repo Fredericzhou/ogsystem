@@ -829,7 +829,7 @@ export async function initializeRunContext(args: {
         "",
         `- systemId: ${args.system.systemId}`,
         `- systemVersion: ${args.system.systemVersion}`,
-        `- entryRoleId: ${args.system.entryRoleId}`,
+        `- entryRoleIds: ${args.system.entryRoleIds.join(", ")}`,
         `- sharedDir: ${sharedDir}`,
         `- logsDir: ${logsDir}`
       ].join("\n")
@@ -1204,8 +1204,9 @@ export async function loadResumeGraphState(args: {
     typeof graphState.selectedEventByBranchId !== "object" ||
     graphState.selectedEventByBranchId === null ||
     Array.isArray(graphState.selectedEventByBranchId) ||
-    typeof graphState.finalOutput !== "string" ||
-    typeof graphState.finalRoleId !== "string" ||
+    !graphState.finalOutputsByRoleId || typeof graphState.finalOutputsByRoleId !== "object" ||
+    !Array.isArray(graphState.finalOutputRoleOrder) ||
+    !Array.isArray(graphState.finalRoleIds) ||
     typeof graphState.lastExecutedRoleId !== "string" ||
     typeof graphState.nextBranchSequence !== "number" ||
     typeof graphState.lastCheckpointSequence !== "number"
@@ -1381,7 +1382,7 @@ export async function loadResumeGraphState(args: {
         (!sessionLineageId || branch.sessionLineageId === sessionLineageId)
     );
     const matchesLastExecution =
-      graphState.lastExecutedRoleId === roleId || graphState.finalRoleId === roleId;
+      graphState.lastExecutedRoleId === roleId || graphState.finalRoleIds.includes(roleId);
     if (!hasRoleMetricEntry && !hasRoleResult && !hasBranchRecord && !matchesLastExecution) {
       throw createRuntimeError({
         errorCode: "RESUME_SNAPSHOT_INCONSISTENT",

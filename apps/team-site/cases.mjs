@@ -33,7 +33,6 @@ export const cases = [
       "delivery-lead": [690, 145]
     },
     semantics: ["parallel_split", "all_of", "context.map"],
-    entryRole: "delivery-coordinator",
     joins: [{ roleId: "delivery-lead", mode: "all_of", sources: ["backend-planner", "experience-planner", "quality-planner"] }],
     projections: [
       ["delivery-lead", "backend_plan", "source(backend-planner).content"],
@@ -69,14 +68,14 @@ export const cases = [
       }
     ],
     flows: [
-      ["input", "delivery-coordinator", "SOFTWARE_REQUEST"],
+      ["__system_start__", "delivery-coordinator", "START"],
       ["delivery-coordinator", "backend-planner", "PLAN_BACKEND"],
       ["delivery-coordinator", "experience-planner", "PLAN_EXPERIENCE"],
       ["delivery-coordinator", "quality-planner", "PLAN_QUALITY"],
       ["backend-planner", "delivery-lead", "BACKEND_PLAN_READY"],
       ["experience-planner", "delivery-lead", "EXPERIENCE_PLAN_READY"],
       ["quality-planner", "delivery-lead", "QUALITY_PLAN_READY"],
-      ["delivery-lead", "output", "DELIVERY_READY"]
+      ["delivery-lead", "__system_end__", "DELIVERY_READY"]
     ]
   },
   {
@@ -113,7 +112,6 @@ export const cases = [
       "chief-reviewer": [690, 145]
     },
     semantics: ["parallel_split", "quorum_of", "join timeout"],
-    entryRole: "consultation-dispatcher",
     joins: [{ roleId: "chief-reviewer", mode: "quorum_of", sources: ["cardiology-expert", "neurology-expert", "imaging-expert"], min: 2 }],
     projections: [],
     roles: [
@@ -144,14 +142,14 @@ export const cases = [
       }
     ],
     flows: [
-      ["input", "consultation-dispatcher", "CASE_RECEIVED"],
+      ["__system_start__", "consultation-dispatcher", "START"],
       ["consultation-dispatcher", "cardiology-expert", "START_CARDIOLOGY"],
       ["consultation-dispatcher", "neurology-expert", "START_NEUROLOGY"],
       ["consultation-dispatcher", "imaging-expert", "START_IMAGING"],
       ["cardiology-expert", "chief-reviewer", "CARDIOLOGY_REVIEW_READY"],
       ["neurology-expert", "chief-reviewer", "NEUROLOGY_REVIEW_READY"],
       ["imaging-expert", "chief-reviewer", "IMAGING_REVIEW_READY"],
-      ["chief-reviewer", "output", "CONSULTATION_READY"]
+      ["chief-reviewer", "__system_end__", "CONSULTATION_READY"]
     ]
   },
   {
@@ -188,7 +186,6 @@ export const cases = [
       "debate-reporter": [900, 155]
     },
     semantics: ["parallel_split", "all_of", "loop.max"],
-    entryRole: "debate-host",
     joins: [{ roleId: "neutral-judge", mode: "all_of", sources: ["proponent", "opponent"] }],
     loopBudgets: [{ roleId: "debate-host", max: 2 }],
     projections: [
@@ -224,14 +221,14 @@ export const cases = [
       }
     ],
     flows: [
-      ["input", "debate-host", "DEBATE_TOPIC"],
+      ["__system_start__", "debate-host", "START"],
       ["debate-host", "proponent", "ISSUE_TO_PRO"],
       ["debate-host", "opponent", "ISSUE_TO_CON"],
       ["proponent", "neutral-judge", "PRO_ARGUMENT_READY"],
       ["opponent", "neutral-judge", "CON_ARGUMENT_READY"],
       ["neutral-judge", "debate-host", "REBUTTAL_REQUESTED"],
       ["neutral-judge", "debate-reporter", "DECISION_READY"],
-      ["debate-reporter", "output", "DEBATE_SUMMARY_READY"]
+      ["debate-reporter", "__system_end__", "DEBATE_SUMMARY_READY"]
     ]
   }
 ];

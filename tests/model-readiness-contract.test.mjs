@@ -36,9 +36,8 @@ async function createFixture(options = {}) {
       "%% system.id=model.readiness.fixture",
       "%% system.version=1.0.0",
       "%% law.global=law.model.test",
-      "%% entry.role=writer",
-      "input -->|START| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| output"
+      "start[开始] -->|START| writer[Role:writer]",
+      "writer[Role:writer] -->|DONE| end[结束]"
     ].join("\n"),
     "utf8"
   );

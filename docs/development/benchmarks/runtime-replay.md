@@ -68,7 +68,11 @@ The record format is versioned and has this shape:
   },
   "result": {
     "finalStatus": "done",
-    "finalRoleId": "test-loop-probe"
+    "finalRoleIds": ["test-loop-probe"],
+    "finalOutputsByRoleId": {
+      "test-loop-probe": [{ "content": "benchmark output" }]
+    },
+    "finalOutputRoleOrder": ["test-loop-probe"]
   }
 }
 ```

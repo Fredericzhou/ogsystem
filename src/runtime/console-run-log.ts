@@ -77,7 +77,9 @@ export type RunConsoleLogger = {
   runStart(args: {
     runId: string;
     systemId: string;
-    entryRoleId: string;
+    entryRoleIds: string[];
+    selectedEntryRoleIds: string[];
+    dispatch: { mode: "all" } | { mode: "random_n"; count: number };
     resume: boolean;
   }): void;
   roleStart(args: {
@@ -122,7 +124,7 @@ export type RunConsoleLogger = {
   }): void;
   runEnd(args: {
     status: "done" | "failed" | "stopped" | "terminated";
-    finalRoleId?: string;
+    finalRoleIds?: string[];
     totalTransitions: number;
     okCount: number;
     failedCount: number;
@@ -158,8 +160,10 @@ export function createRunConsoleLogger(enabled: boolean): RunConsoleLogger {
         fields: {
           run: args.runId,
           system: args.systemId,
+          dispatch: args.dispatch.mode === "all" ? "all" : `random_${args.dispatch.count}`,
           resume: args.resume,
-          entry: args.entryRoleId
+          candidates: args.entryRoleIds.join(","),
+          selected: args.selectedEntryRoleIds.join(",")
         }
       });
     },
@@ -238,7 +242,7 @@ export function createRunConsoleLogger(enabled: boolean): RunConsoleLogger {
         tag: "run:end",
         fields: {
           status: args.status,
-          final: args.finalRoleId,
+          final: args.finalRoleIds?.join(","),
           total: args.totalTransitions,
           ok: args.okCount,
           failed: args.failedCount,

@@ -12,9 +12,10 @@ import {
   STUDIO_NODE_EDGE_CLEARANCE
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
 import { createElkLayoutProjection } from "../src/visualizer/studio-client/elk-layout-adapter.ts";
+import { STUDIO_SYSTEM_END_ROLE_ID, STUDIO_SYSTEM_START_ROLE_ID } from "../src/visualizer/studio-contracts.ts";
 
 function node(id, overrides = {}) {
-  const boundary = id === "input" || id === "output";
+  const boundary = id === "__system_start__" || id === "__system_end__";
   return {
     id,
     roleId: id,
@@ -60,32 +61,32 @@ function graph(nodes, edges) {
 function fixture(name) {
   if (name === "fan-out") {
     return graph(
-      [node("input"), node("split", { structure: { routingMode: "parallel_split", routeOrder: ["right", "left"] } }), node("left"), node("right"), node("output")],
-      [edge("input-split", "input", "split"), edge("split-left", "split", "left"), edge("split-right", "split", "right"), edge("left-output", "left", "output"), edge("right-output", "right", "output")]
+      [node(STUDIO_SYSTEM_START_ROLE_ID), node("split", { structure: { routingMode: "parallel_split", routeOrder: ["right", "left"] } }), node("left"), node("right"), node(STUDIO_SYSTEM_END_ROLE_ID)],
+      [edge("start-split", STUDIO_SYSTEM_START_ROLE_ID, "split", { eventType: "START" }), edge("split-left", "split", "left"), edge("split-right", "split", "right"), edge("left-end", "left", STUDIO_SYSTEM_END_ROLE_ID), edge("right-end", "right", STUDIO_SYSTEM_END_ROLE_ID)]
     );
   }
   if (name === "join") {
     return graph(
-      [node("input"), node("left"), node("right"), node("join", { structure: { joinMode: "all_of", joinSources: ["left", "right"] } }), node("output")],
-      [edge("input-left", "input", "left"), edge("input-right", "input", "right"), edge("left-join", "left", "join", { participatesInJoin: true, channel: "join" }), edge("right-join", "right", "join", { participatesInJoin: true, channel: "join" }), edge("join-output", "join", "output")]
+      [node(STUDIO_SYSTEM_START_ROLE_ID), node("left"), node("right"), node("join", { structure: { joinMode: "all_of", joinSources: ["left", "right"] } }), node(STUDIO_SYSTEM_END_ROLE_ID)],
+      [edge("start-left", STUDIO_SYSTEM_START_ROLE_ID, "left", { eventType: "START" }), edge("start-right", STUDIO_SYSTEM_START_ROLE_ID, "right", { eventType: "START" }), edge("left-join", "left", "join", { participatesInJoin: true, channel: "join" }), edge("right-join", "right", "join", { participatesInJoin: true, channel: "join" }), edge("join-end", "join", STUDIO_SYSTEM_END_ROLE_ID)]
     );
   }
   if (name === "cycle") {
-    return graph([node("input"), node("a"), node("b"), node("output")], [edge("input-a", "input", "a"), edge("a-b", "a", "b"), edge("b-a", "b", "a", { channel: "loop" }), edge("b-output", "b", "output")]);
+    return graph([node(STUDIO_SYSTEM_START_ROLE_ID), node("a"), node("b"), node(STUDIO_SYSTEM_END_ROLE_ID)], [edge("start-a", STUDIO_SYSTEM_START_ROLE_ID, "a", { eventType: "START" }), edge("a-b", "a", "b"), edge("b-a", "b", "a", { channel: "loop" }), edge("b-end", "b", STUDIO_SYSTEM_END_ROLE_ID)]);
   }
   if (name === "error") {
-    return graph([node("input"), node("work"), node("output")], [edge("input-work", "input", "work"), edge("work-output", "work", "output", { channel: "error", runtimeOnlyErrorFlow: true })]);
+    return graph([node(STUDIO_SYSTEM_START_ROLE_ID), node("work"), node(STUDIO_SYSTEM_END_ROLE_ID)], [edge("start-work", STUDIO_SYSTEM_START_ROLE_ID, "work", { eventType: "START" }), edge("work-end", "work", STUDIO_SYSTEM_END_ROLE_ID, { channel: "error", runtimeOnlyErrorFlow: true })]);
   }
   if (name === "multi-terminal") {
-    return graph([node("input"), node("source"), node("target"), node("output")], [
-      edge("input-source", "input", "source"),
+    return graph([node(STUDIO_SYSTEM_START_ROLE_ID), node("source"), node("target"), node(STUDIO_SYSTEM_END_ROLE_ID)], [
+      edge("start-source", STUDIO_SYSTEM_START_ROLE_ID, "source", { eventType: "START" }),
       edge("source-target-a", "source", "target", { eventType: "A", channel: "normal" }),
       edge("source-target-b", "source", "target", { eventType: "B", channel: "feedback" }),
-      edge("target-output", "target", "output")
+      edge("target-end", "target", STUDIO_SYSTEM_END_ROLE_ID)
     ]);
   }
   if (name === "size-variation") {
-    return graph([node("input", { layout: { x: 0, y: 0, width: 120, height: 52 } }), node("small", { layout: { x: 0, y: 0, width: 96, height: 42 } }), node("large", { layout: { x: 0, y: 0, width: 300, height: 132 } }), node("output", { layout: { x: 0, y: 0, width: 140, height: 60 } })], [edge("input-small", "input", "small"), edge("small-large", "small", "large"), edge("large-output", "large", "output")]);
+    return graph([node(STUDIO_SYSTEM_START_ROLE_ID, { layout: { x: 0, y: 0, width: 120, height: 52 } }), node("small", { layout: { x: 0, y: 0, width: 96, height: 42 } }), node("large", { layout: { x: 0, y: 0, width: 300, height: 132 } }), node(STUDIO_SYSTEM_END_ROLE_ID, { layout: { x: 0, y: 0, width: 140, height: 60 } })], [edge("start-small", STUDIO_SYSTEM_START_ROLE_ID, "small", { eventType: "START" }), edge("small-large", "small", "large"), edge("large-end", "large", STUDIO_SYSTEM_END_ROLE_ID)]);
   }
   throw new Error(`unknown fixture ${name}`);
 }
@@ -193,8 +194,8 @@ test("generic ELK fixtures preserve fan-out, Join, cycle, error, and multi-termi
   assert.equal(cycle.edges.length, 4);
 
   const error = await createElkLayoutProjection(fixture("error"), "flow");
-  assert.equal(error.edges.find((item) => item.id === "work-output").runtimeOnlyErrorFlow, true);
-  assert.equal(error.edges.find((item) => item.id === "work-output").routing.lane.startsWith("error:"), true);
+  assert.equal(error.edges.find((item) => item.id === "work-end").runtimeOnlyErrorFlow, true);
+  assert.equal(error.edges.find((item) => item.id === "work-end").routing.lane.startsWith("error:"), true);
 
   const multiTerminal = await createElkLayoutProjection(fixture("multi-terminal"), "flow");
   assert.equal(multiTerminal.edges.length, 4);
@@ -247,9 +248,9 @@ test("stored projection clamps persisted role widths and expands long labels wit
       label: "Long responsibility title ".repeat(8),
       layout: { x: 10, y: 10, width: 420, height: 84 }
     }),
-    node("input"),
-    node("output")
-  ], [edge("input-role", "input", "long-role"), edge("role-output", "long-role", "output")]);
+    node(STUDIO_SYSTEM_START_ROLE_ID),
+    node(STUDIO_SYSTEM_END_ROLE_ID)
+  ], [edge("start-role", STUDIO_SYSTEM_START_ROLE_ID, "long-role", { eventType: "START" }), edge("role-end", "long-role", STUDIO_SYSTEM_END_ROLE_ID)]);
   const projection = createStoredLayoutProjection(view);
   const projected = projection.nodes.find((item) => item.id === "long-role");
 
@@ -321,8 +322,8 @@ test("ELK routes branch links from nearby ports and keeps output boundaries dire
   const projection = await createElkLayoutProjection(fixture("fan-out"), "flow");
   const fanOutLeft = projection.edges.find((item) => item.id === "split-left").routing;
   const fanOutRight = projection.edges.find((item) => item.id === "split-right").routing;
-  const fanInLeft = projection.edges.find((item) => item.id === "left-output").routing;
-  const fanInRight = projection.edges.find((item) => item.id === "right-output").routing;
+  const fanInLeft = projection.edges.find((item) => item.id === "left-end").routing;
+  const fanInRight = projection.edges.find((item) => item.id === "right-end").routing;
   for (const routing of [fanOutLeft, fanOutRight, fanInLeft, fanInRight]) {
     assert.ok(routing.routePoints.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
   }
@@ -344,10 +345,10 @@ test("ELK keeps converging output flows outside the output node in every layout"
   const viewModel = fixture("fan-out");
   for (const [mode, expectedSide] of [["flow", "left"], ["compact", "left"], ["stacked", "top"]]) {
     const projection = await createElkLayoutProjection(viewModel, mode);
-    const output = projection.nodes.find((item) => item.id === "output");
-    const incoming = projection.edges.filter((item) => item.target === "output");
+    const output = projection.nodes.find((item) => item.id === STUDIO_SYSTEM_END_ROLE_ID);
+    const incoming = projection.edges.filter((item) => item.target === STUDIO_SYSTEM_END_ROLE_ID);
     assert.equal(incoming.length, 2);
-    assert.equal(projection.bundles.some((bundle) => bundle.nodeId === "output"), false);
+    assert.equal(projection.bundles.some((bundle) => bundle.nodeId === STUDIO_SYSTEM_END_ROLE_ID), false);
 
     const connectionAxis = expectedSide === "left" || expectedSide === "right" ? "y" : "x";
     const sourceCoordinate = (edge) => {
@@ -666,7 +667,7 @@ test("moving a node recalculates independent flow routes without changing busine
 
 test("ELK keeps cyclic role graphs distributed across flow columns", async () => {
   const projection = await createElkLayoutProjection(fixture("cycle"), "flow");
-  const roleNodes = projection.nodes.filter((item) => !["input", "output"].includes(item.id));
+  const roleNodes = projection.nodes.filter((item) => ![STUDIO_SYSTEM_START_ROLE_ID, STUDIO_SYSTEM_END_ROLE_ID].includes(item.id));
   assert.ok(new Set(roleNodes.map((item) => item.x)).size > 1);
   assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
 });

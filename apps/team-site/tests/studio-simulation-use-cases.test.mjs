@@ -3,7 +3,7 @@ import test from "node:test";
 import { createStudioSimulationUseCases } from "../application/studio-simulation-use-cases.mjs";
 import { computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "../infrastructure/package-integrity.mjs";
 
-const packageBundle = { team: { systemSource: "flow" } };
+const packageBundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "分析师" } } } } };
 const digest = computeTeamPackageCoreDigest(packageBundle);
 
 function createHarness({ runResult, runError, team = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle) } = {}) {
@@ -32,6 +32,10 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
       record.events = [...record.events, ...(update.events || [])];
       return record.simulation;
     },
+    async appendSimulationEvents(versionId, simulationId, events) {
+      const record = records.get(simulationId);
+      record.events.push(...(Array.isArray(events) ? events : [events]));
+    },
     async getSimulationEvidence(versionId, simulationId) {
       const record = records.get(simulationId);
       if (!record || record.simulation.teamVersionId !== versionId) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
@@ -42,6 +46,16 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
     },
     async recoverInterruptedSimulations(versionId) {
       return [...records.values()].map((record) => record.simulation).filter((item) => item.teamVersionId === versionId && item.status === "running");
+    },
+    async clearInteractiveSimulations(versionId) {
+      const removed = [];
+      for (const [id, record] of records) {
+        if (record.simulation.teamVersionId === versionId && record.simulation.mode !== "sandbox" && record.simulation.status !== "running") {
+          records.delete(id);
+          removed.push(id);
+        }
+      }
+      return { removedCount: removed.length, removedSimulationIds: removed };
     }
   };
   const useCases = createStudioSimulationUseCases({
@@ -61,7 +75,9 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
       async simulate(selectedTeam, options) {
         calls.push(["run", selectedTeam.teamVersionId, options]);
         if (runError) throw runError;
-        return runResult || { status: "completed", finalOutput: "result", auditTrail: [{ roleId: "analyst", status: "completed" }] };
+        const result = runResult || { status: "completed", finalOutputsByRoleId: { analyst: [{ content: "result" }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] };
+        for (const item of result.auditTrail || []) await options.onAuditEvent?.({ type: "audit", ...item });
+        return result;
       }
     },
     identifiers: { simulationId: () => "sim-1" },
@@ -80,8 +96,9 @@ test("Studio Simulation creates its own owner record and stores completed state/
   assert.equal(created.simulation.runKind, "studio_simulation");
   assert.equal(created.simulation.owner.kind, "studio_simulation");
   assert.equal(created.simulation.status, "completed");
-  assert.equal(created.state.finalOutput, "result");
+  assert.deepEqual(created.state.finalOutputsByRoleId, { analyst: [{ content: "result" }] });
   assert.deepEqual(created.events.map((event) => event.type), ["simulation.started", "role.completed", "simulation.completed"]);
+  assert.equal(created.simulation.roleDisplayNames.analyst, "分析师");
   assert.equal(records.get("sim-1").simulation.teamCoreDigest, digest);
   assert.deepEqual(calls.map((call) => call[0]), ["export", "create", "run"]);
   assert.equal(calls[2][2].simulationId, "sim-1");
@@ -89,6 +106,34 @@ test("Studio Simulation creates its own owner record and stores completed state/
   assert.equal(calls[2][2].teamCoreDigest, digest);
   assert.deepEqual((await useCases.listTeamVersionSimulations("team-root", "team-v1")).simulations.map((item) => item.simulationId), ["sim-1"]);
   assert.equal((await useCases.getTeamVersionSimulationEvents("team-root", "team-v1", "sim-1")).events.length, 3);
+});
+
+test("interactive Studio Simulation returns running immediately and persists role events incrementally", async () => {
+  let resolveRun;
+  const deferred = createHarness();
+  const pending = new Promise((resolve) => { resolveRun = resolve; });
+  deferred.useCases = createStudioSimulationUseCases({
+    teamCatalog: { getTeamVersion: async () => ({ projectId: "team-v1", teamId: "team-root", teamVersionId: "team-v1", teamVersionStatus: "editing", workdir: "/teams/team-v1" }) },
+    teamPackageReader: { exportTeamPackage: async () => packageBundle },
+    packageIntegrity: { computeTeamPackageCoreDigest: () => digest, computeReleaseBaselineDigest },
+    simulationStore: {
+      createSimulation: async (_versionId, input, options) => { const simulation = { simulationId: options.simulationId, teamId: options.teamId, teamVersionId: "team-v1", owner: { kind: "studio_simulation", teamVersionId: "team-v1", simulationId: options.simulationId }, input, ...options, status: "running" }; deferred.records.set(options.simulationId, { simulation, state: {}, events: [{ type: "simulation.started" }] }); return simulation; },
+      updateSimulation: async (_versionId, simulationId, update) => { const record = deferred.records.get(simulationId); record.simulation = { ...record.simulation, ...update.metadata }; record.state = update.state || record.state; record.events.push(...(update.events || [])); return record.simulation; },
+      appendSimulationEvents: async (_versionId, simulationId, event) => deferred.records.get(simulationId).events.push(event),
+      getSimulationEvidence: async (_versionId, simulationId) => deferred.records.get(simulationId),
+      listVersionSimulations: async () => [...deferred.records.values()].map((record) => record.simulation)
+    },
+    simulationRunner: { simulate: async (_team, options) => { await options.onAuditEvent({ roleId: "analyst", status: "running", inputContext: { task: "Inspect" } }); return pending; } },
+    identifiers: { simulationId: () => "sim-1" },
+    baselineStore: { readReleaseBaselineScenarios: async () => [], saveReleaseBaselineScenarios: async () => [] }
+  });
+
+  const started = await deferred.useCases.createSimulation("team-root", "team-v1", { prompt: "Inspect", awaitCompletion: false });
+  assert.equal(started.simulation.status, "running");
+  assert.deepEqual((await deferred.useCases.getTeamVersionSimulationEvents("team-root", "team-v1", "sim-1")).events.map((event) => event.type), ["simulation.started", "role.running"]);
+  resolveRun({ status: "completed", finalOutputsByRoleId: { analyst: [{ content: "done" }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "running" }] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal((await deferred.useCases.getTeamVersionSimulation("team-root", "team-v1", "sim-1")).simulation.status, "completed");
 });
 
 test("Studio Simulation persists redacted failures and rejects mismatched team ownership", async () => {
@@ -101,7 +146,7 @@ test("Studio Simulation persists redacted failures and rejects mismatched team o
 });
 
 test("Studio Simulation redacts errors returned as failed results", async () => {
-  const { useCases } = createHarness({ runResult: { status: "failed", error: "harness returned api_key=returned-secret", finalOutput: "failed" } });
+  const { useCases } = createHarness({ runResult: { status: "failed", error: "harness returned api_key=returned-secret", finalOutputsByRoleId: { analyst: [{ content: "failed" }] }, finalOutputRoleOrder: ["analyst"] } });
   const result = await useCases.createSimulation("team-root", "team-v1", { prompt: "retry safely" });
   assert.equal(result.simulation.status, "failed");
   assert.match(result.simulation.failureSummary, /api_key=\[REDACTED\]/);
@@ -175,7 +220,7 @@ test("saved release baseline accepts its 4,000-character contract while ad hoc S
     packageBundle: bundle,
     digest: computeTeamPackageCoreDigest(bundle),
     team: { teamVersionStatus: "draft" },
-    runResult: { status: "completed", finalOutput: "{}", auditTrail: [{ roleId: "analyst", status: "completed" }] }
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: {} }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }
   });
 
   const result = await useCases.createSimulation("team-root", "team-v1", { prompt, baselineScenarioId: baseline.scenarioId });
@@ -217,7 +262,7 @@ test("release baseline Sandbox evidence is versioned, schema checked, and tied t
     packageBundle,
     digest: canonicalDigest,
     team: { teamVersionStatus: "draft", teamCoreDigest: null, projectDigest: null },
-    runResult: { status: "completed", finalOutput: JSON.stringify({ ok: true }), auditTrail: [{ roleId: "analyst", status: "completed", backend: "opencode", modelId: "model-a", profileId: "profile-a", toolRef: "tool.task.execute" }] }
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed", backend: "opencode", modelId: "model-a", profileId: "profile-a", toolRef: "tool.task.execute" }] }
   });
 
   await assert.rejects(useCases.createSimulation("team-root", "team-v1", { prompt: baseline.prompt, baselineScenarioId: "missing" }), /TEAM_RELEASE_BASELINE_NOT_FOUND/);
@@ -246,9 +291,9 @@ test("release baseline proof rejects no-op, incomplete-role, and schema-invalid 
   const packageBundle = { team: { systemSource: "flow", releaseBaselineScenarios: [baseline] } };
   const canonicalDigest = computeTeamPackageCoreDigest(packageBundle);
   for (const [name, result] of [
-    ["missing required role", { status: "completed", finalOutput: '{"ok":true}', auditTrail: [{ roleId: "analyst", status: "completed" }] }],
-    ["noop role", { status: "completed", finalOutput: '{"ok":true}', auditTrail: [{ roleId: "analyst", status: "completed" }, { roleId: "reviewer", status: "noop", noop: true }] }],
-    ["invalid schema", { status: "completed", finalOutput: '{"ok":false}', auditTrail: [{ roleId: "analyst", status: "completed" }, { roleId: "reviewer", status: "completed" }] }]
+    ["missing required role", { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }],
+    ["noop role", { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }, { roleId: "reviewer", status: "noop", noop: true }] }],
+    ["invalid schema", { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: false } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }, { roleId: "reviewer", status: "completed" }] }]
   ]) {
     await t.test(name, async () => {
       const { useCases, records } = createHarness({ packageBundle, digest: canonicalDigest, team: { teamVersionStatus: "draft" }, runResult: result });

@@ -60,6 +60,7 @@ test("site completes the product project flow with task records and repository e
     assert.match(await page.locator("#workspace-view .page-heading").innerText(), /团队仓库/);
     assert.equal(await page.locator(".classic-team-section").count(), 1);
     assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 3);
+    assert.equal(await page.locator(".repository-classic-section [data-team-action='delete']").count(), 0, "classic built-in teams in the repository must not expose a delete action");
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     assert.equal(await page.locator('#app-shell [data-site-theme-choice="dark"]').getAttribute("aria-pressed"), "true", "theme choice should persist across product routes");
@@ -72,6 +73,7 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator('.primary-nav a[href="/studio"]').isVisible(), true, "Studio is a peer product and remains discoverable in normal mode");
     assert.match(await page.locator("#studio-view .page-heading").innerText(), /Studio/);
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true']").count(), 3, "Studio should list the three classic built-in teams as forkable versions");
+    assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true'] [data-team-action='delete']").count(), 0, "built-in classic teams must not expose a delete action");
     const libraryActionHeights = await page.locator("#studio-view .heading-actions > *").evaluateAll((items) => items.filter((item) => item.getClientRects().length).map((item) => Math.round(item.getBoundingClientRect().height)));
     assert.equal(new Set(libraryActionHeights).size, 1, "library heading actions should share a height");
     const darkPrimaryContrast = await page.locator("#studio-view .heading-actions .primary-button").evaluate((button) => {

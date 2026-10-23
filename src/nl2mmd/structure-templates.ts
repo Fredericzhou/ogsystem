@@ -67,9 +67,8 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     summary: "Single-path orchestration with one entry role and one terminal path.",
     triggerPatterns: [/直线|单线|简单|顺序|线性|single[- ]?flow/i],
     semanticHintLabels: ["entry_hint", "terminal_hint"],
-    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
+    requiredMetadataKeys: ["system.id", "system.version", "law.global"],
     requiredSlots: [
-      slot("entry", "Declare the entry role and the main linear path.", ["entry.role=role_a"]),
       slot("roles", "List the ordered roles in the single chain.", ["input -> role_a -> role_b -> output"]),
       slot("execution", "Keep this graph focused on role handoffs; configure Agent backend/model choices in the project model settings.", ["Agent backend/model selection is configured outside Mermaid"])
     ],
@@ -81,9 +80,8 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.id=<system.id>",
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
-      "%% entry.role=<entry-role>",
-      "input -->|<EVENT>| <node>[Role:<role-id>]",
-      "<node>[Role:<role-id>] -->|<EVENT>| output"
+      "start[开始] -->|START| <node>[Role:<role-id>]",
+      "<node>[Role:<role-id>] -->|<EVENT>| end[结束]"
     ]
   },
   {
@@ -96,7 +94,6 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "system.id",
       "system.version",
       "law.global",
-      "entry.role",
       "role.mode.<split-role>",
       "join.mode.<join-role>",
       "join.sources.<join-role>"
@@ -114,12 +111,12 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% role.mode.<split-role>=parallel_split",
       "%% join.mode.<join-role>=all_of",
       "%% join.sources.<join-role>=<source-a>,<source-b>",
-      "input -->|<START>| <split>[Role:<split-role>]",
+      "start[开始] -->|START| <split>[Role:<split-role>]",
       "<split>[Role:<split-role>] -->|<EVENT>| <worker-a>[Role:<worker-a>]",
       "<split>[Role:<split-role>] -->|<EVENT>| <worker-b>[Role:<worker-b>]",
       "<worker-a>[Role:<worker-a>] -->|<DONE>| <join>[Role:<join-role>]",
       "<worker-b>[Role:<worker-b>] -->|<DONE>| <join>[Role:<join-role>]",
-      "<join>[Role:<join-role>] -->|DONE| output"
+      "<join>[Role:<join-role>] -->|DONE| end[结束]"
     ]
   },
   {
@@ -132,7 +129,6 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "system.id",
       "system.version",
       "law.global",
-      "entry.role",
       "join.mode.<join-role>",
       "join.sources.<join-role>",
       "join.min.<join-role>"
@@ -150,12 +146,12 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% join.mode.<join-role>=quorum_of",
       "%% join.sources.<join-role>=<source-a>,<source-b>,<source-c>",
       "%% join.min.<join-role>=2",
-      "input -->|<START>| <lead>[Role:<lead-role>]",
+      "start[开始] -->|START| <lead>[Role:<lead-role>]",
       "<lead>[Role:<lead-role>] -->|<EVENT>| <consultant-a>[Role:<consultant-a>]",
       "<lead>[Role:<lead-role>] -->|<EVENT>| <consultant-b>[Role:<consultant-b>]",
       "<consultant-a>[Role:<consultant-a>] -->|<DONE>| <merge>[Role:<join-role>]",
       "<consultant-b>[Role:<consultant-b>] -->|<DONE>| <merge>[Role:<join-role>]",
-      "<merge>[Role:<join-role>] -->|DONE| output"
+      "<merge>[Role:<join-role>] -->|DONE| end[结束]"
     ]
   },
   {
@@ -168,7 +164,6 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "system.id",
       "system.version",
       "law.global",
-      "entry.role",
       "handoff.mode",
       "handoff.contracts"
     ],
@@ -185,9 +180,9 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% handoff.mode=<strict|transition>",
       "%% handoff.contracts=<bundle-path>",
       "%% route.order.<from-role>=<sibling-a>,<sibling-b>",
-      "input -->|<EVENT>| <source>[Role:<source-role>]",
+      "start[开始] -->|START| <source>[Role:<source-role>]",
       "<source>[Role:<source-role>] -->|<EVENT>| <target>[Role:<target-role>]",
-      "<target>[Role:<target-role>] -->|DONE| output"
+      "<target>[Role:<target-role>] -->|DONE| end[结束]"
     ]
   },
   {
@@ -196,7 +191,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     summary: "Primary path with typed error edges and compensating recovery roles.",
     triggerPatterns: [/错误|异常|补偿|恢复|故障|error|fallback|compensat/i],
     semanticHintLabels: ["terminal_hint", "binding_policy"],
-    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
+    requiredMetadataKeys: ["system.id", "system.version", "law.global"],
     requiredSlots: [
       slot("normal-path", "Describe the success path explicitly.", ["reviewer --> output"]),
       slot("error-path", "Add typed error edges for supported failures.", ["reviewer -->|ERROR.CONTRACT_MISSING| recovery"]),
@@ -210,11 +205,10 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.id=<system.id>",
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
-      "%% entry.role=<entry-role>",
-      "input -->|<EVENT>| <main>[Role:<main-role>]",
-      "<main>[Role:<main-role>] -->|DONE| output",
+      "start[开始] -->|START| <main>[Role:<main-role>]",
+      "<main>[Role:<main-role>] -->|DONE| end[结束]",
       "<main>[Role:<main-role>] -->|ERROR.<CODE>| <recovery>[Role:<recovery-role>]",
-      "<recovery>[Role:<recovery-role>] -->|DONE| output"
+      "<recovery>[Role:<recovery-role>] -->|DONE| end[结束]"
     ]
   },
   {
@@ -223,10 +217,10 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     summary: "A loop with an explicit iteration cap and a clear exit path.",
     triggerPatterns: [/循环|重试|反复|再次|loop|retry|bounded/i],
     semanticHintLabels: ["loop_hint", "routing_mode"],
-    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role", "loop.max.<role>"],
+    requiredMetadataKeys: ["system.id", "system.version", "law.global", "loop.max.<role>"],
     requiredSlots: [
       slot("loop-cap", "Declare the role-local iteration limit.", ["loop.max.review=3"]),
-      slot("loop-back", "Add the return edge and the exit edge.", ["review -->|RETRY| intake", "review -->|DONE| output"]),
+      slot("loop-back", "Add the return edge and the exit edge.", ["review -->|RETRY| intake", "review -->|DONE| end[结束]"]),
       slot("exit", "Describe the terminating condition or stop event.", ["DONE"])
     ],
     optionalSlots: [
@@ -235,9 +229,9 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     skeleton: [
       "flowchart TD",
       "%% loop.max.<role>=<N>",
-      "input -->|<START>| <loop>[Role:<role>]",
+      "start[开始] -->|START| <loop>[Role:<role>]",
       "<loop>[Role:<role>] -->|RETRY| <loop>[Role:<role>]",
-      "<loop>[Role:<role>] -->|DONE| output"
+      "<loop>[Role:<role>] -->|DONE| end[结束]"
     ]
   },
   {
@@ -246,11 +240,11 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     summary: "A workflow with a runtime-native manual review checkpoint.",
     triggerPatterns: [/人工|审核|审批|确认|review|approve|gate|human/i],
     semanticHintLabels: ["entry_hint", "binding_policy"],
-    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role", "review.mode.<reviewed-role>"],
+    requiredMetadataKeys: ["system.id", "system.version", "law.global", "review.mode.<reviewed-role>"],
     requiredSlots: [
       slot("reviewed-role", "Declare the role whose durable result requires review.", ["review.mode.writer=required"]),
       slot("decision", "Describe control-plane decisions and the role's normal event routes.", ["approve / rework / pause / terminate"]),
-      slot("post-review", "Describe the downstream path resumed after an approved draft.", ["writer -->|DONE| output"])
+      slot("post-review", "Describe the downstream path resumed after an approved draft.", ["writer -->|DONE| end[结束]"])
     ],
     optionalSlots: [
       slot("review-policy", "Declare review timeout, rework, and termination policy; timeout is currently persisted policy, not an automatic timer.", ["review.timeout.action.writer=pause", "review.rework.max.writer=3"], false)
@@ -260,10 +254,9 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.id=<system.id>",
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
-      "%% entry.role=<reviewed-role>",
       "%% review.mode.<reviewed-role>=required",
-      "input -->|<EVENT>| <reviewed>[Role:<reviewed-role>]",
-      "<reviewed>[Role:<reviewed-role>] -->|<APPROVED-EVENT>| output"
+      "start[开始] -->|START| <reviewed>[Role:<reviewed-role>]",
+      "<reviewed>[Role:<reviewed-role>] -->|<APPROVED-EVENT>| end[结束]"
     ]
   },
   {
@@ -272,7 +265,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     summary: "Template for a role that hands off work after invoking a project execution profile.",
     triggerPatterns: [/exec\.bind|tool binding|mixed/i],
     semanticHintLabels: ["binding_policy"],
-    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
+    requiredMetadataKeys: ["system.id", "system.version", "law.global"],
     requiredSlots: [
       slot("exec-binding", "Declare a different local-shell exec-bound role.", ["exec.bind.publisher=publish-profile"]),
       slot("role-note", "Keep each graph node as a role and configure Agent backend/model choices outside Mermaid.", ["review is an Agent role; publisher uses an execution profile"])
@@ -285,11 +278,10 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.id=<system.id>",
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
-      "%% entry.role=<entry-role>",
       "%% exec.bind.<exec-role>=<profile-id>",
-      "input -->|<EVENT>| <model>[Role:<model-role>]",
+      "start[开始] -->|START| <model>[Role:<model-role>]",
       "<model>[Role:<model-role>] -->|NEXT| <exec>[Role:<exec-role>]",
-      "<exec>[Role:<exec-role>] -->|DONE| output"
+      "<exec>[Role:<exec-role>] -->|DONE| end[结束]"
     ]
   }
 ] as const;

@@ -2,7 +2,6 @@ flowchart TD
 %% system.id=noop.langgraph
 %% system.version=0.1.0
 %% law.global=law.branch
-%% entry.role=test-operator
 
-input -->|GO| noop[Role:test-operator]
-noop[Role:test-operator] -->|DONE| output
+start[开始] -->|START| noop[Role:test-operator]
+noop[Role:test-operator] -->|DONE| end[结束]

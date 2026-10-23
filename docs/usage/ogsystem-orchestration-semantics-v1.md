@@ -146,13 +146,14 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 
 *   **Header 必须严格匹配**：首个非空行必须是 `flowchart TD` 或 `flowchart LR`。
 *   **可执行行是封闭集合**：仅允许 `%% key=value` 元数据行与 `A -->|EVENT| B` 边定义；其他可执行语法直接失败。
-*   **节点 token 是严格格式**：仅支持 `nodeId[Role:roleId]`；边界 token 仅支持 `input/output`，并拒绝 `start/end/done`。
-*   **边界边语义固定**：只允许 `input -->|EVENT| Role` 与 `Role -->|EVENT| output`。
-*   **入口语义需单值一致**：入口来自 `entry.role` 或唯一 `input` 边目标；两者冲突或存在多个 `input` 目标都会失败。
-*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role`、`model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 以及 `review.mode/review.timeout/review.timeout.action/review.rework.target/review.rework.max/review.terminate.scope` 前缀；重复 key 与未知 key 都会失败。`runtime.error_flows.v1` 属于 `.ogs/runtime.json`，不是 Mermaid 元数据。
+*   **节点 token 是严格格式**：业务节点使用 `nodeId[Role:roleId]`，结构角色使用 `start[开始]` 与 `end[结束]`。
+*   **边界边语义固定**：只允许 `start[开始] -->|START| Role` 与 `Role -->|EVENT| end[结束]`。
+*   **入口语义来自开始连线**：Start 的候选角色只由其出边确定，所有出边必须使用 `START`。默认分发全部候选；`start.dispatch.mode=random_n` 配合 `start.dispatch.count=N` 按 Run 固定选择 N 个并持久化，恢复不重抽。
+*   **结束汇聚只看直接连线**：只有直接连接 End 的不同角色参与 `all_of` 或 `quorum_of`；无结束连线的孤立角色不计入。`end.join.min` 范围为直接连接 End 的不同角色数。阈值达成会取消未完成分支，随机入口造成阈值不可达时运行失败并记录未满足角色。终值按稳定图顺序记录，同一角色多次激活均保留。
+*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/start.dispatch.mode/start.dispatch.count/end.join.mode/end.join.min`、`exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 以及 `review.mode/review.timeout/review.timeout.action/review.rework.target/review.rework.max/review.terminate.scope` 前缀；重复 key 与未知 key 都会失败。`runtime.error_flows.v1` 属于 `.ogs/runtime.json`，不是 Mermaid 元数据。
 *   **`engine` 是可选的执行元数据**：可省略；若声明则只能是 `langgraph`。
-*   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
-*   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。
+*   **保留角色名禁止复用**：`start/end` 是特殊角色名，不能作为业务 `roleId`。
+*   **终止条件必须显式可达**：至少一个业务角色必须有 Flow 直接连接 `end[结束]`；无出边角色不会隐式成为终值角色。
 *   **绑定冲突会被拒绝**：同一 role 不允许同时声明 `exec.bind.<roleId>` 与项目模型选择；`system.mmd` 不承载模型绑定。
 
 ---
@@ -167,7 +168,7 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 *   **日志双通道**：引擎日志 `logs/engine.ndjson`，角色日志 `logs/roles/<roleId>.ndjson`，同时保留 `events.ndjson` 作为完整事件流。
 *   **停止状态机**：支持 `running -> stopping -> stopped`，并在 `control/stop-request.json`、`control/stop-outcome.json` 保留操作证据。
 *   **人工审核原生化**：`review.*` 让 role 执行后先进入 `waiting_review`，draft result 落在 pending review 控制面，approve / rework / pause / terminate 通过 `control/reviews/` 与 resume/reconcile 主链完成，而不是通过单独 human-gate role 节点。
-*   **审核超时边界**：`review.timeout.*` 会进入编译快照与 pending review spec，但当前 runtime 不运行自动计时器，也不会自动产生 `expired`；超时后的动作仍需显式写入 review decision。
+*   **审核超时边界**：`review.timeout.*` 会进入编译快照与 pending review spec。status、inspect、review list 和 resume 惰性检查到期时间，并幂等写入超时 decision 与审计事件；没有后台计时服务。`pause` 保留可操作的暂停审核，`terminate` 按配置终止分支或运行；resume 幂等应用持久化 decision。
 *   **语义分叉与物理并发分离**：`parallel_split` 只保证多个下游分支被激活及其 session lineage 隔离；当前 scheduler 按活动队列顺序处理，物理并发属于未来执行策略。
 
 ---
@@ -181,7 +182,7 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 *   **触发来源限定**：仅运行时失败路径触发（execution/validation/io/state 等），不是普通成功输出事件。
 *   **触发时机边界**：执行器侧重试耗尽后，才进行 `ERROR*` 匹配与路由。
 *   **匹配顺序**：先 `ERROR.<errorCode>`，后 `ERROR`，无匹配则保持 fail-stop。
-*   **解析约束**：同一 `fromRole` 仅允许一个 `ERROR` 兜底边；同一 `ERROR.<code>` 仅允许一个目标；`input` 不允许声明 `ERROR*`。
+*   **解析约束**：同一 `fromRole` 仅允许一个 `ERROR` 兜底边；同一 `ERROR.<code>` 仅允许一个目标；结构角色 `start[开始]` 不允许声明 `ERROR*`。
 *   **fail-closed 约束**：保留前缀事件必须是 `ERROR` 或 `ERROR.<errorCode>`；其他 `ERROR*` 形式在解析期拒绝。
 *   **角色提示契约**：运行时注入给角色的 `allowed_events` 不包含 `ERROR*`（异常流仅由运行时失败路径触发）。
 
@@ -191,4 +192,4 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 *   **异常流**：用于“运行时失败后的补偿/降级分支”（execution/validation/io/state）。
 *   **边界约束**：不要把预期业务否定路径建模为 `ERROR*`。
 
-交付记录见：`docs/development/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`；术语对齐收口见：`docs/development/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`。
+错误流配置、失败 envelope、补偿与恢复规则以本规范、[语义手册](./ogsystem-semantics-manual.md)及 runtime 回归测试为准。

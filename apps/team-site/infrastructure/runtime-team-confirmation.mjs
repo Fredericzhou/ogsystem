@@ -25,7 +25,7 @@ export function createRuntimeTeamConfirmation() {
       incoming: node.incoming.map((flow) => ({ from: flow.fromRoleId, event: flow.eventType, priority: flow.priority, condition: flow.condition })).sort((a, b) => `${a.from}:${a.event}`.localeCompare(`${b.from}:${b.event}`)),
       outgoing: node.outgoing.map((flow) => ({ to: flow.toRoleId, event: flow.eventType, priority: flow.priority, condition: flow.condition })).sort((a, b) => `${a.to}:${a.event}`.localeCompare(`${b.to}:${b.event}`))
     })).sort((a, b) => a.roleId.localeCompare(b.roleId));
-    return createHash("sha256").update(JSON.stringify({ entryRoleId: plan.entryRoleId, topology })).digest("hex");
+    return createHash("sha256").update(JSON.stringify({ entryRoleIds: plan.entryRoleIds, endJoin: plan.endJoin, topology })).digest("hex");
   }
 
   return Object.freeze({
@@ -39,7 +39,7 @@ export function createRuntimeTeamConfirmation() {
         loopMax: node.loopMax
       }));
       if (!trustedClassic && project.source !== "classic" && project.source !== "classic-template") {
-        validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleId);
+        validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleIds);
       }
     },
 

@@ -27,19 +27,17 @@ async function createRunContext() {
 %% system.id=test.human.review.artifacts
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `);
   await writeFile(systemPath, `flowchart TD
 %% system.id=test.human.review.artifacts
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `, "utf8");
   await writeFile(runtimeConfigPath, JSON.stringify({ executor: "opencode", roleRepo: "./og-roles" }), "utf8");
 

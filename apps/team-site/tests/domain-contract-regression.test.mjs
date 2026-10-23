@@ -181,7 +181,7 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     assert.equal(recentAttempts.filter((run) => run.isCurrent).length, 1);
     const statePath = join(project.workdir, ".ogs", "runs", retry.currentRunId, "state.json");
     const runSnapshot = JSON.parse(await readFile(statePath, "utf8"));
-    runSnapshot.graphState = { ...(runSnapshot.graphState || {}), finalOutput: "Authorization: Bearer abcdefghijklmnop" };
+    runSnapshot.graphState = { ...(runSnapshot.graphState || {}), finalOutputsByRoleId: { reviewer: [{ content: "Authorization: Bearer abcdefghijklmnop" }] }, finalOutputRoleOrder: ["reviewer"] };
     await writeFile(statePath, `${JSON.stringify(runSnapshot, null, 2)}\n`, "utf8");
     const resultUseCases = createRunResultUseCases({
       getRun: (projectId, taskId, runId) => store.getProjectRun(projectId, taskId, runId),
@@ -189,8 +189,8 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     });
     const result = await resultUseCases.getProjectRunResult(project.projectId, task.taskId, retry.currentRunId);
     assert.equal(result.available, true);
-    assert.match(result.result.finalOutput, /\[REDACTED\]/);
-    assert.doesNotMatch(result.result.finalOutput, /abcdefghijklmnop/);
+    assert.match(result.result.finalOutputsByRoleId.reviewer[0].content, /\[REDACTED\]/);
+    assert.doesNotMatch(result.result.finalOutputsByRoleId.reviewer[0].content, /abcdefghijklmnop/);
     assert.equal((await store.getProjectRun(project.projectId, task.taskId, originalRunId)).taskId, task.taskId);
     assert.equal(Object.hasOwn(result, "projectId"), false);
 

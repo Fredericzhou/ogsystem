@@ -20,7 +20,7 @@ test("visualizer run plan endpoint exposes immutable execution inputs and qualit
     workspaceDigest: "workspace-digest",
     taskDigest: "task-digest",
     fingerprintDigest: "fingerprint-digest",
-    entryNodeId: "writer",
+    entryNodeIds: ["writer"],
     backend: ["codex"],
     nodeGraph: [
       {
@@ -61,7 +61,7 @@ test("visualizer run plan endpoint exposes immutable execution inputs and qualit
       const response = await fetch(`${started.url}/api/v1/ogs/runs/${runId}/plan`);
       assert.equal(response.status, 200);
       const body = await response.json();
-      assert.equal(body.runPlan.entryNodeId, "writer");
+      assert.deepEqual(body.runPlan.entryNodeIds, ["writer"]);
       assert.equal(body.runPlan.executionPolicy.singleWorker, true);
       assert.equal(body.materials[0].materialId, "brief");
       assert.deepEqual(body.sideEffects, []);

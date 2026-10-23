@@ -227,7 +227,6 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
 %% system.id=test.transition.orphan.join
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=dispatcher
 %% handoff.mode=transition
 %% handoff.contracts=contracts/handoff.contracts.json
 %% role.mode.dispatcher=parallel_split
@@ -235,12 +234,12 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
 %% join.sources.review=a,b
 %% join.min.review=2
 
-input -->|START| dispatcher[Role:dispatcher]
+start[开始] -->|START| dispatcher[Role:dispatcher]
 dispatcher[Role:dispatcher] -->|TO_A| a[Role:a]
 dispatcher[Role:dispatcher] -->|TO_B| b[Role:b]
 a[Role:a] -->|DONE_A| review[Role:review]
 b[Role:b] -->|DONE_B| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `,
     "utf8"
   );

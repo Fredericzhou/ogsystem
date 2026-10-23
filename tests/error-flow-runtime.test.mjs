@@ -273,16 +273,17 @@ for (const routingCase of [
 %% system.id=test.error.flow.priority
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=worker
+%% end.join.mode=quorum_of
+%% end.join.min=1
 %% exec.bind.worker=profile.worker
 %% exec.bind.specific=profile.specific
 %% exec.bind.fallback=profile.fallback
 
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_SPAWN| specific[Role:specific]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-specific[Role:specific] -->|SPEC_DONE| output
-fallback[Role:fallback] -->|FB_DONE| output
+specific[Role:specific] -->|SPEC_DONE| end[结束]
+fallback[Role:fallback] -->|FB_DONE| end[结束]
 `,
     expectedStatus: "done",
     expectedFinalRoleId: "specific",
@@ -311,13 +312,12 @@ fallback[Role:fallback] -->|FB_DONE| output
 %% system.id=test.error.flow.fallback
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
 
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| output
+fallback[Role:fallback] -->|FB_DONE| end[结束]
 `,
     expectedStatus: "done",
     expectedFinalRoleId: "fallback",
@@ -346,13 +346,12 @@ fallback[Role:fallback] -->|FB_DONE| output
 %% system.id=test.error.flow.no.match
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.other=profile.other
 
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| other[Role:other]
-other[Role:other] -->|OTHER_DONE| output
+other[Role:other] -->|OTHER_DONE| end[结束]
 `,
     expectedStatus: "failed",
     expectedHandledByEvent: undefined,
@@ -371,7 +370,7 @@ other[Role:other] -->|OTHER_DONE| output
     const result = await runFixture(fixture);
     assert.equal(result.status, routingCase.expectedStatus);
     if (routingCase.expectedFinalRoleId) {
-      assert.equal(result.finalRoleId, routingCase.expectedFinalRoleId);
+      assert.equal(result.finalRoleIds?.at(-1), routingCase.expectedFinalRoleId);
     }
 
     const workerAudit = result.auditTrail.find((item) => item.roleId === "worker");
@@ -429,16 +428,15 @@ test("handled failure last_context uses failed role input context projection", a
 %% system.id=test.error.last.context
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=prep
 %% exec.bind.prep=profile.prep
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
 %% context.map.worker.input=direct.data.detail
 
-input -->|START| prep[Role:prep]
+start[开始] -->|START| prep[Role:prep]
 prep[Role:prep] -->|PREP_DONE| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| output
+fallback[Role:fallback] -->|FB_DONE| end[结束]
 `
   });
 
@@ -484,15 +482,14 @@ test("handled failure last_context falls back to upstream content and redacts se
 %% system.id=test.error.last.context.upstream.fallback
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=prep
 %% exec.bind.prep=profile.prep
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
 
-input -->|START| prep[Role:prep]
+start[开始] -->|START| prep[Role:prep]
 prep[Role:prep] -->|PREP_DONE| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| output
+fallback[Role:fallback] -->|FB_DONE| end[结束]
 `
   });
 
@@ -530,13 +527,12 @@ test("handled failure last_context falls back to user prompt and truncates long 
 %% system.id=test.error.last.context.user.prompt.fallback
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
 
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| output
+fallback[Role:fallback] -->|FB_DONE| end[结束]
 `
   });
 
@@ -576,13 +572,12 @@ test("runtime keeps fail-stop behavior when error flow routing flag is disabled"
 %% system.id=test.error.flow.flag.off
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
 
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| output
+fallback[Role:fallback] -->|FB_DONE| end[结束]
 `
   });
 
@@ -633,7 +628,6 @@ test("runtime handles failure per-branch in parallel split and continues healthy
 %% system.id=test.error.flow.parallel
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.final=all_of
 %% join.sources.final=worker_ok,compensate
@@ -643,19 +637,19 @@ test("runtime handles failure per-branch in parallel split and continues healthy
 %% exec.bind.compensate=profile.compensate
 %% exec.bind.final=profile.final
 
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_FAIL| worker_fail[Role:worker_fail]
 dispatch[Role:dispatch] -->|TO_OK| worker_ok[Role:worker_ok]
 worker_fail[Role:worker_fail] -->|ERROR| compensate[Role:compensate]
 worker_ok[Role:worker_ok] -->|OK_DONE| final[Role:final]
 compensate[Role:compensate] -->|COMP_DONE| final[Role:final]
-final[Role:final] -->|FINAL_DONE| output
+final[Role:final] -->|FINAL_DONE| end[结束]
 `
   });
 
   const result = await runFixture(fixture);
   assert.equal(result.status, "done");
-  assert.equal(result.finalRoleId, "final");
+  assert.equal(result.finalRoleIds?.at(-1), "final");
   assert.ok(result.auditTrail.some((item) => item.roleId === "worker_ok"));
   assert.ok(result.auditTrail.some((item) => item.roleId === "compensate"));
   const failedAudit = result.auditTrail.find((item) => item.roleId === "worker_fail");
@@ -739,25 +733,26 @@ test("parallel_split success path ignores ERROR* edges and duplicate targets", a
 %% system.id=test.error.flow.parallel.success.filter
 %% system.version=1.0.0
 %% law.global=law.test.error.flow
-%% entry.role=dispatch
+%% end.join.mode=quorum_of
+%% end.join.min=1
 %% role.mode.dispatch=parallel_split
 %% exec.bind.dispatch=profile.dispatch
 %% exec.bind.worker_ok=profile.worker_ok
 %% exec.bind.compensate=profile.compensate
 
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_OK| worker_ok[Role:worker_ok]
 dispatch[Role:dispatch] -->|TO_OK_DUP| worker_ok[Role:worker_ok]
 dispatch[Role:dispatch] -->|ERROR| compensate[Role:compensate]
 dispatch[Role:dispatch] -->|ERROR.TOOL_EXECUTION_SPAWN| compensate[Role:compensate]
-worker_ok[Role:worker_ok] -->|OK_DONE| output
-compensate[Role:compensate] -->|COMP_DONE| output
+worker_ok[Role:worker_ok] -->|OK_DONE| end[结束]
+compensate[Role:compensate] -->|COMP_DONE| end[结束]
 `
   });
 
   const result = await runFixture(fixture);
   assert.equal(result.status, "done");
-  assert.equal(result.finalRoleId, "worker_ok");
+  assert.equal(result.finalRoleIds?.at(-1), "worker_ok");
   assert.equal(result.auditTrail.filter((item) => item.roleId === "worker_ok").length, 1);
   assert.equal(result.auditTrail.filter((item) => item.roleId === "compensate").length, 0);
   assert.equal(result.runSummary.handledFailureCount, 0);

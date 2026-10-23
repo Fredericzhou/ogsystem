@@ -132,11 +132,11 @@ test("router delegates navigation once and cancels stale page requests", async (
     await page.route("**/api/v1/teams/**/simulations**", async (route) => {
       const requestUrl = new URL(route.request().url());
       if (route.request().method() === "POST") {
-        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ simulation, state: { status: "completed", finalOutput: "Plan reviewed" }, events: [{ type: "simulation.completed", at: simulation.createdAt }] }) });
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ simulation, state: { status: "completed", finalOutputsByRoleId: { reviewer: [{ content: "Plan reviewed" }] }, finalOutputRoleOrder: ["reviewer"] }, events: [{ type: "simulation.completed", at: simulation.createdAt }] }) });
       } else if (requestUrl.pathname.endsWith("/events")) {
         await route.fulfill({ contentType: "application/json", body: JSON.stringify({ teamId, teamVersionId, simulationId, events: [{ type: "simulation.completed", at: simulation.createdAt }] }) });
       } else if (requestUrl.pathname.endsWith(simulationId)) {
-        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ simulation, state: { status: "completed", finalOutput: "Plan reviewed" }, events: [{ type: "simulation.completed", at: simulation.createdAt }] }) });
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ simulation, state: { status: "completed", finalOutputsByRoleId: { reviewer: [{ content: "Plan reviewed" }] }, finalOutputRoleOrder: ["reviewer"] }, events: [{ type: "simulation.completed", at: simulation.createdAt }] }) });
       } else {
         await route.fulfill({ contentType: "application/json", body: JSON.stringify({ teamId, teamVersionId, simulations: [simulation] }) });
       }
@@ -149,16 +149,16 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.match(await page.locator("#studio-view .panel-intro").first().innerText(), /不验证外部网络或凭据/);
     assert.equal(await page.locator("#studio-release-button").count(), 1);
     await page.goto(`${url}/studio/teams/${teamVersionId}/run`, { waitUntil: "networkidle" });
-    await page.locator(".studio-run-layout, #studio-view .run-error").waitFor();
-    assert.equal(await page.locator(".studio-run-layout").count(), 1, `Studio run page failed: ${await page.locator("#studio-view").innerText()}`);
+    await page.locator(".studio-simulation-list, #studio-view .run-error").waitFor();
+    assert.equal(await page.locator(".studio-simulation-list").count(), 1, `Studio debug history failed: ${await page.locator("#studio-view").innerText()}`);
     assert.equal(await page.locator(".studio-simulation-row").count(), 1, `Simulation list should load: ${await page.locator("#studio-view").innerText()}`);
     assert.match(await page.locator(".studio-simulation-row").innerText(), /Inspect the generated plan/);
     assert.equal(await page.locator(".studio-simulation-row").count(), 1);
-    await page.locator("#studio-simulation-form textarea[name=prompt]").waitFor();
+    assert.equal(await page.locator("#studio-simulation-form").count(), 0, "the history page should not embed the debug input form");
     assert.equal(await page.locator('.studio-workspace-nav a[aria-current="page"]').getAttribute("href"), `/studio/teams/${teamVersionId}/run`);
     await page.locator(".studio-simulation-row").click();
     assert.equal(await page.locator('.studio-workspace-nav a[aria-current="page"]').getAttribute("href"), `/studio/teams/${teamVersionId}/run`);
-    await page.getByText("只读证据").waitFor();
+    await page.locator("#studio-view .page-heading h1").getByText(/调试运行|Debug run/).waitFor();
     await page.getByText("Plan reviewed").waitFor();
     assert.equal(await page.locator(".studio-event-list li").count(), 1);
     await page.goto(`${url}/studio/teams/${teamVersionId}/info`, { waitUntil: "networkidle" });

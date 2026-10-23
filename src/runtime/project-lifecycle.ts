@@ -80,7 +80,7 @@ export type IndexedRun = {
   stopOutcomeStatus?: string;
   lastErrorCode?: string;
   lastRoleId?: string;
-  finalRoleId?: string;
+  finalRoleIds?: string[];
   pendingReviewCount?: number;
   hasWaitingHumanReview?: boolean;
   latestPendingReviewId?: string;
@@ -129,7 +129,7 @@ type IndexedRunStateSnapshot = {
   graphState: {
     status: string;
     transitionCount: number;
-    finalRoleId: string;
+    finalRoleIds: string[];
     pendingReviewsById?: Record<string, unknown>;
   };
 };
@@ -141,10 +141,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=project.starter",
       "%% system.version=1.0.0",
       "%% law.global=law.project.base",
-      "%% entry.role=demo-analyst",
       "",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -164,10 +163,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=project.example.minimal",
       "%% system.version=1.0.0",
       "%% law.global=law.project.base",
-      "%% entry.role=demo-analyst",
       "",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     syncDependencies: true,
@@ -179,11 +177,10 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=template.minimal",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      `%% entry.role=${MINIMAL_HELLO_ROLE_ID}`,
       `%% exec.bind.${MINIMAL_HELLO_ROLE_ID}=${MINIMAL_HELLO_PROFILE_ID}`,
       "",
-      `input -->|START| hello[Role:${MINIMAL_HELLO_ROLE_ID}]`,
-      `hello[Role:${MINIMAL_HELLO_ROLE_ID}] -->|${MINIMAL_HELLO_EVENT}| output`,
+      `start[开始] -->|START| hello[Role:${MINIMAL_HELLO_ROLE_ID}]`,
+      `hello[Role:${MINIMAL_HELLO_ROLE_ID}] -->|${MINIMAL_HELLO_EVENT}| end[结束]`,
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -207,7 +204,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=template.advanced.features",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% entry.role=advanced-coordinator",
       "%% exec.bind.advanced-coordinator=profile.console.print",
       "%% exec.bind.advanced-worker-a=profile.console.print",
       "%% exec.bind.advanced-worker-b=profile.console.print",
@@ -230,12 +226,12 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% review.rework.max.advanced-reviewer=2",
       "%% review.terminate.scope.advanced-reviewer=branch",
       "",
-      "input -->|START| coordinator[Role:advanced-coordinator]",
+      "start[开始] -->|START| coordinator[Role:advanced-coordinator]",
       "coordinator[Role:advanced-coordinator] -->|START_A| workera[Role:advanced-worker-a]",
       "coordinator[Role:advanced-coordinator] -->|START_B| workerb[Role:advanced-worker-b]",
       "workera[Role:advanced-worker-a] -->|A_DONE| reviewer[Role:advanced-reviewer]",
       "workerb[Role:advanced-worker-b] -->|B_DONE| reviewer[Role:advanced-reviewer]",
-      "reviewer[Role:advanced-reviewer] -->|REVIEW_READY| output",
+      "reviewer[Role:advanced-reviewer] -->|REVIEW_READY| end[结束]",
       "reviewer[Role:advanced-reviewer] -->|REWORK| coordinator[Role:advanced-coordinator]",
       ""
     ].join("\n"),
@@ -260,17 +256,16 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=template.software-dev",
       "%% system.version=1.0.0",
       "%% law.global=law.software-dev.base",
-      "%% entry.role=demo-intake",
       "%% role.mode.demo-intake=parallel_split",
       "%% join.mode.test-operator=all_of",
       "%% join.sources.test-operator=test-branch-a,test-branch-b",
       "",
-      "input -->|TASK_IN| intake[Role:demo-intake]",
+      "start[开始] -->|START| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
       "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
       "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
       "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
-      "testop[Role:test-operator] -->|RESULT_READY| output",
+      "testop[Role:test-operator] -->|RESULT_READY| end[结束]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -294,12 +289,11 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=template.consultation",
       "%% system.version=1.0.0",
       "%% law.global=law.consultation.base",
-      "%% entry.role=demo-intake",
       "",
-      "input -->|CASE_IN| intake[Role:demo-intake]",
+      "start[开始] -->|START| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|INTAKE_DONE| dispatch[Role:diagnosis-dispatch]",
       "dispatch[Role:diagnosis-dispatch] -->|DISPATCH_DONE| chief[Role:diagnosis-chief-review]",
-      "chief[Role:diagnosis-chief-review] -->|REPORT_READY| output",
+      "chief[Role:diagnosis-chief-review] -->|REPORT_READY| end[结束]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -1554,7 +1548,7 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       stopOutcomeStatus: stopFields.stopOutcome,
       lastErrorCode: summary?.lastErrorCode,
       lastRoleId: summary?.lastRoleId,
-      finalRoleId: summary?.finalRoleId ?? indexedState?.graphState.finalRoleId,
+      finalRoleIds: summary?.finalRoleIds ?? indexedState?.graphState.finalRoleIds,
       pendingReviewCount: reviewFields.pendingReviewCount,
       hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
       latestPendingReviewId: reviewFields.latestPendingReviewId,
@@ -1641,7 +1635,7 @@ export async function loadPersistedRunsIndex(workdir: string): Promise<RunsIndex
               : undefined,
         lastErrorCode: typeof item.lastErrorCode === "string" ? item.lastErrorCode : undefined,
         lastRoleId: typeof item.lastRoleId === "string" ? item.lastRoleId : undefined,
-        finalRoleId: typeof item.finalRoleId === "string" ? item.finalRoleId : undefined,
+        finalRoleIds: Array.isArray(item.finalRoleIds) ? item.finalRoleIds.filter((roleId): roleId is string => typeof roleId === "string") : undefined,
         pendingReviewCount:
           typeof item.pendingReviewCount === "number" && Number.isFinite(item.pendingReviewCount)
             ? item.pendingReviewCount

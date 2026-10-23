@@ -65,7 +65,7 @@ test("adapter langgraph allows noop when law enables it", async () => {
     systemPath: noopLanggraphSystemPath
   });
   assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "test-operator");
+  assert.strictEqual(result.finalRoleIds?.at(-1), "test-operator");
 });
 
 test("adapter fails preflight when role has noop binding without law authorization", async () => {

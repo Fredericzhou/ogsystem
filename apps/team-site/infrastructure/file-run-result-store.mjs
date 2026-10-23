@@ -8,12 +8,21 @@ function assertSafeId(value, field, pattern) {
   if (!pattern.test(String(value || ""))) throw new Error(`${field} is invalid.`);
 }
 
+function redactStructuredValue(value) {
+  if (typeof value === "string") return redactText(value, { enabled: true });
+  if (Array.isArray(value)) return value.map(redactStructuredValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactStructuredValue(item)]));
+  }
+  return value;
+}
+
 export function createFileRunResultStore({ projectsRoot }) {
   if (!projectsRoot) throw new TypeError("Run result store projects root is required.");
   const root = resolve(projectsRoot);
 
   return Object.freeze({
-    async readFinalOutput(run) {
+    async readFinalOutputs(run) {
       const projectId = run.owner?.kind === "project_task" ? run.owner.projectId : undefined;
       assertSafeId(projectId, "projectId", /^[a-z0-9][a-z0-9-]{0,80}$/);
       assertSafeId(run.taskId, "taskId", /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
@@ -37,10 +46,22 @@ export function createFileRunResultStore({ projectsRoot }) {
         if (error?.code === "ENOENT") return undefined;
         throw error;
       }
-      const finalOutput = snapshot?.graphState?.finalOutput;
-      return typeof finalOutput === "string"
-        ? redactText(finalOutput, { enabled: true })
-        : undefined;
+      const graphState = snapshot?.graphState;
+      const outputMap = graphState?.finalOutputsByRoleId;
+      if (!outputMap || typeof outputMap !== "object" || Array.isArray(outputMap)) return undefined;
+      const finalOutputsByRoleId = Object.fromEntries(Object.entries(outputMap).map(([roleId, outputs]) => [
+        roleId,
+        Array.isArray(outputs) ? outputs.map((output) => ({
+          ...(typeof output?.content === "string" ? { content: redactStructuredValue(output.content) } : {}),
+          ...(output?.data && typeof output.data === "object" && !Array.isArray(output.data)
+            ? { data: redactStructuredValue(output.data) }
+            : {})
+        })) : []
+      ]));
+      return {
+        finalOutputsByRoleId,
+        finalOutputRoleOrder: Array.isArray(graphState.finalOutputRoleOrder) ? [...graphState.finalOutputRoleOrder] : []
+      };
     }
   });
 }

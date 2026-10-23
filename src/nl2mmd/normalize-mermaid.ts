@@ -28,7 +28,10 @@ const SUPPORTED_EXACT_METADATA_KEYS = new Set([
   "system.id",
   "system.version",
   "law.global",
-  "entry.role",
+  "start.dispatch.mode",
+  "start.dispatch.count",
+  "end.join.mode",
+  "end.join.min",
   "handoff.mode",
   "handoff.contracts"
 ]);
@@ -69,16 +72,10 @@ function normalizeBoundaryToken(token: string): string {
   const trimmed = token.trim();
   const normalized = trimmed.toLowerCase();
   if (normalized === "start") {
-    return "input";
+    return "start[开始]";
   }
-  if (normalized === "end" || normalized === "done") {
-    return "output";
-  }
-  if (normalized === "input") {
-    return "input";
-  }
-  if (normalized === "output") {
-    return "output";
+  if (normalized === "end") {
+    return "end[结束]";
   }
   return trimmed;
 }
@@ -88,11 +85,6 @@ function collectKnownRoleIds(lines: string[]): Set<string> {
   for (const line of lines) {
     const metadata = parseMetadata(line);
     if (!metadata) {
-      continue;
-    }
-
-    if (metadata.key === "entry.role" && BARE_NODE_TOKEN_REGEX.test(metadata.value)) {
-      roleIds.add(metadata.value);
       continue;
     }
 
@@ -166,7 +158,7 @@ function collectNodeRoleMap(lines: string[]): Map<string, string> {
 
 function canonicalizeEndpointToken(token: string, nodeRoleMap: Map<string, string>): string {
   const normalizedBoundary = normalizeBoundaryToken(token);
-  if (normalizedBoundary === "input" || normalizedBoundary === "output") {
+  if (normalizedBoundary === "start[开始]" || normalizedBoundary === "end[结束]") {
     return normalizedBoundary;
   }
 
@@ -418,7 +410,6 @@ function canonicalizeWithRuntimeDefaults(args: {
   const metadataOrder: string[] = [];
   const edges: CanonicalizedEdge[] = [];
   const roleIds = new Set<string>();
-  const inputTargets: string[] = [];
   let header: string | undefined;
 
   for (const line of lines) {
@@ -450,7 +441,7 @@ function canonicalizeWithRuntimeDefaults(args: {
     }
     const fromToken = edgeMatch[1].trim();
     const toToken = edgeMatch[3].trim();
-    const eventType = edgeMatch[2].trim();
+    const eventType = fromToken === "start[开始]" ? "START" : edgeMatch[2].trim();
     edges.push({ fromToken, toToken, eventType });
 
     const fromRole = parseRoleToken(fromToken);
@@ -460,9 +451,6 @@ function canonicalizeWithRuntimeDefaults(args: {
     }
     if (toRole) {
       roleIds.add(toRole.roleId);
-    }
-    if (fromToken === "input" && toRole) {
-      inputTargets.push(toRole.roleId);
     }
   }
 
@@ -480,15 +468,6 @@ function canonicalizeWithRuntimeDefaults(args: {
   if (!metadata.get("law.global")) {
     metadata.set("law.global", args.context.lawIds[0] ?? "law.console.base");
     metadataOrder.push("law.global");
-  }
-
-  const entryRole = metadata.get("entry.role");
-  const inferredEntry = inputTargets[0] ?? Array.from(roleIds)[0];
-  if (!entryRole && inferredEntry) {
-    metadata.set("entry.role", inferredEntry);
-    metadataOrder.push("entry.role");
-  } else if (entryRole && !roleIds.has(entryRole) && inferredEntry) {
-    metadata.set("entry.role", inferredEntry);
   }
 
   repairMisplacedJoinMetadata({
@@ -511,7 +490,7 @@ function canonicalizeWithRuntimeDefaults(args: {
     metadataOrder.push(loopKey);
   }
 
-  const requiredOrder = ["engine", "system.id", "system.version", "law.global", "entry.role"];
+  const requiredOrder = ["engine", "system.id", "system.version", "law.global", "start.dispatch.mode", "start.dispatch.count", "end.join.mode", "end.join.min"];
   const emittedMetadataLines: string[] = [];
   const emittedKeys = new Set<string>();
   for (const key of requiredOrder) {
@@ -534,7 +513,7 @@ function canonicalizeWithRuntimeDefaults(args: {
     emittedKeys.add(key);
   }
 
-  const edgeLines = edges.map((edge) => `${edge.fromToken} -->|${edge.eventType}| ${edge.toToken}`);
+  const edgeLines = edges.map((edge) => `${edge.fromToken} -->|${edge.fromToken === "start[开始]" ? "START" : edge.eventType}| ${edge.toToken}`);
   return [header, ...emittedMetadataLines, ...edgeLines].join("\n").trim();
 }
 
@@ -566,7 +545,7 @@ export function normalizeNl2MmdMermaid(mermaid: string): string {
 
     const fromToken = canonicalizeEndpointToken(edgeMatch[1], nodeRoleMap);
     const toToken = canonicalizeEndpointToken(edgeMatch[3], nodeRoleMap);
-    const eventType = edgeMatch[2].trim();
+    const eventType = fromToken === "start[开始]" ? "START" : edgeMatch[2].trim();
     normalizedLines.push(`${fromToken} -->|${eventType}| ${toToken}`);
   }
 

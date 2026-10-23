@@ -16,8 +16,9 @@ test("adapter auto-resolves role packages by roleId", async () => {
   });
 
   assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "demo-analyst");
+  assert.strictEqual(result.finalRoleIds?.at(-1), "demo-analyst");
   assert.strictEqual(result.auditTrail[0]?.selectedEvent, "ANALYSIS_DONE");
-  assert.match(result.finalOutput ?? "", /\[dry-run\]/);
-  assert.match(result.finalOutput ?? "", /codex/);
+  const finalContent = result.finalOutputsByRoleId["demo-analyst"]?.[0]?.content ?? "";
+  assert.match(finalContent, /\[dry-run\]/);
+  assert.match(finalContent, /codex/);
 });

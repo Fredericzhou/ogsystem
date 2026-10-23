@@ -7,7 +7,7 @@
   "system": {
     "systemId": "wechat.miniprogram.factory",
     "systemVersion": "1.0.0",
-    "entryRoleId": "requirements",
+    "entryRoleIds": ["requirements"],
     "entryEventType": "REQUEST",
     "lawGlobalRef": "law.console.base"
   },

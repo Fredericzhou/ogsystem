@@ -17,7 +17,7 @@ async function fixture() {
   await writeFile(join(runDir, "run-owner.json"), JSON.stringify({ version: 1, runKind: "project_task", projectId, taskId: task.taskId, taskNumber: task.taskNumber, attemptNumber: 1, teamVersionId: task.teamVersionId, teamCoreDigest: task.teamCoreDigest, runId: "run-1" }));
   await writeFile(join(runDir, "control", "state.json"), JSON.stringify({ status: "completed" }));
   await writeFile(join(runDir, "run-plan.json"), JSON.stringify({ runId: "run-1" }));
-  await writeFile(join(runDir, "state.json"), JSON.stringify({ graphState: { finalOutput: "done" } }));
+  await writeFile(join(runDir, "state.json"), JSON.stringify({ graphState: { finalOutputsByRoleId: { reviewer: [{ content: "done" }] }, finalOutputRoleOrder: ["reviewer"] } }));
   return { root, projectRoot, runDir };
 }
 

@@ -95,19 +95,22 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       const detail = String(details || "Runtime did not complete the Sandbox run.").slice(0, 400);
       throw new Error(`TEAM_RELEASE_BASELINE_RUN_FAILED: Sandbox status ${String(result?.status || "unknown")}; ${detail}`);
     }
-    const output = typeof result?.finalOutput === "string" ? result.finalOutput.trim() : "";
-    if (!output) throw new Error("TEAM_RELEASE_BASELINE_OUTPUT_EMPTY: Sandbox returned no output.");
+    const outputMap = result?.finalOutputsByRoleId;
+    const outputs = outputMap && typeof outputMap === "object" ? Object.values(outputMap).flat() : [];
+    const parsed = outputs.length === 1 && outputs[0]?.data && typeof outputs[0].data === "object"
+      ? outputs[0].data
+      : outputs.length === 1 && typeof outputs[0]?.content === "string"
+        ? (() => { try { return JSON.parse(outputs[0].content); } catch { return undefined; } })()
+        : undefined;
+    if (!parsed) throw new Error("TEAM_RELEASE_BASELINE_OUTPUT_EMPTY: Sandbox returned no structured output.");
     const badRole = audit.find((item) => item?.status !== "completed" || item?.noop === true || item?.failure || item?.error);
     if (badRole) throw new Error(`TEAM_RELEASE_BASELINE_ROLE_FAILED: ${badRole.roleId || "unknown"} did not complete.`);
     const completed = new Set(audit.filter((item) => item?.status === "completed").map((item) => String(item.roleId || "")));
     const missing = scenario.expectedRoleIds.filter((roleId) => !completed.has(roleId));
     if (missing.length) throw new Error(`TEAM_RELEASE_BASELINE_ROLE_MISSING: ${missing.join(", ")}`);
-    let parsed;
-    try { parsed = JSON.parse(output); }
-    catch { throw new Error("TEAM_RELEASE_BASELINE_OUTPUT_INVALID: output must be JSON matching the baseline schema."); }
     const ajv = new Ajv({ allErrors: true, strict: false });
     if (!ajv.validate(scenario.outputSchema, parsed)) throw new Error(`TEAM_RELEASE_BASELINE_SCHEMA_FAILED: ${ajv.errorsText(ajv.errors, { separator: "; " })}`);
-    return output;
+    return parsed;
   }
 
   return Object.freeze({
@@ -149,7 +152,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       }
       return simulation;
     },
-    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", baselineScenarioId } = {}) {
+    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", baselineScenarioId, awaitCompletion = true } = {}) {
       const input = String(prompt || "").trim();
       if (!input || input.length > 4000) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: enter a task between 1 and 4,000 characters.");
       const startedAt = now();
@@ -163,6 +166,11 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         }
         const simulationId = identifiers.simulationId();
         assertSimulationId(simulationId);
+        const roles = snapshot.bundle?.team?.design?.roles || snapshot.bundle?.team?.design?.seats || {};
+        const roleDisplayNames = Object.fromEntries(Object.entries(roles).map(([roleId, role]) => [
+          roleId,
+          String(role?.name || role?.title || role?.label || roleId)
+        ]));
         const created = await simulationStore.createSimulation(teamVersionId, redactStudioSimulationText(input), {
           simulationId,
           teamId,
@@ -173,6 +181,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           baselineRevision: baseline?.revision || null,
           baselineScenarioDigest: baseline?.scenarioDigest || null,
           expectedRoleIds: baseline?.expectedRoleIds || [],
+          roleDisplayNames,
           createdAt: startedAt,
           startedAt
         });
@@ -184,18 +193,38 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         ? `${runInput}\n\nBaseline materials:\n${baseline.materials.map((item) => `--- ${item.name} ---\n${item.content}`).join("\n\n")}`
         : runInput;
 
+      const execution = (async () => {
       let runtimeEvidence;
       try {
         const result = await simulationRunner.simulate(team, {
           prompt: materialPrompt, locale, simulationId, teamPackageBundle: bundle, teamCoreDigest,
           mode: baseline ? "sandbox" : "dry-run",
-          materials: baseline?.materials || []
+          materials: baseline?.materials || [],
+          onAuditEvent: async (audit) => {
+            const event = redactStudioSimulationValue({
+              type: `role.${String(audit.status || "running").toLowerCase()}`,
+              at: audit.at || now(),
+              roleId: audit.roleId,
+              selectedEvent: audit.selectedEvent,
+              status: audit.status,
+              durationMs: audit.durationMs,
+              inputContext: audit.inputContext,
+              stdoutPreview: audit.stdoutPreview,
+              failure: audit.error,
+              errorEnvelope: audit.errorEnvelope
+            });
+            if (typeof simulationStore.appendSimulationEvents === "function") {
+              await simulationStore.appendSimulationEvents(teamVersionId, simulationId, event);
+            } else {
+              await simulationStore.updateSimulation(teamVersionId, simulationId, { events: event });
+            }
+          }
         });
         runtimeEvidence = redactStudioSimulationValue({
           status: result?.status,
           error: result?.error,
-          finalRoleId: result?.finalRoleId,
-          finalOutput: result?.finalOutput,
+          finalOutputsByRoleId: result?.finalOutputsByRoleId || {},
+          finalOutputRoleOrder: result?.finalOutputRoleOrder || [],
           stages: result?.stages || [],
           auditTrail: result?.auditTrail || [],
           summary: result?.summary || {}
@@ -222,21 +251,38 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           if (eventTime) roleEvent.at = eventTime;
           return roleEvent;
         });
+        const persistedEvents = (await simulationStore.getSimulationEvidence(teamVersionId, simulationId)).events;
+        const persistedCounts = new Map();
+        for (const item of persistedEvents) {
+          if (!String(item.type || "").startsWith("role.")) continue;
+          const key = `${item.roleId || ""}\0${item.status || ""}\0${item.selectedEvent || ""}`;
+          persistedCounts.set(key, (persistedCounts.get(key) || 0) + 1);
+        }
+        const missingEvents = events.filter((item) => {
+          const key = `${item.roleId || ""}\0${item.status || ""}\0${item.selectedEvent || ""}`;
+          const count = persistedCounts.get(key) || 0;
+          if (count > 0) {
+            persistedCounts.set(key, count - 1);
+            return false;
+          }
+          return true;
+        });
         const state = redactStudioSimulationValue({
           status,
           runtimeStatus: rawStatus,
           mode: baseline ? "sandbox" : "dry-run",
           baselineScenarioId: baseline?.scenarioId || null,
           baselineRevision: baseline?.revision || null,
-          finalRoleId: result?.finalRoleId,
-          finalOutput: result?.finalOutput,
+          finalOutputsByRoleId: result?.finalOutputsByRoleId || {},
+          finalOutputRoleOrder: result?.finalOutputRoleOrder || [],
           stages: result?.stages || [],
           auditTrail,
           summary: result?.summary || {},
           durationMs: result?.durationMs
         });
         const failed = status !== "completed";
-        const output = typeof result?.finalOutput === "string" ? redactStudioSimulationText(result.finalOutput) : "";
+        const outputs = result?.finalOutputsByRoleId || {};
+        const output = (result?.finalOutputRoleOrder || []).flatMap((roleId) => (outputs[roleId] || []).map((item) => `${roleId}: ${item.content || JSON.stringify(item.data || {})}`)).join(" | ");
         const updated = await simulationStore.updateSimulation(teamVersionId, simulationId, {
           metadata: {
             status: failed ? "failed" : "completed",
@@ -246,9 +292,9 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
             failureSummary: failed ? redactStudioSimulationText(String(result?.error || output || `Simulation returned status ${rawStatus}.`)).slice(0, 500) : null
           },
           state,
-          events: [...events, { type: failed ? "simulation.failed" : "simulation.completed", at: completedAt }]
+          events: [...missingEvents, { type: failed ? "simulation.failed" : "simulation.completed", at: completedAt }]
         });
-        return publicSimulation({ simulation: updated, state, events: [{ type: "simulation.started", at: startedAt }, ...events, { type: failed ? "simulation.failed" : "simulation.completed", at: completedAt }] });
+        return publicSimulation({ simulation: updated, state, events: (await simulationStore.getSimulationEvidence(teamVersionId, simulationId)).events });
       } catch (error) {
         const completedAt = now();
         const message = redactStudioSimulationText(error instanceof Error ? error.message : String(error)).slice(0, 500);
@@ -262,8 +308,12 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           state: { status: "failed", error: message, runtimeEvidence },
           events: [{ type: "simulation.failed", at: completedAt, error: message }]
         });
-        return publicSimulation({ simulation: failed, state: { status: "failed", error: message }, events: [{ type: "simulation.started", at: startedAt }, { type: "simulation.failed", at: completedAt, error: message }] });
+        return publicSimulation({ simulation: failed, state: { status: "failed", error: message }, events: (await simulationStore.getSimulationEvidence(teamVersionId, simulationId)).events });
       }
+      })();
+      if (baseline || awaitCompletion) return execution;
+      void execution.catch(() => undefined);
+      return publicSimulation({ simulation: created, state: { status: "running" }, events: [{ type: "simulation.started", at: startedAt }] });
     },
 
     async listTeamVersionSimulations(teamId, teamVersionId) {
@@ -298,7 +348,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         try {
           assertBaselineResult({
             status: evidence.state?.status,
-            finalOutput: evidence.state?.finalOutput,
+            finalOutputsByRoleId: evidence.state?.finalOutputsByRoleId,
             auditTrail: evidence.state?.auditTrail
           }, scenario);
           passed = true;
@@ -337,14 +387,24 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       return publicSimulation(await loadSimulationEvidence(teamId, teamVersionId, simulationId));
     },
 
-    async getTeamVersionSimulationEvents(teamId, teamVersionId, simulationId) {
+    async getTeamVersionSimulationEvents(teamId, teamVersionId, simulationId, afterCursor = 0) {
       const evidence = await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      const cursor = Number.isSafeInteger(Number(afterCursor)) && Number(afterCursor) >= 0 ? Number(afterCursor) : 0;
+      const allEvents = evidence.events;
       return {
         teamId,
         teamVersionId,
         simulationId,
-        events: evidence.events
+        events: allEvents.slice(cursor),
+        cursor: allEvents.length,
+        done: ["completed", "failed"].includes(evidence.simulation.status)
       };
+    },
+
+    async clearInteractiveSimulations(teamId, teamVersionId) {
+      await loadTeamVersion(teamId, teamVersionId);
+      if (typeof simulationStore.clearInteractiveSimulations !== "function") throw new TypeError("Studio Simulation store does not support history cleanup.");
+      return simulationStore.clearInteractiveSimulations(teamVersionId);
     }
   });
 }

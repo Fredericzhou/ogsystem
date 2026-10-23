@@ -6,6 +6,7 @@
  * Trade-off: the helpers stay minimal to keep recovery reasoning tight even if the runner gains new
  * persistence strategies later.
  */
+import { createHash } from "node:crypto";
 import { getExecutionPlanNode } from "./execution-plan.js";
 import { countPendingHumanReviews, hasWaitingHumanReview } from "./human-review.js";
 import { createEmptyAuditSummary, summarizeRunFromAuditSummary } from "./run-summary.js";
@@ -110,16 +111,18 @@ export function projectStateSnapshot(args: {
 
   return {
     status: args.state.status,
-    currentRoleId: args.state.finalRoleId || args.state.lastExecutedRoleId || args.plan.entryRoleId,
+    currentRoleId: args.state.finalRoleIds.at(-1) || args.state.lastExecutedRoleId || args.plan.entryRoleIds[0],
+    selectedEntryRoleIds: args.state.selectedEntryRoleIds,
     nextRoleId: activeBranches.length === 1 ? activeBranches[0].roleId : undefined,
-    finalRoleId: args.state.finalRoleId || undefined,
+    finalRoleIds: args.state.finalRoleIds.length ? args.state.finalRoleIds : undefined,
     transitionCount: args.state.transitionCount,
     totalTransitions: summary.totalTransitions,
     okCount: summary.okCount,
     failedCount: summary.failedCount,
     noopCount: summary.noopCount,
     failureCountsByErrorCode: summary.failureCountsByErrorCode,
-    lastOutput: args.state.finalOutput || undefined,
+    finalOutputsByRoleId: Object.keys(args.state.finalOutputsByRoleId).length ? args.state.finalOutputsByRoleId : undefined,
+    finalOutputRoleOrder: args.state.finalOutputRoleOrder.length ? args.state.finalOutputRoleOrder : undefined,
     error: args.state.error || undefined,
     errorEnvelope: args.state.errorEnvelope || undefined,
     pendingReviewCount: countPendingHumanReviews(args.state),
@@ -271,14 +274,31 @@ export function waitForHumanReview(args: {
 export function createInitialGraphState(args: {
   plan: ExecutionPlan;
   prompt: string;
+  runId?: string;
 }): GraphState {
-  const branchId = buildBranchId(args.plan.entryRoleId, 1, 1);
-  // The graph starts with a single active entry branch so branch ids and lineage ids are seeded
-  // before any split, join, or loop logic runs.
+  const runId = args.runId || "local-run";
+  const selectedEntryRoleIds = args.plan.startDispatch.mode === "all"
+    ? [...args.plan.entryRoleIds]
+    : [...args.plan.entryRoleIds]
+      .sort((left, right) => {
+        const leftHash = createHash("sha256").update(`${runId}\0${left}`).digest("hex");
+        const rightHash = createHash("sha256").update(`${runId}\0${right}`).digest("hex");
+        return leftHash.localeCompare(rightHash) || left.localeCompare(right);
+      })
+      .slice(0, args.plan.startDispatch.count)
+      .sort((left, right) => args.plan.entryRoleIds.indexOf(left) - args.plan.entryRoleIds.indexOf(right));
+  const branchRecords = Object.fromEntries(selectedEntryRoleIds.map((roleId, index) => {
+    const branchSequence = index + 1;
+    const branchId = buildBranchId(roleId, 1, branchSequence);
+    return [branchId, { branchId, roleId, loopIteration: 1, branchSequence, lineageId: branchId, sessionLineageId: branchId, status: "active" as const }];
+  }));
+  const loopIterations = Object.fromEntries(selectedEntryRoleIds.map((roleId) => [roleId, 1]));
+  const roleActivationsByScope = Object.fromEntries(Object.values(branchRecords).map((branch) => [buildRoleActivationScopeKey(branch.branchId, branch.roleId), 1]));
   return {
     stateVersion: 0,
     lastEventId: undefined,
     userPrompt: args.prompt,
+    selectedEntryRoleIds,
     businessState: { ...(args.plan.semanticIR?.stateSchema.defaults ?? {}) },
     status: "running",
     error: "",
@@ -292,30 +312,17 @@ export function createInitialGraphState(args: {
     humanReviewContextByBranchId: {},
     reviewRoundByRoleLineageKey: {},
     lastWaitingReviewId: undefined,
-    branchRecords: {
-      [branchId]: {
-        branchId,
-        roleId: args.plan.entryRoleId,
-        loopIteration: 1,
-        branchSequence: 1,
-        lineageId: branchId,
-        sessionLineageId: branchId,
-        status: "active"
-      }
-    },
-    loopIterations: {
-      [args.plan.entryRoleId]: 1
-    },
+    branchRecords,
+    loopIterations,
     loopCountersByScope: {},
-    roleActivationsByScope: {
-      [buildRoleActivationScopeKey(branchId, args.plan.entryRoleId)]: 1
-    },
+    roleActivationsByScope,
     joinScopes: {},
     selectedEventByBranchId: {},
-    finalOutput: "",
-    finalRoleId: "",
+    finalOutputsByRoleId: {},
+    finalOutputRoleOrder: [],
+    finalRoleIds: [],
     lastExecutedRoleId: "",
-    nextBranchSequence: 2,
+    nextBranchSequence: selectedEntryRoleIds.length + 1,
     lastCheckpointSequence: 0
   };
 }

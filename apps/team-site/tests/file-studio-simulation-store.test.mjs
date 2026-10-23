@@ -25,7 +25,8 @@ test("Studio Simulation evidence is isolated, redacted, persisted, and owner che
       metadata: { status: "completed", completedAt: "2026-01-02T03:04:06.000Z", outputSummary: "token=super-secret" },
       state: {
         status: "completed",
-        finalOutput: "token=super-secret",
+        finalOutputsByRoleId: { reviewer: [{ content: "token=super-secret" }] },
+        finalOutputRoleOrder: ["reviewer"],
         auditTrail: [{ roleId: "analyst", backend: "opencode", modelId: "model-a", profileId: "profile-a", toolRef: "tool.task.execute" }]
       },
       events: [{ type: "simulation.completed", token: "super-secret" }]
@@ -159,6 +160,28 @@ test("Studio retention deletes only expired terminal Simulations in its own name
     assert.deepEqual(result, { removedCount: 1, removedSimulationIds: ["sim-old"] });
     assert.deepEqual((await store.listVersionSimulations("team-v1")).map((item) => item.simulationId).sort(), ["sim-recent", "sim-running"]);
     assert.equal(await readdir(join(projectsRoot, ".studio", "simulations", "team-v1")).then((items) => items.includes("sim-old")), false);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("interactive history cleanup preserves running records and protected Sandbox evidence", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-simulation-clear-"));
+  const store = createFileStudioSimulationStore({ projectsRoot, now: () => "2026-02-01T00:00:00.000Z" });
+  const owner = { teamId: "team-1", teamCoreDigest: "c".repeat(64) };
+  try {
+    await store.createSimulation("team-v1", "finished", { ...owner, simulationId: "sim-debug" });
+    await store.updateSimulation("team-v1", "sim-debug", { metadata: { status: "completed", completedAt: "2026-02-01T00:00:00.000Z" } });
+    await store.createSimulation("team-v1", "running", { ...owner, simulationId: "sim-running" });
+    await store.createSimulation("team-v1", "sandbox", { ...owner, simulationId: "sim-sandbox", mode: "sandbox", baselineScenarioId: "release-smoke" });
+    await store.updateSimulation("team-v1", "sim-sandbox", { metadata: { status: "completed", completedAt: "2026-02-01T00:00:00.000Z" } });
+
+    await Promise.all(["analyst", "reviewer", "planner"].map((roleId) => store.appendSimulationEvents("team-v1", "sim-debug", { type: "role.completed", roleId })));
+    const events = (await store.getSimulationEvidence("team-v1", "sim-debug")).events;
+    assert.equal(events.length, 4);
+    assert.deepEqual(events.slice(1).map((event) => event.roleId).sort(), ["analyst", "planner", "reviewer"]);
+    assert.deepEqual(await store.clearInteractiveSimulations("team-v1"), { removedCount: 1, removedSimulationIds: ["sim-debug"] });
+    assert.deepEqual((await store.listVersionSimulations("team-v1")).map((item) => item.simulationId).sort(), ["sim-running", "sim-sandbox"]);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }

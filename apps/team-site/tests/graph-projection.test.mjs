@@ -10,8 +10,13 @@ for (const locale of ["zh-CN", "en"]) {
       assert.equal(graph.mode, "run");
       assert.equal(graph.nodes.length, item.roles.length + 2);
       assert.equal(graph.edges.length, item.flows.length);
-      assert.equal(graph.nodes.find((node) => node.id === "input")?.label, locale === "zh-CN" ? "▶ 任务" : "▶ Task");
-      assert.equal(graph.nodes.find((node) => node.id === "output")?.label, locale === "zh-CN" ? "■ 成果" : "■ Outcome");
+      assert.match(buildCaseSystem(item), /start\[开始\] -->\|START\|/);
+      assert.match(buildCaseSystem(item), /end\[结束\]/);
+      assert.doesNotMatch(buildCaseSystem(item), /entry\.role|input\[Input\]|output\[Output\]|entryRole/);
+      assert.equal(graph.nodes.find((node) => node.id === "__system_start__")?.label, locale === "zh-CN" ? "开始" : "Start");
+      assert.equal(graph.nodes.find((node) => node.id === "__system_end__")?.label, locale === "zh-CN" ? "结束" : "End");
+      const startFlow = graph.edges.find((edge) => edge.eventType === "START");
+      assert.equal(startFlow?.label, locale === "zh-CN" ? "任务分发" : "Task dispatch");
       for (const role of item.roles) {
         const node = graph.nodes.find((candidate) => candidate.id === role.id);
         assert.equal(node?.label, role.label[locale]);
@@ -19,10 +24,9 @@ for (const locale of ["zh-CN", "en"]) {
         assert.deepEqual(node?.structure, {});
         assert.deepEqual(node?.badges, []);
       }
-      for (const [, , eventType] of item.flows) {
-        const edge = graph.edges.find((candidate) => candidate.eventType === eventType);
-        assert.ok(edge?.label);
-        assert.notEqual(edge.label, eventType);
+      for (const edge of graph.edges) {
+        assert.ok(edge.label);
+        assert.notEqual(edge.label, edge.eventType);
       }
       assert.equal(graph.capabilities.editable, false);
     });

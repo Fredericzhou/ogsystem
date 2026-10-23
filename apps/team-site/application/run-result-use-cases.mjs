@@ -1,13 +1,13 @@
 export function createRunResultUseCases({ getRun, runResultStore }) {
   if (typeof getRun !== "function") throw new TypeError("Run result use cases require a Run query.");
-  if (!runResultStore || typeof runResultStore.readFinalOutput !== "function") {
+  if (!runResultStore || typeof runResultStore.readFinalOutputs !== "function") {
     throw new TypeError("Run result use cases require a result store.");
   }
 
   return Object.freeze({
     async getProjectRunResult(projectId, taskId, runId) {
       const run = await getRun(projectId, taskId, runId);
-      const finalOutput = await runResultStore.readFinalOutput(run);
+      const outputs = await runResultStore.readFinalOutputs(run);
       const identity = {
         runKind: "project_task",
         runId,
@@ -23,10 +23,10 @@ export function createRunResultUseCases({ getRun, runResultStore }) {
         taskId: run.taskId,
         attemptNumber: run.attemptNumber
       };
-      if (typeof finalOutput !== "string" || !finalOutput.trim()) {
+      if (!outputs || !Object.keys(outputs.finalOutputsByRoleId).length) {
         return { ...identity, available: false, result: null };
       }
-      return { ...identity, available: true, result: { finalOutput } };
+      return { ...identity, available: true, result: outputs };
     }
   });
 }

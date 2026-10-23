@@ -838,7 +838,12 @@ function buildCompilerDigestValue(args: {
     system: {
       systemId: args.system.systemId,
       systemVersion: args.system.systemVersion,
-      entryRoleId: args.system.entryRoleId,
+      entryRoleIds: args.system.entryRoleIds,
+      startDispatch: args.system.startDispatch,
+      startFlows: args.system.startFlows,
+      startEventType: args.system.startEventType,
+      endJoin: args.system.endJoin ?? { mode: "all_of" },
+      terminalRoleOrder: args.system.terminalRoleOrder,
       roleIds: sortStrings(args.system.roleIds),
       flows: [...args.system.flows]
         .map((flow) => ({

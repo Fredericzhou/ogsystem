@@ -234,16 +234,16 @@ const HINT_RULES: HintRule[] = [
     pattern: /入口|开始|受理|接收|intake|entry/i,
     hint: {
       kind: "entry_hint",
-      label: "entry.role",
-      detail: "Detected entry intent. Make one role the unique input target and `entry.role`."
+      label: "Start role connection",
+      detail: "Detected entry intent. Connect each candidate role from start[开始] with the structural START event."
     }
   },
   {
     pattern: /输出|结束|总结|报告|final|summary|report/i,
     hint: {
       kind: "terminal_hint",
-      label: "output",
-      detail: "Detected terminal intent. Ensure one explicit path ends with `--> output`."
+      label: "End role connection",
+      detail: "Detected terminal intent. Connect each counted terminal role directly to end[结束]."
     }
   },
   {

@@ -323,8 +323,10 @@ async function main() {
 
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
-  assert.equal(startPayload.finalRoleId, "hello-ogsystem");
-  assert.equal(startPayload.finalOutput, "Hello OGSystem world");
+  assert.deepEqual(startPayload.finalRoleIds, ["hello-ogsystem"]);
+  assert.deepEqual(startPayload.finalOutputsByRoleId, {
+    "hello-ogsystem": [{ content: "Hello OGSystem world" }]
+  });
 
   const visualizer = spawn("node", [ogsBinPath, "visualizer", "--ogs-dir", projectDir, "--port", "0"], {
     cwd: projectDir,

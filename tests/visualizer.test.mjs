@@ -373,15 +373,14 @@ async function seedProjectFixture(workdir) {
       "%% system.id=viz.project.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
       "%% review.rework.target.demo-analyst=demo-analyst",
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -409,9 +408,8 @@ async function seedAlternateProjectFixture(workdir) {
       "%% system.id=viz.project.loaded",
       "%% system.version=2.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -450,15 +448,14 @@ async function seedRunnableReviewProjectFixture(workdir) {
       "%% system.id=viz.runtime.review.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
       "%% review.rework.target.demo-analyst=demo-analyst",
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -551,8 +548,9 @@ async function createFixtureRun(workdir) {
         },
         loopIterations: {},
         selectedEventByBranchId: {},
-        finalOutput: "",
-        finalRoleId: "",
+        finalOutputsByRoleId: {},
+        finalOutputRoleOrder: [],
+        finalRoleIds: [],
         lastExecutedRoleId: "alpha",
         nextBranchSequence: 2,
         lastCheckpointSequence: 3
@@ -577,7 +575,7 @@ async function createFixtureRun(workdir) {
         wallClockDurationMs: 42,
         executionDurationMs: 12,
         lastRoleId: "alpha",
-        finalRoleId: "alpha",
+        finalRoleIds: ["alpha"],
         executionDirCount: 1,
         artifactIndexSummary: {
           roleCount: 1,
@@ -619,9 +617,8 @@ async function createFixtureRun(workdir) {
       "%% system.id=viz.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=alpha",
-      "input -->|ENTER| alpha[Role:alpha]",
-      "alpha[Role:alpha] -->|DONE| output",
+      "start[开始] -->|START| alpha[Role:alpha]",
+      "alpha[Role:alpha] -->|DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -790,8 +787,9 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         },
         loopIterations: { "demo-analyst": 1 },
         selectedEventByBranchId: {},
-        finalOutput: "",
-        finalRoleId: "",
+        finalOutputsByRoleId: {},
+        finalOutputRoleOrder: [],
+        finalRoleIds: [],
         lastExecutedRoleId: "demo-analyst",
         nextBranchSequence: 2,
         lastCheckpointSequence: 1
@@ -849,9 +847,8 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
     "%% system.id=viz.review.demo",
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
-    "%% entry.role=demo-analyst",
-    "input -->|GO| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+    "start[开始] -->|START| analyst[Role:demo-analyst]",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
     ""
   ].join("\n");
   await writeFile(path.resolve(runDir, "system.mmd"), systemSource, "utf8");
@@ -1246,8 +1243,8 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(projectReadinessResponse.status, 200);
     const projectReadiness = await projectReadinessResponse.json();
     assert.equal(projectReadiness.systemId, "viz.project.demo");
-    assert.equal(projectReadiness.canDryRun, false);
-    assert.equal(projectReadiness.blockers[0]?.code, "READINESS_CODEX_OUTPUT_SCHEMA_INVALID");
+    assert.equal(projectReadiness.canDryRun, true);
+    assert.equal(projectReadiness.blockers.some((blocker) => blocker.code === "READINESS_CODEX_OUTPUT_SCHEMA_INVALID"), false);
     assert.equal(projectReadiness.roleRepoHealth.roles[0].status, "ok");
 
     const projectBindingsResponse = await fetch(`${url}/api/v1/ogs/workspace/bindings`);
@@ -1284,9 +1281,9 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(detail.header.status, "done");
     assert.equal(detail.header.activeBranches, 1);
     assert.equal(detail.header.transitionCount, 5);
-    assert.equal(detail.header.finalRoleId, "alpha");
+    assert.equal(detail.header.finalRoleIds?.at(-1), "alpha");
     assert.equal(detail.header.isSimulation, true);
-    assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|DONE\| output/);
+    assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|DONE\| end\[结束\]/);
 
     const failureResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/failure`);
     assert.equal(failureResponse.status, 200);
@@ -1360,7 +1357,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(graph.systemSource, /flowchart TD/);
     assert.equal(graph.simulation.isSimulation, true);
     assert.equal(graph.graph.mode, "run");
-    assert.equal(graph.authoring.system.entryRoleId, "alpha");
+    assert.equal(Object.values(graph.authoring.flows).some((flow) => flow.fromRoleId === "__system_start__" && flow.toRoleId === "alpha"), true);
     assert.equal(graph.graph.nodes.some((node) => node.roleId === "alpha" && node.roleSeat === true), true);
     assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
 
@@ -2168,7 +2165,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(applyCanvasResponse.status, 200);
     const appliedCanvas = await applyCanvasResponse.json();
     assert.equal(appliedCanvas.validation.ok, true);
-    assert.match(appliedCanvas.systemSource, /\|ANALYSIS_DONE\| output/);
+    assert.match(appliedCanvas.systemSource, /\|ANALYSIS_DONE\| end\[结束\]/);
     assert.equal(appliedCanvas.authoring.layout.nodes["demo-analyst"].x, 500);
     assert.equal(appliedCanvas.canvas.nodes.some((node) => node.roleId === "demo-analyst" && node.x === 500), true);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
@@ -2375,7 +2372,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(projectJson.projectName, "Empty Created");
     const systemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
     const parsed = parseSystemFromMermaidSource(systemSource);
-    assert.equal(parsed.entryRoleId, "demo-analyst");
+    assert.equal(parsed.entryRoleIds?.[0], "demo-analyst");
 
     const rolePackageResponse = await fetch(`${url}/api/v1/ogs/workspace/role-packages/demo-analyst`);
     assert.equal(rolePackageResponse.status, 200);
@@ -2615,9 +2612,9 @@ test("visualizer server marks invalid project directories and exposes diagnostic
       "%% system.id=invalid.project.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=missing-role",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "%% entry.role=demo-analyst",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"

@@ -205,7 +205,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 
 ## Runtime Guarantees
 
-- The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
+- The adapter runs one graph-based execution model. Explicit `start[开始]` flows select the initial branches, each role execution emits one structured result, and completion is governed by explicit flows into `end[结束]`.
 - Executable roles return one JSON object: `{"event":"EVENT_NAME","content":"..."}`. Agent roles use their selected persistent CLI backend and retain a role/thread session for the run; tool-bound roles use `exec.bind` and parse tool stdout as JSON. `event` must match an outgoing handoff label.
 - OpenCode roles share one run-scoped `opencode serve`; Codex roles share one run-scoped `codex app-server` and resume the same thread for each role branch.
 - Directory ownership is explicit: `--ogs-dir` owns the System, runtime configuration, Sessions, and `.ogs/runs/`; `--workspace-dir` is the project directory given to coding Roles. Explicit System and workspace paths are relative to the command directory; omitted `--system` selects `<ogs-dir>/system.mmd`.
@@ -287,8 +287,8 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 
 ## DSL Hard Rules
 
-- Only `input/output` are system boundary tokens.
-- `input/output/start/end/done` cannot be role ids.
+- `start[开始]` and `end[结束]` are explicit structural roles connected by standard Flows. Start Flows use `START`; only roles directly connected to End count toward End aggregation.
+- `start/end/done/input/output` cannot be business role ids.
 - Unknown metadata keys fail validation.
 
 ## Runtime Core

@@ -1,6 +1,12 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 
-import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import {
+  STUDIO_SYSTEM_END_ROLE_ID,
+  STUDIO_SYSTEM_START_ROLE_ID,
+  type GraphViewModel,
+  type GraphViewModelEdge,
+  type GraphViewModelNode
+} from "../studio-contracts.js";
 import {
   estimateStudioEdgeSummaryLabelWidth,
   formatStudioEdgeSummaryLabel,
@@ -140,14 +146,14 @@ function nodeOrder(viewModel: GraphViewModel): GraphViewModelNode[] {
     order.push(id);
     for (const edge of outgoing.get(id) ?? []) visit(edge.target);
   };
-  visit("input");
+  visit(STUDIO_SYSTEM_START_ROLE_ID);
   for (const node of viewModel.nodes.slice().sort((left, right) => left.id.localeCompare(right.id))) visit(node.id);
   const indexById = new Map(order.map((id, index) => [id, index]));
   return viewModel.nodes.slice().sort((left, right) => compareNodeOrder(indexById, left, right));
 }
 
 function boundaryRank(node: GraphViewModelNode): number {
-  return node.id === "input" ? -2 : node.id === "output" ? 2 : 0;
+  return node.id === STUDIO_SYSTEM_START_ROLE_ID ? -2 : node.id === STUDIO_SYSTEM_END_ROLE_ID ? 2 : 0;
 }
 
 function compareNodeOrder(indexById: ReadonlyMap<string, number>, left: GraphViewModelNode, right: GraphViewModelNode): number {
@@ -180,39 +186,39 @@ function enforceExclusiveBoundaryLayers(
   mode: StudioLayoutMode
 ): void {
   const config = configFor(mode);
-  const input = positions.find((node) => node.id === "input");
-  const output = positions.find((node) => node.id === "output");
-  const business = positions.filter((node) => node.id !== "input" && node.id !== "output");
-  if (!input || !output || !business.length) return;
+  const start = positions.find((node) => node.id === STUDIO_SYSTEM_START_ROLE_ID);
+  const end = positions.find((node) => node.id === STUDIO_SYSTEM_END_ROLE_ID);
+  const business = positions.filter((node) => node.id !== STUDIO_SYSTEM_START_ROLE_ID && node.id !== STUDIO_SYSTEM_END_ROLE_ID);
+  if (!start || !end || !business.length) return;
   const isVertical = config.direction === "DOWN";
-  const axisStart = (node: typeof input): number => isVertical ? node.y : node.x;
-  const axisEnd = (node: typeof input): number => isVertical ? node.y + node.height : node.x + node.width;
+  const axisStart = (node: typeof start): number => isVertical ? node.y : node.x;
+  const axisEnd = (node: typeof start): number => isVertical ? node.y + node.height : node.x + node.width;
   const businessStart = Math.min(...business.map(axisStart));
   const businessEnd = Math.max(...business.map(axisEnd));
-  const inputTarget = Math.min(
-    axisStart(input),
-    businessStart - config.layerSpacing - (isVertical ? input.height : input.width)
+  const startTarget = Math.min(
+    axisStart(start),
+    businessStart - config.layerSpacing - (isVertical ? start.height : start.width)
   );
-  const outputTarget = Math.max(axisStart(output), businessEnd + config.layerSpacing);
-  const inputDelta = inputTarget - axisStart(input);
-  const outputDelta = outputTarget - axisStart(output);
-  if (Math.abs(inputDelta) > 0.5) {
-    if (isVertical) input.y += inputDelta;
-    else input.x += inputDelta;
+  const endTarget = Math.max(axisStart(end), businessEnd + config.layerSpacing);
+  const startDelta = startTarget - axisStart(start);
+  const endDelta = endTarget - axisStart(end);
+  if (Math.abs(startDelta) > 0.5) {
+    if (isVertical) start.y += startDelta;
+    else start.x += startDelta;
   }
-  if (Math.abs(outputDelta) > 0.5) {
-    if (isVertical) output.y += outputDelta;
-    else output.x += outputDelta;
+  if (Math.abs(endDelta) > 0.5) {
+    if (isVertical) end.y += endDelta;
+    else end.x += endDelta;
   }
   for (const edge of edges) {
     const geometry = geometries.get(edge.id);
     if (!geometry) continue;
-    if (edge.target !== "output") continue;
+    if (edge.target !== STUDIO_SYSTEM_END_ROLE_ID) continue;
 
     const target = isVertical
-      ? { x: output.x + output.width / 2, y: output.y }
-      : { x: output.x, y: output.y + output.height / 2 };
-    const boundary = isVertical ? output.y : output.x;
+      ? { x: end.x + end.width / 2, y: end.y }
+      : { x: end.x, y: end.y + end.height / 2 };
+    const boundary = isVertical ? end.y : end.x;
     const upstreamIndex = geometry.points.slice(0, -1).findLastIndex((point) =>
       isVertical ? point.y < boundary : point.x < boundary
     );
@@ -277,9 +283,9 @@ function createElkGraph(
       children: orderedNodes.map((node) => ({
         id: node.id,
         ...layoutNodeSize(node),
-        ...(node.id === "input"
+        ...(node.id === STUDIO_SYSTEM_START_ROLE_ID
           ? { layoutOptions: { "elk.layered.layering.layerConstraint": "FIRST" } }
-          : node.id === "output"
+          : node.id === STUDIO_SYSTEM_END_ROLE_ID
             ? { layoutOptions: { "elk.layered.layering.layerConstraint": "LAST" } }
             : {})
       })),

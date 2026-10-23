@@ -13,7 +13,6 @@ const source = [
   "%% system.id=test.graph.view.model",
   "%% system.version=1.0.0",
   "%% law.global=law.minimal.base",
-  "%% entry.role=dispatch",
   "%% exec.bind.review=profile.review",
   "%% role.mode.dispatch=parallel_split",
   "%% route.order.dispatch=worker,review",
@@ -21,11 +20,11 @@ const source = [
   "%% join.sources.review=worker,dispatch",
   "%% loop.max.worker=3",
   "%% review.mode.review=required",
-  "input -->|START| a[Role:dispatch]",
+  "start[开始] -->|START| a[Role:dispatch]",
   "a[Role:dispatch] -->|WORK| b[Role:worker]",
   "a[Role:dispatch] -->|REVIEW| c[Role:review]",
   "b[Role:worker] -->|DONE| c[Role:review]",
-  "c[Role:review] -->|APPROVED| output",
+  "c[Role:review] -->|APPROVED| end[结束]",
   ""
 ].join("\n");
 
@@ -76,29 +75,30 @@ test("GraphViewModel edit mode inherits authoring.layout and exposes full capabi
   assert.equal(worker.layout.height, 84);
 });
 
-test("GraphViewModel synthesizes input/output boundaries and entry edge", () => {
+test("GraphViewModel exposes explicit Start and End roles and their editable flows", () => {
   const authoring = buildAuthoringFixture();
   const view = buildGraphViewModel({ authoring, mode: "edit" });
 
-  const input = view.nodes.find((node) => node.id === "input");
-  const output = view.nodes.find((node) => node.id === "output");
-  assert.ok(input && output);
-  assert.equal(input.kind, "boundary");
-  assert.equal(output.kind, "boundary");
-  assert.equal(input.roleSeat, false);
-  assert.equal(input.executionScope, "boundary");
-  assert.equal(input.editable, false);
-  assert.equal(output.editable, false);
-  assert.equal(input.runtime, undefined);
-  assert.equal(output.runtime, undefined);
-  assert.equal(input.diagnostic, undefined);
+  const start = view.nodes.find((node) => node.id === "__system_start__");
+  const end = view.nodes.find((node) => node.id === "__system_end__");
+  assert.ok(start && end);
+  assert.equal(start.kind, "specialRole");
+  assert.equal(end.kind, "specialRole");
+  assert.equal(start.specialRole, "start");
+  assert.equal(end.specialRole, "end");
+  assert.equal(start.roleSeat, false);
+  assert.equal(start.executionScope, "boundary");
+  assert.equal(start.editable, true);
+  assert.equal(end.editable, true);
+  assert.equal(start.runtime, undefined);
+  assert.equal(end.runtime, undefined);
+  assert.equal(start.diagnostic, undefined);
 
-  const entryEdge = view.edges.find((edge) => edge.id === "__boundary__:input:entry");
+  const entryEdge = view.edges.find((edge) => edge.source === "__system_start__" && edge.target === "dispatch");
   assert.ok(entryEdge);
-  assert.equal(entryEdge.source, "input");
-  assert.equal(entryEdge.target, "dispatch");
-  assert.equal(entryEdge.editable, false);
+  assert.equal(entryEdge.editable, true);
   assert.equal(entryEdge.eventType, "START");
+  assert.ok(view.edges.some((edge) => edge.source === "review" && edge.target === "__system_end__"));
 });
 
 test("GraphViewModel projects Semantic IR modes, loop scopes, and edge routing metadata", () => {
@@ -180,6 +180,7 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
   const graphState = {
     userPrompt: "",
     status: "running",
+    finalRoleIds: [],
     error: "",
     transitionCount: 0,
     recentAudits: [],
@@ -242,8 +243,9 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
     },
     loopIterations: { worker: 2 },
     selectedEventByBranchId: {},
-    finalOutput: "",
-    finalRoleId: "",
+    finalOutputsByRoleId: {},
+    finalOutputRoleOrder: [],
+    finalRoleIds: [],
     lastExecutedRoleId: "worker",
     nextBranchSequence: 4,
     lastCheckpointSequence: 0
@@ -281,7 +283,7 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
   assert.ok(activatedEdge?.runtime);
   assert.equal(activatedEdge.runtime.recentlyActivated, true);
 
-  const idleEdge = view.edges.find((edge) => edge.source === "review" && edge.target === "output");
+  const idleEdge = view.edges.find((edge) => edge.source === "review" && edge.target === "__system_end__");
   assert.ok(idleEdge?.runtime);
   assert.equal(idleEdge.runtime.recentlyActivated, false);
 });
@@ -292,6 +294,7 @@ test("GraphViewModel projects persisted Join scope timing and source state", () 
   const startedAt = new Date(Date.now() - 5000).toISOString();
   const state = {
     status: "running",
+    finalRoleIds: [],
     recentAudits: [],
     pendingReviewsById: {},
     errorEnvelope: undefined,

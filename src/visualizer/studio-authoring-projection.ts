@@ -1,9 +1,10 @@
-import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
+import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "../runtime/types.js";
 import type {
   StudioAuthoringDocument,
   StudioAuthoringRole,
   StudioGraphSnapshot
 } from "./studio-contracts.js";
+import { STUDIO_SYSTEM_END_ROLE_ID, STUDIO_SYSTEM_START_ROLE_ID } from "./studio-contracts.js";
 
 export type StudioBridgeRole = StudioAuthoringRole & {
   incomingFlowCount: number;
@@ -33,7 +34,7 @@ export function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBrid
       const incoming = flows.filter((flow) => flow.toRoleId === role.roleId);
       const outgoing = flows.filter((flow) => flow.fromRoleId === role.roleId);
       const badges = [
-        authoring.system.entryRoleId === role.roleId ? "entry" : "",
+        flows.some((flow) => flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID && flow.toRoleId === role.roleId) ? "entry" : "",
         role.bindingKind === "model" ? "M" : "",
         role.bindingKind === "exec" ? "E" : "",
         role.routingMode === "parallel_split" ? "P" : "",
@@ -62,7 +63,7 @@ export function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBrid
     .sort((left, right) => left.flowId.localeCompare(right.flowId))
     .map((flow) => ({
       ...flow,
-      flowKey: `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId === SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId}`,
+      flowKey: `${flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID || flow.fromRoleId === SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId}:${flow.eventType}:${flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID || flow.toRoleId === SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId}`,
       participatesInJoin: Boolean(joinSourcesByTarget.get(flow.toRoleId)?.has(flow.fromRoleId))
     }));
 }
@@ -73,7 +74,19 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
   const columns = fallbackGridColumnCount(bridgeRoles.length);
   return {
     version: 1,
-    nodes: bridgeRoles.map((role, index) => {
+    nodes: [
+      {
+        id: STUDIO_SYSTEM_START_ROLE_ID,
+        roleId: STUDIO_SYSTEM_START_ROLE_ID,
+        x: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID]?.x ?? 32,
+        y: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID]?.y ?? 120,
+        width: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID]?.width ?? 112,
+        height: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID]?.height ?? 68,
+        label: "开始",
+        badges: [],
+        bindingKind: "boundary" as const
+      },
+      ...bridgeRoles.map((role, index) => {
       const layout = authoring.layout.nodes[role.roleId] ?? {
         x: 120 + (index % columns) * 260,
         y: 120 + Math.floor(index / columns) * 160
@@ -89,7 +102,19 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
         badges: role.badges,
         bindingKind: role.bindingKind
       };
-    }),
+      }),
+      {
+        id: STUDIO_SYSTEM_END_ROLE_ID,
+        roleId: STUDIO_SYSTEM_END_ROLE_ID,
+        x: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.x ?? 640,
+        y: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.y ?? 120,
+        width: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.width ?? 112,
+        height: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.height ?? 68,
+        label: "结束",
+        badges: [],
+        bindingKind: "boundary" as const
+      }
+    ],
     edges: bridgeFlows.map((flow) => ({
       id: flow.flowId,
       source: flow.fromRoleId,

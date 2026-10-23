@@ -10,6 +10,9 @@ the meaning of Role, Responsibility Seat, nested System, and runtime execution f
 See [专业工作台](visualizer-console.md) for precise structure editing, debugging, role handoffs,
 human review, role I/O, and run-history views.
 
+See [开始分发与结束汇聚](multi-entry-and-terminal-output.md) for the structural Start/End contract,
+terminal quorum behavior, cancellation rules, and stable result ordering.
+
 For installation, single-host production checks, backups, recovery, and OS scheduler recipes, see
 [Single Host Production Runbook](single-host-production.md).
 
@@ -23,7 +26,6 @@ current source for team repository, team factory, collaboration project, task co
 entry points.
 
 - Current guidance lives in this directory.
-- Completed product validation records live in `archive/`.
-- Development plans, implementation rules, and historical engineering records live in
-  `../development/`.
+- Current product contracts and verification guidance live in the manuals and UAT checklist.
+- Active development plans and implementation rules live in `../development/`.
 - Code and tests remain the final authority when this manual and implementation disagree.

@@ -17,3 +17,4 @@ Output requirements:
 - Follow output.schema.json; do not invent fields outside the schema.
 - event must be one of allowed_events.
 - Use the language, tone, and bilingual preference from user_preferences.
+- Include data as an object; use {} when no structured fields are needed.

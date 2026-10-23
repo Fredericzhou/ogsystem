@@ -2,8 +2,7 @@ flowchart TD
 %% system.id=demo.console
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=demo-analyst
 %% exec.bind.demo-analyst=exec.console.codex.v1
 
-input -->|ENTER| analyst[Role:demo-analyst]
-analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
+start[开始] -->|START| analyst[Role:demo-analyst]
+analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]

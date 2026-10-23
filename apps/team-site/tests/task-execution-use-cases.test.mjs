@@ -6,7 +6,7 @@ import test from "node:test";
 import { createTaskExecutionUseCases } from "../application/task-execution-use-cases.mjs";
 import { createFileTaskExecutionStore } from "../infrastructure/file-task-execution-store.mjs";
 
-function harness({ reserveAttempt, teamVersionStatus = "released", mountedTeams = [{ teamVersionId: "team-v1" }], execute = async () => ({ state: { status: "completed" }, result: { finalOutput: "done" } }) } = {}) {
+function harness({ reserveAttempt, teamVersionStatus = "released", mountedTeams = [{ teamVersionId: "team-v1" }], execute = async () => ({ state: { status: "completed" }, result: { finalOutputsByRoleId: { writer: [{ content: "done" }] }, finalOutputRoleOrder: ["writer"] } }) } = {}) {
   const calls = [];
   const task = { taskId: "task-1", input: "Do the work", status: "queued", teamVersionId: "team-v1", runIds: [], attemptRequests: {} };
   const project = { projectId: "project-1", workdir: "/project", taskRecords: [task], mountedTeams, materials: { materials: [] } };

@@ -1,13 +1,18 @@
 {
   "type": "object",
-  "required": ["event", "content"],
+  "required": ["event", "content", "data"],
   "properties": {
     "event": {
       "type": "string",
       "enum": ["ANALYSIS_DONE"]
     },
     "content": { "type": "string" },
-    "data": { "type": "object" }
+    "data": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

@@ -54,7 +54,7 @@ export type WorkbenchStructureFlowView = {
 export type WorkbenchStructureView = {
   systemId: string;
   systemVersion: string;
-  entryRoleId: string;
+  entryRoleIds: string[];
   roleCount: number;
   flowCount: number;
   roles: WorkbenchStructureRoleView[];
@@ -115,7 +115,7 @@ export type ProjectLoadView = {
 export type RunResultSummaryView = {
   systemId?: string;
   systemVersion?: string;
-  finalRoleId?: string;
+  finalRoleIds?: string[];
   transitionCount?: number;
   stageCount?: number;
   error?: string;
@@ -142,7 +142,7 @@ export type RunHeader = {
   runDir: string;
   status: string;
   transitionCount: number;
-  finalRoleId?: string;
+  finalRoleIds?: string[];
   lastExecutedRoleId?: string;
   error?: string;
   updatedAt: string;
@@ -725,7 +725,7 @@ export function mapWorkbenchValidationView(value: unknown): WorkbenchValidationV
       ? {
           systemId: asString(structureRecord.systemId) ?? "",
           systemVersion: asString(structureRecord.systemVersion) ?? "",
-          entryRoleId: asString(structureRecord.entryRoleId) ?? "",
+          entryRoleIds: asArray(structureRecord.entryRoleIds)?.flatMap((item) => asString(item) ?? []) ?? [],
           roleCount: asNumber(structureRecord.roleCount) ?? 0,
           flowCount: asNumber(structureRecord.flowCount) ?? 0,
           roles: asArray(structureRecord.roles)?.flatMap((item) => {
@@ -838,7 +838,7 @@ export function mapRunLifecycleView(value: unknown): RunLifecycleView {
     resultSummary: {
       systemId: asString(resultSummary.systemId),
       systemVersion: asString(resultSummary.systemVersion),
-      finalRoleId: asString(resultSummary.finalRoleId),
+      finalRoleIds: asArray(resultSummary.finalRoleIds)?.flatMap((item) => asString(item) ?? []),
       transitionCount: asNumber(resultSummary.transitionCount),
       stageCount: asNumber(resultSummary.stageCount),
       error: asString(resultSummary.error),

@@ -1,4 +1,5 @@
 import type { SemanticIRConditionAst } from "../runtime/semantic-ir.js";
+import type { SystemStartDispatch } from "../runtime/types.js";
 
 export type DesignDiagnosticSeverity = "info" | "warning" | "error";
 
@@ -53,7 +54,7 @@ export type DesignSeat = {
 
 export type DesignTransition = {
   transitionId: string;
-  fromSeatId: string;
+  fromSeatId: string | "__system_start__";
   toSeatId: string | "__system_end__";
   eventType: string;
   label?: string;
@@ -96,8 +97,8 @@ export type SystemDesignDocument = {
   system: {
     systemId: string;
     systemVersion: string;
-    entrySeatId: string;
-    entryEventType?: string;
+    startDispatch?: SystemStartDispatch;
+    endJoin?: { mode: "all_of" | "quorum_of"; min?: number };
     lawGlobalRef: string;
     handoffMode?: "strict" | "transition";
     handoffContracts?: string;

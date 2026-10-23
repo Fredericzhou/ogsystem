@@ -13,7 +13,7 @@ import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
-import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
+import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "../runtime/types.js";
 import type { Flow, ModelCatalog, ModelCatalogEntry, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
 import {
   createEmptySystemDesign,
@@ -27,6 +27,7 @@ import type {
   StudioAuthoringRole,
   StudioGraphSnapshot
 } from "./studio-contracts.js";
+import { STUDIO_SYSTEM_START_ROLE_ID } from "./studio-contracts.js";
 import {
   authoringToCanvasDocument,
   buildBridgeFlows,
@@ -47,8 +48,7 @@ export function authoringToDesign(
   const base = existing ?? createEmptySystemDesign({
     systemId: authoring.system.systemId,
     systemVersion: authoring.system.systemVersion,
-    entrySeatId: authoring.system.entryRoleId,
-    entryEventType: authoring.system.entryEventType,
+    startDispatch: authoring.system.startDispatch,
     lawGlobalRef: authoring.system.lawGlobalRef
   });
   const design: SystemDesignDocument = {
@@ -58,8 +58,8 @@ export function authoringToDesign(
       ...base.system,
       systemId: authoring.system.systemId,
       systemVersion: authoring.system.systemVersion,
-      entrySeatId: authoring.system.entryRoleId,
-      entryEventType: authoring.system.entryEventType ?? base.system.entryEventType,
+      startDispatch: authoring.system.startDispatch,
+      endJoin: authoring.system.endJoin,
       lawGlobalRef: authoring.system.lawGlobalRef,
       ...(authoring.system.handoffMode === "strict" || authoring.system.handoffMode === "transition"
         ? { handoffMode: authoring.system.handoffMode }
@@ -162,7 +162,6 @@ export type StudioBridgeDraft = {
   extracted: {
     systemId: string;
     systemVersion: string;
-    entryRoleId: string;
     lawGlobal: string;
     roles: StudioBridgeRole[];
     flows: StudioBridgeFlow[];
@@ -182,13 +181,15 @@ function normalizeOptionalDisplayLabel(value: unknown): string | undefined {
 }
 
 function flowId(flow: Flow, index: number): string {
-  const toRoleId = flow.toRoleId === SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId;
-  return `${index + 1}:${flow.fromRoleId}:${flow.eventType}:${toRoleId}`;
+  const fromRoleId = flow.fromRoleId === SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
+  const toRoleId = flow.toRoleId === SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId;
+  return `${index + 1}:${fromRoleId}:${flow.eventType}:${toRoleId}`;
 }
 
 function flowKey(flow: Flow): string {
-  const toRoleId = flow.toRoleId === SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId;
-  return `${flow.fromRoleId}:${flow.eventType}:${toRoleId}`;
+  const fromRoleId = flow.fromRoleId === SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
+  const toRoleId = flow.toRoleId === SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId;
+  return `${fromRoleId}:${flow.eventType}:${toRoleId}`;
 }
 
 type RoleDisplayNames = ReadonlyMap<string, string>;
@@ -246,26 +247,6 @@ async function loadRoleDisplayNames(args: {
   return names;
 }
 
-function detectLegacyEngine(systemSource: string): "langgraph" | undefined {
-  return /^\s*%%\s*engine\s*=\s*langgraph\s*$/m.test(systemSource) ? "langgraph" : undefined;
-}
-
-function detectEntryEventType(systemSource: string, entryRoleId: string): string | undefined {
-  const lines = String(systemSource || "").split(/\r?\n/);
-  for (const line of lines) {
-    const match = line.match(/^\s*input\s*-->\|([^|]+)\|\s*.+\[Role:([^\]]+)\]\s*$/);
-    if (!match) {
-      continue;
-    }
-    const eventType = match[1]?.trim();
-    const targetRoleId = match[2]?.trim();
-    if (eventType && targetRoleId === entryRoleId) {
-      return eventType;
-    }
-  }
-  return undefined;
-}
-
 export function importSystemToAuthoring(args: {
   workdir: string;
   systemPath: string;
@@ -307,7 +288,7 @@ export function importSystemToAuthoring(args: {
   });
 
   const flows: Record<string, StudioAuthoringFlow> = {};
-  args.system.flows.forEach((flow, index) => {
+  [...args.system.startFlows, ...args.system.flows].forEach((flow, index) => {
     const id = flowId(flow, index);
     flows[id] = {
       flowId: id,
@@ -328,9 +309,8 @@ export function importSystemToAuthoring(args: {
     system: {
       systemId: args.system.systemId,
       systemVersion: args.system.systemVersion,
-      legacyEngine: detectLegacyEngine(args.systemSource ?? ""),
-      entryRoleId: args.system.entryRoleId,
-      entryEventType: detectEntryEventType(args.systemSource ?? "", args.system.entryRoleId),
+      startDispatch: args.system.startDispatch,
+      endJoin: args.system.endJoin,
       lawGlobalRef: args.system.lawBinding.globalLawRef,
       handoffMode: args.system.graph?.handoffMode,
       handoffContracts: args.system.graph?.handoffContracts
@@ -364,8 +344,9 @@ function withStudioBridgeImportFailure(
 }
 
 function deterministicCanvasEdgeId(edge: StudioGraphSnapshot["edges"][number], index: number): string {
-  const target = edge.target === SYSTEM_END_ROLE_ID ? "output" : edge.target;
-  return `${index + 1}:${edge.source}:${edge.eventType}:${target}`;
+  const source = edge.source === SYSTEM_START_ROLE_ID ? "start" : edge.source;
+  const target = edge.target === SYSTEM_END_ROLE_ID ? "end" : edge.target;
+  return `${index + 1}:${source}:${edge.eventType}:${target}`;
 }
 
 function normalizeCanvasEdgeId(args: {
@@ -393,7 +374,7 @@ export function applyCanvasDocumentToAuthoring(args: {
 }): StudioAuthoringDocument {
   const nodes: StudioAuthoringDocument["layout"]["nodes"] = { ...args.authoring.layout.nodes };
   for (const node of args.canvas.nodes) {
-    if (!args.authoring.roles[node.roleId]) {
+    if (!args.authoring.roles[node.roleId] && node.roleId !== SYSTEM_START_ROLE_ID && node.roleId !== SYSTEM_END_ROLE_ID) {
       continue;
     }
     nodes[node.roleId] = {
@@ -406,9 +387,10 @@ export function applyCanvasDocumentToAuthoring(args: {
   const flows: StudioAuthoringDocument["flows"] = {};
   const usedFlowIds = new Set<string>();
   for (const [index, edge] of args.canvas.edges.entries()) {
-    const fromExists = Boolean(args.authoring.roles[edge.source]);
+    const fromIsStart = edge.source === SYSTEM_START_ROLE_ID;
+    const fromExists = fromIsStart || Boolean(args.authoring.roles[edge.source]);
     const toExists = edge.target === SYSTEM_END_ROLE_ID || Boolean(args.authoring.roles[edge.target]);
-    if (!fromExists || !toExists) {
+    if (!fromExists || !toExists || edge.source === SYSTEM_END_ROLE_ID || edge.target === SYSTEM_START_ROLE_ID || (fromIsStart && edge.target === SYSTEM_END_ROLE_ID)) {
       continue;
     }
     const flowId = normalizeCanvasEdgeId({ edge, index, usedFlowIds });
@@ -418,7 +400,7 @@ export function applyCanvasDocumentToAuthoring(args: {
       flowId,
       fromRoleId: edge.source,
       toRoleId: edge.target,
-      eventType: edge.eventType,
+      eventType: fromIsStart ? "START" : edge.eventType,
       ...(displayLabel && displayLabel !== edge.eventType ? { label: displayLabel } : {}),
       runtimeOnlyErrorFlow: existing?.runtimeOnlyErrorFlow ?? isRuntimeOnlyErrorEvent(edge.eventType),
       condition: Object.hasOwn(edge, "condition") ? edge.condition : existing?.condition,
@@ -478,7 +460,7 @@ export async function inspectStudioBridgeDraft(args: {
       diagnostics.push({
         source: "studio-bridge",
         severity: "error",
-        message: "Every flow must hand off from an existing role to an existing role or the system output.",
+        message: "Every flow must hand off from Start or an existing role to an existing role or End.",
         detail: invalidFlows.map((flow) => `${flow.fromRoleId} -> ${flow.toRoleId}`).join(", ")
       } satisfies StudioBridgeValidationDiagnostic);
       bridgeValidation = { ...bridgeValidation, ok: false, diagnostics };
@@ -534,7 +516,6 @@ export async function inspectStudioBridgeDraft(args: {
       ? {
           systemId: authoring.system.systemId,
           systemVersion: authoring.system.systemVersion,
-          entryRoleId: authoring.system.entryRoleId,
           lawGlobal: authoring.system.lawGlobalRef,
           roles: buildBridgeRoles(authoring),
           flows: buildBridgeFlows(authoring)
@@ -558,11 +539,13 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
   const roleIds = Object.keys(authoring.roles).sort(sortStrings);
   const metadata: string[] = [
     "flowchart TD",
-    serializeMetadataLine("engine", authoring.system.legacyEngine),
     serializeMetadataLine("system.id", authoring.system.systemId),
     serializeMetadataLine("system.version", authoring.system.systemVersion),
     serializeMetadataLine("law.global", authoring.system.lawGlobalRef),
-    serializeMetadataLine("entry.role", authoring.system.entryRoleId),
+    serializeMetadataLine("start.dispatch.mode", authoring.system.startDispatch.mode === "random_n" ? "random_n" : undefined),
+    serializeMetadataLine("start.dispatch.count", authoring.system.startDispatch.mode === "random_n" ? authoring.system.startDispatch.count : undefined),
+    serializeMetadataLine("end.join.mode", authoring.system.endJoin?.mode === "quorum_of" ? "quorum_of" : undefined),
+    serializeMetadataLine("end.join.min", authoring.system.endJoin?.min),
     serializeMetadataLine("handoff.mode", authoring.system.handoffMode),
     serializeMetadataLine("handoff.contracts", authoring.system.handoffContracts)
   ].filter((line): line is string => Boolean(line));
@@ -601,11 +584,6 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
   roleIds.forEach((roleId, index) => {
     nodeIdByRoleId.set(roleId, `r${index + 1}`);
   });
-  const entryRoleId = authoring.system.entryRoleId;
-  const entryNode = entryRoleId ? (nodeIdByRoleId.get(entryRoleId) ?? entryRoleId) : "";
-  const entryFlowLine = entryRoleId && authoring.roles[entryRoleId]
-    ? `input -->|${authoring.system.entryEventType || "START"}| ${entryNode}[Role:${escapeMermaidRoleId(entryRoleId)}]`
-    : null;
   const flowLines = Object.values(authoring.flows)
     .sort((left, right) =>
       left.fromRoleId.localeCompare(right.fromRoleId) ||
@@ -614,16 +592,20 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
       left.flowId.localeCompare(right.flowId)
     )
     .map((flow) => {
+      if (flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID) {
+        const toNode = nodeIdByRoleId.get(flow.toRoleId) ?? flow.toRoleId;
+        return `start[开始] -->|START| ${toNode}[Role:${escapeMermaidRoleId(flow.toRoleId)}]`;
+      }
       const fromNode = nodeIdByRoleId.get(flow.fromRoleId) ?? flow.fromRoleId;
       const from = `${fromNode}[Role:${escapeMermaidRoleId(flow.fromRoleId)}]`;
       if (flow.toRoleId === SYSTEM_END_ROLE_ID) {
-        return `${from} -->|${flow.eventType}| output`;
+        return `${from} -->|${flow.eventType}| end[结束]`;
       }
       const toNode = nodeIdByRoleId.get(flow.toRoleId) ?? flow.toRoleId;
       return `${from} -->|${flow.eventType}| ${toNode}[Role:${escapeMermaidRoleId(flow.toRoleId)}]`;
     });
 
-  return [...metadata, ...(entryFlowLine ? [entryFlowLine] : []), ...flowLines, ""].join("\n");
+  return [...metadata, ...flowLines, ""].join("\n");
 }
 
 export function importMermaidToAuthoring(args: {

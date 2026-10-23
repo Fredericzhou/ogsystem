@@ -5,6 +5,7 @@ export function createTeamLifecycleUseCases({
   locks,
   confirmation,
   releaseEvidence,
+  caseMaterializer,
   assertTrustedTeamTopology = () => false
 }) {
   for (const operation of ["getProject", "listProjects", "createProject", "saveProjectMetadata", "removeProject"]) {
@@ -37,15 +38,30 @@ export function createTeamLifecycleUseCases({
     const defaultName = caseSpec.title?.[language] || caseSpec.title?.["zh-CN"] || caseSpec.title?.en || caseId;
     const defaultIntent = caseSpec.detail?.scenario?.[language] || caseSpec.detail?.scenario?.["zh-CN"] || caseSpec.short?.[language] || caseSpec.short?.["zh-CN"] || "";
     const projects = await projectStore.listProjects();
-    const classicVersions = projects.filter((project) => !project.teamProjectId && project.source === "classic" && project.caseId === caseId && project.teamVersionStatus === "released");
-    const existingClassic = classicVersions.sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0))[0];
+    const classicVersions = projects.filter((project) => !project.teamProjectId
+      && ["classic", "classic-template"].includes(project.source)
+      && project.caseId === caseId
+      && project.teamVersionStatus === "released");
+    let existingClassic = classicVersions.sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0))[0];
+    if (!asTemplate && !name && existingClassic && typeof caseMaterializer?.isCurrent === "function") {
+      const current = await projectStore.getProject(existingClassic.projectId);
+      if (!await caseMaterializer.isCurrent(caseId, current.workdir)) existingClassic = undefined;
+    }
     if (asTemplate) {
       const existingTemplate = projects.find((project) => !project.teamProjectId
         && project.source === "classic-template"
         && project.caseId === caseId
         && project.teamVersionStatus !== "archived"
         && String(project.name || "").toLocaleLowerCase() === String(name || defaultName).toLocaleLowerCase());
-      if (existingTemplate) return existingTemplate;
+      if (existingTemplate) {
+        if (typeof caseMaterializer?.isCurrent === "function" && typeof caseMaterializer?.materialize === "function") {
+          const current = await projectStore.getProject(existingTemplate.projectId);
+          if (!await caseMaterializer.isCurrent(caseId, current.workdir)) {
+            await caseMaterializer.materialize(caseId, current.workdir, language);
+          }
+        }
+        return existingTemplate;
+      }
     }
     if (!asTemplate && !name) {
       if (existingClassic) return existingClassic;

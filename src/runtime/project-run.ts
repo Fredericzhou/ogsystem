@@ -69,7 +69,7 @@ export type ProjectRunPlan = {
   taskDigest: string;
   fingerprintDigest: string;
   projectAssetManifestDigest: string | null;
-  entryNodeId: string;
+  entryNodeIds: string[];
   backend: string[];
   nodeGraph: ProjectNodePlan[];
   executionPolicy: {
@@ -147,8 +147,8 @@ function resolveBackendNames(plan: ExecutionPlan): string[] {
   )).sort();
 }
 
-/** First-phase project runs intentionally accept a single, terminating chain. */
-export function validateLinearProjectTopology(nodeGraph: ProjectNodePlan[], entryNodeId?: string): void {
+/** First-phase project runs accept one or more independent linear chains. */
+export function validateLinearProjectTopology(nodeGraph: ProjectNodePlan[], entryNodeIds?: string[]): void {
   if (nodeGraph.length === 0) throw new Error("PROJECT_TOPOLOGY_INVALID: project has no executable nodes.");
   const ids = new Set(nodeGraph.map((node) => node.nodeId));
   const byId = new Map(nodeGraph.map((node) => [node.nodeId, node]));
@@ -165,17 +165,20 @@ export function validateLinearProjectTopology(nodeGraph: ProjectNodePlan[], entr
     }
   }
   const roots = nodeGraph.filter((node) => (incomingFromNodes.get(node.nodeId) ?? 0) === 0);
-  if (roots.length !== 1 || (entryNodeId && roots[0].nodeId !== entryNodeId)) {
-    throw new Error("PROJECT_TOPOLOGY_UNSUPPORTED: project must have one linear entry.");
+  const declaredEntries = entryNodeIds?.length ? entryNodeIds : roots.map((node) => node.nodeId);
+  if (roots.length !== declaredEntries.length || declaredEntries.some((entry) => !roots.some((root) => root.nodeId === entry))) {
+    throw new Error("PROJECT_TOPOLOGY_UNSUPPORTED: every declared entry must be a root of an independent linear chain.");
   }
   const visited = new Set<string>();
-  let current: string | undefined = roots[0].nodeId;
-  while (current) {
-    if (visited.has(current)) throw new Error("PROJECT_TOPOLOGY_UNSUPPORTED: loops are not enabled for first-phase project runs.");
-    visited.add(current);
-    const node = byId.get(current);
-    const next = node?.outgoing.filter((edge) => ids.has(edge.to)) ?? [];
-    current = next[0]?.to;
+  for (const root of roots) {
+    let current: string | undefined = root.nodeId;
+    while (current) {
+      if (visited.has(current)) throw new Error("PROJECT_TOPOLOGY_UNSUPPORTED: chains cannot merge or loop in first-phase project runs.");
+      visited.add(current);
+      const node = byId.get(current);
+      const next = node?.outgoing.filter((edge) => ids.has(edge.to)) ?? [];
+      current = next[0]?.to;
+    }
   }
   if (visited.size !== nodeGraph.length) {
     throw new Error("PROJECT_TOPOLOGY_UNSUPPORTED: disconnected or branching project flow.");
@@ -209,7 +212,7 @@ export function buildProjectRunPlan(args: {
     consumingNodeIds: item.consumingNodeIds
   })));
   const nodeGraph = buildNodeGraph(args.plan);
-  if (args.enforceLinearTopology !== false) validateLinearProjectTopology(nodeGraph, args.plan.entryRoleId);
+  if (args.enforceLinearTopology !== false) validateLinearProjectTopology(nodeGraph, args.plan.entryRoleIds);
   const maxTransitions = components.effectiveLaw?.value;
   const maxTransitionValue = typeof maxTransitions === "object" && maxTransitions !== null
     ? (maxTransitions as Record<string, unknown>).maxTransitions
@@ -225,7 +228,7 @@ export function buildProjectRunPlan(args: {
     taskDigest,
     fingerprintDigest: args.fingerprint.digest,
     projectAssetManifestDigest: args.projectAssetManifestDigest ?? null,
-    entryNodeId: args.plan.entryRoleId,
+    entryNodeIds: args.plan.entryRoleIds,
     backend: resolveBackendNames(args.plan),
     nodeGraph,
     executionPolicy: {
@@ -375,7 +378,7 @@ export async function initializeProjectRunArtifacts(args: {
     if (stored.runId !== runPlan.runId || stored.executionPolicy.mode !== runPlan.executionPolicy.mode) {
       throw new Error("RUN_PLAN_CHANGED: the stored run plan execution identity does not match the requested run.");
     }
-    if (args.enforceLinearTopology !== false) validateLinearProjectTopology(stored.nodeGraph, stored.entryNodeId);
+  if (args.enforceLinearTopology !== false) validateLinearProjectTopology(stored.nodeGraph, stored.entryNodeIds);
     if (args.enforceSnapshotContract !== false) {
       const task = await readJsonFile(taskPath).catch(() => undefined) as { prompt?: string; taskDigest?: string } | undefined;
       if (!task || task.taskDigest !== stored.taskDigest || task.prompt !== args.prompt) {

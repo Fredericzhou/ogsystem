@@ -52,7 +52,7 @@ test("branch node follows explicit event output", async () => {
     workdir: isolatedWorkdir,
     dryRun: false
   });
-  assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "test-branch-a");
+  assert.strictEqual(result.status, "done", JSON.stringify({ error: result.error, errorEnvelope: result.errorEnvelope, finalRoleIds: result.finalRoleIds, auditTrail: result.auditTrail }, null, 2));
+  assert.deepStrictEqual(result.finalRoleIds, ["test-branch-a"]);
   assert.strictEqual(result.auditTrail[0]?.selectedEvent, "PATH_A");
 });

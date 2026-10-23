@@ -89,7 +89,7 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
   const system = {
     systemId: "demo.flow.contract.ref",
     systemVersion: "1.0.0",
-    entryRoleId: "dispatcher",
+    entryRoleIds: ["dispatcher"],
     roleIds: ["dispatcher", "review"],
     flows: [
       {
@@ -183,7 +183,7 @@ test("flow-contract loader rejects remote schema $ref", async () => {
   const system = {
     systemId: "demo.flow.contract.remote",
     systemVersion: "1.0.0",
-    entryRoleId: "dispatcher",
+    entryRoleIds: ["dispatcher"],
     roleIds: ["dispatcher", "review"],
     flows: [
       {

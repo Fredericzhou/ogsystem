@@ -405,7 +405,7 @@ function buildWorkbenchStructure(system: SystemDefinition): Record<string, unkno
   return {
     systemId: system.systemId,
     systemVersion: system.systemVersion,
-    entryRoleId: system.entryRoleId,
+    entryRoleIds: system.entryRoleIds,
     roleCount: system.roleIds.length,
     flowCount: system.flows.length,
     roles: system.roleIds.map((roleId) => ({
@@ -1318,7 +1318,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
       createdAt: asString(asRecord(context.projectMeta)?.createdAt),
       systemId: context.system.systemId,
       systemVersion: context.system.systemVersion,
-      entryRoleId: context.system.entryRoleId,
+      entryRoleIds: context.system.entryRoleIds,
       roleCount: context.system.roleIds.length,
       roleIds: context.system.roleIds,
       flowCount: context.system.flows.length,

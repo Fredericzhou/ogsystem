@@ -52,7 +52,11 @@ function buildSystemFingerprintComponent(
   return {
     systemId: system.systemId,
     systemVersion: system.systemVersion,
-    entryRoleId: system.entryRoleId,
+    entryRoleIds: [...system.entryRoleIds],
+    startDispatch: system.startDispatch,
+    startEventType: system.startEventType,
+    startFlows: [...system.startFlows],
+    endJoin: system.endJoin ?? { mode: "all_of" },
     roleIds: sortedRoleIds(system.roleIds),
     flows: [...system.flows]
       .map((flow) => ({

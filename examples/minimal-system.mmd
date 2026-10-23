@@ -2,7 +2,6 @@ flowchart TD
 %% system.id=demo.minimal
 %% system.version=1.0.0
 %% law.global=law.minimal.base
-%% entry.role=demo-intake
 
-input -->|ENTER| intake[Role:demo-intake]
-intake[Role:demo-intake] -->|COMPLETE| output
+start[开始] -->|START| intake[Role:demo-intake]
+intake[Role:demo-intake] -->|COMPLETE| end[结束]

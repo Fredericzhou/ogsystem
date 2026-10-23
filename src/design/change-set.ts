@@ -10,6 +10,8 @@ import type {
 
 const SEAT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]*$/;
 const EVENT_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+const SYSTEM_START_ROLE_ID = "__system_start__";
+const SYSTEM_END_ROLE_ID = "__system_end__";
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -42,8 +44,8 @@ export function createEmptySystemDesign(args: Partial<SystemDesignDocument["syst
     system: {
       systemId: args.systemId ?? "ogs.system",
       systemVersion: args.systemVersion ?? "1.0.0",
-      entrySeatId: args.entrySeatId ?? "",
-      entryEventType: args.entryEventType ?? "START",
+      startDispatch: args.startDispatch ?? { mode: "all" },
+      endJoin: args.endJoin ?? { mode: "all_of" },
       lawGlobalRef: args.lawGlobalRef ?? "law.global"
     },
     seats: {},
@@ -69,10 +71,19 @@ export function validateSystemDesign(design: SystemDesignDocument): DesignValida
   }
   const seatIds = new Set(Object.keys(design.seats ?? {}));
   if (!design.system?.systemId?.trim()) diagnostics.push(diagnostic("DESIGN_SYSTEM_ID_REQUIRED", "system.systemId is required.", "system.systemId"));
-  if (!design.system?.entrySeatId) diagnostics.push(diagnostic("DESIGN_ENTRY_REQUIRED", "system.entrySeatId is required.", "system.entrySeatId"));
-  if (design.system?.entrySeatId && !seatIds.has(design.system.entrySeatId)) {
-    diagnostics.push(diagnostic("DESIGN_ENTRY_UNKNOWN", `Entry seat "${design.system.entrySeatId}" does not exist.`, "system.entrySeatId"));
+  const startTransitions = (design.transitions ?? []).filter((transition) => transition.fromSeatId === SYSTEM_START_ROLE_ID);
+  if (!startTransitions.length) diagnostics.push(diagnostic("DESIGN_ENTRY_REQUIRED", "Connect the Start role to at least one team role.", "transitions"));
+  const startTargets = new Set<string>();
+  for (const transition of startTransitions) {
+    if (transition.toSeatId === SYSTEM_END_ROLE_ID || !seatIds.has(transition.toSeatId)) diagnostics.push(diagnostic("DESIGN_ENTRY_UNKNOWN", `Start target "${transition.toSeatId}" does not exist.`, `transitions.${transition.transitionId}.toSeatId`, { transitionId: transition.transitionId }));
+    if (transition.eventType !== "START") diagnostics.push(diagnostic("DESIGN_START_EVENT_INVALID", "All Start flows must use the structural START event.", `transitions.${transition.transitionId}.eventType`, { transitionId: transition.transitionId }));
+    if (startTargets.has(transition.toSeatId)) diagnostics.push(diagnostic("DESIGN_START_TARGET_DUPLICATE", `Start is connected to "${transition.toSeatId}" more than once.`, "transitions", { transitionId: transition.transitionId }));
+    startTargets.add(transition.toSeatId);
   }
+  if (design.system?.startDispatch?.mode === "random_n" && (!Number.isInteger(design.system.startDispatch.count) || design.system.startDispatch.count < 1 || design.system.startDispatch.count > startTargets.size)) diagnostics.push(diagnostic("DESIGN_START_DISPATCH_COUNT_INVALID", `Random start count must be within [1, ${startTargets.size}].`, "system.startDispatch.count"));
+  const endRoleIds = new Set((design.transitions ?? []).filter((transition) => transition.toSeatId === SYSTEM_END_ROLE_ID).map((transition) => transition.fromSeatId));
+  if (!endRoleIds.size) diagnostics.push(diagnostic("DESIGN_END_REQUIRED", "Connect at least one business role directly to the End role.", "transitions"));
+  if (design.system?.endJoin?.mode === "quorum_of" && (!Number.isInteger(design.system.endJoin.min) || (design.system.endJoin.min ?? 0) < 1 || (design.system.endJoin.min ?? 0) > endRoleIds.size)) diagnostics.push(diagnostic("DESIGN_END_JOIN_MIN_INVALID", `End quorum must be within [1, ${endRoleIds.size}] distinct roles directly connected to End.`, "system.endJoin.min"));
   for (const [seatId, seat] of Object.entries(design.seats ?? {})) {
     if (seatId !== seat.seatId) diagnostics.push(diagnostic("DESIGN_SEAT_KEY_MISMATCH", `Seat key "${seatId}" does not match seatId.`, `seats.${seatId}.seatId`, { seatId }));
     if (!SEAT_ID_PATTERN.test(seatId)) diagnostics.push(diagnostic("DESIGN_SEAT_ID_INVALID", `Seat id "${seatId}" is invalid.`, `seats.${seatId}`, { seatId }));
@@ -98,8 +109,10 @@ export function validateSystemDesign(design: SystemDesignDocument): DesignValida
   for (const transition of design.transitions ?? []) {
     if (transitionIds.has(transition.transitionId)) diagnostics.push(diagnostic("DESIGN_TRANSITION_ID_DUPLICATE", `Transition id "${transition.transitionId}" is duplicated.`, "transitions", { transitionId: transition.transitionId }));
     transitionIds.add(transition.transitionId);
-    if (!seatIds.has(transition.fromSeatId)) diagnostics.push(diagnostic("DESIGN_TRANSITION_SOURCE_UNKNOWN", `Transition source "${transition.fromSeatId}" does not exist.`, `transitions.${transition.transitionId}.fromSeatId`, { transitionId: transition.transitionId }));
-    if (transition.toSeatId !== "__system_end__" && !seatIds.has(transition.toSeatId)) diagnostics.push(diagnostic("DESIGN_TRANSITION_TARGET_UNKNOWN", `Transition target "${transition.toSeatId}" does not exist.`, `transitions.${transition.transitionId}.toSeatId`, { transitionId: transition.transitionId }));
+    if (transition.fromSeatId !== SYSTEM_START_ROLE_ID && !seatIds.has(transition.fromSeatId)) diagnostics.push(diagnostic("DESIGN_TRANSITION_SOURCE_UNKNOWN", `Transition source "${transition.fromSeatId}" does not exist.`, `transitions.${transition.transitionId}.fromSeatId`, { transitionId: transition.transitionId }));
+    if (transition.toSeatId !== SYSTEM_END_ROLE_ID && !seatIds.has(transition.toSeatId)) diagnostics.push(diagnostic("DESIGN_TRANSITION_TARGET_UNKNOWN", `Transition target "${transition.toSeatId}" does not exist.`, `transitions.${transition.transitionId}.toSeatId`, { transitionId: transition.transitionId }));
+    if (transition.fromSeatId === SYSTEM_END_ROLE_ID) diagnostics.push(diagnostic("DESIGN_END_CANNOT_ROUTE", "The End role cannot have outgoing flows.", `transitions.${transition.transitionId}.fromSeatId`, { transitionId: transition.transitionId }));
+    if (transition.toSeatId === SYSTEM_START_ROLE_ID) diagnostics.push(diagnostic("DESIGN_START_CANNOT_RECEIVE", "The Start role cannot have incoming flows.", `transitions.${transition.transitionId}.toSeatId`, { transitionId: transition.transitionId }));
     if (!EVENT_PATTERN.test(transition.eventType)) diagnostics.push(diagnostic("DESIGN_EVENT_INVALID", `Event "${transition.eventType}" must use uppercase snake case.`, `transitions.${transition.transitionId}.eventType`, { transitionId: transition.transitionId }));
     const key = transitionKey(transition);
     if (transitionKeys.has(key)) diagnostics.push(diagnostic("DESIGN_TRANSITION_DUPLICATE", `Transition "${key}" is duplicated.`, "transitions", { transitionId: transition.transitionId }));
@@ -125,7 +138,6 @@ function applyOperation(design: SystemDesignDocument, operation: DesignOperation
     }
     case "deleteSeat":
       if (!design.seats[operation.seatId]) throw new Error(`DESIGN_SEAT_NOT_FOUND:${operation.seatId}`);
-      if (design.system.entrySeatId === operation.seatId) throw new Error(`DESIGN_ENTRY_DELETE_BLOCKED:${operation.seatId}`);
       delete design.seats[operation.seatId];
       delete design.bindings[operation.seatId];
       design.transitions = design.transitions.filter((transition) => transition.fromSeatId !== operation.seatId && transition.toSeatId !== operation.seatId);

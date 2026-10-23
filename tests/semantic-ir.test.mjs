@@ -73,7 +73,7 @@ test("execution role mode is explicit and filters declared events", () => {
       stateVersion: 0, userPrompt: "task", status: "running", error: "", transitionCount: 0,
       recentAudits: [], auditSummary: {}, roleMetricsByRoleId: {}, roleResults: {}, pendingReviewsById: {},
       reviewHistoryByBranchId: {}, humanReviewContextByBranchId: {}, reviewRoundByRoleLineageKey: {},
-      branchRecords: {}, loopIterations: {}, selectedEventByBranchId: {}, finalOutput: "", finalRoleId: "",
+      branchRecords: {}, loopIterations: {}, selectedEventByBranchId: {}, finalOutputsByRoleId: {}, finalOutputRoleOrder: [], finalRoleIds: [],
       lastExecutedRoleId: "", nextBranchSequence: 2, lastCheckpointSequence: 0
     }
   });
@@ -126,7 +126,7 @@ test("versioned state store linearizes CAS and duplicate commits", () => {
 });
 
 test("checkpoint recovery does not replay a WAL record already included in versioned state", async () => {
-  const plan = { entryRoleId: "a" };
+  const plan = { entryRoleIds: ["a"], startDispatch: { mode: "all" } };
   const initial = createInitialGraphState({ plan, prompt: "recover" });
   const committedSnapshotState = {
     ...initial,
@@ -244,12 +244,13 @@ test("Loop Scope routes a boundary transition to onExhausted at max rounds", () 
   const system = {
     systemId: "loop-exhaustion",
     systemVersion: "1",
-    entryRoleId: "boundary",
+    entryRoleIds: ["boundary"],
+    startDispatch: { mode: "all" },
     roleIds: ["boundary", "summary"],
     flows: [
       { fromRoleId: "boundary", toRoleId: "boundary", eventType: "REBUTTAL" },
       { fromRoleId: "boundary", toRoleId: "summary", eventType: "SUMMARY" },
-      { fromRoleId: "summary", toRoleId: "output", eventType: "DONE" }
+      { fromRoleId: "summary", toRoleId: "__system_end__", eventType: "DONE" }
     ],
     lawBinding: { globalLawRef: "law.test" },
     executionBinding: {},
@@ -333,7 +334,8 @@ test("conditional route transition persists a value-free decision trace", async 
   const system = {
     systemId: "conditional-route-audit",
     systemVersion: "1",
-    entryRoleId: "dispatch",
+    entryRoleIds: ["dispatch"],
+    startDispatch: { mode: "all" },
     roleIds: ["dispatch", "approved", "fallback"],
     flows: [
       { fromRoleId: "dispatch", toRoleId: "approved", eventType: "DONE" },
@@ -580,7 +582,7 @@ test("semantic compiler binds Mermaid topology to versioned semantics", async ()
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
   const system = {
-    systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b"],
+    systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b"],
     flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }],
     lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
   };
@@ -604,7 +606,7 @@ test("semantic compiler freezes event contracts, retry policy, reducers, and cap
     "  max_transitions_per_run: 10"
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
-  const system = { systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "DONE" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
+  const system = { systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "DONE" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
   const compiled = compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 20 });
   assert.equal(compiled.ir.stateSchema.reducers.count, "increment");
   assert.equal(compiled.ir.events.DONE.payloadSchema.required[0], "ok");
@@ -649,7 +651,7 @@ test("semantic compiler rejects join declarations that diverge from topology", a
     "version: '1'", "system:", "  systemId: demo", "  systemVersion: '1'", "state:", "  schema: contracts/state.json", "joins:", "  b:", "    mode: all_of", "    sources: [x]", "    timeoutSeconds: 10", "    onTimeout: fail"
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
-  const system = { systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b", "x"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
+  const system = { systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b", "x"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
   assert.throws(() => compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 }), /sources must match Mermaid/);
 });
 
@@ -663,7 +665,7 @@ test("semantic compiler validates composite input and output references independ
   const systemSource = {
     systemId: "demo",
     systemVersion: "1",
-    entryRoleId: "owner",
+    entryRoleIds: ["owner"],
     roleIds: ["owner"],
     flows: [],
     lawBinding: { globalLawRef: "law" },
@@ -729,7 +731,7 @@ test("semantic compiler loads nested systems and rejects composite cycles", asyn
   const snapshot = await loadOgsSpecification(workdir);
   assert.ok(Object.keys(snapshot.sources).some((source) => source.endsWith("/systems/child.yaml")));
   const system = {
-    systemId: "root", systemVersion: "1", entryRoleId: "owner", roleIds: ["owner"], flows: [],
+    systemId: "root", systemVersion: "1", entryRoleIds: ["owner"], roleIds: ["owner"], flows: [],
     lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
   };
   assert.throws(
@@ -757,7 +759,7 @@ test("semantic compiler rejects undeclared cross-System state access", async () 
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
   const system = {
-    systemId: "root", systemVersion: "1", entryRoleId: "owner", roleIds: ["owner"], flows: [],
+    systemId: "root", systemVersion: "1", entryRoleIds: ["owner"], roleIds: ["owner"], flows: [],
     lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
   };
   assert.throws(

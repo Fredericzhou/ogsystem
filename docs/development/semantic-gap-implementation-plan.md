@@ -41,9 +41,9 @@
 
 价值：在已有 Join 总等待超时之外，区分首包等待和相邻 source 到达间隔，并支持超时补偿。
 
-当前状态：基础 Join 超时已实现并由 Semantic IR 的 `timeoutSeconds`、`failurePolicy`、`onTimeout` 驱动，包含审计、恢复和 `terminated`/`stopped`/`failed` 收敛。`docs/development/ogsystem-wait-timeout-semantics-v2.md` 中的 `join.first_packet.*`、`join.gap.*` 和对应 timeout failure envelope 仍为 RFC/未实现。
+当前状态：基础 Join 超时已实现并由 Semantic IR 的 `timeoutSeconds`、`failurePolicy`、`onTimeout` 驱动，包含审计、恢复和 `terminated`/`stopped`/`failed` 收敛。`join.first_packet.*` 与 `join.gap.*` 暂不支持，也不属于活动实现范围。
 
-最小范围（后续）：实现 `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*=FAIL`、`GRAPH_JOIN_FIRST_PACKET_TIMEOUT`、`GRAPH_JOIN_GAP_TIMEOUT`、WAL/resume 恢复、单次触发去重和审计。不得引入新的 YAML 配置面，也不改变现有基础 Join 超时合同。
+延期范围：只有在实际 SLA 证明基础 Join 总等待期限不足时，才重新设计分阶段等待、恢复、去重与审计合同。当前不接受这些配置键。
 
 验收：旧图行为不变；超时可进入 `ERROR.<code>`、`ERROR` 或 fail-stop；scheduler 不会在仍有 pending join 时提前结束；resume 不重复触发。
 

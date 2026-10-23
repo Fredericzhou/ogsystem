@@ -4,7 +4,7 @@ OGS Projects 与 OGS Studio 共用一个 Origin 和 SPA Shell。OGS Studio 面�
 
 当前版本只接受最新业务数据格式，不提供旧 schema/API 字段兼容或自动迁移。升级前由运行方显式准备新的数据根或清理旧数据；应用启动不会自动删除用户数据。
 
-- **OGS Studio**：创建和编辑团队草稿，配置角色执行与编排参数、角色资产包、Context Map 和 Flow Contract/Schema，运行隔离 Simulation、查看历史并发布 TeamVersion。专业编辑能力已实现；自动化覆盖部分字段、保存与回读场景，完整字段矩阵和设计到发布的人工 UAT 尚未签收。
+- **OGS Studio**：创建和编辑团队草稿，配置角色执行与编排参数、角色资产包、Context Map 和 Flow Contract/Schema，运行隔离 Simulation、查看历史并发布 TeamVersion。“AI 构建”与“调试”弹窗独立；交互式调试后台运行并增量保存脱敏角色事件，历史可回放逐角色输入/输出与失败诊断。历史清理只删除已结束的交互式调试，不删除运行中记录或 Sandbox 发布证明。
 - **OGS Projects**：创建协作项目，挂载已发布 TeamVersion，管理项目材料、Task 生命周期和业务结果。
 - **团队工程**：团队仓库、团队创建和角色仓库分别管理 Team 草稿/发布版本、工程设计入口和不可变角色模板。
 - **要素配置**：模型、数据集、工具元数据和存储目标。模型目录提供发现结果；数据集可发布不可变快照，但尚未绑定到 Task/Simulation 输入；工具与存储目录只保存能力元数据和凭据引用。
@@ -33,7 +33,7 @@ OGS Projects 与 OGS Studio 共用一个 Origin 和 SPA Shell。OGS Studio 面�
 | Task | 用户希望团队完成的一项工作请求 | 创建时固定一个 TeamVersion，并分配不复用的项目内 `taskNumber`；在 Run 启动前可排队或删除，状态投影当前 Run。 |
 | Run | 一次具体执行尝试及其审计记录 | 独立保存输入快照、执行状态、事件、审核和结果。重试从 Task 发起并创建新 Run；历史 Run 状态和结果不变。 |
 
-Run DTO 以 `runKind` 和 `owner` 明确运行领域及归属；Project Task Run 使用 `owner.projectId + owner.taskId + runId` 定位，TeamVersion 通过 `owner.teamVersionId` 标识。运行文件位于项目自己的 `.ogs/runs/<runId>/`，团队资产目录只作为只读来源。最近运行页只列出 Projects Task Attempts；Studio Simulation 通过独立历史 API 读取。
+Run DTO 以 `runKind` 和 `owner` 明确运行领域及归属；Project Task Run 使用 `owner.projectId + owner.taskId + runId` 定位，TeamVersion 通过 `owner.teamVersionId` 标识。运行文件位于项目自己的 `.ogs/runs/<runId>/`，团队资产目录只作为只读来源。最近运行页只列出 Projects Task Attempts；Studio Simulation 通过独立历史 API 读取。普通调试创建返回 `202 Accepted`，之后按事件游标读取增量审计；发布基线 Sandbox 仍由发布门禁同步等待完整执行结果。
 
 版本用于冻结发布内容和保证项目执行可复现，不要求用户为每次保存管理一个版本。专业编辑和发布在 OGS Studio 完成。Projects 用户可以发起自然语言团队调整；Studio 创建新草稿，用户检查并发布后，回 Projects 显式挂载新版本。
 

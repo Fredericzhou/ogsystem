@@ -32,9 +32,9 @@ export function evaluateProjectRunPlan(plan: ProjectRunPlan): ProjectQualityRepo
   });
   checks.push({
     id: "entry-node",
-    passed: nodeSet.has(plan.entryNodeId),
+    passed: plan.entryNodeIds.length > 0 && plan.entryNodeIds.every((entryNodeId) => nodeSet.has(entryNodeId)),
     severity: "error",
-    detail: nodeSet.has(plan.entryNodeId) ? "Entry node exists." : `Missing entry node: ${plan.entryNodeId}`
+    detail: plan.entryNodeIds.every((entryNodeId) => nodeSet.has(entryNodeId)) ? "Entry nodes exist." : `Missing entry nodes: ${plan.entryNodeIds.filter((entryNodeId) => !nodeSet.has(entryNodeId)).join(", ")}`
   });
   const dangling = plan.nodeGraph.flatMap((node) => node.outgoing
     .filter((edge) => edge.to !== "output" && !nodeSet.has(edge.to))

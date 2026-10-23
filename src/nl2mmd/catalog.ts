@@ -128,13 +128,16 @@ function getOutputEvents(schema: unknown): string[] {
 export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
   return {
     flowcharts: ["flowchart TD", "flowchart LR"],
-    boundaryTokens: ["input", "output"],
+    boundaryTokens: ["start[开始]", "end[结束]"],
     exactMetadataKeys: [
       "engine",
       "system.id",
       "system.version",
       "law.global",
-      "entry.role",
+      "start.dispatch.mode",
+      "start.dispatch.count",
+      "end.join.mode",
+      "end.join.min",
       "handoff.mode",
       "handoff.contracts"
     ],
@@ -158,7 +161,7 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
     joinModes: ["all_of", "quorum_of"],
     mentionPrefix: "@",
     nodeTokenPattern: "nodeId[Role:roleId]",
-    edgePattern: "fromToken -->|EVENT| toToken (tokens: input/output or nodeId[Role:roleId])"
+    edgePattern: "fromToken -->|EVENT| toToken (tokens: start[开始]/end[结束] or nodeId[Role:roleId]; Start event is START)"
   };
 }
 
@@ -305,7 +308,7 @@ export async function loadNl2MmdContext(args: {
         digest: designDigest(design),
         systemId: design.system.systemId,
         systemVersion: design.system.systemVersion,
-        entrySeatId: design.system.entrySeatId,
+        entryRoleIds: design.transitions.filter((item) => item.fromSeatId === "__system_start__").map((item) => item.toSeatId),
         seatIds: Object.keys(design.seats).sort(),
         transitions: design.transitions.map((item) => ({
           fromSeatId: item.fromSeatId,

@@ -14,6 +14,7 @@ import { buildGraphViewModel } from "../graph-view-model.js";
 import {
   commandFromStudioCommandFormState,
   createDefaultStudioCommandFormState,
+  defaultStudioFlowEventType,
   readStudioCommandFormState,
   renderStudioCommandFormDiagnostics,
   renderStudioCommandFormFieldError,
@@ -70,12 +71,6 @@ type StudioGraphLabelKey =
   | "layoutSwitched"
   | "generate"
   | "debugRun"
-  | "debugAdvanced"
-  | "debugRunNow"
-  | "debugQuickInput"
-  | "debugQuickHint"
-  | "debugQuickPlaceholder"
-  | "debugQuickOpen"
   | "close"
   | "debugRunShort"
   | "quickOpen"
@@ -157,12 +152,12 @@ export type StudioGraphBridgeOptions = {
     blockedCode?: string;
   }) => void | Promise<void>;
   onChatGenerate?: () => void | Promise<void>;
-  onQuickDebugOpen?: () => void | Promise<void>;
+  onOpenDebug?: () => void | Promise<void>;
   historyEvent?: { id?: number; kind?: "push-before-replace"; label?: string } | null;
   onToggleFullscreen?: () => void;
   onValidateWorkbench?: () => void | Promise<void>;
   onSaveWorkbench?: () => void | Promise<void>;
-  onQuickDebugRun?: (input: string) => boolean | Promise<boolean>;
+  onDebugRunInput?: (input: string) => boolean | Promise<boolean>;
   onFocusDebugInput?: () => boolean | Promise<boolean>;
   canSaveWorkbench?: boolean;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
@@ -278,8 +273,6 @@ export class StudioGraphIsland {
   private quickOpenEl: HTMLDivElement;
   private quickOpenInputEl: HTMLInputElement;
   private quickOpenResultsEl: HTMLDivElement;
-  private quickDebugEl: HTMLDivElement;
-  private quickDebugInputEl: HTMLTextAreaElement;
   private dialogEl: HTMLElement;
   private fallbackDialogEl: HTMLDivElement;
   private diagnosticCardEl: HTMLDivElement;
@@ -301,13 +294,13 @@ export class StudioGraphIsland {
   private pendingEdgePreview: PendingStudioEdgePreview | null = null;
   private relationshipSourceRoleId = "";
   private pendingRolePlaceholderId = "";
+  private pendingRoleDraftPosition: { x: number; y: number } | null = null;
   private pendingRoleInsertion: PendingStudioRoleInsertion | null = null;
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
   private contextMenuState: StudioGraphContextMenuState | null = null;
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
   private quickOpenSelectedIndex = 0;
-  private quickDebugBusy = false;
   private reducedMotion = false;
   private resizeObserver: ResizeObserver | null = null;
   private pendingEdgeCleanupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -376,7 +369,6 @@ export class StudioGraphIsland {
       '<option value="compact">' + this.escapeHtml(this.label("layoutModeCompact")) + '</option>' +
       '<option value="stacked">' + this.escapeHtml(this.label("layoutModeStacked")) + '</option>' +
       '</select>',
-      this.toolbarButton("topology-order", "topologyOrder", "#"),
       this.toolbarButton("technical-details", "technicalDetails", "i"),
       this.toolbarButton("quick-open", "quickOpen", "/"),
       this.toolbarButton("export-svg", "exportSvg", "⇩", "SVG"),
@@ -413,15 +405,6 @@ export class StudioGraphIsland {
       '<div class="studio-graph-quick-open-results" data-studio-graph-quick-open-results></div>',
       "</div>",
       "</div>",
-      '<div class="studio-graph-quick-debug" data-studio-graph-quick-debug hidden>',
-      '<div class="studio-graph-quick-debug-panel">',
-      '<div class="studio-graph-quick-debug-head"><strong>' + this.escapeHtml(this.label("debugQuickOpen")) + '</strong><button type="button" class="button subtle studio-icon-button" data-studio-graph-quick-debug-close="1" aria-label="' + this.escapeHtml(this.label("close")) + '" title="' + this.escapeHtml(this.label("close")) + '">×</button></div>',
-      '<label class="studio-graph-quick-debug-label" for="studio-graph-quick-debug-input">' + this.escapeHtml(this.label("debugQuickInput")) + '</label>',
-      '<textarea id="studio-graph-quick-debug-input" class="studio-graph-quick-debug-input" data-studio-graph-quick-debug-input placeholder="' + this.escapeHtml(this.label("debugQuickPlaceholder")) + '"></textarea>',
-      '<div class="hint studio-graph-quick-debug-hint">' + this.escapeHtml(this.label("debugQuickHint")) + '</div>',
-      '<div class="studio-graph-quick-debug-actions"><button type="button" class="button primary" data-studio-graph-quick-debug-run="1">' + this.escapeHtml(this.label("debugRunNow")) + '</button><button type="button" class="button subtle" data-studio-graph-quick-debug-advanced="1">' + this.escapeHtml(this.label("debugAdvanced")) + '</button></div>',
-      '</div>',
-      '</div>',
       '</div>'
     ].join("");
     const toolbar = this.root.querySelector<HTMLDivElement>(".studio-graph-toolbar");
@@ -435,9 +418,7 @@ export class StudioGraphIsland {
     const quickOpenEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open]");
     const quickOpenInputEl = this.root.querySelector<HTMLInputElement>("[data-studio-graph-quick-open-input]");
     const quickOpenResultsEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open-results]");
-    const quickDebugEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-debug]");
-    const quickDebugInputEl = this.root.querySelector<HTMLTextAreaElement>("[data-studio-graph-quick-debug-input]");
-    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !contextMenuEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl || !quickDebugEl || !quickDebugInputEl) {
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !contextMenuEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
@@ -451,8 +432,6 @@ export class StudioGraphIsland {
     this.quickOpenEl = quickOpenEl;
     this.quickOpenInputEl = quickOpenInputEl;
     this.quickOpenResultsEl = quickOpenResultsEl;
-    this.quickDebugEl = quickDebugEl;
-    this.quickDebugInputEl = quickDebugInputEl;
     this.fallbackDialogEl = document.createElement("div");
     this.fallbackDialogEl.hidden = true;
     this.fallbackDialogEl.className = "studio-command-dialog";
@@ -467,7 +446,6 @@ export class StudioGraphIsland {
     this.bindGraphEvents();
     this.bindContextMenu();
     this.bindQuickOpen();
-    this.bindQuickDebug();
     this.bindResizeObserver();
     this.root.addEventListener("keydown", this.rootKeydownListener);
     document.addEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
@@ -497,10 +475,10 @@ export class StudioGraphIsland {
       mode: options.readOnly ? "run" : "edit"
     });
     for (const node of viewModel.nodes) {
-      if (node.kind === "boundary" && node.id === "input") {
-        node.label = "▶ " + this.label("boundaryEntry");
-      } else if (node.kind === "boundary" && node.id === "output") {
-        node.label = "■ " + this.label("boundaryEnd");
+      if (node.kind === "specialRole" && node.specialRole === "start") {
+        node.label = this.label("boundaryEntry");
+      } else if (node.kind === "specialRole" && node.specialRole === "end") {
+        node.label = this.label("boundaryEnd");
       }
     }
     this.preserveBoundaryNodeLayout(viewModel);
@@ -540,7 +518,6 @@ export class StudioGraphIsland {
         : this.label("noRolesAvailable"));
       this.closeCommandForm();
       this.closeQuickOpen();
-      this.closeQuickDebug();
       this.renderMinimap();
       this.setStatus(this.label("graphUnavailable"));
       this.setBusy(true);
@@ -618,7 +595,6 @@ export class StudioGraphIsland {
     this.root.removeEventListener("pointercancel", this.contextPointerUpListener);
     this.root.removeEventListener("mouseleave", this.contextPointerLeaveListener);
     this.root.removeEventListener("contextmenu", this.rootContextMenuListener);
-    this.quickDebugBusy = false;
     this.graph.dispose();
     this.root.innerHTML = "";
     this.root.classList.remove("studio-graph-island");
@@ -650,12 +626,6 @@ export class StudioGraphIsland {
         if (cellView.cell.isNode() && isStudioSccGroup(cellView.cell)) {
           return {
             nodeMovable: !this.isReadOnly(),
-            magnetConnectable: false
-          };
-        }
-        const data = cellView.cell.getData() as { studioNode?: { kind?: string } } | undefined;
-        if (data?.studioNode?.kind === "boundary") {
-          return {
             magnetConnectable: false
           };
         }
@@ -774,23 +744,20 @@ export class StudioGraphIsland {
       if (action === "fit") void this.fitAndSync();
       if (action === "reset-view") void this.resetViewAndSync();
       if (action === "fullscreen") this.options.onToggleFullscreen?.();
-      if (action === "topology-order") {
-        this.showTopologyOrder = !this.showTopologyOrder;
-        this.renderCurrentProjection();
-        this.updateToolbarState();
-      }
       if (action === "technical-details") {
-        this.showTechnicalDetails = !this.showTechnicalDetails;
+        const next = !(this.showTechnicalDetails && this.showTopologyOrder);
+        this.showTechnicalDetails = next;
+        this.showTopologyOrder = next;
         this.renderCurrentProjection();
         this.updateToolbarState();
       }
       if (action === "quick-open") this.toggleQuickOpen();
-      if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 32, preserveDimensions: true });
-      if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 32, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
+      if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 64, preserveDimensions: false });
+      if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 64, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
       if (action === "debug-run") {
-        if (this.options.onQuickDebugOpen) void this.options.onQuickDebugOpen();
-        else this.toggleQuickDebug();
+        if (this.options.onOpenDebug) void this.options.onOpenDebug();
+        else void this.options.onFocusDebugInput?.();
       }
       if (action === "validate") void this.options.onValidateWorkbench?.();
       if (action === "save") void this.options.onSaveWorkbench?.();
@@ -809,6 +776,7 @@ export class StudioGraphIsland {
           return;
         }
         this.relationshipSourceRoleId = selectedRoleId;
+        this.updateConnectionPortPresentation();
         this.options.onStatusChange?.(this.label("connectFromSelectedRole"));
         this.updateToolbarState();
       }
@@ -840,13 +808,13 @@ export class StudioGraphIsland {
         this.openCommandForm("add-role");
         return;
       }
-      if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
+      if ((data?.studioNode?.roleSeat || data?.studioNode?.kind === "specialRole") && data.studioNode.roleId) {
         this.selectRoleById(data.studioNode.roleId, node);
       }
     });
     this.graph.on("node:dblclick", ({ node }) => {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-      if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
+      if ((data?.studioNode?.roleSeat || data?.studioNode?.kind === "specialRole") && data.studioNode.roleId) {
         this.selectRoleById(data.studioNode.roleId, node);
       }
     });
@@ -904,6 +872,7 @@ export class StudioGraphIsland {
       }
       this.graph.cleanSelection();
       this.relationshipSourceRoleId = "";
+      this.updateConnectionPortPresentation();
       this.options.onClearSelection?.();
       this.lastEditSelectionSignature = "";
       this.closeCommandForm();
@@ -926,9 +895,17 @@ export class StudioGraphIsland {
     });
     this.graph.on("node:mouseenter", ({ node, e }) => {
       const data = node.getData() as { studioNode?: Record<string, unknown> } | undefined;
+      const sourceCell = this.relationshipSourceRoleId ? this.graph.getCellById(this.relationshipSourceRoleId) : null;
+      const targetView = this.graph.findViewByCell(node);
+      (targetView?.container as Element | undefined)?.classList.toggle(
+        "is-connection-target",
+        Boolean(this.relationshipSourceRoleId && node.id !== this.relationshipSourceRoleId && validateStudioConnectionCells(sourceCell, node).ok)
+      );
       this.showDiagnosticCard(data?.studioNode, e);
     });
-    this.graph.on("node:mouseleave", () => {
+    this.graph.on("node:mouseleave", ({ node }) => {
+      const targetView = this.graph.findViewByCell(node);
+      (targetView?.container as Element | undefined)?.classList.remove("is-connection-target");
       this.hideDiagnosticCard();
     });
     this.graph.on("cell:mouseup", () => {
@@ -943,6 +920,12 @@ export class StudioGraphIsland {
     });
     this.graph.on("node:moved", ({ node }) => {
       if (this.isReadOnly()) return;
+      if (node.id === this.pendingRolePlaceholderId) {
+        const position = node.getPosition();
+        this.pendingRoleDraftPosition = { x: position.x, y: position.y };
+        this.renderMinimap();
+        return;
+      }
       if (this.minimapRefreshFrame !== null) {
         cancelAnimationFrame(this.minimapRefreshFrame);
         this.minimapRefreshFrame = null;
@@ -1004,9 +987,16 @@ export class StudioGraphIsland {
         return;
       }
       this.relationshipSourceRoleId = "";
-      this.openCommandForm("add-edge", {
+      this.updateConnectionPortPresentation();
+      const command = {
+        type: "add-edge" as const,
         sourceRoleId: source,
-        targetRoleId: target
+        targetRoleId: target,
+        eventType: defaultStudioFlowEventType(this.validationContext(), source),
+        label: ""
+      };
+      void this.applyCommand(command).then(() => {
+        this.updateToolbarState();
       });
     });
   }
@@ -1054,13 +1044,20 @@ export class StudioGraphIsland {
     if (this.isReadOnly()) return;
     this.removePendingRolePlaceholder();
     const viewport = this.canvasEl.getBoundingClientRect();
-    const center = this.graph.clientToLocal(viewport.left + viewport.width / 2, viewport.top + viewport.height / 2);
+    const workbench = this.root.closest<HTMLElement>(".studio-workbench");
+    const assetDrawer = workbench?.querySelector<HTMLElement>(".studio-asset-drawer.is-open");
+    const drawerLeft = assetDrawer?.getBoundingClientRect().left;
+    const anchorX = drawerLeft !== undefined && drawerLeft > viewport.left && drawerLeft < viewport.right
+      ? (viewport.left + drawerLeft) / 2
+      : viewport.left + viewport.width / 2;
+    const center = this.graph.clientToLocal(anchorX, viewport.top + viewport.height / 2);
+    const position = this.nearestOpenRolePosition(center);
     const dark = document.documentElement.dataset.visualizerTheme === "dark";
     const node = this.graph.addNode({
       id: "__studio_pending_role__",
       shape: "rect",
-      x: center.x - 90,
-      y: center.y - 42,
+      x: position.x,
+      y: position.y,
       width: 180,
       height: 84,
       zIndex: 10,
@@ -1071,15 +1068,44 @@ export class StudioGraphIsland {
       }
     });
     this.pendingRolePlaceholderId = node.id;
+    this.pendingRoleDraftPosition = position;
     this.graph.cleanSelection();
     this.graph.select(node);
     this.options.onStatusChange?.(this.label("addRole"));
+  }
+
+  private nearestOpenRolePosition(center: { x: number; y: number }): { x: number; y: number } {
+    const width = 180;
+    const height = 84;
+    const stepX = width + 32;
+    const stepY = height + 32;
+    const nodes = this.graph.getNodes().map((node) => node.getBBox());
+    for (let radius = 0; radius < 24; radius += 1) {
+      for (let row = -radius; row <= radius; row += 1) {
+        for (let column = -radius; column <= radius; column += 1) {
+          if (Math.max(Math.abs(row), Math.abs(column)) !== radius) continue;
+          const position = {
+            x: Math.round(center.x - width / 2 + column * stepX),
+            y: Math.round(center.y - height / 2 + row * stepY)
+          };
+          const overlaps = nodes.some((box) =>
+            position.x < box.x + box.width + 16 &&
+            position.x + width + 16 > box.x &&
+            position.y < box.y + box.height + 16 &&
+            position.y + height + 16 > box.y
+          );
+          if (!overlaps) return position;
+        }
+      }
+    }
+    return { x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2) };
   }
 
   private removePendingRolePlaceholder(): void {
     if (!this.pendingRolePlaceholderId) return;
     this.graph.getCellById(this.pendingRolePlaceholderId)?.remove();
     this.pendingRolePlaceholderId = "";
+    this.pendingRoleDraftPosition = null;
   }
 
   private openEditRoleForm(roleId: string): void {
@@ -1149,7 +1175,7 @@ export class StudioGraphIsland {
       studioNode?: { kind?: string; roleId?: string };
       studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean };
     } | undefined;
-    if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
+    if ((data?.studioNode?.roleSeat || data?.studioNode?.kind === "specialRole") && data.studioNode.roleId) {
       this.selectRoleById(data.studioNode.roleId, selected?.isNode() ? selected : undefined);
       return;
     }
@@ -1230,85 +1256,6 @@ export class StudioGraphIsland {
     this.quickOpenEl.hidden = true;
     this.quickOpenInputEl.value = "";
     this.quickOpenResultsEl.innerHTML = "";
-  }
-
-  private bindQuickDebug(): void {
-    this.quickDebugEl.addEventListener("click", (event) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-studio-graph-quick-debug-close]")) {
-        this.closeQuickDebug();
-        return;
-      }
-      if (target?.closest("[data-studio-graph-quick-debug-advanced]")) {
-        void this.openAdvancedDebugFromQuickDebug();
-        return;
-      }
-      if (target?.closest("[data-studio-graph-quick-debug-run]")) {
-        void this.submitQuickDebug();
-      }
-    });
-    this.quickDebugInputEl.addEventListener("keydown", (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-        event.preventDefault();
-        void this.submitQuickDebug();
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        this.closeQuickDebug();
-      }
-    });
-  }
-
-  private toggleQuickDebug(): void {
-    if (this.quickDebugEl.hidden) {
-      this.closeQuickOpen();
-      this.quickDebugEl.hidden = false;
-      this.quickDebugInputEl.focus();
-      return;
-    }
-    this.closeQuickDebug();
-  }
-
-  private closeQuickDebug(force = false): void {
-    if (this.quickDebugBusy && !force) {
-      return;
-    }
-    this.quickDebugEl.hidden = true;
-    this.quickDebugInputEl.value = "";
-  }
-
-  private async submitQuickDebug(): Promise<void> {
-    if (this.quickDebugBusy) {
-      return;
-    }
-    const input = this.quickDebugInputEl.value.trim();
-    if (!input) {
-      this.toast("error", this.label("debugQuickInput"));
-      this.quickDebugInputEl.focus();
-      return;
-    }
-    this.quickDebugBusy = true;
-    this.updateToolbarState();
-    try {
-      const launched = await this.options.onQuickDebugRun?.(input);
-      if (launched !== false) {
-        this.closeQuickDebug(true);
-      }
-    } finally {
-      this.quickDebugBusy = false;
-      this.updateToolbarState();
-    }
-  }
-
-  private async openAdvancedDebugFromQuickDebug(): Promise<void> {
-    if (this.quickDebugBusy) {
-      return;
-    }
-    const moved = await this.options.onFocusDebugInput?.();
-    if (moved !== false) {
-      this.closeQuickDebug(true);
-    }
   }
 
   private moveQuickOpenSelection(delta: number): void {
@@ -1595,7 +1542,9 @@ export class StudioGraphIsland {
       : null;
     const nextCommand = pendingRoleInsertion && command.type === "add-role"
       ? this.commandForInsertedRole(command, pendingRoleInsertion)
-      : command;
+      : command.type === "add-role" && this.pendingRoleDraftPosition
+        ? { ...command, ...this.pendingRoleDraftPosition }
+        : command;
     const selectionOverride = pendingRoleInsertion && command.type === "add-role"
       ? { selectedRoleId: command.roleId?.trim() || "", selectedFlowKey: "" }
       : undefined;
@@ -1612,7 +1561,9 @@ export class StudioGraphIsland {
       studioNode?: { kind?: string; roleId?: string };
       studioEdge?: { source: string; target: string; eventType: string };
     } | undefined;
-    const currentRoleId = currentData?.studioNode?.roleSeat ? currentData.studioNode.roleId || "" : "";
+    const currentRoleId = currentData?.studioNode?.roleSeat || currentData?.studioNode?.kind === "specialRole"
+      ? currentData.studioNode.roleId || ""
+      : "";
     const currentFlowKey = currentData?.studioEdge ? studioEdgeFlowKey(currentData.studioEdge) : "";
     if (currentRoleId === roleId && currentFlowKey === flowKey) {
       this.syncSelectionPresentation(roleId || current?.id || flowKey || "");
@@ -1682,7 +1633,9 @@ export class StudioGraphIsland {
   private selectedRoleId(): string {
     const selected = this.graph.getSelectedCells()[0];
     const data = selected?.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-    return data?.studioNode?.roleSeat ? data.studioNode.roleId || "" : this.options.selectedRoleId || "";
+    return data?.studioNode?.roleSeat || data?.studioNode?.kind === "specialRole"
+      ? data.studioNode.roleId || ""
+      : this.options.selectedRoleId || "";
   }
 
   private preserveBoundaryNodeLayout(viewModel: GraphViewModel): void {
@@ -1690,7 +1643,7 @@ export class StudioGraphIsland {
       return;
     }
     for (const node of viewModel.nodes) {
-      if (node.kind !== "boundary") {
+      if (node.kind !== "specialRole") {
         continue;
       }
       const cell = this.graph.getCellById(node.id);
@@ -2271,13 +2224,14 @@ export class StudioGraphIsland {
   }
 
   private updateToolbarState(): void {
+    this.updateConnectionPortPresentation();
     const readOnly = this.isReadOnly();
     const selected = this.graph.getSelectedCells()[0];
     const selectedData = selected?.getData() as {
       studioNode?: { kind?: string; roleId?: string };
       studioEdge?: { editable?: boolean };
     } | undefined;
-    const selectedRole = selectedData?.studioNode?.roleSeat === true;
+    const selectedRole = selectedData?.studioNode?.roleSeat === true || selectedData?.studioNode?.kind === "specialRole";
     const selectedEditable = selectedRole || selectedData?.studioEdge?.editable === true;
     const editActions = this.toolbar.querySelector<HTMLElement>("[data-studio-graph-edit-actions]");
     if (editActions) {
@@ -2309,7 +2263,7 @@ export class StudioGraphIsland {
     }
     if (debugRun) {
       debugRun.hidden = readOnly;
-      debugRun.disabled = this.busy || readOnly || this.quickDebugBusy || typeof this.options.onQuickDebugRun !== "function";
+      debugRun.disabled = this.busy || readOnly || (typeof this.options.onOpenDebug !== "function" && typeof this.options.onFocusDebugInput !== "function");
     }
     for (const action of ["layout", "add-role", "add-edge", "delete", "validate", "save"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
@@ -2326,6 +2280,17 @@ export class StudioGraphIsland {
     if (undo) undo.disabled = this.busy || readOnly || this.activeUndoStack().length === 0;
     if (redo) redo.disabled = this.busy || readOnly || this.activeRedoStack().length === 0;
     if (save) save.disabled = this.busy || readOnly || this.options.canSaveWorkbench !== true;
+  }
+
+  private updateConnectionPortPresentation(): void {
+    this.root.classList.toggle("is-relationship-connecting", Boolean(this.relationshipSourceRoleId));
+    for (const node of this.graph.getNodes()) {
+      const view = this.graph.findViewByCell(node);
+      const container = view?.container as Element | undefined;
+      if (!container) continue;
+      container.classList.toggle("is-relationship-source", node.id === this.relationshipSourceRoleId);
+      if (!this.relationshipSourceRoleId) container.classList.remove("is-connection-target");
+    }
   }
 
   private isReadOnly(): boolean {
@@ -2424,11 +2389,6 @@ export class StudioGraphIsland {
     if (!this.quickOpenEl.hidden && event.key === "Escape") {
       event.preventDefault();
       this.closeQuickOpen();
-      return;
-    }
-    if (!this.quickDebugEl.hidden && event.key === "Escape") {
-      event.preventDefault();
-      this.closeQuickDebug();
       return;
     }
     if (!this.commandForm || this.dialogEl.hidden) {
@@ -2792,9 +2752,7 @@ export class StudioGraphIsland {
       return;
     }
     this.contextMenuState = args.state;
-    const canDeleteRole = args.state.kind === "role"
-      ? args.state.roleId !== this.options.authoring?.system.entryRoleId
-      : Boolean(args.state.edge.editable);
+    const canDeleteRole = args.state.kind === "role";
     const items = args.state.kind === "role"
       ? [
           { action: "edit", label: this.label("contextEditRole"), disabled: false },
@@ -2864,10 +2822,6 @@ export class StudioGraphIsland {
   }
 
   private async deleteRole(roleId: string): Promise<void> {
-    if (roleId === this.options.authoring?.system.entryRoleId) {
-      this.toast("error", this.label("entryRoleDeletionBlocked"));
-      return;
-    }
     if (window.confirm && !window.confirm(this.formatLabel("deleteRoleConfirm", { roleId }))) {
       return;
     }
@@ -3171,7 +3125,7 @@ export class StudioGraphIsland {
       const width = Math.max((item.width / totalWidth) * 100, 5);
       const height = Math.max((item.height / totalHeight) * 100, 8);
       const selected = this.options.selectedRoleId === item.id;
-      const kindClass = item.kind === "boundary" ? " is-boundary" : "";
+      const kindClass = item.kind === "specialRole" ? " is-boundary" : "";
       return '<div class="studio-graph-minimap-node' + kindClass + (selected ? " is-selected" : "") +
         '" data-minimap-role-id="' + this.escapeHtml(item.id) +
         '" style="left:' + left.toFixed(3) + "%;top:" + top.toFixed(3) + "%;width:" + width.toFixed(3) + "%;height:" + height.toFixed(3) + '%"></div>';

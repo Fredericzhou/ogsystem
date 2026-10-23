@@ -17,13 +17,13 @@ Studio 已支持图上 Role/Flow 的增删改、部分执行绑定配置，并�
 
 | System 定义 | 当前可视化能力 | 处理方案 |
 |---|---|---|
-| Role、Flow、事件标签、输入/输出拓扑 | 图上可视化编辑 | 保持现有图编辑，补齐拓扑与事件校验 |
+| Role、Flow、开始/结束拓扑 | 图上可视化编辑 | Start/End 是显式特殊角色，所有连线都是可编辑 Flow |
 | `exec.bind.<roleId>`、项目模型选择 | Role 配置面板可选 Tool/Profile 或 Agent/Model；模型选择属于项目配置 | 保持职责边界，不把模型绑定搬回 System DSL |
 | `context.map.<roleId>.<field>` | Role 面板支持受限嵌套路径、Human Review Optional 限制、目标形状预览和 Role Input Schema 的必需/额外字段提示 | Selector 语法与运行时共用；首期不支持值变换、聚合或对象组装 |
 | `role.mode.*`、`route.order.*`、`loop.max.*` | Role 面板支持标准/并行分发、目标排序和循环预算编辑 | Role 的“路由”设置维护策略；只有检测到环路时才启用循环预算 |
 | `join.mode.*`、`join.sources.*`、`join.min.*` | Flow 可标记 Join 入边；Join Role 面板支持模式/阈值；序列化时 Join 来源由实际入边生成 | Join Role 设置模式/阈值；入边是来源集合的唯一事实来源 |
 | `review.*` | Role 面板支持评审开关、超时、超时动作、返工目标/轮数和终止范围 | Role 的“人工评审”设置维护评审和恢复策略 |
-| `system.id`、`system.version`、`law.global`、`entry.role` | Structure 无选择状态显示唯一 System 设置入口；Role/Flow 面板提供跳转按钮 | 继续复用单一作者模型和正式源码校验流程 |
+| `system.id`、`system.version`、`law.global`、Start/End Flow | 团队资产弹框中的“全局”标签编辑团队全局配置；Start/End 角色面板配置结构策略 | Start 候选只由 Start 直连 Flow 定义，分发策略为全部或固定随机 N；End 汇聚只统计直接连 End 的不同角色 |
 | `handoff.mode`、`handoff.contracts` | 固定 System 入口包含 Flow/Role Input 覆盖表、合同逐项表单及 Schema JSON 编辑；专用 API 限制项目真实路径并校验后原子保存 | 持续完善错误跳转和更丰富的 Schema 诊断，不扩为通用文件管理器 |
 | `context.map` Selector 语法 | 来源候选遵守 Join/普通入边规则；受限字段路径由共享 Selector 语义模块校验；Role Input Schema 提供必需字段缺失和额外字段诊断 | Schema 字段类型浏览与 Role Output Schema 联动留待有稳定摘要来源后评估 |
 | `model.bind.<roleId>` | 解析器识别，但模型选择运行时要求配置在 `.ogs/model-selection.json` | 不提供 System 图形配置；验证时提示改用项目模型选择设置 |
@@ -44,7 +44,7 @@ Studio 已支持图上 Role/Flow 的增删改、部分执行绑定配置，并�
 ### 页面信息架构
 
 - **图画布**：负责 Role、Flow、事件、入口/终点以及拓扑关系。
-- **System 设置**：Structure 无选择状态时提供唯一编辑入口；Role/Flow 属性面板提供跳转按钮，不复制全局表单。入口包含基本信息、入口与路由及 Handoff 合同工作区。
+- **全局配置**：团队资产弹框的“全局”标签编辑团队标识、版本、全局法则和 Handoff 契约；Role/Flow 属性面板只显示当前对象属性，不嵌入全局表单。
 - **Role 属性面板**：按需展示“执行”“路由”“Join”“上下文”“人工评审”配置。只显示适用于所选 Role 的区域；非 Join Role 不显示 Join 阈值。
 - **Flow 属性面板**：编辑事件标签、目标 Role，以及该 Flow 是否属于目标 Join 的入边。Join 来源集合以实际入边为准，Flow 勾选状态和 Join 来源列表保持单一事实来源。
 - **源码视图**：作为高级编辑入口，显示确定性生成的 Mermaid。源码修改后解析回同一作者模型；图形/源码来回切换不得丢失已支持语义。
@@ -101,9 +101,9 @@ Context Map 统一在目标 Role 的“上下文”设置中维护。每行包�
 
 ### System 与 Handoff
 
-System 设置提供必填项和引用选择器。入口 Role 与 `input` 起始边同步，避免 `entry.role` 和起始边目标冲突。全局 Law 从当前项目 Law Catalog 选择，找不到引用时显示错误，不要求手写 ID。Law Catalog 当前由 `.ogs/laws.json` 提供，项目上下文经 `GET project/config` 返回 `laws`；选择器可复用该配置数据，无需假设 Catalog 不存在或另建数据源。当前 DTO 将 `laws` 暴露为 `unknown | null`，因此客户端需在选择器边界做窄化和字段校验，再作为 Law 选项使用。
+全局 System 设置位于团队资产弹框的“全局”标签，不使用独立页面，也不与角色或流程属性混排。Start/End 的分发与汇聚配置留在对应特殊角色面板。Start 候选由显式 `start[开始] -->|START| Role` Flow 定义，不保存重复的入口角色多选字段；连接 Start 的每条 Flow 都是普通可选中的流程对象，事件固定为 `START`，可配置业务显示名称。全局 Law 从当前项目 Law Catalog 选择，找不到引用时显示错误，不要求手写 ID。Law Catalog 当前由 `.ogs/laws.json` 提供，项目上下文经 `GET project/config` 返回 `laws`；选择器可复用该配置数据，无需假设 Catalog 不存在或另建数据源。当前 DTO 将 `laws` 暴露为 `unknown | null`，因此客户端需在选择器边界做窄化和字段校验，再作为 Law 选项使用。
 
-Handoff 模式可选择关闭、`transition` 或 `strict`，并填写项目内合同文件路径。System 无选择状态时可直接进入 System 设置；选中 Role/Flow 后可用跳转按钮回到该工作区。合同清单与 Schema 在同一工作区分别编辑、分别保存，服务端以运行时相同的合同规则验证候选文件。作者草稿保存不写合同文件；正式源码保存和运行时 Parser/Compiler 门禁仍是权威校验。
+Handoff 模式可选择关闭、`transition` 或 `strict`，并填写项目内合同文件路径。用户从团队资产弹框的“全局”标签进入全局设置；在角色或流程属性中不会出现全局表单。保存先校验作者模型，再分别写入团队资产与设计；这两个存储 API 尚非跨文件事务，界面须在任一步骤失败时显示具体错误。运行时 Parser/Compiler 门禁仍是权威校验。
 
 ## 建议实施顺序
 
@@ -126,14 +126,14 @@ Handoff 模式可选择关闭、`transition` 或 `strict`，并填写项目内�
 - 每个 Role 可查看目标字段、来源、必需性和只读 JSON 形状；配置 Role Input Schema 时提示必需字段缺失及额外字段。首期不声称推断值类型或预览实际投影值。UI 与服务端使用共享 Selector 规则，最终有效性由 Parser/Compiler 校验。
 - System 入口 Role 与输入边目标保持一致；Join 配置与 Mermaid 入边精确一致；`quorum_of` 阈值合法；Review 和 Loop 设置符合 Parser/Compiler 约束。
 - `.ogs/model-selection.json` 仍是模型绑定唯一配置来源；`exec.bind` 仍解析到项目执行 Profile。
-- System 设置无需先选中 Role/Flow 即可到达；从任一 Role/Flow 可一键跳转到相关设置。
+- System 设置可从团队资产中的“全局”入口到达；Role/Flow 面板只呈现所选对象的配置。开始 Flow 显示本地化业务名称而不显示 `START`。
 - 合同工作区能按当前图列出符合运行时规则的 Flow 与已有 Role Input 合同，明确显示覆盖和引用；保存时报告清单绑定、Schema 及本地 `$ref` 校验错误，失败时原文件与当前输入保持不变。
 - Schema 编辑基础模式覆盖常见对象/数组约束；高级模式往返保留未知于基础表单但被 JSON Schema 解析器接受的关键字，不静默降级或删除。
 
 ### 数据保真与安全
 
 - 对所有可视化支持的配置，导入 `system.mmd`、保存、再导入后的作者模型语义相等；序列化结果确定、稳定，不产生重复元数据键。
-- 当前 `engine=langgraph` 元数据经过导入和序列化后保持一致；未知/无效元数据由 Parser 拒绝，不能被误报为已成功图形编辑。
+- `engine=langgraph` 不属于当前 System 结构；未知/无效元数据由 Parser 拒绝，不能被误报为已成功图形编辑。
 - 客户端校验提供及时反馈，服务端 Parser/Compiler 校验仍是最终门禁；失败时不覆盖已保存的有效 System。
 - 映射器只允许当前运行时 Selector 语法中的 `direct`、Join 入边 `source(...)` 和受支持的 `global` 来源；不开放祖先 Role 任意递归读取或隐式 Session 状态。
 

@@ -13,15 +13,16 @@ test("Deliverable snapshots publish atomically and archive each Run idempotently
   const project = { projectType: "collaboration", workdir };
   try {
     const metadata = { taskId: "task-1", runId: "run-1", attemptNumber: 1 };
-    const first = await store.archive(project, metadata, "first result");
-    const replay = await store.archive(project, metadata, "changed replay must not overwrite");
-    const second = await store.archive(project, { ...metadata, runId: "run-2", attemptNumber: 2 }, "second result");
+    const firstContent = { finalOutputsByRoleId: { writer: [{ content: "first result" }] }, finalOutputRoleOrder: ["writer"] };
+    const secondContent = { finalOutputsByRoleId: { reviewer: [{ data: { verdict: "approved" } }] }, finalOutputRoleOrder: ["reviewer"] };
+    const first = await store.archive(project, metadata, firstContent);
+    const replay = await store.archive(project, metadata, { finalOutputsByRoleId: {}, finalOutputRoleOrder: [] });
+    const second = await store.archive(project, { ...metadata, runId: "run-2", attemptNumber: 2 }, secondContent);
     assert.equal(replay.deliverableId, first.deliverableId);
     assert.equal(replay.idempotentReplay, true);
-    assert.equal(first.summary, "first result");
-    assert.equal(first.outputPath, `workspace/deliverables/${first.deliverableId}/content.txt`);
-    assert.equal(await store.readContent(project, first.deliverableId), "first result");
-    assert.equal(await store.readContent(project, second.deliverableId), "second result");
+    assert.equal(first.outputPath, `workspace/deliverables/${first.deliverableId}/content.json`);
+    assert.deepEqual(await store.readContent(project, first.deliverableId), firstContent);
+    assert.deepEqual(await store.readContent(project, second.deliverableId), secondContent);
     assert.equal((await store.list(project)).length, 2);
     assert.deepEqual((await readdir(join(workdir, "workspace", "deliverables"))).sort(), [first.deliverableId, second.deliverableId].sort());
     assert.equal(JSON.parse(await readFile(join(workdir, ".site", "deliverables.json"), "utf8")).items.length, 2);
@@ -40,18 +41,19 @@ test("archive recovers a complete published snapshot and removes interrupted tem
   const orphan = join(root, orphanId);
   try {
     await mkdir(interrupted, { recursive: true });
-    await writeFile(join(interrupted, "content.txt"), "partial");
+    await writeFile(join(interrupted, "content.json"), "partial");
     await mkdir(orphan, { recursive: true });
-    const orphanContent = "complete result";
+    const orphanContent = { finalOutputsByRoleId: { writer: [{ content: "complete result" }] }, finalOutputRoleOrder: ["writer"] };
+    const orphanContentBytes = JSON.stringify(orphanContent, null, 2);
     const metadata = {
       deliverableId: orphanId,
       taskId: "task-1",
       runId: "run-1",
       attemptNumber: 1,
-      digest: createHash("sha256").update(orphanContent).digest("hex")
+      digest: createHash("sha256").update(orphanContentBytes).digest("hex")
     };
     await writeFile(join(orphan, "metadata.json"), JSON.stringify(metadata));
-    await writeFile(join(orphan, "content.txt"), orphanContent);
+    await writeFile(join(orphan, "content.json"), orphanContentBytes);
     await mkdir(join(workdir, ".site"), { recursive: true });
     await writeFile(join(workdir, ".site", "deliverables.json.temporary.tmp"), "partial index");
 
@@ -59,9 +61,9 @@ test("archive recovers a complete published snapshot and removes interrupted tem
 
     assert.equal(replay.deliverableId, orphanId);
     assert.equal(replay.idempotentReplay, true);
-    assert.equal(replay.summary, "complete result");
-    assert.equal(replay.outputPath, `workspace/deliverables/${orphanId}/content.txt`);
-    assert.equal(await store.readContent(project, orphanId), "complete result");
+    assert.match(replay.summary, /complete result/);
+    assert.equal(replay.outputPath, `workspace/deliverables/${orphanId}/content.json`);
+    assert.deepEqual(await store.readContent(project, orphanId), orphanContent);
     assert.deepEqual(await readdir(root), [orphanId]);
     assert.deepEqual(await readdir(join(workdir, ".site")), ["deliverables.json"]);
     assert.equal(JSON.parse(await readFile(join(workdir, ".site", "deliverables.json"), "utf8")).items.length, 1);
@@ -75,11 +77,11 @@ test("list recovers published snapshots and excludes content whose digest no lon
   const store = createFileDeliverableStore();
   const project = { projectType: "collaboration", workdir };
   try {
-    const recovered = await store.archive(project, { taskId: "task-1", runId: "run-1", attemptNumber: 1 }, "valid result");
+    const recovered = await store.archive(project, { taskId: "task-1", runId: "run-1", attemptNumber: 1 }, { finalOutputsByRoleId: { writer: [{ content: "valid result" }] }, finalOutputRoleOrder: ["writer"] });
     await rm(join(workdir, ".site", "deliverables.json"));
     assert.deepEqual((await store.list(project)).map((item) => item.deliverableId), [recovered.deliverableId]);
 
-    await writeFile(join(workdir, "workspace", "deliverables", recovered.deliverableId, "content.txt"), "tampered result");
+    await writeFile(join(workdir, "workspace", "deliverables", recovered.deliverableId, "content.json"), "tampered result");
     assert.deepEqual(await store.list(project), []);
     await assert.rejects(store.readContent(project, recovered.deliverableId), /DELIVERABLE_NOT_FOUND/);
     assert.deepEqual(JSON.parse(await readFile(join(workdir, ".site", "deliverables.json"), "utf8")).items, []);
@@ -95,13 +97,14 @@ test("concurrent archive requests for the same Run resolve idempotently to one s
   try {
     const metadata = { taskId: "task-1", runId: "run-1", attemptNumber: 1 };
     const concurrent = await Promise.all([
-      store.archive(project, metadata, "first concurrent result"),
-      store.archive(project, metadata, "second concurrent result")
+      store.archive(project, metadata, { finalOutputsByRoleId: { writer: [{ content: "first concurrent result" }] }, finalOutputRoleOrder: ["writer"] }),
+      store.archive(project, metadata, { finalOutputsByRoleId: { writer: [{ content: "second concurrent result" }] }, finalOutputRoleOrder: ["writer"] })
     ]);
     assert.equal(concurrent[0].deliverableId, concurrent[1].deliverableId);
     assert.equal(concurrent.filter((item) => item.idempotentReplay).length, 1);
     assert.equal((await store.list(project)).length, 1);
-    assert.ok(["first concurrent result", "second concurrent result"].includes(await store.readContent(project, concurrent[0].deliverableId)));
+    const outputs = await store.readContent(project, concurrent[0].deliverableId);
+    assert.ok(["first concurrent result", "second concurrent result"].includes(outputs.finalOutputsByRoleId.writer[0].content));
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }
@@ -188,8 +191,8 @@ test("snapshot recovery rejects linked content files", async (t) => {
   const store = createFileDeliverableStore();
   const project = { projectType: "collaboration", workdir };
   try {
-    const record = await store.archive(project, { runId: "run-1" }, "original");
-    const contentPath = join(workdir, "workspace", "deliverables", record.deliverableId, "content.txt");
+    const record = await store.archive(project, { runId: "run-1" }, { finalOutputsByRoleId: { writer: [{ content: "original" }] }, finalOutputRoleOrder: ["writer"] });
+    const contentPath = join(workdir, "workspace", "deliverables", record.deliverableId, "content.json");
     await writeFile(outside, "external");
     await rm(contentPath);
     try {

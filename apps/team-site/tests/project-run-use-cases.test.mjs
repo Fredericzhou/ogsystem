@@ -21,7 +21,7 @@ function fixture({ execute, acquireRunLock, readSnapshot } = {}) {
     async execute(_project, options) {
       calls.push(["execute", options.runId]);
       await options.onPrepared();
-      return execute ? execute(options) : { finalOutput: "result" };
+      return execute ? execute(options) : { finalOutputsByRoleId: { writer: [{ content: "result" }] }, finalOutputRoleOrder: ["writer"] };
     },
     async rebuildIndex() { calls.push(["rebuild"]); },
     async readSnapshot(_project, runId, options) {

@@ -218,12 +218,11 @@ test("compiler rejects noop roles that are unauthorized or ambiguously routed", 
 %% system.id=test.compiler.noop
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=test-operator
 %% exec.bind.test-decision=profile.test-decision
-input -->|START| operator[Role:test-operator]
+start[开始] -->|START| operator[Role:test-operator]
 operator[Role:test-operator] -->|NEXT| decider[Role:test-decision]
-operator[Role:test-operator] -->|DONE| output
-decider[Role:test-decision] -->|DONE| output
+operator[Role:test-operator] -->|DONE| end[结束]
+decider[Role:test-decision] -->|DONE| end[结束]
 `;
   const system = parseSystemFromMermaidSource(source);
   const roleRootDir = path.resolve("og-roles", "roles");
@@ -268,16 +267,15 @@ test("compiler fingerprints review metadata and rejects review on noop bindings"
 %% system.id=test.compiler.review
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=test-operator
 %% exec.bind.test-operator=profile.test-operator
 %% exec.bind.test-decision=profile.test-decision
 %% review.mode.test-decision=required
 %% review.timeout.test-decision=600
 %% review.rework.target.test-decision=test-operator
 %% review.terminate.scope.test-decision=branch
-input -->|START| operator[Role:test-operator]
+start[开始] -->|START| operator[Role:test-operator]
 operator[Role:test-operator] -->|NEXT| decider[Role:test-decision]
-decider[Role:test-decision] -->|DONE| output
+decider[Role:test-decision] -->|DONE| end[结束]
 `;
   const sourceWithTerminate = sourceWithPause.replace(
     "%% review.terminate.scope.test-decision=branch",

@@ -11,7 +11,6 @@ type RunHeaderLike = {
   status?: string | null;
   hasWaitingHumanReview?: boolean | null;
   lastExecutedRoleId?: string | null;
-  finalRoleId?: string | null;
 };
 
 export function selectReviewId(args: {
@@ -29,7 +28,7 @@ export function selectReviewId(args: {
 }
 
 export function fallbackLogRoleId(header: RunHeaderLike | null | undefined): string {
-  return String(header?.lastExecutedRoleId || header?.finalRoleId || "");
+  return String(header?.lastExecutedRoleId || "");
 }
 
 export function resolveRunLiveState(header: RunHeaderLike | null | undefined): {

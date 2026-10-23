@@ -159,12 +159,11 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
       "%% system.id=imported.agency.smoke",
       "%% system.version=1.0.0",
       "%% law.global=law.imported.base",
-      "%% entry.role=imported.agency.frontend-developer",
       "",
-      "input -->|START| agent[Role:imported.agency.frontend-developer]",
-      "agent[Role:imported.agency.frontend-developer] -->|BLOCKED| output",
-      "agent[Role:imported.agency.frontend-developer] -->|DONE| output",
-      "agent[Role:imported.agency.frontend-developer] -->|NEEDS_CLARIFICATION| output"
+      "start[开始] -->|START| agent[Role:imported.agency.frontend-developer]",
+      "agent[Role:imported.agency.frontend-developer] -->|BLOCKED| end[结束]",
+      "agent[Role:imported.agency.frontend-developer] -->|DONE| end[结束]",
+      "agent[Role:imported.agency.frontend-developer] -->|NEEDS_CLARIFICATION| end[结束]"
     ].join("\n"),
     "utf8"
   );
@@ -178,7 +177,7 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
     dryRun: true
   });
   assert.equal(run.status, "done");
-  assert.equal(run.finalRoleId, "imported.agency.frontend-developer");
+  assert.equal(run.finalRoleIds?.at(-1), "imported.agency.frontend-developer");
 });
 
 test("sync-agent-sources removes stale imported agency roles on re-sync", async () => {

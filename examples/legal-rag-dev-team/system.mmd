@@ -2,7 +2,6 @@ flowchart TD
 %% system.id=legal.rag.dev.team
 %% system.version=1.0.0
 %% law.global=law.legal.rag.dev.base
-%% entry.role=legal-product-manager
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.contracts.json
 %% join.mode.delivery-lead=all_of
@@ -23,10 +22,10 @@ flowchart TD
 %% context.map.delivery-lead.review_round=global.human_review.current.round?
 %% role.mode.solution-architect=parallel_split
 %% route.order.solution-architect=legal-knowledge-engineer,retrieval-engineer,answer-engineer,citation-engineer,evaluation-engineer
-input -->|PROJECT_REQUEST| r6[Role:legal-product-manager]
+start[开始] -->|START| r6[Role:legal-product-manager]
 r1[Role:answer-engineer] -->|ANSWER_PLAN_READY| r3[Role:delivery-lead]
 r2[Role:citation-engineer] -->|CITATION_PLAN_READY| r3[Role:delivery-lead]
-r3[Role:delivery-lead] -->|IMPLEMENTATION_READY| output
+r3[Role:delivery-lead] -->|IMPLEMENTATION_READY| end[结束]
 r4[Role:evaluation-engineer] -->|EVAL_PLAN_READY| r3[Role:delivery-lead]
 r5[Role:legal-knowledge-engineer] -->|KNOWLEDGE_PLAN_READY| r3[Role:delivery-lead]
 r6[Role:legal-product-manager] -->|REQUIREMENTS_READY| r8[Role:solution-architect]

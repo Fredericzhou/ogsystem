@@ -120,6 +120,16 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
+  const deleteTeamMatch = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)$/);
+  if (deleteTeamMatch && request.method === "DELETE") {
+    try {
+      sendJson(response, 200, await useCases.deleteTeam(deleteTeamMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to delete team." });
+    }
+    return true;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/v1/team-factory") {
     try {
       const payload = await readBody(request);

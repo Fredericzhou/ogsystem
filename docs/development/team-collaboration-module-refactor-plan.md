@@ -58,7 +58,9 @@ Release UAT 本轮已由框架开发者完成 clean install、真实 Codex sandb
 
 本轮重试契约和页面体验验证（2026-10-18）：`pnpm build` 通过；Team Site 全量测试 88/88 通过；经典团队项目化浏览器路径覆盖 Task 级重试、刷新恢复和 390px 任务区边界；任务正文/操作无重叠、控件在视口内、触控目标至少 44px、尝试时间线不越界。浏览器回归发现并修复最近运行 DTO 的未定义运行项目 ID。`pnpm run test:docs-command-drift` 通过；`pnpm run test:visualizer` 主测试 198/198、布局测试 49/49 通过；最终 `pnpm test` 656 项通过、1 项 Windows 专属用例在 macOS 跳过；`git diff --check` 通过。以上不代表完整 Application/Infrastructure 迁移完成，也不替代真实模型、readiness 阻塞提示、审核和中断恢复的人工 UAT。
 
-本轮持续重构记录（2026-10-18）：Platform 设置和模型发现已迁入 Application 用例与 Infrastructure adapter，资源路由只调用注入的用例；设置 JSON 损坏会显式报错，不再伪装成默认配置。Team Catalog 筛选、排序、分页和统计已迁入 Application 用例，文件目录扫描迁入 Infrastructure；`project-repository.mjs` 不再导出目录查询操作。完整 Run 结果查询已迁入 Application 用例和文件结果 adapter，adapter 只读取 `graphState.finalOutput` 并脱敏；Run 资源级重试入口和 repository 实现已删除，重试统一从 Task 发起。经典团队浏览器验收增加 768px 平板尺寸，并等待当前渲染树的有效布局后检查；修正 Task 测试轮询，使清理目录前等待活动 Run worker 收尾。Team Site 全量测试 97/97 通过；`pnpm build` 通过；`pnpm run test:docs-command-drift` 通过；`pnpm run test:visualizer` 主测试 198/198、布局测试 49/49 通过；`pnpm test` 657 项中 656 项通过、1 项 Windows 专属测试在 macOS 跳过；`git diff --check` 通过。
+本轮持续重构记录（2026-10-18）：Platform 设置和模型发现已迁入 Application 用例与 Infrastructure adapter，资源路由只调用注入的用例；设置 JSON 损坏会显式报错，不再伪装成默认配置。Team Catalog 筛选、排序、分页和统计已迁入 Application 用例，文件目录扫描迁入 Infrastructure；`project-repository.mjs` 不再导出目录查询操作。完整 Run 结果查询已迁入 Application 用例与文件结果 adapter，当时只读取单一字符串结果并脱敏；Run 资源级重试入口和 repository 实现已删除，重试统一从 Task 发起。经典团队浏览器验收增加 768px 平板尺寸，并等待当前渲染树的有效布局后检查；修正 Task 测试轮询，使清理目录前等待活动 Run worker 收尾。Team Site 全量测试 97/97 通过；`pnpm build` 通过；`pnpm run test:docs-command-drift` 通过；`pnpm run test:visualizer` 主测试 198/198、布局测试 49/49 通过；`pnpm test` 657 项中 656 项通过、1 项 Windows 专属测试在 macOS 跳过；`git diff --check` 通过。
+
+当前结果契约修正：上述 2026-10-18 记录描述的是当时的单字符串实现，不再适用于当前结构。现在 Run 完整结果只读取并返回 `finalOutputsByRoleId` 与 `finalOutputRoleOrder`，交付物和页面按角色保留所有终值；不存在单值结果 fallback。
 
 真实模型页面 UAT（2026-10-18）：在隔离数据目录 `/tmp/ogs-team-site-review-projects` 启动 Team Site，以桌面 Chromium 1440×1000 从 `/cases/software-team` 完成“用于项目 → 创建 Collaboration Project → 创建 Task → 选择隔离运行”。平台发现返回 213 个模型，Codex 默认模型可用。项目创建后执行的 Task 只有一个 Run；`task.teamVersionId` 是已挂载的正式 TeamVersion ID，Task 与 Run 均为 `completed`，Run `attemptNumber=1`、mode 为 `sandbox`。五个计划角色（`delivery-coordinator`、`backend-planner`、`experience-planner`、`quality-planner`、`delivery-lead`）及其运行状态全部完成，事件 8 条（7 条含角色证据），脱敏完整结果可按需读取，页面 `pageerror=0`。交付针对记账 SaaS 请求给出功能拆分、关键 UX、实现顺序、验收标准和主要风险。该结果证明一次真实页面隔离运行成功，不替代审核成功、执行中断后人工恢复/重试的人工 UAT；真实设备键盘和屏幕阅读器操作仍需人工检查。
 
@@ -221,7 +223,7 @@ Task 表达工作生命周期，Run 表达一次执行。Task 在 Run 绑定前�
 
 每个 Run 的 `.ogs/runs/<runId>/` 只隔离 Runtime 状态、快照和审计文件，不代表角色写入的项目目录或外部系统已隔离。Git 管理的目标代码可采用每 Run 独立 worktree/分支、固定基准 commit、恢复复用同一 worktree、失败重试从相同基准创建新 worktree，并在审查后显式合并。此为隔离设计选项，Team Site 当前尚未自动实现；非 Git 副作用仍由沙箱、权限和操作幂等策略约束。
 
-运行列表及详情只返回摘要。完整结果由独立按需查询读取 Run 目录 `state.json.graphState.finalOutput`，只投影该字符串并强制启用 Runtime 凭据脱敏；不得把整个 Runtime 状态快照返回客户端。完整结果缺失时返回不可用状态，页面仍明确标记已有内容为“结果摘要”。
+运行列表及详情只返回摘要。完整结果由独立按需查询读取 Run 目录 `state.json.graphState.finalOutputsByRoleId` 和 `finalOutputRoleOrder`，按角色分组投影并强制启用 Runtime 凭据脱敏；不得把整个 Runtime 状态快照返回客户端。完整结果缺失时返回不可用状态，页面仍明确标记已有内容为“结果摘要”。
 
 Run 持久化状态契约必须与 Runtime 对齐，并明确区分请求态、执行态和终态：
 

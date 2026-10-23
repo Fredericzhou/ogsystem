@@ -1,5 +1,5 @@
 import type { SystemDefinition } from "../runtime/types.js";
-import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
+import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "../runtime/types.js";
 import { createEmptySystemDesign, validateSystemDesign } from "./change-set.js";
 import type { DesignBinding, SystemDesignDocument } from "./types.js";
 
@@ -11,8 +11,8 @@ export function systemDefinitionToDesign(system: SystemDefinition): SystemDesign
   const design = createEmptySystemDesign({
     systemId: system.systemId,
     systemVersion: system.systemVersion,
-    entrySeatId: system.entryRoleId,
-    entryEventType: system.entryEventType ?? "START",
+    startDispatch: system.startDispatch,
+    endJoin: system.endJoin ?? { mode: "all_of" },
     lawGlobalRef: system.lawBinding.globalLawRef
   });
   const graph = system.graph;
@@ -47,7 +47,7 @@ export function systemDefinitionToDesign(system: SystemDefinition): SystemDesign
     design.seats[roleId] = role;
     design.bindings[roleId] = binding;
   }
-  design.transitions = system.flows.map((flow, index) => ({
+  design.transitions = [...system.startFlows, ...system.flows].map((flow, index) => ({
     transitionId: `${index + 1}:${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`,
     fromSeatId: flow.fromRoleId,
     toSeatId: flow.toRoleId,
@@ -68,8 +68,13 @@ export function exportDesignToMermaid(design: SystemDesignDocument): string {
     `%% system.id=${design.system.systemId}`,
     `%% system.version=${design.system.systemVersion}`,
     `%% law.global=${design.system.lawGlobalRef}`,
-    `%% entry.role=${design.system.entrySeatId}`
   ];
+  if (design.system.endJoin?.mode && design.system.endJoin.mode !== "all_of") lines.push(`%% end.join.mode=${design.system.endJoin.mode}`);
+  if (design.system.endJoin?.min !== undefined) lines.push(`%% end.join.min=${design.system.endJoin.min}`);
+  if (design.system.startDispatch?.mode === "random_n") {
+    lines.push("%% start.dispatch.mode=random_n");
+    lines.push(`%% start.dispatch.count=${design.system.startDispatch.count}`);
+  }
   if (design.system.handoffMode) lines.push(`%% handoff.mode=${design.system.handoffMode}`);
   if (design.system.handoffContracts) lines.push(`%% handoff.contracts=${design.system.handoffContracts}`);
   for (const seatId of roleIds) {
@@ -98,12 +103,15 @@ export function exportDesignToMermaid(design: SystemDesignDocument): string {
     for (const [field, selector] of Object.entries(seat.contextMap ?? {}).sort(([a], [b]) => a.localeCompare(b))) lines.push(`%% context.map.${seatId}.${field}=${selector}`);
     void nodeId;
   }
-  const entryNode = nodeIdBySeatId.get(design.system.entrySeatId) ?? design.system.entrySeatId;
-  lines.push(`input -->|${design.system.entryEventType ?? "START"}| ${entryNode}[Role:${escapeRoleId(design.system.entrySeatId)}]`);
   for (const transition of design.transitions) {
+    if (transition.fromSeatId === SYSTEM_START_ROLE_ID) {
+      const toNode = nodeIdBySeatId.get(transition.toSeatId) ?? transition.toSeatId;
+      lines.push(`start[开始] -->|START| ${toNode}[Role:${escapeRoleId(transition.toSeatId)}]`);
+      continue;
+    }
     const fromNode = nodeIdBySeatId.get(transition.fromSeatId) ?? transition.fromSeatId;
     const from = `${fromNode}[Role:${escapeRoleId(transition.fromSeatId)}]`;
-    if (transition.toSeatId === SYSTEM_END_ROLE_ID) lines.push(`${from} -->|${transition.eventType}| output`);
+    if (transition.toSeatId === SYSTEM_END_ROLE_ID) lines.push(`${from} -->|${transition.eventType}| end[结束]`);
     else {
       const toNode = nodeIdBySeatId.get(transition.toSeatId) ?? transition.toSeatId;
       lines.push(`${from} -->|${transition.eventType}| ${toNode}[Role:${escapeRoleId(transition.toSeatId)}]`);

@@ -52,6 +52,28 @@ test("Team Site serves direct links for the Studio role repository and shared re
   }
 });
 
+test("released Team global settings show stable identifiers as read-only values", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-global-readonly-"));
+  const team = await seedReleasedClassicTeam(projectsRoot);
+  const { server, url } = await startServer(projectsRoot);
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').waitFor();
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-assets-global-tab").click();
+    await page.locator("#studio-assets-global .studio-readonly-value").first().waitFor();
+    assert.equal(await page.locator("#studio-assets-global [data-system-field]").count(), 0);
+    assert.equal(await page.locator("#studio-assets-global textarea").count(), 0);
+    assert.match(await page.locator("#studio-assets-global").innerText(), /系统标识/);
+    assert.match(await page.locator("#studio-assets-global .studio-readonly-value").first().innerText(), /^[a-z][a-z0-9.-]+$/);
+  } finally {
+    await closeServer(server, projectsRoot, browser);
+  }
+});
+
 test("duplicate team and project creation keeps the user on the form with the entered values", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-product-duplicates-"));
   await seedReleasedClassicTeam(projectsRoot);
@@ -126,16 +148,36 @@ test("Natural assistant failures are visible and successful previews can be appl
         unresolvedItems: []
       }) });
     });
-    await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
     await page.route("**/api/v1/platform/models", (route) => route.fulfill({ json: { models: [{ backend: "codex", id: "gpt-6-luna", ref: "codex/gpt-6-luna", name: "GPT 6 Luna", runnable: true }] } }));
-    await page.reload({ waitUntil: "networkidle" });
+    await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
     await page.locator("#team-assistant").waitFor({ state: "attached" });
     assert.equal(await page.locator("#team-assistant-input").count(), 0, "the assistant should load only after opening its dialog");
     await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').waitFor({ timeout: 10000 }).catch(async () => {
       throw new Error(`Studio graph toolbar did not mount: ${await page.locator("#project-design-status").innerText().catch(() => "no status")}; stage=${(await page.locator("#project-graph-stage").innerText().catch(() => "no stage")).slice(0, 500)}`);
     });
+    let globalAssetsReads = 0;
+    await page.route(`**/api/v1/team-versions/${team.projectId}/design/assets`, async (route) => {
+      globalAssetsReads += 1;
+      if (globalAssetsReads === 1) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporary global configuration read failure" }) });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-assets-global-tab").click();
+    await page.locator("#studio-assets-global [data-system-settings-retry]").waitFor();
+    assert.match(await page.locator("#studio-assets-global [role=alert]").innerText(), /Temporary global configuration read failure/);
+    await page.locator("#studio-assets-global [data-system-settings-retry]").click();
+    await page.locator('#studio-assets-global .studio-readonly-value').first().waitFor();
+    assert.equal(await page.locator('#studio-assets-global [data-system-field="systemId"]').count(), 0);
+    assert.equal(await page.locator('#studio-assets-global .studio-readonly-value').first().innerText(), design.authoring.system.systemId);
+    assert.equal(await page.locator('#studio-assets-global [data-system-field="systemVersion"]').count(), 1, "draft version should remain editable");
+    assert.equal(globalAssetsReads, 2, "retry should re-read global configuration assets exactly once");
+    await page.unroute(`**/api/v1/team-versions/${team.projectId}/design/assets`);
+    await page.locator("#studio-asset-drawer-close").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
-    await page.locator("#team-studio-dialog[open]").waitFor();
+    await page.locator("#team-build-dialog[open]").waitFor();
     await page.locator("#team-assistant-input").waitFor();
     await page.locator("#team-assistant-input").fill("增加一个最终审核角色，确保结果有依据。");
     await page.locator("#team-assistant-send").click();
@@ -152,19 +194,17 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator("#team-assistant-apply").click();
     assert.equal((await saveResponse).status(), 200);
     await page.locator("#team-assistant").waitFor();
-    await page.locator("[data-team-studio-close]").click();
+    await page.locator("[data-team-build-close]").click();
     await page.locator("#studio-simulation-run-open").click();
-    await page.locator("#team-studio-dialog[open]").waitFor();
-    await page.locator('#team-studio-tab-run[aria-selected="true"]').waitFor();
-    await page.locator("[data-team-studio-close]").click();
+    await page.locator("#team-debug-dialog[open]").waitFor();
+    await page.locator("[data-team-debug-close]").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').click();
     await page.getByText("结构校验通过", { exact: true }).waitFor();
     const checkedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     assert.equal(checkedDesign.projectStatus, "draft", "validation must not publish or confirm the draft");
     const runRoot = join(projectsRoot, team.projectId, ".ogs", "runs");
     await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
-    await page.locator("#team-studio-dialog[open]").waitFor();
-    await page.locator('#team-studio-tab-run[aria-selected="true"]').waitFor();
+    await page.locator("#team-debug-dialog[open]").waitFor();
     const simulationPrompt = "Preview the software delivery handoffs.";
     await page.locator("#team-simulation-input").fill(simulationPrompt);
     await page.route("**/api/v1/platform/discovery", async (route) => {
@@ -181,7 +221,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     await firstReadinessDialog.waitFor();
     await firstReadinessDialog.locator('button[value="confirm"]').click();
     const simulationResponse = await simulationResponsePromise;
-    assert.equal(simulationResponse.status(), 201);
+    assert.equal(simulationResponse.status(), 202);
     const simulationResponseBody = await simulationResponse.json();
     assert.equal(simulationResponseBody.simulation.teamVersionId, team.projectId);
     assert.equal(simulationResponseBody.simulation.runKind, "studio_simulation");
@@ -189,8 +229,9 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.ok(simulationResponseBody.simulation.simulationId);
     assert.equal(await page.locator("[data-studio-graph-quick-debug]").isHidden(), true);
     await page.locator("#team-simulation-result .team-simulation-result").waitFor();
+    await page.getByRole("link", { name: "查看运行详情" }).waitFor({ timeout: 30000 });
     assert.equal(await page.locator('#team-simulation-result a[href*="/run/"]').count(), 1);
-    assert.ok((await page.locator("#team-simulation-result pre").innerText()).trim().length > 0);
+    assert.ok((await page.locator("#team-simulation-result pre").last().innerText()).trim().length > 0);
     const simulationRuns = await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
     assert.deepEqual(simulationRuns, [], "Studio quick simulation must not create Run history");
     let simulationScenario = "no-output";
@@ -207,7 +248,8 @@ test("Natural assistant failures are visible and successful previews can be appl
         },
         state: {
           status: "completed",
-          finalOutput: partial ? "Partial team result" : "",
+          finalOutputsByRoleId: partial ? { analyst: [{ content: "Partial team result" }] } : {},
+          finalOutputRoleOrder: partial ? ["analyst"] : [],
           auditTrail: [
             { roleId: "demo-analyst", status: "noop" },
             ...(partial ? [{ roleId: "demo-reviewer", status: "ok" }] : [])
@@ -222,16 +264,16 @@ test("Natural assistant failures are visible and successful previews can be appl
     await readinessDialog.locator('button[value="confirm"]').click();
     await page.locator("#team-simulation-result .status-chip").getByText("未产出结果", { exact: true }).waitFor();
     assert.match(await page.locator("#team-simulation-result").innerText(), /demo-analyst[\s\S]*未执行：未配置模型或执行配置/);
-    assert.match(await page.locator("#team-simulation-result pre").innerText(), /请为上方角色配置模型或执行配置后重试/);
+    assert.match(await page.locator("#team-simulation-result pre").last().innerText(), /请为上方角色配置模型或执行配置后重试/);
     simulationScenario = "partial";
     await page.locator("#team-simulation-run").click();
     await readinessDialog.waitFor();
     await readinessDialog.locator('button[value="confirm"]').click();
     await page.locator("#team-simulation-result .status-chip").getByText("部分完成", { exact: true }).waitFor();
     assert.equal(await page.locator('#team-simulation-result a[href*="/run/"]').count(), 1);
-    assert.match(await page.locator("#team-simulation-result pre").innerText(), /Partial team result/);
+    assert.match(await page.locator("#team-simulation-result pre").last().innerText(), /Partial team result/);
     assert.deepEqual(await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error)), [], "noop previews must remain outside Run history");
-    await page.locator("[data-team-studio-close]").click();
+    await page.locator("[data-team-debug-close]").click();
     await page.locator("#studio-team-info-open").click();
     const overview = page.locator('#project-edit-form textarea[name="overview"]');
     await overview.fill(await overview.inputValue());
@@ -264,8 +306,12 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     let submittedAssetAuthoring;
     const saveSequence = [];
     const designResponses = [];
+    const studioRequests = [];
+    const browserErrors = [];
+    page.on("pageerror", (error) => browserErrors.push(error.stack || error.message));
     page.on("request", (request) => {
       const pathname = new URL(request.url()).pathname;
+      if (pathname.includes(`/api/v1/team-versions/${team?.projectId}`)) studioRequests.push({ method: request.method(), pathname });
       if (pathname.endsWith(`/api/v1/team-versions/${team.projectId}/design`) && request.method() === "PUT") {
         try { submittedAuthoring = JSON.parse(request.postData() || "{}").authoring; } catch { /* assertion below reports missing payload */ }
       }
@@ -286,7 +332,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     const designResponse = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`);
     const design = await designResponse.json();
     const roleId = "backend-planner";
-    const flow = Object.values(design.authoring.flows)[0];
+    const flow = Object.values(design.authoring.flows).find((item) => item.fromRoleId !== "__system_start__" && item.toRoleId !== "__system_end__");
     assert.ok(roleId, "fixture team should have an editable role");
     assert.ok(flow, "fixture team should have an editable flow");
     design.authoring.system.handoffMode = "transition";
@@ -295,25 +341,56 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     });
     assert.equal(configured.status(), 200, await configured.text());
 
-    await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
+    let releaseGraphDesign;
+    let graphDesignStarted;
+    const graphDesignRequest = new Promise((resolve) => { graphDesignStarted = resolve; });
+    const graphDesignGate = new Promise((resolve) => { releaseGraphDesign = resolve; });
+    await page.route(`**/api/v1/team-versions/${team.projectId}/design*`, async (route) => {
+      graphDesignStarted();
+      await graphDesignGate;
+      await route.continue();
+    });
+    const navigation = page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
+    await graphDesignRequest;
+    await page.locator(".studio-graph-loading").waitFor();
+    assert.equal(await page.locator("#project-graph-stage").getAttribute("aria-busy"), "true");
+    releaseGraphDesign();
+    await navigation;
+    await page.unroute(`**/api/v1/team-versions/${team.projectId}/design*`);
     const inspector = page.locator("#studio-property-inspector");
-    assert.equal(await page.locator("#studio-workbench-host").count(), 1);
+    assert.equal(await page.locator("#studio-workbench-host").count(), 1, `Studio design shell missing at ${page.url()}: ${(await page.locator("#studio-view").innerText().catch(() => "no studio view")).slice(0, 600)}`);
     assert.equal(await page.locator("#studio-view .project-grid").count(), 0, "Studio design should not inherit the Project editor grid");
+    const startNode = page.locator('#project-graph-stage .x6-node[data-cell-id="__system_start__"]');
+    await startNode.click({ force: true });
+    await page.waitForFunction(() => document.querySelector("#studio-property-inspector")?.innerText.includes("开始") || document.querySelector("#studio-property-inspector")?.innerText.includes("Start"), { timeout: 3000 }).catch(() => undefined);
+    const startSelectionState = await page.evaluate(() => ({
+      inspector: document.querySelector("#studio-property-inspector")?.innerText,
+      drawerHidden: document.querySelector("#studio-asset-drawer")?.getAttribute("aria-hidden"),
+      startSelected: document.querySelector('#project-graph-stage .x6-node[data-cell-id="__system_start__"]')?.className.baseVal,
+      startNodeCount: document.querySelectorAll('#project-graph-stage .x6-node[data-cell-id="__system_start__"]').length
+    }));
+    assert.match(startSelectionState.inspector || "", /开始只能连接业务角色，不能直接连接结束/, JSON.stringify(startSelectionState));
+    await page.locator("#studio-asset-drawer-close").click();
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-assets-global-tab").click();
+    await page.getByRole("heading", { name: "全局配置" }).waitFor({ timeout: 10000 }).catch(async () => {
+      const panelState = await page.locator("#studio-assets-global").evaluate((panel) => ({ html: panel.outerHTML.slice(0, 800), hidden: panel.hidden, drawerHidden: panel.closest("#studio-asset-drawer")?.getAttribute("aria-hidden") })).catch(() => null);
+      throw new Error(`Global settings panel did not render: ${JSON.stringify({ panelState, studioRequests, browserErrors })}`);
+    });
+    assert.match(page.url(), /\/studio\/teams\/[^/]+\/design$/);
+    await page.locator('[data-system-field="systemVersion"]').fill("2.4.0");
+    await page.locator('[data-system-field="lawGlobalRef"]').fill("law.site.software-team");
+    await page.locator('[data-system-field="handoffMode"]').selectOption("transition");
+    await page.locator("[data-system-save]").click();
+    await page.waitForFunction(() => {
+      const status = document.querySelector("[data-system-status]")?.textContent || "";
+      return status && !status.includes("正在保存");
+    }, { timeout: 10000 });
+    assert.equal(await page.locator("[data-system-status]").innerText(), "全局配置已保存。");
+    await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
     await inspector.waitFor();
-    await page.locator('#project-graph-stage [data-studio-graph-canvas]').click({ position: { x: 8, y: 8 } });
-    await inspector.locator('[data-studio-system-field="systemId"]').fill("professional-inspector-team");
-    await inspector.locator('[data-studio-system-field="systemVersion"]').fill("2.4.0");
-    await inspector.locator('[data-studio-system-field="lawGlobalRef"]').fill("law.site.software-team");
-    await inspector.locator('[data-studio-system-field="entryRoleId"]').selectOption("delivery-coordinator");
-    await inspector.locator('[data-studio-system-field="entryEventType"]').fill("START");
-    await inspector.locator('[data-studio-system-field="handoffMode"]').selectOption("transition");
-    await page.locator('#project-graph-stage [data-studio-graph-canvas]').click({ position: { x: 8, y: 8 } });
-    await inspector.locator('[data-studio-role-input-contract-role]').selectOption(roleId);
-    await inspector.locator('[data-studio-role-input-contract-schema]').fill("schemas/backend-planner-input.json");
-    await inspector.locator('[data-studio-role-input-contract-add]').click();
-    await inspector.locator('[data-studio-contract-schema="schemas/backend-planner-input.json"]').fill('{"type":"object","properties":{"brief":{"type":"string"}}}');
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
     await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
@@ -324,6 +401,10 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.match(await inspector.locator('[data-studio-role-field="contextMap"]').inputValue(), /global\.task/);
     await inspector.locator('[data-studio-context-add]').click();
     await inspector.locator('[data-studio-context-target]').last().fill("audience");
+    const contextSource = inspector.locator('[data-studio-context-source]').last();
+    assert.equal(await contextSource.evaluate((element) => getComputedStyle(element).minHeight), "34px");
+    assert.equal(await contextSource.evaluate((element) => getComputedStyle(element).borderRadius), "4px");
+    assert.match(await contextSource.locator('option[value="global.task"]').first().innerText(), /本次任务/);
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Review source material and return cited findings.");
     const joinRoleId = "delivery-lead";
     await page.locator("#studio-asset-drawer-close").click();
@@ -344,13 +425,20 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     reviewRoleDefinition.authority.controlActions = [...new Set([...(reviewRoleDefinition.authority.controlActions || []), "approve", "rework", "terminate"])];
     await inspector.locator('[data-studio-role-asset="role.json"]').fill(JSON.stringify(reviewRoleDefinition));
     const orderRoleId = Object.keys(design.authoring.roles).find((id) => new Set(Object.values(design.authoring.flows).filter((item) => item.fromRoleId === id && item.toRoleId !== "__system_end__").map((item) => item.toRoleId)).size > 1);
+    let expectedRouteOrder = [];
     if (orderRoleId) {
       await page.locator("#studio-asset-drawer-close").click();
       await page.locator(`#project-graph-stage .x6-node[data-cell-id="${orderRoleId}"]`).click();
-      const routeOrder = inspector.locator("[data-studio-route-order]");
-      assert.ok(await routeOrder.count() >= 2);
-      await routeOrder.nth(0).fill("2");
-      await routeOrder.nth(1).fill("1");
+      const routeOrderRows = inspector.locator("[data-studio-route-order-item]");
+      assert.ok(await routeOrderRows.count() >= 2);
+      assert.equal(await routeOrderRows.first().getAttribute("draggable"), "true");
+      const originalFirst = await routeOrderRows.first().getAttribute("data-studio-route-order");
+      await routeOrderRows.first().locator('[data-studio-route-order-move="down"]').click();
+      assert.notEqual(await routeOrderRows.first().getAttribute("data-studio-route-order"), originalFirst);
+      assert.deepEqual(await inspector.locator("[data-studio-route-order-position]").allTextContents(), Array.from({ length: await routeOrderRows.count() }, (_, index) => String(index + 1)));
+      await routeOrderRows.last().dragTo(routeOrderRows.first());
+      expectedRouteOrder = await routeOrderRows.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-studio-route-order")));
+      assert.equal(expectedRouteOrder[0], await routeOrderRows.first().getAttribute("data-studio-route-order"));
     }
     const execRoleId = Object.keys(design.authoring.roles).find((id) => id !== roleId);
     assert.ok(execRoleId, "fixture team should include a second role for execution profile editing");
@@ -400,11 +488,11 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.deepEqual(submittedAssets?.executionConfig?.tools?.tools?.find((item) => item.toolRef === "review-cli-tool"), { toolRef: "review-cli-tool", runner: "local_shell", command: "node", argsTemplate: ["./tools/review.mjs", "--json"], stdinMode: "none" });
     const saveResponse = designResponses.find((item) => item.url.endsWith(`/api/v1/team-versions/${team.projectId}/design`) && item.method === "PUT" && item.status === 200);
     assert.ok(saveResponse, JSON.stringify(designResponses, null, 2));
-    const assetSaveResponse = designResponses.find((item) => item.url.endsWith(`/api/v1/team-versions/${team.projectId}/design/assets`) && item.method === "PUT");
+    const assetSaveResponse = designResponses.filter((item) => item.url.endsWith(`/api/v1/team-versions/${team.projectId}/design/assets`) && item.method === "PUT").at(-1);
     assert.equal(assetSaveResponse?.status, 200, JSON.stringify(assetSaveResponse, null, 2));
     assert.deepEqual(assetSaveResponse?.body?.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ assetSaveResponse, submittedRole: submittedAssetAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(submittedAuthoring?.roles?.[roleId]?.contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify(submittedAuthoring));
-    if (orderRoleId) assert.equal(submittedAuthoring?.roles?.[orderRoleId]?.routeOrder?.[0], [...new Set(Object.values(design.authoring.flows).filter((item) => item.fromRoleId === orderRoleId && item.toRoleId !== "__system_end__").map((item) => item.toRoleId))].sort()[1]);
+    if (orderRoleId) assert.deepEqual(submittedAuthoring?.roles?.[orderRoleId]?.routeOrder, expectedRouteOrder);
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
@@ -426,11 +514,10 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
       reworkTargetRoleId: "backend-planner",
       reworkMax: 2
     });
-    assert.equal(persistedDesign.authoring.system.systemId, "professional-inspector-team");
+    assert.equal(persistedDesign.authoring.system.systemId, "site.software-team");
     assert.equal(persistedDesign.authoring.system.systemVersion, "2.4.0");
     assert.equal(persistedDesign.authoring.system.lawGlobalRef, "law.site.software-team");
-    assert.equal(persistedDesign.authoring.system.entryRoleId, "delivery-coordinator");
-    assert.equal(persistedDesign.authoring.system.entryEventType, "START");
+    assert.deepEqual(Object.values(persistedDesign.authoring.flows).filter((flow) => flow.fromRoleId === "__system_start__").map((flow) => flow.toRoleId), ["delivery-coordinator"]);
     assert.equal(persistedDesign.authoring.system.handoffMode, "transition");
     assert.equal(persistedDesign.authoring.flows[flow.flowId].label, "Review completed");
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
@@ -447,9 +534,6 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     const manifest = JSON.parse(persistedAssets.contracts);
     assert.ok(manifest.contracts.some((item) => item.id === "review-handoff" && item.schema === schemaPath && item.onViolation === "WARN"));
     assert.deepEqual(JSON.parse(persistedAssets.contractSchemas[schemaPath]), { type: "object", required: ["decision"] });
-    const contractManifest = JSON.parse(persistedAssets.contracts);
-    assert.ok(contractManifest.contracts.some((item) => item.kind === "role_input" && item.match?.roleId === roleId && item.schema === "schemas/backend-planner-input.json"));
-    assert.deepEqual(JSON.parse(persistedAssets.contractSchemas["schemas/backend-planner-input.json"]), { type: "object", properties: { brief: { type: "string" } } });
     assert.equal(persistedAssets.executionConfig.profiles.find((item) => item.profileId === "review-cli-profile").timeoutMs, 45000);
     await page.reload({ waitUntil: "networkidle" });
     await page.locator(`#project-graph-stage .x6-node[data-cell-id="${roleId}"]`).click();
@@ -487,6 +571,21 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.ok(movedPanelBounds.x > originalPanelBounds.x, "the asset panel can be moved by its header");
     await page.locator("#studio-assets-flows-tab").click();
     assert.ok(await page.locator("#studio-assets-flows [data-studio-asset-flow]").count() > 0, "the asset panel should list flows");
+    const expectedFlowEndpoints = Object.values(design.authoring.flows).map((item) => {
+      const from = item.fromRoleId === "__system_start__" ? "开始" : design.authoring.roles[item.fromRoleId]?.title;
+      const to = item.toRoleId === "__system_end__" ? "结束" : design.authoring.roles[item.toRoleId]?.title;
+      return `${from} → ${to}`;
+    });
+    assert.deepEqual(await page.locator("#studio-assets-flows [data-studio-asset-flow] small").allTextContents(), expectedFlowEndpoints);
+    const globalSettingsTab = page.locator("#studio-assets-global-tab");
+    assert.equal(await globalSettingsTab.getAttribute("role"), "tab");
+    await globalSettingsTab.click();
+    await page.getByRole("heading", { name: "全局配置" }).waitFor();
+    assert.equal(await page.locator("[data-system-field='systemId']").count(), 0);
+    assert.equal(await page.locator("#studio-assets-global .studio-readonly-value").first().innerText(), design.authoring.system.systemId);
+    assert.equal(new URL(page.url()).pathname, `/studio/teams/${team.projectId}/design`);
+    await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-assets-roles-tab").click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
     assert.equal(await inspector.locator(".studio-inspector-heading code").innerText(), roleId, "selecting a role from the list should open its editor");
@@ -551,6 +650,8 @@ test("Studio saves all four package files for a newly created role in one author
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const browserErrors = [];
+    page.on("pageerror", (error) => browserErrors.push(error.stack || error.message));
     const team = await page.request.post(`${url}/api/v1/cases/software-team/template`, {
       data: { name: "New Role Asset Team", overview: "Save role and package together." }
     }).then((response) => response.json());
@@ -573,6 +674,8 @@ test("Studio saves all four package files for a newly created role in one author
     await dialog.waitFor({ state: "visible" });
     await dialog.locator("[data-studio-command-close]").click();
     await pendingRoleNode.waitFor({ state: "detached" });
+    const closeAssets = page.locator("#studio-asset-drawer-close");
+    if (await closeAssets.isVisible()) await closeAssets.click();
     await page.locator('[data-studio-graph-action="add-role"]').click();
     await pendingRoleNode.waitFor({ state: "visible" });
     await pendingRoleNode.click();
@@ -589,9 +692,9 @@ test("Studio saves all four package files for a newly created role in one author
     const sourceCell = page.locator(`#project-graph-stage .x6-node[data-cell-id="${sourceRoleId}"]`);
     const sourcePort = sourceCell.locator('[data-studio-port="out"]').first();
     const newRoleInput = newRoleNode.locator('[data-studio-port="in"]').first();
+    const initialEdgeCount = await page.locator("#project-graph-stage .x6-edge").count();
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${sourceRoleId}"]`).click();
-    await page.locator("#studio-asset-drawer-close").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="add-edge"]').click();
     assert.equal(await page.locator('#project-graph-stage [data-studio-graph-action="add-edge"]').getAttribute("aria-pressed"), "true", "relationship creation should arm from the selected role");
     const sourceBounds = await sourcePort.boundingBox();
@@ -602,23 +705,12 @@ test("Studio saves all four package files for a newly created role in one author
     await page.mouse.move(targetBounds.x + targetBounds.width / 2, targetBounds.y + targetBounds.height / 2, { steps: 30 });
     await page.waitForTimeout(120);
     await page.mouse.up();
-    const edgeDialog = page.locator('[data-studio-command-form="add-edge"]');
-    await edgeDialog.waitFor({ state: "visible", timeout: 5000 }).catch(async () => {
-      throw new Error(JSON.stringify({
-        addEdgePressed: await page.locator('#project-graph-stage [data-studio-graph-action="add-edge"]').getAttribute("aria-pressed"),
-        sourceBounds,
-        targetBounds,
-        sourcePort: await sourcePort.evaluate((element) => ({ html: element.outerHTML, rect: element.getBoundingClientRect().toJSON() })),
-        targetPort: await newRoleInput.evaluate((element) => ({ html: element.outerHTML, rect: element.getBoundingClientRect().toJSON() })),
-        status: await page.locator("#project-design-status").innerText(),
-        selected: await page.locator("#project-graph-stage .x6-cell-selected").evaluateAll((cells) => cells.map((cell) => cell.getAttribute("data-cell-id")))
-      }));
-    });
-    assert.equal(await edgeDialog.locator('select[name="sourceRoleId"]').inputValue(), sourceRoleId);
-    assert.equal(await edgeDialog.locator('select[name="targetRoleId"]').inputValue(), "new-auditor");
-    await edgeDialog.locator('input[name="label"]').fill("Audit complete");
-    await edgeDialog.locator('input[name="eventType"]').fill(relationshipEventType);
-    await edgeDialog.locator('button[type="submit"]').click();
+    assert.equal(await page.locator('[data-studio-command-form="add-edge"]').count(), 0, "connecting ports should create a flow without opening a form");
+    await page.waitForFunction((count) => document.querySelectorAll("#project-graph-stage .x6-edge").length === count + 1, initialEdgeCount);
+    const flowLabel = inspector.locator('[data-studio-flow-field="label"]');
+    await flowLabel.waitFor({ state: "visible" });
+    assert.equal(await inspector.locator('[data-studio-flow-field="eventType"]').inputValue(), relationshipEventType);
+    await flowLabel.fill("Audit complete");
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator('#studio-assets-roles [data-studio-asset-role="new-auditor"]').click();
     const loopMax = inspector.locator('[data-studio-role-field="loopMax"]');
@@ -693,6 +785,17 @@ test("Studio saves all four package files for a newly created role in one author
         audit: { requiredFields: [] }
       }),
       "output.schema.json": '{"type":"object","required":["findings"]}'
+    });
+    const addedFlowId = Object.values(design.authoring.flows).find((flow) => flow.fromRoleId === sourceRoleId && flow.toRoleId === "new-auditor")?.flowId;
+    assert.ok(addedFlowId, "the created relationship should have a stable flow identifier");
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    const assetsBack = page.locator("#studio-asset-drawer [data-studio-assets-back]");
+    if (await assetsBack.isVisible()) await assetsBack.click();
+    await page.locator("#studio-assets-flows-tab").click();
+    await page.locator('#studio-assets-flows [data-studio-asset-flow]').filter({ hasText: "Audit complete" }).click();
+    await inspector.locator("[data-studio-flow-delete]").click();
+    await page.waitForFunction((flowId) => !Array.from(document.querySelectorAll("#project-graph-stage .x6-edge")).some((edge) => edge.getAttribute("data-cell-id") === flowId), addedFlowId, { timeout: 5000 }).catch(async () => {
+      throw new Error(JSON.stringify({ browserErrors, edgeIds: await page.locator("#project-graph-stage .x6-edge").evaluateAll((edges) => edges.map((edge) => edge.getAttribute("data-cell-id"))), inspector: await inspector.innerText(), status: await page.locator("#project-design-status").innerText() }));
     });
   } finally {
     await closeServer(server, projectsRoot, browser);

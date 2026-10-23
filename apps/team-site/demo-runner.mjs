@@ -25,7 +25,6 @@ export function buildCaseSystem(caseSpec) {
     `%% system.id=site.${caseSpec.id}`,
     "%% system.version=1.0.0",
     `%% law.global=law.site.${caseSpec.id}`,
-    `%% entry.role=${caseSpec.entryRole}`,
     ...caseSpec.roles.filter((role) => role.mode).map((role) => `%% role.mode.${role.id}=${role.mode}`),
     ...caseSpec.joins.flatMap((joinSpec) => [
       `%% join.mode.${joinSpec.roleId}=${joinSpec.mode}`,
@@ -37,8 +36,8 @@ export function buildCaseSystem(caseSpec) {
     ""
   ];
   for (const [from, to, event] of caseSpec.flows) {
-    const source = from === "input" ? "input" : `${from}[Role:${from}]`;
-    const target = to === "output" ? "output" : `${to}[Role:${to}]`;
+    const source = from === "__system_start__" ? "start[开始]" : `${from}[Role:${from}]`;
+    const target = to === "__system_end__" ? "end[结束]" : `${to}[Role:${to}]`;
     lines.push(`${source} -->|${event}| ${target}`);
   }
   return `${lines.join("\n")}\n`;
@@ -64,14 +63,17 @@ export function buildCaseGraph(caseId, locale = "zh-CN") {
     role.id,
     caseSpec.detail.roles[role.id][locale] || caseSpec.detail.roles[role.id]["zh-CN"]
   ]));
-  const edgeLabels = Object.fromEntries(caseSpec.flows.map(([, , eventType]) => [eventType, localizedEventLabel(eventType, locale)]));
+  const edgeLabels = Object.fromEntries([
+    ["START", localizedEventLabel("START", locale)],
+    ...caseSpec.flows.map(([, , eventType]) => [eventType, localizedEventLabel(eventType, locale)])
+  ]);
   const graph = buildGraphViewModel({
     authoring,
     mode: "run",
     presentation: {
       roleDescriptions,
       edgeLabels,
-      boundaryLabels: locale === "zh-CN" ? { input: "任务", output: "成果" } : { input: "Task", output: "Outcome" }
+      boundaryLabels: locale === "zh-CN" ? { start: "开始", end: "结束" } : { start: "Start", end: "End" }
     }
   });
   return {

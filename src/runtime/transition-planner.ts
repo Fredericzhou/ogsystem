@@ -252,7 +252,7 @@ function buildFailureUpdate(args: {
     loopIterations: {
       [args.roleId]: args.branch.loopIteration
     },
-    finalRoleId: args.roleId,
+    finalRoleIds: [args.roleId],
     lastExecutedRoleId: args.roleId
   };
 }
@@ -457,6 +457,102 @@ function findOutgoingFlow(args: {
   );
 }
 
+type FinalOutputsByRoleId = GraphState["finalOutputsByRoleId"];
+
+function collectEndOutputs(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  branchUpdates: Record<string, BranchRecord>;
+  currentBranch?: BranchRecord;
+  currentResult?: StoredRoleResult;
+  selectedEvent?: string;
+}): FinalOutputsByRoleId {
+  const branches = { ...args.state.branchRecords, ...args.branchUpdates };
+  const results = { ...args.state.roleResults };
+  if (args.currentBranch && args.currentResult) results[args.currentBranch.branchId] = args.currentResult;
+  const ordered = Object.values(branches)
+    .filter((branch) => branch.status === "completed" && args.plan.terminalRoleOrder.includes(branch.roleId))
+    .filter((branch) => {
+      const node = args.plan.nodesByRoleId.get(branch.roleId);
+      if (!node) return false;
+      const endFlows = node.outgoing.filter((flow) => flow.toRoleId === SYSTEM_END_ROLE_ID);
+      if (!endFlows.length) return false;
+      if (branch.branchId === args.currentBranch?.branchId && node.routingMode === "parallel_split") return true;
+      const selectedEvent = branch.branchId === args.currentBranch?.branchId
+        ? args.selectedEvent
+        : args.state.selectedEventByBranchId[branch.branchId];
+      return node.routingMode === "parallel_split"
+        ? true
+        : endFlows.some((flow) => flow.eventType === selectedEvent);
+    })
+    .map((branch) => ({ branch, result: results[branch.branchId] }))
+    .sort((left, right) => {
+      const leftRoleOrder = args.plan.terminalRoleOrder.indexOf(left.branch.roleId);
+      const rightRoleOrder = args.plan.terminalRoleOrder.indexOf(right.branch.roleId);
+      return leftRoleOrder - rightRoleOrder || left.branch.branchSequence - right.branch.branchSequence;
+    });
+  const outputs: FinalOutputsByRoleId = {};
+  for (const { branch, result } of ordered) {
+    const values = outputs[branch.roleId] ??= [];
+    values.push({
+      ...(result?.content !== undefined ? { content: result.content } : {}),
+      ...(result?.data !== undefined ? { data: structuredClone(result.data) } : {})
+    });
+  }
+  return outputs;
+}
+
+function reachableTerminalRoles(plan: ExecutionPlan, startRoleId: string): Set<string> {
+  const visited = new Set<string>();
+  const pending = [startRoleId];
+  while (pending.length) {
+    const roleId = pending.pop()!;
+    if (visited.has(roleId)) continue;
+    visited.add(roleId);
+    const node = plan.nodesByRoleId.get(roleId);
+    if (!node) continue;
+    if (plan.terminalRoleOrder.includes(roleId)) continue;
+    for (const flow of node.outgoing) {
+      if (flow.toRoleId !== SYSTEM_END_ROLE_ID) pending.push(flow.toRoleId);
+    }
+  }
+  return new Set([...visited].filter((roleId) => plan.terminalRoleOrder.includes(roleId)));
+}
+
+function resolveEndAggregation(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  branchUpdates: Record<string, BranchRecord>;
+  outputs: FinalOutputsByRoleId;
+}): { status: "waiting" | "done" | "failed"; branches: Record<string, BranchRecord>; error?: string } {
+  const mode = args.plan.endJoin.mode;
+  const required = mode === "all_of" ? args.plan.terminalRoleOrder.length : args.plan.endJoin.min ?? args.plan.terminalRoleOrder.length;
+  const completedRoleIds = new Set(Object.keys(args.outputs));
+  const branches = { ...args.state.branchRecords, ...args.branchUpdates };
+  const active = Object.values(branches).filter((branch) => branch.status === "active");
+  const possible = new Set(completedRoleIds);
+  for (const branch of active) {
+    for (const roleId of reachableTerminalRoles(args.plan, branch.roleId)) possible.add(roleId);
+  }
+  const reached = completedRoleIds.size >= required;
+  if (mode === "quorum_of" && reached) {
+    const cancelled: Record<string, BranchRecord> = { ...args.branchUpdates };
+    for (const branch of active) cancelled[branch.branchId] = { ...branch, status: "cancelled" };
+    return { status: "done", branches: cancelled };
+  }
+  if (active.length === 0 && reached) return { status: "done", branches: args.branchUpdates };
+  if (possible.size < required) {
+    const cancelled: Record<string, BranchRecord> = { ...args.branchUpdates };
+    for (const branch of active) cancelled[branch.branchId] = { ...branch, status: "cancelled" };
+    return {
+      status: "failed",
+      branches: cancelled,
+      error: `End quorum is unreachable: ${completedRoleIds.size} terminal roles completed and at most ${possible.size} can complete; ${required} required.`
+    };
+  }
+  return { status: "waiting", branches: args.branchUpdates };
+}
+
 function buildContractValidationFailureTransition(args: {
   roleId: string;
   branch: BranchRecord;
@@ -492,7 +588,7 @@ function buildContractValidationFailureTransition(args: {
         [args.roleId]: args.branch.loopIteration
       },
       selectedEventByBranchId: args.selectedEvent ? { [args.branch.branchId]: args.selectedEvent } : {},
-      finalRoleId: args.roleId,
+      finalRoleIds: [args.roleId],
       lastExecutedRoleId: args.roleId
     },
     events: []
@@ -685,7 +781,7 @@ function buildApprovedHumanReviewTransition(args: {
             roleId: args.review.roleId,
             branchId: args.review.branchId
           },
-          finalRoleId: args.review.roleId,
+          finalRoleIds: [args.review.roleId],
           lastExecutedRoleId: args.review.roleId
         },
         events: []
@@ -727,8 +823,9 @@ function buildApprovedHumanReviewTransition(args: {
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
-  let finalOutput = "";
-  let finalRoleId = "";
+  let finalOutputsByRoleId: FinalOutputsByRoleId = {};
+  let finalOutputRoleOrder: string[] = [];
+  let finalRoleIds: string[] = [];
   let finalErrorEnvelope: RuntimeErrorEnvelope | undefined;
   let reachedSystemOutput = false;
   const currentBranch = args.state.branchRecords[args.review.branchId];
@@ -746,7 +843,7 @@ function buildApprovedHumanReviewTransition(args: {
           roleId: args.review.roleId,
           branchId: args.review.branchId
         },
-        finalRoleId: args.review.roleId,
+        finalRoleIds: [args.review.roleId],
         lastExecutedRoleId: args.review.roleId
       },
       events: []
@@ -785,7 +882,7 @@ function buildApprovedHumanReviewTransition(args: {
         roleId: args.review.roleId,
         branchId: args.review.branchId
       };
-      finalRoleId = args.review.roleId;
+      finalRoleIds = [args.review.roleId];
       break;
     }
     const nextLoopIteration = getTargetLoopIteration({
@@ -954,14 +1051,26 @@ function buildApprovedHumanReviewTransition(args: {
     });
   }
 
-  if (reachedSystemOutput && finalStatus !== "failed") {
-    const hasOtherActiveBranches = Object.values(args.state.branchRecords).some(
-      (branch) => branch.status === "active" && branch.branchId !== args.review.branchId
-    );
-    const hasActivatedBranches = Object.values(branchUpdates).some(
-      (branch) => branch.status === "active"
-    );
-    if (!hasOtherActiveBranches && !hasActivatedBranches) {
+  if (reachedSystemOutput || (args.node.isTerminal && candidateTargets.length === 0)) {
+    finalOutputsByRoleId = collectEndOutputs({
+      state: args.state,
+      plan: args.plan,
+      branchUpdates,
+      currentBranch,
+      currentResult: args.review.draftResult,
+      selectedEvent: args.review.selectedEvent
+    });
+    finalOutputRoleOrder = args.plan.terminalRoleOrder.filter((roleId) => finalOutputsByRoleId[roleId]);
+    finalRoleIds = finalOutputRoleOrder;
+    const aggregation = resolveEndAggregation({ state: args.state, plan: args.plan, branchUpdates, outputs: finalOutputsByRoleId });
+    Object.assign(branchUpdates, aggregation.branches);
+    if (aggregation.status === "failed") {
+      finalStatus = "failed";
+      finalError = aggregation.error ?? "End aggregation could not reach its required terminal sources.";
+      finalErrorEnvelope = { errorCode: "GRAPH_END_QUORUM_UNREACHABLE", errorCategory: "state", message: finalError, retryable: false, stage: "execute", roleId: args.review.roleId, branchId: args.review.branchId };
+    } else if (aggregation.status === "done") {
+      const hasActiveBranches = Object.values({ ...args.state.branchRecords, ...branchUpdates }).some((branch) => branch.status === "active");
+      if (!hasActiveBranches) {
       const orphanedJoinGroup = args.contractPlan?.handoffMode === "transition"
         ? findOrphanedJoinGroup({
             state: {
@@ -987,11 +1096,10 @@ function buildApprovedHumanReviewTransition(args: {
           roleId: orphanedJoinGroup.roleId,
           branchId: args.review.branchId
         };
-        finalRoleId = orphanedJoinGroup.roleId;
+        finalRoleIds = [orphanedJoinGroup.roleId];
       } else {
         finalStatus = "done";
-        finalOutput = args.review.draftResult.content ?? "";
-        finalRoleId = args.review.roleId;
+      }
       }
     }
   }
@@ -1022,8 +1130,9 @@ function buildApprovedHumanReviewTransition(args: {
         review: args.review,
         decision: args.decision
       }),
-      finalOutput,
-      finalRoleId,
+      finalOutputsByRoleId,
+      finalOutputRoleOrder,
+      finalRoleIds,
       lastExecutedRoleId: args.review.roleId,
       nextBranchSequence
     },
@@ -1311,8 +1420,9 @@ function buildRoutedTransitionPlan(args: {
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
-  let finalOutput = "";
-  let finalRoleId = "";
+  let finalOutputsByRoleId: FinalOutputsByRoleId = {};
+  let finalOutputRoleOrder: string[] = [];
+  let finalRoleIds: string[] = [];
   let finalErrorEnvelope: RuntimeErrorEnvelope | undefined;
   let reachedSystemOutput = false;
 
@@ -1367,7 +1477,7 @@ function buildRoutedTransitionPlan(args: {
         roleId: args.roleId,
         branchId: args.currentBranch.branchId
       };
-      finalRoleId = args.roleId;
+      finalRoleIds = [args.roleId];
       break;
       }
     }
@@ -1479,7 +1589,7 @@ function buildRoutedTransitionPlan(args: {
           roleId: targetRoleId,
           branchId: args.currentBranch.branchId
         };
-        finalRoleId = targetRoleId;
+        finalRoleIds = [targetRoleId];
         break;
       }
       roleActivationUpdates[activationKey] = activationCount;
@@ -1578,7 +1688,7 @@ function buildRoutedTransitionPlan(args: {
         roleId: targetRoleId,
         branchId: args.currentBranch.branchId
       };
-      finalRoleId = targetRoleId;
+      finalRoleIds = [targetRoleId];
       break;
     }
     roleActivationUpdates[activationKey] = activationCount;
@@ -1612,14 +1722,26 @@ function buildRoutedTransitionPlan(args: {
     });
   }
 
-  if (reachedSystemOutput && finalStatus !== "failed") {
-    const hasOtherActiveBranches = Object.values(args.state.branchRecords).some(
-      (branch) => branch.status === "active" && branch.branchId !== args.currentBranch.branchId
-    );
-    const hasActivatedBranches = Object.values(branchUpdates).some(
-      (branch) => branch.status === "active"
-    );
-    if (!hasOtherActiveBranches && !hasActivatedBranches) {
+  if ((reachedSystemOutput || (args.node.isTerminal && args.candidateTargets.length === 0)) && finalStatus !== "failed") {
+    finalOutputsByRoleId = collectEndOutputs({
+      state: args.state,
+      plan: args.plan,
+      branchUpdates,
+      currentBranch: args.currentBranch,
+      currentResult: args.currentResult,
+      selectedEvent: args.selectedEvent
+    });
+    finalOutputRoleOrder = args.plan.terminalRoleOrder.filter((roleId) => finalOutputsByRoleId[roleId]);
+    finalRoleIds = finalOutputRoleOrder;
+    const aggregation = resolveEndAggregation({ state: args.state, plan: args.plan, branchUpdates, outputs: finalOutputsByRoleId });
+    Object.assign(branchUpdates, aggregation.branches);
+    if (aggregation.status === "failed") {
+      finalStatus = "failed";
+      finalError = aggregation.error ?? "End aggregation could not reach its required terminal sources.";
+      finalErrorEnvelope = { errorCode: "GRAPH_END_QUORUM_UNREACHABLE", errorCategory: "state", message: finalError, retryable: false, stage: "execute", roleId: args.roleId, branchId: args.currentBranch.branchId };
+    } else if (aggregation.status === "done") {
+      const hasActiveBranches = Object.values({ ...args.state.branchRecords, ...branchUpdates }).some((branch) => branch.status === "active");
+      if (!hasActiveBranches) {
       const orphanedJoinGroup = args.allowOrphanedJoinFailure
         ? findOrphanedJoinGroup({
             state: args.state,
@@ -1639,11 +1761,10 @@ function buildRoutedTransitionPlan(args: {
           roleId: orphanedJoinGroup.roleId,
           branchId: args.currentBranch.branchId
         };
-        finalRoleId = orphanedJoinGroup.roleId;
+        finalRoleIds = [orphanedJoinGroup.roleId];
       } else {
         finalStatus = "done";
-        finalOutput = args.terminalOutput;
-        finalRoleId = args.roleId;
+      }
       }
     }
   }
@@ -1666,8 +1787,9 @@ function buildRoutedTransitionPlan(args: {
       selectedEventByBranchId: args.selectedEvent
         ? { [args.currentBranch.branchId]: args.selectedEvent }
         : {},
-      finalOutput,
-      finalRoleId,
+      ...(finalOutputsByRoleId ? { finalOutputsByRoleId } : {}),
+      ...(finalOutputRoleOrder.length || finalOutputsByRoleId ? { finalOutputRoleOrder } : {}),
+      ...(finalRoleIds.length ? { finalRoleIds } : {}),
       lastExecutedRoleId: args.roleId,
       nextBranchSequence
     },

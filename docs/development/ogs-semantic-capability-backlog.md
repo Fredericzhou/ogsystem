@@ -135,11 +135,11 @@ OGS 当前语义采用行业常见的工作流设计原则：显式事件路由�
 - 收集结果具有声明的排序或关联方式，不依赖实际完成顺序。
 - Visualizer 能区分静态图边和动态实例分支；静态图投影不会伪造运行时才产生的边。
 
-### P2-3 Join 分阶段等待窗口
+### Deferred Join 分阶段等待窗口
 
 **进入条件**：真实长流程需要区分首次到达时间和相邻来源到达间隔，且基础 Join 总 timeout 无法满足 SLA。
 
-**验收标准**：沿用 [Join 等待超时 RFC](ogsystem-wait-timeout-semantics-v2.md) 收敛 `first_packet`、`gap`、timeout failure envelope、WAL/resume、去重和审计合同；当前图行为保持不变；任何 timeout 决定在恢复时最多应用一次。
+当前未实现，也不属于本轮交付。只有真实 SLA 需求证明单一总等待期限不足时，才重新立项；届时需重新定义首次到达、来源间隔、取消、恢复和审计合同。旧 RFC 不作为当前实现规范。
 
 ## 6. Deferred：明确暂不建设
 

@@ -70,7 +70,7 @@ export function buildGraphNodeStatus(args: {
   if (args.activeBranchCount > 0) {
     return "active";
   }
-  if (args.state.finalRoleId === args.roleId && args.state.status === "done") {
+  if (args.state.finalRoleIds.includes(args.roleId) && args.state.status === "done") {
     return "done";
   }
   if (args.completedBranchCount > 0) {

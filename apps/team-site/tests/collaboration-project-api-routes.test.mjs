@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleCollaborationProjectRoutes } from "../api/collaboration-project-routes.mjs";
+import { handleProjectRoutes } from "../api/project-routes.mjs";
 
 function routeHarness(useCases = {}, overrides = {}) {
   const sent = [];
@@ -41,6 +42,26 @@ test("project read and patch routes preserve IDs, DTO shaping, and statuses", as
   assert.equal(await harness.invoke("PATCH", "/api/v1/projects/proj-1", { name: "Updated" }), true);
   assert.ok(harness.calls.some((call) => call[0] === "patch" && call[1] === "proj-1" && call[2].name === "Updated"));
   assert.deepEqual(harness.sent[1], { status: 200, payload: { projectId: "proj-1", name: "Updated", public: true } });
+});
+
+test("Project DELETE delegates to collaboration project lifecycle and maps blocked deletes", async () => {
+  const sent = [];
+  const invoke = async (deleteCollaborationProject) => handleProjectRoutes({
+    request: { method: "DELETE" },
+    response: {},
+    url: new URL("http://site.test/api/v1/projects/proj-1"),
+    readBody: async () => ({}),
+    sendJson: (_response, status, payload) => sent.push({ status, payload }),
+    errorStatus: (error) => /PROJECT_DELETE_LOCKED/.test(error.message) ? 409 : 400,
+    publicProject: (value) => value,
+    useCases: { deleteCollaborationProject }
+  });
+  await invoke(async (id) => ({ projectId: id, deleted: true }));
+  assert.deepEqual(sent, [{ status: 200, payload: { projectId: "proj-1", deleted: true } }]);
+
+  sent.length = 0;
+  await invoke(async () => { throw new Error("PROJECT_DELETE_LOCKED: active task task-1 is running."); });
+  assert.deepEqual(sent, [{ status: 409, payload: { error: "PROJECT_DELETE_LOCKED: active task task-1 is running." } }]);
 });
 
 test("Project metadata route rejects Team records so Team metadata stays in Studio", async () => {

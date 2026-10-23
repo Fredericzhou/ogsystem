@@ -74,6 +74,27 @@ test("run polling updates state, stops at terminal status, and protects stale re
   assert.equal(staleRequestSignal.aborted, true, "stopping a poller aborts its active request");
 });
 
+test("run polling stops after missing run evidence instead of retrying forever", async () => {
+  let calls = 0;
+  const errors = [];
+  const stop = createRunPoller({
+    projectId: "project-1",
+    taskId: "task-1",
+    runId: "missing-run",
+    intervalMs: 5,
+    request: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: "RUN_NOT_FOUND: run evidence does not exist." }), { status: 404 });
+    },
+    onError: (error) => errors.push(error)
+  });
+  await waitFor(() => errors.length === 1);
+  await new Promise((resolveWait) => setTimeout(resolveWait, 30));
+  assert.equal(calls, 1);
+  assert.equal(errors[0].status, 404);
+  stop();
+});
+
 test("platform settings clearly report runtimeApplied false after read and save", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-platform-settings-"));
   const server = spawn(process.execPath, ["server.mjs"], {

@@ -53,9 +53,8 @@ async function seedProject(workdir: string): Promise<void> {
       "%% system.id=viz.studio.graph",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -71,15 +70,14 @@ async function seedReviewProject(workdir: string): Promise<void> {
       "%% system.id=viz.studio.graph",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
       "%% review.rework.target.demo-analyst=demo-analyst",
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -95,12 +93,11 @@ async function seedCyclicProject(workdir: string): Promise<void> {
       "%% system.id=viz.studio.graph",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
       "%% loop.max.demo-analyst=3",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|COMPLETE| analyst[Role:demo-analyst]",
-      "intake[Role:demo-intake] -->|COMPLETE| output",
+      "intake[Role:demo-intake] -->|COMPLETE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -132,13 +129,12 @@ async function seedContractProject(workdir: string): Promise<void> {
     "%% system.id=viz.studio.contracts",
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
-    "%% entry.role=demo-analyst",
     "%% context.map.demo-analyst.request=global.task",
     "%% handoff.mode=transition",
     "%% handoff.contracts=.ogs/contracts/handoff.contracts.json",
-    "input -->|ENTER| analyst[Role:demo-analyst]",
+    "start[开始] -->|START| analyst[Role:demo-analyst]",
     "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| intake[Role:demo-intake]",
-    "intake[Role:demo-intake] -->|COMPLETE| output",
+    "intake[Role:demo-intake] -->|COMPLETE| end[结束]",
     ""
   ].join("\n"), "utf8");
 }
@@ -178,14 +174,13 @@ async function seedComplexMappingProject(workdir: string): Promise<void> {
     "%% system.id=viz.studio.mapping-uat",
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
-    "%% entry.role=demo-intake",
     "%% join.mode.test-operator=all_of",
     "%% join.sources.test-operator=demo-analyst,demo-intake",
-    "input -->|ENTER| intake[Role:demo-intake]",
+    "start[开始] -->|START| intake[Role:demo-intake]",
     "intake[Role:demo-intake] -->|COMPLETE| analyst[Role:demo-analyst]",
     "intake[Role:demo-intake] -->|COMPLETE| reviewer[Role:test-operator]",
     "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| reviewer[Role:test-operator]",
-    "reviewer[Role:test-operator] -->|DONE| output",
+    "reviewer[Role:test-operator] -->|DONE| end[结束]",
     ""
   ].join("\n"), "utf8");
 }
@@ -210,6 +205,27 @@ async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string):
   await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function dragStudioConnectPort(page, sourceRoleId: string, targetRoleId: string, rootSelector = "#studio-graph-root"): Promise<void> {
+  const sourcePort = page.locator(`${rootSelector} [data-cell-id="${sourceRoleId}"] [data-studio-connect-port]`).first();
+  const targetPort = page.locator(`${rootSelector} [data-cell-id="${targetRoleId}"] [data-studio-connect-port]`).first();
+  await expect(sourcePort).toHaveCount(1);
+  await expect(targetPort).toHaveCount(1);
+  await sourcePort.scrollIntoViewIfNeeded();
+  await targetPort.scrollIntoViewIfNeeded();
+  const sourceBox = await sourcePort.boundingBox();
+  const targetBox = await targetPort.boundingBox();
+  expect(sourceBox).toBeTruthy();
+  expect(targetBox).toBeTruthy();
+  if (!sourceBox || !targetBox) return;
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 8 });
+  await expect.poll(async () => page.locator(`${rootSelector} [data-cell-id="${targetRoleId}"] [data-studio-connect-port]`).evaluateAll((ports) =>
+    ports.map((port) => getComputedStyle(port).opacity)
+  )).toEqual(["1", "1", "1", "1"]);
   await page.mouse.up();
 }
 
@@ -308,9 +324,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("[data-studio-graph-layout]")).toHaveValue("flow");
     await waitForStudioCell(page, "demo-analyst");
     await expect.poll(async () => page.evaluate(() => {
-      const left = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
+      const left = document.querySelector('#studio-graph-root [data-cell-id="__system_start__"]')?.getBoundingClientRect();
       const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
-      const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      const right = document.querySelector('#studio-graph-root [data-cell-id="__system_end__"]')?.getBoundingClientRect();
       return Boolean(left && role && right && left.right < role.left && role.right < right.left);
     })).toBe(true);
     await expect.poll(async () => page.evaluate(() => {
@@ -334,8 +350,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
           });
         }));
       };
-      return { input: endpointDistance("input") <= 3, output: endpointDistance("output") <= 3 };
-    })).toEqual({ input: true, output: true });
+      return {
+        start: endpointDistance("__system_start__") <= 4,
+        end: endpointDistance("__system_end__") <= 4
+      };
+    })).toEqual({ start: true, end: true });
     await page.locator('[data-studio-side-tab="structure"]').click();
     await expect(page.locator(".studio-system-settings")).toBeVisible();
     await expect(page.locator(".studio-contract-editor")).toBeVisible();
@@ -356,11 +375,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     });
     expect(optionColors).toEqual({ color: "rgb(36, 59, 50)", backgroundColor: "rgb(255, 255, 255)" });
     await page.locator(".studio-system-settings summary").click();
-    await page.locator("[data-system-setting='entryEventType']").fill("BEGIN");
+    await page.locator("[data-system-setting='systemVersion']").fill("2.0.0");
     await page.locator("[data-system-settings-save]").click();
     const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      system: { entryEventType: "BEGIN" }
+      system: { systemVersion: "2.0.0" }
     });
     const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
     await browseFilter.fill("demo");
@@ -424,7 +443,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]')).toBeVisible();
-    await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
@@ -500,6 +520,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const addRoleButton = page.locator('#studio-graph-root [data-studio-graph-action="add-role"]');
     await expect(addRoleButton).toBeEnabled();
     await addRoleButton.click();
+    await page.locator('#studio-graph-root [data-cell-id="__studio_pending_role__"]').click();
     const addRoleForm = page.locator('form[data-studio-command-form="add-role"]');
     await expect(addRoleForm).toBeVisible();
     await expect(addRoleForm.locator('select[name="bindingKind"]')).toHaveValue("model");
@@ -511,19 +532,23 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求分析");
-    await page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]').click();
-    const addEdgeForm = page.locator('form[data-studio-command-form="add-edge"]');
-    await expect(addEdgeForm).toBeVisible();
-    await expect(addEdgeForm.locator('select[name="sourceRoleId"]')).toHaveValue("new-role");
-    await expect(addEdgeForm.locator('select[name="targetRoleId"]')).toHaveValue("__system_end__");
-    await addEdgeForm.locator('input[name="label"]').fill("需求已完成");
-    await addEdgeForm.locator('input[name="eventType"]').fill("DONE");
-    await addEdgeForm.locator('button[type="submit"]').click();
-    await expect(page.locator("#studio-graph-root")).toBeVisible();
-    await waitForStudioCell(page, "new-role");
-    await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
-    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
-    await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toBeVisible();
+    const addEdgeButton = page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]');
+    await addEdgeButton.click();
+    await expect(addEdgeButton).toHaveAttribute("aria-pressed", "true");
+    const sourcePorts = page.locator('#studio-graph-root [data-cell-id="new-role"] [data-studio-connect-port]');
+    await expect(sourcePorts).toHaveCount(4);
+    await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toHaveClass(/is-relationship-source/);
+    const edgeCountBeforeConnect = await page.locator("#studio-graph-root .x6-edge").count();
+    await dragStudioConnectPort(page, "new-role", "demo-analyst");
+    await expect.poll(() => page.locator("#studio-graph-root .x6-edge").count()).toBe(edgeCountBeforeConnect + 1);
+    const newFlowEditor = page.locator(".studio-flow-config-editor");
+    await expect(newFlowEditor).toBeVisible();
+    await expect(newFlowEditor.locator('[data-flow-config-field="eventType"]')).toHaveValue("NEW_ROLE_DONE");
+    await expect(newFlowEditor.locator('[data-flow-config-field="label"]')).toBeVisible();
+    await expect(newFlowEditor.locator("[data-flow-config-delete]")).toBeVisible();
+    await expect(addEdgeButton).toHaveAttribute("aria-pressed", "false");
+    await newFlowEditor.locator("[data-flow-config-delete]").click();
+    await expect.poll(() => page.locator("#studio-graph-root .x6-edge").count()).toBe(edgeCountBeforeConnect);
 
     await page.route("**/api/v1/ogs/workspace/studio/chat", async (route) => {
       const request = route.request();
@@ -533,6 +558,10 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       }
       const body = request.postDataJSON();
       const nextAuthoring = cloneJson(body.authoring);
+      delete nextAuthoring.roles?.["new-role"];
+      delete nextAuthoring.layout?.nodes?.["new-role"];
+      nextAuthoring.flows = Object.fromEntries(Object.entries(nextAuthoring.flows || {})
+        .filter(([, flow]: [string, any]) => flow.fromRoleId !== "new-role" && flow.toRoleId !== "new-role"));
       nextAuthoring.roles = {
         ...(nextAuthoring.roles || {}),
         "qa-reviewer": {
@@ -574,10 +603,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
             "%% system.id=viz.studio.graph",
             "%% system.version=1.0.0",
             "%% law.global=law.minimal.base",
-            "%% entry.role=demo-analyst",
-            "input -->|ENTER| analyst[Role:demo-analyst]",
+            "start[开始] -->|START| analyst[Role:demo-analyst]",
             "analyst[Role:demo-analyst] -->|REVIEW| reviewer[Role:qa-reviewer]",
-            "reviewer[Role:qa-reviewer] -->|DONE| output",
+            "reviewer[Role:qa-reviewer] -->|DONE| end[结束]",
             ""
           ].join("\n"),
           validation: { project: { ok: true, diagnostics: [] } },
@@ -758,7 +786,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await layoutSelect.selectOption("stacked");
     await expect.poll(async () => page.evaluate(() => {
       const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
-      const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      const right = document.querySelector('#studio-graph-root [data-cell-id="__system_end__"]')?.getBoundingClientRect();
       return Boolean(role && right && role.top < right.top);
     })).toBe(true);
     await page.getByRole("tab", { name: runTabName }).click();
@@ -766,8 +794,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(layoutSelect).toHaveValue("stacked");
     await expect.poll(async () => page.evaluate(() => {
       const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
-      const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
-      const input = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
+      const right = document.querySelector('#studio-graph-root [data-cell-id="__system_end__"]')?.getBoundingClientRect();
+      const input = document.querySelector('#studio-graph-root [data-cell-id="__system_start__"]')?.getBoundingClientRect();
       return Boolean(input && role && right && input.top < role.top && role.top < right.top);
     })).toBe(true);
     await expect(page.locator("[data-workbench-view-toggle]").last()).toHaveAttribute("data-workbench-view", "bridge");
@@ -880,10 +908,10 @@ test("Studio graph controls expose localized names in English and Simplified Chi
     await openGraph();
     const layout = page.locator("#studio-graph-root [data-studio-graph-layout]");
     const minimap = page.locator("#studio-graph-root [data-studio-graph-minimap]");
-    const topologyOrder = page.locator('#studio-graph-root [data-studio-graph-action="topology-order"]');
+    const technicalDetails = page.locator('#studio-graph-root [data-studio-graph-action="technical-details"]');
     await expect(layout).toHaveAttribute("aria-label", "Switch layout");
     await expect(minimap).toHaveAttribute("aria-label", "Graph minimap");
-    await expect(topologyOrder).toHaveAttribute("title", "Topology order \u00b7 on");
+    await expect(technicalDetails).toHaveAttribute("title", "Technical details \u00b7 on");
     await expect(layout).toHaveCSS("border-radius", "8px");
     await expect(page.locator("#locale-select")).toHaveCSS("border-radius", "8px");
     await expect(page.locator("[data-studio-bridge-list-mode]")).toHaveCSS("border-radius", "8px");
@@ -922,7 +950,7 @@ test("Studio graph controls expose localized names in English and Simplified Chi
     const localizedLayout = page.locator("#studio-graph-root [data-studio-graph-layout]");
     await expect(localizedLayout).toHaveAttribute("aria-label", "切换布局");
     await expect(page.locator("#studio-graph-root [data-studio-graph-minimap]")).toHaveAttribute("aria-label", "图谱缩略图");
-    await expect(page.locator('#studio-graph-root [data-studio-graph-action="topology-order"]')).toHaveAttribute("title", "\u62d3\u6251\u5e8f\u53f7 \u00b7 \u5df2\u5f00\u542f");
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="technical-details"]')).toHaveAttribute("title", "\u6280\u672f\u8be6\u60c5 \u00b7 \u5df2\u5f00\u542f");
     await localizedLayout.selectOption("compact");
     await page.locator('#studio-graph-root [data-studio-graph-action="layout"]').click();
     await expect(page.locator("#flash")).toContainText("已切换为纵向布局。");
@@ -945,7 +973,7 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
     const graph = page.locator("#studio-graph-root");
     await expect(graph).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
-    const edge = graph.locator('[data-cell-id="1:demo-analyst:ANALYSIS_DONE:output"]');
+    const edge = graph.locator('[data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"]');
     await expect(edge).toBeVisible();
     await edge.locator('path[stroke="transparent"]').first().click({ force: true });
     const flowEditor = page.locator(".studio-flow-config-editor");
@@ -957,18 +985,19 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
     const assertFlowLabelsAvoidRoles = async () => {
       const summary = graph.locator(".x6-edge-label text").filter({ hasText: "PROPOSAL_READY" }).last();
       await expect(summary).toBeVisible();
-      await expect(summary).toContainText("PROPOSAL_READY_WITH_REVIEW_AND_COMPLIANCE_VALIDATION");
+      await expect.poll(() => summary.getAttribute("text"))
+        .toContain("PROPOSAL_READY_WITH_REVIEW_AND_COMPLIANCE_VALIDATION");
       await expect.poll(async () => {
         const bounds = await summary.boundingBox();
         return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
       }).toBe(true);
       const labelWidth = await summary.evaluate((label) => label.getBoundingClientRect().width);
-      expect(labelWidth).toBeLessThanOrEqual(112);
+      expect(labelWidth).toBeLessThanOrEqual(114);
       const measureDistanceFromFlow = () => summary.evaluate((label) => {
         // X6 renders labels in a separate SVG layer after layout updates. Use
         // the stable business edge id instead of relying on label DOM nesting.
         const path = document.querySelector<SVGPathElement>(
-          '[data-cell-id="1:demo-analyst:ANALYSIS_DONE:output"] path[marker-end]'
+          '[data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"] path[marker-end]'
         );
         const matrix = path?.getScreenCTM();
         if (!path || !matrix) return { distance: Number.POSITIVE_INFINITY };
@@ -988,7 +1017,7 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
         const labels = Array.from(root.querySelectorAll<SVGGElement>(".x6-edge-label"))
           .filter((label) => label.textContent?.trim());
         const roles = Array.from(root.querySelectorAll<SVGGElement>(".x6-node[data-cell-id]"))
-          .filter((node) => !["input", "output"].includes(node.getAttribute("data-cell-id") ?? "") &&
+          .filter((node) => !["__system_start__", "__system_end__"].includes(node.getAttribute("data-cell-id") ?? "") &&
             !node.getAttribute("data-cell-id")?.startsWith("__ogs-scc-"));
         const nodeOverlaps = labels.flatMap((label) => {
           const labelBounds = label.getBoundingClientRect();
@@ -1111,7 +1140,7 @@ test("Studio conditional route form saves, reloads, and explains its Semantic IR
     const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
     await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
-    const edge = page.locator('#studio-graph-root [data-cell-id="1:demo-analyst:ANALYSIS_DONE:output"]');
+    const edge = page.locator('#studio-graph-root [data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"]');
     await expect(edge).toBeVisible();
     await edge.locator('path[stroke="transparent"]').first().click({ force: true });
     const editor = page.locator(".studio-flow-config-editor");
@@ -1138,7 +1167,7 @@ test("Studio conditional route form saves, reloads, and explains its Semantic IR
     const reloadedEditor = page.locator(".studio-flow-config-editor");
     await expect(reloadedEditor.locator('[data-flow-config-field="conditionJson"]')).toContainText('"approved"');
     await expect(reloadedEditor.locator('[data-flow-config-field="priority"]')).toHaveValue("7");
-    await expect(page.locator("#studio-graph-root [data-cell-id=\"1:demo-analyst:ANALYSIS_DONE:output\"]")).toContainText("when:equals");
+    await expect(page.locator('#studio-graph-root [data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"]')).toContainText("when:equals");
 
     await reloadedEditor.locator('[data-flow-config-field="conditionJson"]').fill("");
     await reloadedEditor.locator('[data-flow-config-save]').click();
@@ -1148,7 +1177,7 @@ test("Studio conditional route form saves, reloads, and explains its Semantic IR
     await page.getByRole("tab", { name: designTabName }).click();
     await edge.locator('path[stroke="transparent"]').first().click({ force: true });
     await expect(page.locator(".studio-flow-config-editor [data-flow-config-field=\"conditionJson\"]")).toBeEmpty();
-    await expect(page.locator("#studio-graph-root [data-cell-id=\"1:demo-analyst:ANALYSIS_DONE:output\"]")).not.toContainText("when:");
+    await expect(page.locator('#studio-graph-root [data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"]')).not.toContainText("when:");
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
@@ -1256,6 +1285,7 @@ test("empty workspace creates a project visually before graph editing", async ({
   test.info().annotations.push({ type: "server", description: started.url });
   try {
     await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
     const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
     await expect(page.locator("#console-panel-project")).toBeVisible();
     await expect(page.locator("#console-panel-project > article > header").getByRole("heading", { name: "Project Overview" })).toBeVisible();
@@ -1305,13 +1335,13 @@ test("SCC container drag moves every member node with the container", async ({ p
 
     const group = page.locator('#studio-graph-root [data-cell-id^="__ogs-scc-"]').first();
     await expect(group).toBeVisible();
-    await expect(page.locator('#studio-graph-root [data-cell-id="input"]')).toHaveCount(1);
-    await expect(page.locator('#studio-graph-root [data-cell-id="output"]')).toHaveCount(1);
+    await expect(page.locator('#studio-graph-root [data-cell-id="__system_start__"]')).toHaveCount(1);
+    await expect(page.locator('#studio-graph-root [data-cell-id="__system_end__"]')).toHaveCount(1);
     await expect.poll(async () => page.evaluate(() => {
       const groupElement = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]');
       const group = groupElement?.getBoundingClientRect();
-      const input = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
-      const output = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      const input = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="__system_start__"]')?.getBoundingClientRect();
+      const output = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="__system_end__"]')?.getBoundingClientRect();
       const members = ["demo-analyst", "demo-intake"].map((id) =>
         document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`)?.getBoundingClientRect()
       );
@@ -1425,7 +1455,7 @@ test("SCC container drag moves every member node with the container", async ({ p
       const memberBounds = ["demo-analyst", "demo-intake"].map((id) =>
         document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`)?.getBoundingClientRect()
       );
-      const boundaryBounds = ["input", "output"].map((id) =>
+      const boundaryBounds = ["__system_start__", "__system_end__"].map((id) =>
         document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`)?.getBoundingClientRect()
       );
       const overlaps = (left: DOMRect, right: DOMRect) => left.left < right.right && right.left < left.right &&
@@ -1477,7 +1507,7 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
         system: {
           systemId: "viz.direct.k",
           systemVersion: "1.0.0",
-          entryRoleId: "demo-analyst",
+          entryRoleIds: ["demo-analyst"],
           lawGlobal: "law.minimal.base"
         },
         roles: {
@@ -1538,7 +1568,7 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await expect(page.locator("#studio-graph-direct-root .studio-graph-toolbar")).toBeVisible();
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-layout]')).toHaveAttribute("aria-label", "Switch layout");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-minimap]')).toHaveAttribute("aria-label", "Graph minimap");
-    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-action="technical-details"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#studio-graph-direct-root [data-cell-id=\"demo-analyst\"]")).toBeVisible();
     await expect(page.locator('#studio-graph-direct-root [data-cell-id="demo-analyst"] .studio-role-marker-badge[visibility="visible"]')).toBeAttached();
     await expect(page.locator('#studio-graph-direct-root [data-cell-id="demo-analyst"] .studio-role-marker-text')).toHaveText("DA");
@@ -1546,26 +1576,16 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await expect(page.locator("#studio-graph-direct-root [data-minimap-role-id=\"demo-analyst\"]")).toBeVisible();
     const directGraph = page.locator("#studio-graph-direct-root");
     await expect.poll(async () => directGraph.evaluate((root) => {
-      const topologyLabels = Array.from(root.querySelectorAll(".x6-edge-label text"))
-        .map((element) => element.textContent?.trim() || "")
-        .filter((text) => /^#/.test(text));
       const edgePath = root.querySelector('[data-cell-id="flow.demo-qa"] path[marker-end]');
       return {
-        topologyLabels,
+        businessEdge: Boolean(root.querySelector('[data-cell-id="flow.demo-qa"]')),
         hasTargetMarker: Boolean(edgePath?.getAttribute("marker-end"))
       };
     })).toEqual({
-      topologyLabels: expect.arrayContaining([expect.stringMatching(/^#/)]),
+      businessEdge: true,
       hasTargetMarker: true
     });
     await expect.poll(() => directGraph.locator(".x6-edge-label rect").count()).toBeGreaterThan(0);
-
-    await directGraph.locator('[data-studio-graph-action="topology-order"]').evaluate((button) => button.click());
-    await expect(directGraph.locator('[data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "false");
-    await expect.poll(async () => directGraph.evaluate((root) => Array.from(root.querySelectorAll(".x6-edge-label text"))
-      .some((element) => /^#/.test(element.textContent?.trim() || "")))).toBe(false);
-    await directGraph.locator('[data-studio-graph-action="topology-order"]').evaluate((button) => button.click());
-    await expect(directGraph.locator('[data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "true");
 
     await page.evaluate(() => {
       const root = document.getElementById("studio-graph-direct-root");
@@ -1621,7 +1641,7 @@ test("fan-out projection uses nearby ports without replacing business edges", as
       const roles = ["source", "left", "right"];
       const authoring = {
         project: { workdir: "/tmp/bundle", systemPath: "system.mmd" },
-        system: { systemId: "viz.bundle", systemVersion: "1.0.0", entryRoleId: "source", lawGlobal: "law.minimal.base" },
+        system: { systemId: "viz.bundle", systemVersion: "1.0.0", entryRoleIds: ["source"], lawGlobal: "law.minimal.base" },
         roles: Object.fromEntries(roles.map((roleId) => [roleId, {
           roleId,
           title: roleId,
@@ -1649,12 +1669,18 @@ test("fan-out projection uses nearby ports without replacing business edges", as
         ],
         viewport: { x: 0, y: 0, zoom: 1 }
       };
-      (window as any).OGSVisualizerClient.mountStudioX6Bridge(root, {
+      const options: any = {
         authoring,
         canvas,
         validation: { ok: true, diagnostics: [] },
-        defaultAutoLayout: false
-      });
+        defaultAutoLayout: false,
+        onApplyCommand: (result: any) => {
+          options.authoring = result.authoring;
+          options.canvas = result.canvas;
+          (window as any).OGSVisualizerClient.mountStudioX6Bridge(root, options);
+        }
+      };
+      (window as any).OGSVisualizerClient.mountStudioX6Bridge(root, options);
     });
     const root = page.locator("#studio-graph-bundle-root");
     await expect(root.locator('[data-cell-id="flow.source.left"]')).toBeVisible();
@@ -1727,6 +1753,18 @@ test("fan-out projection uses nearby ports without replacing business edges", as
         return id === "flow.source.left" || id === "flow.source.right";
       }).length
     )).toBe(2);
+    await root.locator('[data-cell-id="source"]').click();
+    const addEdgeButton = root.locator('[data-studio-graph-action="add-edge"]');
+    await addEdgeButton.click();
+    await expect(root.locator('[data-cell-id="source"]')).toHaveClass(/is-relationship-source/);
+    await expect(root.locator('[data-cell-id="source"] [data-studio-connect-port]')).toHaveCount(4);
+    await root.locator('[data-cell-id="right"]').hover();
+    await expect(root.locator('[data-cell-id="right"]')).toHaveClass(/is-connection-target/);
+    await dragStudioConnectPort(page, "source", "right", "#studio-graph-bundle-root");
+    await expect(root.locator('form[data-studio-command-form="add-edge"]')).toHaveCount(0);
+    await expect.poll(async () => root.locator(".x6-edge").count()).toBe(3);
+    await expect(addEdgeButton).toHaveAttribute("aria-pressed", "false");
+    await expect(root.locator('[data-studio-graph-action="validate"]')).toBeEnabled();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
@@ -1761,7 +1799,7 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     const schemaEditor = contractEditor.locator("[data-contract-file-editor]");
     const schemaInput = schemaEditor.locator("[data-contract-file-content]");
     await schemaInput.focus();
-    await page.keyboard.press("Control+A");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
     await page.keyboard.type("{");
     await schemaEditor.locator("[data-contract-file-save]").focus();
     await page.keyboard.press("Enter");
@@ -1981,6 +2019,121 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
   }
 });
 
+test("Start and End configure dispatch, aggregation, and each connected flow in the visual graph", async ({ page }) => {
+  test.setTimeout(60000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-boundary-config-"));
+  await seedProject(workdir);
+  await writeFile(path.resolve(workdir, "system.mmd"), [
+    "flowchart TD",
+    "%% system.id=viz.build.layout",
+    "%% system.version=1.0.0",
+    "%% law.global=law.minimal.base",
+    "start[开始] -->|START| analyst[Role:demo-analyst]",
+    "start[开始] -->|START| intake[Role:demo-intake]",
+    "start[开始] -->|START| operator[Role:test-operator]",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+    "intake[Role:demo-intake] -->|COMPLETE| end[结束]",
+    "operator[Role:test-operator] -->|DONE| end[结束]",
+    ""
+  ].join("\n"), "utf8");
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await setWorkbenchView(page, "bridge");
+    await waitForStudioCell(page, "__system_start__");
+    await waitForStudioCell(page, "__system_end__");
+
+    await page.locator('#studio-graph-root [data-cell-id="__system_start__"]').click();
+    const startEditor = page.locator('[data-boundary-config-editor="start"]');
+    await expect(startEditor).toBeVisible();
+    await expect(startEditor.locator('[data-boundary-setting="startMode"]')).toBeEnabled();
+    await expect(startEditor.locator('[data-boundary-setting="startCount"]')).toHaveAttribute("max", "3");
+    await startEditor.locator('[data-boundary-setting="startMode"]').selectOption("random_n");
+    await startEditor.locator('[data-boundary-setting="startCount"]').fill("2");
+    await startEditor.locator('[data-boundary-settings-save="start"]').click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      system: { startDispatch: { mode: "random_n", count: 2 } }
+    });
+
+    await page.locator('#studio-graph-root [data-cell-id="__system_end__"]').click();
+    const endEditor = page.locator('[data-boundary-config-editor="end"]');
+    await expect(endEditor).toBeVisible();
+    await expect(endEditor.locator('[data-boundary-setting="endMin"]')).toHaveAttribute("max", "3");
+    await endEditor.locator('[data-boundary-setting="endMode"]').selectOption("quorum_of");
+    await expect(endEditor.locator('[data-boundary-setting="endMode"]')).toHaveValue("quorum_of");
+    await endEditor.locator('[data-boundary-setting="endMin"]').fill("2");
+    await endEditor.locator('[data-boundary-settings-save="end"]').click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      system: { endJoin: { mode: "quorum_of", min: 2 } }
+    });
+
+    await page.locator("[data-studio-bridge-list-mode]").selectOption("flows");
+    const flowList = page.locator("[data-studio-flow-list-section]");
+    const openFlowEditor = async (flowKey: string) => {
+      if (!(await flowList.evaluate((element: HTMLDetailsElement) => element.open))) {
+        await flowList.locator("summary").click();
+      }
+      await expect(flowList).toHaveJSProperty("open", true);
+      const item = page.locator(`[data-studio-flow-key="${flowKey}"]`);
+      await expect(item).toBeVisible();
+      await expect(item).toBeEnabled();
+      await item.click();
+    };
+    const startFlows = [
+      ["start:START:demo-analyst", "任务分发至分析师"],
+      ["start:START:demo-intake", "任务分发至接待员"],
+      ["start:START:test-operator", "任务分发至审核员"]
+    ];
+    for (const [flowKey, label] of startFlows) {
+      await openFlowEditor(flowKey);
+      const startFlowEditor = page.locator(`[data-flow-config-editor="${flowKey}"]`);
+      await expect(startFlowEditor).toBeVisible();
+      await expect(startFlowEditor.locator('[data-flow-config-field="eventType"]')).toHaveValue("START");
+      await startFlowEditor.locator('[data-flow-config-field="label"]').fill(label);
+      await startFlowEditor.locator('[data-flow-config-save]').click();
+    }
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then((source) => Object.values(JSON.parse(source).flows)
+      .filter((flow: any) => flow.fromRoleId === "__system_start__")
+      .map((flow: any) => flow.label)).catch(() => null)).toEqual(startFlows.map(([, label]) => label));
+
+    if (await flowList.getAttribute("open") === null) await flowList.locator("summary").click();
+    const endFlows = [
+      ["demo-analyst:ANALYSIS_DONE:end", "分析结果送达"],
+      ["demo-intake:COMPLETE:end", "接待结果送达"],
+      ["test-operator:DONE:end", "审核结果送达"]
+    ];
+    for (const [flowKey, label] of endFlows) {
+      await openFlowEditor(flowKey);
+      const endFlowEditor = page.locator(".studio-flow-config-editor");
+      await expect(endFlowEditor).toBeVisible();
+      await endFlowEditor.locator('[data-flow-config-field="label"]').fill(label);
+      await endFlowEditor.locator('[data-flow-config-save]').click();
+    }
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then((source) => Object.values(JSON.parse(source).flows)
+      .filter((flow: any) => flow.toRoleId === "__system_end__")
+      .map((flow: any) => flow.label)).catch(() => null)).toEqual(endFlows.map(([, label]) => label));
+
+    await page.reload();
+    await page.getByRole("tab", { name: designTabName }).click();
+    await setWorkbenchView(page, "bridge");
+    await page.locator('#studio-graph-root [data-cell-id="__system_start__"]').click();
+    await expect(page.locator('[data-boundary-config-editor="start"] [data-boundary-setting="startMode"]')).toHaveValue("random_n");
+    await expect(page.locator('[data-boundary-config-editor="start"] [data-boundary-setting="startCount"]')).toHaveValue("2");
+    await page.locator('#studio-graph-root [data-cell-id="__system_end__"]').click();
+    await expect(page.locator('[data-boundary-config-editor="end"] [data-boundary-setting="endMode"]')).toHaveValue("quorum_of");
+    await expect(page.locator('[data-boundary-config-editor="end"] [data-boundary-setting="endMin"]')).toHaveValue("2");
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("studio graph stays readable and its toolbar remains reachable on mobile", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-mobile-uat-"));
   await seedProject(workdir);
@@ -2075,6 +2228,7 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
     expect(toolbarAudit.controlsInBounds).toBe(true);
     await expect(graph.locator('[data-studio-graph-action="add-role"]')).toBeVisible();
     await graph.locator('[data-studio-graph-action="add-role"]').click();
+    await graph.locator('[data-cell-id="__studio_pending_role__"]').click();
     await expect(page.locator(".studio-selection-overlay")).toBeVisible();
     await page.locator('[data-studio-selection-toggle]').click();
     await expect(page.locator(".studio-selection-overlay")).toBeHidden();

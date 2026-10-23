@@ -52,7 +52,8 @@ test("Team version actions preserve their statuses, IDs, bodies, and error mappi
   const harness = routeHarness({
     forkTeamVersion: async (id) => (calls.push(["edit", id]), { projectId: "draft-3" }),
     releaseTeamVersion: async (id) => (calls.push(["release", id]), { projectId: id }),
-    archiveTeamVersion: async (id) => (calls.push(["archive", id]), { projectId: id })
+    archiveTeamVersion: async (id) => (calls.push(["archive", id]), { projectId: id }),
+    deleteTeam: async (id) => (calls.push(["delete", id]), { teamId: id, deletedTeamVersionIds: [id] })
   });
 
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-1/edit"), true);
@@ -61,7 +62,9 @@ test("Team version actions preserve their statuses, IDs, bodies, and error mappi
   assert.equal(harness.sent[1].status, 200);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-3/archive"), true);
   assert.equal(harness.sent[2].status, 200);
-  assert.deepEqual(calls, [["edit", "team-1"], ["release", "team-2"], ["archive", "team-3"]]);
+  assert.equal(await harness.invoke("DELETE", "/api/v1/teams/team-4"), true);
+  assert.equal(harness.sent[3].status, 200);
+  assert.deepEqual(calls, [["edit", "team-1"], ["release", "team-2"], ["archive", "team-3"], ["delete", "team-4"]]);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-3/simulate", { prompt: "Review this" }), false);
 
   harness.sent.length = 0;

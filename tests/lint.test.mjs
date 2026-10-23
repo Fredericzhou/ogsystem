@@ -35,7 +35,7 @@ test("lint diagnostics are line-aware and stable", async () => {
 
   assert.deepStrictEqual(lintSystemFromMermaidSource(source), [
     {
-      line: 6,
+      line: 5,
       errorCode: "MERMAID_UNSUPPORTED_METADATA_KEY",
       message: 'Unsupported metadata key "unsupported.flag"',
       stage: "validate"
@@ -52,7 +52,7 @@ test("lint cli hard-fails and prints line + errorCode + message", async () => {
   assert.equal(code, 1);
   assert.match(
     stderr,
-    /^6 MERMAID_UNSUPPORTED_METADATA_KEY Unsupported metadata key "unsupported\.flag"$/m
+    /^5 MERMAID_UNSUPPORTED_METADATA_KEY Unsupported metadata key "unsupported\.flag"$/m
   );
   assert.match(stderr, /errorCode=MERMAID_UNSUPPORTED_METADATA_KEY/);
   assert.match(stderr, /stage=validate/);

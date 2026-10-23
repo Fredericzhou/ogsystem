@@ -83,19 +83,25 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     const simulation = await page.request.post(`${url}${simulationPath}`, {
       data: { prompt: "Preview the software delivery workflow." }
     });
-    assert.equal(simulation.status(), 201);
+    assert.equal(simulation.status(), 202);
     const simulationResult = await simulation.json();
     assert.equal(simulationResult.simulation.teamId, teamVersion.teamId);
     assert.equal(simulationResult.simulation.teamVersionId, teamVersionId);
     assert.equal(simulationResult.simulation.runKind, "studio_simulation");
-    assert.equal(simulationResult.simulation.status, "completed", JSON.stringify(simulationResult));
-    assert.equal(simulationResult.state.mode, "dry-run");
+    assert.equal(simulationResult.simulation.status, "running", JSON.stringify(simulationResult));
     assert.equal(Object.hasOwn(simulationResult, "taskId"), false);
     assert.equal(Object.hasOwn(simulationResult, "runId"), false);
     const simulationId = simulationResult.simulation.simulationId;
+    let simulationEvidence;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      simulationEvidence = await page.request.get(`${url}${simulationPath}/${simulationId}`).then((response) => response.json());
+      if (simulationEvidence.simulation.status !== "running") break;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    }
+    assert.equal(simulationEvidence.simulation.status, "completed", JSON.stringify(simulationEvidence));
+    assert.equal(simulationEvidence.state.mode, "dry-run");
     const listedSimulations = await page.request.get(`${url}${simulationPath}`).then((response) => response.json());
     assert.equal(listedSimulations.simulations.some((item) => item.simulationId === simulationId), true);
-    const simulationEvidence = await page.request.get(`${url}${simulationPath}/${simulationId}`).then((response) => response.json());
     assert.equal(simulationEvidence.simulation.owner.kind, "studio_simulation");
     assert.equal(simulationEvidence.state.status, "completed");
     const simulationDir = join(projectsRoot, ".studio", "simulations", teamVersionId, simulationId);
@@ -205,6 +211,17 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     assert.deepEqual(run.plan.nodeGraph.map((node) => node.nodeId).sort(), expectedRoles.slice().sort());
     assert.deepEqual(Object.keys(run.state.nodes).sort(), expectedRoles.slice().sort());
     assert.equal(Object.values(run.state.nodes).every((node) => node.status === "completed"), true);
+    const structuredResultResponse = await page.request.get(
+      `${url}/api/v1/projects/${projectId}/tasks/${queuedTask.taskId}/runs/${encodeURIComponent(completedTask.currentRunId)}/result`
+    );
+    assert.equal(structuredResultResponse.status(), 200);
+    const structuredResult = await structuredResultResponse.json();
+    assert.equal(structuredResult.available, true);
+    assert.deepEqual(structuredResult.result.finalOutputRoleOrder, ["delivery-lead"]);
+    assert.deepEqual(Object.keys(structuredResult.result.finalOutputsByRoleId), ["delivery-lead"]);
+    assert.equal(structuredResult.result.finalOutputsByRoleId["delivery-lead"].length, 1);
+    assert.equal(typeof structuredResult.result.finalOutputsByRoleId["delivery-lead"][0].content, "string");
+    assert.match(structuredResult.result.finalOutputsByRoleId["delivery-lead"][0].content, /^\[dry-run\]/);
     await page.waitForFunction(() => document.querySelector(".task-run-detail")?.dataset.runStatus === "completed");
     assert.equal(await taskRow.locator(".task-run-detail").getAttribute("data-run-status"), "completed");
     assert.equal(await taskRow.locator(".run-mode-chip").innerText(), "流程预览");
@@ -273,7 +290,8 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     assert.equal(eventsResponse.status(), 200);
     const events = (await eventsResponse.json()).events;
     assert.equal(events.length > 0, true, "the Run should expose its event history");
-    assert.equal(events.some((event) => expectedRoles.includes(event.record?.roleId || event.roleId)), true, "event history should identify role execution");
+    const eventRoleIds = new Set(events.map((event) => event.record?.roleId || event.roleId).filter(Boolean));
+    for (const roleId of expectedRoles) assert.equal(eventRoleIds.has(roleId), true, `Run event history should record ${roleId}`);
     assert.equal(await taskRow.locator(".task-run-events li").count() > 0, true, "the page should render run evidence");
     await page.reload({ waitUntil: "networkidle" });
     const restoredTask = (await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json())).taskRecords[0];
@@ -357,7 +375,7 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     await page.route(`**${currentResultPath}`, (route) => route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ available: true, runId: retriedTask.currentRunId, result: { finalOutput: currentResultMarker } })
+      body: JSON.stringify({ available: true, runId: retriedTask.currentRunId, result: { finalOutputsByRoleId: { "delivery-lead": [{ content: currentResultMarker }] }, finalOutputRoleOrder: ["delivery-lead"] } })
     }));
     const currentResultResponse = page.waitForResponse((response) => response.url().endsWith(currentResultPath));
     await page.locator("[data-load-run-result]").click();
@@ -435,7 +453,7 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     const adjustmentUrl = new URL(page.url());
     assert.equal(adjustmentUrl.searchParams.get("collaborationProjectId"), projectId);
     assert.equal(adjustmentUrl.searchParams.get("adjust"), "1");
-    await page.locator("[data-team-studio-close]").click();
+    await page.locator("[data-team-build-close]").click();
     assert.equal(await page.locator("#confirm-project").count(), 1, "Projects adjustment must open an unpublished Studio draft");
     let failFirstMount = true;
     await page.route(`**/api/v1/projects/${projectId}/teams`, async (route) => {
@@ -495,7 +513,7 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     assert.match(await page.locator("#team-mount-status").innerText(), /已发布.*尚未挂载/);
     assert.equal(await page.locator("#retry-team-mount").isVisible(), true);
     assert.equal(await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json()).then((project) => project.mountedTeams.some((team) => team.teamVersionId === draftTeamVersionId)), false);
-    await page.locator("[data-team-studio-close]").click();
+    await page.locator("[data-team-build-close]").click();
     await page.locator("#retry-team-mount").click();
     await page.waitForFunction(({ expectedProjectId, versionId }) => location.pathname === `/projects/${expectedProjectId}`,
       { expectedProjectId: projectId, versionId: draftTeamVersionId }, { timeout: 10000 });

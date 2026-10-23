@@ -72,8 +72,10 @@ test("nl2mmd txt graph renderer prints plain structure preview", async () => {
 
   assert.match(txt, /^SYSTEM architecture\.debate\.current v1\.0\.0/m);
   assert.match(txt, /^ROLES$/m);
-  assert.match(txt, /^\[input\]$/m);
-  assert.match(txt, /--DEBATE_REQUEST--> debate-moderator/);
+  assert.match(txt, /^\[开始\]$/m);
+  assert.match(txt, /--START--> debate-moderator/);
+  assert.match(txt, /^\[debate-summary\]$/m);
+  assert.match(txt, /--SUMMARY_READY--> \[结束\]/);
   assert.match(
     txt,
     /debate-judge \[join=all_of, sources=debate-minimalist,debate-alignmentist\]/
@@ -113,7 +115,7 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
   );
   assert.match(
     prompt,
-    /Exact metadata keys allowed: engine, system\.id, system\.version, law\.global, entry\.role, handoff\.mode, handoff\.contracts/
+    /Exact metadata keys allowed: engine, system\.id, system\.version, law\.global, start\.dispatch\.mode, start\.dispatch\.count, end\.join\.mode, end\.join\.min, handoff\.mode, handoff\.contracts/
   );
   assert.match(
     prompt,
@@ -140,8 +142,8 @@ test("nl2mmd turn prompt stays compact and keeps ranked hints", async () => {
     context,
     input: {
       message: "请用 @debate-judge 汇总，并检查未知的 @not-found-role 是否存在",
-      draftMermaid: "flowchart TD\ninput --> draft[Role:debate-judge]",
-      validationErrors: ["missing entry.role"],
+      draftMermaid: "flowchart TD\nstart[开始] -->|START| draft[Role:debate-judge]",
+      validationErrors: ["missing Start Flow connection to a role"],
       validationWarnings: ["using inferred model binding"]
     }
   });
@@ -153,7 +155,7 @@ test("nl2mmd turn prompt stays compact and keeps ranked hints", async () => {
   assert.match(prompt, /^Models: /m);
   assert.match(prompt, /^Hints: /m);
   assert.match(prompt, /^Draft: flowchart TD$/m);
-  assert.match(prompt, /^Errors: missing entry\.role$/m);
+  assert.match(prompt, /^Errors: missing Start Flow connection to a role$/m);
   assert.match(prompt, /^Warnings: using inferred model binding$/m);
 });
 

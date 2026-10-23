@@ -18,6 +18,7 @@ import { buildBridgeFlows, buildBridgeRoles, fallbackGridColumnCount } from "./s
 import { addTopologyFlowOrder, topologyComponentIds } from "./topology-order.js";
 import {
   normalizeStudioGraphTargetRoleId,
+  STUDIO_SYSTEM_START_ROLE_ID,
   STUDIO_SYSTEM_END_ROLE_ID,
   type GraphViewModel,
   type GraphViewModelEdge,
@@ -264,7 +265,7 @@ export type BuildGraphViewModelArgs = {
   presentation?: {
     roleDescriptions?: Readonly<Record<string, string>>;
     edgeLabels?: Readonly<Record<string, string>>;
-    boundaryLabels?: { input?: string; output?: string };
+    boundaryLabels?: { start?: string; end?: string };
   };
   mode: GraphViewModelMode;
 };
@@ -300,7 +301,9 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
 
   const bridgeRoles = buildBridgeRoles(authoring);
   const bridgeFlows = buildBridgeFlows(authoring);
-  const entryRoleId = authoring.system.entryRoleId;
+  const entryRoleIds = Object.values(authoring.flows)
+    .filter((flow) => flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID)
+    .map((flow) => flow.toRoleId);
 
   const roleNodes: GraphViewModelNode[] = bridgeRoles.map((role, index) => {
     const layoutSource = authoring.layout.nodes[role.roleId];
@@ -336,56 +339,55 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
   const maxX = roleNodes.length
     ? Math.max(...roleNodes.map((node) => node.layout.x + node.layout.width))
     : 360;
-  const baseY = roleNodes.length ? Math.min(...roleNodes.map((node) => node.layout.y)) : 120;
   const roleIds = new Set(roleNodes.map((node) => node.roleId));
+  const averageNodeY = (nodesToAverage: GraphViewModelNode[], fallback: number) => nodesToAverage.length
+    ? Math.round(nodesToAverage.reduce((sum, node) => sum + node.layout.y + node.layout.height / 2, 0) / nodesToAverage.length - BOUNDARY_HEIGHT / 2)
+    : fallback;
+  const entryNodes = roleNodes.filter((node) => entryRoleIds.includes(node.roleId));
+  const terminalRoleIds = new Set(bridgeFlows
+    .filter((flow) => flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID || flow.toRoleId === SYSTEM_END_ROLE_ID)
+    .map((flow) => flow.fromRoleId));
+  const terminalNodes = roleNodes.filter((node) => terminalRoleIds.has(node.roleId));
+  const fallbackY = roleNodes.length ? Math.min(...roleNodes.map((node) => node.layout.y)) : 120;
 
-  const inputBoundary: GraphViewModelNode = {
-    id: "input",
-    roleId: "input",
-    kind: "boundary",
-    entityKind: "boundary",
+  const startRole: GraphViewModelNode = {
+    id: STUDIO_SYSTEM_START_ROLE_ID,
+    roleId: STUDIO_SYSTEM_START_ROLE_ID,
+    kind: "specialRole",
+    entityKind: "special_role",
     roleSeat: false,
     executionScope: "boundary",
-    label: `▶ ${args.presentation?.boundaryLabels?.input || "Entry"}`,
+    label: args.presentation?.boundaryLabels?.start || "开始",
     bindingKind: "boundary",
-    badges: ["START"],
-    structure: {},
-    layout: { x: minX - 260, y: baseY, width: BOUNDARY_WIDTH, height: BOUNDARY_HEIGHT },
-    editable: false
+    specialRole: "start",
+    badges: [],
+    structure: { startDispatch: authoring.system.startDispatch },
+    layout: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID]
+      ? { x: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID].x, y: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID].y, width: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID].width ?? BOUNDARY_WIDTH, height: authoring.layout.nodes[STUDIO_SYSTEM_START_ROLE_ID].height ?? BOUNDARY_HEIGHT }
+      : { x: minX - 260, y: averageNodeY(entryNodes, fallbackY), width: BOUNDARY_WIDTH, height: BOUNDARY_HEIGHT },
+    editable: mode === "edit"
   };
-  const outputBoundary: GraphViewModelNode = {
-    id: "output",
+  const endRole: GraphViewModelNode = {
+    id: STUDIO_SYSTEM_END_ROLE_ID,
     roleId: STUDIO_SYSTEM_END_ROLE_ID,
-    kind: "boundary",
-    entityKind: "boundary",
+    kind: "specialRole",
+    entityKind: "special_role",
     roleSeat: false,
     executionScope: "boundary",
-    label: `■ ${args.presentation?.boundaryLabels?.output || "End"}`,
+    label: args.presentation?.boundaryLabels?.end || "结束",
     bindingKind: "boundary",
-    badges: ["END"],
-    structure: {},
-    layout: { x: maxX + 90, y: baseY, width: BOUNDARY_WIDTH, height: BOUNDARY_HEIGHT },
-    editable: false
+    specialRole: "end",
+    badges: [],
+    structure: { endJoin: authoring.system.endJoin },
+    layout: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]
+      ? { x: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID].x, y: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID].y, width: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID].width ?? BOUNDARY_WIDTH, height: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID].height ?? BOUNDARY_HEIGHT }
+      : { x: maxX + 90, y: averageNodeY(terminalNodes, fallbackY), width: BOUNDARY_WIDTH, height: BOUNDARY_HEIGHT },
+    editable: mode === "edit"
   };
 
-  const nodes: GraphViewModelNode[] = [inputBoundary, ...roleNodes, outputBoundary];
+  const nodes: GraphViewModelNode[] = [startRole, ...roleNodes, endRole];
 
   const edges: GraphViewModelEdge[] = [];
-  if (entryRoleId && roleIds.has(entryRoleId)) {
-    edges.push({
-      id: "__boundary__:input:entry",
-      source: "input",
-      target: entryRoleId,
-      label: args.presentation?.edgeLabels?.[authoring.system.entryEventType || "entry"]
-        || authoring.system.entryEventType
-        || "entry",
-      eventType: authoring.system.entryEventType || "entry",
-      runtimeOnlyErrorFlow: false,
-      participatesInJoin: false,
-      editable: false
-    });
-  }
-
   for (const flow of bridgeFlows) {
     const target = normalizeStudioGraphTargetRoleId(flow.toRoleId);
     const edgeKey = `${flow.fromRoleId}:${flow.eventType}:${target}`;
@@ -437,7 +439,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     });
   }
 
-  const topologyComponentByNode = topologyComponentIds({ nodes, edges, entryRoleId: "input" });
+  const topologyComponentByNode = topologyComponentIds({ nodes, edges, entryNodeId: STUDIO_SYSTEM_START_ROLE_ID });
   return {
     version: 1,
     mode,
@@ -445,7 +447,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       ...node,
       topologyComponentId: topologyComponentByNode.get(node.id)
     })),
-    edges: addTopologyFlowOrder({ nodes, edges, entryRoleId: entryRoleId ? "input" : undefined }),
+    edges: addTopologyFlowOrder({ nodes, edges, entryNodeId: entryRoleIds.length ? STUDIO_SYSTEM_START_ROLE_ID : undefined }),
     viewport: authoring.layout.viewport,
     capabilities,
     validation
@@ -513,6 +515,6 @@ export function projectGraphReadingViewModel(
   const edgeNodeIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
   const nodes = reading.mode === "all" || !reading.roleId
     ? source.nodes.filter((node) => !reading.channel || edgeNodeIds.has(node.id))
-    : source.nodes.filter((node) => node.id === "input" || node.id === "output" || edgeNodeIds.has(node.id) || node.id === reading.roleId);
+    : source.nodes.filter((node) => node.id === STUDIO_SYSTEM_START_ROLE_ID || node.id === STUDIO_SYSTEM_END_ROLE_ID || edgeNodeIds.has(node.id) || node.id === reading.roleId);
   return { ...source, nodes, edges };
 }

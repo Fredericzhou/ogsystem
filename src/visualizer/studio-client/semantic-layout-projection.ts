@@ -1,4 +1,10 @@
-import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import {
+  STUDIO_SYSTEM_END_ROLE_ID,
+  STUDIO_SYSTEM_START_ROLE_ID,
+  type GraphViewModel,
+  type GraphViewModelEdge,
+  type GraphViewModelNode
+} from "../studio-contracts.js";
 import { topologyComponentIds } from "../topology-order.js";
 import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 
@@ -192,8 +198,8 @@ function projectedLabel(node: GraphViewModelNode): string {
 }
 
 export function layoutNodeSize(node: GraphViewModelNode): { width: number; height: number } {
-  const minimumWidth = node.kind === "boundary" ? node.layout.width : Math.max(180, node.layout.width);
-  const minimumHeight = Math.max(node.kind === "boundary" ? 70 : node.description ? 104 : 84, node.layout.height);
+  const minimumWidth = node.kind === "specialRole" ? node.layout.width : Math.max(180, node.layout.width);
+  const minimumHeight = Math.max(node.kind === "specialRole" ? 70 : node.description ? 104 : 84, node.layout.height);
   const labelWidth = estimateTextWidth(formatStudioNodeLabel(node));
   const width = node.roleSeat
     ? Math.min(220, Math.max(180, minimumWidth, Math.ceil(labelWidth + 30)))
@@ -601,6 +607,9 @@ function resolveRoute(edge: GraphViewModelEdge, nodeById: ReadonlyMap<string, La
   if (edge.source === edge.target) {
     return { kind: "self", sourceSide: "right", targetSide: "top", verticalGap: 0 };
   }
+  if (edge.topologyOrder?.endsWith("L")) {
+    return { kind: "backward", sourceSide: "left", targetSide: "right", verticalGap: 0 };
+  }
   const sourceCenter = edgeCenter(nodeById.get(edge.source));
   const targetCenter = edgeCenter(nodeById.get(edge.target));
   const horizontalGap = targetCenter.x - sourceCenter.x;
@@ -666,7 +675,7 @@ function sharedEndpointOffset(
   const nodeSpan = verticalFace ? node?.height : node?.width;
   const index = Math.max(0, endpointGroup.findIndex((candidate) => candidate.edge.id === draft.edge.id));
   const availableHalfSpan = Math.max(0, (nodeSpan ?? 0) / 2 - 9);
-  if (terminal.cell === "input" || terminal.cell === "output") {
+  if (terminal.cell === STUDIO_SYSTEM_START_ROLE_ID || terminal.cell === STUDIO_SYSTEM_END_ROLE_ID) {
     const center = node
       ? (verticalFace ? node.y + node.height / 2 : node.x + node.width / 2)
       : 0;
@@ -702,7 +711,7 @@ function portId(
   direction: "source" | "target",
   flowId: string
 ): string | undefined {
-  if (cell === "input" || cell === "output") return undefined;
+  if (cell === STUDIO_SYSTEM_START_ROLE_ID || cell === STUDIO_SYSTEM_END_ROLE_ID) return undefined;
   const directionToken: LayoutPortDirection = direction === "source" ? "out" : "in";
   const flowToken = encodeURIComponent(flowId);
   return `${directionToken}-flow-${flowToken}`;
@@ -1177,7 +1186,7 @@ function nearbySidePairs(
   const targetCenter = edgeCenter(target);
   const dx = targetCenter.x - sourceCenter.x;
   const dy = targetCenter.y - sourceCenter.y;
-  if (source.id === "input" || target.id === "output") {
+  if (source.id === STUDIO_SYSTEM_START_ROLE_ID || target.id === STUDIO_SYSTEM_END_ROLE_ID) {
     return profile === "stacked"
       ? dy >= 0 ? [["bottom", "top"]] : [["top", "bottom"]]
       : dx >= 0 ? [["right", "left"]] : [["left", "right"]];

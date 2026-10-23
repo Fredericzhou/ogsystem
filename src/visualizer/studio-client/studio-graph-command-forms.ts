@@ -188,7 +188,7 @@ export function createDefaultStudioCommandFormState(args: {
     originalEventType: args.kind === "edit-edge" ? args.eventType : undefined,
     sourceRoleId: args.sourceRoleId || firstRoleId(args.context),
     targetRoleId: args.targetRoleId || STUDIO_SYSTEM_END_ROLE_ID,
-    eventType: args.eventType || "DONE",
+    eventType: args.eventType || defaultStudioFlowEventType(args.context, args.sourceRoleId || firstRoleId(args.context)),
     label: args.label || "",
     runtimeOnlyErrorFlow: Boolean(args.runtimeOnlyErrorFlow),
     participatesInJoin: Boolean(args.participatesInJoin),
@@ -200,6 +200,19 @@ export function createDefaultStudioCommandFormState(args: {
     fields,
     validation: validateStudioAddEdgeDraft(fields, args.context)
   };
+}
+
+export function defaultStudioFlowEventType(context: StudioCommandValidationContext, sourceRoleId: string): string {
+  if (sourceRoleId === "__system_start__") return "START";
+  const existing = Object.values(context.authoring?.flows ?? {})
+    .find((flow) => flow.fromRoleId === sourceRoleId)?.eventType;
+  if (existing) return existing;
+  const declared = extractStudioRolePackages(context.rolePackages)
+    .find((rolePackage) => rolePackage.roleId === sourceRoleId)?.allowedEvents?.[0];
+  if (declared) return declared;
+  const roleId = context.authoring?.roles?.[sourceRoleId]?.roleId || sourceRoleId;
+  const stem = roleId.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+  return `${stem || "ROLE"}_DONE`;
 }
 
 export function commandFromStudioCommandFormState(state: StudioCommandFormState): StudioAuthoringCommand | null {
@@ -280,7 +293,7 @@ export function renderStudioCommandFormDiagnostics(state: StudioCommandFormState
 }
 
 export function renderStudioCommandFormFieldError(state: StudioCommandFormState, fieldPath: string): string {
-  const diagnostic = state.validation.diagnostics.find((item) => item.fieldPath === fieldPath);
+  const diagnostic = state.validation.diagnostics.find((item) => item.severity === "error" && item.fieldPath === fieldPath);
   return diagnostic
     ? '<div class="studio-command-form-error" data-studio-command-error="' + escapeHtml(fieldPath) + '" aria-live="polite">' + escapeHtml(diagnostic.message || diagnostic.code) + '</div>'
     : '<div class="studio-command-form-error" data-studio-command-error="' + escapeHtml(fieldPath) + '" aria-live="polite"></div>';

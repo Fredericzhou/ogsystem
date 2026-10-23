@@ -162,6 +162,10 @@ import {
   asRecord,
   asString
 } from "./json-guards.js";
+
+function asStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+}
 import {
   cachePendingProjectCreateResponse,
   cacheProjectCreateResponse,
@@ -450,10 +454,10 @@ function buildRunHeader(detail: LoadedRunDetail): RunHeader {
     asNumber(state?.transitionCount) ??
     asNumber((detail.state as Record<string, unknown> | undefined)?.transitionCount) ??
     0;
-  const finalRoleId =
-    asString(summary?.finalRoleId) ??
-    asString(state?.finalRoleId) ??
-    asString((detail.state as Record<string, unknown> | undefined)?.finalRoleId);
+  const finalRoleIds =
+    asStringArray(summary?.finalRoleIds) ??
+    asStringArray(state?.finalRoleIds) ??
+    asStringArray((detail.state as Record<string, unknown> | undefined)?.finalRoleIds);
   const lastExecutedRoleId =
     asString(summary?.lastRoleId) ??
     asString(state?.lastExecutedRoleId) ??
@@ -469,7 +473,7 @@ function buildRunHeader(detail: LoadedRunDetail): RunHeader {
     runDir: detail.runDir,
     status,
     transitionCount,
-    finalRoleId,
+    finalRoleIds,
     lastExecutedRoleId,
     error,
     updatedAt:
@@ -543,7 +547,7 @@ function summarizeAdapterResult(result: unknown): Record<string, unknown> {
   return {
     systemId: asString(record.systemId),
     systemVersion: asString(record.systemVersion),
-    finalRoleId: asString(record.finalRoleId),
+    finalRoleIds: asStringArray(record.finalRoleIds),
     transitionCount: asNumber(runSummary.totalTransitions),
     stageCount: Array.isArray(record.stages) ? record.stages.length : undefined,
     error: asString(record.error),
@@ -871,7 +875,7 @@ async function handleApiDesignContext(workdir: string, response: ServerResponse)
     status: run.status,
     lastErrorCode: run.lastErrorCode,
     lastRoleId: run.lastRoleId,
-    finalRoleId: run.finalRoleId,
+    finalRoleIds: run.finalRoleIds,
     transitionCount: run.transitionCount,
     updatedAt: run.updatedAt
   }));

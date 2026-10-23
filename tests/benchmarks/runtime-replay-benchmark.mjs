@@ -29,12 +29,11 @@ function createSystemSource(iterationCount) {
 %% system.id=benchmark.runtime.replay
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=test-loop-probe
 %% loop.max.test-loop-probe=${iterationCount}
 
-input -->|GO| operator[Role:test-loop-probe]
+start[开始] -->|START| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
-operator[Role:test-loop-probe] -->|DONE| output
+operator[Role:test-loop-probe] -->|DONE| end[结束]
 `;
 }
 
@@ -200,8 +199,9 @@ function applyGraphUpdate(state, update) {
       ...state.selectedEventByBranchId,
       ...(update.selectedEventByBranchId ?? {})
     },
-    finalOutput: update.finalOutput || state.finalOutput,
-    finalRoleId: update.finalRoleId || state.finalRoleId,
+    finalOutputsByRoleId: update.finalOutputsByRoleId || state.finalOutputsByRoleId,
+    finalOutputRoleOrder: update.finalOutputRoleOrder || state.finalOutputRoleOrder,
+    finalRoleIds: update.finalRoleIds || state.finalRoleIds,
     lastExecutedRoleId: update.lastExecutedRoleId ?? state.lastExecutedRoleId,
     nextBranchSequence: update.nextBranchSequence ?? state.nextBranchSequence,
     lastCheckpointSequence: Math.max(
@@ -442,7 +442,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     },
     result: {
       finalStatus: resumed.status,
-      finalRoleId: resumed.finalRoleId
+      finalRoleIds: resumed.finalRoleIds
     }
   };
 

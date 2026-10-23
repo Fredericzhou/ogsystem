@@ -150,10 +150,6 @@ export function injectStudioGraphStyles(): void {
         flex: 1 1 120px;
         max-width: 100%;
       }
-      .studio-graph-quick-debug {
-        inset: auto 12px 12px 12px;
-        width: auto;
-      }
     }
     @media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) {
       .studio-graph-toolbar {
@@ -223,6 +219,24 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node .x6-port-body,
     .studio-graph-canvas .x6-node [data-studio-port] {
       vector-effect: non-scaling-stroke;
+    }
+    .studio-graph-canvas .x6-node [data-studio-connect-port] {
+      opacity: 0;
+      transition: opacity 120ms ease, fill 120ms ease, stroke 120ms ease;
+    }
+    .studio-graph-canvas .x6-node.is-relationship-source [data-studio-connect-port],
+    .studio-graph-canvas .x6-node.is-connection-target [data-studio-connect-port],
+    .is-relationship-connecting .x6-node:hover [data-studio-connect-port] {
+      fill: #ecfeff;
+      opacity: 1;
+      r: 5px;
+      stroke: #0891b2;
+      stroke-width: 2px;
+    }
+    .studio-graph-canvas .x6-node.is-relationship-source [data-studio-connect-port],
+    .is-relationship-connecting .x6-node.is-relationship-source [data-studio-connect-port] {
+      fill: #cffafe;
+      stroke: #0e7490;
     }
     .studio-graph-canvas .x6-node:hover rect,
     .studio-graph-canvas .x6-node:hover path:first-of-type {
@@ -532,8 +546,7 @@ export function injectStudioGraphStyles(): void {
       padding: 9px 10px;
       box-sizing: border-box;
     }
-    .studio-graph-quick-open-input:focus-visible,
-    .studio-graph-quick-debug-input:focus-visible {
+    .studio-graph-quick-open-input:focus-visible {
       outline: none;
       border-color: #1b7662;
       box-shadow: 0 0 0 3px rgba(27, 118, 98, 0.16);
@@ -568,52 +581,6 @@ export function injectStudioGraphStyles(): void {
       font-size: 11px;
       color: #52665e;
     }
-    .studio-graph-quick-debug {
-      position: absolute;
-      inset: 16px 16px auto auto;
-      z-index: 7;
-      width: min(380px, calc(100% - 32px));
-    }
-    .studio-graph-quick-debug[hidden] {
-      display: none;
-    }
-    .studio-graph-quick-debug-panel {
-      display: grid;
-      gap: 8px;
-      padding: 12px;
-      border: 1px solid #dce8e2;
-      border-radius: 12px;
-      background: #ffffff;
-      box-shadow: 0 18px 38px rgba(35, 67, 56, 0.14);
-    }
-    .studio-graph-quick-debug-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-    .studio-graph-quick-debug-label {
-      font-size: 12px;
-      color: #52665e;
-    }
-    .studio-graph-quick-debug-input {
-      width: 100%;
-      min-width: 0;
-      min-height: 104px;
-      box-sizing: border-box;
-      resize: vertical;
-      scrollbar-width: thin;
-      scrollbar-color: #cbdad2 #f3f7f4;
-    }
-    .studio-graph-quick-debug-actions {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-    .studio-graph-quick-debug-hint {
-      margin-top: -2px;
-    }
     .studio-graph-stage.is-empty .studio-graph-canvas {
       opacity: 0.34;
     }
@@ -630,7 +597,6 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-toolbar-main::-webkit-scrollbar,
     .studio-graph-context-menu::-webkit-scrollbar,
     .studio-graph-quick-open-results::-webkit-scrollbar,
-    .studio-graph-quick-debug-input::-webkit-scrollbar,
     .studio-command-dialog::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -638,14 +604,12 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-toolbar-main::-webkit-scrollbar-track,
     .studio-graph-context-menu::-webkit-scrollbar-track,
     .studio-graph-quick-open-results::-webkit-scrollbar-track,
-    .studio-graph-quick-debug-input::-webkit-scrollbar-track,
     .studio-command-dialog::-webkit-scrollbar-track {
       background: #f3f7f4;
     }
     .studio-graph-toolbar-main::-webkit-scrollbar-thumb,
     .studio-graph-context-menu::-webkit-scrollbar-thumb,
     .studio-graph-quick-open-results::-webkit-scrollbar-thumb,
-    .studio-graph-quick-debug-input::-webkit-scrollbar-thumb,
     .studio-command-dialog::-webkit-scrollbar-thumb {
       border: 2px solid #f3f7f4;
       border-radius: 8px;
@@ -787,8 +751,7 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="dark"] .studio-graph-empty,
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-label,
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-kind,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-empty,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-label {
+    :root[data-visualizer-theme="dark"] .studio-graph-quick-open-empty {
       color: #8fa1c3;
     }
     :root[data-visualizer-theme="dark"] .studio-graph-empty { background: rgba(8, 13, 26, 0.72); }
@@ -796,7 +759,6 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="dark"] .studio-graph-minimap,
     :root[data-visualizer-theme="dark"] .studio-graph-context-menu,
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-panel,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-panel,
     :root[data-visualizer-theme="dark"] .studio-command-dialog {
       border-color: #334155;
       background: #0f172a;
@@ -808,7 +770,6 @@ export function injectStudioGraphStyles(): void {
       color: #dbeafe;
     }
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-input,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input,
     :root[data-visualizer-theme="dark"] .studio-command-form input,
     :root[data-visualizer-theme="dark"] .studio-command-form select {
       border-color: #475569;
@@ -829,19 +790,16 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="dark"] .studio-graph-toolbar-main,
     :root[data-visualizer-theme="dark"] .studio-graph-context-menu,
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-results,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input,
     :root[data-visualizer-theme="dark"] .studio-command-dialog {
       scrollbar-color: #475569 #111c2e;
     }
     :root[data-visualizer-theme="dark"] .studio-graph-toolbar-main::-webkit-scrollbar-track,
     :root[data-visualizer-theme="dark"] .studio-graph-context-menu::-webkit-scrollbar-track,
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-results::-webkit-scrollbar-track,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input::-webkit-scrollbar-track,
     :root[data-visualizer-theme="dark"] .studio-command-dialog::-webkit-scrollbar-track { background: #111c2e; }
     :root[data-visualizer-theme="dark"] .studio-graph-toolbar-main::-webkit-scrollbar-thumb,
     :root[data-visualizer-theme="dark"] .studio-graph-context-menu::-webkit-scrollbar-thumb,
     :root[data-visualizer-theme="dark"] .studio-graph-quick-open-results::-webkit-scrollbar-thumb,
-    :root[data-visualizer-theme="dark"] .studio-graph-quick-debug-input::-webkit-scrollbar-thumb,
     :root[data-visualizer-theme="dark"] .studio-command-dialog::-webkit-scrollbar-thumb { border-color: #111c2e; background: #475569; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover rect,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover path:first-of-type { stroke: #84b9a0; }

@@ -23,7 +23,16 @@ test("sandbox executor simulates CLI tools without creating real side effects", 
     const result = await executor.execute({
       roleId: "writer",
       prompt: "write the result",
-      schema: { type: "object" },
+      schema: {
+        type: "object",
+        required: ["event", "content", "data"],
+        properties: {
+          event: { type: "string", enum: ["SANDBOX_TOOL"] },
+          content: { type: "string" },
+          data: { type: "object", properties: {}, required: [], additionalProperties: false }
+        },
+        additionalProperties: false
+      },
       binding: {
         kind: "profile",
         profile: { profileId: "profile.writer", toolRef: "tool.writer" },
@@ -48,6 +57,7 @@ test("sandbox executor simulates CLI tools without creating real side effects", 
     const output = JSON.parse(result.stdout);
     assert.equal(result.exitCode, 0);
     assert.equal(output.event, "SANDBOX_TOOL");
+    assert.deepEqual(output.data, {});
     assert.match(output.content, /^\[dry-run\] /);
     await assert.rejects(() => stat(sentinelPath), { code: "ENOENT" });
   } finally {

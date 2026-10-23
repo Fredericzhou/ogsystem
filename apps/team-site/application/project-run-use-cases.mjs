@@ -232,7 +232,9 @@ export function createProjectRunUseCases({ projectStore, teamStore, runStore, re
             roundNumber: ((project.taskRecords || []).length || 0) + 1,
             teamVersionId: project.teamVersionId || project.mountedTeams?.[0]?.teamVersionId || null,
             teamName: project.teamName || project.mountedTeams?.[0]?.teamName || null,
-            outputSummary: typeof result?.finalOutput === "string" ? result.finalOutput.slice(0, 500) : ""
+            outputSummary: result?.finalOutputsByRoleId
+              ? Object.entries(result.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((output) => typeof output.content === "string" && output.content.startsWith("[dry-run]") ? output.content : `${roleId}: ${output.content || JSON.stringify(output.data || {})}`)).join(" | ").slice(0, 500)
+              : ""
           });
         }
         if (requestKey) {

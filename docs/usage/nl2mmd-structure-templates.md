@@ -42,11 +42,10 @@ flowchart TD
 %% system.id=demo.linear.flow
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=intake
 
-input -->|GO| intake[Role:intake]
+start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+writer[Role:writer] -->|DONE| end[结束]
 ```
 
 ### 2.2 `fanout_fanin`
@@ -68,17 +67,16 @@ flowchart TD
 %% system.id=demo.fanout.fanin
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
 
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| worker_b[Role:worker_b]
 worker_a[Role:worker_a] -->|A_DONE| review[Role:review]
 worker_b[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 ```
 
 ### 2.3 `quorum_consultation`
@@ -98,20 +96,19 @@ flowchart TD
 %% system.id=demo.quorum.consultation
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=lead
 %% join.mode.review=quorum_of
 %% join.sources.review=expert_a,expert_b,expert_c
 %% join.min.review=2
 %% context.map.review.task=global.task
 
-input -->|START| lead[Role:lead]
+start[开始] -->|START| lead[Role:lead]
 lead[Role:lead] -->|ASK_A| expert_a[Role:expert_a]
 lead[Role:lead] -->|ASK_B| expert_b[Role:expert_b]
 lead[Role:lead] -->|ASK_C| expert_c[Role:expert_c]
 expert_a[Role:expert_a] -->|A_DONE| review[Role:review]
 expert_b[Role:expert_b] -->|B_DONE| review[Role:review]
 expert_c[Role:expert_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 ```
 
 ### 2.4 `contract_gated_handoff`
@@ -131,16 +128,15 @@ flowchart TD
 %% system.id=demo.contract.gated.handoff
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=intake
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.contracts.json
 %% route.order.intake=reviewer,observer
 
-input -->|GO| intake[Role:intake]
+start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|REVIEW| reviewer[Role:reviewer]
 intake[Role:intake] -->|OBSERVE| observer[Role:observer]
-reviewer[Role:reviewer] -->|DONE| output
-observer[Role:observer] -->|DONE| output
+reviewer[Role:reviewer] -->|DONE| end[结束]
+observer[Role:observer] -->|DONE| end[结束]
 ```
 
 ### 2.5 `error_compensation`
@@ -162,12 +158,11 @@ flowchart TD
 %% system.id=demo.error.compensation
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=main
 
-input -->|START| main[Role:main]
-main[Role:main] -->|DONE| output
+start[开始] -->|START| main[Role:main]
+main[Role:main] -->|DONE| end[结束]
 main[Role:main] -->|ERROR.CONTRACT_MISSING| recovery[Role:recovery]
-recovery[Role:recovery] -->|DONE| output
+recovery[Role:recovery] -->|DONE| end[结束]
 ```
 
 ### 2.6 `bounded_loop`
@@ -187,17 +182,16 @@ flowchart TD
 %% system.id=demo.bounded.loop
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=review
 %% loop.max.review=3
 
-input -->|START| review[Role:review]
+start[开始] -->|START| review[Role:review]
 review[Role:review] -->|RETRY| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 ```
 
 ### 2.7 `human_gate`（runtime-native review）
 
-适合“人审 / 审批 / 确认”。它在被审核 role 上声明 `review.mode.<roleId>=required`，不增加独立的人审节点；`review.timeout.*` 当前只保存审核策略，不会自动计时过期。`runtime.error_flows.v1` 应配置在 `.ogs/runtime.json`，不是 Mermaid metadata。
+适合“人审 / 审批 / 确认”。它在被审核 role 上声明 `review.mode.<roleId>=required`，不增加独立的人审节点；`review.timeout.*` 在 status、inspect、review list 或 resume 时惰性检查，超时动作支持 pause 或 terminate，不启动后台计时服务。`runtime.error_flows.v1` 应配置在 `.ogs/runtime.json`，不是 Mermaid metadata。
 
 必填槽位：
 
@@ -212,12 +206,11 @@ flowchart TD
 %% system.id=demo.human.gate
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 %% review.mode.writer=required
 %% review.timeout.action.writer=pause
 
-input -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 ```
 
 ### 2.8 `mixed_binding`
@@ -236,12 +229,11 @@ flowchart TD
 %% system.id=demo.binding.mixed
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=reviewer
 %% exec.bind.publisher=publish-profile
 
-input -->|START| reviewer[Role:reviewer]
+start[开始] -->|START| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|PUBLISH| publisher[Role:publisher]
-publisher[Role:publisher] -->|DONE| output
+publisher[Role:publisher] -->|DONE| end[结束]
 ```
 
 ## 3. 使用建议

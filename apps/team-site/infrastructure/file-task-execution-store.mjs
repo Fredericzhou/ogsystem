@@ -131,7 +131,9 @@ export function createFileTaskExecutionStore({ projectStore }) {
           status: result.state?.status || "running",
           startedAt,
           completedAt: ["completed", "failed", "cancelled"].includes(result.state?.status) ? (result.state?.finishedAt || now) : null,
-          outputSummary: typeof result.result?.finalOutput === "string" ? result.result.finalOutput.slice(0, 500) : task.outputSummary
+          outputSummary: result.result?.finalOutputsByRoleId
+            ? Object.entries(result.result.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((output) => typeof output.content === "string" && output.content.startsWith("[dry-run]") ? output.content : `${roleId}: ${output.content || JSON.stringify(output.data || {})}`)).join(" | ").slice(0, 500)
+            : task.outputSummary
         });
       });
     },

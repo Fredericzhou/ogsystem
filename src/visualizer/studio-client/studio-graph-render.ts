@@ -40,7 +40,7 @@ function isDarkTheme(): boolean {
 function nodeStroke(node: GraphViewModelNode): string {
   if (node.diagnostic?.severity === "error") return "#f87171";
   if (node.diagnostic?.severity === "warning") return "#fbbf24";
-  if (node.kind === "boundary") return isDarkTheme() ? "#64748b" : "#91aa9d";
+  if (node.kind === "specialRole") return isDarkTheme() ? "#64748b" : "#91aa9d";
   if (node.roleSeat) return roleColorForId(node.roleId, isDarkTheme() ? "dark" : "light").accent;
   return isDarkTheme() ? "#52677e" : "#55798c";
 }
@@ -454,6 +454,15 @@ function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unkno
   };
 }
 
+function connectionPortSpecs(): StudioPortSpec[] {
+  return (["top", "right", "bottom", "left"] as const).map((side) => ({
+    id: `connect-${side}`,
+    direction: "out",
+    side,
+    offset: 0
+  }));
+}
+
 function fallbackPortSpecs(node: GraphViewModelNode): StudioPortSpec[] {
   if (!node.roleSeat) return [];
   return [
@@ -489,8 +498,8 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
 
 function nodeFill(node: GraphViewModelNode, roleColor?: ReturnType<typeof roleColorForId>): string {
   if (node.roleSeat) return roleColor?.fill ?? (isDarkTheme() ? "#101c2d" : "#ffffff");
-  if (isDarkTheme()) return node.kind === "boundary" ? "#152235" : "#101c2d";
-  if (node.kind === "boundary") return "#f1f7f3";
+  if (isDarkTheme()) return node.kind === "specialRole" ? "#152235" : "#101c2d";
+  if (node.kind === "specialRole") return "#f1f7f3";
   return "#ffffff";
 }
 
@@ -502,12 +511,12 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
   const markerY = 10;
   return {
     body: {
-      rx: node.kind === "boundary" ? 20 : 8,
-      ry: node.kind === "boundary" ? 20 : 8,
+      rx: node.kind === "specialRole" ? 20 : 8,
+      ry: node.kind === "specialRole" ? 20 : 8,
       fill: nodeFill(node, roleColor),
       stroke: nodeStroke(node),
-      strokeWidth: node.kind === "boundary" ? 1.2 : 1.5,
-      strokeDasharray: node.kind === "boundary" ? "6 4" : ""
+      strokeWidth: node.kind === "specialRole" ? 1.2 : 1.5,
+      strokeDasharray: node.kind === "specialRole" ? "6 4" : ""
     },
     nodeTitle: {
       text: showRoleMarker ? formatStudioNodeLabel(node) : ""
@@ -544,8 +553,8 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
         textAnchor: "start",
         textVerticalAnchor: "middle"
       } : {}),
-      fill: node.kind === "boundary" ? (dark ? "#dbeafe" : "#165f50") : (dark ? "#e5eefb" : "#243b32"),
-      fontSize: node.kind === "boundary" ? 14 : 13,
+      fill: node.kind === "specialRole" ? (dark ? "#dbeafe" : "#165f50") : (dark ? "#e5eefb" : "#243b32"),
+      fontSize: node.kind === "specialRole" ? 14 : 13,
       fontWeight: 650,
       textWrap: {
         width: node.layout.width - (showRoleMarker ? 74 : 18),
@@ -593,16 +602,25 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
 
 function studioNodePorts(node: GraphViewModelNode, projectedPorts?: readonly StudioPortSpec[]): Node.Metadata["ports"] {
   const specs = [...(projectedPorts ?? [])];
-  if (node.roleSeat) {
+  if (node.roleSeat || node.kind === "specialRole") {
     for (const fallback of fallbackPortSpecs(node)) {
       if (!specs.some((spec) => spec.direction === fallback.direction)) specs.push(fallback);
     }
+    for (const port of connectionPortSpecs()) {
+      if (!specs.some((spec) => spec.id === port.id)) specs.push(port);
+    }
   }
   specs.sort((left, right) => left.id.localeCompare(right.id));
-  const groups = Object.fromEntries(specs.map((spec) => [spec.id, {
-    position: portPosition(spec.side, spec.offset),
-    attrs: portAttrs(spec.direction)
-  }]));
+  const groups = Object.fromEntries(specs.map((spec) => {
+    const attrs = portAttrs(spec.direction);
+    const circle = attrs.circle as Record<string, unknown>;
+    return [spec.id, {
+      position: portPosition(spec.side, spec.offset),
+      attrs: spec.id.startsWith("connect-")
+        ? { ...attrs, circle: { ...circle, "data-studio-port": "connect", "data-studio-connect-port": spec.id } }
+        : attrs
+    }];
+  }));
   return {
     groups,
     items: specs.map((spec) => ({ id: spec.id, group: spec.id }))

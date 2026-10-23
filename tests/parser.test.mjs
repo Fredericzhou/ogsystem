@@ -8,6 +8,7 @@ import {
   loadSystemFromMermaid,
   parseSystemFromMermaidSource
 } from "../dist/runtime/parse-mermaid.js";
+import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import { validateNl2MmdCandidate } from "../dist/nl2mmd/index.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
@@ -15,23 +16,21 @@ const validSource = `flowchart TD
 %% system.id=test.parser
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=intake
 %% exec.bind.intake=profile.parser
-input -->|ENTER| intake[Role:intake]
-intake[Role:intake] -->|COMPLETE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|COMPLETE| end[结束]
 `;
 
 const invalidSource = `flowchart TD
 %% system.id=test.parser
 %% system.version=0.1.0
-input -->|ENTER| intake[Role:intake]
+start[开始] -->|START| intake[Role:intake]
 `;
 
 const graphSource = `flowchart TD
 %% system.id=test.langgraph
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.json
 %% role.mode.dispatch=parallel_split
@@ -43,82 +42,77 @@ const graphSource = `flowchart TD
 %% model.bind.worker_a=model.fast
 %% model.bind.worker_b=model.deep
 %% model.bind.review=model.deep
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
 worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
 review[Role:review] -->|RETRY| dispatch[Role:dispatch]
-review[Role:review] -->|FINISH| output
+review[Role:review] -->|FINISH| end[结束]
 `;
 
 const routeOrderIgnoresErrorEdgesSource = `flowchart TD
 %% system.id=test.route.order.error
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% route.order.dispatch=worker_b,worker_a
 %% model.bind.dispatch=model.fast
 %% model.bind.worker_a=model.fast
 %% model.bind.worker_b=model.fast
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
-dispatch[Role:dispatch] -->|ERROR.INVALID| output
-worker_a[Role:worker_a] -->|DONE_A| output
-worker_b[Role:worker_b] -->|DONE_B| output
+dispatch[Role:dispatch] -->|ERROR.INVALID| end[结束]
+worker_a[Role:worker_a] -->|DONE_A| end[结束]
+worker_b[Role:worker_b] -->|DONE_B| end[结束]
 `;
 
 const cycleWithoutLoopBudgetSource = `flowchart TD
 %% system.id=test.cycle.no-budget
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=a
 %% exec.bind.a=profile.a
 %% exec.bind.b=profile.b
-input -->|START| a[Role:a]
+start[开始] -->|START| a[Role:a]
 a[Role:a] -->|NEXT| b[Role:b]
 b[Role:b] -->|RETRY| a[Role:a]
-b[Role:b] -->|DONE| output
+b[Role:b] -->|DONE| end[结束]
 `;
 
 const cycleWithLoopBudgetSource = `flowchart TD
 %% system.id=test.cycle.with-budget
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=a
 %% loop.max.a=2
 %% exec.bind.a=profile.a
 %% exec.bind.b=profile.b
-input -->|START| a[Role:a]
+start[开始] -->|START| a[Role:a]
 a[Role:a] -->|NEXT| b[Role:b]
 b[Role:b] -->|RETRY| a[Role:a]
-b[Role:b] -->|DONE| output
+b[Role:b] -->|DONE| end[结束]
 `;
 
 const joinSourcesWithoutJoinModeSource = `flowchart TD
 %% system.id=test.join.sources.without-mode
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% exec.bind.dispatch=profile.dispatch
 %% exec.bind.worker_a=profile.worker
 %% exec.bind.worker_b=profile.worker
 %% exec.bind.review=profile.review
 %% join.sources.review=worker_a,worker_b
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
 worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `;
 
 const joinSourcesMismatchSource = `flowchart TD
 %% system.id=test.join.sources.mismatch
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
@@ -127,21 +121,20 @@ const joinSourcesMismatchSource = `flowchart TD
 %% model.bind.worker_b=model.fast
 %% model.bind.worker_c=model.fast
 %% model.bind.review=model.fast
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 dispatch[Role:dispatch] -->|C| worker_c[Role:worker_c]
 worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
 worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
 worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `;
 
 const quorumJoinWithProjectionSource = `flowchart TD
 %% system.id=test.quorum.projection
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
@@ -156,19 +149,19 @@ const quorumJoinWithProjectionSource = `flowchart TD
 %% model.bind.worker_b=model.fast
 %% model.bind.worker_c=model.fast
 %% model.bind.review=model.fast
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 dispatch[Role:dispatch] -->|C| worker_c[Role:worker_c]
 worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
 worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
 worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `;
 
 test("parser accepts a minimal system", () => {
   const system = parseSystemFromMermaidSource(validSource);
-  assert.strictEqual(system.entryRoleId, "intake");
+  assert.deepEqual(system.entryRoleIds, ["intake"]);
   assert.ok(system.flows.length >= 1);
   assert.strictEqual(system.lawBinding.globalLawRef, "law.test");
   assert.strictEqual(system.executionBinding.intake, "profile.parser");
@@ -185,10 +178,9 @@ test("parser rejects removed talent.bind metadata", () => {
 %% system.id=test.removed-talent-binding
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=intake
 %% talent.bind.intake=reasoning
-input -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|DONE| end[结束]
 `;
   assert.throws(
     () => parseSystemFromMermaidSource(source),
@@ -214,16 +206,15 @@ test("parser accepts review metadata with defaults and explicit overrides", () =
 %% system.id=test.review.metadata
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% exec.bind.reviewer=profile.reviewer
 %% review.mode.reviewer=required
 %% review.timeout.reviewer=3600
 %% review.rework.target.reviewer=writer
 %% review.rework.max.reviewer=2
-input -->|START| writer[Role:writer]
+start[开始] -->|START| writer[Role:writer]
 writer[Role:writer] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|APPROVED| output
+reviewer[Role:reviewer] -->|APPROVED| end[结束]
 `;
 
   const system = parseSystemFromMermaidSource(source);
@@ -242,12 +233,11 @@ test("parser accepts optional human review selectors in context.map", () => {
 %% system.id=test.review.selector.optional
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% context.map.writer.review_comment=global.human_review.current.comment?
 %% context.map.writer.previous_content=global.human_review.current.previous_output.content?
-input -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `;
 
   const system = parseSystemFromMermaidSource(source);
@@ -262,13 +252,12 @@ test("parser rejects review metadata without review.mode", () => {
 %% system.id=test.review.missing.mode
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% exec.bind.reviewer=profile.reviewer
 %% review.timeout.reviewer=120
-input -->|START| writer[Role:writer]
+start[开始] -->|START| writer[Role:writer]
 writer[Role:writer] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|APPROVED| output
+reviewer[Role:reviewer] -->|APPROVED| end[结束]
 `;
 
   assert.throws(
@@ -282,11 +271,10 @@ test("parser rejects handoff.contracts without handoff.mode", () => {
 %% system.id=test.handoff.missing.mode
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=intake
 %% handoff.contracts=contracts/handoff.json
 %% exec.bind.intake=profile.parser
-input -->|ENTER| intake[Role:intake]
-intake[Role:intake] -->|COMPLETE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|COMPLETE| end[结束]
 `;
   assert.throws(
     () => parseSystemFromMermaidSource(source),
@@ -316,12 +304,11 @@ test("loadSystemFromMermaid resolves handoff contract paths relative to the syst
 %% system.id=test.resolve.contracts
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=intake
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.json
 %% exec.bind.intake=profile.parser
-input -->|ENTER| intake[Role:intake]
-intake[Role:intake] -->|DONE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|DONE| end[结束]
 `,
     "utf8"
   );
@@ -502,10 +489,9 @@ test("parser rejects duplicate metadata keys instead of silently overriding", ()
 %% system.version=0.1.0
 %% law.global=law.first
 %% law.global=law.second
-%% entry.role=intake
 %% model.bind.intake=model.fast
-input -->|GO| intake[Role:intake]
-intake[Role:intake] -->|DONE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|DONE| end[结束]
 `;
 
   assert.throws(
@@ -519,11 +505,10 @@ test("parser rejects role binding conflicts when model.bind and exec.bind coexis
 %% system.id=test.binding.conflict
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=intake
 %% exec.bind.intake=profile.parser
 %% model.bind.intake=model.fast
-input -->|GO| intake[Role:intake]
-intake[Role:intake] -->|DONE| output
+start[开始] -->|START| intake[Role:intake]
+intake[Role:intake] -->|DONE| end[结束]
 `;
 
   assert.throws(
@@ -537,37 +522,35 @@ test("parser accepts route order when multiple edges share the same target", () 
 %% system.id=test.route.order.duplicate.target
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=dispatch
 %% route.order.dispatch=worker_b,worker_a
 %% model.bind.dispatch=model.fast
 %% model.bind.worker_a=model.fast
 %% model.bind.worker_b=model.fast
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|A2| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
-worker_a[Role:worker_a] -->|DONE_A| output
-worker_b[Role:worker_b] -->|DONE_B| output
+worker_a[Role:worker_a] -->|DONE_A| end[结束]
+worker_b[Role:worker_b] -->|DONE_B| end[结束]
 `;
 
   const system = parseSystemFromMermaidSource(source);
   assert.deepStrictEqual(system.graph?.routeOrderByRoleId?.dispatch, ["worker_b", "worker_a"]);
 });
 
-test("parser rejects ERROR* edges declared from input boundary", () => {
+test("parser rejects non-structural events declared from Start", () => {
   const source = `flowchart TD
 %% system.id=test.error.input
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=intake
 %% exec.bind.intake=profile.intake
-input -->|ERROR| intake[Role:intake]
-intake[Role:intake] -->|DONE| output
+start[开始] -->|ERROR| intake[Role:intake]
+intake[Role:intake] -->|DONE| end[结束]
 `;
 
   assert.throws(
     () => parseSystemFromMermaidSource(source),
-    /MERMAID_INPUT_ERROR_EDGE_NOT_ALLOWED|input boundary cannot declare ERROR/
+    /All Start flows must use the shared structural event START/
   );
 });
 
@@ -576,14 +559,13 @@ test("parser rejects duplicate ERROR fallback edges from the same role", () => {
 %% system.id=test.error.fallback.duplicate
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.comp_a=profile.worker
 %% exec.bind.comp_b=profile.worker
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| comp_a[Role:comp_a]
 worker[Role:worker] -->|ERROR| comp_b[Role:comp_b]
-worker[Role:worker] -->|DONE| output
+worker[Role:worker] -->|DONE| end[结束]
 `;
 
   assert.throws(
@@ -597,14 +579,13 @@ test("parser rejects duplicate ERROR.<code> edges from the same role", () => {
 %% system.id=test.error.code.duplicate
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.retry_a=profile.worker
 %% exec.bind.retry_b=profile.worker
-input -->|START| worker[Role:worker]
+start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_a[Role:retry_a]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_b[Role:retry_b]
-worker[Role:worker] -->|DONE| output
+worker[Role:worker] -->|DONE| end[结束]
 `;
 
   assert.throws(
@@ -620,10 +601,9 @@ for (const invalidErrorEdgeEventCase of [
 %% system.id=test.error.invalid.prefix
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
-input -->|START| worker[Role:worker]
-worker[Role:worker] -->|ERROR_SPAWN| output
+start[开始] -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR_SPAWN| end[结束]
 `,
     expectedMessage: /MERMAID_INVALID_ERROR_EDGE_EVENT|reserved ERROR\* events must be exactly/
   },
@@ -633,10 +613,9 @@ worker[Role:worker] -->|ERROR_SPAWN| output
 %% system.id=test.error.invalid.empty
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
-input -->|START| worker[Role:worker]
-worker[Role:worker] -->|ERROR.| output
+start[开始] -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR.| end[结束]
 `,
     expectedMessage: /MERMAID_INVALID_ERROR_EDGE_EVENT|non-empty <errorCode>/
   }
@@ -710,13 +689,12 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
 %% system.id=test.nl2mmd.error.edge
 %% system.version=0.1.0
 %% law.global=law.test
-%% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.compensate=profile.compensate
-input -->|START| worker[Role:worker]
-worker[Role:worker] -->|DONE| output
+start[开始] -->|START| worker[Role:worker]
+worker[Role:worker] -->|DONE| end[结束]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| compensate[Role:compensate]
-compensate[Role:compensate] -->|RECOVERED| output
+compensate[Role:compensate] -->|RECOVERED| end[结束]
 `;
 
   const validation = await validateNl2MmdCandidate({
@@ -744,4 +722,56 @@ compensate[Role:compensate] -->|RECOVERED| output
 
   assert.equal(validation.status, "ok");
   assert.deepStrictEqual(validation.errors, []);
+});
+
+test("Start flows define entry roles and only roles directly connected to End count toward quorum", () => {
+  const system = parseSystemFromMermaidSource(`flowchart TD
+%% system.id=test.multi-entry
+%% system.version=1.0.0
+%% law.global=law.test
+%% end.join.mode=quorum_of
+%% end.join.min=2
+start[开始] -->|START| alpha[Role:alpha]
+start[开始] -->|START| beta[Role:beta]
+alpha[Role:alpha] -->|DONE| end[结束]
+beta[Role:beta] -->|DONE| end[结束]
+gamma[Role:gamma] -->|DONE| orphan[Role:orphan]
+`);
+
+  assert.deepEqual(system.entryRoleIds, ["alpha", "beta"]);
+  assert.deepEqual(createExecutionPlan(system).terminalRoleOrder, ["alpha", "beta"]);
+  assert.deepEqual(system.endJoin, { mode: "quorum_of", min: 2 });
+  assert.equal(system.flows.filter((flow) => flow.toRoleId === "__system_end__").length, 2);
+  assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
+%% system.id=test.invalid-end-quorum
+%% system.version=1.0.0
+%% law.global=law.test
+%% end.join.mode=quorum_of
+%% end.join.min=2
+start[开始] -->|START| alpha[Role:alpha]
+alpha[Role:alpha] -->|DONE| end[结束]
+`), /end\.join\.min must be within \[1, 1\]/);
+  assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
+%% system.id=test.legacy-entry
+%% system.version=1.0.0
+%% law.global=law.test
+%% entry.role=alpha
+start[开始] -->|START| alpha[Role:alpha]
+alpha[Role:alpha] -->|DONE| end[结束]
+`), /Unsupported metadata key "entry\.role"/);
+  assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
+%% system.id=test.removed-engine
+%% system.version=1.0.0
+%% law.global=law.test
+%% engine=langgraph
+start[开始] -->|START| alpha[Role:alpha]
+alpha[Role:alpha] -->|DONE| end[结束]
+`), /Unsupported metadata key "engine"/);
+  assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
+%% system.id=test.start-event-mismatch
+%% system.version=1.0.0
+%% law.global=law.test
+start[开始] -->|ENTER| alpha[Role:alpha]
+alpha[Role:alpha] -->|DONE| end[结束]
+`), /All Start flows must use the shared structural event START/);
 });

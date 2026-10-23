@@ -35,7 +35,6 @@ const source = [
   "%% system.id=test.studio.authoring",
   "%% system.version=1.0.0",
   "%% law.global=law.minimal.base",
-  "%% entry.role=dispatch",
   "%% handoff.mode=strict",
   "%% handoff.contracts=contracts/handoff.json",
   "%% exec.bind.review=profile.review",
@@ -49,13 +48,37 @@ const source = [
   "%% review.rework.target.review=worker",
   "%% review.terminate.scope.review=branch",
   "%% context.map.review.summary=source(worker).content",
-  "input -->|START| a[Role:dispatch]",
+  "start[开始] -->|START| a[Role:dispatch]",
   "a[Role:dispatch] -->|WORK| b[Role:worker]",
   "a[Role:dispatch] -->|REVIEW| c[Role:review]",
   "b[Role:worker] -->|DONE| c[Role:review]",
-  "c[Role:review] -->|APPROVED| output",
+  "c[Role:review] -->|APPROVED| end[结束]",
   ""
 ].join("\n");
+
+test("Studio authoring commands reject reverse boundary flows and direct Start-to-End flows", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const canvas = authoringToCanvasDocument(authoring);
+  const roleId = Object.keys(authoring.roles)[0];
+  assert.ok(roleId);
+
+  for (const [sourceRoleId, targetRoleId] of [
+    [roleId, "__system_start__"],
+    ["__system_end__", roleId],
+    ["__system_start__", "__system_end__"]
+  ]) {
+    const result = applyStudioAuthoringCommand({
+      authoring,
+      canvas,
+      command: { type: "add-edge", sourceRoleId, targetRoleId, eventType: "DONE" }
+    });
+    assert.equal(result.blockedCode, "invalid-edge-endpoints", `${sourceRoleId} -> ${targetRoleId} must be rejected`);
+  }
+});
 
 test("Studio authoring import extracts normalized roles, flows, and metadata", () => {
   const authoring = importMermaidToAuthoring({
@@ -66,15 +89,14 @@ test("Studio authoring import extracts normalized roles, flows, and metadata", (
 
   assert.equal(authoring.version, 1);
   assert.equal(authoring.system.systemId, "test.studio.authoring");
-  assert.equal(authoring.system.entryRoleId, "dispatch");
-  assert.equal(authoring.system.entryEventType, "START");
+  assert.equal(Object.values(authoring.flows).find((flow) => flow.fromRoleId === "__system_start__")?.toRoleId, "dispatch");
   assert.equal(authoring.roles.dispatch.bindingKind, "noop");
   assert.equal(authoring.roles.review.bindingKind, "exec");
   assert.equal(authoring.roles.dispatch.routingMode, "parallel_split");
   assert.deepEqual(authoring.roles.review.joinSources, ["worker", "dispatch"]);
   assert.equal(authoring.roles.review.review.mode, "required");
   assert.equal(authoring.roles.review.contextMap.summary, "source(worker).content");
-  assert.equal(Object.keys(authoring.flows).length, 4);
+  assert.equal(Object.keys(authoring.flows).length, 5);
 });
 
 test("Studio Mermaid import reflects the project's pinned role model bindings", () => {
@@ -170,12 +192,12 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   assert.doesNotMatch(first, /%% model\.bind\./);
   assert.match(first, /%% exec\.bind\.review=profile\.review/);
   assert.match(first, /%% join\.sources\.review=worker,dispatch/);
-  assert.match(first, /input -->\|START\| r1\[Role:dispatch\]/);
+  assert.match(first, /start\[开始\] -->\|START\| r1\[Role:dispatch\]/);
 
   const original = parseSystemFromMermaidSource(source);
   const roundTripped = parseSystemFromMermaidSource(first);
   assert.equal(roundTripped.systemId, original.systemId);
-  assert.equal(roundTripped.entryRoleId, original.entryRoleId);
+  assert.equal(roundTripped.entryRoleIds?.[0], original.entryRoleIds?.[0]);
   assert.deepEqual(roundTripped.modelBinding, {});
   assert.deepEqual(roundTripped.executionBinding, original.executionBinding);
   assert.deepEqual([...roundTripped.roleIds].sort(), [...original.roleIds].sort());
@@ -286,35 +308,13 @@ test("Studio bridge restores a compatible saved authoring layout and rejects sta
   }
 });
 
-test("Studio authoring preserves legacy engine metadata across spaced syntax round-trips", () => {
-  const legacySource = source.replace("flowchart TD", "flowchart TD\n%% engine   =   langgraph");
-  const authoring = importMermaidToAuthoring({
+test("Studio rejects removed engine metadata instead of preserving it", () => {
+  const sourceWithRemovedEngine = source.replace("flowchart TD", "flowchart TD\n%% engine=langgraph");
+  assert.throws(() => importMermaidToAuthoring({
     workdir: "/tmp/project",
     systemPath: "/tmp/project/system.mmd",
-    systemSource: legacySource
-  });
-
-  assert.equal(authoring.system.legacyEngine, "langgraph");
-  const serialized = serializeAuthoringToMermaid(authoring);
-  assert.match(serialized, /^%% engine=langgraph$/m);
-  assert.equal(importMermaidToAuthoring({
-    workdir: "/tmp/project",
-    systemPath: "/tmp/project/system.mmd",
-    systemSource: serialized
-  }).system.legacyEngine, "langgraph");
-  assert.equal(parseSystemFromMermaidSource(serialized).systemId, authoring.system.systemId);
-});
-
-test("Studio bridge import keeps legacy engine metadata through the editor load path", async () => {
-  const legacySource = source.replace("%% system.id=test.studio.authoring", "%% system.id=test.studio.authoring\n%% engine=langgraph");
-  const bridge = await inspectStudioBridgeDraft({
-    workdir: "/tmp/project",
-    systemPath: "/tmp/project/system.mmd",
-    systemSource: legacySource,
-    validateSystemSource: async () => ({ ok: true, diagnostics: [] })
-  });
-  assert.equal(bridge.authoring?.system.legacyEngine, "langgraph");
-  assert.match(serializeAuthoringToMermaid(bridge.authoring), /%% engine=langgraph/);
+    systemSource: sourceWithRemovedEngine
+  }), /Unsupported metadata key "engine"/);
 });
 
 test("Studio role settings commands round-trip routing, join, review, loop, and context mappings", () => {
@@ -378,9 +378,8 @@ test("Studio authoring preserves entry boundary event types across Mermaid round
     "%% system.id=template.minimal",
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
-    "%% entry.role=demo-analyst",
-    "input -->|ENTER| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+    "start[开始] -->|START| analyst[Role:demo-analyst]",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
     ""
   ].join("\n");
   const authoring = importMermaidToAuthoring({
@@ -390,9 +389,9 @@ test("Studio authoring preserves entry boundary event types across Mermaid round
   });
   const generated = serializeAuthoringToMermaid(authoring);
 
-  assert.equal(authoring.system.entryEventType, "ENTER");
-  assert.match(generated, /input -->\|ENTER\| r1\[Role:demo-analyst\]/);
-  assert.equal(parseSystemFromMermaidSource(generated).entryRoleId, "demo-analyst");
+  assert.equal(Object.values(authoring.flows).find((flow) => flow.fromRoleId === "__system_start__")?.eventType, "START");
+  assert.match(generated, /start\[开始\] -->\|START\| r1\[Role:demo-analyst\]/);
+  assert.equal(parseSystemFromMermaidSource(generated).entryRoleIds?.[0], "demo-analyst");
 });
 
 test("Studio canvas adapter keeps layout state out of generated Mermaid", () => {
@@ -424,7 +423,7 @@ test("Studio canvas adapter keeps layout state out of generated Mermaid", () => 
   assert.equal(parseSystemFromMermaidSource(generated).systemId, "test.studio.authoring");
 });
 
-test("Studio canvas apply rebuilds flows from edges and preserves existing role layout", () => {
+test("Studio canvas apply rebuilds explicit Start, role, and End flows from editable edges", () => {
   const authoring = importMermaidToAuthoring({
     workdir: "/tmp/project",
     systemPath: "/tmp/project/system.mmd",
@@ -456,10 +455,13 @@ test("Studio canvas apply rebuilds flows from edges and preserves existing role 
   });
 
   assert.equal(applied.layout.nodes.worker.x, 333);
+  assert.equal(Object.values(applied.flows).some((flow) => flow.fromRoleId === "__system_start__" && flow.toRoleId === "dispatch" && flow.eventType === "START"), true);
   assert.equal(applied.flows["new-worker-approved-output"].toRoleId, "__system_end__");
   assert.equal(Object.values(applied.flows).some((flow) => flow.fromRoleId === "review" && flow.eventType === "APPROVED"), false);
   assert.equal(Object.values(applied.flows).some((flow) => flow.eventType === "APPROVED"), true);
   const generated = serializeAuthoringToMermaid(applied);
+  assert.match(generated, /start\[开始\] -->\|START\| r1\[Role:dispatch\]/);
+  assert.match(generated, /r3\[Role:worker\] -->\|APPROVED\| end\[结束\]/);
   assert.equal(parseSystemFromMermaidSource(generated).flows.some((flow) => flow.fromRoleId === "review" && flow.eventType === "APPROVED"), false);
   assert.doesNotMatch(generated, /333|444|viewport|width|height/);
 });
@@ -554,7 +556,7 @@ test("Studio flow labels round-trip through authoring and canvas without changin
     systemSource: source
   });
   authoring.roles.dispatch.title = "需求分发";
-  authoring.flows["1:dispatch:WORK:worker"].label = "需求已完成";
+  authoring.flows["2:dispatch:WORK:worker"].label = "需求已完成";
 
   const canvas = authoringToCanvasDocument(authoring);
   const labeledEdge = canvas.edges.find((edge) => edge.eventType === "WORK");
@@ -771,7 +773,7 @@ test("Studio authoring commands create validated roles and edges from command fo
   const invalidRole = applyStudioAuthoringCommand({
     authoring: addedRole.authoring,
     canvas: addedRole.canvas,
-    command: { type: "add-role", roleId: "output", bindingKind: "noop" }
+    command: { type: "add-role", roleId: "start", bindingKind: "noop" }
   });
   assert.equal(invalidRole.blockedCode, "invalid-role-id");
 
@@ -781,19 +783,19 @@ test("Studio authoring commands create validated roles and edges from command fo
     command: {
       type: "add-edge",
       sourceRoleId: "qa_gate",
-      targetRoleId: "output",
-      eventType: "ERROR_TIMEOUT",
-      label: "超时处理",
-      runtimeOnlyErrorFlow: true
+      targetRoleId: "__system_end__",
+      eventType: "DONE",
+      label: "交付完成",
+      runtimeOnlyErrorFlow: false
     }
   });
 
   assert.equal(addedEdge.blockedCode, undefined);
   const edge = Object.values(addedEdge.authoring.flows).find((flow) => flow.fromRoleId === "qa_gate");
   assert.equal(edge.toRoleId, "__system_end__");
-  assert.equal(edge.eventType, "ERROR_TIMEOUT");
-  assert.equal(edge.label, "超时处理");
-  assert.equal(edge.runtimeOnlyErrorFlow, true);
+  assert.equal(edge.eventType, "DONE");
+  assert.equal(edge.label, "交付完成");
+  assert.equal(edge.runtimeOnlyErrorFlow, false);
 
   const updatedEdge = applyStudioAuthoringCommand({
     authoring: addedEdge.authoring,
@@ -802,19 +804,38 @@ test("Studio authoring commands create validated roles and edges from command fo
       type: "update-edge",
       flowId: edge.flowId,
       originalSourceRoleId: "qa_gate",
-      originalTargetRoleId: "output",
-      originalEventType: "ERROR_TIMEOUT",
+      originalTargetRoleId: "__system_end__",
+      originalEventType: "DONE",
       sourceRoleId: "qa_gate",
-      targetRoleId: "output",
-      eventType: "ERROR_RETRY",
-      label: "超时处理",
+      targetRoleId: "__system_end__",
+      eventType: "APPROVED",
+      label: "审核通过",
       runtimeOnlyErrorFlow: true
     }
   });
   const retryEdge = Object.values(updatedEdge.authoring.flows).find((flow) => flow.fromRoleId === "qa_gate");
-  assert.equal(retryEdge.eventType, "ERROR_RETRY");
-  assert.equal(retryEdge.label, "超时处理");
-  assert.equal(updatedEdge.selectedFlowKey, "qa_gate:ERROR_RETRY:output");
+  assert.equal(retryEdge.eventType, "APPROVED");
+  assert.equal(retryEdge.label, "审核通过");
+  assert.equal(updatedEdge.selectedFlowKey, "qa_gate:APPROVED:end");
+
+  const startEdge = Object.values(updatedEdge.authoring.flows).find((flow) => flow.fromRoleId === "__system_start__");
+  assert.ok(startEdge);
+  const renamedStartEdge = applyStudioAuthoringCommand({
+    authoring: updatedEdge.authoring,
+    canvas: updatedEdge.canvas,
+    command: {
+      type: "update-edge",
+      flowId: startEdge.flowId,
+      originalSourceRoleId: "__system_start__",
+      originalTargetRoleId: startEdge.toRoleId,
+      originalEventType: "START",
+      sourceRoleId: "__system_start__",
+      targetRoleId: startEdge.toRoleId,
+      eventType: "START",
+      label: "任务分发至规划师"
+    }
+  });
+  assert.equal(Object.values(renamedStartEdge.authoring.flows).find((flow) => flow.fromRoleId === "__system_start__")?.label, "任务分发至规划师");
 
   const duplicateEdge = applyStudioAuthoringCommand({
     authoring: updatedEdge.authoring,
@@ -822,12 +843,36 @@ test("Studio authoring commands create validated roles and edges from command fo
     command: {
       type: "add-edge",
       sourceRoleId: "qa_gate",
-      targetRoleId: "output",
-      eventType: "ERROR_RETRY",
+      targetRoleId: "__system_end__",
+      eventType: "APPROVED",
       label: "另一个显示名"
     }
   });
   assert.equal(duplicateEdge.blockedCode, "duplicate-edge");
+});
+
+test("adding the first role to an empty graph makes it the start entry", () => {
+  const empty = {
+    version: 1,
+    project: { workdir: "/tmp/empty-team", systemPath: "system.mmd" },
+    system: {
+      systemId: "empty.team",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {},
+    flows: {},
+    layout: { nodes: {} }
+  };
+  const added = applyStudioAuthoringCommand({
+    authoring: empty,
+    canvas: authoringToCanvasDocument(empty),
+    command: { type: "add-role", roleId: "intake", bindingKind: "noop" }
+  });
+
+  assert.deepEqual(Object.values(added.authoring.flows).filter((flow) => flow.fromRoleId === "__system_start__").map((flow) => flow.toRoleId), ["intake"]);
+  assert.match(serializeAuthoringToMermaid(added.authoring), /start\[开始\] -->\|START\| .*\[Role:intake\]/);
 });
 
 test("Studio authoring commands derive batch inverses for semantic undo when the diff is representable", () => {
@@ -972,6 +1017,43 @@ test("Studio command forms expose visual role package, model, and profile choice
     argsTemplate: ["scripts/console-print.mjs"],
     stdinMode: "text"
   });
+});
+
+test("add-edge command form reuses an event already emitted by its selected source", () => {
+  const context = {
+    authoring: {
+      roles: {
+        "backend-planner": { roleId: "backend-planner", title: "后端工程师" },
+        reviewer: { roleId: "reviewer", title: "审核" },
+        publisher: { roleId: "publisher", title: "发布" }
+      },
+      flows: {
+        "backend-planner:PLAN_READY:reviewer": {
+          flowId: "backend-planner:PLAN_READY:reviewer",
+          fromRoleId: "backend-planner",
+          toRoleId: "reviewer",
+          eventType: "PLAN_READY"
+        }
+      }
+    }
+  };
+
+  const state = createDefaultStudioCommandFormState({
+    kind: "add-edge",
+    context,
+    sourceRoleId: "backend-planner",
+    targetRoleId: "publisher"
+  });
+  assert.equal(state.fields.eventType, "PLAN_READY");
+  assert.equal(state.validation.diagnostics.some((item) => item.code === "EDGE_EVENT_UNSUPPORTED"), false);
+
+  const startState = createDefaultStudioCommandFormState({
+    kind: "add-edge",
+    context,
+    sourceRoleId: "__system_start__",
+    targetRoleId: "backend-planner"
+  });
+  assert.equal(startState.fields.eventType, "START");
 });
 
 test("Studio add-role defaults to a valid custom draft when repository roles all conflict with authoring", () => {

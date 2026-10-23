@@ -106,7 +106,7 @@ Adapter 是整个运行时的组合根。
 
 - 解析受限 `flowchart TD/LR`。
 - 识别 metadata、角色节点、边和事件。
-- 校验 `entry.role`、边界、保留字、绑定、join sources、loop budget。
+- 校验由 `start[开始]` Flow 定义的入口、显式 `end[结束]` 连线、保留字、绑定、join sources、loop budget；开始事件必须统一为 `START`。
 - 检测没有 `loop.max` 的循环。
 
 为什么要做成受限 DSL：

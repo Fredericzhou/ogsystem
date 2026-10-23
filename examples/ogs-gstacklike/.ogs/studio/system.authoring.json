@@ -7,7 +7,7 @@
   "system": {
     "systemId": "ogs.gstacklike",
     "systemVersion": "1.0.0",
-    "entryRoleId": "office-hours",
+    "entryRoleIds": ["office-hours"],
     "lawGlobalRef": "law.gstacklike.base"
   },
   "roles": {

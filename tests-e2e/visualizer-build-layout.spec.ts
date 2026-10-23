@@ -49,9 +49,8 @@ async function seedProject(workdir: string): Promise<void> {
       "%% system.id=viz.build.layout",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "start[开始] -->|START| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"

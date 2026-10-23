@@ -102,11 +102,11 @@ export function renderFlowTraceHtml(args: {
   };
   const inputSources = (item: Record<string, any>, index: number): Array<{ roleId: string; event: string; text: string }> => {
     const incoming = edges.filter((edge: Record<string, any>) => edge.target === item.roleId);
-    if (incoming.some((edge: Record<string, any>) => edge.source === "input") && index === 0) {
-      return [{ roleId: "input", event: "", text: String(projection?.input?.text ?? "") }].filter((source) => source.text);
+    if (incoming.some((edge: Record<string, any>) => edge.source === "__system_start__") && index === 0) {
+      return [{ roleId: t("flow.start", undefined, "Start"), event: "", text: String(projection?.input?.text ?? "") }].filter((source) => source.text);
     }
     return incoming
-      .filter((edge: Record<string, any>) => edge.source !== "input")
+      .filter((edge: Record<string, any>) => edge.source !== "__system_start__")
       .map((edge: Record<string, any>) => {
         const candidates = executions.slice(0, index).filter((candidate: Record<string, any>) =>
           candidate.roleId === edge.source && (!edge.eventType || candidate.event === edge.eventType)
@@ -128,7 +128,7 @@ export function renderFlowTraceHtml(args: {
       ? sources.map((source) => '<div class="flow-message"><div class="flow-message-meta"><code>' + escapeText(source.roleId) + '</code>' + (source.event ? ' · <code>' + escapeText(source.event) + '</code>' : '') + '</div><p>' + escapeText(source.text) + '</p></div>').join("")
       : '<div class="hint">' + escapeText(t("flow.inputUnavailable", undefined, "Upstream input was not captured.")) + '</div>';
     const output = contentOf(item);
-    const route = targets.map((edge: Record<string, any>) => '<code>' + escapeText(edge.eventType || item.event || "") + '</code> → <code>' + escapeText(edge.target) + '</code>').join(" · ");
+    const route = targets.map((edge: Record<string, any>) => '<code>' + escapeText(edge.eventType || item.event || "") + '</code> → <span>' + escapeText(edge.target === "__system_end__" ? t("flow.end", undefined, "End") : edge.target) + '</span>').join(" · ");
     const branch = item.branchId ? '<code>' + escapeText(item.branchId) + '</code>' : "";
     const duration = Number.isFinite(item.durationMs) ? Math.round(item.durationMs) + " ms" : "";
     const loopIteration = Number(item.loopIteration);
@@ -157,7 +157,7 @@ export function renderWorkbenchStructureHtml(args: {
   }
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system")) + '</span><span>' + escapeText(structure.systemVersion || "n/a") + '</span></div><strong>' + escapeText(structure.systemId || t("common.unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry")) + ' ' + escapeText(structure.entryRoleId || "n/a") + ' · ' + escapeText(t("common.roles")) + ' ' + escapeText(structure.roleCount || 0) + ' · ' + escapeText(t("studio.flows")) + ' ' + escapeText(structure.flowCount || 0) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system")) + '</span><span>' + escapeText(structure.systemVersion || "n/a") + '</span></div><strong>' + escapeText(structure.systemId || t("common.unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry")) + ' ' + escapeText((structure.entryRoleIds || []).join(", ") || "n/a") + ' · ' + escapeText(t("common.roles")) + ' ' + escapeText(structure.roleCount || 0) + ' · ' + escapeText(t("studio.flows")) + ' ' + escapeText(structure.flowCount || 0) + '</div></div>',
     ...(structure.roles || []).map((role: Record<string, any>) =>
       '<div class="event"><div class="event-top"><span><code>' + escapeText(role.roleId) + '</code></span><span>' + escapeText(role.bindingKind) + '</span></div><strong>'
       + escapeText(role.reviewMode || role.joinMode || role.routingMode || t("project.standardRole"))
@@ -166,7 +166,7 @@ export function renderWorkbenchStructureHtml(args: {
       + '</div></div>'
     ),
     ...(structure.flows || []).map((flow: Record<string, any>) =>
-      '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>' + escapeText(flow.eventType) + '</span></div><strong>' + escapeText(flow.label || flow.eventType) + '</strong></div>'
+      '<div class="event"><div class="event-top"><span>' + escapeText(flow.fromRoleId === "__system_start__" ? t("flow.start", undefined, "Start") : flow.fromRoleId) + ' → ' + escapeText(flow.toRoleId === "__system_end__" ? t("flow.end", undefined, "End") : flow.toRoleId) + '</span><span>' + escapeText(flow.eventType) + '</span></div><strong>' + escapeText(flow.label || flow.eventType) + '</strong></div>'
     ),
     '</div>'
   ].join("");
@@ -174,7 +174,7 @@ export function renderWorkbenchStructureHtml(args: {
 
 export function renderWorkbenchStatusHtml(args: {
   dirty: boolean;
-  entryRoleId: string;
+  entryRoleIds: string[];
   lastDryRunId: string;
   validation: Record<string, any> | null | undefined;
   diagnostics: Array<unknown>;
@@ -184,7 +184,7 @@ export function renderWorkbenchStatusHtml(args: {
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
-  const { dirty, entryRoleId, lastDryRunId, validation, diagnostics, hasDraft, authoringDraftStatus, validating, t, escapeText } = args;
+  const { dirty, entryRoleIds, lastDryRunId, validation, diagnostics, hasDraft, authoringDraftStatus, validating, t, escapeText } = args;
   const renderPill = (label: string, options?: { code?: string; warn?: boolean; className?: string; title?: string }): string => {
     const className = ["pill", "pill-compact", options?.warn ? "warn" : "", options?.className || ""]
       .filter(Boolean)
@@ -220,9 +220,9 @@ export function renderWorkbenchStatusHtml(args: {
       ? '<button type="button" class="button subtle" id="workbench-restore-authoring-draft">' + escapeText(t("studio.graph.restoreDraft", undefined, "Restore saved Studio draft")) + '</button>'
       : "",
     renderPill(t("workbench.entryRole", undefined, "entry"), {
-      code: entryRoleId || "n/a",
+      code: entryRoleIds.join(", ") || "n/a",
       className: "workbench-status-entry",
-      title: t("workbench.entryRole", undefined, "entry") + " " + (entryRoleId || "n/a")
+      title: t("workbench.entryRole", undefined, "entry") + " " + (entryRoleIds.join(", ") || "n/a")
     }),
     validationPill,
     hasDraft ? renderPill(t("workbench.draftCached"), {

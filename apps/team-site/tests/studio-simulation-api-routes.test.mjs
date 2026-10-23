@@ -27,16 +27,20 @@ test("Studio Simulation API creates, lists, reads, and replays owner-scoped evid
     createSimulation: async (...args) => (calls.push(["create", ...args]), { simulation: { simulationId: "sim-1" } }),
     listTeamVersionSimulations: async (...args) => (calls.push(["list", ...args]), { simulations: [] }),
     getTeamVersionSimulation: async (...args) => (calls.push(["get", ...args]), { simulation: { simulationId: args[2] } }),
-    getTeamVersionSimulationEvents: async (...args) => (calls.push(["events", ...args]), { events: [] })
+    getTeamVersionSimulationEvents: async (...args) => (calls.push(["events", ...args]), { events: [], cursor: Number(args[3] || 0), done: false }),
+    clearInteractiveSimulations: async (...args) => (calls.push(["clear", ...args]), { removedCount: 1 })
   });
   const base = "/api/v1/teams/team-1/versions/team-v1/simulations";
   assert.equal(await route.invoke("POST", base, { prompt: "Inspect" }), true);
-  assert.equal(route.sent[0].status, 201);
+  assert.equal(route.sent[0].status, 202);
   assert.equal(await route.invoke("GET", base), true);
   assert.equal(await route.invoke("GET", `${base}/sim-1`), true);
   assert.equal(await route.invoke("GET", `${base}/sim-1/events`), true);
-  assert.deepEqual(calls.map(([kind]) => kind), ["create", "list", "get", "events"]);
-  assert.deepEqual(calls[0], ["create", "team-1", "team-v1", { prompt: "Inspect" }]);
+  assert.equal(await route.invoke("GET", `${base}/sim-1/events?afterCursor=4`), true);
+  assert.equal(await route.invoke("DELETE", base), true);
+  assert.deepEqual(calls.map(([kind]) => kind), ["create", "list", "get", "events", "events", "clear"]);
+  assert.deepEqual(calls[0], ["create", "team-1", "team-v1", { prompt: "Inspect", awaitCompletion: false }]);
+  assert.deepEqual(calls[4], ["events", "team-1", "team-v1", "sim-1", "4"]);
   assert.equal(await route.invoke("POST", `${base}/sim-1/events`), false);
   assert.equal(await route.invoke("GET", "/api/v1/projects/project-1/simulations"), false);
 });

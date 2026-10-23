@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTeamLifecycleUseCases } from "../application/team-lifecycle-use-cases.mjs";
 
-function setup({ projects = [], team, loaded = { validation: { ok: true } }, releaseEvidence } = {}) {
+function setup({ projects = [], team, loaded = { validation: { ok: true } }, releaseEvidence, caseMaterializer } = {}) {
   const calls = [];
   const created = [];
   const store = {
@@ -39,6 +39,7 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
       async validateReleaseEvidence() { calls.push(["release-evidence"]); },
       async prepareBuiltInTeamVersion(team, options) { calls.push(["prepare-built-in", team.projectId, options]); }
     },
+    caseMaterializer,
     caseCatalog: { getCase: (id) => id === "sample" ? caseSpec : undefined, listCases: () => [caseSpec] },
     assertTrustedTeamTopology: (value) => value.source === "classic"
   });
@@ -181,6 +182,48 @@ test("classic Team creation reuses a released version and provisions templates t
   const created = await template.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true });
   assert.equal(created.source, "classic-template");
   assert.equal(template.calls.some(([name]) => name === "save"), false);
+});
+
+test("classic template provisioning rematerializes stale generated structure", async () => {
+  const template = { projectId: "classic-template-v1", workdir: "/templates/classic-v1", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const harness = setup({ projects: [template] });
+  const materialized = [];
+  harness.useCases = createTeamLifecycleUseCases({
+    projectStore: {
+      async getProject(id) { return id === template.projectId ? template : undefined; },
+      async listProjects() { return [template]; },
+      async createProject() { throw new Error("A current template already exists."); },
+      async saveProjectMetadata(_id, metadata) { return metadata; },
+      async removeProject() {},
+      async withProjectWriteLock(_id, _operation, action) { return action(); }
+    },
+    packageStore: { async exportTeamPackage() {}, async loadTeamPackage() {} },
+    locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
+    confirmation: { async validateTopology() {}, async computeDigests() { return {}; } },
+    releaseEvidence: { async validateReleaseEvidence() {}, async prepareBuiltInTeamVersion() {} },
+    caseCatalog: { getCase: () => ({ id: "sample", title: { "zh-CN": "Sample Team" } }), listCases: () => [] },
+    caseMaterializer: {
+      async isCurrent() { return false; },
+      async materialize(...args) { materialized.push(args); }
+    }
+  });
+
+  assert.equal(await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true }), template);
+  assert.deepEqual(materialized, [["sample", template.workdir, "zh-CN"]]);
+});
+
+test("classic team creation publishes a refreshed current template when the released version is stale", async () => {
+  const released = { projectId: "classic-v1", source: "classic", caseId: "sample", teamVersionStatus: "released", teamVersionNumber: 1 };
+  const template = { projectId: "classic-template-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft", teamVersionNumber: 2 };
+  const harness = setup({
+    projects: [released, template],
+    caseMaterializer: { async isCurrent() { return false; }, async materialize() {} }
+  });
+
+  const current = await harness.useCases.createClassicTeamProject({ caseId: "sample" });
+  assert.equal(current.projectId, template.projectId);
+  assert.equal(current.teamVersionStatus, "released");
+  assert.deepEqual(harness.calls.find(([kind]) => kind === "prepare-built-in"), ["prepare-built-in", template.projectId, { caseId: "sample", prompt: "Scenario" }]);
 });
 
 test("release readiness always requires current TeamVersion Sandbox proof", async () => {

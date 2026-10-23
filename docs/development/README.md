@@ -1,8 +1,8 @@
 # OGS Development Documentation
 
 This directory contains current engineering rules, architecture decisions, contracts, and the
-active backlog. Product usage belongs in `../usage/`; completed or superseded delivery records
-belong in `archive/`.
+active backlog. Product usage belongs in `../usage/`. Superseded plans are removed; current
+behavior is described by source code, tests, and active manuals.
 
 - Current engineering guidance and plans live in this directory.
 - [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): current productization work and acceptance criteria for the accepted orchestration semantics.
@@ -17,9 +17,4 @@ belong in `archive/`.
   boundaries, and generated source.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,
   shared contracts, build output, and test ownership.
-- Completed engineering plans, dated execution plans, reviews, and validation records live in
-  `archive/delivery/` or `archive/history/`. They are retained for traceability and are not current
-  implementation instructions.
-- Superseded proposals and early explorations live in `archive/history/`.
 - Product-facing usage and runtime constitution documents live in `../usage/`.
-- Completed Team Site UX, domain, and run-reliability plans are retained as dated delivery evidence in `archive/delivery/`; they do not override the current refactor plan or product manual.

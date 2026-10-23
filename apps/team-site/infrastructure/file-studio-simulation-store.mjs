@@ -25,6 +25,7 @@ function isNotFound(error) {
 export function createFileStudioSimulationStore({ projectsRoot, now = () => new Date().toISOString() }) {
   if (!projectsRoot) throw new TypeError("Studio simulation store projects root is required.");
   const root = resolve(projectsRoot);
+  const eventWriteLocks = new Map();
 
   function resolveVersionDirectory(teamVersionId) {
     assertId(teamVersionId, TEAM_ID, "TEAM_VERSION_ID");
@@ -86,6 +87,20 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       await rename(temporaryPath, path);
     } finally {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
+  }
+
+  async function withEventWriteLock(key, action) {
+    const previous = eventWriteLocks.get(key) || Promise.resolve();
+    let release;
+    const current = new Promise((resolvePromise) => { release = resolvePromise; });
+    eventWriteLocks.set(key, current);
+    await previous.catch(() => undefined);
+    try {
+      return await action();
+    } finally {
+      release();
+      if (eventWriteLocks.get(key) === current) eventWriteLocks.delete(key);
     }
   }
 
@@ -238,6 +253,39 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       }
       await atomicWrite(join(directories.simulationDirectory, "simulation.json"), `${JSON.stringify(nextMetadata, null, 2)}\n`);
       return nextMetadata;
+    },
+
+    async appendSimulationEvents(teamVersionId, simulationId, events) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      return withEventWriteLock(`${teamVersionId}/${simulationId}`, async () => {
+        if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+        await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+        await assertSimulationEvidenceFiles(directories.simulationDirectory);
+        await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+        const existing = await readEvents(directories.simulationDirectory);
+        const added = Array.isArray(events) ? events : [events];
+        const safeEvents = redactStudioSimulationValue([...existing, ...added]);
+        await atomicWrite(join(directories.simulationDirectory, "events.jsonl"), safeEvents.map((event) => JSON.stringify(event)).join("\n") + "\n");
+        return safeEvents.length;
+      });
+    },
+
+    async clearInteractiveSimulations(teamVersionId) {
+      const directories = resolveVersionDirectory(teamVersionId);
+      if (!await assertManagedDirectories(directories)) return { removedCount: 0, removedSimulationIds: [] };
+      if (!await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace")) return { removedCount: 0, removedSimulationIds: [] };
+      const removedSimulationIds = [];
+      for (const entry of await readdir(directories.versionDirectory, { withFileTypes: true })) {
+        if (entry.name.startsWith(".tmp-")) continue;
+        assertId(entry.name, SIMULATION_ID, "ID");
+        const { simulationDirectory } = resolveSimulationDirectory(teamVersionId, entry.name);
+        await assertDirectory(simulationDirectory, "simulation");
+        const metadata = await readMetadata(simulationDirectory, teamVersionId, entry.name);
+        if (metadata.mode === "sandbox" || metadata.baselineScenarioId || !["completed", "failed"].includes(metadata.status)) continue;
+        await rm(simulationDirectory, { recursive: true, force: false });
+        removedSimulationIds.push(metadata.simulationId);
+      }
+      return { removedCount: removedSimulationIds.length, removedSimulationIds };
     },
 
     async getSimulationEvidence(teamVersionId, simulationId) {

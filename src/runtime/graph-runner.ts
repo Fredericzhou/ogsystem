@@ -296,13 +296,21 @@ const GraphStateAnnotation = Annotation.Root({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
   }),
-  finalOutput: Annotation<string>({
-    reducer: (current, update) => update || current,
-    default: () => ""
+  selectedEntryRoleIds: Annotation<string[]>({
+    reducer: (current, update) => update ?? current,
+    default: () => []
   }),
-  finalRoleId: Annotation<string>({
-    reducer: (current, update) => update || current,
-    default: () => ""
+  finalOutputsByRoleId: Annotation<GraphState["finalOutputsByRoleId"]>({
+    reducer: (current, update) => update ?? current,
+    default: () => ({})
+  }),
+  finalOutputRoleOrder: Annotation<string[]>({
+    reducer: (current, update) => update ?? current,
+    default: () => []
+  }),
+  finalRoleIds: Annotation<string[]>({
+    reducer: (current, update) => update ?? current,
+    default: () => []
   }),
   lastExecutedRoleId: Annotation<string>({
     reducer: (_current, update) => update,
@@ -364,8 +372,10 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
       ...(current.selectedEventByBranchId ?? {}),
       ...(update.selectedEventByBranchId ?? {})
     },
-    finalOutput: update.finalOutput || current.finalOutput,
-    finalRoleId: update.finalRoleId || current.finalRoleId,
+    selectedEntryRoleIds: update.selectedEntryRoleIds ?? current.selectedEntryRoleIds,
+    finalOutputsByRoleId: update.finalOutputsByRoleId ?? current.finalOutputsByRoleId,
+    finalOutputRoleOrder: update.finalOutputRoleOrder ?? current.finalOutputRoleOrder,
+    finalRoleIds: update.finalRoleIds ?? current.finalRoleIds,
     lastExecutedRoleId: update.lastExecutedRoleId ?? current.lastExecutedRoleId,
     nextBranchSequence: update.nextBranchSequence ?? current.nextBranchSequence,
     lastCheckpointSequence: Math.max(
@@ -418,8 +428,10 @@ export function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphS
       ...state.selectedEventByBranchId,
       ...(update.selectedEventByBranchId ?? {})
     },
-    finalOutput: update.finalOutput || state.finalOutput,
-    finalRoleId: update.finalRoleId || state.finalRoleId,
+    selectedEntryRoleIds: update.selectedEntryRoleIds ?? state.selectedEntryRoleIds,
+    finalOutputsByRoleId: update.finalOutputsByRoleId ?? state.finalOutputsByRoleId,
+    finalOutputRoleOrder: update.finalOutputRoleOrder ?? state.finalOutputRoleOrder,
+    finalRoleIds: update.finalRoleIds ?? state.finalRoleIds,
     lastExecutedRoleId: update.lastExecutedRoleId ?? state.lastExecutedRoleId,
     nextBranchSequence: update.nextBranchSequence ?? state.nextBranchSequence,
     lastCheckpointSequence: Math.max(
@@ -1017,7 +1029,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   const logger = createRunConsoleLogger(args.logRun);
   const runControl = args.runControl ?? new RunControl();
   let runtimeIndexes = buildRuntimeIndexes(
-    args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt })
+    args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt, runId: args.runContext.runId })
   );
   const graphBuilder = new StateGraph(GraphStateAnnotation) as StateGraph<
     typeof GraphStateAnnotation.spec,
@@ -1234,7 +1246,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   });
 
   const graph = graphBuilder.compile();
-  let finalState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt });
+  let finalState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt, runId: args.runContext.runId });
   if (args.initialState) {
     // Reliability: restore the exact state frontier by replaying checkpoint WAL first,
     // then reconciling any committed role outcomes that crashed before checkpoint emission.
@@ -1264,9 +1276,21 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   logger.runStart({
     runId: args.runContext.runId,
     systemId: args.plan.systemId,
-    entryRoleId: args.plan.entryRoleId,
+    entryRoleIds: args.plan.entryRoleIds,
+    selectedEntryRoleIds: finalState.selectedEntryRoleIds,
+    dispatch: args.plan.startDispatch,
     resume: Boolean(args.initialState)
   });
+  if (!args.initialState) {
+    await appendEvent(args.runContext, {
+      type: "start_dispatch_selected",
+      at: new Date().toISOString(),
+      mode: args.plan.startDispatch.mode,
+      count: args.plan.startDispatch.mode === "random_n" ? args.plan.startDispatch.count : finalState.selectedEntryRoleIds.length,
+      candidates: args.plan.entryRoleIds,
+      selectedEntryRoleIds: finalState.selectedEntryRoleIds
+    });
+  }
   await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
 
   const semanticBudget = args.plan.semanticIR?.capabilities.maxTransitionsPerRun;
@@ -1522,7 +1546,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       "",
       `- runId: ${args.runContext.runId}`,
       `- status: ${finalState.status}`,
-      `- finalRoleId: ${finalState.finalRoleId}`,
+      `- finalRoleIds: ${finalState.finalRoleIds.join(", ")}`,
       `- totalTransitions: ${summary.totalTransitions}`,
       `- okCount: ${summary.okCount}`,
       `- failedCount: ${summary.failedCount}`,
@@ -1574,7 +1598,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         : finalState.status === "stopped"
           ? "stopped"
           : "done",
-    finalRoleId: finalState.finalRoleId || undefined,
+    finalRoleIds: finalState.finalRoleIds.length ? finalState.finalRoleIds : undefined,
     totalTransitions: summary.totalTransitions,
     okCount: summary.okCount,
     failedCount: summary.failedCount,
@@ -1593,20 +1617,22 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         : finalState.status === "stopped"
           ? "stopped"
           : "done",
-    finalRoleId: finalState.finalRoleId || undefined,
-    finalOutput: finalState.finalOutput || undefined,
+    finalRoleIds: finalState.finalRoleIds.length ? finalState.finalRoleIds : undefined,
+    finalOutputsByRoleId: Object.keys(finalState.finalOutputsByRoleId).length ? finalState.finalOutputsByRoleId : undefined,
+    finalOutputRoleOrder: finalState.finalOutputRoleOrder.length ? finalState.finalOutputRoleOrder : undefined,
     systemState: {
       status: finalState.status,
-      currentRoleId: finalState.finalRoleId || finalState.lastExecutedRoleId || args.plan.entryRoleId,
+      currentRoleId: finalState.finalRoleIds.at(-1) || finalState.lastExecutedRoleId || args.plan.entryRoleIds[0],
       nextRoleId: undefined,
-      finalRoleId: finalState.finalRoleId || undefined,
+      finalRoleIds: finalState.finalRoleIds.length ? finalState.finalRoleIds : undefined,
       transitionCount: finalState.transitionCount,
       totalTransitions: summary.totalTransitions,
       okCount: summary.okCount,
       failedCount: summary.failedCount,
       noopCount: summary.noopCount,
       failureCountsByErrorCode: summary.failureCountsByErrorCode,
-      lastOutput: finalState.finalOutput || undefined,
+      finalOutputsByRoleId: Object.keys(finalState.finalOutputsByRoleId).length ? finalState.finalOutputsByRoleId : undefined,
+      finalOutputRoleOrder: finalState.finalOutputRoleOrder.length ? finalState.finalOutputRoleOrder : undefined,
       error: finalState.error || undefined,
       errorEnvelope: finalState.errorEnvelope || undefined,
       pendingReviewCount: Object.values(finalState.pendingReviewsById).filter(

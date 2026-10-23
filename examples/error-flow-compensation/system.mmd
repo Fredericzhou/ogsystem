@@ -2,16 +2,15 @@ flowchart TD
 %% system.id=example.error.flow.compensation
 %% system.version=1.0.0
 %% law.global=law.example.error.flow
-%% entry.role=test-branch-a
 %% exec.bind.test-branch-a=profile.worker
 %% exec.bind.error-handler-base=profile.error-handler
 %% exec.bind.test-operator=profile.finalizer
 
-input -->|START| test-branch-a[Role:test-branch-a]
-test-branch-a[Role:test-branch-a] -->|END_A| output
+start[开始] -->|START| test-branch-a[Role:test-branch-a]
+test-branch-a[Role:test-branch-a] -->|END_A| end[结束]
 test-branch-a[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| error-handler-base[Role:error-handler-base]
 test-branch-a[Role:test-branch-a] -->|ERROR| error-handler-base[Role:error-handler-base]
 error-handler-base[Role:error-handler-base] -->|COMPENSATED| test-operator[Role:test-operator]
-error-handler-base[Role:error-handler-base] -->|ESCALATED| output
-error-handler-base[Role:error-handler-base] -->|ABORTED| output
-test-operator[Role:test-operator] -->|DONE| output
+error-handler-base[Role:error-handler-base] -->|ESCALATED| end[结束]
+error-handler-base[Role:error-handler-base] -->|ABORTED| end[结束]
+test-operator[Role:test-operator] -->|DONE| end[结束]

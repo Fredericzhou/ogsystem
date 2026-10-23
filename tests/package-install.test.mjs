@@ -178,8 +178,8 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   assert.equal(startResult.code, 0, startResult.stderr);
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
-  assert.equal(startPayload.finalRoleId, "hello-ogsystem");
-  assert.equal(startPayload.finalOutput, "Hello OGSystem world");
+  assert.equal(startPayload.finalRoleIds?.at(-1), "hello-ogsystem");
+  assert.equal(startPayload.finalOutputsByRoleId["hello-ogsystem"][0].content, "Hello OGSystem world");
 
   const runIds = await readdir(path.resolve(projectDir, ".ogs", "runs"));
   assert.ok(runIds.length > 0, "expected at least one generated run directory");

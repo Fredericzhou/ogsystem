@@ -95,7 +95,7 @@ export function renderRunListHtml(args: {
     if (!term) {
       return true;
     }
-    return [run.runId, run.status, run.finalRoleId, run.lastExecutedRoleId]
+    return [run.runId, run.status, ...(run.finalRoleIds || []), run.lastExecutedRoleId]
       .filter(Boolean)
       .some((item) => String(item).toLowerCase().includes(term));
   });

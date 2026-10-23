@@ -1,5 +1,6 @@
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
+  STUDIO_SYSTEM_START_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
   normalizeStudioGraphTargetRoleId,
   type StudioAuthoringDocument,
@@ -113,7 +114,7 @@ export type StudioValidationResult = {
 
 const ROLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_:-]*$/;
-const RESERVED_ROLE_IDS = new Set(["input", "output", STUDIO_SYSTEM_END_ROLE_ID]);
+const RESERVED_ROLE_IDS = new Set(["start", "end", STUDIO_SYSTEM_START_ROLE_ID, STUDIO_SYSTEM_END_ROLE_ID]);
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
@@ -389,14 +390,17 @@ export function validateStudioAddEdgeDraft(
   const diagnostics: StudioDiagnosticDto[] = [];
   const authoring = context.authoring;
   const sourceRoleId = asTrimmedStringOrEmpty(draft.sourceRoleId);
-  const targetRoleId = normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.targetRoleId));
+  const rawTargetRoleId = normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.targetRoleId));
+  const targetRoleId = rawTargetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : rawTargetRoleId;
   const targetDisplay = normalizeStudioGraphTargetRoleId(targetRoleId);
+  const sourceIsStart = sourceRoleId === STUDIO_SYSTEM_START_ROLE_ID;
+  const targetIsEnd = targetRoleId === STUDIO_SYSTEM_END_ROLE_ID;
   const eventType = normalizeStudioEventType(draft.eventType || "DONE");
   const flowKey = sourceRoleId && targetRoleId && eventType
     ? `${sourceRoleId}:${eventType}:${targetDisplay}`
     : undefined;
 
-  if (!sourceRoleId || !authoring?.roles?.[sourceRoleId]) {
+  if (!sourceRoleId || (!sourceIsStart && !authoring?.roles?.[sourceRoleId]) || sourceRoleId === STUDIO_SYSTEM_END_ROLE_ID) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "sourceRoleId",
@@ -405,13 +409,13 @@ export function validateStudioAddEdgeDraft(
       message: "Choose an existing source role."
     }));
   }
-  if (!targetRoleId || (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID && !authoring?.roles?.[targetRoleId])) {
+  if (!targetRoleId || (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID && !authoring?.roles?.[targetRoleId]) || targetRoleId === STUDIO_SYSTEM_START_ROLE_ID) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "targetRoleId",
       code: "EDGE_ENDPOINT_INVALID",
       messageKey: "studio.validation.edgeTargetInvalid",
-      message: "Choose an existing target role or output."
+      message: "Choose an existing role or the End role."
     }));
   }
   if (sourceRoleId && targetRoleId && sourceRoleId === targetRoleId) {
@@ -433,6 +437,13 @@ export function validateStudioAddEdgeDraft(
       code: "EDGE_EVENT_UNSUPPORTED",
       messageKey: "studio.validation.eventTypeInvalid",
       message: "Event type must be uppercase and may use digits, _, : or -."
+    }));
+  }
+  if (sourceIsStart && eventType !== "START") {
+    diagnostics.push(issue({
+      severity: "error", fieldPath: "eventType", flowKey,
+      code: "START_EVENT_FIXED", messageKey: "studio.validation.startEventFixed",
+      message: "Flows from Start must use the START event."
     }));
   }
   const priorityText = (draft.priority ?? "0").trim();
@@ -464,7 +475,9 @@ export function validateStudioAddEdgeDraft(
       const sameOriginal =
         (draft.flowId && flow.flowId === draft.flowId) ||
         (flow.fromRoleId === asTrimmedStringOrEmpty(draft.originalSourceRoleId) &&
-          flow.toRoleId === normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.originalTargetRoleId)) &&
+          flow.toRoleId === (asTrimmedStringOrEmpty(draft.originalTargetRoleId) === "output"
+            ? STUDIO_SYSTEM_END_ROLE_ID
+            : normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.originalTargetRoleId))) &&
           flow.eventType === normalizeStudioEventType(draft.originalEventType));
       if (sameOriginal) {
         return false;
@@ -491,7 +504,7 @@ export function validateStudioAddEdgeDraft(
         .filter((flow) => flow.fromRoleId === sourceRoleId)
         .map((flow) => flow.eventType)
     ));
-    if (allowedEvents.length > 0 && eventType && !allowedEvents.includes(eventType)) {
+    if (!sourceIsStart && allowedEvents.length > 0 && eventType && !allowedEvents.includes(eventType)) {
       diagnostics.push(issue({
         severity: "warning",
         fieldPath: "eventType",
@@ -504,7 +517,7 @@ export function validateStudioAddEdgeDraft(
       }));
     }
 
-    const targetRole = authoring.roles[targetRoleId];
+    const targetRole = targetIsEnd ? undefined : authoring.roles[targetRoleId];
     if (targetRole?.joinMode && !(targetRole.joinSources ?? []).includes(sourceRoleId)) {
       diagnostics.push(issue({
         severity: "warning",

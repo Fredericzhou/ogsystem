@@ -170,8 +170,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.strictEqual(helloStart.code, 0, helloStart.stderr);
   const helloStartPayload = JSON.parse(helloStart.stdout);
   assert.equal(helloStartPayload.status, "done");
-  assert.equal(helloStartPayload.finalRoleId, "hello-ogsystem");
-  assert.equal(helloStartPayload.finalOutput, "Hello OGSystem world");
+  assert.equal(helloStartPayload.finalRoleIds?.at(-1), "hello-ogsystem");
+  assert.equal(helloStartPayload.finalOutputsByRoleId["hello-ogsystem"][0].content, "Hello OGSystem world");
 
   await writeFile(
     path.resolve(createdDir, "system.mmd"),
@@ -180,14 +180,13 @@ test("lifecycle cli project init/create commands scaffold project control plane"
       "%% system.id=template.linear",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% entry.role=debate-minimalist",
       "%% exec.bind.debate-minimalist=profile.console.print",
       "%% exec.bind.debate-judge=profile.console.print",
       "",
-      "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
+      "start[开始] -->|START| minimalist[Role:debate-minimalist]",
       "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
-      "judge[Role:debate-judge] -->|DECISION_READY| output",
-      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| output",
+      "judge[Role:debate-judge] -->|DECISION_READY| end[结束]",
+      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -328,12 +327,11 @@ test("lifecycle cli resolves explicit system paths from the command directory", 
       "%% system.id=test.cli.run.workdir.relative-system",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% entry.role=debate-minimalist",
       "",
-      "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
+      "start[开始] -->|START| minimalist[Role:debate-minimalist]",
       "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
-      "judge[Role:debate-judge] -->|DECISION_READY| output",
-      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| output"
+      "judge[Role:debate-judge] -->|DECISION_READY| end[结束]",
+      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| end[结束]"
     ].join("\n"),
     "utf8"
   );
@@ -456,7 +454,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(typeof listPayload.runs[0].wallClockDurationMs, "number");
   assert.equal(typeof listPayload.runs[0].executionDurationMs, "number");
   assert.equal(typeof listPayload.runs[0].lastRoleId, "string");
-  assert.equal(typeof listPayload.runs[0].finalRoleId, "string");
+  assert.equal(typeof listPayload.runs[0].finalRoleIds?.at(-1), "string");
   assert.equal(listPayload.runs[0].lastErrorCode, undefined);
   assert.equal(listPayload.runs[0].stopReason, undefined);
   const runDir = path.resolve(tempRoot, ".ogs", "runs", runId);
@@ -471,7 +469,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(typeof summary.wallClockDurationMs, "number");
   assert.equal(typeof summary.executionDurationMs, "number");
   assert.equal(summary.lastRoleId, listPayload.runs[0].lastRoleId);
-  assert.equal(summary.finalRoleId, listPayload.runs[0].finalRoleId);
+  assert.equal(summary.finalRoleIds?.at(-1), listPayload.runs[0].finalRoleIds?.at(-1));
   assert.equal(summary.lastErrorCode, undefined);
   assert.equal(summary.stopReason, undefined);
   assert.equal(summary.artifactIndexSummary.roleCount > 0, true);
@@ -494,7 +492,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(typeof statusPayload.wallClockDurationMs, "number");
   assert.equal(typeof statusPayload.executionDurationMs, "number");
   assert.equal(statusPayload.lastRoleId, listPayload.runs[0].lastRoleId);
-  assert.equal(statusPayload.finalRoleId, listPayload.runs[0].finalRoleId);
+  assert.equal(statusPayload.finalRoleIds?.at(-1), listPayload.runs[0].finalRoleIds?.at(-1));
   assert.equal(statusPayload.lastErrorCode, null);
   assert.equal(statusPayload.stopReason, null);
   assert.equal(statusPayload.stopOutcomeStatus, null);
@@ -619,11 +617,10 @@ test("lifecycle cli review commands expose pending human review state and can ap
       "%% system.id=cli.review.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% entry.role=test-operator",
       "%% review.mode.test-operator=required",
       "",
-      "input -->|GO| operator[Role:test-operator]",
-      "operator[Role:test-operator] -->|DONE| output",
+      "start[开始] -->|START| operator[Role:test-operator]",
+      "operator[Role:test-operator] -->|DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -770,11 +767,10 @@ test("lifecycle cli review commands preserve paused status and allow a later app
       "%% system.id=cli.review.pause",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% entry.role=test-operator",
       "%% review.mode.test-operator=required",
       "",
-      "input -->|GO| operator[Role:test-operator]",
-      "operator[Role:test-operator] -->|DONE| output",
+      "start[开始] -->|START| operator[Role:test-operator]",
+      "operator[Role:test-operator] -->|DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -898,12 +894,11 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
       "%% system.id=cli.review.rework",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% entry.role=test-operator",
       "%% review.mode.test-operator=required",
       "%% review.rework.target.test-operator=test-operator",
       "",
-      "input -->|GO| operator[Role:test-operator]",
-      "operator[Role:test-operator] -->|DONE| output",
+      "start[开始] -->|START| operator[Role:test-operator]",
+      "operator[Role:test-operator] -->|DONE| end[结束]",
       ""
     ].join("\n"),
     "utf8"

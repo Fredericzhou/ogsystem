@@ -393,7 +393,7 @@ test("runtime renderers fold payload-heavy details by default", () => {
       activeBranches: 1,
       pendingReviewCount: 1,
       lastExecutedRoleId: "demo-analyst",
-      finalRoleId: "__system_end__"
+      finalRoleIds: ["demo-analyst"]
     },
     graph: {
       nodes: [{ roleId: "demo-analyst" }],
@@ -595,8 +595,8 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
 
   const runListHtml = renderRunListHtml({
     runs: [
-      { runId: "run-1", isSimulation: true, status: "stopped", hasWaitingHumanReview: true, finalRoleId: "writer", lastExecutedRoleId: "writer", transitionCount: 3, updatedAt: "2026-05-04T08:09:10.000Z" },
-      { runId: "run-2", status: "done", finalRoleId: "qa", lastExecutedRoleId: "qa", transitionCount: 5, updatedAt: "2026-05-04T08:10:10.000Z" }
+      { runId: "run-1", isSimulation: true, status: "stopped", hasWaitingHumanReview: true, finalRoleIds: ["writer"], lastExecutedRoleId: "writer", transitionCount: 3, updatedAt: "2026-05-04T08:09:10.000Z" },
+      { runId: "run-2", status: "done", finalRoleIds: ["qa"], lastExecutedRoleId: "qa", transitionCount: 5, updatedAt: "2026-05-04T08:10:10.000Z" }
     ],
     filter: "writer",
     selectedRunId: "run-1",
@@ -799,7 +799,7 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
     structure: {
       systemId: "demo.system",
       systemVersion: "1.0.0",
-      entryRoleId: "planner",
+      entryRoleIds: ["planner"],
       roleCount: 1,
       flowCount: 1,
       roles: [{ roleId: "planner", bindingKind: "model", routingMode: "single" }],
@@ -916,7 +916,7 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
 test("client lifecycle panel renderers cover Workbench controls and modes", () => {
   const statusHtml = renderWorkbenchStatusHtml({
     dirty: true,
-    entryRoleId: "planner",
+    entryRoleIds: ["planner"],
     lastDryRunId: "dry-1",
     validation: { ok: false },
     diagnostics: [{ code: "ERR" }],
@@ -935,7 +935,7 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
 
   const savedStatusHtml = renderWorkbenchStatusHtml({
     dirty: false,
-    entryRoleId: "planner",
+    entryRoleIds: ["planner"],
     lastDryRunId: "",
     validation: { ok: true },
     diagnostics: [],
@@ -950,7 +950,7 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
 
   const staleStatusHtml = renderWorkbenchStatusHtml({
     dirty: false,
-    entryRoleId: "planner",
+    entryRoleIds: ["planner"],
     lastDryRunId: "",
     validation: { ok: true },
     diagnostics: [],
@@ -1342,8 +1342,8 @@ test("client run selection helpers keep review fallback and live state determini
     }),
     "review-1"
   );
-  assert.equal(fallbackLogRoleId({ lastExecutedRoleId: "qa", finalRoleId: "writer" }), "qa");
-  assert.equal(fallbackLogRoleId({ finalRoleId: "writer" }), "writer");
+  assert.equal(fallbackLogRoleId({ lastExecutedRoleId: "qa", finalRoleIds: ["writer"] }), "qa");
+  assert.equal(fallbackLogRoleId({ finalRoleIds: ["writer"] }), "");
   assert.deepEqual(resolveRunLiveState({ status: "running" }), { mode: "online", label: "running" });
   assert.deepEqual(resolveRunLiveState({ status: "failed" }), { mode: "idle", label: "failed" });
   assert.deepEqual(resolveRunLiveState({ status: "paused", hasWaitingHumanReview: true }), {
@@ -1429,7 +1429,7 @@ test("operate tabs and Studio Bridge filters expose accessible state and names",
       extracted: {
         systemId: "demo.system",
         systemVersion: "1.0.0",
-        entryRoleId: "writer",
+        entryRoleIds: ["writer"],
         lawGlobal: "law.minimal",
         roles: [{ roleId: "writer", bindingKind: "model", incomingFlowCount: 0, outgoingFlowCount: 0, allowedEvents: [], badges: [] }],
         flows: []

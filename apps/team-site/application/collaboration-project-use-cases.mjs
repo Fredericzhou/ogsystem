@@ -1,4 +1,4 @@
-import { assertCollaborationProject, assertProjectHasTeams, assertProjectTeamMutationAllowed } from "../domain/project.mjs";
+import { assertCollaborationProject, assertProjectDeletionAllowed, assertProjectHasTeams, assertProjectTeamMutationAllowed } from "../domain/project.mjs";
 import { assertCanonicalTeamVersionId, assertReleasedTeamVersion, createMountedTeamRecord } from "../domain/team.mjs";
 
 export function createCollaborationProjectUseCases({ projectStore, teamStore, computeProjectDefinitionDigest }) {
@@ -38,6 +38,16 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
   return Object.freeze({
     async listCollaborationProjects() {
       return (await projectStore.listProjects()).filter((project) => project.projectType === "collaboration");
+    },
+
+    async deleteCollaborationProject(projectId) {
+      return projectStore.withProjectWriteLock(projectId, "project-delete", async () => {
+        const project = await projectStore.getProject(projectId);
+        assertCollaborationProject(project);
+        assertProjectDeletionAllowed(project);
+        await projectStore.removeProject(projectId);
+        return { projectId, deleted: true };
+      });
     },
 
     async createCollaborationProject({ name, overview = "", teamVersionIds = [] } = {}) {

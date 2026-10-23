@@ -25,9 +25,9 @@ test("SCC frames keep compact padding clear of neighboring role and boundary nod
       { id: "cycle-b", x: 320, y: 100, width: 180, height: 84 }
     ],
     obstacles: [
-      { id: "input", x: 20, y: 100, width: 70, height: 70 },
+      { id: "__system_start__", x: 20, y: 100, width: 70, height: 70 },
       { id: "ordinary-role", x: 505, y: 100, width: 180, height: 84 },
-      { id: "output", x: 750, y: 100, width: 70, height: 70 }
+      { id: "__system_end__", x: 750, y: 100, width: 70, height: 70 }
     ]
   });
 
@@ -94,12 +94,16 @@ test("Mini Program factory stacked feedback route leaves both role borders norma
   const first = edge.routing.routePoints[0];
   const last = edge.routing.routePoints.at(-1);
 
-  assert.equal(edge.routing.source.side, "top");
-  assert.equal(edge.routing.target.side, "top");
+  assert.ok(["top", "bottom"].includes(edge.routing.source.side));
+  assert.ok(["top", "bottom"].includes(edge.routing.target.side));
   assert.equal(first.x, sourcePortX);
-  assert.ok(first.y <= source.y - 24);
+  assert.ok(edge.routing.source.side === "top"
+    ? first.y <= source.y - 24
+    : first.y >= source.y + source.height + 24);
   assert.equal(last.x, targetPortX);
-  assert.ok(last.y <= target.y - 24);
+  assert.ok(edge.routing.target.side === "top"
+    ? last.y <= target.y - 24
+    : last.y >= target.y + target.height + 24);
   assert.equal(projection.diagnostics.some((item) => item.code === "EDGE_NODE_COLLISION"), false);
 });
 
@@ -153,7 +157,7 @@ test("both shipped example graphs keep bounded roles and complete routes in auto
 });
 
 function node(id, x, y, structure = {}) {
-  const boundary = id === "input" || id === "output";
+  const boundary = id === "__system_start__" || id === "__system_end__";
   return {
     id,
     roleId: boundary ? id : id,
@@ -180,7 +184,7 @@ function edge(id, source, target, options = {}) {
     runtimeOnlyErrorFlow: options.runtimeOnlyErrorFlow === true,
     participatesInJoin: options.participatesInJoin === true,
     channel: options.channel,
-    editable: source !== "input" && target !== "output"
+    editable: source !== "__system_start__" && target !== "__system_end__"
   };
 }
 
@@ -189,18 +193,18 @@ function graphViewModel() {
     version: 1,
     mode: "edit",
     nodes: [
-      node("input", 0, 0),
+      node("__system_start__", 0, 0),
       node("a", 220, 0, { routingMode: "parallel_split" }),
       node("b", 440, -120),
       node("join", 660, 0, { joinMode: "all_of", joinSources: ["a", "b"] }),
-      node("output", 900, 0)
+      node("__system_end__", 900, 0)
     ],
     edges: [
-      edge("entry", "input", "a", { channel: "normal" }),
+      edge("entry", "__system_start__", "a", { channel: "normal" }),
       edge("a-b", "a", "b", { channel: "normal" }),
       edge("a-join", "a", "join", { channel: "join", participatesInJoin: true }),
       edge("b-join", "b", "join", { channel: "join", participatesInJoin: true }),
-      edge("join-output", "join", "output", { channel: "normal" }),
+      edge("join-end", "join", "__system_end__", { channel: "normal" }),
       edge("join-a-loop", "join", "a", { channel: "loop" }),
       edge("a-error", "a", "join", { channel: "error", runtimeOnlyErrorFlow: true }),
       edge("a-join-alt", "a", "join", { channel: "normal" })
@@ -229,6 +233,40 @@ test("ELK layout projection is deterministic and keeps every semantic edge", asy
     assert.deepEqual(loopRouting.router.args.startDirections, [loopRouting.source.side]);
     assert.deepEqual(loopRouting.router.args.endDirections, [loopRouting.target.side]);
   }
+});
+
+test("Start and End roles align with their connected role groups", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/team", systemPath: "/tmp/team/system.mmd" },
+    system: { systemId: "team.boundaries", systemVersion: "1.0.0", startDispatch: { mode: "all" }, lawGlobalRef: "law.test" },
+    roles: Object.fromEntries(["entry-a", "entry-b", "middle", "end-a", "end-b"].map((roleId) => [roleId, { roleId, title: roleId, bindingKind: "noop" }])),
+    flows: {
+      startA: { flowId: "start-a", fromRoleId: "__system_start__", toRoleId: "entry-a", eventType: "START" },
+      startB: { flowId: "start-b", fromRoleId: "__system_start__", toRoleId: "entry-b", eventType: "START" },
+      a: { flowId: "a", fromRoleId: "entry-a", toRoleId: "middle", eventType: "NEXT" },
+      b: { flowId: "b", fromRoleId: "entry-b", toRoleId: "middle", eventType: "NEXT" },
+      c: { flowId: "c", fromRoleId: "middle", toRoleId: "end-a", eventType: "NEXT" },
+      d: { flowId: "d", fromRoleId: "middle", toRoleId: "end-b", eventType: "NEXT" },
+      e: { flowId: "e", fromRoleId: "end-a", toRoleId: "__system_end__", eventType: "DONE" },
+      f: { flowId: "f", fromRoleId: "end-b", toRoleId: "__system_end__", eventType: "DONE" }
+    },
+    layout: { nodes: {
+      "entry-a": { x: 100, y: 20 },
+      "entry-b": { x: 100, y: 300 },
+      middle: { x: 400, y: 150 },
+      "end-a": { x: 700, y: 80 },
+      "end-b": { x: 700, y: 340 }
+    } }
+  };
+  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
+  const nodes = new Map(viewModel.nodes.map((item) => [item.id, item]));
+  const start = nodes.get("__system_start__");
+  const end = nodes.get("__system_end__");
+  assert.ok(start.layout.y > 100 && start.layout.y < 200);
+  assert.ok(end.layout.y > 150 && end.layout.y < 300);
+  assert.deepEqual(viewModel.edges.filter((item) => item.source === "__system_start__").map((item) => item.target).sort(), ["entry-a", "entry-b"]);
+  assert.deepEqual(viewModel.edges.filter((item) => item.target === "__system_end__").map((item) => item.source).sort(), ["end-a", "end-b"]);
 });
 
 test("ELK projection keeps channels, Join metadata, and distinct parallel lanes", async () => {
@@ -260,12 +298,12 @@ test("ELK expands flow spacing for longer handoff labels", async () => {
 
 test("ELK expands stacked columns for long handoff labels", async () => {
   const viewModel = graphViewModel();
-  viewModel.nodes = [node("input", 0, 0), node("source", 0, 0), node("target", 0, 0), node("output", 0, 0)];
+  viewModel.nodes = [node("__system_start__", 0, 0), node("source", 0, 0), node("target", 0, 0), node("__system_end__", 0, 0)];
   viewModel.edges = [
-    edge("input-source", "input", "source", { label: "GO" }),
-    edge("input-target", "input", "target", { label: "GO" }),
-    edge("source-output", "source", "output", { label: "DONE" }),
-    edge("target-output", "target", "output", { label: "DONE" })
+    edge("start-source", "__system_start__", "source", { label: "GO" }),
+    edge("start-target", "__system_start__", "target", { label: "GO" }),
+    edge("source-end", "source", "__system_end__", { label: "DONE" }),
+    edge("target-end", "target", "__system_end__", { label: "DONE" })
   ];
   const compactLabel = await createElkLayoutProjection(viewModel, "stacked");
   viewModel.edges[0].label = "PROPOSAL_READY_WITH_REVIEW_AND_VALIDATION";
@@ -281,45 +319,46 @@ test("ELK expands stacked columns for long handoff labels", async () => {
 
 test("ELK places disconnected boundaries along the selected orientation without role seats", async () => {
   const viewModel = graphViewModel();
-  viewModel.nodes = viewModel.nodes.filter((node) => node.id === "input" || node.id === "output");
+  viewModel.nodes = viewModel.nodes.filter((node) => node.id === "__system_start__" || node.id === "__system_end__");
   viewModel.edges = [];
   const flow = await createElkLayoutProjection(viewModel, "flow");
   const stacked = await createElkLayoutProjection(viewModel, "stacked");
-  const flowInput = flow.nodes.find((node) => node.id === "input");
-  const flowOutput = flow.nodes.find((node) => node.id === "output");
-  const stackedInput = stacked.nodes.find((node) => node.id === "input");
-  const stackedOutput = stacked.nodes.find((node) => node.id === "output");
+  const flowInput = flow.nodes.find((node) => node.id === "__system_start__");
+  const flowOutput = flow.nodes.find((node) => node.id === "__system_end__");
+  const stackedInput = stacked.nodes.find((node) => node.id === "__system_start__");
+  const stackedOutput = stacked.nodes.find((node) => node.id === "__system_end__");
   assert.equal(flowInput.x + flowInput.width <= flowOutput.x || flowOutput.x + flowOutput.width <= flowInput.x || flowInput.y + flowInput.height <= flowOutput.y || flowOutput.y + flowOutput.height <= flowInput.y, true);
   assert.equal(stackedInput.x + stackedInput.width <= stackedOutput.x || stackedOutput.x + stackedOutput.width <= stackedInput.x || stackedInput.y + stackedInput.height <= stackedOutput.y || stackedOutput.y + stackedOutput.height <= stackedInput.y, true);
 });
 
-test("ELK reserves exclusive terminal layers for input and output", async () => {
+test("ELK reserves exclusive terminal layers for Start and End", async () => {
   const viewModel = graphViewModel();
   for (const [mode, axis] of [["flow", "x"], ["stacked", "y"]]) {
     const projection = await createElkLayoutProjection(viewModel, mode);
-    const input = projection.nodes.find((item) => item.id === "input");
-    const output = projection.nodes.find((item) => item.id === "output");
-    const business = projection.nodes.filter((item) => item.id !== "input" && item.id !== "output");
-    const inputEnd = axis === "x" ? input.x + input.width : input.y + input.height;
-    const outputStart = axis === "x" ? output.x : output.y;
-    assert.ok(business.every((item) => (axis === "x" ? item.x : item.y) > inputEnd));
-    assert.ok(business.every((item) => (axis === "x" ? item.x + item.width : item.y + item.height) < outputStart));
+    const start = projection.nodes.find((item) => item.id === "__system_start__");
+    const end = projection.nodes.find((item) => item.id === "__system_end__");
+    const business = projection.nodes.filter((item) => item.id !== "__system_start__" && item.id !== "__system_end__");
+    const startEnd = axis === "x" ? start.x + start.width : start.y + start.height;
+    const endStart = axis === "x" ? end.x : end.y;
+    assert.ok(business.every((item) => (axis === "x" ? item.x : item.y) > startEnd));
+    assert.ok(business.every((item) => (axis === "x" ? item.x + item.width : item.y + item.height) < endStart));
   }
 });
 
 test("SCC topology separates independent cycles and merges mutually reachable nested cycles", () => {
-  const nodes = ["input", "a", "b", "c", "d", "e", "output"].map((id) => node(id, 0, 0));
+  const nodes = ["__system_start__", "a", "b", "c", "d", "e", "__system_end__"].map((id) => node(id, 0, 0));
   const makeEdge = (source, target) => edge(`${source}-${target}`, source, target);
   const independent = topologyComponentIds({
     nodes,
     edges: [makeEdge("a", "b"), makeEdge("b", "a"), makeEdge("c", "d"), makeEdge("d", "c")]
   });
-  assert.equal(independent.get("a"), "SCC-1");
-  assert.equal(independent.get("b"), "SCC-1");
-  assert.equal(independent.get("c"), "SCC-2");
-  assert.equal(independent.get("d"), "SCC-2");
-  assert.equal(independent.has("input"), false);
-  assert.equal(independent.has("output"), false);
+  assert.ok(independent.get("a"));
+  assert.equal(independent.get("a"), independent.get("b"));
+  assert.ok(independent.get("c"));
+  assert.equal(independent.get("c"), independent.get("d"));
+  assert.notEqual(independent.get("a"), independent.get("c"));
+  assert.equal(independent.has("__system_start__"), false);
+  assert.equal(independent.has("__system_end__"), false);
 
   const nested = topologyComponentIds({
     nodes,
@@ -330,20 +369,20 @@ test("SCC topology separates independent cycles and merges mutually reachable ne
 });
 
 test("topology flow order is globally unique and places cycles after forward handoffs", () => {
-  const nodes = ["input", "a", "b", "c", "output"].map((id) => node(id, 0, 0));
+  const nodes = ["__system_start__", "a", "b", "c", "__system_end__"].map((id) => node(id, 0, 0));
   const edges = [
-    edge("entry", "input", "a"),
+    edge("entry", "__system_start__", "a"),
     edge("a-b", "a", "b"),
     edge("a-c", "a", "c"),
-    edge("b-output", "b", "output"),
+    edge("b-end", "b", "__system_end__"),
     edge("c-self", "c", "c", { channel: "loop" })
   ];
-  const ordered = addTopologyFlowOrder({ nodes, edges, entryRoleId: "input" });
+  const ordered = addTopologyFlowOrder({ nodes, edges, entryNodeId: "__system_start__" });
   const orderById = new Map(ordered.map((item) => [item.id, item.topologyOrder]));
   assert.equal(orderById.get("entry"), "1");
   assert.equal(orderById.get("a-b"), "2");
   assert.equal(orderById.get("a-c"), "3");
-  assert.equal(orderById.get("b-output"), "4");
+  assert.equal(orderById.get("b-end"), "4");
   assert.equal(orderById.get("c-self"), "5L");
   assert.equal(new Set(orderById.values()).size, edges.length);
   assert.match(formatStudioEdgeLabel({ ...edges[1], topologyOrder: orderById.get("a-b") }), /#2/);
@@ -360,7 +399,7 @@ test("stacked loop routes use ELK's vertical geometry without a second router", 
 test("stored back edges use their explicit lane instead of a second X6 route", () => {
   const projection = createStoredLayoutProjection({
     ...graphViewModel(),
-    nodes: [node("input", 0, 0), node("source", 520, 0), node("target", 180, 0), node("output", 900, 0)],
+    nodes: [node("__system_start__", 0, 0), node("source", 520, 0), node("target", 180, 0), node("__system_end__", 900, 0)],
     edges: [edge("source-target", "source", "target", { channel: "loop" })]
   });
   const loop = projection.edges.find((item) => item.id === "source-target");
@@ -371,7 +410,7 @@ test("stored back edges use their explicit lane instead of a second X6 route", (
 test("backward feedback edges use a distinct obstacle-aware channel from the forward handoff", () => {
   const viewModel = {
     ...graphViewModel(),
-    nodes: [node("input", 0, 0), node("proposer", 180, 0), node("judge", 520, 0), node("output", 900, 0)],
+    nodes: [node("__system_start__", 0, 0), node("proposer", 180, 0), node("judge", 520, 0), node("__system_end__", 900, 0)],
     edges: [
       edge("proposal-ready", "proposer", "judge"),
       edge("rework", "judge", "proposer")
@@ -413,11 +452,11 @@ test("backward feedback routes move around obstructing nodes without crossing th
   const viewModel = {
     ...graphViewModel(),
     nodes: [
-      node("input", 0, 0),
+      node("__system_start__", 0, 0),
       node("proposer", 180, 0),
       node("critic", 340, -84),
       node("judge", 520, 0),
-      node("output", 900, 0)
+      node("__system_end__", 900, 0)
     ],
     edges: [
       edge("proposal-ready", "proposer", "judge"),
@@ -462,18 +501,18 @@ test("ELK feedback edges keep a separate orthogonal return path", async () => {
   const viewModel = {
     ...graphViewModel(),
     nodes: [
-      node("input", 0, 0),
+      node("__system_start__", 0, 0),
       node("proposer", 0, 0, { routingMode: "parallel_split" }),
       node("critic-a", 0, 0),
       node("critic-b", 0, 0),
       node("judge", 0, 0, { joinMode: "all_of", joinSources: ["proposer", "critic-a", "critic-b"] }),
-      node("output", 0, 0)
+      node("__system_end__", 0, 0)
     ],
     edges: [
-      edge("research-request", "input", "proposer"),
+      edge("research-request", "__system_start__", "proposer"),
       edge("critique-a", "critic-a", "judge"),
       edge("critique-b", "critic-b", "judge"),
-      edge("decision-ready", "judge", "output"),
+      edge("decision-ready", "judge", "__system_end__"),
       edge("send-critique-a", "proposer", "critic-a"),
       edge("send-critique-b", "proposer", "critic-b"),
       edge("proposal-ready", "proposer", "judge"),

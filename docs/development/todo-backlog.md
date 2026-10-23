@@ -3,7 +3,7 @@
 Date: 2026-09-03
 Status: active; current P1 execution plan reconciled 2026-09-03
 
-This is the only active backlog entry point. Dated plans, reviews, and checklists stay in `docs/development/archive/` and are not daily execution lists.
+This is the only active backlog entry point. Completed or superseded plans are removed after their current contracts and verification criteria are reflected here and in the manuals.
 
 The dated execution record is historical; current work is tracked in this backlog and the linked
 current contracts.
@@ -21,11 +21,8 @@ Contract freeze notes:
 
 ## Closed
 
-- Visualizer platform validation P1/P2 is closed in `docs/development/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`.
-- Browser smoke gating, Windows lifecycle smoke, docs drift checks, and CI Playwright Chromium setup are closed in `docs/development/archive/delivery/ogsystem-cross-platform-visualizer-validation-closure-2026-05-05.md`.
-- Visualizer product usability gate follow-up is closed in `docs/development/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md`.
-- Visualizer UX convergence is closed; the short closure summary is archived at `docs/development/archive/delivery/visualizer-refactor-closure-summary-2026-05-13.md` and the detailed execution record at `docs/development/archive/delivery/visualizer-refactor-plan-2026-05-13.md`. The current ELK.js semantic-layout implementation is tracked in the execution record below.
-- Responsibility-seat semantics review is closed and consolidated into `docs/development/ogs-visualizer-refactor-plan.md`, `docs/usage/ogsystem-orchestration-semantics-v1.md`, and `docs/usage/ogsystem-semantics-manual.md`; the review record remains historical at `docs/development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md`.
+- Visualizer platform validation, browser gating, responsive layout, and accessibility behavior are covered by current visualizer tests and the release UAT checklist.
+- Visualizer UX and responsibility-seat semantics are defined by `docs/development/ogs-visualizer-refactor-plan.md`, `docs/usage/ogsystem-orchestration-semantics-v1.md`, and `docs/usage/ogsystem-semantics-manual.md`.
 - Semantic IR v1 foundations, state reducers, event/payload contracts, condition AST, Loop Scope, Join readiness/timeout, CAS/idempotency, runtime-native review, and ERROR* routing are closed for the current stable baseline. Current boundaries and remaining gaps are maintained in `docs/development/semantic-gap-implementation-plan.md`.
 - Generic feedback modeling is closed: `FEEDBACK` is a transition event between existing responsibility seats, not an implicit `a-feedback`/`b-feedback` seat.
 

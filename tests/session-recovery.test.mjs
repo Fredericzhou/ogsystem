@@ -138,15 +138,14 @@ test("resume context restores branch-local sessions and keeps sibling session me
 %% system.id=session.branch.restore
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-moderator
 %% role.mode.debate-moderator=parallel_split
 
-input -->|START| moderator[Role:debate-moderator]
+start[开始] -->|START| moderator[Role:debate-moderator]
 moderator[Role:debate-moderator] -->|TO_MIN| minimalist[Role:debate-minimalist]
 moderator[Role:debate-moderator] -->|TO_ALIGN| alignmentist[Role:debate-alignmentist]
 minimalist[Role:debate-minimalist] -->|MIN_DONE| summary[Role:debate-summary]
 alignmentist[Role:debate-alignmentist] -->|ALIGN_DONE| summary[Role:debate-summary]
-summary[Role:debate-summary] -->|SUMMARY_READY| output
+summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
 `;
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system, new Map([[
@@ -354,7 +353,7 @@ test("branch workspace isolation stores session directory under branch private w
   const systemPath = path.resolve("examples/target-model-binding-system.mmd");
   const system = await loadSystemFromMermaid(systemPath);
   const plan = createExecutionPlan(system, new Map([[
-    system.entryRoleId,
+    system.entryRoleIds?.[0],
     { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "codex/gpt-5.6-sol", bindingSource: "selection" }
   ]]));
   const runtimeConfig = validateRuntimeConfig(
@@ -378,7 +377,7 @@ test("branch workspace isolation stores session directory under branch private w
     runtimeConfig
   });
   const rolePackage = await loadRolePackage({
-    roleId: system.entryRoleId,
+    roleId: system.entryRoleIds?.[0],
     roleRootDir: path.resolve("og-roles/roles")
   });
   const modelPackage = await loadModelPackage({
@@ -408,8 +407,8 @@ test("branch workspace isolation stores session directory under branch private w
   };
 
   const result = await executeRoleNode({
-    roleId: system.entryRoleId,
-    node: getExecutionPlanNode(plan, system.entryRoleId),
+    roleId: system.entryRoleIds?.[0],
+    node: getExecutionPlanNode(plan, system.entryRoleIds?.[0]),
     plan,
     state,
     effectiveLaw: {
@@ -419,7 +418,7 @@ test("branch workspace isolation stores session directory under branch private w
     profilesById: new Map(),
     toolsByRef: new Map(),
     modelsById: new Map([["general-balanced", modelPackage]]),
-    rolePackagesByRoleId: new Map([[system.entryRoleId, rolePackage]]),
+    rolePackagesByRoleId: new Map([[system.entryRoleIds?.[0], rolePackage]]),
     runContext,
     executor,
     workdir

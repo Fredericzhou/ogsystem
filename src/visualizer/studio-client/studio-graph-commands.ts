@@ -1,6 +1,7 @@
 import { authoringToGraphSnapshot } from "../studio-authoring-projection.js";
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
+  STUDIO_SYSTEM_START_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
   normalizeStudioGraphTargetRoleId,
   type StudioAuthoringDocument,
@@ -128,7 +129,7 @@ function nextRoleId(authoring: StudioAuthoringDocument, base = "new-role"): stri
   return roleId;
 }
 
-const RESERVED_ROLE_IDS = new Set(["input", "output", STUDIO_SYSTEM_END_ROLE_ID]);
+const RESERVED_ROLE_IDS = new Set(["start", "end", STUDIO_SYSTEM_START_ROLE_ID, STUDIO_SYSTEM_END_ROLE_ID]);
 const ROLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_:-]*$/;
 
@@ -155,12 +156,13 @@ function normalizeFlowLabel(value: unknown, eventType: string): string | undefin
 }
 
 function nextFlowId(authoring: StudioAuthoringDocument, flow: Omit<StudioAuthoringFlow, "flowId">): string {
-  const target = flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId;
-  let base = `${Object.keys(authoring.flows).length + 1}:${flow.fromRoleId}:${flow.eventType}:${target}`;
+  const source = flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
+  const target = flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId;
+  let base = `${Object.keys(authoring.flows).length + 1}:${source}:${flow.eventType}:${target}`;
   let candidate = base;
   let suffix = 2;
   while (authoring.flows[candidate]) {
-    base = `${flow.fromRoleId}:${flow.eventType}:${target}`;
+    base = `${source}:${flow.eventType}:${target}`;
     candidate = `${base}#${suffix}`;
     suffix += 1;
   }
@@ -168,7 +170,8 @@ function nextFlowId(authoring: StudioAuthoringDocument, flow: Omit<StudioAuthori
 }
 
 function canvasFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "toRoleId" | "eventType">): string {
-  return `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId}`;
+  const source = flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
+  return `${source}:${flow.eventType}:${flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId}`;
 }
 
 function commandTargetRoleId(roleId: string): string {
@@ -423,6 +426,7 @@ export function applyStudioAuthoringCommand(args: {
         }
       }
       const roleId = explicitRoleId || nextRoleId(authoring);
+      const isFirstRole = Object.keys(authoring.roles).length === 0;
       const bindingKind = command.bindingKind === "model" || command.bindingKind === "exec"
         ? command.bindingKind
         : "noop";
@@ -452,6 +456,11 @@ export function applyStudioAuthoringCommand(args: {
       authoring.roles[roleId] = role;
       authoring.layout.nodes[roleId] = { x, y, width: 180, height: 84 };
       canvas.nodes.push(roleCanvasNode(role, x, y));
+      if (isFirstRole) {
+        const flow = { flowId: `start:START:${roleId}`, fromRoleId: STUDIO_SYSTEM_START_ROLE_ID, toRoleId: roleId, eventType: "START", label: "任务分发" };
+        authoring.flows[flow.flowId] = flow;
+        canvas.edges.push({ id: flow.flowId, source: flow.fromRoleId, target: flow.toRoleId, label: flow.label, eventType: flow.eventType, runtimeOnlyErrorFlow: false, participatesInJoin: false });
+      }
       return {
         authoring,
         canvas,
@@ -477,7 +486,7 @@ export function applyStudioAuthoringCommand(args: {
 
   if (command.type === "delete-role") {
     const roleId = command.roleId;
-    if (!roleId || roleId === authoring.system.entryRoleId) {
+    if (!roleId) {
       return { authoring, canvas, blockedCode: "entry-role-delete" };
     }
     for (const candidate of Object.values(authoring.roles)) {
@@ -503,12 +512,12 @@ export function applyStudioAuthoringCommand(args: {
     );
     canvas.nodes = canvas.nodes.filter((node) => node.roleId !== roleId);
     canvas.edges = canvas.edges.filter((edge) => edge.source !== roleId && edge.target !== roleId);
-    return { authoring, canvas, selectedRoleId: canvas.nodes[0]?.roleId || "" };
+    return { authoring, canvas, selectedRoleId: canvas.nodes.find((node) => node.roleId !== STUDIO_SYSTEM_START_ROLE_ID && node.roleId !== STUDIO_SYSTEM_END_ROLE_ID)?.roleId || "" };
   }
 
   if (command.type === "update-system") {
     authoring.system = { ...authoring.system, ...command.system };
-    return { authoring, canvas, selectedRoleId: authoring.system.entryRoleId || "" };
+    return { authoring, canvas, selectedRoleId: Object.values(authoring.flows).find((flow) => flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID)?.toRoleId || STUDIO_SYSTEM_START_ROLE_ID };
   }
 
   if (command.type === "update-role") {
@@ -528,9 +537,6 @@ export function applyStudioAuthoringCommand(args: {
     if (nextRoleIdValue !== originalRoleId) {
       delete authoring.roles[originalRoleId];
       authoring.roles[nextRoleIdValue] = updatedRole;
-      if (authoring.system.entryRoleId === originalRoleId) {
-        authoring.system.entryRoleId = nextRoleIdValue;
-      }
       if (authoring.layout.nodes[originalRoleId]) {
         authoring.layout.nodes[nextRoleIdValue] = authoring.layout.nodes[originalRoleId];
         delete authoring.layout.nodes[originalRoleId];
@@ -575,15 +581,20 @@ export function applyStudioAuthoringCommand(args: {
   if (command.type === "add-edge") {
     const sourceRoleId = normalizeRoleId(command.sourceRoleId);
     const targetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(command.targetRoleId));
+    const sourceIsStart = sourceRoleId === STUDIO_SYSTEM_START_ROLE_ID;
+    const targetIsEnd = targetRoleId === STUDIO_SYSTEM_END_ROLE_ID;
     if (
       !sourceRoleId ||
       sourceRoleId === targetRoleId ||
-      !authoring.roles[sourceRoleId] ||
-      (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID && !authoring.roles[targetRoleId])
+      (sourceRoleId === STUDIO_SYSTEM_END_ROLE_ID) ||
+      (targetRoleId === STUDIO_SYSTEM_START_ROLE_ID) ||
+      (sourceIsStart && targetIsEnd) ||
+      (!sourceIsStart && !authoring.roles[sourceRoleId]) ||
+      (!targetIsEnd && !authoring.roles[targetRoleId])
     ) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
-    let eventType = normalizeEventType(command.eventType) || "DONE";
+    let eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType) || "DONE";
     if (!EVENT_TYPE_PATTERN.test(eventType)) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
     }
@@ -608,10 +619,9 @@ export function applyStudioAuthoringCommand(args: {
       fromRoleId: sourceRoleId,
       toRoleId: targetRoleId,
       eventType,
-      label: normalizeFlowLabel(command.label, eventType),
-      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
-      condition: command.condition,
-      priority: command.priority ?? 0
+      label: sourceIsStart ? "任务分发" : targetIsEnd ? normalizeFlowLabel(command.label, eventType) ?? "结果到达" : normalizeFlowLabel(command.label, eventType),
+      runtimeOnlyErrorFlow: sourceIsStart || targetIsEnd ? false : command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
+      ...(sourceIsStart || targetIsEnd ? {} : { condition: command.condition, priority: command.priority ?? 0 })
     };
     if (!flowBody.label) {
       delete flowBody.label;
@@ -637,19 +647,30 @@ export function applyStudioAuthoringCommand(args: {
   }
 
   if (command.type === "update-edge") {
-    const originalTargetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(command.originalTargetRoleId));
+    const originalTargetValue = normalizeRoleId(command.originalTargetRoleId);
+    const originalTargetRoleId = originalTargetValue === "output"
+      ? STUDIO_SYSTEM_END_ROLE_ID
+      : normalizeStudioGraphStoredRoleId(originalTargetValue);
     const originalEventType = normalizeEventType(command.originalEventType);
     const sourceRoleId = normalizeRoleId(command.sourceRoleId);
-    const targetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(command.targetRoleId));
+    const targetValue = normalizeRoleId(command.targetRoleId);
+    const targetRoleId = targetValue === "output"
+      ? STUDIO_SYSTEM_END_ROLE_ID
+      : normalizeStudioGraphStoredRoleId(targetValue);
+    const sourceIsStart = sourceRoleId === STUDIO_SYSTEM_START_ROLE_ID;
+    const targetIsEnd = targetRoleId === STUDIO_SYSTEM_END_ROLE_ID;
     if (
       !sourceRoleId ||
       sourceRoleId === targetRoleId ||
-      !authoring.roles[sourceRoleId] ||
-      (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID && !authoring.roles[targetRoleId])
+      sourceRoleId === STUDIO_SYSTEM_END_ROLE_ID ||
+      targetRoleId === STUDIO_SYSTEM_START_ROLE_ID ||
+      (sourceIsStart && targetIsEnd) ||
+      (!sourceIsStart && !authoring.roles[sourceRoleId]) ||
+      (!targetIsEnd && !authoring.roles[targetRoleId])
     ) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
-    const eventType = normalizeEventType(command.eventType || "DONE");
+    const eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType || "DONE");
     if (!EVENT_TYPE_PATTERN.test(eventType)) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
     }
@@ -678,12 +699,14 @@ export function applyStudioAuthoringCommand(args: {
       fromRoleId: sourceRoleId,
       toRoleId: targetRoleId,
       eventType,
-      label: Object.hasOwn(command, "label")
+      label: sourceIsStart || targetIsEnd ? (Object.hasOwn(command, "label")
+        ? normalizeFlowLabel(command.label, eventType) ?? "结果到达"
+        : normalizeFlowLabel(originalFlow.label, eventType) ?? (sourceIsStart ? "任务分发" : "结果到达")) : Object.hasOwn(command, "label")
         ? normalizeFlowLabel(command.label, eventType)
         : normalizeFlowLabel(originalFlow.label, eventType),
-      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
-      condition: command.condition,
-      priority: command.priority ?? originalFlow.priority ?? 0
+      runtimeOnlyErrorFlow: sourceIsStart || targetIsEnd ? false : command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
+      condition: sourceIsStart ? undefined : command.condition,
+      priority: sourceIsStart ? undefined : command.priority ?? originalFlow.priority ?? 0
     };
     if (!flow.label) {
       delete flow.label;

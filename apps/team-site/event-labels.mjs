@@ -1,4 +1,5 @@
 export const eventLabels = {
+  START: ["任务分发", "Task dispatch"],
   SOFTWARE_REQUEST: ["研发需求", "Product request"],
   PLAN_BACKEND: ["规划工程实现", "Plan engineering"],
   PLAN_EXPERIENCE: ["规划使用体验", "Plan user experience"],

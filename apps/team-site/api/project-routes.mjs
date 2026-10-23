@@ -24,6 +24,16 @@ export async function handleProjectRoutes({ request, response, url, readBody, se
     return true;
   }
 
+  const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)$/);
+  if (projectMatch && request.method === "DELETE") {
+    try {
+      sendJson(response, 200, await useCases.deleteCollaborationProject(projectMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to delete project." });
+    }
+    return true;
+  }
+
   const projectTeamMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/teams$/);
   if (!projectTeamMatch) return false;
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
+import { createFilesystemRuntimeServices, runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
 
 function normalizeRuntimeStatus(status) {
@@ -14,7 +14,7 @@ function normalizeRuntimeStatus(status) {
 
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run" }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", onAuditEvent }) {
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
       const runId = `simulation-${randomUUID()}`;
       try {
@@ -35,15 +35,34 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
           modelCatalogModels: modelConfig?.modelCatalogModels,
           modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
-          logRun: false
+          logRun: false,
+          runtimeServicesFactory: (runtimeArgs) => {
+            const services = createFilesystemRuntimeServices({
+              context: runtimeArgs.runContext,
+              initialState: runtimeArgs.initialState,
+              irDigest: runtimeArgs.plan.irDigest,
+              runtimeDigest: runtimeArgs.plan.planFingerprint
+            });
+            if (typeof onAuditEvent !== "function") return services;
+            return {
+              ...services,
+              audit: {
+                ...services.audit,
+                append: async (event) => {
+                  await services.audit.append(event);
+                  if (event.type === "audit") await onAuditEvent(event);
+                }
+              }
+            };
+          }
         });
         return {
           teamVersionId: team.teamVersionId,
           mode,
           persisted: false,
           status: normalizeRuntimeStatus(result.status),
-          finalRoleId: result.finalRoleId,
-          finalOutput: result.finalOutput,
+          finalOutputsByRoleId: result.finalOutputsByRoleId || {},
+          finalOutputRoleOrder: result.finalOutputRoleOrder || [],
           stages: Array.isArray(result.stages) ? result.stages : [],
           auditTrail: Array.isArray(result.auditTrail) ? result.auditTrail.map((item) => ({
             roleId: item.roleId,
@@ -54,7 +73,10 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
             modelId: item.modelId,
             profileId: item.profileId,
             toolRef: item.toolRef,
-            failure: item.error
+            failure: item.error,
+            inputContext: item.inputContext,
+            stdoutPreview: item.stdoutPreview,
+            errorEnvelope: item.errorEnvelope
           })) : [],
           summary: result.runSummary || {},
           durationMs: 0

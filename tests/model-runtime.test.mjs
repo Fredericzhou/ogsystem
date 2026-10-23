@@ -38,7 +38,7 @@ test("adapter persists run artifacts for project-selected model roles", async ()
   });
 
   assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "debate-judge");
+  assert.strictEqual(result.finalRoleIds?.at(-1), "debate-judge");
 
   const runsDir = path.resolve(tempRoot, ".ogs/runs");
   const runs = await readdir(runsDir);
@@ -47,7 +47,7 @@ test("adapter persists run artifacts for project-selected model roles", async ()
 
   const runDir = path.resolve(runsDir, runs[0]);
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
-  assert.strictEqual(stateJson.finalRoleId, "debate-judge");
+  assert.strictEqual(stateJson.finalRoleIds?.at(-1), "debate-judge");
   const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
   assert.equal(sessionIndex.length, 2);
   assert.equal(sessionIndex[0].sessionId.startsWith("dryrun-codex-"), true);

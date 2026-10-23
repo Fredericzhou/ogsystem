@@ -39,7 +39,11 @@ new project; historical development data and interfaces are not migration or com
    is absent from metric labels and operational summaries.
 9. Complete the same operator workflow at desktop and mobile viewport sizes; confirm the graph,
    failure location, pending review action, and next lifecycle action remain discoverable.
-10. On a real supported device, complete the operator's keyboard-only path and review the same
+10. In Studio, open a Role property panel, keep the floating Team assets panel open, and create a
+    relationship between visible graph ports outside the panel. Confirm X6 receives the connection,
+    the relationship editor opens, and the flow is saved with the selected endpoints. Open Global
+    from Team assets and confirm it is a separate page; verify Start/End flows have localized labels.
+11. On a real supported device, complete the operator's keyboard-only path and review the same
     workflow with a screen reader. Verify focus order, visible focus, control names and states,
     status/error announcements, review actions, and recovery actions at the device's actual
     viewport and browser zoom.

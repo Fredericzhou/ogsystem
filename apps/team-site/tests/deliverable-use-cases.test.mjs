@@ -9,7 +9,7 @@ test("Deliverable archive requires a completed Run and stores an independent sna
   const useCases = createDeliverableUseCases({
     getProject: async () => project,
     getRun: async (_projectId, taskId, runId) => ({ runId, taskId, teamVersionId: "team-v1", attemptNumber: runId === "run-2" ? 2 : 1, state: { status: runId === "run-failed" ? "failed" : "completed" } }),
-    runResultStore: { readFinalOutput: async () => "final output" },
+    runResultStore: { readFinalOutputs: async () => ({ finalOutputsByRoleId: { writer: [{ content: "final output" }] }, finalOutputRoleOrder: ["writer"] }) },
     deliverableStore: {
       archive: async (_project, metadata, content) => (archives.push({ metadata, content }), { deliverableId: "d-1", ...metadata }),
       list: async () => [],
@@ -22,8 +22,8 @@ test("Deliverable archive requires a completed Run and stores an independent sna
   assert.equal(first.deliverable.attemptNumber, 1);
   assert.equal(second.deliverable.attemptNumber, 2);
   assert.equal(archives.length, 2);
-  assert.equal(archives[0].content, "final output");
-  assert.equal(archives[0].metadata.summary, "final output");
+  assert.deepEqual(archives[0].content, { finalOutputsByRoleId: { writer: [{ content: "final output" }] }, finalOutputRoleOrder: ["writer"] });
+  assert.equal(archives[0].metadata.summary, "writer: final output");
 });
 
 test("archive API reports created snapshots and idempotent replays with distinct statuses", async () => {

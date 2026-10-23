@@ -32,7 +32,7 @@ test("WeChat mini-program OGS flow feeds QA findings back, passes, then seals ve
 
     const runResult = JSON.parse(stdout);
     assert.equal(runResult.status, "done");
-    assert.equal(runResult.finalRoleId, "seal");
+    assert.equal(runResult.finalRoleIds?.at(-1), "seal");
     assert.ok(runResult.stages.some((stage) => stage.roleId === "testing" && stage.selectedEvent === "TEST_FAIL"));
     assert.ok(runResult.stages.some((stage) => stage.roleId === "testing" && stage.selectedEvent === "TEST_PASS"));
     assert.ok(runResult.stages.some((stage) => stage.roleId === "seal" && stage.selectedEvent === "SEALED"));

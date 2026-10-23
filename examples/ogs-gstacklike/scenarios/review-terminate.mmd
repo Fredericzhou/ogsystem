@@ -2,7 +2,6 @@ flowchart TD
 %% system.id=ogs.gstacklike.review-terminate
 %% system.version=1.0.0
 %% law.global=law.gstacklike.base
-%% entry.role=office-hours
 %% exec.bind.office-hours=profile.office-hours
 %% exec.bind.review=profile.review
 %% exec.bind.qa=profile.qa
@@ -17,18 +16,18 @@ flowchart TD
 %% context.map.ship.human_review_round=global.human_review.current.round?
 %% context.map.ship.previous_ship_output=global.human_review.current.previous_output.content?
 
-input -->|REQUEST_IN| office-hours[Role:office-hours]
+start[开始] -->|START| office-hours[Role:office-hours]
 office-hours[Role:office-hours] -->|READY_FOR_REVIEW| review[Role:review]
-office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| output
-office-hours[Role:office-hours] -->|REJECTED| output
+office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| end[结束]
+office-hours[Role:office-hours] -->|REJECTED| end[结束]
 
 review[Role:review] -->|APPROVED| qa[Role:qa]
-review[Role:review] -->|CHANGES_REQUIRED| output
-review[Role:review] -->|BLOCKED| output
+review[Role:review] -->|CHANGES_REQUIRED| end[结束]
+review[Role:review] -->|BLOCKED| end[结束]
 
 qa[Role:qa] -->|QA_PASS| ship[Role:ship]
-qa[Role:qa] -->|QA_FAIL| output
-qa[Role:qa] -->|QA_BLOCKED| output
+qa[Role:qa] -->|QA_FAIL| end[结束]
+qa[Role:qa] -->|QA_BLOCKED| end[结束]
 
-ship[Role:ship] -->|READY_TO_DEPLOY| output
-ship[Role:ship] -->|SHIP_BLOCKED| output
+ship[Role:ship] -->|READY_TO_DEPLOY| end[结束]
+ship[Role:ship] -->|SHIP_BLOCKED| end[结束]

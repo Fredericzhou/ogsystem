@@ -99,7 +99,7 @@ async function recoverSnapshots(root, indexPath, index) {
     if (!entryStats.isDirectory() || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.name)) continue;
     try {
       const metadataPath = join(path, "metadata.json");
-      const contentPath = join(path, "content.txt");
+      const contentPath = join(path, "content.json");
       const metadataStats = await assertFilePath(metadataPath, "snapshot metadata");
       const contentStats = await assertFilePath(contentPath, "snapshot content");
       if (!metadataStats || !contentStats) continue;
@@ -110,7 +110,7 @@ async function recoverSnapshots(root, indexPath, index) {
       recoveredItems.set(entry.name, {
         ...record,
         summary: record.summary || content.toString("utf8").trim().replace(/\s+/g, " ").slice(0, 500),
-        outputPath: record.outputPath || `workspace/deliverables/${entry.name}/content.txt`
+        outputPath: record.outputPath || `workspace/deliverables/${entry.name}/content.json`
       });
     } catch (error) {
       if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
@@ -161,18 +161,19 @@ export function createFileDeliverableStore() {
           const deliverableId = randomUUID();
           const temporaryPath = join(deliverablesRoot, `.${deliverableId}.tmp`);
           const finalPath = join(deliverablesRoot, deliverableId);
-          const digest = createHash("sha256").update(content, "utf8").digest("hex");
+          const contentJson = JSON.stringify(content, null, 2);
+          const digest = createHash("sha256").update(contentJson, "utf8").digest("hex");
           const record = {
             ...metadata,
             deliverableId,
             digest,
-            summary: metadata.summary || content.trim().replace(/\s+/g, " ").slice(0, 500),
-            outputPath: `workspace/deliverables/${deliverableId}/content.txt`,
+            summary: metadata.summary || "",
+            outputPath: `workspace/deliverables/${deliverableId}/content.json`,
             createdAt: new Date().toISOString()
           };
           try {
             await mkdir(temporaryPath);
-            await writeFile(join(temporaryPath, "content.txt"), content, { encoding: "utf8", flag: "wx" });
+            await writeFile(join(temporaryPath, "content.json"), contentJson, { encoding: "utf8", flag: "wx" });
             await writeFile(join(temporaryPath, "metadata.json"), `${JSON.stringify(record, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
             await rename(temporaryPath, finalPath);
             const nextIndex = { version: 1, items: [...(index.items || []), record] };
@@ -194,7 +195,7 @@ export function createFileDeliverableStore() {
       if (!items.some((item) => item.deliverableId === id)) throw new Error("DELIVERABLE_NOT_FOUND: deliverable does not exist.");
       const paths = await ensureSafeDirectories(project.workdir);
       const root = paths.deliverablesRoot;
-      const path = resolve(root, id, "content.txt");
+      const path = resolve(root, id, "content.json");
       if (!path.startsWith(`${root}${sep}`)) throw new Error("Deliverable path is outside the project workspace.");
       const snapshotPath = resolve(root, id);
       const snapshotStats = await assertRegularPath(snapshotPath, "snapshot directory");
@@ -206,7 +207,7 @@ export function createFileDeliverableStore() {
       if (createHash("sha256").update(content).digest("hex") !== record.digest) {
         throw new Error("DELIVERABLE_DIGEST_MISMATCH: deliverable content failed integrity verification.");
       }
-      return content.toString("utf8");
+      return JSON.parse(content.toString("utf8"));
     }
   });
 }

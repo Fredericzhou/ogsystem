@@ -20,8 +20,16 @@ test("archive persists TeamVersion state and keeps metadata reference files cons
       const meta = JSON.parse(await readFile(join(projectsRoot, id, ".site", "project.json"), "utf8"));
       return { ...meta, projectId: id };
     };
-    const persistence = createFileTeamVersionLifecycle({ projectsRoot, getTeamVersion });
-    const useCases = createTeamVersionLifecycleUseCases({ teamVersions: { ...persistence, getTeamVersion } });
+    const persistence = createFileTeamVersionLifecycle({
+      projectsRoot,
+      getTeamVersion,
+      listProjects: async () => [await getTeamVersion("team-v1")],
+      removeProjectData: async (id) => rm(join(projectsRoot, id), { recursive: true, force: true })
+    });
+    const useCases = createTeamVersionLifecycleUseCases({
+      teamVersions: { ...persistence, getTeamVersion },
+      withTeamVersionLock: async (_id, action) => action()
+    });
     const archived = await useCases.archiveTeamVersion("team-v1");
     assert.equal(archived.teamVersionStatus, "archived");
     assert.ok(archived.archivedAt);

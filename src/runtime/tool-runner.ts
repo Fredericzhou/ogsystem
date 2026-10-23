@@ -223,6 +223,7 @@ export async function runCliTool(args: {
   envAllowlist?: string[];
   dryRunOutput?: {
     event?: string;
+    output?: Record<string, unknown>;
   };
 }): Promise<{ exitCode: number; stdout: string; stderr: string; args: string[] }> {
   const renderedArgs = renderArgs(args.tool.argsTemplate, args.vars).map((item) =>
@@ -231,12 +232,17 @@ export async function runCliTool(args: {
   const resolvedCommand = resolveCliCommand(args.tool.command);
 
   if (args.dryRun) {
+    const output = {
+      event: args.dryRunOutput?.event,
+      content: buildDryRunContent(resolvedCommand, renderedArgs),
+      ...args.dryRunOutput?.output
+    };
+    if (Object.hasOwn(output, "content")) {
+      output.content = buildDryRunContent(resolvedCommand, renderedArgs);
+    }
     return {
       exitCode: 0,
-      stdout: JSON.stringify({
-        event: args.dryRunOutput?.event,
-        content: buildDryRunContent(resolvedCommand, renderedArgs)
-      }),
+      stdout: JSON.stringify(output),
       stderr: "",
       args: renderedArgs
     };

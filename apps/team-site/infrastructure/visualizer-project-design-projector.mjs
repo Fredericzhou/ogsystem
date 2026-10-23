@@ -51,8 +51,8 @@ export function createVisualizerProjectDesignProjector({
         }
       }
       const boundaryLabels = locale === "en"
-        ? { input: "Task", output: "Outcome" }
-        : { input: "任务", output: "结果" };
+        ? { start: "Start", end: "End" }
+        : { start: "开始", end: "结束" };
       return {
         projectId: project.projectId,
         projectDigest: project.projectDigest,

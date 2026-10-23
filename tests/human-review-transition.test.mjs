@@ -64,8 +64,9 @@ function applyGraphUpdate(state, update) {
       ...state.selectedEventByBranchId,
       ...(update.selectedEventByBranchId ?? {})
     },
-    finalOutput: update.finalOutput ?? state.finalOutput,
-    finalRoleId: update.finalRoleId ?? state.finalRoleId,
+    finalOutputsByRoleId: update.finalOutputsByRoleId ?? state.finalOutputsByRoleId,
+    finalOutputRoleOrder: update.finalOutputRoleOrder ?? state.finalOutputRoleOrder,
+    finalRoleIds: update.finalRoleIds ?? state.finalRoleIds,
     lastExecutedRoleId: update.lastExecutedRoleId ?? state.lastExecutedRoleId,
     nextBranchSequence: update.nextBranchSequence ?? state.nextBranchSequence,
     lastCheckpointSequence: Math.max(
@@ -80,15 +81,14 @@ test("transition planner parks reviewed outcomes as pending human review without
 %% system.id=test.runtime.human-review
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% review.mode.writer=required
 %% review.timeout.writer=180
 %% review.timeout.action.writer=terminate
 %% review.rework.max.writer=2
 %% review.terminate.scope.writer=run
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({
@@ -207,11 +207,10 @@ test("human review pause decision keeps the branch waiting and unreleased", () =
 %% system.id=test.runtime.human-review.pause
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% review.mode.writer=required
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({ plan, prompt: "pause review" });
@@ -293,12 +292,11 @@ test("human review rework decision activates a rework branch with feedback conte
 %% system.id=test.runtime.human-review.rework
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% review.mode.writer=required
 %% review.rework.max.writer=2
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({ plan, prompt: "rework review" });
@@ -384,12 +382,11 @@ test("human review terminate(run) maps to stopped", () => {
 %% system.id=test.runtime.human-review.terminate
 %% system.version=1.0.0
 %% law.global=law.test
-%% entry.role=writer
 %% exec.bind.writer=profile.writer
 %% review.mode.writer=required
 %% review.terminate.scope.writer=run
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({ plan, prompt: "terminate review" });

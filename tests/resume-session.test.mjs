@@ -171,10 +171,9 @@ test("adapter resume reloads sessions.json and reuses the same model session", a
 %% system.id=resume.session.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   await mkdir(runDir, { recursive: true });
@@ -249,7 +248,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   });
 
   assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "debate-minimalist");
+  assert.strictEqual(result.finalRoleIds?.at(-1), "debate-minimalist");
 
   const sessions = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
   assert.strictEqual(sessions.length, 1);
@@ -263,7 +262,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   assert.strictEqual(roleSession.promptCount, 3);
 
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
-  assert.strictEqual(stateJson.graphState.finalRoleId, "debate-minimalist");
+  assert.strictEqual(stateJson.graphState.finalRoleIds?.at(-1), "debate-minimalist");
 });
 
 test("adapter resume rejects partial or corrupted state snapshots", async () => {
@@ -277,10 +276,9 @@ test("adapter resume rejects partial or corrupted state snapshots", async () => 
 %% system.id=resume.corrupt.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   await mkdir(runDir, { recursive: true });
@@ -332,10 +330,9 @@ const handledFailureResumeSource = `flowchart TD
 %% system.id=resume.handled.summary.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
 async function createHandledFailureResumeFixture(args) {
@@ -530,10 +527,9 @@ test("adapter resume rejects plan fingerprint mismatch", async () => {
 %% system.id=resume.fingerprint.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
   const mutatedSystemSource = initialSystemSource;
 
@@ -600,10 +596,9 @@ test("adapter resume accepts identical runtime content loaded from different pat
 %% system.id=resume.path-stable.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -644,7 +639,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   });
 
   assert.strictEqual(resumed.status, "done");
-  assert.strictEqual(resumed.finalRoleId, "debate-minimalist");
+  assert.strictEqual(resumed.finalRoleIds?.at(-1), "debate-minimalist");
 });
 
 test("adapter resume rejects role package content drift", async () => {
@@ -652,10 +647,9 @@ test("adapter resume rejects role package content drift", async () => {
 %% system.id=resume.role-drift.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -699,10 +693,9 @@ test("adapter resume ignores refreshable model catalog metadata drift", async ()
 %% system.id=resume.model-drift.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -727,7 +720,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   });
 
   assert.strictEqual(resumed.status, "done");
-  assert.strictEqual(resumed.finalRoleId, "debate-minimalist");
+  assert.strictEqual(resumed.finalRoleIds?.at(-1), "debate-minimalist");
 });
 
 test("adapter resume rejects effective law drift", async () => {
@@ -735,10 +728,9 @@ test("adapter resume rejects effective law drift", async () => {
 %% system.id=resume.law-drift.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -790,10 +782,9 @@ test("adapter resume replays pending checkpoints without re-executing the role",
 %% system.id=resume.checkpoint.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=test-operator
 
-input -->|GO| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| output
+start[开始] -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| end[结束]
 `;
 
   await mkdir(runDir, { recursive: true });
@@ -944,8 +935,9 @@ operator[Role:test-operator] -->|DONE| output
       selectedEventByBranchId: {
         "test-operator@1#1": "DONE"
       },
-      finalOutput: "replayed",
-      finalRoleId: "test-operator",
+      finalOutputsByRoleId: { "test-operator": [{ content: "replayed" }] },
+      finalOutputRoleOrder: ["test-operator"],
+      finalRoleIds: ["test-operator"],
       lastExecutedRoleId: "test-operator",
       nextBranchSequence: 2
     }
@@ -963,8 +955,8 @@ operator[Role:test-operator] -->|DONE| output
   });
 
   assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "test-operator");
-  assert.strictEqual(result.finalOutput, "replayed");
+  assert.strictEqual(result.finalRoleIds?.at(-1), "test-operator");
+  assert.deepStrictEqual(result.finalOutputsByRoleId, { "test-operator": [{ content: "replayed" }] });
 
   const executionsAfterResume = await readdir(
     path.resolve(runDir, "roles", "test-operator", "executions")
@@ -972,7 +964,7 @@ operator[Role:test-operator] -->|DONE| output
   assert.strictEqual(executionsAfterResume.length, 1);
 
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
-  assert.strictEqual(stateJson.graphState.finalRoleId, "test-operator");
+  assert.strictEqual(stateJson.graphState.finalRoleIds?.at(-1), "test-operator");
   assert.strictEqual(stateJson.graphState.lastCheckpointSequence, 1);
 });
 
@@ -994,10 +986,9 @@ test("adapter resume reconciles committed execution outcome without re-executing
 %% system.id=resume.outcome.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=test-operator
 
-input -->|GO| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| output
+start[开始] -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| end[结束]
 `;
 
   await mkdir(roleExecutionDir, { recursive: true });
@@ -1122,8 +1113,8 @@ operator[Role:test-operator] -->|DONE| output
   });
 
   assert.strictEqual(resumed.status, "done");
-  assert.strictEqual(resumed.finalRoleId, "test-operator");
-  assert.strictEqual(resumed.finalOutput, "reconciled");
+  assert.strictEqual(resumed.finalRoleIds?.at(-1), "test-operator");
+  assert.deepStrictEqual(resumed.finalOutputsByRoleId, { "test-operator": [{ content: "reconciled" }] });
   assert.strictEqual(resumed.auditTrail.length, 1);
 
   const executionDirsAfterFirstResume = await readdir(
@@ -1180,10 +1171,9 @@ test("adapter resume backfills outcome reconciliation metadata when checkpoint a
 %% system.id=resume.outcome.backfill.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=test-operator
 
-input -->|GO| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| output
+start[开始] -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| end[结束]
 `;
 
   await mkdir(roleExecutionDir, { recursive: true });
@@ -1384,8 +1374,9 @@ operator[Role:test-operator] -->|DONE| output
       selectedEventByBranchId: {
         "test-operator@1#1": "DONE"
       },
-      finalOutput: "checkpoint already persisted",
-      finalRoleId: "test-operator",
+      finalOutputsByRoleId: { "test-operator": [{ content: "checkpoint already persisted" }] },
+      finalOutputRoleOrder: ["test-operator"],
+      finalRoleIds: ["test-operator"],
       lastExecutedRoleId: "test-operator",
       nextBranchSequence: 2
     }
@@ -1403,8 +1394,8 @@ operator[Role:test-operator] -->|DONE| output
   });
 
   assert.strictEqual(resumed.status, "done");
-  assert.strictEqual(resumed.finalRoleId, "test-operator");
-  assert.strictEqual(resumed.finalOutput, "checkpoint already persisted");
+  assert.strictEqual(resumed.finalRoleIds?.at(-1), "test-operator");
+  assert.deepStrictEqual(resumed.finalOutputsByRoleId, { "test-operator": [{ content: "checkpoint already persisted" }] });
   assert.strictEqual(resumed.auditTrail.length, 1);
 
   const executionDirsAfterResume = await readdir(
@@ -1427,10 +1418,9 @@ test("adapter resume rejects an active resume lock", async () => {
 %% system.id=resume.lock-active.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -1479,10 +1469,9 @@ test("adapter resume replaces a stale lock and releases it on exit", async () =>
 %% system.id=resume.lock-stale.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -1529,7 +1518,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   });
 
   assert.strictEqual(resumed.status, "done");
-  assert.strictEqual(resumed.finalRoleId, "debate-minimalist");
+  assert.strictEqual(resumed.finalRoleIds?.at(-1), "debate-minimalist");
   assert.strictEqual(await pathExists(lockPath), false);
 });
 
@@ -1538,10 +1527,9 @@ test("adapter resume setup failure releases lock acquired during initialization"
 %% system.id=resume.lock-setup-failure.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-minimalist
 
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+start[开始] -->|START| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({

@@ -39,7 +39,7 @@ test("Visualizer design projector reads source, maps display titles, and applies
   assert.deepEqual([...calls[4][1].roleDisplayNames], [["planner", "Planner title"]]);
   assert.deepEqual(calls[4][1].modelSelection, { seats: { planner: { title: "Planner title" }, empty: { title: " " }, ignored: "not an object" } });
   assert.deepEqual(calls[5], ["canvas", authoring]);
-  assert.deepEqual(calls[6][1].presentation.boundaryLabels, { input: "Task", output: "Outcome" });
+  assert.deepEqual(calls[6][1].presentation.boundaryLabels, { start: "Start", end: "End" });
 });
 
 test("Visualizer design projector defaults to Chinese labels and tolerates missing optional design metadata", async () => {
@@ -56,7 +56,7 @@ test("Visualizer design projector defaults to Chinese labels and tolerates missi
   });
 
   await projector.project({ workdir: "/workspace/project" });
-  assert.deepEqual(graphOptions.presentation.boundaryLabels, { input: "任务", output: "结果" });
+  assert.deepEqual(graphOptions.presentation.boundaryLabels, { start: "开始", end: "结束" });
 });
 
 test("Visualizer design projector prefers the persisted authoring document for complete round trips", async () => {

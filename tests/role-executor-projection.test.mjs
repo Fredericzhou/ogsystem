@@ -176,10 +176,9 @@ test("executeRoleNode turns a failed Role Contract precondition into IR_CONTRACT
 %% system.id=role.contract.precondition
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 
-input -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{
       roleId: "writer",
@@ -231,10 +230,9 @@ test("executeRoleNode turns a failed Role Contract postcondition into IR_CONTRAC
 %% system.id=role.contract.postcondition
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 
-input -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{
       roleId: "writer",
@@ -284,10 +282,9 @@ test("executeRoleNode evaluates state postconditions after the declared reducer"
 %% system.id=role.contract.reduced-postcondition
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 
-input -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{
       roleId: "writer",
@@ -354,11 +351,10 @@ test("executeRoleNode enforces an empty Role Contract tool allowlist", async () 
 %% system.id=role.contract.tools
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 %% exec.bind.writer=profile.fixture
 
-input -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{
       roleId: "writer",
@@ -412,11 +408,10 @@ test("executeRoleNode denies tools when the Semantic capability role entry is ab
 %% system.id=role.contract.capability-missing
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 %% exec.bind.writer=profile.fixture
 
-input -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{
       roleId: "writer",
@@ -538,14 +533,13 @@ test("executeRoleNode projects deterministic context.map for ordinary nodes", as
 %% system.id=role.projection.ordinary
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=intake
 %% context.map.reviewer.brief=direct.data.brief
 %% context.map.reviewer.language=global.user_profile.language
 %% context.map.reviewer.task=global.task
 
-input -->|GO| intake[Role:intake]
+start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| output
+reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
     roles: [
       { roleId: "intake", allowedEvents: ["DONE"] },
@@ -663,10 +657,9 @@ test("executeRoleNode emits technical wait heartbeats while executor is still ru
 %% system.id=role.wait.heartbeat
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
   });
@@ -732,15 +725,14 @@ test("executeRoleNode projects current human review feedback for rework branches
 %% system.id=role.projection.human-review
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 %% context.map.writer.review=global.human_review.current
 %% context.map.writer.comment=global.human_review.current.comment
 %% context.map.writer.round=global.human_review.current.round
 %% context.map.writer.previous_output=global.human_review.current.previous_output.content
 %% context.map.writer.previous_score=global.human_review.current.previous_output.data.score
 
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
   });
@@ -848,13 +840,12 @@ test("executeRoleNode omits optional human review fields when no rework context 
 %% system.id=role.projection.human-review.optional
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=writer
 %% context.map.writer.comment=global.human_review.current.comment?
 %% context.map.writer.round=global.human_review.current.round?
 %% context.map.writer.previous_output=global.human_review.current.previous_output.content?
 
-input -->|GO| writer[Role:writer]
-writer[Role:writer] -->|DONE| output
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| end[结束]
 `,
     roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
   });
@@ -916,21 +907,20 @@ test("executeRoleNode fails closed when join projection source is unavailable", 
 %% system.id=role.projection.join.fail
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
 %% join.min.review=3
 %% context.map.review.missing=source(worker_c).content
 
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
 dispatch[Role:dispatch] -->|TO_C| workerC[Role:worker_c]
 workerA[Role:worker_a] -->|A_DONE| review[Role:review]
 workerB[Role:worker_b] -->|B_DONE| review[Role:review]
 workerC[Role:worker_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `,
     roles: [
       { roleId: "dispatch", allowedEvents: ["TO_A", "TO_B", "TO_C"], requireEvent: false },
@@ -1026,12 +1016,11 @@ test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null direc
 %% system.id=role.projection.direct.path.missing
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=intake
 %% context.map.reviewer.missing=direct.data.detail.summary
 
-input -->|GO| intake[Role:intake]
+start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| output
+reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
     roles: [
       { roleId: "intake", allowedEvents: ["DONE"] },
@@ -1118,19 +1107,18 @@ test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null join 
 %% system.id=role.projection.join.path.missing
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b
 %% join.min.review=2
 %% context.map.review.primary_risk=source(worker_b).data.risks.primary
 
-input -->|START| dispatch[Role:dispatch]
+start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
 workerA[Role:worker_a] -->|A_DONE| review[Role:review]
 workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|DONE| output
+review[Role:review] -->|DONE| end[结束]
 `,
     roles: [
       { roleId: "dispatch", allowedEvents: ["TO_A", "TO_B"], requireEvent: false },
@@ -1232,16 +1220,15 @@ test("executeRoleNode validates role_input contracts against projected context o
 %% system.id=role.projection.contract
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=intake
 %% handoff.mode=transition
 %% handoff.contracts=contracts/handoff.contracts.json
 %% context.map.reviewer.brief=direct.data.brief
 %% context.map.reviewer.language=global.user_profile.language
 %% context.map.reviewer.task=global.task
 
-input -->|GO| intake[Role:intake]
+start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| output
+reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
     roles: [
       { roleId: "intake", allowedEvents: ["DONE"] },
@@ -1391,9 +1378,8 @@ test("executeRoleNode redacts prompt and audit artifacts by default", async () =
 %% system.id=role.redaction.default
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=reviewer
-input -->|GO| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| output
+start[开始] -->|START| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
     roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
   });

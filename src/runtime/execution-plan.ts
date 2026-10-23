@@ -4,7 +4,7 @@
  * Boundaries: the plan is derived purely from system metadata and does not touch runtime state.
  * Trade-off: the runtime keeps the plan in memory rather than re-parsing Mermaid on every run.
  */
-import { SYSTEM_END_ROLE_ID } from "./types.js";
+import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "./types.js";
 import type { ResolvedModelRuntimeConfig } from "./model-selection.js";
 import type { ExecutionPlan, ExecutionPlanNode, SystemDefinition } from "./types.js";
 
@@ -85,6 +85,9 @@ export function createExecutionPlan(
   resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>
 ): ExecutionPlan {
   const nodesByRoleId = new Map<string, ExecutionPlanNode>();
+  const terminalRoleOrder = Array.from(new Set(system.flows
+    .filter((flow) => flow.toRoleId === SYSTEM_END_ROLE_ID)
+    .map((flow) => flow.fromRoleId)));
 
   for (const roleId of system.roleIds) {
     const incoming = buildIncoming(system, roleId);
@@ -106,8 +109,7 @@ export function createExecutionPlan(
         roleId,
         resolvedModelsByRoleId
       }),
-      isTerminal:
-        outgoing.length === 0 || outgoing.every((flow) => flow.toRoleId === SYSTEM_END_ROLE_ID)
+      isTerminal: outgoing.some((flow) => flow.toRoleId === SYSTEM_END_ROLE_ID)
     });
   }
 
@@ -115,9 +117,13 @@ export function createExecutionPlan(
     systemId: system.systemId,
     systemVersion: system.systemVersion,
     lawBinding: system.lawBinding,
-    entryRoleId: system.entryRoleId,
+    entryRoleIds: system.entryRoleIds,
+    startDispatch: system.startDispatch,
+    startEventType: system.startEventType,
+    endJoin: system.endJoin ?? { mode: "all_of" },
+    terminalRoleOrder: system.terminalRoleOrder ?? terminalRoleOrder,
     roleIds: system.roleIds,
-    flows: system.flows,
+    flows: system.flows.filter((flow) => flow.fromRoleId !== SYSTEM_START_ROLE_ID),
     nodesByRoleId
   };
 }

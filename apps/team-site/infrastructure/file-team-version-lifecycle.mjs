@@ -15,8 +15,8 @@ async function writeJson(path, value) {
   await rename(temporary, path);
 }
 
-export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects")), getTeamVersion }) {
-  if (typeof getTeamVersion !== "function") throw new TypeError("File TeamVersion lifecycle requires a TeamVersion reader.");
+export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects")), getTeamVersion, listProjects, removeProjectData }) {
+  if (typeof getTeamVersion !== "function" || typeof listProjects !== "function" || typeof removeProjectData !== "function") throw new TypeError("File TeamVersion lifecycle requires TeamVersion read, list, and delete operations.");
   const root = resolve(projectsRoot);
 
   async function archiveReleasedTeamVersion(teamVersionId) {
@@ -70,5 +70,10 @@ export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.
     });
   }
 
-  return Object.freeze({ archiveReleasedTeamVersion });
+  async function deleteTeamVersions(teamVersionIds) {
+    for (const teamVersionId of teamVersionIds) await removeProjectData(teamVersionId);
+    return { deletedTeamVersionIds: [...teamVersionIds] };
+  }
+
+  return Object.freeze({ archiveReleasedTeamVersion, listProjects, deleteTeamVersions });
 }

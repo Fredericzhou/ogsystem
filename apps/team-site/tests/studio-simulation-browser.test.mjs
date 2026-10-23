@@ -22,10 +22,14 @@ test("Studio browser submits a draft Simulation and reads persisted history, det
   const loaderPath = join(testSupportRoot, "mock-runtime-loader.mjs");
   await writeFile(mockRunnerPath, `export function createRuntimeTeamSimulation() {
   return Object.freeze({
-    async simulate(_team, { prompt }) {
+    async simulate(_team, { prompt, onAuditEvent }) {
+      await onAuditEvent?.({ type: "audit", roleId: "reviewer", status: "running", inputContext: { task: prompt }, stdoutPreview: "Role received the task." });
+      await new Promise((resolveWait) => setTimeout(resolveWait, 180));
+      await onAuditEvent?.({ type: "audit", roleId: "reviewer", status: "completed", durationMs: 1, inputContext: { task: prompt }, stdoutPreview: "Mocked role output for " + prompt });
       return {
         status: "completed",
-        finalOutput: "Mocked UAT result for " + prompt,
+        finalOutputsByRoleId: { analyst: [{ content: "Mocked UAT result for " + prompt }] },
+        finalOutputRoleOrder: ["analyst"],
         auditTrail: [{ roleId: "reviewer", status: "completed", durationMs: 1 }]
       };
     }
@@ -99,8 +103,13 @@ registerHooks({
     assert.equal(team.teamCoreDigest, null);
     assert.equal(team.projectDigest, null);
 
+    await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
+    await page.locator("#team-build-dialog[open]").waitFor();
+    assert.equal(await page.locator("#team-debug-dialog[open]").count(), 0);
+    await page.locator("[data-team-build-close]").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
-    await page.locator("#team-studio-tab-run").click();
+    await page.locator("#team-debug-dialog[open]").waitFor();
+    assert.equal(await page.locator("#team-build-dialog[open]").count(), 0);
     await page.locator("#team-simulation-input").fill("Review the draft package.");
     const submit = async () => {
       const responsePromise = page.waitForResponse((response) => response.request().method() === "POST"
@@ -122,9 +131,11 @@ registerHooks({
     assert.doesNotMatch(localizedError, /STUDIO_SIMULATION_INPUT_INVALID/);
 
     await page.locator("#team-simulation-input").fill("Review the draft package.");
-    assert.equal((await submit()).status(), 201);
+    assert.equal((await submit()).status(), 202);
     await page.getByText("Mocked UAT result for Review the draft package.").waitFor();
     assert.deepEqual(scriptErrors, []);
+    assert.ok((await page.locator(".team-debug-transcript").innerText()).includes("Mocked role output"));
+    assert.match(await page.locator(".team-debug-transcript").innerText(), /运行中/);
     const simulationPostCount = simulationRequests.filter((request) => request.startsWith("POST ")).length;
     assert.equal(simulationPostCount, 2);
 
@@ -150,13 +161,13 @@ registerHooks({
 
     await page.goto(`${url}/studio/teams/${teamVersionId}/run`, { waitUntil: "networkidle" });
     const historyRow = page.locator(".studio-simulation-row");
-    await page.locator(".studio-run-layout, #studio-view .run-error").waitFor({ timeout: 10000 });
-    assert.equal(await page.locator(".studio-run-layout").count(), 1, `Studio run page failed: ${await page.locator("#studio-view").innerText()}`);
+    await page.locator(".studio-simulation-list, #studio-view .run-error").waitFor({ timeout: 10000 });
+    assert.equal(await page.locator(".studio-simulation-list").count(), 1, `Studio run page failed: ${await page.locator("#studio-view").innerText()}`);
     assert.equal(await historyRow.count(), 1, `Studio Simulation history should survive restart: ${await page.locator("#studio-view").innerText()}`);
     assert.match(await historyRow.innerText(), /Review the draft package\./);
     await historyRow.click();
     await page.waitForURL(new RegExp(`/studio/teams/${teamVersionId}/run/${simulationId}$`));
-    await page.getByRole("heading", { name: "Studio 模拟" }).waitFor();
+    await page.getByRole("heading", { name: "调试运行" }).waitFor();
     assert.match(await page.locator(".project-grid").innerText(), /Review the draft package\.[\s\S]*Mocked UAT result/);
     const eventTimeline = page.locator(".studio-event-list");
     await eventTimeline.waitFor();
@@ -164,7 +175,7 @@ registerHooks({
     await page.reload({ waitUntil: "networkidle" });
     const reloadedHeading = page.locator("#studio-view .page-heading h1");
     await reloadedHeading.waitFor({ timeout: 10000 });
-    assert.match(await reloadedHeading.innerText(), /Studio/, `Simulation deep link failed at ${page.url()}`);
+    assert.match(await reloadedHeading.innerText(), /调试/, `Simulation deep link failed at ${page.url()}`);
     await page.locator(".studio-event-list li").first().waitFor();
     assert.equal(await page.locator("#studio-view .status-chip.completed").count(), 1);
     assert.deepEqual(scriptErrors, []);

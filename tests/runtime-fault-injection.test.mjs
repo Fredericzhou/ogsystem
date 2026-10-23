@@ -22,10 +22,9 @@ const systemSource = `flowchart TD
 %% system.id=test.fault.injection
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=test-operator
 
-input -->|GO| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| output
+start[开始] -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| end[结束]
 `;
 
 const cliPath = path.resolve("dist/runtime/cli.js");
@@ -402,8 +401,8 @@ test("forced crash after durable outcome resumes without duplicate execution", a
 
   assert.strictEqual(resumed.code, 0);
   const resumedResult = JSON.parse(await readFile(secondTracePath, "utf8"));
-  assert.strictEqual(resumedResult.status, "done");
-  assert.strictEqual(resumedResult.finalRoleId, "test-operator");
+  assert.strictEqual(resumedResult.status, "done", JSON.stringify(resumedResult, null, 2));
+  assert.strictEqual(resumedResult.finalRoleIds?.at(-1), "test-operator");
   assert.strictEqual(resumedResult.auditTrail.length, 1);
   await assert.rejects(() => readFile(path.resolve(runDir, RESUME_RUN_LOCK_FILE), "utf8"));
 
@@ -451,18 +450,19 @@ test("ERROR* handled failure survives crash window resume without duplicate rout
 %% system.id=test.error.flow.crash.resume
 %% system.version=1.0.0
 %% law.global=law.error.flow.resume
-%% entry.role=test-branch-a
+%% end.join.mode=quorum_of
+%% end.join.min=1
 %% exec.bind.test-branch-a=profile.detector
 %% exec.bind.error-handler-base=profile.handler
 %% exec.bind.test-operator=profile.finalizer
 
-input -->|START| source[Role:test-branch-a]
+start[开始] -->|START| source[Role:test-branch-a]
 source[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| handler[Role:error-handler-base]
 source[Role:test-branch-a] -->|ERROR| handler[Role:error-handler-base]
 handler[Role:error-handler-base] -->|COMPENSATED| finalizer[Role:test-operator]
-handler[Role:error-handler-base] -->|ESCALATED| output
-handler[Role:error-handler-base] -->|ABORTED| output
-finalizer[Role:test-operator] -->|DONE| output
+handler[Role:error-handler-base] -->|ESCALATED| end[结束]
+handler[Role:error-handler-base] -->|ABORTED| end[结束]
+finalizer[Role:test-operator] -->|DONE| end[结束]
 `,
     runtimeOverrides: {
       error_flows: {
@@ -608,7 +608,7 @@ finalizer[Role:test-operator] -->|DONE| output
   assert.strictEqual(resumed.code, 0, resumed.stderr || resumed.stdout);
   const resumedResult = JSON.parse(resumed.stdout);
   assert.strictEqual(resumedResult.status, "done");
-  assert.strictEqual(resumedResult.finalRoleId, "test-operator");
+  assert.strictEqual(resumedResult.finalRoleIds?.at(-1), "test-operator");
   assert.strictEqual(resumedResult.runSummary.handledFailureCount, 1);
   assert.strictEqual(resumedResult.runSummary.unhandledFailureCount, 0);
 
@@ -830,13 +830,12 @@ test("runner consumes stop request after current transition and lands in stopped
 %% system.id=test.stop.request.runtime
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=slow_role
 %% exec.bind.slow_role=profile.slow
 %% exec.bind.second_role=profile.second
 
-input -->|START| slow_role[Role:slow_role]
+start[开始] -->|START| slow_role[Role:slow_role]
 slow_role[Role:slow_role] -->|NEXT| second_role[Role:second_role]
-second_role[Role:second_role] -->|DONE| output
+second_role[Role:second_role] -->|DONE| end[结束]
 `,
     "utf8"
   );
@@ -891,7 +890,7 @@ second_role[Role:second_role] -->|DONE| output
 
   const tracedResult = JSON.parse(await readFile(tracePath, "utf8"));
   assert.strictEqual(tracedResult.status, "stopped");
-  assert.strictEqual(tracedResult.finalRoleId, undefined);
+  assert.strictEqual(tracedResult.finalRoleIds?.at(-1), undefined);
 
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
   assert.strictEqual(stateJson.status, "stopped");

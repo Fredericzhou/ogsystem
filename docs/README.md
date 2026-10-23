@@ -1,85 +1,53 @@
 # OGSystem Documentation Index
 
-This file is the active entry point for `docs/`. Code, tests, and CLI behavior remain the source of truth. Documentation is organized into two domains: `usage/` contains product use and runtime contracts; `development/` contains engineering rules, plans, and active work. Each domain has its own `archive/` for completed records.
+This is the active documentation entry point. Runtime behavior, source code, and tests define the current product contract.
 
-Archive rules are documented in [development/archive/README.md](development/archive/README.md). Product-facing historical material belongs under [usage/archive/](usage/archive/README.md).
+## Usage
 
-## Usage Docs
+- [Product introduction](usage/product-introduction.md)
+- [Core concepts](usage/ogsystem-core-concepts.md)
+- [Product concepts](usage/ogs-concepts.md)
+- [Team Site guide](../apps/team-site/README.md)
+- [Usage manual](usage/usage-manual.md)
+- [Professional workbench](usage/visualizer-console.md)
+- [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md)
+- [Semantics manual](usage/ogsystem-semantics-manual.md)
+- [Context map guide](usage/context-map-projection-guide.md)
+- [Data projection spec](usage/ogsystem-data-projection-spec.md)
+- [NL2MMD structure templates](usage/nl2mmd-structure-templates.md)
+- [Ebook](usage/ogsystem-ebook.md)
 
-Product-facing usage, runtime constitution, and operational contracts live under `usage/`.
+## Development
 
-- [Product introduction](usage/product-introduction.md): capability overview for readers.
-- [Core concepts](usage/ogsystem-core-concepts.md): product boundary and normative terms for System, Role, Seat, runtime facts, and standards alignment.
-- [Product concepts](usage/ogs-concepts.md): framework, platform, team, collaboration project, task, and run boundaries.
-- [Team Site guide](../apps/team-site/README.md): team repository/factory, project workspace, task controls, and Tailnet entry points.
-- [Usage manual](usage/usage-manual.md): product workflow, install, CLI, run directory, operations, and professional workbench usage.
-- [Professional workbench](usage/visualizer-console.md): role-first graph design, handoffs, review, and runtime evidence.
-- [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md): runtime semantic contract.
-- [Semantics manual](usage/ogsystem-semantics-manual.md): implementation-aligned reference.
-- [Context map guide](usage/context-map-projection-guide.md): projection selectors and boundaries.
-- [Data projection spec](usage/ogsystem-data-projection-spec.md): runtime data projection contract.
-- [NL2MMD structure templates](usage/nl2mmd-structure-templates.md): natural-language to Mermaid constraints.
-- [Ebook draft](usage/ogsystem-ebook.md): long-form explanatory material.
+- [Decisions](development/DECISIONS.md)
+- [Compiler semantics](development/compiler-semantics-v1.md)
+- [Workflow DSL and semantics roadmap](development/ogs-langgraph-dsl-upgrade-plan.md)
+- [Product boundary and evolution](development/ogs-product-boundary-and-evolution.md)
+- [Team Collaboration refactor contract](development/team-collaboration-module-refactor-plan.md)
+- [Studio and Projects isolation](development/ogs-studio-project-run-isolation-plan.md)
+- [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
+- [Shared resource architecture](development/shared-resource-architecture.md)
+- [Visualizer refactor plan](development/ogs-visualizer-refactor-plan.md)
+- [Release UAT checklist](development/release-uat-checklist.md)
+- [Semantic gap plan](development/semantic-gap-implementation-plan.md)
+- [Semantic capability backlog](development/ogs-semantic-capability-backlog.md)
+- [Unified backlog](development/todo-backlog.md)
+- [Long-term stability roadmap](development/long-term-stability-roadmap.md)
+- [Runtime storage roadmap](development/runtime-storage-engine-decoupling-roadmap.md)
+- [Design release validation template](development/design-release-validation-template.md)
 
-## Development Docs
+## Maintenance
 
-Engineering rules, plans, specifications, and active backlog live under `development/`.
-
-- [Decisions](development/DECISIONS.md): current architecture decisions and boundaries.
-- [Compiler semantics](development/compiler-semantics-v1.md): compiler and diagnostics contract.
-- [OGS workflow DSL upgrade plan](development/ogs-langgraph-dsl-upgrade-plan.md): DSL, IR, reliability, and standards roadmap.
-- [OGS product boundary and evolution](development/ogs-product-boundary-and-evolution.md): core, enhancement, extension tiers and admission rules.
-- [Team Collaboration refactor plan](development/team-collaboration-module-refactor-plan.md): current Team/TeamVersion/Project/Task/Run contract, architecture target, and acceptance gates.
-- [Studio and Projects isolation plan](development/ogs-studio-project-run-isolation-plan.md): TeamVersion release evidence, Project Run and Studio Simulation ownership, persistence, recovery, and security invariants.
-- [Studio and Projects test/UAT report](development/ogs-studio-project-run-isolation-validation-report.md): latest automated results, recorded real-run evidence, and remaining release gates.
-- [Shared resource architecture](development/shared-resource-architecture.md): platform resource ownership, adapter boundaries, and current integration limits.
-- [Archived project/team/task-run plan](development/archive/ogs-project-team-task-run-plan.md): earlier Runtime terminology and workspace notes; Team Site Task/Run semantics are superseded by the current refactor plan.
-- [OGS visualizer refactor plan](development/ogs-visualizer-refactor-plan.md): semantic layout and graph interaction plan.
-- [Release UAT checklist](development/release-uat-checklist.md): clean-install scenarios and release sign-off gates.
-- [Semantic gap implementation plan](development/semantic-gap-implementation-plan.md): current runtime gaps and priorities.
-- [Unified backlog](development/todo-backlog.md): current active backlog.
-- [Long-term stability roadmap](development/long-term-stability-roadmap.md): durable direction.
-- [PraisonAI comparison roadmap](development/praisonai-comparison-roadmap.md): bounded capability roadmap.
-- [Runtime storage/engine roadmap](development/runtime-storage-engine-decoupling-roadmap.md): backend decoupling direction.
-- [Design release validation template](development/design-release-validation-template.md): reusable development checklist template.
-- [Join wait timeout RFC](development/ogsystem-wait-timeout-semantics-v2.md): unimplemented proposal.
-
-## Recent Delivery Records
-
-Use these recent archive records to understand implementation context:
-
-- [Cross-platform Visualizer validation closure 2026-05-05](development/archive/delivery/ogsystem-cross-platform-visualizer-validation-closure-2026-05-05.md)
-- [Visualizer product usability gate follow-up 2026-05-05](development/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md)
-- [Visualizer platform validation execution plan 2026-05-04](development/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md)
-- [Visualizer HTTP runtime isolation decision 2026-05-04](development/archive/delivery/ogsystem-visualizer-http-runtime-isolation-decision-2026-05-04.md)
-- [Visualizer optimization checklist closure 2026-05-03](development/archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md)
-- [Canvas-centered Visualizer architecture roadmap 2026-05-03](development/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md)
-- [Visualizer responsibility-seat semantic review 2026-09-02](development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md)
-- [Unified backlog execution delivery 2026-09-03](development/archive/delivery/todo-backlog-execution-2026-09-03.md)
-- [Team Site domain/product delivery 2026-10-18](development/archive/delivery/team-site-domain-product-plan-2026-10-18.md)
-- [Team Site run reliability delivery 2026-10-18](development/archive/delivery/team-site-run-reliability-plan-2026-10-18.md)
-- [Team Collaboration UX delivery 2026-10-18](development/archive/delivery/team-collaboration-product-ux-fix-plan-2026-10-18.md)
-- [Team Site frontend infrastructure delivery 2026-10-22](development/archive/delivery/team-site-frontend-infrastructure-plan-2026-10-22.md)
-
-The full development archive lives under `docs/development/archive/delivery/` and `docs/development/archive/history/`; the usage archive is at `docs/usage/archive/`. Do not maintain a duplicated full file list here; use `rg` or browse by date when historical context is needed.
-
-## Maintenance Rules
-
-1. Update active docs first when current behavior changes.
-2. Put phase plans, delivery reviews, benchmarks, and one-off checklists in `docs/development/archive/delivery/`.
-3. Put early explorations, superseded proposals, and compatibility discussions in `docs/development/archive/history/`.
-4. When adding a dated archive record, update the "Recent Delivery Records" section.
-5. When changing CLI, install, package management, run directories, or security boundaries, update `README.md` and the [usage manual](usage/usage-manual.md).
-6. When changing orchestration semantics, recovery semantics, or run artifact contracts, update the usage semantic docs and [decisions](development/DECISIONS.md).
-7. Do not delete superseded historical records. Add `Superseded by:` at the top of the old file or note the replacement here.
+1. Update the active manuals and contracts when behavior changes.
+2. Keep plans and checklists only while they guide current work; remove superseded material.
+3. Update the usage manual when CLI, installation, run artifacts, or security boundaries change.
+4. Update semantic manuals, decisions, tests, and UAT cases when orchestration or recovery contracts change.
 
 ## Suggested Reading Order
 
-1. `README.md`
-2. [Product introduction](usage/product-introduction.md)
-3. [Core concepts](usage/ogsystem-core-concepts.md)
-4. [Usage manual](usage/usage-manual.md)
-5. [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md)
-6. [Compiler semantics](development/compiler-semantics-v1.md)
-7. [NL2MMD structure templates](usage/nl2mmd-structure-templates.md)
-8. [Decisions](development/DECISIONS.md)
+1. Product introduction
+2. Core concepts
+3. Usage manual
+4. Orchestration semantics
+5. Compiler semantics
+6. Decisions

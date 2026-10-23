@@ -47,7 +47,7 @@ test(
     });
 
     assert.equal(result.status, "done");
-    assert.equal(result.finalOutput, "hello from OGSystem rust pipeline");
+    assert.equal(result.finalOutputsByRoleId["rust-packager"]?.[0]?.content, "hello from OGSystem rust pipeline");
 
     const runIds = await readdir(runsDir);
     assert.equal(runIds.length, 1);
@@ -65,6 +65,6 @@ test(
 
     const state = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
     assert.equal(state.status, "done");
-    assert.equal(state.finalRoleId, "rust-packager");
+    assert.equal(state.finalRoleIds?.at(-1), "rust-packager");
   }
 );

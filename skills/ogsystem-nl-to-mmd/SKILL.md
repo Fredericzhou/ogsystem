@@ -44,16 +44,12 @@ Allowed:
 
 ### Boundary Tokens
 
-Allowed:
+Allowed explicit structural roles:
 
-- `input`
-- `output`
+- `start[开始]`
+- `end[结束]`
 
-Forbidden:
-
-- `start`
-- `end`
-- `done`
+They are special control roles, not business roles. Every entry and terminal connection is a standard Flow.
 
 ### Node Token
 
@@ -73,9 +69,11 @@ Allowed pattern:
 
 Allowed executable edge forms:
 
-- `input -->|EVENT| roleNode[Role:roleId]`
+- `start[开始] -->|START| roleNode[Role:roleId]`
+- Start connections define the candidate entry roles. Dispatch is configured as all candidates or a fixed random N within the candidate count.
 - `roleNodeA[Role:roleA] -->|EVENT| roleNodeB[Role:roleB]`
-- `roleNode[Role:roleId] -->|EVENT| output`
+- `roleNode[Role:roleId] -->|EVENT| end[结束]`
+- Only distinct business roles directly connected to End count toward End aggregation.
 
 ### Metadata Keys
 
@@ -85,7 +83,6 @@ Exact keys allowed:
 - `%% system.id=...`
 - `%% system.version=...`
 - `%% law.global=...`
-- `%% entry.role=...`
 
 Prefix keys allowed:
 
@@ -196,7 +193,7 @@ Allowed ERROR* edges:
 
 Rules:
 
-- ERROR* edges can only originate from role nodes, never `input`.
+- ERROR* edges can only originate from business role nodes, never structural Start or End.
 - Runtime tries `ERROR.<errorCode>` first, then falls back to `ERROR`.
 - Role output schemas should not include ERROR* events; executable roles must not emit `ERROR` or `ERROR.<CODE>` themselves.
 
@@ -277,7 +274,7 @@ ROLES
   debate-summary [model=steady-gpt54]
 
 CONNECTIONS
-[input]
+[start]
   --DEBATE_REQUEST--> debate-moderator [model=fast-gpt54, mode=parallel_split, loop.max=2]
 [debate-moderator]
   --SEND_MINIMALIST--> debate-minimalist [model=balanced-gpt52]
@@ -318,7 +315,9 @@ Check all of these:
 - Mermaid starts with `flowchart TD` or `flowchart LR`
 - required metadata exists
 - metadata keys stay inside the allow-list
-- `entry.role` exists in the graph
+- Every candidate entry role has an explicit `start[开始] -->|START| Role` Flow.
+- Start Flow events are all `START`.
+- End quorum is bounded by the number of distinct roles directly connected to `end[结束]`.
 - each edge has a non-empty event label
 - each role id is non-reserved
 - role/node mapping stays 1:1
