@@ -511,6 +511,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
     const localeSelectEl = document.getElementById("locale-select");
+    const localeToggleEl = document.getElementById("locale-toggle");
     const OPERATE_DEBUG_PANEL_IDS = ["overview", "recovery", "reviews"];
 
     function joinIdRefs(...ids) {
@@ -613,7 +614,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         [releaseExportButton, "action.exportProject"],
         [resumeRunButton, "action.resumeSelected"],
         [stopRunButton, "action.requestStop"],
-        [refreshButton, "action.refresh"],
         [timelineApplyButton, "action.applyFilters"],
         [timelineClearButton, "action.clearFilters"]
       ];
@@ -621,6 +621,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (element) {
           element.textContent = t(key);
         }
+      }
+      if (refreshButton) {
+        refreshButton.setAttribute("title", t("action.refresh"));
+        refreshButton.setAttribute("aria-label", t("action.refresh"));
+      }
+      if (localeToggleEl) {
+        localeToggleEl.textContent = state.locale === "zh-CN" ? "中" : "EN";
+        localeToggleEl.setAttribute("title", t("app.locale"));
+        localeToggleEl.setAttribute("aria-label", t("app.locale"));
       }
       if (searchEl) searchEl.placeholder = t("search.placeholder");
       if (timelineTypeEl) timelineTypeEl.placeholder = t("timeline.eventType");
@@ -8698,6 +8707,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       localeSelectEl.value = state.locale;
       localeSelectEl.addEventListener("change", (event) => {
         setLocaleFromControl(event.target.value || "");
+      });
+    }
+
+    if (localeToggleEl) {
+      localeToggleEl.addEventListener("click", () => {
+        const nextLocale = state.locale === "zh-CN" ? "en" : "zh-CN";
+        setLocaleFromControl(nextLocale);
       });
     }
 
