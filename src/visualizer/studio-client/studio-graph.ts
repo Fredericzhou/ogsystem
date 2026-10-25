@@ -55,7 +55,7 @@ import { validateStudioConnectionCells } from "./studio-graph-rules.js";
 type StudioGraphLabelKey =
   | "viewportGroup"
   | "editGroup"
-  | "teamAssets"
+  | "teamConfiguration"
   | "zoomOut"
   | "zoomIn"
   | "resetView"
@@ -111,7 +111,6 @@ type StudioGraphLabelKey =
   | "editBlocked"
   | "boundaryEntry"
   | "boundaryEnd"
-  | "exportSvg"
   | "exportPng";
 
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
@@ -374,7 +373,6 @@ export class StudioGraphIsland {
       '</select>',
       this.toolbarButton("technical-details", "technicalDetails", "i"),
       this.options.mode === "product-edit" ? "" : this.toolbarButton("quick-open", "quickOpen", "/"),
-      this.toolbarButton("export-svg", "exportSvg", "⇩", "SVG"),
       this.toolbarButton("export-png", "exportPng", "⇩", "PNG"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
@@ -384,7 +382,7 @@ export class StudioGraphIsland {
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
       this.toolbarButton("add-role", "addRole", "+R"),
       this.toolbarButton("add-edge", "addEdge", "+E"),
-      this.toolbarButton("assets", "teamAssets", "▤"),
+      this.toolbarButton("assets", "teamConfiguration", "⚙"),
       this.toolbarButton("delete", "deleteSelection", "⌫"),
       this.toolbarButton("undo", "undo", "↶"),
       this.toolbarButton("redo", "redo", "↷"),
@@ -769,7 +767,6 @@ export class StudioGraphIsland {
         this.updateToolbarState();
       }
       if (action === "quick-open") this.toggleQuickOpen();
-      if (action === "export-svg") this.graph.exportSVG("ogs-workflow.svg", { padding: 64, preserveDimensions: false });
       if (action === "export-png") this.graph.exportPNG("ogs-workflow.png", { padding: 64, ratio: 2, backgroundColor: document.documentElement.dataset.visualizerTheme === "dark" ? "#0b1220" : "#f4f7f5" });
       if (action === "chat-generate") void this.options.onChatGenerate?.();
       if (action === "debug-run") {

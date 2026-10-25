@@ -121,33 +121,41 @@ export function injectStudioGraphStyles(): void {
     @media (max-width: 720px) {
       .studio-graph-toolbar {
         align-items: center;
+        box-sizing: border-box;
         flex-direction: row;
+        max-width: calc(100% - 20px);
         overflow: hidden;
         padding: 4px;
       }
       .studio-graph-toolbar-main {
-        flex-wrap: wrap;
-        overflow: visible;
+        flex-wrap: nowrap;
+        max-width: 100%;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
         width: 100%;
       }
+      .studio-graph-toolbar-main::-webkit-scrollbar {
+        display: none;
+      }
       .studio-graph-toolbar-group {
-        flex-wrap: wrap;
-        flex: 1 1 auto;
-        max-width: 100%;
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
       }
       .studio-graph-toolbar-text {
         display: none;
       }
       .studio-graph-toolbar button,
       .studio-graph-toolbar select {
-        min-height: 42px;
+        min-height: 44px;
       }
       .studio-graph-toolbar button {
-        min-width: 42px;
-        flex: 1 0 42px;
+        flex: 0 0 44px;
+        min-width: 44px;
       }
       .studio-graph-toolbar select {
-        flex: 1 1 120px;
+        flex: 0 0 120px;
         max-width: 100%;
       }
     }

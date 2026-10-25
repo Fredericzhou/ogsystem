@@ -187,7 +187,7 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     assert.ok(wideWidth.page >= wideWidth.main * 0.95, `wide template A should use the page width: ${JSON.stringify(wideWidth)}`);
     for (const [width, height] of [[1440, 900], [1024, 768], [390, 844]]) {
       await desktopPage.setViewportSize({ width, height });
-      for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/platform/data", "/platform/tools", "/platform/storage", "/cases/software-team"]) {
+      for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
         await desktopPage.goto(`${url}${route}`, { waitUntil: "networkidle" });
         await desktopPage.locator(".main-area > .page-content:not(.hidden)").waitFor();
         if (route !== "/teams" && !route.includes("/cases/")) await desktopPage.locator(".main-area > .page-content:not(.hidden) .page-frame").waitFor();
@@ -222,7 +222,7 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
           assert.ok(vertical.document <= vertical.viewport + 1 && vertical.body <= vertical.viewport + 1, `${route} should keep document scrolling inside the page: ${JSON.stringify(vertical)}`);
         }
         if (route.startsWith("/platform/")) {
-          assert.equal(await desktopPage.locator(".platform-page-tabs a[aria-current='page']").getAttribute("href"), route, `${route} should match the active platform tab`);
+          assert.equal(await desktopPage.locator(`#primary-sidebar .nav-item[href='${route}']`).evaluate((link) => link.classList.contains("active")), true, `${route} should match the active platform navigation item`);
         }
       }
     }
@@ -340,7 +340,7 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     assert.equal(await mobilePage.locator("#topbar-controls").isVisible(), true);
     await mobilePage.keyboard.press("Escape");
     assert.equal(await mobilePage.locator("#topbar-more-toggle").getAttribute("aria-expanded"), "false");
-    for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/platform/data", "/platform/tools", "/platform/storage", "/cases/software-team"]) {
+    for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
       await mobilePage.goto(`${url}${route}`, { waitUntil: "networkidle" });
       await mobilePage.locator(".main-area > .page-content:not(.hidden)").waitFor();
       await assertRouteContentReachable(mobilePage, route);

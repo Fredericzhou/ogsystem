@@ -38,14 +38,17 @@ async function closeServer(server, projectsRoot, browser) {
   await rm(projectsRoot, { recursive: true, force: true });
 }
 
-test("Team Site serves direct links for the Studio role repository and shared resource pages", async () => {
+test("Team Site serves current configuration routes and retires unused resource pages", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-resource-deeplinks-"));
   const { server, url } = await startServer(projectsRoot);
   try {
-    for (const path of ["/studio/roles", "/platform/models", "/platform/data", "/platform/tools", "/platform/storage"]) {
+    for (const path of ["/studio/roles", "/platform/models"]) {
       const response = await fetch(`${url}${path}`);
       assert.equal(response.status, 200, `${path} should load the SPA shell directly`);
       assert.match(response.headers.get("content-type") || "", /text\/html/);
+    }
+    for (const path of ["/platform/data", "/platform/tools", "/platform/storage"]) {
+      assert.equal((await fetch(`${url}${path}`)).status, 404, `${path} should no longer expose an unused page`);
     }
   } finally {
     await closeServer(server, projectsRoot);
@@ -179,7 +182,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.unroute(`**/api/v1/team-versions/${team.projectId}/design/assets`);
     await page.locator("#studio-asset-drawer-close").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
-    await page.locator("#team-build-dialog[open]").waitFor();
+    await page.locator("#team-build-panel.is-open[aria-hidden='false']").waitFor();
     await page.locator("#team-assistant-input").waitFor();
     await page.locator("#team-assistant-input").fill("增加一个最终审核角色，确保结果有依据。");
     await page.locator("#team-assistant-send").click();
@@ -575,7 +578,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(await assetsToggle.getAttribute("aria-expanded"), "true");
     assert.ok(await page.locator("#studio-assets-roles [data-studio-asset-role]").count() > 0, "the Studio asset panel should list roles");
     assert.ok(await page.locator("#studio-assets-roles .studio-role-avatar").evaluateAll((avatars) => new Set(avatars.map((avatar) => avatar.style.getPropertyValue("--role-accent"))).size) > 1, "role avatars should retain distinct role colors");
-    const dragHandle = page.locator(".studio-asset-drawer-head");
+    const dragHandle = page.locator("#studio-asset-drawer .studio-asset-drawer-head");
     const originalPanelBounds = await page.locator("#studio-asset-drawer").boundingBox();
     assert.ok(originalPanelBounds.width <= 382, `asset panel default width should stay compact: ${JSON.stringify(originalPanelBounds)}`);
     const handleBounds = await dragHandle.boundingBox();
@@ -672,7 +675,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     const mobileWorkbench = await page.locator(".studio-design-workbench").boundingBox();
     assert.ok(mobilePanel.x >= mobileWorkbench.x && mobilePanel.x + mobilePanel.width <= mobileWorkbench.x + mobileWorkbench.width, `mobile asset panel stays inside the workbench: ${JSON.stringify({ mobilePanel, mobileWorkbench })}`);
     assert.ok(mobilePanel.y >= mobileWorkbench.y && mobilePanel.y + mobilePanel.height <= mobileWorkbench.y + mobileWorkbench.height, `mobile asset panel stays inside the workbench: ${JSON.stringify({ mobilePanel, mobileWorkbench })}`);
-    const mobileDragHandle = await page.locator(".studio-asset-drawer-head").boundingBox();
+    const mobileDragHandle = await page.locator("#studio-asset-drawer .studio-asset-drawer-head").boundingBox();
     const mobileDockPanel = await page.locator("#studio-asset-drawer").boundingBox();
     const mobileDockTargetLeft = mobileWorkbench.x + mobileWorkbench.width - mobileDockPanel.width - 4;
     await page.mouse.move(mobileDragHandle.x + 100, mobileDragHandle.y + 20);

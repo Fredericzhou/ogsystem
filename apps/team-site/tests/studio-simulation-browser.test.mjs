@@ -27,7 +27,7 @@ test("Studio browser submits a draft Simulation and reads persisted history, det
       await onRuntimeEvent?.({ type: "role.started", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1" });
       await onRuntimeEvent?.({ type: "role.input_ready", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", inputContext: JSON.stringify({ task: prompt }) });
       await new Promise((resolveWait) => setTimeout(resolveWait, 180));
-      await onRuntimeEvent?.({ type: "audit", roleId: "reviewer", branchId: "reviewer:1", status: "ok", durationMs: 1, inputContext: JSON.stringify({ task: prompt }), stdoutPreview: "Mocked role output for " + prompt });
+      await onRuntimeEvent?.({ type: "audit", roleId: "reviewer", branchId: "reviewer:1", status: "ok", at: "2026-10-24T09:08:07.000Z", durationMs: 1, inputContext: JSON.stringify({ task: prompt }), stdoutPreview: "Mocked role output for " + prompt });
       await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "reviewer", toRoleId: "__system_end__", eventType: "DONE", branchId: "reviewer:1" });
       return {
         status: "completed",
@@ -109,7 +109,7 @@ registerHooks({
     assert.equal(team.projectDigest, null);
 
     await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
-    await page.locator("#team-build-dialog[open]").waitFor();
+    await page.locator("#team-build-panel.is-open[aria-hidden='false']").waitFor();
     assert.equal(await page.locator("#team-debug-dialog.is-open").count(), 0);
     await page.locator("[data-team-build-close]").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
@@ -124,7 +124,7 @@ registerHooks({
       assert.fail(`Debug panel did not open: panel=${await page.locator("#team-debug-dialog").getAttribute("class")} hidden=${await page.locator("#team-debug-dialog").getAttribute("aria-hidden")} button=${await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').getAttribute("aria-expanded")} errors=${scriptErrors.join("; ")}`);
     });
     await page.locator("#team-debug-dialog").evaluate((panel) => panel.getBoundingClientRect().width > 0);
-    assert.equal(await page.locator("#team-build-dialog[open]").count(), 0);
+    assert.equal(await page.locator("#team-build-panel.is-open").count(), 0);
     assert.equal(await page.locator("#team-debug-dialog").evaluate((panel) => panel.tagName), "ASIDE");
     assert.equal(await page.locator("#team-debug-dialog .team-debug-panel-head strong").innerText(), "调试");
     assert.doesNotMatch(await page.locator("#team-debug-dialog").innerText(), /OGS Studio/);
@@ -228,8 +228,12 @@ registerHooks({
     await page.getByText("Mocked UAT result for Review the draft package.", { exact: false }).waitFor();
     assert.match(await page.locator("#team-simulation-result").innerText(), /补充资料：\s*Reference version: 3\./);
     assert.deepEqual(scriptErrors, []);
-    assert.ok((await page.locator(".team-debug-transcript").innerText()).includes("Mocked role output"));
-    assert.match(await page.locator(".team-debug-transcript").innerText(), /运行中/);
+    const transcriptText = await page.locator(".team-debug-transcript").innerText();
+    assert.ok(transcriptText.includes("Mocked role output"));
+    assert.match(transcriptText, /2026.*10.*24/);
+    assert.match(transcriptText, /耗时 1 毫秒/);
+    assert.match(transcriptText, /已完成/);
+    assert.match(transcriptText, /运行中/);
     const simulationPostCount = simulationRequests.filter((request) => request.startsWith("POST ")).length;
     assert.equal(simulationPostCount, 2);
 

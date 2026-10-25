@@ -533,7 +533,7 @@ const server = createServer(async (request, response) => {
       || url.pathname === "/studio/roles"
       || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+)?|release|simulations)\/?$/.test(url.pathname)
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
-    const isPlatformRoute = ["/platform", "/platform/models", "/platform/data", "/platform/tools", "/platform/storage"].includes(url.pathname);
+    const isPlatformRoute = ["/platform", "/platform/models"].includes(url.pathname);
     if (url.pathname === "/" || url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;

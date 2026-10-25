@@ -874,7 +874,6 @@ export const zhCN = {
   "studio.graph.editBlocked": "Mermaid 成功解析后才能编辑图编排。",
   "studio.graph.boundaryEntry": "任务",
   "studio.graph.boundaryEnd": "成果",
-  "studio.graph.exportSvg": "导出 SVG",
   "studio.graph.exportPng": "导出 PNG",
   "studio.graph.saveDraftBlocked": "Mermaid 成功解析后才能保存图编排草稿。",
   "studio.graph.draftSaved": "编排草稿已保存到 {path}。",

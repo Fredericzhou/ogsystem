@@ -870,7 +870,6 @@ export const en = {
   "studio.graph.editBlocked": "Graph authoring stays disabled until Mermaid parses successfully.",
   "studio.graph.boundaryEntry": "Task",
   "studio.graph.boundaryEnd": "Outcome",
-  "studio.graph.exportSvg": "Export SVG",
   "studio.graph.exportPng": "Export PNG",
   "studio.graph.saveDraftBlocked": "Graph authoring cannot save a draft until Mermaid parses successfully.",
   "studio.graph.draftSaved": "Authoring draft saved to {path}.",

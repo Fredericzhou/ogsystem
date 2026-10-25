@@ -123,7 +123,7 @@ test("platform settings clearly report runtimeApplied false after read and save"
     await waitFor(async () => (await page.locator("#platform-runtime-status").innerText()).includes("后续运行生效"));
     await page.locator("#platform-settings-form input[name=timeoutSeconds]").fill("180");
     await page.locator("#platform-settings-form button[type=submit]").click();
-    await page.waitForFunction(() => document.querySelector("#platform-settings-status")?.textContent === "设置已保存");
+    await page.waitForFunction(() => document.querySelector("#platform-settings-status")?.textContent === "已保存");
     assert.match(await page.locator("#platform-runtime-status").innerText(), /已持久化.*后续运行生效/);
   } finally {
     await browser?.close();
