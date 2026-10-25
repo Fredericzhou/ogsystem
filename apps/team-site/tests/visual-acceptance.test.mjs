@@ -11,6 +11,22 @@ import { seedReleasedClassicTeam } from "./classic-team-fixtures.mjs";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
+async function confirmTaskReadinessIfRequired(page, action) {
+  const responsePromise = page.waitForResponse((response) => {
+    const pathname = new URL(response.url()).pathname;
+    return pathname.includes("/api/v1/projects/") && pathname.includes("/tasks/") && pathname.endsWith(`/${action}`);
+  }, { timeout: 30000 });
+  const dialog = page.locator(".confirm-dialog");
+  const dialogPromise = dialog.waitFor({ state: "visible", timeout: 20000 }).then(() => true, () => false);
+  const result = await Promise.race([
+    responsePromise.then((response) => ({ response })),
+    dialogPromise.then((visible) => visible ? { visible } : null)
+  ]);
+  if (result?.visible) await dialog.locator('button[value="confirm"]').click();
+  if (!result?.visible && !result?.response) throw new Error(`Task ${action} produced neither a readiness prompt nor a request.`);
+  return result.response || responsePromise;
+}
+
 test("site completes the product project flow with task records and repository export", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-browser-visual-"));
   const server = spawn(process.execPath, ["server.mjs"], {
@@ -48,11 +64,13 @@ test("site completes the product project flow with task records and repository e
     });
 
     await page.goto(`${url}/`, { waitUntil: "networkidle" });
-    assert.match(page.url(), /\/projects$/);
+    assert.equal(new URL(page.url()).pathname, "/", "the public landing page should remain an independent route");
+    await page.locator("#landing-view").waitFor({ state: "visible" });
     assert.deepEqual(configRequests, [], "the product shell should not fetch a browser-visible Visualizer origin");
+    await page.goto(`${url}/projects`, { waitUntil: "networkidle" });
     await page.locator("#projects-view .page-heading").waitFor();
-    await page.locator('#app-shell [data-site-theme-choice="dark"]').click();
-    assert.equal(await page.locator('#app-shell [data-site-theme-choice="dark"]').getAttribute("aria-pressed"), "true");
+    await page.locator("#site-theme-toggle").click();
+    assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true");
     assert.equal(await page.evaluate(() => localStorage.getItem("ogs.visualizer.theme")), "dark");
 
     await page.goto(`${url}/teams`, { waitUntil: "networkidle" });
@@ -63,20 +81,21 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator(".repository-classic-section [data-team-action='delete']").count(), 0, "classic built-in teams in the repository must not expose a delete action");
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
-    assert.equal(await page.locator('#app-shell [data-site-theme-choice="dark"]').getAttribute("aria-pressed"), "true", "theme choice should persist across product routes");
+    assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true", "theme choice should persist across product routes");
     await page.reload({ waitUntil: "networkidle" });
-    assert.equal(await page.locator('#app-shell [data-site-theme-choice="dark"]').getAttribute("aria-pressed"), "true", "theme choice should persist after a page reload");
-    await page.locator('#app-shell [data-site-theme-choice="light"]').click();
-    assert.equal(await page.locator('#app-shell [data-site-theme-choice="light"]').getAttribute("aria-pressed"), "true");
-    await page.locator('#app-shell [data-site-theme-choice="dark"]').click();
-    assert.equal(await page.locator('button[data-product-mode="normal"]').getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true", "theme choice should persist after a page reload");
+    await page.locator("#site-theme-toggle").click();
+    assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "false");
+    await page.locator("#site-theme-toggle").click();
+    assert.equal(await page.locator("#product-mode-toggle").getAttribute("aria-pressed"), "false");
     assert.equal(await page.locator('.primary-nav a[href="/studio"]').isVisible(), true, "Studio is a peer product and remains discoverable in normal mode");
-    assert.match(await page.locator("#studio-view .page-heading").innerText(), /Studio/);
+    assert.match(await page.locator("#studio-view .repository-heading").innerText(), /Studio/);
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true']").count(), 3, "Studio should list the three classic built-in teams as forkable versions");
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true'] [data-team-action='delete']").count(), 0, "built-in classic teams must not expose a delete action");
-    const libraryActionHeights = await page.locator("#studio-view .heading-actions > *").evaluateAll((items) => items.filter((item) => item.getClientRects().length).map((item) => Math.round(item.getBoundingClientRect().height)));
-    assert.equal(new Set(libraryActionHeights).size, 1, "library heading actions should share a height");
-    const darkPrimaryContrast = await page.locator("#studio-view .heading-actions .primary-button").evaluate((button) => {
+    const createTeamAction = page.locator("#studio-view .studio-repository-toolbar .primary-button");
+    assert.equal(await createTeamAction.isVisible(), true, "Studio should keep its create action in the repository toolbar");
+    assert.ok(await createTeamAction.evaluate((button) => button.getBoundingClientRect().height > 0), "Studio create action should have a rendered hit area");
+    const darkPrimaryContrast = await createTeamAction.evaluate((button) => {
       const parse = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((value) => {
         const channel = value / 255;
         return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
@@ -168,16 +187,27 @@ test("site completes the product project flow with task records and repository e
     await page.locator("#project-team-management-form button[type=submit]").click();
     await page.waitForURL(new RegExp(`/projects/${projectId}$`));
     assert.equal(await page.locator(".project-status.confirmed").innerText(), "2 个团队版本 · 0 个任务");
+    await page.locator("#project-material-file-input").setInputFiles({
+      name: "project-brief.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Fixed project material fixture.")
+    });
+    await page.locator("#project-resources-panel .material-row").filter({ hasText: "project-brief.txt" }).waitFor();
     await page.locator("[data-open-task-dialog]").click();
     await page.locator("#collaboration-task-form").waitFor();
+    const taskDialogState = await page.locator("#collaboration-task-dialog").evaluate((dialog) => ({
+      open: dialog.open,
+      textarea: dialog.querySelector("textarea")?.getBoundingClientRect().toJSON()
+    }));
+    assert.equal(await page.locator("#collaboration-task-form textarea[name=input]").isVisible(), true, `task dialog input should be visible above the project workbench: ${JSON.stringify(taskDialogState)}`);
     await page.locator("#collaboration-task-form textarea[name=input]").fill("Summarize the brief.");
     await page.locator("#collaboration-task-form button[type=submit]").click();
     await page.locator(".task-record-row").waitFor();
     assert.match(await page.locator(".task-record-row").innerText(), /Summarize the brief\./);
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
+    const startResponsePromise = confirmTaskReadinessIfRequired(page, "start");
     await page.locator('.task-record-row [data-task-action="start"]').click();
-    const runtimeWarning = page.locator(".confirm-dialog");
-    if (await runtimeWarning.count()) await runtimeWarning.locator('button[value="confirm"]').click();
+    await startResponsePromise;
     await page.waitForFunction(() => {
       const status = document.querySelector(".task-record-row .status-chip");
       return status?.classList.contains("completed") || status?.classList.contains("failed");
@@ -188,6 +218,11 @@ test("site completes the product project flow with task records and repository e
     const runDiagnosticLink = await page.locator(".task-run-workspace-link a").getAttribute("href");
     assert.match(runDiagnosticLink || "", new RegExp(`^/projects/${projectId}/runs/`));
     assert.equal(await page.locator(".task-run-workspace-link a").getAttribute("target"), null, "run diagnostics should open inside the same product shell");
+    await page.goto(`${url}${runDiagnosticLink}`, { waitUntil: "networkidle" });
+    assert.equal(new URL(page.url()).pathname, runDiagnosticLink, "the run detail route should focus the requested Run");
+    const focusedRunId = runDiagnosticLink.split("/").at(-1);
+    await page.locator(`.task-record-row .task-run-detail[data-run-id="${focusedRunId}"]`).waitFor();
+    await page.goto(`${url}/projects/${projectId}`, { waitUntil: "networkidle" });
     const collaboration = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
     const task = collaboration.taskRecords[0];
     const originalRunId = task.currentRunId;
@@ -214,22 +249,13 @@ test("site completes the product project flow with task records and repository e
     const retryButton = page.locator('.task-record-row [data-task-action="retry"]');
     assert.equal(await retryButton.count(), 1, `retry action missing after reload: ${await page.locator(".task-record-row").first().evaluate((row) => row.outerHTML)}`);
     await retryButton.waitFor();
-    const retryRequests = [];
-    page.on("request", (request) => {
-      if (request.url().includes("/retry")) retryRequests.push(request.url());
-    });
-    const retryResponsePromise = page.waitForResponse((response) => {
-      const pathname = new URL(response.url()).pathname;
-      return pathname.startsWith("/api/v1/projects/") && pathname.endsWith("/retry");
-    }, { timeout: 5000 });
+    const retryResponsePromise = confirmTaskReadinessIfRequired(page, "retry");
     await retryButton.click();
-    const retryWarning = page.locator(".confirm-dialog");
-    if (await retryWarning.count()) await retryWarning.locator('button[value="confirm"]').click();
     let retryResponse;
     try {
       retryResponse = await retryResponsePromise;
     } catch (error) {
-      throw new Error(`${error.message}; retry requests: ${retryRequests.join(", ") || "none"}; server: ${output}`);
+      throw new Error(`${error.message}; server: ${output}`);
     }
     const retryPayload = await retryResponse.json();
     assert.equal(retryResponse.ok(), true, retryPayload.error || `retry returned ${retryResponse.status()}`);
@@ -273,7 +299,10 @@ test("site completes the product project flow with task records and repository e
       return { stageWidth: box?.width || 0, stageHeight: box?.height || 0, parentWidth: parentBox?.width || 0 };
     });
     assert.ok(mobileGraphLayout.stageWidth >= 280 && mobileGraphLayout.stageHeight >= 200, `the team graph should remain readable on mobile: ${JSON.stringify(mobileGraphLayout)}`);
-    await mobile.locator('[data-product-mode="professional"]').click();
+    await mobile.locator("#topbar-more-toggle").click();
+    assert.equal(await mobile.locator("#product-mode-toggle").isVisible(), true, "mobile preferences should be available from the more menu");
+    await mobile.locator("#product-mode-toggle").click();
+    await mobile.locator("#mobile-nav-toggle").click();
     await mobile.setViewportSize({ width: 320, height: 740 });
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), "the product shell should fit a 320px viewport");
     const mobileNavigation = await mobile.locator(".primary-nav").evaluate((nav) => ({
@@ -284,6 +313,7 @@ test("site completes the product project flow with task records and repository e
     }));
     assert.ok(mobileNavigation.projectVisible && mobileNavigation.professionalLinksVisible && mobileNavigation.clientWidth > 0, `mobile navigation should keep professional links reachable: ${JSON.stringify(mobileNavigation)}`);
     assert.ok(mobileNavigation.scrollWidth >= mobileNavigation.clientWidth, `mobile navigation should contain its links without widening the page: ${JSON.stringify(mobileNavigation)}`);
+    await mobile.keyboard.press("Escape");
     await mobile.goto(`${url}/studio/teams/${encodeURIComponent(teamId)}/release`, { waitUntil: "networkidle" });
     await mobile.getByRole("heading", { name: "发布检查" }).waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), "the release gate should fit a 320px viewport");

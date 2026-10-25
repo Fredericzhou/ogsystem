@@ -1,6 +1,7 @@
 import { state, beginPageRequest, isCurrentRequest, isAbort, setDirty, clearDirty, isDirty } from "../state.js";
 import { pageFetch } from "../api.js";
 import { $, $$, esc, icon } from "../components/dom.js";
+import { pageFrame, frameExistingPage } from "../components/page-frame.js";
 import { bindDirtyForm, confirmAction, lockBodyScroll, trapFocus } from "../components/interaction.js";
 import { createRunPoller, isTerminalRunStatus } from "../components/run-poll.js";
 import { labelEvent as localizedEventLabel, taskExample, text } from "../i18n.js";
@@ -97,13 +98,17 @@ function professionalWorkspaceUrl(projectId, runId = "") {
   return `/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`;
 }
 const themeStorageKey = "ogs.visualizer.theme";
+const navStorageKey = "ogs.team-site.nav-state";
+let navPreferenceStored = false;
+let mobileNavReleaseTrap;
+let mobileNavReleaseScroll;
 const copy = {
   "zh-CN": {
-    homeCases: "团队仓库", homeStudio: "团队工厂", homeCta: "开始体验", homeEyebrow: "为复杂工作，组织一支 AI 团队", homeTitle: "让专业分工，<br>协作交付结果。", homeIntro: "从清晰目标开始，定义职责角色与交接方式；每项责任由配置的执行者承担，共同产出可检查的结果。", homePrimary: "在线运行示例", homeProof: "真实运行流程 · 无需注册 · 中英文示例", visualTitle: "专业分工，协作交付", visualStatus: "协作中", visualTask: "一个清楚的目标", visualTaskSub: "让团队朝同一个目标推进", visualRoleOne: "工程规划", visualRoleOneSub: "实现与依赖", visualRoleTwo: "体验设计", visualRoleTwoSub: "流程与细节", visualRoleThree: "质量把关", visualRoleThreeSub: "验收与风险", visualResult: "汇成一份共同成果", visualResultSub: "职责 · 交接 · 下一步", visualFooter: "职责清晰，协作有序，过程可追踪", homeCasesEyebrow: "三种真实的协作方式", homeCasesTitle: "从团队仓库开始", homeAllCases: "查看全部案例 →", promiseKicker: "面向真实工作", promiseTitle: "过程清楚，交付有据。", promiseOne: "每位成员有明确职责", promiseOneBody: "从目标拆解到结果整合，每一步都有负责的人。", promiseTwo: "工作交接看得见", promiseTwoBody: "随时了解谁在处理、信息如何流转。", promiseThree: "结果可以逐步检查", promiseThreeBody: "回看各方意见、汇总过程和最终输出。", homeFooter: "为复杂工作构建协作团队", homeFooterCta: "进入在线工作台 →",
+    homeCases: "团队仓库", homeStudio: "团队工厂", homeCta: "开始体验", homeEyebrow: "为复杂工作，组织一支 AI 团队", homeTitle: "让专业分工，<br>协作交付结果。", homeIntro: "从清晰目标开始，定义职责角色与交接方式；每项责任由配置的执行者承担，共同产出可检查的结果。", homePrimary: "在线运行示例", homeProof: "真实运行流程 · 无需注册 · 中英文示例", visualTitle: "专业分工，协作交付", visualStatus: "协作中", visualTask: "一个清楚的目标", visualTaskSub: "让团队朝同一个目标推进", visualRoleOne: "工程规划", visualRoleOneSub: "实现与依赖", visualRoleTwo: "体验设计", visualRoleTwoSub: "流程与细节", visualRoleThree: "质量把关", visualRoleThreeSub: "验收与风险", visualResult: "汇成一份共同成果", visualResultSub: "职责 · 交接 · 下一步", visualFooter: "职责清晰，协作有序，过程可追踪", homeCasesEyebrow: "三支经典团队", homeCasesTitle: "从经典团队案例开始", homeAllCases: "查看全部团队 →", promiseKicker: "面向真实工作", promiseTitle: "过程清楚，交付有据。", promiseOne: "每位成员有明确职责", promiseOneBody: "从目标拆解到结果整合，每一步都有负责的人。", promiseTwo: "工作交接看得见", promiseTwoBody: "随时了解谁在处理、信息如何流转。", promiseThree: "结果可以逐步检查", promiseThreeBody: "回看各方意见、汇总过程和最终输出。", homeFooter: "为复杂工作构建协作团队", homeFooterCta: "进入协作项目 →",
     workspaceName: "个人工作台", workspaceType: "访客空间", navTeams: "团队仓库", navExamples: "团队工厂", navRuns: "最近运行", runtimeReady: "运行服务就绪", crumbHome: "首页", guestMode: "访客体验", eyebrow: "团队仓库", pageTitle: "把复杂任务，交给一支有分工的团队", pageIntro: "从一个目标开始。选择团队案例，查看协作路径，再运行一次完整流程。", metaLabel: "本次体验", metaValue: "完整团队流程 · 结果可回看", taskLabel: "你想完成什么？", taskHint: "先选一个团队案例，也可以改写任务目标", taskPlaceholder: "例如：为一款记账工具制定首版研发方案", charCount: "/ 1,200", runDemo: "运行团队示例", chooseCase: "选择一种协作方式", caseHeading: "典型协作案例", allExamples: "查看团队详情", teamPlan: "团队如何协作", temporaryConfig: "访客预览", adjustWithChat: "编辑任务", membersTitle: "团队成员", membersSubtitle: "每位成员负责一项工作", roleReady: "待开始", memberCompleted: "已完成", flowTitle: "协作路径", flowSubtitle: "从任务输入到最终交付", legendRole: "团队成员", legendFlow: "工作交接", taskInputNode: "任务", deliveryNode: "成果", splitNote: "成员按职责交接，并在汇总时整合所需信息。", capabilityKicker: "清楚 · 有序 · 可回看", capabilityTitle: "每一次协作，都有迹可循", capabilityBody: "团队按职责交接工作，运行过程保留时间线，成果可以逐步检查。", capabilityOne: "明确成员职责", capabilityOneBody: "每位成员有清晰的工作范围", capabilityTwo: "逐步整合意见", capabilityTwoBody: "各方结果按团队安排汇总", capabilityThree: "回看交付过程", capabilityThreeBody: "进度、结果和交接记录可查", footerNote: "公开体验展示完整的团队协作过程，不调用模型或生成业务交付内容。", libraryEyebrow: "团队仓库案例", libraryTitle: "典型协作案例", libraryIntro: "浏览不同团队的背景、分工和预期成果。", caseBackground: "场景背景", caseProblem: "适合解决", caseCollaboration: "协作过程", caseDeliverable: "预期成果", caseRoles: "团队分工", openCase: "查看案例详情", useCase: "使用这个团队", backCases: "返回全部团队", detailEyebrow: "团队仓库案例", runHistoryEyebrow: "最近运行", historyTitle: "最近运行", historyIntro: "本机浏览器临时保存的体验记录。", clearHistory: "清空记录", noHistory: "还没有运行记录。选择一个案例并运行团队示例。", historyRestore: "查看运行", runPanelKicker: "团队运行", runPanelTitle: "运行结果", running: "正在运行团队流程…", runFailed: "运行未完成", simulation: "流程预览", rolesCompleted: "角色执行", transitions: "任务交接", elapsed: "耗时", finalDelivery: "最终成果", runResult: "预览说明", dryOutput: "本次预览展示团队如何分工与交接工作，不调用真实角色模型，也不会生成业务交付内容。", timeline: "运行时间线", noOutput: "团队没有返回最终交付内容。", historyDone: "已完成", selected: "当前团队", close: "关闭", inputRequired: "请先输入任务目标。", networkError: "暂时无法连接运行服务，请稍后重试。", promptCopied: "已载入案例任务，可继续修改。", inputEvent: "收到任务", outputEvent: "流程完成", roleStatus: "已完成", fallbackEvent: "工作已更新"
   },
   en: {
-    homeCases: "Team repository", homeStudio: "Team factory", homeCta: "Explore the preview", homeEyebrow: "A team for complex work", homeTitle: "Specialized roles<br>working toward one delivery.", homeIntro: "Start with a clear goal. Define responsibility roles and handoffs; configured executors perform each responsibility and produce a reviewable outcome.", homePrimary: "Run an example", homeProof: "Real workflow run · No sign-up · English and Chinese", visualTitle: "Specialized roles, one shared delivery", visualStatus: "Working together", visualTask: "A clear shared goal", visualTaskSub: "One direction for the whole team", visualRoleOne: "Engineering plan", visualRoleOneSub: "Build and dependencies", visualRoleTwo: "Experience design", visualRoleTwoSub: "Flow and details", visualRoleThree: "Quality review", visualRoleThreeSub: "Acceptance and risks", visualResult: "One shared outcome", visualResultSub: "Ownership · Handoffs · Next steps", visualFooter: "Clear roles. Coordinated work. Visible progress.", homeCasesEyebrow: "Three practical ways to collaborate", homeCasesTitle: "Start from the team repository", homeAllCases: "Browse all cases →", promiseKicker: "Built for real work", promiseTitle: "Clear process. Reviewable results.", promiseOne: "Every member has a clear role", promiseOneBody: "Each step has an owner, from framing the task to assembling the result.", promiseTwo: "Handoffs stay visible", promiseTwoBody: "See who is working and how information moves through the team.", promiseThree: "Results are easy to review", promiseThreeBody: "Revisit each view, the synthesis, and the final output.", homeFooter: "Teams for complex work", homeFooterCta: "Open the team workspace →",
+    homeCases: "Team repository", homeStudio: "Team factory", homeCta: "Explore the preview", homeEyebrow: "A team for complex work", homeTitle: "Specialized roles<br>working toward one delivery.", homeIntro: "Start with a clear goal. Define responsibility roles and handoffs; configured executors perform each responsibility and produce a reviewable outcome.", homePrimary: "Run an example", homeProof: "Real workflow run · No sign-up · English and Chinese", visualTitle: "Specialized roles, one shared delivery", visualStatus: "Working together", visualTask: "A clear shared goal", visualTaskSub: "One direction for the whole team", visualRoleOne: "Engineering plan", visualRoleOneSub: "Build and dependencies", visualRoleTwo: "Experience design", visualRoleTwoSub: "Flow and details", visualRoleThree: "Quality review", visualRoleThreeSub: "Acceptance and risks", visualResult: "One shared outcome", visualResultSub: "Ownership · Handoffs · Next steps", visualFooter: "Clear roles. Coordinated work. Visible progress.", homeCasesEyebrow: "Three classic teams", homeCasesTitle: "Explore proven collaboration teams", homeAllCases: "Browse all teams →", promiseKicker: "Built for real work", promiseTitle: "Clear process. Reviewable results.", promiseOne: "Every member has a clear role", promiseOneBody: "Each step has an owner, from framing the task to assembling the result.", promiseTwo: "Handoffs stay visible", promiseTwoBody: "See who is working and how information moves through the team.", promiseThree: "Results are easy to review", promiseThreeBody: "Revisit each view, the synthesis, and the final output.", homeFooter: "Teams for complex work", homeFooterCta: "Open the team workspace →",
     workspaceName: "My workspace", workspaceType: "Guest space", navTeams: "Team repository", navExamples: "Team factory", navRuns: "Recent runs", runtimeReady: "Service ready", crumbHome: "Home", guestMode: "Guest preview", eyebrow: "Online team workspace", pageTitle: "Give complex work to a team with clear roles", pageIntro: "Start with a goal. Choose a team, inspect how it works, then run the complete flow.", metaLabel: "This preview", metaValue: "Complete team workflow · Reviewable results", taskLabel: "What would you like to accomplish?", taskHint: "Choose a team example or rewrite the task", taskPlaceholder: "For example: plan the first release of a bookkeeping tool", charCount: "/ 1,200", runDemo: "Run team example", chooseCase: "Choose how to collaborate", caseHeading: "Practical collaboration examples", allExamples: "Explore team details", teamPlan: "How this team works", temporaryConfig: "Guest preview", adjustWithChat: "Edit task", membersTitle: "Team members", membersSubtitle: "Each member owns a part of the work", roleReady: "Ready", memberCompleted: "Completed", flowTitle: "Collaboration flow", flowSubtitle: "From task input to final delivery", legendRole: "Team member", legendFlow: "Work handoff", taskInputNode: "Task", deliveryNode: "Outcome", splitNote: "Members hand off work by responsibility and bring the needed information together.", capabilityKicker: "Clear · Ordered · Reviewable", capabilityTitle: "Every collaboration leaves a trail", capabilityBody: "Members hand off work by responsibility. A timeline captures progress, and you can review each result.", capabilityOne: "Clear member ownership", capabilityOneBody: "Each member has a defined scope", capabilityTwo: "Views brought together", capabilityTwoBody: "Results are assembled according to the team plan", capabilityThree: "Review the process", capabilityThreeBody: "Progress, results, and handoffs stay visible", footerNote: "The public preview demonstrates a complete team workflow. It does not call models or generate business deliverables.", libraryEyebrow: "Team repository examples", libraryTitle: "How teams work together", libraryIntro: "Explore each team's context, responsibilities, and expected outcome.", caseBackground: "Background", caseProblem: "When to use it", caseCollaboration: "How the team works", caseDeliverable: "Expected outcome", caseRoles: "Team responsibilities", openCase: "View case details", useCase: "Use this team", backCases: "All teams", detailEyebrow: "Team repository example", runHistoryEyebrow: "Recent runs", historyTitle: "Recent runs", historyIntro: "Preview history stored temporarily in this browser.", clearHistory: "Clear history", noHistory: "No run history yet. Choose a case and run the team example.", historyRestore: "View run", runPanelKicker: "Team run", runPanelTitle: "Run result", running: "Running the team workflow…", runFailed: "Run did not complete", simulation: "Workflow preview", rolesCompleted: "Role executions", transitions: "Handoffs", elapsed: "Duration", finalDelivery: "Final delivery", runResult: "Preview details", dryOutput: "This preview shows how the team divides and hands off work. It does not call role models or generate a business deliverable.", timeline: "Run timeline", noOutput: "The team returned no final delivery content.", historyDone: "Completed", selected: "Selected team", close: "Close", inputRequired: "Enter a task to run.", networkError: "The runtime is temporarily unavailable. Try again shortly.", promptCopied: "Example task loaded. You can edit it before running.", inputEvent: "Task received", outputEvent: "Workflow complete", roleStatus: "Completed", fallbackEvent: "Work updated"
   }
 };
@@ -153,6 +158,14 @@ Object.assign(copy.en, {
 });
 function syncThemeControls(theme = document.documentElement.dataset.visualizerTheme || "light") {
   const labels = state.locale === "zh-CN" ? { light: "浅色", dark: "深色" } : { light: "Light", dark: "Dark" };
+  const toggle = $("#site-theme-toggle");
+  if (toggle) {
+    const target = theme === "dark" ? "light" : "dark";
+    const label = state.locale === "zh-CN" ? `切换到${labels[target]}模式` : `Switch to ${labels[target].toLowerCase()} mode`;
+    toggle.setAttribute("aria-label", label);
+    toggle.setAttribute("title", label);
+    toggle.setAttribute("aria-pressed", String(theme === "dark"));
+  }
   $$(".theme-switch").forEach((group) => group.setAttribute("aria-label", state.locale === "zh-CN" ? "显示模式" : "Display mode"));
   $$("[data-site-theme-choice]").forEach((button) => {
     const choice = button.dataset.siteThemeChoice;
@@ -213,12 +226,12 @@ Object.assign(copy.en, {
 Object.assign(copy["zh-CN"], {
   navTeams: "团队仓库", navExamples: "OGS Studio", libraryEyebrow: "团队仓库", libraryTitle: "已发布团队版本",
   navRuns: "运行历史",
-  libraryIntro: "选择已经发布的团队版本创建项目。团队结构和项目工作目录分开管理。", factoryEyebrow: "OGS Studio",
+  libraryIntro: "选择已发布团队版本，开始管理项目任务。", factoryEyebrow: "OGS Studio",
   factoryTitle: "专业团队开发", factoryIntro: "在 OGS Studio 中编辑、调试并发布团队版本。",
   noReleasedTeams: "还没有已发布的团队版本", noFactoryTeams: "OGS Studio 中还没有团队", createTeam: "创建团队",
   continueEditing: "继续编辑", editAsVersion: "编辑为新版本", releaseVersion: "发布版本", archiveVersion: "归档版本",
   exportAsset: "导出团队", versionLabel: "版本", releasedLabel: "已发布", editingLabel: "编辑中", draftLabel: "草案",
-  archivedLabel: "已归档", useTeam: "使用团队创建项目", createProject: "创建项目", repositoryEmptyHint: "先在 OGS Studio 创建并发布一支团队。",
+  archivedLabel: "已归档", useTeam: "创建项目", createProject: "创建项目", repositoryEmptyHint: "先创建并发布团队。",
   deleteTeam: "删除团队", deleteProject: "删除项目", confirmDeleteTeam: "确定删除团队“{name}”及其全部版本吗？此操作不可撤销。", confirmDeleteProject: "确定删除项目“{name}”及其任务、运行记录和资料吗？此操作不可撤销。", teamDeleted: "团队及其版本已删除", projectDeleted: "项目及其资料已删除",
   factoryEmptyHint: "用自然语言创建团队草稿，再检查并发布。", runRound: "任务 {round}", clearHistory: "清理本机缓存",
   historyIntro: "按任务查看团队运行结果。清理只影响本机缓存，不会删除项目记录。",
@@ -229,12 +242,12 @@ Object.assign(copy["zh-CN"], {
 Object.assign(copy.en, {
   navTeams: "Team repository", navExamples: "OGS Studio", libraryEyebrow: "Team repository", libraryTitle: "Released team versions",
   navRuns: "Run history",
-  libraryIntro: "Choose a released team version when creating a project. Team design and project workspaces stay separate.", factoryEyebrow: "OGS Studio",
+  libraryIntro: "Choose a released team version to start a project.", factoryEyebrow: "OGS Studio",
   factoryTitle: "Professional team development", factoryIntro: "Edit, debug, and release team versions in OGS Studio.",
   noReleasedTeams: "No released team versions yet", noFactoryTeams: "No teams in OGS Studio yet", createTeam: "Create team",
   continueEditing: "Continue editing", editAsVersion: "Edit as new version", releaseVersion: "Release version", archiveVersion: "Archive version",
   exportAsset: "Export team", versionLabel: "Version", releasedLabel: "Released", editingLabel: "Editing", draftLabel: "Draft",
-  archivedLabel: "Archived", useTeam: "Create project with team", createProject: "Create project", repositoryEmptyHint: "Create and release a team in OGS Studio first.",
+  archivedLabel: "Archived", useTeam: "Create project", createProject: "Create project", repositoryEmptyHint: "Create and release a team first.",
   deleteTeam: "Delete team", deleteProject: "Delete project", confirmDeleteTeam: "Delete team “{name}” and all its versions? This cannot be undone.", confirmDeleteProject: "Delete project “{name}” and its tasks, runs, and materials? This cannot be undone.", teamDeleted: "Team and versions deleted", projectDeleted: "Project and materials deleted",
   factoryEmptyHint: "Describe a team in natural language, then review and release the draft.", runRound: "Task {round}", clearHistory: "Clear local cache",
   historyIntro: "Review team runs by task. Clearing only affects this browser cache, not project records.",
@@ -245,13 +258,53 @@ Object.assign(copy.en, {
 
 function labelEvent(event) { return localizedEventLabel(event, copy); }
 
+function renderPageFrame(root, template, renderPromise) {
+  const route = location.pathname;
+  const isStudioCreate = route === "/studio/new";
+  const studioWorkspace = route.match(/^\/studio\/teams\/([a-z0-9-]+)\/(info|run|release)(?:\/[a-z0-9-]+)?$/);
+  const workspaceTabs = studioWorkspace ? `<div class="studio-workspace-tabs">${studioWorkspaceNav(studioWorkspace[1], studioWorkspace[2])}</div>` : "";
+  const platformTabs = root.id === "platform-view" ? [
+    ["models", state.locale === "en" ? "Models" : "模型"],
+    ["data", state.locale === "en" ? "Data" : "数据"],
+    ["tools", state.locale === "en" ? "Tools" : "工具"],
+    ["storage", state.locale === "en" ? "Storage" : "存储"]
+  ].map(([key, label]) => `<a href="/platform/${key}" data-route="/platform/${key}"${(route === "/platform" ? key === "models" : route === `/platform/${key}`) ? ' aria-current="page"' : ""}>${label}</a>`).join("") : "";
+  const projectWorkspaceTabs = root.id === "project-workspace-view" && /^\/projects\/[a-z0-9-]+(?:\/runs\/[A-Za-z0-9._-]+)?$/.test(route)
+    ? `<div class="project-workspace-tabs"><a href="#project-info-panel" data-project-workspace-tab="overview">概况</a><a href="#project-resources-panel" data-project-workspace-tab="materials">资料</a><a href="#project-run-panel" data-project-workspace-tab="tasks">任务与运行</a><a href="#project-team-heading" data-project-workspace-tab="teams">团队</a></div>`
+    : "";
+  const tabs = platformTabs ? `<div class="platform-page-tabs">${platformTabs}</div>` : workspaceTabs || projectWorkspaceTabs;
+  const aside = template === "E" ? (isStudioCreate
+    ? '<aside class="page-frame-aside"><h2>创建团队</h2><ol><li>描述团队目标和协作偏好</li><li>检查角色、流程与交付要求</li><li>运行调试后发布团队版本</li></ol></aside>'
+    : '<aside class="page-frame-aside"><h2>创建项目</h2><ol><li>填写项目名称和业务目标</li><li>选择项目可使用的已发布团队</li><li>创建后添加资料并建立任务</li></ol></aside>') : "";
+  frameExistingPage(root, template, aside, tabs);
+  Promise.resolve(renderPromise).then(() => {
+    if (location.pathname === route && !root.classList.contains("hidden")) {
+      frameExistingPage(root, template, aside, tabs);
+      root.querySelectorAll("[data-project-workspace-tab]").forEach((link) => link.addEventListener("click", (event) => {
+        event.preventDefault();
+        const target = root.querySelector(link.getAttribute("href"));
+        if (!target) return;
+        target.scrollIntoView({ block: "start", behavior: "smooth" });
+        root.querySelectorAll("[data-project-workspace-tab]").forEach((item) => item.removeAttribute("aria-current"));
+        link.setAttribute("aria-current", "page");
+      }));
+    }
+  }, () => {});
+  return renderPromise;
+}
+
 function readHistory() { return []; }
 function saveHistory() { return undefined; }
 function caseIcon(item) { return `<span class="case-icon case-icon-${esc(item.icon)}" aria-hidden="true">${icon[item.icon] || "✦"}</span>`; }
 function renderCases() {
-  $("#library-grid").innerHTML = state.cases.map((item) => `<article class="library-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-more">${esc(copy[state.locale].openCase)} <span aria-hidden="true">→</span></span></a></article>`).join("");
-  $("#case-grid").innerHTML = state.cases.map((item) => `<button class="case-card ${item.id === state.selected ? "selected" : ""}" data-case="${esc(item.id)}" data-accent="${esc(item.accent)}" type="button">${caseIcon(item)}<span class="case-selected">${item.id === state.selected ? esc(copy[state.locale].selected) : esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-card-foot">${esc(text(item.duration))}<span aria-hidden="true">→</span></span></button>`).join("");
+  const library = $("#library-grid");
+  if (library) library.innerHTML = state.cases.map((item) => `<article class="library-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-more">${esc(copy[state.locale].openCase)} <span aria-hidden="true">→</span></span></a></article>`).join("");
+  const landingGrid = $("#landing-case-grid");
+  if (landingGrid) landingGrid.innerHTML = state.cases.map((item) => `<article class="landing-case-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="case-mini-graph" aria-hidden="true"><span></span><i></i><i></i><i></i><b></b></div><span class="case-more">${esc(copy[state.locale].openCase)} <span aria-hidden="true">→</span></span></a></article>`).join("");
+  const caseGrid = $("#case-grid");
+  if (caseGrid) caseGrid.innerHTML = state.cases.map((item) => `<button class="case-card ${item.id === state.selected ? "selected" : ""}" data-case="${esc(item.id)}" data-accent="${esc(item.accent)}" type="button">${caseIcon(item)}<span class="case-selected">${item.id === state.selected ? esc(copy[state.locale].selected) : esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-card-foot">${esc(text(item.duration))}<span aria-hidden="true">→</span></span></button>`).join("");
   $$('[data-case]').forEach((button) => button.addEventListener("click", () => selectCase(button.dataset.case)));
+  if ($("#examples-view")) frameExistingPage($("#examples-view"), "A");
 }
 function renderSelected(item) {
   if (!item) return;
@@ -425,13 +478,17 @@ function applyLocale() {
   document.documentElement.lang = state.locale;
   $$('[data-i18n]').forEach((element) => { const value = copy[state.locale][element.dataset.i18n]; if (value) element.innerHTML = value; });
   $$('[data-i18n-placeholder]').forEach((element) => { const value = copy[state.locale][element.dataset.i18nPlaceholder]; if (value) element.placeholder = value; });
-  $("#locale-toggle").textContent = state.locale === "zh-CN" ? "EN" : "中文";
+  $("#locale-toggle").textContent = state.locale === "zh-CN" ? "中" : "EN";
+  $("#locale-toggle")?.setAttribute("aria-label", state.locale === "zh-CN" ? "切换到英文" : "Switch to Chinese");
+  $("#locale-toggle")?.setAttribute("title", state.locale === "zh-CN" ? "切换到英文" : "Switch to Chinese");
+  $("#landing-locale")?.replaceChildren(document.createTextNode(state.locale === "zh-CN" ? "EN" : "中文"));
+  syncNavigationLabels();
   syncThemeControls();
   setProductMode(document.documentElement.dataset.productMode || "normal", false);
   const projectRoute = isProjectRoute();
   if (!projectRoute) {
     renderCases();
-    renderSelected(state.cases.find((item) => item.id === state.selected));
+    if ($("#graph-stage")) renderSelected(state.cases.find((item) => item.id === state.selected));
   }
   renderHistory();
   syncRoute();
@@ -443,12 +500,7 @@ function updateCount() {
 }
 function isProjectRoute() {
   const path = location.pathname.replace(/\/$/, "") || "/";
-  if (path === "/") {
-    history.replaceState({}, "", "/projects");
-    router.syncCurrentPath();
-    syncRoute();
-    return;
-  }
+  if (path === "/") return false;
   return path === "/teams"
     || path === "/studio"
     || path === "/studio/roles"
@@ -705,7 +757,7 @@ function bindTeamActions(root) {
 async function renderProjectLibrary() {
   const root = $("#workspace-view");
   const importLabelText = () => { const label = root.querySelector(".import-project-button"); if (label?.firstChild) label.firstChild.textContent = "导入团队"; };
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">${esc(copy[state.locale].libraryEyebrow)}</div><h1>${esc(copy[state.locale].libraryTitle)}</h1><p>${esc(copy[state.locale].libraryIntro)}</p></div><div class="heading-actions"><label class="secondary-button import-project-button">导入团队<input id="project-import-file" type="file" accept="application/json" hidden></label><a class="primary-button" href="/studio" data-route="/studio">${esc(copy[state.locale].createTeam)}</a></div></section><section class="project-library-toolbar"><div><strong>${esc(copy[state.locale].releasedLabel)}</strong><span>${esc(copy[state.locale].repositoryEmptyHint)}</span></div><div class="project-library-filters"><label><span class="sr-only">搜索团队</span><input id="project-library-search" type="search" placeholder="搜索团队名称或目标"></label></div></section><div id="project-library-grid" class="project-library-grid"><div class="project-loading">正在读取团队仓库...</div></div>`;
+  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">${esc(copy[state.locale].libraryEyebrow)}</div><h1>${esc(copy[state.locale].libraryTitle)}</h1><p>${esc(copy[state.locale].libraryIntro)}</p></div></section><section class="project-library-toolbar"><div><strong>${esc(copy[state.locale].releasedLabel)}</strong><span>${esc(copy[state.locale].repositoryEmptyHint)}</span></div><div class="project-library-filters repository-actions"><label><span class="sr-only">搜索团队</span><input id="project-library-search" type="search" placeholder="搜索团队名称或目标"></label><label class="secondary-button import-project-button">导入团队<input id="project-import-file" type="file" accept="application/json" hidden></label><a class="primary-button" href="/studio" data-route="/studio">${esc(copy[state.locale].createTeam)}</a></div></section><div id="project-library-grid" class="project-library-grid"><div class="project-loading">正在读取团队仓库...</div></div>`;
   importLabelText();
   const grid = $("#project-library-grid");
   root.querySelector(".project-library-toolbar")?.insertAdjacentHTML("afterend", `<section class="classic-team-section repository-classic-section"><div class="section-header"><div><div class="section-kicker">${esc(state.locale === "en" ? "Repository examples" : "典型团队")}</div><h2>${esc(state.locale === "en" ? "Ready-made collaboration patterns" : "开箱即用的协作方式")}</h2><p class="section-description">${esc(state.locale === "en" ? "Inspect a built-in team graph, then decide whether to try it or copy it into a new version." : "先查看内置团队图谱，再决定试用流程或复制为新版本。")}</p></div></div><div class="classic-team-grid">${state.cases.map((item) => `<article class="classic-team-card" data-accent="${esc(item.accent)}"><a class="classic-team-preview" href="/cases/${encodeURIComponent(item.id)}" data-route="/cases/${encodeURIComponent(item.id)}" aria-label="${esc(text(item.title))}">${caseGraphThumbnail(item)}<span class="classic-team-arrow" aria-hidden="true">↗</span></a><div class="classic-team-card-top"><span class="asset-mark">${esc(icon[item.icon] || "✦")}</span><span class="status-chip">${esc(state.locale === "en" ? "Built-in" : "内置版本")}</span></div><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="classic-team-meta"><span>${esc(item.duration?.[state.locale] || item.duration?.["zh-CN"] || "")}</span><span>${item.roles.length} ${state.locale === "en" ? "roles" : "个角色"}</span></div></article>`).join("")}</div></section>`);
@@ -720,7 +772,7 @@ async function renderProjectLibrary() {
   try {
     const response = await pageFetch("/api/v1/team-repository"); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "无法读取团队仓库");
     const teams = (payload.teams || []).filter((team) => !team.builtIn);
-    grid.innerHTML = teams.length ? teams.map((team) => teamCard(team, "repository")).join("") : `<div class="empty-projects"><strong>${esc(copy[state.locale].noReleasedTeams)}</strong><p>${esc(copy[state.locale].repositoryEmptyHint)}</p><a class="primary-button" href="/studio" data-route="/studio">${esc(copy[state.locale].createTeam)} →</a></div>`;
+    grid.innerHTML = teams.length ? teams.map((team) => teamCard(team, "repository")).join("") : `<div class="empty-projects"><strong>${esc(copy[state.locale].noReleasedTeams)}</strong><p>${esc(copy[state.locale].repositoryEmptyHint)}</p></div>`;
     bindTeamActions(grid);
     $("#project-library-search")?.addEventListener("input", (event) => { const query = event.target.value.trim().toLowerCase(); grid.querySelectorAll(".team-version-card").forEach((card) => { card.hidden = Boolean(query && !card.textContent.toLowerCase().includes(query)); }); });
     $("#project-import-file")?.addEventListener("change", async (event) => {
@@ -755,7 +807,14 @@ async function renderProjectLibrary() {
 }
 async function renderCollaborationProjects() {
   const root = $("#projects-view");
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">OGS Projects · 业务协作</div><h1>协作项目</h1><p>每个项目使用一个已发布团队版本，统一管理业务资料、Task、Review 和交付成果。</p></div><div class="heading-actions"><a class="primary-button" href="/projects/new" data-route="/projects/new">创建协作项目</a></div></section><div id="collaboration-project-grid" class="project-library-grid"><div class="project-loading">正在读取协作项目...</div></div>`;
+  root.dataset.template = "A";
+  root.innerHTML = pageFrame({
+    template: "A",
+    title: "协作项目",
+    subtitle: "统一管理项目资料、任务、运行和交付。",
+    actions: '<a class="primary-button" href="/projects/new" data-route="/projects/new">创建项目</a>',
+    body: '<div id="collaboration-project-grid" class="project-library-grid" data-layout-scroll><div class="project-loading">正在读取协作项目...</div></div>'
+  });
   const grid = $("#collaboration-project-grid");
   try {
     const response = await pageFetch("/api/v1/projects"); const payload = await response.json();
@@ -850,7 +909,7 @@ async function renderProjectTeams(projectId, pageRequest = state.activeRequest) 
 
 async function renderPlatformConfig() {
   const root = $("#platform-view");
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">平台配置</div><h1>运行底座与默认设置</h1><p>自动检查可用的运行底座和模型，为团队角色选择稳定的默认执行方式。</p></div><div class="heading-actions"><button id="platform-discovery-refresh" class="secondary-button" type="button">刷新底座与模型</button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list">正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list">正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option></select></label><label>默认模型<select name="defaultModel"><option value="default">跟随默认底座</option></select></label><div class="platform-model-probe"><button id="platform-model-probe" class="secondary-button" type="button">探测模型可用性</button><span id="platform-model-probe-status" class="form-status" role="status" aria-live="polite"></span></div><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button" type="submit">保存设置</button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
+  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">平台配置</div><h1>运行底座与默认设置</h1><p>自动检查可用的运行底座和模型，为团队角色选择稳定的默认执行方式。</p></div><div class="heading-actions"><button id="platform-discovery-refresh" class="secondary-button" type="button">刷新底座与模型</button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option></select></label><label>默认模型<select name="defaultModel"><option value="default">跟随默认底座</option></select></label><div class="platform-model-probe"><button id="platform-model-probe" class="secondary-button" type="button">探测模型可用性</button><span id="platform-model-probe-status" class="form-status" role="status" aria-live="polite"></span></div><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button" type="submit">保存设置</button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
   const statusText = (status) => status === "available" || status === "active" ? "可用" : "未发现";
   const statusClass = (status) => status === "available" || status === "active" ? "confirmed" : "warning";
   const capabilityLabels = (capabilities = {}) => [capabilities.textInput && "文本输入", capabilities.textOutput && "文本输出", capabilities.toolcall && "工具调用"].filter(Boolean);
@@ -950,7 +1009,8 @@ async function renderPlatformConfig() {
 
 async function renderStudioOverview() {
   const root = $("#studio-view");
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">OGS Studio · ${state.locale === "en" ? "Team engineering" : "团队工程"}</div><h1>${state.locale === "en" ? "Team repository" : "团队仓库"}</h1><p>${state.locale === "en" ? "Manage drafts and released versions here. Edit a released version to create a new draft." : "统一管理待发布草案与已发布版本。编辑已发布版本会基于原版本创建新草案。"}</p></div><div class="heading-actions"><a class="primary-button" href="/studio/new" data-route="/studio/new">${esc(copy[state.locale].createTeam)}</a></div></section><section class="project-library-toolbar studio-repository-toolbar"><div><strong>${state.locale === "en" ? "Team versions" : "团队版本"}</strong><span>${state.locale === "en" ? "Team assets stay separate from Project tasks and materials." : "团队工程资产独立于项目任务和业务资料。"}</span></div><div class="project-library-filters"><label><span class="sr-only">${state.locale === "en" ? "Search teams" : "搜索团队"}</span><input id="studio-team-search" type="search" placeholder="${state.locale === "en" ? "Search teams" : "搜索团队名称或目标"}"></label><label><span class="sr-only">${state.locale === "en" ? "Filter by status" : "按状态筛选"}</span><select id="studio-team-status"><option value="all">${state.locale === "en" ? "All statuses" : "全部状态"}</option><option value="draft">${state.locale === "en" ? "Draft" : "待发布"}</option><option value="editing">${state.locale === "en" ? "Editing" : "编辑中"}</option><option value="released">${state.locale === "en" ? "Released" : "已发布"}</option><option value="archived">${state.locale === "en" ? "Archived" : "已归档"}</option></select></label></div></section><div id="studio-grid" class="project-library-grid"><div class="project-loading">${state.locale === "en" ? "Loading team versions…" : "正在读取团队版本…"}</div></div>`;
+  root.dataset.template = "A";
+  root.innerHTML = `<section class="page-frame" data-template="A" data-fit><div class="page-frame-body" data-layout-scroll><section class="project-library-toolbar studio-repository-toolbar"><div class="repository-heading"><span class="eyebrow">OGS Studio · ${state.locale === "en" ? "Team engineering" : "团队工程"}</span><h1>${state.locale === "en" ? "Team repository" : "团队仓库"}</h1><p>${state.locale === "en" ? "Manage drafts and released versions. Editing a release creates a draft." : "管理团队草案与已发布版本。编辑发布版会创建新草案。"}</p></div><div class="project-library-filters repository-actions"><label><span class="sr-only">${state.locale === "en" ? "Search teams" : "搜索团队"}</span><input id="studio-team-search" type="search" placeholder="${state.locale === "en" ? "Search teams" : "搜索团队名称或目标"}"></label><label><span class="sr-only">${state.locale === "en" ? "Filter by status" : "按状态筛选"}</span><select id="studio-team-status"><option value="all">${state.locale === "en" ? "All statuses" : "全部状态"}</option><option value="draft">${state.locale === "en" ? "Draft" : "待发布"}</option><option value="editing">${state.locale === "en" ? "Editing" : "编辑中"}</option><option value="released">${state.locale === "en" ? "Released" : "已发布"}</option><option value="archived">${state.locale === "en" ? "Archived" : "已归档"}</option></select><a class="primary-button" href="/studio/new" data-route="/studio/new">${esc(copy[state.locale].createTeam)}</a></div></section><div id="studio-grid" class="project-library-grid"><div class="project-loading">${state.locale === "en" ? "Loading team versions…" : "正在读取团队版本…"}</div></div></div></section>`;
   const grid = $("#studio-grid");
   try {
     const response = await pageFetch("/api/v1/team-repository?status=all&pageSize=50"); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "无法读取团队仓库");
@@ -1276,14 +1336,19 @@ async function renderStudioRunDetail(teamVersionId, simulationId, pageRequest = 
 
 async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
+  const historyScrollTop = root.querySelector(".studio-run-history")?.scrollTop || 0;
+  const evidenceScrollTop = root.querySelector(".studio-run-evidence")?.scrollTop || 0;
   root.innerHTML = `<div class="project-loading">${state.locale === "en" ? "Loading simulation evidence…" : "正在读取模拟证据…"}</div>`;
   try {
     const base = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}`;
-    const [detailResponse, eventsResponse] = await Promise.all([pageFetch(base), pageFetch(`${base}/events`)]);
+    const simulationListPath = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`;
+    const [detailResponse, eventsResponse, simulationsResponse] = await Promise.all([pageFetch(base), pageFetch(`${base}/events`), pageFetch(simulationListPath)]);
     const detail = await detailResponse.json();
     const eventPayload = await eventsResponse.json();
+    const simulationsPayload = await simulationsResponse.json();
     if (!detailResponse.ok) throw new Error(detail.error || "Studio Simulation not found.");
     if (!eventsResponse.ok) throw new Error(eventPayload.error || "Unable to load simulation events.");
+    if (!simulationsResponse.ok) throw new Error(simulationsPayload.error || "Unable to load simulation history.");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
     const simulation = detail.simulation || {};
     const stateData = detail.state || {};
@@ -1293,6 +1358,21 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       : studioSimulationErrorText(stateData.error || simulation.failureSummary || simulation.outputSummary);
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${(stateData.auditTrail || []).length}</span></div><ol class="team-debug-transcript">${(stateData.auditTrail || []).map((item) => { const color = roleColorForId(item.roleId || "system"); const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : ""; const outputText = item.stdoutPreview || item.failure || item.error || ""; return `<li style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><header><strong>${esc(roleLabel(item.roleId || ""))}</strong><span>${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}</li>`; }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
+    const list = (simulationsPayload.simulations || []).map((item) => {
+      const href = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(item.simulationId)}`;
+      return `<a class="material-row studio-simulation-row${item.simulationId === simulationId ? " selected" : ""}" href="${href}" data-route="${href}"${item.simulationId === simulationId ? ' aria-current="page"' : ""}><div><strong>${esc(item.input || "调试任务")}</strong><div class="task-record-meta"><span class="status-chip ${esc(item.status)}">${esc(studioSimulationStatus(item.status))}</span><span>${esc(item.createdAt || "")}</span></div></div></a>`;
+    }).join("");
+    const heading = root.querySelector(":scope > .page-heading");
+    const detailBody = document.createElement("div");
+    detailBody.className = "studio-run-evidence";
+    while (root.children.length > 1) detailBody.append(root.children[1]);
+    const split = document.createElement("div");
+    split.className = "studio-run-split";
+    split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
+    split.append(detailBody);
+    root.append(split);
+    root.querySelector(".studio-run-history").scrollTop = historyScrollTop;
+    root.querySelector(".studio-run-evidence").scrollTop = evidenceScrollTop;
     if (simulation.status === "running" && (!pageRequest || isCurrentRequest(pageRequest))) {
       window.setTimeout(() => void renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest), 800);
     }
@@ -3605,6 +3685,8 @@ async function openTaskReview(projectId, taskId, task = {}) {
 let activeTaskReviewClose = null;
 function closeActiveDialogs() {
   closeDrawer();
+  closeMobileNav();
+  closeTopbarMore();
   activeTaskReviewClose?.("route");
   document.querySelector("#collaboration-task-dialog[open]")?.close();
   document.querySelector("[data-deliverable-viewer][open]")?.close();
@@ -3625,7 +3707,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   const taskCapacity = project.taskCapacity || { capacity: 1, used: 0, available: 1, activeTasks: [] };
   const materials = project.materials?.materials || [];
   const terminalRefreshes = pageRequest?.terminalRunRefreshes || (pageRequest ? (pageRequest.terminalRunRefreshes = new Set()) : new Set());
-  root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length} 个团队版本 · ${tasks.length} 个任务</span></section><div class="project-detail-sections collaboration-project-grid"><section class="project-panel project-info-panel"><div class="panel-head"><div><span class="section-kicker">01 · 项目概况</span><h2>项目信息</h2></div></div><p class="project-overview-text">${esc(project.overview || "尚未填写项目概要。")}</p><div class="project-readiness-panel"><div class="panel-head"><div><span class="section-kicker">运行检查</span><h3>团队就绪情况</h3></div></div><div data-project-readiness><p class="empty-note">正在检查已挂载团队...</p></div></div><div class="panel-head project-team-heading"><div><span class="section-kicker">执行团队</span><h3>已挂载版本</h3></div><span class="count-badge">${teams.length}</span></div><div class="material-list project-team-list">${teams.length ? teams.map((team) => `<div class="material-row team-mount-row"><div><strong>${esc(team.teamName || "团队")}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></div><button class="text-button" type="button" data-team-adjust="${esc(team.teamVersionId)}">编辑团队</button></div>`).join("") : '<p class="empty-note">尚未挂载团队。</p>'}</div><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}/teams" data-route="/projects/${encodeURIComponent(projectId)}/teams">管理团队版本</a></div><p class="panel-intro">编辑会从当前已发布版本创建团队草稿，发布后再将新版本挂载到项目。</p></section><section class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">02 · 项目文件</span><h2>生产资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">生产资料属于当前项目，供任务执行时使用。</p><form id="project-material-form" class="material-upload-form"><div class="form-actions"><label class="secondary-button material-upload-button">上传文件<input id="project-material-file-input" type="file" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><label class="secondary-button material-upload-button">导入文件夹<input id="project-material-folder-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label></div><small>支持批量文件和文件夹导入，保留文件夹相对路径；单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有生产资料。</p>'}</div></section><section class="project-panel task-list-panel project-run-panel"><div class="panel-head"><div><span class="section-kicker">03 · 任务与运行</span><h2>运行信息</h2></div><button class="primary-button" type="button" data-open-task-dialog ${teams.length ? "" : "disabled"}>新增任务</button></div><p class="panel-intro">每项任务绑定一个团队版本；同一项目一次运行一个任务，其他任务可先加入清单。</p><div class="task-capacity-summary" data-task-capacity></div><div class="material-list project-task-list">${orderedTasks.length ? orderedTasks.map((task) => `<div class="material-row task-record-row" data-task-record="${esc(task.taskId)}"><div class="task-record-main"><div class="task-title-line"><strong>任务 #${esc(task.taskNumber)} · ${esc(task.teamName || "团队")}</strong><time datetime="${esc(task.createdAt || "")}">${esc(task.createdAt ? new Date(task.createdAt).toLocaleString(state.locale) : `任务 #${task.taskNumber}`)}</time></div><p>${esc(task.input || "")}</p>${task.outputSummary ? `<p class="task-output-summary"><strong>输出摘要：</strong>${esc(task.outputSummary)}</p>` : ""}<div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.currentRunId ? `<span>Run ${esc(task.currentRunId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.status === "failed" && task.lastError ? `<p class="task-run-last-error" role="status">${esc(task.lastError)}</p>` : ""}${task.currentRunId ? `<div class="task-run-detail" data-run-id="${esc(task.currentRunId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。</p>'}</div><dialog class="task-review-dialog" id="collaboration-task-dialog"><form id="collaboration-task-form" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">新增任务</span><h2>安排一项工作</h2></div><button class="text-button" type="button" data-close-task-dialog aria-label="关闭">关闭</button></div><label>执行团队<select name="teamVersionId" required>${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label>任务内容<textarea name="input" required rows="5" maxlength="4000" placeholder="描述这次需要完成的具体工作"></textarea></label><p class="form-status" id="collaboration-task-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" type="button" data-close-task-dialog>取消</button><button class="primary-button" type="submit">添加到清单</button></div></form></dialog></section></div>`;
+  root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length} 个团队版本 · ${tasks.length} 个任务</span></section><div class="project-detail-sections collaboration-project-grid"><section id="project-info-panel" class="project-panel project-info-panel"><div class="panel-head"><div><span class="section-kicker">01 · 项目概况</span><h2>项目信息</h2></div></div><p class="project-overview-text">${esc(project.overview || "尚未填写项目概要。")}</p><div class="project-readiness-panel"><div class="panel-head"><div><span class="section-kicker">运行检查</span><h3>团队就绪情况</h3></div></div><div data-project-readiness><p class="empty-note">正在检查已挂载团队...</p></div></div><div id="project-team-heading" class="panel-head project-team-heading"><div><span class="section-kicker">执行团队</span><h3>已挂载版本</h3></div><span class="count-badge">${teams.length}</span></div><div class="material-list project-team-list">${teams.length ? teams.map((team) => `<div class="material-row team-mount-row"><div><strong>${esc(team.teamName || "团队")}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></div><button class="text-button" type="button" data-team-adjust="${esc(team.teamVersionId)}">编辑团队</button></div>`).join("") : '<p class="empty-note">尚未挂载团队。</p>'}</div><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}/teams" data-route="/projects/${encodeURIComponent(projectId)}/teams">管理团队版本</a></div><p class="panel-intro">编辑会从当前已发布版本创建团队草稿，发布后再将新版本挂载到项目。</p></section><section id="project-resources-panel" class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">02 · 项目文件</span><h2>生产资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">生产资料属于当前项目，供任务执行时使用。</p><form id="project-material-form" class="material-upload-form"><div class="form-actions"><label class="secondary-button material-upload-button">上传文件<input id="project-material-file-input" type="file" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><label class="secondary-button material-upload-button">导入文件夹<input id="project-material-folder-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label></div><small>支持批量文件和文件夹导入，保留文件夹相对路径；单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有生产资料。</p>'}</div></section><section id="project-run-panel" class="project-panel task-list-panel project-run-panel"><div class="panel-head"><div><span class="section-kicker">03 · 任务与运行</span><h2>运行信息</h2></div><button class="primary-button" type="button" data-open-task-dialog ${teams.length ? "" : "disabled"}>新增任务</button></div><p class="panel-intro">每项任务绑定一个团队版本；同一项目一次运行一个任务，其他任务可先加入清单。</p><div class="task-capacity-summary" data-task-capacity></div><div class="material-list project-task-list">${orderedTasks.length ? orderedTasks.map((task) => `<div class="material-row task-record-row" data-task-record="${esc(task.taskId)}"><div class="task-record-main"><div class="task-title-line"><strong>任务 #${esc(task.taskNumber)} · ${esc(task.teamName || "团队")}</strong><time datetime="${esc(task.createdAt || "")}">${esc(task.createdAt ? new Date(task.createdAt).toLocaleString(state.locale) : `任务 #${task.taskNumber}`)}</time></div><p>${esc(task.input || "")}</p>${task.outputSummary ? `<p class="task-output-summary"><strong>输出摘要：</strong>${esc(task.outputSummary)}</p>` : ""}<div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.currentRunId ? `<span>Run ${esc(task.currentRunId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.status === "failed" && task.lastError ? `<p class="task-run-last-error" role="status">${esc(task.lastError)}</p>` : ""}${task.currentRunId ? `<div class="task-run-detail" data-run-id="${esc(task.currentRunId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。</p>'}</div><dialog class="task-review-dialog" id="collaboration-task-dialog"><form id="collaboration-task-form" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">新增任务</span><h2>安排一项工作</h2></div><button class="text-button" type="button" data-close-task-dialog aria-label="关闭">关闭</button></div><label>执行团队<select name="teamVersionId" required>${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label>任务内容<textarea name="input" required rows="5" maxlength="4000" placeholder="描述这次需要完成的具体工作"></textarea></label><p class="form-status" id="collaboration-task-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" type="button" data-close-task-dialog>取消</button><button class="primary-button" type="submit">添加到清单</button></div></form></dialog></section></div>`;
     root.querySelectorAll('.team-link[data-route^="/teams/"]').forEach((link) => link.setAttribute("data-pro-only", ""));
   const collaborationGrid = root.querySelector(".collaboration-project-grid");
   if (collaborationGrid) {
@@ -3662,6 +3744,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   if (collaborationGrid) {
     const section = document.createElement("article");
     section.className = "project-panel project-deliverables-panel";
+    section.id = "project-deliverables-panel";
     section.innerHTML = `<div class="panel-head"><div><span class="section-kicker">04 · 项目交付</span><h2>项目成果</h2></div><span class="count-badge" data-deliverable-count>0</span></div><div class="material-list" data-deliverable-list><p class="empty-note">正在读取归档成果...</p></div><dialog class="task-review-dialog deliverable-viewer" data-deliverable-viewer><div class="task-review-form"><div class="panel-head"><div><span class="section-kicker">成果预览</span><h3 data-deliverable-title></h3></div><button class="text-button" type="button" data-close-deliverable>关闭</button></div><p class="panel-intro" data-deliverable-path></p><pre class="task-run-output" data-deliverable-content></pre><div class="form-actions"><button class="primary-button" type="button" data-download-deliverable>下载成果</button></div></div></dialog>`;
     collaborationGrid.append(section);
     const list = section.querySelector("[data-deliverable-list]");
@@ -3964,33 +4047,39 @@ function syncRoute() {
   const pageRequest = beginPageRequest();
   const currentPath = location.pathname.replace(/\/$/, "") || "/";
   const path = currentPath;
+  const landing = path === "/";
+  $("#landing-view")?.classList.toggle("hidden", !landing);
+  if (landing) {
+    $("#app-shell").classList.add("hidden");
+    return;
+  }
   state.studioRoute = path === "/studio" || path.startsWith("/studio/");
   $("#app-shell").classList.remove("hidden");
   const detailMatch = path.match(/^\/cases\/([a-z0-9-]+)$/);
   if (detailMatch) {
     const item = state.cases.find((entry) => entry.id === detailMatch[1]);
-    if (item) { $("#workspace-view").classList.add("hidden"); $("#examples-view").classList.add("hidden"); $("#history-view").classList.add("hidden"); $("#case-detail-view").classList.remove("hidden"); state.selected = item.id; renderDetail(item); return; }
+    if (item) { $$(".main-area > .page-content").forEach((page) => page.classList.add("hidden")); $("#case-detail-view").classList.remove("hidden"); state.selected = item.id; renderDetail(item); return; }
     history.replaceState({}, "", "/teams"); router.syncCurrentPath(); syncRoute(); return;
   }
   if (path === "/studio/new") {
     setView("new-project");
-    void renderNewProject(pageRequest);
+    renderPageFrame($("#new-project-view"), "E", renderNewProject(pageRequest));
     return;
   }
   if (path === "/studio/roles") {
     setView("studio");
-    void renderSharedResourcePage($("#studio-view"), "roles", state.locale, navigate);
+    renderPageFrame($("#studio-view"), "A", renderSharedResourcePage($("#studio-view"), "roles", state.locale, navigate));
     return;
   }
   if (path === "/projects/new") {
     setView("new-project");
-    void renderProjectCreate(pageRequest);
+    renderPageFrame($("#new-project-view"), "E", renderProjectCreate(pageRequest));
     return;
   }
   const runDiagnosticMatch = path.match(/^\/projects\/([a-z0-9-]+)\/runs\/([A-Za-z0-9._-]+)$/);
   if (runDiagnosticMatch) {
     setView("project-workspace");
-    void renderProjectRun(runDiagnosticMatch[1], pageRequest).then(() => {
+    renderPageFrame($("#project-workspace-view"), "B", renderProjectRun(runDiagnosticMatch[1], pageRequest)).then(() => {
       if (!isCurrentRequest(pageRequest)) return;
       const detail = [...document.querySelectorAll("[data-run-id]")].find((item) => item.dataset.runId === runDiagnosticMatch[2]);
       detail?.setAttribute("tabindex", "-1");
@@ -4002,43 +4091,43 @@ function syncRoute() {
   const studioDesignMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/design$/);
   if (studioDesignMatch) {
     setView("studio");
-    void renderProjectStudio(studioDesignMatch[1], pageRequest);
+    renderPageFrame($("#studio-view"), "B", renderProjectStudio(studioDesignMatch[1], pageRequest));
     return;
   }
   const studioInfoMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/info$/);
   if (studioInfoMatch) {
     setView("studio");
-    void renderStudioTeamInfo(studioInfoMatch[1], pageRequest);
+    renderPageFrame($("#studio-view"), "D", renderStudioTeamInfo(studioInfoMatch[1], pageRequest));
     return;
   }
   const studioReleaseMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/release$/);
   if (studioReleaseMatch) {
     setView("studio");
-    void renderStudioReleaseGate(studioReleaseMatch[1], pageRequest);
+    renderPageFrame($("#studio-view"), "D", renderStudioReleaseGate(studioReleaseMatch[1], pageRequest));
     return;
   }
   const studioRunDetailMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/run\/([a-z0-9-]+)$/);
   if (studioRunDetailMatch) {
     setView("studio");
-    void renderStudioRunDetail(studioRunDetailMatch[1], studioRunDetailMatch[2], pageRequest);
+    renderPageFrame($("#studio-view"), "C", renderStudioRunDetail(studioRunDetailMatch[1], studioRunDetailMatch[2], pageRequest));
     return;
   }
   const studioRunMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/run$/);
   if (studioRunMatch) {
     setView("studio");
-    void renderStudioRunPage(studioRunMatch[1], pageRequest);
+    renderPageFrame($("#studio-view"), "C", renderStudioRunPage(studioRunMatch[1], pageRequest));
     return;
   }
   const projectTeamsMatch = path.match(/^\/projects\/([a-z0-9-]+)\/teams$/);
   if (projectTeamsMatch) {
     setView("project-workspace");
-    void renderProjectTeams(projectTeamsMatch[1], pageRequest);
+    renderPageFrame($("#project-workspace-view"), "B", renderProjectTeams(projectTeamsMatch[1], pageRequest));
     return;
   }
   const projectRunMatch = path.match(/^\/projects\/([a-z0-9-]+)$/);
   if (projectRunMatch) {
     setView("project-workspace");
-    void renderProjectRun(projectRunMatch[1], pageRequest);
+    renderPageFrame($("#project-workspace-view"), "B", renderProjectRun(projectRunMatch[1], pageRequest));
     return;
   }
   if (path === "/teams" && new URLSearchParams(location.search).has("team")) {
@@ -4047,15 +4136,16 @@ function syncRoute() {
   }
   if (path === "/projects") { state.view = "projects"; void renderCollaborationProjects(pageRequest); }
   else if (path === "/teams") { state.view = "workspace"; void renderProjectLibrary(pageRequest); }
-  else if (path === "/studio") { state.view = "studio"; void renderStudioOverview(pageRequest); }
-  else if (path === "/platform" || path === "/platform/models") { state.view = "platform"; void renderPlatformConfig(pageRequest); }
+  else if (path === "/studio") { state.view = "studio"; renderPageFrame($("#studio-view"), "A", renderStudioOverview(pageRequest)); }
+  else if (path === "/platform" || path === "/platform/models") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderPlatformConfig(pageRequest)); }
   else if (["/platform/data", "/platform/tools", "/platform/storage"].includes(path)) {
     state.view = "platform";
     const section = path.slice("/platform/".length);
-    void renderSharedResourcePage($("#platform-view"), section, state.locale, navigate);
+    renderPageFrame($("#platform-view"), "D", renderSharedResourcePage($("#platform-view"), section, state.locale, navigate));
   }
   else if (path === "/examples") state.view = "examples";
-  else if (path === "/history") { state.view = "history"; void renderHistory(pageRequest); }
+  else if (path === "/history") { state.view = "history"; frameExistingPage($("#history-view"), "A"); void renderHistory(pageRequest); }
+  else if (path === "/examples") frameExistingPage($("#examples-view"), "A");
   setView(state.view);
   if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/data", "/platform/tools", "/platform/storage", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioReleaseMatch && !studioRunMatch && !studioRunDetailMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
@@ -4150,13 +4240,123 @@ function showToast(message) { const toast = $("#toast"); toast.textContent = mes
 function setProductMode(mode, persist = true) {
   const normalized = mode === "professional" ? "professional" : "normal";
   document.documentElement.dataset.productMode = normalized;
-  $$('button[data-product-mode]').forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.productMode === normalized));
-    button.textContent = state.locale === "en"
-      ? (button.dataset.productMode === "professional" ? "Pro" : "Normal")
-      : (button.dataset.productMode === "professional" ? "专业" : "普通");
-  });
+  const toggle = $("#product-mode-toggle");
+  if (toggle) {
+    const currentLabel = state.locale === "en" ? (normalized === "professional" ? "Pro" : "Normal") : (normalized === "professional" ? "专业" : "普通");
+    const targetLabel = state.locale === "en" ? (normalized === "professional" ? "normal" : "professional") : (normalized === "professional" ? "普通" : "专业");
+    const actionLabel = state.locale === "en" ? `Switch to ${targetLabel} mode` : `切换到${targetLabel}模式`;
+    toggle.querySelector("[data-product-mode-label]").textContent = currentLabel;
+    toggle.setAttribute("aria-pressed", String(normalized === "professional"));
+    toggle.setAttribute("aria-label", `${actionLabel} · ${state.locale === "en" ? `Current: ${currentLabel}` : `当前：${currentLabel}`}`);
+    toggle.setAttribute("title", actionLabel);
+  }
   if (persist) try { localStorage.setItem("ogs.product-mode", normalized); } catch {}
+}
+function syncNavigationLabels() {
+  $$('.primary-nav .nav-item').forEach((link) => {
+    const label = link.querySelector("[data-i18n]")?.textContent?.trim();
+    if (label) {
+      link.title = label;
+      link.setAttribute("aria-label", label);
+    }
+  });
+  const shell = $("#app-shell");
+  const collapsed = shell?.dataset.nav === "collapsed";
+  const label = state.locale === "en"
+    ? (collapsed ? "Expand sidebar" : "Collapse sidebar")
+    : (collapsed ? "展开侧栏" : "收起侧栏");
+  const collapse = $("#sidebar-collapse");
+  if (collapse) {
+    collapse.title = label;
+    collapse.setAttribute("aria-label", label);
+    collapse.setAttribute("aria-expanded", String(!collapsed));
+    collapse.querySelector("span").textContent = collapsed ? "›" : "‹";
+  }
+  const mobileToggle = $("#mobile-nav-toggle");
+  if (mobileToggle) {
+    const open = shell?.dataset.mobileNav === "open";
+    mobileToggle.setAttribute("aria-label", state.locale === "en" ? (open ? "Close navigation" : "Open navigation") : (open ? "关闭导航" : "打开导航"));
+  }
+}
+function setNavCollapsed(collapsed, persist = true) {
+  const shell = $("#app-shell");
+  if (!shell) return;
+  shell.dataset.nav = collapsed ? "collapsed" : "expanded";
+  if (persist) {
+    try {
+      localStorage.setItem(navStorageKey, collapsed ? "collapsed" : "expanded");
+      navPreferenceStored = true;
+    } catch {
+      navPreferenceStored = false;
+    }
+  }
+  syncNavigationLabels();
+}
+function initializeNavigationState() {
+  let saved;
+  try { saved = localStorage.getItem(navStorageKey); } catch {}
+  navPreferenceStored = saved === "collapsed" || saved === "expanded";
+  setNavCollapsed(navPreferenceStored ? saved === "collapsed" : window.innerWidth < 1200, false);
+  $("#app-shell")?.setAttribute("data-mobile-nav", "closed");
+}
+function closeMobileNav() {
+  const shell = $("#app-shell");
+  if (shell?.dataset.mobileNav !== "open") return;
+  shell.dataset.mobileNav = "closed";
+  $("#mobile-nav-toggle")?.setAttribute("aria-expanded", "false");
+  const scrim = $("#sidebar-scrim");
+  if (scrim) scrim.hidden = true;
+  mobileNavReleaseTrap?.();
+  mobileNavReleaseTrap = undefined;
+  mobileNavReleaseScroll?.();
+  mobileNavReleaseScroll = undefined;
+  syncNavigationLabels();
+}
+function openMobileNav() {
+  if (window.innerWidth >= 768) return;
+  const shell = $("#app-shell");
+  const sidebar = $("#primary-sidebar");
+  if (!shell || !sidebar || shell.dataset.mobileNav === "open") return;
+  shell.dataset.mobileNav = "open";
+  $("#mobile-nav-toggle")?.setAttribute("aria-expanded", "true");
+  const scrim = $("#sidebar-scrim");
+  if (scrim) scrim.hidden = false;
+  mobileNavReleaseScroll = lockBodyScroll("nav-open");
+  mobileNavReleaseTrap = trapFocus(sidebar, { initial: 'a[data-route]', onEscape: closeMobileNav });
+  syncNavigationLabels();
+}
+function setTopbarMoreOpen(open) {
+  const preferences = $(".topbar-preferences");
+  const toggle = $("#topbar-more-toggle");
+  if (!preferences || !toggle) return;
+  preferences.classList.toggle("is-open", open);
+  toggle.setAttribute("aria-expanded", String(open));
+}
+function closeTopbarMore() { setTopbarMoreOpen(false); }
+function bindNavigationControls() {
+  $("#sidebar-collapse")?.addEventListener("click", () => {
+    setNavCollapsed($("#app-shell")?.dataset.nav !== "collapsed");
+  });
+  $("#mobile-nav-toggle")?.addEventListener("click", () => {
+    if ($("#app-shell")?.dataset.mobileNav === "open") closeMobileNav();
+    else openMobileNav();
+  });
+  $("#sidebar-scrim")?.addEventListener("click", closeMobileNav);
+  $("#topbar-more-toggle")?.addEventListener("click", () => {
+    const expanded = $("#topbar-more-toggle").getAttribute("aria-expanded") === "true";
+    setTopbarMoreOpen(!expanded);
+  });
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest(".topbar-preferences")) closeTopbarMore();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeTopbarMore();
+  });
+  window.addEventListener("resize", () => {
+    if (!navPreferenceStored) setNavCollapsed(window.innerWidth < 1200, false);
+    if (window.innerWidth >= 768) closeMobileNav();
+    if (window.innerWidth > 767) closeTopbarMore();
+  });
 }
 // Run actions are rendered with the response that created the run. Keeping the
 // run ID in the result avoids deriving control state from human-readable text.
@@ -4173,17 +4373,21 @@ async function init() {
   let savedMode = "normal";
   try { savedMode = localStorage.getItem("ogs.product-mode") === "professional" ? "professional" : "normal"; } catch {}
   setProductMode(savedMode, false);
+  initializeNavigationState();
+  bindNavigationControls();
   const response = await pageFetch("/api/v1/cases"); if (!response.ok) throw new Error("Unable to load team cases.");
   const payload = await response.json();
   state.cases = payload.cases || [];
   state.eventLabels = payload.eventLabels || {};
   state.selected = state.cases[0]?.id;
   router.install();
-  $("#locale-toggle")?.addEventListener("click", () => { state.locale = state.locale === "zh-CN" ? "en" : "zh-CN"; localStorage.setItem("ogs-locale", state.locale); applyLocale(); });
+  $("#locale-toggle")?.addEventListener("click", () => { state.locale = state.locale === "zh-CN" ? "en" : "zh-CN"; try { localStorage.setItem("ogs-locale", state.locale); } catch {} applyLocale(); });
+  $("#landing-locale")?.addEventListener("click", () => { state.locale = state.locale === "zh-CN" ? "en" : "zh-CN"; try { localStorage.setItem("ogs-locale", state.locale); } catch {} applyLocale(); });
   $$('[data-site-theme-choice]').forEach((button) => button.addEventListener("click", () => applySiteTheme(button.dataset.siteThemeChoice)));
-  $$('[data-product-mode]').forEach((button) => button.addEventListener("click", () => setProductMode(button.dataset.productMode)));
+  $("#site-theme-toggle")?.addEventListener("click", () => applySiteTheme(document.documentElement.dataset.visualizerTheme === "dark" ? "light" : "dark"));
+  $("#product-mode-toggle")?.addEventListener("click", () => setProductMode(document.documentElement.dataset.productMode === "professional" ? "normal" : "professional"));
   $("#task-input")?.addEventListener("input", () => { updateCount(); setDirty("task-input"); }); $("#run-button")?.addEventListener("click", runSelected);
-  $("#edit-task-button")?.addEventListener("click", () => { $("#task-input")?.focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+  $("#edit-task-button")?.addEventListener("click", () => { $("#task-input")?.focus(); $("#workspace-view")?.scrollTo({ top: 0, behavior: "smooth" }); });
   $("#clear-history")?.addEventListener("click", () => { state.history = []; try { localStorage.removeItem("ogs-run-history"); } catch {} renderHistory(); });
   $$('[data-close-drawer]').forEach((element) => element.addEventListener("click", closeDrawer));
   applyLocale();

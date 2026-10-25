@@ -42,7 +42,8 @@ new project; historical development data and interfaces are not migration or com
 10. In Studio, open a Role property panel, keep the floating Team assets panel open, and create a
     relationship between visible graph ports outside the panel. Confirm X6 receives the connection,
     the relationship editor opens, and the flow is saved with the selected endpoints. Open Global
-    from Team assets and confirm it is a separate page; verify Start/End flows have localized labels.
+    inside Team assets and confirm configuration stays in the floating panel; verify Start/End flows
+    have localized labels.
 11. On a real supported device, complete the operator's keyboard-only path and review the same
     workflow with a screen reader. Verify focus order, visible focus, control names and states,
     status/error announcements, review actions, and recovery actions at the device's actual
@@ -67,7 +68,8 @@ responsible person. A blocked or evidence-free row is not a pass.
 | 7 | Workflow operator / Workflow operator | Blocked | Failure-compensation route and audit evidence; interruption point; committed Role execution IDs/counts immediately before interruption and after recovery; resumed Run/event records proving each committed Role was not executed again. Include operator actions and timestamps. | Requires an operator to interrupt, recover, retry, and verify no committed role repeats. |
 | 8 | Framework developer / Framework developer | Pass | Timestamped `/metrics`, `/healthz`, and `/readyz` responses; redaction inspection noting which labels/summaries were checked and confirming prompt/result content is absent. | Framework developer, 2026-10-19 08:35 CST, macOS 26.1. Started Visualizer on `127.0.0.1` with an isolated temporary workdir. `/healthz` returned HTTP 200 `{"status":"ok"}`; `/readyz` returned HTTP 200 `{"status":"ready"}`; `/metrics` returned HTTP 200 Prometheus text with request/response and SSE counters. Inspected complete response: no prompt, final-output/result, secret, token, or API-key fields. Temporary process and workdir were removed. |
 | 9 | Workflow operator / Workflow operator | Blocked | Desktop, mobile, and viewport dimensions; screenshots or recording showing graph, failure location, pending review, and next lifecycle action; overflow/overlap findings and issue IDs. | Requires workflow operator to perform the responsive product flow; automated viewport results are separate evidence. |
-| 10 | Accessibility evaluator / Accessibility evaluator | Blocked | Device model/OS, browser/version, assistive technology/version, viewport/zoom; keyboard path and focus order; screen-reader names, states, and announcements; recording or notes for any blocker and its reproduction steps. | No real supported device or screen reader is available in this execution context; accessibility evaluator owns completion. |
+| 10 | Workflow operator / Product owner | Blocked | TeamVersion and Run IDs; screen recording showing the Team assets panel open while connecting two graph ports; saved Flow endpoints/event/business label; Global panel state; Start/End flow labels; any console errors. | Automated Studio design regression keeps Team assets open, verifies both connection ports are outside the panel bounds, creates the Flow, and saves its business label. The combined flow is covered automatically, but no human-reviewed screen recording and release sign-off are recorded yet. |
+| 11 | Accessibility evaluator / Accessibility evaluator | Blocked | Device model/OS, browser/version, assistive technology/version, viewport/zoom; keyboard path and focus order; screen-reader names, states, and announcements; recording or notes for any blocker and its reproduction steps. | No real supported device or screen reader is available in this execution context; accessibility evaluator owns completion. |
 
 ## Release Gate
 

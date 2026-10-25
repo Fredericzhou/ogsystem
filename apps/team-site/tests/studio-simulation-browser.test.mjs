@@ -271,7 +271,9 @@ registerHooks({
     await reloadedHeading.waitFor({ timeout: 10000 });
     assert.match(await reloadedHeading.innerText(), /调试/, `Simulation deep link failed at ${page.url()}`);
     await page.locator(".studio-event-list li").first().waitFor();
-    assert.equal(await page.locator("#studio-view .status-chip.completed").count(), 1);
+    assert.equal(await page.locator(".studio-run-split").count(), 1, "debug evidence should use the master-detail layout");
+    assert.equal(await page.locator(".studio-run-history .studio-simulation-row[aria-current='page']").count(), 1, "the current run should remain selected in the history list");
+    assert.equal(await page.locator("#studio-view > .page-frame .page-heading .status-chip.completed").count(), 1);
     assert.deepEqual(scriptErrors, []);
   } finally {
     await browser?.close();

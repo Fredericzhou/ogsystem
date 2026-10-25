@@ -56,7 +56,7 @@ test("dirty forms guard route changes and beforeunload", async () => {
     assert.ok(unload.returnValue === "" || unload.returnValue === false);
     await page.locator('.detail-back[data-route="/studio"]').click();
     await page.locator(".confirm-dialog").getByRole("button", { name: "放弃并离开" }).click();
-    await page.locator("#studio-view .page-heading").waitFor();
+    await page.locator("#studio-view .repository-heading").waitFor();
     assert.match(page.url(), /\/studio$/);
   } finally {
     await browser?.close();
@@ -75,7 +75,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`${url}/teams`, { waitUntil: "networkidle" });
-    await page.locator('[data-product-mode="professional"]').click();
+    await page.locator("#product-mode-toggle").click();
     await page.evaluate(async () => {
       const { openDrawer } = await import("/app/views/app.js");
       const trigger = document.createElement("button");

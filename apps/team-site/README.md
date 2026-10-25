@@ -59,6 +59,12 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 
 团队建设页面不会提供“导出团队”。导出属于团队仓库的资产管理操作；导入入口统一称为“导入团队”。
 
+## 页面布局与导航
+
+Team Site 使用固定应用外壳：桌面侧栏可收起并记住选择，平板默认显示图标导航，手机从顶栏打开导航抽屉；抽屉支持 Escape、遮罩关闭和焦点恢复。页面内容在各自的页面区/面板内滚动，路由切换重置当前页面滚动位置。浏览器无法访问 `localStorage` 时，导航和语言仍使用视口默认值及中文回退。
+
+列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。详细路由映射、滚动规则、逐阶段进度和 L1–L10 验收证据见 [Team Site 版面重构计划](../../docs/development/team-site-layout-refactor-plan.md)。真实设备、屏幕阅读器、Windows 与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
+
 ## 本地启动
 
 在仓库根目录执行：
@@ -68,7 +74,7 @@ pnpm build
 pnpm --dir apps/team-site start
 ```
 
-本地产品入口为 `http://127.0.0.1:4173/projects`；根路径 `/` 自动进入此入口，可用 `PORT` 覆盖。项目、团队设计、运行诊断和平台配置
+本地宣传首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入。可用 `PORT` 覆盖。项目、团队设计、运行诊断和平台配置
 都从这个 Team Site Origin 进入。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 调用；它是
 内部上游服务，不是另一个产品入口。需要自定义服务地址时，在启动 Team Site 前设置 `OGS_VIS_URL`。
 
@@ -91,6 +97,18 @@ CLI 的账号或凭据。模型请求超时只表示等待**单次模型请求�
 任务仍可能因为多角色、多轮处理或人工审核而持续更久。
 
 ## 验证
+
+页面框架与响应式布局回归：
+
+```sh
+node --test apps/team-site/tests/layout-acceptance.test.mjs
+```
+
+外壳和页面迁移后运行完整 Team Site 测试：
+
+```sh
+pnpm --dir apps/team-site test --test-concurrency=1
+```
 
 运行团队案例的真实底座验证前，请先完成对应 CLI 的登录：
 

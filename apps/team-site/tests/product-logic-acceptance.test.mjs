@@ -786,9 +786,15 @@ test("Studio saves all four package files for a newly created role in one author
     await page.locator("#studio-asset-drawer-close").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${sourceRoleId}"]`).click();
-    await page.locator("#studio-asset-drawer-close").click();
+    assert.equal(await page.locator("#studio-asset-drawer").getAttribute("aria-hidden"), "false", "the asset panel remains open while connecting graph ports");
     const sourceBounds = await sourcePort.boundingBox();
     const targetBounds = await newRoleInput.boundingBox();
+    const assetBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    const portCenters = [
+      { x: sourceBounds.x + sourceBounds.width / 2, y: sourceBounds.y + sourceBounds.height / 2 },
+      { x: targetBounds.x + targetBounds.width / 2, y: targetBounds.y + targetBounds.height / 2 }
+    ];
+    assert.ok(portCenters.every(({ x, y }) => x < assetBounds.x || x > assetBounds.x + assetBounds.width || y < assetBounds.y || y > assetBounds.y + assetBounds.height), `both connection ports remain outside the open asset panel: ${JSON.stringify({ assetBounds, sourceBounds, targetBounds })}`);
     await page.mouse.move(sourceBounds.x + sourceBounds.width / 2, sourceBounds.y + sourceBounds.height / 2);
     await page.waitForTimeout(120);
     await page.mouse.down();
@@ -797,6 +803,7 @@ test("Studio saves all four package files for a newly created role in one author
     await page.mouse.up();
     assert.equal(await page.locator('[data-studio-command-form="add-edge"]').count(), 0, "connecting ports should create a flow without opening a form");
     await page.waitForFunction((count) => document.querySelectorAll("#project-graph-stage .x6-edge").length === count + 1, initialEdgeCount);
+    assert.equal(await page.locator("#studio-asset-drawer").getAttribute("aria-hidden"), "false", "connecting ports does not dismiss the asset panel");
     const flowLabel = inspector.locator('[data-studio-flow-field="label"]');
     await flowLabel.waitFor({ state: "visible" });
     assert.equal(await inspector.locator('[data-studio-flow-field="eventType"]').inputValue(), relationshipEventType);

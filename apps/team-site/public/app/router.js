@@ -7,6 +7,13 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
   let currentPath = `${location.pathname}${location.search}${location.hash}`;
   let pending = false;
   const readPath = () => `${location.pathname}${location.search}${location.hash}`;
+  const resetPageScroll = () => {
+    const page = document.querySelector(".main-area > .page-content:not(.hidden)");
+    if (!page) return;
+    const regions = [...page.querySelectorAll("[data-layout-scroll]")];
+    if (regions.length) regions.forEach((region) => { region.scrollTop = 0; });
+    else page.scrollTop = 0;
+  };
   const navigate = async (path) => {
     const nextPath = canonicalize(path);
     if (nextPath === currentPath || pending) return false;
@@ -17,7 +24,7 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
       currentPath = readPath();
       onRouteChange(currentPath);
       syncRoute();
-      window.scrollTo({ top: 0, behavior: "instant" });
+      resetPageScroll();
       return true;
     } finally {
       pending = false;
@@ -25,7 +32,7 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
   };
   const install = () => {
     const initial = readPath();
-    const canonical = canonicalize(initial === "/" ? "/projects" : initial);
+    const canonical = canonicalize(initial);
     if (canonical !== initial) {
       history.replaceState({}, "", canonical);
       currentPath = canonical;
@@ -45,6 +52,7 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
         history.replaceState({}, "", canonical);
         currentPath = canonical;
         syncRoute();
+        resetPageScroll();
         return;
       }
       if (pending) return;
@@ -54,6 +62,7 @@ export function createRouter({ syncRoute, canLeave = () => true, onRouteChange =
           currentPath = nextPath;
           onRouteChange(currentPath);
           syncRoute();
+          resetPageScroll();
         } else {
           history.pushState({}, "", currentPath);
         }

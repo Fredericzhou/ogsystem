@@ -46,9 +46,13 @@ test("router delegates navigation once and cancels stale page requests", async (
     });
 
     const rootResponse = await page.request.get(`${url}/`, { maxRedirects: 0 });
-    assert.equal(rootResponse.status(), 302);
-    assert.equal(rootResponse.headers().location, "/projects");
+    assert.equal(rootResponse.status(), 200);
     await page.goto(`${url}/`, { waitUntil: "networkidle" });
+    assert.equal(new URL(page.url()).pathname, "/");
+    await page.locator("#landing-view").waitFor();
+    await page.locator("#landing-case-grid .landing-case-card").first().waitFor();
+    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 3, "the homepage should feature the three built-in collaboration teams");
+    await page.locator('#landing-view a[href="/projects"]').first().click();
     assert.match(page.url(), /\/projects$/);
     await page.locator("#projects-view .page-heading").waitFor();
     assert.equal(await page.locator('#projects-view a[href="/projects/new"]').count(), 1, "the empty state should not duplicate the page's create action");
@@ -58,10 +62,10 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.equal(await page.locator('.nav-item[href="/teams"]').count(), 0, "the team repository should not duplicate Studio in primary navigation");
     assert.equal(await page.locator('.nav-item[data-view="studio"]').isVisible(), true, "Studio remains a peer product in normal mode");
     assert.equal(await page.locator('.nav-item[href="/studio/new"]').count(), 0, "team creation is available from the team repository, not a duplicate Studio navigation entry");
-    await page.locator('button[data-product-mode="professional"]').click();
+    await page.locator("#product-mode-toggle").click();
     assert.equal(await page.evaluate(() => localStorage.getItem("ogs.product-mode")), "professional");
     await page.locator('.nav-item[data-view="studio"]').click();
-    await page.locator("#studio-view .page-heading").waitFor();
+    await page.locator("#studio-view .repository-heading").waitFor();
     assert.match(page.url(), /\/studio$/);
     await page.evaluate(() => {
       window.__routerPushes = [];
@@ -76,7 +80,7 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.deepEqual(await page.evaluate(() => window.__routerPushes), ["/projects"]);
 
     await page.goBack();
-    await page.locator("#studio-view .page-heading").waitFor();
+    await page.locator("#studio-view .repository-heading").waitFor();
     assert.match(page.url(), /\/studio$/);
     await page.goForward();
     await page.locator("#projects-view .page-heading").waitFor();
@@ -84,10 +88,10 @@ test("router delegates navigation once and cancels stale page requests", async (
     await page.reload({ waitUntil: "networkidle" });
     await page.locator("#projects-view .page-heading").waitFor();
     assert.match(page.url(), /\/projects$/);
-    assert.equal(await page.locator('button[data-product-mode="professional"]').getAttribute("aria-pressed"), "true", "professional mode should persist after reload");
-    await page.locator('button[data-product-mode="normal"]').click();
+    assert.equal(await page.locator("#product-mode-toggle").getAttribute("aria-pressed"), "true", "professional mode should persist after reload");
+    await page.locator("#product-mode-toggle").click();
     await page.reload({ waitUntil: "networkidle" });
-    assert.equal(await page.locator('button[data-product-mode="normal"]').getAttribute("aria-pressed"), "true", "normal mode should persist after reload");
+    assert.equal(await page.locator("#product-mode-toggle").getAttribute("aria-pressed"), "false", "normal mode should persist after reload");
 
     let releaseDelayedResponse;
     let teamRepositoryRequestStarted;
@@ -99,9 +103,9 @@ test("router delegates navigation once and cancels stale page requests", async (
       await delayedResponse;
       await route.fulfill({ response });
     });
-    await page.locator('button[data-product-mode="professional"]').click();
+    await page.locator("#product-mode-toggle").click();
     await page.locator('.nav-item[data-view="studio"]').click();
-    await page.locator("#studio-view .page-heading").waitFor();
+    await page.locator("#studio-view .repository-heading").waitFor();
     await teamRepositoryRequest;
     await page.locator('#app-shell a[data-route="/projects"]:visible').first().click();
     await page.locator("#projects-view .page-heading").waitFor();

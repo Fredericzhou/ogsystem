@@ -1,8 +1,12 @@
+function readLocale() {
+  try { return localStorage.getItem("ogs-locale") || "zh-CN"; } catch { return "zh-CN"; }
+}
+
 export const state = {
   cases: [],
   eventLabels: {},
   selected: null,
-  locale: localStorage.getItem("ogs-locale") || "zh-CN",
+  locale: readLocale(),
   view: "workspace",
   history: [],
   projectId: null,
