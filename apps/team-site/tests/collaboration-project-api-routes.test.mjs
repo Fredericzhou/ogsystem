@@ -85,16 +85,16 @@ test("Project routes leave Team design APIs outside the Project boundary", async
   assert.equal(await harness.invoke("POST", "/api/v1/projects/proj-2/workspaces"), false);
 });
 
-test("Project Team adjustment creates a source-linked Studio draft and validates errors", async () => {
+test("Project Team adjustment opens a mounted TeamVersion without creating a draft", async () => {
   const harness = routeHarness({
     createProjectTeamAdjustment: async (...args) => (harness.calls.push(["adjust", ...args]), {
-      draft: { projectId: "team-draft" }, collaborationProjectId: args[0], sourceTeamVersionId: args[1]
+      teamVersion: { projectId: "team-v1", teamVersionStatus: "released" }, collaborationProjectId: args[0], sourceTeamVersionId: args[1]
     })
   });
   assert.equal(await harness.invoke("POST", "/api/v1/projects/project-1/team-adjustments", { teamVersionId: "team-v1" }), true);
   assert.deepEqual(harness.calls[1], ["adjust", "project-1", "team-v1"]);
-  assert.deepEqual(harness.sent[0], { status: 201, payload: {
-    draft: { projectId: "team-draft", public: true }, collaborationProjectId: "project-1", sourceTeamVersionId: "team-v1"
+  assert.deepEqual(harness.sent[0], { status: 200, payload: {
+    teamVersion: { projectId: "team-v1", teamVersionStatus: "released", public: true }, collaborationProjectId: "project-1", sourceTeamVersionId: "team-v1"
   } });
   const invalid = routeHarness({ createProjectTeamAdjustment: async () => { throw new Error("TEAM_VERSION_NOT_MOUNTED"); } });
   await invalid.invoke("POST", "/api/v1/projects/project-1/team-adjustments", { teamVersionId: "other-team" });

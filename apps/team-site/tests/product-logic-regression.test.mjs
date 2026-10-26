@@ -72,7 +72,7 @@ test("Natural and Professional design paths share one validated, publishable tea
       authoring: authoredDraft,
       expectedTeamVersionDigest: naturalDesign.teamVersionDigest
     });
-    assert.equal(professionalSave.projectStatus, "draft");
+    assert.equal(professionalSave.teamVersionStatus, "draft");
     assert.equal(professionalSave.authoring.roles[roleId].title, "Round-trip role title");
     assert.deepEqual(professionalSave.authoring.roles[roleId].contextMap, { brief: "global.task" });
     assert.equal((await designUseCases.getTeamDesign(draft.projectId)).authoring.roles[roleId].title, "Round-trip role title");

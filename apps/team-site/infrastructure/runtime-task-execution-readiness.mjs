@@ -5,8 +5,11 @@ export function createRuntimeTaskExecutionReadiness({ inspect = inspectProjectRe
   return Object.freeze({
     inspect,
     async requireCurrentConfirmation(project) {
-      if (project.projectStatus !== "confirmed" || !project.projectDigest || !project.confirmedAt) {
-        throw new Error("PROJECT_NOT_CONFIRMED: confirm the team design before preparing or running a task.");
+      const releasedTeamVersion = project.projectType !== "collaboration" && ["released", "archived"].includes(project.teamVersionStatus);
+      const confirmedCollaborationProject = project.projectType === "collaboration"
+        && project.projectStatus === "confirmed" && project.confirmedAt;
+      if (!(releasedTeamVersion || confirmedCollaborationProject) || !project.projectDigest) {
+        throw new Error("PROJECT_NOT_CONFIRMED: release the TeamVersion or confirm the Collaboration Project before preparing or running a task.");
       }
       if (await computeProjectAssetDigest(project.workdir) !== project.projectDigest) {
         throw new Error("PROJECT_CONFIRMATION_STALE: semantic project files changed; confirm the project again.");

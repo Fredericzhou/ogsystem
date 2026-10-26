@@ -35,20 +35,20 @@ test("site creates a persistent project and snapshots materials; runs require a 
       templateId: "empty"
     });
     assert.match(project.projectId, /^research-team-/);
-    assert.equal(project.projectStatus, "draft");
+    assert.equal(project.teamVersionStatus, "draft");
     await assert.rejects(
       () => store.addProjectMaterial(project.projectId, { filename: "brief.md", content: "blocked" }),
       /PROJECT_NOT_CONFIRMED/
     );
     const confirmed = await store.confirmProjectTeam(project.projectId);
-    assert.equal(confirmed.projectStatus, "confirmed");
+    assert.equal(confirmed.teamVersionStatus, "released");
     assert.equal(typeof confirmed.projectDigest, "string");
     const confirmedAgain = await store.confirmProjectTeam(project.projectId);
     assert.equal(confirmedAgain.confirmedAt, confirmed.confirmedAt);
     const renamed = await store.updateProject(project.projectId, { name: "Renamed Team", overview: confirmed.overview });
-    assert.equal(renamed.projectStatus, "confirmed");
+    assert.equal(renamed.teamVersionStatus, "released");
     const changed = await store.updateProject(project.projectId, { overview: "A changed objective." });
-    assert.equal(changed.projectStatus, "draft");
+    assert.equal(changed.teamVersionStatus, "draft");
     await store.confirmProjectTeam(project.projectId);
     const material = await store.addProjectMaterial(project.projectId, {
       filename: "brief.md",
@@ -72,7 +72,7 @@ test("classic team use creates a confirmed asset; Studio runs use the Simulation
   const store = withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?classic=" + Date.now()));
   try {
     const project = await store.createClassicTeamProject({ caseId: "software-team" });
-    assert.equal(project.projectStatus, "confirmed");
+    assert.equal(project.teamVersionStatus, "released");
     assert.equal(project.source, "classic");
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Prepare a concise delivery plan.", mode: "dry-run" }),
@@ -111,7 +111,7 @@ test("project readiness is separate from structure confirmation and gates sandbo
       getProject: store.getProject,
       readinessInspector: createRuntimeProjectReadinessInspector()
     }).getProjectReadiness(project.projectId);
-    assert.equal(readiness.projectStatus, "confirmed");
+    assert.equal(readiness.teamVersionStatus, "released");
     assert.equal(readiness.canDryRun, false);
     assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_ROLE_PACKAGE_INVALID"));
     assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_CATALOG_INVALID"));
@@ -150,10 +150,10 @@ test("classic team templates can be confirmed and are not executed outside Studi
   const store = withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?classic-template=" + Date.now()));
   try {
     const project = await store.createClassicTeamProject({ caseId: "software-team", asTemplate: true });
-    assert.equal(project.projectStatus, "draft");
+    assert.equal(project.teamVersionStatus, "draft");
     assert.equal(project.source, "classic-template");
     const confirmed = await store.confirmProjectTeam(project.projectId);
-    assert.equal(confirmed.projectStatus, "confirmed");
+    assert.equal(confirmed.teamVersionStatus, "released");
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Run the copied classic team.", mode: "dry-run" }),
       /PROJECT_RUN_OWNER_INVALID/
@@ -180,7 +180,7 @@ test("Team package round-trip does not create a Run outside a Project Task", asy
     assert.equal(bundle.mode, "team-v2");
     const { packageDigest: _roundtripDigest, ...roundtripWithoutDigest } = bundle;
     const imported = await packages.importTeamPackage({ ...roundtripWithoutDigest, team: { ...bundle.team, project: { ...bundle.team.project, name: "Roundtrip Team Imported" } } });
-    assert.equal(imported.projectStatus, "draft");
+    assert.equal(imported.teamVersionStatus, "draft");
     assert.equal(imported.source, "imported");
     await assert.rejects(() => store.startProjectRun(imported.projectId, { prompt: "blocked" }), /PROJECT_RUN_OWNER_INVALID/);
     await store.confirmProjectTeam(imported.projectId);
@@ -230,7 +230,8 @@ test("project bundles carry executable role and contract assets without importin
     assert.equal(await readFile(join(imported.workdir, ".ogs", "contracts", "handoff.json"), "utf8"), JSON.stringify({ version: 1, contracts: [] }));
     assert.equal(await readFile(join(imported.workdir, ".ogs", "semantics.yaml"), "utf8"), "version: 1\nsystemId: package\nsystemVersion: 1.0.0\n");
     assert.equal(await readFile(join(imported.workdir, ".ogs", "systems", "nested.mmd"), "utf8"), "%% system.id=nested\n%% system.version=1.0.0\n");
-    assert.equal(JSON.parse(await readFile(join(imported.workdir, ".site", "project.json"), "utf8")).projectStatus, "draft");
+    assert.equal(JSON.parse(await readFile(join(imported.workdir, ".site", "project.json"), "utf8")).teamVersionStatus, "draft");
+    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(imported.workdir, ".site", "project.json"), "utf8")), "projectStatus"), false);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }
@@ -287,7 +288,7 @@ test("project asset digest detects role package changes and credential validatio
       }
     };
     const imported = await packages.importTeamPackage(bundle);
-    assert.equal(imported.projectStatus, "draft");
+    assert.equal(imported.teamVersionStatus, "draft");
     await assert.rejects(
       () => packages.importTeamPackage({ ...bundle, team: { ...bundle.team, project: { apiKey: "secret-value" } } }),
       /credential field is not accepted/
@@ -311,7 +312,7 @@ test("site design editing invalidates confirmation and run control rejects termi
       systemSource: design.systemSource,
       expectedTeamVersionDigest: design.teamVersionDigest
     });
-    assert.equal(saved.projectStatus, "draft");
+    assert.equal(saved.teamVersionStatus, "draft");
     await assert.rejects(
       () => designUseCases.saveTeamDesign(project.projectId, {
         systemSource: design.systemSource,

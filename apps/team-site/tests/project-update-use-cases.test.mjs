@@ -10,9 +10,9 @@ function setup(project = {}) {
     teamName: "Software Team",
     teamRootId: "team-1",
     overview: "Current overview",
-    projectStatus: "confirmed",
+    teamVersionStatus: "released",
     projectDigest: "digest",
-    confirmedAt: "2026-10-01T00:00:00.000Z",
+    releasedAt: "2026-10-01T00:00:00.000Z",
     ...structuredClone(project)
   };
   const calls = [];
@@ -34,9 +34,9 @@ test("Project update trims bounded fields and invalidates confirmation on semant
   assert.equal(updated.name, "New Team");
   assert.equal(updated.overview, "New brief");
   assert.equal(updated.teamName, "New Team");
-  assert.equal(updated.projectStatus, "draft");
+  assert.equal(updated.teamVersionStatus, "draft");
   assert.equal(updated.projectDigest, null);
-  assert.equal(current.confirmedAt, null);
+  assert.equal(current.releasedAt, null);
 });
 
 test("Project update refreshes collaboration digest and rejects an empty name", async () => {

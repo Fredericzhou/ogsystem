@@ -26,3 +26,37 @@ test("collaboration Project name lock releases after a failed operation", async 
     await rm(projectsRoot, { recursive: true, force: true });
   }
 });
+
+test("Team save lock and lifecycle lock share one reentrant Team lock", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-shared-lock-"));
+  const locks = createFileTeamLifecycleLocks({ projectsRoot });
+  try {
+    let entered = false;
+    await locks.withTeamVersionSaveLock("team-root", async () => {
+      await locks.withTeamVersionLock("team-root", async () => { entered = true; });
+    });
+    assert.equal(entered, true);
+    await assert.rejects(() => access(join(projectsRoot, ".team-version-team-root", ".site", "project-write.lock")), { code: "ENOENT" });
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("concurrent Team lock requests wait for the active operation", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-lock-queue-"));
+  const locks = createFileTeamLifecycleLocks({ projectsRoot });
+  let active = 0;
+  let maxActive = 0;
+  const run = () => locks.withTeamVersionLock("team-root", async () => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    active -= 1;
+  });
+  try {
+    await Promise.all([run(), run(), run()]);
+    assert.equal(maxActive, 1);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});

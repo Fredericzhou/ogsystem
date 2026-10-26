@@ -70,11 +70,17 @@ export function createTeamDesignUseCases({
     return team;
   }
 
+  function assertDesignStage(team) {
+    if ((team.teamVersionStatus || "draft") !== "draft") {
+      throw new Error("TEAM_VERSION_IMMUTABLE: only a design-stage TeamVersion can be changed.");
+    }
+  }
+
   async function projectDesign(team, locale = "zh-CN") {
     return {
       ...await designProjector.project(team, locale),
-      projectStatus: team.projectStatus,
-      confirmedAt: team.confirmedAt,
+      teamVersionStatus: team.teamVersionStatus,
+      releasedAt: team.releasedAt,
       teamVersionId: team.teamVersionId || team.projectId,
       teamVersionDigest: team.projectDigest
     };
@@ -112,9 +118,7 @@ export function createTeamDesignUseCases({
       const initialTeam = await readTeamVersion(teamVersionId);
       return withTeamVersionLock(initialTeam.teamRootId || initialTeam.teamId || teamVersionId, async () => {
         const team = await readTeamVersion(teamVersionId);
-        if (team.teamVersionStatus === "released" || team.teamVersionStatus === "archived") {
-          throw new Error("TEAM_VERSION_IMMUTABLE: fork this released TeamVersion before editing it.");
-        }
+        assertDesignStage(team);
         const name = changes.name === undefined ? team.name : String(changes.name).trim().slice(0, 120);
         const overview = changes.overview === undefined ? team.overview : String(changes.overview).trim().slice(0, 4000);
         if (!name) throw new Error("TEAM_NAME_REQUIRED: team name is required.");
@@ -126,9 +130,9 @@ export function createTeamDesignUseCases({
           name,
           teamName: name,
           overview,
-          projectStatus: "draft",
           projectDigest: null,
-          confirmedAt: null,
+          teamVersionStatus: "draft",
+          releasedAt: null,
           updatedAt: new Date().toISOString()
         };
         return teamMetadataStore.saveTeamMetadata(teamVersionId, next);
@@ -154,7 +158,7 @@ export function createTeamDesignUseCases({
       const initialTeam = await readTeamVersion(teamVersionId);
       return withTeamVersionLock(initialTeam.teamRootId || initialTeam.teamId || teamVersionId, async () => {
         const team = await readTeamVersion(teamVersionId);
-        if (["released", "archived"].includes(team.teamVersionStatus)) throw new Error("TEAM_VERSION_IMMUTABLE: fork this released TeamVersion before editing it.");
+        assertDesignStage(team);
         const design = await projectDesign(team);
         const roleIds = Object.keys(design.authoring?.roles || {});
         const existing = await designAssetStore.readReleaseBaselineScenarios({ workdir: team.workdir });
@@ -168,9 +172,7 @@ export function createTeamDesignUseCases({
       const initialTeam = await readTeamVersion(teamVersionId);
       return withTeamVersionLock(initialTeam.teamRootId || initialTeam.teamId || teamVersionId, async () => {
         const team = await readTeamVersion(teamVersionId);
-        if (team.teamVersionStatus === "released" || team.teamVersionStatus === "archived") {
-          throw new Error("TEAM_VERSION_IMMUTABLE: fork this released TeamVersion before editing it.");
-        }
+        assertDesignStage(team);
         const design = await projectDesign(team);
         const roleIds = Object.keys(body.authoring?.roles || design.authoring?.roles || {});
         const submittedRoles = body.assets?.roles || {};
@@ -204,9 +206,7 @@ export function createTeamDesignUseCases({
       const initialTeam = await readTeamVersion(teamVersionId);
       return withTeamVersionLock(initialTeam.teamRootId || initialTeam.teamId || teamVersionId, async () => {
         const team = await readTeamVersion(teamVersionId);
-        if (["released", "archived"].includes(team.teamVersionStatus)) {
-          throw new Error("TEAM_VERSION_IMMUTABLE: fork this released TeamVersion before editing it.");
-        }
+        assertDesignStage(team);
         if (body.expectedTeamVersionDigest && body.expectedTeamVersionDigest !== team.projectDigest) {
           throw new Error("TEAM_VERSION_DIGEST_CONFLICT: the TeamVersion changed in another editor.");
         }

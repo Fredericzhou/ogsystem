@@ -5,7 +5,7 @@ import { createTeamCatalogUseCases } from "../application/team-catalog-use-cases
 const teams = [
   { projectId: "builtin-a", teamName: "软件研发", name: "软件研发", overview: "Plan delivery", teamVersionStatus: "released", builtIn: true, category: { "zh-CN": "产品研发", en: "Product development" } },
   { projectId: "custom-v2", teamName: "Ops Team", name: "Operations", overview: "Coordinate releases", teamVersionStatus: "released", teamVersionNumber: 2, updatedAt: "2026-02-02", category: "Operations" },
-  { projectId: "custom-draft", teamName: "Ops Draft", name: "Operations draft", overview: "Draft", teamVersionStatus: "editing", teamVersionNumber: 3, updatedAt: "2026-03-01", category: "Operations" },
+  { projectId: "custom-draft", teamName: "Ops Draft", name: "Operations draft", overview: "Draft", teamVersionStatus: "draft", teamVersionNumber: 3, updatedAt: "2026-03-01", category: "Operations" },
   { projectId: "archived", teamName: "Old Ops", name: "Old Ops", overview: "Archived", teamVersionStatus: "archived", archivedAt: "2026-03-01", category: "Operations" }
 ];
 
@@ -36,7 +36,7 @@ test("Team Catalog filters by localized category and query and supports explicit
   assert.deepEqual(result.teams.map((team) => team.projectId), ["custom-v2"]);
   assert.equal(result.pagination.total, 1);
 
-  const drafts = await useCases.queryTeamRepository({ status: "editing", category: "Operations" });
+  const drafts = await useCases.queryTeamRepository({ status: "draft", category: "Operations" });
   assert.deepEqual(drafts.teams.map((team) => team.projectId), ["custom-draft"]);
 });
 

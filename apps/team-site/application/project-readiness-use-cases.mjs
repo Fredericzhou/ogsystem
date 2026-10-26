@@ -45,7 +45,7 @@ export function createProjectReadinessUseCases({ getProject, readinessInspector 
           projectId,
           scope: "static_configuration",
           externalConnectivityChecked: false,
-          projectStatus: project.projectStatus || project.status,
+          teamVersionStatus: project.teamVersionStatus,
           mountedTeamVersionIds: [],
           canDryRun: readiness.canDryRun,
           ...publicIssues(readiness),
@@ -58,7 +58,7 @@ export function createProjectReadinessUseCases({ getProject, readinessInspector 
       const versions = await Promise.all(mountedTeams.map(async (team) => {
         try {
           const readiness = await inspectTeamVersion(team.teamId, team.teamVersionId);
-          if (readiness.versionStatus !== "released") blockers.push({ code: "PROJECT_TEAM_VERSION_UNAVAILABLE", severity: "blocker", teamVersionId: team.teamVersionId, message: `TeamVersion ${team.teamVersionId} is not released.` });
+          if (!["released", "archived"].includes(readiness.versionStatus)) blockers.push({ code: "PROJECT_TEAM_VERSION_UNAVAILABLE", severity: "blocker", teamVersionId: team.teamVersionId, message: `TeamVersion ${team.teamVersionId} is not available to this existing Project.` });
           return readiness;
         } catch (error) {
           blockers.push({ code: "PROJECT_TEAM_VERSION_UNAVAILABLE", severity: "blocker", teamVersionId: team.teamVersionId, message: error instanceof Error ? error.message : String(error) });

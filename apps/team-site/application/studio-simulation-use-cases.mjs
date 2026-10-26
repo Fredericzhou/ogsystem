@@ -161,7 +161,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const baseline = baselineScenarioId ? findBaseline(snapshot.bundle, String(baselineScenarioId)) : null;
         if (!baseline && input.length > 1200) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: non-baseline simulations are limited to 1,200 characters.");
         if (baseline && input !== baseline.prompt) throw new Error("TEAM_RELEASE_BASELINE_INPUT_MISMATCH: baseline runs use the saved prompt.");
-        if (!["draft", "editing", "released"].includes(snapshot.team.teamVersionStatus)) {
+        if (!["draft", "released"].includes(snapshot.team.teamVersionStatus)) {
           throw new Error("STUDIO_SIMULATION_TEAM_VERSION_UNAVAILABLE");
         }
         const simulationId = identifiers.simulationId();

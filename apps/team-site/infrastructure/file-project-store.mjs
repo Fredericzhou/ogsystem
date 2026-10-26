@@ -67,8 +67,10 @@ function normalizeMeta(meta, projectId) {
   for (const field of ["teamId", "teamRootId", "teamVersionId", "parentTeamVersionId"]) {
     if (meta?.[field]) assertCanonicalTeamVersionId(meta[field]);
   }
-  const confirmed = meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
-  const teamVersionStatus = meta?.teamVersionStatus || (confirmed ? "released" : "draft");
+  const collaborationProject = meta?.projectType === "collaboration";
+  const confirmed = collaborationProject && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
+  const legacyReleased = !collaborationProject && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
+  const teamVersionStatus = meta?.teamVersionStatus || (legacyReleased ? "released" : "draft");
   const teamRootId = String(meta?.teamRootId || meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
   const teamId = teamRootId;
   const teamVersionNumber = Number.isInteger(meta?.teamVersionNumber) && meta.teamVersionNumber > 0 ? meta.teamVersionNumber : 1;
@@ -77,12 +79,12 @@ function normalizeMeta(meta, projectId) {
     name: String(meta?.name || "New team"),
     overview: String(meta.overview),
     templateId: meta?.templateId || "empty",
-    projectStatus: confirmed ? "confirmed" : "draft",
-    projectDigest: confirmed ? meta.projectDigest : null,
+    ...(collaborationProject ? { projectStatus: confirmed ? "confirmed" : "draft" } : {}),
+    projectDigest: typeof meta?.projectDigest === "string" ? meta.projectDigest : null,
     teamCoreDigest: typeof meta?.teamCoreDigest === "string" ? meta.teamCoreDigest : null,
     teamDigestVersion: Number.isInteger(meta?.teamDigestVersion) ? meta.teamDigestVersion : null,
     projectDefinitionDigest: typeof meta?.projectDefinitionDigest === "string" ? meta.projectDefinitionDigest : null,
-    confirmedAt: confirmed ? meta.confirmedAt : null,
+    ...(collaborationProject ? { confirmedAt: confirmed ? meta.confirmedAt : null } : {}),
     createdAt: meta?.createdAt || new Date().toISOString(),
     updatedAt: meta?.updatedAt || new Date().toISOString(),
     source: meta?.source || "created",
@@ -93,7 +95,7 @@ function normalizeMeta(meta, projectId) {
     teamVersionStatus,
     teamName: String(meta?.teamName || meta?.name || "New team"),
     parentTeamVersionId: meta?.parentTeamVersionId || undefined,
-    releasedAt: meta?.releasedAt || (teamVersionStatus === "released" ? meta?.confirmedAt || null : null),
+    releasedAt: meta?.releasedAt || (legacyReleased ? meta.confirmedAt : null),
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),
@@ -214,9 +216,8 @@ async function createProjectAt(workdir, { projectId, name, overview, templateId 
       ...(parentTeamVersionId ? { parentTeamVersionId } : {}),
       overview: String(overview || "").trim().slice(0, 4000),
       templateId,
-      projectStatus: "draft",
       projectDigest: null,
-      confirmedAt: null,
+      ...(isTeamAsset ? {} : { projectStatus: "draft", confirmedAt: null }),
       createdAt: now,
       updatedAt: now,
       ogsProjectId: projectId,

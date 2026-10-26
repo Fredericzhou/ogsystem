@@ -227,10 +227,8 @@ export function createFilePackageTransactionStore({
       teamRootId,
       teamVersionId: projectId,
       teamVersionStatus: "released",
-      projectStatus: "confirmed",
       projectDigest: await computeProjectAssetDigest(workdir),
       teamCoreDigest,
-      confirmedAt: now,
       releasedAt: now,
       source: "imported",
       updatedAt: now

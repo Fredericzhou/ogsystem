@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleTeamRoutes } from "../api/team-routes.mjs";
+import { errorStatus } from "../api/error-status.mjs";
 
 function routeHarness(useCases) {
   const sent = [];
@@ -11,7 +12,7 @@ function routeHarness(useCases) {
     url: new URL("http://site.test/"),
     readBody: async () => ({}),
     sendJson: (_response, status, payload) => sent.push({ status, payload }),
-    errorStatus: () => 400,
+    errorStatus,
     publicProject: (project) => ({ ...project, public: true }),
     useCases
   };
@@ -53,6 +54,7 @@ test("Team version actions preserve their statuses, IDs, bodies, and error mappi
     forkTeamVersion: async (id) => (calls.push(["edit", id]), { projectId: "draft-3" }),
     releaseTeamVersion: async (id) => (calls.push(["release", id]), { projectId: id }),
     archiveTeamVersion: async (id) => (calls.push(["archive", id]), { projectId: id }),
+    deleteTeamVersion: async (id) => (calls.push(["deleteVersion", id]), { teamId: "root", deletedTeamVersionIds: [id] }),
     deleteTeam: async (id) => (calls.push(["delete", id]), { teamId: id, deletedTeamVersionIds: [id] })
   });
 
@@ -62,15 +64,32 @@ test("Team version actions preserve their statuses, IDs, bodies, and error mappi
   assert.equal(harness.sent[1].status, 200);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-3/archive"), true);
   assert.equal(harness.sent[2].status, 200);
-  assert.equal(await harness.invoke("DELETE", "/api/v1/teams/team-4"), true);
+  assert.equal(await harness.invoke("DELETE", "/api/v1/team-versions/draft-1"), true);
   assert.equal(harness.sent[3].status, 200);
-  assert.deepEqual(calls, [["edit", "team-1"], ["release", "team-2"], ["archive", "team-3"], ["delete", "team-4"]]);
+  assert.equal(await harness.invoke("DELETE", "/api/v1/teams/team-4"), true);
+  assert.equal(harness.sent[4].status, 200);
+  assert.deepEqual(calls, [["edit", "team-1"], ["release", "team-2"], ["archive", "team-3"], ["deleteVersion", "draft-1"], ["delete", "team-4"]]);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-3/simulate", { prompt: "Review this" }), false);
 
   harness.sent.length = 0;
   const failing = routeHarness({ releaseTeamVersion: async () => { throw new Error("Cannot release."); } });
   assert.equal(await failing.invoke("POST", "/api/v1/team-versions/team-4/release"), true);
   assert.deepEqual(failing.sent[0], { status: 400, payload: { error: "Cannot release." } });
+
+  const blocked = new Error("TEAM_IN_USE: mounted by Projects.");
+  blocked.code = "TEAM_IN_USE";
+  blocked.blockedProjects = [{ projectId: "project-a", name: "A" }, { projectId: "project-b", name: "B" }];
+  const deleteFailure = routeHarness({ deleteTeam: async () => { throw blocked; } });
+  assert.equal(await deleteFailure.invoke("DELETE", "/api/v1/teams/team-root"), true);
+  assert.deepEqual(deleteFailure.sent[0], {
+    status: 409,
+    payload: { error: blocked.message, code: "TEAM_IN_USE", blockedProjects: blocked.blockedProjects }
+  });
+
+  const staleSave = new Error("TEAM_VERSION_DIGEST_CONFLICT: the TeamVersion changed in another editor.");
+  const saveFailure = routeHarness({ saveTeamVersion: async () => { throw staleSave; } });
+  assert.equal(await saveFailure.invoke("PUT", "/api/v1/team-versions/team-v1/save", { authoring: {} }), true);
+  assert.deepEqual(saveFailure.sent[0], { status: 409, payload: { error: staleSave.message } });
 });
 
 test("Team design routes use TeamVersion identity and keep writes outside the Project API", async () => {
@@ -83,6 +102,7 @@ test("Team design routes use TeamVersion identity and keep writes outside the Pr
     chatTeamAssistant: async (...args) => (calls.push(["chatTeamAssistant", ...args]), { status: 202, body: { accepted: true } }),
     validateTeamDesign: async (...args) => (calls.push(["validate", ...args]), { ok: true }),
     saveTeamDesign: async (...args) => (calls.push(["save", ...args]), { teamVersionId: args[0], saved: true }),
+    saveTeamVersion: async (...args) => (calls.push(["saveTeamVersion", ...args]), { teamVersionId: args[0], createdDraft: true }),
     getTeamDesignAssets: async (...args) => (calls.push(["assets", ...args]), { roles: {}, contracts: "" }),
     saveTeamDesignAssets: async (...args) => (calls.push(["saveAssets", ...args]), { roles: {}, contracts: "" })
   });
@@ -99,13 +119,15 @@ test("Team design routes use TeamVersion identity and keep writes outside the Pr
   assert.deepEqual(calls[4], ["save", "team-v1", { authoring: {}, expectedTeamVersionDigest: "digest" }]);
   assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/design/assets"), true);
   assert.deepEqual(calls[5], ["assets", "team-v1"]);
+  assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/save", { name: "Team", expectedTeamVersionDigest: "digest-1" }), true);
+  assert.deepEqual(calls[6], ["saveTeamVersion", "team-v1", { name: "Team", expectedTeamVersionDigest: "digest-1" }]);
   assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/design/assets", { assets: { contracts: "{}" } }), true);
-  assert.deepEqual(calls[6], ["saveAssets", "team-v1", { assets: { contracts: "{}" } }]);
+  assert.deepEqual(calls[7], ["saveAssets", "team-v1", { assets: { contracts: "{}" } }]);
   assert.equal(await harness.invoke("GET", "/api/v1/projects/team-v1/team/design"), false);
   assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/graph?locale=en"), true);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-v1/chat", { message: "adjust" }), true);
-  assert.deepEqual(calls[7], ["getTeamGraph", "team-v1", "en"]);
-  assert.deepEqual(calls[8], ["chatTeamAssistant", "team-v1", { message: "adjust" }]);
+  assert.deepEqual(calls[8], ["getTeamGraph", "team-v1", "en"]);
+  assert.deepEqual(calls[9], ["chatTeamAssistant", "team-v1", { message: "adjust" }]);
 });
 
 test("release baseline routes are TeamVersion scoped and versioned through application use cases", async () => {

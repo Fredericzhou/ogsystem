@@ -14,8 +14,8 @@ export function createTeamSimulationUseCases({ teamCatalog, simulationRunner }) 
       if (!input || input.length > 1200) throw new Error("Enter a task between 1 and 1,200 characters.");
       assertCanonicalTeamVersionId(teamVersionId);
       const team = await teamCatalog.getTeamVersion(teamVersionId);
-      if (team.teamProjectId || !["draft", "editing", "released"].includes(team.teamVersionStatus)) {
-        throw new Error("TEAM_VERSION_NOT_SIMULATABLE: only a draft, editing, or released TeamVersion can be simulated.");
+      if (team.teamProjectId || !["draft", "released"].includes(team.teamVersionStatus)) {
+        throw new Error("TEAM_VERSION_NOT_SIMULATABLE: only a draft or released TeamVersion can be simulated.");
       }
       return simulationRunner.simulate(team, { prompt: input, locale });
     }

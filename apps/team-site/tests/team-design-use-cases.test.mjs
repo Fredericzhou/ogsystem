@@ -6,7 +6,7 @@ import { computeReleaseBaselineDigest } from "../infrastructure/package-integrit
 function setup(overrides = {}) {
   const calls = [];
   let savedAuthoring = overrides.authoring || { version: 1 };
-  const team = { projectId: "team-v1", teamVersionId: "team-v1", teamRootId: "team-root", projectType: "team", teamVersionStatus: "editing", projectStatus: "draft", projectDigest: "digest-1", workdir: "/teams/team-v1" };
+  const team = { projectId: "team-v1", teamVersionId: "team-v1", teamRootId: "team-root", projectType: "team", teamVersionStatus: "draft", projectDigest: "digest-1", workdir: "/teams/team-v1" };
   const useCases = createTeamDesignUseCases({
     teamCatalog: {
       getTeamVersion: async (id) => { calls.push(["get", id]); return { ...team, ...(overrides.team || {}) }; },
@@ -73,14 +73,15 @@ test("Team metadata updates lock and persist Team-owned fields while invalidatin
   assert.equal(save[2].name, "Research Team");
   assert.equal(save[2].teamName, "Research Team");
   assert.equal(save[2].overview, "Updated purpose");
-  assert.equal(save[2].projectStatus, "draft");
+  assert.equal(save[2].teamVersionStatus, "draft");
+  assert.equal(Object.hasOwn(save[2], "projectStatus"), false);
   assert.equal(save[2].projectDigest, null);
-  assert.equal(save[2].confirmedAt, null);
+  assert.equal(save[2].releasedAt, null);
   assert.equal(updated.name, "Research Team");
 });
 
 test("Team metadata cannot modify released versions or save a blank name", async () => {
-  const released = setup({ team: { teamVersionStatus: "released", projectStatus: "confirmed" } });
+  const released = setup({ team: { teamVersionStatus: "released" } });
   await assert.rejects(released.useCases.updateTeamMetadata("team-v1", { overview: "Change" }), /TEAM_VERSION_IMMUTABLE/);
   const blank = setup();
   await assert.rejects(blank.useCases.updateTeamMetadata("team-v1", { name: "  " }), /TEAM_NAME_REQUIRED/);

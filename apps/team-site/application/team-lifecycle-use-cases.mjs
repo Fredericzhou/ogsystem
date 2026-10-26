@@ -117,19 +117,17 @@ export function createTeamLifecycleUseCases({
         ...options,
         trustedClassic: Boolean(options.trustedClassic || inheritedClassicTopology)
       });
-      if (project.projectStatus === "confirmed" && project.projectDigest === projectDigest && project.teamCoreDigest === teamCoreDigest) return project;
-      const confirmedAt = new Date().toISOString();
+      if (project.teamVersionStatus === "released" && project.projectDigest === projectDigest && project.teamCoreDigest === teamCoreDigest) return project;
+      const releasedAt = new Date().toISOString();
       return projectStore.saveProjectMetadata(projectId, {
         ...project,
-        projectStatus: "confirmed",
         projectDigest,
         teamCoreDigest,
         teamDigestVersion,
-        confirmedAt,
         teamVersionStatus: options.release === false ? (project.teamVersionStatus || "draft") : "released",
-        releasedAt: options.release === false ? null : confirmedAt,
+        releasedAt: options.release === false ? null : releasedAt,
         trustedClassicTopologyDigest: inheritedClassicTopology || options.trustedClassic ? topologyDigest : null,
-        updatedAt: confirmedAt
+        updatedAt: releasedAt
       });
     }));
   }
@@ -178,7 +176,15 @@ export function createTeamLifecycleUseCases({
     },
 
     async provisionBuiltInTeamTemplates() {
-      return Promise.all(caseCatalog.listCases().map((item) => createClassicTeamProject({ caseId: item.id, asTemplate: true })));
+      const templates = await Promise.all(caseCatalog.listCases().map(async (item) => {
+        try {
+          return await createClassicTeamProject({ caseId: item.id, asTemplate: true });
+        } catch (error) {
+          if (String(error?.message || error).includes("TEAM_NAME_EXISTS")) return undefined;
+          throw error;
+        }
+      }));
+      return templates.filter(Boolean);
     },
 
     async forkTeamVersion(teamVersionId) {
@@ -223,13 +229,11 @@ export function createTeamLifecycleUseCases({
         templateId: source.templateId || "empty",
         teamVersionId: project.projectId,
         teamVersionNumber: nextVersionNumber,
-        teamVersionStatus: "editing",
+        teamVersionStatus: "draft",
         parentTeamVersionId: source.teamVersionId || source.projectId,
         caseId: source.caseId,
         trustedClassicTopologyDigest: trustedClassicTopologyDigest || null,
-        projectStatus: "draft",
         projectDigest: null,
-        confirmedAt: null,
         releasedAt: null,
         updatedAt: new Date().toISOString()
       };

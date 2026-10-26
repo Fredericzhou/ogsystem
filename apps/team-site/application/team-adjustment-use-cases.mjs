@@ -1,6 +1,6 @@
-export function createTeamAdjustmentUseCases({ projectStore, forkTeamVersion }) {
-  if (typeof projectStore?.getProject !== "function" || typeof forkTeamVersion !== "function") {
-    throw new TypeError("Team adjustment requires Project lookup and TeamVersion forking.");
+export function createTeamAdjustmentUseCases({ projectStore, getTeamVersion }) {
+  if (typeof projectStore?.getProject !== "function" || typeof getTeamVersion !== "function") {
+    throw new TypeError("Team adjustment requires Project and TeamVersion lookup.");
   }
 
   return Object.freeze({
@@ -12,8 +12,11 @@ export function createTeamAdjustmentUseCases({ projectStore, forkTeamVersion }) 
       if (!(project.mountedTeams || []).some((team) => team.teamVersionId === teamVersionId)) {
         throw new Error("TEAM_VERSION_NOT_MOUNTED: the selected version is not mounted in this project.");
       }
-      const draft = await forkTeamVersion(teamVersionId);
-      return { draft, collaborationProjectId: projectId, sourceTeamVersionId: teamVersionId };
+      const teamVersion = await getTeamVersion(teamVersionId);
+      if (teamVersion.teamVersionStatus !== "released") {
+        throw new Error("TEAM_VERSION_NOT_RELEASED: only a released TeamVersion can be edited from a Project.");
+      }
+      return { teamVersion, collaborationProjectId: projectId, sourceTeamVersionId: teamVersionId };
     }
   });
 }

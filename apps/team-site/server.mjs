@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -30,6 +30,7 @@ import { handleProjectRoutes } from "./api/project-routes.mjs";
 import { handleTaskRoutes } from "./api/task-routes.mjs";
 import { handleRunRoutes } from "./api/run-routes.mjs";
 import { handleTeamRoutes } from "./api/team-routes.mjs";
+import { errorStatus } from "./api/error-status.mjs";
 import { handleStudioSimulationRoutes } from "./api/studio-simulation-routes.mjs";
 import { handlePackageRoutes } from "./api/package-routes.mjs";
 import { handleCollaborationProjectRoutes } from "./api/collaboration-project-routes.mjs";
@@ -38,6 +39,7 @@ import { handleSharedResourceRoutes } from "./api/shared-resource-routes.mjs";
 import { handleCaseRoutes } from "./api/case-routes.mjs";
 import { createTeamStudioUseCases } from "./application/team-studio-use-cases.mjs";
 import { createTeamVersionLifecycleUseCases } from "./application/team-version-lifecycle-use-cases.mjs";
+import { createTeamVersionSaveUseCases } from "./application/team-version-save-use-cases.mjs";
 import { createTeamLifecycleUseCases } from "./application/team-lifecycle-use-cases.mjs";
 import { createTeamAdjustmentUseCases } from "./application/team-adjustment-use-cases.mjs";
 import { createFileTeamLifecycleLocks } from "./infrastructure/file-team-lifecycle-locks.mjs";
@@ -344,15 +346,6 @@ const runRecoveryUseCases = createRunRecoveryUseCases({
   recoveryStore: createFileRunRecoveryStore({ projectsRoot: siteProjectsRoot })
 });
 
-function errorStatus(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/PROJECT_NOT_CONFIRMED|PROJECT_LOCK_CONFLICT|PROJECT_NAME_EXISTS|PROJECT_TEAM_REQUIRED|PROJECT_TEAM_UPDATE_LOCKED|PROJECT_DELETE_LOCKED|TEAM_NAME_EXISTS|TEAM_VERSION_NOT_RELEASED|TEAM_VERSION_IMMUTABLE|BUILT_IN_TEAM_DELETE_BLOCKED|TEAM_IN_USE|IDEMPOTENCY_KEY_REUSE|PROJECT_TASK_CONCURRENCY_LIMIT|TASK_CONTROL_INVALID|TASK_START_NOT_ALLOWED|TASK_EXECUTION_UNAVAILABLE|TASK_RESUME_NOT_ALLOWED|TASK_REVIEW_NOT_ALLOWED|IMPORT_CONFLICT|active|conflict/i.test(message)) return 409;
-  if (/PROJECT_NOT_READY|DELIVERABLE_RUN_NOT_SUCCESSFUL|DELIVERABLE_RESULT_UNAVAILABLE/i.test(message)) return 422;
-  if (/not found|NOT_FOUND|TASK_NOT_FOUND|TEAM_VERSION_NOT_FOUND|DELIVERABLE_NOT_FOUND/i.test(message)) return 404;
-  if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
-  return 400;
-}
-
 async function readBody(request, limit = 1024 * 1024) {
   let body = "";
   for await (const chunk of request) {
@@ -393,7 +386,15 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
 });
 const teamAdjustmentUseCases = createTeamAdjustmentUseCases({
   projectStore: { getProject },
-  forkTeamVersion: teamLifecycleUseCases.forkTeamVersion
+  getTeamVersion: teamCatalog.getTeamVersion
+});
+const teamVersionSaveUseCases = createTeamVersionSaveUseCases({
+  teamCatalog,
+  designUseCases: teamDesignUseCases,
+  lifecycleUseCases: teamLifecycleUseCases,
+  withTeamVersionSaveLock: teamLifecycleLocks.withTeamVersionSaveLock,
+  removeProject,
+  digestSnapshot: (value) => createHash("sha256").update(value).digest("hex")
 });
 
 function publicProject(project) {
@@ -471,9 +472,12 @@ const server = createServer(async (request, response) => {
       ...teamCatalogUseCases,
       ...teamLifecycleUseCases,
       ...teamDesignUseCases,
+      ...teamVersionSaveUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
-      getTeamVersion: teamCatalog.getTeamVersion,
+      getTeamVersion: teamVersionSaveUseCases.getTeamVersionForSave,
+      getTeamDesign: teamVersionSaveUseCases.getTeamDesignForSave,
       archiveTeamVersion: teamVersionLifecycleUseCases.archiveTeamVersion,
+      deleteTeamVersion: teamVersionLifecycleUseCases.deleteTeamVersion,
       deleteTeam: teamVersionLifecycleUseCases.deleteTeam
     }
   })) return;

@@ -75,10 +75,10 @@ test("team repository queries include unreleased versions and forks refresh refe
     });
     const reference = JSON.parse(await readFile(join(fork.workdir, ".site", "team-version.json"), "utf8"));
     assert.equal(reference.teamVersionId, fork.teamVersionId);
-    assert.equal(reference.status, "editing");
+    assert.equal(reference.status, "draft");
 
     await lifecycle.archiveTeamVersion(released.projectId);
-    assert.ok((await catalog.queryTeamRepository({ status: "editing", pageSize: 50 })).teams.some((team) => team.projectId === fork.projectId));
+    assert.ok((await catalog.queryTeamRepository({ status: "draft", pageSize: 50 })).teams.some((team) => team.projectId === fork.projectId));
     assert.ok((await catalog.queryTeamRepository({ status: "archived", pageSize: 50 })).teams.some((team) => team.projectId === released.projectId));
     assert.ok((await catalog.queryTeamRepository({ status: "all", pageSize: 50 })).teams.some((team) => team.projectId === draft.projectId));
   } finally {

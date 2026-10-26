@@ -13,7 +13,7 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
     projectId: "team-v1",
     teamId: "team-root",
     teamVersionId: "team-v1",
-    teamVersionStatus: "editing",
+    teamVersionStatus: "draft",
     teamCoreDigest: digest,
     workdir: "/teams/team-v1",
     ...team
@@ -113,7 +113,7 @@ test("interactive Studio Simulation returns running immediately and persists rol
   const deferred = createHarness();
   const pending = new Promise((resolve) => { resolveRun = resolve; });
   deferred.useCases = createStudioSimulationUseCases({
-    teamCatalog: { getTeamVersion: async () => ({ projectId: "team-v1", teamId: "team-root", teamVersionId: "team-v1", teamVersionStatus: "editing", workdir: "/teams/team-v1" }) },
+    teamCatalog: { getTeamVersion: async () => ({ projectId: "team-v1", teamId: "team-root", teamVersionId: "team-v1", teamVersionStatus: "draft", workdir: "/teams/team-v1" }) },
     teamPackageReader: { exportTeamPackage: async () => packageBundle },
     packageIntegrity: { computeTeamPackageCoreDigest: () => digest, computeReleaseBaselineDigest },
     simulationStore: {

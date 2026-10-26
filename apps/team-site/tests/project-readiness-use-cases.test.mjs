@@ -87,3 +87,16 @@ test("Project Readiness aggregates checks for every mounted TeamVersion", async 
   assert.deepEqual(result.blockers, [{ code: "MODEL_MISSING", severity: "blocker", message: "Add a model.", teamVersionId: "team-b-v1" }]);
   assert.equal(result.canDryRun, false);
 });
+
+test("Project Readiness allows an already-mounted archived TeamVersion", async () => {
+  const useCases = createProjectReadinessUseCases({
+    getProject: async (id) => id === "project"
+      ? { projectType: "collaboration", projectStatus: "confirmed", mountedTeams: [{ teamId: "team", teamVersionId: "team-v1" }] }
+      : { projectType: "team", teamId: "team", teamRootId: "team", teamVersionId: "team-v1", teamVersionStatus: "archived", workdir: "/team-v1" },
+    readinessInspector: { inspect: async () => ({ canDryRun: true, blockers: [], warnings: [], missingBindings: [] }) }
+  });
+  const readiness = await useCases.getProjectReadiness("project");
+  assert.equal(readiness.canDryRun, true);
+  assert.deepEqual(readiness.blockers, []);
+  assert.equal(readiness.teams[0].versionStatus, "archived");
+});

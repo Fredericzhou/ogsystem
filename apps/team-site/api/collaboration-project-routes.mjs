@@ -24,8 +24,8 @@ export async function handleCollaborationProjectRoutes({
     try {
       const payload = await readBody(request);
       const result = await useCases.createProjectTeamAdjustment(adjustmentMatch[1], payload.teamVersionId);
-      sendJson(response, 201, {
-        draft: publicProject(result.draft),
+      sendJson(response, 200, {
+        teamVersion: publicProject(result.teamVersion),
         collaborationProjectId: result.collaborationProjectId,
         sourceTeamVersionId: result.sourceTeamVersionId
       });

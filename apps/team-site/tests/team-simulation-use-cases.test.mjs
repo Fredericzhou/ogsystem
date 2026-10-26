@@ -19,7 +19,7 @@ test("Team Simulation validates canonical identity, prompt, and supported TeamVe
   assert.deepEqual(calls, [["get", "team-1"]]);
 });
 
-for (const teamVersionStatus of ["draft", "editing", "released"]) {
+for (const teamVersionStatus of ["draft", "draft", "released"]) {
   test(`Team Simulation invokes the temporary runner for a ${teamVersionStatus} TeamVersion`, async () => {
     const team = { teamVersionId: "team-1", teamVersionStatus };
     const { calls, useCases } = setup(team);

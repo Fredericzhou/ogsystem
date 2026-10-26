@@ -61,6 +61,18 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
+  if (teamVersionMatch && request.method === "DELETE" && !teamVersionMatch[2]) {
+    try {
+      sendJson(response, 200, await useCases.deleteTeamVersion(teamVersionMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), {
+        error: error instanceof Error ? error.message : "Unable to delete team version.",
+        ...(error?.code ? { code: error.code } : {}),
+        ...(error?.blockedProjects ? { blockedProjects: error.blockedProjects } : {})
+      });
+    }
+    return true;
+  }
   if (teamVersionMatch && teamVersionMatch[2] === "design" && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getTeamDesign(teamVersionMatch[1], url.searchParams.get("locale") || "zh-CN"));
@@ -82,6 +94,19 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
       sendJson(response, 200, await useCases.saveTeamDesign(teamVersionMatch[1], await readBody(request, 4 * 1024 * 1024)));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save TeamVersion design." });
+    }
+    return true;
+  }
+  const saveVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/save$/);
+  if (saveVersionMatch && request.method === "PUT") {
+    try {
+      sendJson(response, 200, await useCases.saveTeamVersion(saveVersionMatch[1], await readBody(request, 8 * 1024 * 1024)));
+    } catch (error) {
+      sendJson(response, errorStatus(error), {
+        error: error instanceof Error ? error.message : "Unable to save TeamVersion.",
+        ...(error?.code ? { code: error.code } : {}),
+        ...(error?.blockedProjects ? { blockedProjects: error.blockedProjects } : {})
+      });
     }
     return true;
   }
@@ -125,7 +150,11 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     try {
       sendJson(response, 200, await useCases.deleteTeam(deleteTeamMatch[1]));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to delete team." });
+      sendJson(response, errorStatus(error), {
+        error: error instanceof Error ? error.message : "Unable to delete team.",
+        ...(error?.code ? { code: error.code } : {}),
+        ...(error?.blockedProjects ? { blockedProjects: error.blockedProjects } : {})
+      });
     }
     return true;
   }

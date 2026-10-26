@@ -28,9 +28,14 @@ export function createProjectUpdateUseCases({ projectStore, teamCatalog, compute
         };
         if (project.projectType === "collaboration") next.projectDefinitionDigest = computeProjectDefinitionDigest(next);
         if (semanticChanged) {
-          next.projectStatus = "draft";
           next.projectDigest = null;
-          next.confirmedAt = null;
+          if (project.projectType === "team") {
+            next.teamVersionStatus = "draft";
+            next.releasedAt = null;
+          } else {
+            next.projectStatus = "draft";
+            next.confirmedAt = null;
+          }
         }
         return projectStore.saveProjectMetadata(projectId, next);
       });
@@ -41,9 +46,8 @@ export function createProjectUpdateUseCases({ projectStore, teamCatalog, compute
         const project = await projectStore.getProject(projectId);
         const next = {
           ...project,
-          projectStatus: "draft",
           projectDigest: null,
-          confirmedAt: null,
+          ...(project.projectType === "team" ? { teamVersionStatus: "draft", releasedAt: null } : { projectStatus: "draft", confirmedAt: null }),
           updatedAt: new Date().toISOString(),
           invalidatedReason: reason
         };

@@ -140,8 +140,8 @@ test("classic topology trust only affects graph validation and never replaces re
   assert.equal(evidenceCalls.length, 2);
 
   topologyDigest = "graph-v2";
-  harness.created[0].teamVersionStatus = "editing";
-  harness.created[0].projectStatus = "draft";
+  harness.created[0].teamVersionStatus = "draft";
+  delete harness.created[0].projectStatus;
   harness.created[0].projectDigest = null;
   await harness.useCases.releaseTeamVersion("classic-v2");
   assert.equal(validation.at(-1).options.trustedClassic, false);
@@ -182,6 +182,25 @@ test("classic Team creation reuses a released version and provisions templates t
   const created = await template.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true });
   assert.equal(created.source, "classic-template");
   assert.equal(template.calls.some(([name]) => name === "save"), false);
+});
+
+test("built-in template provisioning tolerates a name already owned by an existing TeamVersion", async () => {
+  const useCases = createTeamLifecycleUseCases({
+    projectStore: {
+      async getProject() { return undefined; },
+      async listProjects() { return [{ projectId: "existing", name: "Sample Team", source: "version-edit", teamVersionStatus: "draft" }]; },
+      async createProject() { throw new Error("TEAM_NAME_EXISTS: a team with this name already exists."); },
+      async saveProjectMetadata() {},
+      async removeProject() {},
+      async withProjectWriteLock(_id, _operation, action) { return action(); }
+    },
+    packageStore: { async exportTeamPackage() {}, async loadTeamPackage() {} },
+    locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
+    confirmation: { async validateTopology() {}, async computeDigests() { return {}; } },
+    releaseEvidence: {},
+    caseCatalog: { listCases: () => [{ id: "sample" }], getCase: () => ({ id: "sample", title: { "zh-CN": "Sample Team" } }) }
+  });
+  assert.deepEqual(await useCases.provisionBuiltInTeamTemplates(), []);
 });
 
 test("classic template provisioning rematerializes stale generated structure", async () => {
@@ -281,7 +300,7 @@ test("release readiness always requires current TeamVersion Sandbox proof", asyn
 test("TeamVersion release validates its current digest and Sandbox proof under the Team lock", async () => {
   const team = {
     projectId: "team-v1", teamVersionId: "team-v1", teamRootId: "team-root",
-    projectStatus: "draft", teamVersionStatus: "editing"
+    teamVersionStatus: "draft"
   };
   const harness = setup({ team });
   const released = await harness.useCases.releaseTeamVersion("team-v1");
@@ -298,7 +317,7 @@ test("code-owned classic templates are provisioned as released TeamVersions", as
   const harness = setup();
   const team = await harness.useCases.createClassicTeamProject({ caseId: "sample" });
   assert.equal(team.teamVersionStatus, "released");
-  assert.equal(team.projectStatus, "confirmed");
+  assert.equal(Object.hasOwn(team, "projectStatus"), false);
   assert.ok(team.trustedClassicTopologyDigest);
   assert.equal(harness.calls.some(([name]) => name === "prepare-built-in"), true);
   assert.equal(harness.calls.some(([name]) => name === "release-evidence"), true);
