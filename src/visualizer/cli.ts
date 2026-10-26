@@ -12,7 +12,7 @@ function usage(): string {
     "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>] [--tls-cert <path> --tls-key <path>]",
     "",
     "Source repository equivalent:",
-    "  pnpm run run:visualizer -- [--ogs-dir <path>] [--host <host>] [--port <n|0>] [--tls-cert <path> --tls-key <path>]",
+    "  pnpm run run:visualizer [--ogs-dir <path>] [--host <host>] [--port <n|0>] [--tls-cert <path> --tls-key <path>]",
     "",
     "Defaults:",
     "  ogs-dir: current directory",
