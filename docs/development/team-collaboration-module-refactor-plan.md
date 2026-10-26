@@ -1,13 +1,18 @@
 # Team Collaboration 模块化与分层重构方案
 
-## 文档权威与范围
+## 文档状态与范围
 
-本文是 Team Site 当前领域契约、目标代码边界和重构验收门槛的唯一工程方案。产品术语以
-[OGS 产品概念](../usage/ogs-concepts.md)为准；用户操作入口和现行产品行为以
-[OGS Team Site 手册](../../apps/team-site/README.md)为准。已完成的领域、UX 和运行可靠性方案已归档，
-只保留交付证据，不再定义现行契约。
+**状态：已完成的重构实施记录（归档于 2026-10-26），不再是现行契约或验收状态来源。**本文记录
+2026-10-18 至 2026-10-19 的设计意图、实施切片和当时验证结果。正文中的“目标”、待办清单、
+遗留缺口、测试数量和“最新契约”字样均为当时记录，不代表当前实现或当前发布状态。
 
-## 当前进度
+现行用户术语与业务行为以 [OGS 产品概念](../usage/ogs-concepts.md) 和
+[OGS Team Site 手册](../../apps/team-site/README.md) 为准；架构边界以
+[架构决策](DECISIONS.md) 与源码/测试为准；验证和发布验收状态以
+[Studio 与 Projects 验证报告](ogs-studio-project-run-isolation-validation-report.md) 和
+[Release UAT 清单](release-uat-checklist.md) 为准。发现差异时，先核对这些现行来源，不应按本归档计划中的旧状态改动实现。
+
+## 历史进度快照（截至 2026-10-19）
 
 此前 Mac 自动化验证（2026-10-19；代码提交 `617af33`、`0787b9a`）：Team Site 全量 `pnpm --dir apps/team-site test --test-concurrency=1` 为 225/225；`pnpm test` 为 656 项通过、0 项失败、1 项 Windows PowerShell/CMD smoke 按平台条件跳过；`pnpm run test:visualizer` 通过，Studio 主测试 198 项、布局 49/49；构建通过。经典团队 Playwright UAT 点击“查看全流程”打开真实 Studio 服务，验证关联 TeamVersion 工作区可读、错误 Task 关联被拒绝、运行中继续/停止/重索引/审核控件不可见且不可点击，并核对操作前后 Projects Task/Run API 状态不变。既有浏览器路径还覆盖 readiness 阻塞、运行、结果展开、重试、历史尝试与结果隔离，以及桌面、390px 手机和 768px 平板布局。故障注入与恢复当时覆盖预留失败、计划创建失败、终态 Task 投影写失败、控制写失败、Run 状态缺失/陈旧投影，以及真实活动 Run 中 SIGKILL 后启动恢复；逐项核对持久化、API 读数、Task/Run 关联、重试、清理和恢复幂等性。Windows、人工 UAT 和真实设备验收不包含在该自动化记录中。
 
@@ -19,9 +24,9 @@
 
 Task/Run 使用 `currentRunId`、有序 `runIds`、单调 `attemptNumber` 和按请求指纹校验的幂等键；readiness 在预留前检查；重试从 Task 发起；历史 Run 只读；完整结果按需读取并脱敏。经典团队浏览器回归覆盖项目化、排队、运行、事件与结果、readiness 阻塞、刷新和重试，以及 390px 手机和 768px 平板的溢出、遮挡与控件可达检查。自动化也覆盖 Run 失败持久化、进程重启恢复和后续 Task 重试。
 
-此前完整本机验证（2026-10-19 09:04 CST）早于移除旧 `Task.runId` 兼容逻辑，结果为 Team Site 208/208、Visualizer 198/198、布局 49/49、仓库 656 项通过且 Windows smoke 跳过。该次记录对应 HEAD `d54d97d76cb464a746089d0f96a12fdd7925d3f7` 和当时工作区 SHA-256 `81874419132af88a11b21fbb137327681e2b1b9b865650e36487d36fd165daa8`，仅作为历史背景；当前权威状态以本节“当前进度”和下方验收清单为准。此前 npm 与 pnpm 隔离包安装 smoke 均通过，但不替代本轮 Release UAT。
+此前完整本机验证（2026-10-19 09:04 CST）早于移除旧 `Task.runId` 兼容逻辑，结果为 Team Site 208/208、Visualizer 198/198、布局 49/49、仓库 656 项通过且 Windows smoke 跳过。该次记录对应 HEAD `d54d97d76cb464a746089d0f96a12fdd7925d3f7` 和当时工作区 SHA-256 `81874419132af88a11b21fbb137327681e2b1b9b865650e36487d36fd165daa8`，仅作为历史背景；当前权威状态以本文件开头列出的现行来源为准。此前 npm 与 pnpm 隔离包安装 smoke 均通过，但不替代 Release UAT。
 
-下方按切片的日期记录保留实施过程，只表示各自记录时的状态，不能代替本轮最终验证或当前验收状态。涉及 `project-repository.mjs` 的迁移前记录均已被后续实现取代；当前权威状态以上述验证与验收清单为准。
+下方按切片的日期记录保留实施过程，只表示各自记录时的状态，不能代替当前验证或验收状态。涉及 `project-repository.mjs` 的迁移前记录均已被后续实现取代；当前权威状态以本文件开头列出的现行来源为准。
 
 Release UAT 本轮已由框架开发者完成 clean install、真实 Codex sandbox Task 预检和 Visualizer `/metrics`、`/healthz`、`/readyz` 检查（见 [Release UAT 清单](release-uat-checklist.md)）；八项人工场景仍为 `Blocked`。资源基线已完成一条目标请求的单次观测，产品负责人尚未确认该工作负载的代表性及用户侧影响；没有既定产品资源承诺，不从单次数据推导容量阈值。归档方案中的历史验收结果不代表本轮重构已验收。
 
@@ -88,9 +93,9 @@ Release UAT 本轮已由框架开发者完成 clean install、真实 Codex sandb
 
 本轮验证（2026-10-19）：最新 Run query 切片后 `pnpm build` 通过，Team Site 全量测试 141/141 通过；经典团队项目化浏览器回归 1/1、visual-acceptance、interaction-lifecycle、run-polling 合计 5/5 通过；真实 Team Site 子进程启动恢复/HTTP 查询/Task 重试测试 1/1 通过；`pnpm run test:docs-command-drift` 通过；`pnpm run test:visualizer` 主测试 198/198、布局测试 49/49 通过；最新 `pnpm test` 657 项中 656 项通过、1 项 Windows 专属测试在 macOS 跳过。浏览器测试覆盖历史尝试查看和只读边界、当前尝试控制、Task 级重试、完整结果和手机/平板布局。自动子进程测试不替代操作者执行的中断恢复/重试（包括确认不重复已提交角色）；真实设备键盘/屏幕阅读器，以及发布 UAT 清单中的 clean install、linear/branch-join、审核归属、failure compensation、metrics/health、资源增长和产品/操作员签收仍未完成；`project-repository.mjs` 仍承载 Project、Task/Run、Package 等持久化和事务职责，验收清单保持未通过。
 
-## 目标与范围
+## 历史设计目标与范围（归档）
 
-本方案指导 Team Collaboration 发布前的模块化重构。产品流程和业务规则以本方案的最新契约为准；重构期间可以修正尚未发布的接口和状态语义，完成后统一采用唯一的最新数据结构与 API。
+本方案曾指导 Team Collaboration 发布前的模块化重构。以下内容记录当时的目标与设计决策，不作为当前实现的验收依据。
 
 Team Site 现由 Application 用例编排业务规则，`domain/` 持有领域约束，`infrastructure/` 提供文件、Runtime 和 Visualizer adapters，按资源拆分的 API routes 处理 HTTP。`server.mjs` 是 composition root 和静态资源入口。迁移应沿业务用例垂直推进；不保留兼容 facade、旧路由或旧字段规范化。
 
@@ -99,7 +104,8 @@ Team Site 现由 Application 用例编排业务规则，`domain/` 持有领域�
 ## 核心概念
 
 - **Team**：可复用的团队身份。身份与发布快照分开，便于团队目录稳定引用；版本能力不得扩展成无用户价值的分支/版本管理子系统。
-- **TeamVersion**：一次已发布的团队设计快照；只有 `released` 版本可挂载，发布后内容不可原位修改。保存草稿不创建发布版本；项目选择具体 TeamVersion 后，之后的发布不改变该项目正在使用的定义。
+- **TeamVersion（与当前手册对齐的概念摘要）**：Team 下的设计版本，状态为 `draft`（设计中）、`released`（已发布）或 `archived`（已归档）。设计中版本可以反复原位保存；对已发布版本保存实际设计改动时，首次改动按需创建同一 Team 下的设计中版本（写时复制），未发生实际改动时不创建版本。已发布版本内容不可原位修改；只有已发布版本可供新项目挂载。已归档版本不能新挂载，但已有项目对它的引用仍可用于后续任务。详细业务用语和 API 行为以现行[产品概念](../usage/ogs-concepts.md#团队版本)与[Team Site 手册](../../apps/team-site/README.md)为准。
+- **TeamVersion API 摘要（与当前实现对照）**：设计保存统一通过 `PUT /api/v1/team-versions/:id/save`；删除设计中版本使用 `DELETE /api/v1/team-versions/:teamVersionId`，删除团队及其所有版本使用 `DELETE /api/v1/teams/:teamId`。删除任一仍被项目挂载的相关版本会以 `TEAM_IN_USE` 和受阻项目列表拒绝。具体请求/响应以 Team Site 源码和测试为准。
 - **Collaboration Project**：业务项目，保存项目定义、材料、挂载的 TeamVersion 和 Task 列表。
 - **Task**：项目中的一次业务工作请求，明确选择一个已挂载 TeamVersion；Task 可在 Run 创建前排队或删除。一次 Run 成功完成并满足适用验收条件后即完成 Task；失败或异常时的重试仍属于原 Task。
 - **Run**：Task 的一次执行尝试，保存执行快照、控制、状态、事件、审核和结果。Task 仅在失败或异常后的重新执行需要时关联多个 Run；暂停、审核等待和有效 checkpoint 中断恢复沿用同一 Run。
@@ -261,11 +267,11 @@ planning | ready | running | pause_requested | paused | waiting_review | cancel_
 
 跨工作区失败策略必须覆盖：Run 预留后崩溃、Run 状态落盘后 Task 投影失败、控制意图落盘后进程退出、Run 结束后响应丢失、启动恢复重复执行。每种场景都要定义可恢复结果，并通过故障注入测试验证。
 
-## 最新契约与数据策略
+## 当时的数据策略（历史记录）
 
-产品尚未发布，所有环境统一采用重构后的最新 schema、API、字段和状态。上线前确定唯一 schema 版本；应用启动和存储入口校验必需字段与版本，不接受旧版 shape，不做历史项目迁移、旧路由 fallback、旧字段 alias 或兼容 facade。
+下述数据策略是重构期间的历史提案，不是当前数据兼容契约。当前存储兼容行为以产品概念、Team Site 手册和实现为准；例如团队目录对特定旧版已发布元数据的投影规则，详见[产品概念](../usage/ogs-concepts.md)。
 
-产品当前需要的内置团队仍是正式能力：内置 Team 应通过与其他 Team 一致的 TeamVersion 身份和发布规则进入团队目录，Project 挂载和 Task 请求一律使用规范 TeamVersion ID。不得把 `case:*` 作为持久化业务身份或旧数据迁移机制。测试使用最新规范数据 fixture，不保留专门模拟 pre-release 历史格式的兼容测试。
+产品需要的内置团队仍通过正式 TeamVersion 身份和发布规则进入团队目录；Project 挂载和 Task 请求使用规范 TeamVersion ID。不得把 `case:*` 作为持久化业务身份。此规则保留为历史设计背景，当前行为以源码、测试及用户手册为准。
 
 导入导出是产品功能，不属于历史兼容。其 schema 必须版本化、校验完整、拒绝不支持版本；当前产品只实现并测试发布契约指定的版本。需要变更时在发布前统一更新生产者、消费者和 fixtures。
 

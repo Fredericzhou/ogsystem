@@ -1,14 +1,19 @@
 # OGS Studio 与 Projects 双支柱及运行数据隔离方案
 
+> **状态：历史设计与实施方案。** 本文保留运行数据隔离的设计背景和验收思路；TeamVersion 生命周期以
+> [OGS 产品概念](../usage/ogs-concepts.md#团队版本)和[Team Site 手册](../../apps/team-site/README.md)为准，
+> 当前验证状态以[验证报告](ogs-studio-project-run-isolation-validation-report.md)和[Release UAT 清单](release-uat-checklist.md)为准。
+> 本文中“不可变 TeamVersion”仅指已发布版本及其运行快照，不表示设计中版本不可编辑。
+
 ## 1. 目标与范围
 
 本方案规范 OGS Studio、OGS Projects 与共享 Runtime/Platform 的领域边界、运行数据归属、页面职责、接口契约和验收顺序。Studio 与 Projects 是同一产品 Shell 中对等的一级工作台，各自面向不同工作流程；它们可以复用执行引擎、Harness Adapter、脱敏、审计事件格式和只读诊断组件，但不得混用运行记录、生命周期或查询入口。
 
 目标是：
 
-- Studio 负责团队工程资产的设计、验证、仿真、诊断与发布，产出不可变 TeamVersion。
+- Studio 负责团队工程资产的设计、验证、仿真、诊断与发布，产出内容不可变的已发布 TeamVersion；设计中 TeamVersion 可持续编辑。
 - Projects 负责业务协作项目、Materials、Task、Project Run、Human Review 和 Deliverable。
-- 项目任务运行读取指定的不可变 TeamVersion 与项目材料快照，运行状态和证据由 Collaboration Project 所有。
+- 项目任务运行读取指定的已发布 TeamVersion 与项目材料快照，并在 Run 中固定输入快照；运行状态和证据由 Collaboration Project 所有。
 - Studio Simulation 持久化保存并可回放，但不进入项目 Task、Project Run、项目容量、Deliverable 或业务历史。
 - 共用运行能力时保持领域归属、存储命名空间、授权检查和 API 查询相互独立。
 - 本方案针对未发布产品的当前版本，不做旧数据迁移，也不保留旧 API/路由兼容层。
