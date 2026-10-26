@@ -55,7 +55,7 @@ test("Team Site serves current configuration routes and retires unused resource 
   }
 });
 
-test("released Team global settings show stable identifiers as read-only values", async () => {
+test("released Team global settings keep stable identifiers read-only and save edits into a draft", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-global-readonly-"));
   const team = await seedReleasedClassicTeam(projectsRoot);
   const { server, url } = await startServer(projectsRoot);
@@ -63,17 +63,36 @@ test("released Team global settings show stable identifiers as read-only values"
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').waitFor({ timeout: 10000 }).catch(async () => {
-      assert.fail(`Studio graph toolbar did not mount: ${await page.locator("#project-design-status").innerText().catch(() => "no design status")} | ${await page.locator("#project-graph-stage").innerText().catch(() => "no stage")}`);
+      assert.fail(`Studio graph toolbar did not mount: url=${page.url()} view=${await page.locator("#studio-view").innerText().catch(() => "no studio view")} | ${await page.locator("#project-design-status").innerText().catch(() => "no design status")} | ${await page.locator("#project-graph-stage").innerText().catch(() => "no stage")} | errors=${JSON.stringify(pageErrors)}`);
     });
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-assets-global-tab").click();
-    await page.locator("#studio-assets-global .studio-readonly-value").first().waitFor();
-    assert.equal(await page.locator("#studio-assets-global [data-system-field]").count(), 0);
-    assert.equal(await page.locator("#studio-assets-global textarea").count(), 0);
+    await page.locator("#studio-assets-global [data-system-field='systemVersion']").waitFor();
+    assert.equal(await page.locator("#studio-assets-global .studio-readonly-value").count() >= 1, true);
     assert.match(await page.locator("#studio-assets-global").innerText(), /系统标识/);
     assert.match(await page.locator("#studio-assets-global .studio-readonly-value").first().innerText(), /^[a-z][a-z0-9.-]+$/);
+    const originalTeam = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}`).then((response) => response.json());
+    await page.locator("#studio-assets-global [data-system-field='systemVersion']").fill("8.8.8-uat");
+    const saveResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${team.projectId}/save`), { timeout: 10000 });
+    await page.locator("#studio-assets-global [data-system-save]").click();
+    const saveResponse = await saveResponsePromise;
+    const savePayload = await saveResponse.json();
+    assert.equal(saveResponse.ok(), true, JSON.stringify(savePayload));
+    assert.equal(savePayload.createdDraft, true, JSON.stringify(savePayload));
+    await page.waitForFunction((oldId) => location.pathname.match(/\/teams\/([a-z0-9-]+)\/design$/)?.[1] !== oldId, team.projectId, { timeout: 10000 });
+    const newVersionId = new URL(page.url()).pathname.match(/\/teams\/([a-z0-9-]+)\/design$/)?.[1];
+    assert.notEqual(newVersionId, team.projectId);
+    const [releasedAfter, draftAfter] = await Promise.all([
+      page.request.get(`${url}/api/v1/team-versions/${team.projectId}`).then((response) => response.json()),
+      page.request.get(`${url}/api/v1/team-versions/${newVersionId}`).then((response) => response.json())
+    ]);
+    assert.equal(releasedAfter.teamVersionStatus, "released");
+    assert.equal(releasedAfter.projectDigest, originalTeam.projectDigest);
+    assert.equal(draftAfter.teamVersionStatus, "draft");
   } finally {
     await closeServer(server, projectsRoot, browser);
   }
@@ -88,6 +107,8 @@ test("duplicate team and project creation keeps the user on the form with the en
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
+    assert.doesNotMatch(await page.locator("#new-project-view").innerText(), /协作偏好|Collaboration preference/);
+    assert.equal(await page.locator("#new-project-view .page-frame-aside").count(), 0, "team creation should not show the removed collaboration preference sidebar");
     await page.locator("#new-project-form input[name=name]").fill("Duplicate Product Team");
     await page.locator("#new-project-form textarea[name=overview]").fill("Keep the original team and explain duplicate creation clearly.");
     await page.locator("#new-project-form button[type=submit]").click();
@@ -195,18 +216,19 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.match(await page.locator("#team-assistant-history").innerText(), /已理解目标/);
     assert.equal(typeof latestChatPayload.systemSource, "string");
     assert.equal(typeof latestChatPayload.authoring, "object");
-    const saveResponse = page.waitForResponse((response) => response.url().includes(`/api/v1/team-versions/${team.projectId}/design`) && response.request().method() === "PUT");
+    const saveResponse = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/v1/team-versions/${team.projectId}/save` && response.request().method() === "PUT");
     await page.locator("#team-assistant-apply").click();
     assert.equal((await saveResponse).status(), 200);
     await page.locator("#team-assistant").waitFor();
     await page.locator("[data-team-build-close]").click();
-    await page.locator("#studio-simulation-run-open").click();
+    await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
     await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
     await page.locator("[data-team-debug-close]").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').click();
     await page.getByText("结构校验通过", { exact: true }).waitFor();
     const checkedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
-    assert.equal(checkedDesign.projectStatus, "draft", "validation must not publish or confirm the draft");
+    assert.equal(checkedDesign.teamVersionStatus, "draft", "validation must not publish the design-stage TeamVersion");
+    assert.equal(Object.hasOwn(checkedDesign, "projectStatus"), false, "TeamVersion DTO must not expose the Collaboration Project lifecycle field");
     const runRoot = join(projectsRoot, team.projectId, ".ogs", "runs");
     await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
     await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
@@ -288,13 +310,21 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.match(await page.locator("#team-simulation-result pre").last().innerText(), /Partial team result/);
     assert.deepEqual(await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error)), [], "noop previews must remain outside Run history");
     await page.locator("[data-team-debug-close]").click();
-    await page.locator("#studio-team-info-open").click();
-    const overview = page.locator('#project-edit-form textarea[name="overview"]');
-    await overview.fill(await overview.inputValue());
-    await page.locator('#project-edit-form button[type="submit"]').click();
+    await page.locator('.studio-workspace-nav a[data-route*="/info"]').click();
+    await page.locator("#studio-team-info-form").waitFor();
+    const overview = page.locator('#studio-team-info-form textarea[name="overview"]');
+    await overview.fill(`${await overview.inputValue()} Updated after review.`);
+    const teamSaveResponsePromise = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/v1/team-versions/${team.projectId}/save`);
+    await page.locator('#studio-team-info-form button[type="submit"]').click();
+    const teamSaveResponse = await teamSaveResponsePromise;
+    const savedTeam = await teamSaveResponse.json();
+    assert.equal(teamSaveResponse.status(), 200, JSON.stringify(savedTeam));
+    assert.equal(savedTeam.teamVersionStatus, "draft");
+    assert.match(savedTeam.overview, /Updated after review\./);
+    await page.locator('.studio-workspace-nav a[data-route*="/design"]').click();
     await page.locator("#project-graph-stage").waitFor({ state: "visible" });
     await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').waitFor({ state: "visible" });
-    await page.locator("#confirm-project").click();
+    await page.locator('.studio-workspace-nav a[data-route*="/release"]').click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/release$/);
     assert.equal(await page.locator("#studio-release-button").isDisabled(), true, "static validation alone must not release a TeamVersion");
     const releaseResponse = await page.request.post(`${url}/api/v1/team-versions/${team.projectId}/release`);
@@ -317,7 +347,6 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     let team;
     let submittedAuthoring;
     let submittedAssets;
-    let submittedAssetAuthoring;
     const saveSequence = [];
     const designResponses = [];
     const studioRequests = [];
@@ -326,18 +355,14 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     page.on("request", (request) => {
       const pathname = new URL(request.url()).pathname;
       if (pathname.includes(`/api/v1/team-versions/${team?.projectId}`)) studioRequests.push({ method: request.method(), pathname });
-      if (pathname.endsWith(`/api/v1/team-versions/${team.projectId}/design`) && request.method() === "PUT") {
-        try { submittedAuthoring = JSON.parse(request.postData() || "{}").authoring; } catch { /* assertion below reports missing payload */ }
-      }
-      if (pathname.endsWith(`/api/v1/team-versions/${team.projectId}/design/assets`) && request.method() === "PUT") {
-        try { const body = JSON.parse(request.postData() || "{}"); submittedAssets = body.assets; submittedAssetAuthoring = body.authoring; } catch { /* assertion below reports missing payload */ }
+      if (pathname.endsWith(`/api/v1/team-versions/${team.projectId}/save`) && request.method() === "PUT") {
+        try { const body = JSON.parse(request.postData() || "{}"); submittedAuthoring = body.authoring; submittedAssets = body.assets; } catch { /* assertion below reports missing payload */ }
       }
     });
     page.on("response", async (response) => {
       const pathname = new URL(response.url()).pathname;
-      if (pathname.endsWith(`/api/v1/team-versions/${team?.projectId}/design`) && response.request().method() === "PUT") saveSequence.push("design");
-      if (pathname.endsWith(`/api/v1/team-versions/${team?.projectId}/design/assets`) && response.request().method() === "PUT") saveSequence.push("assets");
-      if (!response.url().includes(`/api/v1/team-versions/${team?.projectId}/design`)) return;
+      if (pathname.endsWith(`/api/v1/team-versions/${team?.projectId}/save`) && response.request().method() === "PUT") saveSequence.push("save");
+      if (pathname !== `/api/v1/team-versions/${team?.projectId}/save`) return;
       designResponses.push({ url: response.url(), method: response.request().method(), status: response.status(), body: await response.json().catch(() => ({})) });
     });
     team = await page.request.post(`${url}/api/v1/cases/software-team/template`, {
@@ -500,20 +525,18 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     saveSequence.length = 0;
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
     await page.waitForTimeout(1200);
-    assert.deepEqual(saveSequence, ["assets", "design"], await page.locator("#project-design-status").innerText());
+    assert.deepEqual(saveSequence, ["save"], await page.locator("#project-design-status").innerText());
     assert.deepEqual(submittedAssets?.contractSchemas?.[schemaPath], '{"type":"object","required":["decision"]}', JSON.stringify(submittedAssets));
     assert.deepEqual(submittedAssets?.executionConfig?.profiles?.find((item) => item.profileId === "review-cli-profile"), { profileId: "review-cli-profile", toolRef: "review-cli-tool", timeoutMs: 45000, maxOutputBytes: 8192 });
     assert.deepEqual(submittedAssets?.executionConfig?.tools?.tools?.find((item) => item.toolRef === "review-cli-tool"), { toolRef: "review-cli-tool", runner: "local_shell", command: "node", argsTemplate: ["./tools/review.mjs", "--json"], stdinMode: "none" });
-    const saveResponse = designResponses.find((item) => item.url.endsWith(`/api/v1/team-versions/${team.projectId}/design`) && item.method === "PUT" && item.status === 200);
+    const saveResponse = designResponses.find((item) => item.url.endsWith(`/api/v1/team-versions/${team.projectId}/save`) && item.method === "PUT" && item.status === 200);
     assert.ok(saveResponse, JSON.stringify(designResponses, null, 2));
-    const assetSaveResponse = designResponses.filter((item) => item.url.endsWith(`/api/v1/team-versions/${team.projectId}/design/assets`) && item.method === "PUT").at(-1);
-    assert.equal(assetSaveResponse?.status, 200, JSON.stringify(assetSaveResponse, null, 2));
-    assert.deepEqual(assetSaveResponse?.body?.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ assetSaveResponse, submittedRole: submittedAssetAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(submittedAuthoring?.roles?.[roleId]?.contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify(submittedAuthoring));
     if (orderRoleId) assert.deepEqual(submittedAuthoring?.roles?.[orderRoleId]?.routeOrder, expectedRouteOrder);
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
+    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(persistedDesign.authoring.roles[roleId].contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify({ authoring: persistedDesign.authoring, assets: persistedAssets }, null, 2));
     assert.equal(persistedDesign.authoring.roles[roleId].modelRef, "codex/gpt-6-luna");
     assert.equal(persistedDesign.authoring.roles[roleId].bindingKind, "model");
@@ -541,7 +564,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
     assert.equal(persistedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
     assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "rework", "terminate"]);
-    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ submittedAssetAuthoring, submittedAssets, persistedAssets }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
     if (openCodeModel && openCodeRoleId) {
       const selectionRef = openCodeModel.selectionRef || `${openCodeModel.backend}/${openCodeModel.id}`;
       assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelRef, selectionRef);
@@ -689,8 +712,8 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.setViewportSize({ width: 1440, height: 960 });
     assert.deepEqual(await page.evaluate(() => window.__productUnhandled || []), []);
 
-    const assetsRoute = `**/api/v1/team-versions/${team.projectId}/design/assets`;
-    await page.route(assetsRoute, async (route) => {
+    const saveRoute = `**/api/v1/team-versions/${team.projectId}/save`;
+    await page.route(saveRoute, async (route) => {
       if (route.request().method() === "PUT") {
         await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "TEAM_ASSET_WRITE_FAILED" }) });
       } else {
@@ -700,12 +723,12 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.getByText("角色资产包", { exact: true }).click();
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Updated prompt with a simulated asset-store failure.");
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
-    await assert.doesNotReject(() => page.getByText(/设计尚未保存；角色资产写入未完成/).waitFor());
+    await assert.doesNotReject(() => page.getByText("TEAM_ASSET_WRITE_FAILED", { exact: true }).waitFor());
     const unchangedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const unchangedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
     assert.equal(unchangedDesign.authoring.roles[roleId].modelRef, "codex/gpt-6-luna");
     assert.equal(unchangedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
-    await page.unroute(assetsRoute);
+    await page.unroute(saveRoute);
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
     await page.waitForTimeout(1200);
     const retriedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
@@ -714,7 +737,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     if (await assetsToggle.getAttribute("aria-expanded") !== "true") await assetsToggle.click();
     await page.locator(`#project-graph-stage .x6-node[data-cell-id="${roleId}"]`).click();
     await inspector.getByText("角色资产包", { exact: true }).click();
-    await page.route(`**/api/v1/team-versions/${team.projectId}/design`, async (route) => {
+    await page.route(saveRoute, async (route) => {
       if (route.request().method() === "PUT") {
         await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "TEAM_VERSION_DIGEST_CONFLICT" }) });
       } else {
@@ -723,9 +746,9 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     });
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Assets persisted before a simulated design conflict.");
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
-    await assert.doesNotReject(() => page.getByText(/角色资产已保存，但设计保存未完成/).waitFor());
-    const partialAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
-    assert.equal(partialAssets.roles[roleId]["prompt.md"], "Assets persisted before a simulated design conflict.");
+    await assert.doesNotReject(() => page.getByText("TEAM_VERSION_DIGEST_CONFLICT", { exact: true }).waitFor());
+    const assetsAfterConflict = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
+    assert.equal(assetsAfterConflict.roles[roleId]["prompt.md"], "Updated prompt with a simulated asset-store failure.");
   } finally {
     await closeServer(server, projectsRoot, browser);
   }
@@ -844,15 +867,10 @@ test("Studio saves all four package files for a newly created role in one author
     }));
     await inspector.locator('[data-studio-role-asset="output.schema.json"]').fill('{"type":"object","required":["findings"]}');
     assert.equal(await page.locator('[data-studio-graph-action="save"]').isDisabled(), false, await page.locator("#project-design-status").innerText());
-    const assetsSaved = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${team.projectId}/design/assets`) && response.request().method() === "PUT");
-    const validation = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${team.projectId}/design/validate`) && response.request().method() === "POST");
-    const designSaved = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${team.projectId}/design`) && response.request().method() === "PUT").catch(() => null);
+    const saved = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/v1/team-versions/${team.projectId}/save` && response.request().method() === "PUT");
     await page.locator("[data-studio-save-workspace]").click();
-    assert.equal((await assetsSaved).status(), 200);
-    const validationResponse = await validation;
-    const validationPayload = await validationResponse.json();
-    assert.equal(validationPayload.ok, true, `${await page.locator("#project-design-status").innerText()}; ${JSON.stringify(validationPayload.diagnostics || [])}`);
-    assert.equal((await designSaved)?.status(), 200);
+    const saveResponse = await saved;
+    assert.equal(saveResponse.status(), 200, JSON.stringify(await saveResponse.json()));
     const [designResponse, assetsResponse] = await Promise.all([
       page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`),
       page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`)

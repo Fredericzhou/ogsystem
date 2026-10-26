@@ -163,11 +163,19 @@ test("site completes the product project flow with task records and repository e
     assert.ok(desktopGraphLayout.pageWidth <= desktopGraphLayout.viewportWidth + 1, "the graph must not widen the whole page");
     await page.setViewportSize({ width: 1440, height: 1000 });
 
-    await page.locator("#confirm-project").click();
+    await page.locator('.studio-workspace-nav a[data-route*="/release"]').click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/release$/);
     assert.equal(await page.locator("#studio-release-button").isDisabled(), true, "a new TeamVersion needs a passing baseline Sandbox before release");
     const publishedTeam = await seedReleasedClassicTeam(projectsRoot, "software-team");
     const teamId = publishedTeam.projectId;
+    const beforeEdit = await page.request.get(`${url}/api/v1/team-repository?status=all&pageSize=50`).then((response) => response.json());
+    assert.equal(beforeEdit.teams.filter((team) => team.teamVersionId === teamId).length, 1);
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    await page.locator(`.team-version-card [data-team-action="edit"][data-team-id="${teamId}"]`).click();
+    await page.waitForURL(new RegExp(`/studio/teams/${teamId}/design\\?edit=1$`));
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    const afterAbandonedEdit = await page.request.get(`${url}/api/v1/team-repository?status=all&pageSize=50`).then((response) => response.json());
+    assert.equal(afterAbandonedEdit.teams.filter((team) => team.teamVersionId === teamId).length, 1, "opening and abandoning a released TeamVersion must not fork it");
     await page.goto(`${url}/projects/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
     await page.locator("#collaboration-project-form").waitFor();
     await page.locator("#collaboration-project-form input[name=name]").fill("Product Research Project");
@@ -275,10 +283,7 @@ test("site completes the product project flow with task records and repository e
     assert.match(await page.locator(".task-attempt-timeline").innerText(), /历史尝试[\s\S]*当前尝试/);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     const originalProjectId = teamId;
-    const exportLink = page.locator(`a[href="/api/v1/projects/${originalProjectId}/team/export"]`);
-    await exportLink.waitFor();
-    assert.equal(await exportLink.count(), 1);
-    const exportResponse = await page.request.get(new URL(await exportLink.getAttribute("href"), url).toString());
+    const exportResponse = await page.request.get(new URL(`/api/v1/projects/${originalProjectId}/team/export`, url).toString());
     assert.equal(exportResponse.status(), 200);
     assert.match(exportResponse.headers()["content-disposition"], /\.ogs\.json/);
     const bundle = await exportResponse.json();

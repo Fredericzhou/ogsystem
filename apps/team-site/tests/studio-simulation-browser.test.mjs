@@ -194,7 +194,7 @@ registerHooks({
     assert.match(await page.locator("#team-debug-dialog").innerText(), /请先点击图谱工具栏中的“保存”保存未提交的图谱修改/);
     await page.locator("[data-team-debug-close]").click();
     const saveDesign = page.waitForResponse((response) => response.request().method() === "PUT"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/design`);
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/save`);
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
     assert.equal((await saveDesign).status(), 200);
     await page.locator("#project-graph-stage .x6-node").first().waitFor();

@@ -70,7 +70,7 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     await page.locator("[data-case-action=template]").click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/design$/);
     await page.locator("#project-graph-stage").waitFor();
-    assert.equal((await (await page.locator(".project-status").first()).innerText()).includes("草案"), true);
+    assert.equal((await (await page.locator(".project-status").first()).innerText()).includes("设计中"), true);
 
     await page.goto(url + "/cases/software-team", { waitUntil: "networkidle" });
     await page.locator("#detail-graph-stage").waitFor();
@@ -430,6 +430,7 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     const teamAdjustmentButton = page.locator(`[data-team-adjust="${queuedTask.teamVersionId}"]`);
     const adjustmentPath = `/api/v1/projects/${projectId}/team-adjustments`;
     const adjustmentRequests = [];
+    const catalogBeforeEdit = await page.request.get(`${url}/api/v1/team-repository?includeUnreleased=true`).then((response) => response.json());
     page.on("request", (request) => { if (request.url().includes(adjustmentPath)) adjustmentRequests.push(request.url()); });
     const adjustmentResponsePromise = page.waitForResponse((response) => response.url().includes(adjustmentPath), { timeout: 30000 })
       .catch(async (error) => {
@@ -443,18 +444,36 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     assert.equal(adjustmentResponse.ok(), true, adjustmentPayload.error || "Projects could not create a Studio draft");
     if (await page.locator(".confirm-dialog").count()) await page.locator(".confirm-dialog button[value=confirm]").click();
     await page.waitForFunction(() => /^\/studio\/teams\/[a-z0-9-]+\/design$/.test(location.pathname));
-    const draftTeamVersionId = new URL(page.url()).pathname.match(/^\/studio\/teams\/([a-z0-9-]+)\/design$/)?.[1];
-    assert.ok(draftTeamVersionId, `adjustment draft route must include a TeamVersion ID: ${page.url()}`);
-    assert.notEqual(draftTeamVersionId, queuedTask.teamVersionId);
+    const openedTeamVersionId = new URL(page.url()).pathname.match(/^\/studio\/teams\/([a-z0-9-]+)\/design$/)?.[1];
+    assert.equal(openedTeamVersionId, queuedTask.teamVersionId, "opening the edit session must not create a draft");
     const sourceTeamVersion = await page.request.get(`${url}/api/v1/projects/${queuedTask.teamVersionId}`).then((response) => response.json());
-    const adjustmentDraft = await page.request.get(`${url}/api/v1/projects/${draftTeamVersionId}`).then((response) => response.json());
-    assert.ok(adjustmentDraft.trustedClassicTopologyDigest,
-      `classic topology baseline must be persisted on the draft: ${JSON.stringify({ source: sourceTeamVersion.teamCoreDigest, draft: adjustmentDraft.trustedClassicTopologyDigest, caseId: adjustmentDraft.caseId })}`);
+    const catalogAfterOpeningEdit = await page.request.get(`${url}/api/v1/team-repository?includeUnreleased=true`).then((response) => response.json());
+    const rootVersions = (catalog) => (catalog.teams || []).filter((team) => team.teamRootId === sourceTeamVersion.teamRootId).map((team) => team.teamVersionId).sort();
+    assert.deepEqual(rootVersions(catalogAfterOpeningEdit), rootVersions(catalogBeforeEdit), "opening edit must not add a TeamVersion");
+    const openedVersion = await page.request.get(`${url}/api/v1/projects/${openedTeamVersionId}`).then((response) => response.json());
+    assert.equal(openedVersion.teamVersionStatus, "released");
     const adjustmentUrl = new URL(page.url());
     assert.equal(adjustmentUrl.searchParams.get("collaborationProjectId"), projectId);
-    assert.equal(adjustmentUrl.searchParams.get("adjust"), "1");
+    assert.equal(adjustmentUrl.searchParams.get("edit"), "1");
     await page.locator("[data-team-build-close]").click();
-    assert.equal(await page.locator("#confirm-project").count(), 1, "Projects adjustment must open an unpublished Studio draft");
+    await page.locator('.studio-workspace-nav a[data-route*="/info"]').click();
+    await page.locator("#studio-team-info-form").waitFor();
+    const editOverview = page.locator('#studio-team-info-form textarea[name="overview"]');
+    await editOverview.fill(`${await editOverview.inputValue()} Adjusted from project.`);
+    const firstSavePromise = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/v1/team-versions/${queuedTask.teamVersionId}/save`);
+    await page.locator('#studio-team-info-form button[type="submit"]').click();
+    const firstSave = await firstSavePromise;
+    assert.equal(firstSave.status(), 200);
+    const firstSaveResult = await firstSave.json();
+    assert.equal(firstSaveResult.createdDraft, true, "the first changed save should fork the released version");
+    const newDraftTeamVersionId = firstSaveResult.teamVersionId;
+    await page.waitForFunction(({ teamVersionId, projectId }) => location.pathname === `/studio/teams/${teamVersionId}/info`
+      && new URLSearchParams(location.search).get("collaborationProjectId") === projectId
+      && new URLSearchParams(location.search).get("edit") === "1", { teamVersionId: newDraftTeamVersionId, projectId });
+    assert.notEqual(newDraftTeamVersionId, queuedTask.teamVersionId);
+    const adjustmentDraft = await page.request.get(`${url}/api/v1/projects/${newDraftTeamVersionId}`).then((response) => response.json());
+    assert.ok(adjustmentDraft.trustedClassicTopologyDigest,
+      `classic topology baseline must be persisted on the draft: ${JSON.stringify({ source: sourceTeamVersion.teamCoreDigest, draft: adjustmentDraft.trustedClassicTopologyDigest, caseId: adjustmentDraft.caseId })}`);
     let failFirstMount = true;
     await page.route(`**/api/v1/projects/${projectId}/teams`, async (route) => {
       if (route.request().method() === "PUT" && failFirstMount) {
@@ -464,8 +483,9 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
       }
       await route.continue();
     });
-    await page.locator("#confirm-project").click();
-    await page.waitForURL(new RegExp(`/studio/teams/${draftTeamVersionId}/release\\?`));
+    await page.locator('.studio-workspace-nav a[data-route*="/release"]').click();
+    await page.waitForURL(new RegExp(`/studio/teams/${newDraftTeamVersionId}/release(?:\\?.*)?$`));
+    const draftTeamVersionId = newDraftTeamVersionId;
     const releasePath = `/api/v1/team-versions/${draftTeamVersionId}/release`;
     const releaseRequests = [];
     const releasePageTraffic = [];
