@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDirectModelRef } from "../../dist/runtime/model-selection.js";
@@ -53,6 +53,7 @@ import { createVisualizerProjectDesignValidator } from "./infrastructure/visuali
 import { createVisualizerProjectDesignProjector } from "./infrastructure/visualizer-project-design-projector.mjs";
 import { createTeamDesignUseCases } from "./application/team-design-use-cases.mjs";
 import { createFileTeamDesignAssetStore } from "./infrastructure/file-team-design-asset-store.mjs";
+import { isProcessAlive } from "./infrastructure/process-liveness.mjs";
 import { createFileTeamVersionLifecycle } from "./infrastructure/file-team-version-lifecycle.mjs";
 import { createPlatformUseCases } from "./application/platform-use-cases.mjs";
 import { createSharedResourceUseCases } from "./application/shared-resource-use-cases.mjs";
@@ -305,7 +306,10 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
   simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection }),
   identifiers: { simulationId: randomUUID },
   baselineStore: teamDesignAssetStore,
-  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock
+  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
+  processId: process.pid,
+  hostName: hostname(),
+  processIsAlive: isProcessAlive
 });
 const projectReadinessUseCases = createProjectReadinessUseCases({
   getProject,

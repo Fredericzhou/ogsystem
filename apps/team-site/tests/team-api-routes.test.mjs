@@ -142,6 +142,29 @@ test("release baseline routes are TeamVersion scoped and versioned through appli
   assert.deepEqual(calls, [["get-baselines", "team-v1"], ["save-baselines", "team-v1", { scenarios: [{ scenarioId: "smoke" }] }]]);
 });
 
+test("release baseline batch and comparison routes preserve TeamVersion scope and response envelopes", async () => {
+  const calls = [];
+  const route = routeHarness({
+    startReleaseBaselineBatch: async (...args) => (calls.push(["start", ...args]), { batchId: "batch-1", status: "running" }),
+    getReleaseBaselineBatchStatus: async (...args) => (calls.push(["latest", ...args]), { teamVersionId: args[0], batch: { batchId: "batch-1" } }),
+    cancelReleaseBaselineBatch: async (...args) => (calls.push(["cancel", ...args]), { batchId: args[1], cancelRequested: true }),
+    compareReleaseBaselines: async (...args) => (calls.push(["compare", ...args]), { availableTargets: {}, selectedTarget: "parent_version", scenarios: [] })
+  });
+  assert.equal(await route.invoke("POST", "/api/v1/team-versions/team-v1/release-baselines/batches", { mode: "all_required" }), true);
+  assert.deepEqual(route.sent[0], { status: 202, payload: { batch: { batchId: "batch-1", status: "running" } } });
+  assert.equal(await route.invoke("GET", "/api/v1/team-versions/team-v1/release-baselines/batches/latest"), true);
+  assert.deepEqual(route.sent[1].payload.batch, { batchId: "batch-1" });
+  assert.equal(await route.invoke("POST", "/api/v1/team-versions/team-v1/release-baselines/batches/batch-1/cancel"), true);
+  assert.deepEqual(route.sent[2].payload.batch, { batchId: "batch-1", cancelRequested: true });
+  assert.equal(await route.invoke("GET", "/api/v1/team-versions/team-v1/release-baselines/comparison?target=latest_released"), true);
+  assert.deepEqual(calls, [
+    ["start", "team-v1", { mode: "all_required" }],
+    ["latest", "team-v1"],
+    ["cancel", "team-v1", "batch-1"],
+    ["compare", "team-v1", "latest_released"]
+  ]);
+});
+
 test("release readiness delegates the current digest and proof decision to Team lifecycle", async () => {
   const calls = [];
   const route = routeHarness({

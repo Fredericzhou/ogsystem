@@ -1,7 +1,7 @@
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { validateProfilesConfig, validateToolsConfig } from "../../../dist/runtime/config.js";
+import { validateLawsConfig, validateProfilesConfig, validateToolsConfig } from "../../../dist/runtime/config.js";
 import { validateModelSelection } from "../../../dist/runtime/model-selection.js";
 
 const ROLE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -10,6 +10,7 @@ const CONTRACT_PATH = ".ogs/contracts/handoff.json";
 const PROFILE_PATH = "profiles.json";
 const TOOL_PATH = "tools.json";
 const MODEL_SELECTION_PATH = ".ogs/model-selection.json";
+const LAWS_PATH = ".ogs/laws.json";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 async function assertRealDirectory(path) {
@@ -169,7 +170,17 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
       let modelSelection = { configVersion: "2" };
       try { modelSelection = validateModelSelection(JSON.parse(await read(modelSelectionPath, "utf8")), modelSelectionPath); }
       catch (error) { if (error?.code !== "ENOENT") throw error; }
-      return { roles, contracts, contractSchemas, executionConfig: await readExecutionConfig(root, read), modelSelection };
+      const lawsPath = resolve(root, LAWS_PATH);
+      await assertSafePath(root, lawsPath);
+      let lawsText = "";
+      let laws = { laws: [] };
+      try {
+        lawsText = await read(lawsPath, "utf8");
+        laws = validateLawsConfig(JSON.parse(lawsText), lawsPath);
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw new Error("TEAM_LAWS_CONFIG_INVALID: .ogs/laws.json is malformed or invalid.");
+      }
+      return { roles, contracts, contractSchemas, executionConfig: await readExecutionConfig(root, read), modelSelection, laws, lawsText };
     },
     async saveAssets({ workdir, assets = {}, roleIds = [] }) {
       const root = resolve(workdir);
@@ -202,6 +213,22 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
         const path = resolve(root, MODEL_SELECTION_PATH);
         const modelSelection = validateModelSelection(assets.modelSelection, path);
         files.push({ path, content: `${JSON.stringify(modelSelection, null, 2)}\n` });
+      }
+      if (assets.laws !== undefined || assets.lawsText !== undefined) {
+        let laws;
+        let content;
+        if (assets.laws !== undefined) {
+          laws = validateLawsConfig(assets.laws, resolve(root, LAWS_PATH));
+          content = `${JSON.stringify(laws, null, 2)}\n`;
+        } else if (assets.lawsText !== undefined) {
+          if (typeof assets.lawsText !== "string" || Buffer.byteLength(assets.lawsText, "utf8") > MAX_FILE_BYTES) {
+            throw new Error("TEAM_LAWS_CONFIG_INVALID: lawsText must be text no larger than 1 MiB.");
+          }
+          try { laws = validateLawsConfig(JSON.parse(assets.lawsText), resolve(root, LAWS_PATH)); }
+          catch (error) { throw new Error(`TEAM_LAWS_CONFIG_INVALID: ${error instanceof Error ? error.message : "invalid laws configuration"}`); }
+          content = `${JSON.stringify(laws, null, 2)}\n`;
+        }
+        files.push({ path: resolve(root, LAWS_PATH), content });
       }
       const staged = [];
       try {

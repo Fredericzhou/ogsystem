@@ -188,7 +188,7 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     for (const [width, height] of [[1440, 900], [1024, 768], [390, 844]]) {
       await desktopPage.setViewportSize({ width, height });
       for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
-        await desktopPage.goto(`${url}${route}`, { waitUntil: "networkidle" });
+        await desktopPage.goto(`${url}${route}`, { waitUntil: "domcontentloaded" });
         await desktopPage.locator(".main-area > .page-content:not(.hidden)").waitFor();
         if (route !== "/teams" && !route.includes("/cases/")) await desktopPage.locator(".main-area > .page-content:not(.hidden) .page-frame").waitFor();
         await assertRouteContentReachable(desktopPage, route);
@@ -341,7 +341,7 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     await mobilePage.keyboard.press("Escape");
     assert.equal(await mobilePage.locator("#topbar-more-toggle").getAttribute("aria-expanded"), "false");
     for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
-      await mobilePage.goto(`${url}${route}`, { waitUntil: "networkidle" });
+      await mobilePage.goto(`${url}${route}`, { waitUntil: "domcontentloaded" });
       await mobilePage.locator(".main-area > .page-content:not(.hidden)").waitFor();
       await assertRouteContentReachable(mobilePage, route);
       const undersized = await mobilePage.locator(".main-area > .page-content:not(.hidden)").evaluate((page) => [...page.querySelectorAll("button, a[href], input:not([type=checkbox]):not([type=radio]), select, textarea, [role=button]")]

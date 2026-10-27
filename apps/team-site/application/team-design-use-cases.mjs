@@ -92,16 +92,22 @@ export function createTeamDesignUseCases({
     const roleOverrides = {};
     for (const [roleId, role] of Object.entries(roles)) {
       if (role?.bindingKind !== "model") continue;
-      if (role.modelSelectionSource === "default") continue;
+      const override = {};
       const modelRef = String(role.modelRef || "").trim();
-      const separator = modelRef.indexOf("/");
-      if (separator < 1 || separator === modelRef.length - 1) {
-        throw new Error(`TEAM_MODEL_BINDING_REQUIRED: select a runnable model for ${roleId} before saving.`);
+      const fallbackModelRef = String(role.fallbackModelRef || "").trim();
+      if (role.modelSelectionSource !== "default") {
+        const separator = modelRef.indexOf("/");
+        if (separator < 1 || separator === modelRef.length - 1) {
+          throw new Error(`TEAM_MODEL_BINDING_REQUIRED: select a runnable model for ${roleId} before saving.`);
+        }
+        override.backend = modelRef.slice(0, separator);
+        override.modelId = modelRef.slice(separator + 1);
+      } else if (fallbackModelRef && current.modelSelection?.defaults?.backend && current.modelSelection?.defaults?.modelId) {
+        override.backend = current.modelSelection.defaults.backend;
+        override.modelId = current.modelSelection.defaults.modelId;
       }
-      roleOverrides[roleId] = {
-        backend: modelRef.slice(0, separator),
-        modelId: modelRef.slice(separator + 1)
-      };
+      if (fallbackModelRef) override.fallbackModelRef = fallbackModelRef;
+      if (override.backend && override.modelId) roleOverrides[roleId] = override;
     }
     return {
       configVersion: "2",

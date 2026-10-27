@@ -1,4 +1,41 @@
 export async function handleTeamRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
+  const batchCancelMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
+  if (batchCancelMatch && request.method === "POST") {
+    try {
+      sendJson(response, 200, { batch: await useCases.cancelReleaseBaselineBatch(batchCancelMatch[1], batchCancelMatch[2]) });
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to cancel release baseline batch." });
+    }
+    return true;
+  }
+  const batchStatusMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/latest$/);
+  if (batchStatusMatch && request.method === "GET") {
+    try {
+      sendJson(response, 200, await useCases.getReleaseBaselineBatchStatus(batchStatusMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read release baseline batch." });
+    }
+    return true;
+  }
+  const batchStartMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches$/);
+  if (batchStartMatch && request.method === "POST") {
+    try {
+      const body = await readBody(request, 1024 * 1024);
+      sendJson(response, 202, { batch: await useCases.startReleaseBaselineBatch(batchStartMatch[1], body) });
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to start release baseline batch." });
+    }
+    return true;
+  }
+  const comparisonMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/comparison$/);
+  if (comparisonMatch && request.method === "GET") {
+    try {
+      sendJson(response, 200, await useCases.compareReleaseBaselines(comparisonMatch[1], url.searchParams.get("target") || "parent_version"));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to compare release baselines." });
+    }
+    return true;
+  }
   const releaseReadinessMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-readiness$/);
   if (releaseReadinessMatch && request.method === "GET") {
     try {

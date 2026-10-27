@@ -40,6 +40,11 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
     return { studioRoot, simulationsRoot, versionDirectory };
   }
 
+  function resolveBatchPath(teamVersionId) {
+    const directories = resolveVersionDirectory(teamVersionId);
+    return { ...directories, batchPath: join(directories.versionDirectory, "batch-latest.json") };
+  }
+
   function resolveSimulationDirectory(teamVersionId, simulationId) {
     assertId(simulationId, SIMULATION_ID, "ID");
     const directories = resolveVersionDirectory(teamVersionId);
@@ -168,6 +173,37 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
   }
 
   return Object.freeze({
+    async readLatestBatch(teamVersionId) {
+      const directories = resolveBatchPath(teamVersionId);
+      if (!await assertManagedDirectories(directories)) return null;
+      if (!await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace")) return null;
+      const path = directories.batchPath;
+      try {
+        const stats = await lstat(path);
+        if (stats.isSymbolicLink() || !stats.isFile()) throw new Error("STUDIO_SIMULATION_BATCH_INVALID");
+        const batch = JSON.parse(await readFile(path, "utf8"));
+        if (!batch || batch.teamVersionId !== teamVersionId || typeof batch.batchId !== "string" || typeof batch.status !== "string" || !Array.isArray(batch.items)) {
+          throw new Error("STUDIO_SIMULATION_BATCH_INVALID");
+        }
+        return batch;
+      } catch (error) {
+        if (isNotFound(error)) return null;
+        if (error?.message === "STUDIO_SIMULATION_BATCH_INVALID") throw error;
+        throw new Error("STUDIO_SIMULATION_BATCH_INVALID");
+      }
+    },
+
+    async writeLatestBatch(teamVersionId, batchRecord) {
+      if (!batchRecord || batchRecord.teamVersionId !== teamVersionId || typeof batchRecord.batchId !== "string" || typeof batchRecord.status !== "string" || !Array.isArray(batchRecord.items)) {
+        throw new Error("STUDIO_SIMULATION_BATCH_INVALID");
+      }
+      const directories = resolveBatchPath(teamVersionId);
+      await assertManagedDirectories(directories, { create: true });
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace", { create: true });
+      await atomicWrite(directories.batchPath, `${JSON.stringify(redactStudioSimulationValue(batchRecord), null, 2)}\n`);
+      return batchRecord;
+    },
+
     async createSimulation(teamVersionId, input, options = {}) {
       const simulationId = options.simulationId || randomUUID();
       assertId(simulationId, SIMULATION_ID, "ID");
@@ -276,7 +312,7 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       if (!await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace")) return { removedCount: 0, removedSimulationIds: [] };
       const removedSimulationIds = [];
       for (const entry of await readdir(directories.versionDirectory, { withFileTypes: true })) {
-        if (entry.name.startsWith(".tmp-")) continue;
+        if (entry.name === "batch-latest.json" || entry.name.startsWith(".tmp-") || entry.name.endsWith(".tmp")) continue;
         assertId(entry.name, SIMULATION_ID, "ID");
         const { simulationDirectory } = resolveSimulationDirectory(teamVersionId, entry.name);
         await assertDirectory(simulationDirectory, "simulation");
@@ -308,7 +344,7 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       const entries = await readdir(directories.versionDirectory, { withFileTypes: true });
       const simulations = [];
       for (const entry of entries) {
-        if (entry.name.startsWith(".tmp-")) continue;
+        if (entry.name === "batch-latest.json" || entry.name.startsWith(".tmp-") || entry.name.endsWith(".tmp")) continue;
         const simulationId = entry.name;
         assertId(simulationId, SIMULATION_ID, "ID");
         const { simulationDirectory } = resolveSimulationDirectory(teamVersionId, simulationId);
@@ -355,7 +391,7 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
         const versionDirectory = resolve(simulationsRoot, versionEntry.name);
         await assertDirectory(versionDirectory, "TeamVersion simulation namespace");
         for (const simulationEntry of await readdir(versionDirectory, { withFileTypes: true })) {
-          if (simulationEntry.name.startsWith(".tmp-")) continue;
+          if (simulationEntry.name === "batch-latest.json" || simulationEntry.name.startsWith(".tmp-") || simulationEntry.name.endsWith(".tmp")) continue;
           assertId(simulationEntry.name, SIMULATION_ID, "ID");
           const simulationDirectory = resolve(versionDirectory, simulationEntry.name);
           await assertDirectory(simulationDirectory, "simulation");

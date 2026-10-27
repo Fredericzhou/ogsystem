@@ -142,6 +142,7 @@ export function injectStudioGraphStyles(): void {
       .studio-graph-toolbar-group {
         flex: 0 0 auto;
         flex-wrap: nowrap;
+        max-width: none;
       }
       .studio-graph-toolbar-text {
         display: none;

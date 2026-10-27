@@ -6,9 +6,13 @@ import { computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "../i
 const packageBundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "分析师" } } } } };
 const digest = computeTeamPackageCoreDigest(packageBundle);
 
-function createHarness({ runResult, runError, team = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle) } = {}) {
+function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynamicDigest = false, team = {}, siblingTeams = [], siblingPackages = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle), processIsAlive = () => true, initialBatch = null, onLockQueued } = {}) {
   const records = new Map();
+  const batches = new Map(initialBatch ? [["team-v1", initialBatch]] : []);
   const calls = [];
+  let lockDepth = 0;
+  let simulationSequence = 0;
+  const lockTails = new Map();
   const teamVersion = {
     projectId: "team-v1",
     teamId: "team-root",
@@ -18,6 +22,7 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
     workdir: "/teams/team-v1",
     ...team
   };
+  const catalogTeams = [teamVersion, ...siblingTeams];
   const simulationStore = {
     async createSimulation(versionId, input, options) {
       calls.push(["create", versionId, input, options]);
@@ -47,6 +52,12 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
     async recoverInterruptedSimulations(versionId) {
       return [...records.values()].map((record) => record.simulation).filter((item) => item.teamVersionId === versionId && item.status === "running");
     },
+    async readLatestBatch(versionId) { return batches.get(versionId) || null; },
+    async writeLatestBatch(versionId, batch) {
+      assert.ok(lockDepth > 0, "batch state writes must happen while holding the TeamVersion lock");
+      batches.set(versionId, batch);
+      return batch;
+    },
     async clearInteractiveSimulations(versionId) {
       const removed = [];
       for (const [id, record] of records) {
@@ -58,36 +69,61 @@ function createHarness({ runResult, runError, team = {}, packageBundle: selected
       return { removedCount: removed.length, removedSimulationIds: removed };
     }
   };
+  const withTeamVersionLock = async (id, action) => {
+    const previous = lockTails.get(id) || Promise.resolve();
+    let releaseTurn;
+    const turn = new Promise((resolve) => { releaseTurn = resolve; });
+    const queued = previous.then(() => turn);
+    if (lockDepth > 0) onLockQueued?.(id);
+    lockTails.set(id, queued);
+    await previous;
+    lockDepth += 1;
+    try { return await action(); }
+    finally {
+      lockDepth -= 1;
+      releaseTurn();
+      if (lockTails.get(id) === queued) lockTails.delete(id);
+    }
+  };
   const useCases = createStudioSimulationUseCases({
     teamCatalog: {
-      getTeamVersion: async (id) => id === teamVersion.teamVersionId ? teamVersion : undefined,
-      listTeamRepository: async () => [teamVersion]
+      getTeamVersion: async (id) => catalogTeams.find((item) => (item.teamVersionId || item.projectId) === id),
+      listTeamRepository: async () => catalogTeams
     },
     teamPackageReader: {
       async exportTeamPackage(workdir) {
         calls.push(["export", workdir]);
+        if (siblingPackages[workdir]) return siblingPackages[workdir];
         return selectedPackageBundle;
       }
     },
-    packageIntegrity: { computeTeamPackageCoreDigest: () => selectedDigest, computeReleaseBaselineDigest },
+    packageIntegrity: { computeTeamPackageCoreDigest: (bundle) => bundle === selectedPackageBundle ? dynamicDigest ? computeTeamPackageCoreDigest(selectedPackageBundle) : selectedDigest : computeTeamPackageCoreDigest(bundle), computeReleaseBaselineDigest },
     simulationStore,
     simulationRunner: {
       async simulate(selectedTeam, options) {
         calls.push(["run", selectedTeam.teamVersionId, options]);
         if (runError) throw runError;
+        if (mutateBundleOnRun) mutateBundleOnRun(selectedPackageBundle);
+        if (runGate) {
+          runGate.onStart?.();
+          await runGate.promise;
+        }
         const result = runResult || { status: "completed", finalOutputsByRoleId: { analyst: [{ content: "result" }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] };
         for (const item of result.auditTrail || []) await options.onRuntimeEvent?.({ type: "audit", ...item });
         return result;
       }
     },
-    identifiers: { simulationId: () => "sim-1" },
+    identifiers: { simulationId: () => `sim-${++simulationSequence}`, batchId: () => `batch-${simulationSequence + 1}` },
+    processIsAlive,
+    hostName: "test-host",
+    withTeamVersionLock,
     baselineStore: {
       async readReleaseBaselineScenarios() { return []; },
       async saveReleaseBaselineScenarios() { return []; }
     },
     now: (() => { let tick = 0; return () => `2026-01-01T00:00:0${tick++}.000Z`; })()
   });
-  return { useCases, records, calls };
+  return { useCases, records, calls, batches, withTeamVersionLock };
 }
 
 test("Studio Simulation creates its own owner record and stores completed state/events", async () => {
@@ -281,6 +317,188 @@ test("release baseline Sandbox evidence is versioned, schema checked, and tied t
   records.get("sim-1").simulation.owner.teamDigestVersion = 2;
   await assert.rejects(useCases.validateReleaseEvidence("team-v1", canonicalDigest), /TEAM_RELEASE_BASELINE_EVIDENCE_REQUIRED/);
   await assert.rejects(useCases.validateReleaseEvidence("team-v1", "0".repeat(64)), /TEAM_RELEASE_DIGEST_CHANGED/);
+});
+
+test("release baseline batch persists an idempotent running record and completes required scenarios", async () => {
+  const scenario = {
+    scenarioId: "release-smoke", name: "Release smoke", revision: 1, prompt: "Return JSON",
+    expectedRoleIds: ["analyst"], materials: [], outputSchema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }
+  };
+  const bundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "Analyst" } } }, releaseBaselineScenarios: [scenario] } };
+  const selectedDigest = computeTeamPackageCoreDigest(bundle);
+  const { useCases, batches } = createHarness({
+    packageBundle: bundle,
+    digest: selectedDigest,
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }
+  });
+
+  const started = await useCases.startReleaseBaselineBatch("team-v1", { mode: "all_required" });
+  assert.equal(started.status, "running");
+  assert.equal(started.items[0].status, "queued");
+  assert.equal((await useCases.startReleaseBaselineBatch("team-v1", { mode: "all_required" })).batchId, started.batchId, "duplicate starts return the persisted active batch");
+
+  let latest;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    latest = batches.get("team-v1");
+    if (latest.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(latest.status, "completed");
+  assert.equal(latest.items[0].status, "completed");
+  assert.equal(latest.items[0].simulationId, "sim-1");
+});
+
+test("release baseline batch recovery only interrupts a confirmed dead same-host owner", async () => {
+  const stale = {
+    batchId: "batch-1", teamVersionId: "team-v1", status: "running", ownerPid: 1234, ownerHost: "test-host",
+    items: [{ scenarioId: "release-smoke", status: "running" }, { scenarioId: "second", status: "queued" }]
+  };
+  const deadOwner = createHarness({ initialBatch: stale, processIsAlive: () => false });
+  const recovered = await deadOwner.useCases.getReleaseBaselineBatchStatus("team-v1");
+  assert.equal(recovered.batch.status, "failed");
+  assert.equal(recovered.batch.failureCode, "BATCH_INTERRUPTED_BY_RESTART");
+  assert.deepEqual(recovered.batch.items.map((item) => item.status), ["interrupted", "interrupted"]);
+
+  const liveOwner = createHarness({ initialBatch: { ...stale, ownerHost: "remote-host" }, processIsAlive: () => false });
+  const preserved = await liveOwner.useCases.getReleaseBaselineBatchStatus("team-v1");
+  assert.equal(preserved.batch.status, "running", "remote PID state is not treated as proof of death");
+});
+
+test("release baseline cancellation stops queued scenarios after the active run completes", async () => {
+  let finishRun;
+  let signalStarted;
+  const startedPromise = new Promise((resolve) => { signalStarted = resolve; });
+  const runPromise = new Promise((resolve) => { finishRun = resolve; });
+  const scenarios = ["release-one", "release-two"].map((scenarioId) => ({
+    scenarioId, name: scenarioId, revision: 1, prompt: "Return JSON", expectedRoleIds: ["analyst"], materials: [], outputSchema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }
+  }));
+  const bundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "Analyst" } } }, releaseBaselineScenarios: scenarios } };
+  const { useCases, batches } = createHarness({
+    packageBundle: bundle,
+    digest: computeTeamPackageCoreDigest(bundle),
+    runGate: { promise: runPromise, onStart: signalStarted },
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }
+  });
+  const started = await useCases.startReleaseBaselineBatch("team-v1", { mode: "all_required" });
+  await startedPromise;
+  await useCases.cancelReleaseBaselineBatch("team-v1", started.batchId);
+  finishRun();
+
+  let latest;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    latest = batches.get("team-v1");
+    if (latest.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(latest.status, "cancelled");
+  assert.deepEqual(latest.items.map((item) => item.status), ["completed", "cancelled"]);
+});
+
+test("release baseline batch invalidates evidence when the TeamVersion digest changes during a scenario", async () => {
+  const scenario = {
+    scenarioId: "release-smoke", name: "Release smoke", revision: 1, prompt: "Return JSON",
+    expectedRoleIds: ["analyst"], materials: [], outputSchema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }
+  };
+  const bundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "Analyst" } } }, releaseBaselineScenarios: [scenario] } };
+  const { useCases, batches } = createHarness({
+    packageBundle: bundle,
+    dynamicDigest: true,
+    mutateBundleOnRun: (candidate) => { candidate.team.systemSource = "changed during execution"; },
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }
+  });
+  const started = await useCases.startReleaseBaselineBatch("team-v1", { mode: "all_required" });
+  let latest;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    latest = batches.get("team-v1");
+    if (latest.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(latest.batchId, started.batchId);
+  assert.equal(latest.status, "invalidated");
+  assert.equal(latest.invalidationReason, "TEAM_OR_SCENARIO_DIGEST_CHANGED");
+});
+
+test("post-run digest check and batch result write share the TeamVersion lock", async () => {
+  let finishRun;
+  let signalRunStarted;
+  const runStarted = new Promise((resolve) => { signalRunStarted = resolve; });
+  const runPromise = new Promise((resolve) => { finishRun = resolve; });
+  let signalEditAcquired;
+  const editAcquired = new Promise((resolve) => { signalEditAcquired = resolve; });
+  let releaseEdit;
+  const editGate = new Promise((resolve) => { releaseEdit = resolve; });
+  let signalBatchQueued;
+  const batchQueued = new Promise((resolve) => { signalBatchQueued = resolve; });
+  const scenario = {
+    scenarioId: "release-smoke", name: "Release smoke", revision: 1, prompt: "Return JSON",
+    expectedRoleIds: ["analyst"], materials: [], outputSchema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }
+  };
+  const bundle = { team: { systemSource: "before-edit", design: { roles: { analyst: { name: "Analyst" } } }, releaseBaselineScenarios: [scenario] } };
+  const { useCases, batches, withTeamVersionLock } = createHarness({
+    packageBundle: bundle,
+    dynamicDigest: true,
+    runGate: { promise: runPromise, onStart: signalRunStarted },
+    onLockQueued: () => signalBatchQueued?.(),
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }
+  });
+  const started = await useCases.startReleaseBaselineBatch("team-v1", { mode: "all_required" });
+  await runStarted;
+  const edit = withTeamVersionLock("team-root", async () => {
+    signalEditAcquired();
+    await editGate;
+    bundle.team.systemSource = "edited while batch result waits for lock";
+  });
+  await editAcquired;
+  finishRun();
+  try {
+    await batchQueued;
+  } finally {
+    releaseEdit();
+    await edit;
+  }
+
+  let latest;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    latest = batches.get("team-v1");
+    if (latest.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(latest.batchId, started.batchId);
+  assert.equal(latest.status, "invalidated");
+  assert.equal(latest.items[0].status, "interrupted", "the result must not be credited after the queued edit commits");
+});
+
+test("release baseline comparison selects a released parent and reports revision regression", async () => {
+  const schema = { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } };
+  const parentScenario = { scenarioId: "release-smoke", name: "Release smoke", revision: 1, prompt: "Parent prompt", expectedRoleIds: ["analyst"], materials: [], outputSchema: schema };
+  const currentScenario = { ...parentScenario, revision: 2, prompt: "Changed prompt" };
+  const parentBundle = { team: { systemSource: "parent", releaseBaselineScenarios: [parentScenario] } };
+  const currentBundle = { team: { systemSource: "current", releaseBaselineScenarios: [currentScenario] } };
+  const parentTeam = {
+    projectId: "team-v0", teamId: "team-root", teamRootId: "team-root", teamVersionId: "team-v0", teamVersionNumber: 1,
+    teamVersionStatus: "released", workdir: "/teams/team-v0"
+  };
+  const { useCases } = createHarness({
+    team: { parentTeamVersionId: "team-v0", teamVersionNumber: 2 },
+    siblingTeams: [parentTeam],
+    siblingPackages: { "/teams/team-v0": parentBundle },
+    packageBundle: currentBundle,
+    digest: computeTeamPackageCoreDigest(currentBundle),
+    runResult: { status: "completed", finalOutputsByRoleId: { analyst: [{ data: { ok: true } }] }, finalOutputRoleOrder: ["analyst"], auditTrail: [{ roleId: "analyst", status: "completed" }] }
+  });
+  await useCases.createSimulation("team-root", "team-v0", { prompt: parentScenario.prompt, baselineScenarioId: parentScenario.scenarioId });
+
+  const comparison = await useCases.compareReleaseBaselines("team-v1", "parent_version");
+  assert.equal(comparison.selectedTarget, "parent_version");
+  assert.equal(comparison.availableTargets.parent_version.id, "team-v0");
+  assert.deepEqual(comparison.scenarios[0], {
+    scenarioId: "release-smoke",
+    name: "Release smoke",
+    revisionChanged: true,
+    regression: true,
+    current: { revision: 2, passed: false },
+    target: { revision: 1, passed: true }
+  });
 });
 
 test("release baseline proof rejects no-op, incomplete-role, and schema-invalid Sandbox results", async (t) => {

@@ -20,7 +20,7 @@ function publicSimulation(evidence) {
   return redactStudioSimulationValue(evidence);
 }
 
-export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, withTeamVersionLock = async (_id, action) => action(), now = () => new Date().toISOString() }) {
+export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
   if (!teamCatalog || typeof teamCatalog.getTeamVersion !== "function") {
     throw new TypeError("Studio simulation use cases require a TeamVersion reader.");
   }
@@ -60,6 +60,162 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     const initial = await teamCatalog.getTeamVersion(teamVersionId);
     if (!initial) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
     return withTeamVersionLock(initial.teamRootId || initial.teamId || teamVersionId, action);
+  }
+
+  async function updateBatchUnderLock(teamVersionId, batchId, update) {
+    return withLockedTeamVersion(teamVersionId, async () => {
+      const batch = await simulationStore.readLatestBatch(teamVersionId);
+      if (!batch || batch.batchId !== batchId) throw new Error("STUDIO_SIMULATION_BATCH_NOT_FOUND");
+      const next = await update(batch);
+      if (next !== batch) await simulationStore.writeLatestBatch(teamVersionId, next);
+      return next;
+    });
+  }
+
+  async function recoverStaleBatchUnderLock(teamVersionId) {
+    const batch = await simulationStore.readLatestBatch(teamVersionId);
+    if (batch?.status !== "running") return batch;
+    if (batch.ownerHost !== hostName || processIsAlive(batch.ownerPid)) return batch;
+    const recoveredAt = now();
+    const recovered = {
+      ...batch,
+      status: "failed",
+      failureCode: "BATCH_INTERRUPTED_BY_RESTART",
+      completedAt: recoveredAt,
+      items: batch.items.map((item) => ["running", "queued"].includes(item.status)
+        ? { ...item, status: "interrupted", completedAt: recoveredAt, failureCode: "BATCH_INTERRUPTED_BY_RESTART" }
+        : item)
+    };
+    await simulationStore.writeLatestBatch(teamVersionId, recovered);
+    return recovered;
+  }
+
+  async function hasValidScenarioEvidence(teamVersionId, teamCoreDigest, scenario) {
+    const scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(scenario);
+    for (const run of await simulationStore.listVersionSimulations(teamVersionId)) {
+      if (run.status !== "completed" || run.mode !== "sandbox" || run.runKind !== "studio_simulation"
+        || run.teamVersionId !== teamVersionId || run.teamCoreDigest !== teamCoreDigest
+        || run.teamDigestVersion !== TEAM_CORE_DIGEST_VERSION || run.baselineScenarioId !== scenario.scenarioId
+        || run.baselineRevision !== scenario.revision || run.baselineScenarioDigest !== scenarioDigest
+        || run.owner?.kind !== "studio_simulation" || run.owner?.teamVersionId !== teamVersionId
+        || run.owner?.teamId !== run.teamId || run.owner?.simulationId !== run.simulationId
+        || run.owner?.teamCoreDigest !== teamCoreDigest) continue;
+      try {
+        const evidence = await simulationStore.getSimulationEvidence(teamVersionId, run.simulationId);
+        assertBaselineResult({ status: evidence.state?.status, finalOutputsByRoleId: evidence.state?.finalOutputsByRoleId, auditTrail: evidence.state?.auditTrail }, scenario);
+        return true;
+      } catch { /* Invalid evidence is never used as a passing baseline. */ }
+    }
+    return false;
+  }
+
+  async function markBatchTerminal(teamVersionId, batchId, status, extra = {}) {
+    return updateBatchUnderLock(teamVersionId, batchId, (batch) => ({ ...batch, ...extra, status, completedAt: now() }));
+  }
+
+  function settledBatchItemCount(items) {
+    return items.filter((item) => ["completed", "failed", "interrupted", "skipped", "cancelled"].includes(item.status)).length;
+  }
+
+  const activeBatchRuns = new Set();
+
+  async function runReleaseBaselineBatch(useCases, teamId, teamVersionId, batchId, locale) {
+    const initial = await simulationStore.readLatestBatch(teamVersionId);
+    for (const item of initial?.items || []) {
+      if (item.status !== "queued") continue;
+      const state = await withLockedTeamVersion(teamVersionId, async () => {
+        const batch = await recoverStaleBatchUnderLock(teamVersionId);
+        if (!batch || batch.batchId !== batchId || batch.status !== "running") return { stop: true };
+        if (batch.cancelRequested) {
+          const items = batch.items.map((entry) => entry.status === "queued" ? { ...entry, status: "cancelled" } : entry);
+          const cancelled = { ...batch, status: "cancelled", completedAt: now(), items, completedCount: settledBatchItemCount(items) };
+          await simulationStore.writeLatestBatch(teamVersionId, cancelled);
+          return { stop: true };
+        }
+        const snapshot = await loadTeamVersion(teamId, teamVersionId);
+        const currentScenario = findBaseline(snapshot.bundle, item.scenarioId);
+        if (snapshot.teamCoreDigest !== batch.teamCoreDigest || currentScenario.scenarioDigest !== item.expectedScenarioDigest) {
+          await simulationStore.writeLatestBatch(teamVersionId, { ...batch, status: "invalidated", invalidationReason: "TEAM_OR_SCENARIO_DIGEST_CHANGED", completedAt: now() });
+          return { stop: true };
+        }
+        await simulationStore.writeLatestBatch(teamVersionId, {
+          ...batch,
+          currentScenarioId: item.scenarioId,
+          currentScenarioName: item.name,
+          items: batch.items.map((entry) => entry.scenarioId === item.scenarioId ? { ...entry, status: "running", startedAt: now() } : entry)
+        });
+        return { scenario: currentScenario, expectedDigest: batch.teamCoreDigest };
+      });
+      if (state.stop) return;
+      try {
+        const result = await useCases.createSimulation(teamId, teamVersionId, {
+          prompt: state.scenario.prompt,
+          locale,
+          baselineScenarioId: state.scenario.scenarioId,
+          expectedTeamCoreDigest: state.expectedDigest,
+          awaitCompletion: true
+        });
+        const invalid = await withLockedTeamVersion(teamVersionId, async () => {
+          const batch = await simulationStore.readLatestBatch(teamVersionId);
+          if (!batch || batch.batchId !== batchId || batch.status !== "running") return batch?.status === "invalidated";
+          const after = await loadTeamVersion(teamId, teamVersionId);
+          const currentScenario = findBaseline(after.bundle, item.scenarioId);
+          const digestChanged = after.teamCoreDigest !== batch.teamCoreDigest || currentScenario.scenarioDigest !== item.expectedScenarioDigest;
+          const items = batch.items.map((entry) => entry.scenarioId === item.scenarioId
+            ? { ...entry, status: digestChanged ? "interrupted" : result.simulation.status === "completed" ? "completed" : "failed", simulationId: result.simulation.simulationId, completedAt: now(), ...(result.simulation.failureSummary ? { failureSummary: result.simulation.failureSummary } : {}) }
+            : entry);
+          const next = {
+            ...batch,
+            items,
+            completedCount: settledBatchItemCount(items),
+            ...(digestChanged ? { status: "invalidated", invalidationReason: "TEAM_OR_SCENARIO_DIGEST_CHANGED", completedAt: now() } : {})
+          };
+          await simulationStore.writeLatestBatch(teamVersionId, next);
+          return digestChanged;
+        });
+        if (invalid) {
+          return;
+        }
+      } catch (error) {
+        const message = redactStudioSimulationText(error instanceof Error ? error.message : String(error)).slice(0, 500);
+        const invalid = await withLockedTeamVersion(teamVersionId, async () => {
+          const batch = await simulationStore.readLatestBatch(teamVersionId);
+          if (!batch || batch.batchId !== batchId || batch.status !== "running") return batch?.status === "invalidated";
+          const snapshot = await loadTeamVersion(teamId, teamVersionId).catch(() => null);
+          const currentScenario = snapshot ? snapshot.bundle?.team?.releaseBaselineScenarios?.find((entry) => entry.scenarioId === item.scenarioId) : null;
+          const currentScenarioDigest = currentScenario ? packageIntegrity.computeReleaseBaselineDigest(currentScenario) : null;
+          const digestChanged = !snapshot || snapshot.teamCoreDigest !== batch.teamCoreDigest || currentScenarioDigest !== item.expectedScenarioDigest;
+          const items = batch.items.map((entry) => entry.scenarioId === item.scenarioId
+            ? { ...entry, status: digestChanged ? "interrupted" : "failed", completedAt: now(), ...(digestChanged ? {} : { failureSummary: message }) }
+            : entry);
+          await simulationStore.writeLatestBatch(teamVersionId, {
+            ...batch,
+            items,
+            completedCount: settledBatchItemCount(items),
+            ...(digestChanged ? { status: "invalidated", invalidationReason: "TEAM_OR_SCENARIO_DIGEST_CHANGED", completedAt: now() } : {})
+          });
+          return digestChanged;
+        });
+        if (invalid) return;
+      }
+    }
+    await withLockedTeamVersion(teamVersionId, async () => {
+      const batch = await simulationStore.readLatestBatch(teamVersionId);
+      if (!batch || batch.batchId !== batchId || batch.status !== "running") return;
+      if (batch.cancelRequested) {
+        const items = batch.items.map((item) => item.status === "queued" ? { ...item, status: "cancelled" } : item);
+        await simulationStore.writeLatestBatch(teamVersionId, { ...batch, status: "cancelled", completedAt: now(), items, completedCount: settledBatchItemCount(items) });
+        return;
+      }
+      const snapshot = await loadTeamVersion(batch.teamId || batch.teamVersionId, teamVersionId);
+      const currentScenarioDigests = new Map((snapshot.bundle?.team?.releaseBaselineScenarios || []).map((scenario) => [scenario.scenarioId, packageIntegrity.computeReleaseBaselineDigest(scenario)]));
+      if (snapshot.teamCoreDigest !== batch.teamCoreDigest || batch.items.some((item) => currentScenarioDigests.get(item.scenarioId) !== item.expectedScenarioDigest)) {
+        await simulationStore.writeLatestBatch(teamVersionId, { ...batch, status: "invalidated", invalidationReason: "TEAM_OR_SCENARIO_DIGEST_CHANGED", completedAt: now() });
+        return;
+      }
+      const failed = batch.items.some((item) => ["failed", "interrupted"].includes(item.status));
+      await simulationStore.writeLatestBatch(teamVersionId, { ...batch, status: failed ? "failed" : "completed", completedAt: now() });
+    });
   }
 
   async function loadSimulationEvidence(teamId, teamVersionId, simulationId) {
@@ -152,12 +308,13 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       }
       return simulation;
     },
-    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", baselineScenarioId, awaitCompletion = true } = {}) {
+    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", baselineScenarioId, expectedTeamCoreDigest, awaitCompletion = true } = {}) {
       const input = String(prompt || "").trim();
       if (!input || input.length > 4000) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: enter a task between 1 and 4,000 characters.");
       const startedAt = now();
       const prepared = await withLockedTeamVersion(teamVersionId, async () => {
         const snapshot = await loadTeamVersion(teamId, teamVersionId);
+        if (expectedTeamCoreDigest && snapshot.teamCoreDigest !== expectedTeamCoreDigest) throw new Error("TEAM_VERSION_DIGEST_CHANGED: TeamVersion changed before baseline execution.");
         const baseline = baselineScenarioId ? findBaseline(snapshot.bundle, String(baselineScenarioId)) : null;
         if (!baseline && input.length > 1200) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: non-baseline simulations are limited to 1,200 characters.");
         if (baseline && input !== baseline.prompt) throw new Error("TEAM_RELEASE_BASELINE_INPUT_MISMATCH: baseline runs use the saved prompt.");
@@ -368,6 +525,138 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     return { ok: true, teamVersionId, teamCoreDigest, teamDigestVersion: TEAM_CORE_DIGEST_VERSION, requiredScenarioCount: requiredScenarios.length };
     },
 
+    async startReleaseBaselineBatch(teamIdOrVersionId, teamVersionIdOrOptions = {}, optionsValue = {}) {
+      let teamId;
+      let teamVersionId;
+      let options;
+      if (typeof teamVersionIdOrOptions === "string") {
+        teamId = teamIdOrVersionId;
+        teamVersionId = teamVersionIdOrOptions;
+        options = optionsValue;
+      } else {
+        teamVersionId = teamIdOrVersionId;
+        options = teamVersionIdOrOptions || {};
+        const team = await teamCatalog.getTeamVersion(teamVersionId);
+        if (!team) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+        teamId = team.teamId || team.teamRootId || teamVersionId;
+      }
+      const { mode = "missing_only", locale = "zh-CN" } = options;
+      if (!simulationStore.readLatestBatch || !simulationStore.writeLatestBatch) throw new Error("STUDIO_SIMULATION_BATCH_UNAVAILABLE");
+      if (!["missing_only", "retry_failed", "all_required"].includes(mode)) throw new Error("STUDIO_SIMULATION_BATCH_MODE_INVALID");
+      const identity = teamVersionIdentity({ teamId, teamVersionId });
+      const batch = await withLockedTeamVersion(teamVersionId, async () => {
+        const existing = await recoverStaleBatchUnderLock(teamVersionId);
+        if (existing?.status === "running") return existing;
+        const snapshot = await loadTeamVersion(identity.teamId, teamVersionId);
+        const scenarios = (snapshot.bundle?.team?.releaseBaselineScenarios || []).filter((scenario) => scenario.requiredForRelease !== false);
+        if (!scenarios.length) throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: define at least one required baseline scenario first.");
+        const previous = mode === "retry_failed" ? existing : null;
+        const previousFailed = new Set((previous?.items || []).filter((item) => ["failed", "interrupted"].includes(item.status)).map((item) => item.scenarioId));
+        const items = [];
+        for (const scenario of scenarios) {
+          const scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(scenario);
+          let status = "queued";
+          if (mode === "missing_only" && await hasValidScenarioEvidence(teamVersionId, snapshot.teamCoreDigest, scenario)) status = "skipped";
+          if (mode === "retry_failed" && !previousFailed.has(scenario.scenarioId)) status = "skipped";
+          items.push({ scenarioId: scenario.scenarioId, name: scenario.name, revision: scenario.revision, expectedScenarioDigest: scenarioDigest, status });
+        }
+        const createdAt = now();
+        const next = {
+          batchId: identifiers.batchId?.() || identifiers.simulationId(),
+          teamId: identity.teamId,
+          teamVersionId,
+          teamCoreDigest: snapshot.teamCoreDigest,
+          mode,
+          status: "running",
+          ownerPid: processId,
+          ownerHost: hostName,
+          startedAt: createdAt,
+          completedCount: items.filter((item) => item.status === "skipped").length,
+          totalCount: items.length,
+          cancelRequested: false,
+          items
+        };
+        await simulationStore.writeLatestBatch(teamVersionId, next);
+        return next;
+      });
+      if (batch.ownerPid === processId && batch.ownerHost === hostName && batch.status === "running" && !activeBatchRuns.has(batch.batchId)) {
+        activeBatchRuns.add(batch.batchId);
+        void runReleaseBaselineBatch(this, identity.teamId, teamVersionId, batch.batchId, locale)
+          .catch(async (error) => {
+            const message = redactStudioSimulationText(error instanceof Error ? error.message : String(error)).slice(0, 500);
+            await markBatchTerminal(teamVersionId, batch.batchId, "failed", { failureSummary: message }).catch(() => undefined);
+          })
+          .finally(() => activeBatchRuns.delete(batch.batchId));
+      }
+      return batch;
+    },
+
+    async getReleaseBaselineBatchStatus(teamVersionId) {
+      if (!simulationStore.readLatestBatch || !simulationStore.writeLatestBatch) throw new Error("STUDIO_SIMULATION_BATCH_UNAVAILABLE");
+      const batch = await withLockedTeamVersion(teamVersionId, () => recoverStaleBatchUnderLock(teamVersionId));
+      return publicSimulation({ teamVersionId, batch });
+    },
+
+    async cancelReleaseBaselineBatch(teamVersionId, batchId) {
+      if (!simulationStore.readLatestBatch || !simulationStore.writeLatestBatch) throw new Error("STUDIO_SIMULATION_BATCH_UNAVAILABLE");
+      return publicSimulation(await updateBatchUnderLock(teamVersionId, batchId, (batch) => {
+        if (batch.status !== "running") return batch;
+        return { ...batch, cancelRequested: true, cancelRequestedAt: now() };
+      }));
+    },
+
+    async compareReleaseBaselines(teamVersionId, target = "parent_version") {
+      const current = await loadTeamVersion((await teamCatalog.getTeamVersion(teamVersionId))?.teamId || teamVersionId, teamVersionId);
+      const siblings = typeof teamCatalog.listTeamRepository === "function"
+        ? await teamCatalog.listTeamRepository({ includeUnreleased: true })
+        : [];
+      const sameTeam = siblings.filter((item) => !item.teamProjectId && (item.teamRootId || item.teamId) === current.teamId);
+      const parent = current.team.parentTeamVersionId ? sameTeam.find((item) => item.teamVersionId === current.team.parentTeamVersionId && item.teamVersionStatus === "released") : null;
+      const latest = sameTeam.filter((item) => item.teamVersionStatus === "released" && item.teamVersionId !== teamVersionId)
+        .sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0) || String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))[0] || null;
+      const targetTeam = target === "latest_released" ? latest : target === "parent_version" ? parent : null;
+      const targetSnapshot = targetTeam ? await loadTeamVersion(current.teamId, targetTeam.teamVersionId || targetTeam.projectId) : null;
+      const currentScenarios = current.bundle?.team?.releaseBaselineScenarios || [];
+      const targetScenarios = targetSnapshot?.bundle?.team?.releaseBaselineScenarios || [];
+      const targetById = new Map(targetScenarios.map((scenario) => [scenario.scenarioId, scenario]));
+      const currentById = new Map(currentScenarios.map((scenario) => [scenario.scenarioId, scenario]));
+      const comparisons = [];
+      const scenarioIds = [...new Set([...currentScenarios.map((scenario) => scenario.scenarioId), ...targetScenarios.map((scenario) => scenario.scenarioId)])];
+      for (const scenarioId of scenarioIds) {
+        const scenario = currentById.get(scenarioId);
+        const previous = targetById.get(scenarioId);
+        const currentPassed = scenario ? await hasValidScenarioEvidence(teamVersionId, current.teamCoreDigest, scenario) : false;
+        const targetPassed = previous ? await hasValidScenarioEvidence(targetSnapshot.team.teamVersionId || targetSnapshot.team.projectId, targetSnapshot.teamCoreDigest, previous) : false;
+        const revisionChanged = Boolean(previous && scenario && packageIntegrity.computeReleaseBaselineDigest(previous) !== packageIntegrity.computeReleaseBaselineDigest(scenario));
+        comparisons.push({
+          scenarioId,
+          name: scenario?.name || previous?.name,
+          revisionChanged,
+          regression: Boolean(targetPassed && !currentPassed),
+          current: scenario ? { revision: scenario.revision, passed: currentPassed } : null,
+          target: previous ? { revision: previous.revision, passed: targetPassed } : null
+        });
+      }
+      const describeTarget = (kind, team) => team ? {
+        target: kind,
+        id: team.teamVersionId || team.projectId,
+        teamVersionId: team.teamVersionId || team.projectId,
+        versionNumber: team.teamVersionNumber,
+        teamName: team.teamName || team.name,
+        label: kind === "parent_version" ? "Parent version" : "Latest released"
+      } : null;
+      return {
+        teamVersionId,
+        availableTargets: {
+          parent_version: describeTarget("parent_version", parent),
+          latest_released: describeTarget("latest_released", latest)
+        },
+        selectedTarget: targetTeam ? target : null,
+        targetTeamVersionId: targetTeam?.teamVersionId || targetTeam?.projectId || null,
+        scenarios: comparisons
+      };
+    },
+
     async recoverInterruptedSimulations() {
       if (typeof teamCatalog.listTeamRepository !== "function" || typeof simulationStore.recoverInterruptedSimulations !== "function") {
         throw new TypeError("Studio Simulation recovery requires TeamVersion listing and recovery storage.");
@@ -377,7 +666,10 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       for (const team of teams) {
         if (team.teamProjectId || team.projectType === "collaboration") continue;
         const { teamVersionId } = teamVersionIdentity(team);
-        const simulations = await simulationStore.recoverInterruptedSimulations(teamVersionId);
+        const simulations = await withLockedTeamVersion(teamVersionId, async () => {
+          if (simulationStore.readLatestBatch && simulationStore.writeLatestBatch) await recoverStaleBatchUnderLock(teamVersionId);
+          return simulationStore.recoverInterruptedSimulations(teamVersionId);
+        });
         recovered.push(...simulations);
       }
       return publicSimulation({ recoveredCount: recovered.length, simulations: recovered });

@@ -718,13 +718,14 @@ function teamVersionMeta(team) {
 }
 function teamCard(team, area) {
   const meta = teamVersionMeta(team); const id = encodeURIComponent(team.projectId); const rootId = encodeURIComponent(team.teamRootId || team.teamId || team.projectId); const title = esc(team.teamName || team.name);
+  const deleteButton = !team.builtIn ? `<button class="danger-button team-delete-button" type="button" data-team-action="delete" data-team-id="${id}" data-team-name="${title}" data-team-status="${meta.status}">${esc(copy[state.locale].deleteTeam)}</button>` : "";
   const actions = area === "repository"
-    ? `<a class="primary-button" href="/projects/new?team=${id}" data-route="/projects/new?team=${id}">${esc(copy[state.locale].useTeam)}</a><button class="secondary-button" type="button" data-team-action="edit" data-team-id="${id}">${esc(copy[state.locale].editAsVersion)}</button>${!team.builtIn ? `<button class="danger-button team-delete-button" type="button" data-team-action="delete" data-team-id="${id}" data-team-name="${title}" data-team-status="${meta.status}">${esc(copy[state.locale].deleteTeam)}</button>` : ""}`
+    ? `<a class="primary-button" href="/projects/new?team=${id}" data-route="/projects/new?team=${id}">${esc(copy[state.locale].useTeam)}</a><button class="secondary-button" type="button" data-team-action="edit" data-team-id="${id}">${esc(copy[state.locale].editAsVersion)}</button>${deleteButton}`
     : meta.status === "archived"
-      ? `<a class="secondary-button" href="/studio/teams/${id}/info" data-route="/studio/teams/${id}/info">${state.locale === "en" ? "View team" : "查看团队"}</a>`
+      ? `<a class="secondary-button team-view-button" href="/studio/teams/${id}/info" data-route="/studio/teams/${id}/info">${state.locale === "en" ? "View team" : "查看团队"}</a>${deleteButton}`
       : `${meta.status === "released"
         ? `<button class="primary-button" type="button" data-team-action="edit" data-team-id="${id}">${state.locale === "en" ? "Edit team" : "编辑团队"}</button><button class="secondary-button" type="button" data-team-action="archive" data-team-id="${id}">${esc(copy[state.locale].archiveVersion)}</button>`
-        : `<a class="primary-button" href="/studio/teams/${id}/design" data-route="/studio/teams/${id}/design">${esc(copy[state.locale].continueEditing)}</a>`}${!team.builtIn ? `<button class="danger-button team-delete-button" type="button" data-team-action="delete" data-team-id="${id}" data-team-name="${title}" data-team-status="${meta.status}">${esc(copy[state.locale].deleteTeam)}</button>` : ""}`;
+        : `<a class="primary-button" href="/studio/teams/${id}/design" data-route="/studio/teams/${id}/design">${esc(copy[state.locale].continueEditing)}</a>`}${deleteButton}`;
   const statusClass = meta.displayStatus === "released" ? "released" : meta.displayStatus;
   return `<article class="team-version-card project-asset-surface" data-team-root-id="${esc(team.teamRootId || team.teamId || team.projectId)}" data-team-status="${esc(meta.displayStatus)}" data-team-builtin="${team.builtIn ? "true" : "false"}"><div class="asset-card-top"><span class="asset-mark">O</span><span class="status-chip ${esc(statusClass)}">${esc(meta.label)}</span></div><div class="asset-title-row"><h2>${title}</h2><span class="version-badge">${esc(meta.version)}</span></div><p>${esc(team.overview || "")}</p><div class="asset-card-meta"><span>${team.builtIn ? (state.locale === "en" ? "Built-in team" : "内置经典团队") : esc(meta.hint)}</span><span>${team.updatedAt ? new Date(team.updatedAt).toLocaleDateString(state.locale) : ""}</span></div><div class="asset-card-actions">${actions}</div></article>`;
 }
@@ -864,7 +865,7 @@ async function renderCollaborationProjects() {
     const response = await pageFetch("/api/v1/projects"); const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法读取协作项目");
     const projects = payload.projects || [];
-    grid.innerHTML = projects.length ? projects.map((project) => { const teams = project.mountedTeams || []; const taskCount = (project.taskRecords || []).filter((task) => !task.deletedAt && task.status !== "deleted").length; const teamSummary = teams.map((team) => `${team.teamName} · v${team.teamVersionNumber || 1}`).join("、"); return `<article class="project-asset-card collaboration-project-card"><div class="asset-card-top"><span class="asset-mark">⌘</span><span class="status-chip ${esc(project.projectStatus || "draft")}">${esc(taskCount ? "进行中" : "待开始")}</span></div><div class="asset-title-row"><h2>${esc(project.name)}</h2><span class="version-badge">${teams.length} 个团队</span></div><p>${esc(project.overview || "共享生产资料，按任务记录项目进展")}</p><div class="asset-card-meta"><span>${esc(teamSummary || "需要挂载已发布团队")}</span><span>${taskCount} 个任务</span></div><div class="asset-card-actions"><a class="primary-button" href="/projects/${encodeURIComponent(project.projectId)}" data-route="/projects/${encodeURIComponent(project.projectId)}">打开项目 →</a><button class="text-button danger-text" type="button" data-project-delete="${esc(project.projectId)}" data-project-name="${esc(project.name)}">${esc(copy[state.locale].deleteProject)}</button></div></article>`; }).join("") : `<div class="empty-projects"><strong>还没有协作项目</strong><p>创建项目后，可挂载已发布团队并开始任务。</p></div>`;
+    grid.innerHTML = projects.length ? projects.map((project) => { const teams = project.mountedTeams || []; const taskCount = (project.taskRecords || []).filter((task) => !task.deletedAt && task.status !== "deleted").length; const teamSummary = teams.map((team) => `${team.teamName} · v${team.teamVersionNumber || 1}`).join("、"); return `<article class="project-asset-card collaboration-project-card"><div class="asset-card-top"><span class="asset-mark">⌘</span><span class="status-chip ${esc(project.projectStatus || "draft")}">${esc(taskCount ? "进行中" : "待开始")}</span></div><div class="asset-title-row"><h2>${esc(project.name)}</h2><span class="version-badge">${teams.length} 个团队</span></div><p>${esc(project.overview || "共享生产资料，按任务记录项目进展")}</p><div class="asset-card-meta"><span>${esc(teamSummary || "需要挂载已发布团队")}</span><span>${taskCount} 个任务</span></div><div class="asset-card-actions"><a class="primary-button" href="/projects/${encodeURIComponent(project.projectId)}" data-route="/projects/${encodeURIComponent(project.projectId)}">${state.locale === "en" ? "Open project" : "打开项目"}</a><button class="danger-button team-delete-button" type="button" data-project-delete="${esc(project.projectId)}" data-project-name="${esc(project.name)}">${esc(copy[state.locale].deleteProject)}</button></div></article>`; }).join("") : `<div class="empty-projects"><strong>还没有协作项目</strong><p>创建项目后，可挂载已发布团队并开始任务。</p></div>`;
     grid.querySelectorAll("[data-project-delete]").forEach((button) => button.addEventListener("click", async () => {
       const message = copy[state.locale].confirmDeleteProject.replace("{name}", button.dataset.projectName || button.dataset.projectDelete);
       if (!window.confirm(message)) return;
@@ -1133,6 +1134,7 @@ function studioWorkspaceNav(teamVersionId, active) {
 }
 
 function addStudioWorkspaceNav(root, teamVersionId, active) {
+  if (!root || root.querySelector(".studio-workspace-nav")) return;
   root.querySelector(".page-heading")?.insertAdjacentHTML("afterend", studioWorkspaceNav(teamVersionId, active));
 }
 
@@ -1204,6 +1206,10 @@ async function renderStudioSystemSettings(teamVersionId, pageRequest = state.act
     const teamVersionDigest = current.teamVersionDigest || design?.saveSnapshotDigest || design?.teamVersionDigest;
     const editable = teamVersionMeta(team).status !== "archived";
     const currentAssets = current.assets || design?.saveSnapshotAssets || assets;
+    const lawCatalog = currentAssets.laws || { laws: [] };
+    const selectedLawId = authoring.system.lawGlobalRef || "";
+    const selectedLaw = (lawCatalog.laws || []).find((law) => law.lawId === selectedLawId) || null;
+    const laws = selectedLaw?.constraints || {};
     const contractSchemas = currentAssets.contractSchemas || {};
     const emptyContractManifest = '{\n  "version": 1,\n  "contracts": []\n}';
     const contractManifest = currentAssets.contracts || emptyContractManifest;
@@ -1224,7 +1230,9 @@ async function renderStudioSystemSettings(teamVersionId, pageRequest = state.act
     const contractField = editable
       ? `<label class="field full"><span>${state.locale === "en" ? "Contract manifest" : "契约清单"}</span><textarea data-system-contracts rows="8" spellcheck="false">${esc(contractManifest)}</textarea></label>`
       : `<div class="field full"><span>${state.locale === "en" ? "Contract manifest" : "契约清单"}</span><pre class="studio-readonly-code">${esc(contractManifest)}</pre></div>`;
-    root.innerHTML = `<div class="studio-global-settings"><header class="studio-global-settings-head"><div><span class="section-kicker">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</span><h2>${state.locale === "en" ? "Global configuration" : "全局配置"}</h2></div><p>${state.locale === "en" ? "System identity and handoff contracts for this team version." : "配置团队身份、全局法则与流转契约。"}</p></header><section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Team configuration" : "团队配置"}</h3></div><div class="studio-inspector-fields"></div></section><section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Contracts and schemas" : "交接契约与 Schema"}</h3></div><div class="studio-inspector-fields">${contractField}${schemaFields || `<p class="field-hint full">${state.locale === "en" ? "No schema files are referenced by the contract manifest yet." : "当前契约清单尚未引用 Schema 文件。"}</p>`}<code>.ogs/contracts/handoff.json</code></div></section><div class="form-actions studio-system-actions">${editable ? `<button class="primary-button" type="button" data-system-save>${state.locale === "en" ? "Save global configuration" : "保存全局配置"}</button>` : `<span class="form-hint">${state.locale === "en" ? "Released versions are read-only. Create a design version to edit." : "已发布版本为只读；请创建新的设计中版本再编辑。"}</span>`}<p class="form-status" data-system-status role="status" aria-live="polite"></p></div></div>`;
+    const lawNumber = (key) => Number.isSafeInteger(laws[key]) && laws[key] > 0 ? laws[key] : "";
+    const lawFields = `<section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Runtime laws" : "运行法则"}</h3></div><div class="studio-inspector-fields"><label class="field"><span>${state.locale === "en" ? "Maximum transitions" : "最大流转步数"}</span><input data-law-number="maxTransitions" type="number" min="1" step="1" value="${esc(lawNumber("maxTransitions"))}" ${editable ? "" : "disabled"}></label><label class="field"><span>${state.locale === "en" ? "Prompt limit per role (characters)" : "单角色提示词上限（字符）"}</span><input data-law-number="maxPromptCharsPerRole" type="number" min="1" step="1" value="${esc(lawNumber("maxPromptCharsPerRole"))}" ${editable ? "" : "disabled"}></label><label class="field"><span>${state.locale === "en" ? "Prompt limit per run (characters)" : "单次运行提示词上限（字符）"}</span><input data-law-number="maxTotalPromptCharsPerRun" type="number" min="1" step="1" value="${esc(lawNumber("maxTotalPromptCharsPerRun"))}" ${editable ? "" : "disabled"}></label><label class="field full"><span>${state.locale === "en" ? "Disabled tool references" : "禁用工具引用"}</span><textarea data-law-tools rows="3" ${editable ? "" : "disabled"}>${esc((laws.forbiddenToolRefs || []).join(", "))}</textarea></label><label class="field checkbox full"><input data-law-isolation type="checkbox" ${laws.isolateExternalData !== false ? "checked" : ""} ${editable ? "" : "disabled"}><span>${state.locale === "en" ? "Separate external data from instructions" : "将外部资料与指令结构化分隔"}</span></label><p class="field-hint full" data-law-isolation-warning role="status" ${laws.isolateExternalData !== false ? "hidden" : ""}>${state.locale === "en" ? "External materials will not be wrapped in an &lt;ogs_external_data&gt; block. Use only for controlled compatibility debugging." : "外部材料将不再使用 &lt;ogs_external_data&gt; 包裹。仅建议在受控环境中临时排查兼容问题。"}</p></div></section>`;
+    root.innerHTML = `<div class="studio-global-settings"><header class="studio-global-settings-head"><div><span class="section-kicker">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</span><h2>${state.locale === "en" ? "Global configuration" : "全局配置"}</h2></div><p>${state.locale === "en" ? "System identity and handoff contracts for this team version." : "配置团队身份、全局法则与流转契约。"}</p></header><section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Team configuration" : "团队配置"}</h3></div><div class="studio-inspector-fields"></div></section>${lawFields}<section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Contracts and schemas" : "交接契约与 Schema"}</h3></div><div class="studio-inspector-fields">${contractField}${schemaFields || `<p class="field-hint full">${state.locale === "en" ? "No schema files are referenced by the contract manifest yet." : "当前契约清单尚未引用 Schema 文件。"}</p>`}<code>.ogs/contracts/handoff.json</code></div></section><div class="form-actions studio-system-actions">${editable ? `<button class="primary-button" type="button" data-system-save>${state.locale === "en" ? "Save global configuration" : "保存全局配置"}</button>` : `<span class="form-hint">${state.locale === "en" ? "Released versions are read-only. Create a design version to edit." : "已发布版本为只读；请创建新的设计中版本再编辑。"}</span>`}<p class="form-status" data-system-status role="status" aria-live="polite"></p></div></div>`;
     root.querySelector(".studio-global-settings-section .studio-inspector-fields").innerHTML = teamConfigurationFields;
     const readOnlyHint = root.querySelector(".studio-system-actions .form-hint");
     if (!editable && readOnlyHint) readOnlyHint.textContent = state.locale === "en"
@@ -1232,7 +1240,12 @@ async function renderStudioSystemSettings(teamVersionId, pageRequest = state.act
       : "已停用版本为只读，不能在此编辑。";
     const status = root.querySelector("[data-system-status]");
     const setPageDirty = () => setDirty("studio-system-settings");
-    root.querySelectorAll("[data-system-field], [data-system-contracts], [data-system-schema]").forEach((field) => field.addEventListener("input", setPageDirty));
+    root.querySelectorAll("[data-system-field], [data-system-contracts], [data-system-schema], [data-law-number], [data-law-tools], [data-law-isolation]").forEach((field) => field.addEventListener("input", setPageDirty));
+    root.querySelector("[data-law-isolation]")?.addEventListener("change", (event) => {
+      const warning = root.querySelector("[data-law-isolation-warning]");
+      warning.hidden = event.currentTarget.checked;
+      setPageDirty();
+    });
     root.querySelector("[data-system-save]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
@@ -1245,11 +1258,38 @@ async function renderStudioSystemSettings(teamVersionId, pageRequest = state.act
         contracts: !currentAssets.contracts && root.querySelector("[data-system-contracts]").value === emptyContractManifest
           ? (nextAuthoring.system.handoffMode ? emptyContractManifest : undefined)
           : root.querySelector("[data-system-contracts]").value,
-        contractSchemas: Object.fromEntries([...root.querySelectorAll("[data-system-schema]")].map((field) => [field.dataset.systemSchema, field.value]))
+        contractSchemas: Object.fromEntries([...root.querySelectorAll("[data-system-schema]")].map((field) => [field.dataset.systemSchema, field.value])),
+        laws: { ...laws }
       };
       try {
+        root.querySelectorAll("[data-law-number]").forEach((field) => {
+          const value = field.value === "" ? undefined : Number(field.value);
+          if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) throw new Error(state.locale === "en" ? `${field.dataset.lawNumber} must be a positive integer.` : `${field.dataset.lawNumber} 必须是正整数。`);
+          if (value === undefined) delete nextAssets.laws[field.dataset.lawNumber];
+          else nextAssets.laws[field.dataset.lawNumber] = value;
+        });
+        nextAssets.laws.forbiddenToolRefs = root.querySelector("[data-law-tools]").value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+        nextAssets.laws.isolateExternalData = root.querySelector("[data-law-isolation]").checked;
+        const nextCatalog = structuredClone(lawCatalog);
+        const nextLawId = nextAuthoring.system.lawGlobalRef || selectedLawId || "law.team.default";
+        let nextLaw = nextCatalog.laws.find((law) => law.lawId === nextLawId);
+        if (!nextLaw) {
+          nextLaw = { lawId: nextLawId, constraints: {} };
+          nextCatalog.laws.push(nextLaw);
+        }
+        nextLaw.constraints = nextAssets.laws;
+        nextAssets.laws = nextCatalog;
+        nextAuthoring.system.lawGlobalRef = nextLawId;
+      } catch (error) {
+        status.textContent = error.message;
+        button.disabled = false;
+        return;
+      }
+      const candidateAssets = { ...currentAssets, ...nextAssets };
+      delete candidateAssets.lawsText;
+      try {
         const designSave = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/save`, {
-          method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: nextAuthoring, assets: { ...currentAssets, ...nextAssets }, expectedTeamVersionDigest: teamVersionDigest })
+          method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: nextAuthoring, assets: candidateAssets, expectedTeamVersionDigest: teamVersionDigest })
         });
         const savedDesign = await designSave.json();
         if (!designSave.ok) throw new Error(savedDesign.error || "全局配置保存失败");
@@ -1406,9 +1446,12 @@ async function renderStudioRunDetail(teamVersionId, simulationId, pageRequest = 
 
 async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
+  const isRefresh = Boolean(root.querySelector(".studio-run-split"));
   const historyScrollTop = root.querySelector(".studio-run-history")?.scrollTop || 0;
   const evidenceScrollTop = root.querySelector(".studio-run-evidence")?.scrollTop || 0;
-  root.innerHTML = `<div class="project-loading">${state.locale === "en" ? "Loading simulation evidence…" : "正在读取模拟证据…"}</div>`;
+  if (!isRefresh) {
+    root.innerHTML = `<div class="project-loading">${state.locale === "en" ? "Loading simulation evidence…" : "正在读取模拟证据…"}</div>`;
+  }
   try {
     const base = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}`;
     const simulationListPath = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`;
@@ -1426,13 +1469,23 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     const evidenceText = stateData.finalOutputsByRoleId
       ? Object.entries(stateData.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((output) => `${roleLabel(roleId)}: ${output.content || JSON.stringify(output.data || {})}`)).join("\n\n")
       : studioSimulationErrorText(stateData.error || simulation.failureSummary || simulation.outputSummary);
+    const auditTrail = stateData.auditTrail || [];
+    const auditSummary = stateData.auditSummary || simulation.auditSummary || {};
+    const promptCalls = auditTrail.flatMap((item) => item.promptCalls || []);
+    const sumCallMetric = (key) => promptCalls.length ? promptCalls.reduce((sum, call) => sum + (Number(call[key]) || 0), 0) : undefined;
+    const metric = (key, fallback) => auditSummary[key] ?? simulation[key] ?? fallback;
+    const promptChars = metric("totalRenderedPromptChars", sumCallMetric("renderedPromptChars"));
+    const inputTokens = metric("totalEstimatedInputTokens", sumCallMetric("estimatedInputTokens"));
+    const outputTokens = metric("totalEstimatedOutputTokens", sumCallMetric("estimatedOutputTokens"));
+    const transitionCount = metric("transitionCount", simulation.transitionCount ?? ((eventPayload.events || []).filter((event) => event.type === "transition" || event.type === "flow_transition").length || undefined));
+    const formatMetric = (value) => value === undefined || value === null ? "—" : Number(value).toLocaleString(state.locale);
+    const runMetrics = `<section class="project-panel studio-run-metrics" aria-label="${state.locale === "en" ? "Run metrics" : "运行指标"}"><div class="studio-run-metric"><span>${state.locale === "en" ? "Transitions" : "流转步数"}</span><strong>${formatMetric(transitionCount)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Rendered prompt characters" : "完整提示词字符"}</span><strong>${formatMetric(promptChars)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated input tokens" : "估算输入 Token"}</span><strong>${formatMetric(inputTokens)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated output tokens" : "估算输出 Token"}</span><strong>${formatMetric(outputTokens)}</strong></div><p class="field-hint">${state.locale === "en" ? "Token values are estimates, not billing totals. A dash means this historical run did not collect the field." : "Token 数为估算值，不代表账单精确值；“—”表示此历史运行未采集该字段。"}</p></section>`;
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${(stateData.auditTrail || []).length}</span></div><ol class="team-debug-transcript">${(stateData.auditTrail || []).map((item) => { const color = roleColorForId(item.roleId || "system"); const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : ""; const outputText = item.stdoutPreview || item.failure || item.error || ""; return `<li style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><header><strong>${esc(roleLabel(item.roleId || ""))}</strong><span>${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}</li>`; }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${auditTrail.length}</span></div><ol class="team-debug-transcript">${auditTrail.map((item) => { const color = roleColorForId(item.roleId || "system"); const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : ""; const outputText = item.stdoutPreview || item.failure || item.error || ""; const calls = item.promptCalls || []; const callChars = calls.reduce((sum, call) => sum + (Number(call.renderedPromptChars) || 0), 0); const callTokens = calls.reduce((sum, call) => sum + (Number(call.estimatedInputTokens) || 0) + (Number(call.estimatedOutputTokens) || 0), 0); const fallbackCall = calls.find((call) => call.phase === "fallback"); const meter = item.renderedPromptChars ?? (calls.length ? callChars : undefined); const projected = item.projectedInputChars ?? (calls.length ? calls.reduce((sum, call) => sum + (Number(call.projectedInputChars) || 0), 0) : undefined); const tokens = (item.estimatedInputTokens ?? item.estimatedOutputTokens) !== undefined ? `${item.estimatedInputTokens ?? 0} / ${item.estimatedOutputTokens ?? 0}` : calls.length ? String(callTokens) : undefined; const isolation = item.externalDataIsolated === true ? (state.locale === "en" ? "External data isolated" : "外部数据已分隔") : item.externalDataIsolated === false ? (state.locale === "en" ? "External data not isolated" : "外部数据未分隔") : (state.locale === "en" ? "Isolation not recorded" : "隔离状态未采集"); const fallbackLabel = item.fallbackUsed || fallbackCall ? `${state.locale === "en" ? "Fallback model" : "备选模型"}: ${fallbackCall?.modelId || "—"} (${state.locale === "en" ? "primary" : "主模型"}: ${item.primaryModelId || "—"})` : ""; return `<li style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><header><strong>${esc(roleLabel(item.roleId || ""))}</strong><span>${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header><div class="studio-audit-badges"><span>${esc(isolation)}</span>${fallbackLabel ? `<span>${esc(fallbackLabel)}</span>` : ""}${projected !== undefined ? `<span>${state.locale === "en" ? "Projected input" : "输入数据"}: ${formatMetric(projected)} ${state.locale === "en" ? "chars" : "字符"}</span>` : ""}${meter !== undefined ? `<span>${state.locale === "en" ? "Prompt" : "提示词"}: ${formatMetric(meter)} ${state.locale === "en" ? "chars" : "字符"}</span>` : `<span>${state.locale === "en" ? "Prompt: not recorded" : "提示词：未采集"}</span>`}${tokens !== undefined ? `<span>${state.locale === "en" ? "Estimated input / output tokens" : "估算输入 / 输出 Token"}: ${esc(tokens)}</span>` : ""}</div>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}</li>`; }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
     const list = (simulationsPayload.simulations || []).map((item) => {
       const href = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(item.simulationId)}`;
       return `<a class="material-row studio-simulation-row${item.simulationId === simulationId ? " selected" : ""}" href="${href}" data-route="${href}"${item.simulationId === simulationId ? ' aria-current="page"' : ""}><div><strong>${esc(item.input || "调试任务")}</strong><div class="task-record-meta"><span class="status-chip ${esc(item.status)}">${esc(studioSimulationStatus(item.status))}</span><span>${esc(item.createdAt || "")}</span></div></div></a>`;
     }).join("");
-    const heading = root.querySelector(":scope > .page-heading");
     const detailBody = document.createElement("div");
     detailBody.className = "studio-run-evidence";
     while (root.children.length > 1) detailBody.append(root.children[1]);
@@ -1441,8 +1494,14 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
     split.append(detailBody);
     root.append(split);
-    root.querySelector(".studio-run-history").scrollTop = historyScrollTop;
-    root.querySelector(".studio-run-evidence").scrollTop = evidenceScrollTop;
+    addStudioWorkspaceNav(root, teamVersionId, "run");
+    if (isRefresh && root.dataset.template) {
+      frameExistingPage(root, root.dataset.template);
+    }
+    const historyNode = root.querySelector(".studio-run-history");
+    const evidenceNode = root.querySelector(".studio-run-evidence");
+    if (historyNode) historyNode.scrollTop = historyScrollTop;
+    if (evidenceNode) evidenceNode.scrollTop = evidenceScrollTop;
     if (simulation.status === "running" && (!pageRequest || isCurrentRequest(pageRequest))) {
       window.setTimeout(() => void renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest), 800);
     }
@@ -1455,23 +1514,34 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
 async function renderStudioReleaseGate(teamVersionId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
   const english = state.locale === "en";
-  root.innerHTML = `<div class="project-loading">${english ? "Checking TeamVersion configuration…" : "正在检查团队版本配置…"}</div>`;
+  if (!root.querySelector(".page-heading")) root.innerHTML = `<div class="project-loading">${english ? "Checking TeamVersion configuration…" : "正在检查团队版本配置…"}</div>`;
   try {
-    const [teamResponse, designResponse, baselineResponse, readinessResponse] = await Promise.all([
+    const [teamResponse, designResponse, baselineResponse, readinessResponse, batchResponse, comparisonResponse] = await Promise.all([
       pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
       pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design?locale=${encodeURIComponent(state.locale)}`),
       pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines`),
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-readiness`)
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-readiness`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/batches/latest`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/comparison`)
     ]);
     const team = await teamResponse.json();
     const design = await designResponse.json();
     const baselinePayload = await baselineResponse.json();
     const readiness = await readinessResponse.json();
+    const batchPayload = batchResponse.ok ? await batchResponse.json() : {};
+    const comparisonPayload = comparisonResponse.ok ? await comparisonResponse.json() : {};
     if (!teamResponse.ok) throw new Error(team.error || "TeamVersion not found.");
     if (!designResponse.ok) throw new Error(design.error || "Unable to read TeamVersion design.");
     if (!baselineResponse.ok) throw new Error(baselinePayload.error || "Unable to read release baselines.");
     if (!readinessResponse.ok) throw new Error(readiness.error || "Unable to verify release readiness.");
     const baselines = baselinePayload.scenarios || [];
+    const latestBatch = batchPayload.batch || batchPayload.latestBatch || batchPayload;
+    const comparisonTargetSource = comparisonPayload.availableTargets || [];
+    const comparisonTargets = Array.isArray(comparisonTargetSource)
+      ? comparisonTargetSource
+      : Object.entries(comparisonTargetSource).filter(([, value]) => value).map(([target, value]) => ({ ...value, target }));
+    const comparisonTargetKey = (target) => typeof target === "string" ? target : target?.target || target?.id || target?.key || "";
+    const selectedComparisonKey = comparisonTargetKey(comparisonPayload.selectedTarget) || comparisonTargetKey(comparisonTargets[0]);
     const simulationsResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`);
     const simulationPayload = await simulationsResponse.json();
     if (!simulationsResponse.ok) throw new Error(simulationPayload.error || "Unable to verify Sandbox evidence.");
@@ -1498,7 +1568,115 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
     const releaseButtonState = $("#studio-release-button");
     if (releaseButtonState && !released && (!passed || !baselineEvidenceReady)) releaseButtonState.disabled = true;
     const t = (en, zh) => english ? en : zh;
-    root.insertAdjacentHTML("beforeend", `<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Release baselines", "发布基线")}</span><h2>${t("Required scenarios", "必跑场景")}</h2></div></div><p class="panel-intro">${t("Each required scenario needs passing Sandbox evidence for this TeamVersion. Editing a scenario creates a new revision and invalidates its previous evidence.", "每条必跑场景都需要当前 TeamVersion 的 Sandbox 证据通过。修改场景会生成新版本，并使旧证据失效。")}</p><div class="material-list">${baselines.map((scenario) => { const evidence = simulations.some((item) => item.status === "completed" && item.mode === "sandbox" && item.runKind === "studio_simulation" && item.teamVersionId === teamVersionId && item.teamDigestVersion === readiness.teamDigestVersion && item.teamCoreDigest === readiness.teamCoreDigest && item.baselineScenarioId === scenario.scenarioId && item.baselineRevision === scenario.revision && item.baselineScenarioDigest === scenario.scenarioDigest); return `<div class="material-row"><div><strong>${esc(scenario.name)} · r${scenario.revision}</strong><div class="task-record-meta"><span>${esc(scenario.scenarioId)}</span><span>${scenario.requiredForRelease !== false ? t("Required", "必跑") : t("Optional", "可选")}</span><span>${t("Required roles", "必跑角色")}: ${scenario.expectedRoleIds.length}</span><span>${evidence ? t("Sandbox passed", "Sandbox 已通过") : t("Pending run", "待运行")}</span></div></div><button class="secondary-button" type="button" data-run-baseline="${esc(scenario.scenarioId)}" ${released ? "disabled" : ""}>${t("Run baseline", "运行基线")}</button></div>`; }).join("") || `<p class="empty-note">${t("No release baselines configured.", "尚未配置发布基线。")}</p>`}</div>${released ? "" : `<form id="studio-baseline-form" class="compact-form"><label>${t("Scenario ID", "场景 ID")}<input name="scenarioId" pattern="[a-z0-9][a-z0-9-]{0,63}" required></label><label>${t("Scenario name", "场景名称")}<input name="name" maxlength="120" required></label><label>${t("Fixed task input", "固定任务输入")}<textarea name="prompt" maxlength="4000" required></textarea></label><label>${t("Required role IDs (comma-separated)", "必跑角色 ID（逗号分隔）")}<input name="roles" required placeholder="analyst, reviewer"></label><label class="field checkbox"><input name="requiredForRelease" type="checkbox" checked><span>${t("Require this scenario for release", "作为发布必跑场景")}</span></label><label>${t("Output JSON Schema", "输出 JSON Schema")}<textarea name="schema" rows="5" required>{"type":"object"}</textarea></label><label>${t("Materials snapshot JSON", "材料快照 JSON")}<textarea name="materials" rows="4">[]</textarea></label><button class="secondary-button" type="submit">${t("Save baseline", "保存基线场景")}</button></form>`}</section>`);
+    const requiredBaselines = baselines.filter((scenario) => scenario.requiredForRelease !== false);
+    const hasEvidence = (scenario) => simulations.some((item) => item.status === "completed" && item.mode === "sandbox" && item.runKind === "studio_simulation" && item.teamVersionId === teamVersionId && item.teamDigestVersion === readiness.teamDigestVersion && item.teamCoreDigest === readiness.teamCoreDigest && item.baselineScenarioId === scenario.scenarioId && item.baselineRevision === scenario.revision && item.baselineScenarioDigest === scenario.scenarioDigest);
+    const batchItems = latestBatch?.items || latestBatch?.scenarios || [];
+    const failedBatchCount = batchItems.filter((item) => ["failed", "interrupted"].includes(item.status)).length;
+    const missingBaselineCount = requiredBaselines.filter((scenario) => !hasEvidence(scenario)).length;
+    const batchIsRunning = latestBatch?.status === "running";
+    const batchProgress = Number.isFinite(latestBatch?.completedCount) ? latestBatch.completedCount : batchItems.filter((item) => ["completed", "failed", "interrupted", "cancelled", "skipped"].includes(item.status)).length;
+    const batchTotal = Number.isFinite(latestBatch?.totalCount) ? latestBatch.totalCount : batchItems.length;
+    const batchStatusText = (batch, progress = batchProgress, total = batchTotal) => {
+      if (!batch || !batch.status) return t("No batch has been run.", "尚未运行基线批次。");
+      if (batch.status === "invalidated") return t("Batch invalidated: TeamVersion or baseline scenarios changed during execution. Run the pending scenarios again.", "批次已失效：团队配置或基线场景在执行期间发生变更，请重新运行待验证场景。");
+      if (batch.status === "running") return `${t("Running batch", "正在运行批次")} · ${progress}/${total}${batch.currentScenarioName ? ` · ${esc(batch.currentScenarioName)}` : ""}`;
+      return `${t("Latest batch", "最近批次")}: ${esc(batch.status)}${batch.failureCode ? ` · ${esc(batch.failureCode)}` : ""}`;
+    };
+    const targetOption = (target) => {
+      const key = comparisonTargetKey(target);
+      const label = target?.label || (target?.target === "parent_version" ? t(`Parent version v${target.version || ""}`, `父版本 v${target.version || ""}`) : target?.target === "latest_released" ? t(`Latest released v${target.version || ""}`, `最新发布版本 v${target.version || ""}`) : target?.name || key);
+      return `<option value="${esc(key)}" ${key === selectedComparisonKey ? "selected" : ""}>${esc(label)}</option>`;
+    };
+    const comparisonRows = (payload) => (payload.scenarios || payload.comparisons || []).map((item) => `<li data-comparison-scenario="${esc(item.scenarioId || "")}"><strong>${esc(item.name || item.scenarioId || "")}</strong><span>${item.revisionChanged ? t("Scenario revised", "场景已修订") : item.regression ? t("Regression", "出现退化") : t("No regression", "未发现退化")}</span><small>${t("Current", "当前版本")}: ${item.current?.passed ? t("passed", "已通过") : t("not passed", "未通过")} · ${t("Reference", "对比版本")}: ${item.target?.passed ? t("passed", "已通过") : t("not passed", "未通过")}${item.revisionChanged ? ` · r${item.target?.revision ?? "—"} → r${item.current?.revision ?? "—"}` : ""}</small></li>`).join("") || `<li class="empty-note">${t("No comparison evidence is available for this target.", "此对比基准暂无可用证据。")}</li>`;
+    const comparisonOptions = comparisonTargets.length ? comparisonTargets.map(targetOption).join("") : `<option value="">${t("No historical version available", "暂无可对比的历史版本")}</option>`;
+    const batchPanel = `<section class="project-panel studio-baseline-batch" data-studio-batch-panel><div class="panel-head"><div><span class="section-kicker">${t("Release baseline batch", "发布基线批次")}</span><h2>${t("Run required scenarios", "运行必跑场景")}</h2></div></div><div class="studio-batch-actions"><button class="secondary-button" type="button" data-run-batch="missing_only" ${!missingBaselineCount || batchIsRunning || released ? "disabled" : ""}>${t("Run pending required", "运行待验证必跑场景")} (${missingBaselineCount})</button><button class="secondary-button" type="button" data-run-batch="all_required" ${!requiredBaselines.length || batchIsRunning || released ? "disabled" : ""}>${t("Rerun all required", "重跑全部必跑")} (${requiredBaselines.length})</button>${failedBatchCount ? `<button class="secondary-button" type="button" data-run-batch="retry_failed" ${batchIsRunning || released ? "disabled" : ""}>${t("Retry failed only", "仅重试失败项")} (${failedBatchCount})</button>` : ""}</div><div class="studio-batch-status" data-batch-status role="status" aria-live="polite">${batchStatusText(latestBatch)}</div><progress data-batch-progress max="${batchTotal || 1}" value="${Math.min(batchProgress, batchTotal || 1)}" ${batchIsRunning ? "" : "hidden"}></progress><div data-batch-cancel-slot>${batchIsRunning ? `<button class="danger-button" type="button" data-cancel-batch="${esc(latestBatch.batchId || "")}">${t("Cancel batch", "取消批次")}</button>` : ""}</div></section><section class="project-panel studio-baseline-comparison"><div class="panel-head"><div><span class="section-kicker">${t("Historical reference", "历史版本对比参考")}</span><h2>${t("Diagnosis only; does not affect release readiness", "仅供诊断，不影响当前版本发布就绪度")}</h2></div><label class="studio-comparison-select"><span>${t("Compare with", "对比基准")}</span><select data-comparison-target ${comparisonTargets.length < 2 ? "disabled" : ""}>${comparisonOptions}</select></label></div><ul class="studio-comparison-list" data-comparison-list>${comparisonRows(comparisonPayload)}</ul></section>`;
+    root.insertAdjacentHTML("beforeend", batchPanel);
+    root.insertAdjacentHTML("beforeend", `<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Release baselines", "发布基线")}</span><h2>${t("Required scenarios", "必跑场景")}</h2></div></div><p class="panel-intro">${t("Each required scenario needs passing Sandbox evidence for this TeamVersion. Editing a scenario creates a new revision and invalidates its previous evidence.", "每条必跑场景都需要当前 TeamVersion 的 Sandbox 证据通过。修改场景会生成新版本，并使旧证据失效。")}</p><div class="material-list">${baselines.map((scenario) => { const evidence = hasEvidence(scenario); return `<div class="material-row" data-baseline-row="${esc(scenario.scenarioId)}"><div><strong>${esc(scenario.name)} · r${scenario.revision}</strong><div class="task-record-meta"><span>${esc(scenario.scenarioId)}</span><span>${scenario.requiredForRelease !== false ? t("Required", "必跑") : t("Optional", "可选")}</span><span>${t("Required roles", "必跑角色")}: ${scenario.expectedRoleIds.length}</span><span data-baseline-evidence>${evidence ? t("Sandbox passed", "Sandbox 已通过") : t("Pending run", "待运行")}</span><span data-batch-item-status></span></div></div><button class="secondary-button" type="button" data-run-baseline="${esc(scenario.scenarioId)}" ${released ? "disabled" : ""}>${t("Run baseline", "运行基线")}</button></div>`; }).join("") || `<p class="empty-note">${t("No release baselines configured.", "尚未配置发布基线。")}</p>`}</div>${released ? "" : `<form id="studio-baseline-form" class="compact-form"><label>${t("Scenario ID", "场景 ID")}<input name="scenarioId" pattern="[a-z0-9][a-z0-9-]{0,63}" required></label><label>${t("Scenario name", "场景名称")}<input name="name" maxlength="120" required></label><label>${t("Fixed task input", "固定任务输入")}<textarea name="prompt" maxlength="4000" required></textarea></label><label>${t("Required role IDs (comma-separated)", "必跑角色 ID（逗号分隔）")}<input name="roles" required placeholder="analyst, reviewer"></label><label class="field checkbox"><input name="requiredForRelease" type="checkbox" checked><span>${t("Require this scenario for release", "作为发布必跑场景")}</span></label><label>${t("Output JSON Schema", "输出 JSON Schema")}<textarea name="schema" rows="5" required>{"type":"object"}</textarea></label><label>${t("Materials snapshot JSON", "材料快照 JSON")}<textarea name="materials" rows="4">[]</textarea></label><button class="secondary-button" type="submit">${t("Save baseline", "保存基线场景")}</button></form>`}</section>`);
+    const updateBatchUi = (batch) => {
+      const panel = root.querySelector("[data-studio-batch-panel]");
+      if (!panel || !batch) return;
+      const items = batch.items || batch.scenarios || [];
+      const total = Number.isFinite(batch.totalCount) ? batch.totalCount : items.length;
+      const progress = Number.isFinite(batch.completedCount) ? batch.completedCount : items.filter((item) => ["completed", "failed", "interrupted", "cancelled", "skipped"].includes(item.status)).length;
+      const running = batch.status === "running";
+      panel.querySelector("[data-batch-status]").textContent = batchStatusText(batch, progress, total);
+      const progressElement = panel.querySelector("[data-batch-progress]");
+      progressElement.max = total || 1;
+      progressElement.value = Math.min(progress, total || 1);
+      progressElement.hidden = !running;
+      panel.querySelectorAll("[data-run-batch]").forEach((button) => { button.disabled = running || released || (button.dataset.runBatch === "missing_only" && !missingBaselineCount) || (button.dataset.runBatch === "all_required" && !requiredBaselines.length); });
+      panel.querySelector("[data-batch-cancel-slot]").innerHTML = running ? `<button class="danger-button" type="button" data-cancel-batch="${esc(batch.batchId || "")}">${t("Cancel batch", "取消批次")}</button>` : "";
+      for (const item of items) {
+        const row = root.querySelector(`[data-baseline-row="${CSS.escape(item.scenarioId || "")}"]`);
+        const status = row?.querySelector("[data-batch-item-status]");
+        if (status) status.textContent = item.status ? `${t("Batch", "批次")}: ${item.status}` : "";
+      }
+      if (running) panel.querySelector("[data-cancel-batch]")?.addEventListener("click", cancelBatch);
+    };
+    const batchPath = `/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/batches`;
+    const pollBatch = async () => {
+      if (pageRequest && !isCurrentRequest(pageRequest)) return;
+      try {
+        const response = await pageFetch(`${batchPath}/latest`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        const batch = payload.batch || payload.latestBatch || payload;
+        updateBatchUi(batch);
+        if (batch?.status === "running") window.setTimeout(pollBatch, 800);
+        else if (latestBatch?.status === "running" || batch?.status) void renderStudioReleaseGate(teamVersionId, pageRequest);
+      } catch (error) { if (!isAbort(error)) window.setTimeout(pollBatch, 1600); }
+    };
+    const cancelBatch = async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const response = await pageFetch(`${batchPath}/${encodeURIComponent(button.dataset.cancelBatch)}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || t("Unable to cancel the batch.", "无法取消批次。"));
+        updateBatchUi(payload.batch || payload);
+      } catch (error) {
+        if (!isAbort(error)) {
+          panelStatusError(error.message);
+          button.disabled = false;
+        }
+      }
+    };
+    const panelStatusError = (message) => {
+      const status = root.querySelector("[data-batch-status]");
+      if (status) status.textContent = message;
+    };
+    root.querySelectorAll("[data-run-batch]").forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true;
+      panelStatusError(t("Starting batch…", "正在启动批次…"));
+      try {
+        const response = await pageFetch(batchPath, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: button.dataset.runBatch, locale: state.locale }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || t("Unable to start the batch.", "无法启动基线批次。"));
+        const batch = payload.batch || payload;
+        updateBatchUi(batch);
+        if (batch.status === "running") window.setTimeout(pollBatch, 800);
+        else void renderStudioReleaseGate(teamVersionId, pageRequest);
+      } catch (error) {
+        if (!isAbort(error)) {
+          panelStatusError(error.message);
+          button.disabled = false;
+        }
+      }
+    }));
+    root.querySelector("[data-cancel-batch]")?.addEventListener("click", cancelBatch);
+    if (batchIsRunning) window.setTimeout(pollBatch, 800);
+    root.querySelector("[data-comparison-target]")?.addEventListener("change", async (event) => {
+      const select = event.currentTarget;
+      select.disabled = true;
+      try {
+        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/comparison?target=${encodeURIComponent(select.value)}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || t("Unable to load comparison.", "无法读取版本对比。"));
+        root.querySelector("[data-comparison-list]").innerHTML = comparisonRows(payload);
+      } catch (error) {
+        if (!isAbort(error)) root.querySelector("[data-comparison-list]").innerHTML = `<li role="alert">${esc(error.message)}</li>`;
+      } finally { if (select.isConnected) select.disabled = comparisonTargets.length < 2; }
+    });
     root.querySelectorAll("[data-run-baseline]").forEach((button) => button.addEventListener("click", async () => {
       button.disabled = true;
       const scenario = baselines.find((item) => item.scenarioId === button.dataset.runBaseline);
@@ -1615,6 +1793,22 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
     const providerRef = model.ref || model.id;
     return `<option value="${esc(selectionRef)}" ${selectionRef === roleModelRef ? "selected" : ""}>${esc(model.name || providerRef)} · ${esc(providerRef)} (${esc(model.backend)})</option>`;
   }).join("")}`;
+  const fallbackModelRef = role?.fallbackModelRef || "";
+  const fallbackModelKnown = runnableModels.some((model) => (model.selectionRef || `${model.backend}/${model.id}`) === fallbackModelRef);
+  const fallbackModelOptions = `${fallbackModelRef && !fallbackModelKnown ? `<option value="${esc(fallbackModelRef)}" selected>${esc(fallbackModelRef)} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
+    const selectionRef = model.selectionRef || `${model.backend}/${model.id}`;
+    const providerRef = model.ref || model.id;
+    return `<option value="${esc(selectionRef)}" ${selectionRef === fallbackModelRef ? "selected" : ""}>${esc(model.name || providerRef)} · ${esc(providerRef)} (${esc(model.backend)})</option>`;
+  }).join("")}`;
+  let roleContract = {};
+  try { roleContract = JSON.parse(selection.assets?.roles?.[role?.roleId]?.["role.json"] || "{}"); } catch { /* Keep the inspector readable while a role contract is being repaired. */ }
+  const allowedTools = roleContract.constraints?.allowedTools || [];
+  const writableStateFields = roleContract.constraints?.writableStateFields || [];
+  const selectedGlobalLaw = (selection.assets?.laws?.laws || []).find((law) => law.lawId === authoring.system?.lawGlobalRef);
+  const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
+  const blockedRoleTools = allowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
+  const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions"><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</details>` : "";
+  const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModelRef"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道瞬态故障时触发。")}</span></label>` : "";
   const review = role?.review || {};
   const reviewTarget = review.reworkTargetRoleId || "";
   const reworkRoleOptions = roleIds.map((roleId) => `<option value="${esc(roleId)}" ${reviewTarget === roleId ? "selected" : ""}>${esc(roles[roleId]?.title || (english ? "Untitled role" : "未命名角色"))}</option>`).join("");
@@ -1626,7 +1820,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const deleteFlowButton = selectedFlow ? `<button type="button" class="secondary-button danger-button" data-studio-flow-delete>${t("Delete flow", "删除关系")}</button>` : "";
   if (selectedFlow?.fromRoleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Structural event", "结构事件")}</span><input value="${t("Start", "开始")}" readonly></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || localizedEventLabel("START", copy))}"></label><p class="field-hint full">${t("Start dispatch is configured on the Start role. This flow defines one eligible role.", "开始分发策略在开始角色中配置；此关系定义一个候选角色。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
   if (selectedFlow) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><input data-studio-flow-field="eventType" value="${esc(selectedFlow.eventType)}"></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
-  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(role.title || role.roleId)}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}<label class="field"><span>${t("Distribution", "分发策略")}</span><select data-studio-role-field="routingMode"><option value="">standard</option><option value="parallel_split" ${role.routingMode === "parallel_split" ? "selected" : ""}>parallel_split</option></select></label><label class="field"><span>${t("Join mode", "汇聚策略")}</span><select data-studio-role-field="joinMode"><option value="">none</option><option value="all_of" ${role.joinMode === "all_of" ? "selected" : ""}>all_of</option><option value="quorum_of" ${role.joinMode === "quorum_of" ? "selected" : ""}>quorum_of</option></select></label>${role.joinMode === "quorum_of" ? `<label class="field"><span>${t("Minimum sources", "最少来源数")}</span><input data-studio-role-field="joinMin" type="number" min="1" step="1" value="${esc(role.joinMin ?? "")}"></label>` : ""}<label class="field"><span>${t("Loop budget", "循环上限")}</span><input data-studio-role-field="loopMax" type="number" min="1" step="1" value="${esc(role.loopMax ?? "")}"></label><label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
+  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(role.title || role.roleId)}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}<label class="field"><span>${t("Distribution", "分发策略")}</span><select data-studio-role-field="routingMode"><option value="">standard</option><option value="parallel_split" ${role.routingMode === "parallel_split" ? "selected" : ""}>parallel_split</option></select></label><label class="field"><span>${t("Join mode", "汇聚策略")}</span><select data-studio-role-field="joinMode"><option value="">none</option><option value="all_of" ${role.joinMode === "all_of" ? "selected" : ""}>all_of</option><option value="quorum_of" ${role.joinMode === "quorum_of" ? "selected" : ""}>quorum_of</option></select></label>${role.joinMode === "quorum_of" ? `<label class="field"><span>${t("Minimum sources", "最少来源数")}</span><input data-studio-role-field="joinMin" type="number" min="1" step="1" value="${esc(role.joinMin ?? "")}"></label>` : ""}<label class="field"><span>${t("Loop budget", "循环上限")}</span><input data-studio-role-field="loopMax" type="number" min="1" step="1" value="${esc(role.loopMax ?? "")}"></label><label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
   return `<div class="studio-inspector-heading"><span class="section-kicker">${t("No selection", "未选择对象")}</span><h2>${t("Select a role or flow", "请选择角色或流程")}</h2></div><p class="form-hint">${t("Open Global from Team configuration to edit team-wide settings.", "请从团队配置中选择“全局”编辑团队级配置。")}</p>`;
 }
 

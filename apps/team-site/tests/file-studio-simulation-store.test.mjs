@@ -5,6 +5,22 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { createFileStudioSimulationStore } from "../infrastructure/file-studio-simulation-store.mjs";
 
+test("release baseline batch records are atomically persisted and scoped to a TeamVersion", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-batch-"));
+  const store = createFileStudioSimulationStore({ projectsRoot });
+  try {
+    assert.equal(await store.readLatestBatch("team-v1"), null);
+    const batch = { batchId: "batch-1", teamVersionId: "team-v1", status: "running", items: [], ownerPid: process.pid };
+    assert.equal(await store.writeLatestBatch("team-v1", batch), batch);
+    assert.deepEqual(await store.readLatestBatch("team-v1"), batch);
+    assert.deepEqual(JSON.parse(await readFile(join(projectsRoot, ".studio", "simulations", "team-v1", "batch-latest.json"), "utf8")), batch);
+    await assert.rejects(store.writeLatestBatch("team-v1", { ...batch, teamVersionId: "team-v2" }), /STUDIO_SIMULATION_BATCH_INVALID/);
+    await assert.rejects(store.readLatestBatch("../outside"), /TEAM_VERSION_ID_INVALID/);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("Studio Simulation evidence is isolated, redacted, persisted, and owner checked", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-simulation-"));
   const store = createFileStudioSimulationStore({ projectsRoot, now: () => "2026-01-02T03:04:05.000Z" });

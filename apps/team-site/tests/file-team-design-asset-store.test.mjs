@@ -39,6 +39,19 @@ test("TeamVersion model bindings persist in the executable model-selection asset
   assert.deepEqual(JSON.parse(await readFile(join(workdir, ".ogs", "model-selection.json"), "utf8")), selection);
 });
 
+test("TeamVersion laws persist as a validated version-local asset", async (t) => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-team-laws-"));
+  t.after(() => rm(workdir, { recursive: true, force: true }));
+  const store = createFileTeamDesignAssetStore();
+  const laws = { laws: [] };
+  const saved = await store.saveAssets({ workdir, assets: { laws } });
+  assert.deepEqual(saved.laws, laws);
+  assert.deepEqual(JSON.parse(saved.lawsText), laws);
+  assert.deepEqual(JSON.parse(await readFile(join(workdir, ".ogs", "laws.json"), "utf8")), laws);
+  await assert.rejects(store.saveAssets({ workdir, assets: { laws: { laws: [{}] } } }), /TEAM_LAWS_CONFIG_INVALID|lawId/);
+  assert.deepEqual(JSON.parse(await readFile(join(workdir, ".ogs", "laws.json"), "utf8")), laws, "invalid law config must not replace the persisted asset");
+});
+
 test("release baseline scenarios persist as TeamVersion assets and reject linked paths", async (t) => {
   const workdir = await mkdtemp(join(tmpdir(), "ogs-team-baselines-"));
   t.after(() => rm(workdir, { recursive: true, force: true }));
@@ -76,7 +89,7 @@ test("TeamVersion design assets reject unsafe ids and malformed JSON before writ
   const store = createFileTeamDesignAssetStore();
   await assert.rejects(store.saveAssets({ workdir, roleIds: ["../outside"], assets: { roles: { "../outside": { "prompt.md": "x" } } } }), /TEAM_ASSET_PATH_INVALID/);
   await assert.rejects(store.saveAssets({ workdir, roleIds: ["analyst"], assets: { roles: { analyst: { "role.json": "not json" } } } }), /TEAM_ASSET_INVALID_JSON/);
-  assert.deepEqual(await store.readAssets({ workdir, roleIds: ["analyst"] }), { roles: { analyst: { "agent.md": "", "prompt.md": "", "role.json": "", "output.schema.json": "" } }, contracts: "", contractSchemas: {}, executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "2" } });
+  assert.deepEqual(await store.readAssets({ workdir, roleIds: ["analyst"] }), { roles: { analyst: { "agent.md": "", "prompt.md": "", "role.json": "", "output.schema.json": "" } }, contracts: "", contractSchemas: {}, executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "2" }, laws: { laws: [] }, lawsText: "" });
 });
 
 test("TeamVersion execution profiles and tools persist validated runtime configuration", async (t) => {

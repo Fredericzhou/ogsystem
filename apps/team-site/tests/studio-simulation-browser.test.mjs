@@ -33,7 +33,8 @@ test("Studio browser submits a draft Simulation and reads persisted history, det
         status: "completed",
         finalOutputsByRoleId: { analyst: [{ content: "Mocked UAT result for " + prompt }] },
         finalOutputRoleOrder: ["analyst"],
-        auditTrail: [{ roleId: "reviewer", status: "completed", durationMs: 1 }]
+        auditSummary: { transitionCount: 2, totalRenderedPromptChars: 321, totalEstimatedInputTokens: 80, totalEstimatedOutputTokens: 24 },
+        auditTrail: [{ roleId: "reviewer", status: "completed", durationMs: 1, projectedInputChars: 42, renderedPromptChars: 321, estimatedInputTokens: 80, estimatedOutputTokens: 24, externalDataIsolated: false, fallbackUsed: true, primaryModelId: "codex/primary", promptCalls: [{ callId: "reviewer-execution-1:primary", phase: "primary", modelId: "codex/primary", projectedInputChars: 42, renderedPromptChars: 200, estimatedInputTokens: 50, estimatedOutputTokens: 10 }, { callId: "reviewer-execution-1:fallback", phase: "fallback", modelId: "codex/fallback", projectedInputChars: 42, renderedPromptChars: 121, estimatedInputTokens: 30, estimatedOutputTokens: 14 }] }]
       };
     }
   });
@@ -267,6 +268,8 @@ registerHooks({
     await page.waitForURL(new RegExp(`/studio/teams/${teamVersionId}/run/${simulationId}$`));
     await page.getByRole("heading", { name: "调试运行" }).waitFor();
     assert.match(await page.locator(".project-grid").innerText(), /Review the draft package\.[\s\S]*Mocked UAT result/);
+    assert.match(await page.locator(".studio-run-metrics").innerText(), /321[\s\S]*80[\s\S]*24/);
+    assert.match(await page.locator(".studio-audit-badges").innerText(), /外部数据未分隔[\s\S]*备选模型: codex\/fallback \(主模型: codex\/primary\)[\s\S]*42[\s\S]*321/);
     const eventTimeline = page.locator(".studio-event-list");
     await eventTimeline.waitFor();
     assert.match(await eventTimeline.innerText(), /simulation\.started[\s\S]*role\.completed[\s\S]*simulation\.completed/);

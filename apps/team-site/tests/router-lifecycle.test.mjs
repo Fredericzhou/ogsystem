@@ -148,7 +148,7 @@ test("router delegates navigation once and cancels stale page requests", async (
     const simulationResponse = await page.evaluate(async ({ teamId, teamVersionId }) => fetch(`/api/v1/teams/${teamId}/versions/${teamVersionId}/simulations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "Inspect the generated plan", locale: "en" }) }).then((response) => response.json()), { teamId, teamVersionId });
     assert.equal(simulationResponse.simulation.simulationId, simulationId);
     assert.equal(simulationResponse.simulation.status, "completed");
-    await page.goto(`${url}/studio/teams/${teamVersionId}/release`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/studio/teams/${teamVersionId}/release`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "发布检查" }).waitFor();
     assert.match(await page.locator("#studio-view .panel-intro").first().innerText(), /不验证外部网络或凭据/);
     assert.equal(await page.locator("#studio-release-button").count(), 1);

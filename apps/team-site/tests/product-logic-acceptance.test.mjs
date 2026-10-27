@@ -72,6 +72,8 @@ test("released Team global settings keep stable identifiers read-only and save e
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-assets-global-tab").click();
     await page.locator("#studio-assets-global [data-system-field='systemVersion']").waitFor();
+    assert.equal(await page.locator("#studio-assets-global [data-law-number]").count(), 3, "global settings should expose transition and prompt budgets");
+    assert.equal(await page.locator("#studio-assets-global [data-law-isolation]").isDisabled(), false, "released TeamVersion settings can be edited into a new draft");
     assert.equal(await page.locator("#studio-assets-global .studio-readonly-value").count() >= 1, true);
     assert.match(await page.locator("#studio-assets-global").innerText(), /系统标识/);
     assert.match(await page.locator("#studio-assets-global .studio-readonly-value").first().innerText(), /^[a-z][a-z0-9.-]+$/);
@@ -93,6 +95,25 @@ test("released Team global settings keep stable identifiers read-only and save e
     assert.equal(releasedAfter.teamVersionStatus, "released");
     assert.equal(releasedAfter.projectDigest, originalTeam.projectDigest);
     assert.equal(draftAfter.teamVersionStatus, "draft");
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-assets-global-tab").click();
+    await page.locator("#studio-assets-global [data-law-number='maxPromptCharsPerRole']").fill("12000");
+    await page.locator("#studio-assets-global [data-law-isolation]").uncheck();
+    assert.equal(await page.locator("#studio-assets-global [data-law-isolation-warning]").isVisible(), true, "disabling external data isolation should show its risk warning");
+    const lawSavePromise = page.waitForResponse((response) => response.url().endsWith(`/api/v1/team-versions/${newVersionId}/save`), { timeout: 10000 });
+    await page.locator("#studio-assets-global [data-system-save]").click();
+    const lawSave = await lawSavePromise;
+    const lawSavePayload = await lawSave.json();
+    assert.equal(lawSave.ok(), true, JSON.stringify(lawSavePayload));
+    const [savedAssets, savedDesign] = await Promise.all([
+      page.request.get(`${url}/api/v1/team-versions/${newVersionId}/design/assets`).then((response) => response.json()),
+      page.request.get(`${url}/api/v1/team-versions/${newVersionId}/design`).then((response) => response.json())
+    ]);
+    const activeLaw = savedAssets.laws.laws.find((law) => law.lawId === savedDesign.authoring.system.lawGlobalRef);
+    assert.equal(activeLaw.constraints.maxPromptCharsPerRole, 12000);
+    assert.equal(activeLaw.constraints.isolateExternalData, false);
+    assert.equal((await page.locator("#studio-assets-global [data-law-isolation-warning]").isVisible()), true);
+    assert.deepEqual(pageErrors, []);
   } finally {
     await closeServer(server, projectsRoot, browser);
   }
@@ -420,12 +441,26 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.locator('[data-system-field="systemVersion"]').fill("2.4.0");
     await page.locator('[data-system-field="lawGlobalRef"]').fill("law.site.software-team");
     await page.locator('[data-system-field="handoffMode"]').selectOption("transition");
+    await page.locator('[data-law-number="maxPromptCharsPerRole"]').fill("12000");
+    await page.locator('[data-law-number="maxTotalPromptCharsPerRun"]').fill("36000");
+    await page.locator("[data-law-tools]").fill("tool.disabled.example");
+    await page.locator("[data-law-isolation]").uncheck();
+    assert.equal(await page.locator("[data-law-isolation-warning]").isVisible(), true, "disabling external input isolation shows the risk warning immediately");
     await page.locator("[data-system-save]").click();
     await page.waitForFunction(() => {
       const status = document.querySelector("[data-system-status]")?.textContent || "";
       return status && !status.includes("正在保存");
     }, { timeout: 10000 });
     assert.equal(await page.locator("[data-system-status]").innerText(), "全局配置已保存。");
+    const [savedLaws, savedDesign] = await Promise.all([
+      page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json()),
+      page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json())
+    ]);
+    const activeLaw = savedLaws.laws.laws.find((law) => law.lawId === savedDesign.authoring.system.lawGlobalRef);
+    assert.equal(activeLaw.constraints.maxPromptCharsPerRole, 12000);
+    assert.equal(activeLaw.constraints.maxTotalPromptCharsPerRun, 36000);
+    assert.deepEqual(activeLaw.constraints.forbiddenToolRefs, ["tool.disabled.example"]);
+    assert.equal(activeLaw.constraints.isolateExternalData, false);
     await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
@@ -434,6 +469,9 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
     await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
     await inspector.locator('[data-studio-role-field="modelRef"]').selectOption("codex/gpt-6-luna");
+    assert.equal(await inspector.locator('[data-studio-role-field="fallbackModelRef"]').count(), 1, "model-bound roles can select a fallback model");
+    assert.equal(await inspector.locator(".studio-contract-permissions").count(), 1, "the role inspector summarizes its contract permissions");
+    await inspector.locator('[data-studio-role-field="fallbackModelRef"]').selectOption("codex/gpt-6-luna");
     await inspector.locator('[data-studio-role-field="routingMode"]').selectOption("parallel_split");
     await inspector.locator('[data-studio-role-field="loopMax"]').fill("3");
     await inspector.locator('[data-studio-role-field="contextMap"]').fill('{"brief":"global.task"}');
@@ -536,9 +574,10 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
-    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(persistedDesign.authoring.roles[roleId].contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify({ authoring: persistedDesign.authoring, assets: persistedAssets }, null, 2));
     assert.equal(persistedDesign.authoring.roles[roleId].modelRef, "codex/gpt-6-luna");
+    assert.equal(persistedDesign.authoring.roles[roleId].fallbackModelRef, "codex/gpt-6-luna");
     assert.equal(persistedDesign.authoring.roles[roleId].bindingKind, "model");
     assert.equal(persistedDesign.authoring.roles[roleId].backend, "codex");
     assert.equal(persistedDesign.authoring.roles[execRoleId].bindingKind, "exec");
@@ -564,7 +603,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
     assert.equal(persistedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
     assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "rework", "terminate"]);
-    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
     if (openCodeModel && openCodeRoleId) {
       const selectionRef = openCodeModel.selectionRef || `${openCodeModel.backend}/${openCodeModel.id}`;
       assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelRef, selectionRef);

@@ -166,11 +166,65 @@ test("site completes the product project flow with task records and repository e
     await page.locator('.studio-workspace-nav a[data-route*="/release"]').click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/release$/);
     assert.equal(await page.locator("#studio-release-button").isDisabled(), true, "a new TeamVersion needs a passing baseline Sandbox before release");
+    assert.equal(await page.locator("[data-studio-batch-panel]").isVisible(), true, "release gate exposes baseline batch controls");
+    assert.equal(await page.locator("[data-run-batch]").count(), 2, "release gate offers pending and full baseline batch modes");
+    assert.equal(await page.locator(".studio-baseline-comparison").isVisible(), true, "release gate shows comparison as a diagnostic reference");
+    assert.match(await page.locator(".studio-baseline-comparison h2").innerText(), /不影响当前版本发布就绪度/);
     const publishedTeam = await seedReleasedClassicTeam(projectsRoot, "software-team");
+    const archivedTeam = await seedReleasedClassicTeam(projectsRoot, "structured-debate");
+    await page.request.post(`${url}/api/v1/team-versions/${encodeURIComponent(archivedTeam.projectId)}/archive`, { data: {} });
     const teamId = publishedTeam.projectId;
     const beforeEdit = await page.request.get(`${url}/api/v1/team-repository?status=all&pageSize=50`).then((response) => response.json());
     assert.equal(beforeEdit.teams.filter((team) => team.teamVersionId === teamId).length, 1);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    const cardButtonMetrics = await page.evaluate(() => {
+      const parseContrast = (element) => {
+        const style = getComputedStyle(element);
+        const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((value) => {
+          const channel = value / 255;
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+        const [bg, fg] = [style.backgroundColor, style.color].map(luminance);
+        return (Math.max(bg, fg) + 0.05) / (Math.min(bg, fg) + 0.05);
+      };
+      const shape = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return {
+          height: Math.round(rect.height),
+          borderRadius: style.borderRadius,
+          paddingLeft: style.paddingLeft,
+          paddingRight: style.paddingRight,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
+          display: style.display,
+          borderTopWidth: style.borderTopWidth
+        };
+      };
+      const continueBtn = document.querySelector('.team-version-card[data-team-status="draft"] .primary-button');
+      const deleteBtn = document.querySelector('.team-version-card[data-team-status="draft"] .team-delete-button');
+      const viewBtn = document.querySelector('.team-version-card[data-team-status="archived"] .team-view-button');
+      return {
+        continueShape: shape(continueBtn),
+        deleteShape: shape(deleteBtn),
+        viewShape: shape(viewBtn),
+        colors: [
+          getComputedStyle(continueBtn).backgroundColor,
+          getComputedStyle(deleteBtn).backgroundColor,
+          getComputedStyle(viewBtn).backgroundColor
+        ],
+        contrasts: {
+          continue: parseContrast(continueBtn),
+          delete: parseContrast(deleteBtn),
+          view: parseContrast(viewBtn)
+        }
+      };
+    });
+    assert.deepEqual(cardButtonMetrics.deleteShape, cardButtonMetrics.continueShape, "delete team button must match continue design button geometry and typography");
+    assert.deepEqual(cardButtonMetrics.viewShape, cardButtonMetrics.continueShape, "view team button must match continue design button geometry and typography");
+    assert.equal(new Set(cardButtonMetrics.colors).size, 3, "continue design, delete team, and view team buttons must have distinct colors");
+    assert.ok(cardButtonMetrics.contrasts.continue >= 4.5 && cardButtonMetrics.contrasts.delete >= 4.5 && cardButtonMetrics.contrasts.view >= 4.5, `team card action buttons must meet WCAG AA contrast: ${JSON.stringify(cardButtonMetrics.contrasts)}`);
     await page.locator(`.team-version-card [data-team-action="edit"][data-team-id="${teamId}"]`).click();
     await page.waitForURL(new RegExp(`/studio/teams/${teamId}/design\\?edit=1$`));
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
@@ -304,6 +358,16 @@ test("site completes the product project flow with task records and repository e
       return { stageWidth: box?.width || 0, stageHeight: box?.height || 0, parentWidth: parentBox?.width || 0 };
     });
     assert.ok(mobileGraphLayout.stageWidth >= 280 && mobileGraphLayout.stageHeight >= 200, `the team graph should remain readable on mobile: ${JSON.stringify(mobileGraphLayout)}`);
+    const toolbar = mobile.locator(".studio-graph-toolbar-main");
+    const toolbarOverflow = await toolbar.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+    assert.ok(toolbarOverflow.scrollWidth > toolbarOverflow.clientWidth, `mobile graph tools should expose overflow as a scrollable rail: ${JSON.stringify(toolbarOverflow)}`);
+    await toolbar.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+    const saveControl = await mobile.locator('[data-studio-graph-action="save"]').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const rail = element.closest(".studio-graph-toolbar-main").getBoundingClientRect();
+      return { left: rect.left, right: rect.right, railLeft: rail.left, railRight: rail.right };
+    });
+    assert.ok(saveControl.left >= saveControl.railLeft - 1 && saveControl.right <= saveControl.railRight + 1, `the mobile save control should be reachable at the end of the toolbar: ${JSON.stringify(saveControl)}`);
     await mobile.locator("#topbar-more-toggle").click();
     assert.equal(await mobile.locator("#product-mode-toggle").isVisible(), true, "mobile preferences should be available from the more menu");
     await mobile.locator("#product-mode-toggle").click();
@@ -319,7 +383,7 @@ test("site completes the product project flow with task records and repository e
     assert.ok(mobileNavigation.projectVisible && mobileNavigation.professionalLinksVisible && mobileNavigation.clientWidth > 0, `mobile navigation should keep professional links reachable: ${JSON.stringify(mobileNavigation)}`);
     assert.ok(mobileNavigation.scrollWidth >= mobileNavigation.clientWidth, `mobile navigation should contain its links without widening the page: ${JSON.stringify(mobileNavigation)}`);
     await mobile.keyboard.press("Escape");
-    await mobile.goto(`${url}/studio/teams/${encodeURIComponent(teamId)}/release`, { waitUntil: "networkidle" });
+    await mobile.goto(`${url}/studio/teams/${encodeURIComponent(teamId)}/release`, { waitUntil: "domcontentloaded" });
     await mobile.getByRole("heading", { name: "发布检查" }).waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), "the release gate should fit a 320px viewport");
     assert.ok(await mobile.locator("#studio-view .panel-intro").first().isVisible(), "the release gate should keep the validation boundary readable on mobile");
