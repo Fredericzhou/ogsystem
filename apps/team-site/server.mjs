@@ -109,6 +109,15 @@ import { createFileRunRecoveryStore } from "./infrastructure/file-run-recovery-s
 import { createRuntimeTaskReviewStore } from "./infrastructure/runtime-task-review-store.mjs";
 import { listHumanReviews, writeHumanReviewDecision } from "../../dist/runtime/project-lifecycle.js";
 import { createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
+import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../../dist/runtime/role-repo.js";
+import { isRuntimeOnlyErrorEvent } from "../../dist/runtime/error-flow-utils.js";
+import { parseMarkdownRole, convertMarkdownRole } from "../../tools/agent-source/markdown-role-adapter.mjs";
+import { handleRoleSourceCatalogRoutes } from "./api/role-source-catalog-routes.mjs";
+import { handleRoleSourceAdminRoutes } from "./api/role-source-admin-routes.mjs";
+import { createRoleSourceCatalogUseCases } from "./application/role-source-catalog-use-cases.mjs";
+import { createRuntimeRoleSourceTrial } from "./infrastructure/runtime-role-source-trial.mjs";
+import { createRoleSourceSyncScheduler } from "./application/role-source-sync-scheduler.mjs";
+import { createFileRoleSourceCatalogStore } from "./infrastructure/file-role-source-catalog-store.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const publicRoot = join(root, "public");
@@ -321,7 +330,43 @@ const teamDesignUseCases = createTeamDesignUseCases({
   designSerializer: { serialize: serializeAuthoringToMermaid },
   designValidator: projectDesignValidator,
   designAssetStore: teamDesignAssetStore,
-  packageIntegrity: { computeReleaseBaselineDigest }
+  packageIntegrity: { computeReleaseBaselineDigest },
+  rolePackageValidator: {
+    validateManifest: validateRolePackageManifest,
+    validatePrompt: validateRolePromptTemplate,
+    validateSchema: validateRoleOutputSchemaDefinition,
+    validateSource: validateRoleSourceRecord,
+    isRuntimeOnlyErrorEvent
+  }
+});
+const agencyNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
+const roleSourceAdapters = {
+  "agency-agents-markdown": {
+    version: "1",
+    parseMarkdownRole,
+    convertMarkdownRole,
+    shouldIndex: (path) => {
+      const segments = path.split("/");
+      return segments.length > 1 && !agencyNonRoleDirectories.has(segments[0].toLowerCase());
+    }
+  }
+};
+const roleSourceCatalogStore = createFileRoleSourceCatalogStore({
+  root: join(platformConfigRoot, "role-sources"),
+  adapters: roleSourceAdapters
+});
+const roleSourceCatalogUseCases = createRoleSourceCatalogUseCases({
+  store: roleSourceCatalogStore,
+  adapters: roleSourceAdapters,
+  copyRoleSourceToDraft: teamDesignUseCases.copyRoleSourceToDraft,
+  runRoleTrial: createRuntimeRoleSourceTrial({ getDefaultModelSelection: getPlatformDefaultModelSelection })
+});
+const roleSourceSyncScheduler = createRoleSourceSyncScheduler({
+  listSources: roleSourceCatalogStore.listSources,
+  getSyncStatus: roleSourceCatalogStore.getSyncStatus,
+  updateSyncStatus: roleSourceCatalogStore.updateSyncStatus,
+  synchronizeSource: roleSourceCatalogStore.synchronizeSource,
+  refreshSourceIndex: roleSourceCatalogStore.refreshSourceIndex,
 });
 const runQueryUseCases = createRunQueryUseCases({
   getProject,
@@ -457,6 +502,8 @@ async function serveStatic(pathname, response) {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
   if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases })) return;
+  if (await handleRoleSourceAdminRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases, scheduler: roleSourceSyncScheduler })) return;
+  if (await handleRoleSourceCatalogRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases })) return;
   if (await handleSharedResourceRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: sharedResourceUseCases })) return;
   if (await handleProjectRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
@@ -537,7 +584,7 @@ const server = createServer(async (request, response) => {
       || url.pathname === "/studio/roles"
       || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+)?|release|simulations)\/?$/.test(url.pathname)
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
-    const isPlatformRoute = ["/platform", "/platform/models"].includes(url.pathname);
+    const isPlatformRoute = ["/platform", "/platform/models", "/platform/role-sources"].includes(url.pathname);
     if (url.pathname === "/" || url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
       return;
@@ -555,6 +602,7 @@ teamLifecycleUseCases.provisionBuiltInTeamTemplates()
   .then(() => Number.isFinite(studioSimulationRetentionDays) && studioSimulationRetentionDays > 0
     ? studioSimulationUseCases.cleanupExpiredSimulations({ retentionDays: studioSimulationRetentionDays })
     : undefined)
+  .then(() => roleSourceSyncScheduler.recoverInterrupted())
   .then(() => {
   server.listen(port, host, () => {
     const address = server.address();

@@ -1,0 +1,71 @@
+{
+  "sourceId": "agency-agents",
+  "gitUrl": "https://github.com/msitarzewski/agency-agents",
+  "commit": "b37b5bb33b78f2c1d6567d98e25ca818e3259219",
+  "digestAlgorithm": "SHA-256",
+  "bodyDigestDefinition": "UTF-8 bytes after the leading YAML front matter closing delimiter and its structural line ending, with all remaining Markdown bytes unchanged",
+  "adapterId": "agency-agents-markdown",
+  "adapterVersion": "1",
+  "entries": [
+    {
+      "path": "engineering/engineering-frontend-developer.md",
+      "category": "engineering",
+      "name": "Frontend Developer",
+      "description": "Expert frontend developer specializing in modern web technologies, React/Vue/Angular frameworks, UI implementation, and performance optimization",
+      "color": "cyan",
+      "emoji": "🖥️",
+      "vibe": "Builds responsive, accessible web apps with pixel-perfect precision.",
+      "language": "und",
+      "sourceSha256": "71eeb60cbeedd94b41b2e5852d8986c909e8d150c324b4bb99e3b184ae202094",
+      "bodySha256": "caced050933f410ccdcb1a05610279ad085db82d9a09f9e317a12b2163aed5ae"
+    },
+    {
+      "path": "design/design-ux-researcher.md",
+      "category": "design",
+      "name": "UX Researcher",
+      "description": "Expert user experience researcher specializing in user behavior analysis, usability testing, and data-driven design insights. Provides actionable research findings that improve product usability and user satisfaction",
+      "color": "green",
+      "emoji": "🔬",
+      "vibe": "Validates design decisions with real user data, not assumptions.",
+      "language": "und",
+      "sourceSha256": "25f59c4333df2d0f1170ff7a1b11ea8415fd3d0ef80c3e0985209aeb4018680f",
+      "bodySha256": "f57890329870739dec5bf9f094ec2c7ce1b686b65d85db93b6668800115e11c8"
+    },
+    {
+      "path": "testing/testing-accessibility-auditor.md",
+      "category": "testing",
+      "name": "Accessibility Auditor",
+      "description": "Expert accessibility specialist who audits interfaces against WCAG standards, tests with assistive technologies, and ensures inclusive design. Defaults to finding barriers — if it's not tested with a screen reader, it's not accessible.",
+      "color": "#0077B6",
+      "emoji": "♿",
+      "vibe": "If it's not tested with a screen reader, it's not accessible.",
+      "language": "und",
+      "sourceSha256": "362935907af23839775b9c6162f38c0c5a740542ab4350cb5c5b5a0d9f9a4268",
+      "bodySha256": "48261464bc1c5fa4b92f998dd8fcf0e55c55757b7e81c9a44ae8900e7d500f3f"
+    },
+    {
+      "path": "support/support-support-responder.md",
+      "category": "support",
+      "name": "Support Responder",
+      "description": "Expert customer support specialist delivering exceptional customer service, issue resolution, and user experience optimization. Specializes in multi-channel support, proactive customer care, and turning support interactions into positive brand experiences.",
+      "color": "blue",
+      "emoji": "💬",
+      "vibe": "Turns frustrated users into loyal advocates, one interaction at a time.",
+      "language": "und",
+      "sourceSha256": "26b4c8706d88ea30358254dd5ac1a2886766015918300130dff070230e05794b",
+      "bodySha256": "99d23350a1211733e46ff98c5f9a5d85caab006486cd8650427f906c88a8e1f6"
+    },
+    {
+      "path": "specialized/specialized-mcp-builder.md",
+      "category": "specialized",
+      "name": "MCP Builder",
+      "description": "Expert Model Context Protocol developer who designs, builds, and tests MCP servers that extend AI agent capabilities with custom tools, resources, and prompts.",
+      "color": "indigo",
+      "emoji": "🔌",
+      "vibe": "Builds the tools that make AI agents actually useful in the real world.",
+      "language": "und",
+      "sourceSha256": "f1a9bbde3c5672408a5e0d71d3d888fd635e517ad8b1c5db210aa87e62c39dd4",
+      "bodySha256": "e58ae3afe873c3695bee1417a3c886c27f9849a2de38a3f4ab716b15ede1d03b"
+    }
+  ]
+}
