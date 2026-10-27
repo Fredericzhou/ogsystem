@@ -6,6 +6,7 @@ are labeled as such; current behavior is described by source code, tests, and ac
 
 - Current engineering guidance and plans live in this directory.
 - [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): current productization work and acceptance criteria for the accepted orchestration semantics.
+- [OGS production governance and eval plan](ogs-production-governance-and-eval-plan.md): implementation plan for untrusted external data isolation, full-prompt resource budgets, batch release baseline execution, version comparison, and scoped model fallback.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
 - [Decisions](DECISIONS.md): accepted architecture decisions and current boundaries.
 - [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.
