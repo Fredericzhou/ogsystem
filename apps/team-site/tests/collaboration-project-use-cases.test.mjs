@@ -63,7 +63,10 @@ const releasedTeam = {
   teamVersionStatus: "released",
   teamVersionNumber: 2,
   teamName: "Software Team",
-  teamCoreDigest: "digest-1"
+  teamCoreDigest: "digest-1",
+  teamIrSemanticDigest: "a".repeat(64),
+  compiledPlanDigest: "b".repeat(64),
+  compilerSemanticsVersion: "team-ir-v2/1"
 };
 
 test("Project team listing returns the collaboration Project mount projection", async () => {
@@ -98,7 +101,14 @@ test("Collaboration Project creation validates canonical released teams and init
     name: "Product Launch", overview: "Plan launch", templateId: "empty", source: "collaboration-project"
   });
   assert.equal(calls.find(([kind]) => kind === "initialize")[2].mountedTeams[0].teamVersionId, "team-1");
+  assert.equal(calls.find(([kind]) => kind === "initialize")[2].mountedTeams[0].compiledPlanDigest, "b".repeat(64));
   assert.equal(calls.find(([kind]) => kind === "initialize")[2].projectDefinitionDigest, "digest:team-1");
+});
+
+test("Project mounting explicitly rejects legacy released TeamVersions without frozen v2 digests", async () => {
+  const legacyTeam = { ...releasedTeam, teamIrSemanticDigest: undefined, compiledPlanDigest: undefined };
+  const { useCases } = makeUseCases({ teams: [legacyTeam] });
+  await assert.rejects(() => useCases.createCollaborationProject({ name: "Legacy", teamVersionIds: ["team-1"] }), /TEAM_IR_V2_REQUIRED/);
 });
 
 test("Collaboration Project creation compensates failed initialization and rejects duplicate names", async () => {

@@ -411,6 +411,7 @@ body { min-width: 0; }
   .studio-repository-toolbar { align-items: stretch; flex-direction: column; gap: 9px; }
   .studio-repository-toolbar .project-library-filters { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(130px, .55fr) auto; }
   .main-area .page-content .task-record-actions .text-button { min-height: 44px; padding: 8px 11px; }
+  .main-area .page-content .task-record-actions .secondary-button { min-height: 44px; }
   .main-area .page-content .task-record-actions .task-delete-button { min-height: 44px; min-width: 44px; padding: 8px; }
   .page-frame-header .primary-button { min-height: 44px; padding: 0 11px; white-space: nowrap; }
   .page-frame-header { flex-wrap: wrap; gap: 6px 10px; }

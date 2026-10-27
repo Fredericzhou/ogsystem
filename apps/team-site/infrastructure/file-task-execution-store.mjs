@@ -48,7 +48,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
   }
 
   return Object.freeze({
-    async reserveAttempt({ projectId, taskId, retrySourceRunId, materialSnapshotPolicy, attemptKey, attemptFingerprint, runId, mode, startedAt, teamVersionId, teamCoreDigest, teamDigestVersion }) {
+    async reserveAttempt({ projectId, taskId, retrySourceRunId, materialSnapshotPolicy, attemptKey, attemptFingerprint, runId, mode, startedAt, teamVersionId, teamCoreDigest, teamDigestVersion, teamIrSemanticDigest, compiledPlanDigest }) {
       return projectStore.withProjectWriteLock(projectId, "project-task-bind-run", async () => {
         const { project, task } = await taskAt(projectId, taskId);
         if (!(retrySourceRunId ? ["queued", "failed"].includes(task.status) : task.status === "queued")) {
@@ -82,6 +82,8 @@ export function createFileTaskExecutionStore({ projectStore }) {
             teamVersionId,
             ...(teamCoreDigest ? { teamCoreDigest } : {}),
             ...(Number.isInteger(teamDigestVersion) ? { teamDigestVersion } : {}),
+            ...(teamIrSemanticDigest ? { teamIrSemanticDigest } : {}),
+            ...(compiledPlanDigest ? { compiledPlanDigest } : {}),
             materialSnapshotPolicy,
             createdAt: startedAt
           };
@@ -131,7 +133,9 @@ export function createFileTaskExecutionStore({ projectStore }) {
           status: result.state?.status || "running",
           startedAt,
           completedAt: ["completed", "failed", "cancelled"].includes(result.state?.status) ? (result.state?.finishedAt || now) : null,
-          outputSummary: result.result?.finalOutputsByRoleId
+          outputSummary: result.result?.teamResult
+            ? JSON.stringify(result.result.teamResult).slice(0, 500)
+            : result.result?.finalOutputsByRoleId
             ? Object.entries(result.result.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((output) => typeof output.content === "string" && output.content.startsWith("[dry-run]") ? output.content : `${roleId}: ${output.content || JSON.stringify(output.data || {})}`)).join(" | ").slice(0, 500)
             : task.outputSummary
         });

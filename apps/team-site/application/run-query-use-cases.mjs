@@ -18,6 +18,8 @@ function findRunOwner(project, projectId, taskId, runId) {
     taskNumber: task.taskNumber,
     teamCoreDigest: task.teamCoreDigest,
     teamDigestVersion: task.teamDigestVersion,
+    teamIrSemanticDigest: task.teamIrSemanticDigest,
+    compiledPlanDigest: task.compiledPlanDigest,
     attemptNumber: Math.max(1, runIds.indexOf(runId) + 1)
   };
 }
@@ -41,7 +43,9 @@ export function createRunQueryUseCases({ getProject, waitForActiveTaskWorker, ru
       if (persistedOwner.taskNumber !== owner.taskNumber || persistedOwner.teamVersionId !== owner.teamVersionId
         || persistedOwner.attemptNumber !== owner.attemptNumber
         || (owner.teamCoreDigest && persistedOwner.teamCoreDigest !== owner.teamCoreDigest)
-        || (Number.isInteger(owner.teamDigestVersion) && persistedOwner.teamDigestVersion !== owner.teamDigestVersion)) {
+        || (Number.isInteger(owner.teamDigestVersion) && persistedOwner.teamDigestVersion !== owner.teamDigestVersion)
+        || (owner.teamIrSemanticDigest && persistedOwner.teamIrSemanticDigest !== owner.teamIrSemanticDigest)
+        || (owner.compiledPlanDigest && persistedOwner.compiledPlanDigest !== owner.compiledPlanDigest)) {
         throw new Error("RUN_NOT_FOUND: persisted Run owner does not match the Task.");
       }
       const state = await runQueryStore.readRunState(projectId, owner.taskId, runId);
@@ -71,7 +75,9 @@ export function createRunQueryUseCases({ getProject, waitForActiveTaskWorker, ru
           attemptNumber: owner.attemptNumber,
           teamVersionId: owner.teamVersionId,
           ...(persistedOwner.teamCoreDigest ? { teamCoreDigest: persistedOwner.teamCoreDigest } : {}),
-          ...(Number.isInteger(persistedOwner.teamDigestVersion) ? { teamDigestVersion: persistedOwner.teamDigestVersion } : {})
+          ...(Number.isInteger(persistedOwner.teamDigestVersion) ? { teamDigestVersion: persistedOwner.teamDigestVersion } : {}),
+          ...(persistedOwner.teamIrSemanticDigest ? { teamIrSemanticDigest: persistedOwner.teamIrSemanticDigest } : {}),
+          ...(persistedOwner.compiledPlanDigest ? { compiledPlanDigest: persistedOwner.compiledPlanDigest } : {})
         },
         teamVersionId: owner.teamVersionId,
         taskId: owner.taskId,
@@ -92,7 +98,9 @@ export function createRunQueryUseCases({ getProject, waitForActiveTaskWorker, ru
       if (persistedOwner.taskNumber !== owner.taskNumber || persistedOwner.teamVersionId !== owner.teamVersionId
         || persistedOwner.attemptNumber !== owner.attemptNumber
         || (owner.teamCoreDigest && persistedOwner.teamCoreDigest !== owner.teamCoreDigest)
-        || (Number.isInteger(owner.teamDigestVersion) && persistedOwner.teamDigestVersion !== owner.teamDigestVersion)) {
+        || (Number.isInteger(owner.teamDigestVersion) && persistedOwner.teamDigestVersion !== owner.teamDigestVersion)
+        || (owner.teamIrSemanticDigest && persistedOwner.teamIrSemanticDigest !== owner.teamIrSemanticDigest)
+        || (owner.compiledPlanDigest && persistedOwner.compiledPlanDigest !== owner.compiledPlanDigest)) {
         throw new Error("RUN_NOT_FOUND: persisted Run owner does not match the Task.");
       }
       return {
@@ -105,7 +113,9 @@ export function createRunQueryUseCases({ getProject, waitForActiveTaskWorker, ru
           attemptNumber: owner.attemptNumber,
           teamVersionId: owner.teamVersionId,
           ...(persistedOwner.teamCoreDigest ? { teamCoreDigest: persistedOwner.teamCoreDigest } : {}),
-          ...(Number.isInteger(persistedOwner.teamDigestVersion) ? { teamDigestVersion: persistedOwner.teamDigestVersion } : {})
+          ...(Number.isInteger(persistedOwner.teamDigestVersion) ? { teamDigestVersion: persistedOwner.teamDigestVersion } : {}),
+          ...(persistedOwner.teamIrSemanticDigest ? { teamIrSemanticDigest: persistedOwner.teamIrSemanticDigest } : {}),
+          ...(persistedOwner.compiledPlanDigest ? { compiledPlanDigest: persistedOwner.compiledPlanDigest } : {})
         },
         teamVersionId: owner.teamVersionId,
         taskId: owner.taskId,

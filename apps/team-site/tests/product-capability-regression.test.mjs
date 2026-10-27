@@ -285,10 +285,19 @@ test("project-v2 imports multiple nested released teams into a clean workspace t
     assert.equal(imported.mountedTeams.every((team) => team.status === "available"), true);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === firstTeam.projectId), false);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === secondTeam.projectId), false);
+    for (const sourceTeam of bundle.project.mountedTeams) {
+      const importedMount = imported.mountedTeams.find((team) => team.source?.sourceTeamVersionId === sourceTeam.source.sourceTeamVersionId);
+      assert.ok(importedMount);
+      assert.equal(importedMount.teamIrSemanticDigest, sourceTeam.teamIrSemanticDigest);
+      assert.equal(importedMount.compiledPlanDigest, sourceTeam.compiledPlanDigest);
+      assert.equal(importedMount.compilerSemanticsVersion, sourceTeam.compilerSemanticsVersion);
+    }
     assert.equal(imported.projectDefinitionDigest, bundle.project.projectDefinitionDigest);
     const importedTeams = (await targetStore.listProjects()).filter((project) => project.projectType === "team");
     assert.equal(importedTeams.length, 2);
     assert.equal(importedTeams.every((team) => team.teamVersionStatus === "released"), true);
+    assert.equal(importedTeams.every((team) => /^[a-f0-9]{64}$/.test(team.teamIrSemanticDigest)), true);
+    assert.equal(importedTeams.every((team) => /^[a-f0-9]{64}$/.test(team.compiledPlanDigest)), true);
     const task = await targetStore.createProjectTask(imported.projectId, {
       input: "Run the imported project.",
       teamVersionId: imported.mountedTeams[0].teamVersionId,

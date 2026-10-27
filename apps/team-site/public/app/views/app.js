@@ -1132,10 +1132,208 @@ function studioWorkspaceNav(teamVersionId, active) {
   const items = [
     ["info", state.locale === "en" ? "Team info" : "团队信息", "info"],
     ["design", state.locale === "en" ? "Design" : "设计", "design"],
+    ["ir", "Team IR v2", "ir"],
     ["run", state.locale === "en" ? "Debug history" : "调试历史", "run"],
     ["release", state.locale === "en" ? "Release" : "发布", "release"]
   ];
   return `<nav class="studio-workspace-nav" aria-label="${state.locale === "en" ? "Team workspace" : "团队工作区"}">${items.map(([key, label, route]) => `<a href="/studio/teams/${id}/${route}${search}" data-route="/studio/teams/${id}/${route}${search}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+}
+
+function starterTeamIr(teamVersionId) {
+  return {
+    schemaVersion: 2,
+    team: { id: teamVersionId, version: "2.0.0" },
+    runInput: { dataSchema: { type: "object", properties: { request: { type: "string" } }, required: ["request"], additionalProperties: false }, preferencesSchema: { type: "object", additionalProperties: true }, artifactSlots: {} },
+    runResult: { dataSchema: { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false }, artifactSlots: {} },
+    executionPolicy: { resultMode: "required", activeExecutionBudgetMs: 900000 },
+    agents: [], handoffs: [],
+    orchestration: { routes: [], joins: [], loops: [], reviews: [] },
+    bindings: [], presentation: { nodes: {} }
+  };
+}
+
+function teamIrAdvancedContracts(ir) {
+  return {
+    runInput: ir.runInput,
+    runResult: ir.runResult,
+    executionPolicy: ir.executionPolicy,
+    orchestration: ir.orchestration,
+    $defs: ir.$defs || {},
+    agentPortContracts: Object.fromEntries((ir.agents || []).map((agent) => [agent.id, {
+      inputPorts: agent.inputPorts,
+      outputPorts: agent.outputPorts
+    }])),
+    handoffContracts: Object.fromEntries((ir.handoffs || []).map((handoff) => [handoff.id, handoff])),
+    bindings: ir.bindings || []
+  };
+}
+
+function teamIrWithAdvancedContracts(form, candidate, previous) {
+  const source = form.querySelector("[data-ir-advanced-json]")?.value;
+  if (source === undefined) return candidate;
+  let advanced;
+  try {
+    advanced = JSON.parse(source);
+  } catch (error) {
+    throw new Error(`Advanced contract JSON is invalid: ${error.message}`);
+  }
+  if (!advanced || typeof advanced !== "object" || Array.isArray(advanced)) {
+    throw new Error("Advanced contracts must be a JSON object.");
+  }
+  candidate.runInput = advanced.runInput ?? candidate.runInput;
+  candidate.runResult = advanced.runResult ?? candidate.runResult;
+  candidate.executionPolicy = advanced.executionPolicy ?? candidate.executionPolicy;
+  candidate.$defs = advanced.$defs ?? candidate.$defs;
+  const previousRoutes = previous.orchestration?.routes || [];
+  const storedRoutes = advanced.orchestration?.routes || [];
+  const advancedRoutesChanged = JSON.stringify(storedRoutes) !== JSON.stringify(previousRoutes);
+  const generatedRoutesByKey = new Map(candidate.orchestration.routes.map((route) => [JSON.stringify(route.from), route]));
+  const routes = advancedRoutesChanged ? storedRoutes : [
+    ...storedRoutes.map((stored) => {
+      const generated = generatedRoutesByKey.get(JSON.stringify(stored.from));
+      return generated ? { ...stored, ...generated, onNoMatch: stored.onNoMatch } : stored;
+    }),
+    ...candidate.orchestration.routes.filter((route) => !storedRoutes.some((stored) => JSON.stringify(stored.from) === JSON.stringify(route.from)))
+  ];
+  candidate.orchestration = {
+    ...candidate.orchestration,
+    joins: advanced.orchestration?.joins ?? [],
+    loops: advanced.orchestration?.loops ?? [],
+    reviews: advanced.orchestration?.reviews ?? [],
+    routes
+  };
+  const agentContracts = advanced.agentPortContracts || {};
+  candidate.agents = candidate.agents.map((agent) => {
+    const contracts = agentContracts[agent.id] || {};
+    const oldAgent = (previous.agents || []).find((item) => item.id === agent.id);
+    const ports = (current, stored, oldPorts) => Object.fromEntries(Object.entries({ ...(stored || {}), ...current }).map(([portId, port]) => {
+      const oldSchema = oldPorts?.[portId]?.dataSchema;
+      const fieldsUnchanged = oldSchema && fieldsFromSchema(oldSchema) === fieldsFromSchema(port.dataSchema);
+      return [portId, {
+        ...(stored?.[portId] || {}),
+        ...port,
+        ...(fieldsUnchanged && stored?.[portId]?.dataSchema ? { dataSchema: stored[portId].dataSchema } : {}),
+        ...(stored?.[portId]?.artifactSlots ? { artifactSlots: stored[portId].artifactSlots } : {})
+      }];
+    }));
+    return {
+      ...agent,
+      inputPorts: ports(agent.inputPorts, contracts.inputPorts, oldAgent?.inputPorts),
+      outputPorts: ports(agent.outputPorts, contracts.outputPorts, oldAgent?.outputPorts)
+    };
+  });
+  const handoffContracts = advanced.handoffContracts || {};
+  candidate.handoffs = candidate.handoffs.map((handoff, index) => {
+    const stored = handoffContracts[handoff.id] || {};
+    const oldHandoff = (previous.handoffs || []).find((item) => item.id === handoff.id);
+    const data = new FormData(form);
+    const oldConditionRef = oldHandoff?.when?.condition?.args?.[0]?.$ref || "";
+    const oldConditionField = oldConditionRef.split(".").at(-1) || "";
+    const oldConditionValue = String(oldHandoff?.when?.condition?.args?.[1]?.$literal ?? "");
+    const conditionFormUnchanged = String(data.get(`handoff-${index}-condition-field`) || "").trim() === oldConditionField
+      && String(data.get(`handoff-${index}-condition-value`) || "") === oldConditionValue
+      && Number(data.get(`handoff-${index}-priority`) || 0) === Number(oldHandoff?.when?.priority ?? 0);
+    const merged = {
+      ...stored,
+      ...handoff,
+      when: conditionFormUnchanged ? stored.when : handoff.when,
+      delivery: { ...(handoff.delivery || {}), ...(stored.delivery || {}) },
+      map: { ...(stored.map || {}), ...handoff.map, ...(stored.map?.artifacts ? { artifacts: stored.map.artifacts } : {}) }
+    };
+    if (handoff.to.kind === "result") delete merged.delivery;
+    return merged;
+  });
+  if (Array.isArray(advanced.bindings)) {
+    const referencedBindingIds = new Set(candidate.agents.map((agent) => agent.bindingRef));
+    const configured = advanced.bindings.filter((binding) => referencedBindingIds.has(binding.id));
+    const configuredIds = new Set(configured.map((binding) => binding.id));
+    candidate.bindings = [...configured, ...candidate.bindings.filter((binding) => !configuredIds.has(binding.id))];
+  }
+  return candidate;
+}
+
+function schemaFromFields(value) {
+  const fields = [...new Set(String(value || "").split(",").map((item) => item.trim()).filter((item) => /^[A-Za-z_][A-Za-z0-9_-]*$/.test(item)))];
+  return { type: "object", properties: Object.fromEntries(fields.map((field) => [field, { type: "string" }])), required: fields, additionalProperties: false };
+}
+
+function fieldsFromSchema(schema) {
+  return Object.keys(schema?.properties || {}).join(", ");
+}
+
+function teamIrFromEditor(form, base) {
+  const data = new FormData(form);
+  const agents = [...form.querySelectorAll("[data-ir-agent]")].map((row) => {
+    const index = row.dataset.irAgent;
+    const id = String(data.get(`agent-${index}-id`) || "").trim();
+    const inputPort = String(data.get(`agent-${index}-input-port`) || "default").trim();
+    const outputPort = String(data.get(`agent-${index}-output-port`) || "DONE").trim();
+    return {
+      id,
+      packageRef: String(data.get(`agent-${index}-package`) || "").trim(),
+      bindingRef: String(data.get(`agent-${index}-binding`) || `binding:${id}`).trim(),
+      inputPorts: { [inputPort]: { dataSchema: schemaFromFields(data.get(`agent-${index}-input-fields`)) } },
+      outputPorts: { [outputPort]: { dataSchema: schemaFromFields(data.get(`agent-${index}-output-fields`)) } }
+    };
+  });
+  const bindings = agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000,
+    retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
+  const handoffs = [...form.querySelectorAll("[data-ir-handoff]")].map((row) => {
+    const index = row.dataset.irHandoff;
+    const fromAgentId = String(data.get(`handoff-${index}-from-agent`) || "");
+    const fromPort = String(data.get(`handoff-${index}-from-port`) || "").trim();
+    const toAgentId = String(data.get(`handoff-${index}-to-agent`) || "");
+    const toPort = String(data.get(`handoff-${index}-to-port`) || "").trim();
+    const id = String(data.get(`handoff-${index}-id`) || "").trim();
+    const fields = String(data.get(`handoff-${index}-mapping`) || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const map = { data: Object.fromEntries(fields.map((field) => {
+      const [target, source] = field.split("=").map((item) => item.trim());
+      return [target, { $ref: source }];
+    }).filter(([target, source]) => target && source)) };
+    const from = fromAgentId ? { kind: "agent", agentId: fromAgentId, outputPort: fromPort } : { kind: "run" };
+    const to = toAgentId === "@result" ? { kind: "result" } : { kind: "agent", agentId: toAgentId, inputPort: toPort };
+    const conditionField = String(data.get(`handoff-${index}-condition-field`) || "").trim();
+    const conditionValue = String(data.get(`handoff-${index}-condition-value`) || "");
+    const when = conditionField ? { condition: { op: "equals", args: [{ $ref: fromAgentId ? `$.output.data.${conditionField}` : `$.run.input.${conditionField}` }, { $literal: conditionValue }] }, priority: Number(data.get(`handoff-${index}-priority`) || 0) } : undefined;
+    return { id, from, to, map, ...(when ? { when } : {}), ...(to.kind === "agent" ? { delivery: { deadlineMs: 300000 } } : {}) };
+  });
+  const routes = [];
+  const sourceGroups = new Map();
+  for (const edge of handoffs) {
+    const key = edge.from.kind === "run" ? "run" : `${edge.from.agentId}:${edge.from.outputPort}`;
+    sourceGroups.set(key, [...(sourceGroups.get(key) || []), edge]);
+  }
+  for (const group of sourceGroups.values()) if (group.length > 1 || group.some((edge) => edge.when)) {
+    const from = group[0].from;
+    const mode = group.some((edge) => edge.when) ? "exclusive_priority" : "parallel_fanout";
+    group.forEach((edge, index) => { if (mode === "exclusive_priority" && !edge.when) edge.when = { priority: index + group.length }; });
+    routes.push({ from, mode, onNoMatch: "fail", handoffIds: group.map((edge) => edge.id) });
+  }
+  return {
+    ...base,
+    team: { id: String(data.get("team-id") || base.team.id).trim(), version: base.team?.version || "2.0.0" },
+    agents, handoffs, bindings,
+    orchestration: { routes, joins: [], loops: [], reviews: [] }
+  };
+}
+
+function renderTeamIrEditorRows(ir, escText, editable) {
+  const agents = (ir.agents || []).map((agent, index) => {
+    const inputEntry = Object.entries(agent.inputPorts || {})[0] || ["default", {}];
+    const outputEntry = Object.entries(agent.outputPorts || {})[0] || ["DONE", {}];
+    return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<input name="agent-${index}-package" value="${escText(agent.packageRef)}" required${editable ? "" : " disabled"}></label><label>Binding reference<input name="agent-${index}-binding" value="${escText(agent.bindingRef)}" required${editable ? "" : " disabled"}></label><label>Input port<input name="agent-${index}-input-port" value="${escText(inputEntry[0])}" required${editable ? "" : " disabled"}></label><label>Required input fields<input name="agent-${index}-input-fields" value="${escText(fieldsFromSchema(inputEntry[1].dataSchema))}" placeholder="request, context"${editable ? "" : " disabled"}></label><label>Output event / port<input name="agent-${index}-output-port" value="${escText(outputEntry[0])}" required${editable ? "" : " disabled"}></label><label>Required output fields<input name="agent-${index}-output-fields" value="${escText(fieldsFromSchema(outputEntry[1].dataSchema))}" placeholder="summary"${editable ? "" : " disabled"}></label></div></section>`;
+  }).join("");
+  const agentOptions = (selected, allowRun = false) => `${allowRun ? `<option value=""${!selected ? " selected" : ""}>Run START</option>` : ""}${(ir.agents || []).map((agent) => `<option value="${escText(agent.id)}"${selected === agent.id ? " selected" : ""}>${escText(agent.id)}</option>`).join("")}${allowRun ? '<option value="@result"' + (selected === "@result" ? " selected" : "") + ">Run result</option>" : ""}`;
+  const handoffs = (ir.handoffs || []).map((edge, index) => {
+    const fromAgent = edge.from?.kind === "agent" ? edge.from.agentId : "";
+    const toAgent = edge.to?.kind === "result" ? "@result" : edge.to?.agentId || "";
+    const mapping = Object.entries(edge.map?.data || {}).map(([target, expr]) => `${target}=${expr?.$ref || ""}`).join(", ");
+    const condition = edge.when?.condition?.args?.[0]?.$ref || "";
+    const conditionField = condition.split(".").at(-1) || "";
+    const conditionValue = edge.when?.condition?.args?.[1]?.$literal ?? "";
+    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<input name="handoff-${index}-from-port" value="${escText(edge.from?.outputPort || "START")}"${editable ? "" : " disabled"}></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<input name="handoff-${index}-to-port" value="${escText(edge.to?.inputPort || "default")}"${editable ? "" : " disabled"}></label><label class="full">Field mappings<input name="handoff-${index}-mapping" value="${escText(mapping)}" placeholder="request=$.run.input.request"${editable ? "" : " disabled"}><span class="field-hint">Use targetField=$.run.input.field or targetField=$.output.data.field. Run task stays immutable.</span></label><label>Condition field<input name="handoff-${index}-condition-field" value="${escText(conditionField)}" placeholder="Leave blank for unconditional"${editable ? "" : " disabled"}></label><label>Equals value<input name="handoff-${index}-condition-value" value="${escText(conditionValue)}"${editable ? "" : " disabled"}></label><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
+  }).join("");
+  return { agents, handoffs };
 }
 
 function addStudioWorkspaceNav(root, teamVersionId, active) {
@@ -1186,6 +1384,110 @@ async function renderStudioTeamInfo(teamVersionId, pageRequest = state.activeReq
   } catch (error) {
     if (isAbort(error)) return;
     root.innerHTML = `<div class="run-error">${esc(error.message || "无法读取团队信息")}</div>`;
+  }
+}
+
+async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeRequest) {
+  const root = $("#studio-view");
+  root.innerHTML = '<div class="project-loading">Loading Team IR v2…</div>';
+  try {
+    const [teamResponse, irResponse] = await Promise.all([
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`)
+    ]);
+    const [team, stored] = await Promise.all([teamResponse.json(), irResponse.json()]);
+    if (!teamResponse.ok) throw new Error(team.error || "Unable to load TeamVersion.");
+    if (!irResponse.ok) throw new Error(stored.error || "Unable to load Team IR v2.");
+    if (pageRequest && !isCurrentRequest(pageRequest)) return;
+    let draft = stored.teamIR || starterTeamIr(teamVersionId);
+    let expectedSemanticDigest = stored.semanticDigest ?? null;
+    const editable = team.teamVersionStatus === "draft";
+    const redraw = () => {
+      const rows = renderTeamIrEditorRows(draft, esc, editable);
+      const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor"><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form>`;
+      const form = root.querySelector("#team-ir-editor");
+      const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
+      const showDiagnostics = (diagnostics = []) => {
+        const list = form.querySelector("[data-team-ir-diagnostics]");
+        list.innerHTML = diagnostics.map((item) => `<li><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> ${esc(item.message || "")}</li>`).join("");
+        list.hidden = diagnostics.length === 0;
+      };
+      const captureFailure = (error) => {
+        form.querySelector("[data-team-ir-status]").textContent = error.message || "Unable to read Team IR form.";
+      };
+      const syncAdvancedContracts = () => {
+        form.querySelector("[data-ir-advanced-json]").value = JSON.stringify(teamIrAdvancedContracts(draft), null, 2);
+      };
+      const add = (kind) => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        if (kind === "agent") {
+          const id = `agent-${draft.agents.length + 1}`;
+          draft.agents.push({ id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`, inputPorts: { default: { dataSchema: schemaFromFields("request") } }, outputPorts: { DONE: { dataSchema: schemaFromFields("summary") } } });
+          draft.bindings.push({ id: `binding:${id}`, kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } });
+        } else {
+          draft.handoffs.push({ id: `handoff-${draft.handoffs.length + 1}`, from: { kind: "run" }, to: { kind: "agent", agentId: draft.agents[0]?.id || "", inputPort: "default" }, map: { data: {} }, delivery: { deadlineMs: 300000 } });
+        }
+        syncAdvancedContracts();
+        redraw();
+      };
+      form.querySelector("[data-ir-add-agent]")?.addEventListener("click", () => add("agent"));
+      form.querySelector("[data-ir-add-handoff]")?.addEventListener("click", () => add("handoff"));
+      form.querySelectorAll("[data-ir-remove-agent]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        draft.agents.splice(Number(button.dataset.irRemoveAgent), 1);
+        draft.bindings = draft.bindings.filter((binding) => draft.agents.some((agent) => agent.bindingRef === binding.id));
+        syncAdvancedContracts();
+        redraw();
+      }));
+      form.querySelectorAll("[data-ir-remove-handoff]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        draft.handoffs.splice(Number(button.dataset.irRemoveHandoff), 1);
+        syncAdvancedContracts();
+        redraw();
+      }));
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = form.querySelector("[data-team-ir-status]");
+        const submit = form.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        showDiagnostics();
+        try {
+          const candidate = captureEditor();
+          const validationResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/validate`, {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: candidate })
+          });
+          const validation = await validationResponse.json();
+          showDiagnostics(validation.diagnostics || []);
+          if (!validationResponse.ok || !validation.ok) {
+            status.textContent = validation.error || "Team IR validation failed.";
+            return;
+          }
+          const saveResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`, {
+            method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: candidate, expectedSemanticDigest })
+          });
+          const saved = await saveResponse.json();
+          showDiagnostics(saved.diagnostics || []);
+          if (!saveResponse.ok || !saved.saved) throw new Error(saved.error || "Unable to save Team IR v2.");
+          const reloadResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`);
+          const reloaded = await reloadResponse.json();
+          if (!reloadResponse.ok || reloaded.semanticDigest !== saved.semanticDigest) throw new Error("Saved Team IR digest did not match the reopened document.");
+          draft = reloaded.teamIR;
+          expectedSemanticDigest = reloaded.semanticDigest;
+          redraw();
+          root.querySelector("[data-team-ir-status]").textContent = `Saved and reopened · ${expectedSemanticDigest}`;
+        } catch (error) {
+          if (isAbort(error)) return;
+          status.textContent = error.message || "Unable to save Team IR v2.";
+        } finally {
+          if (submit?.isConnected) submit.disabled = !editable;
+        }
+      });
+    };
+    redraw();
+  } catch (error) {
+    if (isAbort(error)) return;
+    root.innerHTML = `<div class="run-error">${esc(error.message || "Unable to load Team IR v2.")}</div>`;
   }
 }
 
@@ -1539,6 +1841,11 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
     if (!designResponse.ok) throw new Error(design.error || "Unable to read TeamVersion design.");
     if (!baselineResponse.ok) throw new Error(baselinePayload.error || "Unable to read release baselines.");
     if (!readinessResponse.ok) throw new Error(readiness.error || "Unable to verify release readiness.");
+    if (String(readiness.reason || "").startsWith("TEAM_IR_V2_REQUIRED:")) {
+      const rebuildUrl = `/studio/teams/${encodeURIComponent(teamVersionId)}/ir`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio/teams/${encodeURIComponent(teamVersionId)}/design" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/design">← ${english ? "Team design" : "团队设计"}</a><div class="eyebrow">OGS Studio · v${team.teamVersionNumber || 1}</div><h1>${english ? "Team IR v2 rebuild required" : "需要重建 Team IR v2"}</h1><p>${esc(team.name || "")}</p></div><span class="status-chip warning">${english ? "Rebuild required" : "需要重建"}</span></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Legacy TeamVersion" : "旧版团队版本"}</span><h2>${english ? "This version cannot be released as Team IR v2" : "此版本不能作为 Team IR v2 发布"}</h2></div></div><p class="form-status" role="alert">${english ? "This TeamVersion has no native Team IR v2 document. Rebuild it in the v2 authoring flow. The legacy design and Run history remain unchanged until you explicitly save a v2 document." : "此团队版本尚无原生 Team IR v2 配置，请进入 v2 作者流程重新构建。保存新的 v2 配置前，旧版设计和运行记录保持不变。"}</p><div class="form-actions"><a class="primary-button" href="${rebuildUrl}" data-route="${rebuildUrl}">${english ? "Rebuild in Team IR v2" : "在 Team IR v2 中重建"}</a></div></section>`;
+      return;
+    }
     const baselines = baselinePayload.scenarios || [];
     const latestBatch = batchPayload.batch || batchPayload.latestBatch || batchPayload;
     const comparisonTargetSource = comparisonPayload.availableTargets || [];
@@ -4515,6 +4822,12 @@ function syncRoute() {
   if (studioInfoMatch) {
     setView("studio");
     renderPageFrame($("#studio-view"), "D", renderStudioTeamInfo(studioInfoMatch[1], pageRequest));
+    return;
+  }
+  const studioIrMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/ir$/);
+  if (studioIrMatch) {
+    setView("studio");
+    renderPageFrame($("#studio-view"), "D", renderStudioTeamIr(studioIrMatch[1], pageRequest));
     return;
   }
   const studioReleaseMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/release$/);

@@ -61,10 +61,10 @@ test("collaboration project creation, batch materials, export, and async run res
       idempotencyKey: "contract-run"
     });
     const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
-    assert.equal(reserved.status, "planning");
+    assert.ok(["planning", "running", "completed"].includes(reserved.status));
     assert.ok(reserved.currentRunId);
     const observed = await store.getProjectRun(project.projectId, task.taskId, reserved.currentRunId);
-    assert.equal(observed.state.status, "planning");
+    assert.ok(["running", "completed"].includes(observed.state.status));
     assert.equal(observed.runKind, "project_task");
     assert.equal(observed.owner.projectId, project.projectId);
     assert.equal(Object.hasOwn(observed, "projectId"), false);

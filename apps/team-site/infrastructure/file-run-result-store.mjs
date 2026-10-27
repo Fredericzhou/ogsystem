@@ -37,6 +37,15 @@ export function createFileRunResultStore({ projectsRoot }) {
       if (metadata.projectType !== "collaboration" || !task) throw new Error("RUN_NOT_FOUND: run does not belong to this Project Task.");
       const project = { projectId, workdir: projectRoot };
       await readProjectRunOwner(project, task, run.runId);
+      const teamRunPath = [".ogs", "runs", run.runId, "team-ir-v2-state", `${run.runId}.json`];
+      try {
+        await assertSafeEvidencePath(projectRoot, teamRunPath, { kind: "file", label: "Team IR v2 Run result" });
+        const teamRun = JSON.parse(await readFile(join(projectRoot, ...teamRunPath), "utf8"));
+        if (teamRun.status !== "completed" || !teamRun.resultWritten) return undefined;
+        return { teamResult: redactStructuredValue(teamRun.result) };
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
       const statePath = join(projectRoot, ".ogs", "runs", run.runId, "state.json");
       let snapshot;
       try {

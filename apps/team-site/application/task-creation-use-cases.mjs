@@ -26,6 +26,10 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
         if (!mountedTeams.length) throw new Error("PROJECT_TEAM_REQUIRED: a project must have at least one mounted TeamVersion before creating a task.");
         const team = mountedTeams.find((item) => item.teamVersionId === requestedTeamVersionId);
         if (!team) throw new Error("TEAM_VERSION_NOT_MOUNTED: the selected team is not mounted in this project.");
+        if (!/^[a-f0-9]{64}$/i.test(String(team.teamIrSemanticDigest || ""))
+          || !/^[a-f0-9]{64}$/i.test(String(team.compiledPlanDigest || ""))) {
+          throw new Error("TEAM_IR_V2_REQUIRED: create a Task with a TeamVersion that has a frozen, compiled Team IR v2 snapshot.");
+        }
 
         const requestKey = idempotencyKey ? String(idempotencyKey).trim().slice(0, 160) : "";
         const requestFingerprint = fingerprintRequest(JSON.stringify({
@@ -56,6 +60,9 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
           teamVersionNumber: team.teamVersionNumber,
           teamCoreDigest: team.teamCoreDigest,
           teamDigestVersion: team.teamDigestVersion,
+          teamIrSemanticDigest: team.teamIrSemanticDigest,
+          compiledPlanDigest: team.compiledPlanDigest,
+          compilerSemanticsVersion: team.compilerSemanticsVersion,
           teamName: team.teamName,
           status: "queued",
           idempotencyKey: requestKey || null,

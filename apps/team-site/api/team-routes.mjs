@@ -1,4 +1,32 @@
 export async function handleTeamRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
+  const isTeamIrV2 = (body) => body?.schemaVersion === 2 || body?.teamIR?.schemaVersion === 2;
+  const teamIrMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir(?:\/(validate))?$/);
+  if (teamIrMatch && request.method === "GET" && !teamIrMatch[2]) {
+    try {
+      sendJson(response, 200, await useCases.getTeamIr(teamIrMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read Team IR." });
+    }
+    return true;
+  }
+  if (teamIrMatch && request.method === "POST" && teamIrMatch[2] === "validate") {
+    try {
+      const body = await readBody(request, 4 * 1024 * 1024);
+      sendJson(response, 200, await useCases.validateTeamIr(teamIrMatch[1], body.teamIR ?? body));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to validate Team IR." });
+    }
+    return true;
+  }
+  if (teamIrMatch && request.method === "PUT" && !teamIrMatch[2]) {
+    try {
+      sendJson(response, 200, await useCases.saveTeamIr(teamIrMatch[1], await readBody(request, 4 * 1024 * 1024)));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save Team IR." });
+    }
+    return true;
+  }
+
   const batchCancelMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
   if (batchCancelMatch && request.method === "POST") {
     try {
@@ -120,7 +148,12 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
   }
   if (teamVersionMatch && teamVersionMatch[2] === "design/validate" && request.method === "POST") {
     try {
-      sendJson(response, 200, await useCases.validateTeamDesign(teamVersionMatch[1], await readBody(request, 4 * 1024 * 1024)));
+      const body = await readBody(request, 4 * 1024 * 1024);
+      if (isTeamIrV2(body)) {
+        sendJson(response, 409, { error: "TEAM_IR_VERSION_UNSUPPORTED_HERE: use the Team IR v2 validate endpoint and rebuild the legacy design through Studio." });
+        return true;
+      }
+      sendJson(response, 200, await useCases.validateTeamDesign(teamVersionMatch[1], body));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to validate TeamVersion design." });
     }
@@ -128,7 +161,12 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
   }
   if (teamVersionMatch && teamVersionMatch[2] === "design" && request.method === "PUT") {
     try {
-      sendJson(response, 200, await useCases.saveTeamDesign(teamVersionMatch[1], await readBody(request, 4 * 1024 * 1024)));
+      const body = await readBody(request, 4 * 1024 * 1024);
+      if (isTeamIrV2(body)) {
+        sendJson(response, 409, { error: "TEAM_IR_VERSION_UNSUPPORTED_HERE: use the Team IR v2 endpoint and rebuild the legacy design through Studio." });
+        return true;
+      }
+      sendJson(response, 200, await useCases.saveTeamDesign(teamVersionMatch[1], body));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save TeamVersion design." });
     }
@@ -137,7 +175,12 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
   const saveVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/save$/);
   if (saveVersionMatch && request.method === "PUT") {
     try {
-      sendJson(response, 200, await useCases.saveTeamVersion(saveVersionMatch[1], await readBody(request, 8 * 1024 * 1024)));
+      const body = await readBody(request, 8 * 1024 * 1024);
+      if (isTeamIrV2(body)) {
+        sendJson(response, 409, { error: "TEAM_IR_VERSION_UNSUPPORTED_HERE: use the Team IR v2 endpoint and rebuild the legacy design through Studio." });
+        return true;
+      }
+      sendJson(response, 200, await useCases.saveTeamVersion(saveVersionMatch[1], body));
     } catch (error) {
       sendJson(response, errorStatus(error), {
         error: error instanceof Error ? error.message : "Unable to save TeamVersion.",

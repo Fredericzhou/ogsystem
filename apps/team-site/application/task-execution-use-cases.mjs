@@ -4,6 +4,7 @@ export function createTaskExecutionUseCases({
   attemptStore,
   workerStore,
   runStore,
+  teamIrRunStore,
   runtime,
   readiness,
   identifiers,
@@ -54,6 +55,19 @@ export function createTaskExecutionUseCases({
         || !["released", "archived"].includes(team.teamVersionStatus)) {
         throw new Error("TASK_EXECUTION_UNAVAILABLE: the Task's selected TeamVersion is unavailable for execution.");
       }
+      if (task.teamIrSemanticDigest || task.compiledPlanDigest) {
+        if (!/^[a-f0-9]{64}$/i.test(String(task.teamIrSemanticDigest || ""))
+          || !/^[a-f0-9]{64}$/i.test(String(task.compiledPlanDigest || ""))) {
+          throw new Error("TEAM_IR_V2_REQUIRED: this Task is not bound to a complete frozen Team IR v2 plan.");
+        }
+        if (task.teamIrSemanticDigest !== team.teamIrSemanticDigest || task.compiledPlanDigest !== team.compiledPlanDigest) {
+          throw new Error("TASK_TEAM_IR_DIGEST_MISMATCH: the frozen Team IR v2 snapshot changed after Task creation.");
+        }
+        if (typeof teamIrRunStore?.execute !== "function") {
+          throw new Error("TEAM_IR_V2_EXECUTOR_UNAVAILABLE: the v2 Sandbox executor is not connected.");
+        }
+        if (typeof teamIrRunStore.assertAvailable === "function") teamIrRunStore.assertAvailable();
+      }
       if (task.teamCoreDigest && (task.teamCoreDigest !== (team.teamCoreDigest || team.projectDigest)
         || (Number.isInteger(task.teamDigestVersion) && task.teamDigestVersion !== team.teamDigestVersion))) {
         throw new Error("TASK_TEAM_VERSION_DIGEST_MISMATCH: the bound TeamVersion contents changed after Task creation.");
@@ -74,7 +88,9 @@ export function createTaskExecutionUseCases({
         projectId, taskId, retrySourceRunId, materialSnapshotPolicy: materialSnapshotPolicy || { kind: "project_current" }, attemptKey, attemptFingerprint,
         runId: reservedRunId, mode, startedAt: task.startedAt || now(), teamVersionId: team.teamVersionId || team.projectId,
         teamCoreDigest: team.teamCoreDigest,
-        teamDigestVersion: team.teamDigestVersion
+        teamDigestVersion: team.teamDigestVersion,
+        teamIrSemanticDigest: task.teamIrSemanticDigest,
+        compiledPlanDigest: task.compiledPlanDigest
       });
       project = reserved.project;
       task = reserved.task;
@@ -82,7 +98,7 @@ export function createTaskExecutionUseCases({
 
       const worker = (async () => {
         try {
-          const result = await runStore.execute(projectId, {
+          const runOptions = {
             prompt: task.input,
             mode,
             requestedRunId: reservedRunId,
@@ -99,7 +115,15 @@ export function createTaskExecutionUseCases({
             materialSourceRoot: retrySourceRoot || project.workdir,
             materialSnapshotPolicy: materialSnapshotPolicy || { kind: "project_current" },
             recordTask: false
-          });
+          };
+          const result = task.teamIrSemanticDigest
+            ? await teamIrRunStore.execute({ ...project, projectId }, {
+                ...runOptions,
+                runId: reservedRunId,
+                teamIrSemanticDigest: task.teamIrSemanticDigest,
+                compiledPlanDigest: task.compiledPlanDigest
+              })
+            : await runStore.execute(projectId, runOptions);
           await attemptStore.completeAttempt({ projectId, taskId, runId: reservedRunId, startedAt: task.startedAt || result.state?.startedAt || now(), result, now: now() });
         } catch (error) {
           await attemptStore.failAttempt({ projectId, taskId, runId: reservedRunId, error, now: now() }).catch(() => undefined);

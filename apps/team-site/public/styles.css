@@ -85,7 +85,7 @@ pre.task-run-output { box-sizing: border-box; max-width: 100%; overflow-wrap: an
 @media (max-width: 760px) {
   .task-record-row { flex-direction: column; }
   .task-record-actions { justify-content: flex-start; width: 100%; }
-  .task-record-actions .secondary-button { flex: 1 1 120px; min-height: 44px; }
+  .task-record-row .task-record-actions .secondary-button { flex: 1 1 120px; min-height: 44px; }
   .task-record-actions .text-button { min-height: 44px; padding: 8px 11px; }
   .task-record-actions .task-delete-button { justify-content: center; min-height: 44px; min-width: 44px; padding: 8px; }
   .task-run-mode { flex: 1 1 145px; }
@@ -1662,6 +1662,25 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-workspace-nav a { align-items: center; border-bottom: 2px solid transparent; color: var(--muted); display: inline-flex; flex: 0 0 auto; min-height: 42px; padding: 0 15px; text-decoration: none; }
 .studio-workspace-nav a:hover { color: var(--text); }
 .studio-workspace-nav a[aria-current="page"] { border-color: var(--mint); color: var(--text); font-weight: 650; }
+.team-ir-editor { display: grid; gap: 16px; }
+.team-ir-editor .project-panel, .ir-editor-section { min-width: 0; }
+.ir-editor-section { border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+.ir-editor-section > .panel-head { align-items: center; display: flex; justify-content: space-between; gap: 12px; }
+.ir-editor-list { display: grid; gap: 12px; }
+.ir-editor-row { border: 1px solid var(--line); border-radius: 5px; padding: 14px; }
+.ir-editor-row .panel-head { align-items: center; display: flex; justify-content: space-between; }
+.ir-editor-row h3 { font-size: 15px; margin: 0; }
+.ir-form-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ir-form-grid label { display: grid; gap: 5px; min-width: 0; }
+.ir-form-grid label.full { grid-column: 1 / -1; }
+.ir-form-grid input, .team-ir-editor > .project-panel input { max-width: 100%; min-width: 0; }
+.team-ir-editor code[data-team-ir-digest] { max-width: 100%; overflow-wrap: anywhere; }
+.ir-advanced-contracts { display: grid; gap: 10px; min-width: 0; }
+.ir-advanced-contracts > summary { cursor: pointer; font-size: 15px; font-weight: 650; }
+.ir-advanced-contracts > label { display: grid; gap: 6px; min-width: 0; }
+.ir-advanced-contracts textarea { box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; max-width: 100%; min-height: 300px; min-width: 0; overflow: auto; resize: vertical; width: 100%; }
+.ir-diagnostics { overflow-wrap: anywhere; }
+@media (max-width: 700px) { .ir-form-grid { grid-template-columns: minmax(0, 1fr); } .ir-form-grid label.full { grid-column: auto; } }
 
 .nav-item.nav-subitem { min-height: 36px; padding-left: 30px; font-size: 0.92rem; }
 .shared-resource-layout { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }

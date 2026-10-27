@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -347,10 +347,16 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator('#project-graph-stage [data-studio-graph-action="validate"]').waitFor({ state: "visible" });
     await page.locator('.studio-workspace-nav a[data-route*="/release"]').click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/release$/);
-    assert.equal(await page.locator("#studio-release-button").isDisabled(), true, "static validation alone must not release a TeamVersion");
+    await page.locator('[role="alert"]').getByText(/尚无原生 Team IR v2 配置/).waitFor();
+    assert.equal(await page.locator("#studio-release-button").count(), 0, "a legacy TeamVersion must not expose the v2 release action");
+    assert.equal(await page.getByRole("link", { name: "在 Team IR v2 中重建" }).getAttribute("href"), `/studio/teams/${team.projectId}/ir`);
+    const legacyDesignBeforeRelease = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const releaseResponse = await page.request.post(`${url}/api/v1/team-versions/${team.projectId}/release`);
     assert.equal(releaseResponse.status(), 400);
-    assert.match((await releaseResponse.json()).error, /TEAM_RELEASE_BASELINE_REQUIRED/);
+    assert.match((await releaseResponse.json()).error, /TEAM_IR_V2_REQUIRED:.*rebuild it in the v2 authoring flow/);
+    const legacyDesignAfterRelease = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
+    assert.deepEqual(legacyDesignAfterRelease.authoring, legacyDesignBeforeRelease.authoring, "a rejected legacy release must not rewrite the saved legacy design");
+    await assert.rejects(readFile(join(projectsRoot, team.projectId, ".ogs", "team.ir.json")), { code: "ENOENT" }, "a rejected release must not create a v2 document");
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(await page.evaluate(() => window.__productUnhandled), []);
   } finally {

@@ -23,7 +23,8 @@ export function createRunResultUseCases({ getRun, runResultStore }) {
         taskId: run.taskId,
         attemptNumber: run.attemptNumber
       };
-      if (!outputs || !Object.keys(outputs.finalOutputsByRoleId).length) {
+      const finalOutputsByRoleId = outputs?.finalOutputsByRoleId || {};
+      if (!outputs || (!Object.keys(finalOutputsByRoleId).length && !outputs.teamResult)) {
         return { ...identity, available: false, result: null };
       }
       return { ...identity, available: true, result: outputs };

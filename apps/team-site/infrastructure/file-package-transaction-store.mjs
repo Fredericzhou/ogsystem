@@ -85,7 +85,10 @@ export function createFilePackageTransactionStore({
           projectId: team.projectId || teamVersionId,
           teamRootId: team.teamRootId || team.teamId || teamVersionId,
           teamVersionId: team.teamVersionId || teamVersionId,
-          teamDigestVersion: team.teamDigestVersion || 3
+          teamDigestVersion: team.teamDigestVersion || 3,
+          teamIrSemanticDigest: team.teamIrSemanticDigest || mountedTeam.teamIrSemanticDigest || null,
+          compiledPlanDigest: team.compiledPlanDigest || mountedTeam.compiledPlanDigest || null,
+          compilerSemanticsVersion: team.compilerSemanticsVersion || mountedTeam.compilerSemanticsVersion || null
         }
       }
     };
@@ -96,6 +99,9 @@ export function createFilePackageTransactionStore({
       teamVersionNumber: team.teamVersionNumber || mountedTeam.teamVersionNumber || 1,
       teamName: team.teamName || team.name || mountedTeam.teamName,
       teamCoreDigest,
+      teamIrSemanticDigest: team.teamIrSemanticDigest || mountedTeam.teamIrSemanticDigest || null,
+      compiledPlanDigest: team.compiledPlanDigest || mountedTeam.compiledPlanDigest || null,
+      compilerSemanticsVersion: team.compilerSemanticsVersion || mountedTeam.compilerSemanticsVersion || null,
       teamDigestVersion: Number(teamPackage.team?.digestVersion || mountedTeam.teamDigestVersion || 3),
       builtIn: Boolean(mountedTeam.builtIn),
       source: {
@@ -229,13 +235,26 @@ export function createFilePackageTransactionStore({
       teamVersionStatus: "released",
       projectDigest: await computeProjectAssetDigest(workdir),
       teamCoreDigest,
+      teamIrSemanticDigest: bundle.team?.project?.teamIrSemanticDigest || null,
+      compiledPlanDigest: bundle.team?.project?.compiledPlanDigest || null,
+      compilerSemanticsVersion: bundle.team?.project?.compilerSemanticsVersion || null,
       releasedAt: now,
       source: "imported",
       updatedAt: now
     };
     await writeJson(join(workdir, ".site", "project.json"), next);
     await writeTeamReferenceFiles(workdir, next);
-    return { projectId, workdir, teamRootId, teamVersionNumber: 1, teamName: name, teamCoreDigest };
+    return {
+      projectId,
+      workdir,
+      teamRootId,
+      teamVersionNumber: 1,
+      teamName: name,
+      teamCoreDigest,
+      teamIrSemanticDigest: next.teamIrSemanticDigest,
+      compiledPlanDigest: next.compiledPlanDigest,
+      compilerSemanticsVersion: next.compilerSemanticsVersion
+    };
   }
 
   async function stageProjectMaterials(workdir, materials = []) {
@@ -290,6 +309,9 @@ export function createFilePackageTransactionStore({
             teamVersionNumber: digestMatch.teamVersionNumber || dependency.teamVersionNumber || 1,
             teamName: digestMatch.teamName || digestMatch.name || sourceName,
             teamCoreDigest: dependency.teamCoreDigest,
+            teamIrSemanticDigest: digestMatch.teamIrSemanticDigest || dependency.teamIrSemanticDigest || null,
+            compiledPlanDigest: digestMatch.compiledPlanDigest || dependency.compiledPlanDigest || null,
+            compilerSemanticsVersion: digestMatch.compilerSemanticsVersion || dependency.compilerSemanticsVersion || null,
             status: "available",
             source: dependency.source
           });
@@ -312,6 +334,9 @@ export function createFilePackageTransactionStore({
           teamVersionNumber: stagedTeam.teamVersionNumber,
           teamName: stagedTeam.teamName,
           teamCoreDigest: stagedTeam.teamCoreDigest,
+          teamIrSemanticDigest: stagedTeam.teamIrSemanticDigest || dependency.teamIrSemanticDigest || null,
+          compiledPlanDigest: stagedTeam.compiledPlanDigest || dependency.compiledPlanDigest || null,
+          compilerSemanticsVersion: stagedTeam.compilerSemanticsVersion || dependency.compilerSemanticsVersion || null,
           status: "available",
           source: dependency.source
         });

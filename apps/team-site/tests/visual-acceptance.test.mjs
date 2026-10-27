@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -177,11 +177,10 @@ test("site completes the product project flow with task records and repository e
 
     await page.locator('.studio-workspace-nav a[data-route*="/release"]').click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/release$/);
-    assert.equal(await page.locator("#studio-release-button").isDisabled(), true, "a new TeamVersion needs a passing baseline Sandbox before release");
-    assert.equal(await page.locator("[data-studio-batch-panel]").isVisible(), true, "release gate exposes baseline batch controls");
-    assert.equal(await page.locator("[data-run-batch]").count(), 2, "release gate offers pending and full baseline batch modes");
-    assert.equal(await page.locator(".studio-baseline-comparison").isVisible(), true, "release gate shows comparison as a diagnostic reference");
-    assert.match(await page.locator(".studio-baseline-comparison h2").innerText(), /不影响当前版本发布就绪度/);
+    await page.getByRole("heading", { name: "需要重建 Team IR v2" }).waitFor();
+    assert.match(await page.locator("#studio-view [role=alert]").innerText(), /此团队版本尚无原生 Team IR v2 配置/);
+    assert.equal(await page.getByRole("link", { name: "在 Team IR v2 中重建" }).count(), 1, "legacy TeamVersion offers a v2 rebuild entry");
+    assert.equal(await page.locator("#studio-release-button").count(), 0, "legacy TeamVersion cannot be released as v2");
     const publishedTeam = await seedReleasedClassicTeam(projectsRoot, "software-team");
     const archivedTeam = await seedReleasedClassicTeam(projectsRoot, "structured-debate");
     await page.request.post(`${url}/api/v1/team-versions/${encodeURIComponent(archivedTeam.projectId)}/archive`, { data: {} });
@@ -281,72 +280,21 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator(".project-resources-panel").count(), 1);
     const startResponsePromise = confirmTaskReadinessIfRequired(page, "start");
     await page.locator('.task-record-row [data-task-action="start"]').click();
-    await startResponsePromise;
-    await page.waitForFunction(() => {
-      const status = document.querySelector(".task-record-row .status-chip");
-      return status?.classList.contains("completed") || status?.classList.contains("failed");
-    }, null, { timeout: 30000 });
-    assert.equal(await page.locator(".task-record-row .status-chip").evaluate((status) => status.classList.contains("completed")), true);
-    assert.ok(await page.locator(".task-record-row [data-run-id]").count() >= 1);
-    await page.locator(".task-run-workspace-link a").waitFor();
-    const runDiagnosticLink = await page.locator(".task-run-workspace-link a").getAttribute("href");
-    assert.match(runDiagnosticLink || "", new RegExp(`^/projects/${projectId}/runs/`));
-    assert.equal(await page.locator(".task-run-workspace-link a").getAttribute("target"), null, "run diagnostics should open inside the same product shell");
-    await page.goto(`${url}${runDiagnosticLink}`, { waitUntil: "networkidle" });
-    assert.equal(new URL(page.url()).pathname, runDiagnosticLink, "the run detail route should focus the requested Run");
-    const focusedRunId = runDiagnosticLink.split("/").at(-1);
-    await page.locator(`.task-record-row .task-run-detail[data-run-id="${focusedRunId}"]`).waitFor();
-    await page.goto(`${url}/projects/${projectId}`, { waitUntil: "networkidle" });
-    const collaboration = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
-    const task = collaboration.taskRecords[0];
-    const originalRunId = task.currentRunId;
-    const originalRunDir = join(projectsRoot, projectId, ".ogs", "runs", originalRunId);
-    const runStatePath = join(originalRunDir, "control", "state.json");
-    const runState = JSON.parse(await readFile(runStatePath, "utf8"));
-    await writeFile(runStatePath, `${JSON.stringify({ ...runState, status: "failed", error: "UAT retry fixture", finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
-    const projectMetaPath = join(projectsRoot, projectId, ".site", "project.json");
-    const projectMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
-    projectMeta.taskRecords = projectMeta.taskRecords.map((record) => record.taskId === task.taskId
-      ? { ...record, status: "failed", lastError: "UAT retry fixture" }
-      : record);
-    await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
-    const failedProject = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
-    const failedTask = failedProject.taskRecords.find((record) => record.taskId === task.taskId);
-    assert.equal(failedTask.status, "failed", `retry fixture was not visible in the Project DTO: ${JSON.stringify({ runStatePath, failedTask })}`);
-    assert.equal(failedTask.currentRunId, originalRunId, "failed Task DTO must retain its current Run");
-    await page.reload({ waitUntil: "networkidle" });
-    const reloadedProject = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
-    const reloadedTask = reloadedProject.taskRecords.find((record) => record.taskId === task.taskId);
-    assert.equal(reloadedTask?.status, "failed", `Task status changed after reload: ${JSON.stringify(reloadedTask)}`);
-    const taskRows = page.locator(".task-record-row");
-    assert.ok(await taskRows.count(), `Project task row missing after reload: ${JSON.stringify(await page.evaluate(() => ({ url: location.href, title: document.title, body: document.body?.innerText, html: document.documentElement?.outerHTML.slice(0, 2000) })))}`);
-    const retryButton = page.locator('.task-record-row [data-task-action="retry"]');
-    assert.equal(await retryButton.count(), 1, `retry action missing after reload: ${await page.locator(".task-record-row").first().evaluate((row) => row.outerHTML)}`);
-    await retryButton.waitFor();
-    const retryResponsePromise = confirmTaskReadinessIfRequired(page, "retry");
-    await retryButton.click();
-    let retryResponse;
-    try {
-      retryResponse = await retryResponsePromise;
-    } catch (error) {
-      throw new Error(`${error.message}; server: ${output}`);
-    }
-    const retryPayload = await retryResponse.json();
-    assert.equal(retryResponse.ok(), true, retryPayload.error || `retry returned ${retryResponse.status()}`);
-    await page.waitForFunction(() => {
-      const status = document.querySelector(".task-record-row .status-chip");
-      return status?.classList.contains("completed") || status?.classList.contains("failed");
-    }, null, { timeout: 30000 });
-    const retriedProject = await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json());
-    const retriedTask = retriedProject.taskRecords.find((record) => record.taskId === task.taskId);
-    assert.equal(retriedProject.taskRecords.length, 1);
-    assert.equal(retriedTask.runIds.length, 2);
-    assert.equal(retriedTask.runIds[0], originalRunId);
-    assert.notEqual(retriedTask.runIds[1], originalRunId);
-    assert.equal(retriedTask.currentRunId, retriedTask.runIds[1]);
-    await page.locator(".task-attempt-timeline li").nth(0).waitFor();
-    assert.equal(await page.locator(".task-attempt-timeline li").count(), 2);
-    assert.match(await page.locator(".task-attempt-timeline").innerText(), /历史尝试[\s\S]*当前尝试/);
+    const startResponse = await startResponsePromise;
+    assert.equal(startResponse.status(), 400);
+    assert.match((await startResponse.json()).error, /TEAM_IR_V2_EXECUTOR_UNAVAILABLE/);
+    const taskAfterStart = (await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json())).taskRecords[0];
+    assert.equal(taskAfterStart.status, "queued");
+    assert.equal(taskAfterStart.currentRunId, null);
+    assert.deepEqual(taskAfterStart.runIds, []);
+    assert.deepEqual(await readdir(join(projectsRoot, projectId, ".ogs", "runs"), { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error)), [], "blocked v2 Task must not create Run evidence");
+    const retryResponse = await page.request.post(`${url}/api/v1/projects/${projectId}/tasks/${taskAfterStart.taskId}/retry`, { data: { mode: "sandbox" } });
+    assert.equal(retryResponse.status(), 400);
+    assert.match((await retryResponse.json()).error, /TASK_RETRY_UNSUPPORTED/);
+    const taskAfterRetry = (await page.request.get(`${url}/api/v1/projects/${projectId}`).then((response) => response.json())).taskRecords[0];
+    assert.equal(taskAfterRetry.status, "queued");
+    assert.equal(taskAfterRetry.currentRunId, null);
+    assert.deepEqual(taskAfterRetry.runIds, []);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     const originalProjectId = teamId;
     const exportResponse = await page.request.get(new URL(`/api/v1/projects/${originalProjectId}/team/export`, url).toString());
@@ -396,9 +344,9 @@ test("site completes the product project flow with task records and repository e
     assert.ok(mobileNavigation.scrollWidth >= mobileNavigation.clientWidth, `mobile navigation should contain its links without widening the page: ${JSON.stringify(mobileNavigation)}`);
     await mobile.keyboard.press("Escape");
     await mobile.goto(`${url}/studio/teams/${encodeURIComponent(teamId)}/release`, { waitUntil: "domcontentloaded" });
-    await mobile.getByRole("heading", { name: "发布检查" }).waitFor();
+    await mobile.getByRole("heading", { name: "需要重建 Team IR v2" }).waitFor();
     assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), "the release gate should fit a 320px viewport");
-    assert.ok(await mobile.locator("#studio-view .panel-intro").first().isVisible(), "the release gate should keep the validation boundary readable on mobile");
+    assert.ok(await mobile.locator("#studio-view [role=alert]").isVisible(), "the rebuild reason should remain readable on mobile");
     await mobile.setViewportSize({ width: 390, height: 844 });
     await mobile.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
     await mobile.locator("#new-project-form").waitFor();
@@ -434,7 +382,7 @@ test("site completes the product project flow with task records and repository e
     assert.ok(taskLayout.actions.top >= taskLayout.main.bottom - 1, "mobile task actions should follow task content without overlap");
     assert.ok(taskLayout.buttons.length > 0, "mobile task actions should remain available");
     assert.ok(taskLayout.buttons.every((button) => button.left >= 0 && button.right <= taskLayout.viewportWidth + 1 && button.width >= 44 && button.height >= 44), `mobile task controls should stay inside the viewport and meet the 44px touch target: ${JSON.stringify(taskLayout)}`);
-    assert.ok(taskLayout.timeline && taskLayout.timeline.left >= 0 && taskLayout.timeline.right <= taskLayout.viewportWidth + 1, "mobile attempt timeline should remain within the viewport");
+    assert.equal(taskLayout.timeline, null, "a Task blocked before Run reservation has no attempt timeline");
   } finally {
     await browser?.close();
     if (server.exitCode === null && server.signalCode === null) {

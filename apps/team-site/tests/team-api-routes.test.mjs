@@ -130,6 +130,37 @@ test("Team design routes use TeamVersion identity and keep writes outside the Pr
   assert.deepEqual(calls[9], ["chatTeamAssistant", "team-v1", { message: "adjust" }]);
 });
 
+test("Team IR routes use version-scoped endpoints and legacy design endpoints reject v2 documents", async () => {
+  const calls = [];
+  const harness = routeHarness({
+    getTeamIr: async (id) => (calls.push(["get-ir", id]), { teamVersionId: id, teamIR: null, semanticDigest: null }),
+    validateTeamIr: async (...args) => (calls.push(["validate-ir", ...args]), { ok: true, diagnostics: [] }),
+    saveTeamIr: async (...args) => (calls.push(["save-ir", ...args]), { saved: true, semanticDigest: "semantic" }),
+    validateTeamDesign: async () => { throw new Error("legacy endpoint invoked"); },
+    saveTeamDesign: async () => { throw new Error("legacy endpoint invoked"); },
+    saveTeamVersion: async () => { throw new Error("legacy endpoint invoked"); }
+  });
+
+  assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/ir"), true);
+  assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-v1/ir/validate", { teamIR: { schemaVersion: 2 } }), true);
+  assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/ir", { teamIR: { schemaVersion: 2 }, expectedSemanticDigest: null }), true);
+  assert.deepEqual(calls, [
+    ["get-ir", "team-v1"],
+    ["validate-ir", "team-v1", { schemaVersion: 2 }],
+    ["save-ir", "team-v1", { teamIR: { schemaVersion: 2 }, expectedSemanticDigest: null }]
+  ]);
+
+  for (const [method, path, body] of [
+    ["POST", "/api/v1/team-versions/team-v1/design/validate", { schemaVersion: 2 }],
+    ["PUT", "/api/v1/team-versions/team-v1/design", { teamIR: { schemaVersion: 2 } }],
+    ["PUT", "/api/v1/team-versions/team-v1/save", { schemaVersion: 2 }]
+  ]) {
+    assert.equal(await harness.invoke(method, path, body), true);
+    assert.equal(harness.sent.at(-1).status, 409);
+    assert.match(harness.sent.at(-1).payload.error, /TEAM_IR_VERSION_UNSUPPORTED_HERE/);
+  }
+});
+
 test("release baseline routes are TeamVersion scoped and versioned through application use cases", async () => {
   const calls = [];
   const route = routeHarness({

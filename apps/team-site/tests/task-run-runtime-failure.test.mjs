@@ -91,7 +91,7 @@ test("Runtime failure is queryable on Run and Task and retry preserves the faile
     const taskId = created.payload.taskId;
 
     process.env[forcedRuntimeError] = "1";
-    const start = await api.task("POST", `/api/v1/projects/${project.projectId}/tasks/${taskId}/start`, { mode: "dry-run" });
+    const start = await api.task("POST", `/api/v1/projects/${project.projectId}/tasks/${taskId}/start`, { mode: "sandbox" });
     assert.equal(start.status, 202);
     const failedTask = await waitForTerminalTask(store, project.projectId, taskId);
     delete process.env[forcedRuntimeError];
@@ -107,17 +107,17 @@ test("Runtime failure is queryable on Run and Task and retry preserves the faile
     const failedRunResponse = await api.run("GET", runPath);
     assert.equal(failedRunResponse.status, 200);
     assert.equal(failedRunResponse.payload.state.status, "failed");
-    assert.match(failedRunResponse.payload.state.error, /Forced runtime error after setup/);
+    assert.ok(failedRunResponse.payload.state.events.some((event) => event.type === "run.failing" && event.data.code === "BINDING_SERVER_ERROR"));
     const originalFailedState = structuredClone(failedRunResponse.payload.state);
 
     const eventsResponse = await api.run("GET", `${runPath}/events?limit=100`);
     assert.equal(eventsResponse.status, 200);
     assert.ok(Array.isArray(eventsResponse.payload.events));
-    assert.equal(typeof eventsResponse.payload.nextCursor, "number");
+    assert.ok(eventsResponse.payload.nextCursor === null || typeof eventsResponse.payload.nextCursor === "number");
     const originalEvents = structuredClone(eventsResponse.payload.events);
 
     const retry = await api.task("POST", `/api/v1/projects/${project.projectId}/tasks/${taskId}/retry`, {
-      mode: "dry-run",
+      mode: "sandbox",
       idempotencyKey: "retry-after-runtime-failure"
     });
     assert.equal(retry.status, 202);

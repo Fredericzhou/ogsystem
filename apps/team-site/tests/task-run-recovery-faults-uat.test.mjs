@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
+import { convertTaskFixtureToLegacySnapshot } from "./legacy-run-fixture.mjs";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const forceRuntimeError = "OGSYSTEM_TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP";
@@ -145,6 +146,7 @@ async function createTaskFixture(projectsRoot) {
     input: "Create a durable Run that can be inspected and retried after recovery.",
     teamVersionId: team.teamVersionId
   });
+  await convertTaskFixtureToLegacySnapshot({ project, team, task });
   return { project, task, team };
 }
 

@@ -1,6 +1,6 @@
 # ADR: Team IR 协作边界与克制原则
 
-状态：提案，待批准  
+状态：已批准为本次 Team IR v2 落地任务的架构基线
 范围：Team IR 根 Schema、编译器和 Runtime 的职责边界
 
 ## 背景

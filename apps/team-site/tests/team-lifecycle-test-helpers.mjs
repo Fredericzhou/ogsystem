@@ -4,6 +4,7 @@ import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/pro
 import { createFileTeamLifecycleLocks } from "../infrastructure/file-team-lifecycle-locks.mjs";
 import { createRuntimeTeamConfirmation } from "../infrastructure/runtime-team-confirmation.mjs";
 import { withTaskExecutionUseCases } from "./task-execution-test-helpers.mjs";
+import { classicSoftwareTeamSnapshot } from "./team-ir-test-runtime.mjs";
 
 export function withTeamLifecycleUseCases(repository) {
   repository = withTaskExecutionUseCases(repository);
@@ -16,8 +17,14 @@ export function withTeamLifecycleUseCases(repository) {
       locks: createFileTeamLifecycleLocks(),
       confirmation: createRuntimeTeamConfirmation(),
       releaseEvidence: {
-        async validateReleaseEvidence() {},
+        async validateTeamIrReleaseEvidence() { return { ok: true }; },
         async prepareBuiltInTeamVersion() {}
+      },
+      teamIrRelease: {
+        async getTeamIrReleaseSnapshot(teamVersionId) {
+          return { teamVersionId, ...classicSoftwareTeamSnapshot };
+        },
+        async copyTeamIr() { return { copied: true }; }
       },
       caseCatalog: { getCase, listCases: () => cases },
       assertTrustedTeamTopology: (team) => ["classic", "classic-template"].includes(team.source) && Boolean(team.caseId)

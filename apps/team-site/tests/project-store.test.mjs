@@ -11,18 +11,7 @@ import { createTeamPackageOperations } from "./package-test-helpers.mjs";
 import { withCollaborationProjectUseCases } from "./collaboration-project-test-helpers.mjs";
 import { withTeamLifecycleUseCases } from "./team-lifecycle-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
-import { waitForActiveTaskWorker } from "../infrastructure/in-memory-task-workers.mjs";
-
-async function waitForTask(store, projectId, taskId) {
-  let lastTask;
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const task = await store.getProjectTask(projectId, taskId);
-    lastTask = task;
-    if (task && ["completed", "failed", "cancelled"].includes(task.status)) return task;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`Task did not reach a terminal state in time (status=${lastTask?.status || "missing"}; error=${lastTask?.lastError || "none"}).`);
-}
+import { createFileRunQueryStore } from "../infrastructure/file-run-query-store.mjs";
 
 test("site creates a persistent project and snapshots materials; runs require a Project Task", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-projects-"));
@@ -74,6 +63,11 @@ test("classic team use creates a confirmed asset; Studio runs use the Simulation
     const project = await store.createClassicTeamProject({ caseId: "software-team" });
     assert.equal(project.teamVersionStatus, "released");
     assert.equal(project.source, "classic");
+    assert.match(project.teamIrSemanticDigest, /^[a-f0-9]{64}$/);
+    assert.match(project.compiledPlanDigest, /^[a-f0-9]{64}$/);
+    const frozenVersion = JSON.parse(await readFile(join(project.workdir, ".site", "team-version.json"), "utf8"));
+    assert.equal(frozenVersion.teamIrSemanticDigest, project.teamIrSemanticDigest);
+    assert.equal(frozenVersion.compiledPlanDigest, project.compiledPlanDigest);
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Prepare a concise delivery plan.", mode: "dry-run" }),
       /PROJECT_RUN_OWNER_INVALID/
@@ -353,7 +347,7 @@ test("Project Run resume requires a persisted Task owner before validating a sna
   }
 });
 
-test("collaboration tasks run sequentially on their bound TeamVersion and preserve controls", async () => {
+test("v2 Collaboration Tasks execute their bound TeamVersion through the deterministic Runtime", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-task-controls-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withTaskCreationUseCases(withCollaborationProjectUseCases(await import("../infrastructure/file-project-store.mjs?task-controls=" + Date.now())));
@@ -365,16 +359,26 @@ test("collaboration tasks run sequentially on their bound TeamVersion and preser
     const project = await store.createCollaborationProject({ name: "Task Control Project", workspaceKey: "task-control", teamVersionIds: [teamA.projectId] });
     const first = await store.createProjectTask(project.projectId, { input: "Analyze input", teamVersionId: teamA.projectId, idempotencyKey: "task-a" });
     const second = await store.createProjectTask(project.projectId, { input: "Review output", teamVersionId: teamA.projectId, idempotencyKey: "task-b" });
-    const firstRun = await store.startProjectTask(project.projectId, first.taskId, { mode: "dry-run" });
-    assert.equal(firstRun.status, "planning");
-    assert.ok(firstRun.currentRunId);
-    const firstCompleted = await waitForTask(store, project.projectId, first.taskId);
+    const firstStarted = await store.startProjectTask(project.projectId, first.taskId, { mode: "dry-run" });
+    assert.equal(firstStarted.status, "planning");
+    await store.waitForActiveTaskWorker(project.projectId, first.taskId);
+    const secondStarted = await store.startProjectTask(project.projectId, second.taskId, { mode: "dry-run" });
+    assert.equal(secondStarted.status, "planning");
+    await store.waitForActiveTaskWorker(project.projectId, second.taskId);
+    const firstCompleted = await store.getProjectTask(project.projectId, first.taskId);
+    const secondCompleted = await store.getProjectTask(project.projectId, second.taskId);
     assert.equal(firstCompleted.status, "completed");
-    const secondRun = await store.startProjectTask(project.projectId, second.taskId, { mode: "dry-run" });
-    assert.equal(secondRun.status, "planning");
-    assert.ok(secondRun.currentRunId);
-    const secondCompleted = await waitForTask(store, project.projectId, second.taskId);
     assert.equal(secondCompleted.status, "completed");
+    assert.equal(firstCompleted.compiledPlanDigest, first.compiledPlanDigest);
+    const runQueryStore = createFileRunQueryStore({ projectsRoot });
+    for (const task of [firstCompleted, secondCompleted]) {
+      const state = await runQueryStore.readRunState(project.projectId, task.taskId, task.currentRunId);
+      const owner = await runQueryStore.readRunOwner(project.projectId, task.taskId, task.currentRunId);
+      const plan = await runQueryStore.readRunPlan(project.projectId, task.taskId, task.currentRunId);
+      assert.equal(state.status, "completed");
+      assert.equal(owner.teamVersionId, teamA.teamVersionId);
+      assert.equal(plan.compiledPlanDigest, task.compiledPlanDigest);
+    }
 
     const manual = await store.createProjectTask(project.projectId, { input: "Manual review step", teamVersionId: teamA.projectId, idempotencyKey: "task-manual" });
     const running = await store.controlProjectTask(project.projectId, manual.taskId, "start");
@@ -442,15 +446,15 @@ test("task controls enforce one active task, durable idempotency, and terminal b
     const expanded = await store.replaceProjectTeams(project.projectId, [teamVersionId, builtInTeam.teamVersionId]);
     assert.deepEqual(expanded.mountedTeams.map((team) => team.teamVersionId), [teamVersionId, builtInTeam.teamVersionId]);
     const builtIn = await store.createProjectTask(project.projectId, { input: "Mounted TeamVersion execution", teamVersionId, idempotencyKey: "boundary-built-in" });
-    const builtInRun = await store.startProjectTask(project.projectId, builtIn.taskId);
-    assert.equal(builtInRun.status, "planning");
-    assert.ok(builtInRun.currentRunId);
-    const builtInCompleted = await waitForTask(store, project.projectId, builtIn.taskId);
+    const builtInStarted = await store.startProjectTask(project.projectId, builtIn.taskId);
+    assert.equal(builtInStarted.status, "planning");
+    await store.waitForActiveTaskWorker(project.projectId, builtIn.taskId);
+    const builtInCompleted = await store.getProjectTask(project.projectId, builtIn.taskId);
     assert.equal(builtInCompleted.status, "completed");
-    await waitForActiveTaskWorker(project.projectId, builtIn.taskId);
+    assert.equal(builtInCompleted.compiledPlanDigest, builtIn.compiledPlanDigest);
     const mountedTeam = (await store.getProject(project.projectId)).mountedTeams;
     assert.equal(mountedTeam.length, 2);
-    assert.equal(mountedTeam.some((team) => team.teamVersionId === builtInCompleted.teamVersionId), true);
+    assert.equal(mountedTeam.some((team) => team.teamVersionId === builtIn.teamVersionId), true);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }

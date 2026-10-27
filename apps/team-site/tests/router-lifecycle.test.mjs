@@ -149,9 +149,10 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.equal(simulationResponse.simulation.simulationId, simulationId);
     assert.equal(simulationResponse.simulation.status, "completed");
     await page.goto(`${url}/studio/teams/${teamVersionId}/release`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: "发布检查" }).waitFor();
-    assert.match(await page.locator("#studio-view .panel-intro").first().innerText(), /不验证外部网络或凭据/);
-    assert.equal(await page.locator("#studio-release-button").count(), 1);
+    await page.getByRole("heading", { name: "需要重建 Team IR v2" }).waitFor();
+    assert.match(await page.locator("#studio-view [role=alert]").innerText(), /保存新的 v2 配置前，旧版设计和运行记录保持不变/);
+    assert.equal(await page.getByRole("link", { name: "在 Team IR v2 中重建" }).count(), 1);
+    assert.equal(await page.locator("#studio-release-button").count(), 0);
     await page.goto(`${url}/studio/teams/${teamVersionId}/run`, { waitUntil: "networkidle" });
     await page.locator(".studio-simulation-list, #studio-view .run-error").waitFor();
     assert.equal(await page.locator(".studio-simulation-list").count(), 1, `Studio debug history failed: ${await page.locator("#studio-view").innerText()}`);

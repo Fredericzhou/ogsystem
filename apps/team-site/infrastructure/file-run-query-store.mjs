@@ -50,6 +50,17 @@ export function createFileRunQueryStore({ projectsRoot }) {
     return readProjectRunOwner({ projectId, workdir: projectRoot }, task, runId);
   }
 
+  async function readTeamIrRun(projectRoot, runId) {
+    const pathSegments = [".ogs", "runs", runId, "team-ir-v2-state", `${runId}.json`];
+    try {
+      await assertSafeEvidencePath(projectRoot, pathSegments, { kind: "file", label: "Team IR v2 Run state" });
+      return JSON.parse(await readFile(join(projectRoot, ...pathSegments), "utf8"));
+    } catch (error) {
+      if (error?.code === "ENOENT") return undefined;
+      throw error;
+    }
+  }
+
   return Object.freeze({
     async readRunOwner(projectId, taskId, runId) {
       const { projectRoot } = resolveRunDirectory(projectId, runId);
@@ -58,12 +69,38 @@ export function createFileRunQueryStore({ projectsRoot }) {
     async readRunState(projectId, taskId, runId) {
       const { projectRoot, runDir } = resolveRunDirectory(projectId, runId);
       await readTaskOwner(projectRoot, projectId, taskId, runId);
+      const teamRun = await readTeamIrRun(projectRoot, runId);
+      if (teamRun) return {
+        version: 1,
+        runId,
+        attemptNumber: teamRun.owner?.attemptNumber,
+        status: teamRun.status,
+        startedAt: new Date(teamRun.createdAt).toISOString(),
+        updatedAt: new Date(teamRun.updatedAt).toISOString(),
+        finishedAt: ["completed", "failed", "cancelled"].includes(teamRun.status) ? new Date(teamRun.updatedAt).toISOString() : undefined,
+        result: teamRun.result,
+        resultWritten: teamRun.resultWritten,
+        ...(teamRun.status === "paused_input_required" && teamRun.pendingInput
+          ? { pendingInput: teamRun.pendingInput }
+          : {}),
+        compiledPlanDigest: teamRun.compiledPlanDigest,
+        teamIrSemanticDigest: teamRun.teamIrSemanticDigest,
+        events: teamRun.events
+      };
       await assertSafeEvidencePath(projectRoot, [".ogs", "runs", runId, "control", "state.json"], { kind: "file", label: "Run state" });
       return loadProjectRunState(runDir);
     },
     async readRunPlan(projectId, taskId, runId) {
       const { projectRoot, runDir } = resolveRunDirectory(projectId, runId);
       await readTaskOwner(projectRoot, projectId, taskId, runId);
+      const teamRun = await readTeamIrRun(projectRoot, runId);
+      if (teamRun) return {
+        version: 1,
+        engine: "team-ir-v2",
+        runId,
+        compiledPlanDigest: teamRun.compiledPlanDigest,
+        teamIrSemanticDigest: teamRun.teamIrSemanticDigest
+      };
       try {
         await assertSafeEvidencePath(projectRoot, [".ogs", "runs", runId, "run-plan.json"], { kind: "file", label: "Run plan" });
       } catch (error) {
@@ -74,6 +111,15 @@ export function createFileRunQueryStore({ projectsRoot }) {
     async readRunEvents(projectId, taskId, runId, options = {}) {
       const { projectRoot } = resolveRunDirectory(projectId, runId);
       await readTaskOwner(projectRoot, projectId, taskId, runId);
+      const teamRun = await readTeamIrRun(projectRoot, runId);
+      if (teamRun) {
+        let events = [...(teamRun.events || [])];
+        if (options.type) events = events.filter((item) => item.type === options.type);
+        const start = Math.max(0, Number(options.cursor) || 0);
+        const limit = Math.min(500, Math.max(1, Number(options.limit) || 100));
+        const page = events.slice(start, start + limit);
+        return { events: page, total: events.length, nextCursor: start + page.length < events.length ? start + page.length : null };
+      }
       for (const file of ["timeline.jsonl", "events.ndjson"]) {
         try {
           await assertSafeEvidencePath(projectRoot, [".ogs", "runs", runId, file], { kind: "file", label: "Run events" });

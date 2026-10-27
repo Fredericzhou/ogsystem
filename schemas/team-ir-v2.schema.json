@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ogsystem:schemas:team-ir-v2",
+  "title": "OGSystem Team IR v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "team", "runInput", "runResult", "executionPolicy", "agents", "handoffs", "orchestration", "bindings"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runInput": { "$ref": "#/$defs/runInput" },
+    "runResult": { "$ref": "#/$defs/runResult" },
+    "executionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultMode", "activeExecutionBudgetMs"],
+      "properties": {
+        "resultMode": { "enum": ["required", "allow_empty"] },
+        "activeExecutionBudgetMs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "agents": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/agent" } },
+    "handoffs": { "type": "array", "items": { "$ref": "#/$defs/handoff" } },
+    "orchestration": { "$ref": "#/$defs/orchestration" },
+    "bindings": { "type": "array", "items": { "$ref": "#/$defs/binding" } },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": { "nodes": { "type": "object", "additionalProperties": true } }
+    },
+    "$defs": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/jsonSchema" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_:-]*$" },
+    "jsonSchema": { "anyOf": [{ "type": "object" }, { "type": "boolean" }] },
+    "dataSchema": { "$ref": "#/$defs/jsonSchema" },
+    "artifactSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "cardinality"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "acceptedMediaTypes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "mediaTypes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "cardinality": { "const": "single" }
+      },
+      "anyOf": [
+        { "required": ["acceptedMediaTypes"] },
+        { "required": ["mediaTypes"] }
+      ]
+    },
+    "artifactSlots": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/artifactSlot" }
+    },
+    "runInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataSchema", "preferencesSchema", "artifactSlots"],
+      "properties": {
+        "dataSchema": { "$ref": "#/$defs/dataSchema" },
+        "preferencesSchema": { "$ref": "#/$defs/dataSchema" },
+        "artifactSlots": { "$ref": "#/$defs/artifactSlots" }
+      }
+    },
+    "runResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataSchema", "artifactSlots"],
+      "properties": {
+        "dataSchema": { "$ref": "#/$defs/dataSchema" },
+        "artifactSlots": { "$ref": "#/$defs/artifactSlots" }
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataSchema"],
+      "properties": {
+        "dataSchema": { "$ref": "#/$defs/dataSchema" },
+        "artifactSlots": { "$ref": "#/$defs/artifactSlots" }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "packageRef", "bindingRef", "inputPorts", "outputPorts"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "packageRef": { "type": "string", "minLength": 1 },
+        "bindingRef": { "type": "string", "minLength": 1 },
+        "inputPorts": { "type": "object", "minProperties": 1, "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/port" } },
+        "outputPorts": { "type": "object", "minProperties": 1, "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/port" } }
+      }
+    },
+    "endpoint": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "run" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "agentId", "outputPort"], "properties": { "kind": { "const": "agent" }, "agentId": { "$ref": "#/$defs/id" }, "outputPort": { "$ref": "#/$defs/id" } } }
+      ]
+    },
+    "target": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind", "agentId", "inputPort"], "properties": { "kind": { "const": "agent" }, "agentId": { "$ref": "#/$defs/id" }, "inputPort": { "$ref": "#/$defs/id" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "result" } } }
+      ]
+    },
+    "valueExpr": {
+      "oneOf": [
+        { "type": "object", "required": ["$ref"], "properties": { "$ref": { "type": "string" } }, "additionalProperties": false },
+        { "type": "object", "required": ["$literal"], "properties": { "$literal": true }, "additionalProperties": false },
+        {
+          "allOf": [
+            { "type": "object", "additionalProperties": { "$ref": "#/$defs/valueExpr" } },
+            { "not": { "anyOf": [{ "required": ["$ref"] }, { "required": ["$literal"] }] } }
+          ]
+        },
+        { "type": "array", "items": { "$ref": "#/$defs/valueExpr" } },
+        { "type": ["string", "number", "boolean", "null"] }
+      ]
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": { "$ref": "#/$defs/valueExpr" },
+        "artifacts": { "$ref": "#/$defs/valueExpr" }
+      }
+    },
+    "conditionValue": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["$ref"], "properties": { "$ref": { "type": "string" } } },
+        { "type": "object", "additionalProperties": false, "required": ["$literal"], "properties": { "$literal": true } }
+      ]
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["op", "args"],
+          "properties": { "op": { "enum": ["equals", "notEquals"] }, "args": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/conditionValue" } } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["op", "args"],
+          "properties": { "op": { "enum": ["and", "or"] }, "args": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/condition" } } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["op", "args"],
+          "properties": { "op": { "const": "not" }, "args": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/condition" } } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["op", "args"],
+          "properties": { "op": { "const": "exists" }, "args": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["$ref"], "properties": { "$ref": { "type": "string" } } } } }
+        }
+      ]
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "map"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "from": { "$ref": "#/$defs/endpoint" },
+        "to": { "$ref": "#/$defs/target" },
+        "map": { "$ref": "#/$defs/mapping" },
+        "when": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "condition": { "$ref": "#/$defs/condition" }, "priority": { "type": "integer", "minimum": 0 } }
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "deadlineMs": { "type": "integer", "minimum": 1 }, "onInvalidInput": { "const": "fail" } }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "to": { "properties": { "kind": { "const": "agent" } }, "required": ["kind"] } }, "required": ["to"] },
+          "then": { "required": ["delivery"] },
+          "else": { "not": { "required": ["delivery"] } }
+        }
+      ]
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "mode", "onNoMatch", "handoffIds"],
+      "properties": {
+        "from": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "run" } } },
+            { "type": "object", "additionalProperties": false, "required": ["kind", "agentId", "outputPort"], "properties": { "kind": { "const": "agent" }, "agentId": { "$ref": "#/$defs/id" }, "outputPort": { "$ref": "#/$defs/id" } } }
+          ]
+        },
+        "mode": { "enum": ["exclusive_priority", "parallel_fanout"] },
+        "onNoMatch": { "enum": ["fail", "finish"] },
+        "handoffIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "join": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "agentId", "inputPort", "mode", "handoffIds", "scope", "timeoutMs", "onTimeout"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "agentId": { "$ref": "#/$defs/id" },
+        "inputPort": { "$ref": "#/$defs/id" },
+        "mode": { "enum": ["all_of", "quorum_of"] },
+        "handoffIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "scope": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "run" } } },
+            { "type": "object", "additionalProperties": false, "required": ["kind", "loopId"], "properties": { "kind": { "const": "loop" }, "loopId": { "$ref": "#/$defs/id" } } }
+          ]
+        },
+        "threshold": { "type": "integer", "minimum": 1 },
+        "baseMapping": { "$ref": "#/$defs/mapping" },
+        "timeoutMs": { "type": "integer", "minimum": 1 },
+        "onTimeout": { "const": "fail" }
+      },
+      "allOf": [
+        { "if": { "properties": { "mode": { "const": "quorum_of" } }, "required": ["mode"] }, "then": { "required": ["threshold"] },
+          "else": { "not": { "required": ["threshold"] } } }
+      ]
+    },
+    "loop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "members", "boundaryAgentId", "entryHandoffIds", "continueHandoffIds", "exitHandoffIds", "maxRounds", "maxAgentActivations", "onExhausted"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "members": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "boundaryAgentId": { "$ref": "#/$defs/id" },
+        "entryHandoffIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "continueHandoffIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "exitHandoffIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "maxRounds": { "type": "integer", "minimum": 1 },
+        "maxAgentActivations": { "type": "integer", "minimum": 1 },
+        "onExhausted": { "enum": ["fail", "finish"] }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "at", "feedbackSchema", "timeoutMs", "onTimeout"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "at": { "type": "object", "additionalProperties": false, "required": ["kind", "agentId", "outputPort"], "properties": { "kind": { "const": "agentOutput" }, "agentId": { "$ref": "#/$defs/id" }, "outputPort": { "$ref": "#/$defs/id" } } },
+        "feedbackSchema": { "$ref": "#/$defs/dataSchema" },
+        "timeoutMs": { "type": "integer", "minimum": 1 },
+        "onTimeout": { "const": "fail" }
+      }
+    },
+    "orchestration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routes", "joins", "loops", "reviews"],
+      "properties": {
+        "routes": { "type": "array", "items": { "$ref": "#/$defs/route" } },
+        "joins": { "type": "array", "items": { "$ref": "#/$defs/join" } },
+        "loops": { "type": "array", "items": { "$ref": "#/$defs/loop" } },
+        "reviews": { "type": "array", "items": { "$ref": "#/$defs/review" } }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "attemptTimeoutMs", "retry"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["model", "tool", "a2a"] },
+        "modelRef": { "type": "string", "minLength": 1 },
+        "toolRef": { "type": "string", "minLength": 1 },
+        "agentCardRef": { "type": "string", "minLength": 1 },
+        "credentialRef": { "type": "string", "minLength": 1 },
+        "attemptTimeoutMs": { "type": "integer", "minimum": 1 },
+        "retry": {
+          "type": "object", "additionalProperties": false, "required": ["maxAttempts", "retryOn", "backoff"],
+          "properties": {
+            "maxAttempts": { "type": "integer", "minimum": 1 },
+            "retryOn": { "type": "array", "uniqueItems": true, "items": { "enum": ["transport", "timeout", "rate_limited", "server_error"] } },
+            "backoff": {
+              "oneOf": [
+                { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": { "mode": { "const": "none" } } },
+                { "type": "object", "additionalProperties": false, "required": ["mode", "delayMs"], "properties": { "mode": { "const": "constant" }, "delayMs": { "type": "integer", "minimum": 1 } } },
+                { "type": "object", "additionalProperties": false, "required": ["mode", "initialDelayMs", "maxDelayMs"], "properties": { "mode": { "const": "exponential" }, "initialDelayMs": { "type": "integer", "minimum": 1 }, "maxDelayMs": { "type": "integer", "minimum": 1 } } }
+              ]
+            }
+          }
+        },
+        "capabilities": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "inputMediaTypes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "outputMediaTypes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "protocolCapabilities": { "type": "array", "uniqueItems": true, "items": { "enum": ["poll", "stream", "push", "cancel"] } }
+          }
+        }
+      },
+      "oneOf": [
+        { "properties": { "kind": { "const": "model" } }, "required": ["modelRef"] },
+        { "properties": { "kind": { "const": "tool" } }, "required": ["toolRef"] },
+        { "properties": { "kind": { "const": "a2a" } }, "required": ["agentCardRef"] }
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "retry": { "properties": { "maxAttempts": { "const": 1 } }, "required": ["maxAttempts"] } }, "required": ["retry"] },
+          "then": { "properties": { "retry": { "properties": { "retryOn": { "maxItems": 0 } } } } },
+          "else": { "properties": { "retry": { "properties": { "retryOn": { "minItems": 1 } } } } }
+        }
+      ]
+    }
+  }
+}

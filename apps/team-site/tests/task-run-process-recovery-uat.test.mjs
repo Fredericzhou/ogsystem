@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
+import { convertTaskFixtureToLegacySnapshot } from "./legacy-run-fixture.mjs";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -69,6 +70,7 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
       input: "Create a real Run fixture for process recovery.",
       teamVersionId: team.teamVersionId
     });
+    await convertTaskFixtureToLegacySnapshot({ project, team, task });
     const started = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
     assert.ok(started.currentRunId);
 
@@ -172,6 +174,7 @@ test("server startup removes a Task Run initialized before its Task reservation 
     const team = await store.confirmProjectTeam(teamDraft.projectId, { release: true });
     const project = await store.createCollaborationProject({ name: "Uncommitted Recovery Project", overview: "Task reservation remains uncommitted.", teamVersionIds: [team.teamVersionId] });
     const task = await store.createProjectTask(project.projectId, { input: "Start after orphan cleanup.", teamVersionId: team.teamVersionId });
+    await convertTaskFixtureToLegacySnapshot({ project, team, task });
     const orphanRunId = "orphan-precommit-run";
     const orphanRunDir = join(project.workdir, ".ogs", "runs", orphanRunId);
     await mkdir(join(orphanRunDir, "control"), { recursive: true });

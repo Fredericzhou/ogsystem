@@ -73,6 +73,9 @@ export function createProjectRunUseCases({ projectStore, teamStore, runStore, re
       }
       const assetProject = await teamStore.getTeamVersion(teamVersionId);
       if (!assetProject) throw new Error("TEAM_VERSION_NOT_FOUND: the selected TeamVersion does not exist.");
+      if (projectTask.teamIrSemanticDigest || projectTask.compiledPlanDigest) {
+        throw new Error("TEAM_IR_V2_EXECUTOR_UNAVAILABLE: this Task is bound to a frozen Team IR v2 plan, but the v2 Sandbox executor is not connected.");
+      }
       const taskOwnedRun = true;
       const teamCoreDigest = assetProject.teamCoreDigest || assetProject.projectDigest;
       const makeExecutionProject = (currentProject) => taskOwnedRun

@@ -2,6 +2,7 @@ import { createRunQueryUseCases } from "../application/run-query-use-cases.mjs";
 import { createTaskRetryUseCases } from "../application/task-retry-use-cases.mjs";
 import { createFileRunQueryStore } from "../infrastructure/file-run-query-store.mjs";
 import { createFileTaskRetryStore } from "../infrastructure/file-task-retry-store.mjs";
+import { createV2AwareTaskRetryStore } from "./v2-task-run-test-adapters.mjs";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
 import { withProjectUpdateUseCases } from "./project-update-test-helpers.mjs";
 import { withProjectRunUseCases } from "./project-run-test-helpers.mjs";
@@ -18,7 +19,10 @@ export function withRunQueryUseCases(repository, projectsRoot) {
     ...createTaskRetryUseCases({
       taskStore: { startTask: repository.startProjectTask },
       projectStore: { getProject: repository.getProject },
-      runStore: createFileTaskRetryStore()
+      runStore: createV2AwareTaskRetryStore({
+        projectsRoot,
+        legacyStore: createFileTaskRetryStore({ projectsRoot })
+      })
     })
   };
 }

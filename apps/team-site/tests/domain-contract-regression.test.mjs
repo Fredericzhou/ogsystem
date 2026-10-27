@@ -141,7 +141,9 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
       attemptNumber: 1,
       teamVersionId: team.teamVersionId,
       teamCoreDigest: task.teamCoreDigest,
-      teamDigestVersion: task.teamDigestVersion
+      teamDigestVersion: task.teamDigestVersion,
+      teamIrSemanticDigest: task.teamIrSemanticDigest,
+      compiledPlanDigest: task.compiledPlanDigest
     }), "utf8");
     await writeFile(join(originalRunDir, "task.json"), JSON.stringify({ prompt: task.input }), "utf8");
     await writeFile(join(originalRunDir, "control", "materials.json"), "[]\n", "utf8");
@@ -179,9 +181,9 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     const recentAttempts = (await recentRunUseCases.listRecentProjectRuns(50)).filter((run) => run.taskId === task.taskId);
     assert.deepEqual(recentAttempts.map((run) => run.attemptNumber).sort(), [1, 2]);
     assert.equal(recentAttempts.filter((run) => run.isCurrent).length, 1);
-    const statePath = join(project.workdir, ".ogs", "runs", retry.currentRunId, "state.json");
+    const statePath = join(project.workdir, ".ogs", "runs", retry.currentRunId, "team-ir-v2-state", `${retry.currentRunId}.json`);
     const runSnapshot = JSON.parse(await readFile(statePath, "utf8"));
-    runSnapshot.graphState = { ...(runSnapshot.graphState || {}), finalOutputsByRoleId: { reviewer: [{ content: "Authorization: Bearer abcdefghijklmnop" }] }, finalOutputRoleOrder: ["reviewer"] };
+    runSnapshot.result = { summary: "Authorization: Bearer abcdefghijklmnop" };
     await writeFile(statePath, `${JSON.stringify(runSnapshot, null, 2)}\n`, "utf8");
     const resultUseCases = createRunResultUseCases({
       getRun: (projectId, taskId, runId) => store.getProjectRun(projectId, taskId, runId),
@@ -189,8 +191,8 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     });
     const result = await resultUseCases.getProjectRunResult(project.projectId, task.taskId, retry.currentRunId);
     assert.equal(result.available, true);
-    assert.match(result.result.finalOutputsByRoleId.reviewer[0].content, /\[REDACTED\]/);
-    assert.doesNotMatch(result.result.finalOutputsByRoleId.reviewer[0].content, /abcdefghijklmnop/);
+    assert.match(result.result.teamResult.summary, /\[REDACTED\]/);
+    assert.doesNotMatch(result.result.teamResult.summary, /abcdefghijklmnop/);
     assert.equal((await store.getProjectRun(project.projectId, task.taskId, originalRunId)).taskId, task.taskId);
     assert.equal(Object.hasOwn(result, "projectId"), false);
 

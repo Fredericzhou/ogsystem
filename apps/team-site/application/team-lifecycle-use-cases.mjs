@@ -5,6 +5,7 @@ export function createTeamLifecycleUseCases({
   locks,
   confirmation,
   releaseEvidence,
+  teamIrRelease,
   caseMaterializer,
   assertTrustedTeamTopology = () => false
 }) {
@@ -29,6 +30,9 @@ export function createTeamLifecycleUseCases({
   }
   if (typeof caseCatalog?.getCase !== "function" || typeof caseCatalog?.listCases !== "function") {
     throw new TypeError("Team lifecycle use cases require a case catalog.");
+  }
+  if (typeof teamIrRelease?.getTeamIrReleaseSnapshot !== "function" || typeof teamIrRelease?.copyTeamIr !== "function") {
+    throw new TypeError("Team lifecycle use cases require Team IR v2 release compilation and version forking.");
   }
 
   async function createClassicTeamProject({ caseId, asTemplate = false, name, overview, locale = "zh-CN" } = {}) {
@@ -102,22 +106,42 @@ export function createTeamLifecycleUseCases({
     return locks.withTeamVersionLock(teamLockId, () => projectStore.withProjectWriteLock(projectId, "project-confirm", async () => {
       const project = await projectStore.getProject(projectId);
       const { projectDigest, teamCoreDigest, teamDigestVersion } = await confirmation.computeDigests(project);
-      const topologyDigest = typeof confirmation.computeTopologyDigest === "function"
+      const releasing = options.release !== false;
+      const irSnapshot = releasing
+        ? await teamIrRelease.getTeamIrReleaseSnapshot(project.teamVersionId || projectId)
+        : undefined;
+      const topologyDigest = !releasing && typeof confirmation.computeTopologyDigest === "function"
         ? await confirmation.computeTopologyDigest(project)
         : teamCoreDigest;
-      const releasing = options.release === true;
       if (releasing) {
-        if (typeof releaseEvidence?.validateReleaseEvidence !== "function") throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: release evidence validation is not configured.");
-        await releaseEvidence.validateReleaseEvidence(project.teamVersionId || projectId, teamCoreDigest);
+        if (typeof releaseEvidence?.validateTeamIrReleaseEvidence !== "function") {
+          throw new Error("TEAM_IR_V2_RELEASE_EVIDENCE_UNAVAILABLE: v2 Sandbox release evidence is not connected.");
+        }
+        await releaseEvidence.validateTeamIrReleaseEvidence({
+          teamVersionId: project.teamVersionId || projectId,
+          teamCoreDigest,
+          teamIrSemanticDigest: irSnapshot.teamIrSemanticDigest,
+          compiledPlanDigest: irSnapshot.compiledPlanDigest
+        });
       }
-      const inheritedClassicTopology = Boolean(project.caseId
+      const inheritedClassicTopology = Boolean(!releasing && project.caseId
         && project.trustedClassicTopologyDigest
         && project.trustedClassicTopologyDigest === topologyDigest);
-      await confirmation.validateTopology(project, {
-        ...options,
-        trustedClassic: Boolean(options.trustedClassic || inheritedClassicTopology)
-      });
-      if (project.teamVersionStatus === "released" && project.projectDigest === projectDigest && project.teamCoreDigest === teamCoreDigest) return project;
+      if (releasing) {
+        if (project.teamVersionStatus === "released"
+          && (project.teamIrSemanticDigest !== irSnapshot.teamIrSemanticDigest
+            || project.compiledPlanDigest !== irSnapshot.compiledPlanDigest)) {
+          throw new Error("TEAM_IR_RELEASE_IMMUTABLE: the released Team IR digest does not match its frozen v2 snapshot.");
+        }
+      } else {
+        await confirmation.validateTopology(project, {
+          ...options,
+          trustedClassic: Boolean(options.trustedClassic || inheritedClassicTopology)
+        });
+      }
+      if (project.teamVersionStatus === "released" && project.projectDigest === projectDigest && project.teamCoreDigest === teamCoreDigest
+        && project.teamIrSemanticDigest === irSnapshot?.teamIrSemanticDigest
+        && project.compiledPlanDigest === irSnapshot?.compiledPlanDigest) return project;
       const releasedAt = new Date().toISOString();
       return projectStore.saveProjectMetadata(projectId, {
         ...project,
@@ -125,8 +149,13 @@ export function createTeamLifecycleUseCases({
         teamCoreDigest,
         teamDigestVersion,
         teamVersionStatus: options.release === false ? (project.teamVersionStatus || "draft") : "released",
+        ...(irSnapshot ? {
+          teamIrSemanticDigest: irSnapshot.teamIrSemanticDigest,
+          compiledPlanDigest: irSnapshot.compiledPlanDigest,
+          compilerSemanticsVersion: irSnapshot.compilerSemanticsVersion
+        } : {}),
         releasedAt: options.release === false ? null : releasedAt,
-        trustedClassicTopologyDigest: inheritedClassicTopology || options.trustedClassic ? topologyDigest : null,
+        trustedClassicTopologyDigest: !releasing && (inheritedClassicTopology || options.trustedClassic) ? topologyDigest : null,
         updatedAt: releasedAt
       });
     }));
@@ -142,8 +171,32 @@ export function createTeamLifecycleUseCases({
         if (!project || project.teamProjectId) throw new Error("TEAM_VERSION_NOT_FOUND: the requested TeamVersion does not exist.");
         const { teamCoreDigest, teamDigestVersion } = await confirmation.computeDigests(project);
         try {
-          const evidence = await releaseEvidence.validateReleaseEvidence(project.teamVersionId || projectId, teamCoreDigest);
-          return { ...evidence, teamVersionId: project.teamVersionId || projectId, teamCoreDigest, teamDigestVersion, ready: true, proof: "baseline-sandbox" };
+          const irSnapshot = await teamIrRelease.getTeamIrReleaseSnapshot(project.teamVersionId || projectId);
+          if (project.teamVersionStatus === "released"
+            && (project.teamIrSemanticDigest !== irSnapshot.teamIrSemanticDigest
+              || project.compiledPlanDigest !== irSnapshot.compiledPlanDigest)) {
+            throw new Error("TEAM_IR_RELEASE_IMMUTABLE: the released Team IR digest does not match its frozen v2 snapshot.");
+          }
+          if (typeof releaseEvidence?.validateTeamIrReleaseEvidence !== "function") {
+            throw new Error("TEAM_IR_V2_RELEASE_EVIDENCE_UNAVAILABLE: v2 Sandbox release evidence is not connected.");
+          }
+          const evidence = await releaseEvidence.validateTeamIrReleaseEvidence({
+            teamVersionId: project.teamVersionId || projectId,
+            teamCoreDigest,
+            teamIrSemanticDigest: irSnapshot.teamIrSemanticDigest,
+            compiledPlanDigest: irSnapshot.compiledPlanDigest
+          });
+          return {
+            ...evidence,
+            teamVersionId: project.teamVersionId || projectId,
+            teamCoreDigest,
+            teamDigestVersion,
+            teamIrSemanticDigest: irSnapshot.teamIrSemanticDigest,
+            compiledPlanDigest: irSnapshot.compiledPlanDigest,
+            compilerSemanticsVersion: irSnapshot.compilerSemanticsVersion,
+            ready: true,
+            proof: "team-ir-v2-sandbox"
+          };
         } catch (error) {
           return {
             teamVersionId: project.teamVersionId || projectId,
@@ -210,6 +263,7 @@ export function createTeamLifecycleUseCases({
         await projectStore.removeProject(project.projectId).catch(() => undefined);
         throw new Error("TEAM_VERSION_COPY_INVALID: the released version could not be copied.");
       }
+      await teamIrRelease.copyTeamIr(source.teamVersionId || source.projectId, project.workdir);
       const current = await projectStore.getProject(project.projectId);
       let trustedClassicTopologyDigest = null;
       if (source.caseId && (source.source === "classic" || source.source === "classic-template" || source.trustedClassicTopologyDigest)) {

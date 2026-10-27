@@ -4,7 +4,7 @@ import { loadProjectMaterialSnapshots } from "../../../dist/runtime/project-run.
 import { loadProjectRunState } from "../../../dist/runtime/project-run-state.js";
 import { homedir } from "node:os";
 import { readProjectRunOwner } from "./project-run-evidence-paths.mjs";
-import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
+import { assertSafeEvidencePath, readSafeEvidenceFile } from "./safe-evidence-path.mjs";
 
 function safeRoot(workdir) {
   if (typeof workdir !== "string" || !workdir.trim()) {
@@ -58,6 +58,22 @@ export function createFileTaskRetryStore({ projectsRoot = resolve(process.env.OG
     const project = { projectId, workdir };
     await readProjectRunOwner(project, task, runId);
     return { workdir, task };
+  }
+
+  async function readTeamIrV2Run(workdir, runId) {
+    const segments = [".ogs", "runs", safeRunId(runId), "team-ir-v2-state", `${runId}.json`];
+    try {
+      await assertSafeEvidencePath(workdir, segments, { kind: "file", allowMissingFinal: true, label: "Team IR v2 Run state" });
+      const record = JSON.parse(await readSafeEvidenceFile(workdir, segments, "utf8", "Team IR v2 Run state"));
+      if (!record || typeof record !== "object" || Array.isArray(record) || record.runId !== runId
+        || !["queued", "running", "waiting_human_review", "paused_input_required", "failing", "cancelling", "completed", "failed", "cancelled"].includes(record.status)) {
+        throw new Error("TEAM_RUN_RECORD_INVALID: Team IR v2 Run state is malformed.");
+      }
+      return record;
+    } catch (error) {
+      if (error?.code === "ENOENT") return undefined;
+      throw error;
+    }
   }
 
   async function runDirectoryExists(workdir, runId) {
@@ -117,6 +133,8 @@ export function createFileTaskRetryStore({ projectsRoot = resolve(process.env.OG
         throw new Error("RUN_NOT_FOUND: run evidence does not exist.");
       }
       await readProjectRunOwner({ projectId, workdir }, task, runId);
+      const teamRun = await readTeamIrV2Run(workdir, runId);
+      if (teamRun) return teamRun;
       await assertSafeEvidencePath(workdir, [".ogs", "runs", safeRunId(runId), "control", "state.json"], {
         kind: "file", label: "Run state"
       });
@@ -129,6 +147,14 @@ export function createFileTaskRetryStore({ projectsRoot = resolve(process.env.OG
     },
     async loadMaterialSnapshots(projectId, taskId, runId) {
       const { workdir } = await evidenceRoot(projectId, taskId, runId);
+      const teamRun = await readTeamIrV2Run(workdir, runId);
+      if (teamRun) {
+        const attachments = teamRun.runInput?.attachments;
+        if (attachments && (typeof attachments !== "object" || Array.isArray(attachments) || Object.keys(attachments).length)) {
+          throw new Error("TASK_RETRY_SNAPSHOT_UNAVAILABLE: Team IR v2 Run has attachments without a frozen retry snapshot.");
+        }
+        return [];
+      }
       const runRoot = [".ogs", "runs", safeRunId(runId)];
       await assertSafeEvidencePath(workdir, [...runRoot, "control", "materials.json"], { kind: "file", label: "Run materials" });
       const snapshots = await loadProjectMaterialSnapshots(resolve(workdir, ...runRoot));

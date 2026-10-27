@@ -7,7 +7,7 @@ function setup({ project, taskId = "task-1" } = {}) {
     projectId: "project-1",
     projectType: "collaboration",
     nextTaskNumber: 1,
-    mountedTeams: [{ teamId: "team-1", teamVersionId: "team-1", teamVersionNumber: 1, teamName: "Software Team" }],
+    mountedTeams: [{ teamId: "team-1", teamVersionId: "team-1", teamVersionNumber: 1, teamName: "Software Team", teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" }],
     taskRecords: []
   });
   const calls = [];
@@ -31,6 +31,8 @@ test("Task creation records a queued Task with no Run and a normalized request",
     idempotencyKey: "request-1"
   });
   assert.equal(task.status, "queued");
+  assert.equal(task.compiledPlanDigest, "b".repeat(64));
+  assert.equal(task.teamIrSemanticDigest, "a".repeat(64));
   assert.equal(task.taskNumber, 1);
   assert.equal(task.input, "Plan the first release.");
   assert.equal(task.currentRunId, null);
@@ -59,7 +61,7 @@ test("Task numbers increment independently of deleted records and are required o
   assert.equal(first.taskNumber, 1);
   assert.equal(second.taskNumber, 2);
   assert.equal(current.nextTaskNumber, 3);
-  const unsupported = setup({ project: { projectId: "project-1", projectType: "collaboration", mountedTeams: [{ teamId: "team-1", teamVersionId: "team-1" }], taskRecords: [] } });
+  const unsupported = setup({ project: { projectId: "project-1", projectType: "collaboration", mountedTeams: [{ teamId: "team-1", teamVersionId: "team-1", teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64) }], taskRecords: [] } });
   await assert.rejects(() => unsupported.useCases.createProjectTask("project-1", { input: "Old schema", teamVersionId: "team-1" }), /PROJECT_SCHEMA_UNSUPPORTED/);
 });
 
@@ -78,8 +80,8 @@ test("Task creation binds each task to the selected mounted team version", async
     projectType: "collaboration",
     nextTaskNumber: 1,
     mountedTeams: [
-      { teamId: "team-1", teamVersionId: "team-1", teamVersionNumber: 1, teamName: "Software Team" },
-      { teamId: "team-2", teamVersionId: "team-2-v3", teamVersionNumber: 3, teamName: "Research Team" }
+      { teamId: "team-1", teamVersionId: "team-1", teamVersionNumber: 1, teamName: "Software Team", teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64) },
+      { teamId: "team-2", teamVersionId: "team-2-v3", teamVersionNumber: 3, teamName: "Research Team", teamIrSemanticDigest: "c".repeat(64), compiledPlanDigest: "d".repeat(64) }
     ],
     taskRecords: []
   } });
@@ -87,4 +89,13 @@ test("Task creation binds each task to the selected mounted team version", async
   assert.equal(task.teamId, "team-2");
   assert.equal(task.teamVersionId, "team-2-v3");
   assert.equal(task.teamVersionNumber, 3);
+  assert.equal(task.compiledPlanDigest, "d".repeat(64));
+});
+
+test("Task creation rejects legacy mounts without frozen Team IR v2 digests", async () => {
+  const legacy = setup({ project: {
+    projectId: "project-1", projectType: "collaboration", nextTaskNumber: 1,
+    mountedTeams: [{ teamId: "team-1", teamVersionId: "team-1", teamVersionNumber: 1, teamName: "Legacy" }], taskRecords: []
+  } });
+  await assert.rejects(() => legacy.useCases.createProjectTask("project-1", { input: "Run legacy", teamVersionId: "team-1" }), /TEAM_IR_V2_REQUIRED/);
 });

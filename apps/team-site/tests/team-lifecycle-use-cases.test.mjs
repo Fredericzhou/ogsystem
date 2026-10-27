@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTeamLifecycleUseCases } from "../application/team-lifecycle-use-cases.mjs";
 
-function setup({ projects = [], team, loaded = { validation: { ok: true } }, releaseEvidence, caseMaterializer } = {}) {
+function setup({ projects = [], team, loaded = { validation: { ok: true } }, releaseEvidence, teamIrRelease, caseMaterializer } = {}) {
   const calls = [];
   const created = [];
   const store = {
@@ -36,8 +36,15 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
       async computeTopologyDigest() { return "core"; }
     },
     releaseEvidence: releaseEvidence || {
-      async validateReleaseEvidence() { calls.push(["release-evidence"]); },
+      async validateTeamIrReleaseEvidence(input) { calls.push(["release-evidence-v2", input]); return { ok: true }; },
       async prepareBuiltInTeamVersion(team, options) { calls.push(["prepare-built-in", team.projectId, options]); }
+    },
+    teamIrRelease: teamIrRelease || {
+      async getTeamIrReleaseSnapshot(teamVersionId) {
+        calls.push(["team-ir-compile", teamVersionId]);
+        return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" };
+      },
+      async copyTeamIr(sourceId, destinationWorkdir) { calls.push(["team-ir-copy", sourceId, destinationWorkdir]); return { copied: true }; }
     },
     caseMaterializer,
     caseCatalog: { getCase: (id) => id === "sample" ? caseSpec : undefined, listCases: () => [caseSpec] },
@@ -68,6 +75,7 @@ test("TeamVersion fork numbers the next immutable version and imports into an em
   const fork = await harness.useCases.forkTeamVersion("team-v1");
   assert.equal(fork.teamVersionNumber, 3);
   assert.equal(fork.parentTeamVersionId, "team-v1");
+  assert.deepEqual(harness.calls.find(([name]) => name === "team-ir-copy"), ["team-ir-copy", "team-v1", "/tmp/new-1"]);
   assert.equal(harness.calls.find(([name]) => name === "create")[1].templateId, "empty");
   assert.equal(fork.templateId, "classic:software-team");
   await harness.useCases.releaseTeamVersion("team-v2");
@@ -75,7 +83,7 @@ test("TeamVersion fork numbers the next immutable version and imports into an em
   assert.equal(harness.calls.at(-1)[2].teamVersionStatus, "released");
 });
 
-test("classic topology trust only affects graph validation and never replaces release evidence", async () => {
+test("v2 Team release skips Mermaid topology trust and requires digest-bound v2 evidence", async () => {
   const validation = [];
   const evidenceCalls = [];
   let topologyDigest = "graph-v1";
@@ -116,7 +124,8 @@ test("classic topology trust only affects graph validation and never replaces re
       },
       async computeTopologyDigest() { return topologyDigest; }
     },
-    releaseEvidence: { async validateReleaseEvidence() { evidenceCalls.push("called"); } },
+    releaseEvidence: { async validateTeamIrReleaseEvidence() { evidenceCalls.push("called"); return { ok: true }; } },
+    teamIrRelease: { async getTeamIrReleaseSnapshot(teamVersionId) { return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" }; }, async copyTeamIr() {} },
     caseCatalog: { getCase: () => undefined, listCases: () => [] }
   });
 
@@ -126,17 +135,21 @@ test("classic topology trust only affects graph validation and never replaces re
   assert.equal(fork.parentTeamVersionId, "classic-v1");
   const unchangedReadiness = await harness.useCases.getTeamReleaseReadiness("classic-v2");
   assert.deepEqual(unchangedReadiness, {
+    ok: true,
     teamVersionId: "classic-v2",
     teamCoreDigest: "core-v1",
     teamDigestVersion: undefined,
+    teamIrSemanticDigest: "a".repeat(64),
+    compiledPlanDigest: "b".repeat(64),
+    compilerSemanticsVersion: "team-ir-v2/1",
     ready: true,
-    proof: "baseline-sandbox"
+    proof: "team-ir-v2-sandbox"
   });
   assert.equal(evidenceCalls.length, 1);
   harness.created[0].overview = "edited";
   await harness.useCases.releaseTeamVersion("classic-v2");
-  assert.equal(validation.at(-1).options.trustedClassic, true);
-  assert.equal(harness.created[0].trustedClassicTopologyDigest, "graph-v1");
+  assert.equal(validation.length, 0);
+  assert.equal(harness.created[0].trustedClassicTopologyDigest, null);
   assert.equal(evidenceCalls.length, 2);
 
   topologyDigest = "graph-v2";
@@ -144,7 +157,6 @@ test("classic topology trust only affects graph validation and never replaces re
   delete harness.created[0].projectStatus;
   harness.created[0].projectDigest = null;
   await harness.useCases.releaseTeamVersion("classic-v2");
-  assert.equal(validation.at(-1).options.trustedClassic, false);
   assert.equal(harness.created[0].trustedClassicTopologyDigest, null);
   assert.equal(evidenceCalls.length, 3);
 });
@@ -198,6 +210,7 @@ test("built-in template provisioning tolerates a name already owned by an existi
     locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
     confirmation: { async validateTopology() {}, async computeDigests() { return {}; } },
     releaseEvidence: {},
+    teamIrRelease: { async getTeamIrReleaseSnapshot() { throw new Error("unused"); }, async copyTeamIr() {} },
     caseCatalog: { listCases: () => [{ id: "sample" }], getCase: () => ({ id: "sample", title: { "zh-CN": "Sample Team" } }) }
   });
   assert.deepEqual(await useCases.provisionBuiltInTeamTemplates(), []);
@@ -219,7 +232,8 @@ test("classic template provisioning rematerializes stale generated structure", a
     packageStore: { async exportTeamPackage() {}, async loadTeamPackage() {} },
     locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
     confirmation: { async validateTopology() {}, async computeDigests() { return {}; } },
-    releaseEvidence: { async validateReleaseEvidence() {}, async prepareBuiltInTeamVersion() {} },
+    releaseEvidence: { async validateTeamIrReleaseEvidence() { return { ok: true }; }, async prepareBuiltInTeamVersion() {} },
+    teamIrRelease: { async getTeamIrReleaseSnapshot() { throw new Error("unused"); }, async copyTeamIr() {} },
     caseCatalog: { getCase: () => ({ id: "sample", title: { "zh-CN": "Sample Team" } }), listCases: () => [] },
     caseMaterializer: {
       async isCurrent() { return false; },
@@ -245,7 +259,7 @@ test("classic team creation publishes a refreshed current template when the rele
   assert.deepEqual(harness.calls.find(([kind]) => kind === "prepare-built-in"), ["prepare-built-in", template.projectId, { caseId: "sample", prompt: "Scenario" }]);
 });
 
-test("release readiness always requires current TeamVersion Sandbox proof", async () => {
+test("release readiness always requires current Team IR v2 Sandbox proof", async () => {
   const unchanged = setup({ team: {
     projectId: "classic-v1",
     teamVersionId: "classic-v1",
@@ -253,13 +267,17 @@ test("release readiness always requires current TeamVersion Sandbox proof", asyn
     trustedClassicTopologyDigest: "core"
   } });
   assert.deepEqual(await unchanged.useCases.getTeamReleaseReadiness("classic-v1"), {
+    ok: true,
     teamVersionId: "classic-v1",
     teamCoreDigest: "core",
     teamDigestVersion: 3,
+    teamIrSemanticDigest: "a".repeat(64),
+    compiledPlanDigest: "b".repeat(64),
+    compilerSemanticsVersion: "team-ir-v2/1",
     ready: true,
-    proof: "baseline-sandbox"
+    proof: "team-ir-v2-sandbox"
   });
-  assert.equal(unchanged.calls.some(([name]) => name === "release-evidence"), true);
+  assert.equal(unchanged.calls.some(([name]) => name === "release-evidence-v2"), true);
 
   const inherited = setup({ projects: [{ projectId: "classic-parent", teamVersionStatus: "released" }], team: {
     projectId: "classic-v1",
@@ -269,13 +287,17 @@ test("release readiness always requires current TeamVersion Sandbox proof", asyn
     trustedClassicTopologyDigest: "core",
   } });
   assert.deepEqual(await inherited.useCases.getTeamReleaseReadiness("classic-v1"), {
+    ok: true,
     teamVersionId: "classic-v1",
     teamCoreDigest: "core",
     teamDigestVersion: 3,
+    teamIrSemanticDigest: "a".repeat(64),
+    compiledPlanDigest: "b".repeat(64),
+    compilerSemanticsVersion: "team-ir-v2/1",
     ready: true,
-    proof: "baseline-sandbox"
+    proof: "team-ir-v2-sandbox"
   });
-  assert.equal(inherited.calls.some(([name]) => name === "release-evidence"), true);
+  assert.equal(inherited.calls.some(([name]) => name === "release-evidence-v2"), true);
 
   const edited = setup({ team: {
     projectId: "classic-v1",
@@ -285,16 +307,28 @@ test("release readiness always requires current TeamVersion Sandbox proof", asyn
   } });
   const readiness = await edited.useCases.getTeamReleaseReadiness("classic-v1");
   assert.equal(readiness.ready, true);
-  assert.equal(readiness.proof, "baseline-sandbox");
-  assert.equal(edited.calls.some(([name]) => name === "release-evidence"), true);
+  assert.equal(readiness.proof, "team-ir-v2-sandbox");
+  assert.equal(edited.calls.some(([name]) => name === "release-evidence-v2"), true);
 
   const failed = setup({
     team: { projectId: "classic-v1", teamVersionId: "classic-v1", caseId: "software-team", trustedClassicTopologyDigest: "core" },
-    releaseEvidence: { async validateReleaseEvidence() { throw new Error("TEAM_RELEASE_BASELINE_EVIDENCE_REQUIRED"); } }
+    releaseEvidence: {
+      async validateReleaseEvidence() { return { ok: true }; },
+      async validateTeamIrReleaseEvidence() { throw new Error("TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED: compiledPlanDigest has no passing Sandbox evidence."); }
+    }
   });
   const blocked = await failed.useCases.getTeamReleaseReadiness("classic-v1");
   assert.equal(blocked.ready, false);
-  assert.match(blocked.reason, /TEAM_RELEASE_BASELINE_EVIDENCE_REQUIRED/);
+  assert.match(blocked.reason, /TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED/);
+
+  const legacyEvidenceOnly = setup({
+    team: { projectId: "classic-v1", teamVersionId: "classic-v1", caseId: "software-team" },
+    releaseEvidence: { async validateReleaseEvidence() { return { ok: true }; } }
+  });
+  const unavailable = await legacyEvidenceOnly.useCases.getTeamReleaseReadiness("classic-v1");
+  assert.equal(unavailable.ready, false);
+  assert.match(unavailable.reason, /TEAM_IR_V2_RELEASE_EVIDENCE_UNAVAILABLE/);
+  await assert.rejects(legacyEvidenceOnly.useCases.releaseTeamVersion("classic-v1"), /TEAM_IR_V2_RELEASE_EVIDENCE_UNAVAILABLE/);
 });
 
 test("TeamVersion release validates its current digest and Sandbox proof under the Team lock", async () => {
@@ -305,12 +339,42 @@ test("TeamVersion release validates its current digest and Sandbox proof under t
   const harness = setup({ team });
   const released = await harness.useCases.releaseTeamVersion("team-v1");
   const lockIndex = harness.calls.findIndex(([name]) => name === "team-version-lock");
-  const evidenceIndex = harness.calls.findIndex(([name]) => name === "release-evidence");
+  const evidenceIndex = harness.calls.findIndex(([name]) => name === "release-evidence-v2");
   const saveIndex = harness.calls.findIndex(([name]) => name === "save");
   assert.deepEqual(harness.calls[lockIndex], ["team-version-lock", "team-root"]);
   assert.ok(lockIndex >= 0 && evidenceIndex > lockIndex && saveIndex > evidenceIndex);
   assert.equal(released.teamDigestVersion, 3);
   assert.equal(released.teamVersionStatus, "released");
+  assert.equal(released.teamIrSemanticDigest, "a".repeat(64));
+  assert.equal(released.compiledPlanDigest, "b".repeat(64));
+  assert.equal(released.compilerSemanticsVersion, "team-ir-v2/1");
+});
+
+test("TeamVersion release refuses legacy or invalid IR and does not mutate release metadata", async () => {
+  const team = { projectId: "team-v1", teamVersionId: "team-v1", teamVersionStatus: "draft" };
+  const legacy = setup({ team, teamIrRelease: { async getTeamIrReleaseSnapshot() { throw new Error("TEAM_IR_V2_REQUIRED: rebuild this TeamVersion."); }, async copyTeamIr() {} } });
+  await assert.rejects(legacy.useCases.releaseTeamVersion("team-v1"), /TEAM_IR_V2_REQUIRED/);
+  assert.equal(legacy.calls.some(([name]) => name === "save"), false);
+
+  const invalid = setup({ team, teamIrRelease: { async getTeamIrReleaseSnapshot() { throw new Error("TEAM_IR_INVALID: compile failed."); }, async copyTeamIr() {} } });
+  const readiness = await invalid.useCases.getTeamReleaseReadiness("team-v1");
+  assert.equal(readiness.ready, false);
+  assert.match(readiness.reason, /TEAM_IR_INVALID/);
+  await assert.rejects(invalid.useCases.releaseTeamVersion("team-v1"), /TEAM_IR_INVALID/);
+  assert.equal(invalid.calls.some(([name]) => name === "save"), false);
+});
+
+test("released TeamVersion readiness and re-release reject changed frozen IR digests", async () => {
+  const team = {
+    projectId: "team-v1", teamVersionId: "team-v1", teamVersionStatus: "released",
+    teamIrSemanticDigest: "c".repeat(64), compiledPlanDigest: "d".repeat(64), projectDigest: "digest", teamCoreDigest: "core"
+  };
+  const harness = setup({ team });
+  const readiness = await harness.useCases.getTeamReleaseReadiness("team-v1");
+  assert.equal(readiness.ready, false);
+  assert.match(readiness.reason, /TEAM_IR_RELEASE_IMMUTABLE/);
+  await assert.rejects(harness.useCases.releaseTeamVersion("team-v1"), /TEAM_IR_RELEASE_IMMUTABLE/);
+  assert.equal(harness.calls.some(([name]) => name === "save"), false);
 });
 
 test("code-owned classic templates are provisioned as released TeamVersions", async () => {
@@ -318,7 +382,7 @@ test("code-owned classic templates are provisioned as released TeamVersions", as
   const team = await harness.useCases.createClassicTeamProject({ caseId: "sample" });
   assert.equal(team.teamVersionStatus, "released");
   assert.equal(Object.hasOwn(team, "projectStatus"), false);
-  assert.ok(team.trustedClassicTopologyDigest);
+  assert.equal(team.trustedClassicTopologyDigest, null);
   assert.equal(harness.calls.some(([name]) => name === "prepare-built-in"), true);
-  assert.equal(harness.calls.some(([name]) => name === "release-evidence"), true);
+  assert.equal(harness.calls.some(([name]) => name === "release-evidence-v2"), true);
 });

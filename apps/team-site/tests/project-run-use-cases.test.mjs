@@ -125,6 +125,14 @@ test("Project Run rejects starts without a persisted Task owner", async () => {
   assert.equal(calls.some(([kind]) => kind === "project-lock" || kind === "execute"), false);
 });
 
+test("Project Run refuses v2 Task snapshots until the v2 Sandbox executor is connected", async () => {
+  const { startOwnedRun, project, calls } = fixture();
+  project.taskRecords[0].teamIrSemanticDigest = "a".repeat(64);
+  project.taskRecords[0].compiledPlanDigest = "b".repeat(64);
+  await assert.rejects(() => startOwnedRun({ prompt: "Run v2" }), /TEAM_IR_V2_EXECUTOR_UNAVAILABLE/);
+  assert.deepEqual(calls, []);
+});
+
 test("Project Run rejects a mismatched Task, Run, version, or attempt owner before locking", async () => {
   for (const options of [
     { taskId: "task-other" },

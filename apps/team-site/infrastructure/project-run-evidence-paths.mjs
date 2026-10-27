@@ -49,7 +49,9 @@ export async function readProjectRunOwner(project, task, runId) {
     || owner.taskNumber !== task.taskNumber
     || owner.attemptNumber !== attemptNumber
     || (task.teamCoreDigest && owner.teamCoreDigest !== task.teamCoreDigest)
-    || (Number.isInteger(task.teamDigestVersion) && owner.teamDigestVersion !== task.teamDigestVersion)) {
+    || (Number.isInteger(task.teamDigestVersion) && owner.teamDigestVersion !== task.teamDigestVersion)
+    || (task.teamIrSemanticDigest && owner.teamIrSemanticDigest !== task.teamIrSemanticDigest)
+    || (task.compiledPlanDigest && owner.compiledPlanDigest !== task.compiledPlanDigest)) {
     throw new Error("RUN_NOT_FOUND: run does not belong to this Project Task.");
   }
   return owner;

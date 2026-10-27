@@ -52,7 +52,10 @@ import { createRuntimeProjectReadinessInspector } from "./infrastructure/runtime
 import { createVisualizerProjectDesignValidator } from "./infrastructure/visualizer-project-design-validator.mjs";
 import { createVisualizerProjectDesignProjector } from "./infrastructure/visualizer-project-design-projector.mjs";
 import { createTeamDesignUseCases } from "./application/team-design-use-cases.mjs";
+import { createTeamIrUseCases } from "./application/team-ir-use-cases.mjs";
 import { createFileTeamDesignAssetStore } from "./infrastructure/file-team-design-asset-store.mjs";
+import { createFileTeamIrStore } from "./infrastructure/file-team-ir-store.mjs";
+import { createRuntimeTeamIrProjectRunExecutor } from "./infrastructure/runtime-team-ir-project-run-executor.mjs";
 import { isProcessAlive } from "./infrastructure/process-liveness.mjs";
 import { createFileTeamVersionLifecycle } from "./infrastructure/file-team-version-lifecycle.mjs";
 import { createPlatformUseCases } from "./application/platform-use-cases.mjs";
@@ -193,6 +196,11 @@ const collaborationProjectUseCases = createCollaborationProjectUseCases({
 });
 const taskExecutionReadiness = createRuntimeTaskExecutionReadiness();
 const teamDesignProjector = createVisualizerProjectDesignProjector();
+const teamIrStore = createFileTeamIrStore();
+const teamIrProjectRunExecutor = createRuntimeTeamIrProjectRunExecutor({
+  teamStore: { getTeamVersion: getProject },
+  teamIrStore
+});
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
   teamStore: { getTeamVersion: getProject },
@@ -212,6 +220,7 @@ const taskExecutionUseCases = createTaskExecutionUseCases({
   attemptStore: createFileTaskExecutionStore({ projectStore: { getProject, withProjectWriteLock, saveTaskRecord } }),
   workerStore: taskWorkers,
   runStore: { execute: projectRunUseCases.startProjectRun },
+  teamIrRunStore: teamIrProjectRunExecutor,
   readiness: taskExecutionReadiness,
   identifiers: createTaskExecutionIdentifiers()
 });
@@ -345,6 +354,11 @@ const teamDesignUseCases = createTeamDesignUseCases({
     isRuntimeOnlyErrorEvent
   }
 });
+const teamIrUseCases = createTeamIrUseCases({
+  teamCatalog,
+  teamIrStore,
+  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock
+});
 const agencyNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
 const agencyCnNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
 const roleSourceAdapters = {
@@ -450,6 +464,7 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
   locks: teamLifecycleLocks,
   confirmation: createRuntimeTeamConfirmation(),
   releaseEvidence: studioSimulationUseCases,
+  teamIrRelease: teamIrUseCases,
   caseMaterializer: caseTeamMaterializer,
   caseCatalog: { getCase: (caseId) => cases.find((item) => item.id === caseId), listCases: () => cases },
   assertTrustedTeamTopology: (team) => ["classic", "classic-template"].includes(team.source) && Boolean(team.caseId)
@@ -544,6 +559,7 @@ const server = createServer(async (request, response) => {
       ...teamCatalogUseCases,
       ...teamLifecycleUseCases,
       ...teamDesignUseCases,
+      ...teamIrUseCases,
       ...teamVersionSaveUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
       getTeamVersion: teamVersionSaveUseCases.getTeamVersionForSave,
@@ -607,7 +623,7 @@ const server = createServer(async (request, response) => {
     const isStudioRoute = url.pathname === "/studio"
       || url.pathname === "/studio/new"
       || url.pathname === "/studio/roles"
-      || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+)?|release|simulations)\/?$/.test(url.pathname)
+      || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|ir|run(?:\/[a-z0-9._-]+)?|release|simulations)\/?$/.test(url.pathname)
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
     const isPlatformRoute = ["/platform", "/platform/models", "/platform/role-sources"].includes(url.pathname);
     if (url.pathname === "/" || url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {

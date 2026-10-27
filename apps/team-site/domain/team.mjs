@@ -5,6 +5,10 @@ export function assertReleasedTeamVersion(team) {
     throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
   }
   assertCanonicalTeamVersionId(team.teamVersionId || team.projectId);
+  if (!/^[a-f0-9]{64}$/i.test(String(team.teamIrSemanticDigest || ""))
+    || !/^[a-f0-9]{64}$/i.test(String(team.compiledPlanDigest || ""))) {
+    throw new Error("TEAM_IR_V2_REQUIRED: only a TeamVersion with a frozen, compiled Team IR v2 snapshot can be mounted.");
+  }
 }
 
 export function assertCanonicalTeamVersionId(teamVersionId) {
@@ -27,6 +31,9 @@ export function createMountedTeamRecord(team, previous) {
     status: "available",
     ...(team.teamCoreDigest ? { teamCoreDigest: team.teamCoreDigest } : {}),
     ...(Number.isInteger(team.teamDigestVersion) ? { teamDigestVersion: team.teamDigestVersion } : {}),
+    teamIrSemanticDigest: team.teamIrSemanticDigest,
+    compiledPlanDigest: team.compiledPlanDigest,
+    compilerSemanticsVersion: team.compilerSemanticsVersion,
     ...(team.builtIn ? { builtIn: true } : {})
   };
 }

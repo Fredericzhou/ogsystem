@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 2,
+  "team": {
+    "id": "classic-software-team",
+    "version": "2.0.0"
+  },
+  "runInput": {
+    "dataSchema": {
+      "type": "object",
+      "properties": {
+        "request": { "type": "string", "minLength": 1 }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "preferencesSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "artifactSlots": {}
+  },
+  "runResult": {
+    "dataSchema": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 }
+      },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "artifactSlots": {}
+  },
+  "executionPolicy": {
+    "resultMode": "required",
+    "activeExecutionBudgetMs": 900000
+  },
+  "agents": [
+    {
+      "id": "planner",
+      "packageRef": "role:software-planner@1",
+      "bindingRef": "binding:planner",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "request": { "type": "string" } },
+            "required": ["request"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "PLAN": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "plan": { "type": "string", "minLength": 1 } },
+            "required": ["plan"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "implementer",
+      "packageRef": "role:software-implementer@1",
+      "bindingRef": "binding:implementer",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "plan": { "type": "string" } },
+            "required": ["plan"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "IMPLEMENTED": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "changes": { "type": "string", "minLength": 1 } },
+            "required": ["changes"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "tester",
+      "packageRef": "role:software-tester@1",
+      "bindingRef": "binding:tester",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "plan": { "type": "string" } },
+            "required": ["plan"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "TESTED": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "tests": { "type": "string", "minLength": 1 } },
+            "required": ["tests"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "lead",
+      "packageRef": "role:software-lead@1",
+      "bindingRef": "binding:lead",
+      "inputPorts": {
+        "collect": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "changes": { "type": "string" },
+              "tests": { "type": "string" }
+            },
+            "required": ["changes", "tests"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "DELIVERED": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "summary": { "type": "string", "minLength": 1 } },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "handoffs": [
+    {
+      "id": "run-to-planner",
+      "from": { "kind": "run" },
+      "to": { "kind": "agent", "agentId": "planner", "inputPort": "default" },
+      "map": { "data": { "request": { "$ref": "$.run.input.request" } } },
+      "delivery": { "deadlineMs": 180000 }
+    },
+    {
+      "id": "planner-to-implementer",
+      "from": { "kind": "agent", "agentId": "planner", "outputPort": "PLAN" },
+      "to": { "kind": "agent", "agentId": "implementer", "inputPort": "default" },
+      "map": { "data": { "plan": { "$ref": "$.output.data.plan" } } },
+      "delivery": { "deadlineMs": 300000 }
+    },
+    {
+      "id": "planner-to-tester",
+      "from": { "kind": "agent", "agentId": "planner", "outputPort": "PLAN" },
+      "to": { "kind": "agent", "agentId": "tester", "inputPort": "default" },
+      "map": { "data": { "plan": { "$ref": "$.output.data.plan" } } },
+      "delivery": { "deadlineMs": 300000 }
+    },
+    {
+      "id": "implementer-to-lead",
+      "from": { "kind": "agent", "agentId": "implementer", "outputPort": "IMPLEMENTED" },
+      "to": { "kind": "agent", "agentId": "lead", "inputPort": "collect" },
+      "map": { "data": { "changes": { "$ref": "$.output.data.changes" } } },
+      "delivery": { "deadlineMs": 300000 }
+    },
+    {
+      "id": "tester-to-lead",
+      "from": { "kind": "agent", "agentId": "tester", "outputPort": "TESTED" },
+      "to": { "kind": "agent", "agentId": "lead", "inputPort": "collect" },
+      "map": { "data": { "tests": { "$ref": "$.output.data.tests" } } },
+      "delivery": { "deadlineMs": 300000 }
+    },
+    {
+      "id": "lead-to-result",
+      "from": { "kind": "agent", "agentId": "lead", "outputPort": "DELIVERED" },
+      "to": { "kind": "result" },
+      "map": { "data": { "summary": { "$ref": "$.output.data.summary" } } }
+    }
+  ],
+  "orchestration": {
+    "routes": [
+      {
+        "from": { "kind": "agent", "agentId": "planner", "outputPort": "PLAN" },
+        "mode": "parallel_fanout",
+        "onNoMatch": "fail",
+        "handoffIds": ["planner-to-implementer", "planner-to-tester"]
+      }
+    ],
+    "joins": [
+      {
+        "id": "implementation-review",
+        "agentId": "lead",
+        "inputPort": "collect",
+        "mode": "all_of",
+        "handoffIds": ["implementer-to-lead", "tester-to-lead"],
+        "scope": { "kind": "run" },
+        "timeoutMs": 360000,
+        "onTimeout": "fail"
+      }
+    ],
+    "loops": [],
+    "reviews": []
+  },
+  "bindings": [
+    { "id": "binding:planner", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:implementer", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 240000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:tester", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 240000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:lead", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
+  ],
+  "presentation": {
+    "nodes": {
+      "planner": { "x": 100, "y": 220 },
+      "implementer": { "x": 380, "y": 100 },
+      "tester": { "x": 380, "y": 340 },
+      "lead": { "x": 680, "y": 220 }
+    }
+  }
+}

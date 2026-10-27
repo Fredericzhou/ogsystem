@@ -88,9 +88,12 @@ export function projectDefinitionPayload(project) {
     name: String(project.name || ""),
     overview: project.overview,
     mountedTeams: (project.mountedTeams || []).map((team) => ({
+      teamVersionId: team.source?.sourceTeamVersionId || team.teamVersionId || null,
       teamName: String(team.teamName || team.name || ""),
       teamVersionNumber: Number(team.teamVersionNumber || 1),
       teamCoreDigest: team.teamCoreDigest || null,
+      teamIrSemanticDigest: team.teamIrSemanticDigest || null,
+      compiledPlanDigest: team.compiledPlanDigest || null,
       builtIn: Boolean(team.builtIn)
     })),
     materials: (project.materials?.materials || []).map((item) => ({
