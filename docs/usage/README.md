@@ -7,6 +7,9 @@ authoring guidance.
 Start with [OGS Core Concepts](ogsystem-core-concepts.md) when evaluating the product boundary or
 the meaning of Role, Responsibility Seat, nested System, and runtime execution facts.
 
+See [Designing for social division of labor](team-ir-social-collaboration.md) for collaboration
+principles, supported team and structured-game patterns, product value, and confidentiality boundaries.
+
 See [专业工作台](visualizer-console.md) for precise structure editing, debugging, role handoffs,
 human review, role I/O, and run-history views.
 
