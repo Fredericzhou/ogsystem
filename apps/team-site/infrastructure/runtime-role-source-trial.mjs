@@ -30,13 +30,15 @@ export function createRuntimeRoleSourceTrial({ run = runSystemWithAdapter, getDe
         "%% system.id=role.trial",
         "%% system.version=1.0.0",
         "%% law.global=law.role-trial",
-        `start[Start] -->|START| role[Role:${roleId}]`,
-        `role -->|${TRIAL_EVENT}| finish[End]`
+        `start[开始] -->|START| role[Role:${roleId}]`,
+        `role -->|${TRIAL_EVENT}| end[结束]`
       ].join("\n") + "\n");
       const prompt = [
-        `Task: ${cleanTask}`,
-        "Input (JSON):",
+        "Task (instruction):",
+        cleanTask,
+        "Input (JSON context, requirements, and references for the task):",
         JSON.stringify(input, null, 2),
+        "Use the task as the instruction and the JSON input as supporting information for completing it.",
         "Return one JSON object with event ROLE_TRIAL_COMPLETE, content, and optional data."
       ].join("\n\n");
       const result = await run({

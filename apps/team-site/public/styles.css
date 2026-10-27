@@ -555,7 +555,17 @@ h1, h2, p { margin-top: 0; }
 .team-debug-empty-state strong { font-size: 13px; }
 .team-debug-empty-state p { color: var(--muted); font-size: 11px; line-height: 1.55; margin: 0; max-width: 38em; }
 .team-debug-flow-event { align-self: center; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 11px; padding: 5px 9px; }
+.team-debug-flow-select { background: transparent; border: 0; color: var(--ink); cursor: pointer; font: inherit; padding: 1px 2px; text-align: left; }
+.team-debug-flow-select:hover { color: var(--mint-dark); text-decoration: underline; }
+.team-debug-flow-select:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.team-debug-flow-event small { color: var(--muted); font-size: 10px; }
+.team-debug-event { align-items: baseline; background: var(--mint-soft); border: 1px solid var(--line); border-left: 3px solid var(--mint); border-radius: 4px; color: var(--ink); display: flex; flex-wrap: wrap; font-size: 11px; gap: 5px 9px; padding: 7px 9px; }
+.team-debug-event time, .team-debug-event small { color: var(--muted); font-size: 10px; }
+.team-debug-event-human_review_requested, .team-debug-event-human_review_paused { background: var(--coral-soft); border-left-color: var(--coral); }
+.team-debug-event-human_review_terminated, .team-debug-event-human_review_expired, .team-debug-event-run_terminated { border-left-color: var(--coral); }
+.team-debug-event-role_retry_scheduled { border-left-color: var(--mint); }
 .team-debug-transcript > li[data-status="running"] { border-style: dashed; }
+.team-debug-transcript > li[data-status="waiting"] { border-left-color: var(--coral); }
 .team-studio-dialog-head { align-items: center; display: flex; justify-content: space-between; gap: 16px; }
 .team-studio-dialog-head h2 { font-size: 20px; margin: 4px 0 0; }
 .team-studio-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
@@ -1684,7 +1694,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .role-source-category h3 { font-size: 12px; margin: 0; overflow-wrap: anywhere; }
 .role-source-category-count { color: var(--muted); font-size: 11px; }
 .role-source-category-grid { display: grid; gap: 9px; grid-column: 1 / -1; grid-template-columns: repeat(auto-fill, minmax(min(100%, 245px), 1fr)); min-width: 0; }
-.role-source-dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 24px 70px rgba(5, 18, 28, .28); color: var(--ink); max-height: min(96dvh, 960px); max-width: min(880px, calc(100vw - 28px)); overflow: auto; padding: 0; width: 100%; }
+.role-source-dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 24px 70px rgba(5, 18, 28, .28); color: var(--ink); max-height: min(96dvh, 960px); max-width: min(1120px, calc(100vw - 32px)); overflow: auto; padding: 0; width: 100%; }
 .role-source-dialog::backdrop { background: rgba(6, 17, 28, .5); }
 .role-source-dialog-bar { align-items: center; background: var(--surface); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; padding: 11px 16px; position: sticky; top: 0; z-index: 1; }
 .role-source-dialog-bar .section-kicker { margin: 0; }
@@ -1693,9 +1703,11 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .role-source-detail { background: var(--surface); border: 0; min-width: 0; padding: 10px 18px 14px; }
 .role-source-version-control { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 9px; justify-content: flex-end; margin-bottom: 12px; }
 .role-source-version-control select { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--text); font: inherit; max-width: 100%; min-height: 36px; padding: 0 8px; }
-.role-source-detail-head { align-items: center; display: flex; gap: 11px; }
+.role-source-detail-head { align-items: center; display: flex; gap: 11px; min-width: 0; }
 .role-source-detail-head .role-source-icon { flex-basis: 44px; height: 44px; width: 44px; }
-.role-source-detail h2 { font-size: 19px; margin: 4px 0 0; overflow-wrap: anywhere; }
+.role-source-detail-head > div { min-width: 0; }
+.role-source-detail-head .section-kicker { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-source-detail h2 { font-size: 19px; margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .role-source-description { color: var(--muted); line-height: 1.45; margin: 7px 0; overflow-wrap: anywhere; }
 .role-source-facts, .role-source-display { display: grid; gap: 0 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 12px 0; }
 .role-source-facts > div, .role-source-display > div { border-bottom: 1px solid var(--line); min-width: 0; padding: 8px 0; }
@@ -1828,6 +1840,14 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .role-source-source-facts { color: var(--muted); font-size: 11px; }
 .role-source-source-facts > code { display: block; margin-top: 8px; overflow-wrap: anywhere; }
 .role-source-detail-facts { margin: 14px 0; }
+.role-source-detail-facts[open] .role-source-facts,
+.role-source-detail-facts[open] .role-source-display { gap: 4px 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 8px 0 2px; }
+.role-source-detail-facts[open] .role-source-facts > div,
+.role-source-detail-facts[open] .role-source-display > div { align-items: baseline; display: flex; flex-wrap: wrap; gap: 3px 7px; min-width: 0; padding: 5px 0; }
+.role-source-detail-facts[open] .role-source-facts dt,
+.role-source-detail-facts[open] .role-source-display dt { flex: 0 0 auto; }
+.role-source-detail-facts[open] .role-source-facts dd,
+.role-source-detail-facts[open] .role-source-display dd { flex: 1 1 auto; margin: 0; min-width: 0; }
 .role-source-item { grid-template-columns: 40px minmax(0, 1fr) auto; min-height: 112px; }
 .role-source-item-copy { gap: 4px; }
 .role-source-item-copy strong { white-space: normal; }
@@ -1837,7 +1857,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .page-frame-header.role-source-page-heading { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; }
 .page-frame-header.role-source-page-heading > .page-frame-title { flex: 1 1 440px; }
 .page-frame-header.role-source-page-heading > .role-source-actions { flex: 1 1 300px; min-width: 0; }
-.page-frame-header.role-source-page-heading > .role-source-toolbar { flex: 1 1 100%; grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(140px, .42fr)); margin: 0; }
+.page-frame-header.role-source-page-heading > .role-source-toolbar { flex: 1 1 100%; grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, .42fr)); margin: 0; }
 .role-source-actions { align-items: center; border: 0; gap: 5px 12px; justify-content: flex-end; padding: 0; }
 .role-source-summary { align-items: baseline; display: flex; flex-wrap: wrap; gap: 3px 10px; justify-content: flex-end; }
 .role-source-summary strong { font-size: 12px; }
@@ -1856,18 +1876,21 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .role-source-copy .role-source-confirm { color: var(--muted); margin-top: 10px; }
 .role-source-copy .primary-button:disabled { cursor: not-allowed; opacity: .55; }
 .role-source-copy .form-hint { margin: 2px 0; }
-.role-source-trial { border-top: 1px solid var(--line); display: grid; gap: 7px 12px; grid-template-columns: minmax(0, 1.5fr) minmax(180px, .8fr); margin-top: 9px; padding-top: 9px; }
-.role-source-trial h3, .role-source-trial-meta, .role-source-trial > label:first-of-type, .role-source-trial-output-hint, .role-source-trial > button, .role-source-trial > .form-status, .role-source-trial-output { grid-column: 1 / -1; }
+.role-source-trial { border-top: 1px solid var(--line); display: grid; gap: 9px 16px; grid-template-columns: minmax(0, 1fr); margin-top: 14px; padding-top: 14px; }
+.role-source-trial h3, .role-source-trial-meta, .role-source-trial > label:first-of-type, .role-source-trial > label:nth-of-type(2), .role-source-trial-output-hint, .role-source-trial > button, .role-source-trial > .form-status, .role-source-trial-output { grid-column: 1 / -1; }
 .role-source-trial-meta, .role-source-trial-output-hint { color: var(--muted); font-size: 11px; line-height: 1.35; margin: 0; }
-.role-source-trial textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--text); font: inherit; line-height: 1.35; min-height: 34px; padding: 6px 8px; resize: vertical; width: 100%; }
+.role-source-trial .form-hint { display: block; margin: -2px 0 2px; }
+.role-source-trial textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--text); font: inherit; line-height: 1.45; min-height: 52px; padding: 8px 10px; resize: vertical; width: 100%; }
+.role-source-trial textarea[name=task] { min-height: 112px; }
+.role-source-trial textarea[name=input] { min-height: 230px; }
 .role-source-trial textarea[name=input] { font-family: var(--font-mono, monospace); font-size: 11px; }
-.role-source-trial-output { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; font-size: 12px; max-height: 320px; overflow: auto; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.role-source-trial-output { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; font-size: 12px; max-height: min(48dvh, 460px); min-height: 150px; overflow: auto; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .role-source-actions { align-items: center; }
 .role-source-source-facts { display: flex; align-items: center; gap: 10px; }
 .role-source-source-facts .text-button { min-height: 30px; }
 .role-source-summary-meta { font-size: 12px; }
 .role-source-empty { line-height: 1.6; padding: 20px 4px; }
-.role-source-toolbar { grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(130px, .45fr)); }
+.role-source-toolbar { grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(110px, .45fr)); }
 .role-source-version-control { display: block; margin-bottom: 12px; }
 .role-source-version-control > summary { color: var(--muted); cursor: pointer; font-size: 11px; text-align: right; }
 .role-source-version-control select { display: block; margin: 7px 0 0 auto; }
@@ -1901,9 +1924,21 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   .role-source-item > .status-chip { grid-column: 2; }
   .role-source-copy { padding-top: 14px; }
   .role-source-trial { grid-template-columns: minmax(0, 1fr); }
-  .role-source-dialog { max-height: 96dvh; max-width: calc(100vw - 16px); }
+  .role-source-dialog { max-height: 94dvh; max-width: calc(100vw - 16px); }
   .role-source-detail { padding: 13px 14px 16px; }
-  .role-source-trial { grid-template-columns: minmax(0, 1fr); }
+  .role-source-detail-head .role-source-icon { flex-basis: 38px; height: 38px; width: 38px; }
+  .role-source-detail h2 { font-size: 17px; }
+  .role-source-trial textarea[name=task] { min-height: 96px; }
+  .role-source-trial textarea[name=input] { min-height: 180px; }
+  .role-source-trial-output { max-height: 42dvh; min-height: 130px; }
+}
+@media (max-width: 760px) {
+  .role-source-detail-facts[open] .role-source-facts,
+  .role-source-detail-facts[open] .role-source-display { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 380px) {
+  .role-source-detail-facts[open] .role-source-facts,
+  .role-source-detail-facts[open] .role-source-display { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .role-source-admin-layout { grid-template-columns: minmax(0, 1fr); }

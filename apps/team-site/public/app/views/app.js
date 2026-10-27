@@ -80,6 +80,9 @@ function mountStudioGraph(root, options) {
     },
     setRuntimeProgress(events) {
       window.OGSStudioGraphBundle?.setStudioX6RuntimeProgress?.(root, events);
+    },
+    focusRuntimeHandoff(handoffId) {
+      window.OGSStudioGraphBundle?.focusStudioX6RuntimeHandoff?.(root, handoffId);
     }
   });
 }
@@ -1101,8 +1104,8 @@ async function renderStudioOverview() {
 
 function studioSimulationStatus(status) {
   const labels = state.locale === "en"
-    ? { running: "Running", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
-    : { running: "运行中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
+    ? { running: "Running", waiting: "Waiting", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
+    : { running: "运行中", waiting: "等待中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
   return labels[status] || status || (state.locale === "en" ? "Unknown" : "未知");
 }
 
@@ -2091,7 +2094,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     if (!response.ok) throw new Error(payload.error || "Unable to load the project graph.");
     if (!stage.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
     if (readOnly) {
-      mountStudioGraph(stage, {
+      const graph = mountStudioGraph(stage, {
         viewModel: payload.viewModel,
         readOnly: true,
         showTopologyOrder: false,
@@ -2106,7 +2109,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         }
       });
       stage.removeAttribute("aria-busy");
-      return;
+      return graph;
     }
     let authoring = payload.authoring;
     let canvas = payload.canvas;
@@ -2831,6 +2834,28 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           || (roleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始")
             : roleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束") : roleId);
         const eventActivationKey = (item) => item.executionId || `${item.roleId || ""}:${item.branchId || ""}:${item.loopIteration || 1}`;
+        const eventLabel = (item) => {
+          const english = state.locale === "en";
+          const role = roleName(item.roleId || "");
+          const labels = {
+            "role_waiting": english ? `${role} is waiting for the runtime` : `${role} 正在等待运行服务`,
+            "role_retry_scheduled": english ? `${role} will retry (attempt ${item.attempt || "?"}/${item.maxAttempts || "?"})` : `${role} 将重试（第 ${item.attempt || "?"}/${item.maxAttempts || "?"} 次）`,
+            "join_activated": english ? `Join activated for ${role}` : `${role} 汇聚已启动`,
+            "join_quorum_reached": english ? `Join condition met for ${role}` : `${role} 已满足汇聚条件`,
+            "join_late_arrival_ignored": english ? `Late result ignored at ${role}` : `${role} 忽略了迟到结果`,
+            "human_review_requested": english ? `Review requested for ${role}` : `${role} 已提交人工审核`,
+            "human_review_approved": english ? `Review approved for ${role}` : `${role} 审核已通过`,
+            "human_review_rework_requested": english ? `Rework requested for ${role}` : `${role} 收到返工要求`,
+            "human_review_paused": english ? `Run paused for review` : "运行已暂停，等待审核",
+            "human_review_terminated": english ? `Run terminated during review` : "审核终止了运行",
+            "human_review_expired": english ? `Review timed out` : "审核已超时",
+            "run_waiting": english ? `Run is waiting: ${item.reason || "external decision"}` : `运行正在等待：${item.reason || "外部决策"}`,
+            "run_stopping": english ? "Run is stopping after the active transition" : "当前流转结束后将停止运行",
+            "run_stopped": english ? "Run stopped" : "运行已停止",
+            "run_terminated": english ? "Run terminated" : "运行已终止"
+          };
+          return labels[item.type] || String(item.type || "event").replaceAll("_", " ");
+        };
         const drawTranscript = (events = []) => {
           if (!result) return;
           let panel = result.querySelector(".team-simulation-result");
@@ -2857,8 +2882,41 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             if (flowEvent) {
               const flow = document.createElement("li");
               flow.className = "team-debug-flow-event";
-              flow.textContent = `${roleName(item.fromRoleId)} → ${roleName(item.toRoleId)}`;
+              const selectFlow = document.createElement("button");
+              selectFlow.type = "button";
+              selectFlow.className = "team-debug-flow-select";
+              selectFlow.textContent = `${roleName(item.fromRoleId)} → ${roleName(item.toRoleId)} · ${item.eventType || ""}`;
+              selectFlow.setAttribute("aria-label", state.locale === "en"
+                ? `Focus handoff from ${roleName(item.fromRoleId)} to ${roleName(item.toRoleId)}${item.eventType ? ` on ${item.eventType}` : ""}`
+                : `定位交接：${roleName(item.fromRoleId)} 到 ${roleName(item.toRoleId)}${item.eventType ? `，事件 ${item.eventType}` : ""}`);
+              selectFlow.addEventListener("click", () => {
+                if (item.handoffId) updateStudioGraph?.focusRuntimeHandoff(item.handoffId);
+              });
+              flow.append(selectFlow);
+              if (item.branchId || item.attempt) {
+                const detail = document.createElement("small");
+                detail.textContent = [item.branchId, item.attempt ? `${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}` : ""].filter(Boolean).join(" · ");
+                flow.append(detail);
+              }
               list.append(flow);
+              continue;
+            }
+            const eventType = String(item.type || "");
+            if (eventType === "role_retry_scheduled" || eventType.startsWith("join_") || eventType.startsWith("human_review_") || eventType.startsWith("run_")) {
+              const notice = document.createElement("li");
+              notice.className = `team-debug-event team-debug-event-${eventType.replaceAll(".", "-")}`;
+              notice.dataset.eventType = eventType;
+              const time = document.createElement("time");
+              time.textContent = studioSimulationEventTime(item);
+              const message = document.createElement("span");
+              message.textContent = eventLabel(item);
+              notice.append(time, message);
+              if (item.reason || item.errorCode || item.backoffMs) {
+                const detail = document.createElement("small");
+                detail.textContent = [item.reason, item.errorCode, item.backoffMs ? `${item.backoffMs} ms` : ""].filter(Boolean).join(" · ");
+                notice.append(detail);
+              }
+              list.append(notice);
               continue;
             }
             if (item.type === "simulation.started") continue;
@@ -2869,7 +2927,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               }
               continue;
             }
-            if (!String(item.type || "").startsWith("role.")) continue;
+            if (!String(item.type || "").startsWith("role.") && item.type !== "role_waiting") continue;
             const key = eventActivationKey(item);
             let card = roleCards.get(key);
             if (!card) {
@@ -2883,13 +2941,25 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               list.append(card);
               roleCards.set(key, card);
             }
-            const status = item.type === "role.started" || item.type === "role.input_ready"
+            const status = item.type === "role_waiting" ? "waiting"
+              : item.type === "role.started" || item.type === "role.input_ready"
               ? "running"
               : item.type === "role.failed" ? "failed" : item.type === "role.skipped" ? "skipped" : "completed";
             card.dataset.status = status;
-            card.querySelector("header span").textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}`;
+            const attempt = item.attempt ? ` · ${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}/${item.maxAttempts || "?"}` : "";
+            const duration = item.durationMs !== undefined ? ` · ${Number(item.durationMs).toLocaleString(state.locale)} ms` : "";
+            card.querySelector("header span").textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
             if (item.type === "role.input_ready" || item.inputContext) {
               addSection(card, state.locale === "en" ? "Input" : "收到的任务", item.inputContext, "input");
+            }
+            if (item.type === "role_waiting") {
+              const waitStage = item.stage === "model_provider"
+                ? (state.locale === "en" ? "Model service" : "模型服务")
+                : item.stage === "cli_tool"
+                  ? (state.locale === "en" ? "Execution tool" : "执行工具")
+                  : item.stage;
+              const waitText = [item.waitKind, waitStage, Number.isFinite(item.elapsedMs) ? `${item.elapsedMs} ms` : ""].filter(Boolean).join(" · ");
+              addSection(card, state.locale === "en" ? "Waiting" : "等待原因", waitText, "waiting");
             }
             if (item.stdoutPreview || item.failure) {
               addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
@@ -3209,11 +3279,36 @@ async function renderProjectStudio(projectId, pageRequest = state.activeRequest)
   await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
 }
 
-function mountRunTeamGraph(projectId) {
+const runTeamGraphMounts = new Map();
+function runtimeEventsFromPayload(eventsPayload) {
+  return (eventsPayload?.events || []).map((entry) => {
+    const record = entry?.record || entry || {};
+    const event = record.event && typeof record.event === "object" ? record.event : record;
+    return { ...record, ...event, type: event.type || record.type || record.eventType };
+  }).filter((event) => typeof event.type === "string");
+}
+function mountRunTeamGraph(teamVersionId, eventsPayload, taskId = teamVersionId) {
   const root = $("#project-workspace-view");
-  if (!root || root.querySelector("#project-run-graph-stage")) return;
-  root.insertAdjacentHTML("beforeend", "<section class=\"project-panel project-graph-preview run-team-graph\"><div class=\"panel-head\"><div><span class=\"section-kicker\">已选团队</span><h2>团队协作结构</h2><p class=\"form-status\">只读图谱，用于确认当前运行使用的角色和交接关系。</p></div><span class=\"status-chip\">只读</span></div><div id=\"project-run-graph-stage\" class=\"graph-stage studio-graph-island\" role=\"img\" aria-label=\"Selected team collaboration graph\"></div></section>");
-  void renderProjectGraph(projectId, "project-run-graph-stage", true);
+  if (!root || !teamVersionId) return;
+  let mount = runTeamGraphMounts.get(taskId);
+  if (mount && !mount.stage.isConnected) {
+    runTeamGraphMounts.delete(taskId);
+    mount = null;
+  }
+  if (!mount) {
+    const stageId = `project-run-graph-${createUuid()}`;
+    root.insertAdjacentHTML("beforeend", `<section class="project-panel project-graph-preview run-team-graph"><div class="panel-head"><div><span class="section-kicker">已选团队 · 任务 ${esc(taskId)}</span><h2>团队协作结构</h2><p class="form-status">只读图谱，用于查看此运行经过的角色与交接。</p></div><span class="status-chip">只读</span></div><div id="${esc(stageId)}" class="graph-stage studio-graph-island" role="img" aria-label="Selected team collaboration graph"></div></section>`);
+    const stage = root.querySelector(`#${CSS.escape(stageId)}`);
+    if (!stage) return;
+    mount = { stage, ready: renderProjectGraph(teamVersionId, stageId, true), events: runtimeEventsFromPayload(eventsPayload) };
+    runTeamGraphMounts.set(taskId, mount);
+  }
+  mount.events = runtimeEventsFromPayload(eventsPayload);
+  void Promise.resolve(mount.ready).then((graph) => {
+    if (!mount.stage.isConnected) return;
+    if (graph?.setRuntimeProgress) graph.setRuntimeProgress(mount.events);
+    else window.OGSStudioGraphBundle?.setStudioX6RuntimeProgress?.(mount.stage, mount.events);
+  });
 }
 
 function projectRunStatusLabel(status) {
@@ -3806,6 +3901,7 @@ function renderTaskRunDetail(detail, run, eventsPayload) {
     ? renderRoleOutputs(fullResult.finalOutputsByRoleId, fullResult.finalOutputRoleOrder, "无文本输出")
     : (typeof fullResult === "string" ? `<pre>${esc(fullResult)}</pre>` : "");
   const workspaceUrl = professionalWorkspaceUrl(run.owner?.projectId || detail.dataset.projectId, run.runId);
+  mountRunTeamGraph(detail.dataset.teamVersionId || run.teamVersionId || run.task?.teamVersionId, eventsPayload, detail.dataset.taskId || run.taskId);
   detail.dataset.runStatus = status;
   detail.innerHTML = `<div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(status))}</strong><span class="task-run-mode-label run-mode-chip">${mode === "sandbox" ? "隔离运行" : "流程预览"}</span><span class="task-run-progress-label">${progress}%</span></div>${workspaceUrl ? `<p class="task-run-workspace-link"><a class="text-button" href="${esc(workspaceUrl)}"${/^https?:\/\//.test(workspaceUrl) ? ' target="_blank" rel="noopener"' : ""}>查看全流程</a></p>` : ""}<div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div><ul class="task-run-events">${events || "<li><span>暂无事件摘要</span></li>"}</ul>${failure ? `<p class="task-run-failure" role="status">${esc(failure)}</p>` : ""}${summary ? `<section class="task-run-output"><strong>结果摘要</strong><pre>${esc(summary)}</pre></section>` : ""}<section class="task-run-output"><strong>完整结果</strong>${fullResultHtml || `<button class="text-button" type="button" data-load-run-result>读取完整结果</button>`}</section><p class="form-status task-run-error" role="status" aria-live="polite"></p>`;
   detail.querySelector("[data-load-run-result]")?.addEventListener("click", async (event) => {
@@ -4021,7 +4117,14 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   const taskCapacity = project.taskCapacity || { capacity: 1, used: 0, available: 1, activeTasks: [] };
   const materials = project.materials?.materials || [];
   const terminalRefreshes = pageRequest?.terminalRunRefreshes || (pageRequest ? (pageRequest.terminalRunRefreshes = new Set()) : new Set());
-  root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length} 个团队版本 · ${tasks.length} 个任务</span></section><div class="project-detail-sections collaboration-project-grid"><section id="project-info-panel" class="project-panel project-info-panel"><div class="panel-head"><div><span class="section-kicker">01 · 项目概况</span><h2>项目信息</h2></div></div><p class="project-overview-text">${esc(project.overview || "尚未填写项目概要。")}</p><div class="project-readiness-panel"><div class="panel-head"><div><span class="section-kicker">运行检查</span><h3>团队就绪情况</h3></div></div><div data-project-readiness><p class="empty-note">正在检查已挂载团队...</p></div></div><div id="project-team-heading" class="panel-head project-team-heading"><div><span class="section-kicker">执行团队</span><h3>已挂载版本</h3></div><span class="count-badge">${teams.length}</span></div><div class="material-list project-team-list">${teams.length ? teams.map((team) => `<div class="material-row team-mount-row"><div><strong>${esc(team.teamName || "团队")}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></div><button class="text-button" type="button" data-team-adjust="${esc(team.teamVersionId)}">编辑团队</button></div>`).join("") : '<p class="empty-note">尚未挂载团队。</p>'}</div><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}/teams" data-route="/projects/${encodeURIComponent(projectId)}/teams">管理团队版本</a></div><p class="panel-intro">打开编辑不会新建版本；首次保存实际修改时才创建设计中版本，发布后再将其挂载到项目。</p></section><section id="project-resources-panel" class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">02 · 项目文件</span><h2>生产资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">生产资料属于当前项目，供任务执行时使用。</p><form id="project-material-form" class="material-upload-form"><div class="form-actions"><label class="secondary-button material-upload-button">上传文件<input id="project-material-file-input" type="file" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><label class="secondary-button material-upload-button">导入文件夹<input id="project-material-folder-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label></div><small>支持批量文件和文件夹导入，保留文件夹相对路径；单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有生产资料。</p>'}</div></section><section id="project-run-panel" class="project-panel task-list-panel project-run-panel"><div class="panel-head"><div><span class="section-kicker">03 · 任务与运行</span><h2>运行信息</h2></div><button class="primary-button" type="button" data-open-task-dialog ${teams.length ? "" : "disabled"}>新增任务</button></div><p class="panel-intro">每项任务绑定一个团队版本；同一项目一次运行一个任务，其他任务可先加入清单。</p><div class="task-capacity-summary" data-task-capacity></div><div class="material-list project-task-list">${orderedTasks.length ? orderedTasks.map((task) => `<div class="material-row task-record-row" data-task-record="${esc(task.taskId)}"><div class="task-record-main"><div class="task-title-line"><strong>任务 #${esc(task.taskNumber)} · ${esc(task.teamName || "团队")}</strong><time datetime="${esc(task.createdAt || "")}">${esc(task.createdAt ? new Date(task.createdAt).toLocaleString(state.locale) : `任务 #${task.taskNumber}`)}</time></div><p>${esc(task.input || "")}</p>${task.outputSummary ? `<p class="task-output-summary"><strong>输出摘要：</strong>${esc(task.outputSummary)}</p>` : ""}<div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.currentRunId ? `<span>Run ${esc(task.currentRunId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.status === "failed" && task.lastError ? `<p class="task-run-last-error" role="status">${esc(task.lastError)}</p>` : ""}${task.currentRunId ? `<div class="task-run-detail" data-run-id="${esc(task.currentRunId)}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。</p>'}</div><dialog class="task-review-dialog" id="collaboration-task-dialog"><form id="collaboration-task-form" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">新增任务</span><h2>安排一项工作</h2></div><button class="text-button" type="button" data-close-task-dialog aria-label="关闭">关闭</button></div><label>执行团队<select name="teamVersionId" required>${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label>任务内容<textarea name="input" required rows="5" maxlength="4000" placeholder="描述这次需要完成的具体工作"></textarea></label><p class="form-status" id="collaboration-task-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" type="button" data-close-task-dialog>取消</button><button class="primary-button" type="submit">添加到清单</button></div></form></dialog></section></div>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/projects" data-route="/projects">← 协作项目</a><div class="eyebrow">协作项目</div><h1>${esc(project.name)}</h1><p>${esc(project.overview || "按任务推进项目")}</p></div><span class="project-status confirmed">${teams.length} 个团队版本 · ${tasks.length} 个任务</span></section><div class="project-detail-sections collaboration-project-grid"><section id="project-info-panel" class="project-panel project-info-panel"><div class="panel-head"><div><span class="section-kicker">01 · 项目概况</span><h2>项目信息</h2></div></div><p class="project-overview-text">${esc(project.overview || "尚未填写项目概要。")}</p><div class="project-readiness-panel"><div class="panel-head"><div><span class="section-kicker">运行检查</span><h3>团队就绪情况</h3></div></div><div data-project-readiness><p class="empty-note">正在检查已挂载团队...</p></div></div><div id="project-team-heading" class="panel-head project-team-heading"><div><span class="section-kicker">执行团队</span><h3>已挂载版本</h3></div><span class="count-badge">${teams.length}</span></div><div class="material-list project-team-list">${teams.length ? teams.map((team) => `<div class="material-row team-mount-row"><div><strong>${esc(team.teamName || "团队")}</strong><span>v${team.teamVersionNumber || 1} · ${esc(team.status || "可用")}</span></div><button class="text-button" type="button" data-team-adjust="${esc(team.teamVersionId)}">编辑团队</button></div>`).join("") : '<p class="empty-note">尚未挂载团队。</p>'}</div><div class="form-actions"><a class="secondary-button" href="/projects/${encodeURIComponent(projectId)}/teams" data-route="/projects/${encodeURIComponent(projectId)}/teams">管理团队版本</a></div><p class="panel-intro">打开编辑不会新建版本；首次保存实际修改时才创建设计中版本，发布后再将其挂载到项目。</p></section><section id="project-resources-panel" class="project-panel project-resources-panel"><div class="panel-head"><div><span class="section-kicker">02 · 项目文件</span><h2>生产资料</h2></div><span class="count-badge">${materials.length}</span></div><p class="panel-intro">生产资料属于当前项目，供任务执行时使用。</p><form id="project-material-form" class="material-upload-form"><div class="form-actions"><label class="secondary-button material-upload-button">上传文件<input id="project-material-file-input" type="file" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label><label class="secondary-button material-upload-button">导入文件夹<input id="project-material-folder-input" type="file" multiple webkitdirectory directory hidden accept=".md,.txt,.json,.yaml,.yml,.csv,text/markdown,text/plain,application/json,text/csv"></label></div><small>支持批量文件和文件夹导入，保留文件夹相对路径；单批最多 200 个文件、8 MB。</small><p class="form-status" id="project-material-status" role="status" aria-live="polite"></p></form><div class="material-list">${materials.length ? materials.map((item) => `<div class="material-row"><strong>${esc(item.filename)}</strong><span>${esc(materialStatusLabel(item.status))} · ${item.size || 0} bytes</span></div>`).join("") : '<p class="empty-note">还没有生产资料。</p>'}</div></section><section id="project-run-panel" class="project-panel task-list-panel project-run-panel"><div class="panel-head"><div><span class="section-kicker">03 · 任务与运行</span><h2>运行信息</h2></div><button class="primary-button" type="button" data-open-task-dialog ${teams.length ? "" : "disabled"}>新增任务</button></div><p class="panel-intro">每项任务绑定一个团队版本；同一项目一次运行一个任务，其他任务可先加入清单。</p><div class="task-capacity-summary" data-task-capacity></div><div class="material-list project-task-list">${orderedTasks.length ? orderedTasks.map((task) => `<div class="material-row task-record-row" data-task-record="${esc(task.taskId)}"><div class="task-record-main"><div class="task-title-line"><strong>任务 #${esc(task.taskNumber)} · ${esc(task.teamName || "团队")}</strong><time datetime="${esc(task.createdAt || "")}">${esc(task.createdAt ? new Date(task.createdAt).toLocaleString(state.locale) : `任务 #${task.taskNumber}`)}</time></div><p>${esc(task.input || "")}</p>${task.outputSummary ? `<p class="task-output-summary"><strong>输出摘要：</strong>${esc(task.outputSummary)}</p>` : ""}<div class="task-record-meta"><span class="status-chip ${task.status}">${esc(projectTaskStatusLabel(task.status))}</span>${task.currentRunId ? `<span>Run ${esc(task.currentRunId)}</span>` : ""}${task.review?.comment ? `<span>反馈：${esc(task.review.comment)}</span>` : ""}</div>${task.status === "failed" && task.lastError ? `<p class="task-run-last-error" role="status">${esc(task.lastError)}</p>` : ""}${task.currentRunId ? `<div class="task-run-detail" data-run-id="${esc(task.currentRunId)}" data-team-version-id="${esc(task.teamVersionId || "")}"><div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(task.status))}</strong><span class="task-run-progress-label">正在读取...</span></div><div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div><ul class="task-run-events"><li><span>正在读取运行事件...</span></li></ul><p class="form-status task-run-error" role="status" aria-live="polite"></p></div>` : ""}</div><div class="task-record-actions">${taskActionMarkup(task)}</div></div>`).join("") : '<p class="empty-note">还没有任务记录。</p>'}</div><dialog class="task-review-dialog" id="collaboration-task-dialog"><form id="collaboration-task-form" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">新增任务</span><h2>安排一项工作</h2></div><button class="text-button" type="button" data-close-task-dialog aria-label="关闭">关闭</button></div><label>执行团队<select name="teamVersionId" required>${teams.map((team) => `<option value="${esc(team.teamVersionId)}">${esc(team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label>任务内容<textarea name="input" required rows="5" maxlength="4000" placeholder="描述这次需要完成的具体工作"></textarea></label><p class="form-status" id="collaboration-task-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" type="button" data-close-task-dialog>取消</button><button class="primary-button" type="submit">添加到清单</button></div></form></dialog></section></div>`;
+  for (const task of orderedTasks) {
+    const detail = root.querySelector(`[data-task-record="${CSS.escape(task.taskId)}"] .task-run-detail`);
+    if (detail) {
+      detail.dataset.taskId = task.taskId;
+      detail.dataset.teamVersionId = task.teamVersionId || "";
+    }
+  }
     root.querySelectorAll('.team-link[data-route^="/teams/"]').forEach((link) => link.setAttribute("data-pro-only", ""));
   const collaborationGrid = root.querySelector(".collaboration-project-grid");
   if (collaborationGrid) {

@@ -20,7 +20,7 @@ function publicSimulation(evidence) {
   return redactStudioSimulationValue(evidence);
 }
 
-export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
+export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, projectTeamDesign, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
   if (!teamCatalog || typeof teamCatalog.getTeamVersion !== "function") {
     throw new TypeError("Studio simulation use cases require a TeamVersion reader.");
   }
@@ -328,6 +328,9 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           roleId,
           String(role?.name || role?.title || role?.label || roleId)
         ]));
+        const runtimeEdgeIdsByTransition = typeof projectTeamDesign === "function"
+          ? Object.fromEntries((await projectTeamDesign(snapshot.team)).viewModel.edges.map((edge) => [JSON.stringify([edge.source, edge.eventType, edge.target]), edge.id]))
+          : {};
         const created = await simulationStore.createSimulation(teamVersionId, redactStudioSimulationText(input), {
           simulationId,
           teamId,
@@ -342,9 +345,9 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           createdAt: startedAt,
           startedAt
         });
-        return { ...snapshot, baseline, simulationId, created };
+        return { ...snapshot, baseline, simulationId, created, runtimeEdgeIdsByTransition };
       });
-      const { team, bundle, teamCoreDigest, teamDigestVersion, baseline, simulationId, created } = prepared;
+      const { team, bundle, teamCoreDigest, teamDigestVersion, baseline, simulationId, created, runtimeEdgeIdsByTransition } = prepared;
       const runInput = baseline ? baseline.prompt : input;
       const materialPrompt = baseline?.materials?.length
         ? `${runInput}\n\nBaseline materials:\n${baseline.materials.map((item) => `--- ${item.name} ---\n${item.content}`).join("\n\n")}`
@@ -355,6 +358,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       try {
         const result = await simulationRunner.simulate(team, {
           prompt: materialPrompt, locale, simulationId, teamPackageBundle: bundle, teamCoreDigest,
+          runtimeEdgeIdsByTransition,
           mode: baseline ? "sandbox" : "dry-run",
           materials: baseline?.materials || [],
           onRuntimeEvent: async (runtimeEvent) => {
@@ -364,14 +368,18 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
                   at: runtimeEvent.at || now(),
                   roleId: runtimeEvent.roleId,
                   branchId: runtimeEvent.branchId,
+                  lineageId: runtimeEvent.lineageId,
                   loopIteration: runtimeEvent.loopIteration,
                   executionId: runtimeEvent.executionId,
+                  attempt: runtimeEvent.attempt,
+                  maxAttempts: runtimeEvent.maxAttempts,
                   selectedEvent: runtimeEvent.selectedEvent,
                   status: runtimeEvent.status === "failed" ? "failed" : runtimeEvent.status === "noop" ? "skipped" : "completed",
                   durationMs: runtimeEvent.durationMs,
                   inputContext: runtimeEvent.inputContext,
                   stdoutPreview: runtimeEvent.stdoutPreview,
                   failure: runtimeEvent.error,
+                  errorCode: runtimeEvent.errorCode || runtimeEvent.errorEnvelope?.errorCode,
                   errorEnvelope: runtimeEvent.errorEnvelope
                 })
               : redactStudioSimulationValue(runtimeEvent);
@@ -405,11 +413,17 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
             type: `role.${failed ? "failed" : skipped ? "skipped" : roleStatus === "completed" ? "completed" : "unknown"}`,
             roleId: item.roleId,
             branchId: item.branchId,
+            lineageId: item.lineageId,
             loopIteration: item.loopIteration,
+            executionId: item.executionId,
+            attempt: item.attempt,
+            maxAttempts: item.maxAttempts,
             selectedEvent: item.selectedEvent,
             status: failed ? "failed" : skipped ? "skipped" : roleStatus,
             durationMs: item.durationMs,
-            failure: item.failure || item.error
+            failure: item.failure || item.error,
+            errorCode: item.errorCode || item.errorEnvelope?.errorCode,
+            errorEnvelope: item.errorEnvelope
           };
           const eventTime = item.at || item.timestamp || item.startedAt || item.completedAt || item.finishedAt;
           if (eventTime) roleEvent.at = eventTime;
@@ -419,11 +433,11 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const persistedCounts = new Map();
         for (const item of persistedEvents) {
           if (!String(item.type || "").startsWith("role.")) continue;
-          const key = `${item.roleId || ""}\0${item.status || ""}\0${item.selectedEvent || ""}`;
+          const key = `${item.executionId || ""}\0${item.type || ""}\0${item.selectedEvent || ""}`;
           persistedCounts.set(key, (persistedCounts.get(key) || 0) + 1);
         }
         const missingEvents = events.filter((item) => {
-          const key = `${item.roleId || ""}\0${item.status || ""}\0${item.selectedEvent || ""}`;
+          const key = `${item.executionId || ""}\0${item.type || ""}\0${item.selectedEvent || ""}`;
           const count = persistedCounts.get(key) || 0;
           if (count > 0) {
             persistedCounts.set(key, count - 1);

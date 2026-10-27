@@ -79,6 +79,7 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
   const adapter = document.createElement("select");
   adapter.name = "adapterId";
   adapter.add(new Option("Agency Agents Markdown", "agency-agents-markdown"));
+  adapter.add(new Option("Agency Agents CN Markdown", "agency-agents-cn-markdown"));
   adapterLabel.append(adapter);
   form.append(adapterLabel);
   const enabledLabel = node("label", "field checkbox role-source-admin-enabled");

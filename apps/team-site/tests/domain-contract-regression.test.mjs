@@ -396,7 +396,7 @@ test("HTTP project creation failure leaves no half-created project", async () =>
     assert.ok(builtIns.teams.length > 0);
     assert.ok(builtIns.teams.every((team) => team.builtIn && !team.teamVersionId.startsWith("case:")));
     const storedNames = await readdir(projectsRoot);
-    assert.equal(storedNames.filter((entry) => entry !== ".site" && entry !== ".staging" && !entry.startsWith(".team-version-")).length, builtIns.teams.length);
+    assert.equal(storedNames.filter((entry) => !entry.startsWith(".") && entry !== "role-sources").length, builtIns.teams.length);
   } finally {
     server.kill();
     await new Promise((resolveExit) => server.once("exit", resolveExit));

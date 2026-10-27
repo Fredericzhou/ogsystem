@@ -6,7 +6,7 @@ import { computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "../i
 const packageBundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "分析师" } } } } };
 const digest = computeTeamPackageCoreDigest(packageBundle);
 
-function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynamicDigest = false, team = {}, siblingTeams = [], siblingPackages = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle), processIsAlive = () => true, initialBatch = null, onLockQueued } = {}) {
+function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynamicDigest = false, team = {}, siblingTeams = [], siblingPackages = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle), processIsAlive = () => true, initialBatch = null, onLockQueued, projectTeamDesign } = {}) {
   const records = new Map();
   const batches = new Map(initialBatch ? [["team-v1", initialBatch]] : []);
   const calls = [];
@@ -121,6 +121,7 @@ function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynami
       async readReleaseBaselineScenarios() { return []; },
       async saveReleaseBaselineScenarios() { return []; }
     },
+    projectTeamDesign,
     now: (() => { let tick = 0; return () => `2026-01-01T00:00:0${tick++}.000Z`; })()
   });
   return { useCases, records, calls, batches, withTeamVersionLock };
@@ -142,6 +143,28 @@ test("Studio Simulation creates its own owner record and stores completed state/
   assert.equal(calls[2][2].teamCoreDigest, digest);
   assert.deepEqual((await useCases.listTeamVersionSimulations("team-root", "team-v1")).simulations.map((item) => item.simulationId), ["sim-1"]);
   assert.equal((await useCases.getTeamVersionSimulationEvents("team-root", "team-v1", "sim-1")).events.length, 3);
+});
+
+test("Studio Simulation forwards canonical Graph Edge IDs and failed role diagnostics", async () => {
+  const { useCases, calls } = createHarness({
+    projectTeamDesign: async () => ({ viewModel: { edges: [
+      { id: "custom-flow-id", source: "dispatch", eventType: "WORK", target: "worker" }
+    ] } }),
+    runResult: {
+      status: "failed",
+      auditTrail: [{
+        roleId: "worker",
+        status: "failed",
+        failure: "Model call timed out",
+        errorEnvelope: { errorCode: "MODEL_TIMEOUT", message: "Model call timed out" }
+      }]
+    }
+  });
+  const result = await useCases.createSimulation("team-root", "team-v1", { prompt: "Run" });
+  assert.equal(calls[2][2].runtimeEdgeIdsByTransition[JSON.stringify(["dispatch", "WORK", "worker"])], "custom-flow-id");
+  const failure = result.events.find((event) => event.type === "role.failed");
+  assert.equal(failure.errorCode, "MODEL_TIMEOUT");
+  assert.equal(failure.errorEnvelope.message, "Model call timed out");
 });
 
 test("interactive Studio Simulation returns running immediately and persists role events incrementally", async () => {

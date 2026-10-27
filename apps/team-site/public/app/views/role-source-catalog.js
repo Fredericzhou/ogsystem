@@ -75,9 +75,10 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
   pageHeading?.classList.add("role-source-page-heading");
   const filters = element("div", "role-source-toolbar");
   const searchField = field(en ? "Search roles" : "搜索角色", "search", { type: "search", placeholder: en ? "Role name or description" : "按角色名称或说明搜索" });
+  const sourceSelectField = field(en ? "Role source" : "角色源", "source", { tag: "select" });
   const categorySelectField = field(en ? "Category" : "分类", "category", { tag: "select" });
   const languageSelectField = field(en ? "Language" : "语言", "language", { tag: "select" });
-  filters.append(searchField.label, categorySelectField.label, languageSelectField.label);
+  filters.append(searchField.label, sourceSelectField.label, categorySelectField.label, languageSelectField.label);
   const sourceStatus = element("div", "page-frame-actions role-source-actions");
   pageHeading?.append(sourceStatus, filters);
   const list = element("div", "role-source-list");
@@ -99,6 +100,12 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
   let sources = [];
   let selected = null;
   let detailRequest = 0;
+  const sourcePreferenceKey = "ogs.role-source-catalog.selected-source.v1";
+  let selectedSourceId = "agency-agents-cn";
+  try {
+    const savedSource = localStorage.getItem(sourcePreferenceKey);
+    if (savedSource !== null) selectedSourceId = savedSource;
+  } catch {}
   const roles = () => sources.flatMap((source) => (source.roles || []).map((role) => ({
     ...role,
     sourceId: source.sourceId,
@@ -107,16 +114,19 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
     sourceUpdatedAt: source.updatedAt
   })));
   const sourceFor = (sourceId) => sources.find((source) => source.sourceId === sourceId);
+  const activeSources = () => selectedSourceId ? sources.filter((source) => source.sourceId === selectedSourceId) : sources;
   const renderList = () => {
     const query = searchField.input.value.trim().toLocaleLowerCase();
     const visible = roles().filter((role) =>
+      (!selectedSourceId || role.sourceId === selectedSourceId) &&
       (!categorySelectField.input.value || role.category === categorySelectField.input.value) &&
       (!languageSelectField.input.value || (role.language || "und") === languageSelectField.input.value) &&
       (!query || [role.name, role.category, role.sourceName, role.language, role.description, role.path].some((value) => String(value || "").toLocaleLowerCase().includes(query)))
     );
+    const selectedSourceRoleCount = roles().filter((role) => !selectedSourceId || role.sourceId === selectedSourceId).length;
     list.replaceChildren();
     sourceStatus.replaceChildren();
-    for (const source of sources) {
+    for (const source of activeSources()) {
       const sourceSummary = element("div", "role-source-summary");
       sourceSummary.append(element("strong", "", source.name || source.sourceId));
       if (source.inventory?.completeness === "unverified" && (source.roles || []).length > 0) {
@@ -139,7 +149,7 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
       sourceStatus.append(sourceSummary);
     }
     if (!visible.length) {
-      const empty = !roles().length
+      const empty = !selectedSourceRoleCount
         ? (en ? "No role snapshot is available yet. The catalog will show roles after the background update completes." : "尚无可展示的角色快照；后台更新完成后，角色会显示在此处。")
         : (en ? "No matching roles." : "没有匹配的角色。");
       list.append(element("p", "empty-note role-source-empty", empty));
@@ -217,7 +227,9 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
       header.append(roleIcon(current));
       const title = element("div");
       title.append(element("span", "section-kicker", (source.name || sourceId) + " · " + (current.category || "general")));
-      title.append(element("h2", "", current.name || roleId));
+      const roleTitle = element("h2", "", current.name || roleId);
+      roleTitle.title = current.name || roleId;
+      title.append(roleTitle);
       header.append(title);
       detail.append(header);
       detail.append(element("p", "role-source-description", current.description || ""));
@@ -256,14 +268,27 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
       trialForm.append(element("p", "role-source-trial-meta", en ? "Platform default model · no tool access" : "平台默认模型 · 不授予工具权限"));
       const taskField = field(en ? "Task" : "任务", "task", { required: true, tag: "textarea", rows: 2, maxlength: 12000 });
       taskField.input.value = en
-        ? "Review the input and return practical recommendations with evidence and open questions."
-        : "请依据输入给出可执行建议，并列明依据与待确认事项。";
+        ? "Based on the context and requirements in the JSON input, propose an approach and list key risks."
+        : "请根据 JSON 输入中的背景和要求，提出执行方案并列出主要风险。";
+      const taskHint = element("small", "form-hint", en
+        ? "The task is the instruction. The JSON input below supplies its context, requirements, and references."
+        : "任务是给角色的具体指令；下方 JSON 提供完成任务所需的背景、要求和参考资料。");
+      taskField.label.append(taskHint);
       const inputField = field(en ? "Structured input (JSON object)" : "结构化输入（JSON 对象）", "input", { required: true, tag: "textarea", rows: 3 });
-      inputField.input.value = JSON.stringify({ context: en ? "Describe the situation" : "描述背景", requirements: [en ? "Goal" : "目标", en ? "Constraints" : "限制"], references: [] }, null, 2);
+      inputField.input.value = JSON.stringify({
+        context: en ? "Describe the situation, audience, or current state" : "描述背景、目标对象或当前情况",
+        requirements: en ? ["Desired outcome", "Constraints"] : ["期望结果", "限制条件"],
+        references: [{ title: en ? "Reference title" : "参考资料标题", content: en ? "Relevant excerpt, data, or URL" : "相关摘录、数据或链接" }]
+      }, null, 2);
       inputField.input.spellcheck = false;
+      inputField.input.setAttribute("aria-describedby", "role-source-trial-input-hint");
+      const inputHint = element("small", "form-hint", en
+        ? "Use context for background, requirements for goals or limits, and references for source material."
+        : "context 写背景，requirements 列目标或限制，references 放相关资料、数据或链接。");
+      inputHint.id = "role-source-trial-input-hint";
       const preferencesField = field(en ? "User preferences (optional)" : "用户偏好（可选）", "userPreferences", { tag: "textarea", rows: 1, maxlength: 2000 });
       preferencesField.input.placeholder = en ? "Example: concise, distinguish facts from assumptions" : "例如：简洁表达，区分事实与假设";
-      trialForm.append(taskField.label, inputField.label, preferencesField.label);
+      trialForm.append(taskField.label, inputField.label, inputHint, preferencesField.label);
       trialForm.append(element("p", "role-source-trial-output-hint", en
         ? "Expected output: { event, content, data? } · event: ROLE_TRIAL_COMPLETE"
         : "输出结构：{ event, content, data? } · event 固定为 ROLE_TRIAL_COMPLETE"));
@@ -318,9 +343,19 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
   const refresh = async () => {
     const payload = await request("/api/v1/studio/role-sources");
     sources = Array.isArray(payload.sources) ? payload.sources : [];
+    if (selectedSourceId && !sources.some((source) => source.sourceId === selectedSourceId)) {
+      selectedSourceId = sources.some((source) => source.sourceId === "agency-agents-cn")
+        ? "agency-agents-cn"
+        : (sources[0]?.sourceId || "");
+    }
+    sourceSelectField.input.replaceChildren(new Option(en ? "All sources" : "所有来源", ""));
+    sources.forEach((source) => sourceSelectField.input.add(new Option(source.name || source.sourceId, source.sourceId)));
+    sourceSelectField.input.value = selectedSourceId;
+    try { localStorage.setItem(sourcePreferenceKey, selectedSourceId); } catch {}
     const previousLanguage = languageSelectField.input.value;
-    const languages = Array.from(new Set(roles().map((role) => role.language || "und"))).sort();
-    const categories = Array.from(new Set(roles().map((role) => role.category || "uncategorized"))).sort();
+    const visibleRoles = roles().filter((role) => !selectedSourceId || role.sourceId === selectedSourceId);
+    const languages = Array.from(new Set(visibleRoles.map((role) => role.language || "und"))).sort();
+    const categories = Array.from(new Set(visibleRoles.map((role) => role.category || "uncategorized"))).sort();
     languageSelectField.input.replaceChildren(new Option(en ? "All languages" : "所有语言", ""));
     languages.forEach((language) => languageSelectField.input.add(new Option(language, language)));
     languageSelectField.input.value = previousLanguage;
@@ -343,6 +378,19 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
 
   if (catalogPoller) clearInterval(catalogPoller);
   searchField.input.addEventListener("input", renderList);
+  sourceSelectField.input.addEventListener("change", () => {
+    selectedSourceId = sourceSelectField.input.value;
+    try { localStorage.setItem(sourcePreferenceKey, selectedSourceId); } catch {}
+    categorySelectField.input.value = "";
+    languageSelectField.input.value = "";
+    if (selected && selectedSourceId && selected.sourceId !== selectedSourceId) {
+      selected = null;
+      detailRequest += 1;
+      detail.replaceChildren();
+      if (dialog.open) dialog.close();
+    }
+    void refresh().catch((error) => list.replaceChildren(element("p", "run-error", error.message)));
+  });
   categorySelectField.input.addEventListener("change", renderList);
   languageSelectField.input.addEventListener("change", renderList);
   closeDialog.addEventListener("click", () => dialog.close());

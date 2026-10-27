@@ -60,6 +60,10 @@ async function writeAgencyFixture(rootDir, files) {
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, content, "utf8");
   }
+  for (const args of [["init"], ["remote", "add", "origin", "https://example.invalid/agency-agents.git"], ["add", "."], ["-c", "user.name=OGSystem Test", "-c", "user.email=ogs-test@example.invalid", "commit", "-m", "fixture"]]) {
+    const result = await runCommand("git", args, { cwd: rootDir });
+    assert.equal(result.code, 0, result.stderr);
+  }
 }
 
 test("sync-agent-sources generates canonical agency roles and runtime can load them", async () => {

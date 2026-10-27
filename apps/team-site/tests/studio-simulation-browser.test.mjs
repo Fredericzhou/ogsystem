@@ -25,9 +25,14 @@ test("Studio browser submits a draft Simulation and reads persisted history, det
     async simulate(_team, { prompt, onRuntimeEvent }) {
       await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "__system_start__", toRoleId: "reviewer", eventType: "START", branchId: "reviewer:1" });
       await onRuntimeEvent?.({ type: "role.started", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1" });
+      await onRuntimeEvent?.({ type: "role_waiting", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", stage: "model_provider", elapsedMs: 40 });
+      await onRuntimeEvent?.({ type: "role_retry_scheduled", roleId: "reviewer", branchId: "reviewer:1", attempt: 2, maxAttempts: 3, errorCode: "MODEL_CHANNEL_UNAVAILABLE", backoffMs: 50 });
       await onRuntimeEvent?.({ type: "role.input_ready", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", inputContext: JSON.stringify({ task: prompt }) });
+      await onRuntimeEvent?.({ type: "join_quorum_reached", roleId: "reviewer", branchId: "reviewer:1", arrivedCount: 2, requiredCount: 2 });
+      await onRuntimeEvent?.({ type: "human_review_requested", roleId: "reviewer", branchId: "reviewer:1", reviewId: "review-1" });
       await new Promise((resolveWait) => setTimeout(resolveWait, 180));
       await onRuntimeEvent?.({ type: "audit", roleId: "reviewer", branchId: "reviewer:1", status: "ok", at: "2026-10-24T09:08:07.000Z", durationMs: 1, inputContext: JSON.stringify({ task: prompt }), stdoutPreview: "Mocked role output for " + prompt });
+      await onRuntimeEvent?.({ type: "role.completed", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", attempt: 2 });
       await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "reviewer", toRoleId: "__system_end__", eventType: "DONE", branchId: "reviewer:1" });
       return {
         status: "completed",
@@ -234,7 +239,12 @@ registerHooks({
     assert.match(transcriptText, /2026.*10.*24/);
     assert.match(transcriptText, /耗时 1 毫秒/);
     assert.match(transcriptText, /已完成/);
-    assert.match(transcriptText, /运行中/);
+    assert.match(transcriptText, /等待原因[\s\S]*模型服务/);
+    assert.match(transcriptText, /将重试（第 2\/3 次）/);
+    assert.match(transcriptText, /已满足汇聚条件/);
+    assert.match(transcriptText, /已提交人工审核/);
+    await page.locator("#project-graph-stage .studio-runtime-status-label").filter({ hasText: "已完成" }).first().waitFor();
+    assert.ok(await page.locator('#project-graph-stage .x6-node[aria-label*="已完成"]').count() > 0, "runtime node state is exposed through an accessible name");
     const simulationPostCount = simulationRequests.filter((request) => request.startsWith("POST ")).length;
     assert.equal(simulationPostCount, 2);
 

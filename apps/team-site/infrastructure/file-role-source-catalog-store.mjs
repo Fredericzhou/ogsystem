@@ -163,7 +163,7 @@ async function withSourceLock(sourceId, callback) {
   }
 }
 
-export function createFileRoleSourceCatalogStore({ root, adapters = {}, resolveHost = resolveHostOverHttps }) {
+export function createFileRoleSourceCatalogStore({ root, adapters = {}, defaultSources = [], resolveHost = resolveHostOverHttps }) {
   if (!root) throw new TypeError("Role source catalog root is required.");
   const catalogRoot = resolve(root);
   const configPath = join(catalogRoot, "sources.json");
@@ -180,7 +180,16 @@ export function createFileRoleSourceCatalogStore({ root, adapters = {}, resolveH
   async function readConfigs() {
     const result = await readJson(configPath, { version: 1, sources: [] });
     if (result.version !== 1 || !Array.isArray(result.sources)) throw new Error("ROLE_SOURCE_CONFIG_CORRUPT");
-    return result.sources;
+    const sources = [...result.sources];
+    let changed = false;
+    for (const source of defaultSources) {
+      if (!sources.some((configured) => configured.sourceId === source.sourceId)) {
+        sources.push(source);
+        changed = true;
+      }
+    }
+    if (changed) await atomicJson(configPath, { version: 1, sources });
+    return sources;
   }
 
   async function getConfig(id) {

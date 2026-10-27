@@ -192,10 +192,11 @@ const collaborationProjectUseCases = createCollaborationProjectUseCases({
   computeProjectDefinitionDigest
 });
 const taskExecutionReadiness = createRuntimeTaskExecutionReadiness();
+const teamDesignProjector = createVisualizerProjectDesignProjector();
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
   teamStore: { getTeamVersion: getProject },
-  runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor({ getDefaultModelSelection: getPlatformDefaultModelSelection }) },
+  runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor({ getDefaultModelSelection: getPlatformDefaultModelSelection, projectTeamDesign: (team) => teamDesignProjector.project(team) }) },
   readiness: taskExecutionReadiness,
   identifiers: createTaskExecutionIdentifiers(),
   evaluateResult: evaluateProjectRunResult
@@ -315,6 +316,7 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
   simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection }),
   identifiers: { simulationId: randomUUID },
   baselineStore: teamDesignAssetStore,
+  projectTeamDesign: (team) => teamDesignProjector.project(team),
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
   processId: process.pid,
   hostName: hostname(),
@@ -330,7 +332,7 @@ const teamDesignUseCases = createTeamDesignUseCases({
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
   teamMetadataStore: { saveTeamMetadata: saveProjectMetadata },
   designStore: createVisualizerProjectDesignStore({ getRuntimeModelConfig: getPlatformDefaultModelSelection }),
-  designProjector: createVisualizerProjectDesignProjector(),
+  designProjector: teamDesignProjector,
   designSerializer: { serialize: serializeAuthoringToMermaid },
   designValidator: projectDesignValidator,
   designAssetStore: teamDesignAssetStore,
@@ -344,6 +346,7 @@ const teamDesignUseCases = createTeamDesignUseCases({
   }
 });
 const agencyNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
+const agencyCnNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
 const roleSourceAdapters = {
   "agency-agents-markdown": {
     version: "1",
@@ -353,11 +356,29 @@ const roleSourceAdapters = {
       const segments = path.split("/");
       return segments.length > 1 && !agencyNonRoleDirectories.has(segments[0].toLowerCase());
     }
+  },
+  "agency-agents-cn-markdown": {
+    version: "1",
+    parseMarkdownRole: (markdown, options = {}) => parseMarkdownRole(markdown, { ...options, defaultLanguage: "zh-CN" }),
+    convertMarkdownRole,
+    shouldIndex: (path) => {
+      const segments = path.split("/");
+      return segments.length > 1 && !agencyCnNonRoleDirectories.has(segments[0].toLowerCase());
+    }
   }
 };
 const roleSourceCatalogStore = createFileRoleSourceCatalogStore({
   root: join(platformConfigRoot, "role-sources"),
-  adapters: roleSourceAdapters
+  adapters: roleSourceAdapters,
+  defaultSources: [{
+    sourceId: "agency-agents-cn",
+    name: "Agency Agents CN",
+    gitUrl: "https://github.com/Aura-huang/agency-agents-cn.git",
+    branch: "main",
+    adapterId: "agency-agents-cn-markdown",
+    adapterVersion: "1",
+    enabled: true
+  }]
 });
 const roleSourceCatalogUseCases = createRoleSourceCatalogUseCases({
   store: roleSourceCatalogStore,

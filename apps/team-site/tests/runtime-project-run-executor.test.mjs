@@ -5,8 +5,13 @@ import { createRuntimeProjectRunExecutor } from "../infrastructure/runtime-proje
 test("flow previews do not wait for platform model discovery", async () => {
   const calls = [];
   let modelDiscoveryCalls = 0;
+  let projectedTeam;
   const executor = createRuntimeProjectRunExecutor({
     execute: async (args) => { calls.push(args); return { state: { status: "completed" } }; },
+    projectTeamDesign: async (team) => {
+      projectedTeam = team;
+      return { viewModel: { edges: [{ id: "custom-flow-id", source: "dispatch", eventType: "WORK", target: "worker" }] } };
+    },
     getDefaultModelSelection: async () => {
       modelDiscoveryCalls += 1;
       return { modelSelectionDefaults: { backend: "test", modelId: "model-1" } };
@@ -20,6 +25,8 @@ test("flow previews do not wait for platform model discovery", async () => {
   assert.equal(calls[0].dryRun, true);
   assert.equal(calls[0].modelSelectionDefaults, undefined);
   assert.equal(calls[0].assetSource, "team-workdir");
+  assert.equal(projectedTeam.workdir, "team-workdir");
+  assert.equal(calls[0].runtimeEdgeIdsByTransition[JSON.stringify(["dispatch", "WORK", "worker"])], "custom-flow-id");
   assert.equal(calls[0].workdir, "project-workdir");
   assert.equal(calls[0].runEvidenceRoot, "project-workdir");
 });

@@ -5,6 +5,14 @@ import { join, resolve } from "node:path";
 import { createFilesystemRuntimeServices, runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
 
+const TEAM_RUN_EVENT_TYPES = new Set([
+  "role.started", "role.input_ready", "role_waiting", "role_retry_scheduled", "flow.activated",
+  "join_activated", "join_quorum_reached", "join_late_arrival_ignored",
+  "human_review_requested", "human_review_approved", "human_review_rework_requested",
+  "human_review_paused", "human_review_terminated", "human_review_expired",
+  "run_waiting", "run_stopping", "run_stopped", "run_terminated"
+]);
+
 function normalizeRuntimeStatus(status) {
   const value = String(status || "").toLowerCase();
   if (value === "done" || value === "ok") return "completed";
@@ -14,7 +22,7 @@ function normalizeRuntimeStatus(status) {
 
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", onRuntimeEvent }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent }) {
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
       const runId = `simulation-${randomUUID()}`;
       try {
@@ -35,6 +43,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
           modelCatalogModels: modelConfig?.modelCatalogModels,
           modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
+          runtimeEdgeIdsByTransition,
           logRun: false,
           runtimeServicesFactory: (runtimeArgs) => {
             const services = createFilesystemRuntimeServices({
@@ -50,7 +59,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
                 ...services.audit,
                 append: async (event) => {
                   await services.audit.append(event);
-                  if (event.type === "audit" || ["role.started", "role.input_ready", "flow.activated"].includes(event.type)) {
+                  if (event.type === "audit" || TEAM_RUN_EVENT_TYPES.has(event.type)) {
                     await onRuntimeEvent(event);
                   }
                 }
@@ -67,7 +76,14 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           finalOutputRoleOrder: result.finalOutputRoleOrder || [],
           stages: Array.isArray(result.stages) ? result.stages : [],
           auditTrail: Array.isArray(result.auditTrail) ? result.auditTrail.map((item) => ({
+            at: item.at,
             roleId: item.roleId,
+            branchId: item.branchId,
+            lineageId: item.lineageId,
+            loopIteration: item.loopIteration,
+            executionId: item.executionId,
+            attempt: item.attempt,
+            maxAttempts: item.maxAttempts,
             selectedEvent: item.selectedEvent,
             status: normalizeRuntimeStatus(item.status),
             durationMs: item.durationMs,

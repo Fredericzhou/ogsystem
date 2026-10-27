@@ -110,7 +110,7 @@ export function parseMarkdownRole(sourceText, options = {}) {
   const color = assertStringMetadata(metadata, "color", 32);
   const emoji = assertStringMetadata(metadata, "emoji", 32);
   const vibe = assertStringMetadata(metadata, "vibe", 300);
-  const language = assertStringMetadata(metadata, "language", 35) ?? "und";
+  const language = assertStringMetadata(metadata, "language", 35) ?? options.defaultLanguage ?? "und";
 
   return {
     name: name.trim(),
@@ -166,7 +166,10 @@ export function convertMarkdownRole(args) {
     fail("AGENT_SOURCE_INVALID", "adapterId and adapterVersion are required");
   }
 
-  const parsed = parseMarkdownRole(sourceText, { category: args.category });
+  const parsed = parseMarkdownRole(sourceText, {
+    category: args.category,
+    ...(args.adapterId === "agency-agents-cn-markdown" ? { defaultLanguage: "zh-CN" } : {})
+  });
   const roleId = args.roleId ?? slugifyTeamRoleName(parsed.name, sourcePath);
   if (!TEAM_ROLE_ID.test(roleId)) fail("TEAM_ROLE_ID_INVALID", `Invalid Team role ID '${roleId}'`);
 

@@ -5,7 +5,7 @@
 
 ## 目标与边界
 
-建立一条从独立 Git 角色源到可运行 TeamVersion 的受控流程：
+建立一条从独立 Git 角色源到可运行 TeamVersion 的受控流程。当前注册 Agency Agents 英文源与 Aura-huang/agency-agents-cn 中文源；角色仓库默认筛选中文源，用户可切换已配置来源或查看全部来源：
 
 ```text
 独立 Git 角色源
@@ -108,7 +108,7 @@ Git checkout 放在 Team Site 自身数据目录，和 OGSystem 内核仓库、�
 
 ## Markdown 适配规则
 
-Agency Agents Markdown 适配器的输入是受限 Markdown 数据格式，不是可执行 Agent 配置。
+Agency Agents Markdown 适配器的输入是受限 Markdown 数据格式，不是可执行 Agent 配置。CN 源使用相同的安全 front matter 解析和 OG 角色转换规则；缺少 `language` 时标记为 `zh-CN`，并通过单独的来源 ID、适配器 ID 和快照版本保持来源身份隔离。
 
 1. 解析开头的 YAML front matter，使用安全 YAML 解析器，不允许自定义标签、对象实例化或执行表达式。front matter 缺失、重复键、格式错误或类型不符合约定时，索引条目标记为不支持/解析错误并保留可诊断原因，不猜测字段。
 2. `name`、`description`、`color`、`emoji`、`vibe` 等识别出的元数据单独存放。允许未知的纯标量元数据留在原始来源快照中；只将有明确定义的字段映射到展示元数据。元数据不得重复拼入角色指令正文。

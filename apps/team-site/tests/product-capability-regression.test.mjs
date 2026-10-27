@@ -419,6 +419,61 @@ test("Studio Simulation maps Runtime done and ok into canonical completion evide
   }
 });
 
+test("Team simulation forwards the supported runtime progress events", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-progress-events-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?capability-simulation-events=${Date.now()}`));
+  const { createRuntimeTeamSimulation } = await import("../infrastructure/runtime-team-simulation.mjs");
+  try {
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
+    const bundle = await createTeamPackageOperations(store).exportTeamPackage(team.projectId);
+    const observed = [];
+    let receivedEdgeIds;
+    const runner = createRuntimeTeamSimulation({
+      run: async (input) => {
+        receivedEdgeIds = input.runtimeEdgeIdsByTransition;
+        const runDir = join(projectsRoot, "temporary-run");
+        const context = {
+          runDir,
+          controlDir: join(runDir, "control"),
+          checkpointsDir: join(runDir, "checkpoints"),
+          eventsPath: join(runDir, "events.jsonl"),
+          engineLogPath: join(runDir, "engine.ndjson"),
+          roleLogsDir: join(runDir, "roles"),
+          redaction: { enabled: false }
+        };
+        const services = input.runtimeServicesFactory({
+          runContext: context,
+          initialState: { stateVersion: 0, lastCheckpointSequence: 0 },
+          plan: { irDigest: "ir", planFingerprint: "plan" }
+        });
+        for (const event of [
+          { type: "role_waiting", roleId: "reviewer" },
+          { type: "role_retry_scheduled", roleId: "reviewer", attempt: 2 },
+          { type: "join_quorum_reached", roleId: "reviewer" },
+          { type: "human_review_requested", roleId: "reviewer" },
+          { type: "run_waiting", reason: "review" },
+          { type: "debug.internal", payload: "not for the Team view" }
+        ]) await services.audit.append(event);
+        return { status: "done", auditTrail: [], finalOutputsByRoleId: {}, finalOutputRoleOrder: [] };
+      }
+    });
+    await runner.simulate(team, {
+      prompt: "Observe a Team run.",
+      teamPackageBundle: bundle,
+      runtimeEdgeIdsByTransition: { [JSON.stringify(["dispatch", "WORK", "worker"])]: "custom-flow-id" },
+      onRuntimeEvent: async (event) => observed.push(event)
+    });
+
+    assert.equal(receivedEdgeIds[JSON.stringify(["dispatch", "WORK", "worker"])], "custom-flow-id");
+    assert.deepEqual(observed.map((event) => event.type), [
+      "role_waiting", "role_retry_scheduled", "join_quorum_reached", "human_review_requested", "run_waiting"
+    ]);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("team simulation removes its temporary workspace when the runtime rejects", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-failure-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
