@@ -43,6 +43,14 @@ export type RunSummaryProjection = {
   lastReviewDecision?: HumanReviewDecision;
   lastReviewDecidedAt?: string;
   reviewRoundCount: number;
+  committedPromptCharsByCallId?: Record<string, number>;
+  legacyBaseCommittedChars?: number;
+  totalProjectedInputChars?: number;
+  totalRenderedPromptChars?: number;
+  totalOutputChars?: number;
+  totalEstimatedInputTokens?: number;
+  totalEstimatedOutputTokens?: number;
+  fallbackActivationCount?: number;
   updatedAt: string;
 };
 
@@ -233,6 +241,14 @@ export function buildRunSummaryProjection(args: {
     okCount: summary.okCount,
     failedCount: summary.failedCount,
     noopCount: summary.noopCount,
+    committedPromptCharsByCallId: summary.committedPromptCharsByCallId ?? {},
+    legacyBaseCommittedChars: summary.legacyBaseCommittedChars ?? 0,
+    totalProjectedInputChars: summary.totalProjectedInputChars ?? 0,
+    totalRenderedPromptChars: summary.totalRenderedPromptChars ?? 0,
+    totalOutputChars: summary.totalOutputChars ?? 0,
+    totalEstimatedInputTokens: summary.totalEstimatedInputTokens ?? 0,
+    totalEstimatedOutputTokens: summary.totalEstimatedOutputTokens ?? 0,
+    fallbackActivationCount: summary.fallbackActivationCount ?? 0,
     pendingReviewCount: countPendingHumanReviews(args.state),
     hasWaitingHumanReview: hasWaitingHumanReview(args.state),
     latestPendingReviewId: reviewFields.latestPendingReviewId,

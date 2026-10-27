@@ -13,6 +13,7 @@ import { loadRolePackage } from "../dist/runtime/role-repo.js";
 import { initializeRunContext } from "../dist/runtime/run-artifacts.js";
 import { loadFlowContractPlan } from "../dist/runtime/flow-contract.js";
 import { executeRoleNode } from "../dist/runtime/role-executor.js";
+import { OpencodeExecutionError } from "../dist/runtime/opencode-executor.js";
 import { buildProjectedContext } from "../dist/runtime/role-input-projector.js";
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
@@ -468,9 +469,10 @@ async function prepareRoleExecutorFixture(args) {
   const resolvedModels = new Map(args.roles
     .filter((role) => !system.executionBinding[role.roleId])
     .map((role) => [role.roleId, {
-      backend: "opencode",
-      modelId: "balanced-gpt52",
-      modelRef: "opencode/balanced-gpt52",
+      backend: role.backend ?? "opencode",
+      modelId: role.modelId ?? "balanced-gpt52",
+      modelRef: `${role.backend ?? "opencode"}/${role.modelId ?? "balanced-gpt52"}`,
+      ...(role.fallbackModelRef ? { fallbackModelRef: role.fallbackModelRef } : {}),
       bindingSource: "selection"
     }]));
   const plan = createExecutionPlan(system, resolvedModels);
@@ -1430,4 +1432,201 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
   assert.match(promptText, /loop_iteration: 1 \(the first activation is 1; re-entry increments this value\)/);
   assert.match(promptText, /\[REDACTED\]/);
   assert.match(JSON.stringify(audit), /\[REDACTED\]/);
+});
+
+test("executeRoleNode falls back once for retryable model channel errors and meters both calls", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-model-fallback-",
+    prompt: "fallback prompt",
+    systemSource: `flowchart TD
+%% system.id=role.model.fallback
+%% system.version=1.0.0
+%% law.global=law.console.base
+start[开始] -->|START| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| end[结束]
+`,
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], fallbackModelRef: "provider/fallback" }]
+  });
+  assert.equal(getExecutionPlanNode(fixture.plan, "reviewer").binding.fallbackModelRef, "provider/fallback");
+  const state = createInitialState(fixture.plan, "fallback prompt");
+  const requests = [];
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["reviewer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false, isolateExternalData: true },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute(request) {
+        requests.push(request);
+        if (requests.length === 1) throw new OpencodeExecutionError("HTTP 503 upstream unavailable");
+        return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "fallback worked" }), stderr: "", args: [] };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok", JSON.stringify({ error: result.error, requests: requests.length, calls: result.audit.promptCalls }));
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].binding.modelId, "balanced-gpt52");
+  assert.equal(requests[1].binding.modelId, "fallback");
+  assert.deepEqual(result.audit.promptCalls.map((call) => call.phase), ["primary", "fallback"]);
+  assert.equal(result.audit.fallbackUsed, true);
+  assert.equal(result.audit.primaryModelId, "balanced-gpt52");
+  assert.equal(result.audit.renderedPromptChars, result.audit.promptCalls.reduce((sum, call) => sum + call.renderedPromptChars, 0));
+});
+
+test("executeRoleNode switches to the configured fallback backend", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-cross-backend-fallback-",
+    prompt: "cross backend fallback prompt",
+    systemSource: `flowchart TD
+%% system.id=role.model.cross-backend-fallback
+%% system.version=1.0.0
+%% law.global=law.console.base
+start[开始] -->|START| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| end[结束]
+`,
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/openai/gpt-5.4" }]
+  });
+  const state = createInitialState(fixture.plan, "cross backend fallback prompt");
+  const requests = [];
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["reviewer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false, isolateExternalData: true },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute(request) {
+        requests.push(request);
+        if (requests.length === 1) throw new OpencodeExecutionError("HTTP 503 upstream unavailable");
+        return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "fallback worked" }), stderr: "", args: [] };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok", JSON.stringify({ error: result.error, requests: requests.length }));
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].binding.backend, "codex");
+  assert.equal(requests[1].binding.backend, "opencode");
+  assert.equal(requests[1].binding.modelId, "gpt-5.4");
+  assert.equal(requests[1].binding.modelRef, "openai/gpt-5.4");
+});
+
+test("executeRoleNode separately meters correction prompts and blocks them at the run budget", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-correction-budget-",
+    prompt: "correction prompt",
+    systemSource: `flowchart TD
+%% system.id=role.model.correction-budget
+%% system.version=1.0.0
+%% law.global=law.console.base
+start[开始] -->|START| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| end[结束]
+`,
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
+  });
+  const state = createInitialState(fixture.plan, "correction prompt");
+  let primaryPrompt;
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["reviewer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false, isolateExternalData: true },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      supportsPromptCallMetering: true,
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute(request) {
+        primaryPrompt = request.prompt;
+        const primaryOutput = JSON.stringify({ event: "DONE", content: "primary" });
+        await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "before", prompt: request.prompt });
+        await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "after", prompt: request.prompt, output: primaryOutput });
+        fixture.runContext.promptBudgetLedger.maxTotalPromptCharsPerRun = request.prompt.length;
+        const correctionPrompt = `${request.prompt}\nReturn exactly one JSON object.`;
+        await request.onPromptCall({ phase: "repair", ordinal: 1, stage: "before", prompt: correctionPrompt });
+        throw new Error("correction should be rejected by budget gate");
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "RUN_PROMPT_BUDGET_EXCEEDED");
+  assert.deepEqual(result.audit.promptCalls.map((call) => [call.phase, call.callId]), [["primary", `${result.executionId}:primary:1`]]);
+  assert.equal(result.audit.renderedPromptChars, primaryPrompt.length);
+  assert.equal(fixture.runContext.promptBudgetLedger.reservedChars, 0);
+});
+
+test("executeRoleNode records a successful internal correction as its own call", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-correction-meter-",
+    prompt: "correction prompt",
+    systemSource: `flowchart TD
+%% system.id=role.model.correction-meter
+%% system.version=1.0.0
+%% law.global=law.console.base
+start[开始] -->|START| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| end[结束]
+`,
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
+  });
+  const state = createInitialState(fixture.plan, "correction prompt");
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["reviewer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false, isolateExternalData: true },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      supportsPromptCallMetering: true,
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute(request) {
+        const output = JSON.stringify({ event: "DONE", content: "corrected" });
+        const correctionPrompt = `${request.prompt}\nReturn exactly one JSON object.`;
+        await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "before", prompt: request.prompt });
+        await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "after", prompt: request.prompt, output });
+        await request.onPromptCall({ phase: "repair", ordinal: 1, stage: "before", prompt: correctionPrompt });
+        await request.onPromptCall({ phase: "repair", ordinal: 1, stage: "after", prompt: correctionPrompt, output });
+        return { exitCode: 0, stdout: output, stderr: "", args: [] };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok", result.status === "failed" ? result.error : "");
+  assert.deepEqual(result.audit.promptCalls.map((call) => [call.phase, call.callId]), [
+    ["primary", `${result.executionId}:primary:1`],
+    ["repair", `${result.executionId}:repair:1`]
+  ]);
+  assert.equal(result.audit.renderedPromptChars, result.audit.promptCalls.reduce((sum, call) => sum + call.renderedPromptChars, 0));
+  assert.equal(fixture.runContext.promptBudgetLedger.committedChars, result.audit.renderedPromptChars);
 });

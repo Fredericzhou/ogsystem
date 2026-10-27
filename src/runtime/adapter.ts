@@ -154,6 +154,7 @@ export async function runSystemWithAdapter(args: {
   let result: AdapterRunResult | undefined;
   let setup: RuntimeAdapterSetup | undefined;
   let releaseProjectRunLock: (() => Promise<void>) | undefined;
+  let releaseRuntimeRunLock: (() => Promise<void>) | undefined;
 
   try {
     try {
@@ -175,8 +176,11 @@ export async function runSystemWithAdapter(args: {
         runKind: args.runKind,
         ...(preparedRunId ? { runId: preparedRunId } : {})
       });
-      trace("setup:complete");
       runContextForCleanup = setup.runContext;
+      // Serialize every caller that can mutate this Run's prompt ledger, including local and Studio runs.
+      const runtimeLock = await acquireActiveRunLock(setup.runContext.runDir, setup.runContext.runId);
+      releaseRuntimeRunLock = runtimeLock.release;
+      trace("setup:complete");
       if (args.resumeRunDir && (args.enforceTerminalResumeGate === true || projectTaskRun)) {
         const resumeState = await filesystemRunStore.loadResumeState({ runDir: setup.runContext.runDir });
         assertResumeAllowed({ runDir: setup.runContext.runDir, state: resumeState });
@@ -407,6 +411,24 @@ export async function runSystemWithAdapter(args: {
       }
     }
   } finally {
+    if (releaseRuntimeRunLock) {
+      try {
+        await releaseRuntimeRunLock();
+      } catch (error) {
+        if (!executionError) {
+          executionError = createRuntimeError(
+            normalizeRuntimeError(error, {
+              errorCode: "RUNTIME_RUN_LOCK_RELEASE_FAILED",
+              errorCategory: "state",
+              message: error instanceof Error ? error.message : String(error),
+              retryable: false,
+              stage: "resume",
+              runId: runContextForCleanup?.runId
+            })
+          );
+        }
+      }
+    }
     if (runContextForCleanup?.releaseResumeLock) {
       try {
         await runContextForCleanup.releaseResumeLock();

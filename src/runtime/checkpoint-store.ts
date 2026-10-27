@@ -2,8 +2,10 @@
 import {
   loadCommittedRoleExecutionOutcomes,
   loadPendingRuntimeCheckpoints,
+  markRoleExecutionOutcomeSuperseded,
   markRoleExecutionOutcomeReconciled,
-  persistRuntimeCheckpoint
+  persistRuntimeCheckpoint,
+  updateRoleExecutionOutcomeAudit
 } from "./run-artifacts.js";
 
 export type CheckpointStore = {
@@ -11,11 +13,15 @@ export type CheckpointStore = {
   loadPending: typeof loadPendingRuntimeCheckpoints;
   loadCommittedOutcomes: typeof loadCommittedRoleExecutionOutcomes;
   markOutcomeReconciled: typeof markRoleExecutionOutcomeReconciled;
+  markOutcomeSuperseded: typeof markRoleExecutionOutcomeSuperseded;
+  updateOutcomeAudit: typeof updateRoleExecutionOutcomeAudit;
 };
 
 export const filesystemCheckpointStore: CheckpointStore = {
   persist: persistRuntimeCheckpoint,
   loadPending: loadPendingRuntimeCheckpoints,
   loadCommittedOutcomes: loadCommittedRoleExecutionOutcomes,
-  markOutcomeReconciled: markRoleExecutionOutcomeReconciled
+  markOutcomeReconciled: markRoleExecutionOutcomeReconciled,
+  markOutcomeSuperseded: markRoleExecutionOutcomeSuperseded,
+  updateOutcomeAudit: updateRoleExecutionOutcomeAudit
 };

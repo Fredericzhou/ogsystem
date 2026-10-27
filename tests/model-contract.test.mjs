@@ -162,6 +162,17 @@ test("per-role model selection overrides the project default", () => {
   assert.equal(result.resolvedByRoleId.has("label"), false);
 });
 
+test("per-role model selection preserves an optional fallback model reference", () => {
+  const result = resolveModelSelectionForSystem({
+    system: system(["worker"]),
+    selection: {
+      configVersion: "2",
+      roles: { worker: { backend: "opencode", modelId: "provider/primary", fallbackModelRef: "provider/fallback" } }
+    }
+  });
+  assert.equal(result.resolvedByRoleId.get("worker").fallbackModelRef, "provider/fallback");
+});
+
 test("platform model defaults fill unbound roles without overriding project or role selections", () => {
   const selection = withDefaultModelSelection({
     configVersion: "2",

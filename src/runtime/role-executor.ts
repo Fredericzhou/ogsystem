@@ -30,9 +30,11 @@ import {
 import { filesystemArtifactStore } from "./artifact-store.js";
 import {
   renderRolePrompt,
+  estimateTokenCount,
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import { commitPromptBudget, reservePromptBudget } from "./prompt-budget.js";
 import { evaluateCondition } from "./condition-ast.js";
 import { applySemanticBusinessState } from "./semantic-state.js";
 import {
@@ -82,7 +84,8 @@ import type {
   RuntimeErrorEnvelope,
   RunContext,
   StoredRoleResult,
-  UserProfile
+  UserProfile,
+  PromptCallMeterRecord
 } from "./types.js";
 
 export type RoleExecutorResult =
@@ -106,6 +109,13 @@ export type RoleExecutorResult =
     };
 
 const DEFAULT_ROLE_WAIT_HEARTBEAT_MS = 15000;
+
+export function isRetryableModelChannelError(error: unknown): boolean {
+  if (!(error instanceof OpencodeExecutionError)) return false;
+  const message = [error.message, error.details?.stderr ?? ""].join("\n");
+  if (/\b(?:401|403)\b|unauthori[sz]ed|forbidden|api\s*key|model not found|configuration/i.test(message)) return false;
+  return error.details?.timedOut === true || /\b429\b|\b502\b|\b503\b|\b504\b|rate limit|temporarily unavailable|service unavailable|econnreset|etimedout|socket hang up|connection (?:reset|refused|closed)/i.test(message);
+}
 
 function validateSemanticRoleEvent(args: {
   plan: ExecutionPlan;
@@ -469,6 +479,7 @@ export async function executeRoleNode(args: {
       message: error
     });
     const audit = createAuditRecord({
+      executionId: execution.executionId,
       roleId: args.roleId,
       branchId,
       joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration, currentBranch.lineageId) : undefined,
@@ -512,6 +523,7 @@ export async function executeRoleNode(args: {
       message: error
     });
     const audit = createAuditRecord({
+      executionId: execution.executionId,
       roleId: args.roleId,
       branchId,
       loopIteration,
@@ -569,6 +581,12 @@ export async function executeRoleNode(args: {
   let promptInput!: RolePromptInput;
   let inputContextForAudit: string | undefined;
   let prompt = "";
+  const promptCalls: PromptCallMeterRecord[] = [];
+  let projectedInputChars = 0;
+  let renderedPromptChars = 0;
+  let outputChars = 0;
+  let fallbackUsed = false;
+  let primaryModelId: string | undefined;
   const logger = args.logger ?? createRunConsoleLogger(false);
 
   try {
@@ -593,6 +611,7 @@ export async function executeRoleNode(args: {
       userProfile: args.userProfile
     });
     inputContextForAudit = sanitizeRoleInputContext(promptInput.input);
+    projectedInputChars = promptInput.input.length;
     await args.auditAppend?.({
       type: "role.input_ready",
       at: new Date().toISOString(),
@@ -657,7 +676,8 @@ export async function executeRoleNode(args: {
     prompt = [renderRolePrompt({
       promptTemplate: rolePackage.promptTemplate,
       agent: rolePackage.agent,
-      values: promptInput
+      values: promptInput,
+      isolateExternalData: args.effectiveLaw.isolateExternalData
     }), "Runtime execution context:", `loop_iteration: ${loopIteration} (the first activation is 1; re-entry increments this value).`].join("\n\n");
 
     resolvedBinding = resolveExecutionBinding({
@@ -730,6 +750,7 @@ export async function executeRoleNode(args: {
         eventType: selectedEvent
       });
       const audit = createAuditRecord({
+        executionId: execution.executionId,
         roleId: args.roleId,
         branchId,
         loopIteration,
@@ -740,7 +761,8 @@ export async function executeRoleNode(args: {
         nextRoleId:
           !selectedToRoleId || selectedToRoleId === SYSTEM_END_ROLE_ID ? undefined : selectedToRoleId,
         status: "noop",
-        compilerDigest
+        compilerDigest,
+        externalDataIsolated: args.effectiveLaw.isolateExternalData
       });
       await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
       const result: PersistedRoleExecutorResult = {
@@ -780,28 +802,113 @@ export async function executeRoleNode(args: {
       auditAppend: args.auditAppend
     });
     let executionResult;
+    const invokeMetered = async (binding: NonNullable<ResolvedExecutionBinding["binding"]>, phase: "primary" | "fallback") => {
+      const reportsPromptCalls = binding.kind === "model" && args.executor.supportsPromptCallMetering === true;
+      const recordCall = async (callId: string, callPhase: PromptCallMeterRecord["phase"], callPrompt: string, callOutput: string) => {
+        const meter: PromptCallMeterRecord = {
+          callId,
+          executionId: execution.executionId,
+          phase: callPhase,
+          ...(binding.kind === "model" ? { modelId: binding.modelId } : {}),
+          projectedInputChars,
+          renderedPromptChars: callPrompt.length,
+          outputChars: callOutput.length,
+          estimatedInputTokens: estimateTokenCount(callPrompt),
+          estimatedOutputTokens: estimateTokenCount(callOutput)
+        };
+        promptCalls.push(meter);
+        renderedPromptChars += meter.renderedPromptChars;
+        outputChars += meter.outputChars;
+      };
+      const onPromptCall = reportsPromptCalls ? async (event: {
+        phase: PromptCallMeterRecord["phase"];
+        ordinal: number;
+        stage: "before" | "after";
+        prompt: string;
+        output?: string;
+        outputChars?: number;
+      }) => {
+        const callId = `${execution.executionId}:${event.phase}:${event.ordinal}`;
+        if (event.stage === "before") {
+          await reservePromptBudget({
+            context: args.runContext,
+            callId,
+            renderedPromptChars: event.prompt.length,
+            maxPromptCharsPerRole: args.effectiveLaw.maxPromptCharsPerRole
+          });
+          return;
+        }
+        await commitPromptBudget({ context: args.runContext, callId, actualRenderedChars: event.prompt.length });
+        await recordCall(callId, event.phase, event.prompt, event.output ?? "");
+      } : undefined;
+      const callId = `${execution.executionId}:${phase}:1`;
+      if (!reportsPromptCalls) {
+        await reservePromptBudget({
+          context: args.runContext,
+          callId,
+          renderedPromptChars: prompt.length,
+          maxPromptCharsPerRole: args.effectiveLaw.maxPromptCharsPerRole
+        });
+      }
+      let result: Awaited<ReturnType<Executor["execute"]>> | undefined;
+      let invocationError: unknown;
+      try {
+        result = await args.executor.execute({
+          roleId: args.roleId,
+          sessionKey,
+          prompt,
+          schema: rolePackage.outputSchema,
+          binding,
+          workdir: resolvedBinding!.workdir,
+          directory: args.workdir,
+          commandBaseDir: resolvedBinding!.commandBaseDir,
+          env: binding.kind === "model"
+            ? { ...resolvedBinding!.env, OGSYSTEM_MODEL_ID: binding.modelId }
+            : resolvedBinding!.env,
+          timeoutMs: resolvedBinding!.timeoutMs,
+          maxOutputBytes: resolvedBinding!.maxOutputBytes,
+          signal: args.signal,
+          dryRunOutputEvent: pickDryRunEvent({ node: args.node, branch: currentBranch, state: args.state, plan: args.plan }),
+          sessionId: existingSession?.sessionId,
+          ...(reportsPromptCalls ? { promptCallPhase: phase, onPromptCall } : {})
+        });
+      } catch (error) {
+        invocationError = error;
+      }
+      if (!reportsPromptCalls) {
+        const stdout = result?.stdout ?? (invocationError instanceof OpencodeExecutionError ? invocationError.details?.stdout : undefined) ?? "";
+        await commitPromptBudget({ context: args.runContext, callId, actualRenderedChars: prompt.length });
+        await recordCall(callId, phase, prompt, stdout);
+      }
+      if (invocationError) throw invocationError;
+      return result!;
+    };
     try {
-      executionResult = await args.executor.execute({
-        roleId: args.roleId,
-        sessionKey,
-        prompt,
-        schema: rolePackage.outputSchema,
-        binding: resolvedBinding.binding,
-        workdir: resolvedBinding.workdir,
-        directory: args.workdir,
-        commandBaseDir: resolvedBinding.commandBaseDir,
-        env: resolvedBinding.env,
-        timeoutMs: resolvedBinding.timeoutMs,
-        maxOutputBytes: resolvedBinding.maxOutputBytes,
-        signal: args.signal,
-        dryRunOutputEvent: pickDryRunEvent({
-          node: args.node,
-          branch: currentBranch,
-          state: args.state,
-          plan: args.plan
-        }),
-        sessionId: existingSession?.sessionId
-      });
+      executionResult = await invokeMetered(resolvedBinding.binding, "primary");
+    } catch (error) {
+      const binding = resolvedBinding.binding;
+      if (binding.kind !== "model" || !binding.fallbackModelRef || !isRetryableModelChannelError(error)) throw error;
+      fallbackUsed = true;
+      primaryModelId = binding.modelId;
+      const fallbackSeparator = binding.fallbackModelRef.indexOf("/");
+      const fallbackBackend = fallbackSeparator > 0
+        ? binding.fallbackModelRef.slice(0, fallbackSeparator)
+        : undefined;
+      const fallbackHasBackend = fallbackBackend === "opencode" || fallbackBackend === "codex";
+      const fallbackModelRef = fallbackHasBackend
+        ? binding.fallbackModelRef.slice(fallbackSeparator + 1)
+        : binding.fallbackModelRef;
+      const fallbackModelId = fallbackHasBackend && fallbackBackend === "codex"
+        ? fallbackModelRef
+        : fallbackModelRef.includes("/")
+          ? fallbackModelRef.slice(fallbackModelRef.lastIndexOf("/") + 1)
+          : fallbackModelRef;
+      executionResult = await invokeMetered({
+        ...binding,
+        ...(fallbackHasBackend ? { backend: fallbackBackend } : {}),
+        modelId: fallbackModelId,
+        modelRef: fallbackHasBackend && fallbackBackend === "opencode" ? fallbackModelRef : binding.fallbackModelRef
+      }, "fallback");
     } finally {
       await stopRoleWaitHeartbeat();
     }
@@ -857,6 +964,7 @@ export async function executeRoleNode(args: {
     }
 
     const audit = createAuditRecord({
+      executionId: execution.executionId,
       roleId: args.roleId,
       branchId,
       joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration, currentBranch.lineageId) : undefined,
@@ -882,7 +990,16 @@ export async function executeRoleNode(args: {
       stdout: executionResult.stdout,
       stderr: executionResult.stderr,
       repair,
-      compilerDigest
+      compilerDigest,
+      promptCalls,
+      projectedInputChars,
+      renderedPromptChars,
+      outputChars,
+      estimatedInputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedInputTokens, 0),
+      estimatedOutputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedOutputTokens, 0),
+      externalDataIsolated: args.effectiveLaw.isolateExternalData,
+      fallbackUsed,
+      primaryModelId
     });
 
     if (executionResult.sessionId) {
@@ -962,6 +1079,7 @@ export async function executeRoleNode(args: {
       schemaPath: rolePackage.outputSchemaPath
     });
     const audit = createAuditRecord({
+      executionId: execution.executionId,
       roleId: args.roleId,
       branchId,
       loopIteration,
@@ -985,7 +1103,16 @@ export async function executeRoleNode(args: {
       compilerDiagnosticCode: mapRuntimeErrorToCompilerDiagnosticCode(failure),
       repair,
       correctionRequest,
-      inputContext: inputContextForAudit
+      inputContext: inputContextForAudit,
+      promptCalls,
+      projectedInputChars,
+      renderedPromptChars,
+      outputChars,
+      estimatedInputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedInputTokens, 0),
+      estimatedOutputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedOutputTokens, 0),
+      externalDataIsolated: args.effectiveLaw.isolateExternalData,
+      fallbackUsed,
+      primaryModelId
     });
     if (executionError?.sessionId) {
       await recordRoleSession({

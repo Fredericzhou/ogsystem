@@ -157,6 +157,7 @@ export type RoleExecutionBinding =
       backend: "opencode" | "codex" | "claude" | "antigravity";
       modelId: string;
       modelRef: string;
+      fallbackModelRef?: string;
       variant?: string;
       timeoutMs?: number;
       maxOutputBytes?: number;
@@ -246,6 +247,9 @@ export type LawSpec = {
     forbiddenToolRefs?: string[];
     maxTransitions?: number;
     allowNoopWithoutExecutionBinding?: boolean;
+    maxPromptCharsPerRole?: number;
+    maxTotalPromptCharsPerRun?: number;
+    isolateExternalData?: boolean;
   };
 };
 
@@ -257,6 +261,9 @@ export type EffectiveLawConstraints = {
   forbiddenToolRefs: string[];
   maxTransitions?: number;
   allowNoopWithoutExecutionBinding: boolean;
+  maxPromptCharsPerRole?: number;
+  maxTotalPromptCharsPerRun?: number;
+  isolateExternalData: boolean;
 };
 
 /**
@@ -426,6 +433,7 @@ export type ModelSelectionDefaults = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  fallbackModelRef?: string;
 };
 
 export type ModelSelectionRoleOverride = {
@@ -434,6 +442,7 @@ export type ModelSelectionRoleOverride = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  fallbackModelRef?: string;
 };
 
 export type ModelSelectionSystemOverride = {
@@ -483,6 +492,37 @@ export type AuditRecord = {
   inputContext?: string;
   handledByEvent?: string;
   handledTargetRoleId?: string;
+  executionId?: string;
+  promptCalls?: PromptCallMeterRecord[];
+  projectedInputChars?: number;
+  renderedPromptChars?: number;
+  outputChars?: number;
+  estimatedInputTokens?: number;
+  estimatedOutputTokens?: number;
+  externalDataIsolated?: boolean;
+  fallbackUsed?: boolean;
+  primaryModelId?: string;
+};
+
+export type PromptCallMeterRecord = {
+  callId: string;
+  executionId: string;
+  phase: "primary" | "fallback" | "repair";
+  modelId?: string;
+  projectedInputChars: number;
+  renderedPromptChars: number;
+  outputChars: number;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
+};
+
+export type RunPromptBudgetLedger = {
+  maxTotalPromptCharsPerRun?: number;
+  legacyBaseCommittedChars: number;
+  committedChars: number;
+  reservedChars: number;
+  committedByCallId: Map<string, number>;
+  reservedByCallId: Map<string, number>;
 };
 
 export type RoleRunDirs = {
@@ -554,6 +594,8 @@ export type RunContext = {
   sharedDir: string;
   workspaceIsolation: "role" | "branch";
   redaction: RuntimeRedactionConfig;
+  promptBudgetLedgerPath: string;
+  promptBudgetLedger: RunPromptBudgetLedger;
   releaseResumeLock?: () => Promise<void>;
 };
 
@@ -642,6 +684,15 @@ export type GraphAuditSummary = {
   repairAttemptedCount: number;
   repairAppliedCount: number;
   failureCountsByErrorCode: Record<string, number>;
+  promptCallsByCallId?: Record<string, PromptCallMeterRecord>;
+  committedPromptCharsByCallId?: Record<string, number>;
+  legacyBaseCommittedChars?: number;
+  totalProjectedInputChars?: number;
+  totalRenderedPromptChars?: number;
+  totalOutputChars?: number;
+  totalEstimatedInputTokens?: number;
+  totalEstimatedOutputTokens?: number;
+  fallbackActivationCount?: number;
 };
 
 export type GraphRoleMetricSummary = {
@@ -750,6 +801,7 @@ export type RoleExecutionOutcomeRecord =
       committedAt: string;
       checkpointSequence?: number;
       reconciledAt?: string;
+      supersededByExecutionId?: string;
       status: "ok" | "noop";
       selectedEvent?: string;
       storedResult?: StoredRoleResult;
@@ -766,6 +818,7 @@ export type RoleExecutionOutcomeRecord =
       committedAt: string;
       checkpointSequence?: number;
       reconciledAt?: string;
+      supersededByExecutionId?: string;
       status: "failed";
       error: string;
       failure: RuntimeErrorEnvelope;
@@ -814,6 +867,14 @@ export type RunSummarySnapshot = {
     attemptedCount: number;
     appliedCount: number;
   };
+  committedPromptCharsByCallId?: Record<string, number>;
+  legacyBaseCommittedChars?: number;
+  totalProjectedInputChars?: number;
+  totalRenderedPromptChars?: number;
+  totalOutputChars?: number;
+  totalEstimatedInputTokens?: number;
+  totalEstimatedOutputTokens?: number;
+  fallbackActivationCount?: number;
   pendingReviewCount?: number;
   hasWaitingHumanReview?: boolean;
 };

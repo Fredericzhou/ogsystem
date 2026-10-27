@@ -135,6 +135,7 @@ export class OpencodeExecutionError extends Error {
       sessionId?: string;
       messageId?: string;
       serverPid?: number;
+      timedOut?: boolean;
     }
   ) {
     super(message);
@@ -402,7 +403,8 @@ function wrapExecutionError(args: {
       stderr: [args.stderr, args.error.details?.stderr].filter(Boolean).join("\n"),
       sessionId: args.error.details?.sessionId ?? args.sessionId,
       messageId: args.error.details?.messageId ?? args.messageId,
-      serverPid: args.error.details?.serverPid ?? args.serverPid
+      serverPid: args.error.details?.serverPid ?? args.serverPid,
+      timedOut: args.error.details?.timedOut
     });
   }
 
@@ -897,6 +899,15 @@ export async function executeOpencodeModelRole(
     runClient?: OpencodeRunClient;
     sessionId?: string;
     signal?: AbortSignal;
+    promptCallPhase?: "primary" | "fallback";
+    onPromptCall?: (event: {
+      phase: "primary" | "fallback" | "repair";
+      ordinal: number;
+      stage: "before" | "after";
+      prompt: string;
+      output?: string;
+      outputChars?: number;
+    }) => Promise<void>;
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<{
@@ -937,6 +948,8 @@ export async function executeOpencodeModelRole(
   let sessionId = args.sessionId ?? "";
   let messageId: string | undefined;
   let timeoutCleanupSessionId: string | undefined;
+  let settlePendingPromptCall: (() => Promise<void>) | undefined;
+  const promptOrdinals = new Map<string, number>();
 
   try {
     return await withTimeout(
@@ -1011,7 +1024,7 @@ export async function executeOpencodeModelRole(
                     schema,
                     corrective: true
                   });
-              const promptWithOptionalCorrection = async (text: string): Promise<{
+              const promptWithOptionalCorrection = async (text: string, phase: "primary" | "fallback" | "repair"): Promise<{
                 info?: {
                   structured?: unknown;
                   error?: {
@@ -1025,30 +1038,57 @@ export async function executeOpencodeModelRole(
                 messageId?: string;
                 stderr: string;
               }> => {
-                const response = await runClient.client.session.prompt({
-                  sessionID: sessionId,
-                  directory,
-                  model: {
-                    providerID,
-                    modelID
-                  },
-                  variant,
-                  ...(mode === "structured"
-                    ? {
-                        format: {
-                          type: "json_schema" as const,
-                          schema
+                const callPhase = phase === "repair" ? "repair" : args.promptCallPhase ?? "primary";
+                const ordinal = (promptOrdinals.get(callPhase) ?? 0) + 1;
+                promptOrdinals.set(callPhase, ordinal);
+                if (args.onPromptCall) await args.onPromptCall({ phase: callPhase, ordinal, stage: "before", prompt: text });
+                let response: Awaited<ReturnType<typeof runClient.client.session.prompt>> | undefined;
+                let afterSettlement: Promise<void> | undefined;
+                const settlePromptCall = (): Promise<void> => {
+                  afterSettlement ??= (async () => {
+                    if (!args.onPromptCall) return;
+                    const structured = response?.data?.info?.structured;
+                    const output = structured === undefined
+                      ? summarizeParts(response?.data?.parts)
+                      : typeof structured === "string" ? structured : JSON.stringify(structured) ?? "";
+                    await args.onPromptCall({ phase: callPhase, ordinal, stage: "after", prompt: text, output, outputChars: output.length });
+                  })();
+                  return afterSettlement;
+                };
+                settlePendingPromptCall = settlePromptCall;
+                try {
+                  response = await runClient.client.session.prompt({
+                    sessionID: sessionId,
+                    directory,
+                    model: {
+                      providerID,
+                      modelID
+                    },
+                    variant,
+                    ...(mode === "structured"
+                      ? {
+                          format: {
+                            type: "json_schema" as const,
+                            schema
+                          }
                         }
+                      : {}),
+                    parts: [
+                      {
+                        type: "text",
+                        text
                       }
-                    : {}),
-                  parts: [
-                    {
-                      type: "text",
-                      text
-                    }
-                  ]
-                });
+                    ]
+                  });
+                } finally {
+                  try {
+                    await settlePromptCall();
+                  } finally {
+                    if (settlePendingPromptCall === settlePromptCall) settlePendingPromptCall = undefined;
+                  }
+                }
                 await ensureNotCancelled();
+                if (!response) throw new Error("OpenCode prompt returned no response");
 
                 const promptErrorMessage = extractSdkErrorMessage(response, {
                   providerID,
@@ -1092,7 +1132,7 @@ export async function executeOpencodeModelRole(
                 };
               };
 
-              const firstResponse = await promptWithOptionalCorrection(promptText);
+              const firstResponse = await promptWithOptionalCorrection(promptText, args.promptCallPhase ?? "primary");
               try {
                 const stdout = mode === "structured"
                   ? normalizeStructuredOutput({
@@ -1145,7 +1185,7 @@ export async function executeOpencodeModelRole(
                   throw error;
                 }
 
-                const correctionResponse = await promptWithOptionalCorrection(correctionPromptText);
+                const correctionResponse = await promptWithOptionalCorrection(correctionPromptText, "repair");
                 const stdout = mode === "structured"
                   ? normalizeStructuredOutput({
                       structured: correctionResponse.info?.structured,
@@ -1268,22 +1308,30 @@ export async function executeOpencodeModelRole(
       },
       args.timeoutMs,
       async () => {
-        if (!sessionId || timeoutCleanupSessionId === sessionId) {
-          return;
+        if (sessionId && timeoutCleanupSessionId !== sessionId) {
+          timeoutCleanupSessionId = sessionId;
+          try {
+            await runClient.client.session.abort({
+              sessionID: sessionId,
+              directory
+            });
+          } catch {
+            // Ignore timeout cleanup failures; the timeout error is the primary signal.
+          }
         }
-        timeoutCleanupSessionId = sessionId;
-        try {
-          await runClient.client.session.abort({
-            sessionID: sessionId,
-            directory
-          });
-        } catch {
-          // Ignore timeout cleanup failures; the timeout error is the primary signal.
-        }
+        await settlePendingPromptCall?.();
       },
       args.signal
     );
   } catch (error) {
+    if (isTimeoutError(error) && !args.signal?.aborted) {
+      throw new OpencodeExecutionError(error.message, {
+        sessionId,
+        messageId,
+        serverPid: runClient.pid,
+        timedOut: true
+      });
+    }
     if (error instanceof OpencodeExecutionError) {
       const serverOutput = runClient.getOutput();
       const mergedStderr = [error.details?.stderr, serverOutput].filter(Boolean).join("\n");
@@ -1301,7 +1349,8 @@ export async function executeOpencodeModelRole(
         stderr: mergedStderr,
         sessionId: error.details?.sessionId,
         messageId: error.details?.messageId,
-        serverPid: error.details?.serverPid
+        serverPid: error.details?.serverPid,
+        timedOut: error.details?.timedOut
       });
     }
     throw error;

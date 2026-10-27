@@ -163,7 +163,7 @@ export function validateSemanticRoleContracts(args: { semanticIR: SemanticIR; sp
   }
 }
 
-function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): EffectiveLawConstraints {
+function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec, allowGlobalIsolationOverride = false): EffectiveLawConstraints {
   if (!spec?.constraints) {
     return base;
   }
@@ -171,7 +171,10 @@ function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): Eff
   const next: EffectiveLawConstraints = {
     forbiddenToolRefs: [...base.forbiddenToolRefs],
     maxTransitions: base.maxTransitions,
-    allowNoopWithoutExecutionBinding: base.allowNoopWithoutExecutionBinding
+    allowNoopWithoutExecutionBinding: base.allowNoopWithoutExecutionBinding,
+    maxPromptCharsPerRole: base.maxPromptCharsPerRole,
+    maxTotalPromptCharsPerRun: base.maxTotalPromptCharsPerRun,
+    isolateExternalData: base.isolateExternalData
   };
 
   if (spec.constraints.forbiddenToolRefs?.length) {
@@ -202,6 +205,22 @@ function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): Eff
     }
   }
 
+  for (const key of ["maxPromptCharsPerRole", "maxTotalPromptCharsPerRun"] as const) {
+    const candidate = spec.constraints[key];
+    if (candidate === undefined) continue;
+    const existing = base[key];
+    if (existing !== undefined && candidate > existing) {
+      throw new Error(`Law merge violation on ${spec.lawId}: ${key} cannot be relaxed (${candidate} > ${existing})`);
+    }
+    next[key] = candidate;
+  }
+  if (!allowGlobalIsolationOverride && base.isolateExternalData && spec.constraints.isolateExternalData === false) {
+    throw new Error(`Law merge violation on ${spec.lawId}: isolateExternalData cannot be disabled`);
+  }
+  if (spec.constraints.isolateExternalData !== undefined) {
+    next.isolateExternalData = spec.constraints.isolateExternalData;
+  }
+
   return next;
 }
 
@@ -212,7 +231,8 @@ export function resolveEffectiveLaw(
   const defaultConstraints: EffectiveLawConstraints = {
     forbiddenToolRefs: [],
     maxTransitions: undefined,
-    allowNoopWithoutExecutionBinding: false
+    allowNoopWithoutExecutionBinding: false,
+    isolateExternalData: true
   };
 
   if (!lawCatalog) {
@@ -225,7 +245,7 @@ export function resolveEffectiveLaw(
     throw new Error(`Global law not found in catalog: ${system.lawBinding.globalLawRef}`);
   }
 
-  return mergeLawConstraints(defaultConstraints, globalLaw);
+  return mergeLawConstraints(defaultConstraints, globalLaw, true);
 }
 
 function formatCompilerDiagnosticsMessage(
@@ -395,7 +415,8 @@ export async function prepareRuntimeSetup(args: {
         if (separator <= 0 || separator === seat.binding.modelRef.length - 1) return [];
         return [[roleId, {
           backend: seat.binding.modelRef.slice(0, separator),
-          modelId: seat.binding.modelRef.slice(separator + 1)
+          modelId: seat.binding.modelRef.slice(separator + 1),
+          fallbackModelRef: effectiveModelSelection?.roles?.[roleId]?.fallbackModelRef
         }]];
       }))
     : {};
@@ -602,6 +623,8 @@ export async function prepareRuntimeSetup(args: {
     runId: args.runId,
     runEvidenceRoot
   });
+  runContext.promptBudgetLedger.maxTotalPromptCharsPerRun = effectiveLaw.maxTotalPromptCharsPerRun;
+  runContext.promptBudgetLedger.legacyBaseCommittedChars = 0;
   if (!args.resumeRunDir) {
     await filesystemRunStore.persistPlanFingerprint({
       runDir: runContext.runDir,

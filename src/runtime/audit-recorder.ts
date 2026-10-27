@@ -50,6 +50,16 @@ type AuditRecordInput = {
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
   inputContext?: string;
+  executionId?: string;
+  promptCalls?: AuditRecord["promptCalls"];
+  projectedInputChars?: number;
+  renderedPromptChars?: number;
+  outputChars?: number;
+  estimatedInputTokens?: number;
+  estimatedOutputTokens?: number;
+  externalDataIsolated?: boolean;
+  fallbackUsed?: boolean;
+  primaryModelId?: string;
 };
 
 /**
@@ -87,7 +97,17 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     compilerDiagnosticCode: args.compilerDiagnosticCode,
     repair: args.repair,
     correctionRequest: args.correctionRequest,
-    inputContext: args.inputContext
+    inputContext: args.inputContext,
+    executionId: args.executionId,
+    promptCalls: args.promptCalls,
+    projectedInputChars: args.projectedInputChars,
+    renderedPromptChars: args.renderedPromptChars,
+    outputChars: args.outputChars,
+    estimatedInputTokens: args.estimatedInputTokens,
+    estimatedOutputTokens: args.estimatedOutputTokens,
+    externalDataIsolated: args.externalDataIsolated,
+    fallbackUsed: args.fallbackUsed,
+    primaryModelId: args.primaryModelId
   };
 }
 

@@ -51,7 +51,8 @@ function validateEntry(value: unknown, filePath: string, fieldPath: string): Mod
     modelId,
     variant: optionalString(record.variant, filePath, `${fieldPath}.variant`),
     timeoutMs: optionalPositiveInteger(record.timeoutMs, filePath, `${fieldPath}.timeoutMs`),
-    maxOutputBytes: optionalPositiveInteger(record.maxOutputBytes, filePath, `${fieldPath}.maxOutputBytes`)
+    maxOutputBytes: optionalPositiveInteger(record.maxOutputBytes, filePath, `${fieldPath}.maxOutputBytes`),
+    fallbackModelRef: optionalString(record.fallbackModelRef, filePath, `${fieldPath}.fallbackModelRef`)
   };
 }
 
@@ -91,6 +92,7 @@ export type ResolvedModelRuntimeConfig = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  fallbackModelRef?: string;
   bindingSource: "selection";
 };
 
@@ -110,7 +112,8 @@ function mergeEntry(...layers: Array<ModelSelectionDefaults | ModelSelectionRole
     modelId: layer?.modelId ?? merged.modelId,
     variant: layer?.variant ?? merged.variant,
     timeoutMs: layer?.timeoutMs ?? merged.timeoutMs,
-    maxOutputBytes: layer?.maxOutputBytes ?? merged.maxOutputBytes
+    maxOutputBytes: layer?.maxOutputBytes ?? merged.maxOutputBytes,
+    fallbackModelRef: layer?.fallbackModelRef ?? merged.fallbackModelRef
   }), {});
 }
 
@@ -179,6 +182,7 @@ export function resolveModelSelectionForSystem(args: {
       variant: selected.variant,
       timeoutMs: selected.timeoutMs,
       maxOutputBytes: selected.maxOutputBytes,
+      fallbackModelRef: selected.fallbackModelRef,
       bindingSource: "selection"
     };
     resolvedByRoleId.set(roleId, resolved);

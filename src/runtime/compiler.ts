@@ -111,6 +111,7 @@ export type BindingSummary = {
   roleId: string;
   kind: RoleExecutionBinding["kind"];
   modelRef?: string;
+  fallbackModelRef?: string;
   bindingSource?: "system" | "selection";
   profileId?: string;
 };
@@ -120,6 +121,9 @@ export type LawSummary = {
   forbiddenToolRefs: string[];
   maxTransitions?: number;
   allowNoopWithoutExecutionBinding: boolean;
+  maxPromptCharsPerRole?: number;
+  maxTotalPromptCharsPerRun?: number;
+  isolateExternalData: boolean;
 };
 
 export type CompiledExecutionSnapshot = {
@@ -382,6 +386,7 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
     };
     if (node.binding.kind === "model") {
       summary.modelRef = node.binding.modelRef;
+      summary.fallbackModelRef = node.binding.fallbackModelRef;
       summary.bindingSource = node.binding.bindingSource;
     }
     if (node.binding.kind === "profile") {
@@ -437,7 +442,10 @@ function buildLawSummary(effectiveLaw: EffectiveLawConstraints, system: SystemDe
     globalLawRef: system.lawBinding.globalLawRef,
     forbiddenToolRefs: sortStrings(effectiveLaw.forbiddenToolRefs),
     maxTransitions: effectiveLaw.maxTransitions,
-    allowNoopWithoutExecutionBinding: effectiveLaw.allowNoopWithoutExecutionBinding
+    allowNoopWithoutExecutionBinding: effectiveLaw.allowNoopWithoutExecutionBinding,
+    maxPromptCharsPerRole: effectiveLaw.maxPromptCharsPerRole,
+    maxTotalPromptCharsPerRun: effectiveLaw.maxTotalPromptCharsPerRun,
+    isolateExternalData: effectiveLaw.isolateExternalData
   };
 }
 

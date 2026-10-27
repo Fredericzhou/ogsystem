@@ -406,3 +406,18 @@ test("laws config rejects duplicate lawId entries", () => {
     }
   );
 });
+
+test("laws config validates prompt budgets and external-data isolation policy", () => {
+  const parsed = validateLawsConfig({
+    laws: [{ lawId: "law.runtime", constraints: {
+      maxPromptCharsPerRole: 1200,
+      maxTotalPromptCharsPerRun: 8000,
+      isolateExternalData: false
+    } }]
+  }, "laws.json");
+  assert.equal(parsed.laws[0].constraints.maxPromptCharsPerRole, 1200);
+  assert.equal(parsed.laws[0].constraints.maxTotalPromptCharsPerRun, 8000);
+  assert.equal(parsed.laws[0].constraints.isolateExternalData, false);
+  assert.throws(() => validateLawsConfig({ laws: [{ lawId: "law.runtime", constraints: { maxPromptCharsPerRole: 0 } }] }, "laws.json"), /maxPromptCharsPerRole/);
+  assert.throws(() => validateLawsConfig({ laws: [{ lawId: "law.runtime", constraints: { isolateExternalData: "false" } }] }, "laws.json"), /isolateExternalData/);
+});

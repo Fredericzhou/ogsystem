@@ -55,6 +55,7 @@ export function resolveExecutionBinding(args: {
         backend: args.node.binding.backend,
         modelId: args.node.binding.modelId,
         modelRef,
+        fallbackModelRef: args.node.binding.fallbackModelRef,
         variant
       },
       bindingLabel: `model:${args.node.binding.backend}/${args.node.binding.modelId}`,

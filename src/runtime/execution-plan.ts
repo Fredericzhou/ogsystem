@@ -63,6 +63,7 @@ function resolveBinding(args: {
       backend: resolvedModel.backend,
       modelId: resolvedModel.modelId,
       modelRef: resolvedModel.modelRef,
+      ...(resolvedModel.fallbackModelRef ? { fallbackModelRef: resolvedModel.fallbackModelRef } : {}),
       ...(resolvedModel.variant ? { variant: resolvedModel.variant } : {}),
       ...(resolvedModel.timeoutMs !== undefined ? { timeoutMs: resolvedModel.timeoutMs } : {}),
       ...(resolvedModel.maxOutputBytes !== undefined ? { maxOutputBytes: resolvedModel.maxOutputBytes } : {}),

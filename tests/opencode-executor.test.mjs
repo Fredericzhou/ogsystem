@@ -782,6 +782,7 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
   const createdSessions = [];
   const promptedSessions = [];
   const abortedSessions = [];
+  const promptMeterEvents = [];
   let promptAttempts = 0;
 
   const result = await executeOpencodeModelRole({
@@ -797,6 +798,7 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
       additionalProperties: false
     },
     modelPackage: makeModelPackage(),
+    onPromptCall: async (event) => promptMeterEvents.push(event),
     workdir: "/tmp/run/roles/role-retry",
     timeoutMs: 5000,
     maxOutputBytes: 4096,
@@ -844,6 +846,7 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
 
   assert.deepStrictEqual(createdSessions, ["ses_1"]);
   assert.deepStrictEqual(promptedSessions, ["ses_1", "ses_1"]);
+  assert.deepEqual(promptMeterEvents.filter((event) => event.stage === "before").map(({ phase, ordinal }) => [phase, ordinal]), [["primary", 1], ["primary", 2]]);
   assert.deepStrictEqual(abortedSessions, ["ses_1"]);
   assert.strictEqual(result.sessionId, "ses_1");
   assert.strictEqual(result.messageId, "msg_2");
@@ -1023,6 +1026,7 @@ test("executeOpencodeModelRole falls back to text parts when structured output i
 
 test("executeOpencodeModelRole retries once with corrective prompt when structured output is missing", async () => {
   const promptInputs = [];
+  const promptMeterEvents = [];
   let callCount = 0;
 
   const result = await executeOpencodeModelRole({
@@ -1038,6 +1042,7 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
       additionalProperties: false
     },
     modelPackage: makeModelPackage(),
+    onPromptCall: async (event) => promptMeterEvents.push(event),
     workdir: "/tmp/run/roles/role-corrective-retry",
     timeoutMs: 5000,
     maxOutputBytes: 4096,
@@ -1082,6 +1087,8 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
 
   assert.strictEqual(callCount, 2);
   assert.match(promptInputs[1], /Return exactly one JSON object/);
+  assert.deepEqual(promptMeterEvents.filter((event) => event.stage === "before").map(({ phase, ordinal }) => [phase, ordinal]), [["primary", 1], ["repair", 1]]);
+  assert.equal(promptMeterEvents.filter((event) => event.stage === "after").length, 2);
   assert.deepStrictEqual(JSON.parse(result.stdout), {
     event: "NEXT",
     content: "corrected"
@@ -1090,6 +1097,7 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
 
 test("executeOpencodeModelRole falls back to schemaless JSON when provider rejects json_schema tool_choice", async () => {
   const promptCalls = [];
+  const promptMeterEvents = [];
 
   const result = await executeOpencodeModelRole({
     roleId: "role-tool-choice-fallback",
@@ -1104,6 +1112,7 @@ test("executeOpencodeModelRole falls back to schemaless JSON when provider rejec
       additionalProperties: false
     },
     modelRef: "deepseek/deepseek-reasoner",
+    onPromptCall: async (event) => promptMeterEvents.push(event),
     workdir: "/tmp/run/roles/role-tool-choice-fallback",
     timeoutMs: 5000,
     maxOutputBytes: 4096,
@@ -1147,6 +1156,7 @@ test("executeOpencodeModelRole falls back to schemaless JSON when provider rejec
   });
 
   assert.equal(promptCalls.length, 2);
+  assert.deepEqual(promptMeterEvents.filter((event) => event.stage === "before").map(({ phase, ordinal }) => [phase, ordinal]), [["primary", 1], ["primary", 2]]);
   assert.equal(promptCalls[0].format?.type, "json_schema");
   assert.equal(promptCalls[1].format, undefined);
   assert.match(promptCalls[1].parts[0].text, /JSON schema:/);

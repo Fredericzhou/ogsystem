@@ -91,6 +91,10 @@ async function readLock(path: string): Promise<ProjectLockMetadata | undefined> 
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
 function processIsAlive(pid: number): boolean | undefined {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -103,20 +107,59 @@ function processIsAlive(pid: number): boolean | undefined {
   }
 }
 
-async function clearStaleLock(path: string, metadata: ProjectLockMetadata): Promise<void> {
-  const heartbeat = Date.parse(metadata.heartbeatAt || metadata.createdAt);
-  const expired = !Number.isFinite(heartbeat) || Date.now() - heartbeat > 30_000;
-  if (!expired) throw new ProjectLockError(`Project lock is active: ${path}`, metadata, true);
+async function assertStaleLockOwner(path: string, metadata: ProjectLockMetadata): Promise<void> {
   if (metadata.host !== hostname()) {
     throw new ProjectLockError(`Project lock ownership is uncertain on another host: ${path}`, metadata);
   }
   const alive = processIsAlive(metadata.pid);
-  if (alive !== false) {
-    throw new ProjectLockError(`Project lock ownership is uncertain: ${path}`, metadata);
+  if (alive === true) throw new ProjectLockError(`Project lock is active: ${path}`, metadata, true);
+  if (alive === undefined) throw new ProjectLockError(`Project lock ownership is uncertain: ${path}`, metadata);
+}
+
+async function acquireStaleReclaimGuard(path: string, metadata: ProjectLockMetadata): Promise<() => Promise<void>> {
+  const guardPath = `${path}.reclaim.lock`;
+  const guardId = randomUUID();
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      const handle = await open(guardPath, "wx");
+      try {
+        await handle.writeFile(JSON.stringify({ guardId, pid: process.pid, host: hostname() }), "utf8");
+      } finally {
+        await handle.close();
+      }
+      return async () => {
+        try {
+          const guard = JSON.parse(await readFile(guardPath, "utf8")) as { guardId?: string };
+          if (guard.guardId === guardId) await unlink(guardPath);
+        } catch (error) {
+          if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+        }
+      };
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (code !== "EEXIST") throw error;
+      if (attempt === 49) {
+        throw new ProjectLockError(`Stale lock reclamation guard is occupied; inspect and remove it only after confirming no reclaimer is active: ${guardPath}`, metadata);
+      }
+      await sleep(10);
+    }
   }
-  await unlink(path).catch((error) => {
-    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
-  });
+  throw new ProjectLockError(`Stale lock reclamation guard is unavailable: ${guardPath}`, metadata);
+}
+
+async function clearStaleLock(path: string, metadata: ProjectLockMetadata): Promise<void> {
+  await assertStaleLockOwner(path, metadata);
+  const releaseGuard = await acquireStaleReclaimGuard(path, metadata);
+  try {
+    const current = await readLock(path);
+    if (!current) return;
+    await assertStaleLockOwner(path, current);
+    await unlink(path).catch((error) => {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    });
+  } finally {
+    await releaseGuard();
+  }
 }
 
 export async function acquireProjectLock(args: {

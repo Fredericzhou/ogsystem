@@ -38,6 +38,7 @@ import {
 import { applyGraphUpdateToIndexes, buildRuntimeIndexes } from "./runtime-indexes.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
 import { executeRoleNode } from "./role-executor.js";
+import { reconcilePromptBudgetLedger } from "./prompt-budget.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import type { CompiledExecutionSnapshot } from "./compiler.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
@@ -1076,6 +1077,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
           logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
         });
+      const promptCallsByCallId = new Map((result.audit.promptCalls ?? []).map((call) => [call.callId, call]));
+      const priorAttemptExecutionIds: string[] = [];
       for (let attempt = 2; result.status === "failed" && retryPolicy && result.failure.retryable && attempt <= retryPolicy.maxAttempts; attempt += 1) {
         if (config?.signal?.aborted || runControl.drainRequested || result.failure.errorCode === "RUN_CANCELLED") break;
         const delayMs = retryPolicy.backoff === "exponential" ? 25 * 2 ** (attempt - 2) : 25;
@@ -1092,6 +1095,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           errorCode: result.failure.errorCode,
           backoffMs: delayMs
         });
+        priorAttemptExecutionIds.push(result.executionId);
         result = await executeRoleNode({
           roleId, node, plan: args.plan, state: workingState, branch,
           effectiveLaw: args.effectiveLaw, profilesById: args.profilesById, toolsByRef: args.toolsByRef,
@@ -1100,6 +1104,37 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
           logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
         });
+        for (const call of result.audit.promptCalls ?? []) promptCallsByCallId.set(call.callId, call);
+      }
+      if (promptCallsByCallId.size) {
+        const promptCalls = Array.from(promptCallsByCallId.values());
+        result.audit = {
+          ...result.audit,
+          promptCalls,
+          projectedInputChars: promptCalls.reduce((sum, call) => sum + call.projectedInputChars, 0),
+          renderedPromptChars: promptCalls.reduce((sum, call) => sum + call.renderedPromptChars, 0),
+          outputChars: promptCalls.reduce((sum, call) => sum + call.outputChars, 0),
+          estimatedInputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedInputTokens, 0),
+          estimatedOutputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedOutputTokens, 0),
+          fallbackUsed: promptCalls.some((call) => call.phase === "fallback"),
+          primaryModelId: result.audit.primaryModelId ?? promptCalls.find((call) => call.phase === "primary")?.modelId
+        };
+      }
+      if (priorAttemptExecutionIds.length) {
+        const roleDirs = args.runContext.roleDirsById.get(roleId);
+        if (!roleDirs) throw new Error(`Role run directory missing for "${roleId}"`);
+        if (promptCallsByCallId.size) {
+          await filesystemCheckpointStore.updateOutcomeAudit({
+            executionDir: resolve(roleDirs.executionsDir, result.executionId),
+            audit: result.audit
+          });
+        }
+        for (const executionId of priorAttemptExecutionIds) {
+          await filesystemCheckpointStore.markOutcomeSuperseded({
+            executionDir: resolve(roleDirs.executionsDir, executionId),
+            supersededByExecutionId: result.executionId
+          });
+        }
       }
 
       const businessState = applySemanticBusinessState({
@@ -1300,6 +1335,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
       compilerSnapshot: args.compilerSnapshot,
       runtimeServices: args.runtimeServices
+    });
+    await reconcilePromptBudgetLedger({
+      context: args.runContext,
+      committedPromptCharsByCallId: reconciled.state.auditSummary.committedPromptCharsByCallId,
+      legacyTotalRenderedPromptChars: reconciled.state.auditSummary.totalRenderedPromptChars,
+      promptCalls: reconciled.state.recentAudits.flatMap((audit) => audit.promptCalls ?? [])
     });
     const reviewReconciled = await reconcileCommittedHumanReviewDecisions({
       state: reconciled.state,

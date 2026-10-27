@@ -78,6 +78,7 @@ export type ExecutorBinding =
       backend: "opencode" | "codex" | "claude" | "antigravity";
       modelId: string;
       modelRef: string;
+      fallbackModelRef?: string;
       variant?: string;
     }
   | {
@@ -106,6 +107,15 @@ export type ExecutorRequest = {
   signal?: AbortSignal;
   dryRunOutputEvent?: string;
   sessionId?: string;
+  promptCallPhase?: "primary" | "fallback";
+  onPromptCall?: (event: {
+    phase: "primary" | "fallback" | "repair";
+    ordinal: number;
+    stage: "before" | "after";
+    prompt: string;
+    output?: string;
+    outputChars?: number;
+  }) => Promise<void>;
 };
 
 /**
@@ -142,6 +152,8 @@ export type ExecutorServerMetadata = {
  * or by a local tool (profile).
  */
 export interface Executor {
+  /** True when model calls invoke request.onPromptCall for each underlying model request. */
+  supportsPromptCallMetering?: boolean;
   /**
    * Starts any necessary background services (like the OpenCode server).
    */
@@ -191,6 +203,7 @@ export function createDefaultExecutor(args: {
   let codexClient: CodexAppServerClient | undefined;
 
   return {
+    supportsPromptCallMetering: true,
     async start() {
       // Guard ensures model server is started only once and only when needed.
       if (args.dryRun || !args.needsModelExecutor) {
@@ -231,13 +244,25 @@ export function createDefaultExecutor(args: {
       if (request.binding.kind === "model") {
         if (request.binding.backend === "codex") {
           if (!args.dryRun && !codexClient) throw new Error(`Codex app-server missing for role "${request.roleId}"`);
-          const result = args.dryRun || !codexClient
-            ? { sessionId: request.sessionId ?? `dryrun-codex-${request.sessionKey ?? request.roleId}`, stdout: JSON.stringify(buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "[dry-run] codex-app-server")) }
-            : await codexClient.execute({
+          const phase = request.promptCallPhase ?? "primary";
+          const ordinal = 1;
+          await request.onPromptCall?.({ phase, ordinal, stage: "before", prompt: request.prompt });
+          let result: { sessionId: string; stdout: string; messageId?: string };
+          let outputChars = 0;
+          let output: string | undefined;
+          try {
+            result = args.dryRun || !codexClient
+              ? { sessionId: request.sessionId ?? `dryrun-codex-${request.sessionKey ?? request.roleId}`, stdout: JSON.stringify(buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "[dry-run] codex-app-server")) }
+              : await codexClient.execute({
                 roleId: request.roleId, prompt: request.prompt, schema: request.schema,
                 modelId: request.binding.modelId, cwd: request.directory, timeoutMs: request.timeoutMs,
                 sessionId: request.sessionId, signal: request.signal
               });
+            outputChars = result.stdout.length;
+            output = result.stdout;
+          } finally {
+            await request.onPromptCall?.({ phase, ordinal, stage: "after", prompt: request.prompt, outputChars, ...(output !== undefined ? { output } : {}) });
+          }
           return {
             exitCode: 0, stdout: result.stdout, stderr: "", args: ["app-server"],
             sessionId: result.sessionId, messageId: result.messageId, modelId: request.binding.modelId,
@@ -255,14 +280,20 @@ export function createDefaultExecutor(args: {
 
         const result =
           args.dryRun || !runClient
-            ? {
+            ? await (async () => {
+                const phase = request.promptCallPhase ?? "primary";
+                await request.onPromptCall?.({ phase, ordinal: 1, stage: "before", prompt: request.prompt });
+                const simulated = {
                 exitCode: 0,
                 stdout: JSON.stringify(buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "[dry-run] opencode-sdk")),
                 stderr: "",
                 args: [] as string[],
                 sessionId: request.sessionId ?? `dryrun-session-${request.sessionKey ?? request.roleId}`,
                 messageId: `dryrun-message-${request.sessionKey ?? request.roleId}`
-              }
+                };
+                await request.onPromptCall?.({ phase, ordinal: 1, stage: "after", prompt: request.prompt, outputChars: simulated.stdout.length, output: simulated.stdout });
+                return simulated;
+              })()
             : await executeOpencodeModelRole({
                 roleId: request.roleId,
                 prompt: request.prompt,
@@ -275,7 +306,9 @@ export function createDefaultExecutor(args: {
                 maxOutputBytes: request.maxOutputBytes,
                 signal: request.signal,
                 runClient,
-                sessionId: request.sessionId
+                sessionId: request.sessionId,
+                promptCallPhase: request.promptCallPhase,
+                onPromptCall: request.onPromptCall
               });
 
         return {

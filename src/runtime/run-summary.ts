@@ -28,7 +28,16 @@ export function createEmptyAuditSummary(): GraphAuditSummary {
     handledFailureByTargetRole: {},
     repairAttemptedCount: 0,
     repairAppliedCount: 0,
-    failureCountsByErrorCode: {}
+    failureCountsByErrorCode: {},
+    promptCallsByCallId: {},
+    committedPromptCharsByCallId: {},
+    legacyBaseCommittedChars: 0,
+    totalProjectedInputChars: 0,
+    totalRenderedPromptChars: 0,
+    totalOutputChars: 0,
+    totalEstimatedInputTokens: 0,
+    totalEstimatedOutputTokens: 0,
+    fallbackActivationCount: 0
   };
 }
 
@@ -64,6 +73,16 @@ export function buildAuditSummaryDelta(audit: AuditRecord): GraphAuditSummary {
     summary.repairAppliedCount = 1;
   }
 
+  const promptCalls = audit.promptCalls ?? [];
+  summary.promptCallsByCallId = Object.fromEntries(promptCalls.map((call) => [call.callId, call]));
+  summary.committedPromptCharsByCallId = Object.fromEntries(promptCalls.map((call) => [call.callId, call.renderedPromptChars]));
+  summary.totalProjectedInputChars = promptCalls.reduce((total, call) => total + (call.projectedInputChars ?? 0), 0);
+  summary.totalRenderedPromptChars = promptCalls.reduce((total, call) => total + (call.renderedPromptChars ?? 0), 0);
+  summary.totalOutputChars = promptCalls.reduce((total, call) => total + (call.outputChars ?? 0), 0);
+  summary.totalEstimatedInputTokens = promptCalls.reduce((total, call) => total + (call.estimatedInputTokens ?? 0), 0);
+  summary.totalEstimatedOutputTokens = promptCalls.reduce((total, call) => total + (call.estimatedOutputTokens ?? 0), 0);
+  summary.fallbackActivationCount = audit.fallbackUsed ? 1 : 0;
+
   return summary;
 }
 
@@ -96,6 +115,34 @@ export function mergeAuditSummaries(
       (handledFailureByTargetRole[targetRoleId] ?? 0) + count;
   }
 
+  const promptCallsByCallId = {
+    ...(left.promptCallsByCallId ?? {}),
+    ...(right.promptCallsByCallId ?? {})
+  };
+  const committedPromptCharsByCallId = {
+    ...(left.committedPromptCharsByCallId ?? {}),
+    ...(right.committedPromptCharsByCallId ?? {})
+  };
+  for (const [callId, call] of Object.entries(promptCallsByCallId)) {
+    committedPromptCharsByCallId[callId] = call.renderedPromptChars;
+  }
+  const leftPromptCharSum = Object.values(left.committedPromptCharsByCallId ?? {}).reduce((sum, value) => sum + value, 0);
+  const leftPromptCallChars = Object.values(left.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.renderedPromptChars, 0);
+  const rightPromptCallChars = Object.values(right.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.renderedPromptChars, 0);
+  const legacyBaseCommittedChars = (left.legacyBaseCommittedChars ?? Math.max(0, (left.totalRenderedPromptChars ?? 0) - Math.max(leftPromptCharSum, leftPromptCallChars)))
+    + (right.legacyBaseCommittedChars ?? Math.max(0, (right.totalRenderedPromptChars ?? 0) - rightPromptCallChars));
+  const leftProjectedInputBase = Math.max(0, (left.totalProjectedInputChars ?? 0) - Object.values(left.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.projectedInputChars, 0));
+  const rightProjectedInputBase = Math.max(0, (right.totalProjectedInputChars ?? 0) - Object.values(right.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.projectedInputChars, 0));
+  const leftOutputBase = Math.max(0, (left.totalOutputChars ?? 0) - Object.values(left.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.outputChars, 0));
+  const rightOutputBase = Math.max(0, (right.totalOutputChars ?? 0) - Object.values(right.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.outputChars, 0));
+  const leftInputTokensBase = Math.max(0, (left.totalEstimatedInputTokens ?? 0) - Object.values(left.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.estimatedInputTokens, 0));
+  const rightInputTokensBase = Math.max(0, (right.totalEstimatedInputTokens ?? 0) - Object.values(right.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.estimatedInputTokens, 0));
+  const leftOutputTokensBase = Math.max(0, (left.totalEstimatedOutputTokens ?? 0) - Object.values(left.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.estimatedOutputTokens, 0));
+  const rightOutputTokensBase = Math.max(0, (right.totalEstimatedOutputTokens ?? 0) - Object.values(right.promptCallsByCallId ?? {}).reduce((sum, call) => sum + call.estimatedOutputTokens, 0));
+  const metricCalls = Object.values(promptCallsByCallId);
+  const fallbackActivationBase = Math.max(0, (left.fallbackActivationCount ?? 0) - Object.values(left.promptCallsByCallId ?? {}).filter((call) => call.phase === "fallback").length)
+    + Math.max(0, (right.fallbackActivationCount ?? 0) - Object.values(right.promptCallsByCallId ?? {}).filter((call) => call.phase === "fallback").length);
+
   return {
     okCount: (left.okCount ?? 0) + (right.okCount ?? 0),
     failedCount: (left.failedCount ?? 0) + (right.failedCount ?? 0),
@@ -106,7 +153,16 @@ export function mergeAuditSummaries(
     handledFailureByTargetRole,
     repairAttemptedCount: (left.repairAttemptedCount ?? 0) + (right.repairAttemptedCount ?? 0),
     repairAppliedCount: (left.repairAppliedCount ?? 0) + (right.repairAppliedCount ?? 0),
-    failureCountsByErrorCode
+    failureCountsByErrorCode,
+    promptCallsByCallId,
+    committedPromptCharsByCallId,
+    legacyBaseCommittedChars,
+    totalProjectedInputChars: leftProjectedInputBase + rightProjectedInputBase + metricCalls.reduce((sum, call) => sum + call.projectedInputChars, 0),
+    totalRenderedPromptChars: legacyBaseCommittedChars + Object.values(committedPromptCharsByCallId).reduce((sum, value) => sum + value, 0),
+    totalOutputChars: leftOutputBase + rightOutputBase + metricCalls.reduce((sum, call) => sum + call.outputChars, 0),
+    totalEstimatedInputTokens: leftInputTokensBase + rightInputTokensBase + metricCalls.reduce((sum, call) => sum + call.estimatedInputTokens, 0),
+    totalEstimatedOutputTokens: leftOutputTokensBase + rightOutputTokensBase + metricCalls.reduce((sum, call) => sum + call.estimatedOutputTokens, 0),
+    fallbackActivationCount: fallbackActivationBase + metricCalls.filter((call) => call.phase === "fallback").length
   };
 }
 
@@ -155,7 +211,15 @@ export function summarizeRunFromAuditSummary(args: {
     repairStats: {
       attemptedCount: args.auditSummary.repairAttemptedCount ?? 0,
       appliedCount: args.auditSummary.repairAppliedCount ?? 0
-    }
+    },
+    committedPromptCharsByCallId: args.auditSummary.committedPromptCharsByCallId ?? {},
+    legacyBaseCommittedChars: args.auditSummary.legacyBaseCommittedChars ?? 0,
+    totalProjectedInputChars: args.auditSummary.totalProjectedInputChars ?? 0,
+    totalRenderedPromptChars: args.auditSummary.totalRenderedPromptChars ?? 0,
+    totalOutputChars: args.auditSummary.totalOutputChars ?? 0,
+    totalEstimatedInputTokens: args.auditSummary.totalEstimatedInputTokens ?? 0,
+    totalEstimatedOutputTokens: args.auditSummary.totalEstimatedOutputTokens ?? 0,
+    fallbackActivationCount: args.auditSummary.fallbackActivationCount ?? 0
   };
 }
 

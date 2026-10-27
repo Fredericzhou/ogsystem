@@ -698,6 +698,7 @@ function isRoleExecutionOutcomeRecord(value: unknown): value is RoleExecutionOut
     typeof record.loopIteration !== "number" ||
     typeof record.sessionKey !== "string" ||
     typeof record.committedAt !== "string" ||
+    (record.supersededByExecutionId !== undefined && typeof record.supersededByExecutionId !== "string") ||
     !isBranchRecord(record.branch) ||
     typeof record.audit !== "object" ||
     record.audit === null
@@ -943,6 +944,14 @@ export async function initializeRunContext(args: {
       sharedDir,
       workspaceIsolation: args.runtimeConfig.workspace.workspaceIsolation ?? "role",
       redaction: args.runtimeConfig.redaction ?? { enabled: true },
+      promptBudgetLedgerPath: resolve(runDir, "prompt-budget.json"),
+      promptBudgetLedger: {
+        legacyBaseCommittedChars: 0,
+        committedChars: 0,
+        reservedChars: 0,
+        committedByCallId: new Map(),
+        reservedByCallId: new Map()
+      },
       releaseResumeLock
     };
   } catch (error) {
@@ -1045,6 +1054,58 @@ export async function loadResumeGraphState(args: {
     });
   }
   const auditSummaryRecord = graphState.auditSummary as Record<string, unknown>;
+  if (auditSummaryRecord.promptCallsByCallId === undefined) {
+    auditSummaryRecord.promptCallsByCallId = {};
+  }
+  if (typeof auditSummaryRecord.promptCallsByCallId !== "object" ||
+      auditSummaryRecord.promptCallsByCallId === null ||
+      Array.isArray(auditSummaryRecord.promptCallsByCallId)) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot has invalid graphState.auditSummary.promptCallsByCallId: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  for (const [callId, rawCall] of Object.entries(auditSummaryRecord.promptCallsByCallId as Record<string, unknown>)) {
+    if (typeof rawCall !== "object" || rawCall === null || Array.isArray(rawCall)) {
+      throw createRuntimeError({ errorCode: "RESUME_STATE_INVALID", errorCategory: "state", message: `Invalid prompt call metrics for ${callId}: ${statePath}`, retryable: false, stage: "resume", runId: basename(args.runDir) });
+    }
+    const call = rawCall as Record<string, unknown>;
+    if (call.callId !== callId || !["primary", "fallback", "repair"].includes(String(call.phase)) ||
+        !["projectedInputChars", "renderedPromptChars", "outputChars", "estimatedInputTokens", "estimatedOutputTokens"].every((field) => isNonNegativeInteger(call[field]))) {
+      throw createRuntimeError({ errorCode: "RESUME_STATE_INVALID", errorCategory: "state", message: `Invalid prompt call metrics for ${callId}: ${statePath}`, retryable: false, stage: "resume", runId: basename(args.runDir) });
+    }
+  }
+  for (const field of [
+    "totalProjectedInputChars", "totalRenderedPromptChars", "totalOutputChars",
+    "totalEstimatedInputTokens", "totalEstimatedOutputTokens", "fallbackActivationCount",
+    "legacyBaseCommittedChars"
+  ]) {
+    if (auditSummaryRecord[field] === undefined) auditSummaryRecord[field] = 0;
+  }
+  if (auditSummaryRecord.committedPromptCharsByCallId === undefined) {
+    auditSummaryRecord.committedPromptCharsByCallId = {};
+  }
+  if (typeof auditSummaryRecord.committedPromptCharsByCallId !== "object" ||
+      auditSummaryRecord.committedPromptCharsByCallId === null ||
+      Array.isArray(auditSummaryRecord.committedPromptCharsByCallId)) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot has invalid graphState.auditSummary.committedPromptCharsByCallId: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  for (const [callId, chars] of Object.entries(auditSummaryRecord.committedPromptCharsByCallId as Record<string, unknown>)) {
+    if (!isNonNegativeInteger(chars)) {
+      throw createRuntimeError({ errorCode: "RESUME_STATE_INVALID", errorCategory: "state", message: `Invalid committed prompt character count for ${callId}: ${statePath}`, retryable: false, stage: "resume", runId: basename(args.runDir) });
+    }
+  }
   if (auditSummaryRecord.handledFailureCount === undefined) {
     auditSummaryRecord.handledFailureCount = 0;
   } else if (!isNonNegativeInteger(auditSummaryRecord.handledFailureCount)) {
@@ -1606,6 +1667,37 @@ export async function markRoleExecutionOutcomeReconciled(args: {
   return updated;
 }
 
+export async function updateRoleExecutionOutcomeAudit(args: {
+  executionDir: string;
+  audit: AuditRecord;
+}): Promise<RoleExecutionOutcomeRecord> {
+  const outcomePath = getRoleExecutionOutcomePath(args.executionDir);
+  const raw = await readJsonFile(outcomePath);
+  if (!isRoleExecutionOutcomeRecord(raw)) {
+    throw new Error(`Invalid role execution outcome: ${outcomePath}`);
+  }
+  const updated: RoleExecutionOutcomeRecord = { ...raw, audit: args.audit };
+  await writeAtomicFile(outcomePath, stringifyJson(updated));
+  return updated;
+}
+
+export async function markRoleExecutionOutcomeSuperseded(args: {
+  executionDir: string;
+  supersededByExecutionId: string;
+}): Promise<RoleExecutionOutcomeRecord> {
+  const outcomePath = getRoleExecutionOutcomePath(args.executionDir);
+  const raw = await readJsonFile(outcomePath);
+  if (!isRoleExecutionOutcomeRecord(raw)) {
+    throw new Error(`Invalid role execution outcome: ${outcomePath}`);
+  }
+  const updated: RoleExecutionOutcomeRecord = {
+    ...raw,
+    supersededByExecutionId: args.supersededByExecutionId
+  };
+  await writeAtomicFile(outcomePath, stringifyJson(updated));
+  return updated;
+}
+
 export async function persistHumanReviewRequest(args: {
   context: RunContext;
   review: PendingHumanReview;
@@ -1737,7 +1829,7 @@ export async function loadCommittedRoleExecutionOutcomes(args: {
       if (!isRoleExecutionOutcomeRecord(raw)) {
         throw new Error(`Invalid role execution outcome: ${outcomePath}`);
       }
-      if (args.unresolvedOnly && raw.checkpointSequence !== undefined) {
+      if (args.unresolvedOnly && (raw.checkpointSequence !== undefined || raw.supersededByExecutionId !== undefined)) {
         continue;
       }
       outcomes.push(raw);

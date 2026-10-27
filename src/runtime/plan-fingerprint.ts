@@ -147,6 +147,7 @@ function buildModelSelectionFingerprintComponent(
       identity: {
         roleId,
         modelRef: resolvedModel.modelRef,
+        fallbackModelRef: resolvedModel.fallbackModelRef ?? null,
         variant: resolvedModel.variant ?? null,
         timeoutMs: resolvedModel.timeoutMs ?? null,
         maxOutputBytes: resolvedModel.maxOutputBytes ?? null,
@@ -154,7 +155,8 @@ function buildModelSelectionFingerprintComponent(
       },
       sourceHints: {
         roleId,
-        modelRef: resolvedModel.modelRef
+        modelRef: resolvedModel.modelRef,
+        fallbackModelRef: resolvedModel.fallbackModelRef ?? null
       }
     }));
 }

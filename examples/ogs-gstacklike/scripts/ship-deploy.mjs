@@ -29,8 +29,9 @@ function parseInputSection(prompt) {
   if (!inputSection) {
     return {};
   }
+  const externalData = inputSection.match(/<ogs_external_data>([\s\S]*?)<\/ogs_external_data>/i)?.[1]?.trim();
   try {
-    const parsed = JSON.parse(inputSection);
+    const parsed = JSON.parse(externalData || inputSection);
     return typeof parsed === "object" && parsed !== null ? parsed : {};
   } catch {
     return {};

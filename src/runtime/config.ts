@@ -231,7 +231,7 @@ function validateLawSpec(value: unknown, filePath: string, fieldPath: string): L
     const constraintsRecord = expectRecord(constraintsValue, filePath, `${fieldPath}.constraints`);
     expectNoExtraKeys(
       constraintsRecord,
-      ["forbiddenToolRefs", "maxTransitions", "allowNoopWithoutExecutionBinding"],
+      ["forbiddenToolRefs", "maxTransitions", "allowNoopWithoutExecutionBinding", "maxPromptCharsPerRole", "maxTotalPromptCharsPerRun", "isolateExternalData"],
       filePath,
       `${fieldPath}.constraints`
     );
@@ -260,6 +260,21 @@ function validateLawSpec(value: unknown, filePath: string, fieldPath: string): L
         constraintsRecord.allowNoopWithoutExecutionBinding,
         filePath,
         `${fieldPath}.constraints.allowNoopWithoutExecutionBinding`
+      ),
+      maxPromptCharsPerRole: expectOptionalPositiveInteger(
+        constraintsRecord.maxPromptCharsPerRole,
+        filePath,
+        `${fieldPath}.constraints.maxPromptCharsPerRole`
+      ),
+      maxTotalPromptCharsPerRun: expectOptionalPositiveInteger(
+        constraintsRecord.maxTotalPromptCharsPerRun,
+        filePath,
+        `${fieldPath}.constraints.maxTotalPromptCharsPerRun`
+      ),
+      isolateExternalData: expectOptionalBoolean(
+        constraintsRecord.isolateExternalData,
+        filePath,
+        `${fieldPath}.constraints.isolateExternalData`
       )
     };
   }

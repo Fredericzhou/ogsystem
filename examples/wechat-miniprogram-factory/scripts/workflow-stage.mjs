@@ -21,6 +21,14 @@ function section(heading) {
 }
 
 function input() {
+  const externalData = prompt.match(/<ogs_external_data>([\s\S]*?)<\/ogs_external_data>/);
+  if (externalData) {
+    try {
+      return JSON.parse(externalData[1].replace(/&lt;\/ogs_external_data&gt;/gi, "</ogs_external_data>"));
+    } catch {
+      return {};
+    }
+  }
   try {
     const value = JSON.parse(section("Input"));
     return value && typeof value === "object" ? value : {};

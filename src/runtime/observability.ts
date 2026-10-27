@@ -89,6 +89,11 @@ export function projectOgsSpan(args: {
   branchId?: string;
   lineageId?: string;
   loopIteration?: number;
+  renderedPromptChars?: number;
+  projectedInputChars?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  fallbackUsed?: boolean;
   status?: "UNSET" | "OK" | "ERROR";
 }): OgsSpanProjection {
   if (!args.traceId || !args.spanId || !args.name || !args.runId) throw new Error("traceId, spanId, name, and runId are required");
@@ -103,7 +108,12 @@ export function projectOgsSpan(args: {
       ...(args.roleId ? { "ogs.role_id": args.roleId } : {}),
       ...(args.branchId ? { "ogs.branch_id": args.branchId } : {}),
       ...(args.lineageId ? { "ogs.lineage_id": args.lineageId } : {}),
-      ...(args.loopIteration === undefined ? {} : { "ogs.loop_iteration": args.loopIteration })
+      ...(args.loopIteration === undefined ? {} : { "ogs.loop_iteration": args.loopIteration }),
+      ...(args.renderedPromptChars === undefined ? {} : { "ogs.rendered_prompt_chars": args.renderedPromptChars }),
+      ...(args.projectedInputChars === undefined ? {} : { "ogs.projected_input_chars": args.projectedInputChars }),
+      ...(args.inputTokens === undefined ? {} : { "ogs.input_tokens_est": args.inputTokens }),
+      ...(args.outputTokens === undefined ? {} : { "ogs.output_tokens_est": args.outputTokens }),
+      ...(args.fallbackUsed === undefined ? {} : { "ogs.fallback_used": args.fallbackUsed })
     },
     status: args.status ?? "UNSET"
   };
