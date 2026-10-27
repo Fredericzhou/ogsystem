@@ -7,7 +7,8 @@ export function createTeamDesignUseCases({
   designSerializer,
   designValidator,
   designAssetStore,
-  packageIntegrity
+  packageIntegrity,
+  rolePackageValidator
 }) {
   if (typeof teamCatalog?.getTeamVersion !== "function") throw new TypeError("Team design requires a TeamVersion catalog.");
   if (typeof teamCatalog?.assertTeamNameAvailable !== "function") throw new TypeError("Team design requires Team name validation.");
@@ -25,6 +26,29 @@ export function createTeamDesignUseCases({
 
   if (typeof packageIntegrity?.computeReleaseBaselineDigest !== "function") {
     throw new TypeError("Team design requires canonical baseline digest support.");
+  }
+
+  function normalizeConfirmedList(value, label) {
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+      throw new Error(`TEAM_SOURCE_${label.toUpperCase()}_INVALID`);
+    }
+    const normalized = value.map((item) => item.trim());
+    if (new Set(normalized).size !== normalized.length) throw new Error(`TEAM_SOURCE_${label.toUpperCase()}_INVALID`);
+    return normalized.sort();
+  }
+
+  function createOutputSchema(content, events) {
+    let schema;
+    try { schema = JSON.parse(String(content || "")); }
+    catch { throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID"); }
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID");
+    const properties = schema.properties;
+    if (!properties || typeof properties !== "object" || Array.isArray(properties)) throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID");
+    const event = properties.event;
+    if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID");
+    if (events.length) event.enum = events;
+    else delete event.enum;
+    return schema;
   }
 
   function validateReleaseBaselines(input, roleIds, current = []) {
@@ -197,6 +221,80 @@ export function createTeamDesignUseCases({
           assets.modelSelection = await modelSelectionForAuthoring(team, body.authoring);
         }
         return designAssetStore.saveAssets({ workdir: team.workdir, assets, roleIds });
+      });
+    },
+    async copyRoleSourceToDraft({ teamVersionId, roleId, converted, events, allowedTools, identityConfirmed = false, sourceVersion }) {
+      if (typeof designAssetStore?.saveImportedRoleAssets !== "function") throw new Error("TEAM_SOURCE_IMPORT_UNAVAILABLE");
+      const initialTeam = await readTeamVersion(teamVersionId);
+      return withTeamVersionLock(initialTeam.teamRootId || initialTeam.teamId || teamVersionId, async () => {
+        const team = await readTeamVersion(teamVersionId);
+        assertDesignStage(team);
+        if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(String(roleId || ""))) throw new Error("TEAM_ROLE_ID_INVALID");
+        if (!converted?.files || typeof converted.files !== "object") throw new Error("TEAM_SOURCE_PACKAGE_INVALID");
+        const design = await projectDesign(team);
+        const roles = design.authoring?.roles || {};
+        if (!Object.hasOwn(roles, roleId)) throw new Error("TEAM_SOURCE_ROLE_NOT_IN_DESIGN");
+        const current = await designAssetStore.readAssets({ workdir: team.workdir, roleIds: [roleId] });
+        if (current.roles?.[roleId]?.["source.json"]) throw new Error("TEAM_SOURCE_ROLE_ALREADY_IMPORTED");
+
+        const outgoingEvents = [...new Set(Object.values(design.authoring?.flows || {})
+          .filter((flow) => flow?.fromRoleId === roleId && !rolePackageValidator?.isRuntimeOnlyErrorEvent?.(flow.eventType))
+          .map((flow) => String(flow.eventType || "").trim())
+          .filter(Boolean))].sort();
+        const selectedEvents = events === undefined ? undefined : normalizeConfirmedList(events, "events");
+        if (selectedEvents && (selectedEvents.length !== outgoingEvents.length || selectedEvents.some((event, index) => event !== outgoingEvents[index]))) {
+          throw new Error("TEAM_SOURCE_EVENTS_MISMATCH: selected events must match the role's Team outgoing events.");
+        }
+        const configuredTools = new Set((current.executionConfig?.tools?.tools || []).map((tool) => String(tool.toolRef || "")).filter(Boolean));
+        const selectedTools = allowedTools === undefined ? undefined : normalizeConfirmedList(allowedTools, "allowedTools");
+        if (selectedTools?.some((tool) => !configuredTools.has(tool))) throw new Error("TEAM_SOURCE_TOOL_NOT_ALLOWED");
+        if (!selectedEvents || !selectedTools || identityConfirmed !== true) {
+          if (!converted?.verification || typeof converted.verification !== "object") throw new Error("TEAM_SOURCE_VERIFICATION_REQUIRED");
+        }
+
+        const role = JSON.parse(String(converted.files["role.json"] || ""));
+        const source = JSON.parse(String(converted.files["source.json"] || ""));
+        const selectedSource = converted.source || source;
+        if (!converted.source || !converted.source.sourceId) throw new Error("TEAM_SOURCE_PROVENANCE_REQUIRED");
+        const sourceVersionMatches = sourceVersion && sourceVersion.sourceId === selectedSource.sourceId
+          && String(sourceVersion.gitUrl || "").replace(/\.git$/, "") === selectedSource.gitUrl
+          && sourceVersion.commit === selectedSource.commit && sourceVersion.path === selectedSource.path
+          && sourceVersion.adapterId === selectedSource.adapterId && sourceVersion.adapterVersion === selectedSource.adapterVersion
+          && sourceVersion.language === selectedSource.language && sourceVersion.sourceDigest === selectedSource.sourceContentDigest;
+        if (!sourceVersionMatches) throw new Error("TEAM_SOURCE_PROVENANCE_MISMATCH");
+        role.roleId = roleId;
+        role.outputs = { ...role.outputs, events: selectedEvents || [] };
+        role.constraints = { ...role.constraints, allowedTools: selectedTools || [] };
+        const verification = selectedEvents && selectedTools && identityConfirmed === true
+          ? { status: "verified", identityConfirmed: true, eventsConfirmed: true, toolsConfirmed: true, confirmedEvents: selectedEvents, confirmedTools: selectedTools }
+          : { status: "unverified", identityConfirmed: identityConfirmed === true, eventsConfirmed: selectedEvents !== undefined, toolsConfirmed: selectedTools !== undefined, missingConfirmations: [
+            ...(identityConfirmed !== true ? ["roleIdentity"] : []),
+            ...(!selectedEvents ? ["outputEvents"] : []),
+            ...(!selectedTools ? ["allowedTools"] : [])
+          ] };
+        source.verification = verification;
+        const packageFiles = {
+          ...converted.files,
+          "role.json": `${JSON.stringify(role, null, 2)}\n`,
+          "output.schema.json": `${JSON.stringify(createOutputSchema(converted.files["output.schema.json"], selectedEvents || []), null, 2)}\n`,
+          "source.json": `${JSON.stringify(source, null, 2)}\n`
+        };
+        if (verification.status === "verified") {
+          if (!rolePackageValidator || typeof rolePackageValidator.validateManifest !== "function"
+            || typeof rolePackageValidator.validatePrompt !== "function" || typeof rolePackageValidator.validateSchema !== "function"
+            || typeof rolePackageValidator.validateSource !== "function") throw new Error("TEAM_ROLE_PACKAGE_VALIDATOR_UNAVAILABLE");
+          const validatedRole = rolePackageValidator.validateManifest(role, `${roleId}/role.json`);
+          const validatedSchema = JSON.parse(packageFiles["output.schema.json"]);
+          rolePackageValidator.validatePrompt(packageFiles["prompt.md"], `${roleId}/prompt.md`);
+          rolePackageValidator.validateSchema(validatedSchema, `${roleId}/output.schema.json`);
+          rolePackageValidator.validateSource(source, `${roleId}/source.json`);
+          const eventEnum = validatedSchema?.properties?.event?.enum;
+          if (JSON.stringify(eventEnum || []) !== JSON.stringify(validatedRole.outputs.events)) {
+            throw new Error("TEAM_SOURCE_SCHEMA_EVENTS_MISMATCH");
+          }
+        }
+        await designAssetStore.saveImportedRoleAssets({ workdir: team.workdir, roleId, files: packageFiles });
+        return { teamVersionId, roleId, verification, assets: await designAssetStore.readAssets({ workdir: team.workdir, roleIds: [roleId] }) };
       });
     },
     async getTeamGraph(teamVersionId, locale = "zh-CN") {

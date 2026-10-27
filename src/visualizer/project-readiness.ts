@@ -23,7 +23,7 @@ import {
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
 import { loadLaws, loadProfiles, loadRuntimeConfig, loadTools } from "../runtime/runtime-loader.js";
-import { validateRolePackageManifest } from "../runtime/role-repo.js";
+import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-store.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
@@ -612,7 +612,10 @@ async function inspectRoleHealth(args: {
         : false;
       if (files.outputSchema && outputSchema) {
         outputSchemaValue = await readJsonFile(resolve(resolvedPath, outputSchema));
+        validateRoleOutputSchemaDefinition(outputSchemaValue, manifestPath);
       }
+      if (files.promptTemplate && promptTemplate) validateRolePromptTemplate(await readFile(resolve(resolvedPath, promptTemplate), "utf8"), manifestPath);
+      if (files.source) validateRoleSourceRecord(await readJsonFile(resolve(resolvedPath, "source.json")), manifestPath);
       if (manifest.roleId !== args.roleId) {
         error = `role.json roleId mismatch: expected "${args.roleId}"`;
       }

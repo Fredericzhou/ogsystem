@@ -15,6 +15,7 @@ are labeled as such; current behavior is described by source code, tests, and ac
 - [Studio and Projects isolation plan](ogs-studio-project-run-isolation-plan.md): design record for storage ownership, Runtime inputs, and recovery/security requirements. Read alongside current product concepts and implementation; its historical TeamVersion descriptions are not lifecycle authority.
 - [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): dated verification evidence; consult the latest dated section and Release UAT checklist for status.
 - [Shared resource architecture](shared-resource-architecture.md): shared Platform resource ownership and adapter boundaries.
+- [Team role source catalog plan](team-role-source-catalog-plan.md): upstream Git role sources, immutable indexing, Markdown adaptation, Draft copying, package validation, and release acceptance.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
   boundaries, and generated source.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,

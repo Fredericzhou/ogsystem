@@ -8,6 +8,7 @@ import {
   loadRolePackage,
   renderRolePrompt,
   validateRoleInputSchema,
+  validateRolePromptTemplate,
   validateRolePackageManifest,
   validateRoleOutputSchema
 } from "../dist/runtime/role-repo.js";
@@ -65,6 +66,43 @@ test("role prompts render the new input and user_preferences fields", async () =
 
   assert.match(rendered, /User preferences:/);
   assert.match(rendered, /judge requested another round/);
+});
+
+test("role prompt templates reject variables the Runtime does not expose", () => {
+  assert.doesNotThrow(() => validateRolePromptTemplate("{{agent}} {{task}} {{role_id}}", "prompt.md"));
+  assert.throws(() => validateRolePromptTemplate("{{agent}} {{external_secret}}", "prompt.md"), /unsupported template variable/);
+});
+
+test("Runtime refuses imported roles until source identity, events, and tools are confirmed", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-role-source-verification-"));
+  t.after(async () => (await import("node:fs/promises")).rm(tempRoot, { recursive: true, force: true }));
+  const roleId = "source-verification";
+  const roleDir = path.join(tempRoot, roleId);
+  await mkdir(roleDir, { recursive: true });
+  const manifest = JSON.parse(await readFile(path.join(roleRootDir, "hello-ogsystem", "role.json"), "utf8"));
+  manifest.roleId = roleId;
+  await writeFile(path.join(roleDir, "role.json"), JSON.stringify(manifest), "utf8");
+  await writeFile(path.join(roleDir, "agent.md"), "Source instructions", "utf8");
+  await writeFile(path.join(roleDir, "prompt.md"), "{{agent}} {{task}}", "utf8");
+  await writeFile(path.join(roleDir, "output.schema.json"), await readFile(path.join(roleRootDir, "hello-ogsystem", "output.schema.json"), "utf8"), "utf8");
+  const source = {
+    version: 1,
+    sourceId: "agency-agents",
+    gitUrl: "https://github.com/msitarzewski/agency-agents",
+    commit: "a".repeat(40),
+    path: "engineering/frontend.md",
+    adapterId: "agency-agents-markdown",
+    adapterVersion: "1",
+    language: "en",
+    sourceContentDigest: "b".repeat(64),
+    importedAt: "2026-10-27T00:00:00.000Z",
+    verification: { status: "unverified", identityConfirmed: false, eventsConfirmed: false, toolsConfirmed: false }
+  };
+  await writeFile(path.join(roleDir, "source.json"), JSON.stringify(source), "utf8");
+  await assert.rejects(loadRolePackage({ roleId, roleRootDir: tempRoot }), /unconfirmed Team identity/);
+  source.verification = { status: "verified", identityConfirmed: true, eventsConfirmed: true, toolsConfirmed: true, confirmedEvents: [], confirmedTools: [] };
+  await writeFile(path.join(roleDir, "source.json"), JSON.stringify(source), "utf8");
+  assert.equal((await loadRolePackage({ roleId, roleRootDir: tempRoot })).manifest.roleId, roleId);
 });
 
 test("loadRolePackage fails fast when agent.md is missing", async () => {

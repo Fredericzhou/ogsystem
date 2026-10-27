@@ -1,5 +1,6 @@
 import { pageFetch } from "../api.js";
 import { esc } from "../components/dom.js";
+import { renderRoleSourceCatalog } from "./role-source-catalog.js";
 
 const labels = {
   zh: {
@@ -7,14 +8,14 @@ const labels = {
     data: ["共享数据", "发布并核验不可变的数据集版本。项目 Materials 与此目录分开保存；数据集不会自动注入任务或仿真。"],
     tools: ["工具目录", "登记团队可引用的工具能力。密钥只接受凭据引用，不在此处保存明文。"],
     storage: ["存储目标", "登记受控的外部存储目标。项目成果与运行证据仍由 Projects 自己持有。"],
-    roles: ["角色仓库", "管理可复用的角色模板。选用后会复制到团队设计中；再在图上连接角色并编辑配置，不会修改模板。"]
+    roles: ["角色仓库", "按分类浏览角色，查看图标与职责说明；选定 Team 角色位后，自动转换并复制为可校验、可运行的角色包。"]
   },
   en: {
     models: ["Model catalog", "Models discovered by the shared execution base, with current availability."],
     data: ["Shared data", "Publish and verify immutable dataset versions. Project Materials remain separate; datasets are not automatically injected into tasks or simulations."],
     tools: ["Tool catalog", "Register tool capabilities that teams may reference. Store credential references, never plaintext secrets."],
     storage: ["Storage targets", "Register controlled external storage targets. Project deliverables and run evidence remain Project-owned."],
-    roles: ["Role repository", "Manage reusable role templates. A selected template is copied into the team design; connect and configure the role there. The template stays unchanged."]
+    roles: ["Role repository", "Browse roles by category, review their icons and descriptions, then convert a selected role into a validated, runnable Team package."]
   }
 };
 
@@ -90,42 +91,8 @@ function renderDatasetPage(root, locale) {
 }
 
 async function renderRoleRepository(root, locale, navigate) {
-  root.innerHTML = `${pageHeading("roles", locale)}<section class="project-library-toolbar studio-repository-toolbar"><div><strong>${locale === "en" ? "Versioned role assets" : "版本化角色资产"}</strong><span>${locale === "en" ? "Templates are read-only; each use adds a copy to the team design." : "模板只读；每次选用都会复制到团队设计中。"}</span></div><a class="secondary-button" href="/studio" data-route="/studio">${locale === "en" ? "Team repository" : "团队仓库"}</a></section><div class="shared-role-layout"><form id="role-template-form" class="project-panel compact-form"><div class="panel-head"><div><span class="section-kicker">${locale === "en" ? "New template version" : "新建模板版本"}</span><h2>${locale === "en" ? "Publish role template" : "发布角色模板"}</h2></div></div><label>${locale === "en" ? "Role ID" : "角色标识"}<input name="roleId" required pattern="[a-z0-9][a-z0-9-]{0,79}"></label><label>${locale === "en" ? "Version ID" : "版本标识"}<input name="versionId" required pattern="[a-z0-9][a-z0-9-]{0,79}"></label><label>${locale === "en" ? "Name" : "名称"}<input name="name" required maxlength="120"></label><label>${locale === "en" ? "Category" : "分类"}<input name="category" maxlength="80"></label><label>${locale === "en" ? "Description" : "说明"}<textarea name="description" rows="3" maxlength="1000"></textarea></label><label>${locale === "en" ? "Role files as JSON object" : "角色文件（JSON 对象）"}<textarea name="assets" rows="11" required spellcheck="false">{"prompt.md":"Describe the role's responsibilities and output."}</textarea><small class="field-hint">agent.md, prompt.md, role.json, output.schema.json</small></label><button class="primary-button" type="submit">${locale === "en" ? "Publish template" : "发布模板"}</button><p class="form-status" id="role-template-status" role="status" aria-live="polite"></p></form><section><div class="panel-head"><div><span class="section-kicker">${locale === "en" ? "Available templates" : "可用模板"}</span><h2>${locale === "en" ? "Role repository" : "角色模板"}</h2></div></div><div id="role-template-list" class="shared-resource-list"><p class="project-loading">${locale === "en" ? "Loading…" : "正在读取…"}</p></div></section></div>`;
-  const list = root.querySelector("#role-template-list");
-  let templates = [];
-  let drafts = [];
-  const refresh = async () => {
-    const [rolePayload, teamPayload] = await Promise.all([
-      jsonRequest("/api/v1/studio/role-repository", "GET"),
-      jsonRequest("/api/v1/team-repository?status=all&pageSize=100", "GET")
-    ]);
-    templates = rolePayload.templates || [];
-    drafts = (teamPayload.teams || []).filter((team) => !team.teamProjectId && !team.builtIn && team.teamVersionStatus === "draft");
-    list.innerHTML = templates.length ? templates.map((template, index) => `<article class="shared-resource-row shared-role-row"><div><strong>${esc(template.name)}</strong><code>${esc(template.roleId)} · ${esc(template.versionId)}</code><p>${esc(template.description || "")} · ${esc(template.category || "general")} · ${template.assets.length} files</p></div><form class="role-template-use" data-template-index="${index}"><label><span class="sr-only">${locale === "en" ? "Team in design" : "设计中的团队"}</span><select name="teamVersionId" required><option value="">${locale === "en" ? "Choose a team in design" : "选择设计中的团队"}</option>${drafts.map((team) => `<option value="${esc(team.projectId || team.teamVersionId)}">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</option>`).join("")}</select></label><label><span class="sr-only">${locale === "en" ? "Role ID in team" : "团队内角色标识"}</span><input name="targetRoleId" required pattern="[a-z][a-z0-9_-]{0,79}" value="${esc(template.roleId)}"></label><button class="secondary-button" type="submit" ${drafts.length ? "" : "disabled"}>${locale === "en" ? "Use in design" : "加入设计"}</button></form></article>`).join("") : `<p class="empty-note">${locale === "en" ? "No role templates yet." : "尚无角色模板。"}</p>`;
-    list.querySelectorAll(".role-template-use").forEach((form) => form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const data = new FormData(form);
-      const template = templates[Number(form.dataset.templateIndex)];
-      const query = new URLSearchParams({ roleTemplate: template.roleId, version: template.versionId, roleId: String(data.get("targetRoleId")) });
-      navigate(`/studio/teams/${encodeURIComponent(data.get("teamVersionId"))}/design?${query}`);
-    }));
-  };
-  root.querySelector("#role-template-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const status = root.querySelector("#role-template-status");
-    let assets;
-    try { assets = JSON.parse(data.get("assets")); }
-    catch { status.textContent = locale === "en" ? "Role files must be a JSON object." : "角色文件必须是 JSON 对象。"; return; }
-    status.textContent = locale === "en" ? "Publishing…" : "正在发布…";
-    try {
-      await jsonRequest("/api/v1/studio/role-repository", "POST", { roleId: data.get("roleId"), versionId: data.get("versionId"), metadata: { name: data.get("name"), category: data.get("category"), description: data.get("description") }, assets });
-      status.textContent = locale === "en" ? "Immutable template version published." : "不可变角色模板版本已发布。";
-      await refresh();
-    } catch (error) { status.textContent = error.message; }
-  });
-  void refresh().catch((error) => { list.innerHTML = `<p class="run-error">${esc(error.message)}</p>`; });
+  root.innerHTML = pageHeading("roles", locale);
+  renderRoleSourceCatalog(root, locale, navigate);
 }
 
 export function renderSharedResourcePage(root, section, locale = "zh-CN", navigate = (path) => { location.href = path; }) {

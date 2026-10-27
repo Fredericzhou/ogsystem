@@ -79,6 +79,12 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator(".classic-team-section").count(), 1);
     assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 3);
     assert.equal(await page.locator(".repository-classic-section [data-team-action='delete']").count(), 0, "classic built-in teams in the repository must not expose a delete action");
+    const classicCardSizing = await page.locator(".repository-classic-section .classic-team-card").first().evaluate((card) => ({
+      padding: getComputedStyle(card).padding,
+      previewHeight: getComputedStyle(card.querySelector(".classic-team-preview")).height,
+      descriptionLines: getComputedStyle(card.querySelector("p")).webkitLineClamp
+    }));
+    assert.deepEqual(classicCardSizing, { padding: "12px", previewHeight: "88px", descriptionLines: "3" });
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true", "theme choice should persist across product routes");
@@ -92,6 +98,12 @@ test("site completes the product project flow with task records and repository e
     assert.match(await page.locator("#studio-view .repository-heading").innerText(), /Studio/);
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true']").count(), 3, "Studio should list the three classic built-in teams as forkable versions");
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true'] [data-team-action='delete']").count(), 0, "built-in classic teams must not expose a delete action");
+    const versionCardSizing = await page.locator("#studio-view #studio-grid .team-version-card").first().evaluate((card) => ({
+      padding: getComputedStyle(card).padding,
+      descriptionLines: getComputedStyle(card.querySelector(":scope > p")).webkitLineClamp
+    }));
+    assert.equal(versionCardSizing.padding, classicCardSizing.padding, "team version cards should share compact padding with classic cards");
+    assert.equal(versionCardSizing.descriptionLines, "3");
     const createTeamAction = page.locator("#studio-view .studio-repository-toolbar .primary-button");
     assert.equal(await createTeamAction.isVisible(), true, "Studio should keep its create action in the repository toolbar");
     assert.ok(await createTeamAction.evaluate((button) => button.getBoundingClientRect().height > 0), "Studio create action should have a rendered hit area");
