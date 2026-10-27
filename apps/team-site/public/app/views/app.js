@@ -7,6 +7,7 @@ import { createRunPoller, isTerminalRunStatus } from "../components/run-poll.js"
 import { labelEvent as localizedEventLabel, taskExample, text } from "../i18n.js";
 import { createRouter } from "../router.js";
 import { renderSharedResourcePage } from "./shared-resources.js";
+import { renderPlatformRoleSources } from "./platform-role-sources.js";
 let studioGraphLoad;
 const mountedStudioGraphs = new Set();
 let fallbackUuidCounter = 0;
@@ -113,7 +114,7 @@ const copy = {
   }
 };
 Object.assign(copy["zh-CN"], {
-  navProjects: "协作项目", navStudio: "OGS Studio", navStudioRepository: "团队仓库", navStudioCreate: "团队创建", navRoleRepository: "角色仓库", navModels: "模型", navPlatform: "模型配置",
+  navProjects: "协作项目", navStudio: "OGS Studio", navStudioRepository: "团队仓库", navStudioCreate: "团队创建", navRoleRepository: "角色仓库", navModels: "模型服务", navPlatform: "平台配置", navRoleSources: "角色源配置",
   homeIntro: "从清晰目标开始，定义职责角色与交接方式；每项责任由配置的执行者承担，共同产出可检查的结果。",
   promiseOne: "每个职责都有清晰边界",
   promiseOneBody: "从目标拆解到结果整合，每项责任都在流程中明确。",
@@ -135,7 +136,7 @@ Object.assign(copy["zh-CN"], {
   readinessUnconfirmed: "结构未确认"
 });
 Object.assign(copy.en, {
-  navProjects: "Collaboration projects", navStudio: "OGS Studio", navStudioRepository: "Team repository", navStudioCreate: "Team creation", navRoleRepository: "Role repository", navModels: "Models", navPlatform: "Models",
+  navProjects: "Collaboration projects", navStudio: "OGS Studio", navStudioRepository: "Team repository", navStudioCreate: "Team creation", navRoleRepository: "Role repository", navModels: "Model services", navPlatform: "Platform settings", navRoleSources: "Role sources",
   homeIntro: "Start with a clear goal. Define responsibility roles and handoffs; configured executors perform each responsibility and produce a reviewable outcome.",
   promiseOne: "Every responsibility has a clear boundary",
   promiseOneBody: "Each responsibility is explicit, from framing the task to assembling the result.",
@@ -510,6 +511,7 @@ function isProjectRoute() {
     || path === "/projects"
     || path === "/platform"
     || path === "/platform/models"
+    || path === "/platform/role-sources"
     || path === "/projects/new"
     || path === "/studio/new"
     || /^\/projects\/[a-z0-9-]+\/runs\/[A-Za-z0-9._-]+$/.test(path)
@@ -1993,6 +1995,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (modelResponse.ok) discoveredModels = modelPayload.models || [];
     } catch { /* The design editor remains available when model discovery is offline. */ }
     let studioRoleTemplatesByCommandId = new Map();
+    let studioSourceRolesByCommandId = new Map();
     let studioRolePackages = { rolePackages: [] };
     try {
       const templateResponse = await pageFetch("/api/v1/studio/role-repository");
@@ -2036,6 +2039,30 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         }
       }
     } catch { /* A missing optional shared catalog must not block team design. */ }
+    try {
+      const sourcesResponse = await pageFetch("/api/v1/studio/role-sources");
+      const sourcesPayload = await sourcesResponse.json();
+      if (sourcesResponse.ok) {
+        for (const source of sourcesPayload.sources || []) for (const sourceRole of source.roles || []) {
+          if (sourceRole.status !== "ready") continue;
+          let hash = 2166136261;
+          for (const character of `${source.sourceId}/${sourceRole.roleId}`) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+          const roleId = `source-${(hash >>> 0).toString(36)}`;
+          if (studioRolePackages.rolePackages.some((item) => item.roleId === roleId)) continue;
+          studioRolePackages.rolePackages.push({
+            roleId,
+            name: sourceRole.name,
+            description: sourceRole.description,
+            status: "ok",
+            hasRoleJson: true,
+            hasPrompt: true,
+            hasOutputSchema: true,
+            source: `${source.name || source.sourceId} · ${sourceRole.category || "role"}`
+          });
+          studioSourceRolesByCommandId.set(roleId, { sourceId: source.sourceId, roleKey: sourceRole.roleId, commit: sourceRole.commit || source.commit });
+        }
+      }
+    } catch { /* Source roles are optional; installed role packages remain available. */ }
     const renderInspector = () => {
       if (!inspector) return;
       inspector.innerHTML = studioPropertyInspectorMarkup(authoring, selection, state.locale, discoveredModels);
@@ -2793,6 +2820,17 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (tone === "error") showToast(message);
       },
       onApplyCommand: async (result) => {
+        let convertedSourceAssets;
+        const pendingSourceRole = result.repositoryRoleId ? studioSourceRolesByCommandId.get(result.repositoryRoleId) : undefined;
+        if (pendingSourceRole && result.selectedRoleId) {
+          const sourceResponse = await pageFetch(`/api/v1/studio/role-sources/${encodeURIComponent(pendingSourceRole.sourceId)}/roles/${encodeURIComponent(pendingSourceRole.roleKey)}/convert?commit=${encodeURIComponent(pendingSourceRole.commit)}`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ roleId: result.selectedRoleId })
+          });
+          const sourcePayload = await sourceResponse.json();
+          if (!sourceResponse.ok) throw new Error(sourcePayload.error || "Unable to convert the source role.");
+          convertedSourceAssets = sourcePayload.result?.files || {};
+        }
         authoring = result.authoring;
         canvas = result.canvas;
         if (result.historyContext) {
@@ -2819,6 +2857,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             selection.assets.roles ||= {};
             selection.assets.roles[result.selectedRoleId] = templatePayload.assets || {};
             for (const file of Object.keys(templatePayload.assets || {})) pendingRoleAssets.add(`${result.selectedRoleId}/${file}`);
+          }
+          if (convertedSourceAssets && result.selectedRoleId) {
+            selection.assets.roles ||= {};
+            selection.assets.roles[result.selectedRoleId] = convertedSourceAssets;
+            for (const file of Object.keys(convertedSourceAssets)) pendingRoleAssets.add(`${result.selectedRoleId}/${file}`);
           }
         }
         updateStudioGraph?.update({
@@ -4214,12 +4257,13 @@ function syncRoute() {
   if (path === "/projects") { state.view = "projects"; void renderCollaborationProjects(pageRequest); }
   else if (path === "/teams") { state.view = "workspace"; void renderProjectLibrary(pageRequest); }
   else if (path === "/studio") { state.view = "studio"; renderPageFrame($("#studio-view"), "A", renderStudioOverview(pageRequest)); }
+  else if (path === "/platform/role-sources") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderPlatformRoleSources($("#platform-view"), state.locale)); }
   else if (path === "/platform" || path === "/platform/models") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderPlatformConfig(pageRequest)); }
   else if (path === "/examples") state.view = "examples";
   else if (path === "/history") { state.view = "history"; frameExistingPage($("#history-view"), "A"); void renderHistory(pageRequest); }
   else if (path === "/examples") frameExistingPage($("#examples-view"), "A");
   setView(state.view);
-  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioReleaseMatch && !studioRunMatch && !studioRunDetailMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
+  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioReleaseMatch && !studioRunMatch && !studioRunDetailMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
 let drawerReleaseTrap;
 let drawerReleaseScroll;
