@@ -6,6 +6,7 @@ are labeled as such; current behavior is described by source code, tests, and ac
 
 - Current engineering guidance and plans live in this directory.
 - [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): current productization work and acceptance criteria for the accepted orchestration semantics.
+- [Team IR v2 Handoff 设计方案](team-ir-handoff-v2-design.md)：下一代 Team IR、端口与映射规则、编译器/Runtime 边界、Studio 体验、实施阶段和验收矩阵。
 - [OGS production governance and eval plan](ogs-production-governance-and-eval-plan.md): implementation plan for untrusted external data isolation, full-prompt resource budgets, batch release baseline execution, version comparison, and scoped model fallback.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
 - [Decisions](DECISIONS.md): accepted architecture decisions and current boundaries.
