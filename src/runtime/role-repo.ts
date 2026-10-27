@@ -12,7 +12,9 @@ import { resolve } from "node:path";
 
 import { readJsonFile } from "./json-file.js";
 import { assertJsonSchema } from "./json-schema.js";
+import { listJsonSchemaIssues } from "./json-schema.js";
 import { validateConditionAst } from "./condition-ast.js";
+import { RUNTIME_ROLE_PROMPT_INPUT_SCHEMA } from "./role-prompt-input-schema.js";
 import type {
   LoadedRolePackage,
   RoleExecutionOutput,
@@ -229,6 +231,66 @@ export function validateRolePackageManifest(
   return manifest;
 }
 
+export function validateRolePromptTemplate(promptTemplate: string, filePath: string): void {
+  const properties = RUNTIME_ROLE_PROMPT_INPUT_SCHEMA.properties;
+  const supported = new Set(["agent", ...Object.keys(properties)]);
+  for (const match of promptTemplate.matchAll(/\{\{([^{}]+)\}\}/g)) {
+    const variable = match[1];
+    if (!/^[a-zA-Z0-9_.-]+$/.test(variable) || !supported.has(variable)) {
+      fail(filePath, "$.promptTemplate", `unsupported template variable {{${variable}}}`);
+    }
+  }
+  if (/\{\{[^{}]*\}\}/.test(promptTemplate.replace(/\{\{[^{}]+\}\}/g, ""))) {
+    fail(filePath, "$.promptTemplate", "malformed template variable");
+  }
+}
+
+export function validateRoleOutputSchemaDefinition(outputSchema: unknown, filePath: string): void {
+  try {
+    listJsonSchemaIssues({ schema: outputSchema, data: {} });
+  } catch (error) {
+    fail(filePath, "$.outputSchema", `invalid JSON Schema: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export function validateRoleSourceRecord(value: unknown, filePath: string): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) fail(filePath, "$.source", "expected an object");
+  const record = value as Record<string, unknown>;
+  if (record.adapterId === undefined && record.sourceType === "agency-agents") {
+    const upstream = record.upstream as Record<string, unknown> | undefined;
+    if (record.version !== 1 || typeof record.sourceId !== "string" || typeof record.importedAt !== "string"
+      || !Number.isFinite(Date.parse(record.importedAt)) || !upstream || typeof upstream.path !== "string"
+      || upstream.path.startsWith("/") || upstream.path.includes("\\")
+      || upstream.path.split("/").some((part) => !part || part === "." || part === "..")
+      || typeof upstream.commit !== "string" || !/^[a-f0-9]{40}$/i.test(upstream.commit)) {
+      fail(filePath, "$.source", "invalid legacy source provenance fields");
+    }
+    return;
+  }
+  if (record.version !== 1 || typeof record.sourceId !== "string" || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(record.sourceId)
+    || typeof record.gitUrl !== "string" || !record.gitUrl.startsWith("https://")
+    || typeof record.commit !== "string" || !/^[a-f0-9]{40}$/i.test(record.commit)
+    || typeof record.path !== "string" || !record.path || record.path.startsWith("/") || record.path.includes("\\")
+    || record.path.split("/").some((part) => !part || part === "." || part === "..")
+    || typeof record.adapterId !== "string" || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(record.adapterId)
+    || typeof record.adapterVersion !== "string" || typeof record.language !== "string"
+    || typeof record.sourceContentDigest !== "string" || !/^[a-f0-9]{64}$/i.test(record.sourceContentDigest)
+    || typeof record.importedAt !== "string" || !Number.isFinite(Date.parse(record.importedAt))) {
+    fail(filePath, "$.source", "invalid source provenance fields");
+  }
+  const verification = record.verification;
+  if (!verification || typeof verification !== "object" || Array.isArray(verification)) fail(filePath, "$.source.verification", "missing verification record");
+  const confirmation = verification as Record<string, unknown>;
+  const status = confirmation.status;
+  if (status === "unverified") fail(filePath, "$.source.verification", "source role has unconfirmed Team identity, output events, or tool permissions");
+  if (status !== "verified" || confirmation.identityConfirmed !== true
+    || confirmation.eventsConfirmed !== true || confirmation.toolsConfirmed !== true
+    || !Array.isArray(confirmation.confirmedEvents) || !confirmation.confirmedEvents.every((item) => typeof item === "string")
+    || !Array.isArray(confirmation.confirmedTools) || !confirmation.confirmedTools.every((item) => typeof item === "string")) {
+    fail(filePath, "$.source.verification", "source role verification record is invalid");
+  }
+}
+
 export async function loadRolePackage(args: {
   roleId: string;
   roleRootDir: string;
@@ -247,8 +309,19 @@ export async function loadRolePackage(args: {
   const outputSchemaPath = resolve(resolvedPath, manifest.outputSchema);
   const promptTemplate = await readFile(promptTemplatePath, "utf8");
   const outputSchema = await readJsonFile(outputSchemaPath);
+  validateRolePromptTemplate(promptTemplate, manifestPath);
+  validateRoleOutputSchemaDefinition(outputSchema, manifestPath);
   validateAuditFields(manifest, outputSchema, manifestPath);
   const agent = await readFile(resolve(resolvedPath, "agent.md"), "utf8");
+  let sourceRecord: unknown;
+  try {
+    sourceRecord = JSON.parse(await readFile(resolve(resolvedPath, "source.json"), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      fail(manifestPath, "$.source", `invalid source.json: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (sourceRecord !== undefined) validateRoleSourceRecord(sourceRecord, manifestPath);
 
   return {
     resolvedPath,

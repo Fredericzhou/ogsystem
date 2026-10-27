@@ -22,6 +22,31 @@ test("TeamVersion design assets persist role packages and handoff contracts in t
   assert.deepEqual(JSON.parse(await readFile(join(workdir, ".ogs", "contracts", "handoff.json"), "utf8")), { version: 1, contracts: [] });
 });
 
+test("source.json is retained in Draft assets, import-managed, and protected from Studio edits", async (t) => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-team-source-asset-"));
+  t.after(() => rm(workdir, { recursive: true, force: true }));
+  const store = createFileTeamDesignAssetStore();
+  const source = JSON.stringify({ version: 1, sourceId: "agency-agents", commit: "a".repeat(40), path: "engineering/frontend.md" });
+  const imported = await store.saveImportedRoleAssets({
+    workdir,
+    roleId: "frontend_dev",
+    files: {
+      "agent.md": "Imported instructions.",
+      "prompt.md": "{{agent}} {{task}}",
+      "role.json": JSON.stringify({ roleId: "frontend_dev" }),
+      "output.schema.json": JSON.stringify({ type: "object", properties: { event: { type: "string" } } }),
+      "source.json": source
+    }
+  });
+  assert.equal(imported.roles.frontend_dev["source.json"], source);
+  await assert.rejects(store.saveAssets({
+    workdir,
+    roleIds: ["frontend_dev"],
+    assets: { roles: { frontend_dev: { "source.json": "{}" } } }
+  }), /TEAM_SOURCE_ASSET_READ_ONLY/);
+  assert.equal((await store.readAssets({ workdir, roleIds: ["frontend_dev"] })).roles.frontend_dev["source.json"], source);
+});
+
 test("TeamVersion model bindings persist in the executable model-selection asset and reload", async (t) => {
   const workdir = await mkdtemp(join(tmpdir(), "ogs-team-model-selection-"));
   t.after(() => rm(workdir, { recursive: true, force: true }));

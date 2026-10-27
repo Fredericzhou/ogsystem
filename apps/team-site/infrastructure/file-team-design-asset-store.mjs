@@ -5,7 +5,8 @@ import { validateProfilesConfig, validateToolsConfig } from "../../../dist/runti
 import { validateModelSelection } from "../../../dist/runtime/model-selection.js";
 
 const ROLE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const ROLE_FILES = ["agent.md", "prompt.md", "role.json", "output.schema.json"];
+const ROLE_FILES = ["agent.md", "prompt.md", "role.json", "output.schema.json", "source.json"];
+const EDITABLE_ROLE_FILES = ROLE_FILES.filter((file) => file !== "source.json");
 const CONTRACT_PATH = ".ogs/contracts/handoff.json";
 const PROFILE_PATH = "profiles.json";
 const TOOL_PATH = "tools.json";
@@ -145,7 +146,10 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
           const path = roleFilePath(roleRoot, roleId, file);
           await assertSafePath(root, path);
           try { roles[roleId][file] = await read(path, "utf8"); }
-          catch (error) { if (error?.code !== "ENOENT") throw error; roles[roleId][file] = ""; }
+          catch (error) {
+            if (error?.code !== "ENOENT") throw error;
+            if (file !== "source.json") roles[roleId][file] = "";
+          }
         }
       }
       const contractPath = resolve(root, CONTRACT_PATH);
@@ -177,10 +181,22 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
       const files = [];
       for (const roleId of roleIds) {
         const values = assets.roles?.[roleId] || {};
-        for (const file of ROLE_FILES) {
+        for (const file of EDITABLE_ROLE_FILES) {
           if (values[file] === undefined) continue;
           validateAsset(file, values[file]);
           files.push({ path: roleFilePath(roleRoot, roleId, file), content: values[file] });
+        }
+        if (Object.hasOwn(values, "source.json")) {
+          const submittedSource = values["source.json"];
+          if (typeof submittedSource !== "string") throw new Error("TEAM_SOURCE_ASSET_READ_ONLY: source.json is managed by the source import workflow.");
+          if (submittedSource) {
+            const sourcePath = roleFilePath(roleRoot, roleId, "source.json");
+            await assertSafePath(root, sourcePath);
+            let currentSource = "";
+            try { currentSource = await read(sourcePath, "utf8"); }
+            catch (error) { if (error?.code !== "ENOENT") throw error; }
+            if (submittedSource !== currentSource) throw new Error("TEAM_SOURCE_ASSET_READ_ONLY: source.json is managed by the source import workflow.");
+          }
         }
       }
       if (assets.contracts !== undefined) {
@@ -223,6 +239,28 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
         throw error;
       }
       return this.readAssets({ workdir: root, roleIds });
+    },
+    async saveImportedRoleAssets({ workdir, roleId, files: roleFiles = {} }) {
+      if (!ROLE_ID.test(roleId)) throw new Error("TEAM_ASSET_PATH_INVALID: unsupported role asset.");
+      const sourceContent = roleFiles["source.json"];
+      if (typeof sourceContent !== "string") throw new Error("TEAM_SOURCE_ASSET_REQUIRED");
+      validateAsset("source.json", sourceContent);
+      const { ["source.json"]: _source, ...editableFiles } = roleFiles;
+      await this.saveAssets({ workdir, roleIds: [roleId], assets: { roles: { [roleId]: editableFiles } } });
+      const root = resolve(workdir);
+      const roleRoot = await roleRootPath(root);
+      const path = roleFilePath(roleRoot, roleId, "source.json");
+      await assertSafePath(root, path);
+      await mkdir(dirname(path), { recursive: true });
+      const temporary = join(dirname(path), `.ogs-team-source-${makeId()}.tmp`);
+      try {
+        await write(temporary, sourceContent, { encoding: "utf8", flag: "wx" });
+        await assertSafePath(root, path);
+        await publish(temporary, path);
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
+      return this.readAssets({ workdir: root, roleIds: [roleId] });
     }
   });
 }

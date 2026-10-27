@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 const ID = /^[a-z0-9][a-z0-9-]{0,79}$/;
-const ROLE_FILES = new Set(["agent.md", "prompt.md", "role.json", "output.schema.json"]);
+const ROLE_FILES = new Set(["agent.md", "prompt.md", "role.json", "output.schema.json", "source.json"]);
 const fail = (code) => { throw new Error(code); };
 function assertId(value, label) { if (!ID.test(String(value || ""))) fail(label + "_INVALID"); }
 async function publishJson(path, value) {

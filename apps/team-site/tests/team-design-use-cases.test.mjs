@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTeamDesignUseCases } from "../application/team-design-use-cases.mjs";
 import { computeReleaseBaselineDigest } from "../infrastructure/package-integrity.mjs";
+import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../../../dist/runtime/role-repo.js";
+import { isRuntimeOnlyErrorEvent } from "../../../dist/runtime/error-flow-utils.js";
 
 function setup(overrides = {}) {
   const calls = [];
@@ -22,10 +24,18 @@ function setup(overrides = {}) {
     designSerializer: { serialize: () => "flowchart TD" },
     designValidator: { validate: async (current, body) => ({ ok: true, teamVersionId: current.teamVersionId, body }) },
     designAssetStore: {
-      readAssets: async ({ workdir, roleIds }) => ({ workdir, roleIds, roles: {}, contracts: "", modelSelection: { configVersion: "2", defaults: { backend: "codex", modelId: "gpt-6-luna" } } }),
-      saveAssets: async (value) => (calls.push(["assets", value]), value.assets)
+      readAssets: async ({ workdir, roleIds }) => ({ workdir, roleIds, roles: {}, contracts: "", executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "2", defaults: { backend: "codex", modelId: "gpt-6-luna" } } }),
+      saveAssets: async (value) => (calls.push(["assets", value]), value.assets),
+      saveImportedRoleAssets: async (value) => (calls.push(["importedAssets", value]), value)
     },
-    packageIntegrity: { computeReleaseBaselineDigest }
+    packageIntegrity: { computeReleaseBaselineDigest },
+    rolePackageValidator: {
+      validateManifest: validateRolePackageManifest,
+      validatePrompt: validateRolePromptTemplate,
+      validateSchema: validateRoleOutputSchemaDefinition,
+      validateSource: validateRoleSourceRecord,
+      isRuntimeOnlyErrorEvent
+    }
   });
   return { useCases, calls, team };
 }
@@ -145,4 +155,51 @@ test("Studio keeps default model inheritance out of role overrides", async () =>
     defaults: { backend: "codex", modelId: "gpt-6-luna" },
     roles: { explicit: { backend: "opencode", modelId: "big-pickle" } }
   });
+});
+
+test("source role copy requires Team graph events and records explicit confirmation", async () => {
+  const authoring = {
+    version: 1,
+    roles: { analyst: { roleId: "analyst", bindingKind: "noop" } },
+    flows: { done: { fromRoleId: "analyst", toRoleId: "__system_end__", eventType: "DONE" } }
+  };
+  const { useCases, calls, team } = setup({ authoring });
+  const converted = {
+    source: { sourceId: "agency-agents", gitUrl: "https://github.com/msitarzewski/agency-agents", commit: "a".repeat(40), path: "engineering/frontend.md", adapterId: "agency-agents-markdown", adapterVersion: "1", language: "en", sourceContentDigest: "b".repeat(64) },
+    verification: { status: "unverified" },
+    files: {
+      "agent.md": "Instructions",
+      "prompt.md": "{{agent}} {{task}}",
+      "role.json": JSON.stringify({ roleId: "analyst", roleVersion: "source-test", name: "Analyst", description: "Review provided material", promptTemplate: "prompt.md", outputSchema: "output.schema.json", contractVersion: 1, purpose: "Perform the assigned analytical responsibility", responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] }, inputs: { preconditions: [] }, outputs: { events: [], postconditions: [] }, authority: { controlActions: [] }, constraints: { writableStateFields: [], allowedTools: [] }, failure: { retryableErrorCodes: [], terminalErrorCodes: [] }, audit: { requiredFields: [] } }),
+      "output.schema.json": JSON.stringify({ type: "object", properties: { event: { type: "string" } } }),
+      "source.json": JSON.stringify({ version: 1, sourceId: "agency-agents", gitUrl: "https://github.com/msitarzewski/agency-agents", commit: "a".repeat(40), path: "engineering/frontend.md", adapterId: "agency-agents-markdown", adapterVersion: "1", language: "en", sourceContentDigest: "b".repeat(64), importedAt: "2026-10-27T00:00:00.000Z" })
+    }
+  };
+  const sourceVersion = { ...converted.source, sourceDigest: converted.source.sourceContentDigest };
+  await assert.rejects(useCases.copyRoleSourceToDraft({ teamVersionId: team.teamVersionId, roleId: "analyst", converted, sourceVersion, events: [], allowedTools: [], identityConfirmed: true }), /TEAM_SOURCE_EVENTS_MISMATCH/);
+  await useCases.copyRoleSourceToDraft({ teamVersionId: team.teamVersionId, roleId: "analyst", converted, sourceVersion, events: ["DONE"], allowedTools: [], identityConfirmed: true });
+  const saved = calls.find((call) => call[0] === "importedAssets")[1];
+  const role = JSON.parse(saved.files["role.json"]);
+  const source = JSON.parse(saved.files["source.json"]);
+  assert.deepEqual(role.outputs.events, ["DONE"]);
+  assert.deepEqual(role.constraints.allowedTools, []);
+  assert.equal(source.verification.status, "verified");
+});
+
+test("source role copy can preserve an unverified Draft while confirmation is incomplete", async () => {
+  const authoring = { version: 1, roles: { analyst: { roleId: "analyst", bindingKind: "noop" } }, flows: {} };
+  const { useCases, calls, team } = setup({ authoring });
+  const converted = {
+    source: { sourceId: "agency-agents", gitUrl: "https://github.com/msitarzewski/agency-agents", commit: "a".repeat(40), path: "engineering/frontend.md", adapterId: "agency-agents-markdown", adapterVersion: "1", language: "en", sourceContentDigest: "b".repeat(64) },
+    verification: { status: "unverified" },
+    files: {
+      "agent.md": "Instructions", "prompt.md": "{{agent}} {{task}}",
+      "role.json": JSON.stringify({ roleId: "analyst", outputs: { events: [] }, constraints: { allowedTools: [] } }),
+      "output.schema.json": JSON.stringify({ type: "object", properties: { event: { type: "string" } } }),
+      "source.json": JSON.stringify({ version: 1, sourceId: "agency-agents", commit: "a".repeat(40), path: "engineering/frontend.md" })
+    }
+  };
+  await useCases.copyRoleSourceToDraft({ teamVersionId: team.teamVersionId, roleId: "analyst", converted, sourceVersion: { ...converted.source, sourceDigest: converted.source.sourceContentDigest } });
+  const saved = calls.find((call) => call[0] === "importedAssets")[1];
+  assert.equal(JSON.parse(saved.files["source.json"]).verification.status, "unverified");
 });
