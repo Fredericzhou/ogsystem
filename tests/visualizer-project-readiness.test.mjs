@@ -69,9 +69,6 @@ async function writeRolePackage(workdir, roleId, options = {}) {
   if (!options.omitAgent) {
     await writeFile(path.join(roleDir, "agent.md"), `# ${roleId}\n`, "utf8");
   }
-  if (!options.omitSource) {
-    await writeFile(path.join(roleDir, "source.json"), JSON.stringify({ source: "test" }, null, 2), "utf8");
-  }
 }
 
 async function writeSystem(workdir, lines) {

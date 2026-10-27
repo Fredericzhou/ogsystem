@@ -36,10 +36,15 @@ export function setStudioX6RuntimeProgress(root: HTMLElement, events: readonly S
   mounted.get(root)?.setRuntimeProgress(events);
 }
 
+export function focusStudioX6RuntimeHandoff(root: HTMLElement, handoffId: string): void {
+  mounted.get(root)?.focusRuntimeHandoff(handoffId);
+}
+
 window.OGSVisualizerClient = window.OGSVisualizerClient || {};
 Object.assign(window.OGSVisualizerClient, {
   mountStudioX6Bridge,
   disposeStudioX6Bridge,
   setStudioX6RuntimeProgress,
+  focusStudioX6RuntimeHandoff,
   applyStudioAuthoringCommand
 });

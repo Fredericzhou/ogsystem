@@ -48,21 +48,96 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     progressEvents: [
       { type: "flow.activated", fromRoleId: "__system_start__", toRoleId: "dispatch", eventType: "START", branchId: "entry-1" },
       { type: "role.started", roleId: "dispatch", branchId: "entry-1", executionId: "dispatch-1" },
-      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "worker-1" },
+      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", edgeId: workFlow.id, branchId: "worker-1" },
       { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "worker-2" },
+      { type: "human_review_requested", roleId: "dispatch", branchId: "entry-1" },
       { type: "flow.activated", fromRoleId: "worker", toRoleId: "__system_end__", eventType: "DONE", branchId: "worker-1" },
       { type: "role.completed", roleId: "worker", branchId: "worker-1", executionId: "worker-1" },
       { type: "role.started", roleId: "worker", branchId: "worker-2", executionId: "worker-2" }
     ]
   });
 
-  assert.equal(state.nodeStates.get("dispatch").active, true);
+  assert.equal(state.nodeStates.get("dispatch").active, false, "review waits are static node states");
+  assert.equal(state.nodeStates.get("dispatch").status, "waiting_review");
+  assert.equal(state.nodeStates.get("dispatch").waitingReview, true);
   assert.equal(state.nodeStates.get("worker").active, true);
-  assert.equal(state.edgeStates.get(entryFlow.id).active, true);
+  assert.equal(state.edgeStates.get(entryFlow.id).waiting, true, "review wait uses a static waiting edge state");
   assert.equal(state.edgeStates.get(workFlow.id).active, true, "one still-running branch keeps its shared flow highlighted");
   assert.equal(state.nodeStates.get("__system_end__").status, "running", "End remains active while aggregation is pending");
   assert.equal(state.nodeStates.get("__system_end__").active, true);
-  assert.equal(state.activeNodeCount, 3);
+  assert.equal(state.activeNodeCount, 2);
+
+  const replayed = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "flow.activated", handoffId: "retry-flow", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "retry-branch" },
+      { type: "role.started", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
+      { type: "role.failed", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
+      { type: "role_retry_scheduled", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
+      { type: "role.started", roleId: "worker", branchId: "retry-branch", executionId: "attempt-2", attempt: 2 },
+      { type: "role.failed", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
+      { type: "role.completed", roleId: "worker", branchId: "retry-branch", executionId: "attempt-2", attempt: 2 },
+      { type: "role.completed", roleId: "worker", branchId: "retry-branch", executionId: "attempt-2", attempt: 2 }
+    ]
+  });
+  assert.equal(replayed.handoffStatesById.get("retry-flow").status, "completed", "stale failures and duplicate replay cannot override the latest attempt");
+
+  const stopped = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "flow.activated", handoffId: "stop-flow", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "stop-branch" },
+      { type: "role.started", roleId: "worker", branchId: "stop-branch", executionId: "stop-execution", attempt: 1 },
+      { type: "run_stopped" },
+      { type: "role.started", roleId: "worker", branchId: "stop-branch", executionId: "late-execution", attempt: 2 }
+    ]
+  });
+  assert.equal(stopped.handoffStatesById.get("stop-flow").status, "stopped", "stop freezes flow state and clears active animation");
+  assert.equal(stopped.edgeStates.get(workFlow.id).active, false);
+
+  const mixedBranches = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "flow.activated", handoffId: "failed-branch", edgeId: workFlow.id, fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "failed-branch" },
+      { type: "role.started", roleId: "worker", branchId: "failed-branch", executionId: "failed-execution", attempt: 1 },
+      { type: "role.failed", roleId: "worker", branchId: "failed-branch", executionId: "failed-execution", attempt: 1, errorEnvelope: { errorCode: "MODEL_TIMEOUT", message: "Primary model timed out" } },
+      { type: "flow.activated", handoffId: "active-branch", edgeId: workFlow.id, fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "active-branch" },
+      { type: "role.started", roleId: "worker", branchId: "active-branch", executionId: "active-execution", attempt: 1 }
+    ]
+  });
+  assert.equal(mixedBranches.edgeStates.get(workFlow.id).active, true, "an active branch keeps shared-edge animation despite a failed sibling");
+  assert.equal(mixedBranches.edgeStates.get(workFlow.id).errorCode, "MODEL_TIMEOUT");
+  assert.equal(mixedBranches.nodeStates.get("worker").active, true);
+  assert.equal(mixedBranches.nodeStates.get("worker").errorCode, "MODEL_TIMEOUT");
+
+  const technicalWait = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "role.started", roleId: "dispatch", branchId: "waiting-branch", executionId: "waiting-execution", attempt: 1 },
+      { type: "role_waiting", roleId: "dispatch", branchId: "waiting-branch", executionId: "waiting-execution", attempt: 1, stage: "model_provider" },
+      { type: "role.started", roleId: "dispatch", branchId: "active-branch", executionId: "active-execution", attempt: 1 }
+    ]
+  });
+  assert.equal(technicalWait.nodeStates.get("dispatch").status, "running", "another branch keeps the shared role active while one waits");
+  assert.equal(technicalWait.nodeStates.get("dispatch").active, true);
+
+  const isolatedReview = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "role.started", roleId: "dispatch", branchId: "review-branch", executionId: "review-execution", attempt: 1 },
+      { type: "human_review_requested", roleId: "dispatch", branchId: "review-branch", executionId: "review-execution", attempt: 1 },
+      { type: "role.started", roleId: "dispatch", branchId: "parallel-branch", executionId: "parallel-execution", attempt: 1 },
+      { type: "human_review_approved", roleId: "dispatch", branchId: "parallel-branch", executionId: "parallel-execution", attempt: 1 },
+      { type: "role.completed", roleId: "dispatch", branchId: "parallel-branch", executionId: "parallel-execution", attempt: 1 }
+    ]
+  });
+  assert.equal(isolatedReview.nodeStates.get("dispatch").status, "waiting_review", "another branch cannot clear the waiting branch's review state");
+  assert.equal(isolatedReview.nodeStates.get("dispatch").waitingReview, true);
+  assert.equal(isolatedReview.nodeStates.get("dispatch").active, false);
 });
 
 test("SCC frames keep compact padding clear of neighboring role and boundary nodes", () => {

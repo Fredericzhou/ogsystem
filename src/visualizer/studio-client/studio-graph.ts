@@ -7,6 +7,7 @@ import {
 } from "../studio-contracts.js";
 import type {
   GraphViewModel,
+  GraphViewModelNode,
   StudioAuthoringDocument,
   StudioGraphSnapshot as StudioCanvasSnapshot
 } from "../studio-contracts.js";
@@ -47,6 +48,7 @@ import {
 } from "./semantic-layout-projection.js";
 import {
   deriveStudioRuntimeVisualState,
+  type StudioRuntimeNodeState,
   type StudioRuntimeProgressEvent,
   type StudioRuntimeVisualState
 } from "./studio-graph-runtime.js";
@@ -261,6 +263,56 @@ type PendingStudioRoleInsertion = {
   y: number;
 };
 
+function runtimeStatusLabel(status: StudioRuntimeNodeState["status"], locale: string): string {
+  const labels = locale.startsWith("en")
+    ? { running: "Running", waiting: "Waiting", waiting_review: "Review", failed: "Failed", done: "Done", paused: "Paused", pending: "Pending", idle: "Idle", active: "Active" }
+    : { running: "运行中", waiting: "等待中", waiting_review: "审核中", failed: "失败", done: "已完成", paused: "已暂停", pending: "待处理", idle: "空闲", active: "运行中" };
+  return status ? labels[status] || "" : "";
+}
+
+function syncRuntimeStatusBadge(args: {
+  container: Element;
+  width: number;
+  height: number;
+  node: GraphViewModelNode;
+  state?: StudioRuntimeNodeState;
+  locale: string;
+}): void {
+  const label = runtimeStatusLabel(args.state?.status, args.locale);
+  const failure = [args.state?.errorCode, args.state?.errorMessage].filter(Boolean).join(": ");
+  const accessibleName = [args.node.label || args.node.roleId || args.node.id, label, failure].filter(Boolean).join(" · ");
+  args.container.setAttribute("aria-label", accessibleName);
+  let group = args.container.querySelector<SVGGElement>(".studio-runtime-status");
+  if (!label) {
+    group?.remove();
+    return;
+  }
+  if (!group) {
+    group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.classList.add("studio-runtime-status");
+    const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    background.classList.add("studio-runtime-status-bg");
+    background.setAttribute("rx", "4");
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.classList.add("studio-runtime-status-label");
+    text.setAttribute("text-anchor", "end");
+    group.append(background, text);
+    args.container.append(group);
+  }
+  const text = group.querySelector<SVGTextElement>(".studio-runtime-status-label");
+  const background = group.querySelector<SVGRectElement>(".studio-runtime-status-bg");
+  if (!text || !background) return;
+  group.dataset.status = args.state?.status || "";
+  text.textContent = label;
+  text.setAttribute("x", String(args.width - 8));
+  text.setAttribute("y", String(args.height - 7));
+  const badgeWidth = Math.max(34, label.length * (args.locale.startsWith("en") ? 6 : 11) + 12);
+  background.setAttribute("x", String(args.width - badgeWidth - 3));
+  background.setAttribute("y", String(args.height - 20));
+  background.setAttribute("width", String(badgeWidth));
+  background.setAttribute("height", "16");
+}
+
 export class StudioGraphIsland {
   private graph: Graph;
   private toolbar: HTMLDivElement;
@@ -299,6 +351,7 @@ export class StudioGraphIsland {
   private pendingRoleInsertion: PendingStudioRoleInsertion | null = null;
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
   private runtimeProgressEvents: StudioRuntimeProgressEvent[] = [];
+  private runtimeFocusedHandoffId = "";
   private contextMenuState: StudioGraphContextMenuState | null = null;
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
@@ -573,6 +626,11 @@ export class StudioGraphIsland {
       readOnly: this.options.readOnly === true,
       progressEvents: this.runtimeProgressEvents
     });
+    this.applyRuntimeOverlay();
+  }
+
+  focusRuntimeHandoff(handoffId: string): void {
+    this.runtimeFocusedHandoffId = handoffId;
     this.applyRuntimeOverlay();
   }
 
@@ -2998,12 +3056,15 @@ export class StudioGraphIsland {
 
   private applyRuntimeOverlay(): void {
     const runtime = this.runtimeVisualState;
+    const focusedHandoff = runtime?.handoffStatesById.get(this.runtimeFocusedHandoffId);
     this.root.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
     this.root.dataset.reducedMotion = this.reducedMotion ? "on" : "off";
     const canvas = this.canvasEl.querySelector<HTMLElement>(".x6-graph-svg");
     if (canvas) {
       canvas.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
     }
+    const viewNodesById = new Map((this.currentViewModel?.nodes || []).map((node) => [node.id, node]));
+    const locale = document.documentElement.lang || navigator.language || "zh-CN";
     for (const node of this.graph.getNodes()) {
       const view = this.graph.findViewByCell(node);
       const container = view?.container as Element | undefined;
@@ -3011,11 +3072,13 @@ export class StudioGraphIsland {
         continue;
       }
       const nodeState = runtime?.nodeStates.get(node.id);
+      const viewNode = viewNodesById.get(node.id);
       container.classList.toggle("is-runtime-active", Boolean(nodeState?.active));
       container.classList.toggle("is-runtime-completed", nodeState?.status === "done");
       container.classList.toggle("is-runtime-waiting-review", Boolean(nodeState?.waitingReview));
       container.classList.toggle("has-human-gate", Boolean(nodeState?.humanGateConfigured));
       container.classList.toggle("has-loop-count", Boolean((nodeState?.loopCount || 0) > 1));
+      container.classList.toggle("is-runtime-focus-target", Boolean(focusedHandoff && node.id === focusedHandoff.targetRoleId));
       if (nodeState?.status) {
         container.setAttribute("data-runtime-status", nodeState.status);
       } else {
@@ -3026,10 +3089,20 @@ export class StudioGraphIsland {
       } else {
         container.removeAttribute("data-runtime-error-code");
       }
+      const nodeFailure = [nodeState?.errorCode, nodeState?.errorMessage].filter(Boolean).join(": ");
+      if (nodeFailure) {
+        container.setAttribute("title", nodeFailure);
+      } else {
+        container.removeAttribute("title");
+      }
       if (nodeState?.loopCount && nodeState.loopCount > 1) {
         container.setAttribute("data-loop-count", String(nodeState.loopCount));
       } else {
         container.removeAttribute("data-loop-count");
+      }
+      if (viewNode) {
+        const size = node.getSize();
+        syncRuntimeStatusBadge({ container, width: size.width, height: size.height, node: viewNode, state: nodeState, locale });
       }
     }
     for (const edge of this.graph.getEdges()) {
@@ -3041,8 +3114,17 @@ export class StudioGraphIsland {
       container.classList.toggle("is-pending-preview", this.isPendingEdgePreviewCell(edge));
       const edgeState = runtime?.edgeStates.get(edge.id);
       container.classList.toggle("is-runtime-active", Boolean(edgeState?.active));
+      container.classList.toggle("is-runtime-waiting", Boolean(edgeState?.waiting));
       container.classList.toggle("is-runtime-completed", Boolean(edgeState?.completed));
       container.classList.toggle("is-runtime-error", Boolean(edgeState?.error));
+      container.classList.toggle("is-runtime-stopped", Boolean(edgeState?.stopped));
+      const edgeFailure = [edgeState?.errorCode, edgeState?.errorMessage].filter(Boolean).join(": ");
+      if (edgeFailure) {
+        container.setAttribute("title", edgeFailure);
+      } else {
+        container.removeAttribute("title");
+      }
+      container.classList.toggle("is-runtime-focus-edge", Boolean(focusedHandoff && edge.id === focusedHandoff.edgeId));
       container.classList.toggle("is-loop-back", Boolean(edgeState?.loopBack));
     }
   }

@@ -6,9 +6,10 @@ import type {
 } from "../studio-contracts.js";
 
 export type StudioRuntimeNodeState = {
-  status?: "active" | "running" | "waiting_review" | "done" | "failed" | "paused" | "pending" | "idle";
+  status?: "active" | "running" | "waiting" | "waiting_review" | "done" | "failed" | "paused" | "pending" | "idle";
   statusLabel?: string;
   errorCode?: string;
+  errorMessage?: string;
   loopCount?: number;
   active: boolean;
   waitingReview: boolean;
@@ -17,9 +18,27 @@ export type StudioRuntimeNodeState = {
 
 export type StudioRuntimeEdgeState = {
   active: boolean;
+  waiting: boolean;
   completed: boolean;
   error: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+  stopped: boolean;
   loopBack: boolean;
+};
+
+export type StudioRuntimeHandoffState = {
+  handoffId: string;
+  edgeId: string;
+  branchId: string;
+  targetRoleId: string;
+  lineageId?: string;
+  loopIteration?: number;
+  executionId?: string;
+  attempt?: number;
+  errorCode?: string;
+  errorMessage?: string;
+  status: "active" | "waiting" | "completed" | "failed" | "stopped";
 };
 
 export type StudioRuntimeProgressEvent = {
@@ -30,14 +49,29 @@ export type StudioRuntimeProgressEvent = {
   toRoleId?: string;
   eventType?: string;
   branchId?: string;
+  lineageId?: string;
+  edgeId?: string;
+  handoffId?: string;
+  sourceExecutionId?: string;
+  sourceAttempt?: number;
+  executionId?: string;
+  attempt?: number;
+  maxAttempts?: number;
   loopIteration?: number;
   status?: string;
+  errorCode?: string;
+  error?: string;
+  errorEnvelope?: { errorCode?: string; message?: string };
+  stage?: string;
+  waitKind?: string;
+  elapsedMs?: number;
 };
 
 export type StudioRuntimeVisualState = {
   hasRuntimeSignals: boolean;
   nodeStates: Map<string, StudioRuntimeNodeState>;
   edgeStates: Map<string, StudioRuntimeEdgeState>;
+  handoffStatesById: Map<string, StudioRuntimeHandoffState>;
   activeNodeCount: number;
   waitingReviewCount: number;
   activeEdgeCount: number;
@@ -200,8 +234,10 @@ export function deriveStudioRuntimeEdgeState(args: {
 }): StudioRuntimeEdgeState {
   return {
     active: Boolean(args.readOnly && args.edge.runtime?.recentlyActivated === true),
+    waiting: false,
     completed: false,
     error: Boolean(args.edge.runtimeOnlyErrorFlow || args.edge.diagnostic?.severity === "error"),
+    stopped: false,
     loopBack: args.edge.source === args.edge.target
       || args.edge.channel === "loop"
       || args.edge.channel === "feedback"
@@ -217,6 +253,7 @@ export function deriveStudioRuntimeVisualState(args: {
 }): StudioRuntimeVisualState {
   const nodeStates = new Map<string, StudioRuntimeNodeState>();
   const edgeStates = new Map<string, StudioRuntimeEdgeState>();
+  const handoffStatesById = new Map<string, StudioRuntimeHandoffState>();
   let activeNodeCount = 0;
   let waitingReviewCount = 0;
   let activeEdgeCount = 0;
@@ -241,52 +278,183 @@ export function deriveStudioRuntimeVisualState(args: {
   }
 
   if (args.progressEvents?.length) {
-    const activeExecutions = new Map<string, string>();
+    const activeExecutions = new Map<string, { roleId: string; executionId?: string }>();
     const successfulRoles = new Set<string>();
     const failedRoles = new Set<string>();
+    const waitingBranches = new Set<string>();
+    const failureByBranch = new Map<string, { roleId: string; errorCode?: string; errorMessage?: string }>();
+    const waitingReviewBranches = new Set<string>();
     const selectedEntryRoles = new Set<string>();
-    let hasEndArrival = false;
-    const flowStateByBranch = new Map<string, { edgeId: string; targetRoleId: string; active: boolean }>();
-    let runStatus = "running";
+    let hasEndArrival = args.progressEvents.some((event) => event.type === "flow.activated" && event.toRoleId === "__system_end__");
+    const flowStateByHandoff = handoffStatesById;
+    const seenEventKeys = new Set<string>();
+    const latestAttemptByBranch = new Map<string, number>();
+    const latestExecutionByBranch = new Map<string, string>();
+    let runStatus: "running" | "completed" | "stopped" | "failed" = "running";
+    const runTerminalPriority = { completed: 1, stopped: 2, failed: 3 } as const;
     const activationKey = (event: StudioRuntimeProgressEvent) =>
       String(event.branchId || `${event.roleId || ""}:${event.loopIteration || 1}`);
 
-    for (const event of args.progressEvents) {
+    // Replay in event-time order; stable input order resolves events with equal or missing timestamps.
+    const orderedEvents = args.progressEvents
+      .map((event, index) => ({ event, index, at: Date.parse(event.at || "") }))
+      .sort((left, right) => {
+        if (Number.isFinite(left.at) && Number.isFinite(right.at) && left.at !== right.at) return left.at - right.at;
+        if (Number.isFinite(left.at) !== Number.isFinite(right.at)) return Number.isFinite(left.at) ? -1 : 1;
+        return left.index - right.index;
+      })
+      .map(({ event }) => event);
+    for (const event of orderedEvents) {
+      const eventKey = event.handoffId && event.type === "flow.activated"
+        ? `flow:${event.handoffId}`
+        : event.executionId
+          ? `${event.type}:${event.executionId}:${event.attempt || 0}:${event.stage || ""}:${event.elapsedMs ?? ""}`
+          : `${event.type}:${event.branchId || ""}:${event.attempt || 0}:${event.at || ""}`;
+      if (seenEventKeys.has(eventKey)) continue;
+      seenEventKeys.add(eventKey);
+      if (runStatus !== "running") {
+        // Stop and failure are frozen terminal projections; late activity remains audit-only.
+        if (runStatus === "stopped" || runStatus === "failed") continue;
+        if (["simulation.completed", "run_stopped", "run_terminated", "simulation.failed"].includes(event.type)) {
+          const candidateStatus = event.type === "simulation.failed" || event.type === "run_terminated"
+            ? "failed"
+            : event.type === "run_stopped" ? "stopped" : "completed";
+          if (runTerminalPriority[candidateStatus] > runTerminalPriority[runStatus]) runStatus = candidateStatus;
+        } else {
+          continue;
+        }
+      }
       if (event.type === "flow.activated") {
         const edge = args.viewModel.edges.find((candidate) =>
-          candidate.source === event.fromRoleId
+          (event.edgeId ? candidate.id === event.edgeId : true)
+          && candidate.source === event.fromRoleId
           && candidate.target === event.toRoleId
           && candidate.eventType === event.eventType
         );
         if (edge) {
-          const key = activationKey(event);
-          flowStateByBranch.set(key, {
+          const key = event.handoffId || `${activationKey(event)}:${edge.id}`;
+          flowStateByHandoff.set(key, {
+            handoffId: key,
             edgeId: edge.id,
             targetRoleId: String(event.toRoleId || ""),
-            active: event.toRoleId !== "__system_end__"
+            branchId: String(event.branchId || ""),
+            executionId: event.executionId,
+            lineageId: event.lineageId,
+            loopIteration: event.loopIteration,
+            attempt: event.sourceAttempt,
+            status: event.toRoleId === "__system_end__" ? "completed" : "active"
           });
           if (event.fromRoleId === "__system_start__" && event.toRoleId) selectedEntryRoles.add(event.toRoleId);
-          if (event.toRoleId === "__system_end__") hasEndArrival = true;
         }
       } else if (event.type === "role.started") {
         const key = activationKey(event);
-        activeExecutions.set(key, String(event.roleId || ""));
+        const attempt = event.attempt ?? 1;
+        const latestAttempt = latestAttemptByBranch.get(key) ?? 0;
+        if (attempt < latestAttempt) continue;
+        latestAttemptByBranch.set(key, attempt);
+        latestExecutionByBranch.set(key, String(event.executionId || ""));
+        activeExecutions.set(key, { roleId: String(event.roleId || ""), executionId: event.executionId });
+        waitingBranches.delete(key);
+        waitingReviewBranches.delete(key);
         failedRoles.delete(String(event.roleId || ""));
-        for (const flow of flowStateByBranch.values()) {
-          if (flow.targetRoleId === event.roleId) flow.active = true;
+        failureByBranch.delete(key);
+        for (const flow of flowStateByHandoff.values()) {
+          if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
+          flow.executionId = event.executionId;
+          flow.attempt = attempt;
+          flow.status = "active";
+        }
+      } else if (event.type === "role_waiting" || event.type === "human_review_requested") {
+        const key = activationKey(event);
+        if ((event.attempt ?? 1) < (latestAttemptByBranch.get(key) ?? 1)) continue;
+        const activeExecution = activeExecutions.get(key);
+        const latestExecution = latestExecutionByBranch.get(key);
+        if (event.executionId && latestExecution && event.executionId !== latestExecution) continue;
+        if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;
+        activeExecutions.set(key, { roleId: String(event.roleId || ""), executionId: event.executionId ?? activeExecution?.executionId });
+        if (event.type === "human_review_requested") {
+          waitingReviewBranches.add(key);
+          waitingBranches.delete(key);
+        } else {
+          waitingBranches.add(key);
+        }
+        for (const flow of flowStateByHandoff.values()) {
+          if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
+          if (event.executionId && flow.executionId && event.executionId !== flow.executionId) continue;
+          flow.status = "waiting";
+        }
+      } else if (event.type === "role_retry_scheduled") {
+        const key = activationKey(event);
+        const activeExecution = activeExecutions.get(key);
+        const latestExecution = latestExecutionByBranch.get(key);
+        if (event.executionId && latestExecution && event.executionId !== latestExecution) continue;
+        if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;
+        failedRoles.delete(String(event.roleId || ""));
+        waitingReviewBranches.delete(key);
+        waitingBranches.add(key);
+        for (const flow of flowStateByHandoff.values()) {
+          if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
+          flow.status = "waiting";
+        }
+      } else if (["human_review_approved", "human_review_rework_requested"].includes(event.type)) {
+        const key = activationKey(event);
+        const activeExecution = activeExecutions.get(key);
+        if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;
+        waitingReviewBranches.delete(key);
+        waitingBranches.delete(key);
+        for (const flow of flowStateByHandoff.values()) {
+          if (flow.targetRoleId === event.roleId && flow.branchId === String(event.branchId || "") && flow.status === "waiting") {
+            if (event.executionId && flow.executionId && event.executionId !== flow.executionId) continue;
+            flow.status = "active";
+          }
         }
       } else if (["role.completed", "role.skipped", "role.failed"].includes(event.type)) {
         const key = activationKey(event);
+        const activeExecution = activeExecutions.get(key);
+        const latestExecution = latestExecutionByBranch.get(key);
+        if (event.executionId && latestExecution && event.executionId !== latestExecution) continue;
+        if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;
+        if ((event.attempt ?? 1) < (latestAttemptByBranch.get(key) ?? 1)) continue;
         activeExecutions.delete(key);
-        if (event.type === "role.failed") failedRoles.add(String(event.roleId || ""));
+        latestExecutionByBranch.set(key, String(event.executionId || latestExecution || ""));
+        waitingReviewBranches.delete(key);
+        waitingBranches.delete(key);
+        if (event.type === "role.failed") {
+          const roleId = String(event.roleId || "");
+          const errorCode = event.errorCode || event.errorEnvelope?.errorCode;
+          const errorMessage = event.errorMessage || event.errorEnvelope?.message || event.error;
+          failedRoles.add(roleId);
+          failureByBranch.set(key, {
+            roleId,
+            ...(errorCode ? { errorCode: String(errorCode) } : {}),
+            ...(errorMessage ? { errorMessage: String(errorMessage) } : {})
+          });
+        }
         else successfulRoles.add(String(event.roleId || ""));
-        for (const [branchKey, flow] of flowStateByBranch) {
-          if (branchKey === key) flow.active = false;
+        for (const flow of flowStateByHandoff.values()) {
+          if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
+          if (event.executionId && flow.executionId && event.executionId !== flow.executionId) continue;
+          flow.status = event.type === "role.failed" ? "failed" : "completed";
+          if (event.type === "role.failed") {
+            flow.errorCode = event.errorCode || event.errorEnvelope?.errorCode;
+            flow.errorMessage = event.errorMessage || event.errorEnvelope?.message || event.error;
+          }
         }
       } else if (event.type === "simulation.completed" || event.type === "simulation.failed") {
         runStatus = event.type === "simulation.completed" ? "completed" : "failed";
-        for (const flow of flowStateByBranch.values()) flow.active = false;
+      } else if (event.type === "run_stopped" || event.type === "run_terminated") {
+        runStatus = event.type === "run_terminated" ? "failed" : "stopped";
       }
+    }
+
+    if (runStatus !== "running") {
+      for (const flow of flowStateByHandoff.values()) {
+        if (flow.status !== "active" && flow.status !== "waiting") continue;
+        flow.status = runStatus === "failed" ? "failed" : "stopped";
+      }
+      activeExecutions.clear();
+      waitingBranches.clear();
+      waitingReviewBranches.clear();
     }
 
     for (const node of args.viewModel.nodes) {
@@ -296,25 +464,40 @@ export function deriveStudioRuntimeVisualState(args: {
         state.active = false;
         state.status = selectedEntryRoles.size ? "done" : undefined;
       } else if (node.id === "__system_end__") {
-        state.status = runStatus === "completed" ? "done" : runStatus === "failed" ? "failed" : hasEndArrival ? "running" : undefined;
+        state.status = runStatus === "completed" ? "done" : runStatus === "failed" ? "failed" : hasEndArrival && runStatus === "running" ? "running" : undefined;
         state.active = runStatus === "running" && hasEndArrival;
       } else {
-        const isActive = Array.from(activeExecutions.values()).includes(node.roleId);
+        const roleBranches = Array.from(activeExecutions.entries()).filter(([, execution]) => execution.roleId === node.roleId);
+        const isActive = roleBranches.some(([branchKey]) => !waitingBranches.has(branchKey) && !waitingReviewBranches.has(branchKey));
+        const hasWaitingReview = !isActive && roleBranches.some(([branchKey]) => waitingReviewBranches.has(branchKey));
+        const isWaiting = !isActive && !hasWaitingReview && roleBranches.some(([branchKey]) => waitingBranches.has(branchKey));
         state.active = isActive;
-        state.status = isActive ? "running" : failedRoles.has(node.roleId) ? "failed" : successfulRoles.has(node.roleId) ? "done" : undefined;
+        state.waitingReview = hasWaitingReview;
+        const failure = Array.from(failureByBranch.values()).reverse().find((candidate) => candidate.roleId === node.roleId);
+        state.errorCode = failure?.errorCode;
+        state.errorMessage = failure?.errorMessage;
+        const hasFailedBranch = [...failureByBranch.values()].some((candidate) => candidate.roleId === node.roleId);
+        state.status = isActive ? "running" : state.waitingReview ? "waiting_review" : isWaiting ? "waiting" : hasFailedBranch || failedRoles.has(node.roleId) ? "failed" : successfulRoles.has(node.roleId) ? "done" : undefined;
       }
     }
-    const activeByEdge = new Map<string, boolean>();
-    const seenByEdge = new Set<string>();
-    for (const flow of flowStateByBranch.values()) {
-      seenByEdge.add(flow.edgeId);
-      activeByEdge.set(flow.edgeId, Boolean(activeByEdge.get(flow.edgeId) || flow.active));
+    const flowsByEdge = new Map<string, StudioRuntimeHandoffState[]>();
+    for (const flow of flowStateByHandoff.values()) {
+      const flows = flowsByEdge.get(flow.edgeId) ?? [];
+      flows.push(flow);
+      flowsByEdge.set(flow.edgeId, flows);
     }
-    for (const edgeId of seenByEdge) {
+    for (const [edgeId, flows] of flowsByEdge) {
       const edgeState = edgeStates.get(edgeId);
       if (!edgeState) continue;
-      edgeState.active = Boolean(activeByEdge.get(edgeId));
-      edgeState.completed = !edgeState.active;
+      const statuses = new Set(flows.map((flow) => flow.status));
+      const failedFlow = flows.find((flow) => flow.status === "failed");
+      edgeState.error = Boolean(failedFlow);
+      edgeState.errorCode = failedFlow?.errorCode;
+      edgeState.errorMessage = failedFlow?.errorMessage;
+      edgeState.active = statuses.has("active");
+      edgeState.waiting = !edgeState.active && statuses.has("waiting");
+      edgeState.stopped = !edgeState.active && !edgeState.waiting && statuses.has("stopped");
+      edgeState.completed = !edgeState.active && !edgeState.waiting && !edgeState.stopped && !edgeState.error && statuses.has("completed");
     }
     activeNodeCount = Array.from(nodeStates.values()).filter((state) => state.active).length;
     activeEdgeCount = Array.from(edgeStates.values()).filter((state) => state.active).length;
@@ -333,6 +516,7 @@ export function deriveStudioRuntimeVisualState(args: {
     hasRuntimeSignals,
     nodeStates,
     edgeStates,
+    handoffStatesById,
     activeNodeCount,
     waitingReviewCount,
     activeEdgeCount

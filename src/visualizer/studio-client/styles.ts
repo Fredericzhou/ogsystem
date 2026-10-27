@@ -273,6 +273,12 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node.is-runtime-completed path:first-of-type {
       filter: drop-shadow(0 0 0.22rem rgba(52, 211, 153, 0.2));
     }
+    .studio-graph-canvas .x6-node[data-runtime-status="waiting"] rect,
+    .studio-graph-canvas .x6-node[data-runtime-status="waiting"] path:first-of-type {
+      stroke: #e6a23c !important;
+      stroke-dasharray: 5 4;
+      animation: none !important;
+    }
     .studio-graph-canvas .x6-node[data-runtime-status="failed"] rect,
     .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type {
       animation: studio-node-error-shake 400ms ease-out 1;
@@ -285,6 +291,16 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node.has-human-gate:not(.is-runtime-waiting-review) path:first-of-type {
       stroke-dasharray: 8 4;
     }
+    .studio-graph-canvas .studio-runtime-status-bg { fill: #e6f3ee; stroke: #7db39e; stroke-width: 0.8px; }
+    .studio-graph-canvas .studio-runtime-status-label { fill: #245b46; font-size: 10px; font-weight: 650; pointer-events: none; }
+    .studio-graph-canvas .studio-runtime-status[data-status="running"] .studio-runtime-status-bg { fill: #e2f2fa; stroke: #79b7d2; }
+    .studio-graph-canvas .studio-runtime-status[data-status="running"] .studio-runtime-status-label { fill: #225b72; }
+    .studio-graph-canvas .studio-runtime-status[data-status="waiting"] .studio-runtime-status-bg,
+    .studio-graph-canvas .studio-runtime-status[data-status="waiting_review"] .studio-runtime-status-bg { fill: #fff1d7; stroke: #d7a449; }
+    .studio-graph-canvas .studio-runtime-status[data-status="waiting"] .studio-runtime-status-label,
+    .studio-graph-canvas .studio-runtime-status[data-status="waiting_review"] .studio-runtime-status-label { fill: #80590f; }
+    .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-runtime-status-bg { fill: #fde6e2; stroke: #d68579; }
+    .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-runtime-status-label { fill: #8f392f; }
     .studio-graph-canvas .x6-edge .connection {
       transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease, stroke-dasharray 160ms ease;
       stroke-linecap: round;
@@ -299,6 +315,15 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-edge.is-selection-active .connection {
       stroke-width: 2.6px !important;
       filter: drop-shadow(0 0 0.3rem rgba(56, 189, 248, 0.25));
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-focus-edge .connection {
+      stroke-width: 3px !important;
+      filter: drop-shadow(0 0 0.4rem rgba(56, 189, 248, 0.36));
+    }
+    .studio-graph-canvas .x6-node.is-runtime-focus-target rect,
+    .studio-graph-canvas .x6-node.is-runtime-focus-target path:first-of-type {
+      stroke-width: 2.4px !important;
+      filter: drop-shadow(0 0 0.4rem rgba(56, 189, 248, 0.34));
     }
     .studio-graph-canvas .x6-edge.is-pending-preview .connection {
       stroke: #38bdf8 !important;
@@ -322,8 +347,27 @@ export function injectStudioGraphStyles(): void {
       stroke: #34d399 !important;
       stroke-width: 2px !important;
     }
-    .studio-graph-canvas .x6-edge.is-runtime-error .connection {
+    .studio-graph-canvas .x6-edge.is-runtime-waiting .connection {
+      stroke: #e6a23c !important;
+      stroke-width: 2.3px !important;
+      stroke-dasharray: 5 5;
+      animation: none !important;
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-error:not(.is-runtime-active) .connection {
+      stroke: #d76654 !important;
+      stroke-width: 2.3px !important;
       stroke-dasharray: 7 5;
+      animation: none !important;
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-error.is-runtime-active .connection {
+      stroke: #d76654 !important;
+      animation: studio-edge-flow 680ms linear infinite;
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-stopped .connection {
+      stroke: #89958f !important;
+      stroke-width: 1.9px !important;
+      stroke-dasharray: 3 5;
+      animation: none !important;
     }
     .studio-graph-canvas .x6-edge.is-loop-back .connection,
     .studio-graph-canvas .x6-edge.is-loop-back path[marker-end] {
@@ -822,6 +866,8 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover path:first-of-type { stroke: #84b9a0; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-selection-active .connection,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .connection { stroke: #1b7662 !important; }
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-runtime-waiting .connection { stroke: #a86c12 !important; }
+    :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-runtime-error .connection { stroke: #b74436 !important; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .x6-edge-label rect { stroke: #1b7662; }
     .studio-graph-canvas .x6-node.is-selection-active .studio-node-body {
       fill: #dcfce7 !important;
