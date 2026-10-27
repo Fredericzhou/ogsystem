@@ -110,6 +110,7 @@ export async function runSystemWithAdapter(args: {
   };
   /** Trusted platform-provided team graphs may use supported parallel/join semantics. */
   trustedProjectTopology?: boolean;
+  runtimeEdgeIdsByTransition?: Record<string, string>;
   projectDigest?: string;
   projectRunLock?: boolean;
   materialInputs?: ProjectMaterialInput[];
@@ -355,6 +356,7 @@ export async function runSystemWithAdapter(args: {
                   }
                 : undefined,
             errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
+            runtimeEdgeIdsByTransition: args.runtimeEdgeIdsByTransition,
             logRun: args.logRun ?? false,
             runControl
           };

@@ -24,6 +24,7 @@ import type {
 type AuditRecordInput = {
   roleId: string;
   branchId?: string;
+  lineageId?: string;
   joinId?: string;
   loopIteration?: number;
   lawRef: string;
@@ -51,6 +52,8 @@ type AuditRecordInput = {
   correctionRequest?: RoleOutputCorrectionRequest;
   inputContext?: string;
   executionId?: string;
+  attempt?: number;
+  maxAttempts?: number;
   promptCalls?: AuditRecord["promptCalls"];
   projectedInputChars?: number;
   renderedPromptChars?: number;
@@ -72,6 +75,7 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     at: new Date().toISOString(),
     roleId: args.roleId,
     branchId: args.branchId,
+    lineageId: args.lineageId,
     joinId: args.joinId,
     loopIteration: args.loopIteration,
     lawRef: args.lawRef,
@@ -99,6 +103,8 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     correctionRequest: args.correctionRequest,
     inputContext: args.inputContext,
     executionId: args.executionId,
+    attempt: args.attempt,
+    maxAttempts: args.maxAttempts,
     promptCalls: args.promptCalls,
     projectedInputChars: args.projectedInputChars,
     renderedPromptChars: args.renderedPromptChars,

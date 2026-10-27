@@ -164,6 +164,10 @@ function startRoleWaitHeartbeat(args: {
   runContext: RunContext;
   roleId: string;
   branchId: string;
+  lineageId: string;
+  executionId: string;
+  attempt: number;
+  maxAttempts: number;
   binding: string;
   stage: string;
   timeoutMs?: number;
@@ -187,6 +191,10 @@ function startRoleWaitHeartbeat(args: {
       args.logger.roleWaiting({
         roleId: args.roleId,
         branchId: args.branchId,
+        lineageId: args.lineageId,
+        executionId: args.executionId,
+        attempt: args.attempt,
+        maxAttempts: args.maxAttempts,
         waitKind: "technical",
         stage: args.stage,
         elapsedMs,
@@ -199,6 +207,10 @@ function startRoleWaitHeartbeat(args: {
         waitKind: "technical",
         roleId: args.roleId,
         branchId: args.branchId,
+        lineageId: args.lineageId,
+        executionId: args.executionId,
+        attempt: args.attempt,
+        maxAttempts: args.maxAttempts,
         stage: args.stage,
         elapsedMs,
         timeoutMs: args.timeoutMs,
@@ -400,6 +412,8 @@ export async function executeRoleNode(args: {
   plan: ExecutionPlan;
   state: GraphState;
   branch?: BranchRecord;
+  attempt: number;
+  maxAttempts: number;
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
@@ -444,8 +458,11 @@ export async function executeRoleNode(args: {
     at: new Date().toISOString(),
     roleId: args.roleId,
     branchId,
+    lineageId: currentBranch.lineageId,
     loopIteration,
-    executionId: execution.executionId
+    executionId: execution.executionId,
+    attempt: args.attempt,
+    maxAttempts: args.maxAttempts
   });
   const compilerDigest = args.compilerSnapshot?.digest;
   // Invariant: each allocation increments the per-role execution counter and uses a unique directory so retries/replays never clobber prior evidence.
@@ -480,8 +497,11 @@ export async function executeRoleNode(args: {
     });
     const audit = createAuditRecord({
       executionId: execution.executionId,
+      attempt: args.attempt,
+      maxAttempts: args.maxAttempts,
       roleId: args.roleId,
       branchId,
+      lineageId: currentBranch.lineageId,
       joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration, currentBranch.lineageId) : undefined,
       loopIteration,
       lawRef,
@@ -524,8 +544,11 @@ export async function executeRoleNode(args: {
     });
     const audit = createAuditRecord({
       executionId: execution.executionId,
+      attempt: args.attempt,
+      maxAttempts: args.maxAttempts,
       roleId: args.roleId,
       branchId,
+      lineageId: currentBranch.lineageId,
       loopIteration,
       lawRef,
       started,
@@ -751,8 +774,11 @@ export async function executeRoleNode(args: {
       });
       const audit = createAuditRecord({
         executionId: execution.executionId,
+        attempt: args.attempt,
+        maxAttempts: args.maxAttempts,
         roleId: args.roleId,
         branchId,
+        lineageId: currentBranch.lineageId,
         loopIteration,
         lawRef,
         started,
@@ -796,6 +822,10 @@ export async function executeRoleNode(args: {
       runContext: args.runContext,
       roleId: args.roleId,
       branchId,
+      lineageId: currentBranch.lineageId,
+      executionId: execution.executionId,
+      attempt: args.attempt,
+      maxAttempts: args.maxAttempts,
       binding: resolvedBinding.bindingLabel,
       stage: resolvedBinding.binding.kind === "model" ? "model_provider" : "cli_tool",
       timeoutMs: resolvedBinding.timeoutMs,
@@ -965,8 +995,11 @@ export async function executeRoleNode(args: {
 
     const audit = createAuditRecord({
       executionId: execution.executionId,
+      attempt: args.attempt,
+      maxAttempts: args.maxAttempts,
       roleId: args.roleId,
       branchId,
+      lineageId: currentBranch.lineageId,
       joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration, currentBranch.lineageId) : undefined,
       loopIteration,
       lawRef,
@@ -1080,8 +1113,11 @@ export async function executeRoleNode(args: {
     });
     const audit = createAuditRecord({
       executionId: execution.executionId,
+      attempt: args.attempt,
+      maxAttempts: args.maxAttempts,
       roleId: args.roleId,
       branchId,
+      lineageId: currentBranch.lineageId,
       loopIteration,
       lawRef,
       started,

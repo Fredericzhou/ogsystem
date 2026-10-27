@@ -92,6 +92,10 @@ export type RunConsoleLogger = {
   roleWaiting(args: {
     roleId: string;
     branchId: string;
+    lineageId?: string;
+    executionId?: string;
+    attempt?: number;
+    maxAttempts?: number;
     waitKind: "technical";
     stage: string;
     elapsedMs: number;

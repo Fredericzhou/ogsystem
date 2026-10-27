@@ -137,7 +137,7 @@ async function writeRolePackage(args) {
         properties: {
           event: {
             type: "string",
-            enum: args.allowedEvents
+            ...(args.allowedEvents.length ? { enum: args.allowedEvents } : {})
           },
           content: {
             type: "string"
@@ -212,7 +212,7 @@ async function runCrashAfterOutcome(baseArgs, options = {}) {
       ...(options.env ?? {})
     }
   });
-  assert.strictEqual(crashed.code, 91);
+  assert.strictEqual(crashed.code, 91, crashed.stderr || crashed.stdout);
   if (options.stderrPattern) {
     assert.match(crashed.stderr, options.stderrPattern);
   }

@@ -464,6 +464,7 @@ export type AuditRecord = {
   at: string;
   roleId: string;
   branchId?: string;
+  lineageId?: string;
   joinId?: string;
   loopIteration?: number;
   lawRef?: string;
@@ -493,6 +494,8 @@ export type AuditRecord = {
   handledByEvent?: string;
   handledTargetRoleId?: string;
   executionId?: string;
+  attempt?: number;
+  maxAttempts?: number;
   promptCalls?: PromptCallMeterRecord[];
   projectedInputChars?: number;
   renderedPromptChars?: number;

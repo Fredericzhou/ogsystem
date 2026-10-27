@@ -114,6 +114,36 @@ async function appendEvent(context: RunContext, payload: Record<string, unknown>
   await appendFilesystemEvent(context, payload);
 }
 
+function runtimeEdgeId(
+  fromRoleId: string,
+  eventType: string,
+  toRoleId: string,
+  runtimeEdgeIdsByTransition?: Record<string, string>
+): string {
+  const key = JSON.stringify([fromRoleId, eventType, toRoleId]);
+  return runtimeEdgeIdsByTransition?.[key] || `${fromRoleId}:${eventType}:${toRoleId}`;
+}
+
+function buildHandoffId(args: {
+  runId: string;
+  branchId: string;
+  lineageId: string;
+  sourceExecutionId: string;
+  sourceAttempt: number;
+  edgeId: string;
+  loopIteration: number;
+}): string {
+  return JSON.stringify([
+    args.runId,
+    args.branchId,
+    args.lineageId,
+    args.sourceExecutionId,
+    args.sourceAttempt,
+    args.edgeId,
+    args.loopIteration
+  ]);
+}
+
 type GraphUpdate = GraphStateUpdate;
 
 function semanticDigestForPlan(plan: ExecutionPlan): string {
@@ -155,6 +185,7 @@ export type RunnerInput = {
   logRun: boolean;
   runControl?: RunControl;
   runtimeServices?: RuntimeExecutionServices;
+  runtimeEdgeIdsByTransition?: Record<string, string>;
 };
 
 /**
@@ -1034,13 +1065,28 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   let runtimeIndexes = buildRuntimeIndexes(initialState);
   if (initialState.stateVersion === 0) {
     for (const roleId of initialState.selectedEntryRoleIds) {
+      const branch = Object.values(initialState.branchRecords).find((candidate) => candidate.roleId === roleId);
+      const edgeId = runtimeEdgeId(SYSTEM_START_ROLE_ID, "START", roleId, args.runtimeEdgeIdsByTransition);
       await appendEvent(args.runContext, {
         type: "flow.activated",
         at: new Date().toISOString(),
+        handoffId: buildHandoffId({
+          runId: args.runContext.runId,
+          branchId: branch?.branchId || roleId,
+          lineageId: branch?.lineageId || branch?.branchId || roleId,
+          sourceExecutionId: "start",
+          sourceAttempt: 1,
+          edgeId,
+          loopIteration: branch?.loopIteration ?? 1
+        }),
+        edgeId,
+        sourceExecutionId: "start",
+        sourceAttempt: 1,
         fromRoleId: SYSTEM_START_ROLE_ID,
         toRoleId: roleId,
         eventType: "START",
-        branchId: Object.values(initialState.branchRecords).find((branch) => branch.roleId === roleId)?.branchId,
+        branchId: branch?.branchId,
+        lineageId: branch?.lineageId || branch?.branchId || roleId,
         loopIteration: 1
       });
     }
@@ -1071,6 +1117,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       const retryPolicy = args.plan.semanticIR?.retryByRoleId?.[roleId];
       let result = await executeRoleNode({
           roleId, node, plan: args.plan, state: workingState, branch,
+          attempt: 1,
+          maxAttempts: retryPolicy?.maxAttempts ?? 1,
           effectiveLaw: args.effectiveLaw, profilesById: args.profilesById, toolsByRef: args.toolsByRef,
           rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
@@ -1087,6 +1135,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           type: "role_retry_scheduled",
           at: new Date().toISOString(),
           roleId,
+          executionId: result.executionId,
           branchId: branch.branchId,
           lineageId: branch.lineageId,
           loopIteration: branch.loopIteration,
@@ -1098,6 +1147,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         priorAttemptExecutionIds.push(result.executionId);
         result = await executeRoleNode({
           roleId, node, plan: args.plan, state: workingState, branch,
+          attempt,
+          maxAttempts: retryPolicy.maxAttempts,
           effectiveLaw: args.effectiveLaw, profilesById: args.profilesById, toolsByRef: args.toolsByRef,
           rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
@@ -1257,13 +1308,30 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
       for (const activated of Object.values(effectiveUpdate.branchRecords ?? {})) {
         if (activated.status !== "active" || activated.activatedByRoleId !== roleId) continue;
+        const edgeId = runtimeEdgeId(roleId, activated.activatedByEvent || "", activated.roleId, args.runtimeEdgeIdsByTransition);
+        const sourceAttempt = result.audit.attempt ?? 1;
         await appendEvent(args.runContext, {
           type: "flow.activated",
           at: new Date().toISOString(),
+          handoffId: buildHandoffId({
+            runId: args.runContext.runId,
+            branchId: activated.branchId,
+            lineageId: activated.lineageId,
+            sourceExecutionId: result.executionId,
+            sourceAttempt,
+            edgeId,
+            loopIteration: activated.loopIteration
+          }),
+          edgeId,
+          sourceExecutionId: result.executionId,
+          sourceAttempt,
+          executionId: result.executionId,
+          attempt: sourceAttempt,
           fromRoleId: roleId,
           toRoleId: activated.roleId,
           eventType: activated.activatedByEvent,
           branchId: activated.branchId,
+          lineageId: activated.lineageId,
           loopIteration: activated.loopIteration
         });
       }
@@ -1272,13 +1340,30 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         for (const flow of node.outgoing) {
           const selectedEvent = result.status === "failed" ? undefined : result.selectedEvent;
           if (flow.toRoleId !== SYSTEM_END_ROLE_ID || (selectedEvent && flow.eventType !== selectedEvent)) continue;
+          const edgeId = runtimeEdgeId(roleId, flow.eventType, SYSTEM_END_ROLE_ID, args.runtimeEdgeIdsByTransition);
+          const sourceAttempt = result.audit.attempt ?? 1;
           await appendEvent(args.runContext, {
             type: "flow.activated",
             at: new Date().toISOString(),
+            handoffId: buildHandoffId({
+              runId: args.runContext.runId,
+              branchId: branch.branchId,
+              lineageId: branch.lineageId,
+              sourceExecutionId: result.executionId,
+              sourceAttempt,
+              edgeId,
+              loopIteration: branch.loopIteration
+            }),
+            edgeId,
+            sourceExecutionId: result.executionId,
+            sourceAttempt,
+            executionId: result.executionId,
+            attempt: sourceAttempt,
             fromRoleId: roleId,
             toRoleId: SYSTEM_END_ROLE_ID,
             eventType: flow.eventType,
             branchId: branch.branchId,
+            lineageId: branch.lineageId,
             loopIteration: branch.loopIteration
           });
         }
