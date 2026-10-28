@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { TeamIrDocument } from "./types.js";
 
@@ -13,6 +13,13 @@ export interface TeamArtifactBlobBackend {
   get(artifactId: string): Promise<{ content: Uint8Array; metadata: ArtifactMetadata } | undefined>;
   bindRunInput(owner: TeamArtifactOwner, artifactIds: readonly string[]): Promise<void>;
   getRunInputGrant(owner: TeamArtifactOwner): Promise<readonly string[]>;
+}
+
+function sameArtifactSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const leftSorted = [...left].sort();
+  const rightSorted = [...right].sort();
+  return leftSorted.every((id, index) => id === rightSorted[index]);
 }
 
 export interface TeamArtifactResolver {
@@ -158,7 +165,12 @@ export class MemoryTeamArtifactBackend implements TeamArtifactBlobBackend {
   }
 
   async bindRunInput(owner: TeamArtifactOwner, artifactIds: readonly string[]): Promise<void> {
-    this.grants.set(`${owner.projectId}:${owner.runId}`, [...artifactIds]);
+    const key = `${owner.projectId}:${owner.runId}`;
+    const current = this.grants.get(key);
+    if (current && !sameArtifactSet(current, artifactIds)) {
+      throw new TeamArtifactError("ARTIFACT_RUN_INPUT_CONFLICT", "Run input Artifact grant is immutable once bound.");
+    }
+    if (!current) this.grants.set(key, [...artifactIds]);
   }
 
   async getRunInputGrant(owner: TeamArtifactOwner): Promise<readonly string[]> {
@@ -322,6 +334,22 @@ export class FileTeamArtifactStore extends TeamArtifactStore {
         throw error;
       }
     };
+    const writeOnceAtomic = async (path: string, content: string | Uint8Array): Promise<boolean> => {
+      await mkdir(resolve(path, ".."), { recursive: true });
+      const tempPath = `${path}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(tempPath, content, { flag: "wx" });
+        try {
+          await link(tempPath, path);
+          return true;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+          throw error;
+        }
+      } finally {
+        await rm(tempPath, { force: true }).catch(() => undefined);
+      }
+    };
     const backend: TeamArtifactBlobBackend = {
       put: async (id, content, metadata) => {
         artifactId(id);
@@ -348,7 +376,15 @@ export class FileTeamArtifactStore extends TeamArtifactStore {
       bindRunInput: async (owner, ids) => {
         assertOwner(owner);
         const path = join(root, "projects", owner.projectId, "runs", owner.runId, "input-artifacts.json");
-        await writeAtomic(path, JSON.stringify({ projectId: owner.projectId, runId: owner.runId, artifactIds: [...ids] }));
+        const manifest = JSON.stringify({ projectId: owner.projectId, runId: owner.runId, artifactIds: [...ids] });
+        const created = await writeOnceAtomic(path, manifest);
+        if (created) return;
+        const existing = await readFile(path, "utf8");
+        const parsed = JSON.parse(existing) as { projectId?: string; runId?: string; artifactIds?: unknown };
+        if (parsed.projectId !== owner.projectId || parsed.runId !== owner.runId || !Array.isArray(parsed.artifactIds)
+          || !parsed.artifactIds.every((id): id is string => typeof id === "string") || !sameArtifactSet(parsed.artifactIds, ids)) {
+          throw new TeamArtifactError("ARTIFACT_RUN_INPUT_CONFLICT", "Run input Artifact grant is immutable once bound.");
+        }
       },
       getRunInputGrant: async (owner) => {
         assertOwner(owner);

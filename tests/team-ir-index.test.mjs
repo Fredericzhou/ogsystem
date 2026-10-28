@@ -33,6 +33,14 @@ test("public validator stops at schema errors before dereferencing malformed con
   assert.ok(diagnostics.every((item) => item.code === "IR_SCHEMA_INVALID"));
 });
 
+test("public validator maps a missing root-contract Schema reference to a stable diagnostic pointer", () => {
+  const value = team();
+  value.runInput.dataSchema = { "$ref": "schemas/missing.json#/$defs/request" };
+  const diagnostics = validateTeamIr(value);
+  assert.ok(diagnostics.some((item) => item.code === "IR_UNKNOWN_SCHEMA_REF"
+    && item.pointer === "/runInput/dataSchema/$ref"), JSON.stringify(diagnostics));
+});
+
 test("classic software Team IR fixture compiles parallel required Join sources", async () => {
   const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
   const diagnostics = validateTeamIr(fixture);

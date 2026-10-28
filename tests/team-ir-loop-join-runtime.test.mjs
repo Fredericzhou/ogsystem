@@ -4,13 +4,48 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { compileTeamIr, FileTeamRunStore, TeamBindingError, TeamRuntime } from "../dist/team-ir/index.js";
+import { applyTeamJoinEvent, compileTeamIr, createTeamJoinRound, FileTeamRunStore, TeamBindingError, TeamRuntime } from "../dist/team-ir/index.js";
 
 function within(promise, label, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), timeoutMs);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
+}
+
+function fakeClock(initial = 0) {
+  let now = initial;
+  const sleepers = new Set();
+  return {
+    now: () => now,
+    sleepers,
+    sleep(ms, signal) {
+      return new Promise((resolve) => {
+        const sleeper = { due: now + ms, resolve, signal, abort: undefined };
+        sleeper.abort = () => { sleepers.delete(sleeper); resolve(); };
+        sleepers.add(sleeper);
+        signal?.addEventListener("abort", sleeper.abort, { once: true });
+      });
+    },
+    advanceTo(at) {
+      now = at;
+      for (const sleeper of [...sleepers]) {
+        if (sleeper.due > at) continue;
+        sleepers.delete(sleeper);
+        sleeper.signal?.removeEventListener("abort", sleeper.abort);
+        sleeper.resolve();
+      }
+    }
+  };
+}
+
+async function until(predicate, label) {
+  const started = Date.now();
+  while (Date.now() - started < 3000) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
 }
 
 async function fixture() {
@@ -93,6 +128,124 @@ test("classic structured debate fails the Run when the Loop Join target fails", 
   assert.equal(result.events.some((entry) => entry.type === "run.failing"), true);
   assert.equal(calls.filter(([agentId]) => agentId === "neutral-judge").length, 1);
   assert.equal(calls.some(([agentId]) => agentId === "debate-reporter"), false);
+});
+
+test("Loop-scoped all_of Join timeout fails the Run and cancels active round sources", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-join-timeout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await fixture();
+  team.orchestration.joins[0].timeoutMs = 50;
+  const plan = compileTeamIr(team);
+  const clock = fakeClock(100);
+  const store = new FileTeamRunStore(join(root, "runs"));
+  const started = { proponent: false, opponent: false };
+  const cancels = { proponent: 0, opponent: 0 };
+  const waitForCancel = (role) => ({
+    async invoke() { started[role] = true; return new Promise(() => {}); },
+    async cancel() { cancels[role] += 1; return true; }
+  });
+  const runtime = new TeamRuntime({
+    store,
+    clock,
+    bindings: {
+      "binding:debate-host": { async invoke() { return { kind: "completed", output: { event: "BRIEF", data: { brief: "brief" } } }; } },
+      "binding:proponent": waitForCancel("proponent"),
+      "binding:opponent": waitForCancel("opponent"),
+      "binding:neutral-judge": { async invoke() { throw new Error("Join target must not run after timeout"); } },
+      "binding:debate-reporter": { async invoke() { throw new Error("Reporter must not run after timeout"); } }
+    }
+  });
+  const runId = "classic-debate-join-timeout";
+  await runtime.createRun(plan, { runId, task: "debate", input: { request: "Assess the proposal" } });
+  const running = runtime.executeRun(plan, runId);
+  await until(async () => {
+    const current = await store.load(runId);
+    const round = current.scheduler?.joinRounds?.["debate-positions:1"];
+    return started.proponent && started.opponent && round?.deadlineAt !== undefined;
+  }, "Loop Join round deadline and both source activations");
+  const collecting = await store.load(runId);
+  assert.equal(collecting.scheduler.joinRounds["debate-positions:1"].startedAt, 100);
+  assert.equal(collecting.scheduler.joinRounds["debate-positions:1"].deadlineAt, 150);
+  clock.advanceTo(150);
+  const result = await within(running, "Loop Join timeout settlement");
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
+  assert.equal(result.scheduler.joinRounds["debate-positions:1"].failure.code, "JOIN_TIMEOUT");
+  assert.deepEqual(cancels, { proponent: 1, opponent: 1 });
+  assert.equal(result.invocations[Object.keys(result.invocations).find((id) => id.includes("host-to-proponent"))].status, "failed");
+});
+
+test("FileTeamRunStore recovery preserves a Loop Join round deadline and waits only the remaining time", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-join-timeout-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await fixture();
+  team.orchestration.joins[0].timeoutMs = 50;
+  const plan = compileTeamIr(team);
+  const runId = "classic-debate-join-timeout-recovery";
+  const firstStore = new FileTeamRunStore(join(root, "runs"));
+  const firstClock = fakeClock(100);
+  const noCall = { async invoke() { throw new Error("checkpoint setup must not execute bindings"); } };
+  const initialRuntime = new TeamRuntime({
+    store: firstStore, clock: firstClock,
+    bindings: Object.fromEntries(team.agents.map((agent) => [agent.bindingRef, noCall]))
+  });
+  await initialRuntime.createRun(plan, { runId, task: "debate", input: { request: "Assess the proposal" } });
+  await initialRuntime.claim(runId, plan.compiledPlanDigest);
+  const round = applyTeamJoinEvent(createTeamJoinRound({
+    joinId: "debate-positions", runId, lineage: "run", loopRound: 1, mode: "all_of",
+    handoffIds: ["proponent-to-judge", "opponent-to-judge"], timeoutMs: 50,
+    requiredSourceIds: ["proponent-to-judge", "opponent-to-judge"],
+    requiredFields: ["proponentArgument", "opponentArgument"]
+  }), { type: "predecessor_activated", at: 100 });
+  const checkpoint = await firstStore.load(runId);
+  const expectedRevision = checkpoint.revision;
+  checkpoint.loopStates["debate-rounds"] = {
+    rounds: 1, agentActivations: 1,
+    previousOutputs: { "debate-host": { event: "BRIEF", data: { brief: "persisted brief" } } },
+    currentOutputs: {}
+  };
+  checkpoint.scheduler.pending = ["host-to-proponent", "host-to-opponent"];
+  checkpoint.scheduler.sources = { "agent:debate-host:BRIEF": { event: "BRIEF", data: { brief: "persisted brief" } } };
+  checkpoint.scheduler.visited = {};
+  checkpoint.scheduler.invocationIds = {};
+  checkpoint.scheduler.joinRounds = { "debate-positions:1": round };
+  checkpoint.revision = expectedRevision + 1;
+  assert.equal(await firstStore.compareAndSet(runId, expectedRevision, checkpoint), true);
+
+  const clock = fakeClock(125);
+  const cancels = { proponent: 0, opponent: 0 };
+  const waitForCancel = (role) => ({
+    async invoke() { return new Promise(() => {}); },
+    async cancel() { cancels[role] += 1; return true; }
+  });
+  const recoveredRuntime = new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")), clock,
+    bindings: {
+      "binding:debate-host": noCall,
+      "binding:proponent": waitForCancel("proponent"),
+      "binding:opponent": waitForCancel("opponent"),
+      "binding:neutral-judge": noCall,
+      "binding:debate-reporter": noCall
+    }
+  });
+  const running = recoveredRuntime.executeRun(plan, runId);
+  await until(async () => {
+    const current = await firstStore.load(runId);
+    return Object.values(current.invocations).some((invocation) => invocation.agentId === "proponent" && invocation.status === "running")
+      && Object.values(current.invocations).some((invocation) => invocation.agentId === "opponent" && invocation.status === "running");
+  }, "recovered Loop source activations");
+  const restored = await firstStore.load(runId);
+  assert.equal(restored.scheduler.joinRounds["debate-positions:1"].startedAt, 100);
+  assert.equal(restored.scheduler.joinRounds["debate-positions:1"].deadlineAt, 150);
+  clock.advanceTo(149);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await firstStore.load(runId)).status, "running");
+  assert.deepEqual(cancels, { proponent: 0, opponent: 0 });
+  clock.advanceTo(150);
+  const result = await within(running, "recovered Loop Join timeout settlement");
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
+  assert.deepEqual(cancels, { proponent: 1, opponent: 1 });
 });
 
 test("Loop Join checkpoint recovers a committed round without repeating its contribution calls", async (t) => {

@@ -1,7 +1,7 @@
 # Team IR v2 落地与验证台账
 
 基线日期：2026-10-28  
-状态：实施中；阶段 0 已冻结，阶段 1 部分通过，阶段 2、3、4 进行中
+状态：实施中；阶段 0 已冻结，阶段 1、2 部分通过（仍在推进），阶段 3、4 进行中
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
@@ -40,7 +40,7 @@
 | --- | --- | --- | --- |
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 正例/反例 fixtures 覆盖设计方案全部阻断诊断；路径作用域与受支持 JSON Schema 子集明确 | 部分通过 |
-| 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 顺序、条件路由、fan-out、Join、Loop、结果、失败、恢复和 A2A 合同测试通过；不经旧编译器语义路径 | 进行中 |
+| 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 顺序、条件路由、fan-out、Join、Loop、结果、失败、恢复和 A2A 合同测试通过；不经旧编译器语义路径 | 部分通过（进行中） |
 | 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和语义 digest 一致；浏览器验收覆盖核心作者流程和窄屏 | 进行中 |
 | 4. 切换与清理 | CLI/API/Studio 默认入口、模板、示例、文档和旧配置拒绝行为 | 版本兼容矩阵通过；历史 Run 只读；活动示例均为 v2；无意外迁移或覆盖 | 进行中；默认切换仍关闭 |
 
@@ -306,6 +306,19 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 变更范围：Team IR Schema 测试、经典 Case fixtures/合同、经典专家会诊 Runtime 测试、Case 发布 fail-closed gate、quorum scheduler、Join timeout waiter 生命周期。
 未覆盖与风险：Review reject revise Loop、Result 与终态原子提交、一般 lineage 隔离、Loop-scope Join timeout 仍有独立缺口；fail-fast 仅在受限单 fanout 拓扑有证据，Artifact 登记竞态和有活动 invocation 的进程恢复未验证；真实 Sandbox UAT 受 resolver/认证条件阻塞。Join timeout 切片后 `pnpm test` 为 850 tests，849 pass、0 fail、1 Windows-only skip，退出码 0；Join waiter 清理修复后再次运行 `pnpm test` 为 851 tests，850 pass、0 fail、1 Windows-only skip，退出码 0；其后 Team Site 全量串行回归退出码 0。
 阶段结论：阶段 0 通过；阶段 1 部分通过；阶段 2 部分通过（已新增 quorum 与受限 Loop + Join 运行切片）；阶段 3 进行中；阶段 4 进行中且默认切换关闭。不得宣称所有阶段通过。
+
+### 2026-10-28：继续关闭 Schema、Join、Artifact 与历史 Run 缺口
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 1：Run 根合同 Schema 引用诊断 | 通过（公开校验入口窄合同） | `tests/team-ir-index.test.mjs`：`public validator maps a missing root-contract Schema reference to a stable diagnostic pointer`，经 `validateTeamIr` 断言缺失 `$ref` 产出 `IR_UNKNOWN_SCHEMA_REF` 和 `/runInput/dataSchema/$ref`；`node --test tests/team-ir-index.test.mjs tests/team-ir-schema-resolver.test.mjs` 与 Artifact 测试合并复核共 19/19 | 其他根合同/嵌套 Schema resolver 错误组合和 executionPolicy 全边界仍待补，阶段 1 保持部分通过 |
+| 阶段 2：Loop-scope Join timeout | 通过（单 Loop、单 Loop-scoped `all_of` 切片） | `src/team-ir/runtime.ts` 在成员来源激活时持久化 round deadline、恢复时重挂 waiter、timeout 时取消活跃来源并失败收敛；`tests/team-ir-loop-join-runtime.test.mjs` 覆盖 Fake Clock deadline=150、FileTeamRunStore 新实例在 125/149 不超时、150 超时。`pnpm build`、`node --test tests/team-ir-runtime.test.mjs tests/team-ir-loop-join-runtime.test.mjs`：34/34 | Loop quorum、多 Loop/嵌套、条件来源及不同 lineage 隔离仍未实现或未覆盖；阶段 2 保持部分通过 |
+| 阶段 2：Run input Artifact 授权不可变 | 通过（File/Memory 授权合同切片） | `src/team-ir/artifact-store.ts`：同一 Project/Run 的相同授权清单幂等、不同清单拒绝；File backend 用同目录 create-if-absent 链接线性化跨实例并发。`tests/team-ir-artifact-store.test.mjs` 验证竞争只有一个获胜、获胜清单可读且失败方未获授权；Artifact Store 7/7 | 未注入进程崩溃/fsync 故障；Artifact blob 成功写入但索引提交失败可能遗留孤儿 blob；不代表 Artifact/Run checkpoint 跨存储原子提交 |
+| 阶段 4：Team IR 变更/删除后的历史 Run 查询 | 通过（查询只读与冻结 digest 切片） | `apps/team-site/tests/team-ir-history-after-source-change.test.mjs` 使用真实 Project Run executor、会诊 v2 fixture 和 Fake Bindings 完成 Run；把源 Team IR 改为新 packageRef、再删除后，Run detail/events/result API 均仍返回原 owner digest、事件及历史结果，且查询不依赖现行 IR；测试 1/1 | 持久化 Run 证据包含 Team IR semantic digest 和 compiled plan digest，不含完整 `CompiledTeamPlan` 文档；真实 Sandbox 后查询及终态只读 API 矩阵仍待验收 |
+| 经典团队真实 Sandbox UAT | 受阻 / 未运行 | 本轮检查：`OGS_TEAM_IR_V2_RESOLVER_MODULE` 未配置；`codex login status` 为 `Not logged in`；`opencode auth list` 为 0 credentials；当前进程环境没有 OpenAI/Codex API key 环境变量。真实 UAT 需可信 resolver、有效模型认证和可执行 Sandbox Binding | 配置可信绝对路径 resolver 和真实模型认证后，完成 Studio 保存/重开、Sandbox 模拟、发布、项目挂载、真实 Task 成功及受控失败/重试、重启查询和人工结果审核；Fake 不计真实 UAT |
+
+本轮聚焦回归：`node --test tests/team-ir-artifact-store.test.mjs tests/team-ir-index.test.mjs tests/team-ir-schema-resolver.test.mjs`，19/19；Loop Join 切片 `pnpm build && node --test tests/team-ir-runtime.test.mjs tests/team-ir-loop-join-runtime.test.mjs`，34/34；历史 Run 专项测试 1/1。完整仓库 `pnpm test`：855 项，854 通过、0 失败、1 项 Windows PowerShell/CMD 专项在 macOS 跳过，退出码 0。Team Site 全量串行回归 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0，包含新增历史 Run 查询用例；dot reporter 不输出精确计数。
+阶段结论：阶段 0 通过；阶段 1 部分通过；阶段 2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受阻，不得宣称发布完成。
 
 ### YYYY-MM-DD：阶段 / 任务标识
 

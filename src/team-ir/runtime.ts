@@ -649,14 +649,20 @@ export class TeamRuntime {
     });
     const startJoinForPredecessor = async (agentId: string): Promise<void> => {
       for (const join of joinDefinitions) {
-        if (loops.length > 0 || !isRecord(join.scope) || join.scope.kind !== "run") continue;
+        if (!isRecord(join.scope)) continue;
+        const runScoped = join.scope.kind === "run" && loops.length === 0;
+        const loopScoped = loopJoin === join && join.scope.kind === "loop" && join.scope.loopId === loopId;
+        if (!runScoped && !loopScoped) continue;
         const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds.map(String) : [];
         if (!sourceIds.some((id) => {
           const edge = plan.handoffsById.get(id);
           return isRecord(edge?.from) && edge.from.kind === "agent" && edge.from.agentId === agentId;
         })) continue;
         const joinId = String(join.id);
-        const roundKey = joinId;
+        const currentLoopState = loopScoped ? (await this.args.store.load(runId))?.loopStates[loopId!] : undefined;
+        if (loopScoped && !currentLoopState) return;
+        const loopRound = loopScoped ? Math.max(1, currentLoopState!.rounds) : undefined;
+        const roundKey = loopRound === undefined ? joinId : `${joinId}:${loopRound}`;
         const targetAgent = plan.team.agents.find((agent) => agent.id === join.agentId) as Record<string, unknown> | undefined;
         const targetPorts = isRecord(targetAgent?.inputPorts) ? targetAgent.inputPorts : {};
         const targetPort = isRecord(targetPorts[String(join.inputPort)]) ? targetPorts[String(join.inputPort)] as Record<string, unknown> : {};
@@ -672,16 +678,19 @@ export class TeamRuntime {
             || Object.keys(artifacts).some((slotId) => requiredArtifactSlots.includes(slotId));
         });
         const baseMapping = isRecord(join.baseMapping) ? join.baseMapping : {};
+        const loopPrevious = currentLoopState
+          ? Object.fromEntries(Object.entries(currentLoopState.previousOutputs).map(([previousAgentId, output]) => [previousAgentId, { output }]))
+          : undefined;
         let persistedRound!: TeamJoinRound;
         await this.update(runId, (record) => {
           const rounds = record.scheduler!.joinRounds ?? (record.scheduler!.joinRounds = {});
           let round = rounds[roundKey] ?? createTeamJoinRound({
-            joinId, runId, lineage: "run", mode: String(join.mode) as "all_of" | "quorum_of",
+            joinId, runId, lineage: "run", ...(loopRound === undefined ? {} : { loopRound }), mode: String(join.mode) as "all_of" | "quorum_of",
             handoffIds: sourceIds, threshold: typeof join.threshold === "number" ? join.threshold : undefined,
             timeoutMs: Number(join.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
             baseMapping: {
-              data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput)) as Record<string, unknown> : {},
-              artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput)) as Record<string, unknown> : {}
+              data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput, undefined, loopPrevious)) as Record<string, unknown> : {},
+              artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput, undefined, loopPrevious)) as Record<string, unknown> : {}
             }
           });
           round = applyTeamJoinEvent(round, { type: "predecessor_activated", at: this.args.clock.now() });
@@ -716,6 +725,7 @@ export class TeamRuntime {
       if (existingInvocation?.status === "completed") return current;
       const latest = (await this.args.store.load(runId))!.loopStates[loopId];
       const previous = Object.fromEntries(Object.entries(latest.previousOutputs).map(([agentId, output]) => [agentId, { output }]));
+      await startJoinForPredecessor(String(target.agentId));
       return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, {
         invocationId,
         loopPrevious: previous,
@@ -1171,6 +1181,8 @@ export class TeamRuntime {
     if (!snapshot || snapshot.terminalIntent !== "failed") return;
     for (const invocation of Object.values(snapshot.invocations)) {
       if (invocation.id === failedInvocationId || invocation.status !== "running") continue;
+      const cancellationEventPrefix = `${invocation.id}:sibling-failure-cancel:`;
+      if (snapshot.events.some((item) => item.id.startsWith(cancellationEventPrefix))) continue;
       const binding = this.args.bindings[invocation.bindingId];
       let confirmed = false;
       if (binding?.cancel) {

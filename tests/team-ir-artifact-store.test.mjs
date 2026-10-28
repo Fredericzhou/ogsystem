@@ -107,3 +107,35 @@ test("FileTeamArtifactStore persists blob, metadata, Project ownership and Run g
   assert.equal(fileList.includes("persisted"), false);
   assert.equal(fileList.includes("contentDigest"), true);
 });
+
+test("Run input Artifact grants are immutable, idempotent, and linearized across File store instances", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-grant-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const owner = { projectId: "project-1", runId: "run-1" };
+  const first = new FileTeamArtifactStore(root);
+  const second = new FileTeamArtifactStore(root);
+  const firstRef = await first.registerRunInput({
+    team: team(), projectId: owner.projectId, slotId: "brief", mediaType: "text/plain", content: Buffer.from("first"), authorizeUpload: () => true
+  });
+  const secondRef = await second.registerRunInput({
+    team: team(), projectId: owner.projectId, slotId: "brief", mediaType: "text/plain", content: Buffer.from("second"), authorizeUpload: () => true
+  });
+
+  const contenders = await Promise.allSettled([
+    first.bindRunInputAttachments({ team: team(), owner, attachments: { brief: firstRef } }),
+    second.bindRunInputAttachments({ team: team(), owner, attachments: { brief: secondRef } })
+  ]);
+  assert.equal(contenders.filter((item) => item.status === "fulfilled").length, 1);
+  const rejected = contenders.find((item) => item.status === "rejected");
+  assert.equal(rejected.reason.code, "ARTIFACT_RUN_INPUT_CONFLICT");
+  const winner = contenders.find((item) => item.status === "fulfilled").value.brief;
+  const loser = winner.artifactId === firstRef.artifactId ? secondRef : firstRef;
+  assert.deepEqual(await second.bindRunInputAttachments({ team: team(), owner, attachments: { brief: winner } }), { brief: winner });
+  await assert.rejects(second.bindRunInputAttachments({ team: team(), owner, attachments: { brief: loser } }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_RUN_INPUT_CONFLICT");
+
+  const resolver = await second.createInvocationResolver({ owner, allowedArtifacts: [winner] });
+  assert.equal(Buffer.from(await resolver.read(winner.artifactId)).toString(), winner.artifactId === firstRef.artifactId ? "first" : "second");
+  await assert.rejects(second.createInvocationResolver({ owner, allowedArtifacts: [loser] }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_REFERENCE_INVALID");
+});
