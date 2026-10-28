@@ -676,6 +676,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 
 **阶段结论：** 阶段 0 通过；阶段 1、2 部分通过；阶段 3、4 进行中。默认创建、fork、Case/template 已切到 v2，但发布完成定义尚未满足。
 
+### 2026-10-29：Join 超时迟到结果与 Schema 端点分支补充
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 1：Handoff endpoint discriminator 非法字段组合 | 通过（字段分支窄矩阵） | `tests/team-ir-schema.test.mjs`：`endpoint discriminator rejects every incompatible branch field at its exact pointer`，表驱动覆盖 Run/Agent source 与 Agent/Result target 的跨分支字段和未知字段，并断言精确 JSON Pointer；同文件 `Handoff endpoint kinds and Run/Result endpoint fields are exact` 保留 kind、必需字段和方向非法用例 | 不替代全根 Schema 字段域、嵌套组合与所有静态诊断 code/pointer 的完整追溯矩阵 |
+| 阶段 2：Run-scope Join timeout 迟到成功与 File Store deadline 恢复 | 通过（当前单 Join 调度拓扑窄合同） | `tests/team-ir-runtime.test.mjs`：`an unconfirmed Join timeout keeps a late successful source from invoking the Join target` 断言取消未确认后来源迟到成功仍使 Run 以 `JOIN_TIMEOUT` 失败、Join target 不执行、没有 pending Result；`FileTeamRunStore recovery preserves the remaining deadline for collecting all_of and quorum_of Joins` 覆盖两种模式沿用持久 deadline，截止前保持 running、到期后失败并只请求取消一次 | 不覆盖多 Join/quorum、Loop/Join 组合及跨 ArtifactStore/RunStore 原子边界；这些拓扑仍按当前受限合同拒绝或未实现 |
+| 本轮聚焦验证 | 通过 | `pnpm build && node --test tests/team-ir-schema.test.mjs tests/team-ir-runtime.test.mjs && git diff --check`，60/60；`pnpm --dir apps/team-site test --test-concurrency=1`，349 项中 348 通过、0 失败、1 项 opt-in Docker UAT 跳过；`pnpm test`，918 项中 917 通过、0 失败、1 项 Windows 专项跳过，退出码 0 | Team Site 同一代码首轮曾报告 1 项失败、1 项跳过，进度输出未保留失败标题；用 `pnpm --dir apps/team-site exec node --test --test-concurrency=1 --test-reporter=spec` 完整重跑为 349 项中 348 通过、0 失败、1 项跳过。首轮异常未复现，保留为风险 |
+| 回归生成数据与工作区 | 已清理测试产物 | 全仓回归新生成的 18 个 `.ogs/runs/` Runtime 目录（约 3.2 MB）和 `.ogs/runs-index.json` 已移入系统废纸篓；原有 `.ogs/model-selection.json` 用户改动保留 | 废纸篓提供短期恢复；本轮未改动或提交本机模型选择配置 |
+
+**阶段结论：** 本轮补齐若干阶段 1/2 定向边界证据，但不支持将阶段 1、2 标为通过。阶段 3/4、全部经典场景真实 UAT、独立 Review 身份、远端 A2A、发布门和旧源码剩余清理仍未闭合。
+
 ## 6. Codex / 实施代理工作约定
 
 为减少中途停留后丢失进度，每次委派或启动实施都应引用本文件和目标阶段，并要求：

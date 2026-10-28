@@ -812,43 +812,46 @@ test("pausing for required input disarms the process-local Join timer but preser
   assert.equal(cancels.right, 1);
 });
 
-test("FileTeamRunStore recovery arms a collecting Join with only its persisted remaining deadline", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "team-ir-join-timeout-recovery-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const runId = "join-timeout-recovery";
-  const plan = compileTeamIr(joinTimeoutTeam("quorum_of"));
-  const clock = fakeClock(125);
-  const store = new FileTeamRunStore(root);
-  const cancels = { right: 0 };
-  const bindings = joinTimeoutBindings({ cancels });
-  const firstRuntime = new TeamRuntime({ store, clock, bindings });
-  await firstRuntime.createRun(plan, { runId, task: "check", input: { prompt: "check" } });
-  await firstRuntime.claim(runId, plan.compiledPlanDigest);
-  const round = applyTeamJoinEvent(createTeamJoinRound({
-    joinId: "quorum", runId, lineage: "run", mode: "quorum_of", threshold: 2,
-    handoffIds: ["left-join", "right-join"], timeoutMs: 50
-  }), { type: "predecessor_activated", at: 100 });
-  const checkpoint = await store.load(runId);
-  const expectedRevision = checkpoint.revision;
-  checkpoint.scheduler.joinRounds = { quorum: round };
-  checkpoint.revision = expectedRevision + 1;
-  assert.equal(await store.compareAndSet(runId, expectedRevision, checkpoint), true);
+test("FileTeamRunStore recovery preserves the remaining deadline for collecting all_of and quorum_of Joins", async (t) => {
+  for (const mode of ["all_of", "quorum_of"]) {
+    const root = await mkdtemp(join(tmpdir(), `team-ir-${mode}-join-timeout-recovery-`));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const runId = `join-timeout-recovery-${mode}`;
+    const plan = compileTeamIr(joinTimeoutTeam(mode));
+    const clock = fakeClock(125);
+    const store = new FileTeamRunStore(root);
+    const cancels = { right: 0 };
+    const bindings = joinTimeoutBindings({ cancels });
+    const firstRuntime = new TeamRuntime({ store, clock, bindings });
+    await firstRuntime.createRun(plan, { runId, task: "check", input: { prompt: "check" } });
+    await firstRuntime.claim(runId, plan.compiledPlanDigest);
+    const round = applyTeamJoinEvent(createTeamJoinRound({
+      joinId: "quorum", runId, lineage: "run", mode,
+      ...(mode === "quorum_of" ? { threshold: 2 } : { requiredSourceIds: [] }),
+      handoffIds: ["left-join", "right-join"], timeoutMs: 50
+    }), { type: "predecessor_activated", at: 100 });
+    const checkpoint = await store.load(runId);
+    const expectedRevision = checkpoint.revision;
+    checkpoint.scheduler.joinRounds = { quorum: round };
+    checkpoint.revision = expectedRevision + 1;
+    assert.equal(await store.compareAndSet(runId, expectedRevision, checkpoint), true);
 
-  const recovered = new TeamRuntime({ store: new FileTeamRunStore(root), clock, bindings });
-  const running = recovered.executeRun(plan, runId);
-  await until(() => store.load(runId).then((record) => record.invocations[`${runId}:start-right`]?.status === "running"), "recovered slow source activation");
-  const restored = await store.load(runId);
-  assert.equal(restored.scheduler.joinRounds.quorum.startedAt, 100);
-  assert.equal(restored.scheduler.joinRounds.quorum.deadlineAt, 150);
-  clock.advanceTo(149);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal((await store.load(runId)).status, "running");
-  assert.equal(cancels.right, 0);
-  clock.advanceTo(150);
-  const result = await withinTimeout(running, "recovered Join timeout settlement");
-  assert.equal(result.status, "failed");
-  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
-  assert.equal(cancels.right, 1);
+    const recovered = new TeamRuntime({ store: new FileTeamRunStore(root), clock, bindings });
+    const running = recovered.executeRun(plan, runId);
+    await until(() => store.load(runId).then((record) => record.invocations[`${runId}:start-right`]?.status === "running"), "recovered slow source activation");
+    const restored = await store.load(runId);
+    assert.equal(restored.scheduler.joinRounds.quorum.startedAt, 100);
+    assert.equal(restored.scheduler.joinRounds.quorum.deadlineAt, 150);
+    clock.advanceTo(149);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal((await store.load(runId)).status, "running");
+    assert.equal(cancels.right, 0);
+    clock.advanceTo(150);
+    const result = await withinTimeout(running, "recovered Join timeout settlement");
+    assert.equal(result.status, "failed");
+    assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
+    assert.equal(cancels.right, 1);
+  }
 });
 
 test("Join timeout confirmed during invocation publication prevents the Binding from starting", async () => {
@@ -916,6 +919,43 @@ test("Join timeout confirmed during invocation publication prevents the Binding 
       cancellationConfirmed ? "confirmed cancellation before Binding start must not invoke it later" : "unconfirmed cancellation must not suppress an active Binding");
     assert.equal(cancels.right, 1);
   }
+});
+
+test("an unconfirmed Join timeout keeps a late successful source from invoking the Join target", async () => {
+  const runId = "join-timeout-late-success";
+  const plan = compileTeamIr(joinTimeoutTeam("all_of"));
+  const clock = fakeClock(100);
+  const store = new MemoryTeamRunStore();
+  let rightStarted;
+  const rightStartedPromise = new Promise((resolve) => { rightStarted = resolve; });
+  let releaseRight;
+  const rightResult = new Promise((resolve) => { releaseRight = resolve; });
+  const calls = { joiner: 0, cancel: 0 };
+  const bindings = {
+    "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "left", include: true } } }; } },
+    "binding:right": {
+      async invoke() { rightStarted(); return rightResult; },
+      async cancel() { calls.cancel += 1; return false; }
+    },
+    "binding:joiner": { async invoke() { calls.joiner += 1; return { kind: "completed", output: { event: "DONE", data: { summary: "must not be written" } } }; } }
+  };
+  const runtime = new TeamRuntime({ store, clock, bindings });
+  await runtime.createRun(plan, { runId, task: "check", input: { prompt: "check" } });
+  const running = runtime.executeRun(plan, runId);
+  await withinTimeout(rightStartedPromise, "slow Join source activation");
+  await until(() => store.load(runId).then((record) => record.scheduler?.joinRounds?.quorum?.deadlineAt === 150), "persisted Join deadline");
+  clock.advanceTo(150);
+  await until(() => store.load(runId).then((record) => record.scheduler?.joinRounds?.quorum?.status === "failed"), "Join timeout failure checkpoint");
+  releaseRight({ kind: "completed", output: { event: "DONE", data: { value: "late", include: true } } });
+
+  const result = await withinTimeout(running, "late source failure settlement");
+  assert.equal(result.status, "failed");
+  assert.equal(result.scheduler.joinRounds.quorum.failure.code, "JOIN_TIMEOUT");
+  assert.equal(result.invocations[`${runId}:start-right`].status, "failed");
+  assert.equal(calls.cancel, 1);
+  assert.equal(calls.joiner, 0);
+  assert.equal(result.pendingResult, undefined);
+  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
 });
 
 async function assertUnsupportedQuorumFailsBeforeBinding(teamValue, runId) {

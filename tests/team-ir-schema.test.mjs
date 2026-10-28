@@ -262,6 +262,35 @@ test("Handoff endpoint kinds and Run/Result endpoint fields are exact", () => {
   }
 });
 
+test("endpoint discriminator rejects every incompatible branch field at its exact pointer", () => {
+  const invalidCases = [
+    ...["agentId", "outputPort", "inputPort", "extra"].map((field) => ({
+      pointer: `/handoffs/0/from/${field}`,
+      mutate: (value) => { value.handoffs[0].from[field] = "unexpected"; }
+    })),
+    ...["inputPort", "extra"].map((field) => ({
+      pointer: `/handoffs/1/from/${field}`,
+      mutate: (value) => { value.handoffs[1].from[field] = "unexpected"; }
+    })),
+    ...["agentId", "inputPort", "outputPort", "extra"].map((field) => ({
+      pointer: `/handoffs/1/to/${field}`,
+      mutate: (value) => { value.handoffs[1].to[field] = "unexpected"; }
+    })),
+    ...["outputPort", "extra"].map((field) => ({
+      pointer: `/handoffs/0/to/${field}`,
+      mutate: (value) => { value.handoffs[0].to[field] = "unexpected"; }
+    }))
+  ];
+
+  for (const { pointer, mutate } of invalidCases) {
+    const value = minimalTeam();
+    mutate(value);
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
+      `Expected an exact endpoint discriminator diagnostic at ${pointer}, got ${JSON.stringify(diagnostics)}`);
+  }
+});
+
 test("schema supports only single-cardinality declared artifact slots", () => {
   const value = minimalTeam();
   value.runInput.artifactSlots = { brief: { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } };
