@@ -95,7 +95,7 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | --- | --- | --- |
 | IR Schema：合法 v2 | `tests/team-ir-schema.test.mjs`：`Team IR v2 schema declares Draft 2020-12 and accepts a minimal document` | 部分；仅最小合法文档，不是完整规范 fixture |
 | IR Schema：重复 ID | `tests/team-ir-validation.test.mjs`：`cross-reference validation reports duplicate semantic IDs and unknown references` | 已有静态诊断断言 |
-| IR Schema：未知端点/端口/Binding | 同上；`cross-reference validation accepts a minimal Team and resolves Agent bindings and ports` | 部分；未知 Agent/端口/Binding 有断言，未知 Run/Result endpoint 变体待补 |
+| IR Schema：未知端点/端口/Binding | `tests/team-ir-validation.test.mjs`：`cross-reference validation reports duplicate semantic IDs and unknown references`、`Handoff and route endpoint references diagnose each unknown Agent and port at its field pointer` | 部分；未知 Agent/port/Binding 有精确诊断，Handoff from/to 与 route from 的六个 Agent/port pointer 已断言；Run/Result endpoint discriminator 非法组合仍由 Schema 非法端点行追踪 |
 | IR Schema：非法端点类型 | `tests/team-ir-schema.test.mjs`：`endpoint schema rejects implicit endpoints and malformed agent ports` | 部分；须补齐每个非法 kind/字段组合及诊断 pointer |
 | IR Schema：无效 Schema 引用 | `tests/team-ir-schema-resolver.test.mjs`：`rejects missing resources, pointers and malformed pointer escapes`、`rejects network, absolute, escaping and unsupported Team-local references`、`fails closed for network refs hidden inside a referenced schema closure` | 已有 resolver 静态拒绝；根合同调用前诊断集成仍需补齐 |
 | IR Schema：runInput/runResult | `tests/team-ir-schema.test.mjs`：最小文档、缺失 root contract 断言；`tests/team-ir-payload-validation.test.mjs`：Run input、Agent input/output 与 result payload 校验；`tests/team-ir-result-mode.test.mjs`：result Schema 失败路径 | 部分；运行时 payload 校验与结果模式有证据；完整结构字段边界、Artifact result 合同及非法 Schema 组合仍待补 |
