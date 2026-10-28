@@ -37,6 +37,41 @@ function setup(binding, clockOptions = {}) {
   return { clock, store, runtime: new TeamRuntime({ store, clock, bindings }) };
 }
 
+function reviewedRunAllOfJoinTeam(reviewTimeoutMs = 100) {
+  const value = team();
+  const makeAgent = (id, inputPort, outputPort) => ({
+    id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`,
+    inputPorts: { [inputPort]: { dataSchema: { type: "object", properties: {
+      ...(id === "joiner" ? { left: { type: "string" }, right: { type: "string" } } : { prompt: { type: "string" } })
+    }, required: id === "joiner" ? ["left", "right"] : ["prompt"], additionalProperties: false } } },
+    outputPorts: { [outputPort]: { dataSchema: { type: "object", properties: {
+      ...(id === "joiner" ? { summary: { type: "string" } } : { contribution: { type: "string" } })
+    }, required: id === "joiner" ? ["summary"] : ["contribution"], additionalProperties: false } } }
+  });
+  value.agents = [makeAgent("left", "default", "DONE"), makeAgent("right", "default", "DONE"), makeAgent("joiner", "combined", "DONE")];
+  value.bindings = value.agents.map((agent) => ({
+    id: agent.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000,
+    retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  }));
+  value.handoffs = [
+    { id: "run-left", from: { kind: "run" }, to: { kind: "agent", agentId: "left", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 500 } },
+    { id: "run-right", from: { kind: "run" }, to: { kind: "agent", agentId: "right", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 500 } },
+    { id: "left-join", from: { kind: "agent", agentId: "left", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "combined" }, map: { data: { left: { "$ref": "$.output.data.contribution" } } }, delivery: { deadlineMs: 500 } },
+    { id: "right-join", from: { kind: "agent", agentId: "right", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "combined" }, map: { data: { right: { "$ref": "$.output.data.contribution" } } }, delivery: { deadlineMs: 500 } },
+    { id: "join-result", from: { kind: "agent", agentId: "joiner", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { summary: { "$ref": "$.output.data.summary" } } } }
+  ];
+  value.runResult.dataSchema = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
+  value.executionPolicy.resultMode = "required";
+  value.orchestration = {
+    routes: [{ from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["run-left", "run-right"] }],
+    joins: [{ id: "reviewed-join", agentId: "joiner", inputPort: "combined", mode: "all_of", handoffIds: ["left-join", "right-join"], scope: { kind: "run" }, timeoutMs: 50, onTimeout: "fail" }],
+    loops: [],
+    reviews: [{ id: "join-review", at: { kind: "agentOutput", agentId: "joiner", outputPort: "DONE" },
+      feedbackSchema: { type: "object", properties: { comments: { type: "string" } }, required: ["comments"], additionalProperties: false }, timeoutMs: reviewTimeoutMs, onTimeout: "fail" }]
+  };
+  return value;
+}
+
 function withinTimeout(promise, label, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), timeoutMs);
@@ -222,6 +257,117 @@ test("parallel Run fan-out persists independent Reviews and resumes only after a
   assert.deepEqual(calls.sort(), ["auditor", "worker"]);
   assert.equal(completed.status, "completed");
   assert.equal(completed.events.filter((entry) => entry.type === "run.waiting_human_review").length, 2);
+});
+
+test("Review on a Run-scope all_of Join target uses its own deadline and resumes after FileStore restart", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-join-target-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = reviewedRunAllOfJoinTeam();
+  const plan = compileTeamIr(value);
+  const runId = "reviewed-join-target";
+  let now = 100;
+  const calls = { left: 0, right: 0, joiner: 0 };
+  const makeReviewRuntime = () => new TeamReviewRuntime({
+    store: new FileTeamReviewStore(join(root, "reviews")), now: () => now, authorizeReviewer: () => true
+  });
+  const makeRuntime = () => new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")),
+    clock: { now: () => now, sleep: () => new Promise(() => {}) },
+    reviewRuntime: makeReviewRuntime(),
+    bindings: Object.fromEntries(Object.keys(calls).map((agentId) => [`binding:${agentId}`, { async invoke() {
+      calls[agentId] += 1;
+      return { kind: "completed", output: { event: "DONE", data: agentId === "joiner"
+        ? { summary: "joined contributions" } : { contribution: agentId } } };
+    } }]))
+  });
+  await makeRuntime().createRun(plan, { runId, task: "review joined work", input: { prompt: "combine" } });
+
+  const waiting = await makeRuntime().executeRun(plan, runId);
+  assert.equal(waiting.status, "waiting_human_review", JSON.stringify(waiting.events));
+  assert.deepEqual(calls, { left: 1, right: 1, joiner: 1 });
+  const joinRound = waiting.scheduler.joinRounds["reviewed-join"];
+  assert.equal(joinRound.status, "ready");
+  assert.equal(joinRound.startedAt, 100);
+  assert.equal(joinRound.deadlineAt, 150);
+  const reviewRuntime = makeReviewRuntime();
+  const review = await reviewRuntime.get({ runId, reviewId: "join-review" });
+  assert.equal(review.status, "pending");
+  assert.equal(review.deadlineAt, 200, "review timeout starts when the joined target completes, after the Join is ready");
+
+  now = 151;
+  const restarted = makeRuntime();
+  const stillWaiting = await restarted.executeRun(plan, runId);
+  assert.equal(stillWaiting.status, "waiting_human_review", "passing the disarmed Join deadline does not fail an active Review");
+  assert.deepEqual(calls, { left: 1, right: 1, joiner: 1 }, "restoring and re-reading the Join must not replay producer or target Bindings");
+  const currentReview = await reviewRuntime.get({ runId, reviewId: "join-review" });
+  await reviewRuntime.decide({ runId, reviewId: "join-review", revisionToken: currentReview.revisionToken,
+    idempotencyKey: "approve-joined", reviewerId: "reviewer", decision: "approve", plan });
+
+  const resumes = await Promise.allSettled([
+    makeRuntime().executeRun(plan, runId),
+    makeRuntime().executeRun(plan, runId)
+  ]);
+  const completed = resumes.find((result) => result.status === "fulfilled")?.value;
+  assert.ok(completed, "one scheduler resume must settle the Run");
+  const conflict = resumes.find((result) => result.status === "rejected");
+  if (conflict) assert.match(conflict.reason.message, /Cannot resume Run in (running|completed)/);
+  else assert.equal(resumes[1].value.status, "completed", "a racing caller may observe the committed terminal Run");
+  assert.equal(completed.status, "completed", JSON.stringify(completed.events));
+  assert.deepEqual(completed.result, { summary: "joined contributions" });
+  assert.deepEqual(calls, { left: 1, right: 1, joiner: 1 });
+  assert.equal(completed.events.filter((entry) => entry.type === "run.review.approved").length, 1);
+  assert.equal(completed.events.filter((entry) => entry.type === "run.result.written").length, 1);
+});
+
+test("Review reject and Review timeout after a Run-scope all_of Join fail closed", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-join-fail-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const scenario of ["reject", "timeout"]) {
+    await t.test(scenario, async () => {
+      const scenarioRoot = join(root, scenario);
+      const value = reviewedRunAllOfJoinTeam(100);
+      const plan = compileTeamIr(value);
+      const runId = `reviewed-join-${scenario}`;
+      let now = 100;
+      const calls = { left: 0, right: 0, joiner: 0 };
+      const makeReviewRuntime = () => new TeamReviewRuntime({
+        store: new FileTeamReviewStore(join(scenarioRoot, "reviews")), now: () => now, authorizeReviewer: () => true
+      });
+      const makeRuntime = () => new TeamRuntime({
+        store: new FileTeamRunStore(join(scenarioRoot, "runs")),
+        clock: { now: () => now, sleep: () => new Promise(() => {}) },
+        reviewRuntime: makeReviewRuntime(),
+        bindings: Object.fromEntries(Object.keys(calls).map((agentId) => [`binding:${agentId}`, { async invoke() {
+          calls[agentId] += 1;
+          return { kind: "completed", output: { event: "DONE", data: agentId === "joiner"
+            ? { summary: "joined contributions" } : { contribution: agentId } } };
+        } }]))
+      });
+      await makeRuntime().createRun(plan, { runId, task: "review joined work", input: { prompt: "combine" } });
+      const waiting = await makeRuntime().executeRun(plan, runId);
+      assert.equal(waiting.status, "waiting_human_review");
+      const reviews = makeReviewRuntime();
+      const pending = await reviews.get({ runId, reviewId: "join-review" });
+
+      if (scenario === "reject") {
+        await reviews.decide({ runId, reviewId: "join-review", revisionToken: pending.revisionToken,
+          idempotencyKey: "reject-joined", reviewerId: "reviewer", decision: "reject",
+          feedback: { comments: "The combined answer is incomplete." }, plan });
+      } else {
+        now = 150;
+        assert.equal((await makeRuntime().executeRun(plan, runId)).status, "waiting_human_review",
+          "the Join deadline has elapsed, but the separate Review deadline has not");
+        now = pending.deadlineAt;
+        assert.equal(now, 200);
+      }
+
+      const failed = await makeRuntime().executeRun(plan, runId);
+      assert.equal(failed.status, "failed", JSON.stringify(failed.events));
+      assert.equal(failed.resultWritten, undefined);
+      assert.equal(failed.events.some((entry) => entry.type === "run.failing" && entry.data.code === (scenario === "reject" ? "REVIEW_REJECTED" : "REVIEW_TIMEOUT")), true);
+      assert.deepEqual(calls, { left: 1, right: 1, joiner: 1 });
+    });
+  }
 });
 
 test("active Run resume rejects a changed compiled dependency digest without side effects", async () => {

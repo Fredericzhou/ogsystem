@@ -1034,6 +1034,13 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .ir-form-grid label { display: grid; gap: 5px; min-width: 0; }
 .ir-form-grid label.full { grid-column: 1 / -1; }
 .ir-form-grid input, .team-ir-editor > .project-panel input { max-width: 100%; min-width: 0; }
+.ir-agent-ports { border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 10px; grid-column: 1 / -1; min-width: 0; padding: 10px; }
+.ir-agent-ports > legend { color: var(--muted); font-size: 12px; padding: 0 5px; }
+.ir-port-contract { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 8px; min-width: 0; padding: 10px; }
+.ir-port-contract .panel-head { align-items: center; display: flex; justify-content: space-between; }
+.ir-port-contract label { display: grid; gap: 5px; min-width: 0; }
+.ir-port-contract input, .ir-port-contract textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: inherit; max-width: 100%; min-height: 36px; min-width: 0; padding: 7px 9px; width: 100%; }
+.ir-port-contract textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
 .ir-join-handoffs { border: 0; display: flex; flex-wrap: wrap; gap: 8px 16px; grid-column: 1 / -1; margin: 0; min-width: 0; padding: 0; }
 .ir-join-handoffs legend { font-size: 12px; font-weight: 650; margin-bottom: 6px; }
 .ir-join-handoffs .ir-handoff-choice { align-items: center; display: inline-flex; gap: 7px; min-width: 0; }

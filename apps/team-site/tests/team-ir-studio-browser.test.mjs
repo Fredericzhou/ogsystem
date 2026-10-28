@@ -81,7 +81,8 @@ export async function resolveA2AAgent() {
 }
 export async function resolveBindings({ teamIR }) {
   return Object.fromEntries(teamIR.agents.map((agent) => {
-    const [event, port] = Object.entries(agent.outputPorts)[0];
+    const event = Object.hasOwn(agent.outputPorts, "ALT_DONE") ? "ALT_DONE" : Object.keys(agent.outputPorts)[0];
+    const port = agent.outputPorts[event];
     const data = Object.fromEntries(Object.entries(port.dataSchema?.properties || {}).map(([key, schema]) => [key, schema.type === "string" ? "Simulation result" : schema.type === "boolean" ? false : null]));
     return [agent.bindingRef, { async invoke(invocation) {
       if (invocation.artifactResolver) {
@@ -158,6 +159,25 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await teamIdInput.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd)), "bad team");
     assert.equal(await teamIdInput.evaluate((element) => element.classList.contains("ir-diagnostic-target")), true);
     await teamIdInput.fill(teamVersionId);
+    await page.locator('[data-ir-add-port="0"][data-ir-port-direction="outputPorts"]').click();
+    const alternatePort = page.locator('[data-ir-port-row="outputPorts"][data-ir-port-index="1"]');
+    await alternatePort.locator('input[name$="-id"]').fill("ALT_DONE");
+    await alternatePort.locator('textarea[name$="-schema"]').fill(JSON.stringify({
+      type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false
+    }));
+    await alternatePort.locator('textarea[name$="-artifacts"]').fill(JSON.stringify({
+      trace: { required: false, mediaTypes: ["text/plain"], cardinality: "single" }
+    }));
+    await page.locator('[data-ir-add-port="0"][data-ir-port-direction="inputPorts"]').click();
+    const secondaryInputPort = page.locator('[data-ir-port-row="inputPorts"][data-ir-port-index="1"]');
+    await secondaryInputPort.locator('input[name$="-id"]').fill("SECOND_INPUT");
+    await secondaryInputPort.locator('textarea[name$="-schema"]').fill(JSON.stringify({
+      type: "object", properties: { note: { type: "string" } }, required: ["note"], additionalProperties: false
+    }));
+    await page.locator('[data-ir-add-port="0"][data-ir-port-direction="outputPorts"]').click();
+    await page.locator('[data-ir-remove-port="0"][data-ir-port-direction="outputPorts"][data-ir-port-index="2"]').click();
+    assert.equal(Object.hasOwn(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts.worker.outputPorts, "output-3"), false,
+      "removing an unused port removes it from the Team IR contract");
     await page.locator('[data-ir-remove-handoff="1"]').click();
     await page.locator('[data-ir-remove-handoff="0"]').click();
 
@@ -197,7 +217,7 @@ export async function resolveBindings({ teamIR }) {
     await addedMapRow.locator('[data-ir-map-target]').selectOption("request");
     await addedMapRow.locator('[data-ir-map-source]').selectOption("$.run.input.request");
     assert.equal(await runMapping.inputValue(), "request=$.run.input.request", "field selections update the Team IR mapping");
-    await page.locator('[data-ir-connect-source-agent-index="0"]').click();
+    await page.locator('[data-ir-port-source-agent-index="0"][data-ir-port="ALT_DONE"]').click();
     await page.locator('[data-ir-connect-target="result"]').click();
     await page.locator('[name="handoff-1-id"]').fill("worker-to-result");
     const resultMapping = page.locator('[name="handoff-1-mapping"]');
@@ -215,6 +235,18 @@ export async function resolveBindings({ teamIR }) {
     const validationBody = await validation.json();
     assert.equal(validation.status(), 200);
     assert.equal(validationBody.ok, true, JSON.stringify(validationBody.diagnostics));
+    const savedTeamIr = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    assert.deepEqual(savedTeamIr.agentPortContracts.worker.outputPorts.ALT_DONE.dataSchema, {
+      type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false
+    });
+    assert.deepEqual(savedTeamIr.agentPortContracts.worker.outputPorts.ALT_DONE.artifactSlots, {
+      trace: { required: false, mediaTypes: ["text/plain"], cardinality: "single" }
+    });
+    assert.deepEqual(savedTeamIr.agentPortContracts.worker.inputPorts.SECOND_INPUT.dataSchema, {
+      type: "object", properties: { note: { type: "string" } }, required: ["note"], additionalProperties: false
+    });
+    assert.deepEqual(savedTeamIr.handoffContracts["handoff-2"].from,
+      { kind: "agent", agentId: "worker", outputPort: "ALT_DONE" }, "Handoff uses the selected non-first output port");
     const saveResponse = await page.waitForResponse((response) => response.request().method() === "PUT"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir`, { timeout: 5000 });
     assert.equal(saveResponse.status(), 200, await saveResponse.text());
@@ -228,6 +260,16 @@ export async function resolveBindings({ teamIR }) {
     await page.locator("#team-ir-editor").waitFor();
     assert.equal(await page.locator('[name="agent-0-id"]').inputValue(), "worker");
     assert.equal(await page.locator('[data-ir-handoff]').count(), 2);
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts.worker.outputPorts.ALT_DONE.artifactSlots, {
+      trace: { required: false, mediaTypes: ["text/plain"], cardinality: "single" }
+    }, "all Agent port and Artifact slot contracts survive save and reopen");
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts.worker.inputPorts.SECOND_INPUT.dataSchema, {
+      type: "object", properties: { note: { type: "string" } }, required: ["note"], additionalProperties: false
+    }, "additional Agent input ports survive save and reopen");
+    await page.locator('[data-ir-remove-port="0"][data-ir-port-direction="outputPorts"][data-ir-port-index="1"]').click();
+    assert.match(await page.locator("[data-team-ir-status]").innerText(), /Cannot remove ALT_DONE; it is referenced by Handoff worker-to-result/);
+    assert.ok(Object.hasOwn(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts.worker.outputPorts, "ALT_DONE"),
+      "a referenced port cannot be removed into a broken IR");
     assert.equal((await page.locator("[data-team-ir-digest]").innerText()).trim(), expectedDigest);
     assert.equal(await page.locator('[data-ir-handoff="0"] [data-ir-map-target]').inputValue(), "request");
     assert.equal(await page.locator('[data-ir-handoff="0"] [data-ir-map-source]').inputValue(), "$.run.input.request");

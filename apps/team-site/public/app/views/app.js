@@ -796,16 +796,21 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   candidate.agents = candidate.agents.map((agent) => {
     const contracts = agentContracts[agent.id] || {};
     const oldAgent = (previous.agents || []).find((item) => item.id === agent.id);
-    const ports = (current, stored, oldPorts) => Object.fromEntries(Object.entries({ ...(stored || {}), ...current }).map(([portId, port]) => {
-      const oldSchema = oldPorts?.[portId]?.dataSchema;
-      const fieldsUnchanged = oldSchema && fieldsFromSchema(oldSchema) === fieldsFromSchema(port.dataSchema);
-      return [portId, {
-        ...(stored?.[portId] || {}),
-        ...port,
-        ...(fieldsUnchanged && stored?.[portId]?.dataSchema ? { dataSchema: stored[portId].dataSchema } : {}),
-        ...(stored?.[portId]?.artifactSlots ? { artifactSlots: stored[portId].artifactSlots } : {})
-      }];
-    }));
+    const ports = (current, stored, oldPorts) => {
+      if (JSON.stringify(current) === JSON.stringify(oldPorts)) return stored || current;
+      return Object.fromEntries(Object.entries(current).map(([portId, port]) => {
+        const saved = stored?.[portId] || {};
+        const old = oldPorts?.[portId] || {};
+        return [portId, {
+          ...saved,
+          ...port,
+          ...(JSON.stringify(port.dataSchema) === JSON.stringify(old.dataSchema) && saved.dataSchema !== undefined
+            ? { dataSchema: saved.dataSchema } : {}),
+          ...(JSON.stringify(port.artifactSlots) === JSON.stringify(old.artifactSlots) && Object.hasOwn(saved, "artifactSlots")
+            ? { artifactSlots: saved.artifactSlots } : {})
+        }];
+      }));
+    };
     return {
       ...agent,
       inputPorts: ports(agent.inputPorts, contracts.inputPorts, oldAgent?.inputPorts),
@@ -952,11 +957,13 @@ function teamIrBasicControl(form, ir, parts) {
     if (!agent) return null;
     const names = { id: "id", packageRef: "package", bindingRef: "binding" };
     if (names[section]) return form.querySelector(`[name="agent-${index}-${names[section]}"]`);
-    if (section === "inputPorts" && agent.inputPorts?.[member]) {
-      if (detail === undefined || detail === "dataSchema" || (detail !== "artifactSlots" && parts[4] !== "artifactSlots")) return form.querySelector(`[name="agent-${index}-input-fields"]`);
-    }
-    if (section === "outputPorts" && agent.outputPorts?.[member]) {
-      if (detail === undefined || detail === "dataSchema" || (detail !== "artifactSlots" && parts[4] !== "artifactSlots")) return form.querySelector(`[name="agent-${index}-output-fields"]`);
+    if (["inputPorts", "outputPorts"].includes(section) && agent[section]?.[member]) {
+      const portRow = [...form.querySelectorAll(`[data-ir-agent="${index}"] [data-ir-port-row="${section}"]`)]
+        .find((row) => row.querySelector('input[name$="-id"]')?.value === member);
+      if (!portRow) return null;
+      if (detail === undefined) return portRow.querySelector('input[name$="-id"]');
+      if (detail === "dataSchema") return portRow.querySelector('textarea[name$="-schema"]');
+      if (detail === "artifactSlots") return portRow.querySelector('textarea[name$="-artifacts"]');
     }
     return null;
   }
@@ -1083,17 +1090,29 @@ function teamIrAutoMappingCandidates(ir, handoff) {
 
 function teamIrFromEditor(form, base) {
   const data = new FormData(form);
+  const parsePortJson = (value, label) => {
+    try { return JSON.parse(value); }
+    catch (error) { throw new Error(`${label} must be valid JSON: ${error.message}`); }
+  };
   const agents = [...form.querySelectorAll("[data-ir-agent]")].map((row) => {
     const index = row.dataset.irAgent;
     const id = String(data.get(`agent-${index}-id`) || "").trim();
-    const inputPort = String(data.get(`agent-${index}-input-port`) || "default").trim();
-    const outputPort = String(data.get(`agent-${index}-output-port`) || "DONE").trim();
+    const readPorts = (direction) => Object.fromEntries([...row.querySelectorAll(`[data-ir-port-row="${direction}"]`)].map((portRow) => {
+      const portIndex = portRow.dataset.irPortIndex;
+      const portId = String(data.get(`agent-${index}-${direction}-${portIndex}-id`) || "").trim();
+      if (!portId) throw new Error(`${direction === "inputPorts" ? "Input" : "Output"} port ID is required.`);
+      const dataSchema = parsePortJson(data.get(`agent-${index}-${direction}-${portIndex}-schema`), `${portId} data schema`);
+      const artifactSlotsText = String(data.get(`agent-${index}-${direction}-${portIndex}-artifacts`) || "").trim();
+      const port = { dataSchema };
+      if (artifactSlotsText) port.artifactSlots = parsePortJson(artifactSlotsText, `${portId} Artifact slots`);
+      return [portId, port];
+    }));
     return {
       id,
       packageRef: String(data.get(`agent-${index}-package`) || "").trim(),
       bindingRef: String(data.get(`agent-${index}-binding`) || `binding:${id}`).trim(),
-      inputPorts: { [inputPort]: { dataSchema: schemaFromFields(data.get(`agent-${index}-input-fields`)) } },
-      outputPorts: { [outputPort]: { dataSchema: schemaFromFields(data.get(`agent-${index}-output-fields`)) } }
+      inputPorts: readPorts("inputPorts"),
+      outputPorts: readPorts("outputPorts")
     };
   });
   const bindings = agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "codex-gateway/gpt-6-luna", attemptTimeoutMs: 120000,
@@ -1207,9 +1226,8 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
 
 function renderTeamIrEditorRows(ir, escText, editable) {
   const agents = (ir.agents || []).map((agent, index) => {
-    const inputEntry = Object.entries(agent.inputPorts || {})[0] || ["default", {}];
-    const outputEntry = Object.entries(agent.outputPorts || {})[0] || ["DONE", {}];
-    return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<input name="agent-${index}-package" value="${escText(agent.packageRef)}" required${editable ? "" : " disabled"}></label><label>Binding reference<input name="agent-${index}-binding" value="${escText(agent.bindingRef)}" required${editable ? "" : " disabled"}></label><label>Input port<input name="agent-${index}-input-port" value="${escText(inputEntry[0])}" required${editable ? "" : " disabled"}></label><label>Required input fields<input name="agent-${index}-input-fields" value="${escText(fieldsFromSchema(inputEntry[1].dataSchema))}" placeholder="request, context"${editable ? "" : " disabled"}></label><label>Output event / port<input name="agent-${index}-output-port" value="${escText(outputEntry[0])}" required${editable ? "" : " disabled"}></label><label>Required output fields<input name="agent-${index}-output-fields" value="${escText(fieldsFromSchema(outputEntry[1].dataSchema))}" placeholder="summary"${editable ? "" : " disabled"}></label></div></section>`;
+    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${Object.entries(ports || {}).map(([portId, port], portIndex) => `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><label>Data schema JSON<textarea name="agent-${index}-${direction}-${portIndex}-schema" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea></label><label>Artifact slots JSON<textarea name="agent-${index}-${direction}-${portIndex}-artifacts" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea></label></section>`).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
+    return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<input name="agent-${index}-package" value="${escText(agent.packageRef)}" required${editable ? "" : " disabled"}></label><label>Binding reference<input name="agent-${index}-binding" value="${escText(agent.bindingRef)}" required${editable ? "" : " disabled"}></label>${renderPorts("inputPorts", agent.inputPorts)}${renderPorts("outputPorts", agent.outputPorts)}</div></section>`;
   }).join("");
   const agentOptions = (selected, allowRun = false) => `${allowRun ? `<option value=""${!selected ? " selected" : ""}>Run START</option>` : ""}${(ir.agents || []).map((agent) => `<option value="${escText(agent.id)}"${selected === agent.id ? " selected" : ""}>${escText(agent.id)}</option>`).join("")}${allowRun ? '<option value="@result"' + (selected === "@result" ? " selected" : "") + ">Run result</option>" : ""}`;
   const handoffs = (ir.handoffs || []).map((edge, index) => {
@@ -1690,6 +1708,44 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       form.querySelectorAll("[data-ir-remove-loop]").forEach((button) => button.addEventListener("click", () => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         draft.orchestration.loops.splice(Number(button.dataset.irRemoveLoop), 1);
+        syncAdvancedContracts();
+        redraw();
+      }));
+      form.querySelectorAll("[data-ir-add-port]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        const agent = draft.agents[Number(button.dataset.irAddPort)];
+        const direction = button.dataset.irPortDirection;
+        if (!agent || !["inputPorts", "outputPorts"].includes(direction)) return;
+        const ports = agent[direction];
+        let suffix = Object.keys(ports).length + 1;
+        let portId = `${direction === "inputPorts" ? "input" : "output"}-${suffix}`;
+        while (Object.hasOwn(ports, portId)) portId = `${direction === "inputPorts" ? "input" : "output"}-${++suffix}`;
+        ports[portId] = { dataSchema: { type: "object", properties: {}, additionalProperties: false } };
+        syncAdvancedContracts();
+        redraw();
+        root.querySelector(`[data-ir-agent="${button.dataset.irAddPort}"] [name$="-${direction}-${Object.keys(ports).length - 1}-id"]`)?.focus();
+      }));
+      form.querySelectorAll("[data-ir-remove-port]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        const agent = draft.agents[Number(button.dataset.irRemovePort)];
+        const direction = button.dataset.irPortDirection;
+        const portId = Object.keys(agent?.[direction] || {})[Number(button.dataset.irPortIndex)];
+        if (!agent || !portId) return;
+        const references = direction === "inputPorts"
+          ? [
+              ...(draft.handoffs || []).filter((handoff) => handoff.to?.kind === "agent" && handoff.to.agentId === agent.id && handoff.to.inputPort === portId).map((handoff) => `Handoff ${handoff.id}`),
+              ...(draft.orchestration.joins || []).filter((join) => join.agentId === agent.id && join.inputPort === portId).map((join) => `Join ${join.id}`)
+            ]
+          : [
+              ...(draft.handoffs || []).filter((handoff) => handoff.from?.kind === "agent" && handoff.from.agentId === agent.id && handoff.from.outputPort === portId).map((handoff) => `Handoff ${handoff.id}`),
+              ...(draft.orchestration.routes || []).filter((route) => route.from?.kind === "agent" && route.from.agentId === agent.id && route.from.outputPort === portId).map((route) => "a Route"),
+              ...(draft.orchestration.reviews || []).filter((review) => review.at?.kind === "agentOutput" && review.at.agentId === agent.id && review.at.outputPort === portId).map((review) => `Review ${review.id}`)
+            ];
+        if (references.length) {
+          captureFailure(new Error(`Cannot remove ${portId}; it is referenced by ${references.join(", ")}.`));
+          return;
+        }
+        delete agent[direction][portId];
         syncAdvancedContracts();
         redraw();
       }));
