@@ -986,11 +986,20 @@ function teamIrBasicControl(form, ir, parts) {
 }
 
 function focusTeamIrDiagnostic(form, ir, pointer) {
+  const revealTarget = (target) => {
+    target.focus({ preventScroll: true });
+    target.select?.();
+    target.scrollIntoView({
+      block: "center",
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+    });
+    target.classList.add("ir-diagnostic-target");
+    window.setTimeout(() => target.classList.remove("ir-diagnostic-target"), 1400);
+  };
   const parts = decodeTeamIrPointer(pointer);
   const basic = teamIrBasicControl(form, ir, parts);
   if (basic) {
-    basic.focus();
-    basic.select?.();
+    revealTarget(basic);
     return;
   }
   const advanced = form.querySelector("[data-ir-advanced-json]");
@@ -1000,7 +1009,7 @@ function focusTeamIrDiagnostic(form, ir, pointer) {
   const advancedParts = teamIrAdvancedPointer(parts, ir);
   const range = teamIrJsonPointerRange(advanced.value, advancedParts);
   const fallback = range || { start: 0, end: Math.min(advanced.value.length, 1) };
-  advanced.focus();
+  revealTarget(advanced);
   advanced.setSelectionRange(fallback.start, fallback.end);
 }
 

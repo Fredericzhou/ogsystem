@@ -134,6 +134,20 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator('[name="agent-0-package"]').inputValue(), "role:worker@1");
     assert.equal(await page.locator('[name="agent-0-binding"]').inputValue(), "binding:worker");
     assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).bindings[0].modelRef, "codex-gateway/gpt-6-luna");
+    const teamIdInput = page.locator('[name="team-id"]');
+    await teamIdInput.fill("bad team");
+    const invalidAgentValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const invalidAgentBody = await (await invalidAgentValidation).json();
+    assert.equal(invalidAgentBody.ok, false);
+    const teamDiagnostic = page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").filter({ hasText: "/team/id" }).first();
+    await teamDiagnostic.waitFor();
+    await teamDiagnostic.click();
+    assert.equal(await teamIdInput.evaluate((element) => document.activeElement === element), true);
+    assert.equal(await teamIdInput.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd)), "bad team");
+    assert.equal(await teamIdInput.evaluate((element) => element.classList.contains("ir-diagnostic-target")), true);
+    await teamIdInput.fill(teamVersionId);
     await page.locator('[data-ir-remove-handoff="1"]').click();
     await page.locator('[data-ir-remove-handoff="0"]').click();
 

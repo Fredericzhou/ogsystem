@@ -1269,6 +1269,32 @@ test("an active quorum sibling failure after target activation still fails the R
   assert.equal(result.events.some((entry) => entry.type === "run.failing"), true);
 });
 
+test("an all_of source failure prevents the Join target and Result after another source has completed", async () => {
+  const plan = compileTeamIr(joinTimeoutTeam("all_of"));
+  let joinerCalls = 0;
+  const bindings = {
+    "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "left", include: true } } }; } },
+    "binding:right": { async invoke() { throw new TeamBindingError("required all_of source failed", "transport"); } },
+    "binding:joiner": { async invoke() { joinerCalls += 1; return { kind: "completed", output: { event: "DONE", data: { summary: "must not be written" } } }; } }
+  };
+  const runtime = new TeamRuntime({
+    store: new MemoryTeamRunStore(),
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings
+  });
+  await runtime.createRun(plan, { runId: "all-of-source-failure", task: "check", input: { prompt: "check" } });
+  const result = await runtime.executeRun(plan, "all-of-source-failure");
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminalIntent, "failed");
+  assert.equal(result.invocations["all-of-source-failure:start-left"].status, "completed");
+  assert.equal(result.invocations["all-of-source-failure:start-right"].status, "failed");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing"), true);
+  assert.equal(joinerCalls, 0);
+  assert.equal(result.pendingResult, undefined);
+  assert.equal(result.resultWritten, undefined);
+});
+
 test("TeamRuntime projects authorized Artifact refs, injects an allowlist resolver, registers output and persists only opaque result refs", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-run-"));
   t.after(() => rm(root, { recursive: true, force: true }));
