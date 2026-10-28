@@ -57,6 +57,9 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
     async decideProjectTaskTeamIrReview(projectId, taskId, runId, reviewId, input = {}) {
       const context = await getContext(projectId, taskId, runId, reviewId);
       if (!context.reviewerId) throw new Error("TEAM_REVIEW_PRINCIPAL_UNAVAILABLE: authenticated reviewer identity is unavailable.");
+      if (["approve", "reject"].includes(input.decision) && typeof context.resumeTeamIrRun !== "function") {
+        throw new Error("TEAM_REVIEW_RESUME_UNAVAILABLE: trusted same-Run resume dispatch is unavailable; no decision was recorded.");
+      }
       const review = await context.runtime.decideReview({
         runId,
         reviewId,
@@ -69,7 +72,27 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
         ...(Object.hasOwn(input, "feedback") ? { feedback: input.feedback } : {}),
         plan: context.plan
       });
-      return { projectId, taskId, runId, reviewId, status: review.status, decision: review.decision, revision: review.revision };
+      let resumedRun;
+      if (["approved", "rejected"].includes(review.status)) {
+        const dispatchId = `${runId}:team-review:${reviewId}:${context.lineage}:${context.loopRound ?? "run"}`;
+        resumedRun = await context.resumeTeamIrRun({
+          project: context.project,
+          task: context.task,
+          runId,
+          reviewId,
+          decision: review.decision,
+          lineage: context.lineage,
+          loopRound: context.loopRound,
+          dispatchId,
+          runRecord: context.runRecord,
+          runtime: context.runtime,
+          plan: context.plan
+        });
+      }
+      return {
+        projectId, taskId, runId, reviewId, status: review.status, decision: review.decision, revision: review.revision,
+        ...(resumedRun === undefined ? {} : { resumedRun })
+      };
     }
   });
 }

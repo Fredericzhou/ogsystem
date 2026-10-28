@@ -7,7 +7,7 @@ import { handleTeamIrReviewRoutes } from "../api/team-ir-review-routes.mjs";
 
 const fixtureUrl = new URL("../../../examples/team-ir-v2/classic-software-team.json", import.meta.url);
 
-async function setup({ reviewerId = "reviewer-1", authorized = true, loopRound } = {}) {
+async function setup({ reviewerId = "reviewer-1", authorized = true, loopRound, includeResume = true, resumeTeamIrRun } = {}) {
   const teamIR = JSON.parse(await readFile(fixtureUrl, "utf8"));
   teamIR.orchestration.reviews = [{
     id: "planner-review",
@@ -36,16 +36,23 @@ async function setup({ reviewerId = "reviewer-1", authorized = true, loopRound }
     taskId: "task-1", currentRunId: "run-1", runIds: ["run-1"],
     teamIrSemanticDigest: teamIRSemanticDigest(teamIR), compiledPlanDigest: plan.compiledPlanDigest
   };
+  const resumeCalls = [];
   const useCases = createTeamIrReviewUseCases({
     projectStore: { getProject: async () => ({ projectId: "project-1", taskRecords: [task] }) },
-    resolveReviewContext: async () => ({ runtime: projectRuntime, plan, reviewerId, runRecord, lineage: "run", loopRound })
+    resolveReviewContext: async () => ({
+      runtime: projectRuntime, plan, reviewerId, runRecord, lineage: "run", loopRound,
+      ...(includeResume ? { resumeTeamIrRun: resumeTeamIrRun || (async (input) => {
+        resumeCalls.push(input);
+        return { runId: input.runId, status: "running" };
+      }) } : {})
+    })
   });
   const pending = await runtime.openFromPlan({ plan, runId: "run-1", reviewId: "planner-review" });
-  return { plan, runtime, useCases, pending, task };
+  return { plan, runtime, useCases, pending, task, resumeCalls };
 }
 
 test("owner scoped Team IR Review API reads pending state and validates reject feedback and revision", async () => {
-  const { useCases, pending } = await setup();
+  const { useCases, pending, runtime, resumeCalls } = await setup();
   const context = await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review");
   assert.deepEqual(context, {
     projectId: "project-1", taskId: "task-1", runId: "run-1", reviewId: "planner-review",
@@ -61,9 +68,37 @@ test("owner scoped Team IR Review API reads pending state and validates reject f
     decision: "reject", revisionToken: pending.revisionToken, idempotencyKey: "reject-1", feedback: { comments: "Revise tests." }
   });
   assert.equal(decided.status, "rejected");
+  assert.deepEqual(decided.resumedRun, { runId: "run-1", status: "running" });
+  assert.equal(resumeCalls.length, 1);
+  assert.equal((await runtime.get({ runId: "run-1", reviewId: "planner-review" })).status, "rejected",
+    "the durable Review decision must be visible before same-Run resume dispatch");
+  assert.equal(resumeCalls[0].dispatchId, "run-1:team-review:planner-review:run:run");
   await assert.rejects(useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
     decision: "approve", revisionToken: pending.revisionToken, idempotencyKey: "stale"
   }), (error) => ["REVIEW_CONFLICT", "REVIEW_STALE_TOKEN"].includes(error.code));
+});
+
+test("Team IR Review decision fails closed without resume dispatch and retries a committed decision with a stable dispatch ID", async () => {
+  const unavailable = await setup({ includeResume: false });
+  await assert.rejects(unavailable.useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
+    decision: "approve", revisionToken: unavailable.pending.revisionToken, idempotencyKey: "approve-unavailable"
+  }), /TEAM_REVIEW_RESUME_UNAVAILABLE/);
+  assert.equal((await unavailable.runtime.get({ runId: "run-1", reviewId: "planner-review" })).status, "pending",
+    "missing dispatch must be rejected before committing the Review decision");
+
+  let attempts = 0;
+  const resumable = await setup({ resumeTeamIrRun: async (input) => {
+    attempts += 1;
+    assert.equal((await input.runtime.getReview(input.runId, input.reviewId, input.lineage, input.loopRound)).status, "approved");
+    if (attempts === 1) throw new Error("resume unavailable after decision commit");
+    return { runId: input.runId, status: "running" };
+  } });
+  const request = { decision: "approve", revisionToken: resumable.pending.revisionToken, idempotencyKey: "approve-resume-retry" };
+  await assert.rejects(resumable.useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", request), /resume unavailable/);
+  const retried = await resumable.useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", request);
+  assert.equal(retried.status, "approved");
+  assert.equal(retried.resumedRun.status, "running");
+  assert.equal(attempts, 2);
 });
 
 test("Team IR Review API rejects wrong owner, changed plan, and unauthorized reviewer", async () => {
@@ -103,7 +138,10 @@ test("Team IR Review API scopes the same reviewId to the persisted Maker-Checker
     getReview: (runId, reviewId, lineage, loopRound) => runtime.get({ runId, reviewId, lineage, loopRound }),
     decideReview: (input) => runtime.decide(input)
   };
-  const context = { runtime: projectRuntime, plan, reviewerId: "reviewer-1", runRecord, lineage: "run", loopRound: 1 };
+  const context = {
+    runtime: projectRuntime, plan, reviewerId: "reviewer-1", runRecord, lineage: "run", loopRound: 1,
+    resumeTeamIrRun: async () => ({ status: "running" })
+  };
   const useCases = createTeamIrReviewUseCases({
     projectStore: { getProject: async () => ({ taskRecords: [task] }) },
     resolveReviewContext: async () => context

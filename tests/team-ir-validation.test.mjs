@@ -123,6 +123,42 @@ test("Join requires exact incoming source and valid target ports", () => {
   assert.ok(validateTeamIrReferences(team).some((item) => item.code === "IR_UNKNOWN_PORT" && item.pointer === "/orchestration/joins/0/inputPort"));
 });
 
+test("Join accepts the exact inbound Handoff set and rejects omitted or unrelated IDs", () => {
+  const team = baseTeam();
+  team.agents.push({
+    id: "reviewer",
+    packageRef: "role:reviewer@1",
+    bindingRef: "binding:worker",
+    inputPorts: { collect: { dataSchema: { type: "object" } } },
+    outputPorts: { DONE: { dataSchema: { type: "object" } } }
+  });
+  team.handoffs = [
+    { id: "start-worker", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: {} },
+    { id: "start-reviewer", from: { kind: "run" }, to: { kind: "agent", agentId: "reviewer", inputPort: "collect" }, map: {} },
+    { id: "worker-to-review", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "agent", agentId: "reviewer", inputPort: "collect" }, map: {} },
+    { id: "worker-result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: {} }
+  ];
+  team.orchestration.routes = [
+    { from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-worker", "start-reviewer"] },
+    { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["worker-to-review", "worker-result"] }
+  ];
+  team.orchestration.joins = [{
+    id: "review-join",
+    agentId: "reviewer",
+    inputPort: "collect",
+    mode: "all_of",
+    handoffIds: ["start-reviewer", "worker-to-review"]
+  }];
+
+  assert.deepEqual(validateTeamIrReferences(team), []);
+
+  team.orchestration.joins[0].handoffIds = ["worker-to-review"];
+  assert.ok(validateTeamIrReferences(team).some((item) => item.code === "IR_JOIN_UNDECLARED_INBOUND" && item.pointer === "/handoffs/1/to"));
+
+  team.orchestration.joins[0].handoffIds = ["start-reviewer", "worker-to-review", "worker-result"];
+  assert.ok(validateTeamIrReferences(team).some((item) => item.code === "IR_JOIN_TARGET_MISMATCH" && item.pointer === "/orchestration/joins/0/handoffIds/2"));
+});
+
 test("Loop declarations validate members, disjoint boundary sets and edge direction", () => {
   const team = baseTeam();
   team.agents.push({

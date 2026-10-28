@@ -245,6 +245,43 @@ test("classic template provisioning rematerializes stale generated structure", a
   assert.deepEqual(materialized, [["sample", template.workdir, "zh-CN"]]);
 });
 
+test("classic template provisioning preserves an existing native Team IR v2 document", async () => {
+  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const harness = setup({
+    projects: [template],
+    teamIrRelease: {
+      async getTeamIr() { return { teamIR: { schemaVersion: 2, team: { id: "authored-v2" } } }; },
+      async getTeamIrReleaseSnapshot() { throw new Error("unused"); },
+      async copyTeamIr() {}
+    },
+    caseMaterializer: {
+      async isCurrent() { return false; },
+      async materialize() { assert.fail("native Team IR v2 template must not be overwritten by the legacy materializer"); }
+    }
+  });
+
+  assert.equal(await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true }), template);
+  assert.equal(harness.calls.some(([name]) => name === "team-ir-copy" || name === "export" || name === "load"), false);
+});
+
+test("classic template provisioning fails closed when native IR inspection fails", async () => {
+  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const harness = setup({
+    projects: [template],
+    teamIrRelease: {
+      async getTeamIr() { throw new Error("TEAM_IR_STORE_UNAVAILABLE: read failed"); },
+      async getTeamIrReleaseSnapshot() { throw new Error("unused"); },
+      async copyTeamIr() {}
+    },
+    caseMaterializer: {
+      async isCurrent() { return false; },
+      async materialize() { assert.fail("inspection failure must not fall back to overwriting the template"); }
+    }
+  });
+
+  await assert.rejects(harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true }), /TEAM_IR_STORE_UNAVAILABLE/);
+});
+
 test("classic team creation publishes a refreshed current template when the released version is stale", async () => {
   const released = { projectId: "classic-v1", source: "classic", caseId: "sample", teamVersionStatus: "released", teamVersionNumber: 1 };
   const template = { projectId: "classic-template-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft", teamVersionNumber: 2 };

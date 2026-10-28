@@ -201,6 +201,8 @@ export async function resolveBindings({ teamIR }) {
     const releaseSnapshot = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}/ir/release-snapshot`);
     assert.equal(releaseSnapshot.status(), 200);
     await page.goto(`${url}/studio/teams/${teamVersionId}/ir`, { waitUntil: "networkidle" });
+    assert.equal(await page.locator("[data-ir-add-join]").isDisabled(), true);
+    assert.equal(await page.locator("[data-ir-add-loop]").isDisabled(), true);
     const layout = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
     assert.ok(layout.content <= layout.viewport + 1, `mobile page overflows horizontally: ${JSON.stringify(layout)}`);
 
@@ -230,6 +232,71 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(contracts.orchestration.reviews[0].id, "review-draft");
     assert.equal(contracts.agentPortContracts.writer.outputPorts.DONE.artifactSlots.report.required, false);
     assert.equal(contracts.bindings[0].kind, "a2a");
+    assert.equal(await page.locator("[data-ir-join]").count(), 1);
+    assert.equal(await page.locator("[data-ir-loop]").count(), 1);
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, ["revise"]);
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[0].entryHandoffIds, ["entry"]);
+    await page.locator('[name="join-0-timeout"]').fill("6500");
+    await page.locator('[name="loop-0-rounds"]').fill("4");
+    const structuredValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    const structuredSave = page.waitForResponse((response) => response.request().method() === "PUT"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const structuredBody = await (await structuredValidation).json();
+    assert.equal(structuredBody.ok, true, JSON.stringify(structuredBody.diagnostics));
+    assert.equal((await structuredSave).status(), 200);
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator('[name="join-0-timeout"]').waitFor();
+    assert.equal(await page.locator('[name="join-0-timeout"]').inputValue(), "6500");
+    assert.equal(await page.locator('[name="loop-0-rounds"]').inputValue(), "4");
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].baseMapping,
+      contracts.orchestration.joins[0].baseMapping, "structured edits preserve advanced Join fields");
+    Object.assign(contracts.orchestration, JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration);
+    assert.equal(contracts.orchestration.joins[0].timeoutMs, 6500);
+    assert.equal(contracts.orchestration.loops[0].maxRounds, 4);
+    advancedIr.orchestration.joins[0].timeoutMs = 6500;
+    advancedIr.orchestration.loops[0].maxRounds = 4;
+
+    const advancedEdit = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    advancedEdit.orchestration.joins[0].timeoutMs = 7100;
+    advancedEdit.orchestration.loops[0].maxRounds = 5;
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(advancedEdit, null, 2));
+    const advancedEditValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    const advancedEditSave = page.waitForResponse((response) => response.request().method() === "PUT"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const advancedEditValidationBody = await (await advancedEditValidation).json();
+    assert.equal(advancedEditValidationBody.ok, true, JSON.stringify(advancedEditValidationBody.diagnostics));
+    const advancedEditSaveResponse = await advancedEditSave;
+    assert.equal(advancedEditSaveResponse.status(), 200);
+    const advancedEditSavedBody = advancedEditSaveResponse.request().postDataJSON();
+    assert.equal(advancedEditSavedBody.teamIR.orchestration.joins[0].timeoutMs, 7100);
+    assert.equal(advancedEditSavedBody.teamIR.orchestration.loops[0].maxRounds, 5);
+    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.locator('[name="join-0-timeout"]').waitFor();
+    assert.equal(await page.locator('[name="join-0-timeout"]').inputValue(), "7100", "advanced Join edits flow back to the structured row");
+    assert.equal(await page.locator('[name="loop-0-rounds"]').inputValue(), "5", "advanced Loop edits flow back to the structured row");
+    const roundTripped = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    assert.deepEqual(roundTripped.orchestration.joins[0].handoffIds, ["revise"], "Join Handoff IDs survive a visual/JSON round trip");
+    assert.deepEqual(roundTripped.orchestration.loops[0].entryHandoffIds, ["entry"], "Loop Handoff IDs survive a visual/JSON round trip");
+
+    await page.locator('[name="join-0-timeout"]').fill("0");
+    let structuredInvalidSaves = 0;
+    page.on("request", (request) => {
+      if (request.method() === "PUT" && new URL(request.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`) structuredInvalidSaves += 1;
+    });
+    const structuredInvalidValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const structuredInvalid = await (await structuredInvalidValidation).json();
+    assert.equal(structuredInvalid.ok, false);
+    assert.ok(structuredInvalid.diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/orchestration/joins/0/timeoutMs"), JSON.stringify(structuredInvalid.diagnostics));
+    assert.equal(structuredInvalidSaves, 0, "invalid structured contracts must not reach save API");
+    await page.locator('[data-team-ir-diagnostics] .ir-diagnostic').first().waitFor();
+    assert.equal(await page.locator("[data-team-ir-diagnostics]").isVisible(), true, "server diagnostics are shown for invalid structured contracts");
+    await page.reload({ waitUntil: "networkidle" });
 
     await page.locator('[data-ir-connect-source-agent-index="0"]').click();
     await page.locator('[data-ir-connect-target-agent-index="0"]').click();

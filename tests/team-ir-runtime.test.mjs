@@ -1135,7 +1135,9 @@ function makerCheckerTeam() {
 test("Maker-Checker reject then approve uses round-scoped Review and resumes without repeating a completed invocation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-maker-checker-review-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const plan = compileTeamIr(makerCheckerTeam());
+  const makerChecker = makerCheckerTeam();
+  makerChecker.orchestration.reviews[0].timeoutMs = 10000;
+  const plan = compileTeamIr(makerChecker);
   const runStore = new FileTeamRunStore(join(root, "runs"));
   const reviewStore = new FileTeamReviewStore(join(root, "reviews"));
   let now = 100;
@@ -1144,6 +1146,7 @@ test("Maker-Checker reject then approve uses round-scoped Review and resumes wit
   const inputs = [];
   const bindings = { "binding:worker": { async invoke(invocation) {
     calls += 1;
+    now += 5;
     inputs.push(invocation.input);
     return { kind: "completed", output: { event: "DONE", data: { answer: `draft-${calls}`, again: false } } };
   } } };
@@ -1153,15 +1156,18 @@ test("Maker-Checker reject then approve uses round-scoped Review and resumes wit
   const waiting1 = await runtime1.executeRun(plan, runId);
   assert.equal(waiting1.status, "waiting_human_review");
   assert.equal(waiting1.waitingReview.loopRound, 1);
+  assert.equal(waiting1.activeExecutionMs, 5);
+  now += 6000;
   const review1 = await reviewStore.load("maker-checker-rounds:maker-checker-review:run:1");
   assert.ok(review1);
   await makeReviewRuntime().decide({ runId, reviewId: "maker-checker-review", loopRound: 1, revisionToken: review1.revisionToken, idempotencyKey: "reject-1", reviewerId: "reviewer", decision: "reject", feedback: { comments: "Add a stronger qualification." }, plan });
 
-  now = 110;
   const runtime2 = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime: makeReviewRuntime() });
   const waiting2 = await runtime2.executeRun(plan, runId);
   assert.equal(waiting2.status, "waiting_human_review");
   assert.equal(waiting2.waitingReview.loopRound, 2);
+  assert.equal(waiting2.activeExecutionMs, 10);
+  now += 6000;
   assert.equal(calls, 2, "resume must reuse completed round 1 invocation and only run the new revision");
   assert.deepEqual(inputs, [
     { prompt: "draft" },
@@ -1171,11 +1177,11 @@ test("Maker-Checker reject then approve uses round-scoped Review and resumes wit
   assert.ok(review2);
   await makeReviewRuntime().decide({ runId, reviewId: "maker-checker-review", loopRound: 2, revisionToken: review2.revisionToken, idempotencyKey: "approve-2", reviewerId: "reviewer", decision: "approve", plan });
 
-  now = 120;
   const runtime3 = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime: makeReviewRuntime() });
   const completed = await runtime3.executeRun(plan, runId);
   assert.equal(completed.status, "completed", JSON.stringify(completed.events.filter((item) => item.type === "run.failing")));
   assert.deepEqual(completed.result, { answer: "draft-2" });
+  assert.equal(completed.activeExecutionMs, 10, "Review wait time must not consume the Run active execution budget");
   assert.equal(completed.loopStates.revision.rounds, 2);
   assert.equal(calls, 2, "approve exit must not replay the completed Maker invocation");
   assert.equal(completed.events.filter((item) => item.type === "run.waiting_human_review").length, 2);

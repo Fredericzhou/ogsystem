@@ -154,6 +154,42 @@ test("Run input and result Artifact slots require consumer acceptedMediaTypes", 
   }
 });
 
+test("Run input and result Artifact consumers reject open slot fields and producer media declarations", () => {
+  const invalidCases = [
+    {
+      pointer: "/runInput/artifactSlots/brief/extra",
+      mutate: (value) => { value.runInput.artifactSlots.brief.extra = true; }
+    },
+    {
+      pointer: "/runInput/artifactSlots/brief",
+      mutate: (value) => { value.runInput.artifactSlots.brief.mediaTypes = ["text/plain"]; }
+    },
+    {
+      pointer: "/runResult/artifactSlots/report/required",
+      mutate: (value) => { delete value.runResult.artifactSlots.report.required; }
+    },
+    {
+      pointer: "/runResult/artifactSlots/report/acceptedMediaTypes",
+      code: "IR_DUPLICATE_VALUE",
+      mutate: (value) => { value.runResult.artifactSlots.report.acceptedMediaTypes = ["text/plain", "text/plain"]; }
+    }
+  ];
+
+  for (const { pointer, code = "IR_SCHEMA_INVALID", mutate } of invalidCases) {
+    const value = minimalTeam();
+    value.runInput.artifactSlots = {
+      brief: { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" }
+    };
+    value.runResult.artifactSlots = {
+      report: { required: false, acceptedMediaTypes: ["application/json"], cardinality: "single" }
+    };
+    mutate(value);
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === code && item.pointer === pointer),
+      `Expected ${code} at ${pointer}, got ${JSON.stringify(diagnostics)}`);
+  }
+});
+
 test("condition schema is closed and enforces operator argument arity", () => {
   const value = minimalTeam();
   value.handoffs[0].when = {

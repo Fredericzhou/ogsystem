@@ -58,6 +58,10 @@ export function createTeamLifecycleUseCases({
         && project.teamVersionStatus !== "archived"
         && String(project.name || "").toLocaleLowerCase() === String(name || defaultName).toLocaleLowerCase());
       if (existingTemplate) {
+        if (typeof teamIrRelease?.getTeamIr === "function") {
+          const stored = await teamIrRelease.getTeamIr(existingTemplate.projectId);
+          if (stored?.teamIR?.schemaVersion === 2) return existingTemplate;
+        }
         if (typeof caseMaterializer?.isCurrent === "function" && typeof caseMaterializer?.materialize === "function") {
           const current = await projectStore.getProject(existingTemplate.projectId);
           if (!await caseMaterializer.isCurrent(caseId, current.workdir)) {

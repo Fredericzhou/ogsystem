@@ -1195,10 +1195,24 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
     }),
     ...candidate.orchestration.routes.filter((route) => !storedRoutes.some((stored) => JSON.stringify(stored.from) === JSON.stringify(route.from)))
   ];
+  const mergeOrchestrationRows = (key, fields) => {
+    const formRows = candidate.orchestration[key] || [];
+    const previousRows = previous.orchestration?.[key] || [];
+    const storedRows = advanced.orchestration?.[key] || [];
+    const rowChanged = (row, old) => fields.some((field) => JSON.stringify(row[field]) !== JSON.stringify(old?.[field]));
+    if (formRows.length === previousRows.length && !formRows.some((row, index) => rowChanged(row, previousRows[index]))) return storedRows;
+    return formRows.map((row, index) => {
+      const old = previousRows[index] || {};
+      const stored = storedRows.find((item) => item.id === old.id) || storedRows[index] || old;
+      const merged = { ...stored };
+      for (const field of fields) if (JSON.stringify(row[field]) !== JSON.stringify(old[field])) merged[field] = row[field];
+      return merged;
+    });
+  };
   candidate.orchestration = {
     ...candidate.orchestration,
-    joins: advanced.orchestration?.joins ?? [],
-    loops: advanced.orchestration?.loops ?? [],
+    joins: mergeOrchestrationRows("joins", ["id", "agentId", "inputPort", "mode", "handoffIds", "scope", "threshold", "timeoutMs", "onTimeout"]),
+    loops: mergeOrchestrationRows("loops", ["id", "members", "boundaryAgentId", "entryHandoffIds", "continueHandoffIds", "exitHandoffIds", "maxRounds", "maxAgentActivations", "onExhausted"]),
     reviews: advanced.orchestration?.reviews ?? [],
     routes
   };
@@ -1490,6 +1504,39 @@ function teamIrFromEditor(form, base) {
     const when = conditionField ? { condition: { op: "equals", args: [{ $ref: fromAgentId ? `$.output.data.${conditionField}` : `$.run.input.${conditionField}` }, { $literal: conditionValue }] }, priority: Number(data.get(`handoff-${index}-priority`) || 0) } : undefined;
     return { id, from, to, map, ...(when ? { when } : {}), ...(to.kind === "agent" ? { delivery: { deadlineMs: 300000 } } : {}) };
   });
+  const joins = [...form.querySelectorAll("[data-ir-join]")].map((row) => {
+    const index = row.dataset.irJoin;
+    const id = String(data.get(`join-${index}-id`) || "").trim();
+    const mode = String(data.get(`join-${index}-mode`) || "all_of");
+    const handoffIds = String(data.get(`join-${index}-handoffs`) || "").split(",").map((item) => item.trim()).filter(Boolean);
+    return {
+      id,
+      agentId: String(data.get(`join-${index}-agent`) || "").trim(),
+      inputPort: String(data.get(`join-${index}-port`) || "").trim(),
+      mode,
+      handoffIds,
+      scope: { kind: String(data.get(`join-${index}-scope-kind`) || "run"), ...(String(data.get(`join-${index}-scope-loop`) || "").trim() ? { loopId: String(data.get(`join-${index}-scope-loop`)).trim() } : {}) },
+      ...(mode === "quorum_of" ? { threshold: Number(data.get(`join-${index}-threshold`)) } : {}),
+      timeoutMs: Number(data.get(`join-${index}-timeout`) || 0),
+      onTimeout: "fail"
+    };
+  });
+  const loops = [...form.querySelectorAll("[data-ir-loop]")].map((row) => {
+    const index = row.dataset.irLoop;
+    const list = (key) => String(data.get(`loop-${index}-${key}`) || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const boundaryAgentId = String(data.get(`loop-${index}-boundary`) || "").trim();
+    return {
+      id: String(data.get(`loop-${index}-id`) || "").trim(),
+      members: String(data.get(`loop-${index}-members`) || "").split(",").map((item) => item.trim()).filter(Boolean),
+      boundaryAgentId,
+      entryHandoffIds: list("entry"),
+      continueHandoffIds: list("continue"),
+      exitHandoffIds: list("exit"),
+      maxRounds: Number(data.get(`loop-${index}-rounds`) || 0),
+      maxAgentActivations: Number(data.get(`loop-${index}-activations`) || 0),
+      onExhausted: String(data.get(`loop-${index}-exhausted`) || "fail")
+    };
+  });
   const routes = [];
   const sourceGroups = new Map();
   for (const edge of handoffs) {
@@ -1506,8 +1553,41 @@ function teamIrFromEditor(form, base) {
     ...base,
     team: { id: String(data.get("team-id") || base.team.id).trim(), version: base.team?.version || "2.0.0" },
     agents, handoffs, bindings,
-    orchestration: { routes, joins: [], loops: [], reviews: [] }
+    orchestration: { routes, joins, loops, reviews: [] }
   };
+}
+
+function renderTeamIrOrchestrationRows(ir, escText, editable) {
+  const disabled = editable ? "" : " disabled";
+  const agents = ir.agents || [];
+  const agentOptions = (selected) => agents.map((agent) => `<option value="${escText(agent.id)}"${agent.id === selected ? " selected" : ""}>${escText(agent.id)}</option>`).join("");
+  const joins = (ir.orchestration?.joins || []).map((join, index) => `<section class="project-panel ir-editor-row" data-ir-join="${index}">
+    <div class="panel-head"><h3>Join ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-join="${index}" aria-label="Remove Join" title="Remove Join"${disabled}>×</button></div>
+    <div class="ir-form-grid">
+      <label>Join ID<input name="join-${index}-id" value="${escText(join.id || "")}" required${disabled}></label>
+      <label>Target Agent<select name="join-${index}-agent" required${disabled}>${agentOptions(join.agentId)}</select></label>
+      <label>Target input port<input name="join-${index}-port" value="${escText(join.inputPort || "")}" required${disabled}></label>
+      <label>Mode<select name="join-${index}-mode"${disabled}><option value="all_of"${join.mode === "all_of" ? " selected" : ""}>all_of</option><option value="quorum_of"${join.mode === "quorum_of" ? " selected" : ""}>quorum_of</option></select></label>
+      <label>Quorum threshold<input type="number" min="1" name="join-${index}-threshold" value="${Number(join.threshold || 1)}"${disabled}></label>
+      <label>Timeout (ms)<input type="number" min="1" name="join-${index}-timeout" value="${Number(join.timeoutMs || 0)}" required${disabled}></label>
+      <label>Scope<select name="join-${index}-scope-kind"${disabled}><option value="run"${join.scope?.kind !== "loop" ? " selected" : ""}>Run</option><option value="loop"${join.scope?.kind === "loop" ? " selected" : ""}>Loop</option></select></label>
+      <label>Scope Loop ID<input name="join-${index}-scope-loop" value="${escText(join.scope?.loopId || "")}"${disabled}></label>
+      <label class="full">Handoff IDs<input name="join-${index}-handoffs" value="${escText((join.handoffIds || []).join(", "))}" required${disabled}><span class="field-hint">Comma-separated exact contributing Handoff IDs.</span></label>
+    </div></section>`).join("");
+  const loops = (ir.orchestration?.loops || []).map((loop, index) => `<section class="project-panel ir-editor-row" data-ir-loop="${index}">
+    <div class="panel-head"><h3>Loop ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-loop="${index}" aria-label="Remove Loop" title="Remove Loop"${disabled}>×</button></div>
+    <div class="ir-form-grid">
+      <label>Loop ID<input name="loop-${index}-id" value="${escText(loop.id || "")}" required${disabled}></label>
+      <label>Boundary Agent<select name="loop-${index}-boundary" required${disabled}>${agentOptions(loop.boundaryAgentId)}</select></label>
+      <label>Member Agent IDs<input name="loop-${index}-members" value="${escText((loop.members || []).join(", "))}" required${disabled}></label>
+      <label>Max rounds<input type="number" min="1" name="loop-${index}-rounds" value="${Number(loop.maxRounds || 0)}" required${disabled}></label>
+      <label>Max Agent activations<input type="number" min="1" name="loop-${index}-activations" value="${Number(loop.maxAgentActivations || 0)}" required${disabled}></label>
+      <label>On exhausted<select name="loop-${index}-exhausted"${disabled}><option value="fail"${loop.onExhausted !== "finish" ? " selected" : ""}>fail</option><option value="finish"${loop.onExhausted === "finish" ? " selected" : ""}>finish</option></select></label>
+      <label>Entry Handoff IDs<input name="loop-${index}-entry" value="${escText((loop.entryHandoffIds || []).join(", "))}" required${disabled}></label>
+      <label>Continue Handoff IDs<input name="loop-${index}-continue" value="${escText((loop.continueHandoffIds || []).join(", "))}" required${disabled}></label>
+      <label>Exit Handoff IDs<input name="loop-${index}-exit" value="${escText((loop.exitHandoffIds || []).join(", "))}" required${disabled}></label>
+    </div></section>`).join("");
+  return { joins, loops };
 }
 
 function renderTeamIrEditorRows(ir, escText, editable) {
@@ -1631,9 +1711,11 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     let pendingConnectionSource;
     const redraw = () => {
       const rows = renderTeamIrEditorRows(draft, esc, editable);
+      Object.assign(rows, renderTeamIrOrchestrationRows(draft, esc, editable));
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor">${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
+      form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section>`);
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
       form.querySelectorAll("[data-ir-graph-node]").forEach((button) => button.addEventListener("click", () => {
         focusTeamIrGraphSelection(form, draft, { kind: button.dataset.irGraphNode, agentId: button.dataset.agentId });
@@ -1691,8 +1773,20 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           const id = `agent-${draft.agents.length + 1}`;
           draft.agents.push({ id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`, inputPorts: { default: { dataSchema: schemaFromFields("request") } }, outputPorts: { DONE: { dataSchema: schemaFromFields("summary") } } });
           draft.bindings.push({ id: `binding:${id}`, kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } });
-        } else {
+        } else if (kind === "handoff") {
           draft.handoffs.push({ id: `handoff-${draft.handoffs.length + 1}`, from: { kind: "run" }, to: { kind: "agent", agentId: draft.agents[0]?.id || "", inputPort: "default" }, map: { data: {} }, delivery: { deadlineMs: 300000 } });
+        } else if (kind === "join") {
+          const agent = draft.agents[0];
+          draft.orchestration.joins.push({
+            id: `join-${draft.orchestration.joins.length + 1}`, agentId: agent?.id || "", inputPort: Object.keys(agent?.inputPorts || {})[0] || "default",
+            mode: "all_of", handoffIds: [], scope: { kind: "run" }, timeoutMs: 300000, onTimeout: "fail"
+          });
+        } else {
+          const agent = draft.agents[0];
+          draft.orchestration.loops.push({
+            id: `loop-${draft.orchestration.loops.length + 1}`, members: agent ? [agent.id] : [], boundaryAgentId: agent?.id || "",
+            entryHandoffIds: [], continueHandoffIds: [], exitHandoffIds: [], maxRounds: 3, maxAgentActivations: 10, onExhausted: "fail"
+          });
         }
         syncAdvancedContracts();
         redraw();
@@ -1754,6 +1848,8 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       };
       form.querySelector("[data-ir-add-agent]")?.addEventListener("click", () => add("agent"));
       form.querySelector("[data-ir-add-handoff]")?.addEventListener("click", () => add("handoff"));
+      form.querySelector("[data-ir-add-join]")?.addEventListener("click", () => add("join"));
+      form.querySelector("[data-ir-add-loop]")?.addEventListener("click", () => add("loop"));
       form.querySelector("[data-ir-connect-source='run']")?.addEventListener("click", () => chooseConnectionSource());
       form.querySelectorAll("[data-ir-connect-source-agent-index]").forEach((button) => button.addEventListener("click", () => chooseConnectionSource(Number(button.dataset.irConnectSourceAgentIndex))));
       form.querySelectorAll("[data-ir-connect-target-agent-index]").forEach((button) => button.addEventListener("click", () => completeConnection(Number(button.dataset.irConnectTargetAgentIndex))));
@@ -1772,6 +1868,18 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       form.querySelectorAll("[data-ir-remove-handoff]").forEach((button) => button.addEventListener("click", () => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         draft.handoffs.splice(Number(button.dataset.irRemoveHandoff), 1);
+        syncAdvancedContracts();
+        redraw();
+      }));
+      form.querySelectorAll("[data-ir-remove-join]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        draft.orchestration.joins.splice(Number(button.dataset.irRemoveJoin), 1);
+        syncAdvancedContracts();
+        redraw();
+      }));
+      form.querySelectorAll("[data-ir-remove-loop]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        draft.orchestration.loops.splice(Number(button.dataset.irRemoveLoop), 1);
         syncAdvancedContracts();
         redraw();
       }));
