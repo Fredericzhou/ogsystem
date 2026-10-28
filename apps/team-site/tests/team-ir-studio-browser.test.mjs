@@ -282,6 +282,19 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(roundTripped.orchestration.joins[0].handoffIds, ["revise"], "Join Handoff IDs survive a visual/JSON round trip");
     assert.deepEqual(roundTripped.orchestration.loops[0].entryHandoffIds, ["entry"], "Loop Handoff IDs survive a visual/JSON round trip");
 
+    await page.locator("[data-ir-add-join]").click();
+    assert.equal(await page.locator("[data-ir-join]").count(), 2);
+    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[1].id, "join-2");
+    await page.locator('[data-ir-remove-join="1"]').click();
+    assert.equal(await page.locator("[data-ir-join]").count(), 1);
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, ["revise"]);
+    await page.locator("[data-ir-add-loop]").click();
+    assert.equal(await page.locator("[data-ir-loop]").count(), 2);
+    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[1].id, "loop-2");
+    await page.locator('[data-ir-remove-loop="1"]').click();
+    assert.equal(await page.locator("[data-ir-loop]").count(), 1);
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[0].entryHandoffIds, ["entry"]);
+
     await page.locator('[name="join-0-timeout"]').fill("0");
     let structuredInvalidSaves = 0;
     page.on("request", (request) => {

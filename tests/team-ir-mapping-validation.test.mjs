@@ -91,6 +91,28 @@ test("source optionality and simple type direction are checked against required 
   assert.ok(found.some((item) => item.code === "IR_MAPPING_TYPE_INCOMPATIBLE" && item.pointer === "/handoffs/1/map/data/answer"));
 });
 
+test("nullable required sources differ from optional sources during mapping validation", () => {
+  const team = baseTeam();
+  team.$defs.runInput.properties.nullableNote = { type: ["string", "null"] };
+  team.$defs.runInput.required.push("nullableNote");
+  team.$defs.input.properties.query = { type: ["string", "null"] };
+  team.handoffs[0].map.data.query = { "$ref": "$.run.input.nullableNote" };
+
+  assert.deepEqual(validate(team), [], "required nullable source is guaranteed and fits a nullable target");
+
+  team.$defs.input.properties.query = { type: "string" };
+  let diagnostics = validate(team);
+  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_TYPE_INCOMPATIBLE" && item.pointer === "/handoffs/0/map/data/query"),
+    "a nullable source cannot be assigned to a non-nullable target");
+  assert.ok(!diagnostics.some((item) => item.code === "IR_MAPPING_OPTIONAL_TO_REQUIRED"),
+    "nullability must not be mistaken for optional property presence");
+
+  team.$defs.runInput.required = ["query"];
+  diagnostics = validate(team);
+  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_OPTIONAL_TO_REQUIRED" && item.pointer === "/handoffs/0/map/data/query"),
+    "optional property presence remains a distinct required-target error");
+});
+
 test("literal mappings check nested object and array item types at the target pointer", () => {
   const team = baseTeam();
   team.$defs.runInput.properties.query = { type: "object", properties: { count: { type: "integer" } }, required: ["count"], additionalProperties: false };

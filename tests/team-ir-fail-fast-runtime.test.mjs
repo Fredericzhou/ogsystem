@@ -66,7 +66,7 @@ function deferred() {
 async function until(predicate, label, timeoutMs = 3000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
   throw new Error(`Timed out waiting for ${label}`);
@@ -160,4 +160,78 @@ test("unconfirmed sibling cancellation waits through the remaining attempt deadl
   assert.equal(afterLateSuccess.events.some((entry) => entry.type === "run.result.written"), false);
   assert.equal(afterLateSuccess.invocations["fail-fast-unconfirmed:start-slow"].status, "failed");
   assert.equal(slowCalls, 1);
+});
+
+test("parallel fail-fast waits for every active sibling outcome before settling", async () => {
+  const team = failFastTeam();
+  const extra = structuredClone(team.agents.find((agent) => agent.id === "slow-branch"));
+  extra.id = "second-slow-branch";
+  extra.packageRef = "role:second-slow-branch@1";
+  extra.bindingRef = "binding:second-slow-branch";
+  team.agents.push(extra);
+  team.handoffs.push({
+    id: "start-second-slow",
+    from: { kind: "run" },
+    to: { kind: "agent", agentId: extra.id, inputPort: "default" },
+    map: { data: { prompt: { "$ref": "$.run.input.prompt" } } },
+    delivery: { deadlineMs: 100 }
+  });
+  team.orchestration.routes[0].handoffIds.push("start-second-slow");
+  team.bindings.push({
+    id: extra.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 60,
+    retry: { maxAttempts: 2, retryOn: ["transport", "timeout", "server_error"], backoff: { mode: "none" } }
+  });
+  const plan = compileTeamIr(team);
+  const clock = fakeClock();
+  const store = new MemoryTeamRunStore();
+  const entered = { failure: deferred(), slow: deferred(), secondSlow: deferred() };
+  const releaseFailure = deferred();
+  const cancelRequests = { slow: deferred(), secondSlow: deferred() };
+  const lateSuccess = deferred();
+  const runtime = new TeamRuntime({
+    store,
+    clock,
+    bindings: {
+      "binding:fast-failure": { async invoke() {
+        entered.failure.resolve();
+        await releaseFailure.promise;
+        throw new TeamBindingError("permanent branch failure", "policy");
+      } },
+      "binding:slow-branch": {
+        async invoke() { entered.slow.resolve(); return new Promise(() => {}); },
+        async cancel() { cancelRequests.slow.resolve(); return true; }
+      },
+      [extra.bindingRef]: {
+        async invoke() { entered.secondSlow.resolve(); return lateSuccess.promise; },
+        async cancel() { cancelRequests.secondSlow.resolve(); return false; }
+      }
+    }
+  });
+  await runtime.createRun(plan, { runId: "fail-fast-all-siblings", task: "parallel", input: { prompt: "start" } });
+  const running = runtime.executeRun(plan, "fail-fast-all-siblings");
+  await Promise.all(Object.values(entered).map((item) => item.promise));
+  releaseFailure.resolve();
+  await Promise.all(Object.values(cancelRequests).map((item) => item.promise));
+  await until(async () => (await store.load("fail-fast-all-siblings"))
+    .invocations["fail-fast-all-siblings:start-slow"].status === "failed", "confirmed sibling cancellation persistence");
+
+  const duringCancel = await store.load("fail-fast-all-siblings");
+  assert.equal(duringCancel.status, "failing");
+  assert.equal(duringCancel.invocations["fail-fast-all-siblings:start-slow"].status, "failed");
+  assert.equal(duringCancel.invocations["fail-fast-all-siblings:start-second-slow"].status, "running");
+  assert.equal(duringCancel.resultWritten, undefined);
+  assert.equal(clock.sleepers.size, 1, "the unconfirmed sibling retains its original attempt deadline");
+
+  clock.advanceTo(60);
+  const result = await running;
+  assert.equal(result.status, "failed");
+  assert.equal(result.invocations["fail-fast-all-siblings:start-slow"].outcomeUnknown, false);
+  assert.equal(result.invocations["fail-fast-all-siblings:start-second-slow"].outcomeUnknown, true);
+  assert.equal(result.resultWritten, undefined);
+  lateSuccess.resolve({ kind: "completed", output: { event: "DONE", data: { summary: "too late" } } });
+  await new Promise((resolve) => setImmediate(resolve));
+  const afterLateSuccess = await store.load("fail-fast-all-siblings");
+  assert.equal(afterLateSuccess.resultWritten, undefined);
+  assert.equal(afterLateSuccess.events.some((entry) => entry.type === "run.result.written"), false);
+  assert.equal(afterLateSuccess.invocations["fail-fast-all-siblings:start-second-slow"].status, "failed");
 });
