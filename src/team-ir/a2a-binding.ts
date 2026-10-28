@@ -32,6 +32,9 @@ export type TeamA2ARemoteTask = {
   errorMessage?: string;
 };
 
+export type TeamA2AOutputArtifact = { mediaType: string; bytesBase64: string };
+export type TeamA2AOutputMessagePart = { kind: "file"; slotId: string } & TeamA2AOutputArtifact;
+
 export interface TeamA2AClient {
   getAgentCard(): Promise<TeamA2AAgentCard>;
   sendMessage(input: {
@@ -66,6 +69,7 @@ type InvocationControl = {
   taskId?: string;
   promise?: Promise<TeamBindingResult>;
   terminalResult?: TeamBindingResult;
+  cancelPromise?: Promise<boolean>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,14 +124,43 @@ function encodeInput(input: unknown, artifactReader?: TeamA2AArtifactReader, inv
   })();
 }
 
-function defaultReadOutput(task: TeamA2ARemoteTask): TeamBindingResult {
+function defaultReadOutput(task: TeamA2ARemoteTask, outputMediaTypes: string[]): TeamBindingResult {
   if (!isRecord(task.result) || typeof task.result.event !== "string" || !Object.prototype.hasOwnProperty.call(task.result, "data")) {
     throw new TeamBindingError("Completed A2A Task did not return a typed Team output envelope.", "invalid_output");
+  }
+  const outputArtifacts: Record<string, unknown> = {};
+  if (task.result.artifacts !== undefined) {
+    if (!isRecord(task.result.artifacts)) throw new TeamBindingError("Completed A2A Task returned an invalid Artifact map.", "invalid_output");
+    Object.assign(outputArtifacts, task.result.artifacts);
+  }
+  for (const part of task.messageParts ?? []) {
+    if (!isRecord(part) || part.kind !== "file") continue;
+    if (typeof part.slotId !== "string" || !part.slotId || Object.prototype.hasOwnProperty.call(outputArtifacts, part.slotId)) {
+      throw new TeamBindingError("Completed A2A Task returned a file Message Part without a unique output slotId.", "invalid_output");
+    }
+    outputArtifacts[part.slotId] = part;
+  }
+  let artifacts: Record<string, { mediaType: string; content: Uint8Array }> | undefined;
+  if (Object.keys(outputArtifacts).length) {
+    artifacts = {};
+    for (const [slotId, raw] of Object.entries(outputArtifacts)) {
+      if (!slotId || !isRecord(raw) || typeof raw.mediaType !== "string" || typeof raw.bytesBase64 !== "string") {
+        throw new TeamBindingError("Completed A2A Task returned a malformed Artifact part.", "invalid_output");
+      }
+      if (!outputMediaTypes.includes(raw.mediaType)) {
+        throw new TeamBindingError(`Remote Artifact media type '${raw.mediaType}' is not allowed by the pinned Agent Card contract.`, "policy");
+      }
+      const bytes = Buffer.from(raw.bytesBase64, "base64");
+      if (bytes.toString("base64") !== raw.bytesBase64) {
+        throw new TeamBindingError("Completed A2A Task returned invalid base64 Artifact bytes.", "invalid_output");
+      }
+      artifacts[slotId] = { mediaType: raw.mediaType, content: new Uint8Array(bytes) };
+    }
   }
   return { kind: "completed", output: {
     event: task.result.event,
     data: task.result.data,
-    ...(isRecord(task.result.artifacts) ? { artifacts: task.result.artifacts } : {})
+    ...(artifacts && Object.keys(artifacts).length ? { artifacts } : {})
   } };
 }
 
@@ -145,7 +178,7 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
   if (!options.client || !options.expectedProtocolVersion || !options.expectedAgentVersion) throw new TypeError("A2A Binding requires a client and immutable protocol/Agent version requirements.");
   const controls = new Map<string, InvocationControl>();
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const readOutput = options.readOutput ?? defaultReadOutput;
+  const readOutput = options.readOutput ?? ((task: TeamA2ARemoteTask) => defaultReadOutput(task, options.outputMediaTypes ?? ["application/json"]));
   const classifyError = options.classifyError ?? ((error: unknown) => {
     if (isRecord(error) && typeof error.status === "number") {
       if (error.status === 429) return "rate_limited" as const;
@@ -153,6 +186,10 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
     }
     return "transport" as const;
   });
+  const cancelRemoteTask = (control: InvocationControl, taskId: string): Promise<boolean> => {
+    control.cancelPromise ??= options.client.cancelTask(taskId).catch(() => false);
+    return control.cancelPromise;
+  };
 
   return Object.freeze({
     async invoke(invocation: TeamBindingInvocation): Promise<TeamBindingResult> {
@@ -175,7 +212,7 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
         const submitted = await options.client.sendMessage({ messageId: invocation.idempotencyKey, idempotencyKey: invocation.idempotencyKey, parts });
         control.taskId = submitted.id;
         if (control.cancelled) {
-          const confirmed = await options.client.cancelTask(submitted.id).catch(() => false);
+          const confirmed = await cancelRemoteTask(control, submitted.id);
           const error = new TeamBindingError("A2A invocation canceled during task submission.", "cancelled");
           error.outcomeUnknown = !confirmed;
           throw error;
@@ -184,7 +221,7 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
         while (["submitted", "working"].includes(task.status)) {
           await sleep(options.pollIntervalMs ?? 1000);
           if (control.cancelled) {
-            const confirmed = await options.client.cancelTask(task.id).catch(() => false);
+            const confirmed = await cancelRemoteTask(control, task.id);
             const error = new TeamBindingError("A2A invocation canceled while waiting for its Task.", "cancelled");
             error.outcomeUnknown = !confirmed;
             throw error;
@@ -208,8 +245,7 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
       if (!control) return false;
       control.cancelled = true;
       if (!control.taskId) return false;
-      try { return await options.client.cancelTask(control.taskId); }
-      catch { return false; }
+      return cancelRemoteTask(control, control.taskId);
     }
   });
 }

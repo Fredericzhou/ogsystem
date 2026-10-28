@@ -24,9 +24,13 @@ function advancedTeamIr(teamVersionId) {
       id: "writer", packageRef: "role:writer@1", bindingRef: "binding:writer",
       inputPorts: {
         draft: { dataSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false }, artifactSlots: { sources: slot } },
-        revise: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: [], additionalProperties: false } }
+        revise: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: [], additionalProperties: false } },
+        audit: { dataSchema: { type: "object", properties: { reason: { type: "string" } }, required: [], additionalProperties: false } }
       },
-      outputPorts: { DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" }, again: { type: "boolean" } }, required: ["answer", "again"], additionalProperties: false }, artifactSlots: { report: outputSlot } } }
+      outputPorts: {
+        DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" }, again: { type: "boolean" } }, required: ["answer", "again"], additionalProperties: false }, artifactSlots: { report: outputSlot } },
+        BLOCKED: { dataSchema: { type: "object", properties: { reason: { type: "string" } }, required: [], additionalProperties: false } }
+      }
     }],
     handoffs: [
       { id: "entry", from: { kind: "run" }, to: { kind: "agent", agentId: "writer", inputPort: "draft" }, map: { data: { prompt: { $ref: "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 10000 } },
@@ -319,6 +323,16 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(selfLoopContracts.handoffContracts["handoff-4"].to, { kind: "agent", agentId: "writer", inputPort: "draft" });
     assert.deepEqual(selfLoopContracts.orchestration.routes.find((route) => route.from.kind === "agent" && route.from.outputPort === "DONE").handoffIds,
       ["revise", "exit", "handoff-4"], "an existing route must continue to list every outgoing Handoff");
+    await page.locator('[data-ir-link-source-port="0"]').selectOption("BLOCKED");
+    await page.locator('[data-ir-link-target-port="0"]').selectOption("audit");
+    await page.locator('[data-ir-connect-source-agent-index="0"]').click();
+    await page.locator('[data-ir-connect-target-agent-index="0"]').click();
+    assert.equal(await page.locator("[data-ir-handoff]").count(), 5);
+    const selectedPortContracts = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    assert.deepEqual(selectedPortContracts.handoffContracts["handoff-5"].from,
+      { kind: "agent", agentId: "writer", outputPort: "BLOCKED" });
+    assert.deepEqual(selectedPortContracts.handoffContracts["handoff-5"].to,
+      { kind: "agent", agentId: "writer", inputPort: "audit" });
     await page.reload({ waitUntil: "networkidle" });
     await page.locator("[data-ir-advanced-json]").waitFor();
 

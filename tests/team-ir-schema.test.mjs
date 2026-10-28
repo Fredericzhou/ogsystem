@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import { getTeamIrV2JsonSchema, parseTeamIr, validateTeamIrSchema } from "../dist/team-ir/schema.js";
 
@@ -31,6 +32,17 @@ function minimalTeam() {
 test("Team IR v2 schema declares Draft 2020-12 and accepts a minimal document", () => {
   assert.equal(getTeamIrV2JsonSchema()["$schema"], "https://json-schema.org/draft/2020-12/schema");
   assert.deepEqual(parseTeamIr(minimalTeam()).diagnostics, []);
+});
+
+test("public Schema validator accepts every latest classic Team IR fixture", async () => {
+  const directory = new URL("../examples/team-ir-v2/", import.meta.url);
+  const files = (await readdir(directory)).filter((file) => file.endsWith(".json")).sort();
+  assert.equal(files.length, 8, "keep the latest classic fixture inventory explicit in this contract test");
+
+  for (const file of files) {
+    const value = JSON.parse(await readFile(new URL(file, directory), "utf8"));
+    assert.deepEqual(validateTeamIrSchema(value), [], `${file} must satisfy the complete v2 root Schema`);
+  }
 });
 
 test("schema parser returns stable pointers for missing root contracts and unknown fields", () => {

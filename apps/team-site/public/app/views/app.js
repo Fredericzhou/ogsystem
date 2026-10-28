@@ -1611,9 +1611,16 @@ function renderTeamIrEditorRows(ir, escText, editable) {
 
 function renderTeamIrStructureGraph(ir, escText, editable) {
   const disabled = editable ? "" : " disabled";
+  const portPicker = (ports, kind, index, agentId) => {
+    const entries = Object.keys(ports || {});
+    if (entries.length < 2) return "";
+    const label = kind === "source" ? "来源输出端口" : "目标输入端口";
+    const attribute = kind === "source" ? "data-ir-link-source-port" : "data-ir-link-target-port";
+    return `<label class="ir-graph-port-picker"><span>${label}</span><select ${attribute}="${index}" aria-label="${label} ${escText(agentId)}"${disabled}>${entries.map((port) => `<option value="${escText(port)}">${escText(port)}</option>`).join("")}</select></label>`;
+  };
   const nodes = [
     `<div class="ir-graph-node-wrap"><button class="ir-graph-node run" type="button" data-ir-graph-node="run"><span>Run</span><small>输入 · ${escText(ir.team?.id || "Team")}</small></button><button class="text-button" type="button" data-ir-connect-source="run"${disabled}>设为来源</button></div>`,
-    ...(ir.agents || []).map((agent, index) => `<div class="ir-graph-node-wrap"><button class="ir-graph-node agent" type="button" data-ir-graph-node="agent" data-agent-id="${escText(agent.id)}"><span>${escText(agent.id)}</span><small>${escText(agent.packageRef || "Agent")}</small></button><div class="ir-graph-node-actions"><button class="text-button" type="button" data-ir-connect-source-agent-index="${index}"${disabled}>设为来源</button><button class="text-button" type="button" data-ir-connect-target-agent-index="${index}"${disabled}>设为目标</button></div></div>`),
+    ...(ir.agents || []).map((agent, index) => `<div class="ir-graph-node-wrap"><button class="ir-graph-node agent" type="button" data-ir-graph-node="agent" data-agent-id="${escText(agent.id)}"><span>${escText(agent.id)}</span><small>${escText(agent.packageRef || "Agent")}</small></button>${portPicker(agent.outputPorts, "source", index, agent.id)}${portPicker(agent.inputPorts, "target", index, agent.id)}<div class="ir-graph-node-actions"><button class="text-button" type="button" data-ir-connect-source-agent-index="${index}"${disabled}>设为来源</button><button class="text-button" type="button" data-ir-connect-target-agent-index="${index}"${disabled}>设为目标</button></div></div>`),
     `<div class="ir-graph-node-wrap"><button class="ir-graph-node result" type="button" data-ir-graph-node="result"><span>Run Result</span><small>最终输出</small></button><button class="text-button" type="button" data-ir-connect-target="result"${disabled}>设为目标</button></div>`
   ].join("");
   const edges = (ir.handoffs || []).map((handoff, index) => {
@@ -1797,7 +1804,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           if (agentIndex === undefined) pendingConnectionSource = { kind: "run" };
           else {
             const agent = current.agents[agentIndex];
-            const outputPort = Object.keys(agent?.outputPorts || {})[0];
+            const outputPort = form.querySelector(`[data-ir-link-source-port="${agentIndex}"]`)?.value || Object.keys(agent?.outputPorts || {})[0];
             if (!agent || !outputPort) throw new Error(`Agent at row ${agentIndex + 1} has no output port to connect.`);
             pendingConnectionSource = { kind: "agent", agentId: agent.id, outputPort };
           }
@@ -1816,7 +1823,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           if (agentIndex === "result") target = { kind: "result" };
           else {
             const agent = current.agents[agentIndex];
-            const inputPort = Object.keys(agent?.inputPorts || {})[0];
+            const inputPort = form.querySelector(`[data-ir-link-target-port="${agentIndex}"]`)?.value || Object.keys(agent?.inputPorts || {})[0];
             if (!agent || !inputPort) throw new Error(`Agent at row ${agentIndex + 1} has no input port to connect.`);
             target = { kind: "agent", agentId: agent.id, inputPort };
           }
