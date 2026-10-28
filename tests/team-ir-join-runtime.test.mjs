@@ -115,6 +115,23 @@ test("Join deadline starts at first predecessor activation and survives snapshot
   assert.equal(timedOut.deadlineAt, 120);
 });
 
+test("a late source arrival cannot mutate a failed timeout Join round", () => {
+  let round = createTeamJoinRound(config({ requiredSourceIds: [], requiredFields: [] }));
+  round = applyTeamJoinEvent(round, { type: "predecessor_activated", at: 20 });
+  round = applyTeamJoinEvent(round, { type: "tick", at: 120 });
+  assert.equal(round.status, "failed");
+  assert.equal(round.failure.code, "JOIN_TIMEOUT");
+  const failedSnapshot = structuredClone(round);
+
+  const afterLateArrival = applyTeamJoinEvent(round, {
+    type: "arrival", sourceId: "left", contribution: { data: { late: true } }, at: 121
+  });
+  assert.deepEqual(afterLateArrival, failedSnapshot);
+  assert.equal(afterLateArrival.sourceStates.left, "pending");
+  assert.deepEqual(afterLateArrival.contributions, {});
+  assert.equal(afterLateArrival.merged, undefined);
+});
+
 test("Join source state is isolated by lineage and Loop round", () => {
   const isolated = { baseMapping: {}, requiredSourceIds: [], requiredFields: [] };
   const firstLineage = createTeamJoinRound(config({ ...isolated, lineage: "branch-a" }));

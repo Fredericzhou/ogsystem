@@ -134,6 +134,104 @@ test("public validator maps an unsupported external Schema dialect to each refer
     && item.pointer === "/runResult/dataSchema/$ref"), JSON.stringify(diagnostics));
 });
 
+test("public validator maps package-closure resolver failures to each embedded reference pointer", () => {
+  const roots = [
+    {
+      pointer: "/runInput/dataSchema/$ref",
+      set(value, reference) { value.runInput.dataSchema = { "$ref": reference }; }
+    },
+    {
+      pointer: "/runInput/preferencesSchema/$ref",
+      set(value, reference) { value.runInput.preferencesSchema = { "$ref": reference }; }
+    },
+    {
+      pointer: "/runResult/dataSchema/$ref",
+      set(value, reference) { value.runResult.dataSchema = { "$ref": reference }; }
+    },
+    {
+      pointer: "/agents/0/inputPorts/default/dataSchema/$ref",
+      set(value, reference) { value.agents[0].inputPorts.default.dataSchema = { "$ref": reference }; }
+    },
+    {
+      pointer: "/agents/0/outputPorts/DONE/dataSchema/$ref",
+      set(value, reference) { value.agents[0].outputPorts.DONE.dataSchema = { "$ref": reference }; }
+    },
+    {
+      pointer: "/orchestration/reviews/0/feedbackSchema/$ref",
+      set(value, reference) {
+        value.orchestration.reviews = [{
+          id: "review",
+          at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
+          feedbackSchema: { "$ref": reference },
+          timeoutMs: 1000,
+          onTimeout: "fail"
+        }];
+      }
+    }
+  ];
+  const rootReference = "schemas/root.json#/$defs/payload";
+  const rootResource = { $schema: "https://json-schema.org/draft/2020-12/schema", $defs: { payload: { $ref: "child.json#/$defs/value" } } };
+  const failures = [
+    {
+      name: "missing resource",
+      code: "IR_UNKNOWN_SCHEMA_REF",
+      packageSchemas: { "schemas/root.json": rootResource }
+    },
+    {
+      name: "forbidden network reference",
+      code: "IR_SCHEMA_REF_FORBIDDEN",
+      packageSchemas: {
+        "schemas/root.json": rootResource,
+        "schemas/child.json": { $schema: "https://json-schema.org/draft/2020-12/schema", $defs: { value: { $ref: "https://example.test/remote.json" } } }
+      }
+    },
+    {
+      name: "out-of-scope reference",
+      code: "IR_SCHEMA_PATH_OUT_OF_SCOPE",
+      packageSchemas: {
+        "schemas/root.json": rootResource,
+        "schemas/child.json": { $schema: "https://json-schema.org/draft/2020-12/schema", $defs: { value: { $ref: "../../outside.json" } } }
+      }
+    },
+    {
+      name: "unsupported nested dialect",
+      code: "IR_SCHEMA_DIALECT_UNSUPPORTED",
+      packageSchemas: {
+        "schemas/root.json": rootResource,
+        "schemas/child.json": { $schema: "https://json-schema.org/draft-07/schema#", $defs: { value: { type: "string" } } }
+      }
+    },
+    {
+      name: "invalid nested schema",
+      code: "IR_SCHEMA_INVALID",
+      packageSchemas: {
+        "schemas/root.json": rootResource,
+        "schemas/child.json": { $schema: "https://json-schema.org/draft/2020-12/schema", $defs: { value: { type: 7 } } }
+      }
+    }
+  ];
+
+  for (const root of roots) {
+    for (const failure of failures) {
+      const value = team();
+      root.set(value, rootReference);
+      const diagnostics = validateTeamIr(value, { packageSchemas: failure.packageSchemas });
+      assert.ok(diagnostics.some((item) => item.code === failure.code && item.pointer === root.pointer),
+        `${failure.name} should map ${failure.code} to ${root.pointer}: ${JSON.stringify(diagnostics)}`);
+    }
+  }
+
+  const valid = team();
+  roots[0].set(valid, rootReference);
+  const diagnostics = validateTeamIr(valid, {
+    packageSchemas: {
+      "schemas/root.json": rootResource,
+      "schemas/child.json": { $schema: "https://json-schema.org/draft/2020-12/schema", $defs: { value: { type: "string" } } }
+    }
+  });
+  assert.deepEqual(diagnostics.filter((item) => item.severity === "error"), []);
+});
+
 test("classic software Team IR fixture compiles parallel required Join sources", async () => {
   const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
   const diagnostics = validateTeamIr(fixture);

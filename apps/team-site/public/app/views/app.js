@@ -1113,7 +1113,7 @@ function teamIrFromEditor(form, base) {
     const index = row.dataset.irJoin;
     const id = String(data.get(`join-${index}-id`) || "").trim();
     const mode = String(data.get(`join-${index}-mode`) || "all_of");
-    const handoffIds = String(data.get(`join-${index}-handoffs`) || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const handoffIds = data.getAll(`join-${index}-handoffs`).map((item) => String(item));
     return {
       id,
       agentId: String(data.get(`join-${index}-agent`) || "").trim(),
@@ -1165,6 +1165,7 @@ function teamIrFromEditor(form, base) {
 function renderTeamIrOrchestrationRows(ir, escText, editable) {
   const disabled = editable ? "" : " disabled";
   const agents = ir.agents || [];
+  const handoffs = ir.handoffs || [];
   const agentOptions = (selected) => agents.map((agent) => `<option value="${escText(agent.id)}"${agent.id === selected ? " selected" : ""}>${escText(agent.id)}</option>`).join("");
   const joins = (ir.orchestration?.joins || []).map((join, index) => `<section class="project-panel ir-editor-row" data-ir-join="${index}">
     <div class="panel-head"><h3>Join ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-join="${index}" aria-label="Remove Join" title="Remove Join"${disabled}>×</button></div>
@@ -1177,7 +1178,7 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
       <label>Timeout (ms)<input type="number" min="1" name="join-${index}-timeout" value="${Number(join.timeoutMs || 0)}" required${disabled}></label>
       <label>Scope<select name="join-${index}-scope-kind"${disabled}><option value="run"${join.scope?.kind !== "loop" ? " selected" : ""}>Run</option><option value="loop"${join.scope?.kind === "loop" ? " selected" : ""}>Loop</option></select></label>
       <label>Scope Loop ID<input name="join-${index}-scope-loop" value="${escText(join.scope?.loopId || "")}"${disabled}></label>
-      <label class="full">Handoff IDs<input name="join-${index}-handoffs" value="${escText((join.handoffIds || []).join(", "))}" required${disabled}><span class="field-hint">Comma-separated exact contributing Handoff IDs.</span></label>
+      <fieldset class="full ir-join-handoffs"><legend>Contributing Handoffs</legend>${handoffs.length ? handoffs.map((handoff) => `<label class="ir-handoff-choice"><input type="checkbox" name="join-${index}-handoffs" value="${escText(handoff.id)}"${(join.handoffIds || []).includes(handoff.id) ? " checked" : ""}${disabled}><span>${escText(handoff.id)}</span></label>`).join("") : '<p class="empty-note">No Handoffs are defined.</p>'}</fieldset>
     </div></section>`).join("");
   const loops = (ir.orchestration?.loops || []).map((loop, index) => `<section class="project-panel ir-editor-row" data-ir-loop="${index}">
     <div class="panel-head"><h3>Loop ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-loop="${index}" aria-label="Remove Loop" title="Remove Loop"${disabled}>×</button></div>
@@ -1426,6 +1427,12 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       const syncAdvancedContracts = () => {
         form.querySelector("[data-ir-advanced-json]").value = JSON.stringify(teamIrAdvancedContracts(draft), null, 2);
       };
+      form.querySelectorAll(".ir-join-handoffs input[type=checkbox]").forEach((input) => input.addEventListener("change", () => {
+        try {
+          draft = captureEditor();
+          syncAdvancedContracts();
+        } catch (error) { captureFailure(error); }
+      }));
       const add = (kind) => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         if (kind === "agent") {

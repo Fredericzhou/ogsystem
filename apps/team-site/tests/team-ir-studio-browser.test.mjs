@@ -270,6 +270,7 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator("[data-ir-join]").count(), 1);
     assert.equal(await page.locator("[data-ir-loop]").count(), 1);
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, ["revise"]);
+    assert.equal(await page.locator('[name="join-0-handoffs"][value="revise"]').isChecked(), true);
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[0].entryHandoffIds, ["entry"]);
     await page.locator('[name="join-0-timeout"]').fill("6500");
     await page.locator('[name="loop-0-rounds"]').fill("4");
@@ -316,6 +317,25 @@ export async function resolveBindings({ teamIR }) {
     const roundTripped = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     assert.deepEqual(roundTripped.orchestration.joins[0].handoffIds, ["revise"], "Join Handoff IDs survive a visual/JSON round trip");
     assert.deepEqual(roundTripped.orchestration.loops[0].entryHandoffIds, ["entry"], "Loop Handoff IDs survive a visual/JSON round trip");
+
+    let emptyJoinSaves = 0;
+    const countEmptyJoinSave = (request) => {
+      if (request.method() === "PUT" && new URL(request.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`) emptyJoinSaves += 1;
+    };
+    page.on("request", countEmptyJoinSave);
+    await page.locator('[name="join-0-handoffs"][value="revise"]').uncheck();
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, [],
+      "Join checkbox changes immediately synchronize advanced JSON");
+    const emptyJoinValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const emptyJoinBody = await (await emptyJoinValidation).json();
+    assert.equal(emptyJoinBody.ok, false, JSON.stringify(emptyJoinBody.diagnostics));
+    assert.equal(emptyJoinSaves, 0, "an empty Join source selection must not reach save API");
+    page.off("request", countEmptyJoinSave);
+    await page.reload({ waitUntil: "networkidle" });
+    assert.equal(await page.locator('[name="join-0-handoffs"][value="revise"]').isChecked(), true,
+      "saved Join source selection is restored after reopen");
 
     await page.locator("[data-ir-add-join]").click();
     assert.equal(await page.locator("[data-ir-join]").count(), 2);
