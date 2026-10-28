@@ -479,11 +479,11 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | --- | --- | --- |
 | 阶段 1：最新经典 fixture 的公开 Schema 正例 | `tests/team-ir-schema.test.mjs`：`public Schema validator accepts every latest classic Team IR fixture`，枚举并验证 `examples/team-ir-v2/` 全部 8 个 JSON fixture；Schema 专项 14/14 | 关闭 fixture inventory 漂移的正例缺口；不替代完整阻断诊断/复杂 Schema 组合矩阵 |
 | 阶段 2：A2A file Message Part 与 Artifact | `src/team-ir/a2a-binding.ts`、`tests/team-ir-a2a-binding.test.mjs`：显式唯一 slot、base64、pinned output media type、并发相同 idempotency key 共享 Task、Runtime deadline 触发一次远端 cancel；A2A + Schema 聚焦测试 26/26 | A2A Adapter 合同通过；未连接真实远端 A2A service，未证明跨进程持久幂等缓存 |
-| 阶段 3：多端口 Handoff 编辑 | `apps/team-site/public/app/views/app.js`、`apps/team-site/tests/team-ir-studio-browser.test.mjs`：多 output/input port 显示选择器，Playwright 选择 `BLOCKED` → `audit` 并断言所存 IR endpoint；浏览器验收 1/1 | 解决创建连线时默认首端口的问题；自由布局拖线和 Join/Loop 字段并集可视编辑仍未完成 |
+| 阶段 3：多端口 Handoff 编辑 | `apps/team-site/public/app/views/app.js`、`apps/team-site/public/styles.css`、`apps/team-site/tests/team-ir-studio-browser.test.mjs`：多 output/input port 显示窄屏可用的选择器，Playwright 选择 `BLOCKED` → `audit` 并断言所存 IR endpoint；浏览器验收 1/1 | 解决创建连线时默认首端口的问题；自由布局拖线和 Join/Loop 字段并集可视编辑仍未完成 |
 | 最新版页面与回归 | `pnpm test`：884 个顶层测试、898 含子测试，897 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`：493/493 | Playwright 属于本地浏览器合同验收，不等于生产发布或 Sandbox 用户验收 |
-| 旧数据盘点 | 根 `.ogs/runs/` 有 248 个被 Git 忽略的旧 Runtime 运行目录（约 50 MB），含 `run-plan.json`/`state.json`，无 Team IR v2 Run 格式；根 `.site/` 为空；示例目录 `.ogs/` 是版本控制 fixture | 按用户最新指示，在最终回归之后清理根旧 Run 数据；保留被跟踪的示例 fixture，不删除其它项目路径 |
+| 旧数据盘点与清理 | 回归结束后发现根 `.ogs/runs/` 有 256 个被 Git 忽略的旧 Runtime 运行目录（约 52 MB），含 `run-plan.json`/`state.json`，无 Team IR v2 Run 格式；根 `.site/` 为空；示例目录 `.ogs/` 是版本控制 fixture | 根 `.ogs/runs/` 已移出工作区到 `/tmp/team-ir-v2-legacy-runs-20261028`，可恢复；系统拒绝永久递归删除。保留被跟踪的示例 fixture；用户数据备份尚未永久清除 |
 
-**此增量未覆盖：** 真实 Sandbox UAT 仍不可执行：没有配置可信 `OGS_TEAM_IR_V2_RESOLVER_MODULE`，仓库没有接入 Team IR 的真实隔离 Sandbox Binding，部分经典场景角色包不存在，Project Task 输入合同不接 Artifact。不得将本地 Fake、Stub A2A 或浏览器验收称为真实 UAT。
+**此增量未覆盖：** 真实 Sandbox UAT 仍不可执行：没有配置可信 `OGS_TEAM_IR_V2_RESOLVER_MODULE`，仓库没有接入 Team IR 的真实隔离 Sandbox Binding，部分经典场景角色包不存在，Project Task 输入合同不接 Artifact。默认新建仍缺原生 v2 草稿 API 并走旧 `/design`；阶段 3 发布门未通过前不切换默认入口。不得将本地 Fake、Stub A2A 或浏览器验收称为真实 UAT。
 
 ### YYYY-MM-DD：阶段 / 任务标识
 
