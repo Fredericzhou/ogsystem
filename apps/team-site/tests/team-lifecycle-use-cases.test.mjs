@@ -256,7 +256,8 @@ test("classic team creation publishes a refreshed current template when the rele
   const current = await harness.useCases.createClassicTeamProject({ caseId: "sample" });
   assert.equal(current.projectId, template.projectId);
   assert.equal(current.teamVersionStatus, "released");
-  assert.deepEqual(harness.calls.find(([kind]) => kind === "prepare-built-in"), ["prepare-built-in", template.projectId, { caseId: "sample", prompt: "Scenario" }]);
+  assert.equal(harness.calls.some(([kind]) => kind === "prepare-built-in"), false, "legacy Mermaid baseline preparation is not v2 release evidence");
+  assert.equal(harness.calls.some(([kind]) => kind === "release-evidence-v2"), true);
 });
 
 test("release readiness always requires current Team IR v2 Sandbox proof", async () => {
@@ -383,6 +384,6 @@ test("code-owned classic templates are provisioned as released TeamVersions", as
   assert.equal(team.teamVersionStatus, "released");
   assert.equal(Object.hasOwn(team, "projectStatus"), false);
   assert.equal(team.trustedClassicTopologyDigest, null);
-  assert.equal(harness.calls.some(([name]) => name === "prepare-built-in"), true);
+  assert.equal(harness.calls.some(([name]) => name === "prepare-built-in"), false);
   assert.equal(harness.calls.some(([name]) => name === "release-evidence-v2"), true);
 });

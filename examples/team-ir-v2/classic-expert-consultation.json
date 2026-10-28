@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "team": { "id": "classic-expert-consultation", "version": "2.0.0" },
+  "runInput": {
+    "dataSchema": { "type": "object", "properties": { "request": { "type": "string", "minLength": 1 } }, "required": ["request"], "additionalProperties": false },
+    "preferencesSchema": { "type": "object", "additionalProperties": true },
+    "artifactSlots": {}
+  },
+  "runResult": {
+    "dataSchema": { "type": "object", "properties": { "summary": { "type": "string", "minLength": 1 } }, "required": ["summary"], "additionalProperties": false },
+    "artifactSlots": {}
+  },
+  "executionPolicy": { "resultMode": "required", "activeExecutionBudgetMs": 900000 },
+  "agents": [
+    { "id": "dispatcher", "packageRef": "role:consultation-dispatcher@1", "bindingRef": "binding:dispatcher", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "request": { "type": "string" } }, "required": ["request"], "additionalProperties": false } } }, "outputPorts": { "BRIEF": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string", "minLength": 1 } }, "required": ["brief"], "additionalProperties": false } } } },
+    { "id": "cardiology", "packageRef": "role:cardiology-expert@1", "bindingRef": "binding:cardiology", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string" } }, "required": ["brief"], "additionalProperties": false } } }, "outputPorts": { "REVIEW": { "dataSchema": { "type": "object", "properties": { "review": { "type": "string", "minLength": 1 } }, "required": ["review"], "additionalProperties": false } } } },
+    { "id": "neurology", "packageRef": "role:neurology-expert@1", "bindingRef": "binding:neurology", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string" } }, "required": ["brief"], "additionalProperties": false } } }, "outputPorts": { "REVIEW": { "dataSchema": { "type": "object", "properties": { "review": { "type": "string", "minLength": 1 } }, "required": ["review"], "additionalProperties": false } } } },
+    { "id": "imaging", "packageRef": "role:imaging-expert@1", "bindingRef": "binding:imaging", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string" } }, "required": ["brief"], "additionalProperties": false } } }, "outputPorts": { "REVIEW": { "dataSchema": { "type": "object", "properties": { "review": { "type": "string", "minLength": 1 } }, "required": ["review"], "additionalProperties": false } } } },
+    { "id": "chief-reviewer", "packageRef": "role:chief-reviewer@1", "bindingRef": "binding:chief-reviewer", "inputPorts": { "collect": { "dataSchema": { "type": "object", "properties": { "cardiology": { "type": "string" }, "neurology": { "type": "string" }, "imaging": { "type": "string" } }, "additionalProperties": false } } }, "outputPorts": { "CONSULTATION": { "dataSchema": { "type": "object", "properties": { "summary": { "type": "string", "minLength": 1 } }, "required": ["summary"], "additionalProperties": false } } } }
+  ],
+  "handoffs": [
+    { "id": "run-to-dispatcher", "from": { "kind": "run" }, "to": { "kind": "agent", "agentId": "dispatcher", "inputPort": "default" }, "map": { "data": { "request": { "$ref": "$.run.input.request" } } }, "delivery": { "deadlineMs": 180000 } },
+    { "id": "dispatcher-to-cardiology", "from": { "kind": "agent", "agentId": "dispatcher", "outputPort": "BRIEF" }, "to": { "kind": "agent", "agentId": "cardiology", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.output.data.brief" } } }, "delivery": { "deadlineMs": 240000 } },
+    { "id": "dispatcher-to-neurology", "from": { "kind": "agent", "agentId": "dispatcher", "outputPort": "BRIEF" }, "to": { "kind": "agent", "agentId": "neurology", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.output.data.brief" } } }, "delivery": { "deadlineMs": 240000 } },
+    { "id": "dispatcher-to-imaging", "from": { "kind": "agent", "agentId": "dispatcher", "outputPort": "BRIEF" }, "to": { "kind": "agent", "agentId": "imaging", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.output.data.brief" } } }, "delivery": { "deadlineMs": 240000 } },
+    { "id": "cardiology-to-chief", "from": { "kind": "agent", "agentId": "cardiology", "outputPort": "REVIEW" }, "to": { "kind": "agent", "agentId": "chief-reviewer", "inputPort": "collect" }, "map": { "data": { "cardiology": { "$ref": "$.output.data.review" } } }, "delivery": { "deadlineMs": 300000 } },
+    { "id": "neurology-to-chief", "from": { "kind": "agent", "agentId": "neurology", "outputPort": "REVIEW" }, "to": { "kind": "agent", "agentId": "chief-reviewer", "inputPort": "collect" }, "map": { "data": { "neurology": { "$ref": "$.output.data.review" } } }, "delivery": { "deadlineMs": 300000 } },
+    { "id": "imaging-to-chief", "from": { "kind": "agent", "agentId": "imaging", "outputPort": "REVIEW" }, "to": { "kind": "agent", "agentId": "chief-reviewer", "inputPort": "collect" }, "map": { "data": { "imaging": { "$ref": "$.output.data.review" } } }, "delivery": { "deadlineMs": 300000 } },
+    { "id": "chief-to-result", "from": { "kind": "agent", "agentId": "chief-reviewer", "outputPort": "CONSULTATION" }, "to": { "kind": "result" }, "map": { "data": { "summary": { "$ref": "$.output.data.summary" } } } }
+  ],
+  "orchestration": {
+    "routes": [ { "from": { "kind": "agent", "agentId": "dispatcher", "outputPort": "BRIEF" }, "mode": "parallel_fanout", "onNoMatch": "fail", "handoffIds": ["dispatcher-to-cardiology", "dispatcher-to-neurology", "dispatcher-to-imaging"] } ],
+    "joins": [ { "id": "specialist-quorum", "agentId": "chief-reviewer", "inputPort": "collect", "mode": "quorum_of", "handoffIds": ["cardiology-to-chief", "neurology-to-chief", "imaging-to-chief"], "threshold": 2, "scope": { "kind": "run" }, "timeoutMs": 300000, "onTimeout": "fail" } ],
+    "loops": [],
+    "reviews": []
+  },
+  "bindings": [
+    { "id": "binding:dispatcher", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:cardiology", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:neurology", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:imaging", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:chief-reviewer", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 180000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
+  ]
+}

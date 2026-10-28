@@ -37,6 +37,13 @@ function setup(binding, clockOptions = {}) {
   return { clock, store, runtime: new TeamRuntime({ store, clock, bindings }) };
 }
 
+function withinTimeout(promise, label, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), timeoutMs);
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+  });
+}
+
 test("route selection evaluates conditions and exclusive priority deterministically", () => {
   const plan = compileTeamIr(team());
   assert.deepEqual(selectTeamHandoffs(plan, { kind: "run" }, {}, { task: "t", input: { prompt: "hi" } }), ["start"]);
@@ -291,6 +298,219 @@ test("executeRun waits for a conditional Join source to be explicitly skipped be
 
   value.agents[2].inputPorts.default.dataSchema.required = ["leftValue"];
   assert.throws(() => compileTeamIr(value), /Team IR compilation failed/);
+});
+
+function quorumTeam({ threshold = 1, conditionalLeft = false } = {}) {
+  const value = team();
+  const agent = (id, properties, required, outputProperties, outputRequired) => ({
+    id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`,
+    inputPorts: { default: { dataSchema: { type: "object", properties, required, additionalProperties: false } } },
+    outputPorts: { DONE: { dataSchema: { type: "object", properties: outputProperties, required: outputRequired, additionalProperties: false } } }
+  });
+  value.agents = [
+    agent("left", { prompt: { type: "string" } }, ["prompt"], { value: { type: "string" }, include: { type: "boolean" } }, ["value", "include"]),
+    agent("right", { prompt: { type: "string" } }, ["prompt"], { value: { type: "string" } }, ["value"]),
+    agent("joiner", { leftValue: { type: "string" }, rightValue: { type: "string" } }, [], { summary: { type: "string" } }, ["summary"])
+  ];
+  const joinWhen = conditionalLeft
+    ? { condition: { op: "equals", args: [{ "$ref": "$.output.data.include" }, { "$literal": true }] }, priority: 0 }
+    : undefined;
+  value.handoffs = [
+    { id: "start-left", from: { kind: "run" }, to: { kind: "agent", agentId: "left", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "start-right", from: { kind: "run" }, to: { kind: "agent", agentId: "right", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "left-join", from: { kind: "agent", agentId: "left", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { leftValue: { "$ref": "$.output.data.value" } } }, when: joinWhen ?? { priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "right-join", from: { kind: "agent", agentId: "right", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { rightValue: { "$ref": "$.output.data.value" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "join-result", from: { kind: "agent", agentId: "joiner", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { summary: { "$ref": "$.output.data.summary" } } }, when: { priority: 0 } }
+  ];
+  value.orchestration = {
+    routes: [
+      { from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-left", "start-right"] },
+      { from: { kind: "agent", agentId: "left", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: ["left-join"] },
+      { from: { kind: "agent", agentId: "right", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: ["right-join"] },
+      { from: { kind: "agent", agentId: "joiner", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: ["join-result"] }
+    ],
+    joins: [{ id: "quorum", agentId: "joiner", inputPort: "default", mode: "quorum_of", threshold, handoffIds: ["left-join", "right-join"], scope: { kind: "run" }, timeoutMs: 1500, onTimeout: "fail" }],
+    loops: [], reviews: []
+  };
+  value.runResult.dataSchema = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
+  value.executionPolicy.resultMode = "required";
+  value.bindings = value.agents.map((item) => ({ id: item.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
+  return value;
+}
+
+async function assertUnsupportedQuorumFailsBeforeBinding(teamValue, runId) {
+  let calls = 0;
+  let plan;
+  try { plan = compileTeamIr(teamValue); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  const bindings = Object.fromEntries(teamValue.agents.map((agent) => [agent.bindingRef, {
+    async invoke() {
+      calls += 1;
+      return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected" } } };
+    }
+  }]));
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId, task: "check", input: { prompt: "check" } });
+  const result = await runtime.executeRun(plan, runId);
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "TEAM_QUORUM_TOPOLOGY_UNSUPPORTED"), true);
+  assert.equal(calls, 0);
+}
+
+test("quorum Join starts at threshold and persists the selected contributions and original deadline across FileTeamRunStore instances", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-quorum-run-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let plan;
+  try { plan = compileTeamIr(quorumTeam()); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  let releaseRight;
+  let rightStarted;
+  const rightStartedPromise = new Promise((resolve) => { rightStarted = resolve; });
+  let joinStarted;
+  const joinStartedPromise = new Promise((resolve) => { joinStarted = resolve; });
+  const calls = [];
+  const bindings = {
+    "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "first", include: true } } }; } },
+    "binding:right": { async invoke() { rightStarted(); await new Promise((resolve) => { releaseRight = resolve; }); return { kind: "completed", output: { event: "DONE", data: { value: "late" } } }; } },
+    "binding:joiner": { async invoke(args) { calls.push(args.input); joinStarted(); return { kind: "completed", output: { event: "DONE", data: { summary: "joined" } } }; } }
+  };
+  const store = new FileTeamRunStore(root);
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "quorum-early", task: "check", input: { prompt: "check" } });
+  const running = runtime.executeRun(plan, "quorum-early");
+  try {
+    await withinTimeout(rightStartedPromise, "right source activation");
+    await withinTimeout(joinStartedPromise, "quorum target activation");
+    assert.deepEqual(calls, [{ leftValue: "first" }]);
+  } finally {
+    releaseRight?.();
+    await withinTimeout(running.catch(() => undefined), "quorum Run settlement");
+  }
+  const result = await running;
+  assert.equal(result.status, "completed", JSON.stringify(result.events.map((entry) => [entry.type, entry.data])));
+  assert.equal(calls.length, 1);
+  const reloaded = await new FileTeamRunStore(root).load("quorum-early");
+  const round = reloaded.scheduler.joinRounds.quorum;
+  assert.equal(round.status, "ready");
+  assert.deepEqual(round.merged.data, { leftValue: "first" });
+  assert.equal(round.deadlineAt, round.startedAt + 1500);
+  assert.equal(round.audit.some((entry) => entry.type === "join.source.late_arrival" && entry.sourceId === "right-join"), true);
+});
+
+test("quorum Join fails when conditional source skips make the threshold unreachable", async () => {
+  let plan;
+  try { plan = compileTeamIr(quorumTeam({ threshold: 2, conditionalLeft: true })); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  const bindings = {
+    "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "omit", include: false } } }; } },
+    "binding:right": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "only" } } }; } },
+    "binding:joiner": { async invoke() { throw new Error("unreachable Join target must not run"); } }
+  };
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "quorum-unreachable", task: "check", input: { prompt: "check" } });
+  const result = await runtime.executeRun(plan, "quorum-unreachable");
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_QUORUM_UNREACHABLE"), true);
+});
+
+test("quorum topologies outside the single no-Loop Join contract fail before any Binding call", async () => {
+  const withLoop = quorumTeam();
+  withLoop.handoffs = withLoop.handoffs.filter((handoff) => handoff.id !== "join-result");
+  withLoop.orchestration.routes = withLoop.orchestration.routes.filter((route) => route.from.kind !== "agent" || route.from.agentId !== "joiner");
+  withLoop.agents.push({
+    id: "loop-worker", packageRef: "role:loop-worker@1", bindingRef: "binding:loop-worker",
+    inputPorts: {
+      default: { dataSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false } },
+      revise: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } }
+    },
+    outputPorts: { DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" }, again: { type: "boolean" } }, required: ["answer", "again"], additionalProperties: false } } }
+  });
+  withLoop.handoffs.push(
+    { id: "loop-entry", from: { kind: "run" }, to: { kind: "agent", agentId: "loop-worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "loop-continue", from: { kind: "agent", agentId: "loop-worker", outputPort: "DONE" }, to: { kind: "agent", agentId: "loop-worker", inputPort: "revise" }, map: { data: { answer: { "$ref": "$.loop.previous.loop-worker.output.data.answer" } } }, when: { condition: { op: "equals", args: [{ "$ref": "$.output.data.again" }, { "$literal": true }] }, priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "loop-exit", from: { kind: "agent", agentId: "loop-worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { summary: { "$ref": "$.output.data.answer" } } }, when: { priority: 1 } }
+  );
+  withLoop.orchestration.routes.find((route) => route.from.kind === "run").handoffIds.push("loop-entry");
+  withLoop.orchestration.routes.push({
+    from: { kind: "agent", agentId: "loop-worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["loop-continue", "loop-exit"]
+  });
+  withLoop.orchestration.loops = [{
+    id: "loop-topology", members: ["loop-worker"], boundaryAgentId: "loop-worker", entryHandoffIds: ["loop-entry"],
+    continueHandoffIds: ["loop-continue"], exitHandoffIds: ["loop-exit"], maxRounds: 2, maxAgentActivations: 3, onExhausted: "fail"
+  }];
+  withLoop.bindings.push({
+    id: "binding:loop-worker", kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000,
+    retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  });
+  await assertUnsupportedQuorumFailsBeforeBinding(withLoop, "quorum-loop-unsupported");
+
+  const multiple = quorumTeam();
+  const clonedAgents = structuredClone(multiple.agents).map((agent) => {
+    const oldId = agent.id;
+    agent.id = `${oldId}-two`;
+    agent.packageRef = `role:${agent.id}@1`;
+    agent.bindingRef = `binding:${agent.id}`;
+    return agent;
+  });
+  multiple.agents.push(...clonedAgents);
+  const clonedHandoffs = multiple.handoffs
+    .filter((handoff) => ["start-left", "start-right", "left-join", "right-join"].includes(handoff.id))
+    .map((handoff) => {
+      const clone = structuredClone(handoff);
+      clone.id = `${clone.id}-two`;
+      if (clone.from.kind === "agent") clone.from.agentId = `${clone.from.agentId}-two`;
+      if (clone.to.kind === "agent") clone.to.agentId = `${clone.to.agentId}-two`;
+      return clone;
+    });
+  multiple.handoffs.push(...clonedHandoffs);
+  const [startLeft, startRight, leftJoin, rightJoin] = clonedHandoffs;
+  multiple.orchestration.routes.find((route) => route.from.kind === "run").handoffIds.push(startLeft.id, startRight.id);
+  multiple.orchestration.routes.push(
+    { from: { kind: "agent", agentId: "left-two", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: [leftJoin.id] },
+    { from: { kind: "agent", agentId: "right-two", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: [rightJoin.id] }
+  );
+  multiple.orchestration.joins.push({
+    ...structuredClone(multiple.orchestration.joins[0]), id: "quorum-two", agentId: "joiner-two",
+    handoffIds: [leftJoin.id, rightJoin.id]
+  });
+  multiple.bindings.push(...clonedAgents.map((agent) => ({
+    id: agent.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000,
+    retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  })));
+  await assertUnsupportedQuorumFailsBeforeBinding(multiple, "quorum-multiple-unsupported");
+
+  const mixed = structuredClone(multiple);
+  mixed.team.id = "quorum-mixed";
+  mixed.orchestration.joins[1].mode = "all_of";
+  delete mixed.orchestration.joins[1].threshold;
+  await assertUnsupportedQuorumFailsBeforeBinding(mixed, "quorum-mixed-unsupported");
+});
+
+test("an active quorum sibling failure after target activation still fails the Run", async () => {
+  const plan = compileTeamIr(quorumTeam());
+  let releaseRight;
+  let rightStarted;
+  const rightStartedPromise = new Promise((resolve) => { rightStarted = resolve; });
+  let joinStarted;
+  const joinStartedPromise = new Promise((resolve) => { joinStarted = resolve; });
+  const bindings = {
+    "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "first", include: true } } }; } },
+    "binding:right": { async invoke() { rightStarted(); await new Promise((resolve) => { releaseRight = resolve; }); throw new TeamBindingError("late sibling failed", "transport"); } },
+    "binding:joiner": { async invoke() { joinStarted(); return { kind: "completed", output: { event: "DONE", data: { summary: "joined" } } }; } }
+  };
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "quorum-late-failure", task: "check", input: { prompt: "check" } });
+  const running = runtime.executeRun(plan, "quorum-late-failure");
+  try {
+    await withinTimeout(rightStartedPromise, "right source activation");
+    await withinTimeout(joinStartedPromise, "quorum target activation");
+  } finally {
+    releaseRight?.();
+    await withinTimeout(running.catch(() => undefined), "quorum Run settlement");
+  }
+  const result = await running;
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing"), true);
 });
 
 test("TeamRuntime projects authorized Artifact refs, injects an allowlist resolver, registers output and persists only opaque result refs", async (t) => {

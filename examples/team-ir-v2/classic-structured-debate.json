@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "team": { "id": "classic-structured-debate", "version": "2.0.0" },
+  "runInput": {
+    "dataSchema": { "type": "object", "properties": { "request": { "type": "string", "minLength": 1 } }, "required": ["request"], "additionalProperties": false },
+    "preferencesSchema": { "type": "object", "additionalProperties": true },
+    "artifactSlots": {}
+  },
+  "runResult": {
+    "dataSchema": { "type": "object", "properties": { "summary": { "type": "string", "minLength": 1 } }, "required": ["summary"], "additionalProperties": false },
+    "artifactSlots": {}
+  },
+  "executionPolicy": { "resultMode": "required", "activeExecutionBudgetMs": 900000 },
+  "agents": [
+    { "id": "debate-host", "packageRef": "role:debate-host@1", "bindingRef": "binding:debate-host", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string", "minLength": 1 } }, "required": ["brief"], "additionalProperties": false } } }, "outputPorts": { "BRIEF": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string", "minLength": 1 } }, "required": ["brief"], "additionalProperties": false } } } },
+    { "id": "proponent", "packageRef": "role:debate-proponent@1", "bindingRef": "binding:proponent", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string" } }, "required": ["brief"], "additionalProperties": false } } }, "outputPorts": { "ARGUMENT": { "dataSchema": { "type": "object", "properties": { "argument": { "type": "string", "minLength": 1 } }, "required": ["argument"], "additionalProperties": false } } } },
+    { "id": "opponent", "packageRef": "role:debate-opponent@1", "bindingRef": "binding:opponent", "inputPorts": { "default": { "dataSchema": { "type": "object", "properties": { "brief": { "type": "string" } }, "required": ["brief"], "additionalProperties": false } } }, "outputPorts": { "ARGUMENT": { "dataSchema": { "type": "object", "properties": { "argument": { "type": "string", "minLength": 1 } }, "required": ["argument"], "additionalProperties": false } } } },
+    { "id": "neutral-judge", "packageRef": "role:neutral-judge@1", "bindingRef": "binding:neutral-judge", "inputPorts": { "review": { "dataSchema": { "type": "object", "properties": { "proponentArgument": { "type": "string" }, "opponentArgument": { "type": "string" } }, "required": ["proponentArgument", "opponentArgument"], "additionalProperties": false } } }, "outputPorts": { "JUDGMENT": { "dataSchema": { "type": "object", "properties": { "decision": { "type": "string", "enum": ["rebuttal", "final"] }, "request": { "type": "string", "minLength": 1 } }, "required": ["decision", "request"], "additionalProperties": false } } } },
+    { "id": "debate-reporter", "packageRef": "role:debate-reporter@1", "bindingRef": "binding:debate-reporter", "inputPorts": { "final": { "dataSchema": { "type": "object", "properties": { "decision": { "type": "string", "enum": ["final"] } }, "required": ["decision"], "additionalProperties": false } } }, "outputPorts": { "REPORT": { "dataSchema": { "type": "object", "properties": { "summary": { "type": "string", "minLength": 1 } }, "required": ["summary"], "additionalProperties": false } } } }
+  ],
+  "handoffs": [
+    { "id": "run-to-host", "from": { "kind": "run" }, "to": { "kind": "agent", "agentId": "debate-host", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.run.input.request" } } }, "delivery": { "deadlineMs": 180000 } },
+    { "id": "host-to-proponent", "from": { "kind": "agent", "agentId": "debate-host", "outputPort": "BRIEF" }, "to": { "kind": "agent", "agentId": "proponent", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.output.data.brief" } } }, "delivery": { "deadlineMs": 240000 } },
+    { "id": "host-to-opponent", "from": { "kind": "agent", "agentId": "debate-host", "outputPort": "BRIEF" }, "to": { "kind": "agent", "agentId": "opponent", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.output.data.brief" } } }, "delivery": { "deadlineMs": 240000 } },
+    { "id": "proponent-to-judge", "from": { "kind": "agent", "agentId": "proponent", "outputPort": "ARGUMENT" }, "to": { "kind": "agent", "agentId": "neutral-judge", "inputPort": "review" }, "map": { "data": { "proponentArgument": { "$ref": "$.output.data.argument" } } }, "delivery": { "deadlineMs": 300000 } },
+    { "id": "opponent-to-judge", "from": { "kind": "agent", "agentId": "opponent", "outputPort": "ARGUMENT" }, "to": { "kind": "agent", "agentId": "neutral-judge", "inputPort": "review" }, "map": { "data": { "opponentArgument": { "$ref": "$.output.data.argument" } } }, "delivery": { "deadlineMs": 300000 } },
+    { "id": "judge-to-host", "from": { "kind": "agent", "agentId": "neutral-judge", "outputPort": "JUDGMENT" }, "to": { "kind": "agent", "agentId": "debate-host", "inputPort": "default" }, "map": { "data": { "brief": { "$ref": "$.output.data.request" } } }, "when": { "condition": { "op": "equals", "args": [ { "$ref": "$.output.data.decision" }, { "$literal": "rebuttal" } ] }, "priority": 0 }, "delivery": { "deadlineMs": 180000 } },
+    { "id": "judge-to-reporter", "from": { "kind": "agent", "agentId": "neutral-judge", "outputPort": "JUDGMENT" }, "to": { "kind": "agent", "agentId": "debate-reporter", "inputPort": "final" }, "map": { "data": { "decision": { "$ref": "$.output.data.decision" } } }, "when": { "priority": 1 }, "delivery": { "deadlineMs": 180000 } },
+    { "id": "reporter-to-result", "from": { "kind": "agent", "agentId": "debate-reporter", "outputPort": "REPORT" }, "to": { "kind": "result" }, "map": { "data": { "summary": { "$ref": "$.output.data.summary" } } } }
+  ],
+  "orchestration": {
+    "routes": [
+      { "from": { "kind": "agent", "agentId": "debate-host", "outputPort": "BRIEF" }, "mode": "parallel_fanout", "onNoMatch": "fail", "handoffIds": ["host-to-proponent", "host-to-opponent"] },
+      { "from": { "kind": "agent", "agentId": "neutral-judge", "outputPort": "JUDGMENT" }, "mode": "exclusive_priority", "onNoMatch": "fail", "handoffIds": ["judge-to-host", "judge-to-reporter"] }
+    ],
+    "joins": [ { "id": "debate-positions", "agentId": "neutral-judge", "inputPort": "review", "mode": "all_of", "handoffIds": ["proponent-to-judge", "opponent-to-judge"], "scope": { "kind": "loop", "loopId": "debate-rounds" }, "timeoutMs": 300000, "onTimeout": "fail" } ],
+    "loops": [ { "id": "debate-rounds", "members": ["debate-host", "proponent", "opponent", "neutral-judge"], "boundaryAgentId": "debate-host", "entryHandoffIds": ["run-to-host"], "continueHandoffIds": ["judge-to-host"], "exitHandoffIds": ["judge-to-reporter"], "maxRounds": 2, "maxAgentActivations": 8, "onExhausted": "finish" } ],
+    "reviews": []
+  },
+  "bindings": [
+    { "id": "binding:debate-host", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:proponent", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:opponent", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:neutral-judge", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 180000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:debate-reporter", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
+  ]
+}

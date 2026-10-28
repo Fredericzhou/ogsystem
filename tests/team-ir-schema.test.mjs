@@ -42,6 +42,61 @@ test("schema parser returns stable pointers for missing root contracts and unkno
   assert.ok(diagnostics.some((item) => item.pointer === "/legacy" && item.code === "IR_SCHEMA_INVALID"));
 });
 
+test("Run input, result, and execution policy contracts accept complete shapes and reject malformed fields", () => {
+  const complete = minimalTeam();
+  complete.runInput = {
+    dataSchema: { type: "object", properties: { request: { type: "string" } }, required: ["request"] },
+    preferencesSchema: { type: "object", properties: { concise: { type: "boolean" } } },
+    artifactSlots: { brief: { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } }
+  };
+  complete.runResult = {
+    dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+    artifactSlots: { report: { required: false, mediaTypes: ["text/markdown"], cardinality: "single" } }
+  };
+  complete.executionPolicy = { resultMode: "allow_empty", activeExecutionBudgetMs: 1 };
+  assert.deepEqual(parseTeamIr(complete).diagnostics, []);
+
+  const invalidCases = [
+    { pointer: "/runInput/dataSchema", mutate: (value) => { delete value.runInput.dataSchema; } },
+    { pointer: "/runInput/preferencesSchema", mutate: (value) => { delete value.runInput.preferencesSchema; } },
+    { pointer: "/runInput/artifactSlots", mutate: (value) => { delete value.runInput.artifactSlots; } },
+    { pointer: "/runInput/extra", mutate: (value) => { value.runInput.extra = true; } },
+    { pointer: "/runInput/dataSchema", mutate: (value) => { value.runInput.dataSchema = 1; } },
+    { pointer: "/runInput/preferencesSchema", mutate: (value) => { value.runInput.preferencesSchema = []; } },
+    { pointer: "/runInput/artifactSlots", mutate: (value) => { value.runInput.artifactSlots = []; } },
+    { pointer: "/runResult/dataSchema", mutate: (value) => { delete value.runResult.dataSchema; } },
+    { pointer: "/runResult/artifactSlots", mutate: (value) => { delete value.runResult.artifactSlots; } },
+    { pointer: "/runResult/extra", mutate: (value) => { value.runResult.extra = true; } },
+    { pointer: "/runResult/dataSchema", mutate: (value) => { value.runResult.dataSchema = 1; } },
+    { pointer: "/runResult/artifactSlots", mutate: (value) => { value.runResult.artifactSlots = null; } },
+    { pointer: "/executionPolicy/resultMode", mutate: (value) => { value.executionPolicy.resultMode = "optional"; } },
+    { pointer: "/executionPolicy/activeExecutionBudgetMs", mutate: (value) => { delete value.executionPolicy.activeExecutionBudgetMs; } },
+    { pointer: "/executionPolicy/activeExecutionBudgetMs", mutate: (value) => { value.executionPolicy.activeExecutionBudgetMs = "1000"; } },
+    { pointer: "/executionPolicy/extra", mutate: (value) => { value.executionPolicy.extra = true; } }
+  ];
+
+  for (const { pointer, mutate } of invalidCases) {
+    const value = structuredClone(complete);
+    mutate(value);
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
+      `Expected IR_SCHEMA_INVALID at ${pointer}, got ${JSON.stringify(diagnostics)}`);
+  }
+});
+
+test("execution budget must be a positive integer with a stable diagnostic pointer", () => {
+  for (const budget of [0, -1, 1.5]) {
+    const value = minimalTeam();
+    value.executionPolicy.activeExecutionBudgetMs = budget;
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/executionPolicy/activeExecutionBudgetMs"),
+      `Expected invalid budget ${budget} to point at activeExecutionBudgetMs, got ${JSON.stringify(diagnostics)}`);
+  }
+  const minimumBudget = minimalTeam();
+  minimumBudget.executionPolicy.activeExecutionBudgetMs = 1;
+  assert.deepEqual(validateTeamIrSchema(minimumBudget), []);
+});
+
 test("endpoint schema rejects implicit endpoints and malformed agent ports", () => {
   const value = minimalTeam();
   value.handoffs[0].to = { kind: "agent", agentId: "worker" };

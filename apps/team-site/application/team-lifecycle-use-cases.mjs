@@ -71,10 +71,7 @@ export function createTeamLifecycleUseCases({
       if (existingClassic) return existingClassic;
       const template = projects.find((project) => !project.teamProjectId && project.source === "classic-template" && project.caseId === caseId && project.teamVersionStatus !== "archived" && String(project.name || "").toLocaleLowerCase() === defaultName.toLocaleLowerCase());
       if (template) {
-        if (typeof releaseEvidence?.prepareBuiltInTeamVersion !== "function") {
-          throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: built-in TeamVersions require current Sandbox evidence.");
-        }
-        await releaseEvidence.prepareBuiltInTeamVersion(template, { caseId, prompt: defaultIntent });
+        await assertTeamIrReleaseEvidence(template);
         return confirmProjectTeam(template.projectId, { trustedClassic: true, release: true });
       }
     }
@@ -92,11 +89,36 @@ export function createTeamLifecycleUseCases({
       } : {})
     });
     if (asTemplate) return project;
-    if (typeof releaseEvidence?.prepareBuiltInTeamVersion !== "function") {
-      throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: built-in TeamVersions require current Sandbox evidence.");
+    try {
+      await assertTeamIrReleaseEvidence(project);
+      return await confirmProjectTeam(project.projectId, { trustedClassic: true, release: true });
+    } catch (error) {
+      try {
+        if (typeof projectStore.removeProjectData === "function") await projectStore.removeProjectData(project.projectId);
+        else await projectStore.removeProject(project.projectId);
+      } catch (cleanupError) {
+        throw new Error(`CLASSIC_TEAM_CREATION_COMPENSATION_FAILED: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`, { cause: error });
+      }
+      throw error;
     }
-    await releaseEvidence.prepareBuiltInTeamVersion(project, { caseId, prompt: defaultIntent });
-    return confirmProjectTeam(project.projectId, { trustedClassic: true, release: true });
+  }
+
+  async function assertTeamIrReleaseEvidence(team) {
+    const teamVersionId = team.teamVersionId || team.projectId;
+    const currentTeam = await projectStore.getProject(teamVersionId);
+    if (!currentTeam) throw new Error("TEAM_VERSION_NOT_FOUND: the requested TeamVersion does not exist.");
+    const { teamCoreDigest } = await confirmation.computeDigests(currentTeam);
+    const irSnapshot = await teamIrRelease.getTeamIrReleaseSnapshot(teamVersionId);
+    if (typeof releaseEvidence?.validateTeamIrReleaseEvidence !== "function") {
+      throw new Error("TEAM_IR_V2_RELEASE_EVIDENCE_UNAVAILABLE: v2 Sandbox release evidence is not connected.");
+    }
+    await releaseEvidence.validateTeamIrReleaseEvidence({
+      teamVersionId,
+      teamCoreDigest,
+      teamIrSemanticDigest: irSnapshot.teamIrSemanticDigest,
+      compiledPlanDigest: irSnapshot.compiledPlanDigest
+    });
+    return irSnapshot;
   }
 
   async function confirmProjectTeam(projectId, options = {}) {
