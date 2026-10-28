@@ -276,11 +276,59 @@ export async function resolveBindings({ teamIR }) {
     const blockedReadiness = await page.request.post(`${url}/api/v1/team-versions/${teamVersionId}/release`, { data: {} });
     assert.notEqual(blockedReadiness.status(), 200);
     assert.match((await blockedReadiness.json()).error, /TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED/);
+    const simulationAdvanced = page.locator("[data-ir-advanced-json]");
+    const simulationContracts = JSON.parse(await simulationAdvanced.inputValue());
+    simulationContracts.runInput.dataSchema = {
+      type: "object",
+      properties: {
+        request: { type: "string", title: "Request" },
+        count: { type: "integer", default: 3 },
+        temperature: { type: "number", default: 0.25 },
+        enabled: { type: "boolean", default: true }
+      },
+      required: ["request"], additionalProperties: true
+    };
+    await simulationAdvanced.fill(JSON.stringify(simulationContracts, null, 2));
+    assert.equal(await page.locator('[data-ir-simulation-field="request"]').getAttribute("type"), "text");
+    assert.equal(await page.locator('[data-ir-simulation-field="count"]').getAttribute("type"), "number");
+    assert.equal(await page.locator('[data-ir-simulation-field="count"]').inputValue(), "3");
+    assert.equal(await page.locator('[data-ir-simulation-field="temperature"]').inputValue(), "0.25");
+    assert.equal(await page.locator('[data-ir-simulation-field="enabled"]').isChecked(), true);
+    simulationContracts.runInput.dataSchema.properties.request.pattern = "^[a-z]+$";
+    await simulationAdvanced.fill(JSON.stringify(simulationContracts, null, 2));
+    assert.equal(await page.locator("[data-ir-simulation-input]").count(), 1, "unsupported schema constraints keep the JSON fallback");
+    await page.locator("[data-ir-simulation-input]").fill(JSON.stringify({ request: "browser test", extra: { kept: true } }));
+    delete simulationContracts.runInput.dataSchema.properties.request.pattern;
+    await simulationAdvanced.fill(JSON.stringify(simulationContracts, null, 2));
+    assert.equal(await page.locator('[data-ir-simulation-field="request"]').inputValue(), "browser test");
+    const validateSimulationSchema = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const simulationSchemaValidation = await (await validateSimulationSchema).json();
+    assert.equal(simulationSchemaValidation.ok, true, JSON.stringify(simulationSchemaValidation.diagnostics));
+    const saveSimulationSchema = page.waitForResponse((response) => response.request().method() === "PUT"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir`);
+    assert.equal((await saveSimulationSchema).status(), 200);
+    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator('[data-ir-simulation-field="request"]').waitFor();
+    assert.equal(await page.locator('[data-ir-simulation-field="count"]').inputValue(), "3", "schema defaults are restored after save and reopen");
+    await page.locator('[data-ir-simulation-run]').click();
+    assert.match(await page.locator('[data-ir-simulation-status]').innerText(), /request is required/);
+    simulationContracts.runInput.dataSchema.properties.request.pattern = "^[a-z]+$";
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(simulationContracts, null, 2));
+    await page.locator("[data-ir-simulation-input]").fill(JSON.stringify({ request: "browser test", extra: { kept: true } }));
+    delete simulationContracts.runInput.dataSchema.properties.request.pattern;
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(simulationContracts, null, 2));
+    assert.equal(await page.locator('[data-ir-simulation-field="request"]').inputValue(), "browser test");
     const simulationResponse = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/simulations`);
     await page.locator("[data-ir-simulation-run]").click();
     const simulationResponseValue = await simulationResponse;
     const simulation = await simulationResponseValue.json();
+    assert.deepEqual(simulationResponseValue.request().postDataJSON().input, {
+      request: "browser test", count: 3, temperature: 0.25, enabled: true, extra: { kept: true }
+    }, "typed fields serialize with defaults while unknown JSON values survive schema refresh");
     assert.equal(simulationResponseValue.status(), 200, JSON.stringify(simulation));
     assert.equal(simulation.status, "completed", JSON.stringify(simulation));
     assert.equal(simulation.run.resultWritten, true);
@@ -594,7 +642,7 @@ export async function resolveBindings({ teamIR }) {
     await page.locator("[data-ir-simulation-artifact-add]").click();
     await page.getByText("Simulation attachment registered.").waitFor();
     assert.match(await page.locator("[data-ir-simulation-artifact-list]").innerText(), /brief[\s\S]*source\.md/);
-    await page.locator("[data-ir-simulation-input]").fill(JSON.stringify({ prompt: "Use the attached source" }));
+    await page.locator('[data-ir-simulation-field="prompt"]').fill("Use the attached source");
     const artifactSimulationResponse = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/simulations`);
     await page.locator("[data-ir-simulation-run]").click();

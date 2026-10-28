@@ -150,6 +150,69 @@ test("prepared output Artifacts remain private until the publication intent comm
   assert.equal(Buffer.from(await resolver.read(reference.artifactId)).toString(), "prepared");
 });
 
+test("abort removes only a matching prepared output and preserves committed outputs and Run inputs", async () => {
+  const backend = new MemoryTeamArtifactBackend();
+  const store = new TeamArtifactStore({ backend });
+  const owner = { projectId: "project-1", runId: "run-1" };
+  const prepared = await store.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId: "publication-abort"
+  });
+  await store.abortOutput({ owner, reference: prepared, publicationId: "publication-abort" });
+  await store.abortOutput({ owner, reference: prepared, publicationId: "publication-abort" });
+  assert.equal(await store.getReference(prepared.artifactId), undefined);
+  await assert.rejects(store.commitOutput({ owner, reference: prepared, publicationId: "publication-abort" }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_PUBLICATION_INVALID");
+
+  const committed = await store.registerOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("committed")
+  });
+  await assert.rejects(store.abortOutput({ owner, reference: committed, publicationId: "publication-abort" }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_PUBLICATION_INVALID");
+  const input = await store.registerRunInput({
+    team: team(), projectId: owner.projectId, slotId: "brief", mediaType: "text/plain", content: Buffer.from("input"), authorizeUpload: () => true
+  });
+  await assert.rejects(store.abortOutput({ owner, reference: input, publicationId: "publication-abort" }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_PUBLICATION_INVALID");
+  assert.equal(Buffer.from(await (await store.createInvocationResolver({ owner, allowedArtifacts: [committed] })).read(committed.artifactId)).toString(), "committed");
+});
+
+test("File Artifact abort removes both prepared index and blob", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-abort-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new FileTeamArtifactStore(root);
+  const owner = { projectId: "project-1", runId: "run-1" };
+  const reference = await store.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId: "publication-file-abort"
+  });
+  await store.abortOutput({ owner, reference, publicationId: "publication-file-abort" });
+  await assert.rejects(readFile(join(root, "index", `${reference.artifactId}.json`)), { code: "ENOENT" });
+  await assert.rejects(readFile(join(root, "projects", owner.projectId, "runs", owner.runId, "artifacts", `${reference.artifactId}.bin`)), { code: "ENOENT" });
+});
+
+test("File Artifact abort cleans blob-only and index-only prepared writes", async (t) => {
+  for (const partial of ["blob-only", "index-only"]) {
+    await t.test(partial, async (t) => {
+      const root = await mkdtemp(join(tmpdir(), `team-ir-artifact-${partial}-`));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const store = new FileTeamArtifactStore(root);
+      const owner = { projectId: "project-1", runId: "run-1" };
+      const reference = await store.prepareOutput({
+        team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+        mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId: `publication-${partial}`
+      });
+      const indexPath = join(root, "index", `${reference.artifactId}.json`);
+      const blobPath = join(root, "projects", owner.projectId, "runs", owner.runId, "artifacts", `${reference.artifactId}.bin`);
+      await rm(partial === "blob-only" ? indexPath : blobPath, { force: true });
+      await store.abortOutput({ owner, reference, publicationId: `publication-${partial}` });
+      await assert.rejects(readFile(indexPath), { code: "ENOENT" });
+      await assert.rejects(readFile(blobPath), { code: "ENOENT" });
+    });
+  }
+});
+
 test("blob and index write interruptions never expose an uncommitted Artifact", async (t) => {
   for (const faultPoint of ["after-blob", "after-index"]) {
     await t.test(faultPoint, async () => {

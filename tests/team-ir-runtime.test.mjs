@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import { applyTeamJoinEvent, compileTeamIr, createTeamA2ABinding, createTeamJoinRound, FileTeamArtifactStore, FileTeamReviewStore, FileTeamRunStore, MemoryTeamArtifactBackend, MemoryTeamRunStore, TeamArtifactStore, TeamBindingError, TeamReviewRuntime, TeamRuntime, selectTeamHandoffs } from "../dist/team-ir/index.js";
 
@@ -1652,6 +1652,43 @@ test("TeamRuntime projects authorized Artifact refs, injects an allowlist resolv
   assert.equal(Buffer.from(await resolver.read(storedOutput.artifactId)).toString(), "private report");
 });
 
+test("invalid Artifact output fails the Run and aborts earlier prepared slots", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-invalid-output-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.agents[0].outputPorts.DONE.artifactSlots = {
+    first: { required: false, mediaTypes: ["text/plain"], cardinality: "single" },
+    second: { required: false, mediaTypes: ["text/plain"], cardinality: "single" }
+  };
+  const plan = compileTeamIr(value);
+  const artifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const store = new FileTeamRunStore(join(root, "runs"));
+  const runtime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() {
+      return { kind: "completed", output: { event: "DONE", data: { answer: "partial" }, artifacts: {
+        first: { mediaType: "text/plain", content: Buffer.from("prepared then aborted") },
+        second: { mediaType: "text/plain", content: "not bytes" }
+      } } };
+    } } },
+    artifactStore: artifacts
+  });
+  await runtime.createRun(plan, { runId: "invalid-artifact-output", projectId: "project-1", task: "check", input: { prompt: "check" } });
+  const result = await runtime.executeRun(plan, "invalid-artifact-output");
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminalIntent, "failed");
+  assert.equal(result.invocations["invalid-artifact-output:start"].status, "failed");
+  assert.equal(result.invocations["invalid-artifact-output:start"].error, "ARTIFACT_OUTPUT_INVALID");
+  assert.equal(JSON.stringify(result).includes("prepared then aborted"), false);
+  const artifactRoot = join(root, "artifacts");
+  const indexes = await readdir(join(artifactRoot, "index"));
+  const blobs = await readdir(join(artifactRoot, "projects", "project-1", "runs", "invalid-artifact-output", "artifacts"));
+  assert.deepEqual(indexes, []);
+  assert.deepEqual(blobs, []);
+});
+
 test("Artifact registered before a failed completion checkpoint is not published or retried after recovery", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-checkpoint-fault-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -1717,6 +1754,8 @@ test("Artifact registered before a failed completion checkpoint is not published
   assert.equal(JSON.stringify(recovered).includes("private uncommitted report"), false);
   assert.equal(JSON.stringify(recovered).includes(registeredReference.artifactId), false, "the uncommitted Artifact reference is not exposed in the Run record");
   assert.equal(await new FileTeamArtifactStore(join(root, "artifacts")).getReference(registeredReference.artifactId), undefined, "an Artifact prepared before the failed Run CAS remains unpublished");
+  await assert.rejects(readFile(join(root, "artifacts", "index", `${registeredReference.artifactId}.json`)), { code: "ENOENT" });
+  await assert.rejects(readFile(join(root, "artifacts", "projects", "project-1", "runs", "artifact-checkpoint-fault", "artifacts", `${registeredReference.artifactId}.bin`)), { code: "ENOENT" });
 });
 
 test("Artifact publication recovers when Run CAS commits but its response is lost", async (t) => {

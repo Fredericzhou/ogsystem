@@ -848,6 +848,35 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   return candidate;
 }
 
+function teamIrSimulationSchemaFields(dataSchema) {
+  if (!dataSchema || dataSchema.type !== "object" || !dataSchema.properties || Array.isArray(dataSchema.properties)) return null;
+  const fields = Object.entries(dataSchema.properties);
+  if (fields.some(([, schema]) => !schema || !["string", "number", "integer", "boolean"].includes(schema.type)
+    || Object.keys(schema).some((key) => !["type", "title", "description", "default", "minimum", "maximum", "minLength", "maxLength"].includes(key)))) return null;
+  if (Object.keys(dataSchema).some((key) => !["type", "properties", "required", "additionalProperties", "title", "description"].includes(key))) return null;
+  return fields;
+}
+
+function renderTeamIrSimulationInput(schema, value, esc) {
+  const fields = teamIrSimulationSchemaFields(schema);
+  if (!fields) return `<label data-ir-simulation-input-container>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">${esc(JSON.stringify(value, null, 2))}</textarea></label>`;
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  const controls = fields.map(([key, field]) => {
+    const current = Object.hasOwn(value, key) ? value[key] : field.default;
+    const label = esc(field.title || key);
+    const description = field.description ? `<small class="field-hint">${esc(field.description)}</small>` : "";
+    const attr = `data-ir-simulation-field="${esc(key)}" data-ir-simulation-type="${field.type}"${required.has(key) ? " required" : ""}`;
+    if (field.type === "boolean") return `<label>${label}<input type="checkbox" ${attr}${current === true ? " checked" : ""}>${description}</label>`;
+    if (field.type === "number" || field.type === "integer") {
+      const bounds = `${Number.isFinite(field.minimum) ? ` min="${field.minimum}"` : ""}${Number.isFinite(field.maximum) ? ` max="${field.maximum}"` : ""}`;
+      return `<label>${label}<input type="number" ${attr} step="${field.type === "integer" ? "1" : "any"}"${bounds} value="${current === undefined || current === null ? "" : esc(String(current))}">${description}</label>`;
+    }
+    const bounds = `${Number.isInteger(field.minLength) ? ` minlength="${field.minLength}"` : ""}${Number.isInteger(field.maxLength) ? ` maxlength="${field.maxLength}"` : ""}`;
+    return `<label>${label}<input type="text" ${attr}${bounds} value="${current === undefined || current === null ? "" : esc(String(current))}">${description}</label>`;
+  }).join("");
+  return `<div data-ir-simulation-input-container data-ir-simulation-fields>${controls || '<p class="empty-note">This Run input has no data fields.</p>'}</div>`;
+}
+
 function decodeTeamIrPointer(pointer) {
   if (pointer === "" || pointer === "/") return [];
   if (typeof pointer !== "string" || !pointer.startsWith("/")) return null;
@@ -1403,12 +1432,13 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     let draft = stored.teamIR;
     let expectedSemanticDigest = stored.semanticDigest ?? null;
     const editable = team.teamVersionStatus === "draft";
+    let simulationInputValue = {};
     let pendingConnectionSource;
     const redraw = () => {
       const rows = renderTeamIrEditorRows(draft, esc, editable);
       Object.assign(rows, renderTeamIrOrchestrationRows(draft, esc, editable));
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p>${renderTeamIrSimulationInput(draft.runInput?.dataSchema, simulationInputValue, esc)}<label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
       form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Review gates</h2></div><button class="secondary-button" type="button" data-ir-add-review${editable ? "" : " disabled"}>Add Review</button></div><div class="ir-editor-list">${rows.reviews || '<p class="empty-note">No Review gates.</p>'}</div></section>`);
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
@@ -1856,11 +1886,66 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       });
       const simulation = root.querySelector("[data-team-ir-simulation]");
       const simulationStatus = simulation.querySelector("[data-ir-simulation-status]");
+      const readSimulationInput = (validate = false) => {
+        const json = simulation.querySelector("[data-ir-simulation-input]");
+        if (json) {
+          const parsed = JSON.parse(json.value);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Run input must be a JSON object.");
+          simulationInputValue = parsed;
+          return parsed;
+        }
+        const input = { ...(simulationInputValue || {}) };
+        for (const field of simulation.querySelectorAll("[data-ir-simulation-field]")) {
+          const key = field.dataset.irSimulationField;
+          const type = field.dataset.irSimulationType;
+          if (type === "boolean") {
+            input[key] = field.checked;
+            continue;
+          }
+          if (field.value === "") {
+            if (validate && field.required) throw new Error(`${key} is required.`);
+            delete input[key];
+            continue;
+          }
+          if (type === "number" || type === "integer") {
+            const number = Number(field.value);
+            if (!Number.isFinite(number) || (type === "integer" && !Number.isInteger(number))) throw new Error(`${key} must be a ${type}.`);
+            if (field.min !== "" && number < Number(field.min)) throw new Error(`${key} must be at least ${field.min}.`);
+            if (field.max !== "" && number > Number(field.max)) throw new Error(`${key} must be at most ${field.max}.`);
+            input[key] = number;
+          } else {
+            if (field.hasAttribute("minlength") && field.value.length < Number(field.minLength)) throw new Error(`${key} must contain at least ${field.minLength} characters.`);
+            if (field.hasAttribute("maxlength") && field.value.length > Number(field.maxLength)) throw new Error(`${key} must contain at most ${field.maxLength} characters.`);
+            input[key] = field.value;
+          }
+        }
+        simulationInputValue = input;
+        return input;
+      };
+      const refreshSimulationInput = (schema) => {
+        try { simulationInputValue = readSimulationInput(false); } catch { /* Keep the last valid input while a JSON fallback is being edited. */ }
+        const container = simulation.querySelector("[data-ir-simulation-input-container]");
+        if (!container) return;
+        container.outerHTML = renderTeamIrSimulationInput(schema, simulationInputValue, esc);
+        simulation.querySelectorAll("[data-ir-simulation-field]").forEach((field) => field.addEventListener("input", () => {
+          try { readSimulationInput(false); } catch { /* Validation runs when Simulation starts. */ }
+        }));
+        simulation.querySelector("[data-ir-simulation-input]")?.addEventListener("input", () => {
+          try { readSimulationInput(false); } catch { /* Keep the last valid input while JSON is incomplete. */ }
+        });
+      };
+      refreshSimulationInput(draft.runInput?.dataSchema);
+      form.querySelector("[data-ir-advanced-json]")?.addEventListener("input", (event) => {
+        try {
+          const advanced = JSON.parse(event.currentTarget.value);
+          refreshSimulationInput(advanced.runInput?.dataSchema);
+        } catch { /* The editor may be temporarily incomplete while typing. */ }
+      });
       const simulationArtifactInputs = document.createElement("section");
       simulationArtifactInputs.dataset.irSimulationArtifactInputs = "";
       simulationArtifactInputs.hidden = true;
       simulationArtifactInputs.innerHTML = '<div class="panel-head"><div><span class="section-kicker">Run input</span><h3>Simulation attachments</h3></div></div><div class="form-actions"><label>Artifact slot<select data-ir-simulation-artifact-slot disabled><option value="">Loading slots...</option></select></label><label class="secondary-button material-upload-button">Choose file<input type="file" data-ir-simulation-artifact-file hidden></label><button class="secondary-button" type="button" data-ir-simulation-artifact-add disabled>Add attachment</button></div><div class="material-list" data-ir-simulation-artifact-list></div><p class="form-status" data-ir-simulation-artifact-status role="status" aria-live="polite"></p>';
-      simulation.querySelector("[data-ir-simulation-input]")?.closest("label")?.after(simulationArtifactInputs);
+      simulation.querySelector("[data-ir-simulation-input-container]")?.after(simulationArtifactInputs);
       const simulationArtifactSlot = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-slot]");
       const simulationArtifactFile = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-file]");
       const simulationArtifactAdd = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-add]");
@@ -1950,7 +2035,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         button.disabled = true;
         simulationStatus.textContent = "Running Team IR v2 Simulation…";
         try {
-          const input = JSON.parse(simulation.querySelector("[data-ir-simulation-input]").value);
+          const input = readSimulationInput(true);
           const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`, {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ input, task: simulation.querySelector("[data-ir-simulation-task]").value, artifactScopeId: simulationArtifactScopeId,

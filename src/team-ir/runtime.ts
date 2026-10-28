@@ -637,28 +637,42 @@ export class TeamRuntime {
         }
         const registeredArtifacts: Record<string, { artifactId: string; mediaType: string }> = {};
         const publicationId = result.output.artifacts === undefined ? undefined : randomUUID();
+        const abortPreparedArtifacts = async (): Promise<void> => {
+          if (!publicationId || !this.args.artifactStore) return;
+          await Promise.allSettled(Object.values(registeredArtifacts).map((reference) => this.args.artifactStore!.abortOutput({
+            owner: { projectId: existing.projectId, runId }, reference, publicationId
+          })));
+        };
         if (result.output.artifacts !== undefined) {
           if (!isRecord(result.output.artifacts) || !this.args.artifactStore) return this.fail(runId, invocationId, "ARTIFACT_STORE_REQUIRED");
-          for (const [slotId, value] of Object.entries(result.output.artifacts)) {
-            if (!isRecord(value) || typeof value.mediaType !== "string" || !(value.content instanceof Uint8Array)) {
-              return this.fail(runId, invocationId, "ARTIFACT_OUTPUT_INVALID");
+          try {
+            for (const [slotId, value] of Object.entries(result.output.artifacts)) {
+              if (!isRecord(value) || typeof value.mediaType !== "string" || !(value.content instanceof Uint8Array)) {
+                throw new TeamArtifactError("ARTIFACT_OUTPUT_INVALID", "Agent output Artifact is invalid.");
+              }
+              registeredArtifacts[slotId] = await this.args.artifactStore.prepareOutput({
+                team: plan.team, owner: { projectId: existing.projectId, runId }, agentId,
+                outputPortId: result.output.event, slotId, mediaType: value.mediaType, content: value.content,
+                publicationId: publicationId!
+              });
             }
-            registeredArtifacts[slotId] = await this.args.artifactStore.prepareOutput({
-              team: plan.team, owner: { projectId: existing.projectId, runId }, agentId,
-              outputPortId: result.output.event, slotId, mediaType: value.mediaType, content: value.content,
-              publicationId: publicationId!
-            });
+          } catch (error) {
+            await abortPreparedArtifacts();
+            if (error instanceof TeamArtifactError) return this.fail(runId, invocationId, error.code);
+            throw error;
           }
         }
         const outputSlots = isRecord(agent?.outputPorts) && isRecord(agent.outputPorts[result.output.event])
           && isRecord((agent.outputPorts[result.output.event] as Record<string, unknown>).artifactSlots)
           ? (agent.outputPorts[result.output.event] as Record<string, unknown>).artifactSlots as Record<string, Record<string, unknown>> : {};
         if (Object.entries(outputSlots).some(([slotId, slot]) => slot.required === true && !registeredArtifacts[slotId])) {
+          await abortPreparedArtifacts();
           return this.fail(runId, invocationId, "AGENT_OUTPUT_ARTIFACT_REQUIRED");
         }
         const current = (await this.args.store.load(runId))!;
         const elapsed = Math.max(0, finishedAt - attemptStartedAt);
         if (current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs) {
+          await abortPreparedArtifacts();
           return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
         }
         let completed: TeamRunRecord;
@@ -686,7 +700,10 @@ export class TeamRuntime {
         } catch (error) {
           const persisted = await this.args.store.load(runId);
           const publication = persisted?.invocations[invocationId]?.artifactPublication;
-          if (!publicationId || !persisted || persisted.invocations[invocationId]?.status !== "completed" || publication?.id !== publicationId) throw error;
+          if (!publicationId || !persisted || persisted.invocations[invocationId]?.status !== "completed" || publication?.id !== publicationId) {
+            await abortPreparedArtifacts();
+            throw error;
+          }
           completed = persisted;
         }
         return this.commitInvocationArtifacts(completed, invocationId);

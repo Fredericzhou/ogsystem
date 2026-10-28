@@ -11,6 +11,7 @@ export interface TeamArtifactReference {
 export interface TeamArtifactBlobBackend {
   put(artifactId: string, content: Uint8Array, metadata: ArtifactMetadata): Promise<void>;
   commitOutput(artifactId: string, publicationId: string): Promise<void>;
+  abortOutput(artifactId: string, expected: ArtifactMetadata): Promise<void>;
   get(artifactId: string): Promise<{ content: Uint8Array; metadata: ArtifactMetadata } | undefined>;
   bindRunInput(owner: TeamArtifactOwner, artifactIds: readonly string[]): Promise<void>;
   getRunInputGrant(owner: TeamArtifactOwner): Promise<readonly string[]>;
@@ -41,6 +42,7 @@ export interface ArtifactStore {
     publicationId: string;
   }): Promise<TeamArtifactReference>;
   commitOutput(args: { owner: TeamArtifactOwner; reference: TeamArtifactReference; publicationId: string }): Promise<void>;
+  abortOutput(args: { owner: TeamArtifactOwner; reference: TeamArtifactReference; publicationId: string }): Promise<void>;
   registerOutput(args: {
     team: TeamIrDocument;
     owner: TeamArtifactOwner;
@@ -180,6 +182,17 @@ export class MemoryTeamArtifactBackend implements TeamArtifactBlobBackend {
     stored.metadata.publicationState = "committed";
   }
 
+  async abortOutput(artifactId: string, expected: ArtifactMetadata): Promise<void> {
+    const stored = this.blobs.get(artifactId);
+    if (!stored) return;
+    if (stored.metadata.kind !== "agent-output" || stored.metadata.publicationState !== "prepared"
+      || stored.metadata.publicationId !== expected.publicationId || stored.metadata.projectId !== expected.projectId
+      || stored.metadata.runId !== expected.runId) {
+      throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Only the matching prepared Artifact publication can be aborted.");
+    }
+    this.blobs.delete(artifactId);
+  }
+
   async get(artifactId: string): Promise<{ content: Uint8Array; metadata: ArtifactMetadata } | undefined> {
     const stored = this.blobs.get(artifactId);
     return stored ? { content: Uint8Array.from(stored.content), metadata: structuredClone(stored.metadata) } : undefined;
@@ -252,6 +265,21 @@ export class TeamArtifactStore implements ArtifactStore {
     }
   }
 
+  async abortOutput(args: { owner: TeamArtifactOwner; reference: TeamArtifactReference; publicationId: string }): Promise<void> {
+    assertOwner(args.owner);
+    if (!SAFE_ID.test(args.publicationId)) throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Artifact publication ID is invalid.");
+    const ref = reference(args.reference);
+    const stored = await this.args.backend.get(ref.artifactId).catch(() => undefined);
+    const metadata = stored?.metadata ?? this.metadata.get(ref.artifactId);
+    if (!metadata) return;
+    if (metadata.kind !== "agent-output" || metadata.projectId !== args.owner.projectId || metadata.runId !== args.owner.runId
+      || metadata.publicationId !== args.publicationId || metadata.publicationState !== "prepared") {
+      throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Only the matching prepared Artifact publication can be aborted.");
+    }
+    await this.args.backend.abortOutput(ref.artifactId, metadata);
+    this.metadata.delete(ref.artifactId);
+  }
+
   async registerRunInput(args: {
     team: TeamIrDocument;
     projectId: string;
@@ -273,8 +301,16 @@ export class TeamArtifactStore implements ArtifactStore {
     const contentDigest = createHash("sha256").update(bytes).digest("hex");
     const artifactId = `art_${randomUUID()}`;
     const metadata = { artifactId, mediaType, contentDigest, ...ownership };
-    await this.args.backend.put(artifactId, bytes, metadata);
     this.metadata.set(artifactId, metadata);
+    try {
+      await this.args.backend.put(artifactId, bytes, metadata);
+    } catch (error) {
+      if (metadata.kind === "agent-output" && metadata.publicationId && this.args.backend.abortOutput) {
+        await this.args.backend.abortOutput(artifactId, metadata).catch(() => undefined);
+      }
+      this.metadata.delete(artifactId);
+      throw error;
+    }
     return Object.freeze({ artifactId, mediaType });
   }
 
@@ -423,6 +459,34 @@ export class FileTeamArtifactStore extends TeamArtifactStore {
         if (stored.metadata.publicationState === "committed") return;
         const path = indexPath(id);
         await writeAtomic(path, JSON.stringify({ metadata: { ...stored.metadata, publicationState: "committed" }, contentPath: blobPath(stored.metadata) }));
+      },
+      abortOutput: async (id, expected) => {
+        artifactId(id);
+        const path = indexPath(id);
+        let record: { metadata?: ArtifactMetadata; contentPath?: string } | undefined;
+        try {
+          record = JSON.parse(await readFile(path, "utf8")) as { metadata?: ArtifactMetadata; contentPath?: string };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        const metadata = record?.metadata ?? expected;
+        if (metadata.artifactId !== id || metadata.kind !== "agent-output" || metadata.projectId !== expected.projectId
+          || metadata.runId !== expected.runId || metadata.publicationId !== expected.publicationId
+          || metadata.publicationState !== "prepared") {
+          throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Only the matching prepared Artifact publication can be aborted.");
+        }
+        const contentPath = record?.contentPath ?? blobPath(expected);
+        if (contentPath !== blobPath(expected)) throw new TeamArtifactError("ARTIFACT_METADATA_INVALID", "Artifact metadata failed path validation.");
+        try {
+          const content = new Uint8Array(await readFile(contentPath));
+          if (createHash("sha256").update(content).digest("hex") !== expected.contentDigest) {
+            throw new TeamArtifactError("ARTIFACT_INTEGRITY_FAILED", "Prepared Artifact content does not match its publication metadata.");
+          }
+          await rm(contentPath, { force: true });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        await rm(path, { force: true });
       },
       get: async (id) => {
         artifactId(id);

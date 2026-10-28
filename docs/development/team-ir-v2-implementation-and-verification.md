@@ -31,7 +31,7 @@
 | Team IR v2 设计方案 | 已冻结为实施基线 | `docs/development/team-ir-handoff-v2-design.md`；阶段 0 语义复核完成，包含并行 Review、A2A 暂停/兄弟调用、重试/deadline 与失败竞态决策 |
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
 | v2 Schema / Compiler / Runtime | 部分通过 | 阶段 1 Schema/Compiler 静态合同已通过设计 §10 阶段门审计（86/86 聚焦测试）；阶段 2 Runtime 仍部分通过。多个独立 Run-scope `all_of`/`quorum_of` Join、单 Loop-scope quorum、无 Loop/Join 的 Run-entry parallel fan-out + 多独立 Review gate、Run-scope all-of Join 目标 Review 和 Artifact publication intent/CAS/恢复协议已支持。一般 Loop 多 lineage、更多 Review/Join 组合、跨进程活动调用和 prepared Artifact 物理回收仍未闭合，见追溯矩阵 |
-| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、自由布局端口画布、多 input/output port 的 Schema/Artifact slot 编辑、Review gate 创建/编辑和高级 JSON 同步均有浏览器证据。引用中的 Agent/port 删除会阻止并说明原因；完整生产发布浏览器矩阵、Review 身份 UAT、诊断全矩阵、Run input Schema 表单和复杂条件/映射的渐进式结构化编辑仍未闭合 |
+| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、自由布局端口画布、多 input/output port 的 Schema/Artifact slot 编辑、Review gate 创建/编辑、高级 JSON 同步及 Simulation Run input 基础标量表单均有浏览器证据。引用中的 Agent/port 删除会阻止并说明原因；完整生产发布浏览器矩阵、Review 身份 UAT、诊断全矩阵、复杂条件/映射的渐进式结构化编辑仍未闭合 |
 | v2 端到端或发布验收 | 部分通过 | 真实 Docker/OpenCode resolver 已完成 Release Gate、Artifact Evidence、专家会诊、条件会签、结构化辩论、Maker-Checker reject/revise/approve 和软件交付 fan-out/Join 的 Project Task。Software Team adapter /3 Project Task 已成功完成且结果写入；此前 adapter /2 两次失败记录保留作历史，见本日 UAT 记录。Artifact 输入固定快照、同 Run Review 恢复、幂等重放与重启查询已有真实 UAT。Maker-Checker 使用本机 OS principal，不代表独立审核用户/外部身份服务。Artifact Evidence provenance、远端 A2A 和全部经典场景矩阵仍未通过 |
 
 ## 3. 实施与验收状态
@@ -43,7 +43,7 @@
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 通过；阶段 1 审计及 86/86 聚焦测试确认硬门闭合，见 2026-10-29 阶段 1 追溯复核记录 |
 | 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑不能算支持；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 部分通过；独立 Run-scope 多 Join、单 Loop/Loop-scope quorum、Run-entry fan-out + 多 Review、Run-scope all-of Join 目标 Review 和 Artifact publication intent/commit 恢复已支持；其它 Review/Join/Loop 组合、一般 Loop 多 lineage、prepared Artifact 回收和跨进程活动调用恢复仍未闭合 |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；生产 resolver 下完成保存、发布、Project Task 和 Review 用户流程 | 进行中；自由布局端口画布和多端口合同编辑已有移动端浏览器合同；Review 用户流程和完整生产发布浏览器矩阵未闭合 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；生产 resolver 下完成保存、发布、Project Task 和 Review 用户流程 | 进行中；自由布局端口画布、多端口合同、Review gate 编辑和 Simulation Run input 基础标量表单已有浏览器合同；Review 用户流程和完整生产发布浏览器矩阵未闭合 |
 | 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；旧 Team 配置不迁移、不覆盖无关路径 | 进行中；默认创建、fork、Case/template 已切 v2；无调用方旧 Team Author/Run 模块已清理；standalone OGS System/CLI 有独立用例而保留；远端 A2A 真实 UAT 未闭合 |
 
 ### 阶段门
@@ -790,6 +790,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 真实远端 A2A UAT | 外部阻塞，未运行 | 用户确认暂无兼容远端服务；本地官方 SDK/HTTP 与 Fake A2A 合同测试不代替 HTTPS 远端。 | 解除条件：提供 HTTPS Agent Card、认证配置名或本机凭据路径，以及能处理 Team IR JSON/Artifact 的测试 Agent。继续保留阻塞，不标成通过 |
 
 **阶段结论：** 阶段 0、1 通过；阶段 2 部分通过，Artifact publication recovery 和 Run-scope all-of Join target Review 已进入受限支持；一般 Loop 多 lineage、其它 Review/Join 混合拓扑、prepared 孤儿回收和跨进程活动调用仍未闭合。阶段 3 仍进行中，自由布局端口画布、多端口合同和 Review gate 结构化编辑切片通过，但完整生产发布/审核身份/诊断矩阵、Run input 表单和复杂条件/映射作者体验未闭合。阶段 4 仍进行中，八个 fixture 的 Fake Runtime 追溯通过，真实 Sandbox 全矩阵和远端 A2A 仍未完成。`team-ir-v2-studio-authoring-proposal.md` 继续等待本台账所有必需阶段门清零。
+
+### 2026-10-29：Simulation Run input 表单与 Artifact 失败清理
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 3：Simulation Run input Schema 表单 | 通过（基础标量与 JSON 回退浏览器合同） | `apps/team-site/public/app/views/app.js` 按 `runInput.dataSchema` 为简单 object Schema 生成 string/number/integer/boolean 输入、默认值和长度/数值边界校验；遇到 `$ref`、复杂类型或不支持的 Schema 关键字时保留 JSON 输入。高级合同变更刷新表单时保留已有值和未知字段；Simulation 使用用户输入并在启动前校验必填项。浏览器用例覆盖控件、复杂 Schema 回退、未知字段保留、保存重开和一次成功 Simulation。初次回归在 Simulation 发请求前失败，原因是未声明的 `maxlength` DOM 属性值 `-1` 被当作长度限制；修复为只在属性实际存在时检查。`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`：1/1 | JSON Schema 的复杂组合依旧使用 JSON 编辑；生产 resolver 下完整发布/Project Task 浏览器流程和 Review 身份仍未闭合 |
+| 阶段 2：Artifact prepared 输出在可观测失败时清理并收敛 | 通过（当前 Runtime 可处理失败路径） | `src/team-ir/artifact-store.ts` 增加 owner/publication 校验的 `abortOutput`，File backend 删除匹配的 prepared index/blob；`put` 失败清除内存 metadata。Runtime 遇到非法 Artifact、必需 Artifact 缺失、活跃预算超限或 Run 完成 CAS 未提交时清理已返回的 prepared refs；Artifact 合同错误以稳定 code 失败 Run。`tests/team-ir-artifact-store.test.mjs` 覆盖幂等 abort、不能删除已提交输出/Run input，以及 File backend index/blob 中断残留清理；`tests/team-ir-runtime.test.mjs` 验证先准备一个有效槽、后遇无效槽时 Run 以 `ARTIFACT_OUTPUT_INVALID` 失败且无 Artifact 泄漏。`pnpm build && node --test tests/team-ir-runtime.test.mjs tests/team-ir-artifact-store.test.mjs`：72/72 | 进程在 Run intent 持久化前崩溃仍可能留下不可见 prepared 文件；没有对已存在孤儿的全局扫描/回收。跨 ArtifactStore/RunStore 仍非原子事务 |
+| 本轮完整回归 | 通过（保留一次未复现失败） | `pnpm build && node --test tests/team-ir-runtime.test.mjs tests/team-ir-artifact-store.test.mjs`：72/72；`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`：1/1；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`：350 项，349 通过、0 失败、1 项 opt-in Docker skip；全仓 `pnpm test` 首次 944 项中 942 通过、1 失败、1 Windows-only skip，退出码 1（失败标题未包含在返回片段）；完整日志复跑 944 项中 943 通过、0 失败、1 Windows-only skip，退出码 0。首次全仓失败原因未查明，保留为未复现竞态/环境风险；所有命令均在本机 macOS 执行 | opt-in Docker skip 不代表真实 UAT 通过；真实 Sandbox 和远端 A2A 阻塞仍在 |
+| 真实 Sandbox / A2A 前置条件复查 | 受阻 / 未运行 | 本轮 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 未设置；`timeout 6 docker ps` 退出 124；OpenCode serve `http://127.0.0.1:4096/global/health` 无认证返回 401。用户此前确认暂无兼容远端 A2A 测试服务 | Docker daemon 响应后按 setup 文档运行真实 Project Task UAT；远端 A2A 解除条件仍为 HTTPS Agent Card、认证配置名或本机凭据路径、兼容的测试 Agent |
+
+**本轮阶段结论：** Run input 表单基础合同及 Artifact 可观测失败清理切片通过；阶段 2 仍有 Artifact 进程崩溃孤儿回收、活动调用恢复及受限拓扑以外的语义缺口；阶段 3 仍缺生产 resolver/Review 完整用户流程和完整发布浏览器验收；阶段 4 仍缺真实 Sandbox 全经典场景 UAT 与远端 A2A。完整回归已复跑通过，但一次失败未复现。主台账未清零，proposal 暂不进入实施。
 
 ## 6. Codex / 实施代理工作约定
 
