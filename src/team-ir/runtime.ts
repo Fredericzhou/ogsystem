@@ -195,6 +195,9 @@ function retryable(policy: Record<string, unknown>, error: unknown): boolean {
 }
 
 export class TeamRuntime {
+  private readonly activeCancellationSignals = new Map<string, () => void>();
+  private readonly failureCancellationRuns = new Map<string, Promise<void>>();
+
   constructor(private readonly args: { store: TeamRunStore; clock: TeamClock; bindings: Record<string, TeamBinding>; artifactStore?: ArtifactStore; reviewRuntime?: TeamReviewRuntime }) {}
 
   async getReview(runId: string, reviewId: string): Promise<TeamReviewRecord> {
@@ -367,8 +370,26 @@ export class TeamRuntime {
           })
           : undefined;
         const call = { runId, handoffId, agentId, bindingId, attempt, input: mapped, ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId };
-        const result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined));
+        let rejectCancelled!: (error: TeamBindingError) => void;
+        const cancellation = new Promise<never>((_resolve, reject) => { rejectCancelled = reject; });
+        this.activeCancellationSignals.set(invocationId, () => rejectCancelled(new TeamBindingError("Binding cancelled after a sibling failure", "cancelled")));
+        let result: TeamBindingResult;
+        try {
+          result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined), cancellation);
+        } finally {
+          this.activeCancellationSignals.delete(invocationId);
+        }
         const finishedAt = this.args.clock.now();
+        const afterBinding = await this.args.store.load(runId);
+        if (afterBinding?.terminalIntent === "failed" || afterBinding?.status === "failing") {
+          return this.update(runId, (record) => {
+            const state = record.invocations[invocationId];
+            if (state.status !== "running") return;
+            state.status = "failed";
+            state.error = "SIBLING_FAILURE_CANCELLED";
+            event(record, `${invocationId}:late-completion-ignored`, "invocation.late_completion_ignored", finishedAt, { reason: "sibling_failure" });
+          });
+        }
         if (result.kind === "input-required") {
           return this.update(runId, (record) => {
             if (record.terminalIntent === "failed" || record.status === "failing") return;
@@ -384,6 +405,16 @@ export class TeamRuntime {
           assertValidTeamPayload(plan, { kind: "agent-output", agentId, portId: result.output.event }, result.output.data);
         } catch (error) {
           return this.fail(runId, invocationId, "AGENT_OUTPUT_SCHEMA_INVALID");
+        }
+        const beforeArtifactRegistration = await this.args.store.load(runId);
+        if (beforeArtifactRegistration?.terminalIntent === "failed" || beforeArtifactRegistration?.status === "failing") {
+          return this.update(runId, (record) => {
+            const state = record.invocations[invocationId];
+            if (state.status !== "running") return;
+            state.status = "failed";
+            state.error = "SIBLING_FAILURE_CANCELLED";
+            event(record, `${invocationId}:late-completion-ignored`, "invocation.late_completion_ignored", finishedAt, { reason: "sibling_failure" });
+          });
         }
         const registeredArtifacts: Record<string, { artifactId: string; mediaType: string }> = {};
         if (result.output.artifacts !== undefined) {
@@ -437,7 +468,9 @@ export class TeamRuntime {
         });
         if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
         const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
-        const canRetry = attempt < Number(retry.maxAttempts) && retryable(retry, error) && !(error instanceof TeamBindingError && error.outcomeUnknown);
+        const failureIntentWon = (await this.args.store.load(runId))?.terminalIntent === "failed";
+        const canRetry = !failureIntentWon && attempt < Number(retry.maxAttempts) && retryable(retry, error)
+          && !(error instanceof TeamBindingError && (error.outcomeUnknown || error.failureClass === "cancelled"));
         if (canRetry) {
           const delay = retryDelayMs(retry.backoff as Record<string, unknown>, attempt - 1);
           if (this.args.clock.now() + delay < deadlineAt) {
@@ -517,6 +550,20 @@ export class TeamRuntime {
         return route?.mode === "parallel_fanout";
       }))) {
       return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_REVIEW_TOPOLOGY_UNSUPPORTED");
+    }
+
+    const routes = Array.isArray(orchestration.routes) ? orchestration.routes.filter(isRecord) : [];
+    const fanoutRoutes = routes.filter((route) => route.mode === "parallel_fanout");
+    if (fanoutRoutes.length > 0 && loops.length === 0 && reviews.length === 0) {
+      const fanout = fanoutRoutes.length === 1 ? fanoutRoutes[0] : undefined;
+      const targets = fanout && Array.isArray(fanout.handoffIds)
+        ? fanout.handoffIds.map((id) => plan.handoffsById.get(String(id)))
+        : [];
+      const supportedFanout = isRecord(fanout?.from) && (fanout.from.kind === "run" || fanout.from.kind === "agent")
+        && targets.length > 1 && targets.every((handoff) => isRecord(handoff?.to) && handoff.to.kind === "agent");
+      if (!supportedFanout) {
+        return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_FAIL_FAST_TOPOLOGY_UNSUPPORTED");
+      }
     }
 
     if (loops.length > 1 || loops.some((loop) => {
@@ -699,6 +746,9 @@ export class TeamRuntime {
           result = current;
         }
         if (result.status === "paused_input_required") await this.cancelSiblingInvocations(runId, `${runId}:${handoffId}`);
+        if (result.status === "failing" && (await this.args.store.load(runId))?.terminalIntent === "failed") {
+          await this.cancelActiveInvocationsAfterFailure(runId, `${runId}:${handoffId}`);
+        }
         if (quorumJoin && result.status === "running") {
           const completed = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId);
           if (completed?.status === "completed" && completed.output?.kind === "completed") {
@@ -997,7 +1047,47 @@ export class TeamRuntime {
     }
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, cancel?: () => Promise<boolean | undefined>): Promise<T> {
+  private async cancelActiveInvocationsAfterFailure(runId: string, failedInvocationId: string): Promise<void> {
+    const existing = this.failureCancellationRuns.get(runId);
+    if (existing) return existing;
+    const cancellation = this.cancelActiveInvocationsAfterFailureOnce(runId, failedInvocationId);
+    this.failureCancellationRuns.set(runId, cancellation);
+    try {
+      await cancellation;
+    } finally {
+      if (this.failureCancellationRuns.get(runId) === cancellation) this.failureCancellationRuns.delete(runId);
+    }
+  }
+
+  private async cancelActiveInvocationsAfterFailureOnce(runId: string, failedInvocationId: string): Promise<void> {
+    const snapshot = await this.args.store.load(runId);
+    if (!snapshot || snapshot.terminalIntent !== "failed") return;
+    for (const invocation of Object.values(snapshot.invocations)) {
+      if (invocation.id === failedInvocationId || invocation.status !== "running") continue;
+      const binding = this.args.bindings[invocation.bindingId];
+      let confirmed = false;
+      if (binding?.cancel) {
+        try {
+          confirmed = await binding.cancel({
+            runId,
+            handoffId: invocation.handoffId,
+            agentId: invocation.agentId,
+            bindingId: invocation.bindingId,
+            attempt: invocation.attempt,
+            input: undefined,
+            idempotencyKey: invocation.id
+          });
+        } catch { confirmed = false; }
+      }
+      await this.update(runId, (record) => {
+        event(record, `${invocation.id}:sibling-failure-cancel:${confirmed ? "confirmed" : "unconfirmed"}`, confirmed
+          ? "invocation.cancelled_after_sibling_failure" : "invocation.cancel_unconfirmed_after_sibling_failure", this.args.clock.now(), { failedInvocationId });
+      });
+      if (confirmed) this.activeCancellationSignals.get(invocation.id)?.();
+    }
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, cancel?: () => Promise<boolean | undefined>, cancellation?: Promise<never>): Promise<T> {
     const controller = new AbortController();
     let timedOut = false;
     const timeout = this.args.clock.sleep(timeoutMs, controller.signal).then(() => {
@@ -1005,7 +1095,7 @@ export class TeamRuntime {
       throw new TeamBindingError("Binding attempt timed out", "timeout");
     });
     try {
-      return await Promise.race([promise, timeout]);
+      return await Promise.race(cancellation ? [promise, timeout, cancellation] : [promise, timeout]);
     } catch (error) {
       if (timedOut) {
         let confirmed = false;
