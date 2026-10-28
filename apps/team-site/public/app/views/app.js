@@ -4478,6 +4478,10 @@ function renderTaskRunDetail(detail, run, eventsPayload) {
   mountRunTeamGraph(detail.dataset.teamVersionId || run.teamVersionId || run.task?.teamVersionId, eventsPayload, detail.dataset.taskId || run.taskId);
   detail.dataset.runStatus = status;
   detail.innerHTML = `<div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(status))}</strong><span class="task-run-mode-label run-mode-chip">${mode === "sandbox" ? "隔离运行" : "流程预览"}</span><span class="task-run-progress-label">${progress}%</span></div>${workspaceUrl ? `<p class="task-run-workspace-link"><a class="text-button" href="${esc(workspaceUrl)}"${/^https?:\/\//.test(workspaceUrl) ? ' target="_blank" rel="noopener"' : ""}>查看全流程</a></p>` : ""}<div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div><ul class="task-run-events">${events || "<li><span>暂无事件摘要</span></li>"}</ul>${failure ? `<p class="task-run-failure" role="status">${esc(failure)}</p>` : ""}${summary ? `<section class="task-run-output"><strong>结果摘要</strong><pre>${esc(summary)}</pre></section>` : ""}<section class="task-run-output"><strong>完整结果</strong>${fullResultHtml || `<button class="text-button" type="button" data-load-run-result>读取完整结果</button>`}</section><p class="form-status task-run-error" role="status" aria-live="polite"></p>`;
+  if ((run.teamIrSemanticDigest || run.owner?.teamIrSemanticDigest) && detail.dataset.taskId
+    && run.runId && run.runId === detail.dataset.runId) {
+    void mountTeamIrRunReviews(detail, run);
+  }
   detail.querySelector("[data-load-run-result]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -4494,6 +4498,98 @@ function renderTaskRunDetail(detail, run, eventsPayload) {
       button.disabled = false;
     }
   });
+}
+
+const teamIrRunReviewPanels = new Map();
+async function mountTeamIrRunReviews(detail, run) {
+  const orchestration = run.plan?.team?.orchestration || run.plan?.orchestration;
+  const reviewDefinitions = Array.isArray(orchestration?.reviews) ? orchestration.reviews : [];
+  if (!reviewDefinitions.length) return;
+  const key = `${detail.dataset.projectId}/${detail.dataset.taskId}/${run.runId}`;
+  let cached = teamIrRunReviewPanels.get(key);
+  if (cached) {
+    if (!cached.panel.isConnected) detail.append(cached.panel);
+    if (cached.loading) await cached.loading;
+    return;
+  }
+  const panel = document.createElement("section");
+  panel.className = "task-run-output team-ir-run-reviews";
+  panel.dataset.teamIrRunReviews = "";
+  panel.innerHTML = '<strong>Team IR v2 人工审核</strong><p class="form-status" role="status" aria-live="polite">正在读取审核状态...</p><div data-team-ir-review-list></div>';
+  detail.append(panel);
+  cached = { panel, loading: null };
+  teamIrRunReviewPanels.set(key, cached);
+  const status = panel.querySelector('[role="status"]');
+  const list = panel.querySelector("[data-team-ir-review-list]");
+  const base = `/api/v1/projects/${encodeURIComponent(detail.dataset.projectId)}/tasks/${encodeURIComponent(detail.dataset.taskId)}/runs/${encodeURIComponent(run.runId)}/team-ir-reviews`;
+  try {
+    cached.loading = Promise.all(reviewDefinitions.map(async (definition) => {
+      if (!definition?.id) return null;
+      const response = await pageFetch(`${base}/${encodeURIComponent(definition.id)}`);
+      const payload = await response.json();
+      if (response.status === 404 || response.status === 409 && /TEAM_REVIEW_NOT_PENDING/.test(payload.error || "")) return null;
+      if (!response.ok) throw new Error(payload.error || "Team IR v2 审核状态读取失败");
+      return { ...payload, definition };
+    }));
+    const reviews = await cached.loading;
+    if (!panel.isConnected || detail.dataset.selectedRunId && detail.dataset.selectedRunId !== run.runId) return;
+    const pending = reviews.filter(Boolean);
+    if (!pending.length) { panel.remove(); teamIrRunReviewPanels.delete(key); return; }
+    status.textContent = "存在待处理的 v2 审核请求。";
+    list.innerHTML = pending.map((review, index) => `<form data-team-ir-review="${index}" data-review-id="${esc(review.reviewId)}"><h3>${esc(review.reviewId)}</h3><p>激活时间：${esc(review.activatedAt || "未知")} · 截止时间：${esc(review.deadlineAt || "未设置")} · 修订 ${esc(review.revision)}</p><label>审核决定<select name="decision"><option value="approve">通过</option><option value="reject">拒绝并反馈</option></select></label><label data-review-feedback hidden>拒绝反馈（JSON 对象）<textarea name="feedback" rows="4" placeholder='{"comments":"请补充……"}'></textarea></label><p class="form-status" data-review-status role="status" aria-live="polite"></p><button class="primary-button" type="submit">提交 v2 审核</button></form>`).join("");
+    list.querySelectorAll("form[data-team-ir-review]").forEach((form, index) => {
+      const review = pending[index];
+      const decision = form.elements.decision;
+      const feedbackField = form.querySelector("[data-review-feedback]");
+      const feedback = form.elements.feedback;
+      decision.addEventListener("change", () => { feedbackField.hidden = decision.value !== "reject"; feedback.required = decision.value === "reject"; });
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const resultStatus = form.querySelector("[data-review-status]");
+        let feedbackValue;
+        if (decision.value === "reject") {
+          try { feedbackValue = JSON.parse(feedback.value); }
+          catch { resultStatus.textContent = "反馈必须是有效 JSON 对象。"; return; }
+          if (!feedbackValue || typeof feedbackValue !== "object" || Array.isArray(feedbackValue)) { resultStatus.textContent = "反馈必须是 JSON 对象。"; return; }
+        }
+        const button = form.querySelector("button[type=submit]");
+        button.disabled = true;
+        resultStatus.textContent = "正在提交...";
+        try {
+          const response = await pageFetch(`${base}/${encodeURIComponent(review.reviewId)}`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ decision: decision.value, revisionToken: review.revisionToken, idempotencyKey: createUuid(), ...(feedbackValue ? { feedback: feedbackValue } : {}) })
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            if (/REVIEW_(?:CONFLICT|STALE_TOKEN)/.test(payload.error || "")) {
+              resultStatus.textContent = "审核状态已变化，当前修订令牌已过期。";
+              const refresh = document.createElement("button");
+              refresh.type = "button";
+              refresh.className = "text-button";
+              refresh.textContent = "重新读取审核状态";
+              refresh.addEventListener("click", async () => {
+                teamIrRunReviewPanels.delete(key);
+                await mountTeamIrRunReviews(detail, run);
+              }, { once: true });
+              resultStatus.append(" ", refresh);
+            } else resultStatus.textContent = payload.error || "审核提交失败。";
+            button.disabled = false;
+            return;
+          }
+          resultStatus.textContent = `审核已记录：${payload.status}（修订 ${payload.revision}）。`;
+          form.querySelectorAll("input, select, textarea, button").forEach((control) => { control.disabled = true; });
+        } catch (error) {
+          if (!isAbort(error)) resultStatus.textContent = error.message || "审核提交失败。";
+          button.disabled = false;
+        }
+      });
+    });
+  } catch (error) {
+    if (!isAbort(error) && panel.isConnected) status.textContent = error.message || "Team IR v2 审核状态读取失败。";
+  } finally {
+    cached.loading = null;
+  }
 }
 
 function renderTaskRunError(detail, error) {
@@ -5388,7 +5484,7 @@ async function init() {
   if (!isProjectRoute() && $("#task-input")) selectCase(state.selected);
   updateCount();
 }
-export { openDrawer, closeDrawer, openTaskReview };
+export { openDrawer, closeDrawer, openTaskReview, mountTeamIrRunReviews };
 
 export function bootstrap() {
   return init().catch((error) => { document.body.innerHTML = `<main class="fatal-error">${esc(error.message)}</main>`; });

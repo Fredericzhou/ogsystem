@@ -331,6 +331,18 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 本轮聚焦回归：`pnpm build && node --test tests/team-ir-index.test.mjs tests/team-ir-schema-resolver.test.mjs apps/team-site/tests/team-ir-v2-resolvers.test.mjs apps/team-site/tests/team-ir-review-api.test.mjs apps/team-site/tests/team-ir-studio-browser.test.mjs`：20/20，退出码 0。新增该批用例后重跑 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0；`pnpm test`：856 tests，855 pass、0 fail、1 Windows-only skip，退出码 0。
 阶段结论：阶段 0 通过；阶段 1 部分通过；阶段 2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受 resolver/模型认证条件阻塞。
 
+### 2026-10-28：结果竞态、活动调用恢复与 v2 Review 浏览器流程
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 1：`executionPolicy.resultMode` 缺失/null 诊断 | 通过（Schema 字段合同） | `tests/team-ir-schema.test.mjs` 增加字段缺失与显式 `null` 反例，均断言 `IR_SCHEMA_INVALID` 和 `/executionPolicy/resultMode`；与 `tests/team-ir-result-mode.test.mjs` 合并聚焦验证 12/12 | 阶段 1 其他 Schema/映射/闭包矩阵仍未闭合 |
+| 阶段 2：终态意图与 Result 提交竞态 | 通过（RunStore CAS 窄合同） | `src/team-ir/runtime.ts` Result mutator 在每次 CAS 尝试中要求 Run 仍为 running 且无 terminal intent；`tests/team-ir-runtime.test.mjs` 通过受控 CAS 让取消先赢，断言 Result、`resultWritten`、`run.result.written` 均未提交。与 File Run Store 聚焦测试 33/33 | Result 记录与 `run.completed` 仍分两次 CAS；未覆盖进程崩溃/磁盘故障及 Artifact Store 与 RunStore 跨存储事务 |
+| 阶段 2：活动 Binding 跨进程恢复 | 通过（明确 fail-closed 恢复合同） | `tests/team-ir-runtime.test.mjs` 将活动 invocation 恢复改为 FileTeamRunStore 第二实例：尝试 cancel 后以 `failed/outcomeUnknown` 结算，Binding 调用数为 0；第三实例重入读取相同终态且不重复 cancel/invoke；`pnpm build`、`node --test tests/team-ir-runtime.test.mjs` 29/29 | 活动 invocation 不自动续接；cancel 缺失/抛错也保持 unknown/fail closed，不提供外部副作用 exactly-once |
+| 阶段 3：Team IR v2 Review 浏览器流程 | 部分通过（Run 详情审核 UI 切片） | `apps/team-site/public/app/views/app.js` 在匹配冻结 Team digest 的当前 Run 详情内读取 pending v2 Review；独立使用 v2 Review API、revisionToken 和随机幂等 key，不提交 reviewer 身份；支持 approve/reject、JSON feedback 校验、409 stale 提示与重读。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 覆盖 pending、客户端 JSON 拒绝、服务端 feedback 拒绝、合法 reject payload、无 reviewerId 和 stale 状态；浏览器 1/1 | 生产 Review resolver、Task 状态映射、checkpoint resume 调度桥和真实身份集成仍未配置/实现；本项是 Fake/API UI 合同，不是生产人工审核 UAT |
+
+本轮局部验证：`pnpm build`；`node --test tests/team-ir-runtime.test.mjs` 29/29；Result/File Run Store 测试 33/33；`node --test tests/team-ir-schema.test.mjs tests/team-ir-result-mode.test.mjs` 12/12；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；Runtime/Store/Schema/Review/Browser 综合聚焦套件 52/52。集成后 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0；`pnpm test`：857 tests，856 pass、0 fail、1 Windows-only skip，退出码 0。
+阶段结论：阶段 0 通过；阶段 1、2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受 resolver/模型认证条件阻塞。
+
 ### YYYY-MM-DD：阶段 / 任务标识
 
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |

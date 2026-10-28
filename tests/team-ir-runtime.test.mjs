@@ -275,6 +275,47 @@ test("executeRun schedules the classic software Team through fanout, Join, and o
   assert.equal((await store.load("classic-run")).status, "completed");
 });
 
+test("a cancellation intent that wins the Result CAS race prevents Result commit", async () => {
+  const backing = new MemoryTeamRunStore();
+  let reachedResultCommit;
+  const resultCommitReached = new Promise((resolve) => { reachedResultCommit = resolve; });
+  let releaseResultCommit;
+  const resultCommitGate = new Promise((resolve) => { releaseResultCommit = resolve; });
+  let paused = false;
+  const store = {
+    create: (record) => backing.create(record),
+    load: (runId) => backing.load(runId),
+    async compareAndSet(runId, expectedRevision, record) {
+      if (record.resultWritten && !paused) {
+        paused = true;
+        reachedResultCommit();
+        await resultCommitGate;
+      }
+      return backing.compareAndSet(runId, expectedRevision, record);
+    }
+  };
+  const runtime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { answer: "late" } } }; } } }
+  });
+  const value = team();
+  value.handoffs.push({ id: "result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } });
+  const plan = compileTeamIr(value);
+  await runtime.createRun(plan, { runId: "result-cancel-race", task: "race", input: { prompt: "check" } });
+  const execution = runtime.executeRun(plan, "result-cancel-race");
+  await resultCommitReached;
+  const cancelled = await runtime.cancel("result-cancel-race");
+  assert.equal(cancelled.status, "cancelling");
+  releaseResultCommit();
+  await assert.rejects(execution, /Cannot write Run Result in cancelling/);
+  const persisted = await store.load("result-cancel-race");
+  assert.equal(persisted.status, "cancelling");
+  assert.equal(persisted.resultWritten, undefined);
+  assert.equal(persisted.result, undefined);
+  assert.equal(persisted.events.some((item) => item.type === "run.result.written"), false);
+});
+
 test("Join tracks selected and skipped Handoffs separately when candidates share one source endpoint", async () => {
   const value = team();
   const agent = (id, inputSchema, outputSchema) => ({
@@ -882,13 +923,17 @@ test("active Run re-entry without a scheduler checkpoint is rejected without sid
   assert.equal(calls, 0);
 });
 
-test("scheduler recovery cancels an active invocation and settles an unknown outcome without replay", async () => {
+test("FileTeamRunStore recovery attempts cancel but keeps an active invocation outcome unknown without replay", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-active-invocation-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
   let cancels = 0;
   let calls = 0;
-  const { runtime, store } = setup({
+  const store = new FileTeamRunStore(root);
+  const bindings = { "binding:worker": {
     async invoke() { calls += 1; throw new Error("must not replay unknown invocation"); },
-    async cancel() { cancels += 1; return true; }
-  });
+    async cancel(input) { cancels += 1; assert.equal(input.idempotencyKey, "unknown-run:start"); return true; }
+  } };
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
   const plan = compileTeamIr(team());
   await runtime.createRun(plan, { runId: "unknown-run", task: "recover", input: { prompt: "recover" } });
   await runtime.claim("unknown-run", plan.compiledPlanDigest);
@@ -901,11 +946,18 @@ test("scheduler recovery cancels an active invocation and settles an unknown out
   claimed.revision += 1;
   assert.equal(await store.compareAndSet("unknown-run", claimed.revision - 1, claimed), true);
 
-  const result = await runtime.executeRun(plan, "unknown-run");
+  const recoveredRuntime = new TeamRuntime({ store: new FileTeamRunStore(root), clock: { now: () => 500, sleep: () => new Promise(() => {}) }, bindings });
+  const result = await recoveredRuntime.executeRun(plan, "unknown-run");
   assert.equal(result.status, "failed");
+  assert.equal(result.terminalIntent, "failed");
   assert.equal(result.invocations["unknown-run:start"].status, "failed");
   assert.equal(result.invocations["unknown-run:start"].outcomeUnknown, true);
   assert.equal(result.invocations["unknown-run:start"].error, "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART");
+  assert.equal(cancels, 1);
+  assert.equal(calls, 0);
+  assert.equal(result.events.some((entry) => entry.type === "binding.outcome_unknown" && entry.data?.reason === "scheduler_recovery_found_active_invocation"), true);
+  const reopened = await new TeamRuntime({ store: new FileTeamRunStore(root), clock: { now: () => 600, sleep: () => new Promise(() => {}) }, bindings }).executeRun(plan, "unknown-run");
+  assert.deepEqual(reopened, result);
   assert.equal(cancels, 1);
   assert.equal(calls, 0);
 });

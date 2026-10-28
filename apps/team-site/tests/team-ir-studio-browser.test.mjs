@@ -262,6 +262,58 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(advancedReopened.teamIR.bindings, advancedIr.bindings);
     const advancedLayout = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
     assert.ok(advancedLayout.content <= advancedLayout.viewport + 1, `advanced contract editor overflows mobile viewport: ${JSON.stringify(advancedLayout)}`);
+
+    const v2ReviewRouteCalls = [];
+    await page.route("**/api/v1/projects/project-v2/tasks/task-v2/runs/run-v2/team-ir-reviews/review-draft", async (route) => {
+      const request = route.request();
+      v2ReviewRouteCalls.push({ method: request.method(), body: request.postDataJSON() });
+      if (request.method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+          projectId: "project-v2", taskId: "task-v2", runId: "run-v2", reviewId: "review-draft",
+          revision: 3, revisionToken: "trusted-revision-token", activatedAt: "2026-10-28T00:00:00.000Z",
+          deadlineAt: "2026-10-28T01:00:00.000Z", status: "pending"
+        }) });
+      } else if (request.postDataJSON()?.feedback?.comments === "valid feedback") {
+        await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "REVIEW_STALE_TOKEN: review changed" }) });
+      } else {
+        await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "REVIEW_FEEDBACK_INVALID: comments required" }) });
+      }
+    });
+    await page.evaluate(async () => {
+      const { mountTeamIrRunReviews } = await import("/app/views/app.js");
+      const detail = document.createElement("div");
+      detail.dataset.projectId = "project-v2";
+      detail.dataset.taskId = "task-v2";
+      detail.dataset.runId = "run-v2";
+      detail.dataset.selectedRunId = "run-v2";
+      document.body.append(detail);
+      window.__teamIrReviewDetail = detail;
+      await mountTeamIrRunReviews(detail, {
+        runId: "run-v2", owner: { teamIrSemanticDigest: "f".repeat(64) },
+        plan: { team: { orchestration: { reviews: [{ id: "review-draft" }] } } }
+      });
+    });
+    await page.locator("[data-team-ir-run-reviews] h3").getByText("review-draft").waitFor();
+    const reviewForm = page.locator('[data-team-ir-review="0"]');
+    assert.equal(await reviewForm.locator("[name=decision]").inputValue(), "approve");
+    await reviewForm.locator("[name=decision]").selectOption("reject");
+    await reviewForm.locator("[name=feedback]").fill("not-json");
+    await reviewForm.locator("button[type=submit]").click();
+    await reviewForm.getByText("反馈必须是有效 JSON 对象。").waitFor();
+    assert.equal(v2ReviewRouteCalls.length, 1, "invalid feedback must not be sent to the server");
+    await reviewForm.locator("[name=feedback]").fill("{}");
+    await reviewForm.locator("button[type=submit]").click();
+    await reviewForm.getByText(/REVIEW_FEEDBACK_INVALID/).waitFor();
+    await reviewForm.locator("[name=feedback]").fill('{"comments":"valid feedback"}');
+    await reviewForm.locator("button[type=submit]").click();
+    await reviewForm.getByText(/修订令牌已过期/).waitFor();
+    assert.deepEqual(v2ReviewRouteCalls.map((call) => call.method), ["GET", "POST", "POST"]);
+    assert.equal(v2ReviewRouteCalls[1].body.decision, "reject");
+    assert.deepEqual(v2ReviewRouteCalls[1].body.feedback, {});
+    assert.equal(v2ReviewRouteCalls[1].body.revisionToken, "trusted-revision-token");
+    assert.match(v2ReviewRouteCalls[1].body.idempotencyKey, /^[0-9a-f-]{36}$/i);
+    assert.equal(Object.hasOwn(v2ReviewRouteCalls[1].body, "reviewerId"), false);
+    assert.equal(v2ReviewRouteCalls[2].body.feedback.comments, "valid feedback");
     assert.deepEqual(pageErrors, []);
   } finally {
     await browser?.close();

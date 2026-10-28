@@ -70,6 +70,8 @@ test("Run input, result, and execution policy contracts accept complete shapes a
     { pointer: "/runResult/dataSchema", mutate: (value) => { value.runResult.dataSchema = 1; } },
     { pointer: "/runResult/artifactSlots", mutate: (value) => { value.runResult.artifactSlots = null; } },
     { pointer: "/executionPolicy/resultMode", mutate: (value) => { value.executionPolicy.resultMode = "optional"; } },
+    { pointer: "/executionPolicy/resultMode", mutate: (value) => { delete value.executionPolicy.resultMode; } },
+    { pointer: "/executionPolicy/resultMode", mutate: (value) => { value.executionPolicy.resultMode = null; } },
     { pointer: "/executionPolicy/activeExecutionBudgetMs", mutate: (value) => { delete value.executionPolicy.activeExecutionBudgetMs; } },
     { pointer: "/executionPolicy/activeExecutionBudgetMs", mutate: (value) => { value.executionPolicy.activeExecutionBudgetMs = "1000"; } },
     { pointer: "/executionPolicy/extra", mutate: (value) => { value.executionPolicy.extra = true; } }

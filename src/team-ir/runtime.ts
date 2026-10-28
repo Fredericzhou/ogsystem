@@ -491,7 +491,7 @@ export class TeamRuntime {
     const initial = await this.args.store.load(runId);
     if (!initial) throw new Error(`Unknown Team Run '${runId}'`);
     if (initial.compiledPlanDigest !== plan.compiledPlanDigest) throw new TeamRunConflictError("compiledPlanDigest mismatch");
-    if (initial.status === "completed") return initial;
+    if (terminal.has(initial.status)) return initial;
     if (initial.status === "queued") await this.claim(runId, plan.compiledPlanDigest);
     else if (initial.status === "waiting_human_review") {
       if (!this.args.reviewRuntime || !initial.waitingReview || !initial.scheduler) throw new TeamRunConflictError("TEAM_REVIEW_RESUME_UNSUPPORTED: review runtime or scheduler checkpoint is unavailable.");
@@ -772,6 +772,9 @@ export class TeamRuntime {
           const current = await this.args.store.load(runId);
           if (current?.resultWritten) continue;
           await this.update(runId, (record) => {
+            if (record.status !== "running" || record.terminalIntent !== undefined) {
+              throw new TeamRunConflictError(`Cannot write Run Result in ${record.status}`);
+            }
             if (record.resultWritten) throw new TeamRunConflictError("Run result already written");
             record.result = Object.keys(mappedArtifacts).length ? { data: mapped, artifacts: mappedArtifacts } : mapped;
             record.resultWritten = true;
