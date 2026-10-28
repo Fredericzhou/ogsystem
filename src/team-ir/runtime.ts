@@ -643,7 +643,7 @@ export class TeamRuntime {
     const quorumJoins = Array.isArray(orchestration.joins)
       ? orchestration.joins.filter((join) => isRecord(join) && join.mode === "quorum_of") as Record<string, unknown>[]
       : [];
-    if (quorumJoins.length > 0 && (loops.length > 0 || quorumJoins.length !== 1 || joinDefinitions.length !== 1)) {
+    if (quorumJoins.length > 0 && loops.length > 0) {
       return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_QUORUM_TOPOLOGY_UNSUPPORTED");
     }
     const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
@@ -743,8 +743,7 @@ export class TeamRuntime {
     for (const [roundKey, round] of joinRounds) this.armJoinTimeout(runId, roundKey, round);
     let pending = checkpoint ? [...checkpoint.pending] : selectTeamHandoffs(plan, { kind: "run" }, {}, runInput);
     const visited = new Map(Object.entries(checkpoint?.visited ?? {}));
-    const quorumJoin = loops.length === 0 && quorumJoins.length === 1 ? quorumJoins[0] : undefined;
-    const quorumJoinSources = new Set(Array.isArray(quorumJoin?.handoffIds) ? quorumJoin.handoffIds as string[] : []);
+    const quorumJoinSources = new Set(quorumJoins.flatMap((join) => Array.isArray(join.handoffIds) ? join.handoffIds.map(String) : []));
     const quorumTargetInvoked = new Set<string>();
     if (!checkpoint) await this.update(runId, (record) => {
       record.scheduler = { pending: [...pending], sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {}, reviewContexts: {}, joinRounds: {} };
@@ -919,34 +918,37 @@ export class TeamRuntime {
         if (result.status === "failing" && (await this.args.store.load(runId))?.terminalIntent === "failed") {
           await this.cancelActiveInvocationsAfterFailure(runId, `${runId}:${handoffId}`);
         }
-        if (quorumJoin && result.status === "running") {
+        if (quorumJoins.length > 0 && result.status === "running") {
           const completed = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId);
           if (completed?.status === "completed" && completed.output?.kind === "completed") {
             const output = completed.output.output;
             const source = { kind: "agent", agentId: completed.agentId, outputPort: output.event };
             const selected = selectTeamHandoffs(plan, source, output, runInput);
-            const sourceId = selected.find((id) => quorumJoinSources.has(id));
-            if (sourceId) {
+            for (const quorumJoin of quorumJoins) {
+              const quorumJoinId = String(quorumJoin.id);
+              const quorumJoinSourceIds = new Set((quorumJoin.handoffIds as string[]).map(String));
+              const sourceId = selected.find((id) => quorumJoinSourceIds.has(id));
+              if (!sourceId) continue;
               const edge = plan.handoffsById.get(sourceId)!;
               const map = isRecord(edge.map) ? edge.map : {};
               const data = map.data === undefined ? {} : evaluateTeamValueExpr(map.data, valueContext(runInput, output));
-              const targetAgent = plan.team.agents.find((agent) => agent.id === quorumJoin!.agentId) as Record<string, unknown>;
-              const targetPort = (targetAgent.inputPorts as Record<string, Record<string, unknown>>)[String(quorumJoin!.inputPort)];
+              const targetAgent = plan.team.agents.find((agent) => agent.id === quorumJoin.agentId) as Record<string, unknown>;
+              const targetPort = (targetAgent.inputPorts as Record<string, Record<string, unknown>>)[String(quorumJoin.inputPort)];
               const requiredFields = isRecord(targetPort?.dataSchema) && Array.isArray(targetPort.dataSchema.required) ? targetPort.dataSchema.required as string[] : [];
               const targetArtifactSlots = isRecord(targetPort?.artifactSlots) ? targetPort.artifactSlots as Record<string, Record<string, unknown>> : {};
               const requiredArtifactSlots = Object.entries(targetArtifactSlots).filter(([, slot]) => slot.required === true).map(([slotId]) => slotId);
-              const requiredSourceIds = (quorumJoin!.handoffIds as string[]).filter((id) => {
+              const requiredSourceIds = (quorumJoin.handoffIds as string[]).filter((id) => {
                 const item = plan.handoffsById.get(id)!;
                 const fields = isRecord(item.map) && isRecord(item.map.data) ? item.map.data : {};
                 const artifacts = isRecord(item.map) && isRecord(item.map.artifacts) ? item.map.artifacts : {};
                 return Object.keys(fields).some((field) => requiredFields.includes(field))
                   || Object.keys(artifacts).some((slotId) => requiredArtifactSlots.includes(slotId));
               });
-              const baseMapping = isRecord(quorumJoin!.baseMapping) ? quorumJoin!.baseMapping : {};
-              let round = joinRounds.get(String(quorumJoin!.id)) ?? createTeamJoinRound({
-                joinId: String(quorumJoin!.id), runId, lineage: "run", mode: "quorum_of",
-                handoffIds: quorumJoin!.handoffIds as string[], threshold: Number(quorumJoin!.threshold),
-                timeoutMs: Number(quorumJoin!.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
+              const baseMapping = isRecord(quorumJoin.baseMapping) ? quorumJoin.baseMapping : {};
+              let round = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
+                joinId: quorumJoinId, runId, lineage: "run", mode: "quorum_of",
+                handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
+                timeoutMs: Number(quorumJoin.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
                 baseMapping: {
                   data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput)) as Record<string, unknown> : {},
                   artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput)) as Record<string, unknown> : {}
@@ -955,21 +957,21 @@ export class TeamRuntime {
               const artifactMappings = isRecord(map.artifacts) ? map.artifacts : {};
               const artifacts = Object.fromEntries(Object.entries(artifactMappings).map(([slotId, expression]) => [slotId, evaluateTeamValueExpr(expression, valueContext(runInput, output))]));
               round = applyTeamJoinEvent(round, { type: "arrival", sourceId, contribution: { data: isRecord(data) ? data : {}, artifacts }, at: this.args.clock.now() });
-              joinRounds.set(String(quorumJoin!.id), round);
+              joinRounds.set(quorumJoinId, round);
               await this.update(runId, (record) => {
-                record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [String(quorumJoin!.id)]: structuredClone(round) };
+                record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [quorumJoinId]: structuredClone(round) };
               });
-              if (round.status === "collecting") this.armJoinTimeout(runId, String(quorumJoin!.id), round);
-              else this.disarmJoinTimeout(runId, String(quorumJoin!.id));
-              if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${String(quorumJoin!.id)}`, round.failure?.code ?? "JOIN_FAILED");
-              if (round.status === "ready" && round.merged && !quorumTargetInvoked.has(String(quorumJoin!.id))) {
-                quorumTargetInvoked.add(String(quorumJoin!.id));
+              if (round.status === "collecting") this.armJoinTimeout(runId, quorumJoinId, round);
+              else this.disarmJoinTimeout(runId, quorumJoinId);
+              if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${quorumJoinId}`, round.failure?.code ?? "JOIN_FAILED");
+              if (round.status === "ready" && round.merged && !quorumTargetInvoked.has(quorumJoinId)) {
+                quorumTargetInvoked.add(quorumJoinId);
                 const artifactOverride = Object.fromEntries(Object.entries(round.merged.artifacts ?? {}).map(([slotId, envelope]) => [
                   slotId, isRecord(envelope) && Object.prototype.hasOwnProperty.call(envelope, "value") ? envelope.value : envelope
                 ]));
-                const driven = await executeEdge((quorumJoin!.handoffIds as string[])[0], undefined, round.merged.data ?? {}, undefined, artifactOverride);
+                const driven = await executeEdge((quorumJoin.handoffIds as string[])[0], undefined, round.merged.data ?? {}, undefined, artifactOverride);
                 if (driven.status !== "running") return driven;
-                const targetInvocation = latestInvocationForHandoff((await this.args.store.load(runId))!, (quorumJoin!.handoffIds as string[])[0]);
+                const targetInvocation = latestInvocationForHandoff((await this.args.store.load(runId))!, (quorumJoin.handoffIds as string[])[0]);
                 if (targetInvocation?.status === "completed" && targetInvocation.output?.kind === "completed") {
                   nextSources.set(`agent:${targetInvocation.agentId}:${targetInvocation.output.output.event}`, targetInvocation.output.output);
                 }
@@ -1147,23 +1149,21 @@ export class TeamRuntime {
               else this.disarmJoinTimeout(runId, roundKey);
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${joinId}`, round.failure?.code ?? "JOIN_FAILED");
             }
-            if (quorumJoin && quorumJoinSources.has(handoffId)) {
-              let round = joinRounds.get(String(quorumJoin.id));
-              if (!round) {
-                round = createTeamJoinRound({
-                  joinId: String(quorumJoin.id), runId, lineage: "run", mode: "quorum_of",
-                  handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
-                  timeoutMs: Number(quorumJoin.timeoutMs)
-                });
-              }
-              round = applyTeamJoinEvent(round, { type: "skip", sourceId: handoffId, at: this.args.clock.now() });
-              joinRounds.set(String(quorumJoin.id), round);
-              await this.update(runId, (record) => {
-                record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [String(quorumJoin.id)]: structuredClone(round!) };
+            for (const quorumJoin of quorumJoins.filter((join) => (join.handoffIds as string[]).includes(handoffId))) {
+              const quorumJoinId = String(quorumJoin.id);
+              let round = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
+                joinId: quorumJoinId, runId, lineage: "run", mode: "quorum_of",
+                handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
+                timeoutMs: Number(quorumJoin.timeoutMs)
               });
-              if (round.status === "collecting") this.armJoinTimeout(runId, String(quorumJoin.id), round);
-              else this.disarmJoinTimeout(runId, String(quorumJoin.id));
-              if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${String(quorumJoin.id)}`, round.failure?.code ?? "JOIN_FAILED");
+              round = applyTeamJoinEvent(round, { type: "skip", sourceId: handoffId, at: this.args.clock.now() });
+              joinRounds.set(quorumJoinId, round);
+              await this.update(runId, (record) => {
+                record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [quorumJoinId]: structuredClone(round!) };
+              });
+              if (round.status === "collecting") this.armJoinTimeout(runId, quorumJoinId, round);
+              else this.disarmJoinTimeout(runId, quorumJoinId);
+              if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${quorumJoinId}`, round.failure?.code ?? "JOIN_FAILED");
             }
           }
         }
@@ -1185,7 +1185,7 @@ export class TeamRuntime {
             continue;
           }
         }
-        if (quorumJoin) outgoing.push(...selected.filter((id) => !quorumJoinSources.has(id)));
+        if (quorumJoins.length > 0) outgoing.push(...selected.filter((id) => !quorumJoinSources.has(id)));
         else outgoing.push(...selected);
       }
       pending = [...new Set(outgoing)];

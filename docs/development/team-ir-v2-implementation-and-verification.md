@@ -1,7 +1,7 @@
 # Team IR v2 落地与验证台账
 
 基线日期：2026-10-29
-状态：实施中；阶段 0 通过，阶段 1、2 部分通过，阶段 3、4 进行中；结构化辩论、Maker-Checker、Software Team adapter /3、条件会签、阶段放行 PASS/REJECT 的真实 Project Task UAT 与全仓回归新增通过，远端 A2A 和其他发布门仍未完成
+状态：实施中；阶段 0 通过，阶段 1、2 部分通过，阶段 3、4 进行中；结构化辩论、Maker-Checker、Software Team adapter /3、条件会签、阶段放行 PASS/REJECT 的真实 Project Task UAT、多 quorum Runtime 与 Studio 事件端口拖放新增通过；远端 A2A 和其他发布门仍未完成
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
@@ -30,8 +30,8 @@
 | --- | --- | --- |
 | Team IR v2 设计方案 | 已冻结为实施基线 | `docs/development/team-ir-handoff-v2-design.md`；阶段 0 语义复核完成，包含并行 Review、A2A 暂停/兄弟调用、重试/deadline 与失败竞态决策 |
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
-| v2 Schema / Compiler / Runtime | 部分通过 | 诊断、映射、digest、Join/Loop/Review/Artifact/A2A、终态 CAS 与恢复有确定性合同；多 Join/Loop/Review 并行组合、一般 sibling 失败收敛和跨存储 Artifact/Run 提交仍受限，见追溯矩阵 |
-| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、结构投影、窄屏、真实 resolver Simulation/发布已有证据；现支持点击式 Handoff 创建和简单顶层字段映射编辑，Review 状态临时读取失败可页面内重试；自由布局拖线画布、Join/Loop 可视化编辑、独立 Review 身份和完整发布浏览器验收仍未闭合 |
+| v2 Schema / Compiler / Runtime | 部分通过 | 诊断、映射、digest、Join/Loop/Review/Artifact/A2A、终态 CAS 与恢复有确定性合同；多个独立 Run-scope `all_of`/`quorum_of` Join 已支持；`quorum_of` + Loop、Review 与并行、一般 Loop 多 lineage 和跨存储 Artifact/Run 原子提交仍受限，见追溯矩阵 |
+| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、结构投影、窄屏、真实 resolver Simulation/发布已有证据；现支持点击或拖放创建 Handoff、端口选择、部分 Join/Loop 结构化字段和简单顶层映射编辑；Review 状态临时读取失败可页面内重试；自由布局/端口桩画布、全部 Join/Loop 字段可视化编辑、独立 Review 身份和完整发布浏览器验收仍未闭合 |
 | v2 端到端或发布验收 | 部分通过 | 真实 Docker/OpenCode resolver 已完成 Release Gate、Artifact Evidence、专家会诊、条件会签、结构化辩论、Maker-Checker reject/revise/approve 和软件交付 fan-out/Join 的 Project Task。Software Team adapter /3 Project Task 已成功完成且结果写入；此前 adapter /2 两次失败记录保留作历史，见本日 UAT 记录。Artifact 输入固定快照、同 Run Review 恢复、幂等重放与重启查询已有真实 UAT。Maker-Checker 使用本机 OS principal，不代表独立审核用户/外部身份服务。Artifact Evidence provenance、远端 A2A 和全部经典场景矩阵仍未通过 |
 
 ## 3. 实施与验收状态
@@ -42,9 +42,9 @@
 | --- | --- | --- | --- |
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 部分通过 |
-| 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑不能算支持；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 部分通过；多 Join/Loop/Review 组合和一般并行竞态仍有限制 |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；生产 resolver 下完成保存、发布、Project Task 和 Review 用户流程 | 进行中；自由布局画布、Review 用户流程和完整发布浏览器矩阵未闭合 |
-| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；旧 Team 配置不迁移、不覆盖无关路径 | 进行中；默认创建、fork、Case/template 已切 v2；已删除失效 public demo、landing 和 drawer 入口/样式/文案；远端 A2A 与全经典团队真实矩阵未闭合 |
+| 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑不能算支持；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 部分通过；独立 Run-scope 多 `all_of`/`quorum_of` Join 已支持；quorum+Loop、Review/并行组合、一般 Loop 多 lineage 与跨存储提交边界仍未闭合 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；生产 resolver 下完成保存、发布、Project Task 和 Review 用户流程 | 进行中；来源到目标的事件端口拖放已验；自由布局/端口桩画布、Review 用户流程和完整发布浏览器矩阵未闭合 |
+| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；旧 Team 配置不迁移、不覆盖无关路径 | 进行中；默认创建、fork、Case/template 已切 v2；无调用方旧 Team Author/Run 模块已清理；standalone OGS System/CLI 有独立用例而保留；远端 A2A 真实 UAT 未闭合 |
 
 ### 阶段门
 
@@ -741,6 +741,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 阶段 3：从结构图来源拖到目标创建 Handoff | 通过（浏览器合同切片） | `apps/team-site/public/app/views/app.js` 为 Run/Agent 来源操作及 Agent/Run Result 目标操作增加原生拖放；拖放仍复用现有连接创建路径和端口选择器，生成显式 Handoff、路由与空字段映射草稿。点击式来源/目标操作继续可用，便于键盘操作。`apps/team-site/public/styles.css` 增加拖动源与可放置目标状态。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 在 Chromium 中选择 Agent `BLOCKED` 输出和 `audit` 输入，实际 `dragTo` 后断言两个 endpoint，并继续断言 IR 保存、重载和 digest 语义；`pnpm build && pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`，1/1 | 当前结构图仍是自动排布节点卡片和 Handoff 列表，不提供节点自由布局、画布上的独立端口桩/连线几何编辑；Review 使用外部身份的完整 Project Task 浏览器验收也仍未完成 |
 
 **阶段结论：** 本轮闭合事件端口拖放创建 Handoff 的浏览器合同，不宣称完整 Studio 完成。现有浏览器 resolver 是隔离测试 Fake，只证明页面/API 和 Runtime 模拟合同；生产 Review 用户操作仍需配置并验收真实身份主体、授权决策和服务重启后的待审恢复。阶段 3 继续进行中。
+
+### 2026-10-29：独立 Run-scope 多 quorum Join
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 2：多个独立 quorum/all_of Join | 通过（无 Loop 的 Run-scope Join） | `src/team-ir/runtime.ts` 不再把 `quorum_of` 限制为全 Team 唯一 Join；各 quorum 按 Join ID 独立记录来源状态、deadline、merged contribution 与目标触发状态，条件 skip 分别结算到每个参与 Join。`tests/team-ir-runtime.test.mjs` 的 `independent quorum and all_of Joins execute and persist separate rounds` 运行两个独立 quorum，并将第二个改为 all_of 再跑一次，断言两个 Join round 均 ready、各目标仅调用一次；Loop + quorum 仍在 Binding 调用前 fail closed。`pnpm build && node --test tests/team-ir-runtime.test.mjs tests/team-ir-join-runtime.test.mjs tests/team-ir-loop-join-runtime.test.mjs tests/team-ir-join-artifact-runtime.test.mjs tests/team-ir-fail-fast-runtime.test.mjs`，71/71 | 不扩展 quorum + Loop、Review + parallel fan-out、Loop 多 lineage、跨 ArtifactStore/RunStore 原子事务；各限制仍需在设计的首版边界内保持 fail closed |
+| standalone OGS System/CLI 旧格式源码清理审计 | 保留（有独立用途） | `src/visualizer/client-app.ts` 的 System Release Export 经 `/api/v1/ogs/workspace/export` 导出 standalone OGS System 项目；该流程被活动 UI 使用，处理 `system.mmd`、角色和运行配置。`src/visualizer/project-projection.ts` 的 `loadTeamPackage` 仅测试调用，无生产 HTTP 调用，可在归并旧内容清理时删除；Team Site v2 组合根不暴露 Project Package import/export，`apps/team-site/tests/project-store.test.mjs` 已断言只提供 `createWorkspace`/`inspectWorkspace` | 本阶段清理只删除无 v2 调用方的旧 Team 代码，不移除 standalone System 的有效 Release Export/CLI。移除该活动功能需要另行替换 System artifact 导出，不属于 Team IR v2 切换合同 |
+| 当前全仓与 Team Site 回归 | 通过 | `pnpm test`（含 build）：923 个含子测试项，922 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`：349 项，348 通过、0 失败、1 项 opt-in Docker UAT 跳过。Team Site 首次回归时系统临时卷仅剩 102 MiB，`mkdtemp` 报 `ENOSPC` 并产生级联失败；空间恢复至 5 GiB 后完整重跑通过，故首次失败保留作环境证据，不计作代码失败。`git diff --check` 通过 | 本轮未运行 opt-in Docker Test；真实远端 A2A UAT 仍缺服务 |
+| 回归生成数据和工作区 | 已清理测试产物 | `pnpm test` 在仓库 `.ogs/runs/` 生成的 8 个 Runtime 目录（共约 1.6 MiB）及 `.ogs/runs-index.json` 已移除；时间戳均为本轮运行时间。`.ogs/model-selection.json` 用户配置保留 | 用户已有配置未暂存、未提交 |
+
+**阶段结论：** 多个互相独立的 Run-scope quorum/all-of Join 已接入并通过状态机回归。设计矩阵仍要求跨 Scope/Review 并行等已列明组合与 Artifact/Run 存储边界继续验收；不能将 fail-closed 拒绝或本地合同替代真实远端 A2A。阶段 2 仍为部分通过。
 
 ## 6. Codex / 实施代理工作约定
 

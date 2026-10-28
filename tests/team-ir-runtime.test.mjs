@@ -1075,7 +1075,7 @@ test("quorum Join fails when conditional source skips make the threshold unreach
   assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_QUORUM_UNREACHABLE"), true);
 });
 
-test("quorum topologies outside the single no-Loop Join contract fail before any Binding call", async () => {
+test("quorum Join with Loop fails before any Binding call", async () => {
   const withLoop = quorumTeam();
   withLoop.handoffs = withLoop.handoffs.filter((handoff) => handoff.id !== "join-result");
   withLoop.orchestration.routes = withLoop.orchestration.routes.filter((route) => route.from.kind !== "agent" || route.from.agentId !== "joiner");
@@ -1105,8 +1105,14 @@ test("quorum topologies outside the single no-Loop Join contract fail before any
     retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
   });
   await assertUnsupportedQuorumFailsBeforeBinding(withLoop, "quorum-loop-unsupported");
+});
 
+test("independent quorum and all_of Joins execute and persist separate rounds", async () => {
   const multiple = quorumTeam();
+  multiple.team.id = "multiple-independent-quorums";
+  multiple.executionPolicy.resultMode = "allow_empty";
+  multiple.handoffs = multiple.handoffs.filter((handoff) => handoff.id !== "join-result");
+  multiple.orchestration.routes = multiple.orchestration.routes.filter((route) => route.from.kind !== "agent" || route.from.agentId !== "joiner");
   const clonedAgents = structuredClone(multiple.agents).map((agent) => {
     const oldId = agent.id;
     agent.id = `${oldId}-two`;
@@ -1139,13 +1145,42 @@ test("quorum topologies outside the single no-Loop Join contract fail before any
     id: agent.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000,
     retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
   })));
-  await assertUnsupportedQuorumFailsBeforeBinding(multiple, "quorum-multiple-unsupported");
+  const calls = [];
+  const bindings = Object.fromEntries(multiple.agents.map((agent) => [agent.bindingRef, {
+    async invoke(args) {
+      calls.push({ agentId: agent.id, input: args.input });
+      if (agent.id.startsWith("left") || agent.id.startsWith("right")) {
+        const data = { value: agent.id };
+        if (agent.id.startsWith("left")) data.include = true;
+        return { kind: "completed", output: { event: "DONE", data } };
+      }
+      return { kind: "completed", output: { event: "DONE", data: { summary: agent.id } } };
+    }
+  }]));
+  const plan = compileTeamIr(multiple);
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "quorum-multiple", task: "check", input: { prompt: "check" } });
+  const result = await runtime.executeRun(plan, "quorum-multiple");
+  assert.equal(result.status, "completed", JSON.stringify(result.events.map((entry) => [entry.type, entry.data])));
+  assert.deepEqual(Object.keys(result.scheduler.joinRounds).sort(), ["quorum", "quorum-two"]);
+  assert.equal(result.scheduler.joinRounds.quorum.status, "ready");
+  assert.equal(result.scheduler.joinRounds["quorum-two"].status, "ready");
+  assert.equal(calls.filter((call) => call.agentId === "joiner").length, 1);
+  assert.equal(calls.filter((call) => call.agentId === "joiner-two").length, 1);
 
   const mixed = structuredClone(multiple);
-  mixed.team.id = "quorum-mixed";
+  mixed.team.id = "mixed-independent-joins";
   mixed.orchestration.joins[1].mode = "all_of";
   delete mixed.orchestration.joins[1].threshold;
-  await assertUnsupportedQuorumFailsBeforeBinding(mixed, "quorum-mixed-unsupported");
+  const mixedStore = new MemoryTeamRunStore();
+  const mixedRuntime = new TeamRuntime({ store: mixedStore, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  const mixedPlan = compileTeamIr(mixed);
+  await mixedRuntime.createRun(mixedPlan, { runId: "quorum-all-of", task: "check", input: { prompt: "check" } });
+  const mixedResult = await mixedRuntime.executeRun(mixedPlan, "quorum-all-of");
+  assert.equal(mixedResult.status, "completed", JSON.stringify(mixedResult.events.map((entry) => [entry.type, entry.data])));
+  assert.equal(mixedResult.scheduler.joinRounds.quorum.status, "ready");
+  assert.equal(mixedResult.scheduler.joinRounds["quorum-two"].status, "ready");
 });
 
 test("multiple independent all_of Joins recover after a ready round checkpoint", async (t) => {
