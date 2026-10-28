@@ -11,6 +11,9 @@ export async function loadTeamIrV2Resolvers(modulePath = process.env.OGS_TEAM_IR
   if (missing.length) throw new Error(`TEAM_IR_V2_RESOLVER_INVALID: missing exports ${missing.join(", ")}.`);
   return Object.freeze({
     resolveTeamIrReleaseClosure: loaded.resolveTeamIrReleaseClosure,
-    resolveBindings: loaded.resolveBindings
+    resolveBindings: loaded.resolveBindings,
+    ...(typeof loaded.resolveTeamIrReviewContext === "function"
+      ? { resolveTeamIrReviewContext: loaded.resolveTeamIrReviewContext }
+      : {})
   });
 }

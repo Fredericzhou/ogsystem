@@ -320,6 +320,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 本轮聚焦回归：`node --test tests/team-ir-artifact-store.test.mjs tests/team-ir-index.test.mjs tests/team-ir-schema-resolver.test.mjs`，19/19；Loop Join 切片 `pnpm build && node --test tests/team-ir-runtime.test.mjs tests/team-ir-loop-join-runtime.test.mjs`，34/34；历史 Run 专项测试 1/1。完整仓库 `pnpm test`：855 项，854 通过、0 失败、1 项 Windows PowerShell/CMD 专项在 macOS 跳过，退出码 0。Team Site 全量串行回归 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0，包含新增历史 Run 查询用例；dot reporter 不输出精确计数。
 阶段结论：阶段 0 通过；阶段 1 部分通过；阶段 2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受阻，不得宣称发布完成。
 
+### 2026-10-28：Studio 诊断定位与 v2 Review API
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 1：公开校验入口嵌套 Schema resolver 诊断 | 通过（missing/out-of-scope/forbidden 窄矩阵） | `tests/team-ir-index.test.mjs`：`public validator preserves nested Schema reference pointers for missing, out-of-scope and forbidden refs` 精确断言 `IR_UNKNOWN_SCHEMA_REF`、`IR_SCHEMA_PATH_OUT_OF_SCOPE`、`IR_SCHEMA_REF_FORBIDDEN` 与 `/runInput/dataSchema/properties/payload/$ref`。`pnpm build && node --test tests/team-ir-index.test.mjs tests/team-ir-schema-resolver.test.mjs` 13/13 | 阶段 1 仍缺完整 endpoint-kind/field 诊断矩阵、复杂 Schema 组合、执行预算/结果组合和闭包漂移矩阵 |
+| 阶段 3：Studio 诊断 pointer 可操作定位 | 通过（当前 v2 表单与高级合同编辑器切片） | `apps/team-site/public/app/views/app.js` 将诊断 pointer 映射到基础 Team/Agent/Handoff 控件，端口/高级语义定位到 JSON 合同选区；支持 JSON Pointer `~0`/`~1` 转义，未知结构退化到高级 JSON 开头。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 覆盖基础映射定位、Review timeout 的 `0` 选区和含 `/`、`~` key 的嵌套路径。`pnpm build && node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1 | 事件桩画布/直接连线、自动映射、完整 Join/Loop 可视化编辑及完整作者流程仍未完成 |
+| 阶段 3：Team IR v2 Review owner-scoped API | 部分通过 | 新增独立 GET/POST `/api/v1/projects/:projectId/tasks/:taskId/runs/:runId/team-ir-reviews/:reviewId`；校验当前 Task/Run owner 与 Team IR semantic/compiled digest，ReviewRuntime 承接 authenticated reviewer、revision CAS、幂等和 feedback Schema；可信 resolver 可选导出 `resolveTeamIrReviewContext`，未提供时 fail closed。`apps/team-site/tests/team-ir-review-api.test.mjs` 与 resolver 测试覆盖 owner、授权、错误 feedback、stale revision、legacy route 隔离和 runtime unavailable。 | 生产 resolver 未配置；Task waiting-review 状态映射、同一 FileTeamRunStore checkpoint 重建与 resume 调度桥、浏览器审核流程未接线；因此此项不构成生产 Review 完成 |
+
+本轮聚焦回归：`pnpm build && node --test tests/team-ir-index.test.mjs tests/team-ir-schema-resolver.test.mjs apps/team-site/tests/team-ir-v2-resolvers.test.mjs apps/team-site/tests/team-ir-review-api.test.mjs apps/team-site/tests/team-ir-studio-browser.test.mjs`：20/20，退出码 0。新增该批用例后重跑 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0；`pnpm test`：856 tests，855 pass、0 fail、1 Windows-only skip，退出码 0。
+阶段结论：阶段 0 通过；阶段 1 部分通过；阶段 2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受 resolver/模型认证条件阻塞。
+
 ### YYYY-MM-DD：阶段 / 任务标识
 
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |

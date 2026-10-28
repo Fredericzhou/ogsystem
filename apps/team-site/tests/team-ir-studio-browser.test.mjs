@@ -141,6 +141,16 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator('[name="agent-0-id"]').inputValue(), "worker");
     assert.equal(await page.locator('[data-ir-handoff]').count(), 2);
     assert.equal((await page.locator("[data-team-ir-digest]").innerText()).trim(), expectedDigest);
+    await page.locator('[name="handoff-0-mapping"]').fill("request=$.run.input.unknown");
+    const basicInvalidValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const basicInvalidBody = await (await basicInvalidValidation).json();
+    assert.equal(basicInvalidBody.ok, false, JSON.stringify(basicInvalidBody));
+    await page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").first().click();
+    assert.equal(await page.locator('[name="handoff-0-mapping"]').evaluate((element) => document.activeElement === element), true);
+    assert.equal(await page.locator('[name="handoff-0-mapping"]').inputValue(), "request=$.run.input.unknown");
+    await page.locator('[name="handoff-0-mapping"]').fill("request=$.run.input.request");
     const blockedReadiness = await page.request.post(`${url}/api/v1/team-versions/${teamVersionId}/release`, { data: {} });
     assert.notEqual(blockedReadiness.status(), 200);
     assert.match((await blockedReadiness.json()).error, /TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED/);
@@ -208,8 +218,24 @@ export async function resolveBindings({ teamIR }) {
     await page.locator("[data-team-ir-diagnostics]").getByText("/orchestration/reviews/0/timeoutMs").waitFor();
     assert.match(await page.locator("[data-team-ir-diagnostics]").innerText(), /IR_SCHEMA_INVALID/);
     assert.equal(invalidSaves, 0, "invalid advanced contracts must not reach save API");
+    await page.locator("[data-team-ir-diagnostics]").getByText("/orchestration/reviews/0/timeoutMs").click();
+    assert.equal(await advancedEditor.evaluate((element) => document.activeElement === element), true);
+    assert.equal(await advancedEditor.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd)), "0");
 
     contracts.orchestration.reviews[0].timeoutMs = 5000;
+    contracts.runInput.dataSchema.properties["bad/~key"] = { type: "not-a-json-type" };
+    await advancedEditor.fill(JSON.stringify(contracts, null, 2));
+    const escapedPointerValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const escapedPointerBody = await (await escapedPointerValidation).json();
+    assert.equal(escapedPointerBody.ok, false);
+    const escapedPointer = "/runInput/dataSchema/properties/bad~1~0key/type";
+    const escapedDiagnostic = page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").filter({ hasText: escapedPointer }).first();
+    await escapedDiagnostic.click();
+    assert.equal(await advancedEditor.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd)), '"not-a-json-type"');
+
+    delete contracts.runInput.dataSchema.properties["bad/~key"];
     await advancedEditor.fill(JSON.stringify(contracts, null, 2));
     const advancedValidation = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);

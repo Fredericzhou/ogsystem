@@ -41,6 +41,26 @@ test("public validator maps a missing root-contract Schema reference to a stable
     && item.pointer === "/runInput/dataSchema/$ref"), JSON.stringify(diagnostics));
 });
 
+test("public validator preserves nested Schema reference pointers for missing, out-of-scope and forbidden refs", () => {
+  const cases = [
+    ["schemas/missing.json#/$defs/request", "IR_UNKNOWN_SCHEMA_REF"],
+    ["../outside.json#/$defs/request", "IR_SCHEMA_PATH_OUT_OF_SCOPE"],
+    ["https://example.test/schema.json#/$defs/request", "IR_SCHEMA_REF_FORBIDDEN"]
+  ];
+
+  for (const [reference, code] of cases) {
+    const value = team();
+    value.runInput.dataSchema = {
+      type: "object",
+      properties: { payload: { "$ref": reference } }
+    };
+    const diagnostics = validateTeamIr(value);
+    assert.ok(diagnostics.some((item) => item.code === code
+      && item.pointer === "/runInput/dataSchema/properties/payload/$ref"),
+    `${reference} should map ${code} to the nested $ref: ${JSON.stringify(diagnostics)}`);
+  }
+});
+
 test("classic software Team IR fixture compiles parallel required Join sources", async () => {
   const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
   const diagnostics = validateTeamIr(fixture);

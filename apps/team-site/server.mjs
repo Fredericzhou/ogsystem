@@ -28,6 +28,7 @@ import { createVisualizerAdapter } from "./infrastructure/visualizer-adapter.mjs
 import { resolveTeamStudioModelRef } from "./capabilities/team-studio-model.mjs";
 import { handleProjectRoutes } from "./api/project-routes.mjs";
 import { handleTaskRoutes } from "./api/task-routes.mjs";
+import { handleTeamIrReviewRoutes } from "./api/team-ir-review-routes.mjs";
 import { handleRunRoutes } from "./api/run-routes.mjs";
 import { handleTeamRoutes } from "./api/team-routes.mjs";
 import { handleTeamIrSimulationRoutes } from "./api/team-ir-simulation-routes.mjs";
@@ -59,6 +60,7 @@ import { createFileTeamIrStore } from "./infrastructure/file-team-ir-store.mjs";
 import { createFileTeamIrSimulationStore } from "./infrastructure/file-team-ir-simulation-store.mjs";
 import { createTeamIrStudioSimulationUseCases } from "./application/team-ir-studio-simulation-use-cases.mjs";
 import { createRuntimeTeamIrProjectRunExecutor } from "./infrastructure/runtime-team-ir-project-run-executor.mjs";
+import { createTeamIrReviewUseCases } from "./application/team-ir-review-use-cases.mjs";
 import { createRuntimeTeamIrStudioSimulation } from "./infrastructure/runtime-team-ir-studio-simulation.mjs";
 import { loadTeamIrV2Resolvers } from "./infrastructure/team-ir-v2-resolvers.mjs";
 import { isProcessAlive } from "./infrastructure/process-liveness.mjs";
@@ -208,6 +210,10 @@ const teamIrProjectRunExecutor = createRuntimeTeamIrProjectRunExecutor({
   teamIrStore,
   resolveReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure,
   resolveBindings: teamIrV2Resolvers.resolveBindings
+});
+const teamIrReviewUseCases = createTeamIrReviewUseCases({
+  projectStore: { getProject },
+  resolveReviewContext: teamIrV2Resolvers.resolveTeamIrReviewContext || (async () => undefined)
 });
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
@@ -608,6 +614,10 @@ const server = createServer(async (request, response) => {
   if (await handleTaskRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicTask,
     useCases: { ...taskCreationUseCases, ...taskLifecycleUseCases, getProjectTask, startProjectTask: taskExecutionUseCases.startProjectTask, retryProjectTask: taskRetryUseCases.retryProjectTask }
+  })) return;
+  if (await handleTeamIrReviewRoutes({
+    request, response, url, readBody, sendJson, errorStatus,
+    useCases: teamIrReviewUseCases
   })) return;
   if (await handleRunRoutes({
     request, response, url, readBody, sendJson, errorStatus,

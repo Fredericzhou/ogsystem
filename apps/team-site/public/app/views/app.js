@@ -1252,6 +1252,163 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   return candidate;
 }
 
+function decodeTeamIrPointer(pointer) {
+  if (pointer === "" || pointer === "/") return [];
+  if (typeof pointer !== "string" || !pointer.startsWith("/")) return null;
+  try {
+    return pointer.slice(1).split("/").map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
+  } catch {
+    return null;
+  }
+}
+
+function teamIrAdvancedPointer(parts, ir) {
+  if (!parts?.length) return [];
+  if (parts[0] === "agents" && /^\d+$/.test(parts[1] || "")) {
+    const agent = ir.agents?.[Number(parts[1])];
+    if (!agent) return parts;
+    if (["inputPorts", "outputPorts"].includes(parts[2])) return ["agentPortContracts", agent.id, ...parts.slice(2)];
+  }
+  if (parts[0] === "handoffs" && /^\d+$/.test(parts[1] || "")) {
+    const handoff = ir.handoffs?.[Number(parts[1])];
+    if (handoff) return ["handoffContracts", handoff.id, ...parts.slice(2)];
+  }
+  return parts;
+}
+
+function teamIrJsonPointerRange(source, parts) {
+  if (!Array.isArray(parts)) return null;
+  let cursor = 0;
+  let targetRange = null;
+  const skipSpace = () => { while (/\s/.test(source[cursor] || "")) cursor += 1; };
+  const parseString = () => {
+    const start = cursor;
+    cursor += 1;
+    while (cursor < source.length) {
+      if (source[cursor] === "\\") { cursor += 2; continue; }
+      if (source[cursor] === '"') { cursor += 1; return { start, end: cursor, value: JSON.parse(source.slice(start, cursor)) }; }
+      cursor += 1;
+    }
+    throw new Error("Unterminated JSON string");
+  };
+  const parseValue = (path) => {
+    skipSpace();
+    const start = cursor;
+    const valuePath = path;
+    let value;
+    if (source[cursor] === "{") {
+      cursor += 1;
+      skipSpace();
+      value = {};
+      while (source[cursor] !== "}") {
+        skipSpace();
+        const key = parseString().value;
+        skipSpace();
+        if (source[cursor] !== ":") throw new Error("Invalid JSON object");
+        cursor += 1;
+        value[key] = parseValue([...path, key]).value;
+        skipSpace();
+        if (source[cursor] !== ",") break;
+        cursor += 1;
+        skipSpace();
+      }
+      if (source[cursor] !== "}") throw new Error("Invalid JSON object");
+      cursor += 1;
+    } else if (source[cursor] === "[") {
+      cursor += 1;
+      skipSpace();
+      value = [];
+      let index = 0;
+      while (source[cursor] !== "]") {
+        value.push(parseValue([...path, String(index)]).value);
+        index += 1;
+        skipSpace();
+        if (source[cursor] !== ",") break;
+        cursor += 1;
+        skipSpace();
+      }
+      if (source[cursor] !== "]") throw new Error("Invalid JSON array");
+      cursor += 1;
+    } else if (source[cursor] === '"') {
+      value = parseString().value;
+    } else {
+      const endMatch = /^[^\s,}\]]+/.exec(source.slice(cursor));
+      if (!endMatch) throw new Error("Invalid JSON value");
+      cursor += endMatch[0].length;
+      value = JSON.parse(endMatch[0]);
+    }
+    const end = cursor;
+    if (valuePath.length === parts.length && valuePath.every((segment, index) => segment === parts[index])) {
+      targetRange = { start, end };
+    }
+    return { value, range: { start, end, path: valuePath } };
+  };
+  try {
+    parseValue([]);
+  } catch {
+    return null;
+  }
+  return targetRange;
+}
+
+function teamIrBasicControl(form, ir, parts) {
+  if (!parts?.length) return null;
+  const [root, indexText, section, member, detail] = parts;
+  const index = Number(indexText);
+  if (root === "team" && parts[1] === "id") return form.querySelector('[name="team-id"]');
+  if (root === "agents" && Number.isInteger(index)) {
+    const agent = ir.agents?.[index];
+    if (!agent) return null;
+    const names = { id: "id", packageRef: "package", bindingRef: "binding" };
+    if (names[section]) return form.querySelector(`[name="agent-${index}-${names[section]}"]`);
+    if (section === "inputPorts" && agent.inputPorts?.[member]) {
+      if (detail === undefined || detail === "dataSchema" || (detail !== "artifactSlots" && parts[4] !== "artifactSlots")) return form.querySelector(`[name="agent-${index}-input-fields"]`);
+    }
+    if (section === "outputPorts" && agent.outputPorts?.[member]) {
+      if (detail === undefined || detail === "dataSchema" || (detail !== "artifactSlots" && parts[4] !== "artifactSlots")) return form.querySelector(`[name="agent-${index}-output-fields"]`);
+    }
+    return null;
+  }
+  if (root === "handoffs" && Number.isInteger(index)) {
+    const edge = ir.handoffs?.[index];
+    if (!edge) return null;
+    if (section === "id") return form.querySelector(`[name="handoff-${index}-id"]`);
+    if (section === "from") {
+      if (member === "agentId" || member === "kind") return form.querySelector(`[name="handoff-${index}-from-agent"]`);
+      if (member === "outputPort") return form.querySelector(`[name="handoff-${index}-from-port"]`);
+    }
+    if (section === "to") {
+      if (member === "agentId" || member === "kind") return form.querySelector(`[name="handoff-${index}-to-agent"]`);
+      if (member === "inputPort") return form.querySelector(`[name="handoff-${index}-to-port"]`);
+    }
+    if (section === "map" && member === "data") return form.querySelector(`[name="handoff-${index}-mapping"]`);
+    if (section === "when") {
+      if (member === "priority") return form.querySelector(`[name="handoff-${index}-priority"]`);
+      if (member === "condition") return form.querySelector(`[name="handoff-${index}-condition-field"]`);
+    }
+  }
+  return null;
+}
+
+function focusTeamIrDiagnostic(form, ir, pointer) {
+  const parts = decodeTeamIrPointer(pointer);
+  const basic = teamIrBasicControl(form, ir, parts);
+  if (basic) {
+    basic.focus();
+    basic.select?.();
+    return;
+  }
+  const advanced = form.querySelector("[data-ir-advanced-json]");
+  if (!advanced) return;
+  const details = advanced.closest("details");
+  if (details) details.open = true;
+  const advancedParts = teamIrAdvancedPointer(parts, ir);
+  const range = teamIrJsonPointerRange(advanced.value, advancedParts);
+  const fallback = range || { start: 0, end: Math.min(advanced.value.length, 1) };
+  advanced.focus();
+  advanced.setSelectionRange(fallback.start, fallback.end);
+}
+
 function schemaFromFields(value) {
   const fields = [...new Set(String(value || "").split(",").map((item) => item.trim()).filter((item) => /^[A-Za-z_][A-Za-z0-9_-]*$/.test(item)))];
   return { type: "object", properties: Object.fromEntries(fields.map((field) => [field, { type: "string" }])), required: fields, additionalProperties: false };
@@ -1410,8 +1567,21 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
       const showDiagnostics = (diagnostics = []) => {
         const list = form.querySelector("[data-team-ir-diagnostics]");
-        list.innerHTML = diagnostics.map((item) => `<li><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> ${esc(item.message || "")}</li>`).join("");
+        list.innerHTML = diagnostics.map((item, index) => `<li><button type="button" class="ir-diagnostic" data-ir-diagnostic-index="${index}"><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> <span>${esc(item.message || "")}</span></button></li>`).join("");
         list.hidden = diagnostics.length === 0;
+        list.querySelectorAll("[data-ir-diagnostic-index]").forEach((button) => button.addEventListener("click", () => {
+          const item = diagnostics[Number(button.dataset.irDiagnosticIndex)];
+          if (!item) return;
+          try {
+            const current = captureEditor();
+            focusTeamIrDiagnostic(form, current, item.pointer || "/");
+          } catch {
+            const advanced = form.querySelector("[data-ir-advanced-json]");
+            advanced?.closest("details") && (advanced.closest("details").open = true);
+            advanced?.focus();
+            advanced?.setSelectionRange(0, Math.min(advanced.value.length, 1));
+          }
+        }));
       };
       const captureFailure = (error) => {
         form.querySelector("[data-team-ir-status]").textContent = error.message || "Unable to read Team IR form.";
