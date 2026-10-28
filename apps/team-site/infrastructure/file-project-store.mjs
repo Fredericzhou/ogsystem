@@ -69,8 +69,7 @@ function normalizeMeta(meta, projectId) {
   }
   const collaborationProject = meta?.projectType === "collaboration";
   const confirmed = collaborationProject && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
-  const legacyReleased = !collaborationProject && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
-  const teamVersionStatus = meta?.teamVersionStatus || (legacyReleased ? "released" : "draft");
+  const teamVersionStatus = meta?.teamVersionStatus || "draft";
   const teamRootId = String(meta?.teamRootId || meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
   const teamId = teamRootId;
   const teamVersionNumber = Number.isInteger(meta?.teamVersionNumber) && meta.teamVersionNumber > 0 ? meta.teamVersionNumber : 1;
@@ -98,7 +97,7 @@ function normalizeMeta(meta, projectId) {
     teamVersionStatus,
     teamName: String(meta?.teamName || meta?.name || "New team"),
     parentTeamVersionId: meta?.parentTeamVersionId || undefined,
-    releasedAt: meta?.releasedAt || (legacyReleased ? meta.confirmedAt : null),
+    releasedAt: meta?.releasedAt || null,
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),

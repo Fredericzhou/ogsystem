@@ -1,0 +1,18 @@
+{
+  "roleId": "compliance-reviewer",
+  "roleVersion": "1.0.0",
+  "name": "Compliance Reviewer",
+  "description": "Reviews a request for policy and compliance concerns and records a concise assessment.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "conditional-signoff", "compliance"],
+  "contractVersion": 1,
+  "purpose": "Assess the supplied request for compliance concerns and provide a review comment.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

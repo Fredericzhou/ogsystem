@@ -1,0 +1,18 @@
+{
+  "roleId": "neutral-judge",
+  "roleVersion": "1.0.0",
+  "name": "Neutral Debate Judge",
+  "description": "Compares both arguments and requests one bounded rebuttal or ends debate.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "structured-debate", "judging"],
+  "contractVersion": 1,
+  "purpose": "Compare both supplied arguments fairly and choose a rebuttal request or final decision.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

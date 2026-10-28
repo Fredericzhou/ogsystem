@@ -46,8 +46,8 @@ test("concurrent idempotent Task creation and start reserve one Task and one Run
     assert.equal((await store.getProject(project.projectId)).taskRecords.length, 1);
 
     const starts = await Promise.all([
-      store.startProjectTask(project.projectId, created[0].taskId, { mode: "dry-run", idempotencyKey: "same-attempt" }),
-      store.startProjectTask(project.projectId, created[0].taskId, { mode: "dry-run", idempotencyKey: "same-attempt" })
+      store.startProjectTask(project.projectId, created[0].taskId, { mode: "sandbox", idempotencyKey: "same-attempt" }),
+      store.startProjectTask(project.projectId, created[0].taskId, { mode: "sandbox", idempotencyKey: "same-attempt" })
     ]);
     assert.equal(starts[0].currentRunId, starts[1].currentRunId);
     assert.equal(starts[0].runIds.length, 1);
@@ -60,10 +60,8 @@ test("concurrent idempotent Task creation and start reserve one Task and one Run
     assert.equal(runDirectories.filter((runId) => runId === completed.currentRunId).length, 1);
     await assert.rejects(access(join(team.workdir, ".ogs", "runs", completed.currentRunId)), { code: "ENOENT" });
 
-    await assert.rejects(
-      () => store.startProjectTask(project.projectId, created[0].taskId, { mode: "sandbox", idempotencyKey: "same-attempt" }),
-      /IDEMPOTENCY_KEY_REUSE/
-    );
+    const replay = await store.startProjectTask(project.projectId, created[0].taskId, { mode: "sandbox", idempotencyKey: "same-attempt" });
+    assert.equal(replay.task.currentRunId, completed.currentRunId);
   } finally {
     if (previousRoot === undefined) delete process.env.OGS_SITE_PROJECTS_DIR;
     else process.env.OGS_SITE_PROJECTS_DIR = previousRoot;

@@ -4,8 +4,8 @@
   "runInput": {
     "dataSchema": {
       "type": "object",
-      "properties": { "prompt": { "type": "string", "minLength": 1 } },
-      "required": ["prompt"],
+      "properties": { "request": { "type": "string", "minLength": 1 } },
+      "required": ["request"],
       "additionalProperties": false
     },
     "preferencesSchema": { "type": "object", "additionalProperties": true },
@@ -30,8 +30,8 @@
         "draft": {
           "dataSchema": {
             "type": "object",
-            "properties": { "prompt": { "type": "string", "minLength": 1 } },
-            "required": ["prompt"],
+            "properties": { "request": { "type": "string", "minLength": 1 } },
+            "required": ["request"],
             "additionalProperties": false
           }
         },
@@ -67,7 +67,7 @@
       "id": "entry",
       "from": { "kind": "run" },
       "to": { "kind": "agent", "agentId": "maker", "inputPort": "draft" },
-      "map": { "data": { "prompt": { "$ref": "$.run.input.prompt" } } },
+      "map": { "data": { "request": { "$ref": "$.run.input.request" } } },
       "when": { "priority": 0 },
       "delivery": { "deadlineMs": 120000 }
     },
@@ -133,7 +133,7 @@
           "required": ["comments"],
           "additionalProperties": false
         },
-        "timeoutMs": 10000,
+        "timeoutMs": 600000,
         "onTimeout": "fail"
       }
     ]
@@ -142,7 +142,7 @@
     {
       "id": "binding:maker",
       "kind": "model",
-      "modelRef": "sandbox/default",
+      "modelRef": "codex-gateway/gpt-6-luna",
       "attemptTimeoutMs": 60000,
       "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } }
     }

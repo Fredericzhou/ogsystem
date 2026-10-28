@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "decision": { "type": "string", "enum": ["rebuttal", "final"] },
+    "request": { "type": "string", "minLength": 1 },
+    "proponentSummary": { "type": "string", "minLength": 1 },
+    "opponentSummary": { "type": "string", "minLength": 1 },
+    "rationale": { "type": "string", "minLength": 1 }
+  },
+  "required": ["decision", "request", "proponentSummary", "opponentSummary", "rationale"],
+  "additionalProperties": false
+}

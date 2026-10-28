@@ -104,7 +104,7 @@ test("Team version actions preserve their statuses, IDs, bodies, and error mappi
   assert.equal(oldDesignSave.sent[0].status, 409);
 });
 
-test("TeamVersion metadata routes remain available while Mermaid design routes are removed", async () => {
+test("TeamVersion metadata routes remain available while legacy authoring routes fail closed", async () => {
   const calls = [];
   const harness = routeHarness({
     getTeamVersion: async (id) => (calls.push(["getTeam", id]), { projectId: id, teamVersionId: id }),
@@ -124,18 +124,23 @@ test("TeamVersion metadata routes remain available while Mermaid design routes a
     ["PUT", "/api/v1/team-versions/team-v1/design", { authoring: {}, expectedTeamVersionDigest: "digest" }],
     ["GET", "/api/v1/team-versions/team-v1/design/assets"],
     ["PUT", "/api/v1/team-versions/team-v1/design/assets", { assets: { contracts: "{}" } }]
-  ]) assert.equal(await harness.invoke(method, path, body), false, `${method} ${path} must not dispatch legacy Mermaid design API`);
+  ]) {
+    assert.equal(await harness.invoke(method, path, body), true, `${method} ${path} is explicitly rejected`);
+    assert.equal(harness.sent.at(-1).status, 409);
+    assert.match(harness.sent.at(-1).payload.error, /TEAM_IR_V2_REQUIRED/);
+  }
 
   assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/save", { name: "Team", expectedTeamVersionDigest: "digest-1" }), true);
   assert.deepEqual(calls[2], ["saveTeamVersion", "team-v1", { name: "Team", expectedTeamVersionDigest: "digest-1" }]);
   assert.equal(await harness.invoke("GET", "/api/v1/projects/team-v1/team/design"), false);
   assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/graph?locale=en"), true);
+  assert.equal(harness.sent.at(-1).status, 409);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-v1/chat", { message: "adjust" }), true);
-  assert.deepEqual(calls[3], ["getTeamGraph", "team-v1", "en"]);
-  assert.deepEqual(calls[4], ["chatTeamAssistant", "team-v1", { message: "adjust" }]);
+  assert.equal(harness.sent.at(-1).status, 409);
+  assert.equal(calls.length, 3, "legacy graph and assistant calls are never dispatched");
 });
 
-test("Team IR routes remain version-scoped while legacy design routes have no compatibility dispatch", async () => {
+test("Team IR routes remain version-scoped while legacy design routes are rejected", async () => {
   const calls = [];
   const harness = routeHarness({
     getTeamIr: async (id) => (calls.push(["get-ir", id]), { teamVersionId: id, teamIR: null, semanticDigest: null }),
@@ -159,23 +164,23 @@ test("Team IR routes remain version-scoped while legacy design routes have no co
     ["POST", "/api/v1/team-versions/team-v1/design/validate", { schemaVersion: 2 }],
     ["PUT", "/api/v1/team-versions/team-v1/design", { teamIR: { schemaVersion: 2 } }]
   ]) {
-    assert.equal(await harness.invoke(method, path, body), false);
+    assert.equal(await harness.invoke(method, path, body), true);
+    assert.equal(harness.sent.at(-1).status, 409);
   }
 });
 
-test("release baseline routes are TeamVersion scoped and versioned through application use cases", async () => {
-  const calls = [];
+test("legacy release baseline routes are rejected in favor of Team IR v2 evidence", async () => {
   const route = routeHarness({
-    getReleaseBaselineScenarios: async (id) => (calls.push(["get-baselines", id]), { teamVersionId: id, scenarios: [] }),
-    saveReleaseBaselineScenarios: async (id, body) => (calls.push(["save-baselines", id, body]), { teamVersionId: id, scenarios: body.scenarios })
+    getReleaseBaselineScenarios: async () => { throw new Error("legacy baseline route invoked"); },
+    saveReleaseBaselineScenarios: async () => { throw new Error("legacy baseline route invoked"); }
   });
   assert.equal(await route.invoke("GET", "/api/v1/team-versions/team-v1/release-baselines"), true);
-  assert.deepEqual(route.sent[0].payload, { teamVersionId: "team-v1", scenarios: [] });
+  assert.equal(route.sent[0].status, 409);
   assert.equal(await route.invoke("PUT", "/api/v1/team-versions/team-v1/release-baselines", { scenarios: [{ scenarioId: "smoke" }] }), true);
-  assert.deepEqual(calls, [["get-baselines", "team-v1"], ["save-baselines", "team-v1", { scenarios: [{ scenarioId: "smoke" }] }]]);
+  assert.equal(route.sent.at(-1).status, 409);
 });
 
-test("release baseline batch and comparison routes preserve TeamVersion scope and response envelopes", async () => {
+test("legacy release baseline batch and comparison routes do not dispatch", async () => {
   const calls = [];
   const route = routeHarness({
     startReleaseBaselineBatch: async (...args) => (calls.push(["start", ...args]), { batchId: "batch-1", status: "running" }),
@@ -183,19 +188,16 @@ test("release baseline batch and comparison routes preserve TeamVersion scope an
     cancelReleaseBaselineBatch: async (...args) => (calls.push(["cancel", ...args]), { batchId: args[1], cancelRequested: true }),
     compareReleaseBaselines: async (...args) => (calls.push(["compare", ...args]), { availableTargets: {}, selectedTarget: "parent_version", scenarios: [] })
   });
-  assert.equal(await route.invoke("POST", "/api/v1/team-versions/team-v1/release-baselines/batches", { mode: "all_required" }), true);
-  assert.deepEqual(route.sent[0], { status: 202, payload: { batch: { batchId: "batch-1", status: "running" } } });
-  assert.equal(await route.invoke("GET", "/api/v1/team-versions/team-v1/release-baselines/batches/latest"), true);
-  assert.deepEqual(route.sent[1].payload.batch, { batchId: "batch-1" });
-  assert.equal(await route.invoke("POST", "/api/v1/team-versions/team-v1/release-baselines/batches/batch-1/cancel"), true);
-  assert.deepEqual(route.sent[2].payload.batch, { batchId: "batch-1", cancelRequested: true });
-  assert.equal(await route.invoke("GET", "/api/v1/team-versions/team-v1/release-baselines/comparison?target=latest_released"), true);
-  assert.deepEqual(calls, [
-    ["start", "team-v1", { mode: "all_required" }],
-    ["latest", "team-v1"],
-    ["cancel", "team-v1", "batch-1"],
-    ["compare", "team-v1", "latest_released"]
-  ]);
+  for (const [method, path, body] of [
+    ["POST", "/api/v1/team-versions/team-v1/release-baselines/batches", { mode: "all_required" }],
+    ["GET", "/api/v1/team-versions/team-v1/release-baselines/batches/latest"],
+    ["POST", "/api/v1/team-versions/team-v1/release-baselines/batches/batch-1/cancel", {}],
+    ["GET", "/api/v1/team-versions/team-v1/release-baselines/comparison?target=latest_released"]
+  ]) {
+    assert.equal(await route.invoke(method, path, body), true);
+    assert.equal(route.sent.at(-1).status, 409);
+  }
+  assert.deepEqual(calls, []);
 });
 
 test("release readiness delegates the current digest and proof decision to Team lifecycle", async () => {

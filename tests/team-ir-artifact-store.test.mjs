@@ -56,6 +56,24 @@ test("Run input registration requires caller authorization and matches the decla
     (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_ACCESS_DENIED");
 });
 
+test("Task Artifact validation accepts only registered same-Project slot references and supported cardinality", async () => {
+  const store = new TeamArtifactStore({ backend: new MemoryTeamArtifactBackend() });
+  const reference = await store.registerRunInput({
+    team: team(), projectId: "project-1", slotId: "brief", mediaType: "text/plain", content: Buffer.from("brief"), authorizeUpload: () => true
+  });
+  assert.deepEqual(await store.validateRunInputAttachments({ team: team(), projectId: "project-1", attachments: { brief: reference } }), { brief: reference });
+  await assert.rejects(store.validateRunInputAttachments({ team: team(), projectId: "project-2", attachments: { brief: reference } }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_ACCESS_DENIED");
+  await assert.rejects(store.validateRunInputAttachments({ team: team(), projectId: "project-1", attachments: { unknown: reference } }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_SLOT_UNKNOWN");
+  await assert.rejects(store.validateRunInputAttachments({ team: team(), projectId: "project-1", attachments: { brief: { ...reference, mediaType: "text/html" } } }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_ACCESS_DENIED");
+  const many = team();
+  many.runInput.artifactSlots.brief.cardinality = "many";
+  await assert.rejects(store.validateRunInputAttachments({ team: many, projectId: "project-1", attachments: { brief: reference } }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_CARDINALITY_UNSUPPORTED");
+});
+
 test("invocation resolver can read only explicitly allowed Artifacts and verifies content integrity", async () => {
   const blobs = new Map();
   const backend = {

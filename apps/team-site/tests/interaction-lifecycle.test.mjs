@@ -66,7 +66,7 @@ test("dirty forms guard route changes and beforeunload", async () => {
   }
 });
 
-test("run drawer and task review dialog manage focus, Escape, and keyboard errors", async () => {
+test("run drawer manages focus and Team IR v2 task review focuses the current Run checkpoint", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-interaction-modal-"));
   await seedReleasedClassicTeam(projectsRoot);
   const { server, url } = await startServer(projectsRoot);
@@ -104,9 +104,39 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     const projectMetaPath = join(projectsRoot, project.projectId, ".site", "project.json");
     const projectMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
     projectMeta.taskRecords = projectMeta.taskRecords.map((record) => record.taskId === task.taskId
-      ? { ...record, status: "paused", currentRunId: null, runIds: [] }
+      ? { ...record, status: "waiting_review", currentRunId: "run-review-context", runIds: ["run-review-context"] }
       : record);
     await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
+    let v2ReviewStatus = "pending";
+    const v2ReviewRequests = [];
+    let legacyReviewCalls = 0;
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/run-review-context`, async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        runKind: "project_task", runId: "run-review-context", owner: { teamIrSemanticDigest: "f".repeat(64) },
+        state: { status: "waiting_human_review", waitingReview: { reviewId: "review-draft", lineage: "run" } },
+        plan: { engine: "team-ir-v2", team: { orchestration: { reviews: [{ id: "review-draft" }] } } }
+      }) });
+    });
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/run-review-context/team-ir-reviews/review-draft`, async (route) => {
+      const request = route.request();
+      if (request.method() === "GET") {
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+          reviewId: "review-draft", status: v2ReviewStatus, revision: 4, revisionToken: "revision-token-4",
+          activatedAt: "2026-10-29T00:00:00.000Z", deadlineAt: "2026-10-29T01:00:00.000Z"
+        }) });
+      }
+      const payload = request.postDataJSON();
+      v2ReviewRequests.push(payload);
+      if (v2ReviewRequests.length === 1) {
+        v2ReviewStatus = "rejected";
+        return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "resume dispatch response was lost" }) });
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "rejected", decision: "reject", revision: 5 }) });
+    });
+    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`, async (route) => {
+      legacyReviewCalls += 1;
+      await route.fulfill({ status: 410, contentType: "application/json", body: JSON.stringify({ error: "legacy review endpoint must not be used" }) });
+    });
     await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error));
@@ -135,90 +165,31 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
     await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
     const reviewButton = page.locator('[data-task-action="review"]').first();
     await reviewButton.waitFor();
-    await reviewButton.focus();
-    await page.evaluate(async ({ projectId, taskId }) => {
-      const { openTaskReview } = await import("/app/views/app.js");
-      await openTaskReview(projectId, taskId);
-    }, { projectId: project.projectId, taskId: task.taskId });
-    await page.locator(".task-review-dialog[open]").waitFor();
-    assert.equal(await page.locator(".task-review-dialog.focus-scope").evaluate((dialog) => dialog.contains(document.activeElement)), true);
-    assert.equal(await page.locator('.task-review-dialog button[value="submit"]').isDisabled(), true, "review decisions require an active Run request");
-    await page.keyboard.press("Tab");
-    assert.equal(await page.locator(".task-review-dialog.focus-scope").evaluate((dialog) => dialog.contains(document.activeElement)), true);
-    await page.goBack();
-    await page.locator("#projects-view .page-heading").waitFor();
-    assert.equal(await page.locator(".task-review-dialog.focus-scope").count(), 0, "route changes must close review dialogs");
-    assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("modal-open")), false, "route changes must release modal scroll lock");
-
-    await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
-    const reopenedReviewButton = page.locator('[data-task-action="review"]').first();
-    await reopenedReviewButton.waitFor();
-    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`, async (route) => route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ projectId: project.projectId, taskId: task.taskId, runId: "run-review-context", reviews: [
-        { reviewId: "review-first", roleId: "first-reviewer", currentStatus: "pending", allowedDecisions: ["approve"] },
-        { reviewId: "review-second", roleId: "second-reviewer", currentStatus: "pending", allowedDecisions: ["rework", "terminate"] },
-        { reviewId: "review-locked", roleId: "locked-reviewer", currentStatus: "pending", allowedDecisions: [] }
-      ] })
-    }));
-    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/run-review-context/events?limit=100`, async (route) => route.fulfill({
-      status: 200, contentType: "application/json", body: JSON.stringify({ events: [] })
-    }));
-    await reopenedReviewButton.focus();
-    await page.evaluate(async ({ projectId, taskId }) => {
-      const { openTaskReview } = await import("/app/views/app.js");
-      await openTaskReview(projectId, taskId);
-    }, { projectId: project.projectId, taskId: task.taskId });
-    await page.locator(".task-review-dialog[open]").waitFor();
-    const reviewRequestSelect = page.locator('.task-review-dialog select[name="reviewId"]');
-    const reviewDecisionSelect = page.locator('.task-review-dialog select[name="decision"]');
-    const reviewSubmit = page.locator('.task-review-dialog button[value="submit"]');
-    assert.deepEqual(await reviewDecisionSelect.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["approve"]);
-    await reviewRequestSelect.selectOption("review-second");
-    assert.deepEqual(await reviewDecisionSelect.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["rework", "terminate"]);
-    assert.equal(await reviewSubmit.isDisabled(), false);
-    await reviewRequestSelect.selectOption("review-locked");
-    assert.equal(await reviewDecisionSelect.isDisabled(), true);
-    assert.equal(await reviewSubmit.isDisabled(), true);
-    await page.keyboard.press("Escape");
-    await page.locator(".task-review-dialog.focus-scope").waitFor({ state: "detached" });
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset.taskAction), "review");
-
-    let recoveryPayload;
-    await page.route(`**/api/v1/projects/${project.projectId}/tasks/${task.taskId}/review`, async (route) => {
-      if (route.request().method() === "GET") {
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ projectId: project.projectId, taskId: task.taskId, runId: "run-review-context", reviews: [
-            { reviewId: "review-recovery", roleId: "reviewer", currentStatus: "resolved", allowedDecisions: [], recoveryDecision: "approve", recoveryComment: "ship after checks" }
-          ] })
-        });
-      }
-      if (route.request().method() !== "POST") return route.fallback();
-      recoveryPayload = route.request().postDataJSON();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ task: { taskId: task.taskId, status: "running" }, review: { reviewId: "review-recovery", decision: "approve" } }) });
-    });
-    await reopenedReviewButton.focus();
-    await page.evaluate(async ({ projectId, taskId }) => {
-      const { openTaskReview } = await import("/app/views/app.js");
-      await openTaskReview(projectId, taskId);
-    }, { projectId: project.projectId, taskId: task.taskId });
-    await page.locator(".task-review-dialog[open]").waitFor();
-    const recoveryDecision = page.locator('.task-review-dialog select[name="decision"]');
-    const recoveryComment = page.locator('.task-review-dialog textarea[name="comment"]');
-    assert.equal(await recoveryDecision.inputValue(), "approve");
-    assert.equal(await recoveryDecision.isDisabled(), true);
-    assert.equal(await recoveryComment.inputValue(), "ship after checks");
-    assert.equal(await recoveryComment.isDisabled(), true);
-    assert.equal(await page.locator('.task-review-dialog button[value="submit"]').isDisabled(), false);
-    await page.locator('.task-review-dialog button[value="submit"]').click();
-    await page.waitForFunction(() => document.querySelector(".task-review-dialog.focus-scope") === null);
-    assert.deepEqual(recoveryPayload, { reviewId: "review-recovery", decision: "approve", comment: "ship after checks" });
+    await reviewButton.click();
+    const reviewPanel = page.locator("[data-team-ir-run-reviews]");
+    await reviewPanel.waitFor();
+    assert.equal(await reviewPanel.evaluate((panel) => panel.contains(document.activeElement)), true, "the current v2 Review panel receives focus");
+    assert.equal(await reviewPanel.locator('form[data-review-id="review-draft"]').count(), 1, "the Run checkpoint's waitingReview is the displayed request");
+    assert.equal(await page.locator(".task-review-dialog[open]").count(), 0, "v2 reviews do not open the legacy modal");
+    assert.equal(await page.locator('[data-team-ir-review="0"] [name=decision]').inputValue(), "approve");
+    await page.locator('[data-team-ir-review="0"] [name=decision]').selectOption("reject");
+    await page.locator('[data-team-ir-review="0"] [name=feedback]').fill('{"comments":"Please revise the evidence."}');
+    await page.locator('[data-team-ir-review="0"] button[type=submit]').click();
+    await page.locator('[data-team-ir-review="0"] [data-review-status]').getByText(/resume dispatch response was lost/).waitFor();
+    await page.locator('[data-team-ir-review="0"] button[type=submit]').click();
+    await page.locator("[data-team-ir-run-reviews]").waitFor({ state: "detached" });
+    assert.equal(legacyReviewCalls, 0, "the legacy Project Review API must never be called");
+    assert.equal(v2ReviewRequests.length, 2);
+    assert.deepEqual(v2ReviewRequests[0].decision, "reject");
+    assert.deepEqual(v2ReviewRequests[0].feedback, { comments: "Please revise the evidence." });
+    assert.equal(v2ReviewRequests[0].revisionToken, "revision-token-4");
+    assert.match(v2ReviewRequests[0].idempotencyKey, /^[0-9a-f-]{36}$/i);
+    assert.equal(v2ReviewRequests[1].idempotencyKey, v2ReviewRequests[0].idempotencyKey, "retry reuses the v2 idempotency key");
+    assert.equal(Object.hasOwn(v2ReviewRequests[0], "reviewerId"), false);
+    assert.equal(Object.hasOwn(v2ReviewRequests[0], "comment"), false);
 
     const lifecycleTasks = [];
-    for (const action of ["resume", "cancel"]) {
+    for (const action of ["cancel"]) {
       const response = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, {
         data: { input: `UI lifecycle ${action}`, teamVersionId: team.projectId, idempotencyKey: `ui-lifecycle-${action}` }
       });
@@ -226,23 +197,7 @@ test("run drawer and task review dialog manage focus, Escape, and keyboard error
       assert.equal(response.status(), 201, task.error || "Task creation should succeed.");
       lifecycleTasks.push({ action, task });
     }
-    const lifecycleMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
-    lifecycleMeta.taskRecords = lifecycleMeta.taskRecords.map((record) =>
-      lifecycleTasks.some(({ task: item, action }) => item.taskId === record.taskId && action === "resume")
-        ? { ...record, status: "paused", currentRunId: null, runIds: [] }
-        : record
-    );
-    await writeFile(projectMetaPath, `${JSON.stringify(lifecycleMeta, null, 2)}\n`, "utf8");
     await page.goto(`${url}/projects/${project.projectId}`, { waitUntil: "networkidle" });
-
-    const resumeTaskId = lifecycleTasks.find((item) => item.action === "resume").task.taskId;
-    const resumeRow = page.locator(`.task-record-row:has([data-task-id="${resumeTaskId}"])`);
-    await resumeRow.locator('[data-task-action="resume"]').click();
-    await page.waitForFunction((taskId) => {
-      const row = [...document.querySelectorAll(".task-record-row")].find((item) => item.querySelector(`[data-task-id="${taskId}"]`));
-      return row?.querySelector(".status-chip")?.classList.contains("queued");
-    }, resumeTaskId);
-    assert.equal((await page.request.get(`${url}/api/v1/projects/${project.projectId}`).then((result) => result.json())).taskRecords.find((item) => item.taskId === resumeTaskId).status, "queued");
 
     const queuedCancelId = lifecycleTasks.find((item) => item.action === "cancel").task.taskId;
     const queuedCancelRow = page.locator(`.task-record-row:has([data-task-id="${queuedCancelId}"])`);

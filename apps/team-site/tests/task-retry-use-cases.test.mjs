@@ -21,14 +21,14 @@ function setup(overrides = {}) {
         calls.push(["getProject", projectId]);
         return projectId === "team-1"
           ? { workdir: "/tmp/team-1" }
-          : { projectType: "collaboration", workdir: "/tmp/project-1", materials: { materials: [{ materialId: "mat-1", path: "workspace/files/input.txt", contentType: "text/plain" }] }, taskRecords: [task] };
+          : { projectType: "collaboration", workdir: "/tmp/project-1", taskRecords: [task] };
       }
     },
     runStore: {
       async readRunState(projectId, taskId, runId) { calls.push(["readRunState", projectId, taskId, runId]); return { status: "failed" }; },
       async loadMaterialSnapshots(projectId, taskId, runId) {
         calls.push(["loadMaterialSnapshots", projectId, taskId, runId]);
-        return [{ materialId: "mat-1", snapshotPath: "inputs/input.txt", contentType: "text/plain", selectedRanges: [], consumingNodeIds: ["role-a"] }];
+        return [];
       },
       resolveMaterialPath(projectId, path) { return `/tmp/${projectId}/${path}`; },
       resolveRunArtifactPath(projectId, taskId, runId, path) { return `/tmp/${projectId}/.ogs/runs/${runId}/${path}`; }
@@ -48,15 +48,8 @@ test("Task retry validates the failed current Run and starts a new immutable att
   assert.deepEqual(start[3], {
     mode: "sandbox",
     retrySourceRunId: "run-1",
-    retryInputs: [{
-      materialId: "mat-1",
-      sourcePath: "/tmp/project-1/.ogs/runs/run-1/inputs/input.txt",
-      contentType: "text/plain",
-      selectedRanges: [],
-      consumingNodeIds: ["role-a"]
-    }],
-    retrySourceRoot: undefined,
-    materialSnapshotPolicy: { kind: "source_run_snapshot", sourceRunId: "run-1" },
+    retryInputs: [],
+    materialSnapshotPolicy: { kind: "team-ir-v2-task-snapshot", sourceRunId: "run-1" },
     idempotencyKey: "retry-key"
   });
 });
@@ -66,24 +59,17 @@ test("Task retry refuses a Task that is not failed", async () => {
   await assert.rejects(() => useCases.retryProjectTask("project-1", "task-1"), /TASK_RETRY_UNSUPPORTED/);
 });
 
-test("Task retry can recover a failed reservation with no Run state", async () => {
+test("Task retry fails closed when the failed Run has no Team IR v2 checkpoint", async () => {
   const { useCases, calls } = setup({
     projectStore: { async getProject(projectId) {
       return projectId === "team-1"
         ? { workdir: "/tmp/team-1" }
-        : { projectType: "collaboration", workdir: "/tmp/project-1", materials: { materials: [{ materialId: "mat-1", path: "workspace/files/input.txt", contentType: "text/plain" }] }, taskRecords: [{ taskId: "task-1", status: "failed", currentRunId: "missing-run", teamVersionId: "team-1", lastError: "RUN_STATE_MISSING: reserved Run state was not created." }] };
+        : { projectType: "collaboration", workdir: "/tmp/project-1", taskRecords: [{ taskId: "task-1", status: "failed", currentRunId: "missing-run", teamVersionId: "team-1", lastError: "RUN_STATE_MISSING: reserved Run state was not created." }] };
     } },
     runStore: { async readRunState() { return undefined; } }
   });
-  await useCases.retryProjectTask("project-1", "task-1");
-  const start = calls.find(([name]) => name === "startTask");
-  assert.deepEqual(start[3].retryInputs, [{ materialId: "mat-1", sourcePath: "/tmp/project-1/workspace/files/input.txt", contentType: "text/plain" }]);
-  assert.equal(start[3].retrySourceRoot, "/tmp/project-1");
-  assert.deepEqual(start[3].materialSnapshotPolicy, {
-    kind: "current_project_fallback",
-    sourceRunId: "missing-run",
-    reason: "source_run_state_missing"
-  });
+  await assert.rejects(() => useCases.retryProjectTask("project-1", "task-1", { mode: "sandbox" }), /TASK_RETRY_UNSUPPORTED/);
+  assert.equal(calls.some(([name]) => name === "startTask"), false);
 });
 
 test("Task retry rejects invalid IDs before reading the Task", async () => {

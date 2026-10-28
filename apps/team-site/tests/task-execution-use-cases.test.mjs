@@ -8,11 +8,20 @@ import { createFileTaskExecutionStore } from "../infrastructure/file-task-execut
 import { createFileTeamIrStore } from "../infrastructure/file-team-ir-store.mjs";
 import { createRuntimeTeamIrProjectRunExecutor } from "../infrastructure/runtime-team-ir-project-run-executor.mjs";
 
-function harness({ reserveAttempt, teamVersionStatus = "released", team = {}, teamIrRunStore, mountedTeams = [{ teamVersionId: "team-v1" }], execute = async () => ({ state: { status: "completed" }, result: { finalOutputsByRoleId: { writer: [{ content: "done" }] }, finalOutputRoleOrder: ["writer"] } }) } = {}) {
+function harness({ reserveAttempt, teamVersionStatus = "released", team: teamInfo = {}, teamIrRunStore, mountedTeams = [{ teamVersionId: "team-v1" }], execute = async () => ({ state: { status: "completed" }, result: { finalOutputsByRoleId: { writer: [{ content: "done" }] }, finalOutputRoleOrder: ["writer"] } }) } = {}) {
   const calls = [];
-  const task = { taskId: "task-1", input: "Do the work", status: "queued", teamVersionId: "team-v1", runIds: [], attemptRequests: {} };
+  const semanticDigest = "a".repeat(64);
+  const compiledPlanDigest = "b".repeat(64);
+  const task = { taskId: "task-1", input: "Do the work", status: "queued", teamVersionId: "team-v1", teamIrSemanticDigest: semanticDigest, compiledPlanDigest, runIds: [], attemptRequests: {} };
   const project = { projectId: "project-1", workdir: "/project", taskRecords: [task], mountedTeams, materials: { materials: [] } };
   const workers = new Map();
+  const team = { teamIrSemanticDigest: semanticDigest, compiledPlanDigest, teamCoreDigest: "c".repeat(64), teamDigestVersion: 3, ...teamInfo };
+  const v2RunStore = teamIrRunStore === undefined ? {
+    async execute(project, options) {
+      calls.push(["execute-v2", project, options]);
+      return execute(project.projectId, options);
+    }
+  } : teamIrRunStore;
   const useCases = createTaskExecutionUseCases({
     projectStore: { async getProject() { return project; } },
     teamStore: { async getTeamVersion(id) { return id === "team-v1" ? { projectId: id, teamVersionId: id, teamVersionStatus, workdir: "/team-v1", ...team } : undefined; } },
@@ -33,8 +42,8 @@ function harness({ reserveAttempt, teamVersionStatus = "released", team = {}, te
       delete: (key) => workers.delete(key),
       async wait(key) { await workers.get(key)?.catch(() => undefined); }
     },
-    runStore: { async execute(...args) { calls.push(["execute", ...args]); return execute(...args); } },
-    teamIrRunStore,
+    runStore: { async execute(...args) { calls.push(["legacy-execute", ...args]); return execute(...args); } },
+    teamIrRunStore: v2RunStore,
     readiness: { async inspect() { return { canDryRun: true, blockers: [] }; }, async requireCurrentConfirmation() {} },
     identifiers: {
       createRunId: () => "run-1",
@@ -47,31 +56,50 @@ function harness({ reserveAttempt, teamVersionStatus = "released", team = {}, te
   return { calls, project, useCases };
 }
 
+test("Task attempt summary stores readable Team IR v2 result text before applying its length limit", async () => {
+  const task = { taskId: "task-1", currentRunId: "run-1", status: "running" };
+  const project = { projectId: "project-1", taskRecords: [task] };
+  const store = createFileTaskExecutionStore({
+    projectStore: {
+      async getProject() { return project; },
+      async withProjectWriteLock(_id, _operation, action) { return action(); },
+      async saveTaskRecord(_project, _taskId, update) { Object.assign(task, update); return task; }
+    }
+  });
+  const answer = `Readable delivery\n${"x".repeat(600)}`;
+  await store.completeAttempt({
+    projectId: "project-1", taskId: "task-1", runId: "run-1", startedAt: "start", now: "finish",
+    result: { state: { status: "completed" }, result: { teamResult: { answer } } }
+  });
+  assert.equal(task.outputSummary.length, 500);
+  assert.equal(task.outputSummary, answer.slice(0, 500));
+});
+
 test("Task execution reserves an immutable attempt under its Collaboration Project before launching the Run", async () => {
   const testHarness = harness();
   const task = await testHarness.useCases.startProjectTask("project-1", "task-1", { idempotencyKey: "request-1" });
-  assert.deepEqual(testHarness.calls.slice(0, 2).map(([name]) => name), ["reserve", "execute"]);
+  assert.deepEqual(testHarness.calls.slice(0, 2).map(([name]) => name), ["reserve", "execute-v2"]);
   assert.equal(testHarness.calls[0][1].teamVersionId, "team-v1");
-  assert.deepEqual(testHarness.calls[1][2], {
-    prompt: "Do the work",
-    mode: "dry-run",
-    requestedRunId: "run-1",
-    runKind: "project_task",
-    taskId: "task-1",
-    taskNumber: undefined,
-    attemptNumber: 1,
-    teamVersionId: "team-v1",
-    teamCoreDigest: undefined,
-    teamDigestVersion: undefined,
-    readinessChecked: false,
-    idempotencyKey: "task:project-1:task-1:request-1",
-    materialInputsOverride: [],
-    materialSourceRoot: "/project",
-    materialSnapshotPolicy: { kind: "project_current" },
-    recordTask: false
-  });
+  const options = testHarness.calls[1][2];
+  assert.equal(options.prompt, "Do the work");
+  assert.equal(options.runId, "run-1");
+  assert.equal(options.teamIrSemanticDigest, "a".repeat(64));
+  assert.equal(options.compiledPlanDigest, "b".repeat(64));
+  assert.equal(options.idempotencyKey, "task:project-1:task-1:request-1");
+  assert.deepEqual(options.materialSnapshotPolicy, { kind: "project_current" });
   await testHarness.useCases.startProjectTask("project-1", "task-1", { idempotencyKey: "request-1" });
   assert.equal(testHarness.calls.filter(([name]) => name === "reserve").length, 1);
+});
+
+test("Task execution carries the frozen Artifact references into each Run attempt", async () => {
+  const testHarness = harness();
+  const reference = { artifactId: `art_${"a".repeat(36)}`, mediaType: "text/plain" };
+  testHarness.project.taskRecords[0].runInputAttachments = { brief: reference };
+  await testHarness.useCases.startProjectTask("project-1", "task-1", { mode: "sandbox", idempotencyKey: "artifact-attempt" });
+  const reservation = testHarness.calls.find(([name]) => name === "reserve")[1];
+  const [, , options] = testHarness.calls.find(([name]) => name === "execute-v2");
+  assert.deepEqual(reservation.artifactReferences, { brief: reference });
+  assert.deepEqual(options.attachments, { brief: reference });
 });
 
 test("Run state initialization failure leaves reservation handling to the atomic attempt store", async () => {
@@ -79,7 +107,8 @@ test("Run state initialization failure leaves reservation handling to the atomic
   await assert.rejects(() => testHarness.useCases.startProjectTask("project-1", "task-1"), /state write failed/);
   assert.equal(testHarness.project.taskRecords[0].currentRunId, undefined);
   assert.equal(testHarness.calls.some(([name]) => name === "fail"), false);
-  assert.equal(testHarness.calls.some(([name]) => name === "execute"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "execute-v2"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "legacy-execute"), false);
 });
 
 test("Task Run reservation write failure leaves the queued Task unchanged and never starts Runtime", async () => {
@@ -88,7 +117,8 @@ test("Task Run reservation write failure leaves the queued Task unchanged and ne
   assert.equal(testHarness.project.taskRecords[0].status, "queued");
   assert.equal(testHarness.project.taskRecords[0].currentRunId, undefined);
   assert.deepEqual(testHarness.project.taskRecords[0].runIds, []);
-  assert.equal(testHarness.calls.some(([name]) => name === "execute"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "execute-v2"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "legacy-execute"), false);
 });
 
 test("Runtime failure is projected through the failure port and worker bookkeeping is cleared", async () => {
@@ -105,8 +135,8 @@ test("Task execution launches the archived fixed TeamVersion using Project-owned
   const task = await testHarness.useCases.startProjectTask("project-1", "task-1");
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(task.currentRunId, "run-1");
-  const [, projectId, options] = testHarness.calls.find(([name]) => name === "execute");
-  assert.equal(projectId, "project-1");
+  const [, project, options] = testHarness.calls.find(([name]) => name === "execute-v2");
+  assert.equal(project.projectId, "project-1");
   assert.equal(options.teamVersionId, "team-v1");
   assert.equal(Object.hasOwn(options, "workdir"), false);
   assert.equal(Object.hasOwn(options, "runEvidenceRoot"), false);
@@ -115,11 +145,11 @@ test("Task execution launches the archived fixed TeamVersion using Project-owned
 test("Task execution refuses a frozen v2 plan until the v2 Sandbox executor is connected", async () => {
   const semanticDigest = "a".repeat(64);
   const compiledPlanDigest = "b".repeat(64);
-  const testHarness = harness({ team: { teamIrSemanticDigest: semanticDigest, compiledPlanDigest } });
+  const testHarness = harness({ team: { teamIrSemanticDigest: semanticDigest, compiledPlanDigest }, teamIrRunStore: null });
   Object.assign(testHarness.project.taskRecords[0], { teamIrSemanticDigest: semanticDigest, compiledPlanDigest });
   await assert.rejects(() => testHarness.useCases.startProjectTask("project-1", "task-1"), /TEAM_IR_V2_EXECUTOR_UNAVAILABLE/);
   assert.equal(testHarness.calls.some(([name]) => name === "reserve"), false);
-  assert.equal(testHarness.calls.some(([name]) => name === "execute"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "legacy-execute"), false);
 });
 
 test("production Team IR executor rejects unavailable trusted resolvers before reserving a Task Run", async () => {
@@ -133,7 +163,7 @@ test("production Team IR executor rejects unavailable trusted resolvers before r
   Object.assign(testHarness.project.taskRecords[0], { teamIrSemanticDigest: semanticDigest, compiledPlanDigest });
   await assert.rejects(() => testHarness.useCases.startProjectTask("project-1", "task-1"), /TEAM_IR_V2_EXECUTOR_UNAVAILABLE/);
   assert.equal(testHarness.calls.some(([name]) => name === "reserve"), false);
-  assert.equal(testHarness.calls.some(([name]) => name === "execute"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "legacy-execute"), false);
 });
 
 test("Task execution sends frozen v2 digests to the Project-owned Team IR executor without invoking the legacy Run store", async () => {
@@ -147,10 +177,19 @@ test("Task execution sends frozen v2 digests to the Project-owned Team IR execut
   const task = await testHarness.useCases.startProjectTask("project-1", "task-1", { mode: "sandbox" });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(task.currentRunId, "run-1");
-  assert.equal(testHarness.calls.some(([name]) => name === "execute"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "legacy-execute"), false);
   assert.equal(testHarness.calls.some(([name]) => name === "reserve"), true);
   const completed = testHarness.calls.find(([name]) => name === "complete");
   assert.deepEqual(completed[1].result.result, { teamResult: { summary: "v2 result" } });
+});
+
+test("Task execution rejects an unbound legacy Task before invoking either executor", async () => {
+  const testHarness = harness();
+  delete testHarness.project.taskRecords[0].teamIrSemanticDigest;
+  delete testHarness.project.taskRecords[0].compiledPlanDigest;
+  await assert.rejects(() => testHarness.useCases.startProjectTask("project-1", "task-1"), /TEAM_IR_V2_REQUIRED/);
+  assert.equal(testHarness.calls.some(([name]) => name === "reserve"), false);
+  assert.equal(testHarness.calls.some(([name]) => name === "legacy-execute" || name === "execute-v2"), false);
 });
 
 test("Team IR human-review wait maps to Task waiting_review while preserving the Runtime checkpoint", async () => {

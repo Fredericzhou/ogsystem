@@ -62,11 +62,34 @@ export async function resolveTeamIrReleaseClosure({ teamIR }) {
     adapterVersions: Object.fromEntries([...new Set(teamIR.bindings.map((binding) => binding.kind))].map((kind) => [kind, "browser-fake/1"]))
   };
 }
+export const a2aAdapterVersion = "browser-fake-a2a/1";
+const a2aCard = {
+  protocolVersion: "1.0", name: "Browser Fake Agent", version: "1",
+  defaultInputModes: ["application/json"], defaultOutputModes: ["application/json"],
+  capabilities: { streaming: false, pushNotifications: false }
+};
+export async function resolveA2AAgent() {
+  return {
+    agentCard: a2aCard,
+    client: {
+      async getAgentCard() { return a2aCard; },
+      async sendMessage() { return { id: "browser-task", status: "completed", result: { event: "DONE", data: { answer: "Simulation result", again: false } } }; },
+      async getTask(taskId) { return { id: taskId, status: "completed", result: { event: "DONE", data: { answer: "Simulation result", again: false } } }; },
+      async cancelTask() { return true; }
+    }
+  };
+}
 export async function resolveBindings({ teamIR }) {
   return Object.fromEntries(teamIR.agents.map((agent) => {
     const [event, port] = Object.entries(agent.outputPorts)[0];
     const data = Object.fromEntries(Object.entries(port.dataSchema?.properties || {}).map(([key, schema]) => [key, schema.type === "string" ? "Simulation result" : schema.type === "boolean" ? false : null]));
-    return [agent.bindingRef, { async invoke() { return { kind: "completed", output: { event, data } }; } }];
+    return [agent.bindingRef, { async invoke(invocation) {
+      if (invocation.artifactResolver) {
+        const reference = invocation.input.artifacts.sources;
+        await invocation.artifactResolver.read(reference.artifactId);
+      }
+      return { kind: "completed", output: { event, data } };
+    } }];
   }));
 }
 `, "utf8");
@@ -98,21 +121,21 @@ export async function resolveBindings({ teamIR }) {
     await page.locator("#new-project-form input[name=name]").fill("IR v2 Browser UAT");
     await page.locator("#new-project-form textarea[name=overview]").fill("Create a simple versioned Team IR and verify it after reopening.");
     await page.locator("#new-project-form button[type=submit]").click();
-    await page.waitForURL(/\/teams\/[a-z0-9-]+\/design$/);
-    const teamVersionId = page.url().match(/\/teams\/([a-z0-9-]+)\/design$/)?.[1];
+    await page.waitForURL(/\/teams\/[a-z0-9-]+\/ir$/);
+    const teamVersionId = page.url().match(/\/teams\/([a-z0-9-]+)\/ir$/)?.[1];
     assert.ok(teamVersionId);
 
     await page.goto(`${url}/studio/teams/${teamVersionId}/ir`, { waitUntil: "networkidle" });
     await page.locator("#team-ir-editor").waitFor({ timeout: 5000 }).catch(async () => {
       assert.fail(`Team IR editor did not render at ${page.url()}: ${await page.locator("body").innerText().catch(() => "no body")} | page errors: ${pageErrors.join("; ")}`);
     });
-    assert.equal(await page.locator('[data-ir-agent]').count(), 0);
-    await page.locator("[data-ir-add-agent]").click();
-    await page.locator('[name="agent-0-id"]').fill("worker");
-    await page.locator('[name="agent-0-package"]').fill("role:worker@1");
-    await page.locator('[name="agent-0-binding"]').fill("binding:worker");
-    await page.locator('[name="agent-0-input-fields"]').fill("request");
-    await page.locator('[name="agent-0-output-fields"]').fill("summary");
+    assert.equal(await page.locator('[data-ir-agent]').count(), 1);
+    assert.equal(await page.locator('[name="agent-0-id"]').inputValue(), "worker");
+    assert.equal(await page.locator('[name="agent-0-package"]').inputValue(), "role:worker@1");
+    assert.equal(await page.locator('[name="agent-0-binding"]').inputValue(), "binding:worker");
+    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).bindings[0].modelRef, "codex-gateway/gpt-6-luna");
+    await page.locator('[data-ir-remove-handoff="1"]').click();
+    await page.locator('[data-ir-remove-handoff="0"]').click();
 
     await page.locator('[data-ir-connect-target-agent-index="0"]').click();
     assert.match(await page.locator("[data-ir-connect-status]").innerText(), /先选择来源/);
@@ -129,6 +152,7 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].from, { kind: "run" });
     assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].to, { kind: "agent", agentId: "worker", inputPort: "default" });
     assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].map, { data: {} }, "generated edge keeps data mapping explicit");
+    assert.equal(generatedContracts.bindings.find((binding) => binding.id === "binding:worker")?.modelRef, "codex-gateway/gpt-6-luna");
     await page.locator('[name="handoff-0-id"]').fill("run-to-worker");
     const runMapping = page.locator('[name="handoff-0-mapping"]');
     assert.equal(await runMapping.inputValue(), "", "mapping suggestions must not become semantics before acceptance");
@@ -138,11 +162,9 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await runMapping.inputValue(), "");
     await runSuggestion.click();
     assert.equal(await runMapping.inputValue(), "request=$.run.input.request");
-    await page.locator("[data-ir-add-handoff]").click();
+    await page.locator('[data-ir-connect-source-agent-index="0"]').click();
+    await page.locator('[data-ir-connect-target="result"]').click();
     await page.locator('[name="handoff-1-id"]').fill("worker-to-result");
-    await page.locator('[name="handoff-1-from-agent"]').selectOption("worker");
-    await page.locator('[name="handoff-1-from-port"]').fill("DONE");
-    await page.locator('[name="handoff-1-to-agent"]').selectOption("@result");
     const resultMapping = page.locator('[name="handoff-1-mapping"]');
     await page.locator('[data-ir-map-suggest="1"]').click();
     const resultSuggestion = page.locator('[data-ir-map-accept="summary"]');
@@ -214,15 +236,23 @@ export async function resolveBindings({ teamIR }) {
       data: { schemaVersion: 2, teamIR: reopened.teamIR }
     });
     assert.equal(legacy.status(), 409);
-    assert.match((await legacy.json()).error, /TEAM_IR_VERSION_UNSUPPORTED_HERE/);
+    assert.match((await legacy.json()).error, /TEAM_IR_V2_REQUIRED/);
 
-    const advancedTeam = await page.request.post(`${url}/api/v1/team-factory`, {
+    const advancedTeam = await page.request.post(`${url}/api/v1/team-ir-drafts`, {
       data: { name: "IR v2 Advanced Contracts", overview: "Round-trip advanced Team IR contracts." }
     }).then((response) => response.json());
     const advancedId = advancedTeam.projectId;
     const advancedIr = advancedTeamIr(advancedId);
+    advancedIr.runInput.artifactSlots.brief = { ...advancedIr.runInput.artifactSlots.brief, required: true };
+    advancedIr.agents[0].inputPorts.draft.artifactSlots.sources = {
+      ...advancedIr.agents[0].inputPorts.draft.artifactSlots.sources, required: true
+    };
+    advancedIr.handoffs.find((handoff) => handoff.id === "entry").map.artifacts = {
+      sources: { $ref: "$.run.attachments.brief" }
+    };
+    const advancedStored = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir`).then((response) => response.json());
     const seeded = await page.request.put(`${url}/api/v1/team-versions/${advancedId}/ir`, {
-      data: { teamIR: advancedIr, expectedSemanticDigest: null }
+      data: { teamIR: advancedIr, expectedSemanticDigest: advancedStored.semanticDigest }
     });
     const seededBody = await seeded.json();
     assert.equal(seeded.status(), 200, JSON.stringify(seededBody));
@@ -406,6 +436,45 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(advancedReopened.teamIR.handoffs.find((handoff) => handoff.id === "exit").map.artifacts, advancedIr.handoffs.find((handoff) => handoff.id === "exit").map.artifacts);
     assert.deepEqual(advancedReopened.teamIR.handoffs, advancedIr.handoffs);
     assert.deepEqual(advancedReopened.teamIR.bindings, advancedIr.bindings);
+    const artifactUatIr = structuredClone(advancedReopened.teamIR);
+    artifactUatIr.handoffs = artifactUatIr.handoffs.filter((handoff) => ["entry", "exit"].includes(handoff.id));
+    artifactUatIr.handoffs.find((handoff) => handoff.id === "exit").map = {
+      data: { answer: { $ref: "$.output.data.answer" } }
+    };
+    artifactUatIr.orchestration = {
+      routes: [
+        { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["entry"] },
+        { from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["exit"] }
+      ], joins: [], loops: [], reviews: []
+    };
+    const artifactUatSave = await page.request.put(`${url}/api/v1/team-versions/${advancedId}/ir`, {
+      data: { teamIR: artifactUatIr, expectedSemanticDigest: advancedReopened.semanticDigest }
+    });
+    const artifactUatSaved = await artifactUatSave.json();
+    assert.equal(artifactUatSave.status(), 200, JSON.stringify(artifactUatSaved));
+    await page.reload({ waitUntil: "networkidle" });
+    const browserArtifactSlotsResponse = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir/simulation-artifact-slots`);
+    const browserArtifactSlots = await browserArtifactSlotsResponse.json();
+    assert.equal(browserArtifactSlotsResponse.status(), 200, JSON.stringify(browserArtifactSlots));
+    assert.deepEqual(browserArtifactSlots.slots.map((slot) => slot.slotId), ["brief"]);
+    await page.locator("[data-ir-simulation-artifact-slot]").waitFor({ state: "attached" });
+    assert.equal(await page.locator("[data-ir-simulation-artifact-inputs]").isVisible(), true,
+      `Simulation Artifact controls did not load: ${await page.locator("[data-ir-simulation-artifact-status]").innerText()}`);
+    assert.equal(await page.locator("[data-ir-simulation-artifact-slot] option").first().getAttribute("value"), "brief");
+    await page.locator("[data-ir-simulation-artifact-file]").setInputFiles({
+      name: "source.md", mimeType: "text/markdown", buffer: Buffer.from("Browser Sandbox source")
+    });
+    await page.locator("[data-ir-simulation-artifact-add]").click();
+    await page.getByText("Simulation attachment registered.").waitFor();
+    assert.match(await page.locator("[data-ir-simulation-artifact-list]").innerText(), /brief[\s\S]*source\.md/);
+    await page.locator("[data-ir-simulation-input]").fill(JSON.stringify({ prompt: "Use the attached source" }));
+    const artifactSimulationResponse = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/simulations`);
+    await page.locator("[data-ir-simulation-run]").click();
+    const artifactSimulation = await (await artifactSimulationResponse).json();
+    assert.equal(artifactSimulation.status, "completed", JSON.stringify(artifactSimulation));
+    assert.deepEqual(Object.keys(artifactSimulation.attachments), ["brief"]);
+    assert.match(artifactSimulation.attachments.brief.artifactId, /^art_[a-f0-9-]+$/);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator("[data-ir-graph-node=run]").click();
     assert.equal(await page.locator('[name="team-id"]').evaluate((element) => document.activeElement === element), true);
@@ -421,12 +490,9 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator("[data-ir-graph-node]").count(), advancedIr.agents.length + 2);
     assert.ok(await page.locator("[data-ir-graph-handoff]").count() >= 2);
 
-    const nativeCreateDirectResponse = await page.goto(`${url}/studio/ir/new`, { waitUntil: "networkidle" });
-    assert.equal(nativeCreateDirectResponse.status(), 200);
-    await page.locator(".new-team-heading h1").getByText("Team IR v2").waitFor();
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
-    await page.locator('#studio-view a[href="/studio/ir/new"]').click();
-    await page.waitForURL(`${url}/studio/ir/new`);
+    await page.locator('#studio-view a[href="/studio/new"]').click();
+    await page.waitForURL(`${url}/studio/new`);
     await page.locator(".new-team-heading h1").getByText("Team IR v2").waitFor();
     await page.locator("#new-project-form input[name=name]").fill("Native v2 draft");
     await page.locator("#new-project-form textarea[name=overview]").fill("A native Team IR draft with a typed starter workflow.");

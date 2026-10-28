@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTaskCreationUseCases } from "../application/task-creation-use-cases.mjs";
 
-function setup({ project, taskId = "task-1" } = {}) {
+function setup({ project, taskId = "task-1", validateRunInputAttachments } = {}) {
   const current = structuredClone(project || {
     projectId: "project-1",
     projectType: "collaboration",
@@ -18,7 +18,8 @@ function setup({ project, taskId = "task-1" } = {}) {
       async saveProjectMetadata(projectId, next) { calls.push(["save", projectId, next]); Object.assign(current, next); }
     },
     taskStore: { createTaskId: () => taskId },
-    fingerprintRequest: (request) => `fingerprint:${request}`
+    fingerprintRequest: (request) => `fingerprint:${request}`,
+    validateRunInputAttachments
   });
   return { useCases, calls, current };
 }
@@ -90,6 +91,29 @@ test("Task creation binds each task to the selected mounted team version", async
   assert.equal(task.teamVersionId, "team-2-v3");
   assert.equal(task.teamVersionNumber, 3);
   assert.equal(task.compiledPlanDigest, "d".repeat(64));
+});
+
+test("Task creation freezes validated Artifact slot references and includes them in idempotency", async () => {
+  const reference = { artifactId: `art_${"a".repeat(36)}`, mediaType: "text/plain" };
+  const { useCases } = setup({ validateRunInputAttachments: async ({ project, team, attachments }) => {
+    assert.equal(project.projectId, "project-1");
+    assert.equal(team.teamVersionId, "team-1");
+    return structuredClone(attachments);
+  } });
+  const request = { input: "Read the brief", teamVersionId: "team-1", attachments: { brief: reference }, idempotencyKey: "artifact-task" };
+  const task = await useCases.createProjectTask("project-1", request);
+  assert.deepEqual(task.runInputAttachments, { brief: reference });
+  assert.deepEqual((await useCases.createProjectTask("project-1", request)).runInputAttachments, { brief: reference });
+  await assert.rejects(() => useCases.createProjectTask("project-1", {
+    ...request, attachments: { brief: { ...reference, artifactId: `art_${"b".repeat(36)}` } }
+  }), /IDEMPOTENCY_KEY_REUSE/);
+});
+
+test("Task creation refuses unregistered Artifact references when no validator is configured", async () => {
+  const { useCases } = setup();
+  await assert.rejects(() => useCases.createProjectTask("project-1", {
+    input: "Read the brief", teamVersionId: "team-1", attachments: { brief: { artifactId: `art_${"a".repeat(36)}`, mediaType: "text/plain" } }
+  }), /TASK_ARTIFACT_VALIDATION_UNAVAILABLE/);
 });
 
 test("Task creation rejects legacy mounts without frozen Team IR v2 digests", async () => {

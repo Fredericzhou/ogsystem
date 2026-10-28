@@ -28,7 +28,7 @@ test("Run detail resolves canonical ownership and waits for an active terminal w
     runQueryStore: {
       readRunOwner: async () => ({ taskNumber: 3, attemptNumber: 1, teamVersionId: "team-1", teamCoreDigest: "a".repeat(64) }),
       readRunState: async (projectId, taskId, runId) => (calls.push(`state-${projectId}-${taskId}-${runId}`), { projectId: "project-1", status: "completed", attemptNumber: 1 }),
-      readRunPlan: async (projectId, taskId, runId) => (calls.push(`plan-${projectId}-${taskId}-${runId}`), { projectId: "project-1", executionPolicy: { mode: "dry-run" } }),
+      readRunPlan: async (projectId, taskId, runId) => (calls.push(`plan-${projectId}-${taskId}-${runId}`), { projectId: "project-1", engine: "team-ir-v2" }),
       readRunEvents: async () => ({ events: [] })
     }
   });
@@ -107,12 +107,11 @@ test("file Run query store constrains project/run paths and preserves missing st
     await writeFile(join(root, "project-1", ".site", "project.json"), JSON.stringify({ projectId: "project-1", projectType: "collaboration", taskRecords: [task] }));
     const runDir = join(root, "project-1", ".ogs", "runs", "run-1");
     await mkdir(runDir, { recursive: true });
-    await mkdir(join(runDir, "control"), { recursive: true });
+    await mkdir(join(runDir, "team-ir-v2-state"), { recursive: true });
     await writeFile(join(runDir, "run-owner.json"), JSON.stringify({ version: 1, runKind: "project_task", projectId: "project-1", taskId: "task-1", taskNumber: 1, attemptNumber: 1, teamVersionId: "team-1", runId: "run-1" }));
-    await writeFile(join(runDir, "control", "state.json"), JSON.stringify({ status: "completed" }));
-    await writeFile(join(runDir, "run-plan.json"), JSON.stringify({ executionPolicy: { mode: "dry-run" } }));
-    assert.deepEqual(await store.readRunState("project-1", "task-1", "run-1"), { status: "completed" });
-    assert.deepEqual(await store.readRunPlan("project-1", "task-1", "run-1"), { executionPolicy: { mode: "dry-run" } });
+    await writeFile(join(runDir, "team-ir-v2-state", "run-1.json"), JSON.stringify({ runId: "run-1", revision: 1, status: "completed", createdAt: 1000, updatedAt: 2000, compiledPlanDigest: "b".repeat(64), teamIrSemanticDigest: "a".repeat(64), events: [] }));
+    assert.equal((await store.readRunState("project-1", "task-1", "run-1")).status, "completed");
+    assert.deepEqual(await store.readRunPlan("project-1", "task-1", "run-1"), { version: 1, engine: "team-ir-v2", runId: "run-1", compiledPlanDigest: "b".repeat(64), teamIrSemanticDigest: "a".repeat(64) });
     await assert.rejects(store.readRunPlan("project-1", "task-1", "missing"), /RUN_NOT_FOUND/);
     await writeFile(join(root, "project-1", ".site", "project.json"), JSON.stringify({ projectId: "project-1", projectType: "team", taskRecords: [task] }));
     await assert.rejects(store.readRunState("project-1", "task-1", "run-1"), /owned by Collaboration Projects/);
@@ -146,33 +145,29 @@ test("file Run query store rejects a linked Collaboration Project workspace", as
   }
 });
 
-test("file Run query store rejects linked state, plan, and event evidence", async (t) => {
+test("file Run query store rejects a linked Team IR v2 checkpoint", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "ogs-run-query-evidence-link-"));
   try {
     const projectRoot = join(root, "project-1");
     const runDir = join(projectRoot, ".ogs", "runs", "run-1");
     await mkdir(join(projectRoot, ".site"), { recursive: true });
-    await mkdir(join(runDir, "control"), { recursive: true });
+    await mkdir(join(runDir, "team-ir-v2-state"), { recursive: true });
     const task = { taskId: "task-1", taskNumber: 1, currentRunId: "run-1", runIds: ["run-1"], teamVersionId: "team-1" };
     await writeFile(join(projectRoot, ".site", "project.json"), JSON.stringify({ projectType: "collaboration", taskRecords: [task] }));
     await writeFile(join(runDir, "run-owner.json"), JSON.stringify({ version: 1, runKind: "project_task", projectId: "project-1", taskId: "task-1", taskNumber: 1, attemptNumber: 1, teamVersionId: "team-1", runId: "run-1" }));
     const outside = join(root, "outside.json");
     await writeFile(outside, JSON.stringify({ status: "completed" }));
-    const linked = [
-      [join(runDir, "control", "state.json"), () => createFileRunQueryStore({ projectsRoot: root }).readRunState("project-1", "task-1", "run-1")],
-      [join(runDir, "run-plan.json"), () => createFileRunQueryStore({ projectsRoot: root }).readRunPlan("project-1", "task-1", "run-1")],
-      [join(runDir, "timeline.jsonl"), () => createFileRunQueryStore({ projectsRoot: root }).readRunEvents("project-1", "task-1", "run-1")]
-    ];
-    for (const [path, read] of linked) {
-      try {
-        await symlink(outside, path, "file");
-      } catch (error) {
-        if (["EPERM", "EACCES", "ENOTSUP", "ENOSYS"].includes(error?.code)) return t.skip(`file links unavailable: ${error.code}`);
-        throw error;
-      }
-      await assert.rejects(read(), /RUN_EVIDENCE_LINK_NOT_ALLOWED/);
-      await rm(path);
+    const path = join(runDir, "team-ir-v2-state", "run-1.json");
+    try {
+      await symlink(outside, path, "file");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP", "ENOSYS"].includes(error?.code)) return t.skip(`file links unavailable: ${error.code}`);
+      throw error;
     }
+    const store = createFileRunQueryStore({ projectsRoot: root });
+    await assert.rejects(store.readRunState("project-1", "task-1", "run-1"), /RUN_EVIDENCE_LINK_NOT_ALLOWED/);
+    await assert.rejects(store.readRunPlan("project-1", "task-1", "run-1"), /RUN_EVIDENCE_LINK_NOT_ALLOWED/);
+    await assert.rejects(store.readRunEvents("project-1", "task-1", "run-1"), /RUN_EVIDENCE_LINK_NOT_ALLOWED/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

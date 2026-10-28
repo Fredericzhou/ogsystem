@@ -16,16 +16,8 @@ function compileValid(fixture, closure) {
 }
 
 test("every active classic Case has a native v2 fixture with stable semantic and compiled digests", async () => {
-  const fixtureNames = {
-    "software-team": "classic-software-team",
-    "expert-consultation": "classic-expert-consultation",
-    "structured-debate": "classic-structured-debate"
-  };
-
-  assert.deepEqual(Object.keys(fixtureNames).sort(), activeCases.map(({ id }) => id).sort());
-
   for (const { id: caseId } of activeCases) {
-    const fixtureName = fixtureNames[caseId];
+    const fixtureName = `classic-${caseId}`;
     const teamId = `classic-${caseId}`;
     const fixture = await loadFixture(fixtureName);
     assert.equal(fixture.schemaVersion, 2, `${caseId} fixture must remain native Team IR v2`);
@@ -44,6 +36,15 @@ test("every active classic Case has a native v2 fixture with stable semantic and
     assert.equal(teamIRSemanticDigest(fixture), semanticDigest, `${caseId} semantic digest must be stable`);
     assert.match(plan.compiledPlanDigest, /^[a-f0-9]{64}$/);
     assert.equal(repeatedPlan.compiledPlanDigest, plan.compiledPlanDigest, `${caseId} compiled digest must be stable`);
+  }
+});
+
+test("Project Task compatible classic fixtures use the single request input field", async () => {
+  for (const fixtureName of ["classic-maker-checker", "classic-release-gate"]) {
+    const fixture = await loadFixture(fixtureName);
+    assert.deepEqual(Object.keys(fixture.runInput.dataSchema.properties), ["request"], fixtureName);
+    assert.deepEqual(fixture.runInput.dataSchema.required, ["request"], fixtureName);
+    assert.deepEqual(fixture.runInput.dataSchema.additionalProperties, false, fixtureName);
   }
 });
 
@@ -78,7 +79,9 @@ test("classic structured debate compiles an all-of bounded loop and exclusive de
   assert.deepEqual(loop.exitHandoffIds, ["judge-to-reporter"]);
   assert.equal(loop.maxRounds, 2);
   assert.deepEqual(route.handoffIds, ["judge-to-host", "judge-to-reporter"]);
-  assert.deepEqual(fixture.handoffs.find((handoff) => handoff.id === "judge-to-reporter").when, { priority: 1 });
+  const exitHandoff = fixture.handoffs.find((handoff) => handoff.id === "judge-to-reporter");
+  assert.deepEqual(exitHandoff.when, { priority: 1 });
+  assert.deepEqual(Object.keys(exitHandoff.map.data), ["decision", "proponentSummary", "opponentSummary", "rationale"]);
   assert.match(plan.compiledPlanDigest, /^[a-f0-9]{64}$/);
   assert.equal(repeated.compiledPlanDigest, plan.compiledPlanDigest);
 });

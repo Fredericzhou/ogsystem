@@ -16,9 +16,7 @@ function normalizeTeamMeta(meta, projectId) {
   for (const task of meta?.taskRecords || []) {
     if (task?.teamVersionId) assertCanonicalTeamVersionId(task.teamVersionId);
   }
-  const legacyReleased = !meta?.teamProjectId && meta?.projectType !== "collaboration"
-    && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
-  const teamVersionStatus = meta?.teamVersionStatus || (legacyReleased ? "released" : "draft");
+  const teamVersionStatus = meta?.teamVersionStatus || "draft";
   const teamRootId = String(meta?.teamRootId || meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
   const teamId = teamRootId;
   const teamVersionNumber = Number.isInteger(meta?.teamVersionNumber) && meta.teamVersionNumber > 0 ? meta.teamVersionNumber : 1;
@@ -44,12 +42,12 @@ function normalizeTeamMeta(meta, projectId) {
     teamVersionStatus,
     teamName: String(meta?.teamName || meta?.name || "New team"),
     parentTeamVersionId: meta?.parentTeamVersionId || undefined,
-    releasedAt: meta?.releasedAt || (legacyReleased ? meta.confirmedAt : null),
+    releasedAt: meta?.releasedAt || null,
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),
     ...(meta?.caseId ? { caseId: meta.caseId } : {}),
-    ...((meta?.source === "classic" || meta?.source === "classic-template") && meta?.caseId ? { builtIn: true, category: getCase(meta.caseId)?.category } : {}),
+    ...((meta?.source === "classic" || meta?.source === "classic-template") && meta?.templateId === "team-ir-v2" && meta?.caseId ? { builtIn: true, category: getCase(meta.caseId)?.category } : {}),
     ...(meta?.ogsProjectId ? { ogsProjectId: meta.ogsProjectId } : {}),
     ...(meta?.trustedClassicTopologyDigest ? { trustedClassicTopologyDigest: meta.trustedClassicTopologyDigest } : {}),
     projectType: meta?.projectType || (meta?.teamProjectId ? "workspace" : "team"),
@@ -80,6 +78,11 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
       if (!entry.isDirectory() || entry.name === ".staging") continue;
       const meta = await readJson(join(root, entry.name, ".site", "project.json"));
       if (!meta) continue;
+      if (["classic", "classic-template"].includes(meta.source) && meta.templateId !== "team-ir-v2") continue;
+      if (!meta.teamProjectId && meta.projectType !== "collaboration") {
+        const teamIR = await readJson(join(root, entry.name, ".ogs", "team.ir.json"));
+        if (teamIR?.schemaVersion !== 2) continue;
+      }
       if (meta.teamVersionId && meta.teamVersionId !== entry.name) {
         throw new Error("TEAM_VERSION_ID_INVALID: stored TeamVersion identity does not match its workspace.");
       }
@@ -98,8 +101,8 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
   }
 
   async function listTeamFactory() {
-    return (await listTeamRepository({ includeUnreleased: true, includeCollaboration: true })).filter((team) =>
-      !team.builtIn && team.teamVersionStatus !== "released" && team.teamVersionStatus !== "archived"
+    return (await listTeamRepository({ includeUnreleased: true })).filter((team) =>
+      !team.builtIn && team.projectType !== "collaboration" && team.teamVersionStatus !== "released" && team.teamVersionStatus !== "archived"
     );
   }
 

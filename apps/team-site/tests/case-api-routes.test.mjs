@@ -14,32 +14,31 @@ async function invoke(method, pathname, body, overrides = {}) {
     errorStatus: () => 409,
     publicProject: (project) => ({ projectId: project.projectId }),
     cases: [{ id: "classic", title: "Classic", roles: [{ id: "lead", label: "Lead" }], detail: { roles: { lead: "Coordinates" } }, flows: [["lead", "worker", "start"]], joins: [{ roleId: "worker" }] }],
-    eventLabels: { start: "Start" },
-    buildCaseGraph: (...args) => { calls.push(["graph", ...args]); return { nodes: [] }; },
-    runCase: async (input) => { calls.push(["run", input]); return { output: "simulated" }; },
+    teamIrFixtures: { classic: { schemaVersion: 2, team: { id: "classic" } } },
     createClassicTeamProject: async (input) => { calls.push(["create", input]); return { projectId: "project-1" }; },
     ...overrides
   });
   return { handled, sent, calls };
 }
 
-test("case catalog returns the page DTO and graph passes locale", async () => {
+test("case catalog returns presentation metadata and graph reads the native v2 fixture", async () => {
   const catalog = await invoke("GET", "/api/v1/cases");
   assert.equal(catalog.handled, true);
   assert.deepEqual(catalog.sent[0].payload.cases[0].roles, [{ id: "lead", label: "Lead", description: "Coordinates" }]);
+  assert.equal("flows" in catalog.sent[0].payload.cases[0], false);
+  assert.equal("joins" in catalog.sent[0].payload.cases[0], false);
 
-  const graph = await invoke("GET", "/api/v1/cases/classic/graph?locale=en-US");
-  assert.deepEqual(graph.calls, [["graph", "classic", "en-US"]]);
-  assert.deepEqual(graph.sent[0].payload, { nodes: [] });
+  const graph = await invoke("GET", "/api/v1/cases/classic/ir");
+  assert.deepEqual(graph.sent[0].payload, { teamIR: { schemaVersion: 2, team: { id: "classic" } } });
 });
 
-test("classic team actions keep template mode and simulation explicit", async () => {
+test("classic team actions use v2 provisioning and reject the old demo-run endpoint", async () => {
   const created = await invoke("POST", "/api/v1/cases/classic/template", { name: "Template", overview: "Overview", locale: "en-US" });
   assert.deepEqual(created.calls[0], ["create", { caseId: "classic", asTemplate: true, name: "Template", overview: "Overview", locale: "en-US" }]);
   assert.equal(created.sent[0].status, 201);
 
-  const simulated = await invoke("POST", "/api/v1/demo-runs", { caseId: "classic", prompt: "Review", locale: "en-US" });
-  assert.deepEqual(simulated.calls[0], ["run", { caseId: "classic", prompt: "Review", locale: "en-US", mode: "simulation" }]);
+  const legacyRun = await invoke("POST", "/api/v1/demo-runs", { caseId: "classic", prompt: "Review" });
+  assert.equal(legacyRun.handled, false);
 });
 
 test("case routes report domain errors and leave unrelated paths unmatched", async () => {

@@ -1,0 +1,96 @@
+{
+  "image": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+  "adapterVersion": "ogs-opencode-docker-adapter/1",
+  "modelRef": "codex-gateway/gpt-6-luna",
+  "endpoint": "http://host.docker.internal:4096",
+  "packages": {
+    "role:advanced-worker-a@1": {
+      "directory": "og-roles/roles/advanced-worker-a",
+      "digest": "f1ab03e99bd7db6c19547b05fb0f81a4110c38c88a0211a6c17f9dd4f8f02c3a"
+    },
+    "role:advanced-worker-b@1": {
+      "directory": "og-roles/roles/advanced-worker-b",
+      "digest": "bed3d1028ac4b1cef61876169d75fa5ed4fab3405c9710f048b6827976236c23"
+    },
+    "role:imported.agency.legal-client-intake@1.0.0": {
+      "directory": "og-roles/roles/imported.agency.legal-client-intake",
+      "digest": "e2cd12a0c10ba6f61e9c1b6a389af6d55de56468771810205fdc5a0003964d76"
+    },
+    "role:primary-reviewer@1": {
+      "directory": "og-roles/roles/primary-reviewer",
+      "digest": "8fc835aa05a8dc7e23fe434ec7d719078dbb5e555e50bf53dbe11fdf89d10996"
+    },
+    "role:compliance-reviewer@1": {
+      "directory": "og-roles/roles/compliance-reviewer",
+      "digest": "6e490d728ad734772df4cb30de8235b565c781fb92993be70ca8d2add588be96"
+    },
+    "role:signoff-chair@1": {
+      "directory": "og-roles/roles/signoff-chair",
+      "digest": "77f9cc2684d6adca5ba722b6381065dcd744824310d6ff89723989e56d20a991"
+    },
+    "role:consultation-dispatcher@1": {
+      "directory": "og-roles/roles/consultation-dispatcher",
+      "digest": "c10d818fdd9a3935551dd1a3e6c9d098541266f248d161efd8012cb0142e5412"
+    },
+    "role:cardiology-expert@1": {
+      "directory": "og-roles/roles/cardiology-expert",
+      "digest": "0e849254feaee50f0f5d376bfa1a9d417ac0aa3779e724fc01b9c5e37d35bc78"
+    },
+    "role:neurology-expert@1": {
+      "directory": "og-roles/roles/neurology-expert",
+      "digest": "211b4fdbcd2ada1bbd106864636973e78d693074558ee39ff73ab17ab293e197"
+    },
+    "role:imaging-expert@1": {
+      "directory": "og-roles/roles/imaging-expert",
+      "digest": "7142646056556a6bf3f8fcb067da3f382cc329a0d3655a2b3c5aee151a88ef21"
+    },
+    "role:chief-reviewer@1": {
+      "directory": "og-roles/roles/chief-reviewer",
+      "digest": "bc332f17a9fad9d47d4b4bca87d5572508cf1fcc93fe8074ef3e87398e6c9dcf"
+    },
+    "role:maker@1": {
+      "directory": "og-roles/roles/maker",
+      "digest": "9776daa3ec301d49e8512edecb1c5366ed7757ea661ec522170c745a669953d0"
+    },
+    "role:release-gate@1": {
+      "directory": "og-roles/roles/release-gate",
+      "digest": "ab2a08b16986f94373d71e3c025bf7a8a63d2bc008cd47fb23edafa74ecf3787"
+    },
+    "role:software-planner@1": {
+      "directory": "og-roles/roles/software-planner",
+      "digest": "d4f97562d94eedc0768fc4c594c86580b32b520690dde77893d45fbed60463e1"
+    },
+    "role:software-implementer@1": {
+      "directory": "og-roles/roles/software-implementer",
+      "digest": "0da16d82a9d88f4808a6a3f6abef7b78b473f6986158838bedfbf0136835087a"
+    },
+    "role:software-tester@1": {
+      "directory": "og-roles/roles/software-tester",
+      "digest": "6ae2bcf73904fa2aa8397e03d91455bd8421055621e4561bd556ae52f6c168dc"
+    },
+    "role:software-lead@1": {
+      "directory": "og-roles/roles/software-lead",
+      "digest": "cc190c9ef29b3d98df455b3299a61cdef68903da6ece50624a78ffb0363683b5"
+    },
+    "role:debate-host@1": {
+      "directory": "og-roles/roles/debate-host",
+      "digest": "4279acadfe7d1d757ea942106ca220249c650169a3c63b2e18af8a8a6836efd4"
+    },
+    "role:debate-proponent@1": {
+      "directory": "og-roles/roles/debate-proponent",
+      "digest": "8d911a6b212bd25b248e5a5e696c46d735fadfb69bff5357323ee77fc64dbb94"
+    },
+    "role:debate-opponent@1": {
+      "directory": "og-roles/roles/debate-opponent",
+      "digest": "3ec4b07d3eb6ab7e574d2dbd31724ca84b0ef570f493dfbb5e581c23880d2b7a"
+    },
+    "role:neutral-judge@1": {
+      "directory": "og-roles/roles/neutral-judge",
+      "digest": "671eec563831699ad2717b3b97774704d4c778025434912571afe5e8352b20bb"
+    },
+    "role:debate-reporter@1": {
+      "directory": "og-roles/roles/debate-reporter",
+      "digest": "ed71428d0a7473e2f3c189f1fd9325d3bcce30bd380274a5aa67833caaa08dfe"
+    }
+  }
+}

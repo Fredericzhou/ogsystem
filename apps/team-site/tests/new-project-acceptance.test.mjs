@@ -13,7 +13,7 @@ const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 test("site creates a new project, records a task, and shows project resources", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-browser-projects-"));
-  await seedReleasedClassicTeam(projectsRoot);
+  const seededTeam = await seedReleasedClassicTeam(projectsRoot);
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
     env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
@@ -40,8 +40,7 @@ test("site creates a new project, records a task, and shows project resources", 
     await page.addInitScript(() => {
       Object.defineProperty(Crypto.prototype, "randomUUID", { configurable: true, value: undefined });
     });
-    const team = await page.request.post(`${url}/api/v1/cases/software-team/use`, { data: { locale: "zh-CN" } }).then((response) => response.json());
-    const teamId = team.projectId;
+    const teamId = seededTeam.teamVersionId || seededTeam.projectId;
     assert.ok(teamId, "the published classic TeamVersion should expose its id");
     await page.goto(`${url}/projects/new?team=${encodeURIComponent(teamId)}`, { waitUntil: "networkidle" });
     await page.locator("#collaboration-project-form").waitFor();

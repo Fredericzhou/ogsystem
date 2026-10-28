@@ -321,9 +321,9 @@
         }
       },
       "oneOf": [
-        { "properties": { "kind": { "const": "model" } }, "required": ["modelRef"] },
-        { "properties": { "kind": { "const": "tool" } }, "required": ["toolRef"] },
-        { "properties": { "kind": { "const": "a2a" } }, "required": ["agentCardRef"] }
+        { "properties": { "kind": { "const": "model" } }, "required": ["modelRef"], "not": { "anyOf": [{ "required": ["toolRef"] }, { "required": ["agentCardRef"] }] } },
+        { "properties": { "kind": { "const": "tool" } }, "required": ["toolRef"], "not": { "anyOf": [{ "required": ["modelRef"] }, { "required": ["agentCardRef"] }] } },
+        { "properties": { "kind": { "const": "a2a" } }, "required": ["agentCardRef"], "not": { "anyOf": [{ "required": ["modelRef"] }, { "required": ["toolRef"] }] } }
       ],
       "allOf": [
         {

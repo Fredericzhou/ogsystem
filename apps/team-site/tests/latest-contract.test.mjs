@@ -7,6 +7,7 @@ import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
 import { createRunRecoveryUseCases } from "../application/run-recovery-use-cases.mjs";
 import { createFileRunRecoveryStore } from "../infrastructure/file-run-recovery-store.mjs";
+import { FileTeamRunStore } from "../../../dist/team-ir/index.js";
 
 test("latest domain contract exposes only canonical run statuses", async () => {
   const contracts = await import("../domain/contracts.mjs");
@@ -118,8 +119,7 @@ test("service restart repairs a stale Task projection from a Project-owned Run i
   const store = withTaskCreationUseCases(await import(`../infrastructure/file-project-store.mjs?cross-workspace-recovery=${Date.now()}-${Math.random()}`));
   const runRecovery = createRunRecoveryUseCases({ recoveryStore: createFileRunRecoveryStore({ projectsRoot }) });
   try {
-    const createdTeam = await store.createProject({ name: "Recovery Source Team", overview: "Team workspace for the Run.", templateId: "empty" });
-    const team = await store.confirmProjectTeam(createdTeam.projectId, { release: true });
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
     const project = await store.createCollaborationProject({
       name: "Recovery Collaboration Project",
       overview: "Task projection lives in this separate workspace.",
@@ -131,7 +131,28 @@ test("service restart repairs a stale Task projection from a Project-owned Run i
     });
     const runId = "cross-workspace-recovery-run";
     const runDir = join(project.workdir, ".ogs", "runs", runId);
-    await mkdir(join(runDir, "control"), { recursive: true });
+    const stateDirectory = join(runDir, "team-ir-v2-state");
+    await mkdir(stateDirectory, { recursive: true });
+    await new FileTeamRunStore(stateDirectory).create({
+      projectId: project.projectId,
+      runId,
+      revision: 0,
+      status: "failed",
+      compiledPlanDigest: task.compiledPlanDigest,
+      teamIrSemanticDigest: task.teamIrSemanticDigest,
+      createdAt: Date.parse("2026-10-18T00:00:00.000Z"),
+      updatedAt: Date.parse("2026-10-18T00:00:00.000Z"),
+      runInput: { task: task.input, input: {}, preferences: {}, attachments: {} },
+      activeExecutionBudgetMs: 60000,
+      activeExecutionMs: 0,
+      loopStates: {},
+      invocations: {},
+      error: "RUNNER_RESTARTED: simulated process exit after Run state commit.",
+      events: [
+        { id: `${runId}:failure-intent`, type: "run.failing", at: Date.parse("2026-10-18T00:00:00.000Z"), data: { code: "RUNNER_RESTARTED: simulated process exit after Run state commit." } },
+        { id: `${runId}:settled:failed`, type: "run.failed", at: Date.parse("2026-10-18T00:00:00.000Z") }
+      ]
+    });
     await writeFile(join(runDir, "run-owner.json"), JSON.stringify({
       version: 1,
       runKind: "project_task",
@@ -141,22 +162,8 @@ test("service restart repairs a stale Task projection from a Project-owned Run i
       runId,
       attemptNumber: 1,
       teamVersionId: team.teamVersionId,
-      teamCoreDigest: task.teamCoreDigest
-    }), "utf8");
-    await writeFile(join(runDir, "control", "state.json"), JSON.stringify({
-      status: "failed",
-      runId,
-      attemptNumber: 1,
-      taskReservation: {
-        kind: "task-attempt",
-        projectId: project.projectId,
-        taskId: task.taskId,
-        teamVersionId: team.teamVersionId,
-        runId
-      },
-      error: "RUNNER_RESTARTED: simulated process exit after Run state commit.",
-      updatedAt: "2026-10-18T00:00:00.000Z",
-      finishedAt: "2026-10-18T00:00:00.000Z"
+      teamIrSemanticDigest: task.teamIrSemanticDigest,
+      compiledPlanDigest: task.compiledPlanDigest
     }), "utf8");
 
     const metadataPath = join(project.workdir, ".site", "project.json");

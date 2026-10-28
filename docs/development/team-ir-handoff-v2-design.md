@@ -553,7 +553,7 @@ Run 按失败收敛，后到的 `input-required` 响应只记审计。暂停不�
 
 ### 7.1 Binding 与交付策略归属
 
-- Binding 定义执行器/后端、模型或工具引用、必填正整数 `attemptTimeoutMs`、重试策略、凭据引用和能力限制；
+- Binding 的 `kind` 为 `model`、`tool` 或 `a2a`，且必须且只能包含匹配的 `modelRef`、`toolRef` 或 `agentCardRef`；不得携带其它后端引用。Binding 定义执行器/后端、模型或工具引用、必填正整数 `attemptTimeoutMs`、重试策略、凭据引用和能力限制；
   不设隐式 timeout 默认值。重试策略
   `{ "maxAttempts": n, "retryOn": [...], "backoff": ... }` 中 `maxAttempts` 是包含首次调用在内的总尝试次数，正整数；
   `retryOn` 只允许 `transport`、`timeout`、`rate_limited`、`server_error`。认证、无效输出/输入、Schema 错误、策略拒绝、

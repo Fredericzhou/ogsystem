@@ -1,7 +1,6 @@
 import { join, resolve, sep } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
-import { loadProjectMaterialSnapshots } from "../../../dist/runtime/project-run.js";
-import { loadProjectRunState } from "../../../dist/runtime/project-run-state.js";
+import { isDeepStrictEqual } from "node:util";
 import { homedir } from "node:os";
 import { readProjectRunOwner } from "./project-run-evidence-paths.mjs";
 import { assertSafeEvidencePath, readSafeEvidenceFile } from "./safe-evidence-path.mjs";
@@ -117,49 +116,27 @@ export function createFileTaskRetryStore({ projectsRoot = resolve(process.env.OG
     });
   }
 
-  function isMissingReservation(task, runId) {
-    const taskRunIds = Array.isArray(task.runIds) ? task.runIds : task.currentRunId ? [task.currentRunId] : [];
-    return task.currentRunId === runId && taskRunIds.includes(runId) && task.status === "failed"
-      && /^RUN_STATE_MISSING:/.test(task.lastError || "");
-  }
   return Object.freeze({
     async readRunState(projectId, taskId, runId) {
       safeRunId(runId);
       const { workdir, task } = await loadProjectTask(projectId, taskId);
-      const missingReservation = isMissingReservation(task, runId);
       const directoryExists = await runDirectoryExists(workdir, runId);
-      if (!directoryExists) {
-        if (missingReservation) return undefined;
-        throw new Error("RUN_NOT_FOUND: run evidence does not exist.");
-      }
+      if (!directoryExists) throw new Error("RUN_NOT_FOUND: run evidence does not exist.");
       await readProjectRunOwner({ projectId, workdir }, task, runId);
       const teamRun = await readTeamIrV2Run(workdir, runId);
       if (teamRun) return teamRun;
-      await assertSafeEvidencePath(workdir, [".ogs", "runs", safeRunId(runId), "control", "state.json"], {
-        kind: "file", label: "Run state"
-      });
-      try {
-        return await loadProjectRunState(resolve(workdir, ".ogs", "runs", safeRunId(runId)));
-      } catch (error) {
-        if (error?.code === "ENOENT" && missingReservation) return undefined;
-        throw error;
-      }
+      throw new Error("TEAM_IR_V2_REQUIRED: Project Task retry requires a Team IR v2 Run checkpoint.");
     },
     async loadMaterialSnapshots(projectId, taskId, runId) {
-      const { workdir } = await evidenceRoot(projectId, taskId, runId);
+      const { workdir, task } = await evidenceRoot(projectId, taskId, runId);
       const teamRun = await readTeamIrV2Run(workdir, runId);
-      if (teamRun) {
-        const attachments = teamRun.runInput?.attachments;
-        if (attachments && (typeof attachments !== "object" || Array.isArray(attachments) || Object.keys(attachments).length)) {
-          throw new Error("TASK_RETRY_SNAPSHOT_UNAVAILABLE: Team IR v2 Run has attachments without a frozen retry snapshot.");
-        }
-        return [];
+      if (!teamRun) throw new Error("TEAM_IR_V2_REQUIRED: Project Task retry requires a Team IR v2 Run checkpoint.");
+      const runAttachments = teamRun.runInput?.attachments || {};
+      const frozenAttachments = task.runInputAttachments || {};
+      if (!isDeepStrictEqual(runAttachments, frozenAttachments)) {
+        throw new Error("TEAM_RUN_INPUT_SNAPSHOT_MISMATCH: Run Artifact references do not match the Task snapshot.");
       }
-      const runRoot = [".ogs", "runs", safeRunId(runId)];
-      await assertSafeEvidencePath(workdir, [...runRoot, "control", "materials.json"], { kind: "file", label: "Run materials" });
-      const snapshots = await loadProjectMaterialSnapshots(resolve(workdir, ...runRoot));
-      for (const snapshot of snapshots) await safeRunArtifact(workdir, runId, snapshot.snapshotPath);
-      return snapshots;
+      return [];
     },
     resolveMaterialPath(projectId, relativePath) {
       const projectRoot = safeRoot(join(root, safeProjectId(projectId)));

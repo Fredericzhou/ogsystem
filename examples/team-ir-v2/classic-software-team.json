@@ -207,10 +207,10 @@
     "reviews": []
   },
   "bindings": [
-    { "id": "binding:planner", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:implementer", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 240000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:tester", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 240000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:lead", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
+    { "id": "binding:planner", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:implementer", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 240000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:tester", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 240000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:lead", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
   ],
   "presentation": {
     "nodes": {

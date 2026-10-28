@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
-import { convertTaskFixtureToLegacySnapshot } from "./legacy-run-fixture.mjs";
+import { FileTeamRunStore } from "../../../dist/team-ir/index.js";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -70,8 +70,7 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
       input: "Create a real Run fixture for process recovery.",
       teamVersionId: team.teamVersionId
     });
-    await convertTaskFixtureToLegacySnapshot({ project, team, task });
-    const started = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
+    const started = await store.startProjectTask(project.projectId, task.taskId, { mode: "sandbox" });
     assert.ok(started.currentRunId);
 
     let completedFixture;
@@ -82,21 +81,18 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
     }
     assert.equal(completedFixture.status, "completed", completedFixture.lastError || "fixture Run should complete");
     const strandedRunId = completedFixture.currentRunId;
-    const runStatePath = join(project.workdir, ".ogs", "runs", strandedRunId, "control", "state.json");
+    const stateDirectory = join(project.workdir, ".ogs", "runs", strandedRunId, "team-ir-v2-state");
+    const runStatePath = join(stateDirectory, `${strandedRunId}.json`);
     const runState = JSON.parse(await readFile(runStatePath, "utf8"));
-    assert.deepEqual(runState.taskReservation, {
-      kind: "task-attempt",
-      projectId: project.projectId,
-      taskId: task.taskId,
-      teamVersionId: team.teamVersionId,
-      runId: strandedRunId
-    });
+    assert.equal(runState.projectId, project.projectId);
+    assert.equal(runState.status, "completed");
     await writeJsonAtomic(runStatePath, {
       ...runState,
       status: "running",
-      taskReservation: { kind: "task-attempt", projectId: project.projectId, taskId: task.taskId, teamVersionId: team.teamVersionId, runId: strandedRunId },
-      error: undefined,
-      finishedAt: undefined,
+      revision: runState.revision + 1,
+      events: runState.events.filter((event) => !["run.completed", "run.failing", "run.failed"].includes(event.type)),
+      result: undefined,
+      terminalIntent: undefined,
       updatedAt: new Date().toISOString()
     });
 
@@ -110,7 +106,7 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
 
     server = spawn(process.execPath, ["server.mjs"], {
       cwd: appRoot,
-      env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
+      env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot, OGS_TEAM_IR_V2_RESOLVER_MODULE: fileURLToPath(new URL("./team-ir-v2-task-test-resolver.mjs", import.meta.url)) },
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -135,7 +131,7 @@ test("server startup recovers a stranded Task Run and its Task retry completes o
     const retryResponse = await fetch(`${baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/retry`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "dry-run", idempotencyKey: "process-recovery-uat-retry" })
+      body: JSON.stringify({ mode: "sandbox", idempotencyKey: "process-recovery-uat-retry" })
     });
     const retryPayload = await retryResponse.json();
     assert.equal(retryResponse.status, 202, JSON.stringify(retryPayload));
@@ -174,21 +170,25 @@ test("server startup removes a Task Run initialized before its Task reservation 
     const team = await store.confirmProjectTeam(teamDraft.projectId, { release: true });
     const project = await store.createCollaborationProject({ name: "Uncommitted Recovery Project", overview: "Task reservation remains uncommitted.", teamVersionIds: [team.teamVersionId] });
     const task = await store.createProjectTask(project.projectId, { input: "Start after orphan cleanup.", teamVersionId: team.teamVersionId });
-    await convertTaskFixtureToLegacySnapshot({ project, team, task });
     const orphanRunId = "orphan-precommit-run";
     const orphanRunDir = join(project.workdir, ".ogs", "runs", orphanRunId);
-    await mkdir(join(orphanRunDir, "control"), { recursive: true });
-    await writeJsonAtomic(join(orphanRunDir, "control", "state.json"), {
-      version: 1,
+    const orphanStateDirectory = join(orphanRunDir, "team-ir-v2-state");
+    await mkdir(orphanStateDirectory, { recursive: true });
+    await new FileTeamRunStore(orphanStateDirectory).create({
+      projectId: project.projectId,
       runId: orphanRunId,
-      attemptNumber: 1,
-      status: "planning",
-      taskReservation: { kind: "task-attempt", projectId: project.projectId, taskId: task.taskId, teamVersionId: team.teamVersionId, runId: orphanRunId, attemptKey: "crashed-before-commit" },
-      control: { paused: false, cancelRequested: false },
-      nodes: {},
-      attempts: [],
-      reviews: [],
-      updatedAt: new Date().toISOString()
+      revision: 0,
+      status: "queued",
+      compiledPlanDigest: task.compiledPlanDigest,
+      teamIrSemanticDigest: task.teamIrSemanticDigest,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      runInput: { task: task.input, input: {}, preferences: {}, attachments: {} },
+      activeExecutionBudgetMs: 60000,
+      activeExecutionMs: 0,
+      loopStates: {},
+      invocations: {},
+      events: []
     });
     await writeJsonAtomic(join(orphanRunDir, "run-owner.json"), {
       version: 1,
@@ -199,22 +199,15 @@ test("server startup removes a Task Run initialized before its Task reservation 
       runId: orphanRunId,
       attemptNumber: 1
     });
-    const orphanState = JSON.parse(await readFile(join(orphanRunDir, "control", "state.json"), "utf8"));
-    assert.deepEqual(orphanState.taskReservation, {
-      kind: "task-attempt",
-      projectId: project.projectId,
-      taskId: task.taskId,
-      teamVersionId: team.teamVersionId,
-      runId: orphanRunId,
-      attemptKey: "crashed-before-commit"
-    });
+    const orphanState = JSON.parse(await readFile(join(orphanStateDirectory, `${orphanRunId}.json`), "utf8"));
+    assert.equal(orphanState.status, "queued");
     await assert.rejects(access(join(team.workdir, ".ogs", "runs", orphanRunId)), { code: "ENOENT" });
 
     const startServer = async () => {
       output = "";
       server = spawn(process.execPath, ["server.mjs"], {
         cwd: appRoot,
-        env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
+        env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot, OGS_TEAM_IR_V2_RESOLVER_MODULE: fileURLToPath(new URL("./team-ir-v2-task-test-resolver.mjs", import.meta.url)) },
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"]
       });
@@ -241,7 +234,7 @@ test("server startup removes a Task Run initialized before its Task reservation 
     await assert.rejects(access(orphanRunDir), { code: "ENOENT" });
 
     const startResponse = await fetch(`${baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/start`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "dry-run", idempotencyKey: "start-after-orphan-cleanup" })
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "sandbox", idempotencyKey: "start-after-orphan-cleanup" })
     });
     assert.equal(startResponse.status, 202);
     const started = await startResponse.json();

@@ -3,16 +3,16 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createTeamDesignUseCasesForStore } from "./team-design-test-helpers.mjs";
 import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
+import { withTeamLifecycleUseCases } from "./team-lifecycle-test-helpers.mjs";
 
 async function withStore(prefix, callback) {
   const projectsRoot = await mkdtemp(join(tmpdir(), `ogs-site-${prefix}-`));
   const previousRoot = process.env.OGS_SITE_PROJECTS_DIR;
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const repository = await import(`../infrastructure/file-project-store.mjs?product-logic=${prefix}-${Date.now()}-${Math.random()}`);
-  const store = withProjectMaterialUseCases(withRunQueryUseCases(repository, projectsRoot));
+  const store = withTeamLifecycleUseCases(withProjectMaterialUseCases(withRunQueryUseCases(repository, projectsRoot)));
   try {
     return await callback(store, projectsRoot);
   } finally {
@@ -38,50 +38,6 @@ async function waitForTerminal(store, projectId, runId) {
   }
   throw new Error("Run did not reach a terminal state in time.");
 }
-
-test("built-in provisioning creates stable persisted TeamVersion identities", async () => {
-  await withStore("builtin-provisioning", async (store) => {
-    const first = await store.provisionBuiltInTeamVersions();
-    const listed = await store.listTeamRepository();
-    assert.ok(first.length > 0);
-    assert.ok(first.every((team) => team.teamVersionId === team.projectId && !team.teamVersionId.startsWith("case:")));
-    assert.equal(listed.filter((team) => team.builtIn).length, first.length);
-    assert.equal(new Set(listed.filter((team) => team.builtIn).map((team) => team.teamVersionId)).size, first.length);
-
-    const second = await store.provisionBuiltInTeamVersions();
-    assert.deepEqual(second.map((team) => team.teamVersionId), first.map((team) => team.teamVersionId));
-  });
-});
-
-test("Natural and Professional design paths share one validated, publishable team definition", async () => {
-  await withStore("team-design", async (store) => {
-    const draft = await store.createProject({ name: "Shared Design Team", overview: "Turn a brief into a reviewed recommendation.", templateId: "minimal" });
-    const designUseCases = createTeamDesignUseCasesForStore(store);
-    const naturalDesign = await designUseCases.getTeamDesign(draft.projectId);
-    assert.equal((await designUseCases.validateTeamDesign(draft.projectId, { authoring: naturalDesign.authoring })).ok, true);
-
-    const roleId = Object.keys(naturalDesign.authoring.roles)[0];
-    const authoredDraft = {
-      ...naturalDesign.authoring,
-      roles: {
-        ...naturalDesign.authoring.roles,
-        [roleId]: { ...naturalDesign.authoring.roles[roleId], title: "Round-trip role title", contextMap: { brief: "global.task" } }
-      }
-    };
-    const professionalSave = await designUseCases.saveTeamDesign(draft.projectId, {
-      authoring: authoredDraft,
-      expectedTeamVersionDigest: naturalDesign.teamVersionDigest
-    });
-    assert.equal(professionalSave.teamVersionStatus, "draft");
-    assert.equal(professionalSave.authoring.roles[roleId].title, "Round-trip role title");
-    assert.deepEqual(professionalSave.authoring.roles[roleId].contextMap, { brief: "global.task" });
-    assert.equal((await designUseCases.getTeamDesign(draft.projectId)).authoring.roles[roleId].title, "Round-trip role title");
-
-    const released = await store.confirmProjectTeam(draft.projectId, { release: true });
-    assert.equal(released.teamVersionStatus, "released");
-    assert.match(released.teamCoreDigest, /^[a-f0-9]{64}$/);
-  });
-});
 
 test("task creation requires the selected team to be mounted instead of silently switching teams", async () => {
   await withStore("task-selection", async (store) => {

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { lstat, mkdtemp, mkdir, readFile, readdir, symlink } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
@@ -19,9 +19,9 @@ test("adapter persists run artifacts for project-selected model roles", async ()
   await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
-  await symlink(
-    path.resolve(repoRoot, ".ogs", "model-selection.json"),
-    path.resolve(tempRoot, ".ogs", "model-selection.json")
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    JSON.stringify({ configVersion: "2", defaults: { backend: "codex", modelId: "gpt-6-luna" } })
   );
   await symlink(
     path.resolve(repoRoot, ".ogs", "model-catalog.json"),

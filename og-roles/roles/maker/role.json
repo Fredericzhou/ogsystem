@@ -1,0 +1,18 @@
+{
+  "roleId": "maker",
+  "roleVersion": "1.0.0",
+  "name": "Maker",
+  "description": "Drafts an answer and incorporates explicit reviewer feedback during revision rounds.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "maker-checker", "revision"],
+  "contractVersion": 1,
+  "purpose": "Produce a reasoned answer and revise it in response to explicit review feedback.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

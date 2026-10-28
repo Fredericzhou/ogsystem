@@ -23,7 +23,7 @@ export function createProjectReadinessUseCases({ getProject, readinessInspector 
     if (version.projectType === "collaboration" || (version.teamRootId || version.teamId) !== teamId || version.teamVersionId !== teamVersionId) {
       throw new Error("TEAM_VERSION_NOT_FOUND: TeamVersion does not belong to this Team.");
     }
-    const readiness = await readinessInspector.inspect(version.workdir);
+    const readiness = await readinessInspector.inspect(version.workdir, version);
     return {
       teamId,
       teamVersionId,
@@ -40,7 +40,7 @@ export function createProjectReadinessUseCases({ getProject, readinessInspector 
     async getProjectReadiness(projectId) {
       const project = await getProject(projectId);
       if (project.projectType !== "collaboration") {
-        const readiness = await readinessInspector.inspect(project.workdir);
+        const readiness = await readinessInspector.inspect(project.workdir, project);
         return {
           projectId,
           scope: "static_configuration",

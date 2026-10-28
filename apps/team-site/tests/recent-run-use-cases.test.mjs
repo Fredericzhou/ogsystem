@@ -26,7 +26,7 @@ test("recent Project Run query lists only Collaboration Project Task attempts", 
     ],
     runArtifactStore: {
       async readRunArtifacts(_projectId, _taskId, runId) {
-        return { state: { status: "completed", attemptNumber: runId === "run-1" ? 1 : 2, updatedAt: `2026-01-0${runId === "run-1" ? 1 : 2}T00:00:00Z` }, plan: { executionPolicy: { mode: "dry-run" } } };
+        return { state: { status: "completed", attemptNumber: runId === "run-1" ? 1 : 2, updatedAt: `2026-01-0${runId === "run-1" ? 1 : 2}T00:00:00Z` }, plan: { engine: "team-ir-v2" }, outputSummary: runId === "run-1" ? "Previous result" : "Latest result" };
       }
     }
   });
@@ -42,8 +42,32 @@ test("recent Project Run query lists only Collaboration Project Task attempts", 
   assert.equal(Object.hasOwn(retry, "projectId"), false);
   assert.equal(retry.attemptNumber, 2);
   assert.equal(retry.isCurrent, true);
-  assert.equal(retry.mode, "dry-run");
-  assert.equal(retry.outputSummary, "Done");
+  assert.equal(retry.mode, "sandbox");
+  assert.equal(retry.outputSummary, "Latest result");
   assert.equal(runs[1].isCurrent, false);
+  assert.equal(runs[1].mode, "sandbox");
+  assert.equal(runs[1].outputSummary, "Previous result");
   assert.equal(Object.hasOwn(retry, "roundNumber"), false);
+});
+
+test("recent Project Run query surfaces old-format Run rejection without a legacy reader", async () => {
+  let legacyReads = 0;
+  const useCases = createRecentRunUseCases({
+    listProjects: async () => [{
+      projectId: "collaboration",
+      projectType: "collaboration",
+      taskRecords: [{ taskId: "task-1", taskNumber: 1, currentRunId: "run-old", runIds: ["run-old"], status: "completed" }]
+    }],
+    runArtifactStore: {
+      async readRunArtifacts() {
+        throw new Error("TEAM_IR_V2_REQUIRED: Project Task attempts must use a Team IR v2 Run.");
+      },
+      async readLegacyRunArtifacts() { legacyReads += 1; }
+    }
+  });
+
+  const [run] = await useCases.listRecentProjectRuns();
+  assert.equal(run.status, "completed");
+  assert.equal(run.error, "TEAM_IR_V2_REQUIRED: Project Task attempts must use a Team IR v2 Run.");
+  assert.equal(legacyReads, 0);
 });

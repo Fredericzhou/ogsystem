@@ -85,6 +85,69 @@ test("route selection evaluates conditions and exclusive priority deterministica
   assert.deepEqual(selectTeamHandoffs(plan, { kind: "run" }, {}, { task: "t", input: { prompt: "hi", kind: "fallback" } }), ["fallback"]);
 });
 
+test("Review on a parallel fan-out route fails closed before any Binding invocation", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-fanout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.agents.push(...["auditor", "backup"].map((id) => ({
+    id,
+    packageRef: `role:${id}@1`,
+    bindingRef: `binding:${id}`,
+    inputPorts: { default: { dataSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false } } },
+    outputPorts: { DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } } }
+  })));
+  value.bindings.push(...["auditor", "backup"].map((id) => ({ ...structuredClone(value.bindings[0]), id: `binding:${id}` })));
+  value.handoffs.push(...["auditor", "backup"].map((id) => ({
+    id: `reviewed-${id}`,
+    from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+    to: { kind: "agent", agentId: id, inputPort: "default" },
+    map: { data: { prompt: { "$ref": "$.output.data.answer" } } },
+    delivery: { deadlineMs: 2000 }
+  })));
+  value.orchestration.routes.push({
+    from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+    mode: "parallel_fanout",
+    onNoMatch: "fail",
+    handoffIds: ["reviewed-auditor", "reviewed-backup"]
+  });
+  value.orchestration.reviews = [{
+    id: "worker-review",
+    at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
+    feedbackSchema: { type: "object" },
+    timeoutMs: 1000,
+    onTimeout: "fail"
+  }];
+
+  let plan;
+  try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  const reviewRuntime = new TeamReviewRuntime({
+    store: new FileTeamReviewStore(join(root, "reviews")),
+    now: () => 100,
+    authorizeReviewer: () => true
+  });
+  const calls = [];
+  const runtime = new TeamRuntime({
+    store: new MemoryTeamRunStore(),
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    reviewRuntime,
+    bindings: Object.fromEntries(["worker", "auditor", "backup"].map((id) => [`binding:${id}`, {
+      async invoke() {
+        calls.push(id);
+        return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected" } } };
+      }
+    }]))
+  });
+  await runtime.createRun(plan, { runId: "review-fanout", task: "review fan-out", input: { prompt: "hello" } });
+
+  const result = await runtime.executeRun(plan, "review-fanout");
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.filter((entry) => entry.type === "run.failing").length, 1);
+  assert.equal(result.events.find((entry) => entry.type === "run.failing").data.code, "TEAM_REVIEW_TOPOLOGY_UNSUPPORTED");
+  assert.equal(result.events.filter((entry) => entry.type === "run.failed").length, 1);
+  assert.deepEqual(calls, [], "unsupported Review/fan-out topology must be rejected before any Binding runs");
+  await assert.rejects(reviewRuntime.get({ runId: "review-fanout", reviewId: "worker-review" }), /does not exist/i);
+});
+
 test("active Run resume rejects a changed compiled dependency digest without side effects", async () => {
   let calls = 0;
   const store = new MemoryTeamRunStore();
@@ -459,6 +522,53 @@ test("a crash before terminal commit keeps Result private and recovery commits i
   assert.deepEqual(recovered.result, { answer: "durable" });
   assert.equal(recovered.resultWritten, true);
   assert.equal(recovered.pendingResult, undefined);
+  assert.equal(calls, 1);
+  assert.equal(recovered.events.filter((item) => item.type === "run.result.written").length, 1);
+  assert.equal(recovered.events.filter((item) => item.type === "run.completed").length, 1);
+});
+
+test("a lost response after terminal Result commit returns the committed Result without replay", async () => {
+  const backing = new MemoryTeamRunStore();
+  let loseCommitResponse = true;
+  const store = {
+    create: (record) => backing.create(record),
+    load: (runId) => backing.load(runId),
+    async compareAndSet(runId, expectedRevision, record) {
+      const committed = await backing.compareAndSet(runId, expectedRevision, record);
+      if (committed && record.status === "completed" && record.resultWritten && loseCommitResponse) {
+        loseCommitResponse = false;
+        throw new Error("simulated lost response after terminal commit");
+      }
+      return committed;
+    }
+  };
+  let calls = 0;
+  const runtime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { calls += 1; return { kind: "completed", output: { event: "DONE", data: { answer: "committed" } } }; } } }
+  });
+  const value = team();
+  value.handoffs.push({ id: "result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } });
+  const plan = compileTeamIr(value);
+  await runtime.createRun(plan, { runId: "result-commit-response-lost", task: "recover", input: { prompt: "check" } });
+
+  await assert.rejects(runtime.executeRun(plan, "result-commit-response-lost"), /simulated lost response/);
+  const committed = await backing.load("result-commit-response-lost");
+  assert.equal(committed.status, "completed");
+  assert.equal(committed.resultWritten, true);
+  assert.deepEqual(committed.result, { answer: "committed" });
+  assert.equal(committed.pendingResult, undefined);
+  assert.equal(committed.events.filter((item) => item.type === "run.result.written").length, 1);
+  assert.equal(committed.events.filter((item) => item.type === "run.completed").length, 1);
+
+  const recovered = await new TeamRuntime({
+    store: backing,
+    clock: { now: () => 200, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { calls += 1; throw new Error("must not replay"); } } }
+  }).executeRun(plan, "result-commit-response-lost");
+  assert.equal(recovered.status, "completed");
+  assert.deepEqual(recovered.result, { answer: "committed" });
   assert.equal(calls, 1);
   assert.equal(recovered.events.filter((item) => item.type === "run.result.written").length, 1);
   assert.equal(recovered.events.filter((item) => item.type === "run.completed").length, 1);

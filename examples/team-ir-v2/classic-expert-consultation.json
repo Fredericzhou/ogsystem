@@ -35,10 +35,10 @@
     "reviews": []
   },
   "bindings": [
-    { "id": "binding:dispatcher", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:cardiology", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:neurology", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:imaging", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
-    { "id": "binding:chief-reviewer", "kind": "model", "modelRef": "sandbox/default", "attemptTimeoutMs": 180000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
+    { "id": "binding:dispatcher", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 150000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:cardiology", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:neurology", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:imaging", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 210000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } },
+    { "id": "binding:chief-reviewer", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 180000, "retry": { "maxAttempts": 2, "retryOn": ["transport", "timeout", "rate_limited", "server_error"], "backoff": { "mode": "constant", "delayMs": 1000 } } }
   ]
 }

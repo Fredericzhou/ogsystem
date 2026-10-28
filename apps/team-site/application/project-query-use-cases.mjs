@@ -12,7 +12,7 @@ export function createProjectQueryUseCases({ projectStore, taskAttemptStore, wai
     const taskRecords = await Promise.all((project.taskRecords || []).map(async (task) => {
       const runIds = Array.isArray(task.runIds) ? task.runIds : [];
       const attemptData = await Promise.all(runIds.map(async (runId, index) => {
-        const attempt = await taskAttemptStore.readAttempt(projectId, task.taskId, runId).catch(() => ({}));
+        const attempt = await taskAttemptStore.readAttempt(projectId, task.taskId, runId).catch((error) => ({ queryError: error }));
         return { runId, index, attempt };
       }));
       const runAttempts = attemptData.map(({ runId, index, attempt }) => ({
@@ -21,8 +21,8 @@ export function createProjectQueryUseCases({ projectStore, taskAttemptStore, wai
         isCurrent: task.currentRunId === runId,
         evidenceAvailable: Boolean(attempt.state?.status),
         status: attempt.state?.status || "unknown",
-        mode: attempt.plan?.executionPolicy?.mode || "unknown",
-        error: attempt.state?.error || null,
+        mode: attempt.plan?.executionPolicy?.mode || (attempt.plan?.engine === "team-ir-v2" ? "sandbox" : "unknown"),
+        error: attempt.state?.error || attempt.queryError?.message || null,
         outputSummary: attempt.outputSummary || (task.currentRunId === runId ? task.outputSummary || "" : ""),
         updatedAt: attempt.state?.updatedAt || null
       }));

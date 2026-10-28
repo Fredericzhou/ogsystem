@@ -4,6 +4,8 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { acquireProjectWriteLock, ProjectLockError } from "../../../dist/runtime/project-run-lock.js";
 
+const teamNameLockContext = new AsyncLocalStorage();
+
 export function createFileTeamLifecycleLocks({ projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects")) } = {}) {
   const root = resolve(projectsRoot);
   const nameLockPath = join(root, ".site", "team-name-creation");
@@ -53,6 +55,8 @@ export function createFileTeamLifecycleLocks({ projectsRoot = resolve(process.en
   }
 
   async function withTeamNameLock(action) {
+    const held = teamNameLockContext.getStore();
+    if (held?.has(nameLockPath)) return action();
     const previous = nameLockQueues.get(nameLockPath) || Promise.resolve();
     let releaseQueue;
     const turn = new Promise((resolveTurn) => { releaseQueue = resolveTurn; });
@@ -70,7 +74,9 @@ export function createFileTeamLifecycleLocks({ projectsRoot = resolve(process.en
           await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
         }
       }
-      return await action();
+      const next = new Set(held || []);
+      next.add(nameLockPath);
+      return await teamNameLockContext.run(next, action);
     } finally {
       await lock?.release();
       releaseQueue();

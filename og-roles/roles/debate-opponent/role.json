@@ -1,0 +1,18 @@
+{
+  "roleId": "debate-opponent",
+  "roleVersion": "1.0.0",
+  "name": "Debate Opponent",
+  "description": "Builds the strongest evidence-based case against the proposition.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "structured-debate", "opponent"],
+  "contractVersion": 1,
+  "purpose": "Present a clear, evidence-aware argument challenging the proposition.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

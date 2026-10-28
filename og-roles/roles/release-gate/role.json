@@ -1,0 +1,18 @@
+{
+  "roleId": "release-gate",
+  "roleVersion": "1.0.0",
+  "name": "Release Gate Reviewer",
+  "description": "Evaluates supplied change evidence and returns a PASS or REJECT release decision.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "release-gate", "decision"],
+  "contractVersion": 1,
+  "purpose": "Assess whether supplied evidence satisfies the stated release criteria; abstain if evidence is insufficient.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

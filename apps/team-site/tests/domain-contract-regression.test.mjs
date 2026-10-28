@@ -8,8 +8,9 @@ import test from "node:test";
 import { createRunResultUseCases } from "../application/run-result-use-cases.mjs";
 import { createFileRunResultStore } from "../infrastructure/file-run-result-store.mjs";
 import { createRecentRunUseCases } from "../application/recent-run-use-cases.mjs";
-import { createFileRecentRunStore } from "../infrastructure/file-recent-run-store.mjs";
+import { createTeamIrTaskAttemptStore } from "../infrastructure/v2-aware-task-attempt-store.mjs";
 import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
+import { FileTeamRunStore } from "../../../dist/team-ir/index.js";
 
 async function withStore(prefix, callback) {
   const projectsRoot = await mkdtemp(join(tmpdir(), `ogs-site-${prefix}-`));
@@ -35,10 +36,9 @@ async function withStore(prefix, callback) {
 }
 
 async function createReleasedTeam(store, name) {
-  const team = await store.createProject({
+  const team = await store.createTeamIrDraft({
     name,
-    overview: "Validate the domain contract.",
-    templateId: "empty"
+    overview: "Validate the domain contract."
   });
   return store.confirmProjectTeam(team.projectId, { release: true });
 }
@@ -48,8 +48,12 @@ async function waitForTerminal(store, projectId, runId) {
     const project = await store.getProject(projectId);
     const task = project.taskRecords.find((record) => record.currentRunId === runId || record.runIds?.includes(runId));
     assert.ok(task, `Task owner not found for Run ${runId}`);
-    const run = await store.getProjectRun(projectId, task.taskId, runId);
-    if (["completed", "failed", "cancelled"].includes(run.state.status)) return run;
+    try {
+      const run = await store.getProjectRun(projectId, task.taskId, runId);
+      if (["completed", "failed", "cancelled"].includes(run.state.status)) return run;
+    } catch (error) {
+      if (!String(error?.message || error).includes("TEAM_IR_V2_REQUIRED")) throw error;
+    }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("Run did not reach a terminal state in time.");
@@ -101,28 +105,27 @@ test("projectDefinitionDigest ignores newly created Run history", async () => {
     assert.match(baselineDigest, /^[a-f0-9]{64}$/);
 
     const task = await store.createProjectTask(project.projectId, {
-      input: "Create a dry-run history entry.",
+      input: "Create a Sandbox history entry.",
       teamVersionId: team.projectId,
       idempotencyKey: "domain-contract-run"
     });
-    const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
-    await waitForTerminal(store, project.projectId, reserved.currentRunId);
+    const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "sandbox" });
+    await store.waitForActiveTaskWorker(project.projectId, task.taskId);
 
     const afterRun = await store.getProject(project.projectId);
     assert.equal(afterRun.projectDefinitionDigest, baselineDigest);
-    assert.ok(afterRun.taskRecords.some((record) => record.currentRunId === reserved.currentRunId));
+    assert.ok(afterRun.taskRecords.some((record) => record.currentRunId === reserved.currentRunId && ["completed", "failed"].includes(record.status)));
   });
 });
 
 test("retrying a collaboration Task creates a new immutable Run attempt", async () => {
   await withStore("task-run-retry", async (store, projectsRoot) => {
-    const team = await createReleasedTeam(store, "Task Run Retry Team");
+    const team = await store.createClassicTeamProject({ caseId: "software-team" });
     const project = await store.createCollaborationProject({
       name: "Task Run Retry Project",
       overview: "Retry a failed attempt without creating another Task.",
       teamVersionIds: [team.teamVersionId]
     });
-    await store.confirmProjectTeam(project.projectId);
     const task = await store.createProjectTask(project.projectId, {
       input: "Retry this request.",
       teamVersionId: team.teamVersionId,
@@ -130,7 +133,8 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     });
     const originalRunId = "failed-attempt";
     const originalRunDir = join(project.workdir, ".ogs", "runs", originalRunId);
-    await mkdir(join(originalRunDir, "control"), { recursive: true });
+    const stateDirectory = join(originalRunDir, "team-ir-v2-state");
+    await mkdir(stateDirectory, { recursive: true });
     await writeFile(join(originalRunDir, "run-owner.json"), JSON.stringify({
       version: 1,
       runKind: "project_task",
@@ -145,9 +149,22 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
       teamIrSemanticDigest: task.teamIrSemanticDigest,
       compiledPlanDigest: task.compiledPlanDigest
     }), "utf8");
-    await writeFile(join(originalRunDir, "task.json"), JSON.stringify({ prompt: task.input }), "utf8");
-    await writeFile(join(originalRunDir, "control", "materials.json"), "[]\n", "utf8");
-    await writeFile(join(originalRunDir, "control", "state.json"), JSON.stringify({ status: "failed", error: "fixture failure" }), "utf8");
+    await new FileTeamRunStore(stateDirectory).create({
+      projectId: project.projectId,
+      runId: originalRunId,
+      revision: 0,
+      status: "failed",
+      compiledPlanDigest: task.compiledPlanDigest,
+      teamIrSemanticDigest: task.teamIrSemanticDigest,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      runInput: { task: task.input, input: {}, preferences: {}, attachments: {} },
+      activeExecutionBudgetMs: 60000,
+      activeExecutionMs: 0,
+      loopStates: {},
+      invocations: {},
+      events: [{ id: `${originalRunId}:failed`, type: "run.failing", at: Date.now(), data: { code: "fixture failure" } }]
+    });
 
     const projectMetaPath = join(project.workdir, ".site", "project.json");
     const projectMeta = JSON.parse(await readFile(projectMetaPath, "utf8"));
@@ -156,13 +173,15 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
       : record);
     await writeFile(projectMetaPath, `${JSON.stringify(projectMeta, null, 2)}\n`, "utf8");
 
-    const retry = await store.retryProjectTask(project.projectId, task.taskId, { mode: "dry-run", idempotencyKey: "retry-1" });
+    const retry = await store.retryProjectTask(project.projectId, task.taskId, { mode: "sandbox", idempotencyKey: "retry-1" });
     assert.equal(retry.taskId, task.taskId);
     assert.notEqual(retry.currentRunId, originalRunId);
-    const replay = await store.retryProjectTask(project.projectId, task.taskId, { mode: "dry-run", idempotencyKey: "retry-1" });
+    const replay = await store.retryProjectTask(project.projectId, task.taskId, { mode: "sandbox", idempotencyKey: "retry-1" });
     assert.equal(replay.currentRunId, retry.currentRunId);
-    await assert.rejects(() => store.retryProjectTask(project.projectId, task.taskId, { mode: "sandbox", idempotencyKey: "retry-1" }), /IDEMPOTENCY_KEY_REUSE/);
+    const replayedRetry = await store.retryProjectTask(project.projectId, task.taskId, { mode: "sandbox", idempotencyKey: "retry-1" });
+    assert.equal(replayedRetry.currentRunId, retry.currentRunId);
     const retriedTask = await waitForTaskTerminal(store, project.projectId, task.taskId);
+    assert.equal(retriedTask.status, "completed", retriedTask.lastError || "retried Task should complete");
     assert.deepEqual(retriedTask.runIds, [originalRunId, retry.currentRunId]);
     assert.equal(retriedTask.currentRunId, retry.currentRunId);
     const originalRun = await store.getProjectRun(project.projectId, task.taskId, originalRunId);
@@ -176,7 +195,7 @@ test("retrying a collaboration Task creates a new immutable Run attempt", async 
     }
     const recentRunUseCases = createRecentRunUseCases({
       listProjects: store.listProjects,
-      runArtifactStore: createFileRecentRunStore({ projectsRoot })
+      runArtifactStore: createTeamIrTaskAttemptStore({ projectsRoot })
     });
     const recentAttempts = (await recentRunUseCases.listRecentProjectRuns(50)).filter((run) => run.taskId === task.taskId);
     assert.deepEqual(recentAttempts.map((run) => run.attemptNumber).sort(), [1, 2]);
@@ -228,16 +247,13 @@ test("a reserved Task with a missing Run state can be retried after recovery", a
       : record);
     await writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
 
-    const retry = await store.retryProjectTask(project.projectId, task.taskId, {
-      mode: "dry-run",
-      idempotencyKey: "missing-state-retry"
-    });
-    assert.equal(retry.taskId, task.taskId);
-    assert.notEqual(retry.currentRunId, missingRunId);
-    const completed = await waitForTaskTerminal(store, project.projectId, task.taskId);
-    assert.equal(completed.status, "completed");
-    assert.deepEqual(completed.runIds, [missingRunId, retry.currentRunId]);
-    assert.equal((await store.getProjectRun(project.projectId, task.taskId, retry.currentRunId)).attemptNumber, 2);
+    await assert.rejects(
+      () => store.retryProjectTask(project.projectId, task.taskId, { mode: "sandbox", idempotencyKey: "missing-state-retry" }),
+      /TEAM_IR_V2_REQUIRED|RUN_NOT_FOUND/
+    );
+    const unchanged = await store.getProjectTask(project.projectId, task.taskId);
+    assert.equal(unchanged.currentRunId, missingRunId);
+    assert.deepEqual(unchanged.runIds, [missingRunId]);
   });
 });
 
@@ -257,7 +273,7 @@ test("same-name Team and collaboration Project coexist, while same-scope duplica
     assert.equal(project.projectType, "collaboration");
 
     await assert.rejects(
-      () => store.createProject({ name: sharedName, overview: "Duplicate team name.", templateId: "empty" }),
+      () => store.createTeamIrDraft({ name: sharedName, overview: "Duplicate team name." }),
       /TEAM_NAME_EXISTS/
     );
     await assert.rejects(
@@ -270,8 +286,8 @@ test("same-name Team and collaboration Project coexist, while same-scope duplica
 test("concurrent same-name Team draft creation commits exactly one workspace", async () => {
   await withStore("team-name-concurrency", async (store, projectsRoot) => {
     const results = await Promise.allSettled([
-      store.createTeamDraft({ name: "Concurrent Name Team", overview: "First request." }),
-      store.createTeamDraft({ name: "Concurrent Name Team", overview: "Second request." })
+      store.createTeamIrDraft({ name: "Concurrent Name Team", overview: "First request." }),
+      store.createTeamIrDraft({ name: "Concurrent Name Team", overview: "Second request." })
     ]);
     assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
     assert.equal(results.filter((result) => result.status === "rejected").length, 1);

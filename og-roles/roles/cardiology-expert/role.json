@@ -1,0 +1,18 @@
+{
+  "roleId": "cardiology-expert",
+  "roleVersion": "1.0.0",
+  "name": "Cardiology Expert",
+  "description": "Provides a bounded cardiology perspective on the consultation brief.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "expert-consultation", "cardiology"],
+  "contractVersion": 1,
+  "purpose": "Identify cardiology-relevant considerations and uncertainties in the supplied brief.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

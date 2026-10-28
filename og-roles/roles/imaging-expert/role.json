@@ -1,0 +1,18 @@
+{
+  "roleId": "imaging-expert",
+  "roleVersion": "1.0.0",
+  "name": "Imaging Expert",
+  "description": "Provides a bounded imaging perspective on the consultation brief.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "expert-consultation", "imaging"],
+  "contractVersion": 1,
+  "purpose": "Identify imaging-relevant considerations and uncertainties in the supplied brief.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

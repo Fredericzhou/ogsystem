@@ -1,0 +1,18 @@
+{
+  "roleId": "software-implementer",
+  "roleVersion": "1.0.0",
+  "name": "Software Implementer",
+  "description": "Implements a planned software change and reports the concrete changes made.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "software-delivery", "implementation"],
+  "contractVersion": 1,
+  "purpose": "Implement the assigned software plan and summarize concrete changes.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

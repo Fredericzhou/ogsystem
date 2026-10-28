@@ -1,0 +1,18 @@
+{
+  "roleId": "chief-reviewer",
+  "roleVersion": "1.0.0",
+  "name": "Chief Reviewer",
+  "description": "Synthesizes specialist consultation contributions into a bounded summary.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "expert-consultation", "synthesis"],
+  "contractVersion": 1,
+  "purpose": "Synthesize available specialist reviews into a concise consultation summary with clear uncertainty.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

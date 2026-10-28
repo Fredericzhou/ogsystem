@@ -27,13 +27,12 @@ export async function handleRoleSourceCatalogRoutes({ request, response, url, re
     } catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const action = url.pathname.match(/^\/api\/v1\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)\/(convert|trial)$/);
+  const action = url.pathname.match(/^\/api\/v1\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)\/convert$/);
   if (action && request.method === "POST") {
     try {
       const body = await readBody(request, 1024 * 1024);
       const payload = { ...body, sourceId: action[1], roleKey: action[2], commit: url.searchParams.get("commit") || body.commit };
-      if (action[3] === "convert") sendJson(response, 200, { result: await useCases.convertRoleSourceRole(payload) });
-      else sendJson(response, 200, { result: await useCases.trialRoleSourceRole(payload) });
+      sendJson(response, 200, { result: await useCases.convertRoleSourceRole(payload) });
     } catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }

@@ -1,14 +1,11 @@
-import { createHash } from "node:crypto";
-
 export function createTeamVersionSaveUseCases({ teamCatalog, teamMetadataUseCases, lifecycleUseCases, withTeamVersionSaveLock, removeProject, digestSnapshot }) {
   if (typeof teamCatalog?.getTeamVersion !== "function" || typeof teamMetadataUseCases?.updateTeamMetadata !== "function"
     || typeof lifecycleUseCases?.forkTeamVersion !== "function"
-    || typeof withTeamVersionSaveLock !== "function" || typeof removeProject !== "function") {
+    || typeof withTeamVersionSaveLock !== "function" || typeof removeProject !== "function" || typeof digestSnapshot !== "function") {
     throw new TypeError("TeamVersion metadata save requires catalog, metadata, lifecycle, lock, and rollback operations.");
   }
 
-  const digest = digestSnapshot || ((value) => createHash("sha256").update(value).digest("hex"));
-  const metadataDigest = (team) => digest(JSON.stringify({
+  const metadataDigest = (team) => digestSnapshot(JSON.stringify({
     name: team.name || team.teamName || "",
     overview: team.overview || ""
   }));

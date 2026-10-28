@@ -28,7 +28,6 @@ import {
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
-import { materializeCaseTeam } from "../apps/team-site/demo-runner.mjs";
 
 test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
   const parsed = parseStudioChatToMmdRequest({
@@ -57,7 +56,7 @@ test("visualizer rejects direct business Runs so Projects Tasks own execution", 
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-classic-project-run-"));
   let started;
   try {
-    await materializeCaseTeam("software-team", workdir, "en");
+    await seedProjectFixture(workdir);
     const projectDigest = await computeProjectAssetDigest(workdir);
     await mkdir(path.resolve(workdir, ".site"), { recursive: true });
     await writeFile(path.resolve(workdir, ".ogs", "project.json"), JSON.stringify({

@@ -74,7 +74,7 @@ function debateBindings({ failJudge = false, onJudge } = {}) {
       if (failJudge) throw new TeamBindingError("judge unavailable", "policy");
       const output = onJudge ? await onJudge(invocation, calls.filter(([agentId]) => agentId === "neutral-judge").length) : undefined;
       const turn = calls.filter(([agentId]) => agentId === "neutral-judge").length;
-      return { kind: "completed", output: { event: "JUDGMENT", data: output ?? { decision: turn === 1 ? "rebuttal" : "final", request: turn === 1 ? "address the strongest objection" : "prepare the conclusion" } } };
+      return { kind: "completed", output: { event: "JUDGMENT", data: output ?? { decision: turn === 1 ? "rebuttal" : "final", request: turn === 1 ? "address the strongest objection" : "prepare the conclusion", proponentSummary: `proponent summary ${turn}`, opponentSummary: `opponent summary ${turn}`, rationale: `judge rationale ${turn}` } } };
     } },
     "binding:debate-reporter": { async invoke(invocation) {
       calls.push(["debate-reporter", invocation.input]);
@@ -129,6 +129,74 @@ test("classic structured debate runs two Loop rounds through all_of Join, rebutt
   });
   assert.deepEqual(firstRound.merged.data, { proponentArgument: "pro-1", opponentArgument: "con-1" });
   assert.deepEqual(secondRound.merged.data, { proponentArgument: "pro-2", opponentArgument: "con-2" });
+});
+
+test("classic structured debate reports an unresolved rebuttal when the round limit is reached", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-join-exhausted-rebuttal-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await fixture();
+  const plan = compileTeamIr(team);
+  const { calls, bindings } = debateBindings({ onJudge: (_invocation, turn) => ({ decision: "rebuttal", request: "one more clarification", proponentSummary: `proponent summary ${turn}`, opponentSummary: `opponent summary ${turn}`, rationale: `judge rationale ${turn}` }) });
+  const store = new FileTeamRunStore(join(root, "runs"));
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "classic-debate-exhausted-rebuttal", task: "debate", input: { request: "Assess the proposal" } });
+  const result = await runtime.executeRun(plan, "classic-debate-exhausted-rebuttal");
+
+  assert.equal(result.status, "completed", JSON.stringify(result.events.filter((entry) => entry.type === "run.failing")));
+  assert.equal(result.loopStates["debate-rounds"].rounds, 2);
+  assert.deepEqual(calls.filter(([agentId]) => agentId === "debate-reporter").map(([, input]) => input), [{
+    decision: "rebuttal",
+    proponentSummary: "proponent summary 2",
+    opponentSummary: "opponent summary 2",
+    rationale: "judge rationale 2"
+  }]);
+});
+
+test("Loop Join skips an unselected candidate sharing an arrived source endpoint", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-join-same-endpoint-skip-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await fixture();
+  const judgePort = team.agents.find((agent) => agent.id === "neutral-judge").inputPorts.review;
+  judgePort.dataSchema.required = [];
+  judgePort.dataSchema.properties.proponentNote = { type: "string" };
+  const selectedContribution = team.handoffs.find((handoff) => handoff.id === "proponent-to-judge");
+  selectedContribution.when = { priority: 2 };
+  team.handoffs.push({
+    id: "proponent-optional-note",
+    from: { kind: "agent", agentId: "proponent", outputPort: "ARGUMENT" },
+    to: { kind: "agent", agentId: "neutral-judge", inputPort: "review" },
+    map: { data: { proponentNote: { "$ref": "$.output.data.argument" } } },
+    when: { condition: { op: "equals", args: [{ "$ref": "$.output.data.argument" }, { "$literal": "never-selected" }] }, priority: 1 },
+    delivery: { deadlineMs: 300000 }
+  });
+  team.orchestration.joins[0].handoffIds.push("proponent-optional-note");
+  team.orchestration.routes.push({
+    from: { kind: "agent", agentId: "proponent", outputPort: "ARGUMENT" },
+    mode: "exclusive_priority", onNoMatch: "fail",
+    handoffIds: ["proponent-to-judge", "proponent-optional-note"]
+  });
+  const plan = compileTeamIr(team);
+  const { calls, bindings } = debateBindings();
+  const store = new FileTeamRunStore(join(root, "runs"));
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "loop-same-endpoint-skip", task: "debate", input: { request: "Assess the proposal" } });
+  const result = await runtime.executeRun(plan, "loop-same-endpoint-skip");
+
+  assert.equal(result.status, "completed", JSON.stringify(result.events.filter((entry) => entry.type === "run.failing")));
+  assert.equal(calls.filter(([agentId]) => agentId === "neutral-judge").length, 2);
+  assert.deepEqual(calls.filter(([agentId]) => agentId === "neutral-judge").map(([, input]) => input), [
+    { proponentArgument: "pro-1", opponentArgument: "con-1" },
+    { proponentArgument: "pro-2", opponentArgument: "con-2" }
+  ]);
+  for (const roundKey of ["debate-positions:1", "debate-positions:2"]) {
+    const round = result.scheduler.joinRounds[roundKey];
+    assert.deepEqual(round.sourceStates, {
+      "proponent-to-judge": "arrived",
+      "opponent-to-judge": "arrived",
+      "proponent-optional-note": "skipped"
+    });
+    assert.equal(round.merged.data.proponentNote, undefined);
+  }
 });
 
 test("classic structured debate fails the Run when the Loop Join target fails", async (t) => {

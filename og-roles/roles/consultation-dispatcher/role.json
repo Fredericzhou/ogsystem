@@ -1,0 +1,18 @@
+{
+  "roleId": "consultation-dispatcher",
+  "roleVersion": "1.0.0",
+  "name": "Consultation Dispatcher",
+  "description": "Frames a consultation request for parallel specialist review.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "expert-consultation", "dispatch"],
+  "contractVersion": 1,
+  "purpose": "Produce a focused brief that gives each specialist the same relevant consultation context.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

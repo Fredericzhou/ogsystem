@@ -1,12 +1,14 @@
 # Team IR v2 落地与验证台账
 
-基线日期：2026-10-28  
-状态：实施中；阶段 0 已冻结，阶段 1、2 部分通过（仍在推进），阶段 3、4 进行中
+基线日期：2026-10-29
+状态：实施中；阶段 0 通过，阶段 1、2 部分通过，阶段 3、4 进行中；结构化辩论真实 Project Task UAT 和 Team Site 串行回归新增通过，发布门仍有未完成项
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
 
 本文件是推进台账，不是第二份规范。字段、诊断、运行状态和产品边界以[Team IR v2 Handoff 设计方案](team-ir-handoff-v2-design.md)为准；架构选择以[协作边界 ADR](adr-team-ir-collaboration-boundaries.md)为准；面向用户的场景说明以[社会分工协作设计理念](../usage/team-ir-social-collaboration.md)为准。
+
+本节后的日期记录按发生时的代码和证据保存；较早记录中的“未开始/受阻/未配置”是历史快照。判断当前状态以第 2、3 节和最新日期记录为准。
 
 每次实施工作都更新本文件：开始前确认阶段和验收项；完成后记录代码位置、测试命令、结果、日期和未覆盖边界。不能用旧版能力相似、单元测试通过或文档写完来代替 v2 自身验收。
 
@@ -22,15 +24,15 @@
 
 ## 2. 当前基线
 
-截至基线日期，设计和协作边界文档存在，`src/team-ir/` 尚未建立。仓库当前实现主要是 Mermaid / 旧 System 编译与运行路径。既有 `all_of`、`quorum_of`、人工审核、错误流、Artifact 和恢复测试可用于理解现状或复用测试设施，但不证明 v2 的端口映射、Join `skipped`、唯一 `runResult`、Loop dominance 或 `compiledPlanDigest` 已实现。
+截至 2026-10-29，本仓库已建立 Team IR v2 Schema、Compiler、Runtime、Studio/API、Sandbox resolver 与 8 个最新经典场景 fixture。旧 Team 作者/运行模块正在清理，standalone OGSystem System/CLI 仍有独立用途，不作为 Team 配置或执行路径。旧测试只在明确验证遗留拒绝/无副作用时保留，不能替代 v2 语义证据。
 
 | 项目 | 状态 | 当前证据或限制 |
 | --- | --- | --- |
 | Team IR v2 设计方案 | 已冻结为实施基线 | `docs/development/team-ir-handoff-v2-design.md`；阶段 0 语义复核完成，包含并行 Review、A2A 暂停/兄弟调用、重试/deadline 与失败竞态决策 |
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
-| v2 Schema / Compiler / Runtime | 进行中 | `src/team-ir/` 已含 Schema、引用表达式、映射静态校验、digest、编译计划初稿和 Runtime 状态机初稿；逐项缺口见追溯矩阵 |
-| Studio v2 作者体验 | 进行中 | 已有独立 `/ir` 作者页、原生非默认 `/studio/ir/new` 草稿流程、Playwright 保存/重开、advanced IR round-trip、Fake resolver Simulation/发布、可点选 Run/Agent/Result 与 Handoff 结构投影、逐字段诊断定位和窄屏证据；自由布局事件桩画布、生产 resolver/UAT 与默认入口仍未完成 |
-| v2 端到端或发布验收 | 部分通过 | 有确定性经典 Team IR fixture 和 Fake Binding Runtime 集成；无可信 production closure/evidence/Binding resolver 或真实 Sandbox UAT |
+| v2 Schema / Compiler / Runtime | 部分通过 | 诊断、映射、digest、Join/Loop/Review/Artifact/A2A、终态 CAS 与恢复有确定性合同；多 Join/Loop/Review 并行组合、一般 sibling 失败收敛和跨存储 Artifact/Run 提交仍受限，见追溯矩阵 |
+| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、结构投影、窄屏、真实 resolver Simulation/发布已有证据；直接拖线画布、Review 产品体验及真实发布后的完整浏览器验收未闭合 |
+| v2 端到端或发布验收 | 部分通过 | 真实 Docker/OpenCode resolver 已完成 Release Gate、Artifact Evidence、专家会诊、条件会签、结构化辩论和 Maker-Checker reject/revise/approve 的 Project Task；Artifact 输入固定快照、同 Run Review 恢复、幂等重放与重启查询已有真实 UAT。Maker-Checker 使用本机 OS principal，不代表独立审核用户/外部身份服务。软件交付质量、远端 A2A 和全部经典场景矩阵仍未通过 |
 
 ## 3. 实施与验收状态
 
@@ -39,10 +41,10 @@
 | 阶段 | 主要交付 | 必须通过的门槛 | 状态 |
 | --- | --- | --- | --- |
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
-| 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 正例/反例 fixtures 覆盖设计方案全部阻断诊断；路径作用域与受支持 JSON Schema 子集明确 | 部分通过 |
-| 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 顺序、条件路由、fan-out、Join、Loop、结果、失败、恢复和 A2A 合同测试通过；不经旧编译器语义路径 | 部分通过（进行中） |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和语义 digest 一致；浏览器验收覆盖核心作者流程和窄屏 | 进行中 |
-| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 最新版本干净 workspace 下创建、保存、发布、挂载、运行和查询通过；不要求历史数据读取兼容，不做数据迁移；无意外覆盖无关路径 | 进行中；默认切换仍关闭 |
+| 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 部分通过 |
+| 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑不能算支持；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 部分通过；多 Join/Loop/Review 组合和一般并行竞态仍有限制 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；生产 resolver 下完成保存、发布、Project Task 和 Review 用户流程 | 进行中；自由布局画布、Review 用户流程和完整发布浏览器矩阵未闭合 |
+| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；旧 Team 配置不迁移、不覆盖无关路径 | 进行中；默认创建、fork、Case/template 已切 v2；全部真实场景内容验收、A2A 远端、无用入口清理和回归/提交未闭合 |
 
 ### 阶段门
 
@@ -99,6 +101,7 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | --- | --- | --- |
 | IR Schema：合法 v2 | `tests/team-ir-schema.test.mjs`：`Team IR v2 schema declares Draft 2020-12 and accepts a minimal document` | 部分；仅最小合法文档，不是完整规范 fixture |
 | IR Schema：重复 ID | `tests/team-ir-validation.test.mjs`：`cross-reference validation reports duplicate semantic IDs and unknown references` | 已有静态诊断断言 |
+| IR Schema：Binding kind 与后端引用互斥 | `tests/team-ir-schema.test.mjs`：`Binding kind accepts exactly its matching backend reference` | Schema 已补 model/tool/a2a 合法正例及六种不匹配引用反例；Ajv 根 Schema 定义聚焦验证通过；完整构建及 Node 测试因 `pnpm build` 启动时 `ENOSPC` 尚未执行 |
 | IR Schema：未知端点/端口/Binding | `tests/team-ir-validation.test.mjs`：`cross-reference validation reports duplicate semantic IDs and unknown references`、`Handoff and route endpoint references diagnose each unknown Agent and port at its field pointer` | 部分；未知 Agent/port/Binding 有精确诊断，Handoff from/to 与 route from 的六个 Agent/port pointer 已断言；Run/Result endpoint discriminator 非法组合仍由 Schema 非法端点行追踪 |
 | IR Schema：非法端点类型 | `tests/team-ir-schema.test.mjs`：`endpoint schema rejects implicit endpoints and malformed agent ports`、`Handoff endpoint kinds and Run/Result endpoint fields are exact` | 部分；Run/Result kind 和额外字段，以及 Agent source/target 必需 Agent/port 和额外字段均有精确 pointer 反例；schema oneOf 交叉组合仍未穷举 |
 | IR Schema：无效 Schema 引用 | `tests/team-ir-schema-resolver.test.mjs`：`rejects missing resources, pointers and malformed pointer escapes`、`rejects network, absolute, escaping and unsupported Team-local references`、`fails closed for network refs hidden inside a referenced schema closure` | 已有 resolver 静态拒绝；根合同调用前诊断集成仍需补齐 |
@@ -117,31 +120,31 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | Schema 边界：type/required/items | `tests/team-ir-mapping-validation.test.mjs`：`source optionality and simple type direction are checked against required targets`、`array index references honor items, tuple positions, minItems and maxItems`、`array construction checks tuple item positions and forbidden extra items`；`tests/team-ir-payload-validation.test.mjs`：`payload validator reports stable runtime diagnostic codes and JSON Pointers` | 部分；object/type/required 与 array `items`/tuple 专项边界有断言；完整组合 Schema 不做静态蕴含推理，须由运行时 validator 覆盖 |
 | Schema 边界：optional source 到 required target 拒绝 | 同上 | 已有静态拒绝断言 |
 | Schema 边界：复杂 Schema 运行时校验提示 | `tests/team-ir-mapping-validation.test.mjs`：`complex target constraints retain a runtime validation warning`；`tests/team-ir-payload-validation.test.mjs`：`payload validator reports stable runtime diagnostic codes and JSON Pointers`、`invalid mapped Agent input can be rejected before the Binding invocation`；`tests/team-ir-runtime.test.mjs`：`invalid mapped input fails before Binding invocation and invalid output fails before delivery` | 部分；复杂 Schema warning、payload validator 与本地 TeamRuntime 调用前拒绝均有证据；生产 Project Task 全面接线仍受 release closure/resolver 配置限制 |
-| Schema 边界：调用前校验失败 | `tests/team-ir-payload-validation.test.mjs`：`invalid mapped Agent input can be rejected before the Binding invocation`；`tests/team-ir-runtime.test.mjs`：`invalid mapped input fails before Binding invocation and invalid output fails before delivery` | 部分；无效输入不调用 Binding，输入/输出错误使 Run 进入失败收敛；Project API 路径未接入 |
-| Join：精确 `handoffIds`、目标端口、游离入边 | `tests/team-ir-validation.test.mjs`：`Join requires exact incoming source and valid target ports` | 部分；游离入边和目标端口有断言；精确合法全集与多 Join 冲突组合待补 |
+| Schema 边界：调用前校验失败 | `tests/team-ir-payload-validation.test.mjs`：`invalid mapped Agent input can be rejected before the Binding invocation`；`tests/team-ir-runtime.test.mjs`：`invalid mapped input fails before Binding invocation and invalid output fails before delivery`；`apps/team-site/tests/team-ir-project-run-executor.test.mjs`：Task 输入合同在 Binding 前拒绝 | 通过（调用前验证窄合同）；模型输入/输出与 Project Task 都在执行前校验。完整 release/Task 场景覆盖仍归阶段 2–4 |
+| Join：精确 `handoffIds`、目标端口、游离入边 | `tests/team-ir-validation.test.mjs`：`Join accepts the exact inbound Handoff set and rejects omitted or unrelated IDs`、`Join requires exact incoming source and valid target ports` | 已覆盖精确全集、漏声明/无关来源、目标端口和游离入边的代表性正反例；其它 Join/Loop 组合见 Runtime 行 |
 | Join：单边缺必填豁免 | `tests/team-ir-mapping-validation.test.mjs`：`Join single-source contribution is checked with baseMapping as one complete field union` | 已有单来源正例与 baseMapping 字段并集检查；多来源 optional/required 组合见 Join 来源行 |
 | Join：条件必需来源约束 | `tests/team-ir-mapping-validation.test.mjs`：`Join detects duplicate providers, missing required contributions and optional conditional sources`、`Join required fields cannot rely on a source behind a conditional Run route`、`Join required fields cannot rely on a source Agent with no guaranteed activation path` | 部分；必达性静态拒绝已覆盖；所有 route/Loop/Join 条件组合待补 |
-| Join：字段并集、重复字段拒绝 | `tests/team-ir-mapping-validation.test.mjs`：Join 重复 provider 测试；`tests/team-ir-join-runtime.test.mjs`：`all_of merges baseMapping once, preserves Artifact provenance, and omits skipped optional values`、`first contribution starts deadline, target conflicts fail closed, and unknown sources reject` | 部分；纯状态机合并/冲突已覆盖，尚未接入 Agent 调用及 Schema 校验 |
-| Join：`all_of` optional skip / required skip / 零到达 | `tests/team-ir-join-runtime.test.mjs`：`all_of merges baseMapping once, preserves Artifact provenance, and omits skipped optional values`、`all_of fails when a required source skips or every source skips` | 部分；确定性状态机覆盖；上游 scheduler 何时判定全部前驱终止/可标记 skipped 尚未集成 |
+| Join：字段并集、重复字段拒绝 | `tests/team-ir-mapping-validation.test.mjs`：Join 重复 provider；`tests/team-ir-join-artifact-runtime.test.mjs`：all_of/quorum provenance 与 allowlist；`tests/team-ir-join-runtime.test.mjs`：合并、冲突和越权来源；`tests/team-ir-runtime.test.mjs`：Agent 调用前输入校验 | Runtime 已将 Join 合并接入 Agent 输入与 Schema 校验；ArtifactStore 与 RunStore 跨存储没有事务，见 Artifact/Result 行 |
+| Join：`all_of` optional skip / required skip / 零到达 | `tests/team-ir-join-runtime.test.mjs`：reducer skip/零到达；`tests/team-ir-runtime.test.mjs`：`Join tracks selected and skipped Handoffs separately when candidates share one source endpoint`；`tests/team-ir-loop-join-runtime.test.mjs`：同端点候选逐 Handoff 状态与 Loop round | scheduler 已按 Handoff ID 持久化 `pending/arrived/skipped` 并覆盖同 source endpoint 多候选；Loop/Join 其它组合仍按拓扑限制处理 |
 | Join：`quorum_of` 早触发 / 不可达 / 迟到来源 | `tests/team-ir-join-runtime.test.mjs`：reducer threshold/late-arrival tests；`tests/team-ir-runtime.test.mjs`：`quorum Join starts at threshold and persists the selected contributions and original deadline across FileTeamRunStore instances`、`quorum Join fails when conditional source skips make the threshold unreachable`、`an active quorum sibling failure after target activation still fails the Run` | 部分；单个无 Loop quorum Join 在 scheduler 内可提前触发、持久选中来源、忽略迟到合并贡献、条件 skip 不可达失败且活动 sibling 失败仍使 Run 失败；多 Join、Loop 和其它复杂拓扑未接入早触发路径 |
-| Join：timeout 起点、恢复与迟到幂等 | `tests/team-ir-join-runtime.test.mjs`：`Join deadline starts at first predecessor activation and survives snapshot recovery`；`tests/team-ir-runtime.test.mjs`：all_of/quorum scheduler timeout 与 `FileTeamRunStore recovery arms a collecting Join with only its persisted remaining deadline` | 部分；no-Loop Run-scope all_of/quorum 的持久 deadline、timeout tick、失败收敛和无活动调用 checkpoint 恢复有 Runtime 证据；Loop-scope timeout 和有活动 Binding 的进程崩溃恢复仍未覆盖 |
+| Join：timeout 起点、恢复与迟到幂等 | `tests/team-ir-join-runtime.test.mjs`；`tests/team-ir-runtime.test.mjs`：all_of/quorum scheduler timeout 与 collecting round 恢复；`tests/team-ir-loop-join-runtime.test.mjs`：`Loop-scoped all_of Join timeout fails the Run and cancels active round sources`、`FileTeamRunStore recovery preserves a Loop Join round deadline and waits only the remaining time`、round checkpoint 恢复 | Run-scope all_of/quorum 与受限 Loop-scope all_of 的 deadline/剩余时间恢复有证据；其它不支持拓扑仍 fail closed，活动 invocation 崩溃的跨进程恢复边界另见 Runtime |
 | Loop：draft/revise 端口及上一轮 data/Artifact 引用 | `tests/team-ir-reference.test.mjs`：`parses the supported root paths and array indexes`；`tests/team-ir-validation.test.mjs`：`Loop declarations validate members, disjoint boundary sets and edge direction` | 部分；路径解析和 Loop 边界结构有覆盖，端口策略与 Artifact 执行未覆盖 |
 | Loop：支配关系通过/拒绝、首轮历史缺失 | `tests/team-ir-mapping-validation.test.mjs`：`Loop previous reference passes when the anchor dominates the reader in the Loop DAG`、`Loop previous reference rejects a bypass path, external initialization and conditional route`、`Loop previous references fail closed across Join aggregation and multi-lineage fan-out` | 部分；通过/绕过/外部初始化/条件路由有精确 pointer；同 Scope Join 与多内部分支 fan-out 明确拒绝，不宣称支持其 lineage 证明；首轮实际历史读取需 Runtime 证据 |
 | Loop：前轮零次/多次执行、陈旧值拒绝 | `tests/team-ir-runtime.test.mjs`：单 lineage bounded rounds / exhaustion / unsupported topology tests；`tests/team-ir-loop-join-runtime.test.mjs`：classic structured debate 两轮 Loop-scoped all-of Join 和 checkpoint recovery | 部分；单 Scope/lineage 串行及特定单 Loop + 无条件成员内 all-of Join / boundary fanout 有 Runtime 证据；条件 Loop Join 来源、多 Loop/嵌套和一般多 lineage 仍以 `TEAM_LOOP_TOPOLOGY_UNSUPPORTED` fail closed，未证明支持 |
 | Loop：耗尽与恢复 | `tests/team-ir-runtime.test.mjs`：`Loop executes bounded sequential rounds and resolves only the immediately previous output`、`scheduler checkpoint resumes from a completed invocation across FileTeamRunStore instances without repeating the Binding call`、`scheduler recovery cancels an active invocation and settles an unknown outcome without replay`、`active Run re-entry without a scheduler checkpoint is rejected without side effects`；`multiple independent all_of Joins recover after a ready round checkpoint` | 部分；scheduler 持久化 pending/source/skipped/arrived/visited、invocation ID 和 Loop 轮次/激活/历史；File Store 第二实例恢复 completed 输出不重复调用，active invocation 尝试 cancel 后以 `outcomeUnknown` 失败结算；多 Join 场景在一个 Join ready checkpoint 持久化后崩溃，第二实例恢复两个 Join 且不重放来源 Binding；缺少 checkpoint 的老/不完整 Run 仍明确拒绝；Artifact output 注册去重与外部副作用的通用 exactly-once 未覆盖 |
-| Runtime：本地结构化 handoff、条件 Run 入口、结果写入/收敛/冲突 | `tests/team-ir-runtime.test.mjs`：经典软件团队 scheduler 集成、路由/结果断言、quorum scheduler 集成；`tests/team-ir-result-mode.test.mjs`：`allow_empty` 和 `required` 终态；`tests/team-ir-validation.test.mjs`：`required-result policy and parallel result writes are checked statically` | 部分；`START -> route -> fan-out -> Join -> result -> settlement`、窄拓扑 quorum early fire 与 resultMode 有本地运行证据；静默收敛、并行竞态、Result 原子提交与所有活动分支立即取消/收敛仍缺证据 |
-| Runtime：Artifact 来源、越权拒绝、受控登记 | `tests/team-ir-runtime.test.mjs`：Agent Handoff/opaque result tests；`tests/team-ir-join-artifact-runtime.test.mjs`：`all_of Join projects source and baseMapping Artifacts with provenance into the target allowlist`、`quorum Join passes only selected source Artifacts plus baseMapping through the invocation allowlist`；`tests/team-ir-artifact-store.test.mjs`：File Store 跨实例所有权与完整性 | 部分；Run input/Agent output/Handoff/Join all_of 与 quorum 的来源 envelope、下游 invocation allowlist 与越权拒绝有本地证据；Artifact Store 登记与 RunStore checkpoint 仍无原子事务，通用外部副作用 exactly-once 未承诺 |
-| Runtime：无效输入失败关闭 | `tests/team-ir-payload-validation.test.mjs`：调用 Binding 前拒绝；`tests/team-ir-runtime.test.mjs`：`invalid mapped input fails before Binding invocation and invalid output fails before delivery` | 部分；Runtime 本地执行路径有证明；Project Task executor 仅拒绝当前不能满足的 Run 输入合同，生产 executor/resolver 未接线 |
+| Runtime：本地结构化 handoff、条件 Run 入口、结果写入/收敛/冲突 | `tests/team-ir-runtime.test.mjs`：路由/Join/result、`a cancellation intent that wins the Result CAS race prevents Result commit`、`a crash before terminal commit keeps Result private and recovery commits it without repeating the Binding`、`a lost response after terminal Result commit returns the committed Result without replay`；`tests/team-ir-result-mode.test.mjs` | 单 RunRecord 的 Result/终态 CAS、崩溃恢复和丢失响应重放通过；并行 Result 写入另由静态诊断拒绝。一般并行失败/取消收敛竞态仍不完整 |
+| Runtime：Artifact 来源、越权拒绝、受控登记 | `tests/team-ir-runtime.test.mjs`：授权 Artifact refs、只读 resolver、受控登记与 opaque result；`tests/team-ir-join-artifact-runtime.test.mjs`：all_of/quorum provenance/allowlist；`tests/team-ir-artifact-store.test.mjs`：跨实例所有权与完整性 | Run input/Agent output/Handoff/Join 的授权与来源保留有本地证据；ArtifactStore 与 RunStore 无跨存储原子事务，故 checkpoint 故障可留下未公开孤儿资源，不能承诺物理清理或跨存储 exactly-once |
+| Runtime：无效输入失败关闭 | `tests/team-ir-payload-validation.test.mjs`、`tests/team-ir-runtime.test.mjs`；`apps/team-site/tests/team-ir-project-run-executor.test.mjs`：缺失必需 Run input Artifact 在 Binding resolution 前拒绝 | 本地 Runtime 与 Project Task executor 均有 fail-closed 证据；真实模型 UAT 是组合验证，不替代所有 Schema 错误组合 |
 | Runtime：Review 暂停/批准/拒绝/反馈/timeout/预算冻结 | `tests/team-ir-review-runtime.test.mjs`：授权、revision、approve/reject 幂等、feedback 校验、独立 deadline、取消、File Store 跨实例与竞争 CAS；`tests/team-ir-runtime.test.mjs`：`TeamRuntime waits for an authorized FileStore Review decision and resumes the same completed output` | 部分；串行单 lineage gate 已接 scheduler，Run 等待不占 Binding active time；授权 approve 后同 checkpoint 重放已完成 output，`$.review.decision/feedback` 投影到下游；reject/timeout fail closed；Loop/Join/Review parallel fanout 拓扑拒绝；外部生产 Review API、Task/UI 接线及有活动并行 siblings 的收敛未覆盖 |
 | Runtime：deadline、Binding 重试耗尽、错误归属、取消、checkpoint replay | `tests/team-ir-runtime.test.mjs`：`Runtime persists invocation, retries transport failure and completes once`、`timeout starts failure intent; cancellation and failure settle only their winning intent`、`unconfirmed timeout cancellation records unknown outcome and does not retry` | 部分；单调用生命周期及失败/取消竞态有覆盖；并行 sibling 失败收敛、持久 scheduler replay 和所有中断点未覆盖 |
-| Runtime：生产 Project Task v2 执行 | `apps/team-site/tests/team-ir-project-run-executor.test.mjs`：冻结 digest、sandbox mode、输入合同、状态目录 symlink 与 query store 重读；`apps/team-site/tests/task-execution-use-cases.test.mjs`：无可信 resolver 时在 Run 预留前 fail closed | 部分；生产组合根已注入 v2 executor/resolver loader；本机未配置可信 resolver 模块，因此真实 Task 仍 fail closed |
-| A2A：Agent Card、Task 状态、Message Parts/Artifact、deadline、幂等 | `tests/team-ir-a2a-binding.test.mjs`：pin Agent Card、媒体/输入映射、Task 状态、幂等 key、取消不确定结果 | 部分；纯 Adapter 合同有覆盖；输出 Artifact 反序列化、持久幂等缓存、deadline 和实际远程 client 未覆盖 |
+| Runtime：生产 Project Task v2 执行 | `apps/team-site/tests/team-ir-project-run-executor.test.mjs`、Task retry/recovery 测试；本机真实 UAT 记录见 2026-10-29 条目 | 固定 Docker/OpenCode resolver 已接入，真实 Task 完成/失败/重启查询有场景证据；Review、内容质量、全部经典场景和生产级 egress 隔离仍未闭合 |
+| A2A：Agent Card、Task 状态、Message Parts/Artifact、deadline、幂等 | `tests/team-ir-a2a-binding.test.mjs`：Agent Card pin、媒体/Task 状态、`concurrent A2A invocations with the same idempotency key share one remote Task`、Artifact parts、Handoff deadline/cancel；`apps/team-site/tests/team-ir-v2-a2a-resolver.test.mjs`：注入客户端与 pin drift | Adapter/Runtime/resolver 注入合同通过；仍缺真实远端 HTTP client、跨进程持久幂等缓存和兼容远端服务真实 UAT |
 | A2A：`input-required` 暂停、请求暴露、不可 Resume、取消/新 Run、completed/failed/canceled | `tests/team-ir-runtime.test.mjs`：`A2A input-required durably pauses, cancels fanout siblings, rejects resume, and requires a new Run for changed input`；`apps/team-site/tests/team-ir-project-run-executor.test.mjs`：owner-scoped pendingInput 查询、无成功结果及事件不含请求正文；Task attempt 投影将 `paused_input_required` 映射为产品 `paused` | 部分；持久暂停、已确认 sibling cancel/迟到来源审计、同 Run 不可续跑、新输入需新 Run 与 owner-scoped 请求查询已有确定性证据；远程 HTTP client/持久 A2A 幂等缓存、产品取消/control API、跨进程活动 sibling 收敛仍未完成 |
 | Studio：连线/自动映射/缺项定位/Handoff/Join/Loop 编辑/发布诊断 | `apps/team-site/tests/team-ir-studio-browser.test.mjs`：Agent/port/Handoff 编辑、advanced Team IR round-trip（含 Join/Loop/Review/routes）、可点选 Run/Agent/Result/Handoff 结构投影、基础与高级 JSON pointer 定位、服务器诊断阻止保存；`apps/team-site/tests/team-ir-use-cases.test.mjs`：服务端校验/保存 | 部分；已有只读节点/边投影、诊断定位；Studio 仅对同名、必填来源且源/目标属性 Schema 键序归一化后完全相同（且不含 `$ref`）的字段显示建议，用户点击后才写入映射；浏览器覆盖 Run→Agent 与 Agent→Result 接受流程，并拒绝 pattern 不同的同名字段；自由布局事件桩画布/直接拖线和 Join/Loop 可视化编辑仍未完成 |
 | Studio：窄屏、保存重开、digest | `apps/team-site/tests/team-ir-studio-browser.test.mjs`：真实 Playwright 保存/重开、semanticDigest、390px 无横溢、Simulation、Fake resolver 发布阻断/成功及发布后只读 | 部分；已覆盖 Fake resolver 下的 simulation/release 浏览器合同，但不是生产 resolver 或真实 Sandbox UAT；完整关闭/重启后重新打开验收仍待补 |
-| 数据边界：旧配置拒绝及重建提示 | `apps/team-site/tests/team-ir-legacy-compatibility.test.mjs`：legacy Team API create/read/design/validate/save 旧合同仍委派，legacy 写入口拒绝 v2 payload；旧 Team IR read 返回空且 release snapshot 拒绝、不创建 IR 文件；`apps/team-site/tests/team-api-routes.test.mjs`：legacy TeamVersion release route/error mapping；`apps/team-site/tests/product-logic-acceptance.test.mjs`：真实旧 Team 发布拒绝且整个 Team workspace tree digest 不变；`apps/team-site/tests/classic-team-flow.test.mjs`：重建提示与挂载关系保持 | 部分；create/read/save/validate/release、v2 不误写、挂载身份及拒绝发布不改历史文件有证据；Task/Run/history 的兼容合同仍由既有专用测试分散覆盖，尚无单一端到端矩阵，也未完成默认入口切换 |
+| 数据边界：旧配置拒绝且不迁移 | `apps/team-site/tests/team-ir-legacy-compatibility.test.mjs`：旧配置不会创建 Team IR 文件；旧 `/design`、`/graph`、`/chat`、release baseline API 由 `team-routes.mjs` 统一 409 拒绝；旧 TeamVersion 发布失败且 workspace tree digest 不变 | 部分；拒绝与无写入已有合同证据；最新入口的完整创建/发布/挂载/Task 矩阵和遗留本地数据清理仍未闭合 |
 | 数据边界：创建/发布不改 `.ogs/runs/`、无迁移副作用 | `apps/team-site/tests/team-ir-legacy-compatibility.test.mjs`：legacy `.ogs/runs/run-old` 树 SHA-256 在 IR read/validate、拒绝发布、拒绝挂载、拒绝 Task 创建前后不变，且未创建 IR 文件；有效 Project Task 历史 Run 经 Recent Run 读取前后 `.ogs/runs/` SHA-256 不变 | 部分；历史内容只读与拒绝边界副作用有本地证据；尚未覆盖 Team IR 变更/删除后历史查询 API 仍可读取绑定原快照，也未覆盖真实发布/真实 Sandbox 后历史 Run 查询 |
-| 发布：活动模板/示例/文档/默认入口为 v2 | 入口与模板 inventory 及切换验收矩阵见下方“阶段 4 入口与模板 inventory” | 未切换；Team Site `/studio/new`、草稿续编/版本编辑及经典 case/template provisioning 仍走旧 `/design`/Mermaid materializer。三个活动 Case 已分别有 API 级 native v2 release 缺失时 fail closed 和补偿清理测试。作者默认路由、活动案例/模板 provisioning、legacy draft 的重建入口统一切换，必须等阶段 3 作者/Simulation/生产可信 release 成功门通过 |
+| 发布：活动模板/示例/默认入口为 v2 | 入口与模板 inventory 及切换验收矩阵见下方“阶段 4 入口与模板 inventory” | 默认创建、版本 fork、8 个活动 Case fixture 和 built-in template provisioning 已使用原生 v2；8 个 Case 的 provisioning 失败补偿已有测试。所有场景逐一真实 Project Task UAT、遗留作者代码删除和完整新入口验收仍未完成 |
 | 发布：Compiler/API/Runtime/Team Site/浏览器验收 | Team IR 聚焦测试、Team Site IR API/Project executor 测试及一项 v2 Studio browser 测试 | 部分；各自垂直切片存在；没有生产 closure/evidence/Binding 注入下的端到端发布与 Project Task 真实运行 |
 | 发布：`git diff --check` | 每次变更后运行并记录 | 工程卫生检查，不替代任何语义覆盖 |
 
@@ -166,12 +169,12 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 
 | 原子语义 / 产品边界 | 当前证据 | 状态与未完成项 |
 | --- | --- | --- |
-| 结果 Handoff 的每条边独立满足完整 data/Artifact 合同；并行冲突静态拒绝 | `tests/team-ir-mapping-validation.test.mjs`：结果字段完整性、类型和冲突测试；`tests/team-ir-validation.test.mjs`：required-result policy/并行写入静态测试；`tests/team-ir-runtime.test.mjs`：Artifact output slot 登记和结果只保留 opaque reference | 映射与 Artifact output ref 通过；Result 整体原子唯一提交和 commit 中断恢复仍无覆盖 |
-| `required`、`allow_empty`、`finish`、活动工作收敛及缺结果终态 | Runtime 测试覆盖 `finish` 仅选声明出口、`executeRun` 经典路径与失败收敛 | 部分；显式空结果策略、静默收敛与活动分支竞争没有独立断言 |
-| `all_of`/`quorum_of` 后 Join 输入只生成一次，迟到来源仅审计，活动 sibling 失败仍使 Run 失败 | `tests/team-ir-runtime.test.mjs`：单无 Loop quorum threshold/late/failure、scheduler timeout 与 File Store checkpoint；`tests/team-ir-loop-join-runtime.test.mjs`：Loop-scoped all-of 两轮、失败和 checkpoint recovery | TeamRuntime 有受限 scheduler 集成/持久恢复证据；多 Join、Loop quorum、条件 Join 来源、所有拓扑 sibling 取消与 Loop deadline enforcement 仍未覆盖 |
-| optional 条件来源按所有前驱终止状态标记 `skipped`；required 缺席失败 | mapping validation 和 Join reducer 的 optional/required skip 测试 | 静态/状态机部分通过；scheduler 尚未把分支路由和 `pending/arrived/skipped` 完整接合 |
-| Loop 紧邻前轮唯一成功执行、同 lineage/Scope，零次/多次/陈旧历史拒绝 | Loop 单 Scope/lineage 串行 Runtime 测试覆盖 bounded rounds 和 immediately-previous output | 部分；多 lineage/Join/并行/嵌套 Scope 与进程重启 checkpoint 恢复待做 |
-| Review 在下游 route 前暂停；授权决定、reject feedback、独立 timeout、等待不耗 active budget，决定后 sibling 收敛 | `tests/team-ir-review-runtime.test.mjs`；`tests/team-ir-runtime.test.mjs`：`TeamRuntime waits for an authorized FileStore Review decision and resumes the same completed output` | 部分；串行路径接入 TeamRuntime，File Review Store 可跨实例读取/决定，CAS 防止并发不同决定，unauthorized reviewer 被拒；Run 暂停时 scheduler checkpoint 保留且决定后不重复调用已完成 Agent；Loop/Join/fanout 和有活动 siblings 场景显式 fail closed，未接生产 Task API/浏览器，等待预算/下游 deadline 无端到端集成测量 |
+| 结果 Handoff 的每条边独立满足完整 data/Artifact 合同；并行冲突静态拒绝 | mapping/validation 结果合同测试；`tests/team-ir-runtime.test.mjs` 的 Result CAS race、terminal commit recovery、lost commit response replay | RunRecord 单记录 Result 原子 CAS 与恢复通过；跨 ArtifactStore/RunStore 无事务，普通并行冲突静态拒绝，通用并行竞态矩阵仍缺 |
+| `required`、`allow_empty`、`finish`、活动工作收敛及缺结果终态 | `tests/team-ir-result-mode.test.mjs`；Runtime `finish`、Result CAS 和 failure intent 测试 | `required`/`allow_empty` 与单记录 Result/终态提交有证据；普通 fan-out 下所有 sibling 失败/取消/迟到响应的组合收敛未闭合 |
+| `all_of`/`quorum_of` 后 Join 输入只生成一次，迟到来源仅审计，活动 sibling 失败仍使 Run 失败 | `tests/team-ir-runtime.test.mjs`：单 no-Loop quorum early/late/failure、Join timeout/recovery、同端点逐 Handoff skip；`tests/team-ir-loop-join-runtime.test.mjs`：Loop all-of、timeout、恢复与 skip | 受支持拓扑内有 scheduler 与 File Store 恢复证据；多 quorum Join、quorum+Loop、任意 fan-out 故障组合仍不支持或未闭合 |
+| optional 条件来源按所有前驱终止状态标记 `skipped`；required 缺席失败 | mapping/Join reducer；`tests/team-ir-runtime.test.mjs` 与 `tests/team-ir-loop-join-runtime.test.mjs` 同端点多 Handoff 回归 | scheduler 已按 Handoff ID 接合路由和 `pending/arrived/skipped`；Join/Loop 之外的全部条件组合矩阵仍需核对 |
+| Loop 紧邻前轮唯一成功执行、同 lineage/Scope，零次/多次/陈旧历史拒绝 | `tests/team-ir-runtime.test.mjs` bounded rounds/dominance；`tests/team-ir-loop-join-runtime.test.mjs` 两轮 Join、timeout 与 checkpoint recovery | 单 Loop/lineage 和受限单 Loop + all_of 有运行恢复证据；多 Loop、嵌套、Loop quorum 和一般多 lineage 保持拒绝/未支持 |
+| Review 在下游 route 前暂停；授权决定、reject feedback、独立 timeout、等待不耗 active budget，决定后 sibling 收敛 | `tests/team-ir-review-runtime.test.mjs`；`tests/team-ir-runtime.test.mjs` 同 Run checkpoint Review resume；`apps/team-site/tests/team-ir-review-api.test.mjs` owner/checkpoint/dispatch；Project Task Review restart UAT | 串行与 Maker-Checker 单 Agent boundary Loop合同通过；生产 API/resume bridge 和 local OS principal 已装配。真实 UAT 仍等待实际审核决定；与一般 fan-out/Join 并行组合 fail closed |
 | A2A `completed`/`failed`/`canceled`/`input-required`、Artifact Parts、deadline、幂等及输入请求审计 | `tests/team-ir-a2a-binding.test.mjs` 覆盖 adapter 状态；`tests/team-ir-runtime.test.mjs` 覆盖 `paused_input_required`、拒绝同 Run 续跑和 sibling 收敛；`apps/team-site/tests/team-ir-project-run-executor.test.mjs` 覆盖持久 query 的 owner-scoped pendingInput、无成功结果及事件不含请求正文 | adapter + scheduler 切片通过；具体远端 HTTP client/持久远端幂等缓存、用户取消/control API、新输入 Run 的公开产品流程及跨进程恢复时活动 sibling 收敛待做 |
 | 首个失败、取消、Review 决定、A2A input-required 通过 revision/CAS 线性化；晚到响应不可提交下游副作用 | `tests/team-ir-runtime.test.mjs` 覆盖单调用 failure/cancel intent winner 和 A2A input-required sibling cancellation/late sibling audit；Review reducer 有 revision token 测试 | 部分；Review 与终态、Result/Artifact 提交竞态及跨重启线性化无集成故障注入 |
 | Runtime checkpoint replay 不重复 Binding 副作用、Result/Artifact 登记；恢复重算冻结闭包，不匹配即拒绝 | File Run Store/Runtime 单测覆盖记录持久化、digest 和局部恢复检查 | 部分；完整 scheduler 意图/提交检查点、真实进程重启和全依赖漂移矩阵未覆盖 |
@@ -179,23 +182,22 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | Studio 画布事件桩连线、自动映射、缺项定位、Handoff/Join/Loop 编辑、诊断 code/pointer 一致 | `apps/team-site/tests/team-ir-studio-browser.test.mjs`：schema-driven 高级合同 JSON 编辑，完整 Join/Loop/Review/routes、Run contract、Agent port/Artifact slot、Handoff Artifact mapping、A2A Binding 往返；无效 Review timeout 返回 code/pointer 且不触发 PUT；保存重开 digest 一致、legacy API 409、390px 无横溢 | 部分；高级合同可编辑/往返；尚无事件桩画布、自动映射、逐字段可视化编辑与缺项定位 UX |
 | Studio v2 Simulation 独立于 Project Task/旧 Mermaid simulation，保存 simulation evidence 但不写 `.ogs/runs/` | `apps/team-site/tests/team-ir-studio-simulation.test.mjs`、`team-ir-simulation-routes.test.mjs`：原生 TeamRuntime execution、digest 绑定、脱敏持久 evidence、legacy evidence 拒绝；`team-ir-studio-browser.test.mjs`：Fake resolver 下从保存/重开、Simulation、readiness 到发布成功 | 部分；Simulation 独立持久化，FileTeamRunStore checkpoint 可跨实例恢复；启动时扫描恢复已接线，显式 API 仍可按 TeamVersion 恢复。Fake UAT 不证明真实 Sandbox |
 | TeamVersion v2 readiness/release 成功和失败路径，发布后只读/重开，冻结完整依赖及专用 Sandbox 证据 | IR lifecycle/use case 测试覆盖 fail closed、digest freeze；基础浏览器只验保存重开 | 部分；服务端 production closure/evidence resolver 未注入，故无可信发布成功路径和 release browser 验收 |
-| legacy create/read/save/validate/release/mount/task/run/history 兼容矩阵；拒绝旧定义不迁移、不覆盖；旧页面给重建提示 | `apps/team-site/tests/team-ir-legacy-compatibility.test.mjs`：旧 API 合同委派、v2 payload 旧写入口 409、旧 Team IR 缺失读取为空；legacy Run 树 hash 在 IR read/validate、拒绝 release/mount/Task 后不变，Project 历史 Run 查询前后 `.ogs/runs/` hash 不变；`apps/team-site/tests/product-logic-acceptance.test.mjs`：legacy Team 发布失败前后整个工作区 SHA-256 tree digest 相同且不创建 `team.ir.json`；`apps/team-site/tests/classic-team-flow.test.mjs`：页面重建提示及 Project mount/Task TeamVersion 不变；`apps/team-site/tests/run-query-use-cases.test.mjs`：Run owner 隔离 | 部分；证据来自分散合同，legacy `/design` 仍可写旧格式；缺统一全入口端到端矩阵、IR 改动/删除后的冻结快照历史查询和默认入口切换，阶段 3 完成前保持切换门关闭 |
-| 默认作者入口、经典活动模板与活动示例切到 Team IR v2；通用 standalone System 示例明确范围 | 入口与数据路径 inventory、可独立工作及切换 gate 见“阶段 4 入口与模板 inventory”；新增 `examples/team-ir-v2/classic-software-team.json`；standalone `examples/**/system.mmd` 属 OGS System/CLI 示例，不属于 Team Site 活动 Team 模板迁移 | 未完成并受阶段门约束；`/studio/new`、draft/released 编辑及 3 个活动 classic cases/template provisioning 仍走 legacy `/design` 或 Mermaid materializer。inventory、只读合同、v2 fixture/schema 校验可先做；默认入口、活动 Case/template provisioning 和旧 Team 重建 flow 须等待阶段 3 production release 成功门 |
+| 旧 Team 定义拒绝；默认入口、经典活动模板和案例切到 Team IR v2 | `apps/team-site/tests/team-ir-legacy-compatibility.test.mjs`、`team-api-routes.test.mjs`；8 个 `examples/team-ir-v2/classic-*.json`；`classic-case-v2-release-gate.test.mjs` | 默认作者入口、版本 fork、案例和模板 provisioning 已切到 v2；旧 Team 编辑 API 只拒绝、不迁移。真实运行 UAT 仅覆盖部分场景；完整版本入口与数据清理验收尚缺 |
+| 最新经典团队真实 UAT 集 | 8 个活动案例及同名 v2 fixture；当前真实 Sandbox 证据见后续 UAT 记录 | 部分；Release Gate 与 Artifact Evidence 有真实 Simulation/Task 证据；其余场景的真实 Task、Review 产品流程、A2A 远端和失败恢复矩阵未全通过 |
 
 ### 阶段 4 入口与模板 inventory
 
-以下 inventory 区分 Team Site 的活动 Team 产品链与 OGS standalone System/CLI 示例。仅列可在代码中确认的入口/物化路径；阶段 3 production release 成功门未通过前不得改变默认路由、既有 TeamVersion 身份或启动时 provision 行为。新建 v2 草稿只能通过明确的 v2 API/页面操作，不得把 legacy `/design` 文件自动解析、迁移或覆盖成 IR。
+以下 inventory 区分 Team Site 的活动 Team 产品链与 OGS standalone System/CLI 示例。默认创建、fork、Case 和模板 provisioning 已使用 Team IR v2；历史记录不得被理解为当前仍关闭默认入口。最新 Team 创建/发布路径不解析或迁移 legacy `/design` 文件，也不覆盖无关文件。
 
 | 产品面 / 现有文件 | 当前行为与数据合同 | 可先独立完成 | 切换门与验收矩阵 |
 | --- | --- | --- | --- |
-| 默认创建 `/studio/new`；`apps/team-site/public/app/views/app.js` (`renderNewProject`)；`apps/team-site/api/team-routes.mjs` (`POST /api/v1/team-factory`)；`apps/team-site/application/team-lifecycle-use-cases.mjs` (`createTeamDraft`) | 默认入口仍创建 `source: team-factory` / `templateId: empty` legacy 草稿，成功后进入 `/design`；另有显式非默认 `/studio/ir/new` 和 `POST /api/v1/team-ir-drafts` 创建原生 v2 草稿，不复用 legacy authoring | 已通过显式 v2 authoring route、API、独立 `.ogs/team.ir.json`、无 `system.mmd`/`authoring.json`、digest 重开和 Team 卡续编验收；Playwright 覆盖直达 URL 和站内入口 | 默认路由切换仍须等生产 release resolver、evidence、Binding resolver，以及 v2 保存/Simulation/发布成功和发布后只读验收通过；之后才能分别验收默认创建链 |
-| 草稿续编、已发布版本编辑；`app.js` (`teamCard`, `bindTeamActions`, `renderProjectStudio`)；版本创建在 `team-lifecycle-use-cases.mjs` (`forkTeamVersion`) | Draft `继续编辑` 和 released `编辑团队` 跳 `/design`; fork 复制旧 package/Mermaid 且会复制已有 Team IR（如有），不能默认为 legacy draft 自动生成 IR | 只读确认旧 draft/version 链接与旧 API 写入合同、显式重建提示/不落盘兼容验收 | 新 legacy draft 的 v2 重建应创建独立新 TeamVersion，旧 TeamVersion 与 `.ogs/runs` hash 保持；已有 native v2 fork 复制 IR 且重新冻结成功。分别覆盖 legacy draft、legacy released、native v2 draft/released，不把 ID/版本来源混同 |
-| 经典活动案例列表/“使用案例”动作；`apps/team-site/cases.mjs` (`software-team`, `expert-consultation`, `structured-debate`)；`apps/team-site/api/case-routes.mjs` (`POST /api/v1/cases/:id/use`)；`app.js` 案例动作 | 通过 `createClassicTeamProject({ caseId })` 创建并发布 `source: classic` 团队，`templateId: classic:<caseId>`，当前拓扑来自 Case spec/旧 Mermaid materializer | 三个 Case 均有独立 v2 IR fixture；contract tests 覆盖 schema/compiler/digest；expert-consultation 有 Fake Runtime quorum 正反例，structured-debate 有受限 Loop+all_of Runtime 两轮/失败/恢复测试；Case API 当前仍只验 v2 发布失败时拒绝/清理 | 禁止只替换入口。production release gate 通过后，对 3 个 case 逐一验证 v2 Team IR、发布证据、发布版本 immutable digest、Project mount/Task 使用其 frozen compiled digest；案例创建不得再把 Mermaid materializer 当 v2 发布源。对现有 classic TeamVersion 保持原位读取且不自动升级 |
-| 内置模板与启动 provision；`apps/team-site/server.mjs` (`provisionBuiltInTeamTemplates`)；`team-lifecycle-use-cases.mjs` (`provisionBuiltInTeamTemplates`, `createClassicTeamProject`)；`infrastructure/case-team-materializer.mjs`；`apps/team-site/demo-runner.mjs` | 每个 case provisioning `source: classic-template` 的旧拓扑模板；按 name/caseId 复用，发现物化不匹配会重写 `system.mmd`；启动后另有 `provisionBuiltInTeamVersions` API/调用路径可能触发 Sandbox release proof | 可先静态确认启动调用、复用/更新条件和现存目录列表；在隔离临时目录验证只读 inventory，不运行可能写用户项目的 provisioning | 生产 release gate 后逐 case 实现可重复且不覆盖历史版本的 v2 provisioning；迁移需明确新旧模板身份/ID、Run hash、重复启动幂等、旧模板仍可读；不得复用“旧 Mermaid 内容变化后原位覆盖”的更新行为改写用户资产 |
-| v2 示例；`examples/team-ir-v2/classic-software-team.json` | 目前是一个可独立校验的 classic software Team IR fixture；尚不代表 Team Site 案例/内置模板/default | 可独立扩展其他 Case 对应 IR fixture、离线 schema/compiler fixture validation 和文档示例 | 成为活动案例/默认模板需走上方真实 release/mount/Task 门；fixture 编译通过不算发布/UAT |
+| 默认创建 `/studio/new`；`renderNewProject`、`POST /api/v1/team-ir-drafts` | 默认入口直接创建原生 v2 草稿；没有 `/studio/ir/new` 别名和 legacy `/design` 写路径 | 浏览器覆盖 v2 创建、保存、重开和窄屏；Case/template 创建也只物化 v2 fixture | 真实 resolver 下完整作者、Simulation、发布和发布后只读浏览器验收以及全入口回归未完成 |
+| 草稿续编与发布版本编辑；`teamCard`、`forkTeamVersion` | 编辑动作进入 `/studio/teams/:id/ir`；fork 只复制原生 Team IR v2，缺 IR 的源版本明确拒绝 | lifecycle tests 覆盖 v2 fork 和缺少原生 IR 时拒绝旧版本回退复制 | Team 编辑页面完整浏览器验收、跨关闭重开和真实发布版本编辑验证仍缺 |
+| 经典活动案例、Case API 与 built-in template provisioning | `apps/team-site/cases.mjs` 包含 8 个案例；每个案例映射同名 `examples/team-ir-v2/classic-*.json` fixture；创建时写入 native Team IR，模板按 `templateId: team-ir-v2` 复用 | 8 个 fixture 全部 schema/compiler/digest 校验；`classic-case-v2-release-gate.test.mjs` 覆盖每个 Case 缺少 release evidence 时失败补偿；旧 `case-team-materializer.mjs` 已删除 | 八个场景的真实发布/挂载/Project Task UAT 尚未逐一通过；不得把 fixture/失败补偿测试当真实运行证据 |
+| v2 示例；`examples/team-ir-v2/classic-*.json` | 8 个最新经典团队 IR fixture 是 Case catalog 和启动 template provisioning 的唯一拓扑来源 | 全部 fixture 有稳定 semantic/compiled digest 和发布包闭包检查 | 静态合同不替代真实 Sandbox Task、人工 Review、远端 A2A UAT |
 | standalone System/CLI 示例；`examples/README.md` 与 `git ls-files 'examples/*system*' 'examples/**/*.mmd'` inventory：根目录 `minimal-system.mmd`、`target-model-binding-system.mmd`、`console-system.mmd`；目录 `error-flow-compensation/`、`langgraph-debate-current/`、`langgraph-expert-consultation/`、`legal-rag-dev-team/`、`medical-quorum-consultation/`、`mulit-debate-ogs/`、`ogs-gstacklike/`、`runtime-native-human-review/`、`rust-hello-pipeline/`、`wechat-miniprogram-factory/` 各自有 `system.mmd`；另有 `mulit-debate-ogs/system.example.mmd` 及 `ogs-gstacklike/scenarios/*.mmd` | 作为 OGSystem standalone System/CLI 运行示例，使用 `system.mmd`/Runtime 语义；不通过 Team Site 案例 API 或 built-in Team provisioning 消费 | 可独立审阅/维护 `examples/README.md` 的分类与命令，确认无 Team Site 活动路由引用；保持各目录原命令与 fixture 回归 | 不属于 Team TeamVersion 模板迁移，不改文件格式或命名以制造“活动示例全 v2”；若未来将某目录明确纳入 Team 案例/模板，需独立登记其 package/Binding/Schema closure、运行合同与切换验收 |
 
-**切换验收顺序：** (1) 独立 inventory 与旧数据只读哈希回归；(2) 阶段 3 production release 成功门及 v2 Simulation/重开合同；(3) `/studio/new` 默认作者路径切换且旧 Team 明确走新建 v2 TeamVersion 重建，不改旧版本；(4) 3 个活动 case 和 built-in template 的逐项 v2 发布/挂载/Task/UAT；(5) 文档、截图/链接、default route/API、创建后的重开和旧路径回归；(6) 全量回归和历史 Run 只读验收。任何步骤失败均保持旧入口可用且不得做隐式迁移。当前可做完第 (1) 项及 v2 fixture/documentation 准备；第 (2) 未通过前第 (3)–(5) 是阻断项。
+**切换验收顺序：** 默认入口、Team fork、Case 与模板 provisioning 已按 v2 实现；后续门槛为 (1) 按当前设计逐项完结语义/浏览器矩阵；(2) 8 个经典场景各自通过真实 Simulation/release/mount/Project Task UAT；(3) Review 与 A2A 产品合同、受控失败/重试和重启查询通过；(4) 删除所有未使用的 legacy Team 源码及旧 Team 活动数据；(5) 全量回归、页面 UAT、清理数据边界和最终提交。任何未运行项保持未完成，不以兼容历史或迁移数据作为门槛。
 | Team Site production Project Task v2 真实 Sandbox 执行、Run query/retry/control/recovery | `apps/team-site/tests/team-ir-project-run-executor.test.mjs`、`apps/team-site/tests/task-run-runtime-failure.test.mjs` 和 `apps/team-site/tests/file-task-retry-store.test.mjs`；另有 Runtime A2A input-required 的 owner-scoped pending input query 集成 | 部分；`server.mjs` 已注入正式 executor，但 trusted closure/evidence/Binding resolver 未配置，生产仍 fail closed；v2 附件没有冻结重试快照合同并会拒绝重试；TeamRuntime user cancel/control、跨重启暂停恢复和 sibling 收敛仍未接完 |
 | 经典团队真实 Sandbox UAT：经 Studio、发布、挂载、Task 启动，成功与失败/重试，重启后查询 | 本地 classic Team IR fixture + Fake Binding 集成测试；Codex custom provider CLI 和 OpenCode serve 模型探测 | 未运行/受实现配置阻塞；自定义 provider 模型调用已通过且不依赖 Codex 登录态。仍缺可信 production closure、release evidence、Sandbox Binding resolver 及真实 Project Task UAT；Fake、CLI 探测、旧 Mermaid 或 dry-run 均不计 |
 
@@ -499,6 +501,122 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 
 **阶段结论：** 本次关闭显式原生 v2 草稿创建/数据隔离及当前浏览器合同验收，并将旧和回归生成的 Run 数据从活动 workspace 可恢复归档；未改变默认作者入口。阶段 1、2 仍部分通过，阶段 3、4 仍未完成，真实 Sandbox UAT 未运行。不得据此宣称 Team IR v2 发布完成。
 
+### 2026-10-28：旧 Team 源码清理审计（后由下方增量更新）
+
+| 范围 | 审计结果 | 清理门槛 / 后续动作 |
+| --- | --- | --- |
+| Team 作者入口 | 当前 `/studio/new` 仍是默认 legacy 创建流程；`/studio/ir/new` 是明确的非默认 v2 创建流程。路由和浏览器测试仍覆盖两者 | 阶段 3 生产发布门通过、默认入口切换并完成人工 UAT 后，再移除旧页面、路由和专属测试；切换前删除会破坏当前默认创建路径 |
+| 旧 Team 设计与版本保存用例 | `team-design-use-cases.mjs`、`team-version-save-use-cases.mjs` 仍由 `/design`、角色源导入及 TeamVersion fork/edit 流程调用；对应测试覆盖这些合同 | 原生 v2 的角色源/版本编辑、保存、重开和 API 合同接管全部调用方并通过回归后，删除 legacy 用例及只服务旧合同的测试 |
+| Case Team materializer | `case-team-materializer.mjs` 仍由带 `caseId` 的项目创建和 Team lifecycle 的 Case、模板、启动 provisioning 调用；活动 Case 和内置模板尚无真实 v2 发布、挂载、Project Task UAT 证据 | 每个活动 Case 与模板先通过原生 v2 发布、挂载和真实 Task UAT；随后切换生命周期调用方，回归项目创建、模板启动、Case provisioning 和故障补偿后再删除 materializer |
+| System 示例与历史数据 | `examples/**/system.mmd` 属于 OGS System/CLI 示例，不是 Team Site 的旧 Team 模板；示例 `.ogs/` fixtures 由版本控制维护。根 `.ogs/runs/` 旧运行数据已移出活动 workspace 至可恢复归档 | 保留独立 System 示例和受版本控制 fixtures。旧 Run 归档已不在活动 workspace，但尚未永久销毁；永久删除前需由维护者确认归档内容与保留要求 |
+
+**审计结论（当时状态）：** 当时调用图仍指向旧实现；后续增量已切换默认创建、Case/template provisioning 与 Team fork，并删除 Case materializer。以文末最新清理增量为当前状态；以上仅保留审计历史。
+
+### 2026-10-28：经典 Team IR 角色包闭包
+
+| Fixture | 固定 packageRef | 包状态 |
+| --- | --- | --- |
+| `classic-software-team.json` | `role:software-planner@1`、`role:software-implementer@1`、`role:software-tester@1`、`role:software-lead@1` | 本轮新增 4 个不可变角色包；每包含 `role.json`、角色说明、提示词和匹配 v2 output port 的 JSON Schema，无工具权限 |
+| `classic-expert-consultation.json` | `role:consultation-dispatcher@1`、`role:cardiology-expert@1`、`role:neurology-expert@1`、`role:imaging-expert@1`、`role:chief-reviewer@1` | 本轮新增 5 个不可变角色包；专业意见强调证据边界，角色包无工具权限 |
+| `classic-structured-debate.json` | `role:debate-host@1`、`role:debate-proponent@1`、`role:debate-opponent@1`、`role:neutral-judge@1`、`role:debate-reporter@1` | 本轮新增 5 个不可变角色包；主持、双方论证、裁决、报告职责与输出合同匹配，无工具权限 |
+| `classic-conditional-signoff.json` | `role:primary-reviewer@1`、`role:compliance-reviewer@1`、`role:signoff-chair@1` | 本轮新增 3 个不可变角色包，输出 enum/字段按 v2 fixture 合同固定，无工具权限 |
+| `classic-maker-checker.json` | `role:maker@1` | 本轮新增不可变 Maker 包，输出合同包含 answer/again，无工具权限 |
+| `classic-release-gate.json` | `role:release-gate@1` | 本轮新增不可变 gate 包，PASS/REJECT/ABSTAIN 输出合同与 fixture 一致，无工具权限 |
+| `classic-artifact-evidence.json` | `role:advanced-worker-a@1`、`role:advanced-worker-b@1` | 已有本地包；本轮验证文件存在、包身份和 published package allowlist，不改变既有工具合同 |
+| `classic-a2a-intake.json` | `role:imported.agency.legal-client-intake@1.0.0` | 已有本地包；本轮将该精确包路径加入 published package allowlist，并校验 Role Package Loader 可加载 |
+
+**闭包与验证：** 8 个 `examples/team-ir-v2/*.json` 共引用 22 个不同 packageRef；19 个此前缺包的引用已补入 `og-roles/roles/`，并加入根 `package.json` 发布白名单。新增 `tests/team-ir-classic-role-packages.test.mjs` 从 fixture inventory 逐个加载实际包，调用正式 `loadRolePackage`，校验新增包无工具、输出 Schema 与 fixture output port 完全一致，按包内文件内容计算 SHA-256 packageDigests，并用真实闭包编译全部 fixture、断言 compiled plan digest 重复稳定。`node --test tests/team-ir-classic-role-packages.test.mjs tests/package-publish-policy.test.mjs tests/role-package-adapter.test.mjs`，4/4；前置 `pnpm build` 通过。
+
+**边界：** 此项关闭的是经典 fixture 的静态角色包/发布归档缺口，不代表生产 resolver 当前从已安装发布包解析闭包，也不代表真实 Sandbox Binding、模型 Task、Artifact 或 A2A 远端 UAT 已通过。Stage 3/4 和真实 Sandbox UAT 状态不因本项变更而提升。
+
+### 2026-10-28：Loop Join 条件来源按 Handoff ID 结算
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 2：Loop-scoped `all_of` Join 条件 optional 来源与同端点候选 | 通过（现有单 Loop/单 Join 拓扑内的窄合同） | `src/team-ir/runtime.ts` 放开 Loop `all_of` Join 对条件来源的拓扑拒绝；本轮路由跳过写入对应 `(joinId, loopRound)` 的持久 Join round，Join 汇总只从本轮被选中的 Handoff ID 收集贡献。`tests/team-ir-loop-join-runtime.test.mjs`：`Loop Join skips an unselected candidate sharing an arrived source endpoint` 构造同一来源端点两条候选边，跨两轮断言 selected/ skipped 状态、Join 输入和目标调用次数；`pnpm build && node --test tests/team-ir-loop-join-runtime.test.mjs`，7/7 | 仅支持既有单 Loop、单 Loop-scoped `all_of` Join 调度拓扑；不代表 Loop `quorum_of`、多 Loop/多 Join、嵌套 Loop 或任意并行拓扑已支持。Run-scope 同端点候选仍由 `tests/team-ir-runtime.test.mjs` 的既有回归覆盖 |
+
+**本轮聚焦验证：** `pnpm build && node --test tests/team-ir-loop-join-runtime.test.mjs`，7/7；`node --test tests/team-ir-runtime.test.mjs tests/team-ir-loop-join-runtime.test.mjs`，46/46；`git diff --check` 通过。阶段 2 仍部分通过，真实 Sandbox UAT、发布和源码切换/清理未因此关闭。
+
+### 2026-10-28：Project Task Run Artifact 输入/结果合同盘点
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| Project Task 对 Run 输入 Artifact 槽位的 fail-closed（历史，2026-10-28） | 当时通过（阻断合同） | 当时 `runtime-team-ir-project-run-executor.mjs` 拒绝必需 Run input Artifact；随后已实现 TeamArtifactStore 登记、slot 选择、Task/retry 冻结附件快照、executor 授权读取、结果元数据和 owner-scoped 结果 API，真实验收见 2026-10-29 Artifact Evidence UAT | 当前验收已覆盖一次成功 Task、两次模型输出合同失败及第三次 Simulation 修正成功；跨存储提交原子性与通用 orphan cleanup 仍在阶段 2 Runtime 矩阵跟踪 |
+
+**阶段结论：** 仅确认 Project Task 对必需 Artifact 输入保持 fail-closed；经典 Artifact Team 的真实 Project Task UAT 仍不可执行。阶段 3/4 发布门和默认入口切换不受本项通过状态影响。
+
+### 2026-10-28：本机 Docker/OpenCode 模型 Binding 配置与验证
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 可信 Team IR 模型 Binding resolver | 通过（本机 model-only adapter 合同） | `apps/team-site/infrastructure/team-ir-v2-opencode-docker-resolver.mjs` 和 `team-ir-v2-opencode-docker-adapter.mjs` 固定使用发布白名单中的 Role Package SHA-256、`codex-gateway/gpt-6-luna`、本机 OpenCode serve 的固定 HTTP endpoint/path 与 Node image digest。密码从 `OGS_TEAM_IR_V2_OPENCODE_PASSWORD_FILE` 指向的 `0600` 文件中严格读取唯一 `OPENCODE_API_KEY` assignment，单独经 stdin 传入一次性 Docker 容器；容器不挂载主机或 Project 文件，使用非 root、只读根文件系统、无 capabilities、no-new-privileges 与 CPU/内存/PID 限额。Model 输出 JSON、事件、数据 Schema 和 Artifact media/slot 均在 Host adapter 检查。配置和已知限制见 `docs/development/team-ir-v2-docker-binding-setup.md` | Bridge 网络没有强制 egress allowlist，不能用于不可信 Team/调用者或宣称生产级隔离；需要网络层 egress policy 与生产 secret 管理。该 resolver 只支持 model Binding；A2A fixture 需独立的可信远端 A2A resolver/client |
+| 最新模型型经典 fixture 与绑定闭包 | 通过（静态闭包） | 8 个最新 classic fixture 的 21 个模型角色 packageRef 已按内容 digest 固定于 resolver pin 清单；模型型 fixture 的旧 `sandbox/default` 均更新为已验证 `codex-gateway/gpt-6-luna`。`apps/team-site/tests/team-ir-v2-opencode-docker-resolver.test.mjs` 通过 resolver 解析闭包并编译每个模型型 fixture；A2A 的第 8 个场景不被伪装成模型 Binding | 静态编译不代表各协作拓扑已通过真实 Project Task 或人工场景验收；maker-checker 身份授权、结果审核和重启查询仍须沿真实产品链验证 |
+| 原生 v2 Studio 新 Agent 默认模型 | 通过（浏览器合同） | `apps/team-site/public/app/views/app.js` 中新增 Agent 和保存时重建 Binding 的默认值统一为 `codex-gateway/gpt-6-luna`；`apps/team-site/tests/team-ir-studio-browser.test.mjs` 在实际浏览器创建 Agent 后断言 Advanced IR 中的新 Binding 引用。`pnpm build && node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`，1/1 | 该默认值匹配本机 resolver；其它部署若使用不同可信 resolver/模型，需在作者页选择和验证其固定 Binding |
+| Docker 隔离的真实模型 Binding 请求 | 通过（单次本机 adapter UAT） | `OGS_TEAM_IR_V2_DOCKER_BINDING_UAT=1 OGS_TEAM_IR_V2_OPENCODE_PASSWORD_FILE="$HOME/.config/opencode/gpt6-luna-serve.env" node --test apps/team-site/tests/team-ir-v2-opencode-docker-resolver.test.mjs`，6/6。实际调用经 pinned Docker 容器到 OpenCode serve，返回 event `A_DONE`、Schema 合法、一个 269-byte `text/markdown` Artifact、退出码 0；测试仅输出这些摘要，不记录模型正文或凭据 | 这是一次真实模型 Binding 请求，不是 Team IR Studio release evidence、Project mount/Task UAT 或完整隔离网络证明 |
+| 真实 Project Task 与 classic scenario UAT（截至本节记录时） | 未运行 / 受阻 | resolver 尚未在可审计的隔离 UAT Team Site 进程下完成 Studio 保存重开、真实 Sandbox Simulation/release、发布版本挂载、Task 成功/受控失败重试、进程重启后查询和人工审核 | 后续验收进展见本文件最后的 2026-10-28 UAT 记录；未覆盖的 Artifact slot、Review identity 和远端 A2A 仍是发布门 |
+| 默认作者入口与旧 Team 源码切换 | 未开始（发布门未通过） | `/studio/ir/new` 保持原生 v2 非默认入口；旧作者流程和 Case materializer 仍有实际调用方，清理调用图见前述审计 | 生产发布 gate、所有经典场景 UAT 和人工验收全部通过后，才能按最新设计切换默认入口、provisioning 与活动 Case，再删掉调用方已清零的旧 Team 源码 |
+
+**本轮回归：** `pnpm test` 构建通过，900 个含子测试项中 899 通过、0 失败、1 项 Windows-only 跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`，503 项中 502 通过、0 失败、1 项 opt-in Docker Binding UAT 跳过。Loop Join/Runtime + Project executor + Role closure + package policy 定向组合 65 项中 64 通过、0 失败、1 项 opt-in 跳过；opt-in Docker Binding 单独运行 6/6。测试生成的旧 Runtime `.ogs/runs/` 与 `runs-index.json` 已移至 `/tmp/team-ir-v2-legacy-runs-20261028/post-full-regression-20261028/`，可恢复；项目默认 `.ogs/model-selection.json` 仍为已验证的 `codex/gpt-6-luna`。
+
+**阶段结论：** resolver 与固定模型型 fixture 闭包已就绪；阶段 1、2 仍按原矩阵部分通过，阶段 3、4 仍进行中，默认作者入口保持未切换。单次真实模型 Binding 请求不能代替真实 Project Task、Release Gate、Artifact/A2A/Review 场景 UAT，因此本轮没有将发布标为完成。
+
+### 2026-10-28：Team IR v2 readiness、Task 恢复与真实 Release Gate UAT
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 原生 Team IR v2 Project Readiness 与 Sandbox 确认 | 通过（当前 release-gate fixture） | `runtime-project-readiness.mjs` 将原生 IR 分流至 v2 Schema、trusted closure、compiled digest 和 Binding 检查；Project/Task readiness 将 TeamVersion 快照传入，不再要求 `system.mmd`。Task 确认调用 `createRuntimeTeamConfirmation({ teamIrStore })`，以 semantic digest 确认冻结 IR。`node --test apps/team-site/tests/runtime-project-readiness.test.mjs apps/team-site/tests/runtime-team-confirmation-v2.test.mjs apps/team-site/tests/runtime-task-execution-readiness-v2.test.mjs apps/team-site/tests/project-readiness-use-cases.test.mjs`，10/10；隔离 Project Readiness API 返回 `canDryRun: true`、无阻断 | 多 Team mount 的 closure drift 和 resolver 变化时序仍归阶段 2 恢复矩阵 |
+| Team IR v2 Project Task 状态查询与进程恢复 | 通过（终态、失败、等待审核与中断调用窄矩阵） | 新增 `v2-aware-task-attempt-store.mjs` 接入生产 Task/Run 查询；`file-run-recovery-store.mjs` 从 `FileTeamRunStore` 读取 v2 checkpoint、同步 Task 终态，保留 waiting Review/paused 状态，对中断的活动 Binding 记录 outcome unknown 并 fail closed；Run/Task 查询从 `run.failing` 事件投影失败码。定向 Runtime/恢复/查询回归 14/14 | 仅验证单本机进程重启；多主机 lease/fencing 和并发恢复仍未通过；跨存储 Artifact 完成边界仍按既有 fail-closed 合同 |
+| Project Task 友好的经典 gate 与 maker-checker 输入 | 通过（fixture 合同） | `classic-release-gate.json`、`classic-maker-checker.json` 的 `runInput.dataSchema` 统一使用 Project Task 提供的唯一 `request` 字段，并映射至各 Agent 输入。`tests/team-ir-classic-case-v2-contract.test.mjs` 新增兼容断言；经典 fixture / executor 合同聚焦测试 4/4 | Artifact 输入场景仍有必填 `runInput.artifactSlots`，因 Task API 未有受控 Artifact ID/slot 输入而保持 fail closed |
+| 真实 Release Gate Sandbox Simulation 与 TeamVersion 发布 | 通过（单一 classic gate 场景） | 使用本机 Team Site `127.0.0.1:4182` 隔离数据根 `/tmp/team-ir-v2-configured-site-uat-20261028`，真实 pinned Docker/OpenCode `codex-gateway/gpt-6-luna` resolver。通过 v2 草稿 API 保存最新 `classic-release-gate.json` 后，Simulation `a0ed8713-fcda-4502-bf8e-148050d710fa` 依据实际本地 Node assertion 返回 `PASS`，仅选中 `gate-pass-result` 并写入唯一结果；Release Readiness `ready: true`，TeamVersion `release-gate-task-uat-a004369d` 成功发布。前一版输入字段尚未统一时 `33464754-f9c8-4fbb-8102-73cd14da2a5d` 产生受控 `RUN_RESULT_REQUIRED`，作为失败记录保留 | 仅一个模型型 classic gate 通过；未覆盖三支活动 Case 和其他新增经典场景的真实 Task；本轮 v2 保存通过 API，不是完整 Studio 浏览器编辑验收 |
+| 真实 Project mount、Task 成功、失败与 retry | 通过（Release Gate 单场景） | Project `release-gate-task-uat-project-16e438f9` 挂载已发布 TeamVersion。Task `20261028-201158-8209a6d2` / Run `20261028-201217-d6e3e410` 由真实 Sandbox Binding 返回 PASS；在隔离 Project workspace 中保存 `workspace/greet.mjs` 与 `workspace/greet.test.mjs`，执行 `node --test workspace/greet.test.mjs`，1/1 通过。Task `20261028-200943-5fd30068` 首次因 gate 没有足够实现证据而 `RUN_RESULT_REQUIRED`；retry 建立新 Run `20261028-201342-7ac5d6e1`，原 Run 和新 Run 各自失败且均可查询，失败原因正确显示。失败只产生 Run 状态/事件，没有提交 Artifact/业务副作用 | Run 查询的 `mode` 列表对 Team IR v2 仍显示 `unknown`；非目标状态展示问题，需统一 Task/Run 视图投影。模型输出是 gate 审核结果，不证明 Team Agent 会直接写 Project 文件 |
+| 真实 v2 Task 服务重启后查询 | 通过（本机单进程） | Task 完成/失败后重启隔离 Team Site；重启后成功 Task 保留 `completed`、`lastError: null`，失败 Task 保留两次 failed attempts、`RUN_RESULT_REQUIRED` 和原始 Run ID，Readiness 仍通过。此前复现并修复 legacy `control/state.json` 的 `planning` 覆盖 v2 TeamRun checkpoint，以及重启恢复错误标记已完成 Task 的问题 | 不替代故障注入于活跃模型调用、Review resume 和跨主机恢复矩阵 |
+
+**本轮聚焦验证：** `pnpm build` 通过；readiness/confirmation 用例 10/10；`node --test apps/team-site/tests/team-ir-v2-run-recovery.test.mjs apps/team-site/tests/team-ir-project-run-executor.test.mjs apps/team-site/tests/v2-aware-task-attempt-store.test.mjs`，14/14；`node --test tests/team-ir-classic-case-v2-contract.test.mjs tests/team-ir-project-run-executor.test.mjs`，4/4；本机真实 Team Run gate 成功、受控失败+retry、服务重启后查询均通过。全仓和 Team Site 完整回归待本批更改合并前重跑。
+
+**未覆盖与风险：** Project Task 目前只接受 request string；Run input 必需 Artifact、Artifact Task 引用/授权读取与结果下载未实现。Maker-Checker 真实 Review 身份授权/产品 UI、兼容远端 A2A `input-required`/cancel/retry、所有经典场景逐一 Sandbox Task、活动 Case provisioning 和最新作者入口切换仍未验收。真实 gate Task 成功不代表所有 Team IR v2 语义或阶段 1–4 全通过。隔离 UAT 含模型输出及临时数据，提交前须将必要脱敏证据写入本台账，再归档/清理生成数据并复核默认工作区。
+
+**阶段结论：** 阶段 0 通过；阶段 1、2 部分通过；阶段 3、4 进行中。当前一个真实 Release Gate Scenario 已完成 Simulation、Release、Project mount、Sandbox Task 成功/受控失败 retry 和单进程重启查询；不满足发布完成定义。默认作者入口仍关闭，旧 Team 源码尚有调用方，不删除未完成调用图审计的源码。
+
+### 2026-10-28：Artifact Evidence 真实 Sandbox Simulation 与 Project Task UAT
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| Team IR v2 创建、Artifact fixture 保存、重开与窄屏 | 通过（本机隔离 Team Site） | `127.0.0.1:4196` 使用全新数据根 `/tmp/team-ir-v2-artifact-uat-20261028`、固定 Docker/OpenCode `codex-gateway/gpt-6-luna` resolver。经 `/studio/new` 创建 `artifact-evidence-team-uat-32c247b9`，在原生 `/studio/teams/:id/ir` 页面重开编辑器；先读当前 semantic digest 再保存完整 `classic-artifact-evidence.json`，避免覆盖创建时的默认 IR。Playwright 页面错误为 0，390px 下 `scrollWidth === clientWidth === 390` | UAT 用 API 导入 fixture 内容，未逐字段通过 Studio 表单编辑；自由布局画布仍未完成 |
+| 必需 Simulation Artifact 上传、真实模型 Simulation 与发布 | 通过 | 将 `text/markdown` 上传到必需 `brief` slot 后运行真实 Sandbox Simulation `d0ebdf6b-064a-4eca-ab1b-e9ebff849622`，状态 `completed`、`resultWritten: true`；发布 TeamVersion。IR semantic digest `5a93b3299c6de4a30173fc1e7b2c44a4a2fc10ccbdecebc336c012ae0552bbaf`，compiled digest `bfa0ec60f275cdf253483325dc6b1aee1119aa3abce38d5bef044a6227c8675d` | 本次只验收 Artifact Evidence 单一经典场景，模型生成内容由人工检查范围限于输出合同和摘要 |
+| Project Artifact 登记、Task 快照、受控 retry 与授权读取 | 通过（第二 attempt） | Project `artifact-evidence-uat-project-7aa8cd47`；Task `20261028-215342-6c80a132` 冻结 `brief` Artifact 引用。首次启动故意记录为失败但原因是 UAT 请求误传 `dry-run`，被 v2 明确拒绝 `TEAM_IR_V2_SANDBOX_REQUIRED`；用 `sandbox` retry 创建新 Run `20261028-215509-1c7fd1cd`，第二 attempt `completed`，产出 `report` Artifact 引用和结果摘要。Task 页面 1440px/390px 均显示已完成、无页面错误/水平溢出 | 首个 attempt 是测试调用配置错误，不作为 Team 语义失败证据；没有对输出 Artifact 增加下载/内容读取的人工验收 |
+| 隔离 Team Site 重启后查询 | 通过（单进程重启） | 停止并重启同一隔离服务后，Task 仍为 `completed`、`lastError: null`，两条 Run attempt 与原始 Artifact 输入引用可查询，成功结果仍包含 `report` 引用 | 不替代跨主机并发恢复或活动 Binding 中断故障注入 |
+| 架构与 Artifact/Simulation 聚焦回归 | 通过 | `node --test apps/team-site/tests/architecture-boundaries.test.mjs apps/team-site/tests/team-ir-artifact-use-cases.test.mjs apps/team-site/tests/team-ir-studio-simulation.test.mjs apps/team-site/tests/team-ir-artifact-routes.test.mjs apps/team-site/tests/team-ir-project-run-executor.test.mjs`，27/27；修复 Application 用例直接导入文件存储、路径和 Node crypto 的架构边界违规，改由组合根和 ID 端口注入 | 全 Team Site 串行回归仍有失败项，见本轮回归记录；不可据聚焦通过标记整仓回归通过 |
+
+**本轮全量回归结果：** `pnpm test` 通过，903 个含子测试项中 902 通过、0 失败、1 项 Windows 专项跳过。最近一次完整 Team Site 串行套件在更新默认作者页验收前非零退出，包含旧 Case/template materializer 生成的 Team 缺少冻结 v2 摘要，以及依赖旧 `/design` 页面/路由的浏览器断言；本轮已将默认视觉验收改为 v2、移除过期 legacy Studio Simulation 浏览器验收、更新重复创建页路由断言。随后 `node --test apps/team-site/tests/team-ir-studio-browser.test.mjs apps/team-site/tests/visual-acceptance.test.mjs --test-name-pattern='Team IR v2 Studio validates|default Team Studio creation'` 2/2，`node --test --test-name-pattern='duplicate team and project creation' apps/team-site/tests/product-logic-acceptance.test.mjs` 1/1；Team Site 完整套件尚未对这批最新改动重跑。`git diff --check` 通过。默认工作区 `.ogs/model-selection.json` 是既有用户改动，本轮未触碰。
+
+**未覆盖与风险：** 真实 A2A intake 仍无远端 endpoint/认证配置；本机 Docker resolver 未提供强制网络 egress allowlist，不满足生产隔离要求。`/studio/new` 是唯一原生 v2 创建页且 `/studio/ir/new` 已移除，但启动时的活动经典模板 provisioning、Case API、项目 Case materializer、Team 版本编辑/调整和 `/design` 仍会创建或访问旧 Team 格式；尚未按最新要求切断这些消费者。阶段 1/2 语义矩阵尚有未支持拓扑/恢复边界。未完成这些门槛前，不得宣称旧内容清理完毕或发布完成。
+
+**阶段结论：** Artifact Evidence 单场景真实 UAT 通过；阶段 0 通过，阶段 1/2 部分通过，阶段 3/4 进行中。UAT 记录不是全阶段通过或生产发布完成证明。
+
+### 2026-10-28：v2 默认链路与旧入口清理增量
+
+| 项目 | 当前实现与证据 | 状态 / 剩余项 |
+| --- | --- | --- |
+| 默认 Team 作者入口和版本编辑 | `/studio/new` 创建原生 v2；版本编辑进入 `/studio/teams/:id/ir`；`forkTeamVersion` 只复制原生 v2 IR，拒绝缺少 v2 IR 的旧 TeamVersion | 实现已切换；真实 resolver 下完整创建、保存、发布、关闭重开和发布后只读浏览器 UAT 尚需补齐 |
+| 经典 Case 与内置模板 | 8 个 `cases.mjs` 条目各自对应 `examples/team-ir-v2/classic-*.json`；启动 provisioning 只使用 `templateId: team-ir-v2`，不再通过旧 Mermaid materializer | 8 个 provisioning 补偿测试及 fixture digest/compiler 合同通过；8 个场景的真实 Project Task UAT 尚未全覆盖 |
+| 旧 Team API/Assistant | TeamVersion `/design`、`/graph`、`/chat`、`/release-baselines` 由统一 guard 返回 `TEAM_IR_V2_REQUIRED`；生产组合根已移除旧 Team Assistant use case、模型选择能力和 Visualizer HTTP adapter；旧 Team Design/asset、Mermaid design store/validator、Team package Simulation 与 Studio Simulation 独立模块已删除 | `app.js` 中的旧 Assistant/Graph/Draft renderer 与 release-baseline 分支仍待从浏览器脚本删除；旧 API 拒绝 guard 尚保留；不能视为旧源码清理完成 |
+| 旧数据与独立 OGS System 示例 | 本轮没有删除用户数据；本地旧 Run 归档位置见前序记录，仍为可恢复归档。独立 `examples/**/system.mmd` 不是 Team catalog/template 输入 | 旧数据尚未永久清除；只在确认属项目生成的旧 Team 配置与旧 Team Simulation 数据后，才删除对应活动数据，不触碰其他用户数据 |
+
+**验证：** `pnpm build` 通过；`node --test apps/team-site/tests/team-api-routes.test.mjs apps/team-site/tests/case-api-routes.test.mjs apps/team-site/tests/team-ir-legacy-compatibility.test.mjs apps/team-site/tests/classic-case-v2-release-gate.test.mjs apps/team-site/tests/team-ir-studio-browser.test.mjs tests/team-ir-classic-case-v2-contract.test.mjs`，28/28；`node --check`（app.js/server.mjs/team-routes.mjs）与 `git diff --check` 通过。完整 Team Site 串行回归仍在运行，结果写于下一条记录；未以本组聚焦测试表示整套回归通过。
+
+### 2026-10-29：旧 Team 代码清理增量
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 脱离生产装配的旧 Team Design/Simulation 源码 | 已删除 | 移除旧 `team-design-use-cases`、Team Design asset store、Mermaid design store/validator、旧 Team package Simulation、旧 Studio Simulation use case/API/store/redaction 及其专属测试；v2 Simulation 脱敏工具迁为 `team-ir-simulation-redaction.mjs` 并更新调用点 | `public/app/views/app.js` 仍有旧 Assistant/Graph/Draft renderer、旧 Simulation UI 与 release-baseline 分支；`server.mjs` 未装配的通用旧 Visualizer Run 路径仍须完成调用图确认 |
+| 旧测试装配 | 部分通过 | Team lifecycle 测试改用原生 FileStore 创建端口；产品回归移除已不存在的 `provisionBuiltInTeamVersions` 与旧 Team Design 用例；旧 classic graph、旧 Team package Simulation、Assistant、Team Role Source 导入浏览器测试已删除 | 其他 Project bundle 用例仍创建无 v2 IR 的 Team，导出时依赖 `system.mmd`；需明确删除该旧包行为或将项目包合同改为 Team IR v2 |
+| Build 与 Team IR v2 聚焦回归 | 通过 | `pnpm build`；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs apps/team-site/tests/team-ir-studio-simulation.test.mjs apps/team-site/tests/team-ir-project-run-executor.test.mjs`，19/19；`git diff --check` 通过 | 仅为构建和 v2 定向覆盖，不代表完整 Team Site 回归通过 |
+| Team Site 完整串行回归 | 失败（清理前基线） | `pnpm --dir apps/team-site test --test-concurrency=1`，501 项中 474 通过、26 失败、1 跳过；发现旧 Graph/Assistant/Simulation UI 测试失败、无 v2 IR 的旧包 fixture 依赖 Mermaid、Projects Task 创建/恢复以及团队同名并发测试失败 | 旧测试与模块删除之后尚未重跑全套；并发重名、Projects Task 页面和 Run 恢复失败需按最新 v2 合同复核并修复或替换有效验收 |
+
+**未覆盖与风险：** 本轮未运行全 Team Site 回归、全部经典场景真实 Project Task UAT、远端 A2A UAT，也未提交。已有 Release Gate/Maker-Checker/Artifact Evidence 单场景 UAT 不能替代完整经典团队集验收。`.ogs/model-selection.json` 是既有用户修改，保留未动。
+
+**阶段结论：** 旧 Team 代码清理尚未完成；阶段 1/2 仍按原矩阵部分通过，阶段 3/4 进行中。默认 v2 链路和 v2 定向测试通过，不代表完整发布门通过。
+
 ### YYYY-MM-DD：阶段 / 任务标识
 
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |
@@ -509,6 +627,41 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 **变更范围：** 代码、Schema、Studio、API、示例和文档。  
 **未覆盖与风险：** 写明未运行的验证及其影响；没有则写“无已知未覆盖项”。  
 **阶段结论：** 仅当该阶段所有必需门槛均通过时写“通过”；否则写“部分通过”或“受阻”。
+
+### 2026-10-29：继续清理新版本旧 Team/Run 入口（历史快照）
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 缺少原生 Team IR v2 时拒绝 Team readiness | 通过（窄合同） | `apps/team-site/infrastructure/team-ir-v2-readiness.mjs` 对 IR store 缺失和 Team IR v2 文档缺失分别返回阻断项；`runtime-project-readiness.mjs` 不再回退 Mermaid readiness。`apps/team-site/tests/runtime-project-readiness.test.mjs` 覆盖两种 fail-closed 情况及有效 v2 resolver | 全量 Team Site 回归和新版本全入口矩阵仍未通过 |
+| Team 确认摘要仅以 Team IR v2 为源 | 通过（窄合同） | `runtime-team-confirmation.mjs` 删除 Mermaid 拓扑、Team Package 和旧 Project Asset digest 计算路径；缺失 Team IR v2 时拒绝确认。`runtime-team-confirmation-v2.test.mjs` 与 `runtime-task-execution-readiness-v2.test.mjs` 通过 | 所有确认、创建、发布入口的全量回归待清零 |
+| Project Task 只调用 v2 Runtime | 通过（窄合同） | `task-execution-use-cases.mjs` 无条件要求 Task 和 TeamVersion 的冻结 semantic/compiled digest 相等，删除旧 Run Store 执行分支；生产组合不再注入旧 Run Store。测试加入 unbound Task 不 reserve 且不调用任一 executor 的拒绝合同 | 全量 Task retry/recovery/control、经典场景 UAT 尚未闭合 |
+| Team Studio 缺 IR 不生成新草稿或引导迁移 | 通过（源码合同） | `renderStudioTeamIr` 缺少 v2 IR 时显示错误，不再使用本地 starter Team IR；删除“重建旧 Team”页面分支和未引用的 `starterTeamIr` | 缺 IR 的实际浏览器验收待补 |
+| 旧 Project Package Team/Run 入口 | 部分通过 | 从 Team Site server 移除旧 Project Package import/export 路由及其 Mermaid Team package 生产组合；相关通用源码和旧测试尚未清理 | 明确移除或替换旧 Project Package 源码/测试合同，确认不影响新 Collaboration Project 与 Artifact 功能 |
+| 构建与 v2 定向回归 | 通过 | `pnpm build`；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs apps/team-site/tests/runtime-project-readiness.test.mjs apps/team-site/tests/runtime-team-confirmation-v2.test.mjs apps/team-site/tests/runtime-task-execution-readiness-v2.test.mjs apps/team-site/tests/task-execution-use-cases.test.mjs`，22/22 | 不代表完整 Team Site 或全仓回归通过 |
+| Team Site 完整串行回归 | 失败 | `pnpm --dir apps/team-site test --test-concurrency=1`，432 含子测试项，394 通过、37 失败、1 跳过。失败包含旧 Project Run readiness/confirmation 测试夹具、旧 Mermaid Team Package import/export 与测试、旧 Project Run 控制/重试和页面布局断言；未运行全仓回归 | 逐项把仍属于最新 Project Task/恢复/UI 的失败修到通过；过时旧 Team Package/Run 断言删除或改成 v2 拒绝合同，再重跑完整套件 |
+
+**未覆盖与风险：** 当前仍存在旧 Mermaid Project Run executor、旧 Team/Project Package 相关模块和不可达 Team Graph/Assistant/调试工作区脚本。运行时部分入口现已 fail closed 或不再路由，但不能据此称旧源码清理、阶段 3/4 或发布验收完成。工作区中 `.ogs/model-selection.json` 用户修改未覆盖。
+
+**阶段结论：** 阶段 0 通过；阶段 1、2 仍部分通过；阶段 3、4 进行中。旧 Team/Run 清理推进中，完整回归失败，真实经典场景 Project Task UAT、本轮用户验收和提交均未完成。
+
+### 2026-10-29：结构化辩论真实 Sandbox Project Task UAT 与回归
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 真实 Team IR v2 保存/重开、Simulation、发布 | 通过（Structured Debate Reporter） | macOS、Node v22.21.1、pnpm；隔离 Team Site 使用 v2 OpenCode Docker resolver、仅本机 `0600` OpenCode serve 密钥文件和数据根 `/tmp/team-ir-v2-classic-real-uat-20261029`。经 `/api/v1/team-ir-drafts` 创建并保存当前 `classic-structured-debate.json`，重开校验 semantic digest `cc1c9151ffe7628549aaee7dbf0af539c27e2e77245cb263f09df7a414b572df`；真实 Simulation `4e50d1a9-2617-459f-b0c1-2133998ee34b` completed；发布 compiled digest `5fd24a75275afc47abb1f3f4ff4c4c34f3c7f00c04cc2e152267df32bc69a120` | 使用 API 导入 fixture 内容，不是逐字段 Studio 表单编辑；完整真实浏览器作者流程仍待验收 |
+| 真实 Project mount 与两轮 Loop/Reporter Task | 通过（真实模型 Task） | 模型/Binding `codex-gateway/gpt-6-luna` / `modelRef: codex-gateway/gpt-6-luna`，`ogs-opencode-docker-adapter/1`，固定 Node image digest `sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914`，调用经受限 Docker 容器到本机 OpenCode serve `http://host.docker.internal:4096`。Project `uat-debate-reporter-result-20261029-c44262f4`，Task `20261029-020454-e4ab349a`，Run `20261029-020454-93f1ea08` completed 且 `resultWritten=true` | 本机 Docker 网络未强制 egress allowlist；不构成生产隔离证明 |
+| 真实辩论内容及运行语义检查 | 通过（9/9） | 检查持久 checkpoint `.../.ogs/runs/20261029-020454-93f1ea08/team-ir-v2-state/20261029-020454-93f1ea08.json`：Run completed、Loop 两轮、Judge 含 `proponentSummary`/`opponentSummary`/`rationale`，Reporter 同时呈现双方论点与裁判理由，明确记录 rebuttal 决定和未决结论；文本未错误声称缺少论点、证据或输入。全部 9 项运行/内容断言通过 | 这是 `classic-structured-debate` 单场景真实 UAT；其它场景、Review 用户决定、A2A 远端、失败重试和跨进程恢复仍需各自证据 |
+| Artifact Evidence 的真实 Run input Artifact 登记、Task 快照、消费和授权结果读取 | 通过（真实 Project Task） | 隔离数据根 `/tmp/team-ir-v2-artifact-input-uat-20261029`；TeamVersion `artifact-input-real-uat-20759aca`，semantic digest `0753ee4bb6fc35aca93ad43285f0e74de971dfb62300da1e246e0ee82773f8be`，compiled digest `1b100c281ea784baddb4b7536d35c2244720ec5da825968f46ab5ccd05dfe0ec`。真实模型/Binding `codex-gateway/gpt-6-luna` / `modelRef=codex-gateway/gpt-6-luna`，`ogs-opencode-docker-adapter/1`，固定 Node image digest `sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914`；opt-in adapter UAT 8/8。经 slot discovery 确认必填 `brief:text/markdown`，Simulation upload API 登记附件并传入 `attachments.brief`；发布后 Project `artifact-input-uat-project-8008b1ff` 登记 Artifact `art_337494cf-591c-410e-bce1-c6e197f230d9`，Task `20261029-021726-574decf4` 的 `runInputAttachments` 与请求快照一致，Run `20261029-021726-a603a7c7` completed 且 `resultWritten=true` | 未覆盖失败 Task 的 Artifact retry 快照重用与跨进程重启；Project Task 此场景成功后无需重试 |
+| Artifact 输入 UAT 的失败恢复与内容授权检查 | 通过（受控 Simulation 修正和 owner scope） | 前两次真实 Simulation 分别以 `BINDING_SERVER_ERROR`（`dc9ffec4-4916-463c-92bf-69754ff7069f`）和 `BINDING_INVALID_OUTPUT`（`9b1d060a-2f01-45f3-a944-5c3e5353e064`）失败；适配器真实调用 probe 8/8 证明 provider/container 可达。将输出契约明确为 Team IR envelope 后，Simulation `aebd930e-48b0-4d82-8a3c-139914df4230` 成功，两 Agent completed。通过 owner-scoped Run result API 读取唯一 Result 和报告 Artifact；错误 Task ID 对同一 Run 返回 404。Artifact 内容确认模型实际引用 brief 中的产品要求，并产出含价值、数据处理、无障碍、风险与验收标准的 Markdown 报告 | 此 UAT 是 Artifact Evidence 场景的真实内容抽查；不能替代其它 classic 场景和 Artifact/Run 跨存储崩溃边界测试 |
+| Review 与并行 fan-out 拓扑拒绝 | 通过（fail-closed Runtime 回归） | `tests/team-ir-runtime.test.mjs`：`Review on a parallel fan-out route fails closed before any Binding invocation`；`pnpm build && node --test tests/team-ir-runtime.test.mjs`，41/41。断言稳定 `TEAM_REVIEW_TOPOLOGY_UNSUPPORTED`、Run 失败、0 次 Binding 调用且未创建 Review activation | 该组合仍不支持；多 Review Store/reducer 独立 deadline 测试不意味着 scheduler 并行 Review 已支持 |
+| Maker-Checker 真实模型 Task Review reject/revise/approve | 通过（本机 OS principal/API 流程） | 隔离 TeamVersion `maker-checker-real-uat-0905c361`，semantic digest `7e0eebd04477eb7bfc651e3fd4bab39012995c40435a9e1c14bb0b419b4c1041`，Simulation `9258cb26-1a84-4b28-a0fc-e222f402828b` completed，compiled digest `7df117f7778cd5e200b03bc25cf98b665168caacc45da631a05c2cdca41e444c`。Project `maker-checker-review-uat-b907af2c`，Task `20261029-022236-0abf9e76`，Run `20261029-022236-65e8aaf1`；Run 进入 `waiting_human_review`，Review round 1 reject 通过 Schema 校验并在同 Run 进入 round 2，approve 后同 Run completed，结果非空；相同 approve/idempotency key 重放返回 200，服务重启后 Task/Run/Review round 2/result 仍可查询 | 验证了 API/本机 principal，不是独立审核员或外部身份服务；Review 产品页面操作与外部身份仍待验收 |
+| 旧版本运行与隔离 UAT 数据清理 | 已从活动路径清理 | 核实根 `.ogs/runs/` 的 48 个 Run 均无 `team-ir-v2-state` checkpoint，并连同旧归档 `/tmp/team-ir-v2-legacy-runs-20261028`（256 个旧 Runtime 目录）、`.ogs/runs-index.json` 移入系统废纸篓；本轮已记录证据的隔离真实 UAT 根、旧隔离站点根一并清理。`.ogs/model-selection.json` 用户修改保留 | 废纸篓提供短期恢复能力；新版本不读取或迁移这些历史 Run |
+| 旧 Team Design 孤儿 projector 清理 | 已删除 | 调用图审计确认 `visualizer-project-design-projector.mjs` 只由其自身测试引用、没有生产调用；删除该 `system.mmd` 读取/解析路径及专属旧测试 | OGS standalone Visualizer 不受此删除影响 |
+| Build、Team Site 与全仓完整回归 | 通过 | `pnpm build` 退出码 0；删除孤儿 projector 后 `pnpm --dir apps/team-site test --test-concurrency=1`：346 个含子测试项，345 通过、0 失败、1 项跳过，退出码 0；Visualizer fixture 切换后 `pnpm build && node --test tests/visualizer.test.mjs`，39/39；最终 `pnpm test` 通过，906 个含子测试项中 905 通过、0 失败、1 项 Windows 专项跳过，退出码 0 | 经典团队集、Review 外部用户、真实远端 A2A、未支持拓扑、完整 Studio 作者体验仍是阶段发布门 |
+
+**未覆盖与风险：** 结构化辩论、Artifact Evidence 和 Maker-Checker 已有真实模型 Task UAT；不代表六类必需语义团队及八个经典 fixture 全部完成。阶段 1/2 的复杂语义/受限拓扑边界、阶段 3 的自由布局和 Review 浏览器产品流程、阶段 4 的其余经典 UAT、独立 Review 身份、远端 A2A 仍未闭合。全仓和 Team Site 回归通过，但发布完成定义尚未满足。工作区 `.ogs/model-selection.json` 是既有用户改动，保留未动。
+
+**阶段结论：** 阶段 0 通过；阶段 1、2 部分通过；阶段 3、4 进行中。默认创建、fork、Case/template 已切到 v2，但发布完成定义尚未满足。
 
 ## 6. Codex / 实施代理工作约定
 

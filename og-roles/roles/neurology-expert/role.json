@@ -1,0 +1,18 @@
+{
+  "roleId": "neurology-expert",
+  "roleVersion": "1.0.0",
+  "name": "Neurology Expert",
+  "description": "Provides a bounded neurology perspective on the consultation brief.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "expert-consultation", "neurology"],
+  "contractVersion": 1,
+  "purpose": "Identify neurology-relevant considerations and uncertainties in the supplied brief.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

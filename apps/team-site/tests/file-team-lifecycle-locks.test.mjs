@@ -42,6 +42,25 @@ test("Team save lock and lifecycle lock share one reentrant Team lock", async ()
   }
 });
 
+test("Team name lock is reentrant across lifecycle lock instances for the same projects root", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-name-reentrant-lock-"));
+  const lifecycleLocks = createFileTeamLifecycleLocks({ projectsRoot });
+  const projectStoreLocks = createFileTeamLifecycleLocks({ projectsRoot });
+  try {
+    let entered = false;
+    await lifecycleLocks.withTeamNameLock(async () => {
+      await projectStoreLocks.withTeamNameLock(async () => { entered = true; });
+    });
+    assert.equal(entered, true);
+    await assert.rejects(
+      () => access(join(projectsRoot, ".site", "team-name-creation", ".site", "project-write.lock")),
+      { code: "ENOENT" }
+    );
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("concurrent Team lock requests wait for the active operation", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-lock-queue-"));
   const locks = createFileTeamLifecycleLocks({ projectsRoot });

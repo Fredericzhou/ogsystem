@@ -12,9 +12,10 @@ export function createRecentRunUseCases({ listProjects, runArtifactStore }) {
         for (const task of (project.taskRecords || []).filter((item) => !item.deletedAt && item.status !== "deleted")) {
           const runIds = task.runIds || (task.currentRunId ? [task.currentRunId] : []);
           const attempts = await Promise.all(runIds.map(async (runId, attemptIndex) => {
-            const artifacts = await runArtifactStore.readRunArtifacts(project.projectId, task.taskId, runId).catch(() => ({}));
+            const artifacts = await runArtifactStore.readRunArtifacts(project.projectId, task.taskId, runId).catch((queryError) => ({ queryError }));
             const state = artifacts.state;
             const plan = artifacts.plan;
+            const isCurrent = task.currentRunId === runId;
             return {
               runKind: "project_task",
               owner: {
@@ -30,7 +31,7 @@ export function createRecentRunUseCases({ listProjects, runArtifactStore }) {
               taskId: task.taskId,
               taskNumber: task.taskNumber,
               attemptNumber: state?.attemptNumber || attemptIndex + 1,
-              isCurrent: task.currentRunId === runId,
+              isCurrent,
               projectName: project.name,
               workspaceKey: project.workspaceKey || "",
               teamId: task.teamId || null,
@@ -39,8 +40,9 @@ export function createRecentRunUseCases({ listProjects, runArtifactStore }) {
               teamVersionNumber: task.teamVersionNumber || 1,
               input: task.input || "",
               status: state?.status || (task.currentRunId === runId ? task.status : "unknown"),
-              mode: plan?.executionPolicy?.mode || "unknown",
-              outputSummary: task.currentRunId === runId ? task.outputSummary || "" : "",
+              mode: plan?.executionPolicy?.mode || (plan?.engine === "team-ir-v2" ? "sandbox" : "unknown"),
+              outputSummary: artifacts.outputSummary || (isCurrent ? task.outputSummary || "" : ""),
+              error: state?.error || artifacts.queryError?.message || null,
               updatedAt: state?.updatedAt || task.updatedAt,
               durationMs: state?.durationMs || 0,
               pendingReviewCount: state?.pendingReviewCount || 0

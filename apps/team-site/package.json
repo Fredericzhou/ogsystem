@@ -8,7 +8,6 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test",
-    "verify:cases": "node scripts/verify-cases.mjs"
+    "test": "node --test"
   }
 }

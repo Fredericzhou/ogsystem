@@ -230,6 +230,110 @@ export const cases = [
       ["neutral-judge", "debate-reporter", "DECISION_READY"],
       ["debate-reporter", "__system_end__", "DEBATE_SUMMARY_READY"]
     ]
+  },
+  {
+    id: "a2a-intake",
+    title: { "zh-CN": "远程补件受理", en: "Remote intake" },
+    short: { "zh-CN": "由远程 A2A 服务检查请求；信息不足时暂停并等待补件。", en: "A remote A2A service reviews a request and pauses for missing information." },
+    category: { "zh-CN": "远程协作", en: "Remote collaboration" },
+    duration: { "zh-CN": "1 个角色", en: "1 role" },
+    icon: "message",
+    accent: "blue",
+    detail: {
+      scenario: { "zh-CN": "检查一份外部提交的服务接入申请，缺少必要信息时向申请人补问。", en: "Review an external service onboarding request and ask for missing details." },
+      background: { "zh-CN": "远程 Agent 可能要求补充信息；这不是普通失败，也不能假装任务已经完成。", en: "A remote Agent can request more information; that is not a normal failure or a completed task." },
+      problem: { "zh-CN": "需要保留远程任务身份与请求内容，并明确禁止原 Run 续接。", en: "Preserve the remote task identity and requested fields, while requiring a new Run after clarification." },
+      collaboration: { "zh-CN": "请求发送到固定 Agent Card；Runtime 持久化待补件状态，收到补充信息后由用户创建新 Run。", en: "Send the request to a pinned Agent Card, persist the input-required state, then start a new Run after clarification." },
+      deliverable: { "zh-CN": "受理结论、所需补充字段和远程任务状态。", en: "An intake decision, requested fields, and remote task state." },
+      roles: { "remote-intake": { "zh-CN": "远程受理 Agent，检查申请并提出补件要求。", en: "Remote intake Agent that reviews the request and asks for missing details." } }
+    },
+    roles: [{ id: "remote-intake", label: { "zh-CN": "远程受理 Agent", en: "Remote intake Agent" }, description: "A2A" }]
+  },
+  {
+    id: "artifact-evidence",
+    title: { "zh-CN": "证据材料交付", en: "Artifact evidence delivery" },
+    short: { "zh-CN": "分析与编辑角色通过声明的 Artifact 槽传递大文件证据。", en: "Analyst and editor roles exchange large evidence through declared Artifact slots." },
+    category: { "zh-CN": "资料分析", en: "Evidence analysis" },
+    duration: { "zh-CN": "2 个角色", en: "2 roles" },
+    icon: "file",
+    accent: "mint",
+    detail: {
+      scenario: { "zh-CN": "分析一组合同与访谈材料，产出附带原始证据的审阅报告。", en: "Analyze contracts and interviews and deliver a review with its source evidence." },
+      background: { "zh-CN": "大型材料不应复制进普通 JSON 映射；Artifact 引用须按声明槽位授权。", en: "Large materials should not be copied into ordinary JSON mappings; Artifact references need declared slot authorization." },
+      problem: { "zh-CN": "保证材料在绑定、Run 和结果之间按槽位传递，并可核查其摘要。", en: "Carry materials through bindings, Runs, and results by slot, with verifiable digests." },
+      collaboration: { "zh-CN": "分析员登记证据包，编辑员只读取授权槽并生成报告与证据索引。", en: "An analyst registers an evidence bundle; an editor reads only declared slots and creates a report and index." },
+      deliverable: { "zh-CN": "审阅报告、Artifact 引用及其摘要。", en: "A review report, Artifact references, and their digests." },
+      roles: {
+        "evidence-analyst": { "zh-CN": "整理原始材料并登记证据 Artifact。", en: "Organizes source materials and registers evidence Artifacts." },
+        "evidence-editor": { "zh-CN": "读取声明槽位并生成带引用的审阅报告。", en: "Reads declared slots and produces a cited review." }
+      }
+    },
+    roles: [
+      { id: "evidence-analyst", label: { "zh-CN": "证据分析员", en: "Evidence analyst" }, description: "Registers source evidence." },
+      { id: "evidence-editor", label: { "zh-CN": "报告编辑", en: "Report editor" }, description: "Produces a cited report." }
+    ]
+  },
+  {
+    id: "conditional-signoff",
+    title: { "zh-CN": "条件会签", en: "Conditional sign-off" },
+    short: { "zh-CN": "主审与条件触发的合规审核汇总后，由签署主席作出结论。", en: "A chair decides after primary and conditionally selected compliance reviews." },
+    category: { "zh-CN": "审核与治理", en: "Review and governance" },
+    duration: { "zh-CN": "3 个角色", en: "3 roles" },
+    icon: "shield",
+    accent: "gold",
+    detail: {
+      scenario: { "zh-CN": "审查新供应商；涉及受监管数据时，增加合规角色会签。", en: "Review a new supplier and add compliance sign-off when regulated data is involved." },
+      background: { "zh-CN": "条件路由可能让同一来源的某条 Handoff 被跳过；Join 必须按 Handoff 身份区分到达与跳过。", en: "Conditional routing can skip one Handoff while another shares its source; Join must track each Handoff separately." },
+      problem: { "zh-CN": "同时验证 optional Join、条件分支、同端点候选 Handoff 和字段冲突处理。", en: "Exercise optional Join, conditions, same-source candidate Handoffs, and field conflict handling." },
+      collaboration: { "zh-CN": "主审先检查；条件满足时并行征求合规意见；签署主席按声明集合形成决定。", en: "A primary reviewer checks first, compliance joins conditionally, and a chair decides from the declared set." },
+      deliverable: { "zh-CN": "会签结果、触发依据、未参与分支状态和待办事项。", en: "A sign-off decision, trigger rationale, skipped branch states, and follow-up items." },
+      roles: {
+        "primary-reviewer": { "zh-CN": "评估供应商申请与主要风险。", en: "Reviews the supplier request and primary risks." },
+        "compliance-reviewer": { "zh-CN": "在适用时评估监管义务。", en: "Assesses regulatory obligations when applicable." },
+        "signoff-chair": { "zh-CN": "汇总适用意见并给出会签结论。", en: "Combines applicable reviews into the sign-off decision." }
+      }
+    },
+    roles: [
+      { id: "primary-reviewer", label: { "zh-CN": "主审", en: "Primary reviewer" }, description: "Reviews the request." },
+      { id: "compliance-reviewer", label: { "zh-CN": "合规审核员", en: "Compliance reviewer" }, description: "Conditional compliance review." },
+      { id: "signoff-chair", label: { "zh-CN": "签署主席", en: "Sign-off chair" }, description: "Decides from applicable reviews." }
+    ]
+  },
+  {
+    id: "maker-checker",
+    title: { "zh-CN": "制作者与复核者", en: "Maker-checker" },
+    short: { "zh-CN": "制作者提交修改，由独立复核者批准或要求限轮返工。", en: "A maker submits a change for independent approval or bounded revision." },
+    category: { "zh-CN": "审核与治理", en: "Review and governance" },
+    duration: { "zh-CN": "1 个角色 + Review", en: "1 role + Review" },
+    icon: "check",
+    accent: "coral",
+    detail: {
+      scenario: { "zh-CN": "修改服务配置，直到独立审核通过或达到返工轮次上限。", en: "Revise a service configuration until independent approval or the round limit." },
+      background: { "zh-CN": "Review 与受限 Loop 需要区分每一轮产物，恢复时不能重放已提交的制作调用。", en: "Review and bounded Loop need round-scoped outputs; recovery must not replay committed maker calls." },
+      problem: { "zh-CN": "验证 reject/revise、审核等待、回合隔离和跨实例恢复。", en: "Exercise reject/revise, review waiting, round isolation, and cross-instance recovery." },
+      collaboration: { "zh-CN": "制作者提交版本；Review 决定批准或给出反馈；拒绝后只在预算内启动下一轮。", en: "The maker submits a version; Review approves or returns feedback; rejection starts another bounded round." },
+      deliverable: { "zh-CN": "最终版本、审核决定、返工轮次和剩余问题。", en: "The final version, review decision, revision count, and remaining issues." },
+      roles: { maker: { "zh-CN": "根据任务制作或修改交付物。", en: "Creates or revises the deliverable." } }
+    },
+    roles: [{ id: "maker", label: { "zh-CN": "制作者", en: "Maker" }, description: "Creates and revises the deliverable." }]
+  },
+  {
+    id: "release-gate",
+    title: { "zh-CN": "阶段放行门", en: "Release gate" },
+    short: { "zh-CN": "按验证结果进入互斥放行或拒绝分支，并遵守结果完整性策略。", en: "Validation selects an exclusive release or reject path under a result completeness policy." },
+    category: { "zh-CN": "交付与发布", en: "Delivery and release" },
+    duration: { "zh-CN": "1 个角色", en: "1 role" },
+    icon: "check",
+    accent: "mint",
+    detail: {
+      scenario: { "zh-CN": "检查发布清单，所有必需项通过才输出放行决定。", en: "Check a release checklist and approve only when every required item passes." },
+      background: { "zh-CN": "互斥条件路由必须唯一命中；拒绝分支不能被错误地视作成功结果。", en: "Exclusive conditional routes must select one path; rejection must not be treated as a successful result." },
+      problem: { "zh-CN": "验证成功/拒绝分支、唯一结果和 required/partial 结果策略。", en: "Exercise pass/reject branches, unique results, and required/partial result policies." },
+      collaboration: { "zh-CN": "放行角色逐项验证证据，只能给出批准或拒绝之一，并附上依据。", en: "A gate Agent validates evidence and returns exactly one approval or rejection with rationale." },
+      deliverable: { "zh-CN": "放行状态、检查摘要、阻断项与依据。", en: "A release decision, checklist summary, blockers, and rationale." },
+      roles: { "release-gate": { "zh-CN": "根据完整检查清单作出阶段放行决定。", en: "Decides whether the release checklist permits progression." } }
+    },
+    roles: [{ id: "release-gate", label: { "zh-CN": "放行审核员", en: "Release gate" }, description: "Validates the release checklist." }]
   }
 ];
 

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "answer": { "type": "string", "minLength": 1 },
+    "again": { "type": "boolean" }
+  },
+  "required": ["answer", "again"],
+  "additionalProperties": false
+}

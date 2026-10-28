@@ -7,7 +7,6 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
-import { convertTaskFixtureToLegacySnapshot } from "./legacy-run-fixture.mjs";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const forceRuntimeError = "OGSYSTEM_TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP";
@@ -33,7 +32,7 @@ const taskStatus = process.env.OGS_TEST_RENAME_FAULT_TASK_STATUS || "";
 fs.promises.rename = async (source, target, ...args) => {
   const targetPath = resolve(String(target)).replaceAll("\\\\", "/");
   const normalizedSuffix = targetSuffix.replaceAll("\\\\", "/");
-  let shouldFail = remaining > 0 && normalizedSuffix && targetPath.endsWith(normalizedSuffix);
+  let shouldFail = remaining > 0 && normalizedSuffix && targetPath.includes(normalizedSuffix);
   if (shouldFail && taskId) {
     try {
       const metadata = JSON.parse(readFileSync(String(source), "utf8"));
@@ -74,6 +73,7 @@ async function spawnServer({ projectsRoot, platformConfigRoot = projectsRoot, pr
       PORT: "0",
       OGS_SITE_PROJECTS_DIR: projectsRoot,
       OGS_PLATFORM_CONFIG_DIR: platformConfigRoot,
+      OGS_TEAM_IR_V2_RESOLVER_MODULE: fileURLToPath(new URL("./team-ir-v2-task-test-resolver.mjs", import.meta.url)),
       [forceRuntimeError]: runtimeFailure ? "1" : "",
       OGS_TEST_RENAME_FAULT_COUNT: String(fault.count || 0),
       OGS_TEST_RENAME_FAULT_SUFFIX: fault.suffix || "",
@@ -146,7 +146,6 @@ async function createTaskFixture(projectsRoot) {
     input: "Create a durable Run that can be inspected and retried after recovery.",
     teamVersionId: team.teamVersionId
   });
-  await convertTaskFixtureToLegacySnapshot({ project, team, task });
   return { project, task, team };
 }
 
@@ -154,7 +153,7 @@ async function startTask(baseUrl, projectId, taskId, idempotencyKey) {
   const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/tasks/${taskId}/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mode: "dry-run", idempotencyKey })
+    body: JSON.stringify({ mode: "sandbox", idempotencyKey })
   });
   const payload = await response.json();
   assert.equal(response.status, 202, JSON.stringify(payload));
@@ -166,14 +165,14 @@ async function retryTask(baseUrl, projectId, taskId, idempotencyKey) {
   const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/tasks/${taskId}/retry`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mode: "dry-run", idempotencyKey })
+    body: JSON.stringify({ mode: "sandbox", idempotencyKey })
   });
   const payload = await response.json();
   assert.equal(response.status, 202, JSON.stringify(payload));
   return payload;
 }
 
-test("Task Run plan creation failure is persisted, queryable, and safely retryable", { timeout: 90000 }, async () => {
+test("Team IR v2 checkpoint persistence failure is surfaced and rejected by Run query", { timeout: 90000 }, async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "ogs-task-run-plan-fault-"));
   const projectsRoot = join(testRoot, "projects");
   const preloadPath = join(testRoot, "rename-fault.mjs");
@@ -182,7 +181,7 @@ test("Task Run plan creation failure is persisted, queryable, and safely retryab
   let running;
 
   try {
-    running = await spawnServer({ projectsRoot, preloadPath, fault: { suffix: "run-plan.json", count: 1 } });
+    running = await spawnServer({ projectsRoot, preloadPath, fault: { suffix: "/team-ir-v2-state/", count: 2 } });
     const initial = await startTask(running.baseUrl, project.projectId, task.taskId, "plan-write-fault-start");
     const failedTask = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "failed");
     assert.equal(failedTask.currentRunId, initial.currentRunId);
@@ -191,34 +190,16 @@ test("Task Run plan creation failure is persisted, queryable, and safely retryab
 
     const runPath = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${initial.currentRunId}`;
     const failedRunResponse = await fetch(runPath);
-    assert.equal(failedRunResponse.status, 200);
-    const failedRun = await failedRunResponse.json();
-    assert.equal(failedRun.taskId, task.taskId);
-    assert.equal(failedRun.state.status, "failed");
-    assert.match(failedRun.state.error, /Injected one-shot filesystem rename failure/);
-    assert.equal(failedRun.plan, null);
+    assert.equal(failedRunResponse.status, 400);
+    assert.match((await failedRunResponse.json()).error, /TEAM_IR_V2_REQUIRED/);
     const runDir = join(projectsRoot, project.projectId, ".ogs", "runs", initial.currentRunId);
-    const durableFailedState = JSON.parse(await readFile(join(runDir, "control", "state.json"), "utf8"));
-    assert.deepEqual(durableFailedState, failedRun.state);
-
-    const retried = await retryTask(running.baseUrl, project.projectId, task.taskId, "plan-write-fault-retry");
-    assert.equal(retried.taskId, task.taskId);
-    assert.notEqual(retried.currentRunId, initial.currentRunId);
-    const completedTask = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "completed");
-    assert.deepEqual(completedTask.runIds, [initial.currentRunId, completedTask.currentRunId]);
-    const oldRunAfterRetry = await fetch(runPath).then((response) => response.json());
-    assert.deepEqual(oldRunAfterRetry.state, durableFailedState);
-    const retriedRun = await waitForRun(running.baseUrl, project.projectId, task.taskId, completedTask.currentRunId, (value) => value.state.status === "completed");
-    assert.equal(retriedRun.taskId, task.taskId);
-    recordRecoveryEvidence("plan creation failure", {
+    await assert.rejects(readFile(join(runDir, "team-ir-v2-state", `${initial.currentRunId}.json`)), { code: "ENOENT" });
+    recordRecoveryEvidence("Team IR v2 checkpoint creation failure", {
       projectId: project.projectId,
       taskId: task.taskId,
       failedRunId: initial.currentRunId,
-      retryRunId: completedTask.currentRunId,
-      diskRunState: durableFailedState.status,
-      apiRunState: failedRun.state.status,
-      retryTaskState: completedTask.status,
-      oldRunUnchanged: true,
+      taskStatus: failedTask.status,
+      runQueryRejectsMissingCheckpoint: true,
       tempRootCleaned: true
     });
   } finally {
@@ -246,7 +227,7 @@ test("Task Run reservation write failure leaves no Run artifacts and permits a l
     const failedResponse = await fetch(startPath, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "dry-run", idempotencyKey: "reservation-write-fault" })
+      body: JSON.stringify({ mode: "sandbox", idempotencyKey: "reservation-write-fault" })
     });
     const failure = await failedResponse.json();
     assert.notEqual(failedResponse.status, 202, JSON.stringify(failure));
@@ -293,7 +274,7 @@ test("Task Run reservation write failure leaves no Run artifacts and permits a l
   }
 });
 
-test("partial Run state initialization failure removes the reserved directory", { timeout: 90000 }, async () => {
+test("partial Team IR v2 checkpoint initialization remains fail-closed", { timeout: 90000 }, async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "ogs-task-run-state-init-fault-"));
   const projectsRoot = join(testRoot, "projects");
   const preloadPath = join(testRoot, "rename-fault.mjs");
@@ -302,28 +283,24 @@ test("partial Run state initialization failure removes the reserved directory", 
   let running;
 
   try {
-    running = await spawnServer({ projectsRoot, preloadPath, fault: { suffix: "control/state.json", count: 1 } });
+    running = await spawnServer({ projectsRoot, preloadPath, fault: { suffix: "/team-ir-v2-state/", count: 1 } });
     const startPath = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/start`;
     const failedResponse = await fetch(startPath, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "dry-run", idempotencyKey: "run-state-init-fault" })
+      body: JSON.stringify({ mode: "sandbox", idempotencyKey: "run-state-init-fault" })
     });
     const failure = await failedResponse.json();
-    assert.notEqual(failedResponse.status, 202, JSON.stringify(failure));
-    assert.match(failure.error, /Injected one-shot filesystem rename failure/);
-
-    const taskAfterFailure = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}`).then((response) => response.json());
-    assert.equal(taskAfterFailure.status, "queued");
-    assert.equal(taskAfterFailure.currentRunId, null);
-    assert.deepEqual(taskAfterFailure.runIds, []);
-    const runDirectories = await readdir(join(team.workdir, ".ogs", "runs"), { withFileTypes: true }).catch(() => []);
-    assert.deepEqual(runDirectories.filter((entry) => entry.isDirectory()).map((entry) => entry.name), []);
-
-    const started = await startTask(running.baseUrl, project.projectId, task.taskId, "run-state-init-retry");
-    const completed = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "completed");
-    assert.equal(completed.currentRunId, started.currentRunId);
-    assert.deepEqual(completed.runIds, [started.currentRunId]);
+    assert.equal(failedResponse.status, 202, JSON.stringify(failure));
+    const failedTask = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "failed");
+    assert.equal(failedTask.currentRunId, failure.task.currentRunId);
+    assert.deepEqual(failedTask.runIds, [failedTask.currentRunId]);
+    assert.match(failedTask.lastError, /Injected one-shot filesystem rename failure/);
+    const runPath = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${failedTask.currentRunId}`;
+    const runResponse = await fetch(runPath);
+    assert.equal(runResponse.status, 400);
+    assert.match((await runResponse.json()).error, /TEAM_IR_V2_REQUIRED/);
+    await assert.rejects(readFile(join(project.workdir, ".ogs", "runs", failedTask.currentRunId, "team-ir-v2-state", `${failedTask.currentRunId}.json`)), { code: "ENOENT" });
   } finally {
     await stopServer(running?.server);
     await rm(testRoot, { recursive: true, force: true });
@@ -349,17 +326,13 @@ test("recovery repairs a failed Run whose terminal Task projection write failed;
     const initial = await startTask(running.baseUrl, project.projectId, task.taskId, "projection-write-fault-start");
     const failedRun = await waitForRun(running.baseUrl, project.projectId, task.taskId, initial.currentRunId, (value) => value.state.status === "failed");
     assert.equal(failedRun.taskId, task.taskId);
-    assert.match(failedRun.state.error, /Forced runtime error after setup/);
-    const runStatePath = join(projectsRoot, project.projectId, ".ogs", "runs", initial.currentRunId, "control", "state.json");
+    assert.match(failedRun.state.error, /BINDING_SERVER_ERROR/);
+    const runStatePath = join(projectsRoot, project.projectId, ".ogs", "runs", initial.currentRunId, "team-ir-v2-state", `${initial.currentRunId}.json`);
     const persistedFailedRun = JSON.parse(await readFile(runStatePath, "utf8"));
-    assert.deepEqual(persistedFailedRun, failedRun.state);
-    assert.deepEqual(persistedFailedRun.taskReservation, {
-      kind: "task-attempt",
-      projectId: project.projectId,
-      taskId: task.taskId,
-      teamVersionId: team.teamVersionId,
-      runId: initial.currentRunId
-    });
+    assert.equal(persistedFailedRun.runId, failedRun.state.runId);
+    assert.equal(persistedFailedRun.status, failedRun.state.status);
+    assert.match(persistedFailedRun.events.findLast((event) => event.type === "run.failing").data.code, /BINDING_SERVER_ERROR/);
+    assert.equal(persistedFailedRun.projectId, project.projectId);
     const staleTaskResponse = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}`);
     assert.equal(staleTaskResponse.status, 200);
     const staleTask = await staleTaskResponse.json();
@@ -378,9 +351,9 @@ test("recovery repairs a failed Run whose terminal Task projection write failed;
     assert.equal(recoveredTask.status, "failed");
     assert.equal(recoveredTask.currentRunId, initial.currentRunId);
     assert.deepEqual(recoveredTask.runIds, [initial.currentRunId]);
-    assert.match(recoveredTask.lastError, /Forced runtime error after setup/);
+    assert.match(recoveredTask.lastError, /BINDING_SERVER_ERROR/);
     const runAfterRecovery = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${initial.currentRunId}`).then((response) => response.json());
-    assert.deepEqual(runAfterRecovery.state, persistedFailedRun);
+    assert.deepEqual(runAfterRecovery.state, failedRun.state);
     const metadataAfterRecovery = await readFile(metadataPath, "utf8");
     const recoveredMetadata = JSON.parse(metadataAfterRecovery);
     assert.equal(recoveredMetadata.taskRecords.find((record) => record.taskId === task.taskId).status, "failed");
@@ -396,7 +369,7 @@ test("recovery repairs a failed Run whose terminal Task projection write failed;
     const completedTask = await waitForTask(running.baseUrl, project.projectId, task.taskId, (value) => value.status === "completed");
     assert.deepEqual(completedTask.runIds, [initial.currentRunId, completedTask.currentRunId]);
     const oldRunAfterRetry = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${initial.currentRunId}`).then((response) => response.json());
-    assert.deepEqual(oldRunAfterRetry.state, persistedFailedRun);
+    assert.deepEqual(oldRunAfterRetry.state, failedRun.state);
     const retriedRun = await waitForRun(running.baseUrl, project.projectId, task.taskId, completedTask.currentRunId, (value) => value.state.status === "completed");
     assert.equal(retriedRun.taskId, task.taskId);
     recordRecoveryEvidence("terminal Task projection write failure", {

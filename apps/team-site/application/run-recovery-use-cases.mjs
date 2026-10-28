@@ -50,6 +50,7 @@ export function createRunRecoveryUseCases({ recoveryStore, now = () => new Date(
           if (owner?.runKind !== "project_task") continue;
           const state = await recoveryStore.readRunState(projectId, runId);
           if (!state || !ACTIVE_RUN_STATUSES.has(state.status)) continue;
+          if (state.teamIrV2 && ["waiting_review", "paused"].includes(state.status)) continue;
           const reservation = state.taskReservation;
           if (reservation?.kind !== "task-attempt") continue;
           if (owner?.kind && owner.kind !== "project_task"

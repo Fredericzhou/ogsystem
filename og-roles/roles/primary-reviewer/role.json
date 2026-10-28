@@ -1,0 +1,18 @@
+{
+  "roleId": "primary-reviewer",
+  "roleVersion": "1.0.0",
+  "name": "Primary Reviewer",
+  "description": "Reviews the request, selects its review track, and records a concise assessment.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "conditional-signoff", "review"],
+  "contractVersion": 1,
+  "purpose": "Assess a request and classify it as standard, clinical, or skipped for the primary review path.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

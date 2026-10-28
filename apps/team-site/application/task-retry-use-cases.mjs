@@ -6,12 +6,13 @@ export function createTaskRetryUseCases({ taskStore, projectStore, runStore }) {
     throw new TypeError("Task retry requires Project lookup.");
   }
   if (typeof runStore?.readRunState !== "function" || typeof runStore?.loadMaterialSnapshots !== "function"
-    || typeof runStore?.resolveMaterialPath !== "function" || typeof runStore?.resolveRunArtifactPath !== "function") {
-    throw new TypeError("Task retry requires Run state and material snapshot reads.");
+    ) {
+    throw new TypeError("Task retry requires Team IR v2 Run state and frozen input reads.");
   }
 
   return Object.freeze({
-    async retryProjectTask(projectId, taskId, { mode = "dry-run", idempotencyKey } = {}) {
+    async retryProjectTask(projectId, taskId, { mode = "sandbox", idempotencyKey } = {}) {
+      if (mode !== "sandbox") throw new Error("TEAM_IR_V2_SANDBOX_REQUIRED: Team IR v2 Task retries require Sandbox execution mode.");
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(String(taskId || ""))) {
         throw new Error("TASK_NOT_FOUND: task does not exist.");
       }
@@ -44,48 +45,18 @@ async function retryFromTask(project, task, { projectId, taskId, mode, idempoten
     throw new Error("TASK_RETRY_UNSUPPORTED: only a Task with a failed current Run can be retried.");
   }
 
-  const originalRunState = await runStore.readRunState(projectId, taskId, originalRunId).catch((error) => {
-    if (error?.code === "ENOENT" || /^RUN_STATE_MISSING:/.test(error instanceof Error ? error.message : String(error))) return undefined;
-    throw error;
-  });
-  const missingRunState = !originalRunState?.status && /^RUN_STATE_MISSING:/.test(task.lastError || "");
-  if (!missingRunState && originalRunState?.status !== "failed") {
+  const originalRunState = await runStore.readRunState(projectId, taskId, originalRunId);
+  if (originalRunState?.status !== "failed") {
     throw new Error("TASK_RETRY_UNSUPPORTED: only a Task with a failed current Run can be retried.");
   }
 
-  let retryInputs;
-  let retrySourceRoot;
-  let materialSnapshotPolicy;
-  if (missingRunState) {
-    retryInputs = (project.materials?.materials || []).map((item) => ({
-      materialId: item.materialId,
-      sourcePath: runStore.resolveMaterialPath(projectId, item.path),
-      contentType: item.contentType
-    }));
-    retrySourceRoot = project.workdir;
-    materialSnapshotPolicy = {
-      kind: "current_project_fallback",
-      sourceRunId: originalRunId,
-      reason: "source_run_state_missing"
-    };
-  } else {
-    const snapshots = await runStore.loadMaterialSnapshots(projectId, taskId, originalRunId);
-    retryInputs = await Promise.all(snapshots.map(async (item) => ({
-      materialId: item.materialId,
-      sourcePath: await runStore.resolveRunArtifactPath(projectId, taskId, originalRunId, item.snapshotPath),
-      contentType: item.contentType,
-      selectedRanges: item.selectedRanges,
-      consumingNodeIds: item.consumingNodeIds
-    })));
-    materialSnapshotPolicy = { kind: "source_run_snapshot", sourceRunId: originalRunId };
-  }
+  await runStore.loadMaterialSnapshots(projectId, taskId, originalRunId);
 
   return taskStore.startTask(projectId, taskId, {
     mode,
     retrySourceRunId: originalRunId,
-    retryInputs,
-    retrySourceRoot,
-    materialSnapshotPolicy,
+    retryInputs: [],
+    materialSnapshotPolicy: { kind: "team-ir-v2-task-snapshot", sourceRunId: originalRunId },
     idempotencyKey
   });
 }

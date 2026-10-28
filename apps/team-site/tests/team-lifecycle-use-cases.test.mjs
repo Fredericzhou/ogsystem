@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTeamLifecycleUseCases } from "../application/team-lifecycle-use-cases.mjs";
 
-function setup({ projects = [], team, loaded = { validation: { ok: true } }, releaseEvidence, teamIrRelease, caseMaterializer } = {}) {
+function setup({ projects = [], team, loaded = { validation: { ok: true } }, releaseEvidence, teamIrRelease, teamIrFixtures } = {}) {
   const calls = [];
   const created = [];
   const store = {
@@ -35,6 +35,11 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
     packageStore,
     locks: {
       withWorkspaceBindingLock: (action) => action(),
+      async withTeamNameLock(action) {
+        calls.push(["team-name-lock-enter"]);
+        try { return await action(); }
+        finally { calls.push(["team-name-lock-exit"]); }
+      },
       withTeamVersionLock: (_teamId, action) => { calls.push(["team-version-lock", _teamId]); return action(); }
     },
     confirmation: {
@@ -47,6 +52,7 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
       async prepareBuiltInTeamVersion(team, options) { calls.push(["prepare-built-in", team.projectId, options]); }
     },
     teamIrRelease: teamIrRelease || {
+      async getTeamIr() { return { teamIR: null }; },
       async getTeamIrReleaseSnapshot(teamVersionId) {
         calls.push(["team-ir-compile", teamVersionId]);
         return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" };
@@ -54,7 +60,7 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
       async copyTeamIr(sourceId, destinationWorkdir) { calls.push(["team-ir-copy", sourceId, destinationWorkdir]); return { copied: true }; },
       async saveTeamIr(teamVersionId, input) { calls.push(["team-ir-save", teamVersionId, input]); return { saved: true }; }
     },
-    caseMaterializer,
+    teamIrFixtures: teamIrFixtures || { sample: { schemaVersion: 2, team: { id: "classic-sample", version: "2.0.0" } } },
     caseCatalog: { getCase: (id) => id === "sample" ? caseSpec : undefined, listCases: () => [caseSpec] },
     assertTrustedTeamTopology: (value) => value.source === "classic"
   });
@@ -65,16 +71,6 @@ test("Team lifecycle does not clone TeamVersions into Project workspaces", async
   const harness = setup();
   assert.equal(harness.useCases.createProjectWorkspace, undefined);
   assert.equal(typeof harness.useCases.createProjectWorkspace, "undefined");
-});
-
-test("Team draft creation uses the Team lifecycle contract and normalizes supported fields", async () => {
-  const harness = setup();
-  const draft = await harness.useCases.createTeamDraft({ name: "  Support Team  ", overview: "  Coordinate support.  ", locale: "en" });
-  assert.equal(draft.projectId, "new-1");
-  assert.deepEqual(harness.calls.find(([kind]) => kind === "create")[1], {
-    name: "Support Team", overview: "Coordinate support.", templateId: "empty", source: "team-factory", locale: "en"
-  });
-  await assert.rejects(() => harness.useCases.createTeamDraft({ name: "   " }), /TEAM_NAME_REQUIRED/);
 });
 
 test("native Team IR draft creation persists a typed starter without invoking legacy creation", async () => {
@@ -91,6 +87,11 @@ test("native Team IR draft creation persists a typed starter without invoking le
   assert.equal(saved[2].teamIR.team.id, "native-1");
   assert.equal(saved[2].teamIR.agents.length, 1);
   assert.equal(saved[2].expectedSemanticDigest, null);
+  const lockEnter = harness.calls.findIndex(([kind]) => kind === "team-name-lock-enter");
+  const create = harness.calls.findIndex(([kind]) => kind === "create-native-v2");
+  const save = harness.calls.findIndex(([kind]) => kind === "team-ir-save");
+  const lockExit = harness.calls.findIndex(([kind]) => kind === "team-name-lock-exit");
+  assert.ok(lockEnter < create && create < save && save < lockExit);
 });
 
 test("native Team IR draft creation compensates when its starter IR cannot be saved", async () => {
@@ -101,20 +102,34 @@ test("native Team IR draft creation compensates when its starter IR cannot be sa
   } });
   await assert.rejects(harness.useCases.createTeamIrDraft({ name: "Broken v2" }), /TEAM_IR_STORE_WRITE_FAILED/);
   assert.deepEqual(harness.calls.find(([kind]) => kind === "remove-project-data"), ["remove-project-data", "native-1"]);
+  const lockEnter = harness.calls.findIndex(([kind]) => kind === "team-name-lock-enter");
+  const compensate = harness.calls.findIndex(([kind]) => kind === "remove-project-data");
+  const lockExit = harness.calls.findIndex(([kind]) => kind === "team-name-lock-exit");
+  assert.ok(lockEnter < compensate && compensate < lockExit);
 });
 
-test("TeamVersion fork numbers the next immutable version and imports into an empty workspace", async () => {
+test("legacy TeamVersion fork is rejected without importing a package", async () => {
   const source = { projectId: "team-v1", workdir: "/teams/team-v1", name: "Research", templateId: "classic:software-team", teamId: "team-root", teamVersionId: "team-v1", teamVersionStatus: "released" };
   const harness = setup({ team: source, projects: [source, { projectId: "team-v2", teamId: "team-root", teamVersionNumber: 2 }] });
-  const fork = await harness.useCases.forkTeamVersion("team-v1");
-  assert.equal(fork.teamVersionNumber, 3);
-  assert.equal(fork.parentTeamVersionId, "team-v1");
-  assert.deepEqual(harness.calls.find(([name]) => name === "team-ir-copy"), ["team-ir-copy", "team-v1", "/tmp/new-1"]);
-  assert.equal(harness.calls.find(([name]) => name === "create")[1].templateId, "empty");
-  assert.equal(fork.templateId, "classic:software-team");
-  await harness.useCases.releaseTeamVersion("team-v2");
-  assert.equal(harness.calls.at(-1)[0], "save");
-  assert.equal(harness.calls.at(-1)[2].teamVersionStatus, "released");
+  await assert.rejects(harness.useCases.forkTeamVersion("team-v1"), /TEAM_IR_V2_REQUIRED/);
+  assert.equal(harness.calls.some(([name]) => ["create", "create-native-v2", "export", "load"].includes(name)), false);
+});
+
+test("native Team IR v2 version fork copies IR without importing a legacy System package", async () => {
+  const source = {
+    projectId: "native-v1", workdir: "/teams/native-v1", name: "Native Team", teamId: "native-root",
+    teamVersionId: "native-v1", teamVersionNumber: 1, teamVersionStatus: "released", source: "team-ir-v2"
+  };
+  const harness = setup({ team: source, projects: [source], teamIrRelease: {
+    async getTeamIr() { return { teamIR: { schemaVersion: 2 } }; },
+    async getTeamIrReleaseSnapshot() {},
+    async copyTeamIr(sourceId, destinationWorkdir) { harness.calls?.push(["team-ir-copy", sourceId, destinationWorkdir]); }
+  } });
+  const fork = await harness.useCases.forkTeamVersion("native-v1");
+  assert.equal(fork.templateId, "team-ir-v2");
+  assert.equal(fork.parentTeamVersionId, "native-v1");
+  assert.equal(harness.calls.some(([name]) => name === "export" || name === "load" || name === "create"), false);
+  assert.ok(harness.calls.some(([name]) => name === "create-native-v2"));
 });
 
 test("v2 Team release skips Mermaid topology trust and requires digest-bound v2 evidence", async () => {
@@ -132,6 +147,11 @@ test("v2 Team release skips Mermaid topology trust and requires digest-bound v2 
         return id === "classic-v1" ? source : harness.created.find((project) => project.projectId === id);
       },
       async listProjects() { return [source, ...harness.created]; },
+      async createNativeTeamIrProject(input) {
+        const project = { projectId: "classic-v2", workdir: "/teams/classic-v2", ...input };
+        harness.created.push(project);
+        return project;
+      },
       async createProject(input) {
         const project = { projectId: "classic-v2", workdir: "/teams/classic-v2", ...input };
         harness.created.push(project);
@@ -147,7 +167,7 @@ test("v2 Team release skips Mermaid topology trust and requires digest-bound v2 
       async withProjectWriteLock(_id, _operation, action) { return action(); }
     },
     packageStore: { async exportTeamPackage() { return {}; }, async loadTeamPackage() { return { validation: { ok: true } }; } },
-    locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
+    locks: { withWorkspaceBindingLock: (action) => action(), withTeamNameLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
     confirmation: {
       async validateTopology(project, options) { validation.push({ project, options }); },
       async computeDigests(project) {
@@ -159,7 +179,7 @@ test("v2 Team release skips Mermaid topology trust and requires digest-bound v2 
       async computeTopologyDigest() { return topologyDigest; }
     },
     releaseEvidence: { async validateTeamIrReleaseEvidence() { evidenceCalls.push("called"); return { ok: true }; } },
-    teamIrRelease: { async getTeamIrReleaseSnapshot(teamVersionId) { return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" }; }, async copyTeamIr() {} },
+    teamIrRelease: { async getTeamIr() { return { teamIR: { schemaVersion: 2 } }; }, async getTeamIrReleaseSnapshot(teamVersionId) { return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" }; }, async copyTeamIr() {} },
     caseCatalog: { getCase: () => undefined, listCases: () => [] }
   });
 
@@ -209,25 +229,35 @@ test("forking an edited version preserves classic topology trust only while its 
     caseId: "software-team",
     trustedClassicTopologyDigest: "core"
   };
-  const preserved = setup({ team: source, projects: [source] });
+  const nativeIr = {
+    async getTeamIr() { return { teamIR: { schemaVersion: 2 } }; },
+    async getTeamIrReleaseSnapshot() {},
+    async copyTeamIr() {}
+  };
+  const preserved = setup({ team: source, projects: [source], teamIrRelease: nativeIr });
   const fork = await preserved.useCases.forkTeamVersion("classic-v2");
   assert.equal(fork.trustedClassicTopologyDigest, "core");
 
-  const changed = setup({ team: { ...source, trustedClassicTopologyDigest: "stale-topology" }, projects: [source] });
+  const changed = setup({ team: { ...source, trustedClassicTopologyDigest: "stale-topology" }, projects: [source], teamIrRelease: nativeIr });
   const changedFork = await changed.useCases.forkTeamVersion("classic-v2");
   assert.equal(changedFork.trustedClassicTopologyDigest, null);
 });
 
-test("classic Team creation reuses a released version and provisions templates through the same flow", async () => {
-  const existing = { projectId: "classic-v1", source: "classic", caseId: "sample", teamVersionStatus: "released", teamVersionNumber: 1 };
-  const reuse = setup({ projects: [existing] });
+test("classic Team creation reuses only v2 released versions and provisions templates through the same flow", async () => {
+  const existing = { projectId: "classic-v1", source: "classic", templateId: "team-ir-v2", caseId: "sample", teamVersionStatus: "released", teamVersionNumber: 1 };
+  const reuse = setup({ projects: [existing], teamIrRelease: {
+    async getTeamIr() { return { teamIR: { schemaVersion: 2, team: { id: "classic-v1" } } }; },
+    async getTeamIrReleaseSnapshot() {}, async copyTeamIr() {}, async saveTeamIr() {}
+  } });
   assert.equal(await reuse.useCases.createClassicTeamProject({ caseId: "sample" }), existing);
   assert.equal(reuse.created.length, 0);
 
   const template = setup();
   const created = await template.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true });
   assert.equal(created.source, "classic-template");
-  assert.equal(template.calls.some(([name]) => name === "save"), false);
+  assert.equal(template.calls.some(([name]) => name === "create-native-v2"), true);
+  assert.equal(template.calls.some(([name]) => name === "team-ir-save"), true);
+  assert.equal(template.calls.some(([name]) => name === "create"), false);
 });
 
 test("built-in template provisioning tolerates a name already owned by an existing TeamVersion", async () => {
@@ -236,51 +266,52 @@ test("built-in template provisioning tolerates a name already owned by an existi
       async getProject() { return undefined; },
       async listProjects() { return [{ projectId: "existing", name: "Sample Team", source: "version-edit", teamVersionStatus: "draft" }]; },
       async createProject() { throw new Error("TEAM_NAME_EXISTS: a team with this name already exists."); },
+      async createNativeTeamIrProject() { throw new Error("TEAM_NAME_EXISTS: a team with this name already exists."); },
       async saveProjectMetadata() {},
       async removeProject() {},
       async withProjectWriteLock(_id, _operation, action) { return action(); }
     },
     packageStore: { async exportTeamPackage() {}, async loadTeamPackage() {} },
-    locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
+    locks: { withWorkspaceBindingLock: (action) => action(), withTeamNameLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
     confirmation: { async validateTopology() {}, async computeDigests() { return {}; } },
     releaseEvidence: {},
-    teamIrRelease: { async getTeamIrReleaseSnapshot() { throw new Error("unused"); }, async copyTeamIr() {} },
+    teamIrRelease: { async getTeamIr() { return { teamIR: null }; }, async getTeamIrReleaseSnapshot() { throw new Error("unused"); }, async copyTeamIr() {}, async saveTeamIr() {} },
+    teamIrFixtures: { sample: { schemaVersion: 2, team: { id: "classic-sample" } } },
     caseCatalog: { listCases: () => [{ id: "sample" }], getCase: () => ({ id: "sample", title: { "zh-CN": "Sample Team" } }) }
   });
   assert.deepEqual(await useCases.provisionBuiltInTeamTemplates(), []);
 });
 
-test("classic template provisioning rematerializes stale generated structure", async () => {
+test("classic template provisioning ignores a legacy template and creates a fresh native v2 template", async () => {
   const template = { projectId: "classic-template-v1", workdir: "/templates/classic-v1", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
   const harness = setup({ projects: [template] });
-  const materialized = [];
   harness.useCases = createTeamLifecycleUseCases({
     projectStore: {
       async getProject(id) { return id === template.projectId ? template : undefined; },
       async listProjects() { return [template]; },
-      async createProject() { throw new Error("A current template already exists."); },
+      async createProject() { throw new Error("Legacy Team creation must not be used."); },
+      async createNativeTeamIrProject(input) { const project = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", ...input }; return project; },
       async saveProjectMetadata(_id, metadata) { return metadata; },
       async removeProject() {},
       async withProjectWriteLock(_id, _operation, action) { return action(); }
     },
     packageStore: { async exportTeamPackage() {}, async loadTeamPackage() {} },
-    locks: { withWorkspaceBindingLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
+    locks: { withWorkspaceBindingLock: (action) => action(), withTeamNameLock: (action) => action(), withTeamVersionLock: (_id, action) => action() },
     confirmation: { async validateTopology() {}, async computeDigests() { return {}; } },
     releaseEvidence: { async validateTeamIrReleaseEvidence() { return { ok: true }; }, async prepareBuiltInTeamVersion() {} },
-    teamIrRelease: { async getTeamIrReleaseSnapshot() { throw new Error("unused"); }, async copyTeamIr() {} },
+    teamIrRelease: { async getTeamIr() { return { teamIR: null }; }, async getTeamIrReleaseSnapshot() { throw new Error("unused"); }, async copyTeamIr() {}, async saveTeamIr() { return { saved: true }; } },
+    teamIrFixtures: { sample: { schemaVersion: 2, team: { id: "classic-sample" } } },
     caseCatalog: { getCase: () => ({ id: "sample", title: { "zh-CN": "Sample Team" } }), listCases: () => [] },
-    caseMaterializer: {
-      async isCurrent() { return false; },
-      async materialize(...args) { materialized.push(args); }
-    }
   });
 
-  assert.equal(await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true }), template);
-  assert.deepEqual(materialized, [["sample", template.workdir, "zh-CN"]]);
+  const current = await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true });
+  assert.equal(current.projectId, "classic-template-v2");
+  assert.equal(current.templateId, "team-ir-v2");
+  assert.equal(template.templateId, undefined, "the legacy template is not rewritten");
 });
 
 test("classic template provisioning preserves an existing native Team IR v2 document", async () => {
-  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", templateId: "team-ir-v2", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
   const harness = setup({
     projects: [template],
     teamIrRelease: {
@@ -288,10 +319,6 @@ test("classic template provisioning preserves an existing native Team IR v2 docu
       async getTeamIrReleaseSnapshot() { throw new Error("unused"); },
       async copyTeamIr() {}
     },
-    caseMaterializer: {
-      async isCurrent() { return false; },
-      async materialize() { assert.fail("native Team IR v2 template must not be overwritten by the legacy materializer"); }
-    }
   });
 
   assert.equal(await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true }), template);
@@ -299,7 +326,7 @@ test("classic template provisioning preserves an existing native Team IR v2 docu
 });
 
 test("repeated classic template provisioning keeps the existing native Team IR v2 contract unchanged", async () => {
-  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", templateId: "team-ir-v2", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
   const authoredIr = {
     schemaVersion: 2,
     team: { id: "authored-v2", version: "2.0.0" },
@@ -317,10 +344,6 @@ test("repeated classic template provisioning keeps the existing native Team IR v
       async getTeamIrReleaseSnapshot() { throw new Error("unused"); },
       async copyTeamIr() { assert.fail("reprovisioning must not copy or replace authored Team IR"); }
     },
-    caseMaterializer: {
-      async isCurrent() { return false; },
-      async materialize() { assert.fail("stale legacy Mermaid must not trigger v2 template rematerialization"); }
-    }
   });
 
   const first = await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true, locale: "zh-CN" });
@@ -334,7 +357,7 @@ test("repeated classic template provisioning keeps the existing native Team IR v
 });
 
 test("classic template provisioning fails closed when native IR inspection fails", async () => {
-  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", templateId: "team-ir-v2", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
   const harness = setup({
     projects: [template],
     teamIrRelease: {
@@ -342,21 +365,21 @@ test("classic template provisioning fails closed when native IR inspection fails
       async getTeamIrReleaseSnapshot() { throw new Error("unused"); },
       async copyTeamIr() {}
     },
-    caseMaterializer: {
-      async isCurrent() { return false; },
-      async materialize() { assert.fail("inspection failure must not fall back to overwriting the template"); }
-    }
   });
 
   await assert.rejects(harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true }), /TEAM_IR_STORE_UNAVAILABLE/);
 });
 
 test("classic team creation publishes a refreshed current template when the released version is stale", async () => {
-  const released = { projectId: "classic-v1", source: "classic", caseId: "sample", teamVersionStatus: "released", teamVersionNumber: 1 };
-  const template = { projectId: "classic-template-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft", teamVersionNumber: 2 };
+  const released = { projectId: "classic-v1", source: "classic", templateId: "team-ir-v2", caseId: "sample", teamVersionStatus: "released", teamVersionNumber: 1 };
+  const template = { projectId: "classic-template-v2", source: "classic-template", templateId: "team-ir-v2", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft", teamVersionNumber: 2 };
   const harness = setup({
     projects: [released, template],
-    caseMaterializer: { async isCurrent() { return false; }, async materialize() {} }
+    teamIrRelease: {
+      async getTeamIr(id) { return { teamIR: id === template.projectId ? { schemaVersion: 2, team: { id } } : null }; },
+      async getTeamIrReleaseSnapshot(teamVersionId) { return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" }; },
+      async copyTeamIr() {}, async saveTeamIr() {}
+    }
   });
 
   const current = await harness.useCases.createClassicTeamProject({ caseId: "sample" });
@@ -492,4 +515,10 @@ test("code-owned classic templates are provisioned as released TeamVersions", as
   assert.equal(team.trustedClassicTopologyDigest, null);
   assert.equal(harness.calls.some(([name]) => name === "prepare-built-in"), false);
   assert.equal(harness.calls.some(([name]) => name === "release-evidence-v2"), true);
+  const saved = harness.calls.find(([name]) => name === "team-ir-save");
+  assert.equal(saved[1], team.projectId);
+  assert.equal(saved[2].teamIR.schemaVersion, 2);
+  assert.equal(saved[2].teamIR.team.id, team.projectId);
+  assert.equal(harness.calls.some(([name]) => name === "create"), false);
+  assert.equal(harness.calls.some(([name]) => name === "create-native-v2"), true);
 });

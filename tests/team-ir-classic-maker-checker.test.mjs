@@ -22,7 +22,7 @@ test("classic Maker-Checker fixture compiles as a native Team IR v2 document", a
   assert.equal(fixture.schemaVersion, 2);
   assert.equal(fixture.team.id, "classic-maker-checker");
   assert.equal(plan.loopsById.get("revision").maxRounds, 3);
-  assert.equal(plan.reviewsByOutput.get("maker:DONE")[0].timeoutMs, 10000);
+  assert.equal(plan.reviewsByOutput.get("maker:DONE")[0].timeoutMs, 600000);
 });
 
 test("classic Maker-Checker reject, revise, and approve survives Run and Review Store reconstruction", async (t) => {
@@ -57,7 +57,7 @@ test("classic Maker-Checker reject, revise, and approve survives Run and Review 
   });
   const runId = "maker-checker-release";
 
-  await makeRuntime().createRun(plan, { runId, task: "review a draft", input: { prompt: "Prepare a release note." } });
+  await makeRuntime().createRun(plan, { runId, task: "review a draft", input: { request: "Prepare a release note." } });
   const waiting1 = await makeRuntime().executeRun(plan, runId);
   assert.equal(waiting1.status, "waiting_human_review");
   assert.equal(waiting1.waitingReview.loopRound, 1);
@@ -83,7 +83,7 @@ test("classic Maker-Checker reject, revise, and approve survives Run and Review 
   assert.equal(waiting2.activeExecutionMs, 10);
   assert.equal(calls, 2, "resume should reuse round 1 output and execute only the revision");
   assert.deepEqual(inputs, [
-    { prompt: "Prepare a release note." },
+    { request: "Prepare a release note." },
     { answer: "draft-1", comments: "Add the release compatibility note." }
   ]);
   now += 6000;

@@ -56,15 +56,17 @@ test("legacy authoring API has no creation, read, validate, or write dispatch", 
     saveTeamDesign: async (id, input) => (calls.push(["save", id, input]), { teamVersionId: id, saved: true })
   });
 
+  assert.equal(await harness.invoke("POST", "/api/v1/team-factory", { name: "Legacy team", overview: "Existing contract" }), false);
   for (const [method, path, body] of [
-    ["POST", "/api/v1/team-factory", { name: "Legacy team", overview: "Existing contract" }],
     ["GET", "/api/v1/team-versions/legacy-v1/design?locale=en"],
     ["POST", "/api/v1/team-versions/legacy-v1/design/validate", { authoring: { roles: {} } }],
     ["PUT", "/api/v1/team-versions/legacy-v1/design", { authoring: { roles: {} } }],
     ["GET", "/api/v1/team-versions/legacy-v1/design/assets"],
     ["PUT", "/api/v1/team-versions/legacy-v1/design/assets", { assets: {} }]
   ]) {
-    assert.equal(await harness.invoke(method, path, body), false);
+    assert.equal(await harness.invoke(method, path, body), true);
+    assert.equal(harness.sent.at(-1).status, 409);
+    assert.match(harness.sent.at(-1).payload.error, /TEAM_IR_V2_REQUIRED/);
   }
   assert.deepEqual(calls, []);
 });

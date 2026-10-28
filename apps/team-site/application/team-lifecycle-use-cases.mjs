@@ -1,22 +1,16 @@
 export function createTeamLifecycleUseCases({
   projectStore,
-  packageStore,
   caseCatalog,
   locks,
   confirmation,
   releaseEvidence,
   teamIrRelease,
-  caseMaterializer,
+  teamIrFixtures = {},
   assertTrustedTeamTopology = () => false
 }) {
   for (const operation of ["getProject", "listProjects", "createProject", "saveProjectMetadata", "removeProject"]) {
     if (typeof projectStore?.[operation] !== "function") {
       throw new TypeError(`Team lifecycle use cases require project ${operation}.`);
-    }
-  }
-  for (const operation of ["exportTeamPackage", "loadTeamPackage"]) {
-    if (typeof packageStore?.[operation] !== "function") {
-      throw new TypeError(`Team lifecycle use cases require package ${operation}.`);
     }
   }
   if (typeof projectStore.withProjectWriteLock !== "function"
@@ -25,7 +19,8 @@ export function createTeamLifecycleUseCases({
     || typeof confirmation?.computeDigests !== "function") {
     throw new TypeError("Team lifecycle use cases require locked Team confirmation and digest operations.");
   }
-  if (typeof locks?.withWorkspaceBindingLock !== "function" || typeof locks?.withTeamVersionLock !== "function") {
+  if (typeof locks?.withWorkspaceBindingLock !== "function" || typeof locks?.withTeamVersionLock !== "function"
+    || typeof locks?.withTeamNameLock !== "function") {
     throw new TypeError("Team lifecycle use cases require workspace and TeamVersion locks.");
   }
   if (typeof caseCatalog?.getCase !== "function" || typeof caseCatalog?.listCases !== "function") {
@@ -38,51 +33,61 @@ export function createTeamLifecycleUseCases({
   async function createClassicTeamProject({ caseId, asTemplate = false, name, overview, locale = "zh-CN" } = {}) {
     const caseSpec = caseCatalog.getCase(caseId);
     if (!caseSpec) throw new Error("Unknown example team.");
+    const fixture = teamIrFixtures[caseId];
+    if (fixture?.schemaVersion !== 2 || typeof fixture?.team?.id !== "string") {
+      throw new Error(`TEAM_IR_V2_FIXTURE_REQUIRED: classic Case ${caseId} has no native Team IR v2 fixture.`);
+    }
     const language = locale === "en" ? "en" : "zh-CN";
     const defaultName = caseSpec.title?.[language] || caseSpec.title?.["zh-CN"] || caseSpec.title?.en || caseId;
     const defaultIntent = caseSpec.detail?.scenario?.[language] || caseSpec.detail?.scenario?.["zh-CN"] || caseSpec.short?.[language] || caseSpec.short?.["zh-CN"] || "";
+    async function readStoredTeamIr(teamVersionId) {
+      if (typeof teamIrRelease.getTeamIr !== "function") {
+        throw new Error("TEAM_IR_V2_STORE_UNAVAILABLE: native Team IR lookup is not configured.");
+      }
+      return teamIrRelease.getTeamIr(teamVersionId);
+    }
     const projects = await projectStore.listProjects();
     const classicVersions = projects.filter((project) => !project.teamProjectId
       && ["classic", "classic-template"].includes(project.source)
+      && project.templateId === "team-ir-v2"
       && project.caseId === caseId
       && project.teamVersionStatus === "released");
-    let existingClassic = classicVersions.sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0))[0];
-    if (!asTemplate && !name && existingClassic && typeof caseMaterializer?.isCurrent === "function") {
-      const current = await projectStore.getProject(existingClassic.projectId);
-      if (!await caseMaterializer.isCurrent(caseId, current.workdir)) existingClassic = undefined;
+    let existingClassic;
+    for (const candidate of classicVersions.sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0))) {
+      const stored = await readStoredTeamIr(candidate.teamVersionId || candidate.projectId);
+      if (stored?.teamIR?.schemaVersion === 2) {
+        existingClassic = candidate;
+        break;
+      }
     }
     if (asTemplate) {
       const existingTemplate = projects.find((project) => !project.teamProjectId
         && project.source === "classic-template"
+        && project.templateId === "team-ir-v2"
         && project.caseId === caseId
         && project.teamVersionStatus !== "archived"
         && String(project.name || "").toLocaleLowerCase() === String(name || defaultName).toLocaleLowerCase());
       if (existingTemplate) {
-        if (typeof teamIrRelease?.getTeamIr === "function") {
-          const stored = await teamIrRelease.getTeamIr(existingTemplate.projectId);
-          if (stored?.teamIR?.schemaVersion === 2) return existingTemplate;
-        }
-        if (typeof caseMaterializer?.isCurrent === "function" && typeof caseMaterializer?.materialize === "function") {
-          const current = await projectStore.getProject(existingTemplate.projectId);
-          if (!await caseMaterializer.isCurrent(caseId, current.workdir)) {
-            await caseMaterializer.materialize(caseId, current.workdir, language);
-          }
-        }
+        const stored = await readStoredTeamIr(existingTemplate.teamVersionId || existingTemplate.projectId);
+        if (stored?.teamIR?.schemaVersion !== 2) throw new Error("TEAM_IR_V2_REQUIRED: built-in templates must contain native Team IR v2.");
         return existingTemplate;
       }
     }
     if (!asTemplate && !name) {
       if (existingClassic) return existingClassic;
-      const template = projects.find((project) => !project.teamProjectId && project.source === "classic-template" && project.caseId === caseId && project.teamVersionStatus !== "archived" && String(project.name || "").toLocaleLowerCase() === defaultName.toLocaleLowerCase());
+      const template = projects.find((project) => !project.teamProjectId && project.source === "classic-template" && project.templateId === "team-ir-v2" && project.caseId === caseId && project.teamVersionStatus !== "archived" && String(project.name || "").toLocaleLowerCase() === defaultName.toLocaleLowerCase());
       if (template) {
         await assertTeamIrReleaseEvidence(template);
         return confirmProjectTeam(template.projectId, { trustedClassic: true, release: true });
       }
     }
-    const project = await projectStore.createProject({
+    if (typeof projectStore.createNativeTeamIrProject !== "function" || typeof teamIrRelease.saveTeamIr !== "function") {
+      throw new Error("TEAM_IR_V2_FIXTURE_PROVISIONING_UNAVAILABLE: native Team IR v2 storage is not configured.");
+    }
+    const project = await projectStore.createNativeTeamIrProject({
       name: name || defaultName,
       overview: overview || defaultIntent,
-      templateId: `classic:${caseId}`,
+      templateId: "team-ir-v2",
       caseId,
       source: asTemplate ? "classic-template" : "classic",
       locale: language,
@@ -92,8 +97,15 @@ export function createTeamLifecycleUseCases({
         parentTeamVersionId: existingClassic.teamVersionId
       } : {})
     });
-    if (asTemplate) return project;
     try {
+      const teamIR = structuredClone(fixture);
+      teamIR.team.id = project.teamVersionId || project.projectId;
+      const saved = await teamIrRelease.saveTeamIr(project.teamVersionId || project.projectId, {
+        teamIR,
+        expectedSemanticDigest: null
+      });
+      if (!saved?.saved) throw new Error(`TEAM_IR_V2_FIXTURE_INVALID: classic Case ${caseId} fixture could not be saved.`);
+      if (asTemplate) return project;
       await assertTeamIrReleaseEvidence(project);
       return await confirmProjectTeam(project.projectId, { trustedClassic: true, release: true });
     } catch (error) {
@@ -147,7 +159,7 @@ export function createTeamLifecycleUseCases({
         { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["run-to-worker"] },
         { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["worker-to-result"] }
       ], joins: [], loops: [], reviews: [] },
-      bindings: [{ id: "binding:worker", kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }]
+      bindings: [{ id: "binding:worker", kind: "model", modelRef: "codex-gateway/gpt-6-luna", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }]
     };
   }
 
@@ -260,18 +272,6 @@ export function createTeamLifecycleUseCases({
         }
       }));
     },
-    async createTeamDraft({ name, overview = "", locale = "zh-CN" } = {}) {
-      const normalizedName = String(name || "").trim().slice(0, 120);
-      if (!normalizedName) throw new Error("TEAM_NAME_REQUIRED: enter a name for the Team draft.");
-      return projectStore.createProject({
-        name: normalizedName,
-        overview: String(overview || "").trim().slice(0, 4000),
-        templateId: "empty",
-        source: "team-factory",
-        locale: locale === "en" ? "en" : "zh-CN"
-      });
-    },
-
     async createTeamIrDraft({ name, overview = "", locale = "zh-CN" } = {}) {
       if (typeof projectStore.createNativeTeamIrProject !== "function"
         || typeof teamIrRelease?.saveTeamIr !== "function" || typeof projectStore.removeProjectData !== "function") {
@@ -279,36 +279,34 @@ export function createTeamLifecycleUseCases({
       }
       const normalizedName = String(name || "").trim().slice(0, 120);
       if (!normalizedName) throw new Error("TEAM_NAME_REQUIRED: enter a name for the Team draft.");
-      const project = await projectStore.createNativeTeamIrProject({
-        name: normalizedName,
-        overview: String(overview || "").trim().slice(0, 4000),
-        templateId: "team-ir-v2",
-        source: "team-ir-v2",
-        locale: locale === "en" ? "en" : "zh-CN"
-      });
-      try {
-        const result = await teamIrRelease.saveTeamIr(project.projectId, {
-          teamIR: createStarterTeamIr(project.projectId),
-          expectedSemanticDigest: null
+      return locks.withTeamNameLock(async () => {
+        const project = await projectStore.createNativeTeamIrProject({
+          name: normalizedName,
+          overview: String(overview || "").trim().slice(0, 4000),
+          templateId: "team-ir-v2",
+          source: "team-ir-v2",
+          locale: locale === "en" ? "en" : "zh-CN"
         });
-        if (!result.saved) throw new Error("TEAM_IR_DRAFT_INVALID: the starter Team IR failed validation.");
-        return await projectStore.getProject(project.projectId);
-      } catch (error) {
         try {
-          await projectStore.removeProjectData(project.projectId);
-        } catch (cleanupError) {
-          throw new Error(`TEAM_IR_DRAFT_COMPENSATION_FAILED: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`, { cause: error });
+          const result = await teamIrRelease.saveTeamIr(project.projectId, {
+            teamIR: createStarterTeamIr(project.projectId),
+            expectedSemanticDigest: null
+          });
+          if (!result.saved) throw new Error("TEAM_IR_DRAFT_INVALID: the starter Team IR failed validation.");
+          return await projectStore.getProject(project.projectId);
+        } catch (error) {
+          try {
+            await projectStore.removeProjectData(project.projectId);
+          } catch (cleanupError) {
+            throw new Error(`TEAM_IR_DRAFT_COMPENSATION_FAILED: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`, { cause: error });
+          }
+          throw error;
         }
-        throw error;
-      }
+      });
     },
 
     async createClassicTeamProject(input) {
       return createClassicTeamProject(input);
-    },
-
-    async provisionBuiltInTeamVersions() {
-      return Promise.all(caseCatalog.listCases().map((item) => createClassicTeamProject({ caseId: item.id })));
     },
 
     async provisionBuiltInTeamTemplates() {
@@ -330,23 +328,26 @@ export function createTeamLifecycleUseCases({
       if (source.teamProjectId || source.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be edited.");
       const versions = (await projectStore.listProjects()).filter((project) => !project.teamProjectId && project.teamId === source.teamId);
       const nextVersionNumber = Math.max(...versions.map((project) => project.teamVersionNumber || 0), 0) + 1;
-      const project = await projectStore.createProject({
+      const sourceTeamVersionId = source.teamVersionId || source.projectId;
+      const sourceIr = await teamIrRelease.getTeamIr(sourceTeamVersionId);
+      if (sourceIr?.teamIR?.schemaVersion !== 2) {
+        throw new Error("TEAM_IR_V2_REQUIRED: only native Team IR v2 versions can be edited.");
+      }
+      if (typeof projectStore.createNativeTeamIrProject !== "function") {
+        throw new Error("TEAM_IR_DRAFT_CREATION_UNAVAILABLE: native v2 version forking is not configured.");
+      }
+      const project = await projectStore.createNativeTeamIrProject({
         name: source.name,
         teamName: source.teamName || source.name,
         teamId: source.teamId,
         teamVersionNumber: nextVersionNumber,
         parentTeamVersionId: source.teamVersionId || source.projectId,
         overview: source.overview,
-        templateId: "empty",
-        source: "version-edit"
+        templateId: "team-ir-v2",
+        source: "version-edit",
+        locale: source.locale || "zh-CN"
       });
-      const bundle = await packageStore.exportTeamPackage(source.workdir);
-      const loaded = await packageStore.loadTeamPackage({ workdir: project.workdir, bundle });
-      if (loaded.validation?.ok === false) {
-        await projectStore.removeProject(project.projectId).catch(() => undefined);
-        throw new Error("TEAM_VERSION_COPY_INVALID: the released version could not be copied.");
-      }
-      await teamIrRelease.copyTeamIr(source.teamVersionId || source.projectId, project.workdir);
+      await teamIrRelease.copyTeamIr(sourceTeamVersionId, project.workdir);
       const current = await projectStore.getProject(project.projectId);
       let trustedClassicTopologyDigest = null;
       if (source.caseId && (source.source === "classic" || source.source === "classic-template" || source.trustedClassicTopologyDigest)) {
@@ -363,7 +364,7 @@ export function createTeamLifecycleUseCases({
         teamName: source.teamName || source.name,
         teamId: source.teamId,
         teamRootId: source.teamRootId || source.teamId,
-        templateId: source.templateId || "empty",
+        templateId: "team-ir-v2",
         teamVersionId: project.projectId,
         teamVersionNumber: nextVersionNumber,
         teamVersionStatus: "draft",

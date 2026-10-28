@@ -6,7 +6,7 @@ import { createTaskLifecycleUseCases } from "../application/task-lifecycle-use-c
 import { createFileTaskLifecycleStore } from "../infrastructure/file-task-lifecycle-store.mjs";
 import { withProjectRunUseCases } from "./project-run-test-helpers.mjs";
 import { createProjectQueryUseCases } from "../application/project-query-use-cases.mjs";
-import { createFileRecentRunStore } from "../infrastructure/file-recent-run-store.mjs";
+import { createTeamIrTaskAttemptStore } from "../infrastructure/v2-aware-task-attempt-store.mjs";
 import { projectsRoot } from "../infrastructure/file-project-store.mjs";
 import { waitForActiveTaskWorker } from "../infrastructure/in-memory-task-workers.mjs";
 import { projectVisualizerStore } from "../infrastructure/project-visualizer-store.mjs";
@@ -22,8 +22,7 @@ export function withTaskCreationUseCases(store) {
         saveTaskRecord: store.saveTaskRecord,
         controlRun: store.controlProjectRun
       }),
-      runControlStore: { controlRun: store.controlProjectRun },
-      reviewStore: { listReviews: async () => ({ reviews: [] }), decideReview: async () => undefined }
+      runControlStore: { controlRun: store.controlProjectRun }
     }),
     ...createTaskCreationUseCases({
       projectStore: store,
@@ -33,7 +32,7 @@ export function withTaskCreationUseCases(store) {
   };
   const projectQueries = createProjectQueryUseCases({
     projectStore: { getProject: store.getProject },
-    taskAttemptStore: createFileRecentRunStore({ projectsRoot }),
+    taskAttemptStore: createTeamIrTaskAttemptStore({ projectsRoot }),
     waitForActiveTaskWorker,
     workspaceInspector: projectVisualizerStore.inspectWorkspace
   });

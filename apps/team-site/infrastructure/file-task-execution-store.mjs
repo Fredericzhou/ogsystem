@@ -48,7 +48,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
   }
 
   return Object.freeze({
-    async reserveAttempt({ projectId, taskId, retrySourceRunId, materialSnapshotPolicy, attemptKey, attemptFingerprint, runId, mode, startedAt, teamVersionId, teamCoreDigest, teamDigestVersion, teamIrSemanticDigest, compiledPlanDigest }) {
+    async reserveAttempt({ projectId, taskId, retrySourceRunId, materialSnapshotPolicy, artifactReferences = {}, attemptKey, attemptFingerprint, runId, mode, startedAt, teamVersionId, teamCoreDigest, teamDigestVersion, teamIrSemanticDigest, compiledPlanDigest }) {
       return projectStore.withProjectWriteLock(projectId, "project-task-bind-run", async () => {
         const { project, task } = await taskAt(projectId, taskId);
         if (!(retrySourceRunId ? ["queued", "failed"].includes(task.status) : task.status === "queued")) {
@@ -65,7 +65,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
         const attemptNumber = (task.runIds || []).length + 1;
         const attemptRequests = {
           ...(task.attemptRequests || {}),
-          [attemptKey]: { requestFingerprint: attemptFingerprint, runId, attemptNumber, mode, sourceRunId: retrySourceRunId || null, materialSnapshotPolicy }
+          [attemptKey]: { requestFingerprint: attemptFingerprint, runId, attemptNumber, mode, sourceRunId: retrySourceRunId || null, materialSnapshotPolicy, artifactReferences: structuredClone(artifactReferences) }
         };
         if (!teamVersionId || teamVersionId !== task.teamVersionId) throw new Error("TASK_TEAM_VERSION_INVALID: Run owner must use the Task's fixed TeamVersion.");
         let runDir;
@@ -85,6 +85,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
             ...(teamIrSemanticDigest ? { teamIrSemanticDigest } : {}),
             ...(compiledPlanDigest ? { compiledPlanDigest } : {}),
             materialSnapshotPolicy,
+            artifactReferences: structuredClone(artifactReferences),
             createdAt: startedAt
           };
           const ownerPath = resolve(runDir, "run-owner.json");
@@ -133,8 +134,13 @@ export function createFileTaskExecutionStore({ projectStore }) {
           status: result.state?.status || "running",
           startedAt,
           completedAt: ["completed", "failed", "cancelled"].includes(result.state?.status) ? (result.state?.finishedAt || now) : null,
+          lastError: result.state?.error || null,
           outputSummary: result.result?.teamResult
-            ? JSON.stringify(result.result.teamResult).slice(0, 500)
+            ? (typeof result.result.teamResult.answer === "string"
+                ? result.result.teamResult.answer
+                : typeof result.result.teamResult.summary === "string"
+                  ? result.result.teamResult.summary
+                  : JSON.stringify(result.result.teamResult)).slice(0, 500)
             : result.result?.finalOutputsByRoleId
             ? Object.entries(result.result.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((output) => typeof output.content === "string" && output.content.startsWith("[dry-run]") ? output.content : `${roleId}: ${output.content || JSON.stringify(output.data || {})}`)).join(" | ").slice(0, 500)
             : task.outputSummary

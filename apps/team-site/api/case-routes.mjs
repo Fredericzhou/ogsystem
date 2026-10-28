@@ -1,6 +1,6 @@
-export async function handleCaseRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, cases, eventLabels, buildCaseGraph, runCase, createClassicTeamProject }) {
+export async function handleCaseRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, cases, teamIrFixtures, createClassicTeamProject }) {
   if (request.method === "GET" && url.pathname === "/api/v1/cases") {
-    sendJson(response, 200, { eventLabels, cases: cases.map((item) => ({
+    sendJson(response, 200, { cases: cases.map((item) => ({
       id: item.id,
       title: item.title,
       short: item.short,
@@ -9,15 +9,18 @@ export async function handleCaseRoutes({ request, response, url, readBody, sendJ
       accent: item.accent,
       icon: item.icon,
       detail: item.detail,
-      layout: item.layout,
       roles: item.roles.map(({ id, label }) => ({ id, label, description: item.detail?.roles?.[id] })),
-      flows: item.flows.map(([from, to, event]) => ({ from, to, event })),
-      joins: item.joins.map(({ roleId }) => ({ roleId }))
     })) });
     return true;
   }
 
-  const graphMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/graph$/);
+  const irMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/ir$/);
+  if (irMatch && request.method === "GET") {
+    const teamIR = teamIrFixtures?.[irMatch[1]];
+    if (!teamIR) sendJson(response, 404, { error: "TEAM_IR_V2_FIXTURE_NOT_FOUND: no native Team IR v2 fixture exists for this team." });
+    else sendJson(response, 200, { teamIR });
+    return true;
+  }
   const caseActionMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/(use|template)$/);
   if (caseActionMatch && request.method === "POST") {
     try {
@@ -32,24 +35,6 @@ export async function handleCaseRoutes({ request, response, url, readBody, sendJ
       sendJson(response, 201, publicProject(project));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create team project." });
-    }
-    return true;
-  }
-  if (request.method === "GET" && graphMatch) {
-    try {
-      sendJson(response, 200, buildCaseGraph(graphMatch[1], url.searchParams.get("locale") || "zh-CN"));
-    } catch (error) {
-      sendJson(response, 404, { error: error instanceof Error ? error.message : "Unable to load team graph." });
-    }
-    return true;
-  }
-  if (request.method === "POST" && url.pathname === "/api/v1/demo-runs") {
-    try {
-      const payload = await readBody(request);
-      const result = await runCase({ caseId: payload.caseId, prompt: payload.prompt, locale: payload.locale, mode: "simulation" });
-      sendJson(response, 200, result);
-    } catch (error) {
-      sendJson(response, 400, { error: error instanceof Error ? error.message : "Run failed." });
     }
     return true;
   }

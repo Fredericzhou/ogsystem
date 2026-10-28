@@ -1,17 +1,13 @@
-import { inspectProjectReadiness } from "../../../dist/visualizer/project-readiness.js";
+import { inspectTeamIrV2Readiness } from "./team-ir-v2-readiness.mjs";
 
 export function createRuntimeProjectReadinessInspector({
-  inspect = inspectProjectReadiness,
-  getRuntimeModelConfig = async () => undefined
+  teamIrStore,
+  resolveReleaseClosure,
+  resolveBindings
 } = {}) {
   return Object.freeze({
-    async inspect(workdir) {
-      const modelConfig = await getRuntimeModelConfig();
-      if (!modelConfig?.modelCatalogModels) return inspect(workdir);
-      return inspect(workdir, {
-        modelCatalogModels: modelConfig.modelCatalogModels,
-        modelCatalogGeneratedAt: modelConfig.modelCatalogGeneratedAt
-      });
+    async inspect(workdir, team) {
+      return inspectTeamIrV2Readiness({ workdir, team, teamIrStore, resolveReleaseClosure, resolveBindings });
     }
   });
 }

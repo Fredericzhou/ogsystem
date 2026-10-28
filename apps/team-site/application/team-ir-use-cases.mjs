@@ -14,7 +14,11 @@ export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersion
   return Object.freeze({
     async getTeamIr(teamVersionId) {
       const team = await readTeam(teamVersionId);
-      return { teamVersionId, ...(await teamIrStore.read({ workdir: team.workdir })) };
+      const stored = await teamIrStore.read({ workdir: team.workdir });
+      if (!stored.teamIR || stored.teamIR.schemaVersion !== 2) {
+        throw new Error("TEAM_IR_V2_REQUIRED: this TeamVersion has no native Team IR v2 document.");
+      }
+      return { teamVersionId, ...stored };
     },
     async getTeamIrReleaseSnapshot(teamVersionId) {
       const team = await readTeam(teamVersionId);
@@ -72,7 +76,9 @@ export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersion
     async copyTeamIr(sourceTeamVersionId, destinationWorkdir) {
       const source = await readTeam(sourceTeamVersionId);
       const stored = await teamIrStore.read({ workdir: source.workdir });
-      if (!stored.teamIR) return { copied: false };
+      if (!stored.teamIR || stored.teamIR.schemaVersion !== 2) {
+        throw new Error("TEAM_IR_V2_REQUIRED: only a native Team IR v2 TeamVersion can be forked.");
+      }
       const saved = await teamIrStore.save({ workdir: destinationWorkdir, teamIR: stored.teamIR });
       return { copied: true, semanticDigest: saved.semanticDigest };
     },

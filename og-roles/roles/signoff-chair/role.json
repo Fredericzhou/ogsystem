@@ -1,0 +1,18 @@
+{
+  "roleId": "signoff-chair",
+  "roleVersion": "1.0.0",
+  "name": "Signoff Chair",
+  "description": "Synthesizes available primary and compliance reviews into a signoff summary.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "conditional-signoff", "synthesis"],
+  "contractVersion": 1,
+  "purpose": "Summarize a request and the arrived review contributions without inventing skipped reviews.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

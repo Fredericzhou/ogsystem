@@ -1,0 +1,18 @@
+{
+  "roleId": "software-tester",
+  "roleVersion": "1.0.0",
+  "name": "Software Tester",
+  "description": "Reviews a software plan and defines or reports verification coverage.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "software-delivery", "verification"],
+  "contractVersion": 1,
+  "purpose": "Identify verification cases that demonstrate whether the software plan is satisfied.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

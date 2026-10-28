@@ -1,56 +1,39 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { computeProjectAssetDigest } from "../../../dist/runtime/project-asset-digest.js";
-import { createExecutionPlan } from "../../../dist/runtime/execution-plan.js";
-import { parseSystemFromMermaidSource } from "../../../dist/runtime/parse-mermaid.js";
-import { validateLinearProjectTopology } from "../../../dist/runtime/project-run.js";
-import { exportTeamPackage } from "../../../dist/visualizer/project-projection.js";
-import { computeTeamPackageCoreDigest, TEAM_CORE_DIGEST_VERSION } from "./package-integrity.mjs";
+import { teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
+import { TEAM_CORE_DIGEST_VERSION } from "./package-integrity.mjs";
+import { createFileTeamIrStore } from "./file-team-ir-store.mjs";
 
-export function createRuntimeTeamConfirmation() {
-  async function loadExecutionPlan(project) {
-    const systemSource = await readFile(join(project.workdir, "system.mmd"), "utf8");
-    return createExecutionPlan(parseSystemFromMermaidSource(systemSource));
-  }
-
-  async function computeTopologyDigest(project) {
-    const plan = await loadExecutionPlan(project);
-    const topology = Array.from(plan.nodesByRoleId.values()).map((node) => ({
-      roleId: node.roleId,
-      dispatchMode: node.dispatchMode,
-      join: node.join,
-      loopMax: node.loopMax,
-      review: node.review,
-      incoming: node.incoming.map((flow) => ({ from: flow.fromRoleId, event: flow.eventType, priority: flow.priority, condition: flow.condition })).sort((a, b) => `${a.from}:${a.event}`.localeCompare(`${b.from}:${b.event}`)),
-      outgoing: node.outgoing.map((flow) => ({ to: flow.toRoleId, event: flow.eventType, priority: flow.priority, condition: flow.condition })).sort((a, b) => `${a.to}:${a.event}`.localeCompare(`${b.to}:${b.event}`))
-    })).sort((a, b) => a.roleId.localeCompare(b.roleId));
-    return createHash("sha256").update(JSON.stringify({ entryRoleIds: plan.entryRoleIds, endJoin: plan.endJoin, topology })).digest("hex");
+export function createRuntimeTeamConfirmation({ teamIrStore = createFileTeamIrStore() } = {}) {
+  async function readNativeTeamIr(project) {
+    const stored = await teamIrStore.read({ workdir: project.workdir });
+    if (stored.teamIR?.schemaVersion !== 2) {
+      throw new Error("TEAM_IR_V2_REQUIRED: TeamVersion must contain a native Team IR v2 document.");
+    }
+    return stored.teamIR;
   }
 
   return Object.freeze({
-    async validateTopology(project, { trustedClassic = false } = {}) {
-      const executionPlan = await loadExecutionPlan(project);
-      const nodeGraph = Array.from(executionPlan.nodesByRoleId.values()).map((node) => ({
-        nodeId: node.roleId,
-        incoming: node.incoming.map((flow) => ({ from: flow.fromRoleId, event: flow.eventType })),
-        outgoing: node.outgoing.map((flow) => ({ to: flow.toRoleId, event: flow.eventType })),
-        reviewRequired: node.review?.mode === "required",
-        loopMax: node.loopMax
-      }));
-      if (!trustedClassic && project.source !== "classic" && project.source !== "classic-template") {
-        validateLinearProjectTopology(nodeGraph, executionPlan.entryRoleIds);
-      }
+    async validateTopology(project) {
+      await readNativeTeamIr(project);
     },
 
     async computeDigests(project) {
-      const bundle = await exportTeamPackage(project.workdir);
+      const teamIR = await readNativeTeamIr(project);
+      const semanticDigest = teamIRSemanticDigest(teamIR);
+      const digest = createHash("sha256").update(JSON.stringify({
+        digestVersion: TEAM_CORE_DIGEST_VERSION,
+        schemaVersion: teamIR.schemaVersion,
+        semanticDigest
+      })).digest("hex");
       return {
-        projectDigest: await computeProjectAssetDigest(project.workdir),
-        teamCoreDigest: computeTeamPackageCoreDigest(bundle),
+        projectDigest: digest,
+        teamCoreDigest: digest,
         teamDigestVersion: TEAM_CORE_DIGEST_VERSION
       };
     },
-    computeTopologyDigest
+
+    async computeTopologyDigest(project) {
+      return teamIRSemanticDigest(await readNativeTeamIr(project));
+    }
   });
 }

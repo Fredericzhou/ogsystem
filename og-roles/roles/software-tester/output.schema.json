@@ -1,0 +1,6 @@
+{
+  "type": "object",
+  "properties": { "tests": { "type": "string", "minLength": 1 } },
+  "required": ["tests"],
+  "additionalProperties": false
+}

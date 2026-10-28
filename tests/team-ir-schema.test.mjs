@@ -98,6 +98,36 @@ test("Run input, result, and execution policy contracts accept complete shapes a
   }
 });
 
+test("Binding kind accepts exactly its matching backend reference", () => {
+  const model = minimalTeam();
+  assert.deepEqual(validateTeamIrSchema(model), []);
+
+  const tool = minimalTeam();
+  tool.bindings[0] = { ...tool.bindings[0], kind: "tool", toolRef: "tools/example" };
+  delete tool.bindings[0].modelRef;
+  assert.deepEqual(validateTeamIrSchema(tool), []);
+
+  const a2a = minimalTeam();
+  a2a.bindings[0] = { ...a2a.bindings[0], kind: "a2a", agentCardRef: "agents/example" };
+  delete a2a.bindings[0].modelRef;
+  assert.deepEqual(validateTeamIrSchema(a2a), []);
+
+  for (const [kind, matchingRef, unrelatedRefs] of [
+    ["model", "modelRef", ["toolRef", "agentCardRef"]],
+    ["tool", "toolRef", ["modelRef", "agentCardRef"]],
+    ["a2a", "agentCardRef", ["modelRef", "toolRef"]]
+  ]) {
+    for (const unrelatedRef of unrelatedRefs) {
+      const invalid = minimalTeam();
+      invalid.bindings[0].kind = kind;
+      invalid.bindings[0][matchingRef] = "backend/example";
+      invalid.bindings[0][unrelatedRef] = "backend/unexpected";
+      assert.ok(validateTeamIrSchema(invalid).some((item) => item.pointer === "/bindings/0"),
+        `${kind} Binding must reject an unrelated ${unrelatedRef}`);
+    }
+  }
+});
+
 test("execution budget must be a positive integer with a stable diagnostic pointer", () => {
   for (const budget of [0, -1, 1.5]) {
     const value = minimalTeam();

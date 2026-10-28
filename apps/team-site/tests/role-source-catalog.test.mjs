@@ -217,16 +217,12 @@ test("role source versions endpoint exposes immutable commit summaries", async (
   });
 });
 
-test("role trial route pins the requested source commit and forwards structured input", async () => {
-  let trialPayload;
-  const h = routeHarness({ useCases: { trialRoleSourceRole: async (payload) => { trialPayload = payload; return { status: "completed" }; } } });
-  assert.equal(await h.invoke("POST", "/api/v1/studio/role-sources/agency-agents/roles/frontend/trial?commit=" + "a".repeat(40), {
-    task: "Summarize", input: { document: "hello" }, userPreferences: "concise"
-  }), true);
-  assert.equal(h.sent.at(-1).status, 200);
-  assert.equal(trialPayload.commit, "a".repeat(40));
-  assert.deepEqual(trialPayload.input, { document: "hello" });
-  assert.equal(trialPayload.sourceId, "agency-agents");
+test("legacy role trial endpoint is not exposed", async () => {
+  const h = routeHarness();
+  assert.equal(await h.invoke("POST", "/api/v1/studio/role-sources/agency-agents/roles/frontend/trial", {
+    task: "Summarize", input: { document: "hello" }
+  }), false);
+  assert.equal(h.sent.length, 0);
 });
 
 test("copy use case converts the selected immutable source version and leaves missing confirmations unverified", async () => {

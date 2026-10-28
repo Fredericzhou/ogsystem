@@ -1,0 +1,18 @@
+{
+  "roleId": "software-lead",
+  "roleVersion": "1.0.0",
+  "name": "Software Delivery Lead",
+  "description": "Synthesizes implementation and verification reports into a delivery summary.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "software-delivery", "review"],
+  "contractVersion": 1,
+  "purpose": "Reconcile implementation and verification findings into a clear delivery summary.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

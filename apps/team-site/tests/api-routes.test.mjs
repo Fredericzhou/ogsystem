@@ -58,7 +58,6 @@ test("Task routes map actions and hide internal task fingerprints", async () => 
     createProjectTask: async (projectId, input) => (calls.push(["create", projectId, input]), { taskId: "task-1", requestFingerprint: "private" }),
     getProjectTask: async () => ({ taskId: "task-1" }),
     deleteProjectTask: async () => ({ taskId: "task-1" }),
-    reviewProjectTask: async () => ({ task: { taskId: "task-1", requestFingerprint: "private" }, review: { decision: "approve" } }),
     startProjectTask: async () => ({ task: { taskId: "task-1", requestFingerprint: "private" } }),
     retryProjectTask: async (projectId, taskId, input) => (calls.push(["retryTask", projectId, taskId, input]), { taskId }),
     controlProjectTask: async (_projectId, _taskId, action) => (calls.push(["control", action]), { taskId: "task-1" })
@@ -77,6 +76,11 @@ test("Task routes map actions and hide internal task fingerprints", async () => 
   assert.equal(harness.sent[1].payload.task.requestFingerprint, undefined);
   assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/cancel"), true);
   assert.deepEqual(calls[1], ["control", "cancel"]);
+  assert.equal(await invoke("GET", "/api/v1/projects/project-1/tasks/task-1/review"), false, "Task review context is available only through the Team IR v2 review API");
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/review", { decision: "approve" }), false);
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/pause"), false);
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/resume"), false);
+  assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/runs/run-1/team-ir-reviews/review-1", { decision: "approve" }), false, "Team IR v2 review routes are dispatched separately");
   assert.equal(await invoke("POST", "/api/v1/projects/project-1/tasks/task-1/retry", { mode: "dry-run", idempotencyKey: "retry-key" }), true);
   assert.equal(harness.sent[3].status, 202);
   assert.deepEqual(calls[2], ["retryTask", "project-1", "task-1", { mode: "dry-run", idempotencyKey: "retry-key" }]);

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join, resolve, sep } from "node:path";
 import { FileTeamRunStore } from "../../../dist/team-ir/index.js";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
-import { redactStudioSimulationValue } from "../domain/studio-simulation-redaction.mjs";
+import { redactTeamIrSimulationValue } from "../domain/team-ir-simulation-redaction.mjs";
 
 const ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
 
@@ -33,7 +33,7 @@ export function createFileTeamIrSimulationStore({ projectsRoot }) {
   async function writeRecord(path, record) {
     const temp = `${path}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temp, `${JSON.stringify(redactStudioSimulationValue(record), null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+      await writeFile(temp, `${JSON.stringify(redactTeamIrSimulationValue(record), null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       await rename(temp, path);
     } finally {
       await rm(temp, { force: true }).catch(() => undefined);

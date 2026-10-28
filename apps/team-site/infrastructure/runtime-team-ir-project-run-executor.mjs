@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
-import { compileTeamIr, FileTeamReviewStore, FileTeamRunStore, TeamReviewRuntime, TeamRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
+import { compileTeamIr, FileTeamArtifactStore, FileTeamReviewStore, FileTeamRunStore, TeamReviewRuntime, TeamRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
 
 function assertRunId(value) {
@@ -59,7 +59,7 @@ async function acquireRunResumeLock(projectRoot, runRelative, stateDirectory, ru
   }
 }
 
-export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, resolveReleaseClosure, resolveBindings, authorizeTeamIrReviewer, clock = { now: Date.now, sleep: defaultSleep } }) {
+export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, resolveReleaseClosure, resolveBindings, authorizeTeamIrReviewer, artifactStoreFactory, clock = { now: Date.now, sleep: defaultSleep } }) {
   if (typeof teamStore?.getTeamVersion !== "function" || typeof teamIrStore?.read !== "function") {
     throw new TypeError("Team IR Project Run executor requires TeamVersion and Team IR stores.");
   }
@@ -91,10 +91,9 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
       const requestSchema = runInputSchema?.properties?.request;
       const unsupportedRunFields = (runInputSchema?.required || []).filter((field) => field !== "request");
       const hasRequiredPreferences = (stored.teamIR.runInput?.preferencesSchema?.required || []).length > 0;
-      const hasRequiredAttachments = Object.values(stored.teamIR.runInput?.artifactSlots || {}).some((slot) => slot?.required === true);
       if (!requestSchema || requestSchema.type !== "string" || unsupportedRunFields.length > 0
-        || hasRequiredPreferences || hasRequiredAttachments) {
-        throw new Error("TEAM_IR_TASK_INPUT_UNSUPPORTED: Project Task currently supplies only a request string and cannot satisfy this Run input contract.");
+        || hasRequiredPreferences) {
+        throw new Error("TEAM_IR_TASK_INPUT_UNSUPPORTED: Project Task currently supplies a request string, optional preferences, and registered Artifact slot references.");
       }
       const closure = await resolveReleaseClosure({ team, teamIR: stored.teamIR });
       if (closure?.complete !== true || !closure.packageDigests || !closure.bindingDigests || !closure.adapterVersions) {
@@ -108,10 +107,18 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
         packageSchemas: closure.packageSchemas
       });
       if (plan.compiledPlanDigest !== compiledPlanDigest) throw new Error("TEAM_IR_COMPILED_DIGEST_MISMATCH: current frozen closure does not match this Task.");
+      const projectRoot = resolve(project.workdir);
+      const artifactStore = typeof artifactStoreFactory === "function"
+        ? await artifactStoreFactory({ project, projectRoot, runId })
+        : new FileTeamArtifactStore(join(projectRoot, ".ogs", "team-artifacts"));
+      await artifactStore.validateRunInputAttachments({
+        team: stored.teamIR,
+        projectId: project.projectId,
+        attachments: options.attachments || {}
+      });
       const bindings = await resolveBindings({ team, teamIR: stored.teamIR, closure, project, runId });
       if (!bindings || typeof bindings !== "object") throw new Error("TEAM_BINDING_RESOLVER_UNAVAILABLE: no executable Team Bindings were resolved.");
 
-      const projectRoot = resolve(project.workdir);
       const runRelative = [".ogs", "runs", runId];
       const runDirectory = await assertSafeEvidencePath(projectRoot, runRelative, { kind: "directory", label: "Project Run evidence" });
       const stateDirectory = resolve(runDirectory, "team-ir-v2-state");
@@ -138,15 +145,17 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
           )
         });
       }
-      const runtime = new TeamRuntime({ store, clock, bindings, reviewRuntime });
-      return { projectRoot, runRelative, stateDirectory, store, runtime, plan, team, teamIR: stored.teamIR, runId, taskId, taskNumber, attemptNumber, teamVersionId, teamIrSemanticDigest, compiledPlanDigest };
+      const runtime = new TeamRuntime({ store, clock, bindings, artifactStore, reviewRuntime });
+      return { projectRoot, runRelative, stateDirectory, store, runtime, artifactStore, plan, team, teamIR: stored.teamIR, runId, taskId, taskNumber, attemptNumber, teamVersionId, teamIrSemanticDigest, compiledPlanDigest };
   }
 
   async function execute(project, options) {
       const prepared = await prepare(project, options);
       const input = { request: String(options.prompt || "") };
-      await prepared.runtime.createRun(prepared.plan, { runId: options.runId, projectId: project.projectId, task: String(options.prompt || ""), input });
-      const record = await prepared.runtime.executeRun(prepared.plan, options.runId);
+      await prepared.runtime.createRun(prepared.plan, { runId: options.runId, projectId: project.projectId, task: String(options.prompt || ""), input, attachments: options.attachments || {} });
+      await prepared.runtime.executeRun(prepared.plan, options.runId);
+      const record = await prepared.store.load(options.runId);
+      if (!record) throw new Error("TEAM_RUN_CHECKPOINT_MISSING: Runtime did not persist its terminal checkpoint.");
       return {
         state: {
           status: record.status,
@@ -187,7 +196,9 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
     const release = await acquireRunResumeLock(prepared.projectRoot, prepared.runRelative, prepared.stateDirectory, options.runId);
     let record;
     try {
-      record = await prepared.runtime.executeRun(prepared.plan, options.runId);
+      await prepared.runtime.executeRun(prepared.plan, options.runId);
+      record = await prepared.store.load(options.runId);
+      if (!record) throw new Error("TEAM_RUN_CHECKPOINT_MISSING: Runtime did not persist its resumed checkpoint.");
     } finally {
       await release();
     }
@@ -209,10 +220,31 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
     };
   }
 
+  async function control(project, options, action) {
+    if (action !== "cancel") {
+      throw new Error(`TEAM_IR_TASK_CONTROL_UNSUPPORTED: ${action} is not supported for Team IR v2 Runs.`);
+    }
+    const prepared = await prepare(project, options);
+    const record = await prepared.runtime.cancel(options.runId);
+    return {
+      state: {
+        status: record.status,
+        runId: options.runId,
+        attemptNumber: options.attemptNumber,
+        teamVersionId: options.teamVersionId,
+        teamIrSemanticDigest: options.teamIrSemanticDigest,
+        compiledPlanDigest: options.compiledPlanDigest
+      },
+      teamRun: record,
+      owner: { kind: "project_task", projectId: project.projectId, taskId: options.taskId, attemptNumber: options.attemptNumber, teamVersionId: options.teamVersionId }
+    };
+  }
+
   return Object.freeze({
     assertAvailable: assertResolversAvailable,
     execute,
     resume,
+    control,
     async getReviewContext({ project, task, runId, reviewId, principal }) {
       const prepared = await prepare(project, {
         runId,
@@ -222,6 +254,7 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
         attemptNumber: task.runIds?.indexOf(runId) + 1,
         teamIrSemanticDigest: task.teamIrSemanticDigest,
         compiledPlanDigest: task.compiledPlanDigest,
+        attachments: task.runInputAttachments || {},
         mode: "sandbox"
       }, principal);
       const runRecord = await prepared.store.load(runId);
@@ -255,6 +288,7 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
             teamIrSemanticDigest: task.teamIrSemanticDigest,
             compiledPlanDigest: task.compiledPlanDigest,
             mode: "sandbox",
+            attachments: task.runInputAttachments || {},
             prompt: task.input,
             reviewId,
             lineage,

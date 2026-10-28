@@ -5,7 +5,7 @@ import path from "node:path";
 
 const packageJsonPath = path.resolve("package.json");
 
-test("package publish whitelist only includes the starter built-in role set", async () => {
+test("package publish whitelist includes the built-in and classic Team IR role sets", async () => {
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
   const files = Array.isArray(packageJson.files) ? packageJson.files : [];
   const roleEntries = files.filter(
@@ -17,11 +17,31 @@ test("package publish whitelist only includes the starter built-in role set", as
     "og-roles/roles/advanced-reviewer/**",
     "og-roles/roles/advanced-worker-a/**",
     "og-roles/roles/advanced-worker-b/**",
+    "og-roles/roles/cardiology-expert/**",
+    "og-roles/roles/chief-reviewer/**",
+    "og-roles/roles/compliance-reviewer/**",
+    "og-roles/roles/consultation-dispatcher/**",
+    "og-roles/roles/debate-host/**",
+    "og-roles/roles/debate-opponent/**",
+    "og-roles/roles/debate-proponent/**",
+    "og-roles/roles/debate-reporter/**",
     "og-roles/roles/demo-analyst/**",
     "og-roles/roles/demo-intake/**",
     "og-roles/roles/diagnosis-chief-review/**",
     "og-roles/roles/diagnosis-dispatch/**",
     "og-roles/roles/hello-ogsystem/**",
+    "og-roles/roles/imaging-expert/**",
+    "og-roles/roles/imported.agency.legal-client-intake/**",
+    "og-roles/roles/maker/**",
+    "og-roles/roles/neurology-expert/**",
+    "og-roles/roles/neutral-judge/**",
+    "og-roles/roles/primary-reviewer/**",
+    "og-roles/roles/release-gate/**",
+    "og-roles/roles/signoff-chair/**",
+    "og-roles/roles/software-implementer/**",
+    "og-roles/roles/software-lead/**",
+    "og-roles/roles/software-planner/**",
+    "og-roles/roles/software-tester/**",
     "og-roles/roles/test-branch-a/**",
     "og-roles/roles/test-branch-b/**",
     "og-roles/roles/test-operator/**"

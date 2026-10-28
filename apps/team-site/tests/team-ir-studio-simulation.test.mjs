@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
-import { compileTeamIr, FileTeamRunStore, TeamRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
+import { compileTeamIr, FileTeamArtifactStore, FileTeamRunStore, MemoryTeamRunStore, TeamRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
 import { createTeamIrStudioSimulationUseCases } from "../application/team-ir-studio-simulation-use-cases.mjs";
 import { createFileTeamIrSimulationStore } from "../infrastructure/file-team-ir-simulation-store.mjs";
 import { createRuntimeTeamIrStudioSimulation } from "../infrastructure/runtime-team-ir-studio-simulation.mjs";
@@ -18,9 +18,10 @@ const closure = {
 };
 
 async function makeHarness(t, overrides = {}) {
+  const { teamIR: suppliedTeamIR, ...useCaseOverrides } = overrides;
   const projectsRoot = await mkdtemp(resolve(tmpdir(), "ogs-team-ir-simulation-"));
   t.after(() => rm(projectsRoot, { recursive: true, force: true }));
-  const teamIR = JSON.parse(await readFile(fixtureUrl, "utf8"));
+  const teamIR = suppliedTeamIR || JSON.parse(await readFile(fixtureUrl, "utf8"));
   const semanticDigest = teamIRSemanticDigest(teamIR);
   const plan = compileTeamIr(teamIR, closure);
   const team = { teamVersionId: "classic-v2", teamId: "classic-v2", teamVersionStatus: "draft", workdir: "/team/classic-v2" };
@@ -35,14 +36,15 @@ async function makeHarness(t, overrides = {}) {
     teamCatalog: { async getTeamVersion() { return team; } },
     teamIrStore: { async read() { return { teamIR, semanticDigest }; } },
     simulationStore,
+    artifactStoreFactory: async ({ teamVersionId }) => new FileTeamArtifactStore(resolve(projectsRoot, ".studio", "team-ir-v2-simulation-artifacts", teamVersionId)),
     resolveReleaseClosure: async () => closure,
     resolveBindings: async () => Object.fromEntries(Object.entries(outputs).map(([agentId, output]) => [`binding:${agentId}`, {
       async invoke() { return { kind: "completed", output }; }
     }])),
-    identifiers: { simulationId: () => "sim-1" },
+    identifiers: { simulationId: () => "sim-1", artifactScopeId: (_teamVersionId, scopeId) => (scopeId.startsWith("different") ? "b" : "a").repeat(48) },
     clock: { now: (() => { let value = 100; return () => value++; })(), sleep: async () => undefined },
     simulationRunner: createRuntimeTeamIrStudioSimulation({ clock: { now: () => 100, sleep: async () => undefined } }),
-    ...overrides
+    ...useCaseOverrides
   });
   return { projectsRoot, teamIR, semanticDigest, plan, simulationStore, useCases };
 }
@@ -56,7 +58,7 @@ test("Team IR v2 Studio Simulation executes the native plan and persists digest-
   });
   assert.equal(simulation.kind, "team_ir_v2_simulation");
   assert.equal(simulation.mode, "sandbox");
-  assert.equal(simulation.status, "completed");
+  assert.equal(simulation.status, "completed", JSON.stringify(simulation));
   assert.equal(simulation.teamIrSemanticDigest, h.semanticDigest);
   assert.equal(simulation.compiledPlanDigest, h.plan.compiledPlanDigest);
   assert.deepEqual(simulation.result, { summary: "done" });
@@ -78,12 +80,108 @@ test("Team IR v2 Simulation refuses unavailable or incomplete frozen resolvers b
   assert.deepEqual(await h.useCases.listSimulations("classic-v2"), { simulations: [] });
 });
 
+test("Studio Simulation Artifact input is isolated by artifact scope and limited to declared Agent inputs", async (t) => {
+  const teamIR = JSON.parse(await readFile(fixtureUrl, "utf8"));
+  teamIR.runInput.artifactSlots.brief = { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" };
+  const planner = teamIR.agents.find((agent) => agent.id === "planner");
+  planner.inputPorts.default.artifactSlots = { sources: { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" } };
+  teamIR.handoffs.find((handoff) => handoff.id === "run-to-planner").map.artifacts = {
+    sources: { $ref: "$.run.attachments.brief" }
+  };
+  let registeredReference;
+  let invocationRead = false;
+  const outputs = {
+    planner: { event: "PLAN", data: { plan: "Use source" } },
+    implementer: { event: "IMPLEMENTED", data: { changes: "code changed" } },
+    tester: { event: "TESTED", data: { tests: "all passed" } },
+    lead: { event: "DELIVERED", data: { summary: "done" } }
+  };
+  const runtimeClock = {
+    now: () => Date.now(),
+    sleep: (ms, signal) => new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(new Error("TEAM_RUNTIME_SLEEP_ABORTED"));
+      }, { once: true });
+    })
+  };
+  const h = await makeHarness(t, {
+    teamIR,
+    simulationRunner: createRuntimeTeamIrStudioSimulation({ clock: runtimeClock }),
+    async resolveBindings({ teamIR: resolvedTeamIR }) {
+      return Object.fromEntries(resolvedTeamIR.agents.map((agent) => [agent.bindingRef, {
+        async invoke(invocation) {
+          if (agent.id === "planner") {
+            assert.deepEqual(invocation.input.artifacts.sources, { artifactId: registeredReference.artifactId, mediaType: registeredReference.mediaType });
+            assert.equal(Buffer.from(await invocation.artifactResolver.read(registeredReference.artifactId)).toString(), "Sandbox-only input");
+            await assert.rejects(invocation.artifactResolver.read(`art_${"f".repeat(36)}`), /Allowed Artifact Set/);
+            invocationRead = true;
+          }
+          return { kind: "completed", output: outputs[agent.id] };
+        }
+      }]));
+    }
+  });
+  const artifactScopeId = "sandbox-session-1";
+  registeredReference = await h.useCases.registerSimulationInputArtifact("classic-v2", {
+    artifactScopeId, slotId: "brief", mediaType: "text/plain", contentBase64: Buffer.from("Sandbox-only input").toString("base64")
+  });
+  const reference = { artifactId: registeredReference.artifactId, mediaType: registeredReference.mediaType };
+  await assert.rejects(h.useCases.createSimulation("classic-v2", {
+    input: { request: "Use the input" }, attachments: { brief: reference }, artifactScopeId: "different-sandbox"
+  }), (error) => error.code === "ARTIFACT_ACCESS_DENIED");
+  const simulation = await h.useCases.createSimulation("classic-v2", {
+    input: { request: "Use the input" }, attachments: { brief: reference }, artifactScopeId
+  });
+  assert.equal(simulation.status, "completed", JSON.stringify(simulation));
+  assert.equal(invocationRead, true);
+  assert.deepEqual(simulation.run.runInput.attachments, { brief: reference });
+
+  const isolatedStore = new FileTeamArtifactStore(resolve(h.projectsRoot, ".studio", "different-artifact-store", "classic-v2"));
+  await assert.rejects(isolatedStore.createInvocationResolver({
+    owner: { projectId: "studio-artifact-isolated", runId: simulation.simulationId }, allowedArtifacts: [reference]
+  }), (error) => error.code === "ARTIFACT_REFERENCE_INVALID");
+});
+
 test("legacy Team Package simulation evidence cannot satisfy Team IR v2 release evidence", async (t) => {
   const h = await makeHarness(t);
   await h.useCases.createSimulation("classic-v2", { input: { request: "test" } });
   await assert.rejects(h.useCases.validateReleaseEvidence({
     teamVersionId: "classic-v2", teamIrSemanticDigest: h.semanticDigest, compiledPlanDigest: "c".repeat(64)
   }), /TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED/);
+});
+
+test("Studio Sandbox Simulation auto-approves Review gates and completes a Maker-Checker Loop", async () => {
+  const teamIR = JSON.parse(await readFile(new URL("../../../examples/team-ir-v2/classic-maker-checker.json", import.meta.url), "utf8"));
+  const simulationClosure = {
+    packageDigests: Object.fromEntries(teamIR.agents.map((agent) => [agent.packageRef, "a".repeat(64)])),
+    bindingDigests: Object.fromEntries(teamIR.bindings.map((binding) => [binding.id, "b".repeat(64)])),
+    adapterVersions: { model: "team-runtime-test/1" },
+    schemaDigests: {}
+  };
+  const plan = compileTeamIr(teamIR, simulationClosure);
+  const bindings = Object.fromEntries(teamIR.agents.map((agent) => [agent.bindingRef, {
+    async invoke() { return { kind: "completed", output: { event: "DONE", data: { answer: "Release proposal", again: false } } }; }
+  }]));
+  const run = await createRuntimeTeamIrStudioSimulation({ clock: { now: () => 100, sleep: async () => undefined } }).execute({
+    plan,
+    bindings,
+    store: new MemoryTeamRunStore(),
+    simulationId: "maker-checker-simulation",
+    teamIR,
+    input: { request: "Review a controlled release plan." },
+    task: "Maker-Checker simulation",
+    preferences: {},
+    attachments: {},
+    createRun: true
+  });
+
+  assert.equal(run.status, "completed", JSON.stringify(run.events.filter((event) => event.type === "run.failing")));
+  assert.equal(run.resultWritten, true);
+  assert.deepEqual(run.result, { answer: "Release proposal" });
+  assert.equal(run.events.filter((event) => event.type === "run.review.approved").length, 1);
+  assert.equal(run.events.filter((event) => event.type === "run.waiting_human_review").length, 1);
 });
 
 test("restarting a Studio Simulation resumes from its checkpoint and fails closed on an unknown active invocation", async (t) => {
@@ -116,18 +214,19 @@ test("restarting a Studio Simulation resumes from its checkpoint and fails close
     teamCatalog: { async getTeamVersion() { return { teamVersionId: "classic-v2", teamId: "classic-v2", teamVersionStatus: "draft", workdir: "/team/classic-v2" }; } },
     teamIrStore: { async read() { return { teamIR: h.teamIR, semanticDigest: h.semanticDigest }; } },
     simulationStore: createFileTeamIrSimulationStore({ projectsRoot: h.projectsRoot }),
+    artifactStoreFactory: async ({ teamVersionId }) => new FileTeamArtifactStore(resolve(h.projectsRoot, ".studio", "team-ir-v2-simulation-artifacts", teamVersionId)),
     resolveReleaseClosure: async () => closure,
     resolveBindings: async () => Object.fromEntries(["planner", "implementer", "tester", "lead"].map((agentId) => [`binding:${agentId}`, {
       async invoke() { invocationCount += 1; throw new Error("must not replay unknown invocation"); },
       async cancel() { cancelCount += 1; return true; }
     }])),
-    identifiers: { simulationId: () => "different-sim-id" },
+    identifiers: { simulationId: () => "different-sim-id", artifactScopeId: (_teamVersionId, scopeId) => (scopeId.startsWith("different") ? "b" : "a").repeat(48) },
     clock: { now: () => 200, sleep: async () => undefined },
     simulationRunner: createRuntimeTeamIrStudioSimulation({ clock: { now: () => 200, sleep: async () => undefined } })
   });
   const recovered = await restartedUseCases.recoverInterruptedSimulations("classic-v2");
   assert.equal(recovered.recoveredCount, 1);
-  assert.equal(recovered.simulations[0].status, "failed");
+  assert.equal(recovered.simulations[0].status, "failed", JSON.stringify(recovered));
   assert.equal(recovered.simulations[0].run.events.some((event) => event.type === "binding.outcome_unknown"), true, JSON.stringify(recovered.simulations[0]));
   assert.equal(cancelCount, 1);
   assert.equal(invocationCount, 0);
@@ -169,6 +268,7 @@ test("restart replay reuses committed upstream output and does not invoke the co
     teamCatalog: { async getTeamVersion() { return { teamVersionId: "classic-v2", teamId: "classic-v2", teamVersionStatus: "draft", workdir: "/team/classic-v2" }; } },
     teamIrStore: { async read() { return { teamIR: h.teamIR, semanticDigest: h.semanticDigest }; } },
     simulationStore: createFileTeamIrSimulationStore({ projectsRoot: h.projectsRoot }),
+    artifactStoreFactory: async ({ teamVersionId }) => new FileTeamArtifactStore(resolve(h.projectsRoot, ".studio", "team-ir-v2-simulation-artifacts", teamVersionId)),
     resolveReleaseClosure: async () => closure,
     resolveBindings: async () => Object.fromEntries(Object.entries({
       planner: { event: "PLAN", data: { plan: "unexpected duplicate" } },
@@ -178,13 +278,13 @@ test("restart replay reuses committed upstream output and does not invoke the co
     }).map(([agentId, output]) => [`binding:${agentId}`, {
       async invoke() { invocations.push(agentId); return { kind: "completed", output }; }
     }])),
-    identifiers: { simulationId: () => "unused" },
+    identifiers: { simulationId: () => "unused", artifactScopeId: () => "a".repeat(48) },
     clock: { now: () => 200, sleep: async () => undefined },
     simulationRunner: createRuntimeTeamIrStudioSimulation({ clock: { now: () => 200, sleep: async () => undefined } })
   });
   const recovered = await recovery.recoverInterruptedSimulations("classic-v2");
   assert.equal(recovered.recoveredCount, 1);
-  assert.equal(recovered.simulations[0].status, "completed");
+  assert.equal(recovered.simulations[0].status, "completed", JSON.stringify(recovered));
   assert.equal(recovered.simulations[0].run.resultWritten, true);
   assert.equal(invocations.includes("planner"), false);
   assert.deepEqual(invocations.sort(), ["implementer", "lead", "tester"]);

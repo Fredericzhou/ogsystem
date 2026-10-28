@@ -27,7 +27,7 @@ async function execute(fixture, decision, runId) {
       }
     }
   });
-  await runtime.createRun(plan, { runId, task: "validate release gate", input: { change: "publish build 42" } });
+  await runtime.createRun(plan, { runId, task: "validate release gate", input: { request: "publish build 42" } });
   return runtime.executeRun(plan, runId);
 }
 

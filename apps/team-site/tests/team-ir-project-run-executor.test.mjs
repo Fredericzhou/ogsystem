@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
-import { compileTeamIr, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
+import { compileTeamIr, FileTeamArtifactStore, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
 import { createRuntimeTeamIrProjectRunExecutor } from "../infrastructure/runtime-team-ir-project-run-executor.mjs";
 import { createFileRunQueryStore } from "../infrastructure/file-run-query-store.mjs";
 import { createFileRunResultStore } from "../infrastructure/file-run-result-store.mjs";
@@ -58,7 +58,7 @@ async function makeHarness(t, { transformTeamIr = (value) => value, resolveBindi
       async invoke() { return { kind: "completed", output }; }
     }])))
   });
-  return { root, project, task, team, plan, executor };
+  return { root, project, task, team, teamIR, plan, executor };
 }
 
 function withSingleAgentReview(value) {
@@ -99,6 +99,8 @@ test("Project Task Review persists activation and resumes the same Run and attem
   };
   const waiting = await h.executor.execute(h.project, options);
   assert.equal(waiting.state.status, "waiting_human_review");
+  const queryState = await createFileRunQueryStore({ projectsRoot: h.root }).readRunState("project-1", "task-1", "run-1");
+  assert.deepEqual(queryState.waitingReview, { reviewId: "planner-review", lineage: "run" });
   const principal = { id: "reviewer-1", issuer: "test" };
   const context = await h.executor.getReviewContext({ project: h.project, task: h.task, runId: "run-1", reviewId: "planner-review", principal });
   const review = await context.runtime.getReview("run-1", "planner-review", context.lineage, context.loopRound);
@@ -114,6 +116,8 @@ test("Project Task Review persists activation and resumes the same Run and attem
   ]);
   assert.equal(resumed.state.status, "completed");
   assert.equal(replayed.state.status, "completed");
+  assert.equal(resumed.state.status, resumed.teamRun.status);
+  assert.equal(replayed.state.status, replayed.teamRun.status);
   assert.equal(resumed.state.runId, "run-1");
   assert.equal(resumed.owner.attemptNumber, 1);
   assert.equal(Object.keys(resumed.teamRun.invocations).length, 1, "the completed agent call is not repeated during same-Run review recovery");
@@ -150,6 +154,7 @@ test("Team IR Project Run executor verifies frozen digests and persists a full R
     prompt: "Add a greeting endpoint", teamIrSemanticDigest: h.team.teamIrSemanticDigest, compiledPlanDigest: h.plan.compiledPlanDigest
   });
   assert.equal(result.state.status, "completed");
+  assert.equal(result.teamRun.status, "completed", "executor returns the persisted terminal checkpoint");
   assert.deepEqual(result.result, { teamResult: { summary: "completed" } });
   assert.equal(result.teamRun.events.filter((event) => event.type === "run.result.written").length, 1);
   const persisted = JSON.parse(await readFile(resolve(h.project.workdir, ".ogs/runs/run-1/team-ir-v2-state/run-1.json"), "utf8"));
@@ -157,13 +162,23 @@ test("Team IR Project Run executor verifies frozen digests and persists a full R
   assert.equal(persisted.compiledPlanDigest, h.plan.compiledPlanDigest);
 });
 
+test("Team IR Project Run executor rejects controls without a v2 runtime contract", async (t) => {
+  const h = await makeHarness(t);
+  await assert.rejects(
+    h.executor.control(h.project, { runId: "run-1" }, "pause"),
+    /TEAM_IR_TASK_CONTROL_UNSUPPORTED/
+  );
+});
+
 test("Team IR Project Run query exposes an owner-scoped input-required request and no successful result", async (t) => {
   let siblingReject;
   let siblingCancelCount = 0;
   const h = await makeHarness(t, {
     transformTeamIr(teamIR) {
-      teamIR.bindings.find((binding) => binding.id === "binding:implementer").kind = "a2a";
-      teamIR.bindings.find((binding) => binding.id === "binding:implementer").agentCardRef = "https://agents.example/implementer/card.json";
+      const binding = teamIR.bindings.find((item) => item.id === "binding:implementer");
+      binding.kind = "a2a";
+      delete binding.modelRef;
+      binding.agentCardRef = "https://agents.example/implementer/card.json";
       return teamIR;
     },
     resolveBindings: async () => ({
@@ -290,6 +305,72 @@ test("Team IR Project Run executor rejects unsupported Task input contracts befo
     teamIrSemanticDigest: semanticDigest, compiledPlanDigest: plan.compiledPlanDigest
   }), /TEAM_IR_TASK_INPUT_UNSUPPORTED/);
   assert.equal(bindingResolutionCalls, 0);
+});
+
+test("Project Task rejects missing required Run input Artifacts before resolving any Binding", async (t) => {
+  const h = await makeHarness(t, { transformTeamIr(teamIR) {
+    teamIR.runInput.artifactSlots.brief = { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" };
+    return teamIR;
+  } });
+  let bindingResolutionCalls = 0;
+  const unavailable = createRuntimeTeamIrProjectRunExecutor({
+    teamStore: { async getTeamVersion() { return h.team; } },
+    teamIrStore: { async read() { return { teamIR: h.teamIR, semanticDigest: h.team.teamIrSemanticDigest }; } },
+    resolveReleaseClosure: async () => closure,
+    resolveBindings: async () => { bindingResolutionCalls += 1; return {}; }
+  });
+  await assert.rejects(unavailable.execute(h.project, {
+    runId: "run-1", taskId: "task-1", teamVersionId: "team-v1", prompt: "task", mode: "sandbox",
+    teamIrSemanticDigest: h.team.teamIrSemanticDigest, compiledPlanDigest: h.plan.compiledPlanDigest
+  }), (error) => error.code === "RUN_INPUT_ARTIFACT_REQUIRED");
+  assert.equal(bindingResolutionCalls, 0);
+});
+
+test("Project Task freezes registered Artifact inputs and exposes only the declared invocation allowlist", async (t) => {
+  const h = await makeHarness(t, { transformTeamIr(teamIR) {
+    teamIR.runInput.artifactSlots.brief = { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" };
+    const planner = teamIR.agents.find((agent) => agent.id === "planner");
+    planner.inputPorts.default.artifactSlots = { sources: { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" } };
+    teamIR.handoffs.find((handoff) => handoff.id === "run-to-planner").map.artifacts = {
+      sources: { $ref: "$.run.attachments.brief" }
+    };
+    return teamIR;
+  } });
+  const artifactStore = new FileTeamArtifactStore(resolve(h.project.workdir, ".ogs", "team-artifacts"));
+  const reference = await artifactStore.registerRunInput({
+    team: h.teamIR, projectId: h.project.projectId, slotId: "brief", mediaType: "text/plain", content: Buffer.from("Project-owned input"), authorizeUpload: () => true
+  });
+  let plannerRead = false;
+  const outputByAgent = {
+    planner: { event: "PLAN", data: { plan: "Use the approved source." } },
+    implementer: { event: "IMPLEMENTED", data: { changes: "done" } },
+    tester: { event: "TESTED", data: { tests: "passed" } },
+    lead: { event: "DELIVERED", data: { summary: "completed" } }
+  };
+  const executor = createRuntimeTeamIrProjectRunExecutor({
+    teamStore: { async getTeamVersion() { return h.team; } },
+    teamIrStore: { async read() { return { teamIR: h.teamIR, semanticDigest: h.team.teamIrSemanticDigest }; } },
+    resolveReleaseClosure: async () => closure,
+    resolveBindings: async () => Object.fromEntries(Object.entries(outputByAgent).map(([agentId, output]) => [`binding:${agentId}`, {
+      async invoke(invocation) {
+        if (agentId === "planner") {
+          assert.deepEqual(invocation.input.artifacts.sources, reference);
+          assert.equal(Buffer.from(await invocation.artifactResolver.read(reference.artifactId)).toString(), "Project-owned input");
+          await assert.rejects(invocation.artifactResolver.read(`art_${"f".repeat(36)}`), /Allowed Artifact Set/);
+          plannerRead = true;
+        }
+        return { kind: "completed", output };
+      }
+    }]))
+  });
+  const result = await executor.execute(h.project, {
+    runId: "run-1", taskId: "task-1", teamVersionId: "team-v1", prompt: "Use the source", mode: "sandbox",
+    teamIrSemanticDigest: h.team.teamIrSemanticDigest, compiledPlanDigest: h.plan.compiledPlanDigest,
+    attachments: { brief: reference }
+  });
+  assert.equal(result.state.status, "completed");
+  assert.equal(plannerRead, true);
+  assert.deepEqual(result.teamRun.runInput.attachments, { brief: reference });
 });
 
 test("Team IR Project Run executor rejects a symlinked Team Run state directory", async (t) => {

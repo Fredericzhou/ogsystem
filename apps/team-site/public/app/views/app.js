@@ -8,8 +8,6 @@ import { labelEvent as localizedEventLabel, taskExample, text } from "../i18n.js
 import { createRouter } from "../router.js";
 import { renderSharedResourcePage } from "./shared-resources.js";
 import { renderPlatformRoleSources } from "./platform-role-sources.js";
-let studioGraphLoad;
-const mountedStudioGraphs = new Set();
 let fallbackUuidCounter = 0;
 function createUuid() {
   const cryptoApi = globalThis.crypto;
@@ -23,80 +21,6 @@ function createUuid() {
   fallbackUuidCounter += 1;
   return `fallback-${Date.now().toString(36)}-${fallbackUuidCounter.toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
-function ensureStudioGraphBundle() {
-  if (window.OGSStudioGraphBundle?.mountStudioX6Bridge) return Promise.resolve();
-  if (!studioGraphLoad) studioGraphLoad = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "/assets/ogs-studio-graph.js";
-    script.onload = () => resolve();
-    script.onerror = () => { studioGraphLoad = null; reject(new Error("Studio graph engine could not be loaded.")); };
-    document.head.append(script);
-  });
-  return studioGraphLoad;
-}
-function mountStudioGraph(root, options) {
-  const mount = window.OGSStudioGraphBundle?.mountStudioX6Bridge;
-  if (!mount) return undefined;
-  const withTeamFlowPresentation = (value, previousAuthoring = value.authoring, previousViewModel = value.viewModel) => {
-    if (value.mode !== "product-edit" || !value.authoring) return value;
-    const previousEdges = previousViewModel?.edges || [];
-    const previousEdgeById = new Map(previousEdges.map((edge) => [edge.id, edge]));
-    const previousFlowById = new Map(Object.values(previousAuthoring?.flows || {}).map((flow) => [flow.flowId, flow]));
-    const previousLabelByEvent = new Map();
-    for (const edge of previousEdges) {
-      if (edge.label && edge.label !== edge.eventType && !previousLabelByEvent.has(edge.eventType)) {
-        previousLabelByEvent.set(edge.eventType, edge.label);
-      }
-    }
-    const edgeLabels = Object.fromEntries(Object.values(value.authoring.flows || {}).flatMap((flow) => {
-      const flowId = typeof flow.flowId === "string" ? flow.flowId : "";
-      if (!flowId) return [];
-      const previous = previousEdgeById.get(flowId);
-      const previousFlow = previousFlowById.get(flowId);
-      const previousPresentationLabel = previousFlow?.eventType === flow.eventType
-        ? value.presentation?.edgeLabels?.[flowId]
-        : "";
-      const label = flow.label?.trim()
-        || (previous?.eventType === flow.eventType ? previous.label : "")
-        || previousPresentationLabel
-        || previousLabelByEvent.get(flow.eventType)
-        || localizedEventLabel(flow.eventType, copy);
-      return [[flowId, label]];
-    }));
-    return { ...value, presentation: { ...value.presentation, edgeLabels } };
-  };
-  let currentOptions = withTeamFlowPresentation({ ...options });
-  mount(root, currentOptions);
-  mountedStudioGraphs.add(root);
-  return Object.freeze({
-    update(changes) {
-      const previousOptions = currentOptions;
-      currentOptions = withTeamFlowPresentation(
-        { ...previousOptions, ...changes },
-        previousOptions.authoring,
-        previousOptions.viewModel
-      );
-      mount(root, currentOptions);
-    },
-    setRuntimeProgress(events) {
-      window.OGSStudioGraphBundle?.setStudioX6RuntimeProgress?.(root, events);
-    },
-    focusRuntimeHandoff(handoffId) {
-      window.OGSStudioGraphBundle?.focusStudioX6RuntimeHandoff?.(root, handoffId);
-    }
-  });
-}
-function disposeStudioGraphs() {
-  const dispose = window.OGSStudioGraphBundle?.disposeStudioX6Bridge;
-  for (const stage of mountedStudioGraphs) {
-    dispose?.(stage);
-    const graphRegion = stage.closest(".project-graph-preview, .detail-graph-section");
-    if (graphRegion) graphRegion.remove();
-    else stage.remove();
-  }
-  mountedStudioGraphs.clear();
-}
-function trackStudioGraphRoot(root) { if (root) mountedStudioGraphs.add(root); }
 function professionalWorkspaceUrl(projectId, runId = "") {
   if (!projectId || !runId) return "";
   return `/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`;
@@ -265,7 +189,7 @@ function labelEvent(event) { return localizedEventLabel(event, copy); }
 
 function renderPageFrame(root, template, renderPromise) {
   const route = location.pathname;
-  const isStudioCreate = route === "/studio/new" || route === "/studio/ir/new";
+  const isStudioCreate = route === "/studio/new";
   const studioWorkspace = route.match(/^\/studio\/teams\/([a-z0-9-]+)\/(info|run|release)(?:\/[a-z0-9-]+)?$/);
   const workspaceTabs = studioWorkspace ? `<div class="studio-workspace-tabs">${studioWorkspaceNav(studioWorkspace[1], studioWorkspace[2])}</div>` : "";
   const projectWorkspaceTabs = root.id === "project-workspace-view" && /^\/projects\/[a-z0-9-]+(?:\/runs\/[A-Za-z0-9._-]+)?$/.test(route)
@@ -320,76 +244,22 @@ function renderSelected(item) {
 async function renderGraph(item) {
   const stage = $("#graph-stage");
   if (!stage) return;
-  trackStudioGraphRoot(stage);
+
   stage.dataset.case = item.id;
   stage.setAttribute("aria-label", state.locale === "zh-CN" ? `${text(item.title)}协作关系图` : `${text(item.title)} team relationship diagram`);
   $(".graph-foot span[data-i18n='splitNote']").textContent = text(item.detail.relationship);
   try {
-    await ensureStudioGraphBundle();
-    const response = await pageFetch(`/api/v1/cases/${encodeURIComponent(item.id)}/graph?locale=${encodeURIComponent(state.locale)}`);
-    const viewModel = await response.json();
-    if (!response.ok) throw new Error(viewModel.error || "Unable to load the team graph.");
+    const response = await pageFetch(`/api/v1/cases/${encodeURIComponent(item.id)}/ir`);
+    const payload = await response.json();
+    if (!response.ok || payload.teamIR?.schemaVersion !== 2) throw new Error(payload.error || "Unable to load the Team IR v2 fixture.");
     if (state.selected !== item.id) return;
-    mountStudioGraph(stage, {
-      viewModel,
-      readOnly: true,
-      showTopologyOrder: false,
-      showTechnicalDetails: false,
-      initialLayoutMode: "flow",
-      defaultAutoLayout: true,
-      defaultAutoLayoutRequestId: 1,
-      labels: graphLabels[state.locale],
-      onToggleFullscreen: async () => {
-        if (document.fullscreenElement) await document.exitFullscreen();
-        else await stage.requestFullscreen();
-      }
-    });
+    stage.innerHTML = renderTeamIrStructureGraph(payload.teamIR, esc, false);
+    stage.setAttribute("aria-label", "Team IR v2 structure");
   } catch (error) { if (isAbort(error)) return;
     stage.textContent = error.message || "Unable to load the team graph.";
   }
 }
 
-const graphLabels = {
-  "zh-CN": {
-    viewportGroup: "图谱视图", editGroup: "编辑图谱", teamConfiguration: "配置", connectFromSelectedRole: "从已选角色的输出链接桩拖到目标角色，创建关系。", zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布", autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局", topologyOrder: "流转顺序", enabled: "开启", disabled: "关闭", layoutSwitched: "已切换为{layout}布局", generate: "AI构建", debugRun: "调试", close: "关闭", debugRunShort: "调试", quickOpen: "快速定位", quickOpenPlaceholder: "搜索角色或协作关系", quickOpenEmpty: "没有匹配的角色或协作关系。", quickOpenRole: "角色", quickOpenFlow: "协作关系", contextEditRole: "编辑角色", contextEditFlow: "编辑关系", contextInsertRole: "插入角色", contextDelete: "删除", minimap: "图谱导航", addRole: "新增角色", addEdge: "新增关系", editSelection: "编辑所选", editRole: "编辑角色", editEdge: "编辑关系", deleteSelection: "删除所选", undo: "撤销", redo: "重做", validateWorkbench: "校验", saveWorkbench: "保存", ready: "就绪", graphUnavailable: "图谱不可用", graphReady: "图谱已载入", fixMermaidBeforeGraphEditing: "请先修复结构诊断，再编辑图谱。", noRolesAvailable: "请先选择角色，再新增关系。", selectRoleBeforeAddingEdge: "请先选择角色，再新增关系。", invalidConnection: "无效的团队关系。", entryRoleDeletionBlocked: "不能删除入口角色。", invalidEdgeEndpoints: "关系端点无效。", duplicateRoleId: "角色 ID 已存在。", invalidRoleId: "角色 ID 必须以字母开头，只能使用字母、数字、下划线或连字符。", duplicateEdge: "该关系已存在。", invalidEventType: "事件类型必须使用大写字母。", deleteRoleConfirm: "确定删除角色 {roleId} 吗？", editBlocked: "结构校验通过后才能编辑图谱。", exportPng: "导出 PNG", boundaryEntry: "开始", boundaryEnd: "结束"
-  },
-  en: {
-    viewportGroup: "Graph view", editGroup: "Edit graph", teamConfiguration: "Configuration", connectFromSelectedRole: "Drag from the selected role’s output port to a target role to create a relationship.", zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph", autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout", topologyOrder: "Flow order", enabled: "On", disabled: "Off", layoutSwitched: "Switched to {layout} layout", generate: "AI Build", debugRun: "Debug", close: "Close", debugRunShort: "Debug", quickOpen: "Quick locate", quickOpenPlaceholder: "Search roles or relationships", quickOpenEmpty: "No matching roles or relationships.", quickOpenRole: "Role", quickOpenFlow: "Relationship", contextEditRole: "Edit role", contextEditFlow: "Edit relationship", contextInsertRole: "Insert role", contextDelete: "Delete", minimap: "Graph navigator", addRole: "Add role", addEdge: "Add relationship", editSelection: "Edit selected", editRole: "Edit role", editEdge: "Edit relationship", deleteSelection: "Delete selected", undo: "Undo", redo: "Undo", validateWorkbench: "Validate", saveWorkbench: "Save", ready: "Ready", graphUnavailable: "Graph unavailable", graphReady: "Graph loaded", fixMermaidBeforeGraphEditing: "Fix the structure diagnostics before editing the graph.", noRolesAvailable: "Select a role before adding a relationship.", selectRoleBeforeAddingEdge: "Select a role before adding a relationship.", invalidConnection: "Invalid team relationship.", entryRoleDeletionBlocked: "The entry role cannot be deleted.", invalidEdgeEndpoints: "Relationship endpoints are invalid.", duplicateRoleId: "Role ID already exists.", invalidEventType: "Event type must use uppercase letters.", deleteRoleConfirm: "Delete role {roleId}?", editBlocked: "Pass structure validation before editing the graph.", exportPng: "Export PNG", boundaryEntry: "Start", boundaryEnd: "End"
-  }
-};
-graphLabels.en.redo = "Redo";
-graphLabels.en.entryRoleDeletionBlocked = "Remove this role's connection from Start before deleting it.";
-graphLabels["zh-CN"].entryRoleDeletionBlocked = "请先移除此角色与开始节点的连线，再删除角色。";
-graphLabels.en.quickOpenPlaceholder = "Search roles or transitions";
-graphLabels.en.quickOpenEmpty = "No matching roles or transitions.";
-graphLabels.en.quickOpenFlow = "Transition";
-graphLabels.en.contextEditFlow = "Edit transition";
-graphLabels.en.addEdge = "Add transition";
-graphLabels.en.editEdge = "Edit transition";
-graphLabels.en.connectFromSelectedRole = "Drag from a role's output port to another role to create a transition.";
-graphLabels["zh-CN"].quickOpenPlaceholder = "搜索角色或流转";
-graphLabels["zh-CN"].quickOpenEmpty = "没有匹配的角色或流转。";
-graphLabels["zh-CN"].quickOpenFlow = "流转";
-graphLabels["zh-CN"].contextEditFlow = "编辑流转";
-graphLabels["zh-CN"].addEdge = "新增流转";
-graphLabels["zh-CN"].editEdge = "编辑流转";
-graphLabels["zh-CN"].connectFromSelectedRole = "从已选角色的输出端口拖到目标角色，创建流转。";
-graphLabels["zh-CN"].technicalDetails = "流转编号";
-graphLabels.en.technicalDetails = "Flow number";
-const graphFormLabels = {
-  "zh-CN": {
-    roleDialogTitle: "新增角色", edgeDialogTitle: "新增关系", editRoleDialogTitle: "编辑角色", editEdgeDialogTitle: "编辑关系", repositoryRole: "角色库", customRole: "自定义角色", rolePackage: "角色包", rolePackageSource: "从已安装的角色库导入", roleId: "角色 ID", title: "显示名称", bindingKind: "绑定方式", modelRef: "模型", profileId: "执行配置", existingProfile: "复用已有执行配置", createProfile: "创建项目执行配置", newProfileId: "生成的配置 ID", newProfileToolRef: "工具", newProfileTimeoutMs: "超时毫秒数", newProfileMaxOutputBytes: "最大输出字节数", sourceRole: "起始角色", targetRole: "目标角色", flowLabel: "关系名称", eventType: "事件类型", runtimeOnlyErrorFlow: "运行时错误关系", participatesInJoin: "参与汇总", cancel: "取消", create: "创建", save: "保存", noRepositoryRoles: "暂无角色库角色", noModels: "暂无模型", noProfiles: "暂无执行配置", noTools: "暂无工具", outputTarget: "成果"
-  },
-  en: {
-    roleDialogTitle: "Add role", edgeDialogTitle: "Add relationship", editRoleDialogTitle: "Edit role", editEdgeDialogTitle: "Edit relationship", repositoryRole: "Role library", customRole: "Custom role", rolePackage: "Role package", rolePackageSource: "Import from the installed role library", roleId: "Role ID", title: "Display name", bindingKind: "Binding", modelRef: "Model", profileId: "Execution profile", existingProfile: "Reuse existing execution config", createProfile: "Create project execution config", newProfileId: "Generated profile ID", newProfileToolRef: "Tool", newProfileTimeoutMs: "Timeout in milliseconds", newProfileMaxOutputBytes: "Maximum output bytes", sourceRole: "Source role", targetRole: "Target role", flowLabel: "Relationship name", eventType: "Event type", runtimeOnlyErrorFlow: "Runtime error relationship", participatesInJoin: "Participates in join", cancel: "Cancel", create: "Create", save: "Save", noRepositoryRoles: "No role library entries", noModels: "No models", noProfiles: "No execution profiles", noTools: "No tools", outputTarget: "Outcome"
-  }
-};
-graphFormLabels.en.edgeDialogTitle = "Add transition";
-graphFormLabels.en.editEdgeDialogTitle = "Edit transition";
-graphFormLabels.en.flowLabel = "Transition name";
-graphFormLabels["zh-CN"].edgeDialogTitle = "新增流转";
-graphFormLabels["zh-CN"].editEdgeDialogTitle = "编辑流转";
-graphFormLabels["zh-CN"].flowLabel = "流转名称";
 function selectCase(caseId) {
   const item = state.cases.find((entry) => entry.id === caseId);
   if (!item) return;
@@ -438,28 +308,14 @@ function renderDetail(item) {
 
 async function renderDetailGraph(item) {
   const stage = $("#detail-graph-stage");
-  if (stage) trackStudioGraphRoot(stage);
+
   try {
-    await ensureStudioGraphBundle();
-    if (!stage?.isConnected || !window.OGSStudioGraphBundle?.mountStudioX6Bridge) return;
-    const response = await pageFetch("/api/v1/cases/" + encodeURIComponent(item.id) + "/graph?locale=" + encodeURIComponent(state.locale));
+    const response = await pageFetch("/api/v1/cases/" + encodeURIComponent(item.id) + "/ir");
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Unable to load the team graph.");
+    if (!response.ok || payload.teamIR?.schemaVersion !== 2) throw new Error(payload.error || "Unable to load the Team IR v2 fixture.");
     if (!stage.isConnected) return;
-    mountStudioGraph(stage, {
-      viewModel: payload,
-      readOnly: true,
-      showTopologyOrder: false,
-      showTechnicalDetails: false,
-      initialLayoutMode: "flow",
-      defaultAutoLayout: true,
-      defaultAutoLayoutRequestId: 1,
-      labels: graphLabels[state.locale],
-      onToggleFullscreen: async () => {
-        if (document.fullscreenElement) await document.exitFullscreen();
-        else await stage.requestFullscreen();
-      }
-    });
+    stage.innerHTML = renderTeamIrStructureGraph(payload.teamIR, esc, false);
+    stage.setAttribute("aria-label", state.locale === "en" ? "Team IR v2 structure" : "Team IR v2 协作结构");
   } catch (error) { if (isAbort(error)) return;
     stage.textContent = error.message || "Unable to load the team graph.";
   }
@@ -471,7 +327,7 @@ async function createProjectFromCase(caseId, action, button) {
     const response = await pageFetch("/api/v1/cases/" + encodeURIComponent(caseId) + "/" + action, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法创建团队。");
-    navigate(action === "use" ? "/projects/new?team=" + encodeURIComponent(payload.projectId) : "/studio/teams/" + encodeURIComponent(payload.projectId) + "/design");
+    navigate(action === "use" ? "/projects/new?team=" + encodeURIComponent(payload.projectId) : "/studio/teams/" + encodeURIComponent(payload.projectId) + "/ir");
   } catch (error) { if (isAbort(error)) return;
     if (button) button.disabled = false;
     showToast(error.message || "无法创建团队。");
@@ -489,7 +345,7 @@ function applyLocale() {
   syncThemeControls();
   setProductMode(document.documentElement.dataset.productMode || "normal", false);
   const projectRoute = isProjectRoute();
-  if (!projectRoute) {
+  if (!projectRoute && location.pathname === "/") {
     renderCases();
     if ($("#graph-stage")) renderSelected(state.cases.find((item) => item.id === state.selected));
   }
@@ -507,17 +363,14 @@ function isProjectRoute() {
   return path === "/teams"
     || path === "/studio"
     || path === "/studio/roles"
-    || /^\/studio\/teams\/[a-z0-9-]+\/(info|run|release|design)$/.test(path)
-    || /^\/studio\/teams\/[a-z0-9-]+\/run\/[a-z0-9-]+$/.test(path)
+    || /^\/studio\/teams\/[a-z0-9-]+\/(info|ir|release)$/.test(path)
     || /^\/studio\/teams\/[a-z0-9-]+\/release$/.test(path)
-    || /^\/studio\/teams\/[a-z0-9-]+\/design$/.test(path)
     || path === "/projects"
     || path === "/platform"
     || path === "/platform/models"
     || path === "/platform/role-sources"
     || path === "/projects/new"
     || path === "/studio/new"
-    || path === "/studio/ir/new"
     || /^\/projects\/[a-z0-9-]+\/runs\/[A-Za-z0-9._-]+$/.test(path)
     || /^\/projects\/[a-z0-9-]+(?:\/teams)?$/.test(path);
 }
@@ -526,7 +379,7 @@ function setView(view) {
   const viewMap = { projects: "projects-view", workspace: "workspace-view", studio: "studio-view", platform: "platform-view", examples: "examples-view", history: "history-view", "new-project": "new-project-view", "project-workspace": "project-workspace-view" };
   Object.entries(viewMap).forEach(([key, id]) => document.getElementById(id)?.classList.toggle("hidden", key !== view));
   $("#case-detail-view")?.classList.add("hidden");
-  const activeView = state.studioRoute ? (["/studio/new", "/studio/ir/new"].includes(location.pathname) ? "studio-create" : location.pathname === "/studio/roles" ? "studio-roles" : "studio") : view;
+  const activeView = state.studioRoute ? (location.pathname === "/studio/new" ? "studio-create" : location.pathname === "/studio/roles" ? "studio-roles" : "studio") : view;
   $$(".nav-item[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView && !(activeView === "platform" && button.getAttribute("href") !== location.pathname)));
   const nav = $(`.nav-item[href="${location.pathname}"] [data-i18n]`) || $(`.nav-item[data-view="${activeView}"] [data-i18n]`);
   $("#breadcrumb-current").textContent = nav?.textContent || copy[state.locale].navTeams;
@@ -578,31 +431,11 @@ async function renderProjectCreate() {
     collaborationProjectForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const teamVersionIds = form.getAll("teamVersionIds").map(String); const status = $("#collaboration-project-status"); const submit = event.currentTarget.querySelector("button[type=submit]"); if (!teamVersionIds.length) { status.textContent = "请至少选择一个已发布团队版本。"; return; } submit.disabled = true; status.textContent = "正在创建项目..."; try { const createResponse = await pageFetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), teamVersionIds }) }); const project = await createResponse.json(); if (!createResponse.ok) throw new Error(project.error || "项目创建失败"); clearDirty("collaboration-project-form"); navigate(`/projects/${encodeURIComponent(project.projectId)}`); } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "项目创建失败"; submit.disabled = false; } });
   } catch (error) { if (isAbort(error)) return; if (error?.name !== "AbortError") options.innerHTML = `<p class="run-error">${esc(error.message || "无法读取团队仓库")}</p>`; }
 }
-async function renderNewProject(_pageRequest, mode = "legacy") {
+async function renderNewProject(_pageRequest) {
   const root = $("#new-project-view");
   const english = state.locale === "en";
   const t = (en, zh) => english ? en : zh;
-  root.innerHTML = `<section class="page-heading new-team-heading"><div><a class="detail-back" href="/teams" data-route="/teams">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">Team Studio · ${t("Create", "创建")}</div><h1>${t("Describe the team’s goal", "先说清团队要完成什么")}</h1><p>${t("The assistant will turn your goal into a design that you can review and refine.", "提交目标后，团队助手会先整理你的意图，再通过对话完善职责、协作关系和交付结果。")}</p></div></section><section class="project-builder new-team-builder"><form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">${t("Team design", "团队设计")}</span><h2>${t("What should this team accomplish?", "你希望团队完成什么？")}</h2><p>${t("Start with the goal. Refine the name, roles, and workflow in the design workspace.", "从目标开始，创建后可在设计工作区调整名称、角色和协作结构。")}</p></div><label>${t("Team name", "团队名称")}<input name="name" required maxlength="120" autocomplete="organization" placeholder="${t("For example: Product research team", "例如：产品研究团队")}"></label><label>${t("Team goal", "团队目标")}<textarea name="overview" required maxlength="4000" rows="6" placeholder="${t("For example: compare competitor research and produce evidence-based recommendations; researchers collect sources, analysts compare findings, and a lead reviews the result.", "例如：目标是分析竞品资料并提出行动建议；研究员负责资料整理，分析员负责比较，负责人汇总并审核；流程为收集材料、独立分析、汇总审核；输入包括竞品文档，输出为带依据的建议清单。")}"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><div class="new-team-form-footer"><p class="form-hint">${t("After creation, refine roles, workflow, and output requirements with the assistant.", "创建后可继续用自然语言调整角色、流程和输出要求。")}</p><div class="form-actions"><button class="primary-button" type="submit">${t("Create team", "创建团队")} <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`;
-  const studioCreateBack = root.querySelector(".new-team-heading .detail-back");
-  const createIntro = root.querySelector(".new-team-heading p");
-  if (createIntro) createIntro.textContent = mode === "ir-v2"
-    ? t("Create a native Team IR v2 draft. It stays separate from legacy team design.", "创建原生 Team IR v2 草稿，与旧版团队设计数据隔离。")
-    : t("Describe the goal, then refine the team design before release.", "描述团队目标，再完善设计并发布。");
-  const createTitle = root.querySelector(".new-team-heading h1");
-  if (createTitle && mode === "ir-v2") createTitle.textContent = t("Create a Team IR v2 draft", "新建 Team IR v2 草稿");
-  const createSectionLabel = root.querySelector(".new-team-form-heading .section-kicker");
-  if (createSectionLabel) createSectionLabel.textContent = mode === "ir-v2" ? "Team IR v2" : t("Team design", "团队设计");
-  const createFormTitle = root.querySelector(".new-team-form-heading h2");
-  if (createFormTitle && mode === "ir-v2") createFormTitle.textContent = t("Name the team and its goal", "填写团队名称与目标");
-  const createFormHint = root.querySelector(".new-team-form-heading p");
-  if (createFormHint && mode === "ir-v2") createFormHint.textContent = t("A typed starter flow is created with the draft. You can refine its roles and handoffs next.", "草稿会包含一个可编辑的类型化起始流程，创建后可继续调整角色和交接。");
-  if (studioCreateBack) {
-    studioCreateBack.href = "/studio";
-    studioCreateBack.dataset.route = "/studio";
-    studioCreateBack.textContent = state.locale === "en" ? "Back to OGS Studio" : "返回 OGS Studio";
-  }
-  const createDraftButton = root.querySelector("#new-project-form button[type=submit]");
-  if (createDraftButton) createDraftButton.textContent = mode === "ir-v2" ? t("Create v2 draft", "创建 v2 草稿") : t("Create team", "创建团队");
+  root.innerHTML = `<section class="page-heading new-team-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Back to OGS Studio", "返回 OGS Studio")}</a><div class="eyebrow">Team Studio · ${t("Create", "创建")}</div><h1>${t("Create a Team IR v2 draft", "新建 Team IR v2 草稿")}</h1><p>${t("Create a native Team IR v2 draft with a typed starter workflow.", "创建原生 Team IR v2 草稿，并从类型化流程开始。")}</p></div></section><section class="project-builder new-team-builder"><form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">Team IR v2</span><h2>${t("Name the team and its goal", "填写团队名称与目标")}</h2><p>${t("A typed starter flow is created with the draft. Refine its roles and handoffs next.", "草稿会包含一个可编辑的类型化起始流程，创建后可继续调整角色和交接。")}</p></div><label>${t("Team name", "团队名称")}<input name="name" required maxlength="120" autocomplete="organization" placeholder="${t("For example: Product research team", "例如：产品研究团队")}"></label><label>${t("Team goal", "团队目标")}<textarea name="overview" required maxlength="4000" rows="6" placeholder="${t("For example: compare competitor research and produce evidence-based recommendations; researchers collect sources, analysts compare findings, and a lead reviews the result.", "例如：分析竞品资料并提出行动建议；明确角色职责、交接顺序、输入材料和结果格式。")}"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><div class="new-team-form-footer"><div class="form-actions"><button class="primary-button" type="submit">${t("Create v2 draft", "创建 v2 草稿")} <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`;
   const newProjectForm = $("#new-project-form");
   bindDirtyForm(newProjectForm, () => setDirty("new-project-form"));
   newProjectForm.addEventListener("submit", async (event) => {
@@ -615,12 +448,12 @@ async function renderNewProject(_pageRequest, mode = "legacy") {
     submit.textContent = state.locale === "en" ? "Creating team…" : "正在创建团队…";
     status.textContent = state.locale === "en" ? "Creating team…" : "正在创建团队…";
     try {
-      const response = await pageFetch(mode === "ir-v2" ? "/api/v1/team-ir-drafts" : "/api/v1/team-factory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) });
+      const response = await pageFetch("/api/v1/team-ir-drafts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) });
       const project = await response.json();
       if (!response.ok) throw new Error(project.error || "项目创建失败");
       clearDirty("new-project-form");
       state.projectId = project.projectId;
-      navigate("/studio/teams/" + encodeURIComponent(project.projectId) + (mode === "ir-v2" ? "/ir" : "/design"));
+      navigate("/studio/teams/" + encodeURIComponent(project.projectId) + "/ir");
     } catch (error) { if (isAbort(error)) return;
       status.textContent = error.message || t("Team creation failed.", "团队创建失败。");
     } finally {
@@ -632,95 +465,6 @@ async function renderNewProject(_pageRequest, mode = "legacy") {
   });
 }
 
-async function renderTeamAssistant(projectId, project, pageRequest = state.activeRequest) {
-  if (pageRequest && !isCurrentRequest(pageRequest)) return;
-  const root = $("#team-assistant");
-  if (!root) return;
-  let latestDesign;
-  let latestDigest = project.projectDigest;
-  let lastResponse;
-  let sending = false;
-  root.innerHTML = `<p class="panel-intro">团队目标已预填。发送后先生成结构预览，确认后才应用到草案。</p><div class="assistant-history" id="team-assistant-history"><div class="assistant-message"><strong>当前目标</strong><span>${esc(project.overview || "还没有填写团队目标")}</span></div><div class="assistant-message"><strong>可以这样说</strong><span>增加一个事实核查角色，并让最终结论都附上来源。</span></div></div><div class="assistant-choices"><button type="button" class="builder-choice" data-assistant-choice="按顺序接力完成任务，并在最后增加人工审核"><strong>增加审核</strong><span>在最终输出前检查质量</span></button><button type="button" class="builder-choice" data-assistant-choice="减少角色，优先保证运行速度和成本"><strong>减少角色</strong><span>让流程更短、更容易运行</span></button><button type="button" class="builder-choice" data-assistant-choice="为每个关键结论增加来源引用要求"><strong>增加来源</strong><span>让结果更容易核查</span></button></div><label class="assistant-input-label"><span>团队目标或调整要求</span><textarea id="team-assistant-input" rows="3" maxlength="4000" placeholder="例如：让研究员先分析，再让审核员检查事实依据">${esc(project.overview || "")}</textarea></label><div class="form-actions"><button class="primary-button" type="button" id="team-assistant-send">生成结构预览</button></div><p class="form-status" id="team-assistant-status" role="status" aria-live="polite"></p><div id="team-assistant-preview"></div>`;
-  const assistantIntro = root.querySelector(".panel-intro");
-  if (assistantIntro) assistantIntro.textContent = "团队目标已预填。发送后先生成结构预览，确认后才应用到团队设计。";
-  try {
-    const designResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design`);
-    latestDesign = await designResponse.json();
-    latestDigest = latestDesign.saveSnapshotDigest || latestDesign.teamVersionDigest || latestDigest;
-  } catch (error) { if (isAbort(error)) return;
-    $("#team-assistant-status").textContent = error.message || "无法读取当前团队设计";
-  }
-  const addMessage = (label, content, kind = "assistant") => {
-    $("#team-assistant-history")?.insertAdjacentHTML("beforeend", `<div class="assistant-message ${kind}"><strong>${esc(label)}</strong><span>${esc(content)}</span></div>`);
-  };
-  const send = async (message) => {
-    const text = String(message || "").trim();
-    if (!text) return;
-    if (sending) return;
-    const status = $("#team-assistant-status");
-    const input = $("#team-assistant-input");
-    const sendButton = $("#team-assistant-send");
-    sending = true;
-    if (sendButton) sendButton.disabled = true;
-    input.value = text;
-    addMessage("你", text, "user");
-    status.textContent = "正在分析团队结构并生成预览…";
-    try {
-      const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: text, systemSource: latestDesign?.systemSource, authoring: latestDesign?.authoring }) });
-      const payload = await response.json();
-      const responseError = typeof payload.error === "string"
-        ? payload.error
-        : payload.error?.message || payload.error?.code || "团队助手暂时不可用";
-      if (!response.ok) throw new Error(responseError);
-      lastResponse = payload;
-      addMessage("团队助手", payload.summary || payload.questions?.join("\n") || "已生成下一步建议。");
-      const preview = $("#team-assistant-preview");
-      const questions = (payload.questions || []).map((question) => `<button type="button" class="assistant-question" data-assistant-choice="${esc(question)}">${esc(question)}</button>`).join("");
-      const patchReady = payload.authoringPatch?.authoring;
-      if (patchReady) setDirty("team-assistant");
-      const modeLabel = payload.mode === "draft" ? (state.locale === "en" ? "In design" : "设计中") : payload.mode || (state.locale === "en" ? "In design" : "设计中");
-      preview.innerHTML = `<div class="assistant-preview"><div class="preview-list"><div><strong>当前状态</strong><span>${esc(modeLabel)}</span></div><div><strong>待确认问题</strong><span>${payload.unresolvedItems?.length || 0}</span></div></div>${payload.assumptions?.length ? `<p class="form-hint">假设：${esc(payload.assumptions.join("；"))}</p>` : ""}${questions ? `<div class="assistant-question-list">${questions}</div>` : ""}${patchReady ? '<div class="form-actions"><button type="button" class="primary-button" id="team-assistant-apply">应用到团队设计</button></div>' : ""}</div>`;
-      preview.querySelectorAll("[data-assistant-choice]").forEach((button) => button.addEventListener("click", () => send(button.dataset.assistantChoice)));
-      $("#team-assistant-apply")?.addEventListener("click", async (event) => {
-        const patch = lastResponse?.authoringPatch?.authoring;
-        if (!patch) return;
-        const applyButton = event.currentTarget;
-        applyButton.disabled = true;
-        status.textContent = "正在保存团队设计…";
-        try {
-          const save = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/save`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: patch, expectedTeamVersionDigest: latestDigest }) });
-          const saved = await save.json();
-          if (!save.ok) throw new Error(saved.error || "团队设计保存失败");
-          if (saved.createdDraft) {
-            clearDirty("team-assistant");
-            navigate(withCurrentSearch(`/studio/teams/${encodeURIComponent(saved.teamVersionId)}/design`));
-            return;
-          }
-          latestDigest = saved.teamVersionDigest || latestDigest;
-          latestDesign = saved;
-          clearDirty("team-assistant");
-          status.textContent = "修改已应用，团队处于设计中，请检查后发布。";
-          await renderProjectStudio(projectId, pageRequest);
-          state.teamStudioDialog?.("assistant");
-          const refreshedStatus = $("#team-assistant-status");
-          if (refreshedStatus) refreshedStatus.textContent = status.textContent;
-        } catch (error) {
-          if (isAbort(error)) return;
-          status.textContent = error.message || "团队设计保存失败";
-          applyButton.disabled = false;
-        }
-      });
-      status.textContent = patchReady ? "预览已生成，确认后才会保存。" : "请回答团队助手的问题，继续完善团队。";
-    } catch (error) { if (isAbort(error)) return;
-      status.innerHTML = teamStudioErrorMarkup(error.message || "团队助手暂时不可用");
-    } finally {
-      sending = false;
-      if (sendButton?.isConnected) sendButton.disabled = false;
-    }
-  };
-  $("#team-assistant-send")?.addEventListener("click", () => send($("#team-assistant-input").value));
-  $$("#team-assistant [data-assistant-choice]").forEach((button) => button.addEventListener("click", () => send(button.dataset.assistantChoice)));
-}
 function teamVersionMeta(team) {
   const status = team.teamVersionStatus || "draft";
   const displayStatus = status;
@@ -739,7 +483,7 @@ function teamCard(team, area) {
       ? `<a class="secondary-button team-view-button" href="/studio/teams/${id}/info" data-route="/studio/teams/${id}/info">${state.locale === "en" ? "View team" : "查看团队"}</a>${deleteButton}`
       : `${meta.status === "released"
         ? `<button class="primary-button" type="button" data-team-action="edit" data-team-id="${id}">${state.locale === "en" ? "Edit team" : "编辑团队"}</button><button class="secondary-button" type="button" data-team-action="archive" data-team-id="${id}">${esc(copy[state.locale].archiveVersion)}</button>`
-        : (() => { const route = `/studio/teams/${id}/${team.source === "team-ir-v2" ? "ir" : "design"}`; return `<a class="primary-button" href="${route}" data-route="${route}">${esc(copy[state.locale].continueEditing)}</a>`; })()}${deleteButton}`;
+        : `<a class="primary-button" href="/studio/teams/${id}/ir" data-route="/studio/teams/${id}/ir">${esc(copy[state.locale].continueEditing)}</a>`}${deleteButton}`;
   const statusClass = meta.displayStatus === "released" ? "released" : meta.displayStatus;
   return `<article class="team-version-card project-asset-surface" data-team-root-id="${esc(team.teamRootId || team.teamId || team.projectId)}" data-team-status="${esc(meta.displayStatus)}" data-team-builtin="${team.builtIn ? "true" : "false"}"><div class="asset-card-top"><span class="asset-mark">O</span><span class="status-chip ${esc(statusClass)}">${esc(meta.label)}</span></div><div class="asset-title-row"><h2>${title}</h2><span class="version-badge">${esc(meta.version)}</span></div><p>${esc(team.overview || "")}</p><div class="asset-card-meta"><span>${team.builtIn ? (state.locale === "en" ? "Built-in team" : "内置经典团队") : esc(meta.hint)}</span><span>${team.updatedAt ? new Date(team.updatedAt).toLocaleDateString(state.locale) : ""}</span></div><div class="asset-card-actions">${actions}</div></article>`;
 }
@@ -750,16 +494,7 @@ function roleColorForId(roleId) {
   return { accent: `hsl(${hue} 58% 30%)`, fill: `hsl(${hue} 42% 95%)` };
 }
 function caseGraphThumbnail(item) {
-  const roles = item.roles || [];
-  const points = roles.map((role, index) => ({ role, x: 28 + (index % 4) * 102, y: 34 + Math.floor(index / 4) * 54 }));
-  const pointById = new Map(points.map((point) => [point.role.id, point]));
-  const edges = (item.flows || []).map((flow) => {
-    const [from, to] = Array.isArray(flow) ? flow : [flow?.from, flow?.to];
-    const source = pointById.get(from); const target = pointById.get(to);
-    return source && target ? `<path d="M ${source.x + 25} ${source.y + 11} C ${(source.x + target.x) / 2} ${source.y + 11}, ${(source.x + target.x) / 2} ${target.y + 11}, ${target.x - 25} ${target.y - 11}" />` : "";
-  }).join("");
-  const nodes = points.map(({ role, x, y }) => { const color = roleColorForId(role.id); return `<g><rect x="${x - 25}" y="${y - 11}" width="50" height="22" rx="5" fill="${color.fill}" stroke="${color.accent}" /><text x="${x}" y="${y + 3}" fill="${color.accent}" text-anchor="middle">${esc(text(role.label)).slice(0, 8)}</text></g>`; }).join("");
-  return `<svg class="team-graph-thumbnail" viewBox="0 0 360 128" aria-hidden="true"><g class="thumbnail-edges">${edges}</g><g class="thumbnail-nodes">${nodes}</g></svg>`;
+  return `<div class="team-role-preview" aria-hidden="true">${(item.roles || []).slice(0, 5).map((role) => `<span>${esc(text(role.label))}</span>`).join("")}</div>`;
 }
 function bindTeamActions(root) {
   const pageRequest = state.activeRequest;
@@ -774,7 +509,7 @@ function bindTeamActions(root) {
         if (!window.confirm(message)) { button.disabled = false; return; }
       }
       if (action === "edit") {
-        navigate(`/studio/teams/${encodeURIComponent(id)}/design?edit=1`);
+        navigate(`/studio/teams/${encodeURIComponent(id)}/ir?edit=1`);
         return;
       }
       const isDraftDelete = action === "delete" && button.dataset.teamStatus === "draft";
@@ -815,9 +550,7 @@ function showBlockedTeamProjects(projects) {
 }
 async function renderProjectLibrary() {
   const root = $("#workspace-view");
-  const importLabelText = () => { const label = root.querySelector(".import-project-button"); if (label?.firstChild) label.firstChild.textContent = "导入团队"; };
-  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">${esc(copy[state.locale].libraryEyebrow)}</div><h1>${esc(copy[state.locale].libraryTitle)}</h1><p>${esc(copy[state.locale].libraryIntro)}</p></div></section><section class="project-library-toolbar"><div><strong>${esc(copy[state.locale].releasedLabel)}</strong><span>${esc(copy[state.locale].repositoryEmptyHint)}</span></div><div class="project-library-filters repository-actions"><label><span class="sr-only">搜索团队</span><input id="project-library-search" type="search" placeholder="搜索团队名称或目标"></label><label class="secondary-button import-project-button">导入团队<input id="project-import-file" type="file" accept="application/json" hidden></label><a class="primary-button" href="/studio" data-route="/studio">${esc(copy[state.locale].createTeam)}</a></div></section><div id="project-library-grid" class="project-library-grid"><div class="project-loading">正在读取团队仓库...</div></div>`;
-  importLabelText();
+  root.innerHTML = `<section class="page-heading library-heading"><div><div class="eyebrow">${esc(copy[state.locale].libraryEyebrow)}</div><h1>${esc(copy[state.locale].libraryTitle)}</h1><p>${esc(copy[state.locale].libraryIntro)}</p></div></section><section class="project-library-toolbar"><div><strong>${esc(copy[state.locale].releasedLabel)}</strong><span>${esc(copy[state.locale].repositoryEmptyHint)}</span></div><div class="project-library-filters repository-actions"><label><span class="sr-only">搜索团队</span><input id="project-library-search" type="search" placeholder="搜索团队名称或目标"></label><a class="primary-button" href="/studio" data-route="/studio">${esc(copy[state.locale].createTeam)}</a></div></section><div id="project-library-grid" class="project-library-grid"><div class="project-loading">正在读取团队仓库...</div></div>`;
   const grid = $("#project-library-grid");
   root.querySelector(".project-library-toolbar")?.insertAdjacentHTML("afterend", `<section class="classic-team-section repository-classic-section"><div class="section-header"><div><div class="section-kicker">${esc(state.locale === "en" ? "Repository examples" : "典型团队")}</div><h2>${esc(state.locale === "en" ? "Ready-made collaboration patterns" : "开箱即用的协作方式")}</h2><p class="section-description">${esc(state.locale === "en" ? "Inspect a built-in team graph, then decide whether to try it or copy it into a new version." : "先查看内置团队图谱，再决定试用流程或复制为新版本。")}</p></div></div><div class="classic-team-grid">${state.cases.map((item) => `<article class="classic-team-card" data-accent="${esc(item.accent)}"><a class="classic-team-preview" href="/cases/${encodeURIComponent(item.id)}" data-route="/cases/${encodeURIComponent(item.id)}" aria-label="${esc(text(item.title))}">${caseGraphThumbnail(item)}<span class="classic-team-arrow" aria-hidden="true">↗</span></a><div class="classic-team-card-top"><span class="asset-mark">${esc(icon[item.icon] || "✦")}</span><span class="status-chip">${esc(state.locale === "en" ? "Built-in" : "内置版本")}</span></div><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="classic-team-meta"><span>${esc(item.duration?.[state.locale] || item.duration?.["zh-CN"] || "")}</span><span>${item.roles.length} ${state.locale === "en" ? "roles" : "个角色"}</span></div></article>`).join("")}</div></section>`);
   root.querySelectorAll("[data-classic-team]").forEach((button) => button.addEventListener("click", async () => {
@@ -834,34 +567,6 @@ async function renderProjectLibrary() {
     grid.innerHTML = teams.length ? teams.map((team) => teamCard(team, "repository")).join("") : `<div class="empty-projects"><strong>${esc(copy[state.locale].noReleasedTeams)}</strong><p>${esc(copy[state.locale].repositoryEmptyHint)}</p></div>`;
     bindTeamActions(grid);
     $("#project-library-search")?.addEventListener("input", (event) => { const query = event.target.value.trim().toLowerCase(); grid.querySelectorAll(".team-version-card").forEach((card) => { card.hidden = Boolean(query && !card.textContent.toLowerCase().includes(query)); }); });
-    $("#project-import-file")?.addEventListener("change", async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      event.target.value = "";
-      try {
-        const bundle = JSON.parse(await file.text());
-        const previewResponse = await pageFetch("/api/v1/team-packages/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(bundle) });
-        const preview = await previewResponse.json();
-        if (!previewResponse.ok) throw new Error(preview.error || "导入预览失败");
-        if (preview.duplicate) {
-          showToast(`内容一致：团队“${preview.name}”已经存在，已取消重复导入。`);
-          navigate(`/studio/teams/${encodeURIComponent(preview.duplicate.projectId)}/design`);
-          return;
-        }
-        let teamName;
-        if (preview.conflicts?.length) {
-          teamName = window.prompt(`团队“${preview.name}”已存在，但内容不同。请输入新的团队名称后导入：`, `${preview.name}（导入）`)?.trim();
-          if (!teamName) {
-            showToast("未提供新的团队名称，已取消导入。");
-            return;
-          }
-        }
-        const imported = await pageFetch("/api/v1/team-packages/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...bundle, conflictStrategy: "reject", ...(teamName ? { teamName } : {}) }) });
-        const result = await imported.json();
-        if (!imported.ok) throw new Error(result.error || "导入失败");
-        navigate(`/studio/teams/${encodeURIComponent(result.projectId)}/design`);
-      } catch (error) { if (isAbort(error)) return; showToast(error.message || "导入失败"); }
-    });
   } catch (error) { if (isAbort(error)) return; grid.innerHTML = `<div class="run-error">${esc(error.message || "无法读取团队仓库")}</div>`; }
 }
 async function renderCollaborationProjects() {
@@ -1081,12 +786,6 @@ async function renderStudioOverview() {
   const root = $("#studio-view");
   root.dataset.template = "A";
   root.innerHTML = `<section class="page-frame" data-template="A" data-fit><div class="page-frame-body" data-layout-scroll><section class="project-library-toolbar studio-repository-toolbar"><div class="repository-heading"><div class="eyebrow">${esc(copy[state.locale].factoryEyebrow)}</div><h1>${esc(copy[state.locale].factoryTitle)}</h1><p>${esc(copy[state.locale].factoryIntro)}</p></div><div class="project-library-filters repository-actions"><label><span class="sr-only">${state.locale === "en" ? "Search teams" : "搜索团队"}</span><input id="studio-team-search" type="search" placeholder="${state.locale === "en" ? "Search teams" : "搜索团队"}"></label><label><span class="sr-only">${state.locale === "en" ? "Filter status" : "筛选状态"}</span><select id="studio-team-status"><option value="all">${state.locale === "en" ? "All statuses" : "全部状态"}</option><option value="released">${esc(copy[state.locale].releasedLabel)}</option><option value="draft">${state.locale === "en" ? "Designing" : "设计中"}</option><option value="archived">${esc(copy[state.locale].archivedLabel)}</option></select></label><a class="primary-button" href="/studio/new" data-route="/studio/new">${esc(copy[state.locale].createTeam)}</a></div></section><div id="studio-grid" class="project-library-grid"><div class="project-loading" role="status">${state.locale === "en" ? "Loading team repository…" : "正在读取团队仓库…"}</div></div></div></section>`;
-  const nativeDraftLink = document.createElement("a");
-  nativeDraftLink.className = "secondary-button";
-  nativeDraftLink.href = "/studio/ir/new";
-  nativeDraftLink.dataset.route = "/studio/ir/new";
-  nativeDraftLink.textContent = state.locale === "en" ? "New Team IR v2" : "新建 Team IR v2";
-  root.querySelector(".repository-actions")?.append(nativeDraftLink);
   const grid = $("#studio-grid");
   const statusFilter = $("#studio-team-status");
   const draftOption = statusFilter?.querySelector('option[value="draft"]');
@@ -1117,54 +816,15 @@ async function renderStudioOverview() {
   } catch (error) { if (isAbort(error)) return; grid.innerHTML = `<div class="run-error">${esc(error.message || (state.locale === "en" ? "Unable to load the team repository." : "无法读取团队仓库。"))}</div>`; }
 }
 
-function studioSimulationStatus(status) {
-  const labels = state.locale === "en"
-    ? { running: "Running", waiting: "Waiting", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
-    : { running: "运行中", waiting: "等待中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
-  return labels[status] || status || (state.locale === "en" ? "Unknown" : "未知");
-}
-
-function studioSimulationEventTime(event) {
-  const parts = [];
-  if (event.at) {
-    const date = new Date(event.at);
-    if (!Number.isNaN(date.getTime())) {
-      parts.push(date.toLocaleString(state.locale, {
-        year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-      }));
-    }
-  }
-  if (Number.isFinite(Number(event.durationMs))) {
-    parts.push(state.locale === "en" ? `${Math.max(0, Number(event.durationMs))} ms` : `耗时 ${Math.max(0, Number(event.durationMs))} 毫秒`);
-  }
-  return parts.join(" · ");
-}
-
 function studioWorkspaceNav(teamVersionId, active) {
   const id = encodeURIComponent(teamVersionId);
   const search = location.search;
   const items = [
     ["info", state.locale === "en" ? "Team info" : "团队信息", "info"],
-    ["design", state.locale === "en" ? "Design" : "设计", "design"],
     ["ir", "Team IR v2", "ir"],
-    ["run", state.locale === "en" ? "Debug history" : "调试历史", "run"],
     ["release", state.locale === "en" ? "Release" : "发布", "release"]
   ];
   return `<nav class="studio-workspace-nav" aria-label="${state.locale === "en" ? "Team workspace" : "团队工作区"}">${items.map(([key, label, route]) => `<a href="/studio/teams/${id}/${route}${search}" data-route="/studio/teams/${id}/${route}${search}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
-}
-
-function starterTeamIr(teamVersionId) {
-  return {
-    schemaVersion: 2,
-    team: { id: teamVersionId, version: "2.0.0" },
-    runInput: { dataSchema: { type: "object", properties: { request: { type: "string" } }, required: ["request"], additionalProperties: false }, preferencesSchema: { type: "object", additionalProperties: true }, artifactSlots: {} },
-    runResult: { dataSchema: { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false }, artifactSlots: {} },
-    executionPolicy: { resultMode: "required", activeExecutionBudgetMs: 900000 },
-    agents: [], handoffs: [],
-    orchestration: { routes: [], joins: [], loops: [], reviews: [] },
-    bindings: [], presentation: { nodes: {} }
-  };
 }
 
 function teamIrAdvancedContracts(ir) {
@@ -1201,14 +861,18 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   candidate.$defs = advanced.$defs ?? candidate.$defs;
   const previousRoutes = previous.orchestration?.routes || [];
   const storedRoutes = advanced.orchestration?.routes || [];
+  const liveHandoffIds = new Set(candidate.handoffs.map((handoff) => handoff.id));
+  const liveStoredRoutes = storedRoutes
+    .map((route) => ({ ...route, handoffIds: route.handoffIds.filter((id) => liveHandoffIds.has(id)) }))
+    .filter((route) => route.handoffIds.length > 0);
   const advancedRoutesChanged = JSON.stringify(storedRoutes) !== JSON.stringify(previousRoutes);
   const generatedRoutesByKey = new Map(candidate.orchestration.routes.map((route) => [JSON.stringify(route.from), route]));
-  const routes = advancedRoutesChanged ? storedRoutes : [
-    ...storedRoutes.map((stored) => {
+  const routes = advancedRoutesChanged ? liveStoredRoutes : [
+    ...liveStoredRoutes.map((stored) => {
       const generated = generatedRoutesByKey.get(JSON.stringify(stored.from));
       return generated ? { ...stored, ...generated, onNoMatch: stored.onNoMatch } : stored;
     }),
-    ...candidate.orchestration.routes.filter((route) => !storedRoutes.some((stored) => JSON.stringify(stored.from) === JSON.stringify(route.from)))
+    ...candidate.orchestration.routes.filter((route) => !liveStoredRoutes.some((stored) => JSON.stringify(stored.from) === JSON.stringify(route.from)))
   ];
   const mergeOrchestrationRows = (key, fields) => {
     const formRows = candidate.orchestration[key] || [];
@@ -1498,7 +1162,7 @@ function teamIrFromEditor(form, base) {
       outputPorts: { [outputPort]: { dataSchema: schemaFromFields(data.get(`agent-${index}-output-fields`)) } }
     };
   });
-  const bindings = agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000,
+  const bindings = agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "codex-gateway/gpt-6-luna", attemptTimeoutMs: 120000,
     retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
   const handoffs = [...form.querySelectorAll("[data-ir-handoff]")].map((row) => {
     const index = row.dataset.irHandoff;
@@ -1673,9 +1337,13 @@ async function renderStudioTeamInfo(teamVersionId, pageRequest = state.activeReq
   const root = $("#studio-view");
   root.innerHTML = '<div class="project-loading">正在读取团队信息...</div>';
   try {
-    const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`);
-    const team = await response.json();
+    const [response, irResponse] = await Promise.all([
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`)
+    ]);
+    const [team, stored] = await Promise.all([response.json(), irResponse.json()]);
     if (!response.ok) throw new Error(team.error || "无法读取团队版本");
+    if (!irResponse.ok || stored.teamIR?.schemaVersion !== 2) throw new Error("TEAM_IR_V2_REQUIRED");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
     const meta = teamVersionMeta(team);
     const editable = meta.status !== "archived";
@@ -1727,7 +1395,8 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     if (!teamResponse.ok) throw new Error(team.error || "Unable to load TeamVersion.");
     if (!irResponse.ok) throw new Error(stored.error || "Unable to load Team IR v2.");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
-    let draft = stored.teamIR || starterTeamIr(teamVersionId);
+    if (stored.teamIR?.schemaVersion !== 2) throw new Error("TEAM_IR_V2_REQUIRED: TeamVersion must contain a native Team IR v2 document.");
+    let draft = stored.teamIR;
     let expectedSemanticDigest = stored.semanticDigest ?? null;
     const editable = team.teamVersionStatus === "draft";
     let pendingConnectionSource;
@@ -1735,7 +1404,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       const rows = renderTeamIrEditorRows(draft, esc, editable);
       Object.assign(rows, renderTeamIrOrchestrationRows(draft, esc, editable));
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
       form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section>`);
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
@@ -1794,7 +1463,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         if (kind === "agent") {
           const id = `agent-${draft.agents.length + 1}`;
           draft.agents.push({ id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`, inputPorts: { default: { dataSchema: schemaFromFields("request") } }, outputPorts: { DONE: { dataSchema: schemaFromFields("summary") } } });
-          draft.bindings.push({ id: `binding:${id}`, kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } });
+          draft.bindings.push({ id: `binding:${id}`, kind: "model", modelRef: "codex-gateway/gpt-6-luna", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } });
         } else if (kind === "handoff") {
           draft.handoffs.push({ id: `handoff-${draft.handoffs.length + 1}`, from: { kind: "run" }, to: { kind: "agent", agentId: draft.agents[0]?.id || "", inputPort: "default" }, map: { data: {} }, delivery: { deadlineMs: 300000 } });
         } else if (kind === "join") {
@@ -1855,10 +1524,18 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
             from: structuredClone(pendingConnectionSource),
             to: target,
             map: { data: {} },
-            ...(existingRoute && existingRoute.mode === "exclusive_priority" ? { when: { priority } } : {}),
+            ...(existingRoute
+              ? (existingRoute.mode === "exclusive_priority" ? { when: { priority } } : {})
+              : { when: { priority: 0 } }),
             delivery: { deadlineMs: 300000 }
           });
           if (existingRoute) existingRoute.handoffIds.push(handoffId);
+          else current.orchestration.routes.push({
+            from: structuredClone(pendingConnectionSource),
+            mode: "exclusive_priority",
+            onNoMatch: "fail",
+            handoffIds: [handoffId]
+          });
           draft = current;
           pendingConnectionSource = undefined;
           syncAdvancedContracts();
@@ -1889,7 +1566,18 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       }));
       form.querySelectorAll("[data-ir-remove-handoff]").forEach((button) => button.addEventListener("click", () => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
-        draft.handoffs.splice(Number(button.dataset.irRemoveHandoff), 1);
+        const [removed] = draft.handoffs.splice(Number(button.dataset.irRemoveHandoff), 1);
+        if (removed) {
+          draft.orchestration.routes = draft.orchestration.routes
+            .map((route) => ({ ...route, handoffIds: route.handoffIds.filter((id) => id !== removed.id) }))
+            .filter((route) => route.handoffIds.length > 0);
+          for (const join of draft.orchestration.joins) join.handoffIds = join.handoffIds.filter((id) => id !== removed.id);
+          for (const loop of draft.orchestration.loops) {
+            loop.entryHandoffIds = loop.entryHandoffIds.filter((id) => id !== removed.id);
+            loop.continueHandoffIds = loop.continueHandoffIds.filter((id) => id !== removed.id);
+            loop.exitHandoffIds = loop.exitHandoffIds.filter((id) => id !== removed.id);
+          }
+        }
         syncAdvancedContracts();
         redraw();
       }));
@@ -1944,6 +1632,75 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       });
       const simulation = root.querySelector("[data-team-ir-simulation]");
       const simulationStatus = simulation.querySelector("[data-ir-simulation-status]");
+      const simulationArtifactInputs = document.createElement("section");
+      simulationArtifactInputs.dataset.irSimulationArtifactInputs = "";
+      simulationArtifactInputs.hidden = true;
+      simulationArtifactInputs.innerHTML = '<div class="panel-head"><div><span class="section-kicker">Run input</span><h3>Simulation attachments</h3></div></div><div class="form-actions"><label>Artifact slot<select data-ir-simulation-artifact-slot disabled><option value="">Loading slots...</option></select></label><label class="secondary-button material-upload-button">Choose file<input type="file" data-ir-simulation-artifact-file hidden></label><button class="secondary-button" type="button" data-ir-simulation-artifact-add disabled>Add attachment</button></div><div class="material-list" data-ir-simulation-artifact-list></div><p class="form-status" data-ir-simulation-artifact-status role="status" aria-live="polite"></p>';
+      simulation.querySelector("[data-ir-simulation-input]")?.closest("label")?.after(simulationArtifactInputs);
+      const simulationArtifactSlot = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-slot]");
+      const simulationArtifactFile = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-file]");
+      const simulationArtifactAdd = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-add]");
+      const simulationArtifactStatus = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-status]");
+      const simulationArtifactList = simulationArtifactInputs.querySelector("[data-ir-simulation-artifact-list]");
+      const simulationArtifactScopeId = createUuid().toLowerCase();
+      const simulationArtifactReferences = new Map();
+      const renderSimulationArtifacts = () => {
+        simulationArtifactList.innerHTML = [...simulationArtifactReferences.entries()].map(([slotId, item]) => `<div class="material-row"><div><strong>${esc(slotId)}</strong><span>${esc(item.filename)} · ${item.size} bytes</span></div><button class="text-button" type="button" data-ir-simulation-artifact-remove="${esc(slotId)}">Remove</button></div>`).join("");
+        simulationArtifactList.querySelectorAll("[data-ir-simulation-artifact-remove]").forEach((button) => button.addEventListener("click", () => {
+          simulationArtifactReferences.delete(button.dataset.irSimulationArtifactRemove);
+          renderSimulationArtifacts();
+        }));
+      };
+      const loadSimulationArtifactSlots = async () => {
+        simulationArtifactSlot.disabled = true;
+        simulationArtifactAdd.disabled = true;
+        simulationArtifactStatus.textContent = "";
+        try {
+          const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulation-artifact-slots`);
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to load Simulation Artifact slots.");
+          const slots = (payload.slots || []).filter((slot) => slot.cardinality === "single");
+          simulationArtifactSlot.innerHTML = slots.length
+            ? slots.map((slot) => `<option value="${esc(slot.slotId)}">${esc(slot.slotId)}${slot.required ? " · required" : " · optional"}</option>`).join("")
+            : '<option value="">No single Artifact input slots</option>';
+          simulationArtifactInputs.hidden = slots.length === 0;
+          simulationArtifactSlot.disabled = slots.length === 0;
+          simulationArtifactAdd.disabled = slots.length === 0;
+          const unsupportedRequired = (payload.slots || []).filter((slot) => slot.required && slot.cardinality !== "single");
+          if (unsupportedRequired.length) simulationArtifactStatus.textContent = `Required slot(s) need unsupported cardinality: ${unsupportedRequired.map((slot) => slot.slotId).join(", ")}.`;
+        } catch (error) {
+          if (!isAbort(error)) simulationArtifactStatus.textContent = error.message || "Unable to load Simulation Artifact slots.";
+        }
+      };
+      simulationArtifactAdd.addEventListener("click", async () => {
+        const file = simulationArtifactFile.files?.[0];
+        const slotId = simulationArtifactSlot.value;
+        if (!file || !slotId) { simulationArtifactStatus.textContent = "Select an Artifact slot and a file."; return; }
+        if (!file.size || file.size > 512 * 1024) { simulationArtifactStatus.textContent = "Choose a non-empty file no larger than 512 KiB."; return; }
+        simulationArtifactAdd.disabled = true;
+        simulationArtifactStatus.textContent = "Registering Simulation attachment...";
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+          const mediaType = file.type || (file.name.endsWith(".md") ? "text/markdown" : "text/plain");
+          const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulation-artifacts/run-input`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ artifactScopeId: simulationArtifactScopeId, slotId, mediaType, contentBase64: btoa(binary) })
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to register Simulation attachment.");
+          simulationArtifactReferences.set(slotId, { filename: file.name, size: file.size, reference: { artifactId: payload.artifactId, mediaType: payload.mediaType } });
+          simulationArtifactFile.value = "";
+          simulationArtifactStatus.textContent = "Simulation attachment registered.";
+          renderSimulationArtifacts();
+        } catch (error) {
+          if (!isAbort(error)) simulationArtifactStatus.textContent = error.message || "Unable to register Simulation attachment.";
+        } finally {
+          simulationArtifactAdd.disabled = simulationArtifactSlot.disabled;
+        }
+      });
+      void loadSimulationArtifactSlots();
       const renderSimulation = (record) => {
         simulation.querySelector("[data-ir-simulation-evidence]").innerHTML = `<h3>${esc(record.status || "unknown")} · ${esc(record.simulationId || "")}</h3>${record.error ? `<p class="form-status" role="alert">${esc(record.error)}</p>` : ""}<pre>${esc(JSON.stringify({ result: record.result, events: record.events }, null, 2))}</pre>`;
       };
@@ -1972,13 +1729,16 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           const input = JSON.parse(simulation.querySelector("[data-ir-simulation-input]").value);
           const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`, {
             method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ input, task: simulation.querySelector("[data-ir-simulation-task]").value })
+            body: JSON.stringify({ input, task: simulation.querySelector("[data-ir-simulation-task]").value, artifactScopeId: simulationArtifactScopeId,
+              attachments: Object.fromEntries([...simulationArtifactReferences.entries()].map(([slotId, item]) => [slotId, item.reference])) })
           });
           const record = await response.json();
           if (!response.ok) throw new Error(record.error || "Unable to run Team IR v2 Simulation.");
           renderSimulation(record);
           simulationStatus.textContent = record.error || `Simulation ${record.status}.`;
           await refreshSimulationHistory();
+          simulationArtifactReferences.clear();
+          renderSimulationArtifacts();
         } catch (error) {
           simulationStatus.textContent = error instanceof SyntaxError ? "Run input must be valid JSON." : (error.message || "Unable to run Simulation.");
         } finally { button.disabled = false; }
@@ -1989,146 +1749,6 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
   } catch (error) {
     if (isAbort(error)) return;
     root.innerHTML = `<div class="run-error">${esc(error.message || "Unable to load Team IR v2.")}</div>`;
-  }
-}
-
-async function renderStudioSystemSettings(teamVersionId, pageRequest = state.activeRequest, root = $("#studio-assets-global"), current = {}) {
-  if (!root) return;
-  root.innerHTML = '<div class="project-loading">正在读取团队全局配置...</div>';
-  try {
-    const [teamResponse, designResponse, assetsResponse] = await Promise.all([
-      current.teamVersion || state.studioTeamVersion ? Promise.resolve(null) : pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
-      current.authoring ? Promise.resolve(null) : pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design?locale=${encodeURIComponent(state.locale)}`),
-      current.assets ? Promise.resolve(null) : pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design/assets`)
-    ]);
-    const [team, design, assets] = await Promise.all([
-      teamResponse ? teamResponse.json() : Promise.resolve(current.teamVersion || state.studioTeamVersion),
-      designResponse ? designResponse.json() : Promise.resolve(null),
-      assetsResponse ? assetsResponse.json() : Promise.resolve(null)
-    ]);
-    if ((teamResponse && !teamResponse.ok) || (designResponse && !designResponse.ok) || (assetsResponse && !assetsResponse.ok)) {
-      throw new Error(team.error || design?.error || assets?.error || "无法读取团队全局配置");
-    }
-    if (!root.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
-    const authoring = structuredClone(current.authoring || design.authoring);
-    const teamVersionDigest = current.teamVersionDigest || design?.saveSnapshotDigest || design?.teamVersionDigest;
-    const editable = teamVersionMeta(team).status !== "archived";
-    const currentAssets = current.assets || design?.saveSnapshotAssets || assets;
-    const lawCatalog = currentAssets.laws || { laws: [] };
-    const selectedLawId = authoring.system.lawGlobalRef || "";
-    const selectedLaw = (lawCatalog.laws || []).find((law) => law.lawId === selectedLawId) || null;
-    const laws = selectedLaw?.constraints || {};
-    const contractSchemas = currentAssets.contractSchemas || {};
-    const emptyContractManifest = '{\n  "version": 1,\n  "contracts": []\n}';
-    const contractManifest = currentAssets.contracts || emptyContractManifest;
-    const displayValue = (value) => `<output class="studio-readonly-value">${esc(value || (state.locale === "en" ? "Not set" : "未设置"))}</output>`;
-    const configField = (key, label, value, options) => editable
-      ? `<label class="field"><span>${label}</span>${options ? `<select data-system-field="${key}">${options}</select>` : `<input data-system-field="${key}" value="${esc(value || "")}">`}</label>`
-      : `<div class="field"><span>${label}</span>${displayValue(options ? (authoring.system.handoffMode === "strict" ? (state.locale === "en" ? "Strict validation" : "严格校验") : authoring.system.handoffMode === "transition" ? (state.locale === "en" ? "Flow validation" : "流转校验") : (state.locale === "en" ? "Off" : "关闭")) : value)}</div>`;
-    const handoffOptions = `<option value="">${state.locale === "en" ? "Off" : "关闭"}</option><option value="transition" ${authoring.system.handoffMode === "transition" ? "selected" : ""}>${state.locale === "en" ? "Flow validation" : "流转校验"}</option><option value="strict" ${authoring.system.handoffMode === "strict" ? "selected" : ""}>${state.locale === "en" ? "Strict validation" : "严格校验"}</option>`;
-    const teamConfigurationFields = [
-      `<div class="field"><span>${state.locale === "en" ? "System ID" : "系统标识"}</span>${displayValue(authoring.system.systemId)}</div>`,
-      configField("systemVersion", state.locale === "en" ? "Version" : "版本", authoring.system.systemVersion),
-      configField("lawGlobalRef", state.locale === "en" ? "Global law" : "全局法则", authoring.system.lawGlobalRef),
-      configField("handoffMode", state.locale === "en" ? "Handoff mode" : "流转模式", authoring.system.handoffMode, handoffOptions)
-    ].join("");
-    const schemaFields = Object.entries(contractSchemas).map(([path, content]) => editable
-      ? `<label class="field full"><span>${esc(path)}</span><textarea data-system-schema="${esc(path)}" rows="7" spellcheck="false">${esc(content)}</textarea></label>`
-      : `<div class="field full"><span>${esc(path)}</span><pre class="studio-readonly-code">${esc(content)}</pre></div>`).join("");
-    const contractField = editable
-      ? `<label class="field full"><span>${state.locale === "en" ? "Contract manifest" : "契约清单"}</span><textarea data-system-contracts rows="8" spellcheck="false">${esc(contractManifest)}</textarea></label>`
-      : `<div class="field full"><span>${state.locale === "en" ? "Contract manifest" : "契约清单"}</span><pre class="studio-readonly-code">${esc(contractManifest)}</pre></div>`;
-    const lawNumber = (key) => Number.isSafeInteger(laws[key]) && laws[key] > 0 ? laws[key] : "";
-    const lawFields = `<section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Runtime laws" : "运行法则"}</h3></div><div class="studio-inspector-fields"><label class="field"><span>${state.locale === "en" ? "Maximum transitions" : "最大流转步数"}</span><input data-law-number="maxTransitions" type="number" min="1" step="1" value="${esc(lawNumber("maxTransitions"))}" ${editable ? "" : "disabled"}></label><label class="field"><span>${state.locale === "en" ? "Prompt limit per role (characters)" : "单角色提示词上限（字符）"}</span><input data-law-number="maxPromptCharsPerRole" type="number" min="1" step="1" value="${esc(lawNumber("maxPromptCharsPerRole"))}" ${editable ? "" : "disabled"}></label><label class="field"><span>${state.locale === "en" ? "Prompt limit per run (characters)" : "单次运行提示词上限（字符）"}</span><input data-law-number="maxTotalPromptCharsPerRun" type="number" min="1" step="1" value="${esc(lawNumber("maxTotalPromptCharsPerRun"))}" ${editable ? "" : "disabled"}></label><label class="field full"><span>${state.locale === "en" ? "Disabled tool references" : "禁用工具引用"}</span><textarea data-law-tools rows="3" ${editable ? "" : "disabled"}>${esc((laws.forbiddenToolRefs || []).join(", "))}</textarea></label><label class="field checkbox full"><input data-law-isolation type="checkbox" ${laws.isolateExternalData !== false ? "checked" : ""} ${editable ? "" : "disabled"}><span>${state.locale === "en" ? "Separate external data from instructions" : "将外部资料与指令结构化分隔"}</span></label><p class="field-hint full" data-law-isolation-warning role="status" ${laws.isolateExternalData !== false ? "hidden" : ""}>${state.locale === "en" ? "External materials will not be wrapped in an &lt;ogs_external_data&gt; block. Use only for controlled compatibility debugging." : "外部材料将不再使用 &lt;ogs_external_data&gt; 包裹。仅建议在受控环境中临时排查兼容问题。"}</p></div></section>`;
-    root.innerHTML = `<div class="studio-global-settings"><header class="studio-global-settings-head"><div><span class="section-kicker">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</span><h2>${state.locale === "en" ? "Global configuration" : "全局配置"}</h2></div><p>${state.locale === "en" ? "System identity and handoff contracts for this team version." : "配置团队身份、全局法则与流转契约。"}</p></header><section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Team configuration" : "团队配置"}</h3></div><div class="studio-inspector-fields"></div></section>${lawFields}<section class="studio-global-settings-section"><div class="panel-head"><h3>${state.locale === "en" ? "Contracts and schemas" : "交接契约与 Schema"}</h3></div><div class="studio-inspector-fields">${contractField}${schemaFields || `<p class="field-hint full">${state.locale === "en" ? "No schema files are referenced by the contract manifest yet." : "当前契约清单尚未引用 Schema 文件。"}</p>`}<code>.ogs/contracts/handoff.json</code></div></section><div class="form-actions studio-system-actions">${editable ? `<button class="primary-button" type="button" data-system-save>${state.locale === "en" ? "Save global configuration" : "保存全局配置"}</button>` : `<span class="form-hint">${state.locale === "en" ? "Released versions are read-only. Create a design version to edit." : "已发布版本为只读；请创建新的设计中版本再编辑。"}</span>`}<p class="form-status" data-system-status role="status" aria-live="polite"></p></div></div>`;
-    root.querySelector(".studio-global-settings-section .studio-inspector-fields").innerHTML = teamConfigurationFields;
-    const readOnlyHint = root.querySelector(".studio-system-actions .form-hint");
-    if (!editable && readOnlyHint) readOnlyHint.textContent = state.locale === "en"
-      ? "Archived versions are read-only."
-      : "已停用版本为只读，不能在此编辑。";
-    const status = root.querySelector("[data-system-status]");
-    const setPageDirty = () => setDirty("studio-system-settings");
-    root.querySelectorAll("[data-system-field], [data-system-contracts], [data-system-schema], [data-law-number], [data-law-tools], [data-law-isolation]").forEach((field) => field.addEventListener("input", setPageDirty));
-    root.querySelector("[data-law-isolation]")?.addEventListener("change", (event) => {
-      const warning = root.querySelector("[data-law-isolation-warning]");
-      warning.hidden = event.currentTarget.checked;
-      setPageDirty();
-    });
-    root.querySelector("[data-system-save]")?.addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      status.textContent = state.locale === "en" ? "Saving configuration…" : "正在保存全局配置…";
-      const nextAuthoring = structuredClone(authoring);
-      root.querySelectorAll("[data-system-field]").forEach((field) => { nextAuthoring.system[field.dataset.systemField] = field.value; });
-      if (nextAuthoring.system.handoffMode) nextAuthoring.system.handoffContracts = ".ogs/contracts/handoff.json";
-      else delete nextAuthoring.system.handoffContracts;
-      const nextAssets = {
-        contracts: !currentAssets.contracts && root.querySelector("[data-system-contracts]").value === emptyContractManifest
-          ? (nextAuthoring.system.handoffMode ? emptyContractManifest : undefined)
-          : root.querySelector("[data-system-contracts]").value,
-        contractSchemas: Object.fromEntries([...root.querySelectorAll("[data-system-schema]")].map((field) => [field.dataset.systemSchema, field.value])),
-        laws: { ...laws }
-      };
-      try {
-        root.querySelectorAll("[data-law-number]").forEach((field) => {
-          const value = field.value === "" ? undefined : Number(field.value);
-          if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) throw new Error(state.locale === "en" ? `${field.dataset.lawNumber} must be a positive integer.` : `${field.dataset.lawNumber} 必须是正整数。`);
-          if (value === undefined) delete nextAssets.laws[field.dataset.lawNumber];
-          else nextAssets.laws[field.dataset.lawNumber] = value;
-        });
-        nextAssets.laws.forbiddenToolRefs = root.querySelector("[data-law-tools]").value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
-        nextAssets.laws.isolateExternalData = root.querySelector("[data-law-isolation]").checked;
-        const nextCatalog = structuredClone(lawCatalog);
-        const nextLawId = nextAuthoring.system.lawGlobalRef || selectedLawId || "law.team.default";
-        let nextLaw = nextCatalog.laws.find((law) => law.lawId === nextLawId);
-        if (!nextLaw) {
-          nextLaw = { lawId: nextLawId, constraints: {} };
-          nextCatalog.laws.push(nextLaw);
-        }
-        nextLaw.constraints = nextAssets.laws;
-        nextAssets.laws = nextCatalog;
-        nextAuthoring.system.lawGlobalRef = nextLawId;
-      } catch (error) {
-        status.textContent = error.message;
-        button.disabled = false;
-        return;
-      }
-      const candidateAssets = { ...currentAssets, ...nextAssets };
-      delete candidateAssets.lawsText;
-      try {
-        const designSave = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/save`, {
-          method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: nextAuthoring, assets: candidateAssets, expectedTeamVersionDigest: teamVersionDigest })
-        });
-        const savedDesign = await designSave.json();
-        if (!designSave.ok) throw new Error(savedDesign.error || "全局配置保存失败");
-        if (pageRequest && !isCurrentRequest(pageRequest)) return;
-        if (savedDesign.createdDraft) {
-          clearDirty("studio-system-settings");
-          navigate(withCurrentSearch(`/studio/teams/${encodeURIComponent(savedDesign.teamVersionId)}/design`));
-          return;
-        }
-        const assetsResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(savedDesign.teamVersionId || teamVersionId)}/design/assets`);
-        const savedAssets = await assetsResponse.json();
-        if (!assetsResponse.ok) throw new Error(savedAssets.error || "全局配置已保存，但读取资产失败");
-        current.onSaved?.({ authoring: nextAuthoring, teamVersionDigest: savedDesign.teamVersionDigest, assets: savedAssets });
-        clearDirty("studio-system-settings");
-        status.textContent = state.locale === "en" ? "Global configuration saved." : "全局配置已保存。";
-      } catch (error) {
-        if (isAbort(error)) return;
-        status.textContent = error.message || "全局配置保存失败";
-      } finally { if (button?.isConnected) button.disabled = false; }
-    });
-  } catch (error) {
-    if (isAbort(error)) return;
-    if (!root.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
-    root.innerHTML = `<div class="run-error" role="alert"><p>${esc(error.message || "无法读取团队全局配置")}</p><button class="secondary-button" type="button" data-system-settings-retry>${state.locale === "en" ? "Retry" : "重试"}</button></div>`;
-    root.querySelector("[data-system-settings-retry]")?.addEventListener("click", () => {
-      delete root.dataset.loaded;
-      if (root.dataset.loading) return;
-      root.dataset.loading = "true";
-      void renderStudioSystemSettings(teamVersionId, state.activeRequest, root, { ...current, teamVersion: current.teamVersion || state.studioTeamVersion })
-        .finally(() => { delete root.dataset.loading; });
-    });
   }
 }
 
@@ -2149,176 +1769,6 @@ function studioSimulationErrorText(message) {
   return detail || (state.locale === "en" ? "The debug run could not be completed. Try again." : "调试无法完成，请重试。");
 }
 
-async function renderStudioSimulationList(teamVersionId, pageRequest = state.activeRequest) {
-  const root = $("#studio-view");
-  root.innerHTML = `<div class="project-loading">${state.locale === "en" ? "Loading simulation history…" : "正在读取模拟记录…"}</div>`;
-  try {
-    const teamResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`);
-    const team = await teamResponse.json();
-    if (!teamResponse.ok) throw new Error(team.error || "TeamVersion not found.");
-    const response = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Unable to load Studio Simulations.");
-    if (pageRequest && !isCurrentRequest(pageRequest)) return;
-    const simulations = payload.simulations || [];
-    const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "OGS Studio" : "OGS Studio"}</a><div class="eyebrow">${esc(team.name)} · v${team.teamVersionNumber || 1}</div><h1>${state.locale === "en" ? "Simulation history" : "模拟记录"}</h1><p>${state.locale === "en" ? "Isolated Studio evidence. These records do not appear in Project Task or Run history." : "独立保存的 Studio 证据，不会出现在项目任务或 Run 历史中。"}</p></div><a class="secondary-button" href="/studio/teams/${encodeURIComponent(teamVersionId)}/design" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/design">${state.locale === "en" ? "Open design" : "打开团队设计"}</a></section><div class="material-list studio-simulation-list">${simulations.length ? simulations.map((simulation) => { const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId)}`; return `<a class="material-row studio-simulation-row" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || (state.locale === "en" ? "Simulation" : "模拟任务"))}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div></div><span>→</span></a>`; }).join("") : `<p class="empty-note">${state.locale === "en" ? "No simulations for this TeamVersion yet." : "此团队版本还没有模拟记录。"}</p>`}</div>`;
-  } catch (error) {
-    if (isAbort(error)) return;
-    root.innerHTML = `<div class="run-error">${esc(studioSimulationErrorText(error.message))}</div>`;
-  }
-}
-
-async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequest) {
-  const root = $("#studio-view");
-  const english = state.locale === "en";
-  root.innerHTML = `<div class="project-loading">${english ? "Loading team simulations…" : "正在读取团队仿真…"}</div>`;
-  try {
-    const teamResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`);
-    const team = await teamResponse.json();
-    if (!teamResponse.ok) throw new Error(team.error || "无法读取团队版本");
-    const simulationResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`);
-    const payload = await simulationResponse.json();
-    if (!simulationResponse.ok) throw new Error(payload.error || "无法读取 Studio 仿真记录");
-    if (pageRequest && !isCurrentRequest(pageRequest)) return;
-    const simulations = payload.simulations || [];
-    const history = simulations.length ? simulations.map((simulation) => {
-      const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId)}`;
-      return `<a class="material-row studio-simulation-row" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div>${simulation.failureSummary ? `<p class="task-run-last-error">${esc(studioSimulationErrorText(simulation.failureSummary))}</p>` : ""}</div><span>→</span></a>`;
-    }).join("") : `<p class="empty-note">${english ? "No simulations for this TeamVersion yet." : "此团队版本还没有仿真记录。"}</p>`;
-    const clearable = simulations.some((item) => item.mode !== "sandbox" && !item.baselineScenarioId && ["completed", "failed"].includes(item.status));
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${english ? "Team repository" : "团队仓库"}</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>${english ? "Debug history" : "调试历史"}</h1><p>${english ? "Review role input, output, progress, and failures from each isolated debug run." : "按次回看独立调试中的角色输入、输出、进度和异常诊断。"}</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Debug runs" : "调试记录"}</span><h2>${english ? "History" : "历史"}</h2></div><div class="form-actions"><span class="count-badge">${simulations.length}</span>${clearable ? `<button class="secondary-button danger-button" type="button" data-clear-studio-history>${english ? "Clear finished debug runs" : "清理已完成调试记录"}</button>` : ""}</div></div><div class="material-list studio-simulation-list">${history}</div></section>`;
-    root.querySelector(".project-panel .panel-head h2").textContent = english ? "Debug history" : "调试历史";
-    root.querySelector("[data-clear-studio-history]")?.addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      const message = english ? "Remove completed and failed interactive debug records? Sandbox release evidence and running records are protected." : "清理已结束的交互式调试记录？发布 Sandbox 证据和运行中的记录会保留。";
-      if (!window.confirm(message)) return;
-      button.disabled = true;
-      try {
-        const clearResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`, { method: "DELETE" });
-        const cleared = await clearResponse.json();
-        if (!clearResponse.ok) throw new Error(cleared.error || "Unable to clear debug history.");
-        await renderStudioRunPage(teamVersionId, pageRequest);
-      } catch (error) {
-        if (isAbort(error)) return;
-        showToast(error.message || "清理调试历史失败");
-        button.disabled = false;
-      }
-    });
-    $("#studio-simulation-form")?.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const submit = form.querySelector('button[type="submit"]');
-      const status = $("#studio-simulation-status");
-      const prompt = String(new FormData(form).get("prompt") || "").trim();
-      const originalLabel = submit.textContent;
-      submit.disabled = true;
-      submit.textContent = english ? "Starting…" : "正在启动…";
-      status.textContent = english ? "Checking TeamVersion configuration…" : "正在检查团队配置…";
-      try {
-        const designResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design`);
-        const design = await designResponse.json();
-        if (!designResponse.ok) throw new Error(design.error || "无法读取团队设计");
-        if (!await confirmTeamRuntimeReadiness(teamVersionId, design.authoring, pageRequest)) {
-          status.textContent = english ? "Simulation cancelled." : "已取消仿真。";
-          return;
-        }
-        status.textContent = english ? "Studio Simulation is running…" : "正在运行 Studio Simulation…";
-        const runResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, locale: state.locale }) });
-        const result = await runResponse.json();
-        if (!runResponse.ok) throw new Error(result.error || "Studio 仿真失败");
-        if (pageRequest && !isCurrentRequest(pageRequest)) return;
-        navigate(`/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(result.simulation.simulationId)}`);
-      } catch (error) {
-        if (isAbort(error)) return;
-        status.textContent = studioSimulationErrorText(error.message);
-      } finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = originalLabel; } }
-    });
-  } catch (error) {
-    if (isAbort(error)) return;
-    root.innerHTML = `<div class="run-error">${esc(studioSimulationErrorText(error.message))}</div>`;
-  }
-}
-
-async function renderStudioRunDetail(teamVersionId, simulationId, pageRequest = state.activeRequest) {
-  const teamResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`);
-  const team = await teamResponse.json();
-  if (!teamResponse.ok) {
-    $("#studio-view").innerHTML = `<div class="run-error">${esc(team.error || "无法读取团队版本")}</div>`;
-    return;
-  }
-  await renderStudioSimulationDetail(team.teamId, team.teamVersionId || teamVersionId, simulationId, pageRequest);
-  if (pageRequest && !isCurrentRequest(pageRequest)) return;
-  addStudioWorkspaceNav($("#studio-view"), teamVersionId, "run");
-}
-
-async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest = state.activeRequest) {
-  const root = $("#studio-view");
-  const isRefresh = Boolean(root.querySelector(".studio-run-split"));
-  const historyScrollTop = root.querySelector(".studio-run-history")?.scrollTop || 0;
-  const evidenceScrollTop = root.querySelector(".studio-run-evidence")?.scrollTop || 0;
-  if (!isRefresh) {
-    root.innerHTML = `<div class="project-loading">${state.locale === "en" ? "Loading simulation evidence…" : "正在读取模拟证据…"}</div>`;
-  }
-  try {
-    const base = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}`;
-    const simulationListPath = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`;
-    const [detailResponse, eventsResponse, simulationsResponse] = await Promise.all([pageFetch(base), pageFetch(`${base}/events`), pageFetch(simulationListPath)]);
-    const detail = await detailResponse.json();
-    const eventPayload = await eventsResponse.json();
-    const simulationsPayload = await simulationsResponse.json();
-    if (!detailResponse.ok) throw new Error(detail.error || "Studio Simulation not found.");
-    if (!eventsResponse.ok) throw new Error(eventPayload.error || "Unable to load simulation events.");
-    if (!simulationsResponse.ok) throw new Error(simulationsPayload.error || "Unable to load simulation history.");
-    if (pageRequest && !isCurrentRequest(pageRequest)) return;
-    const simulation = detail.simulation || {};
-    const stateData = detail.state || {};
-    const roleLabel = (roleId) => simulation.roleDisplayNames?.[roleId] || roleId;
-    const evidenceText = stateData.finalOutputsByRoleId
-      ? Object.entries(stateData.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((output) => `${roleLabel(roleId)}: ${output.content || JSON.stringify(output.data || {})}`)).join("\n\n")
-      : studioSimulationErrorText(stateData.error || simulation.failureSummary || simulation.outputSummary);
-    const auditTrail = stateData.auditTrail || [];
-    const auditSummary = stateData.auditSummary || simulation.auditSummary || {};
-    const promptCalls = auditTrail.flatMap((item) => item.promptCalls || []);
-    const sumCallMetric = (key) => promptCalls.length ? promptCalls.reduce((sum, call) => sum + (Number(call[key]) || 0), 0) : undefined;
-    const metric = (key, fallback) => auditSummary[key] ?? simulation[key] ?? fallback;
-    const promptChars = metric("totalRenderedPromptChars", sumCallMetric("renderedPromptChars"));
-    const inputTokens = metric("totalEstimatedInputTokens", sumCallMetric("estimatedInputTokens"));
-    const outputTokens = metric("totalEstimatedOutputTokens", sumCallMetric("estimatedOutputTokens"));
-    const transitionCount = metric("transitionCount", simulation.transitionCount ?? ((eventPayload.events || []).filter((event) => event.type === "transition" || event.type === "flow_transition").length || undefined));
-    const formatMetric = (value) => value === undefined || value === null ? "—" : Number(value).toLocaleString(state.locale);
-    const runMetrics = `<section class="project-panel studio-run-metrics" aria-label="${state.locale === "en" ? "Run metrics" : "运行指标"}"><div class="studio-run-metric"><span>${state.locale === "en" ? "Transitions" : "流转步数"}</span><strong>${formatMetric(transitionCount)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Rendered prompt characters" : "完整提示词字符"}</span><strong>${formatMetric(promptChars)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated input tokens" : "估算输入 Token"}</span><strong>${formatMetric(inputTokens)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated output tokens" : "估算输出 Token"}</span><strong>${formatMetric(outputTokens)}</strong></div><p class="field-hint">${state.locale === "en" ? "Token values are estimates, not billing totals. A dash means this historical run did not collect the field." : "Token 数为估算值，不代表账单精确值；“—”表示此历史运行未采集该字段。"}</p></section>`;
-    const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${auditTrail.length}</span></div><ol class="team-debug-transcript">${auditTrail.map((item) => { const color = roleColorForId(item.roleId || "system"); const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : ""; const outputText = item.stdoutPreview || item.failure || item.error || ""; const calls = item.promptCalls || []; const callChars = calls.reduce((sum, call) => sum + (Number(call.renderedPromptChars) || 0), 0); const callTokens = calls.reduce((sum, call) => sum + (Number(call.estimatedInputTokens) || 0) + (Number(call.estimatedOutputTokens) || 0), 0); const fallbackCall = calls.find((call) => call.phase === "fallback"); const meter = item.renderedPromptChars ?? (calls.length ? callChars : undefined); const projected = item.projectedInputChars ?? (calls.length ? calls.reduce((sum, call) => sum + (Number(call.projectedInputChars) || 0), 0) : undefined); const tokens = (item.estimatedInputTokens ?? item.estimatedOutputTokens) !== undefined ? `${item.estimatedInputTokens ?? 0} / ${item.estimatedOutputTokens ?? 0}` : calls.length ? String(callTokens) : undefined; const isolation = item.externalDataIsolated === true ? (state.locale === "en" ? "External data isolated" : "外部数据已分隔") : item.externalDataIsolated === false ? (state.locale === "en" ? "External data not isolated" : "外部数据未分隔") : (state.locale === "en" ? "Isolation not recorded" : "隔离状态未采集"); const fallbackLabel = item.fallbackUsed || fallbackCall ? `${state.locale === "en" ? "Fallback model" : "备选模型"}: ${fallbackCall?.modelId || "—"} (${state.locale === "en" ? "primary" : "主模型"}: ${item.primaryModelId || "—"})` : ""; return `<li style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><header><strong>${esc(roleLabel(item.roleId || ""))}</strong><span>${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header><div class="studio-audit-badges"><span>${esc(isolation)}</span>${fallbackLabel ? `<span>${esc(fallbackLabel)}</span>` : ""}${projected !== undefined ? `<span>${state.locale === "en" ? "Projected input" : "输入数据"}: ${formatMetric(projected)} ${state.locale === "en" ? "chars" : "字符"}</span>` : ""}${meter !== undefined ? `<span>${state.locale === "en" ? "Prompt" : "提示词"}: ${formatMetric(meter)} ${state.locale === "en" ? "chars" : "字符"}</span>` : `<span>${state.locale === "en" ? "Prompt: not recorded" : "提示词：未采集"}</span>`}${tokens !== undefined ? `<span>${state.locale === "en" ? "Estimated input / output tokens" : "估算输入 / 输出 Token"}: ${esc(tokens)}</span>` : ""}</div>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}</li>`; }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
-    const list = (simulationsPayload.simulations || []).map((item) => {
-      const href = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(item.simulationId)}`;
-      return `<a class="material-row studio-simulation-row${item.simulationId === simulationId ? " selected" : ""}" href="${href}" data-route="${href}"${item.simulationId === simulationId ? ' aria-current="page"' : ""}><div><strong>${esc(item.input || "调试任务")}</strong><div class="task-record-meta"><span class="status-chip ${esc(item.status)}">${esc(studioSimulationStatus(item.status))}</span><span>${esc(item.createdAt || "")}</span></div></div></a>`;
-    }).join("");
-    const detailBody = document.createElement("div");
-    detailBody.className = "studio-run-evidence";
-    while (root.children.length > 1) detailBody.append(root.children[1]);
-    const split = document.createElement("div");
-    split.className = "studio-run-split";
-    split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
-    split.append(detailBody);
-    root.append(split);
-    addStudioWorkspaceNav(root, teamVersionId, "run");
-    if (isRefresh && root.dataset.template) {
-      frameExistingPage(root, root.dataset.template);
-    }
-    const historyNode = root.querySelector(".studio-run-history");
-    const evidenceNode = root.querySelector(".studio-run-evidence");
-    if (historyNode) historyNode.scrollTop = historyScrollTop;
-    if (evidenceNode) evidenceNode.scrollTop = evidenceScrollTop;
-    if (simulation.status === "running" && (!pageRequest || isCurrentRequest(pageRequest))) {
-      window.setTimeout(() => void renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest), 800);
-    }
-  } catch (error) {
-    if (isAbort(error)) return;
-    root.innerHTML = `<div class="run-error">${esc(studioSimulationErrorText(error.message))}</div>`;
-  }
-}
-
 async function renderStudioReleaseGate(teamVersionId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
   const english = state.locale === "en";
@@ -2330,225 +1780,8 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
     ]);
     const [version, storedIr] = await Promise.all([versionResponse.json(), irResponse.json()]);
     if (!versionResponse.ok) throw new Error(version.error || "TeamVersion not found.");
-    if (irResponse.ok && storedIr.teamIR?.schemaVersion === 2) {
-      await renderStudioTeamIrReleaseGate(teamVersionId, version, storedIr, pageRequest);
-      return;
-    }
-    const [teamResponse, designResponse, baselineResponse, readinessResponse, batchResponse, comparisonResponse] = await Promise.all([
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design?locale=${encodeURIComponent(state.locale)}`),
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines`),
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-readiness`),
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/batches/latest`),
-      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/comparison`)
-    ]);
-    const team = await teamResponse.json();
-    const design = await designResponse.json();
-    const baselinePayload = await baselineResponse.json();
-    const readiness = await readinessResponse.json();
-    const batchPayload = batchResponse.ok ? await batchResponse.json() : {};
-    const comparisonPayload = comparisonResponse.ok ? await comparisonResponse.json() : {};
-    if (!teamResponse.ok) throw new Error(team.error || "TeamVersion not found.");
-    if (!designResponse.ok) throw new Error(design.error || "Unable to read TeamVersion design.");
-    if (!baselineResponse.ok) throw new Error(baselinePayload.error || "Unable to read release baselines.");
-    if (!readinessResponse.ok) throw new Error(readiness.error || "Unable to verify release readiness.");
-    if (String(readiness.reason || "").startsWith("TEAM_IR_V2_REQUIRED:")) {
-      const rebuildUrl = `/studio/teams/${encodeURIComponent(teamVersionId)}/ir`;
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio/teams/${encodeURIComponent(teamVersionId)}/design" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/design">← ${english ? "Team design" : "团队设计"}</a><div class="eyebrow">OGS Studio · v${team.teamVersionNumber || 1}</div><h1>${english ? "Team IR v2 rebuild required" : "需要重建 Team IR v2"}</h1><p>${esc(team.name || "")}</p></div><span class="status-chip warning">${english ? "Rebuild required" : "需要重建"}</span></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Legacy TeamVersion" : "旧版团队版本"}</span><h2>${english ? "This version cannot be released as Team IR v2" : "此版本不能作为 Team IR v2 发布"}</h2></div></div><p class="form-status" role="alert">${english ? "This TeamVersion has no native Team IR v2 document. Rebuild it in the v2 authoring flow. The legacy design and Run history remain unchanged until you explicitly save a v2 document." : "此团队版本尚无原生 Team IR v2 配置，请进入 v2 作者流程重新构建。保存新的 v2 配置前，旧版设计和运行记录保持不变。"}</p><div class="form-actions"><a class="primary-button" href="${rebuildUrl}" data-route="${rebuildUrl}">${english ? "Rebuild in Team IR v2" : "在 Team IR v2 中重建"}</a></div></section>`;
-      return;
-    }
-    const baselines = baselinePayload.scenarios || [];
-    const latestBatch = batchPayload.batch || batchPayload.latestBatch || batchPayload;
-    const comparisonTargetSource = comparisonPayload.availableTargets || [];
-    const comparisonTargets = Array.isArray(comparisonTargetSource)
-      ? comparisonTargetSource
-      : Object.entries(comparisonTargetSource).filter(([, value]) => value).map(([target, value]) => ({ ...value, target }));
-    const comparisonTargetKey = (target) => typeof target === "string" ? target : target?.target || target?.id || target?.key || "";
-    const selectedComparisonKey = comparisonTargetKey(comparisonPayload.selectedTarget) || comparisonTargetKey(comparisonTargets[0]);
-    const simulationsResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`);
-    const simulationPayload = await simulationsResponse.json();
-    if (!simulationsResponse.ok) throw new Error(simulationPayload.error || "Unable to verify Sandbox evidence.");
-    const simulations = simulationPayload.simulations || [];
-    const validationResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design/validate`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring: design.authoring })
-    });
-    const validation = await validationResponse.json();
-    if (!validationResponse.ok) throw new Error(validation.error || "Unable to validate TeamVersion.");
-    if (pageRequest && !isCurrentRequest(pageRequest)) return;
-    const passed = validation.ok !== false;
-    const released = team.teamVersionStatus === "released";
-    const baselineEvidenceReady = readiness.ready === true;
-    const adjustmentParams = new URLSearchParams(location.search);
-    const collaborationProjectId = adjustmentParams.get("collaborationProjectId");
-    const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/design${location.search}`;
-    const diagnostics = (validation.diagnostics || []).map((item) => `<li>${esc(item.message || item.code || item)}</li>`).join("");
-    const releaseBlocker = !passed
-      ? (english ? "Fix the static configuration issues above before release." : "请先修复上方的结构校验问题，再发布团队版本。")
-      : !baselineEvidenceReady
-        ? (english ? "Run every required Sandbox baseline for this exact TeamVersion before release." : "请先为当前团队版本运行全部必跑 Sandbox 基线场景，再发布。")
-        : "";
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${english ? "Team design" : "团队设计"}</a><div class="eyebrow">OGS Studio · v${team.teamVersionNumber || 1}</div><h1>${english ? "Release gate" : "发布检查"}</h1><p>${esc(team.name || "")}</p></div><span class="status-chip ${released ? "released" : passed ? "completed" : "warning"}">${released ? (english ? "Released" : "已发布") : passed ? (english ? "Validation passed" : "静态校验通过") : (english ? "Needs changes" : "需要修改")}</span></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Static configuration check" : "静态配置检查"}</span><h2>${passed ? (english ? "TeamVersion is structurally valid" : "团队版本结构有效") : (english ? "Resolve the reported issues" : "请先处理以下问题")}</h2></div></div><p class="panel-intro">${english ? "This check covers the saved graph and role bindings. It does not verify external network access or credentials; isolated execution checks those at runtime." : "此检查覆盖已保存的图结构和角色绑定，不验证外部网络或凭据是否连通；隔离运行时会再次检查实际可用性。"}</p>${diagnostics ? `<ul class="studio-event-list">${diagnostics}</ul>` : `<p class="form-status" role="status">${english ? "No static configuration issues were reported." : "未发现静态配置问题。"}</p>`}${releaseBlocker ? `<p class="form-status" role="status">${releaseBlocker}</p>` : ""}<p class="form-status" id="studio-release-status" role="status" aria-live="polite"></p><div class="form-actions">${released ? `<span class="form-hint">${english ? "This TeamVersion is already released and remains immutable." : "此团队版本已发布且不可变。"}</span>` : `<button class="primary-button" id="studio-release-button" type="button" ${passed ? "" : "disabled"}>${english ? "Release TeamVersion" : "发布团队版本"}</button>`}</div></section>`;
-    const releaseButtonState = $("#studio-release-button");
-    if (releaseButtonState && !released && (!passed || !baselineEvidenceReady)) releaseButtonState.disabled = true;
-    const t = (en, zh) => english ? en : zh;
-    const requiredBaselines = baselines.filter((scenario) => scenario.requiredForRelease !== false);
-    const hasEvidence = (scenario) => simulations.some((item) => item.status === "completed" && item.mode === "sandbox" && item.runKind === "studio_simulation" && item.teamVersionId === teamVersionId && item.teamDigestVersion === readiness.teamDigestVersion && item.teamCoreDigest === readiness.teamCoreDigest && item.baselineScenarioId === scenario.scenarioId && item.baselineRevision === scenario.revision && item.baselineScenarioDigest === scenario.scenarioDigest);
-    const batchItems = latestBatch?.items || latestBatch?.scenarios || [];
-    const failedBatchCount = batchItems.filter((item) => ["failed", "interrupted"].includes(item.status)).length;
-    const missingBaselineCount = requiredBaselines.filter((scenario) => !hasEvidence(scenario)).length;
-    const batchIsRunning = latestBatch?.status === "running";
-    const batchProgress = Number.isFinite(latestBatch?.completedCount) ? latestBatch.completedCount : batchItems.filter((item) => ["completed", "failed", "interrupted", "cancelled", "skipped"].includes(item.status)).length;
-    const batchTotal = Number.isFinite(latestBatch?.totalCount) ? latestBatch.totalCount : batchItems.length;
-    const batchStatusText = (batch, progress = batchProgress, total = batchTotal) => {
-      if (!batch || !batch.status) return t("No batch has been run.", "尚未运行基线批次。");
-      if (batch.status === "invalidated") return t("Batch invalidated: TeamVersion or baseline scenarios changed during execution. Run the pending scenarios again.", "批次已失效：团队配置或基线场景在执行期间发生变更，请重新运行待验证场景。");
-      if (batch.status === "running") return `${t("Running batch", "正在运行批次")} · ${progress}/${total}${batch.currentScenarioName ? ` · ${esc(batch.currentScenarioName)}` : ""}`;
-      return `${t("Latest batch", "最近批次")}: ${esc(batch.status)}${batch.failureCode ? ` · ${esc(batch.failureCode)}` : ""}`;
-    };
-    const targetOption = (target) => {
-      const key = comparisonTargetKey(target);
-      const label = target?.label || (target?.target === "parent_version" ? t(`Parent version v${target.version || ""}`, `父版本 v${target.version || ""}`) : target?.target === "latest_released" ? t(`Latest released v${target.version || ""}`, `最新发布版本 v${target.version || ""}`) : target?.name || key);
-      return `<option value="${esc(key)}" ${key === selectedComparisonKey ? "selected" : ""}>${esc(label)}</option>`;
-    };
-    const comparisonRows = (payload) => (payload.scenarios || payload.comparisons || []).map((item) => `<li data-comparison-scenario="${esc(item.scenarioId || "")}"><strong>${esc(item.name || item.scenarioId || "")}</strong><span>${item.revisionChanged ? t("Scenario revised", "场景已修订") : item.regression ? t("Regression", "出现退化") : t("No regression", "未发现退化")}</span><small>${t("Current", "当前版本")}: ${item.current?.passed ? t("passed", "已通过") : t("not passed", "未通过")} · ${t("Reference", "对比版本")}: ${item.target?.passed ? t("passed", "已通过") : t("not passed", "未通过")}${item.revisionChanged ? ` · r${item.target?.revision ?? "—"} → r${item.current?.revision ?? "—"}` : ""}</small></li>`).join("") || `<li class="empty-note">${t("No comparison evidence is available for this target.", "此对比基准暂无可用证据。")}</li>`;
-    const comparisonOptions = comparisonTargets.length ? comparisonTargets.map(targetOption).join("") : `<option value="">${t("No historical version available", "暂无可对比的历史版本")}</option>`;
-    const batchPanel = `<section class="project-panel studio-baseline-batch" data-studio-batch-panel><div class="panel-head"><div><span class="section-kicker">${t("Release baseline batch", "发布基线批次")}</span><h2>${t("Run required scenarios", "运行必跑场景")}</h2></div></div><div class="studio-batch-actions"><button class="secondary-button" type="button" data-run-batch="missing_only" ${!missingBaselineCount || batchIsRunning || released ? "disabled" : ""}>${t("Run pending required", "运行待验证必跑场景")} (${missingBaselineCount})</button><button class="secondary-button" type="button" data-run-batch="all_required" ${!requiredBaselines.length || batchIsRunning || released ? "disabled" : ""}>${t("Rerun all required", "重跑全部必跑")} (${requiredBaselines.length})</button>${failedBatchCount ? `<button class="secondary-button" type="button" data-run-batch="retry_failed" ${batchIsRunning || released ? "disabled" : ""}>${t("Retry failed only", "仅重试失败项")} (${failedBatchCount})</button>` : ""}</div><div class="studio-batch-status" data-batch-status role="status" aria-live="polite">${batchStatusText(latestBatch)}</div><progress data-batch-progress max="${batchTotal || 1}" value="${Math.min(batchProgress, batchTotal || 1)}" ${batchIsRunning ? "" : "hidden"}></progress><div data-batch-cancel-slot>${batchIsRunning ? `<button class="danger-button" type="button" data-cancel-batch="${esc(latestBatch.batchId || "")}">${t("Cancel batch", "取消批次")}</button>` : ""}</div></section><section class="project-panel studio-baseline-comparison"><div class="panel-head"><div><span class="section-kicker">${t("Historical reference", "历史版本对比参考")}</span><h2>${t("Diagnosis only; does not affect release readiness", "仅供诊断，不影响当前版本发布就绪度")}</h2></div><label class="studio-comparison-select"><span>${t("Compare with", "对比基准")}</span><select data-comparison-target ${comparisonTargets.length < 2 ? "disabled" : ""}>${comparisonOptions}</select></label></div><ul class="studio-comparison-list" data-comparison-list>${comparisonRows(comparisonPayload)}</ul></section>`;
-    root.insertAdjacentHTML("beforeend", batchPanel);
-    root.insertAdjacentHTML("beforeend", `<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Release baselines", "发布基线")}</span><h2>${t("Required scenarios", "必跑场景")}</h2></div></div><p class="panel-intro">${t("Each required scenario needs passing Sandbox evidence for this TeamVersion. Editing a scenario creates a new revision and invalidates its previous evidence.", "每条必跑场景都需要当前 TeamVersion 的 Sandbox 证据通过。修改场景会生成新版本，并使旧证据失效。")}</p><div class="material-list">${baselines.map((scenario) => { const evidence = hasEvidence(scenario); return `<div class="material-row" data-baseline-row="${esc(scenario.scenarioId)}"><div><strong>${esc(scenario.name)} · r${scenario.revision}</strong><div class="task-record-meta"><span>${esc(scenario.scenarioId)}</span><span>${scenario.requiredForRelease !== false ? t("Required", "必跑") : t("Optional", "可选")}</span><span>${t("Required roles", "必跑角色")}: ${scenario.expectedRoleIds.length}</span><span data-baseline-evidence>${evidence ? t("Sandbox passed", "Sandbox 已通过") : t("Pending run", "待运行")}</span><span data-batch-item-status></span></div></div><button class="secondary-button" type="button" data-run-baseline="${esc(scenario.scenarioId)}" ${released ? "disabled" : ""}>${t("Run baseline", "运行基线")}</button></div>`; }).join("") || `<p class="empty-note">${t("No release baselines configured.", "尚未配置发布基线。")}</p>`}</div>${released ? "" : `<form id="studio-baseline-form" class="compact-form"><label>${t("Scenario ID", "场景 ID")}<input name="scenarioId" pattern="[a-z0-9][a-z0-9-]{0,63}" required></label><label>${t("Scenario name", "场景名称")}<input name="name" maxlength="120" required></label><label>${t("Fixed task input", "固定任务输入")}<textarea name="prompt" maxlength="4000" required></textarea></label><label>${t("Required role IDs (comma-separated)", "必跑角色 ID（逗号分隔）")}<input name="roles" required placeholder="analyst, reviewer"></label><label class="field checkbox"><input name="requiredForRelease" type="checkbox" checked><span>${t("Require this scenario for release", "作为发布必跑场景")}</span></label><label>${t("Output JSON Schema", "输出 JSON Schema")}<textarea name="schema" rows="5" required>{"type":"object"}</textarea></label><label>${t("Materials snapshot JSON", "材料快照 JSON")}<textarea name="materials" rows="4">[]</textarea></label><button class="secondary-button" type="submit">${t("Save baseline", "保存基线场景")}</button></form>`}</section>`);
-    const updateBatchUi = (batch) => {
-      const panel = root.querySelector("[data-studio-batch-panel]");
-      if (!panel || !batch) return;
-      const items = batch.items || batch.scenarios || [];
-      const total = Number.isFinite(batch.totalCount) ? batch.totalCount : items.length;
-      const progress = Number.isFinite(batch.completedCount) ? batch.completedCount : items.filter((item) => ["completed", "failed", "interrupted", "cancelled", "skipped"].includes(item.status)).length;
-      const running = batch.status === "running";
-      panel.querySelector("[data-batch-status]").textContent = batchStatusText(batch, progress, total);
-      const progressElement = panel.querySelector("[data-batch-progress]");
-      progressElement.max = total || 1;
-      progressElement.value = Math.min(progress, total || 1);
-      progressElement.hidden = !running;
-      panel.querySelectorAll("[data-run-batch]").forEach((button) => { button.disabled = running || released || (button.dataset.runBatch === "missing_only" && !missingBaselineCount) || (button.dataset.runBatch === "all_required" && !requiredBaselines.length); });
-      panel.querySelector("[data-batch-cancel-slot]").innerHTML = running ? `<button class="danger-button" type="button" data-cancel-batch="${esc(batch.batchId || "")}">${t("Cancel batch", "取消批次")}</button>` : "";
-      for (const item of items) {
-        const row = root.querySelector(`[data-baseline-row="${CSS.escape(item.scenarioId || "")}"]`);
-        const status = row?.querySelector("[data-batch-item-status]");
-        if (status) status.textContent = item.status ? `${t("Batch", "批次")}: ${item.status}` : "";
-      }
-      if (running) panel.querySelector("[data-cancel-batch]")?.addEventListener("click", cancelBatch);
-    };
-    const batchPath = `/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/batches`;
-    const pollBatch = async () => {
-      if (pageRequest && !isCurrentRequest(pageRequest)) return;
-      try {
-        const response = await pageFetch(`${batchPath}/latest`);
-        if (!response.ok) return;
-        const payload = await response.json();
-        const batch = payload.batch || payload.latestBatch || payload;
-        updateBatchUi(batch);
-        if (batch?.status === "running") window.setTimeout(pollBatch, 800);
-        else if (latestBatch?.status === "running" || batch?.status) void renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) { if (!isAbort(error)) window.setTimeout(pollBatch, 1600); }
-    };
-    const cancelBatch = async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      try {
-        const response = await pageFetch(`${batchPath}/${encodeURIComponent(button.dataset.cancelBatch)}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || t("Unable to cancel the batch.", "无法取消批次。"));
-        updateBatchUi(payload.batch || payload);
-      } catch (error) {
-        if (!isAbort(error)) {
-          panelStatusError(error.message);
-          button.disabled = false;
-        }
-      }
-    };
-    const panelStatusError = (message) => {
-      const status = root.querySelector("[data-batch-status]");
-      if (status) status.textContent = message;
-    };
-    root.querySelectorAll("[data-run-batch]").forEach((button) => button.addEventListener("click", async () => {
-      button.disabled = true;
-      panelStatusError(t("Starting batch…", "正在启动批次…"));
-      try {
-        const response = await pageFetch(batchPath, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: button.dataset.runBatch, locale: state.locale }) });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || t("Unable to start the batch.", "无法启动基线批次。"));
-        const batch = payload.batch || payload;
-        updateBatchUi(batch);
-        if (batch.status === "running") window.setTimeout(pollBatch, 800);
-        else void renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) {
-        if (!isAbort(error)) {
-          panelStatusError(error.message);
-          button.disabled = false;
-        }
-      }
-    }));
-    root.querySelector("[data-cancel-batch]")?.addEventListener("click", cancelBatch);
-    if (batchIsRunning) window.setTimeout(pollBatch, 800);
-    root.querySelector("[data-comparison-target]")?.addEventListener("change", async (event) => {
-      const select = event.currentTarget;
-      select.disabled = true;
-      try {
-        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines/comparison?target=${encodeURIComponent(select.value)}`);
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || t("Unable to load comparison.", "无法读取版本对比。"));
-        root.querySelector("[data-comparison-list]").innerHTML = comparisonRows(payload);
-      } catch (error) {
-        if (!isAbort(error)) root.querySelector("[data-comparison-list]").innerHTML = `<li role="alert">${esc(error.message)}</li>`;
-      } finally { if (select.isConnected) select.disabled = comparisonTargets.length < 2; }
-    });
-    root.querySelectorAll("[data-run-baseline]").forEach((button) => button.addEventListener("click", async () => {
-      button.disabled = true;
-      const scenario = baselines.find((item) => item.scenarioId === button.dataset.runBaseline);
-      try {
-        $("#studio-release-status").textContent = t("Running Sandbox baseline…", "正在运行 Sandbox 基线…");
-        const response = await pageFetch(`/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/simulations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: scenario.prompt, baselineScenarioId: scenario.scenarioId }) });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Baseline Sandbox failed.");
-        await renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) { if (!isAbort(error)) { $("#studio-release-status").textContent = studioSimulationErrorText(error.message); button.disabled = false; } }
-    }));
-    root.querySelector("#studio-baseline-form")?.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const formElement = event.currentTarget;
-      const submit = formElement.querySelector('button[type="submit"]');
-      const originalLabel = submit.textContent;
-      const form = new FormData(formElement);
-      submit.disabled = true;
-      submit.textContent = t("Saving…", "正在保存…");
-      try {
-        const next = { scenarioId: String(form.get("scenarioId")), name: String(form.get("name")), prompt: String(form.get("prompt")), expectedRoleIds: String(form.get("roles")).split(",").map((item) => item.trim()).filter(Boolean), requiredForRelease: form.get("requiredForRelease") === "on", outputSchema: JSON.parse(String(form.get("schema") || "{}")), materials: JSON.parse(String(form.get("materials") || "[]")) };
-        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release-baselines`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenarios: [...baselines.filter((item) => item.scenarioId !== next.scenarioId), next] }) });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Unable to save baseline.");
-        await renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) { if (!isAbort(error)) $("#studio-release-status").textContent = error.message || t("Invalid baseline JSON.", "基线场景 JSON 格式无效。"); }
-      finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = originalLabel; } }
-    });
-    addStudioWorkspaceNav(root, teamVersionId, "release");
-    const releaseButton = $("#studio-release-button");
-    releaseButton?.addEventListener("click", async () => {
-      releaseButton.disabled = true;
-      $("#studio-release-status").textContent = english ? "Releasing TeamVersion…" : "正在发布团队版本…";
-      try {
-        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/release`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Unable to release TeamVersion.");
-        if (collaborationProjectId) {
-          const designUrl = `/studio/teams/${encodeURIComponent(teamVersionId)}/design?collaborationProjectId=${encodeURIComponent(collaborationProjectId)}&adjust=1&mount=1`;
-          navigate(designUrl);
-          return;
-        }
-        await renderStudioReleaseGate(teamVersionId, pageRequest);
-      } catch (error) {
-        if (isAbort(error)) return;
-        $("#studio-release-status").textContent = error.message || "Unable to release TeamVersion.";
-        releaseButton.disabled = false;
-      }
-    });
+    if (!irResponse.ok || storedIr.teamIR?.schemaVersion !== 2) throw new Error("TEAM_IR_V2_REQUIRED");
+    await renderStudioTeamIrReleaseGate(teamVersionId, version, storedIr, pageRequest);
   } catch (error) {
     if (isAbort(error)) return;
     root.innerHTML = `<div class="run-error">${esc(error.message || "Unable to validate TeamVersion.")}</div>`;
@@ -2600,1549 +1833,20 @@ async function renderStudioTeamIrReleaseGate(teamVersionId, team, stored, pageRe
   });
 }
 
-function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredModels = []) {
-  const english = locale === "en";
-  const copyOverrides = {
-    en: {
-      "Random number": "Randomly select a specified number of roles",
-      "Candidates are defined by flows connected from Start. Random selection is fixed for each run.": "Candidates are the roles connected from Start. The selected roles stay the same when this run resumes.",
-      "Only distinct roles connected directly to End are counted.": "The threshold counts distinct roles connected directly to End. Repeated outputs from one role are retained but count as one role.",
-      "Start dispatch is configured on the Start role. This flow defines one eligible role.": "Configure dispatch on Start. This flow adds its target role to the candidate set.",
-      "Minimum number": "Wait for at least a specified number of terminal roles",
-      "Minimum arrivals": "Minimum number of terminal roles",
-      "Distribution": "Routing mode",
-      "Minimum sources": "Minimum incoming roles",
-      "Structural role": "Boundary node",
-      "Flow properties": "Transition properties",
-      "Flow and condition": "Transition rules",
-      "Flow contract": "Transition contract"
-    },
-    zh: {
-      "随机选择数量": "随机选取指定数量",
-      "达到指定数量": "至少有指定数量的终端角色到达",
-      "最少到达数": "最少终端角色数",
-      "选择数量": "角色数量",
-      "最少来源数": "最少上游角色数",
-      "候选角色由开始节点的连线决定；随机选择在每次运行中固定。": "候选角色由开始节点的连线决定；本次运行及恢复执行时，随机抽选结果保持不变。",
-      "只统计直接连接到结束节点的不同角色。": "门槛按直接连接到结束节点的不同角色计算。同一角色的多份终端输出都会保留，但只计作一个角色。",
-      "开始分发策略在开始角色中配置；此关系定义一个候选角色。": "请在开始节点配置分发方式；此连线将目标角色加入候选范围。",
-      "结构角色": "边界节点",
-      "流程属性": "流转属性",
-      "流程与条件": "流转规则",
-      "流程契约": "流转契约"
-    }
-  };
-  const t = (en, zh) => {
-    if (en === "Dispatch") return english ? "Task dispatch" : "任务分发";
-    if (en === "Distribution") return english ? "Routing mode" : "路由策略";
-    if (en === "All connected roles") return english ? (zh === "全部候选角色" ? "Dispatch to all connected roles" : "Wait for all terminal roles to complete") : (zh === "全部连接角色到达" ? "全部终端角色完成" : zh);
-    return (english ? copyOverrides.en[en] : copyOverrides.zh[zh]) || (english ? en : zh);
-  };
-  const system = authoring.system || (authoring.system = {});
-  const roles = authoring.roles || {};
-  const roleIds = Object.keys(roles).sort();
-  const selectedFlow = resolveStudioSelectedFlow(authoring, selection);
-  let manifest = { version: 1, contracts: [] };
-  try { manifest = JSON.parse(selection.assets?.contracts || JSON.stringify(manifest)); } catch { /* The editor shows the repairable manifest as empty. */ }
-  const flowContract = selectedFlow && Array.isArray(manifest.contracts)
-    ? manifest.contracts.find((item) => item?.kind === "flow" && item.match?.fromRoleId === selectedFlow.fromRoleId && item.match?.eventType === selectedFlow.eventType && item.match?.toRoleId === studioContractTargetRoleId(selectedFlow.toRoleId))
-    : null;
-  const manifestContracts = Array.isArray(manifest.contracts) ? manifest.contracts : [];
-  const contractSchemaRef = flowContract?.schema || `schemas/${String(selectedFlow?.flowId || "flow").replace(/[^a-zA-Z0-9_.-]/g, "-")}.json`;
-  const role = selection.roleId ? roles[selection.roleId] : null;
-  const roleName = (roleId) => roleId === "__system_start__" ? t("Start", "开始")
-    : roleId === "__system_end__" ? t("End", "结束")
-      : roles[roleId]?.title || (english ? "Untitled role" : "未命名角色");
-  const roleModelRef = role?.modelRef || (role?.backend && role?.modelId ? `${role.backend}/${role.modelId}` : "");
-  const runnableModels = discoveredModels.filter((model) => model.runnable);
-  const selectedModelKnown = runnableModels.some((model) => (model.selectionRef || `${model.backend}/${model.id}`) === roleModelRef);
-  const modelOptions = `${roleModelRef && !selectedModelKnown ? `<option value="${esc(roleModelRef)}" selected>${esc(roleModelRef)} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
-    const selectionRef = model.selectionRef || `${model.backend}/${model.id}`;
-    const providerRef = model.ref || model.id;
-    return `<option value="${esc(selectionRef)}" ${selectionRef === roleModelRef ? "selected" : ""}>${esc(model.name || providerRef)} · ${esc(providerRef)} (${esc(model.backend)})</option>`;
-  }).join("")}`;
-  const fallbackModelRef = role?.fallbackModelRef || "";
-  const fallbackModelKnown = runnableModels.some((model) => (model.selectionRef || `${model.backend}/${model.id}`) === fallbackModelRef);
-  const fallbackModelOptions = `${fallbackModelRef && !fallbackModelKnown ? `<option value="${esc(fallbackModelRef)}" selected>${esc(fallbackModelRef)} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
-    const selectionRef = model.selectionRef || `${model.backend}/${model.id}`;
-    const providerRef = model.ref || model.id;
-    return `<option value="${esc(selectionRef)}" ${selectionRef === fallbackModelRef ? "selected" : ""}>${esc(model.name || providerRef)} · ${esc(providerRef)} (${esc(model.backend)})</option>`;
-  }).join("")}`;
-  let roleContract = {};
-  try { roleContract = JSON.parse(selection.assets?.roles?.[role?.roleId]?.["role.json"] || "{}"); } catch { /* Keep the inspector readable while a role contract is being repaired. */ }
-  const allowedTools = roleContract.constraints?.allowedTools || [];
-  const writableStateFields = roleContract.constraints?.writableStateFields || [];
-  const selectedGlobalLaw = (selection.assets?.laws?.laws || []).find((law) => law.lawId === authoring.system?.lawGlobalRef);
-  const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
-  const blockedRoleTools = allowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
-  const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions"><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</details>` : "";
-  const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModelRef"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道瞬态故障时触发。")}</span></label>` : "";
-  const review = role?.review || {};
-  const reviewTarget = review.reworkTargetRoleId || "";
-  const reworkRoleOptions = roleIds.map((roleId) => `<option value="${esc(roleId)}" ${reviewTarget === roleId ? "selected" : ""}>${esc(roles[roleId]?.title || (english ? "Untitled role" : "未命名角色"))}</option>`).join("");
-  const startRoleId = "__system_start__";
-  const endRoleId = "__system_end__";
-  const terminalRoleCount = new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === endRoleId).map((flow) => flow.fromRoleId)).size;
-  if (selection.roleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Structural role", "结构角色")}</span><h2>${t("Start", "开始")}</h2></div><div class="studio-inspector-fields"><label class="field"><span>${t("Dispatch", "分发策略")}</span><select data-studio-special-field="startDispatchMode"><option value="all" ${system.startDispatch?.mode !== "random_n" ? "selected" : ""}>${t("All connected roles", "全部候选角色")}</option><option value="random_n" ${system.startDispatch?.mode === "random_n" ? "selected" : ""}>${t("Random number", "随机选择数量")}</option></select></label>${system.startDispatch?.mode === "random_n" ? `<label class="field"><span>${t("Candidate count", "选择数量")}</span><input type="number" min="1" max="${Math.max(1, roleIds.filter((roleId) => Object.values(authoring.flows || {}).some((flow) => flow.fromRoleId === startRoleId && flow.toRoleId === roleId)).length)}" step="1" data-studio-special-field="startDispatchCount" value="${esc(system.startDispatch.count)}"></label>` : ""}<p class="field-hint full">${t("Candidates are defined by flows connected from Start. Random selection is fixed for each run.", "候选角色由开始节点的连线决定；随机选择在每次运行中固定。")}</p><p class="studio-structure-rule full">${t("Start can connect only to business roles. It cannot connect directly to End.", "开始只能连接业务角色，不能直接连接结束。")}</p></div>`;
-  if (selection.roleId === endRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Structural role", "结构角色")}</span><h2>${t("End", "结束")}</h2></div><div class="studio-inspector-fields"><label class="field"><span>${t("Aggregation", "汇聚策略")}</span><select data-studio-special-field="endJoinMode"><option value="all_of" ${system.endJoin?.mode !== "quorum_of" ? "selected" : ""}>${t("All connected roles", "全部连接角色到达")}</option><option value="quorum_of" ${system.endJoin?.mode === "quorum_of" ? "selected" : ""}>${t("Minimum number", "达到指定数量")}</option></select></label>${system.endJoin?.mode === "quorum_of" ? `<label class="field"><span>${t("Minimum arrivals", "最少到达数")}</span><input type="number" min="1" max="${Math.max(1, terminalRoleCount)}" step="1" data-studio-special-field="endJoinMin" value="${esc(system.endJoin.min ?? 1)}"></label>` : ""}<p class="field-hint full">${t("Only distinct roles connected directly to End are counted.", "只统计直接连接到结束节点的不同角色。")}</p><p class="studio-structure-rule full">${t("End can receive flows only from business roles. Start cannot connect directly to End.", "结束只能接收业务角色的连接，不能与开始直接连接。")}</p></div>`;
-  const deleteFlowButton = selectedFlow ? `<button type="button" class="secondary-button danger-button" data-studio-flow-delete>${t("Delete flow", "删除关系")}</button>` : "";
-  if (selectedFlow?.fromRoleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Structural event", "结构事件")}</span><input value="${t("Start", "开始")}" readonly></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || localizedEventLabel("START", copy))}"></label><p class="field-hint full">${t("Start dispatch is configured on the Start role. This flow defines one eligible role.", "开始分发策略在开始角色中配置；此关系定义一个候选角色。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
-  if (selectedFlow) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><input data-studio-flow-field="eventType" value="${esc(selectedFlow.eventType)}"></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
-  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(role.title || role.roleId)}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}<label class="field"><span>${t("Distribution", "分发策略")}</span><select data-studio-role-field="routingMode"><option value="">standard</option><option value="parallel_split" ${role.routingMode === "parallel_split" ? "selected" : ""}>parallel_split</option></select></label><label class="field"><span>${t("Join mode", "汇聚策略")}</span><select data-studio-role-field="joinMode"><option value="">none</option><option value="all_of" ${role.joinMode === "all_of" ? "selected" : ""}>all_of</option><option value="quorum_of" ${role.joinMode === "quorum_of" ? "selected" : ""}>quorum_of</option></select></label>${role.joinMode === "quorum_of" ? `<label class="field"><span>${t("Minimum sources", "最少来源数")}</span><input data-studio-role-field="joinMin" type="number" min="1" step="1" value="${esc(role.joinMin ?? "")}"></label>` : ""}<label class="field"><span>${t("Loop budget", "循环上限")}</span><input data-studio-role-field="loopMax" type="number" min="1" step="1" value="${esc(role.loopMax ?? "")}"></label><label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
-  return `<div class="studio-inspector-heading"><span class="section-kicker">${t("No selection", "未选择对象")}</span><h2>${t("Select a role or flow", "请选择角色或流程")}</h2></div><p class="form-hint">${t("Open Global from Team configuration to edit team-wide settings.", "请从团队配置中选择“全局”编辑团队级配置。")}</p>`;
-}
-
-function localizeStudioInspector(inspector, locale) {
-  if (!inspector) return;
-  const english = locale === "en";
-  const bindingLabels = english
-    ? { model: "AI model", exec: "Execution tool", noop: "No execution binding" }
-    : { model: "AI 模型", exec: "执行工具", noop: "未绑定执行器" };
-  const optionLabels = english
-    ? {
-        routingMode: { "": "Standard routing", parallel_split: "Parallel fan-out" },
-        joinMode: { "": "No join", all_of: "Wait for all sources", quorum_of: "Wait for a quorum" },
-        reviewTimeoutAction: { pause: "Pause", terminate: "Terminate" },
-        reviewTerminateScope: { branch: "Current branch", run: "Entire run" }
-      }
-    : {
-        routingMode: { "": "标准路由", parallel_split: "并行分发" },
-        joinMode: { "": "不等待上游汇聚", all_of: "等待全部来源", quorum_of: "等待达到最少来源数" },
-        reviewTimeoutAction: { pause: "暂停等待", terminate: "终止" },
-        reviewTerminateScope: { branch: "当前分支", run: "整个运行" }
-      };
-  inspector.querySelectorAll('[data-studio-role-field="bindingKind"] option').forEach((option) => {
-    option.textContent = bindingLabels[option.value] || option.textContent;
-  });
-  for (const [field, labels] of Object.entries(optionLabels)) {
-    inspector.querySelectorAll(`[data-studio-role-field="${field}"] option`).forEach((option) => {
-      if (Object.hasOwn(labels, option.value)) option.textContent = labels[option.value];
-    });
+async function confirmTeamRuntimeReadiness(teamId, teamVersionId, pageRequest = state.activeRequest) {
+  if (!teamId || !teamVersionId) throw new Error("Team IR v2 readiness requires a Team and TeamVersion.");
+  const path = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/readiness`;
+  const response = await pageFetch(path);
+  const readiness = await response.json();
+  if (pageRequest && !isCurrentRequest(pageRequest)) return false;
+  if (!response.ok) throw new Error(readiness.error || "Unable to inspect Team IR v2 readiness.");
+  if (readiness.canDryRun !== true || (readiness.blockers || []).length) {
+    const blocker = (readiness.blockers || [])[0];
+    throw new Error(blocker?.message || blocker?.code || "Team IR v2 is not ready for a Sandbox Run.");
   }
-  const roleId = inspector.querySelector(".studio-inspector-heading > code");
-  if (roleId) {
-    const roleTitle = inspector.querySelector(".studio-inspector-heading h2");
-    if (roleTitle?.textContent === roleId.textContent) roleTitle.textContent = english ? "Untitled role" : "未命名角色";
-    const details = document.createElement("details");
-    details.className = "studio-inspector-advanced-id";
-    const summary = document.createElement("summary");
-    summary.textContent = english ? "Technical identifier" : "技术标识";
-    const roleHeading = roleId.parentElement;
-    details.append(summary, roleId);
-    roleHeading?.append(details);
-  }
-  inspector.querySelectorAll(".studio-inspector-section").forEach((section) => {
-    const summary = section.querySelector(":scope > summary")?.textContent.trim().toLocaleLowerCase() || "";
-    if (/flow contract|transition contract|role package|execution profile|流程契约|流转契约|角色资产包|执行配置与本地工具/.test(summary)) section.open = false;
-  });
+  return true;
 }
 
-function localizeStudioDesignPage(root, locale, { confirmed, version } = {}) {
-  if (!root) return;
-  const english = locale === "en";
-  root.querySelector("#studio-asset-drawer")?.setAttribute("aria-label", english ? "Team configuration" : "团队配置");
-  root.querySelector(".studio-asset-tabs")?.setAttribute("aria-label", english ? "Team configuration" : "团队配置");
-  root.querySelector("#studio-property-inspector")?.setAttribute("aria-label", english ? "Team configuration properties" : "团队配置属性");
-  root.querySelector(".team-debug-panel-head")?.setAttribute("aria-label", english ? "Drag the debug panel. Use arrow keys to move." : "拖动调试面板；也可使用方向键移动。");
-  root.querySelector("#project-graph-stage")?.setAttribute("aria-label", english ? "Editable team collaboration graph" : "可编辑的团队协作图谱");
-  if (!english) return;
-  const setText = (selector, text) => {
-    const element = root.querySelector(selector);
-    if (element) element.textContent = text;
-  };
-  const setLabel = (selector, text) => {
-    const label = root.querySelector(selector)?.closest("label");
-    const textNode = [...(label?.childNodes || [])].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
-    if (textNode) textNode.textContent = `${text} `;
-  };
-  setText(".page-heading .eyebrow", "OGS Studio · Team design");
-  setText(".page-heading .project-status", confirmed ? `Released · v${version}` : "In design");
-  setText(".studio-workspace-nav + p.form-hint[role='status']", "This TeamVersion is in design from a project team adjustment. Review and release it, then return to the project to mount the new version.");
-  const backLink = root.querySelector(".page-heading .detail-back");
-  if (backLink) backLink.textContent = backLink.getAttribute("href")?.startsWith("/projects/") ? "← Back to project" : "← Back to OGS Studio";
-  setText("#studio-team-info-open", "Team info");
-  setText("#team-build-title", "AI team builder");
-  setText("#confirm-project", "Release team version");
-  setText("#reconfirm-project", "Create a new draft");
-  setText('#project-edit-form button[type="submit"]', "Save changes");
-  setText("#studio-team-metadata-title", "Team information");
-  setText(".project-graph-preview .panel-head h2", "Team collaboration graph");
-  setText("#project-design-status", "Loading editable team structure");
-  setLabel('#project-edit-form input[name="name"]', "Team name");
-  setLabel('#project-edit-form textarea[name="overview"]', "Team goal");
-  setLabel("#team-simulation-input", "Debug task");
-  setText("#team-debug-dialog .team-debug-panel-head strong", "Debug");
-  setText("#team-simulation-run", "Start debug run");
-  setLabel("#team-simulation-materials", "Additional materials");
-  setText("#team-debug-dialog .team-debug-empty-state strong", "Ready to debug");
-  setText("#team-debug-dialog .team-debug-empty-state p", "Enter the task and relevant materials to see role conversations, flow progress, and results here.");
-  setText("#team-debug-dialog .team-debug-panel-content .form-actions a", "Debug history");
-  const debugHint = root.querySelector("#team-simulation-materials")?.closest("label")?.nextElementSibling;
-  if (debugHint) debugHint.textContent = "The task and additional materials are sent together as this run's input. The run uses the current TeamVersion snapshot and is stored as an isolated debug record.";
-  const debugInput = root.querySelector("#team-simulation-input");
-  if (debugInput) debugInput.placeholder = "Describe the task to validate";
-  const debugMaterials = root.querySelector("#team-simulation-materials");
-  if (debugMaterials) debugMaterials.placeholder = "Paste background, source text, requirements, or other test data";
-  root.querySelector("#team-debug-dialog")?.setAttribute("aria-label", "Debug panel");
-  root.querySelector("#team-debug-dialog [data-team-debug-close]")?.setAttribute("aria-label", "Close debug panel");
-  root.querySelector("#team-build-panel [data-team-build-close]")?.setAttribute("aria-label", "Close AI builder");
-  root.querySelector("#studio-workbench-host")?.setAttribute("aria-label", "Team design workspace");
-}
-
-function studioExecutionConfigMarkup(role, selection, locale) {
-  const config = selection.assets.executionConfig || { profiles: [], tools: { tools: [] } };
-  const profileId = role.profileId || `${role.roleId}-profile`;
-  const profile = (config.profiles || []).find((item) => item.profileId === profileId) || {};
-  const toolRef = profile.toolRef || `${role.roleId}-tool`;
-  const tool = (config.tools?.tools || []).find((item) => item.toolRef === toolRef) || {};
-  const label = (en, zh) => locale === "en" ? en : zh;
-  return `<details class="studio-inspector-section" open><summary>${label("Execution profile and local tool", "执行配置与本地工具")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${label("Profile ID", "配置标识")}</span><input list="studio-profile-options" data-studio-profile-field="profileId" value="${esc(profileId)}" maxlength="100"><datalist id="studio-profile-options">${(config.profiles || []).map((item) => `<option value="${esc(item.profileId)}"></option>`).join("")}</datalist></label><label class="field full"><span>${label("Tool reference", "工具引用")}</span><input list="studio-tool-options" data-studio-profile-field="toolRef" value="${esc(toolRef)}" maxlength="100"><datalist id="studio-tool-options">${(config.tools?.tools || []).map((item) => `<option value="${esc(item.toolRef)}"></option>`).join("")}</datalist></label><label class="field full"><span>${label("Command", "启动命令")}</span><input data-studio-tool-field="command" value="${esc(tool.command || "node")}" maxlength="500"></label><label class="field full"><span>${label("Argument template (JSON array)", "参数模板（JSON 数组）")}</span><textarea data-studio-tool-field="argsTemplate" rows="3">${esc(JSON.stringify(tool.argsTemplate || [], null, 2))}</textarea></label><label class="field"><span>${label("Stdin mode", "标准输入模式")}</span><select data-studio-tool-field="stdinMode"><option value="text" ${tool.stdinMode !== "none" ? "selected" : ""}>text</option><option value="none" ${tool.stdinMode === "none" ? "selected" : ""}>none</option></select></label><label class="field"><span>${label("Timeout (ms)", "超时（毫秒）")}</span><input data-studio-profile-field="timeoutMs" type="number" min="1" step="1" value="${esc(profile.timeoutMs ?? "")}"></label><label class="field"><span>${label("Maximum output bytes", "最大输出字节数")}</span><input data-studio-profile-field="maxOutputBytes" type="number" min="1" step="1" value="${esc(profile.maxOutputBytes ?? "")}"></label><p class="field-hint full">${label("This command runs within the TeamVersion execution environment. Review its permissions before release.", "命令在 TeamVersion 执行环境中运行。发布前请核对命令权限。")}</p></div></details>`;
-}
-
-function studioRouteOrderMarkup(authoring, role, locale) {
-  const outgoing = [...new Set(Object.values(authoring.flows || {})
-    .filter((flow) => flow.fromRoleId === role.roleId && flow.toRoleId !== "__system_end__")
-    .map((flow) => flow.toRoleId))].sort();
-  if (outgoing.length < 2) return "";
-  const saved = Array.isArray(role.routeOrder) ? role.routeOrder.filter((target) => outgoing.includes(target)) : [];
-  const targets = [...saved, ...outgoing.filter((target) => !saved.includes(target))];
-  const label = locale === "en" ? "Sibling flow order" : "同级下游顺序";
-  const hint = locale === "en" ? "Drag rows to set the order. Lower positions run first when sibling flows compete." : "拖动角色调整顺序；同级流程竞争时，序号靠前的优先。";
-  const roleName = (roleId) => authoring.roles?.[roleId]?.title || roleId;
-  return `<section class="studio-inspector-section studio-route-order-editor"><h3>${label}<span class="studio-order-count">${targets.length}</span></h3><p class="field-hint">${hint}</p><div class="studio-route-order-list" data-studio-route-order-list role="list">${targets.map((target, index) => `<div class="studio-route-order-row" data-studio-route-order-item data-studio-route-order="${esc(target)}" draggable="true" role="listitem" aria-posinset="${index + 1}" aria-setsize="${targets.length}"><span class="studio-route-order-position" data-studio-route-order-position>${index + 1}</span><span class="studio-route-order-name">${esc(roleName(target))}</span><button type="button" class="studio-order-handle" data-studio-route-order-handle aria-label="${locale === "en" ? `Drag to reorder ${esc(roleName(target))}` : `拖动调整${esc(roleName(target))}顺序`}" title="${locale === "en" ? "Drag to reorder" : "拖动调整顺序"}">⠿</button><span class="studio-route-order-moves"><button type="button" class="studio-order-move" data-studio-route-order-move="up" aria-label="${locale === "en" ? `Move ${esc(roleName(target))} up` : `将${esc(roleName(target))}上移`}" title="${locale === "en" ? "Move up" : "上移"}" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" class="studio-order-move" data-studio-route-order-move="down" aria-label="${locale === "en" ? `Move ${esc(roleName(target))} down` : `将${esc(roleName(target))}下移`}" title="${locale === "en" ? "Move down" : "下移"}" ${index === targets.length - 1 ? "disabled" : ""}>↓</button></span></div>`).join("")}</div></section>`;
-}
-
-function studioContextMapMarkup(authoring, role, locale) {
-  const incoming = [...new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === role.roleId).map((flow) => flow.fromRoleId))];
-  const candidates = new Set([
-    "global.task", "global.user_profile", "global.human_review.current.comment",
-    "global.human_review.current.round", "global.human_review.current.previous_output.content"
-  ]);
-  if (role.joinMode) {
-    if (role.joinMode !== "quorum_of" || Number(role.joinMin || incoming.length) >= incoming.length) {
-      for (const source of incoming) for (const suffix of ["content", "event", "data"]) candidates.add(`source(${source}).${suffix}`);
-    }
-  } else if (incoming.length) {
-    for (const source of ["direct.content", "direct.event", "direct.data"]) candidates.add(source);
-  }
-  const sourceLabel = (value) => {
-    const roleSource = value.match(/^source\((.+)\)\.(content|event|data)$/);
-    if (roleSource) {
-      const labels = locale === "en"
-        ? { content: "role output", event: "flow event", data: "structured data" }
-        : { content: "角色输出", event: "流转事件", data: "结构化数据" };
-      return `${authoring.roles?.[roleSource[1]]?.title || roleSource[1]} · ${labels[roleSource[2]]}`;
-    }
-    const labels = locale === "en" ? {
-      "global.task": "Current task",
-      "global.user_profile": "User profile",
-      "global.human_review.current.comment": "Current review comment",
-      "global.human_review.current.round": "Current review round",
-      "global.human_review.current.previous_output.content": "Previous role output",
-      "direct.content": "Direct upstream content",
-      "direct.event": "Direct upstream event",
-      "direct.data": "Direct upstream data"
-    } : {
-      "global.task": "本次任务",
-      "global.user_profile": "用户档案",
-      "global.human_review.current.comment": "当前审核意见",
-      "global.human_review.current.round": "当前审核轮次",
-      "global.human_review.current.previous_output.content": "上轮角色输出",
-      "direct.content": "直接上游内容",
-      "direct.event": "直接上游事件",
-      "direct.data": "直接上游数据"
-    };
-    return labels[value] || value;
-  };
-  const candidateOptions = [...candidates].sort().map((value) => `<option value="${esc(value)}">${esc(sourceLabel(value))}</option>`).join("");
-  const rows = Object.entries(role.contextMap || {}).sort(([left], [right]) => left.localeCompare(right)).map(([target, raw]) => {
-    const optional = String(raw).endsWith("?");
-    const selector = optional ? String(raw).slice(0, -1) : String(raw);
-    const base = [...candidates].sort((left, right) => right.length - left.length).find((candidate) => selector === candidate || selector.startsWith(`${candidate}.`)) || "global.task";
-    const path = selector === base ? "" : selector.slice(base.length + 1);
-    const optionalAllowed = base === "direct.data" || base.startsWith("source(") && base.endsWith(".data") || base.startsWith("global.human_review.current");
-    return `<div class="studio-context-map-row" data-studio-context-row><label class="field"><span>${locale === "en" ? "Target field" : "目标字段"}</span><input data-studio-context-target value="${esc(target)}"></label><label class="field"><span>${locale === "en" ? "Source" : "来源"}</span><select data-studio-context-source>${candidateOptions}<option value="${esc(base)}" selected>${esc(sourceLabel(base))}</option></select></label><label class="field"><span>${locale === "en" ? "Field path" : "字段路径"}</span><input data-studio-context-path value="${esc(path)}" placeholder="issue.id"></label><label class="field checkbox"><input type="checkbox" data-studio-context-optional ${optional ? "checked" : ""}${optionalAllowed ? "" : " disabled"}><span>${locale === "en" ? "Optional" : "可选"}</span></label><button type="button" class="icon-button" data-studio-context-remove aria-label="${locale === "en" ? "Remove mapping" : "移除映射"}" title="${locale === "en" ? "Remove mapping" : "移除映射"}">×</button></div>`;
-  }).join("");
-  return `<section class="studio-inspector-section studio-context-map-editor"><h3>${locale === "en" ? "Context Map" : "上下文映射"}</h3><p class="field-hint">${locale === "en" ? "Map supported incoming values to role input fields." : "将受支持的上游值映射到角色输入字段。"}</p><div data-studio-context-rows>${rows}</div><button type="button" class="secondary-button" data-studio-context-add>${locale === "en" ? "Add mapping" : "添加映射"}</button></section>`;
-}
-
-function studioRoleInputContractMarkup(authoring, selection, locale) {
-  const roles = Object.keys(authoring.roles || {}).sort();
-  const options = roles.map((roleId) => `<option value="${esc(roleId)}">${esc(roleId)}</option>`).join("");
-  return `<section class="studio-inspector-section studio-role-input-contract"><h3>${locale === "en" ? "Role input contract" : "角色输入契约"}</h3><div class="studio-inspector-fields"><label class="field"><span>${locale === "en" ? "Role" : "角色"}</span><select data-studio-role-input-contract-role>${options}</select></label><label class="field"><span>${locale === "en" ? "Schema path" : "Schema 路径"}</span><input data-studio-role-input-contract-schema value="schemas/${esc(roles[0] || "role")}-input.json"></label><button type="button" class="secondary-button" data-studio-role-input-contract-add ${roles.length ? "" : "disabled"}>${locale === "en" ? "Add role input contract" : "添加角色输入契约"}</button><p class="field-hint full">${locale === "en" ? "Creates or updates the role_input entry in the TeamVersion manifest and adds its schema to this design." : "在 TeamVersion 清单中新增或更新 role_input 项，并在当前设计中创建对应 Schema。"}</p></div></section>`;
-}
-
-function studioAuthoringFlowKey(flow) {
-  const source = flow.fromRoleId === "__system_start__" ? "start" : flow.fromRoleId;
-  const target = flow.toRoleId === "__system_end__" ? "end" : flow.toRoleId;
-  return `${source}:${flow.eventType}:${target}`;
-}
-
-function deleteStudioAuthoringFlow(authoring, canvas, flow) {
-  const nextAuthoring = structuredClone(authoring);
-  const nextCanvas = structuredClone(canvas);
-  delete nextAuthoring.flows[flow.flowId];
-  if (flow.toRoleId !== "__system_end__") {
-    const target = nextAuthoring.roles[flow.toRoleId];
-    if (target?.joinSources) {
-      target.joinSources = target.joinSources.filter((sourceRoleId) => sourceRoleId !== flow.fromRoleId);
-    }
-  }
-  nextCanvas.edges = (nextCanvas.edges || []).filter((edge) => edge.id !== flow.flowId && !(
-    edge.source === flow.fromRoleId && edge.target === flow.toRoleId && edge.eventType === flow.eventType
-  ));
-  return { authoring: nextAuthoring, canvas: nextCanvas };
-}
-
-function resolveStudioSelectedFlow(authoring, selection) {
-  const flows = Object.values(authoring.flows || {});
-  if (selection.flowId) {
-    const byId = flows.find((flow) => flow.flowId === selection.flowId);
-    if (byId) return byId;
-  }
-  return selection.flowKey ? flows.find((flow) => studioAuthoringFlowKey(flow) === selection.flowKey) || null : null;
-}
-
-function studioContractTargetRoleId(roleId) {
-  return roleId === "__system_end__" ? "output" : roleId;
-}
-
-async function renderProjectGraph(projectId, stageId = "project-graph-stage", readOnly = false, pageRequest = state.activeRequest) {
-  if (pageRequest && !isCurrentRequest(pageRequest)) return;
-  const stage = $("#" + stageId);
-  if (!stage) return;
-  trackStudioGraphRoot(stage);
-  const editorStatusCopy = {
-    "有未保存的下游顺序修改": "Unsaved transition-order changes.",
-    "有未保存的专业配置修改": "Unsaved execution settings.",
-    "有未保存的上下文映射修改": "Unsaved context-map changes.",
-    "有未保存的流程契约修改": "Unsaved transition-contract changes.",
-    "交接契约 JSON 无效，请修正后再编辑。": "The transition-contract JSON is invalid. Fix it before editing.",
-    "交接契约必须包含 version: 1 和 contracts 数组。": "The transition contract must contain version: 1 and a contracts array.",
-    "请输入本次模拟的任务内容": "Enter a task to debug.",
-    "请先保存未提交的图谱修改，再运行模拟": "Save the unsaved graph changes before starting a debug run.",
-    "请先点击图谱工具栏中的“保存”保存未提交的图谱修改，再开始调试。": "Save the unsaved graph changes from the graph toolbar before starting a debug run.",
-    "正在运行 Studio 模拟…": "Studio debug run in progress…"
-  };
-  const setEditorState = (message) => {
-    const status = $("#project-design-status");
-    if (status) status.textContent = state.locale === "en" ? editorStatusCopy[message] || message : message;
-  };
-  const showLoading = (message) => {
-    stage.setAttribute("aria-busy", "true");
-    stage.innerHTML = '<div class="studio-graph-loading" role="status" aria-live="polite"><span class="studio-graph-loading-spinner" aria-hidden="true"></span><span>' + esc(message) + '</span><span class="studio-graph-loading-track" aria-hidden="true"><i></i></span></div>';
-    setEditorState(message);
-  };
-  showLoading(state.locale === "en" ? "Preparing graph editor…" : "正在准备图谱编辑器…");
-  try {
-    await ensureStudioGraphBundle();
-  } catch (error) {
-    stage.removeAttribute("aria-busy");
-    stage.textContent = error.message || "Studio graph engine is unavailable.";
-    setEditorState(error.message || (state.locale === "en" ? "Unable to load the graph editor." : "图谱编辑器加载失败。"));
-    return;
-  }
-  if (!stage.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
-  if (!window.OGSStudioGraphBundle?.mountStudioX6Bridge) {
-    const message = state.locale === "en" ? "Graph editor is unavailable. Reload the page and try again." : "图谱编辑器不可用，请刷新页面后重试。";
-    stage.removeAttribute("aria-busy");
-    stage.textContent = message;
-    setEditorState(message);
-    return;
-  }
-  try {
-    showLoading(state.locale === "en" ? "Loading team structure…" : "正在读取团队结构…");
-    const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design?locale=${encodeURIComponent(state.locale)}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Unable to load the project graph.");
-    if (!stage.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
-    if (readOnly) {
-      const graph = mountStudioGraph(stage, {
-        viewModel: payload.viewModel,
-        readOnly: true,
-        showTopologyOrder: false,
-        showTechnicalDetails: false,
-        initialLayoutMode: "flow",
-        defaultAutoLayout: true,
-        defaultAutoLayoutRequestId: 1,
-        labels: graphLabels[state.locale],
-        onToggleFullscreen: async () => {
-          if (document.fullscreenElement) await document.exitFullscreen();
-          else await stage.requestFullscreen();
-        }
-      });
-      stage.removeAttribute("aria-busy");
-      return graph;
-    }
-    let authoring = payload.authoring;
-    let canvas = payload.canvas;
-    let projectDigest = payload.saveSnapshotDigest || payload.teamVersionDigest;
-    let dirty = false;
-    state.isTeamGraphDirty = () => dirty;
-    let selection = { roleId: "", flowKey: "", assets: { roles: {}, contracts: "" } };
-    const workbench = stage.closest(".studio-design-workbench");
-    const inspector = $("#studio-property-inspector");
-    const assetDrawer = workbench?.querySelector("#studio-asset-drawer");
-    let debugPanel = null;
-    const assetToggle = () => workbench?.querySelector("[data-studio-graph-action='assets']");
-    const assetListView = assetDrawer?.querySelector("#studio-assets-list-view");
-    const propertyView = assetDrawer?.querySelector("#studio-assets-property-view");
-    const globalView = assetDrawer?.querySelector("#studio-assets-global");
-    const assetBack = assetDrawer?.querySelector("[data-studio-assets-back]");
-    let assetPanelView = "list";
-    let commandDismissRequest = 0;
-    const showAssetPanel = (view = "list", { focusInspector = true } = {}) => {
-      if (!assetDrawer) return;
-      const buildPanel = workbench?.querySelector("#team-build-panel");
-      buildPanel?.classList.remove("is-open");
-      buildPanel?.setAttribute("aria-hidden", "true");
-      if (debugPanel?.classList.contains("is-open")) {
-        debugPanel.classList.remove("is-open");
-        debugPanel.setAttribute("aria-hidden", "true");
-        graphPanel.querySelector('[data-studio-graph-action="debug-run"]')?.setAttribute("aria-expanded", "false");
-      }
-      assetDrawer.classList.add("is-open");
-      workbench?.studioSyncPanelDockLayout?.("asset");
-      assetPanelView = view;
-      assetToggle()?.setAttribute("aria-expanded", "true");
-      assetDrawer.setAttribute("aria-hidden", "false");
-      const showProperties = view === "properties";
-      if (assetListView) assetListView.hidden = showProperties;
-      if (propertyView) propertyView.hidden = !showProperties;
-      if (assetBack) assetBack.hidden = !showProperties;
-      if (showProperties && focusInspector) inspector?.querySelector("input,select,textarea,button")?.focus({ preventScroll: true });
-    };
-    workbench?.addEventListener("studio-assets-show", (event) => showAssetPanel(event.detail?.view || "list"));
-    workbench?.addEventListener("studio-global-settings-saved", (event) => {
-      const { authoring: savedAuthoring, teamVersionDigest, assets } = event.detail || {};
-      if (!savedAuthoring) return;
-      const stagedAssets = selection.assets;
-      authoring = savedAuthoring;
-      projectDigest = teamVersionDigest || projectDigest;
-      selection.assets = { ...assets, roles: stagedAssets.roles, executionConfig: stagedAssets.executionConfig };
-      updateStudioGraph?.update({ authoring, viewModel: undefined, historyContext: captureEditorHistoryContext() });
-      renderInspector();
-      renderAssetNavigator();
-      setEditorState(state.locale === "en" ? "Global configuration saved." : "全局配置已保存。");
-    });
-    workbench?.addEventListener("studio-command-dismiss", () => {
-      updateStudioGraph?.update({ dismissCommandFormRequest: ++commandDismissRequest });
-    });
-    const pendingRoleAssets = new Set();
-    const pendingContractSchemas = new Set();
-    let contractsDirty = false;
-    let executionConfigDirty = false;
-    let modelSelectionDirty = false;
-    let editorHistoryRevision = 0;
-    let editorHistoryFieldActive = false;
-    const captureEditorHistoryContext = () => JSON.parse(JSON.stringify({
-      assets: selection.assets,
-      pendingRoleAssets: [...pendingRoleAssets],
-      pendingContractSchemas: [...pendingContractSchemas],
-      contractsDirty,
-      executionConfigDirty,
-      modelSelectionDirty
-    }));
-    const recordEditorHistory = () => updateStudioGraph?.update({
-      historyContext: captureEditorHistoryContext(),
-      historyEvent: { id: ++editorHistoryRevision, kind: "push-before-replace", label: "Edit team properties" }
-    });
-    selection.assets = payload.saveSnapshotAssets;
-    let discoveredModels = [];
-    try {
-      const modelResponse = await pageFetch("/api/v1/platform/models");
-      const modelPayload = await modelResponse.json();
-      if (modelResponse.ok) discoveredModels = modelPayload.models || [];
-    } catch { /* The design editor remains available when model discovery is offline. */ }
-    let studioRoleTemplatesByCommandId = new Map();
-    let studioSourceRolesByCommandId = new Map();
-    let studioRolePackages = { rolePackages: [] };
-    try {
-      const templateResponse = await pageFetch("/api/v1/studio/role-repository");
-      const templatePayload = await templateResponse.json();
-      if (templateResponse.ok) {
-        const templates = templatePayload.templates || [];
-        const latestTemplates = new Map();
-        for (const template of templates) {
-          const current = latestTemplates.get(template.roleId);
-          if (!current || String(template.createdAt || "") > String(current.createdAt || "")) latestTemplates.set(template.roleId, template);
-        }
-        studioRolePackages.rolePackages = [...latestTemplates.values()].map((template) => ({
-          roleId: template.roleId,
-          name: template.name,
-          description: template.description,
-          status: template.assets?.includes("role.json") && template.assets?.includes("prompt.md") ? "ok" : "incomplete",
-          hasRoleJson: template.assets?.includes("role.json"),
-          hasPrompt: template.assets?.includes("prompt.md"),
-          hasOutputSchema: template.assets?.includes("output.schema.json"),
-          source: "OGS Studio role repository"
-        }));
-        for (const template of latestTemplates.values()) studioRoleTemplatesByCommandId.set(template.roleId, template);
-        const requested = new URLSearchParams(location.search);
-        const templateId = requested.get("roleTemplate");
-        const versionId = requested.get("version");
-        const targetRoleId = requested.get("roleId");
-        const selectedTemplate = templates.find((template) => template.roleId === templateId && template.versionId === versionId);
-        if (selectedTemplate && /^[a-z][a-z0-9_-]{0,79}$/.test(targetRoleId || "")) {
-          studioRolePackages.rolePackages = studioRolePackages.rolePackages.filter((item) => item.roleId !== selectedTemplate.roleId);
-          studioRolePackages.rolePackages.push({
-            roleId: targetRoleId,
-            name: selectedTemplate.name,
-            description: selectedTemplate.description,
-            status: selectedTemplate.assets?.includes("role.json") && selectedTemplate.assets?.includes("prompt.md") ? "ok" : "incomplete",
-            hasRoleJson: selectedTemplate.assets?.includes("role.json"),
-            hasPrompt: selectedTemplate.assets?.includes("prompt.md"),
-            hasOutputSchema: selectedTemplate.assets?.includes("output.schema.json"),
-            source: "OGS Studio role repository"
-          });
-          studioRoleTemplatesByCommandId.set(targetRoleId, selectedTemplate);
-        }
-      }
-    } catch { /* A missing optional shared catalog must not block team design. */ }
-    try {
-      const sourcesResponse = await pageFetch("/api/v1/studio/role-sources");
-      const sourcesPayload = await sourcesResponse.json();
-      if (sourcesResponse.ok) {
-        for (const source of sourcesPayload.sources || []) for (const sourceRole of source.roles || []) {
-          if (sourceRole.status !== "ready") continue;
-          let hash = 2166136261;
-          for (const character of `${source.sourceId}/${sourceRole.roleId}`) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
-          const roleId = `source-${(hash >>> 0).toString(36)}`;
-          if (studioRolePackages.rolePackages.some((item) => item.roleId === roleId)) continue;
-          studioRolePackages.rolePackages.push({
-            roleId,
-            name: sourceRole.name,
-            description: sourceRole.description,
-            status: "ok",
-            hasRoleJson: true,
-            hasPrompt: true,
-            hasOutputSchema: true,
-            source: `${source.name || source.sourceId} · ${sourceRole.category || "role"}`
-          });
-          studioSourceRolesByCommandId.set(roleId, { sourceId: source.sourceId, roleKey: sourceRole.roleId, commit: sourceRole.commit || source.commit });
-        }
-      }
-    } catch { /* Source roles are optional; installed role packages remain available. */ }
-    const renderInspector = () => {
-      if (!inspector) return;
-      inspector.innerHTML = studioPropertyInspectorMarkup(authoring, selection, state.locale, discoveredModels);
-      const selectedRole = selection.roleId ? authoring.roles?.[selection.roleId] : undefined;
-      if (selectedRole?.bindingKind === "exec") inspector.insertAdjacentHTML("beforeend", studioExecutionConfigMarkup(selectedRole, selection, state.locale));
-      if (selectedRole) {
-        inspector.insertAdjacentHTML("beforeend", studioRouteOrderMarkup(authoring, selectedRole, state.locale));
-        inspector.insertAdjacentHTML("beforeend", studioContextMapMarkup(authoring, selectedRole, state.locale));
-      }
-      if (!selectedRole && !selection.roleId && !selection.flowId && !selection.flowKey) inspector.insertAdjacentHTML("beforeend", studioRoleInputContractMarkup(authoring, selection, state.locale));
-      localizeStudioInspector(inspector, state.locale);
-      inspector.querySelectorAll("[data-studio-contract-schema]").forEach((element) => {
-        element.addEventListener("input", () => updateInspector(element));
-      });
-    };
-    const updateRouteOrderPresentation = (list) => {
-      const rows = [...list.querySelectorAll("[data-studio-route-order-item]")];
-      rows.forEach((row, index) => {
-        row.setAttribute("aria-posinset", String(index + 1));
-        row.querySelector("[data-studio-route-order-position]").textContent = String(index + 1);
-        row.querySelector('[data-studio-route-order-move="up"]').disabled = index === 0;
-        row.querySelector('[data-studio-route-order-move="down"]').disabled = index === rows.length - 1;
-      });
-      const role = authoring.roles[selection.roleId];
-      if (role) role.routeOrder = rows.map((row) => row.dataset.studioRouteOrder);
-    };
-    const moveRouteOrderRow = (row, direction) => {
-      const list = row.closest("[data-studio-route-order-list]");
-      if (!list) return false;
-      const sibling = direction === "up" ? row.previousElementSibling : row.nextElementSibling;
-      if (!sibling) return false;
-      recordEditorHistory();
-      if (direction === "up") list.insertBefore(row, sibling);
-      else list.insertBefore(sibling, row);
-      updateRouteOrderPresentation(list);
-      markDesignDirty("有未保存的下游顺序修改");
-      return true;
-    };
-    inspector?.addEventListener("dragstart", (event) => {
-      const row = event.target.closest("[data-studio-route-order-item]");
-      if (!row) return;
-      recordEditorHistory();
-      row.classList.add("is-dragging");
-      event.dataTransfer?.setData("text/plain", row.dataset.studioRouteOrder || "");
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-    });
-    inspector?.addEventListener("dragover", (event) => {
-      const target = event.target.closest("[data-studio-route-order-item]");
-      const dragging = inspector.querySelector("[data-studio-route-order-item].is-dragging");
-      if (!target || !dragging || target === dragging) return;
-      event.preventDefault();
-      const bounds = target.getBoundingClientRect();
-      const after = event.clientY > bounds.top + bounds.height / 2;
-      target.parentElement.insertBefore(dragging, after ? target.nextSibling : target);
-    });
-    inspector?.addEventListener("drop", (event) => {
-      const list = event.target.closest("[data-studio-route-order-list]");
-      if (!list) return;
-      event.preventDefault();
-      const dragging = list.querySelector("[data-studio-route-order-item].is-dragging");
-      if (!dragging) return;
-      dragging.classList.remove("is-dragging");
-      updateRouteOrderPresentation(list);
-      markDesignDirty("有未保存的下游顺序修改");
-    });
-    inspector?.addEventListener("dragend", (event) => {
-      const row = event.target.closest("[data-studio-route-order-item]");
-      if (row) row.classList.remove("is-dragging");
-    });
-    const renderAssetNavigator = () => {
-      const roleList = workbench?.querySelector("#studio-assets-roles");
-      const flowList = workbench?.querySelector("#studio-assets-flows");
-      if (!roleList || !flowList) return;
-      const roles = Object.values(authoring.roles || {});
-      const flows = Object.values(authoring.flows || {});
-      roleList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search roles" : "搜索角色"}</span><input type="search" placeholder="${state.locale === "en" ? "Search roles" : "搜索角色"}"></label>${roles.map((role) => { const color = roleColorForId(role.roleId); return `<button type="button" class="studio-asset-row" data-studio-asset-role="${esc(role.roleId)}" aria-current="${selection.roleId === role.roleId ? "true" : "false"}"><span class="studio-role-avatar" style="--role-accent:${color.accent}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="7.5" r="3.3"></circle><path d="M4.5 21c.3-4.2 3-6.7 7.5-6.7s7.2 2.5 7.5 6.7z"></path></svg></span><span><strong>${esc(role.title || role.roleId)}</strong><small>${esc(role.roleId)} · ${esc(role.bindingKind || "noop")}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No roles yet." : "尚无角色。"}</p>`}`;
-      roleList.querySelectorAll("[data-studio-asset-role]").forEach((button) => {
-        const role = roles.find((item) => item.roleId === button.dataset.studioAssetRole);
-        const binding = role?.bindingKind || "noop";
-        const label = state.locale === "en"
-          ? { model: "AI model", exec: "Execution tool", noop: "Unbound" }[binding] || "Custom executor"
-          : { model: "AI 模型", exec: "执行工具", noop: "未绑定执行器" }[binding] || "自定义执行器";
-        const description = role?.description || role?.summary;
-        button.querySelector("small").textContent = description ? `${label} · ${description}` : label;
-      });
-      flowList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search flows" : "搜索流程"}</span><input type="search" placeholder="${state.locale === "en" ? "Search flows" : "搜索流程"}"></label>${flows.map((flow) => { const flowKey = studioAuthoringFlowKey(flow); const fromLabel = flow.fromRoleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始") : (authoring.roles?.[flow.fromRoleId]?.title || flow.fromRoleId); const targetLabel = flow.toRoleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束") : (authoring.roles?.[flow.toRoleId]?.title || flow.toRoleId); const flowLabel = flow.label || localizedEventLabel(flow.eventType, copy); return `<button type="button" class="studio-asset-row studio-flow-row" data-studio-asset-flow="${esc(flowKey)}" aria-current="${selection.flowKey === flowKey ? "true" : "false"}"><span class="studio-flow-contract-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"></path><path d="M14 3.5v5h5M9 12h6M9 15h6M9 18c1-1 1.5 1 2.5 0 1-.9 1.5 1.2 2.5 0"></path></svg></span><span><strong>${esc(flowLabel)}</strong><small>${esc(fromLabel)} → ${esc(targetLabel)}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No flows yet." : "尚无流程。"}</p>`}`;
-      const flowSearch = flowList.querySelector(".studio-asset-search");
-      if (flowSearch) {
-        const label = state.locale === "en" ? "Search transitions" : "搜索流转";
-        flowSearch.querySelector("span").textContent = label;
-        flowSearch.querySelector("input").placeholder = label;
-      }
-      const emptyFlows = flowList.querySelector(":scope > .empty-note");
-      if (emptyFlows) emptyFlows.textContent = state.locale === "en" ? "No transitions yet." : "暂无流转。";
-      roleList.querySelectorAll("[data-studio-asset-role]").forEach((button) => {
-        const role = roles.find((item) => item.roleId === button.dataset.studioAssetRole);
-        const title = button.querySelector("strong");
-        if (title && title.textContent === role?.roleId) title.textContent = state.locale === "en" ? "Untitled role" : "未命名角色";
-      });
-      flowList.querySelectorAll("[data-studio-asset-flow]").forEach((button) => {
-        const key = button.dataset.studioAssetFlow;
-        const flow = flows.find((item) => studioAuthoringFlowKey(item) === key);
-        if (!flow) return;
-        const endpointName = (roleId) => roleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始")
-          : roleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束")
-            : authoring.roles?.[roleId]?.title || (state.locale === "en" ? "Unnamed role" : "未命名角色");
-        button.querySelector("small").textContent = `${endpointName(flow.fromRoleId)} → ${endpointName(flow.toRoleId)}`;
-      });
-      for (const [list, selector, getFlow] of [[roleList, "[data-studio-asset-role]", false], [flowList, "[data-studio-asset-flow]", true]]) {
-        list.querySelectorAll(selector).forEach((button) => button.addEventListener("click", () => {
-          const value = button.dataset[getFlow ? "studioAssetFlow" : "studioAssetRole"];
-          const flow = getFlow ? Object.values(authoring.flows || {}).find((item) => studioAuthoringFlowKey(item) === value) : null;
-          selection = { ...selection, roleId: getFlow ? "" : value, flowKey: getFlow ? value : "", flowId: flow?.flowId || "" };
-          updateStudioGraph?.update({ selectedRoleId: selection.roleId, selectedFlowKey: selection.flowKey });
-          renderInspector();
-          renderAssetNavigator();
-          showAssetPanel("properties");
-        }));
-        list.querySelector(".studio-asset-search input")?.addEventListener("input", (event) => {
-          const query = event.currentTarget.value.trim().toLocaleLowerCase();
-          list.querySelectorAll(selector).forEach((button) => { button.hidden = Boolean(query && !button.textContent.toLocaleLowerCase().includes(query)); });
-        });
-      }
-    };
-    const syncAssetNavigatorSelection = () => {
-      workbench?.querySelectorAll(".studio-asset-row").forEach((button) => {
-        const selected = button.dataset.studioAssetRole === selection.roleId || button.dataset.studioAssetFlow === selection.flowKey;
-        button.setAttribute("aria-current", String(selected));
-      });
-    };
-    const markDesignDirty = (message) => {
-      dirty = true;
-      setDirty("project-graph");
-      updateStudioGraph?.update({ historyContext: captureEditorHistoryContext() });
-      setEditorState(message);
-    };
-    const readJsonField = (element, emptyValue) => {
-      const source = element.value.trim();
-      if (!source) return { ok: true, value: emptyValue };
-      try { return { ok: true, value: JSON.parse(source) }; }
-      catch { return { ok: false }; }
-    };
-    const profileForRole = (role) => {
-      const config = selection.assets.executionConfig ||= { profiles: [], tools: { tools: [] } };
-      const profileId = role.profileId || `${role.roleId}-profile`;
-      let profile = config.profiles.find((item) => item.profileId === profileId);
-      if (!profile) {
-        profile = { profileId, toolRef: `${role.roleId}-tool` };
-        config.profiles.push(profile);
-      }
-      return profile;
-    };
-    const toolForProfile = (profile) => {
-      const config = selection.assets.executionConfig;
-      let tool = config.tools.tools.find((item) => item.toolRef === profile.toolRef);
-      if (!tool) {
-        tool = { toolRef: profile.toolRef, runner: "local_shell", command: "node", argsTemplate: [], stdinMode: "text" };
-        config.tools.tools.push(tool);
-      }
-      return tool;
-    };
-    const updateInspector = (element) => {
-      const systemField = element.dataset.studioSystemField;
-      const roleField = element.dataset.studioRoleField;
-      const flowField = element.dataset.studioFlowField;
-      const roleAsset = element.dataset.studioRoleAsset;
-      const specialField = element.dataset.studioSpecialField;
-      const profileField = element.dataset.studioProfileField;
-      const toolField = element.dataset.studioToolField;
-      if (profileField || toolField) {
-        const role = authoring.roles[selection.roleId];
-        if (!role) return false;
-        const oldProfileId = role.profileId || `${role.roleId}-profile`;
-        const profile = profileForRole(role);
-        if (profileField === "profileId") {
-          const nextId = element.value.trim();
-          if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(nextId)) return false;
-          if (selection.assets.executionConfig.profiles.some((item) => item !== profile && item.profileId === nextId)) return false;
-          profile.profileId = nextId;
-          role.profileId = nextId;
-        } else if (profileField === "toolRef") {
-          const nextRef = element.value.trim();
-          if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(nextRef)) return false;
-          const oldRef = profile.toolRef;
-          profile.toolRef = nextRef;
-          let tool = selection.assets.executionConfig.tools.tools.find((item) => item.toolRef === oldRef);
-          if (tool) tool.toolRef = nextRef;
-          else toolForProfile(profile);
-        } else if (["timeoutMs", "maxOutputBytes"].includes(profileField)) {
-          const value = element.value === "" ? undefined : Number(element.value);
-          if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) return false;
-          if (value === undefined) delete profile[profileField];
-          else profile[profileField] = value;
-          toolForProfile(profile);
-        } else if (toolField === "argsTemplate") {
-          const parsed = readJsonField(element, []);
-          if (!parsed.ok || !Array.isArray(parsed.value) || parsed.value.some((item) => typeof item !== "string")) return false;
-          toolForProfile(profile).argsTemplate = parsed.value;
-        } else if (toolField === "command") {
-          const command = element.value.trim();
-          if (!command) return false;
-          toolForProfile(profile).command = command;
-        } else if (toolField === "stdinMode") {
-          if (!new Set(["none", "text"]).has(element.value)) return false;
-          toolForProfile(profile).stdinMode = element.value;
-        }
-        if (oldProfileId !== profile.profileId) role.profileId = profile.profileId;
-        executionConfigDirty = true;
-      } else if (specialField === "startDispatchMode") {
-        authoring.system.startDispatch = element.value === "random_n"
-          ? { mode: "random_n", count: Math.min(Math.max(1, authoring.system.startDispatch?.count || 1), Object.values(authoring.flows || {}).filter((flow) => flow.fromRoleId === "__system_start__").length) }
-          : { mode: "all" };
-      } else if (specialField === "startDispatchCount") {
-        const count = Number(element.value);
-        const candidates = Object.values(authoring.flows || {}).filter((flow) => flow.fromRoleId === "__system_start__").length;
-        if (!Number.isInteger(count) || count < 1 || count > candidates) return false;
-        authoring.system.startDispatch = { mode: "random_n", count };
-      } else if (specialField === "endJoinMode") {
-        authoring.system.endJoin = element.value === "quorum_of"
-          ? { mode: "quorum_of", min: Math.min(Math.max(1, authoring.system.endJoin?.min || 1), Math.max(1, new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === "__system_end__").map((flow) => flow.fromRoleId)).size)) }
-          : { mode: "all_of" };
-      } else if (specialField === "endJoinMin") {
-        const count = Number(element.value);
-        const terminalRoles = new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === "__system_end__").map((flow) => flow.fromRoleId)).size;
-        if (!Number.isInteger(count) || count < 1 || count > terminalRoles) return false;
-        authoring.system.endJoin = { mode: "quorum_of", min: count };
-      } else if (systemField) {
-        authoring.system[systemField] = element.value;
-      } else if (roleField) {
-        const role = authoring.roles[selection.roleId];
-        if (!role) return false;
-        if (roleField === "contextMap") {
-          const parsed = readJsonField(element, {});
-          if (!parsed.ok || !parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)
-            || Object.entries(parsed.value).some(([key, value]) => !key.trim() || typeof value !== "string" || !value.trim())) return false;
-          role.contextMap = parsed.value;
-        } else if (roleField === "reviewEnabled") {
-          role.review = element.checked ? { ...role.review, mode: "required", timeoutAction: role.review?.timeoutAction || "pause", terminateScope: role.review?.terminateScope || "branch" } : undefined;
-        } else if (roleField.startsWith("review")) {
-          const review = { ...(role.review || {}), mode: "required" };
-          if (roleField === "reviewTimeout") review.timeoutSeconds = element.value === "" ? undefined : Number(element.value);
-          if (roleField === "reviewTimeoutAction") review.timeoutAction = element.value;
-          if (roleField === "reviewTarget") review.reworkTargetRoleId = element.value || undefined;
-          if (roleField === "reviewReworkMax") review.reworkMax = element.value === "" ? undefined : Number(element.value);
-          if (roleField === "reviewTerminateScope") review.terminateScope = element.value;
-          role.review = review;
-        } else if (["joinMin", "loopMax"].includes(roleField)) {
-          role[roleField] = element.value === "" ? undefined : Number(element.value);
-        } else if (["routingMode", "joinMode"].includes(roleField)) {
-          if (element.value) role[roleField] = element.value;
-          else delete role[roleField];
-        } else if (roleField === "profileId") {
-          const profileId = element.value.trim();
-          if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(profileId)) return false;
-          const currentProfile = profileForRole(role);
-          if (selection.assets.executionConfig.profiles.some((item) => item !== currentProfile && item.profileId === profileId)) return false;
-          currentProfile.profileId = profileId;
-          role.profileId = profileId;
-          executionConfigDirty = true;
-        } else if (roleField === "modelRef") {
-          role.modelRef = element.value.trim() || undefined;
-          role.modelSelectionSource = "role";
-          modelSelectionDirty = true;
-          const separator = role.modelRef?.indexOf("/") ?? -1;
-          if (separator > 0) {
-            role.backend = role.modelRef.slice(0, separator);
-            role.modelId = role.modelRef.slice(separator + 1);
-          } else { delete role.backend; delete role.modelId; }
-        } else if (roleField === "bindingKind") {
-          role.bindingKind = element.value;
-          modelSelectionDirty = true;
-          if (role.bindingKind === "exec") {
-            role.profileId ||= `${role.roleId}-profile`;
-            toolForProfile(profileForRole(role));
-            executionConfigDirty = true;
-          }
-          if (role.bindingKind !== "model") {
-            delete role.modelRef;
-            delete role.backend;
-            delete role.modelId;
-            delete role.modelSelectionSource;
-          }
-          if (role.bindingKind !== "exec") delete role.profileId;
-        } else {
-          role[roleField] = element.value || undefined;
-        }
-      } else if (flowField) {
-        const flow = resolveStudioSelectedFlow(authoring, selection);
-        if (!flow) return false;
-        if (flowField === "condition") {
-          const parsed = readJsonField(element, undefined);
-          if (!parsed.ok) return false;
-          if (parsed.value === undefined) delete flow.condition;
-          else flow.condition = parsed.value;
-        } else if (flowField === "priority") {
-          flow.priority = element.value === "" ? undefined : Number(element.value);
-        } else if (flowField === "runtimeOnlyErrorFlow") {
-          flow.runtimeOnlyErrorFlow = element.checked;
-        } else if (flowField === "eventType") {
-          if (flow.fromRoleId === "__system_start__") {
-            flow.eventType = "START";
-            markDesignDirty("有未保存的专业配置修改");
-            return true;
-          }
-          try {
-            const manifest = JSON.parse(selection.assets.contracts || '{"version":1,"contracts":[]}');
-            const contract = manifest.contracts?.find((item) => item?.kind === "flow"
-              && item.match?.fromRoleId === flow.fromRoleId
-              && item.match?.eventType === flow.eventType
-              && item.match?.toRoleId === studioContractTargetRoleId(flow.toRoleId));
-            if (contract) {
-              contract.match.eventType = element.value;
-              selection.assets.contracts = JSON.stringify(manifest, null, 2);
-              contractsDirty = true;
-              authoring.system.handoffContracts = ".ogs/contracts/handoff.json";
-            }
-          } catch { /* The manifest editor remains available for correcting invalid JSON. */ }
-          flow.eventType = element.value;
-        } else {
-          flow[flowField] = element.value;
-        }
-      } else if (roleAsset && selection.roleId) {
-        selection.assets.roles[selection.roleId] ||= {};
-        selection.assets.roles[selection.roleId][roleAsset] = element.value;
-        pendingRoleAssets.add(`${selection.roleId}/${roleAsset}`);
-      } else if (element.dataset.studioAsset === "contracts") {
-        selection.assets.contracts = element.value;
-        contractsDirty = true;
-        authoring.system.handoffContracts = ".ogs/contracts/handoff.json";
-      } else if (element.dataset.studioContractSchema) {
-        selection.assets.contractSchemas ||= {};
-        selection.assets.contractSchemas[element.dataset.studioContractSchema] = element.value;
-        pendingContractSchemas.add(element.dataset.studioContractSchema);
-      } else return false;
-      markDesignDirty("有未保存的专业配置修改");
-      return true;
-    };
-    const syncContextMapFromRows = () => {
-      const role = authoring.roles[selection.roleId];
-      if (!role) return false;
-      const mappings = {};
-      for (const row of inspector.querySelectorAll("[data-studio-context-row]")) {
-        const target = row.querySelector("[data-studio-context-target]")?.value.trim() || "";
-        const source = row.querySelector("[data-studio-context-source]")?.value || "";
-        const path = row.querySelector("[data-studio-context-path]")?.value.trim() || "";
-        const optional = row.querySelector("[data-studio-context-optional]")?.checked === true;
-        if (!/^[a-zA-Z0-9_]+$/.test(target) || Object.hasOwn(mappings, target)) return false;
-        if (path && !/^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$/.test(path)) return false;
-        const optionalAllowed = source === "direct.data" || source.startsWith("source(") && source.endsWith(".data") || source.startsWith("global.human_review.current");
-        if (optional && !optionalAllowed) return false;
-        mappings[target] = `${source}${path ? `.${path}` : ""}${optional ? "?" : ""}`;
-      }
-      role.contextMap = mappings;
-      const advanced = inspector.querySelector('[data-studio-role-field="contextMap"]');
-      if (advanced) advanced.value = JSON.stringify(mappings, null, 2);
-      markDesignDirty("有未保存的上下文映射修改");
-      return true;
-    };
-    renderInspector();
-    inspector?.addEventListener("focusout", () => { editorHistoryFieldActive = false; });
-    const recordInspectorEdit = () => {
-      if (editorHistoryFieldActive) return;
-      editorHistoryFieldActive = true;
-      recordEditorHistory();
-    };
-    inspector?.addEventListener("input", (event) => {
-      const element = event.target;
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) return;
-      recordInspectorEdit();
-      if (element.dataset.studioContractField) return;
-      if (element.dataset.studioProfileField === "profileId" || element.dataset.studioRoleField === "profileId") return;
-      if (element.closest("[data-studio-context-row]")) {
-        if (!syncContextMapFromRows()) setEditorState(state.locale === "en" ? "Check the mapping fields and keep target names unique." : "请检查映射字段，并确保目标字段不重复。");
-        return;
-      }
-      if (!updateInspector(element)) {
-        setEditorState(state.locale === "en" ? "Invalid JSON or Context Map; fix the field before saving." : "JSON 或上下文映射格式无效，请修正后再保存。");
-      }
-    });
-    inspector?.addEventListener("change", (event) => {
-      const element = event.target;
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) return;
-      recordInspectorEdit();
-      const contractField = element.dataset.studioContractField;
-      if (contractField && selection.flowId) {
-        const flow = Object.values(authoring.flows || {}).find((item) => item.flowId === selection.flowId);
-        if (!flow) return;
-        let manifest;
-        try { manifest = JSON.parse(selection.assets.contracts || '{"version":1,"contracts":[]}'); }
-        catch { setEditorState(state.locale === "en" ? "The transition contract JSON is invalid. Fix it before editing." : "流转契约 JSON 无效，请修正后再编辑。"); return; }
-        if (manifest.version !== 1 || !Array.isArray(manifest.contracts)) { setEditorState(state.locale === "en" ? "The transition contract must contain version: 1 and a contracts array." : "流转契约必须包含 version: 1 和 contracts 数组。"); return; }
-        let contract = manifest.contracts.find((item) => item?.kind === "flow" && item.match?.fromRoleId === flow.fromRoleId && item.match?.eventType === flow.eventType && item.match?.toRoleId === studioContractTargetRoleId(flow.toRoleId));
-        if (!contract) {
-          const schemaName = String(flow.flowId).replace(/[^a-zA-Z0-9_.-]/g, "-");
-          contract = { kind: "flow", match: { fromRoleId: flow.fromRoleId, eventType: flow.eventType, toRoleId: studioContractTargetRoleId(flow.toRoleId) }, schema: `schemas/${schemaName}.json`, onViolation: "FAIL" };
-          manifest.contracts.push(contract);
-        }
-        if (contractField === "id") contract.id = element.value.trim() || flow.flowId;
-        if (contractField === "schema") {
-          contract.schema = element.value.trim();
-          const schemaEditor = inspector.querySelector("[data-studio-contract-schema]");
-          if (schemaEditor) {
-            schemaEditor.dataset.studioContractSchema = contract.schema;
-            schemaEditor.value = selection.assets.contractSchemas?.[contract.schema] || '{\n  "type": "object"\n}';
-            schemaEditor.previousElementSibling?.querySelector("span")?.replaceChildren(document.createTextNode(contract.schema));
-          }
-        }
-        if (contractField === "onViolation") contract.onViolation = element.value;
-        selection.assets.contracts = JSON.stringify(manifest, null, 2);
-        contractsDirty = true;
-        authoring.system.handoffContracts = ".ogs/contracts/handoff.json";
-        markDesignDirty("有未保存的流程契约修改");
-        return;
-      }
-      if (element.dataset.studioContractSchema) {
-        updateInspector(element);
-        return;
-      }
-      if (!updateInspector(element)) return;
-      if (element.dataset.studioRoleField === "bindingKind" || element.dataset.studioRoleField === "reviewEnabled"
-        || element.dataset.studioRoleField === "joinMode" || element.dataset.studioSpecialField) renderInspector();
-    });
-    inspector?.addEventListener("click", (event) => {
-      const orderMove = event.target.closest("[data-studio-route-order-move]");
-      if (orderMove) {
-        moveRouteOrderRow(orderMove.closest("[data-studio-route-order-item]"), orderMove.dataset.studioRouteOrderMove);
-        return;
-      }
-      const deleteFlow = event.target.closest("[data-studio-flow-delete]");
-      if (deleteFlow && selection.flowId) {
-        const flow = Object.values(authoring.flows || {}).find((item) => item.flowId === selection.flowId);
-        if (!flow) return;
-        const result = deleteStudioAuthoringFlow(authoring, canvas, flow);
-        let manifest;
-        try { manifest = JSON.parse(selection.assets.contracts || '{"version":1,"contracts":[]}'); } catch { manifest = { version: 1, contracts: [] }; }
-        const removedContracts = (manifest.contracts || []).filter((item) => item?.kind === "flow" && item.match?.fromRoleId === flow.fromRoleId && item.match?.eventType === flow.eventType && item.match?.toRoleId === studioContractTargetRoleId(flow.toRoleId));
-        manifest.contracts = (manifest.contracts || []).filter((item) => !removedContracts.includes(item));
-        selection.assets.contracts = JSON.stringify(manifest, null, 2);
-        contractsDirty = removedContracts.length > 0;
-        for (const contract of removedContracts) {
-          if (contract.schema && !manifest.contracts.some((item) => item?.schema === contract.schema)) {
-            delete selection.assets.contractSchemas?.[contract.schema];
-            pendingContractSchemas.add(contract.schema);
-          }
-        }
-        selection = { ...selection, roleId: "", flowKey: "", flowId: "" };
-        authoring = result.authoring;
-        canvas = result.canvas;
-        updateStudioGraph?.update({
-          authoring,
-          canvas,
-          viewModel: undefined,
-          selectedRoleId: "",
-          selectedFlowKey: "",
-          historyContext: captureEditorHistoryContext()
-        });
-        renderInspector();
-        renderAssetNavigator();
-        showAssetPanel("list");
-        markDesignDirty(state.locale === "en" ? "Flow deleted." : "关系已删除。");
-        return;
-      }
-      const remove = event.target.closest("[data-studio-context-remove]");
-      if (remove) {
-        remove.closest("[data-studio-context-row]")?.remove();
-        syncContextMapFromRows();
-        return;
-      }
-      if (event.target.closest("[data-studio-role-input-contract-add]")) {
-        recordEditorHistory();
-        if (!authoring.system.handoffMode) {
-          setEditorState(state.locale === "en" ? "Choose a handoff mode before adding a contract." : "添加契约前，请先选择交接模式。");
-          return;
-        }
-        const roleId = inspector.querySelector("[data-studio-role-input-contract-role]")?.value || "";
-        const schemaPath = inspector.querySelector("[data-studio-role-input-contract-schema]")?.value.trim() || "";
-        if (!authoring.roles?.[roleId] || !schemaPath || schemaPath.startsWith("/") || schemaPath.split("/").some((part) => !part || part === "." || part === ".." || !/^[a-zA-Z0-9_.-]+$/.test(part)) || !schemaPath.endsWith(".json")) {
-          setEditorState(state.locale === "en" ? "Choose a role and a safe relative JSON Schema path." : "请选择角色，并填写安全的相对 JSON Schema 路径。");
-          return;
-        }
-        let manifest;
-        try { manifest = JSON.parse(selection.assets.contracts || '{"version":1,"contracts":[]}'); }
-        catch { setEditorState(state.locale === "en" ? "Repair the contract manifest JSON before adding an entry." : "请先修正契约清单 JSON，再添加条目。"); return; }
-        if (manifest.version !== 1 || !Array.isArray(manifest.contracts)) {
-          setEditorState(state.locale === "en" ? "The contract manifest must contain version 1 and a contracts array." : "契约清单必须包含 version: 1 和 contracts 数组。");
-          return;
-        }
-        let contract = manifest.contracts.find((item) => item?.kind === "role_input" && item.match?.roleId === roleId);
-        if (!contract) { contract = { id: `role-input-${roleId}`, kind: "role_input", match: { roleId }, onViolation: "FAIL" }; manifest.contracts.push(contract); }
-        contract.match ||= { roleId };
-        contract.schema = schemaPath;
-        contract.onViolation ||= "FAIL";
-        selection.assets.contracts = JSON.stringify(manifest, null, 2);
-        selection.assets.contractSchemas ||= {};
-        selection.assets.contractSchemas[schemaPath] ||= '{\n  "type": "object",\n  "properties": {}\n}';
-        pendingContractSchemas.add(schemaPath);
-        contractsDirty = true;
-        authoring.system.handoffContracts = ".ogs/contracts/handoff.json";
-        markDesignDirty(state.locale === "en" ? "Role input contract has unsaved changes." : "角色输入契约有未保存的修改。");
-        renderInspector();
-        const schemaEditor = inspector.querySelector(`[data-studio-contract-schema="${CSS.escape(schemaPath)}"]`);
-        schemaEditor?.closest("details")?.setAttribute("open", "");
-        schemaEditor?.focus();
-        return;
-      }
-      if (event.target.closest("[data-studio-context-add]")) {
-        recordEditorHistory();
-        const role = authoring.roles[selection.roleId];
-        if (!role) return;
-        role.contextMap ||= {};
-        let key = "new_field";
-        let suffix = 2;
-        while (Object.hasOwn(role.contextMap, key)) key = `new_field_${suffix++}`;
-        role.contextMap[key] = "global.task";
-        markDesignDirty("有未保存的上下文映射修改");
-        renderInspector();
-        inspector.querySelector(`[data-studio-context-target][value="${CSS.escape(key)}"]`)?.focus();
-      }
-    });
-    renderAssetNavigator();
-    const showUnsavedDebugNotice = () => {
-      const message = state.locale === "en"
-        ? "Save the unsaved graph changes from the graph toolbar before starting a debug run."
-        : "请先点击图谱工具栏中的“保存”保存未提交的图谱修改，再开始调试。";
-      const result = $("#team-simulation-result");
-      if (result) result.innerHTML = `<p class="run-error" role="alert">${esc(message)}</p>`;
-      setEditorState(message);
-    };
-    state.showTeamGraphUnsavedDebugNotice = showUnsavedDebugNotice;
-    const simulateTeam = async (input) => {
-      const prompt = String(input || "").trim();
-      if (!prompt) {
-        setEditorState(state.locale === "en" ? "Enter a task to debug." : "请输入本次调试任务。");
-        return false;
-      }
-      if (dirty) {
-        showUnsavedDebugNotice();
-        state.teamStudioDialog?.("run");
-        return false;
-      }
-      setEditorState(state.locale === "en" ? "Checking role model readiness…" : "正在检查角色模型配置…");
-      const ready = await confirmTeamRuntimeReadiness(projectId, authoring, pageRequest);
-      if (!ready) {
-        if (isCurrentRequest(pageRequest)) setEditorState(state.locale === "en" ? "Debug run cancelled; configure the listed roles and try again." : "调试已取消；请配置提示中的角色后重试。");
-        return false;
-      }
-      const result = $("#team-simulation-result");
-      if (result) result.innerHTML = `<p class="form-status" role="status">${state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…"}</p>`;
-      setEditorState(state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…");
-      try {
-        const teamResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}`);
-        const team = await teamResponse.json();
-        if (!teamResponse.ok) throw new Error(team.error || "无法读取团队版本身份");
-        const teamId = team.teamId || team.teamRootId || team.projectId;
-        const teamVersionId = team.teamVersionId || team.projectId;
-        const response = await pageFetch(`/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ prompt, locale: state.locale })
-        });
-        const payload = await response.json();
-        if (!isCurrentRequest(pageRequest)) return false;
-        if (!response.ok) throw new Error(payload.error || (state.locale === "en" ? "Team debug run failed." : "团队调试失败。"));
-        let simulation = payload.simulation || {};
-        let simulationState = payload.state || {};
-        let cursor = 0;
-        const transcript = [];
-        const roleCards = new Map();
-        const roleDefinitions = Object.values(authoring.roles || authoring.seats || {});
-        const roleName = (roleId) => roleDefinitions.find((role) => role.roleId === roleId || role.id === roleId)?.name
-          || roleDefinitions.find((role) => role.roleId === roleId || role.id === roleId)?.title
-          || (roleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始")
-            : roleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束") : roleId);
-        const eventActivationKey = (item) => item.executionId || `${item.roleId || ""}:${item.branchId || ""}:${item.loopIteration || 1}`;
-        const eventLabel = (item) => {
-          const english = state.locale === "en";
-          const role = roleName(item.roleId || "");
-          const labels = {
-            "role_waiting": english ? `${role} is waiting for the runtime` : `${role} 正在等待运行服务`,
-            "role_retry_scheduled": english ? `${role} will retry (attempt ${item.attempt || "?"}/${item.maxAttempts || "?"})` : `${role} 将重试（第 ${item.attempt || "?"}/${item.maxAttempts || "?"} 次）`,
-            "join_activated": english ? `Join activated for ${role}` : `${role} 汇聚已启动`,
-            "join_quorum_reached": english ? `Join condition met for ${role}` : `${role} 已满足汇聚条件`,
-            "join_late_arrival_ignored": english ? `Late result ignored at ${role}` : `${role} 忽略了迟到结果`,
-            "human_review_requested": english ? `Review requested for ${role}` : `${role} 已提交人工审核`,
-            "human_review_approved": english ? `Review approved for ${role}` : `${role} 审核已通过`,
-            "human_review_rework_requested": english ? `Rework requested for ${role}` : `${role} 收到返工要求`,
-            "human_review_paused": english ? `Run paused for review` : "运行已暂停，等待审核",
-            "human_review_terminated": english ? `Run terminated during review` : "审核终止了运行",
-            "human_review_expired": english ? `Review timed out` : "审核已超时",
-            "run_waiting": english ? `Run is waiting: ${item.reason || "external decision"}` : `运行正在等待：${item.reason || "外部决策"}`,
-            "run_stopping": english ? "Run is stopping after the active transition" : "当前流转结束后将停止运行",
-            "run_stopped": english ? "Run stopped" : "运行已停止",
-            "run_terminated": english ? "Run terminated" : "运行已终止"
-          };
-          return labels[item.type] || String(item.type || "event").replaceAll("_", " ");
-        };
-        const drawTranscript = (events = []) => {
-          if (!result) return;
-          let panel = result.querySelector(".team-simulation-result");
-          if (!panel) {
-            result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Debug trace" : "调试过程"}</strong><span class="status-chip running">${esc(studioSimulationStatus("running"))}</span></div><ol class="team-debug-transcript" aria-live="polite"></ol><p class="form-hint">${state.locale === "en" ? "Run continues if this panel is closed." : "关闭此面板不会中断调试运行。"}</p></div>`;
-            panel = result.querySelector(".team-simulation-result");
-          }
-          const list = panel.querySelector(".team-debug-transcript");
-          const chip = panel.querySelector(".status-chip");
-          const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 36;
-          const addSection = (card, label, value, className = "") => {
-            if (!value) return;
-            let section = card.querySelector(`[data-debug-section="${className || label}"]`);
-            if (!section) {
-              section = document.createElement("section");
-              section.dataset.debugSection = className || label;
-              section.innerHTML = `<small>${esc(label)}</small><pre></pre>`;
-              card.append(section);
-            }
-            section.querySelector("pre").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-          };
-          for (const item of events) {
-            const flowEvent = item.type === "flow.activated";
-            if (flowEvent) {
-              const flow = document.createElement("li");
-              flow.className = "team-debug-flow-event";
-              const selectFlow = document.createElement("button");
-              selectFlow.type = "button";
-              selectFlow.className = "team-debug-flow-select";
-              selectFlow.textContent = `${roleName(item.fromRoleId)} → ${roleName(item.toRoleId)} · ${item.eventType || ""}`;
-              selectFlow.setAttribute("aria-label", state.locale === "en"
-                ? `Focus handoff from ${roleName(item.fromRoleId)} to ${roleName(item.toRoleId)}${item.eventType ? ` on ${item.eventType}` : ""}`
-                : `定位交接：${roleName(item.fromRoleId)} 到 ${roleName(item.toRoleId)}${item.eventType ? `，事件 ${item.eventType}` : ""}`);
-              selectFlow.addEventListener("click", () => {
-                if (item.handoffId) updateStudioGraph?.focusRuntimeHandoff(item.handoffId);
-              });
-              flow.append(selectFlow);
-              if (item.branchId || item.attempt) {
-                const detail = document.createElement("small");
-                detail.textContent = [item.branchId, item.attempt ? `${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}` : ""].filter(Boolean).join(" · ");
-                flow.append(detail);
-              }
-              list.append(flow);
-              continue;
-            }
-            const eventType = String(item.type || "");
-            if (eventType === "role_retry_scheduled" || eventType.startsWith("join_") || eventType.startsWith("human_review_") || eventType.startsWith("run_")) {
-              const notice = document.createElement("li");
-              notice.className = `team-debug-event team-debug-event-${eventType.replaceAll(".", "-")}`;
-              notice.dataset.eventType = eventType;
-              const time = document.createElement("time");
-              time.textContent = studioSimulationEventTime(item);
-              const message = document.createElement("span");
-              message.textContent = eventLabel(item);
-              notice.append(time, message);
-              if (item.reason || item.errorCode || item.backoffMs) {
-                const detail = document.createElement("small");
-                detail.textContent = [item.reason, item.errorCode, item.backoffMs ? `${item.backoffMs} ms` : ""].filter(Boolean).join(" · ");
-                notice.append(detail);
-              }
-              list.append(notice);
-              continue;
-            }
-            if (item.type === "simulation.started") continue;
-            if (item.type === "simulation.completed" || item.type === "simulation.failed") {
-              if (chip) {
-                chip.className = `status-chip ${item.type === "simulation.completed" ? "completed" : "failed"}`;
-                chip.textContent = studioSimulationStatus(item.type === "simulation.completed" ? "completed" : "failed");
-              }
-              continue;
-            }
-            if (!String(item.type || "").startsWith("role.") && item.type !== "role_waiting") continue;
-            const key = eventActivationKey(item);
-            let card = roleCards.get(key);
-            if (!card) {
-              const color = roleColorForId(item.roleId || "system");
-              card = document.createElement("li");
-              card.dataset.executionKey = key;
-              card.style.setProperty("--role-accent", color.accent);
-              card.style.setProperty("--role-fill", color.fill);
-              card.innerHTML = `<header><strong></strong><span></span></header>`;
-              card.querySelector("header strong").textContent = roleName(item.roleId || "system");
-              list.append(card);
-              roleCards.set(key, card);
-            }
-            const status = item.type === "role_waiting" ? "waiting"
-              : item.type === "role.started" || item.type === "role.input_ready"
-              ? "running"
-              : item.type === "role.failed" ? "failed" : item.type === "role.skipped" ? "skipped" : "completed";
-            card.dataset.status = status;
-            const attempt = item.attempt ? ` · ${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}/${item.maxAttempts || "?"}` : "";
-            const duration = item.durationMs !== undefined ? ` · ${Number(item.durationMs).toLocaleString(state.locale)} ms` : "";
-            card.querySelector("header span").textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
-            if (item.type === "role.input_ready" || item.inputContext) {
-              addSection(card, state.locale === "en" ? "Input" : "收到的任务", item.inputContext, "input");
-            }
-            if (item.type === "role_waiting") {
-              const waitStage = item.stage === "model_provider"
-                ? (state.locale === "en" ? "Model service" : "模型服务")
-                : item.stage === "cli_tool"
-                  ? (state.locale === "en" ? "Execution tool" : "执行工具")
-                  : item.stage;
-              const waitText = [item.waitKind, waitStage, Number.isFinite(item.elapsedMs) ? `${item.elapsedMs} ms` : ""].filter(Boolean).join(" · ");
-              addSection(card, state.locale === "en" ? "Waiting" : "等待原因", waitText, "waiting");
-            }
-            if (item.stdoutPreview || item.failure) {
-              addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
-            }
-            if (item.errorEnvelope) {
-              addSection(card, state.locale === "en" ? "Failure details" : "失败诊断详情", item.errorEnvelope, "diagnostic");
-            }
-          }
-          if (wasAtBottom) list.scrollTop = list.scrollHeight;
-          updateStudioGraph?.setRuntimeProgress(transcript);
-        };
-        const endpoint = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`;
-        while (true) {
-          const eventsResponse = await pageFetch(`${endpoint}/${encodeURIComponent(simulation.simulationId)}/events?afterCursor=${cursor}`);
-          const eventPayload = await eventsResponse.json();
-          if (!eventsResponse.ok) throw new Error(eventPayload.error || "读取运行事件失败");
-          const incomingEvents = eventPayload.events || [];
-          transcript.push(...incomingEvents);
-          cursor = Number(eventPayload.cursor || cursor);
-          drawTranscript(incomingEvents);
-          if (eventPayload.done) break;
-          await new Promise((resolve) => setTimeout(resolve, 600));
-        }
-        const detailResponse = await pageFetch(`${endpoint}/${encodeURIComponent(simulation.simulationId)}`);
-        const detailPayload = await detailResponse.json();
-        if (!detailResponse.ok) throw new Error(detailPayload.error || "读取运行状态失败");
-        simulation = detailPayload.simulation || simulation;
-        simulationState = detailPayload.state || simulationState;
-        const auditTrail = simulationState.auditTrail || [];
-        const noopRoles = auditTrail.filter((item) => String(item.status || "").toLowerCase() === "noop");
-        const failed = simulation.status === "failed" || ["failed", "error"].includes(String(simulationState.status || "").toLowerCase()) || auditTrail.some((item) => String(item.status || "").toLowerCase() === "failed");
-        const output = simulationState.finalOutputsByRoleId
-          ? Object.entries(simulationState.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((item) => `${roleName(roleId)}: ${item.content || JSON.stringify(item.data || {})}`)).join("\n\n")
-          : "";
-        const hasOutput = typeof output === "string" && Boolean(output.trim());
-        const succeeded = !failed && hasOutput;
-        const roleRows = auditTrail.map((item) => {
-          const status = String(item.status || "").toLowerCase();
-          const label = status === "noop"
-            ? (state.locale === "en" ? "Not run: no model or execution profile" : "未执行：未配置模型或执行配置")
-            : (item.status || (state.locale === "en" ? "Executed" : "已执行"));
-          return `<li><strong>${esc(item.roleId || (state.locale === "en" ? "Role" : "角色"))}</strong><span>${esc(label)}${item.failure ? ` · ${esc(item.failure)}` : ""}</span></li>`;
-        }).join("");
-        const statusLabel = failed
-          ? (state.locale === "en" ? "Debug run failed" : "调试失败")
-          : !hasOutput
-            ? (state.locale === "en" ? "No result produced" : "未产出结果")
-            : noopRoles.length
-              ? (state.locale === "en" ? "Partial result" : "部分完成")
-              : (state.locale === "en" ? "Debug run complete" : "调试完成");
-        const historyHref = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-        const detailHref = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId || "")}`;
-        const persistenceLabel = state.locale === "en" ? "Saved as isolated Studio evidence · not a Project Run" : "已保存为独立 Studio 证据 · 不属于项目 Run";
-        const emptyMessage = noopRoles.length
-          ? (state.locale === "en" ? "No result was produced because one or more roles have no execution binding. Configure a model or execution profile for the listed roles, then retry." : "角色尚未配置执行绑定，因此没有生成结果。请为上方角色配置模型或执行配置后重试。")
-          : (state.locale === "en" ? "The debug run returned no final result." : "调试未返回最终结果。");
-        const displayedFailure = studioSimulationErrorText(simulationState.error || simulation.failureSummary || emptyMessage);
-        if (result) {
-          drawTranscript();
-          result.insertAdjacentHTML("beforeend", `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Final result" : "最终结果"}</strong><span class="status-chip${succeeded && !noopRoles.length ? "" : " warning"}">${statusLabel}</span></div><p class="form-hint">${persistenceLabel}</p>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(hasOutput ? output : displayedFailure)}</pre><div class="form-actions"><a class="secondary-button" href="${detailHref}" data-route="${detailHref}">${state.locale === "en" ? "Open run details" : "查看运行详情"}</a><a class="text-button" href="${historyHref}" data-route="${historyHref}">${state.locale === "en" ? "Debug history" : "调试历史"}</a></div></div>`);
-        }
-        setEditorState(failed
-          ? (state.locale === "en" ? "Debug run failed; review the role details and retry." : "调试失败；请检查角色执行信息后重试。")
-          : !hasOutput
-            ? emptyMessage
-            : noopRoles.length
-              ? (state.locale === "en" ? "A partial result was produced; some roles were not run." : "已生成部分结果；仍有角色未执行。")
-              : (state.locale === "en" ? "Debug run completed and saved as Studio evidence." : "调试完成，已保存为 Studio 证据。"));
-        return succeeded;
-      } catch (error) {
-        if (isAbort(error)) return false;
-        const message = studioSimulationErrorText(error.message);
-        if (result) result.innerHTML = `<p class="run-error" role="alert">${esc(message)}</p>`;
-        setEditorState(message);
-        return false;
-      }
-    };
-    state.runTeamStudioSimulation = simulateTeam;
-    const updateStudioGraph = mountStudioGraph(stage, {
-      mode: "product-edit",
-      authoring,
-      canvas,
-      viewModel: payload.viewModel,
-      readOnly: false,
-      showTopologyOrder: true,
-      showTechnicalDetails: true,
-      initialLayoutMode: "flow",
-      defaultAutoLayout: true,
-      defaultAutoLayoutRequestId: 1,
-      canSaveWorkbench: true,
-      historyContext: captureEditorHistoryContext(),
-      rolePackages: studioRolePackages,
-      labels: graphLabels[state.locale],
-      commandFormLabels: graphFormLabels[state.locale],
-      commandFormHost: workbench?.querySelector("#studio-command-form-host"),
-      onCommandFormStateChange: ({ open }) => {
-        const commandHost = workbench?.querySelector("#studio-command-form-host");
-        if (open) showAssetPanel("properties");
-        if (commandHost) commandHost.hidden = !open;
-        if (inspector) inspector.hidden = open;
-        if (assetBack) assetBack.hidden = open || assetPanelView !== "properties";
-        const editorActions = assetDrawer?.querySelector(".studio-asset-editor-actions");
-        if (editorActions) editorActions.hidden = open;
-      },
-      onSelectRole: (roleId) => { selection = { ...selection, roleId, flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); showAssetPanel("properties", { focusInspector: false }); },
-      onSelectFlow: (flowKey) => {
-        const flow = Object.values(authoring.flows || {}).find((item) => studioAuthoringFlowKey(item) === flowKey);
-        selection = { ...selection, roleId: "", flowKey, flowId: flow?.flowId || "" };
-        renderInspector();
-        syncAssetNavigatorSelection();
-        showAssetPanel("properties", { focusInspector: false });
-      },
-      onOpenTeamAssets: () => showAssetPanel("list"),
-      onClearSelection: () => { selection = { ...selection, roleId: "", flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); },
-      onChatGenerate: () => state.teamStudioDialog?.("assistant"),
-      onOpenDebug: () => state.teamStudioDialog?.("run"),
-      onQuickDebugRun: (input) => simulateTeam(input),
-      onFocusDebugInput: () => { state.teamStudioDialog?.("run"); return true; },
-      onStatusChange: setEditorState,
-      onToast: (tone, message) => {
-        setEditorState(message);
-        if (tone === "error") showToast(message);
-      },
-      onApplyCommand: async (result) => {
-        let convertedSourceAssets;
-        const pendingSourceRole = result.repositoryRoleId ? studioSourceRolesByCommandId.get(result.repositoryRoleId) : undefined;
-        if (pendingSourceRole && result.selectedRoleId) {
-          const sourceResponse = await pageFetch(`/api/v1/studio/role-sources/${encodeURIComponent(pendingSourceRole.sourceId)}/roles/${encodeURIComponent(pendingSourceRole.roleKey)}/convert?commit=${encodeURIComponent(pendingSourceRole.commit)}`, {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ roleId: result.selectedRoleId })
-          });
-          const sourcePayload = await sourceResponse.json();
-          if (!sourceResponse.ok) throw new Error(sourcePayload.error || "Unable to convert the source role.");
-          convertedSourceAssets = sourcePayload.result?.files || {};
-        }
-        authoring = result.authoring;
-        canvas = result.canvas;
-        if (result.historyContext) {
-          const history = result.historyContext;
-          selection.assets = history.assets || selection.assets;
-          pendingRoleAssets.clear();
-          for (const key of history.pendingRoleAssets || []) pendingRoleAssets.add(key);
-          pendingContractSchemas.clear();
-          for (const path of history.pendingContractSchemas || []) pendingContractSchemas.add(path);
-          contractsDirty = Boolean(history.contractsDirty);
-          executionConfigDirty = Boolean(history.executionConfigDirty);
-          modelSelectionDirty = Boolean(history.modelSelectionDirty);
-        }
-        const selectedFlow = result.selectedFlowKey
-          ? Object.values(authoring.flows || {}).find((flow) => studioAuthoringFlowKey(flow) === result.selectedFlowKey)
-          : null;
-        selection = { ...selection, roleId: result.selectedRoleId || "", flowKey: result.selectedFlowKey || "", flowId: selectedFlow?.flowId || "" };
-        if (result.repositoryRoleId) {
-          const template = studioRoleTemplatesByCommandId.get(result.repositoryRoleId);
-          if (template && result.selectedRoleId) {
-            const templateResponse = await pageFetch(`/api/v1/studio/role-repository/${encodeURIComponent(template.roleId)}/versions/${encodeURIComponent(template.versionId)}`);
-            const templatePayload = await templateResponse.json();
-            if (!templateResponse.ok) throw new Error(templatePayload.error || "Unable to load role template assets.");
-            selection.assets.roles ||= {};
-            selection.assets.roles[result.selectedRoleId] = templatePayload.assets || {};
-            for (const file of Object.keys(templatePayload.assets || {})) pendingRoleAssets.add(`${result.selectedRoleId}/${file}`);
-          }
-          if (convertedSourceAssets && result.selectedRoleId) {
-            selection.assets.roles ||= {};
-            selection.assets.roles[result.selectedRoleId] = convertedSourceAssets;
-            for (const file of Object.keys(convertedSourceAssets)) pendingRoleAssets.add(`${result.selectedRoleId}/${file}`);
-          }
-        }
-        updateStudioGraph?.update({
-          authoring,
-          canvas,
-          viewModel: undefined,
-          selectedRoleId: result.selectedRoleId || "",
-          selectedFlowKey: result.selectedFlowKey || "",
-          historyContext: result.historyContext || captureEditorHistoryContext()
-        });
-        renderInspector();
-        renderAssetNavigator();
-        dirty = true;
-        setDirty("project-graph");
-        setEditorState(state.locale === "en" ? "Unsaved structure changes." : "有未保存的结构修改");
-        if (result.selectedRoleId || result.selectedFlowKey) showAssetPanel("properties");
-      },
-      onApplyCanvas: (nextCanvas) => {
-        canvas = nextCanvas;
-        dirty = true;
-        setDirty("project-graph");
-        setEditorState(state.locale === "en" ? "Unsaved layout changes." : "有未保存的布局修改");
-      },
-      onValidateWorkbench: async () => {
-        const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design/validate`, {
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring })
-        });
-        const validation = await result.json();
-        if (!isCurrentRequest(pageRequest)) return;
-        if (!result.ok || validation.ok === false) {
-          setEditorState(validation.error || validation.diagnostics?.map((item) => item.message).join("; ") || (state.locale === "en" ? "Structure validation failed." : "结构校验失败"));
-          return;
-        }
-        setEditorState(state.locale === "en" ? "Structure validation passed." : "结构校验通过");
-      },
-      onSaveWorkbench: async () => {
-        if (!dirty) { setEditorState(state.locale === "en" ? "There are no unsaved changes." : "没有待保存的修改"); return; }
-        setEditorState(state.locale === "en" ? "Saving TeamVersion design…" : "正在保存团队设计…");
-        const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/save`, {
-          method: "PUT", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ authoring, assets: selection.assets, expectedTeamVersionDigest: projectDigest })
-        });
-        const saved = await result.json();
-        if (!isCurrentRequest(pageRequest)) return;
-        if (!result.ok) {
-          setEditorState(saved.error || "团队版本保存失败");
-          return;
-        }
-        dirty = false;
-        clearDirty("project-graph");
-        pendingRoleAssets.clear();
-        pendingContractSchemas.clear();
-        contractsDirty = false;
-        executionConfigDirty = false;
-        modelSelectionDirty = false;
-        if (saved.createdDraft) {
-          navigate(withCurrentSearch(`/studio/teams/${encodeURIComponent(saved.teamVersionId)}/design`));
-          return;
-        }
-        setEditorState(saved.unchanged ? "内容未变化，无需创建新版本。" : (state.locale === "en" ? "Saved." : "已保存。"));
-        await renderProjectStudio(projectId, pageRequest);
-      },
-      onQuickDebugRun: simulateTeam,
-      onToggleFullscreen: async () => {
-        if (document.fullscreenElement) await document.exitFullscreen();
-        else await stage.requestFullscreen();
-      }
-    });
-    stage.removeAttribute("aria-busy");
-    setEditorState(state.locale === "en" ? "Team graph loaded and ready to edit." : "团队结构已加载，可以编辑。");
-  } catch (error) { if (isAbort(error)) return;
-    stage.removeAttribute("aria-busy");
-    stage.textContent = error.message || "Unable to load the project graph.";
-    setEditorState(error.message || (state.locale === "en" ? "Unable to load the project graph." : "团队结构加载失败。"));
-  }
-}
-
-async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest = state.activeRequest) {
-  try {
-    const [discoveryResponse, designResponse, settingsResponse] = await Promise.all([
-      pageFetch("/api/v1/platform/discovery", { method: "POST" }),
-      authoring ? Promise.resolve(undefined) : pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design`),
-      pageFetch("/api/v1/platform/settings")
-    ]);
-    const discovery = await discoveryResponse.json();
-    if (!discoveryResponse.ok) throw new Error(discovery.error || "Unable to discover runtime models.");
-    const design = designResponse ? await designResponse.json() : undefined;
-    if (designResponse && !designResponse.ok) throw new Error(design.error || "Unable to read the team model bindings.");
-    const settingsPayload = await settingsResponse.json();
-    if (!settingsResponse.ok) throw new Error(settingsPayload.error || "Unable to read the default model setting.");
-    if (pageRequest && !isCurrentRequest(pageRequest)) return false;
-    const roles = (authoring || design?.authoring)?.roles || {};
-    const models = discovery.models || [];
-    const settings = settingsPayload.settings || {};
-    const configuredDefault = String(settings.defaultModel || "default");
-    const defaultModel = configuredDefault === "default"
-      ? models.find((item) => item.backend === settings.defaultProvider && item.runnable)
-      : models.find((item) => item.runnable && (item.ref === configuredDefault || (item.backend === settings.defaultProvider && item.id === configuredDefault)));
-    const issues = [];
-    const inheritedRoles = [];
-    for (const [roleId, role] of Object.entries(roles)) {
-      if (role.bindingKind === "exec" || (role.profileId && role.bindingKind !== "model")) continue;
-      if (role.bindingKind !== "model") {
-        if (defaultModel) {
-          inheritedRoles.push(roleId);
-          continue;
-        }
-        issues.push(`${roleId}: ${state.locale === "en" ? "no model or execution profile is configured" : "未配置模型或执行配置"}`);
-        continue;
-      }
-      const modelRef = role.modelRef || (role.backend && role.modelId ? `${role.backend}/${role.modelId}` : "");
-      if (!modelRef && defaultModel) {
-        inheritedRoles.push(roleId);
-        continue;
-      }
-      const backend = role.backend || modelRef.split("/", 1)[0];
-      const modelId = role.modelId || modelRef.slice(backend ? backend.length + 1 : 0);
-      const model = models.find((item) => item.backend === backend && item.runnable && (item.ref === modelRef || item.id === modelId || item.ref === `${backend}/${modelId}`));
-      if (!model) {
-        issues.push(`${roleId}: ${state.locale === "en" ? `runnable model ${modelRef || "is not selected"} was not discovered` : `未发现可运行模型 ${modelRef || "（尚未选择）"}`}`);
-      }
-    }
-    if (!issues.length && !inheritedRoles.length) return true;
-    return confirmAction({
-      title: issues.length
-        ? (state.locale === "en" ? "Some team roles may not run" : "部分团队角色可能无法执行")
-        : (state.locale === "en" ? "Use the platform default model?" : "使用平台默认模型运行？"),
-      message: state.locale === "en"
-        ? `${issues.length ? `${issues.join("\n")}\n` : ""}${inheritedRoles.length ? `Unbound roles: ${inheritedRoles.join(", ")}\n` : ""}Unbound roles use the selected platform default. Explicit role and project model settings keep priority.`
-        : `${issues.length ? `${issues.join("\n")}\n` : ""}${inheritedRoles.length ? `未绑定模型：${inheritedRoles.join("、")}\n` : ""}未绑定角色会使用平台默认模型；角色和项目中已配置的模型优先。`,
-      confirmLabel: state.locale === "en" ? "Continue anyway" : "仍然继续",
-      cancelLabel: state.locale === "en" ? "Return to configure" : "返回配置"
-    });
-  } catch (error) {
-    if (isAbort(error)) return false;
-    if (pageRequest && !isCurrentRequest(pageRequest)) return false;
-    return confirmAction({
-      title: state.locale === "en" ? "Model readiness could not be checked" : "暂时无法确认模型状态",
-      message: state.locale === "en"
-        ? "Refresh Codex and OpenCode discovery in Platform settings, or continue without a readiness check."
-        : "可到平台设置刷新 Codex 和 OpenCode 的发现结果，或跳过检查继续运行。",
-      confirmLabel: state.locale === "en" ? "Continue without check" : "跳过检查并继续",
-      cancelLabel: state.locale === "en" ? "Cancel" : "取消"
-    });
-  }
-}
-
-async function renderProjectStudio(projectId, pageRequest = state.activeRequest) {
-  await renderProjectDraft(projectId, pageRequest);
-  if (pageRequest && !isCurrentRequest(pageRequest)) return;
-  await renderProjectGraph(projectId, "project-graph-stage", false, pageRequest);
-}
-
-const runTeamGraphMounts = new Map();
 function runtimeEventsFromPayload(eventsPayload) {
   return (eventsPayload?.events || []).map((entry) => {
     const record = entry?.record || entry || {};
@@ -4150,570 +1854,22 @@ function runtimeEventsFromPayload(eventsPayload) {
     return { ...record, ...event, type: event.type || record.type || record.eventType };
   }).filter((event) => typeof event.type === "string");
 }
-function mountRunTeamGraph(teamVersionId, eventsPayload, taskId = teamVersionId) {
-  const root = $("#project-workspace-view");
-  if (!root || !teamVersionId) return;
-  let mount = runTeamGraphMounts.get(taskId);
-  if (mount && !mount.stage.isConnected) {
-    runTeamGraphMounts.delete(taskId);
-    mount = null;
+async function mountTeamIrRunGraph(teamVersionId, stage, eventsPayload, runId) {
+  try {
+    const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`);
+    const payload = await response.json();
+    if (!response.ok || payload.teamIR?.schemaVersion !== 2) {
+      throw new Error(payload.error || "Frozen Team IR v2 graph is unavailable.");
+    }
+    stage.innerHTML = `${renderTeamIrStructureGraph(payload.teamIR, esc, false)}<p class="form-hint">Run ${esc(runId)} · ${runtimeEventsFromPayload(eventsPayload).length} 个运行事件</p>`;
+    stage.setAttribute("aria-label", "Frozen Team IR v2 Run graph");
+  } catch (error) {
+    stage.textContent = error.message || "Frozen Team IR v2 graph is unavailable.";
   }
-  if (!mount) {
-    const stageId = `project-run-graph-${createUuid()}`;
-    root.insertAdjacentHTML("beforeend", `<section class="project-panel project-graph-preview run-team-graph"><div class="panel-head"><div><span class="section-kicker">已选团队 · 任务 ${esc(taskId)}</span><h2>团队协作结构</h2><p class="form-status">只读图谱，用于查看此运行经过的角色与交接。</p></div><span class="status-chip">只读</span></div><div id="${esc(stageId)}" class="graph-stage studio-graph-island" role="img" aria-label="Selected team collaboration graph"></div></section>`);
-    const stage = root.querySelector(`#${CSS.escape(stageId)}`);
-    if (!stage) return;
-    mount = { stage, ready: renderProjectGraph(teamVersionId, stageId, true), events: runtimeEventsFromPayload(eventsPayload) };
-    runTeamGraphMounts.set(taskId, mount);
-  }
-  mount.events = runtimeEventsFromPayload(eventsPayload);
-  void Promise.resolve(mount.ready).then((graph) => {
-    if (!mount.stage.isConnected) return;
-    if (graph?.setRuntimeProgress) graph.setRuntimeProgress(mount.events);
-    else window.OGSStudioGraphBundle?.setStudioX6RuntimeProgress?.(mount.stage, mount.events);
-  });
 }
 
 function projectRunStatusLabel(status) {
   return ({ waiting_review: "等待人工审核", paused: "已安全暂停", pause_requested: "正在暂停", running: "运行中", planning: "准备运行", completed: "已完成", failed: "运行失败", cancelled: "已取消", cancel_requested: "正在取消" })[status] || status || "已完成";
-}
-
-async function renderProjectDraft(projectId, pageRequest = state.activeRequest) {
-  if (pageRequest && !isCurrentRequest(pageRequest)) return;
-  const root = state.studioRoute ? $("#studio-view") : $("#project-workspace-view"); root.innerHTML = `<div class="project-loading">${state.locale === "en" ? "Loading team version…" : "正在读取团队版本…"}</div>`;
-  try {
-    const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}`); const project = await response.json(); if (!response.ok) throw new Error(project.error || (state.locale === "en" ? "Team version not found." : "团队版本不存在。"));
-    state.studioTeamVersion = project;
-    const confirmed = project.teamVersionStatus === "released";
-    const adjustmentParams = new URLSearchParams(window.location.search);
-    const collaborationProjectId = adjustmentParams.get("collaborationProjectId");
-    if (collaborationProjectId) {
-      root.insertAdjacentHTML("afterbegin", `<p class="form-hint" role="status">此设计来自 OGS Projects 项目调整。检查并发布后返回项目显式挂载新版本。</p>`);
-    }
-    const designBackUrl = collaborationProjectId ? `/projects/${encodeURIComponent(collaborationProjectId)}/teams` : state.studioRoute ? "/studio" : "/projects";
-    const designBackLabel = state.locale === "en" ? (collaborationProjectId ? "Back to project" : state.studioRoute ? "Back to OGS Studio" : "Back to project") : (collaborationProjectId ? "返回项目" : state.studioRoute ? "返回 OGS Studio" : "返回项目");
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${designBackUrl}" data-route="${designBackUrl}">← ${designBackLabel}</a><div class="eyebrow">OGS Studio · 团队工程</div><h1>${esc(project.name)} <span class="version-badge">v${project.teamVersionNumber || 1}</span></h1><p>${esc(project.overview || "还没有填写团队目标")}</p></div><span class="project-status ${confirmed ? "confirmed" : "draft"}">${confirmed ? "团队版本已发布" : "团队设计中，可继续调整"}</span></section><nav class="project-steps team-only"><a class="project-step active" href="#team"><span>01</span><strong>团队设计</strong><small>${confirmed ? "已发布版本" : "编辑与验证中"}</small></a></nav><section class="project-grid draft-grid"><article class="project-panel project-editor-panel" id="team"><div class="panel-head"><div><span class="section-kicker">团队资产</span><h2>定义团队职责</h2></div><span class="count-badge">${confirmed ? "RELEASED" : "DESIGN"}</span></div><form id="project-edit-form" class="compact-form"><label>团队名称<input name="name" value="${esc(project.name)}" required maxlength="120"></label><label>团队目标<textarea name="overview" rows="7" maxlength="4000" required>${esc(project.overview || "")}</textarea><span class="field-hint">${esc(copy[state.locale].targetHint)}</span></label><div class="form-actions"><button class="secondary-button" type="submit">保存微调</button>${confirmed ? '<button id="reconfirm-project" class="secondary-button" type="button">另存为新版本</button>' : `<button id="confirm-project" class="primary-button" type="button">${esc(copy[state.locale].releaseTeam)}</button>`}</div><p class="form-status" id="project-edit-status"></p></form></article><article class="project-panel project-preview-panel"><div class="panel-head"><div><span class="section-kicker">版本信息</span><h2>团队版本</h2></div><span class="status-chip">${confirmed ? "已发布" : "设计中"}</span></div><div class="preview-list"><div><strong>版本状态</strong><span>${confirmed ? "已发布，可挂载到项目" : "未发布，不能挂载到项目"}</span></div><div><strong>工程资产</strong><span>图谱、角色绑定、角色资产包、上下文映射与流程契约</span></div></div><p class="preview-note">团队工程配置由 Studio 管理；Projects 使用已发布版本并独立保存业务材料、任务和运行证据。</p></article></section>`;
-    const versionChip = root.querySelector(".project-preview-panel .status-chip");
-    if (versionChip) {
-      versionChip.textContent = confirmed ? "已发布" : "设计中";
-      versionChip.classList.add(confirmed ? "released" : "draft");
-    }
-    if (state.studioRoute) {
-      root.classList.add("studio-design-page");
-      root.querySelector(".project-steps")?.remove();
-      const editorPanel = root.querySelector(".project-editor-panel");
-      const metadataForm = editorPanel?.querySelector("#project-edit-form");
-      const releaseAction = metadataForm?.querySelector("#confirm-project, #reconfirm-project");
-      const heading = root.querySelector(".page-heading");
-      releaseAction?.remove();
-      if (state.studioRoute) addStudioWorkspaceNav(root, projectId, "design");
-      const teamStatus = heading?.querySelector(".project-status");
-      if (teamStatus) teamStatus.textContent = confirmed ? `已发布 · v${project.teamVersionNumber || 1}` : "设计中";
-      editorPanel?.remove();
-      root.querySelector(".project-preview-panel")?.remove();
-      root.querySelector(".project-grid")?.remove();
-      root.insertAdjacentHTML("beforeend", '<div class="studio-design-workbench-host" id="studio-workbench-host"></div>');
-      metadataForm?.remove();
-    } else {
-      root.classList.remove("studio-design-page");
-    }
-    const previewVersion = root.querySelector(".project-preview-panel .preview-list > div:first-child span");
-    if (previewVersion) previewVersion.textContent = confirmed ? "已发布版本" : "未发布，仅在 OGS Studio 中可见";
-    const previewAssets = root.querySelector(".project-preview-panel .preview-list > div:nth-child(2) span");
-    if (previewAssets) previewAssets.textContent = state.locale === "en"
-      ? "Topology, role bindings, role packages, Context Map, and flow contracts"
-      : "图谱拓扑、角色绑定、角色资产包、上下文映射和流程契约";
-    const previewNote = root.querySelector(".project-preview-panel .preview-note");
-    if (previewNote) previewNote.textContent = "团队只负责结构、角色和协作方式。";
-    if (collaborationProjectId) {
-      root.querySelector(".page-heading")?.insertAdjacentHTML("afterend", `<p class="form-hint" role="status">${state.locale === "en" ? "This in-design version is from a project team adjustment. Review and release it, then return to the project to mount it." : "此设计中版本来自 OGS Projects 项目调整。检查并发布后返回项目显式挂载。"}</p>`);
-    }
-    const graphMarkup = '<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS Studio · 架构编排</span><h2>团队协作图谱</h2><p id="project-design-status" class="form-status" role="status" aria-live="polite">正在加载可编辑团队结构</p></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable team collaboration graph"></div><p class="preview-note">此处编辑团队拓扑；选择角色或流程可打开对应属性。静态校验不代表模型服务或凭据已连通。</p></section>';
-    if (state.studioRoute) root.querySelector("#studio-workbench-host")?.insertAdjacentHTML("beforeend", graphMarkup);
-    else root.querySelector(".project-grid")?.insertAdjacentHTML("beforebegin", graphMarkup);
-    const graphPanel = root.querySelector(".project-graph-preview");
-    let workbench = null;
-    let debugPanel = null;
-    let panelDockStates = {
-      build: { docked: false, floatingBounds: null },
-      asset: { docked: false, floatingBounds: null },
-      debug: { docked: false, floatingBounds: null }
-    };
-    let undockPanelForDrag = () => {};
-    let dockPanelAfterDrag = () => false;
-    let syncPanelDockLayout = () => {};
-    let assetDrawer = null;
-    let assetToggle = null;
-    let buildPanel = null;
-    if (graphPanel) {
-      graphPanel.querySelector(".section-kicker")?.remove();
-      graphPanel.querySelector(".studio-canvas-actions .status-chip")?.remove();
-      const graphStatus = graphPanel.querySelector("#project-design-status");
-      graphStatus?.classList.add("studio-graph-status-bar");
-      graphPanel.querySelector("#project-graph-stage")?.after(graphStatus);
-      graphPanel.querySelector(".preview-note")?.remove();
-      workbench = document.createElement("section");
-      workbench.className = "studio-design-workbench";
-      if (state.studioRoute) root.querySelector("#studio-workbench-host")?.append(workbench);
-      else graphPanel.before(workbench);
-      workbench.append(graphPanel);
-      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><strong>调试</strong><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></header><div class="team-debug-panel-content"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p><div class="form-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><a class="text-button" href="/studio/teams/' + encodeURIComponent(projectId) + '/run" data-route="/studio/teams/' + encodeURIComponent(projectId) + '/run">调试历史</a></div><div id="team-simulation-result" aria-live="polite"><div class="team-debug-empty-state"><strong>等待开始调试</strong><p>填写任务和可选资料后开始，角色对话、流转进度和运行结果会显示在这里。</p></div></div></aside>');
-      workbench.insertAdjacentHTML("beforeend", '<aside id="team-build-panel" class="studio-asset-drawer studio-build-panel" aria-label="AI 构建" aria-hidden="true"><header class="studio-asset-drawer-head team-build-panel-head" tabindex="0" aria-label="拖动 AI 构建面板"><strong>AI 构建</strong><button class="close-button" type="button" data-team-build-close aria-label="关闭 AI 构建">×</button></header><div class="studio-build-panel-content"><section id="team-assistant" class="team-assistant-panel"></section></div></aside>');
-      const inspector = workbench.querySelector("#studio-property-inspector");
-      assetDrawer = workbench.querySelector("#studio-asset-drawer");
-      debugPanel = workbench.querySelector("#team-debug-dialog");
-      buildPanel = workbench.querySelector("#team-build-panel");
-      const resizePanel = (panel, handle, minWidth, minHeight, key) => {
-        if (!panel || !handle) return;
-        let resizeState = null;
-        const applySize = (width, height, anchor = null) => {
-          const host = workbench.getBoundingClientRect();
-          const bounds = panel.getBoundingClientRect();
-          const left = Math.max(0, anchor?.left ?? bounds.left - host.left - workbench.clientLeft);
-          const top = Math.max(0, anchor?.top ?? bounds.top - host.top - workbench.clientTop);
-          const maxWidth = Math.max(1, workbench.clientWidth - left - 12);
-          const maxHeight = Math.max(1, workbench.clientHeight - top - 12);
-          const nextWidth = Math.min(Math.max(Math.min(minWidth, maxWidth), width), maxWidth);
-          const nextHeight = Math.min(Math.max(Math.min(minHeight, maxHeight), height), maxHeight);
-          panel.style.left = `${left}px`;
-          panel.style.top = `${top}px`;
-          panel.style.right = "auto";
-          panel.style.width = `${nextWidth}px`;
-          panel.style.height = `${nextHeight}px`;
-        };
-        handle.addEventListener("pointerdown", (event) => {
-          const bounds = panel.getBoundingClientRect();
-          const host = workbench.getBoundingClientRect();
-          resizeState = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: bounds.left - host.left - workbench.clientLeft, top: bounds.top - host.top - workbench.clientTop, width: bounds.width, height: bounds.height };
-          handle.setPointerCapture(event.pointerId);
-          event.preventDefault();
-          event.stopPropagation();
-        });
-        handle.addEventListener("pointermove", (event) => {
-          if (!resizeState || event.pointerId !== resizeState.pointerId) return;
-          if (panel.classList.contains("is-right-docked")) {
-            const nextWidth = Math.min(520, Math.max(minWidth, resizeState.width - (event.clientX - resizeState.x)));
-            workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
-            panelDockStates[key].floatingBounds = { ...panelDockStates[key].floatingBounds, width: nextWidth };
-            return;
-          }
-          applySize(resizeState.width + event.clientX - resizeState.x, resizeState.height + event.clientY - resizeState.y, resizeState);
-        });
-        const finishResize = (event) => { if (resizeState?.pointerId === event.pointerId) resizeState = null; };
-        handle.addEventListener("pointerup", finishResize);
-        handle.addEventListener("pointercancel", finishResize);
-        handle.addEventListener("keydown", (event) => {
-          const delta = event.shiftKey ? 48 : 16;
-          const changes = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
-          if (!changes[event.key]) return;
-          event.preventDefault();
-          const bounds = panel.getBoundingClientRect();
-          if (panel.classList.contains("is-right-docked")) {
-            const nextWidth = Math.min(520, Math.max(minWidth, bounds.width + changes[event.key][0]));
-            workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
-            panelDockStates[key].floatingBounds = { ...panelDockStates[key].floatingBounds, width: nextWidth };
-            return;
-          }
-          applySize(bounds.width + changes[event.key][0], bounds.height + changes[event.key][1]);
-        });
-      };
-      const assetResizeHandle = document.createElement("button");
-      assetResizeHandle.type = "button";
-      assetResizeHandle.className = "studio-panel-resize-handle";
-      assetResizeHandle.setAttribute("aria-label", state.locale === "en" ? "Resize team configuration panel" : "调整团队配置面板大小");
-      assetResizeHandle.title = state.locale === "en" ? "Resize panel" : "调整面板大小";
-      assetResizeHandle.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 13 5M9 13l4-4M13 9v4H9"></path></svg>';
-      assetDrawer?.append(assetResizeHandle);
-      resizePanel(assetDrawer, assetResizeHandle, 320, 300, "asset");
-      const buildResizeHandle = document.createElement("button");
-      buildResizeHandle.type = "button";
-      buildResizeHandle.className = "studio-panel-resize-handle";
-      buildResizeHandle.setAttribute("aria-label", state.locale === "en" ? "Resize AI Build panel" : "调整 AI 构建面板大小");
-      buildResizeHandle.title = state.locale === "en" ? "Resize panel" : "调整面板大小";
-      buildResizeHandle.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 13 5M9 13l4-4M13 9v4H9"></path></svg>';
-      buildPanel?.append(buildResizeHandle);
-      resizePanel(buildPanel, buildResizeHandle, 320, 320, "build");
-      const debugResizeHandle = document.createElement("button");
-      debugResizeHandle.type = "button";
-      debugResizeHandle.className = "studio-panel-resize-handle";
-      debugResizeHandle.setAttribute("aria-label", state.locale === "en" ? "Resize debug panel" : "调整调试面板大小");
-      debugResizeHandle.title = state.locale === "en" ? "Resize panel" : "调整面板大小";
-      debugResizeHandle.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 13 5M9 13l4-4M13 9v4H9"></path></svg>';
-      debugPanel?.append(debugResizeHandle);
-      resizePanel(debugPanel, debugResizeHandle, 320, 320, "debug");
-      panelDockStates = {
-        build: { docked: false, floatingBounds: null },
-        asset: { docked: false, floatingBounds: null },
-        debug: { docked: false, floatingBounds: null }
-      };
-      let activeDockPanel = null;
-      const syncDockLayout = () => {
-        workbench.classList.remove("is-build-docked", "is-asset-docked", "is-debug-docked");
-        workbench.style.removeProperty("--studio-panel-dock-width");
-        for (const panel of [buildPanel, assetDrawer, debugPanel]) panel?.classList.remove("is-right-docked");
-        if (!activeDockPanel || !panelDockStates[activeDockPanel]?.docked) return;
-        const panel = activeDockPanel === "build" ? buildPanel : activeDockPanel === "asset" ? assetDrawer : debugPanel;
-        if (!panel) return;
-        const dockState = panelDockStates[activeDockPanel];
-        const host = workbench.getBoundingClientRect();
-        const minWidth = 320;
-        const preferredWidth = dockState.floatingBounds?.width || (activeDockPanel === "build" ? 420 : activeDockPanel === "asset" ? 340 : 360);
-        const maxWidth = Math.max(minWidth, host.width - 520);
-        const dockWidth = Math.min(Math.max(minWidth, preferredWidth), Math.min(520, maxWidth));
-        workbench.classList.add(`is-${activeDockPanel}-docked`);
-        workbench.style.setProperty("--studio-panel-dock-width", `${dockWidth}px`);
-        panel.classList.add("is-right-docked");
-      };
-      syncPanelDockLayout = (key) => {
-        activeDockPanel = key;
-        syncDockLayout();
-      };
-      workbench.studioSyncPanelDockLayout = syncPanelDockLayout;
-      undockPanelForDrag = (panel, key) => {
-        const dockState = panelDockStates[key];
-        if (!dockState.docked) return;
-        const bounds = panel.getBoundingClientRect();
-        const host = workbench.getBoundingClientRect();
-        dockState.docked = false;
-        panel.classList.remove("is-right-docked");
-        panel.style.left = `${Math.max(0, bounds.left - host.left)}px`;
-        panel.style.top = `${Math.max(0, bounds.top - host.top)}px`;
-        panel.style.right = "auto";
-        panel.style.width = `${dockState.floatingBounds?.width || bounds.width}px`;
-        panel.style.height = `${dockState.floatingBounds?.height || bounds.height}px`;
-        syncPanelDockLayout(null);
-      };
-      dockPanelAfterDrag = (panel, key) => {
-        const host = workbench.getBoundingClientRect();
-        const bounds = panel.getBoundingClientRect();
-        if (host.right - bounds.right > 44) return false;
-        const dockState = panelDockStates[key];
-        dockState.floatingBounds = {
-          left: bounds.left - host.left,
-          top: bounds.top - host.top,
-          width: bounds.width,
-          height: bounds.height
-        };
-        dockState.docked = true;
-        panel.style.left = "";
-        panel.style.top = "";
-        panel.style.right = "";
-        panel.style.width = "";
-        panel.style.height = "";
-        syncPanelDockLayout(key);
-        return true;
-      };
-      assetToggle = graphPanel.querySelector('[data-studio-graph-action="assets"]');
-      if (assetDrawer) assetDrawer.querySelector(".studio-asset-drawer-head strong").textContent = state.locale === "en" ? "Team configuration" : "团队配置";
-      if (assetToggle) assetToggle.setAttribute("aria-expanded", "false");
-      assetDrawer?.querySelector("#studio-assets-roles-tab")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Roles" : "角色"));
-      assetDrawer?.querySelector("#studio-assets-flows-tab")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Transitions" : "流转"));
-      assetDrawer?.querySelector("#studio-assets-global-tab")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Global" : "全局"));
-      assetDrawer?.setAttribute("aria-label", state.locale === "en" ? "Team configuration" : "团队配置");
-      assetDrawer?.querySelector("#studio-asset-drawer-close")?.setAttribute("aria-label", state.locale === "en" ? "Close team configuration" : "关闭团队配置");
-      assetDrawer?.querySelector(".studio-asset-back")?.setAttribute("aria-label", state.locale === "en" ? "Back to team configuration" : "返回团队配置");
-      assetDrawer?.querySelector(".studio-asset-drawer-head")?.setAttribute("aria-label", state.locale === "en" ? "Drag team configuration panel. Use arrow keys to move." : "拖动团队配置面板；也可使用方向键移动。");
-      assetDrawer?.querySelector(".studio-asset-editor-actions .form-hint")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Saves changes to the current in-design TeamVersion." : "保存会写入当前设计中的团队版本"));
-      assetDrawer?.querySelector("[data-studio-save-workspace]")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Save team" : "保存团队"));
-      workbench.querySelector("#studio-asset-drawer-close")?.addEventListener("click", () => {
-        workbench.dispatchEvent(new CustomEvent("studio-command-dismiss"));
-        assetDrawer?.classList.remove("is-open");
-        assetDrawer?.setAttribute("aria-hidden", "true");
-        syncPanelDockLayout(null);
-        workbench.querySelector('[data-studio-graph-action="assets"]')?.setAttribute("aria-expanded", "false");
-        workbench.querySelector('[data-studio-graph-action="assets"]')?.focus();
-      });
-      assetDrawer?.querySelector("[data-studio-assets-back]")?.addEventListener("click", () => {
-        workbench.dispatchEvent(new CustomEvent("studio-assets-show", { detail: { view: "list" } }));
-        assetDrawer?.querySelector('#studio-assets-roles [data-studio-asset-role], #studio-assets-flows [data-studio-asset-flow]')?.focus({ preventScroll: true });
-      });
-      assetDrawer?.querySelector("[data-studio-save-workspace]")?.addEventListener("click", () => {
-        graphPanel.querySelector('[data-studio-graph-action="save"]')?.click();
-      });
-      const assetTabs = [...workbench.querySelectorAll('.studio-asset-tabs [role="tab"]')];
-      assetTabs.forEach((tab, index) => {
-        tab.addEventListener("click", () => {
-          const selected = tab.getAttribute("aria-controls");
-          assetTabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
-          workbench.querySelectorAll(".studio-asset-list").forEach((panel) => { panel.hidden = panel.id !== selected; });
-          const selectedGlobalView = selected === "studio-assets-global" ? workbench.querySelector("#studio-assets-global") : null;
-          if (selectedGlobalView && !selectedGlobalView.dataset.loaded && !selectedGlobalView.dataset.loading) {
-            selectedGlobalView.dataset.loading = "true";
-            void renderStudioSystemSettings(projectId, pageRequest, selectedGlobalView, {
-              teamVersion: state.studioTeamVersion,
-              onSaved: (detail) => workbench.dispatchEvent(new CustomEvent("studio-global-settings-saved", { detail }))
-            }).finally(() => {
-              delete selectedGlobalView.dataset.loading;
-              if (selectedGlobalView.querySelector("[data-system-field]")) selectedGlobalView.dataset.loaded = "true";
-            });
-          }
-        });
-        tab.addEventListener("keydown", (event) => {
-          if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-          event.preventDefault();
-          const next = assetTabs[(index + (event.key === "ArrowRight" ? 1 : assetTabs.length - 1)) % assetTabs.length];
-          next.focus();
-          next.click();
-        });
-      });
-      assetDrawer?.setAttribute("aria-hidden", "true");
-      const dragHandle = assetDrawer?.querySelector(".studio-asset-drawer-head");
-      let dragState = null;
-      const moveAssetPanel = (left, top) => {
-        if (!assetDrawer || !workbench) return;
-        const host = workbench.getBoundingClientRect();
-        const panel = assetDrawer.getBoundingClientRect();
-        const maxLeft = Math.max(0, host.width - panel.width);
-        const maxTop = Math.max(0, host.height - panel.height);
-        assetDrawer.style.left = `${Math.min(maxLeft, Math.max(0, left))}px`;
-        assetDrawer.style.top = `${Math.min(maxTop, Math.max(0, top))}px`;
-        assetDrawer.style.right = "auto";
-      };
-      dragHandle?.addEventListener("pointerdown", (event) => {
-        if (event.target.closest("button")) return;
-        undockPanelForDrag(assetDrawer, "asset");
-        const host = workbench.getBoundingClientRect();
-        const panel = assetDrawer.getBoundingClientRect();
-        dragState = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: panel.left - host.left, top: panel.top - host.top };
-        dragHandle.setPointerCapture(event.pointerId);
-        event.preventDefault();
-      });
-      dragHandle?.addEventListener("pointermove", (event) => {
-        if (!dragState || event.pointerId !== dragState.pointerId) return;
-        moveAssetPanel(dragState.left + event.clientX - dragState.x, dragState.top + event.clientY - dragState.y);
-      });
-      const finishDrag = (event) => {
-        if (dragState?.pointerId !== event.pointerId) return;
-        dragState = null;
-        dockPanelAfterDrag(assetDrawer, "asset");
-      };
-      dragHandle?.addEventListener("pointerup", finishDrag);
-      dragHandle?.addEventListener("pointercancel", finishDrag);
-      dragHandle?.addEventListener("keydown", (event) => {
-        if (event.target.closest("button")) return;
-        const delta = event.shiftKey ? 48 : 16;
-        const moves = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
-        if (!moves[event.key]) return;
-        event.preventDefault();
-        const host = workbench.getBoundingClientRect();
-        const panel = assetDrawer.getBoundingClientRect();
-        moveAssetPanel(panel.left - host.left + moves[event.key][0], panel.top - host.top + moves[event.key][1]);
-      });
-      const buildDragHandle = buildPanel?.querySelector(".team-build-panel-head");
-      let buildDrag = null;
-      const moveBuildPanel = (left, top) => {
-        if (!buildPanel || !workbench) return;
-        const host = workbench.getBoundingClientRect();
-        const panel = buildPanel.getBoundingClientRect();
-        buildPanel.style.left = `${Math.min(Math.max(0, host.width - panel.width), Math.max(0, left))}px`;
-        buildPanel.style.top = `${Math.min(Math.max(0, host.height - panel.height), Math.max(0, top))}px`;
-        buildPanel.style.right = "auto";
-      };
-      buildDragHandle?.addEventListener("pointerdown", (event) => {
-        if (event.target.closest("button")) return;
-        undockPanelForDrag(buildPanel, "build");
-        const host = workbench.getBoundingClientRect();
-        const panel = buildPanel.getBoundingClientRect();
-        buildDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: panel.left - host.left, top: panel.top - host.top };
-        buildDragHandle.setPointerCapture(event.pointerId);
-        event.preventDefault();
-      });
-      buildDragHandle?.addEventListener("pointermove", (event) => {
-        if (!buildDrag || event.pointerId !== buildDrag.pointerId) return;
-        moveBuildPanel(buildDrag.left + event.clientX - buildDrag.x, buildDrag.top + event.clientY - buildDrag.y);
-      });
-      const finishBuildDrag = (event) => {
-        if (buildDrag?.pointerId !== event.pointerId) return;
-        buildDrag = null;
-        dockPanelAfterDrag(buildPanel, "build");
-      };
-      buildDragHandle?.addEventListener("pointerup", finishBuildDrag);
-      buildDragHandle?.addEventListener("pointercancel", finishBuildDrag);
-      buildDragHandle?.addEventListener("keydown", (event) => {
-        const delta = event.shiftKey ? 48 : 16;
-        const moves = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
-        if (!moves[event.key]) return;
-        event.preventDefault();
-        const host = workbench.getBoundingClientRect();
-        const panel = buildPanel.getBoundingClientRect();
-        undockPanelForDrag(buildPanel, "build");
-        moveBuildPanel(panel.left - host.left + moves[event.key][0], panel.top - host.top + moves[event.key][1]);
-      });
-    }
-    const confirmedStatus = root.querySelector(".page-heading .project-status");
-    if (confirmedStatus) {
-      const status = teamStatusMeta(project.teamVersionStatus);
-      confirmedStatus.textContent = status.label;
-      confirmedStatus.title = status.hint;
-    }
-    const previewStatus = root.querySelector(".project-preview-panel .status-chip");
-    if (previewStatus) previewStatus.textContent = teamStatusMeta(project.teamVersionStatus).label;
-    const editorTitle = root.querySelector(".project-editor-panel .panel-head h2");
-    if (editorTitle) editorTitle.textContent = state.locale === "en" ? "Define responsibilities and collaboration" : "定义职责与协作方式";
-    root.querySelector(".project-editor-panel .section-kicker")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Team configuration" : "团队配置"));
-    localizeStudioDesignPage(root, state.locale, { confirmed, version: project.teamVersionNumber || 1 });
-    buildPanel = workbench?.querySelector("#team-build-panel") || null;
-    const buildOpenButton = graphPanel.querySelector('[data-studio-graph-action="chat-generate"]');
-    debugPanel = workbench?.querySelector("#team-debug-dialog") || null;
-    const debugOpenButton = graphPanel.querySelector('[data-studio-graph-action="debug-run"]');
-    const debugCloseButton = debugPanel?.querySelector("[data-team-debug-close]");
-    const moveDebugPanel = (left, top) => {
-      if (!debugPanel || !workbench) return;
-      const host = workbench.getBoundingClientRect();
-      const panel = debugPanel.getBoundingClientRect();
-      debugPanel.style.left = `${Math.min(Math.max(0, host.width - panel.width), Math.max(0, left))}px`;
-      debugPanel.style.top = `${Math.min(Math.max(0, host.height - panel.height), Math.max(0, top))}px`;
-      debugPanel.style.right = "auto";
-    };
-    const closeDebugPanel = ({ focus = true } = {}) => {
-      debugPanel?.classList.remove("is-open");
-      debugPanel?.setAttribute("aria-hidden", "true");
-      syncPanelDockLayout(null);
-      debugOpenButton?.setAttribute("aria-expanded", "false");
-      if (focus && debugOpenButton?.isConnected) debugOpenButton.focus({ preventScroll: true });
-    };
-    const openDebugPanel = () => {
-      buildPanel?.classList.remove("is-open");
-      buildPanel?.setAttribute("aria-hidden", "true");
-      assetDrawer?.classList.remove("is-open");
-      assetDrawer?.setAttribute("aria-hidden", "true");
-      assetToggle?.setAttribute("aria-expanded", "false");
-      debugPanel?.classList.add("is-open");
-      syncPanelDockLayout("debug");
-      debugPanel?.setAttribute("aria-hidden", "false");
-      debugOpenButton?.setAttribute("aria-expanded", "true");
-      if (state.isTeamGraphDirty?.()) state.showTeamGraphUnsavedDebugNotice?.();
-      $("#team-simulation-input")?.focus({ preventScroll: true });
-    };
-    const debugHead = debugPanel?.querySelector(".team-debug-panel-head");
-    let debugDrag = null;
-    debugHead?.addEventListener("pointerdown", (event) => {
-      if (event.target.closest("button")) return;
-      undockPanelForDrag(debugPanel, "debug");
-      const host = workbench.getBoundingClientRect();
-      const panel = debugPanel.getBoundingClientRect();
-      debugDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: panel.left - host.left, top: panel.top - host.top };
-      debugHead.setPointerCapture(event.pointerId);
-      event.preventDefault();
-    });
-    debugHead?.addEventListener("pointermove", (event) => {
-      if (!debugDrag || event.pointerId !== debugDrag.pointerId) return;
-      moveDebugPanel(debugDrag.left + event.clientX - debugDrag.x, debugDrag.top + event.clientY - debugDrag.y);
-    });
-    const finishDebugDrag = (event) => {
-      if (debugDrag?.pointerId !== event.pointerId) return;
-      debugDrag = null;
-      dockPanelAfterDrag(debugPanel, "debug");
-    };
-    debugHead?.addEventListener("pointerup", finishDebugDrag);
-    debugHead?.addEventListener("pointercancel", finishDebugDrag);
-    debugHead?.addEventListener("keydown", (event) => {
-      if (event.target.closest("button")) return;
-      const delta = event.shiftKey ? 48 : 16;
-      const moves = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
-      if (!moves[event.key]) return;
-      event.preventDefault();
-      const host = workbench.getBoundingClientRect();
-      const panel = debugPanel.getBoundingClientRect();
-      moveDebugPanel(panel.left - host.left + moves[event.key][0], panel.top - host.top + moves[event.key][1]);
-    });
-    debugCloseButton?.addEventListener("click", () => closeDebugPanel());
-    debugPanel?.querySelector(".team-debug-panel-head strong")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Debug" : "调试"));
-    let assistantReady = false;
-    state.teamStudioDialog = (tab = "assistant") => {
-      if (tab === "run") openDebugPanel();
-      else {
-        closeDebugPanel({ focus: false });
-        assetDrawer?.classList.remove("is-open");
-        assetDrawer?.setAttribute("aria-hidden", "true");
-        assetToggle?.setAttribute("aria-expanded", "false");
-        buildPanel?.classList.add("is-open");
-        buildPanel?.setAttribute("aria-hidden", "false");
-        syncPanelDockLayout("build");
-        buildOpenButton?.setAttribute("aria-expanded", "true");
-      }
-      if (tab !== "run" && !assistantReady) {
-        assistantReady = true;
-        void renderTeamAssistant(projectId, project, pageRequest);
-      }
-      if (tab === "run") $("#team-simulation-input")?.focus();
-      else $("#team-assistant-input")?.focus();
-    };
-    root.querySelector("[data-team-build-close]")?.addEventListener("click", () => {
-      buildPanel?.classList.remove("is-open");
-      buildPanel?.setAttribute("aria-hidden", "true");
-      syncPanelDockLayout(null);
-      buildOpenButton?.setAttribute("aria-expanded", "false");
-      buildOpenButton?.focus({ preventScroll: true });
-    });
-    root.querySelector("#team-simulation-run")?.addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      const input = $("#team-simulation-input");
-      if (!input?.value.trim()) { input?.focus(); return; }
-      const materials = $("#team-simulation-materials")?.value.trim() || "";
-      const prompt = materials
-        ? `${input.value.trim()}\n\n${state.locale === "en" ? "Additional materials:" : "补充资料："}\n${materials}`
-        : input.value.trim();
-      button.disabled = true;
-      try { await state.runTeamStudioSimulation?.(prompt); }
-      finally { if (button.isConnected) button.disabled = false; }
-    });
-    const projectEditForm = $("#project-edit-form");
-    $("#reconfirm-project")?.remove();
-    bindDirtyForm(projectEditForm, () => setDirty("project-form"));
-    projectEditForm?.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/save`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), expectedMetadataDigest: project.expectedMetadataDigest }) }); const payload = await result.json(); if (!isCurrentRequest(pageRequest)) return; $("#project-edit-status").textContent = result.ok ? (payload.unchanged ? "内容未变化，无需创建新版本。" : "已保存，团队版本处于设计中。") : (payload.error || (state.locale === "en" ? "Unable to save team information." : "保存失败")); if (result.ok) { clearDirty("project-form"); if (payload.createdDraft) { navigate(withCurrentSearch(`/studio/teams/${encodeURIComponent(payload.teamVersionId)}/design`)); return; } await renderProjectStudio(projectId, pageRequest); } });
-    const mountReleasedVersion = async (button = null) => {
-      const status = $("#team-mount-status");
-      if (!collaborationProjectId) return false;
-      if (button) button.disabled = true;
-      status.hidden = false;
-      status.textContent = state.locale === "en" ? "Team version released. Mounting it to the project…" : "版本已发布，正在挂载到项目…";
-      try {
-        const currentResponse = await pageFetch(`/api/v1/projects/${encodeURIComponent(collaborationProjectId)}/teams`);
-        const current = await currentResponse.json();
-        if (!currentResponse.ok) throw new Error(current.error || (state.locale === "en" ? "Unable to load the project's team configuration." : "无法读取项目团队配置"));
-        const sourceTeamId = team.teamId || team.teamRootId || teamVersionId;
-        const nextTeamVersionIds = (current.mountedTeams || [])
-          .filter((item) => (item.teamId || item.teamVersionId) !== sourceTeamId)
-          .map((item) => item.teamVersionId);
-        nextTeamVersionIds.push(teamVersionId);
-        const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(collaborationProjectId)}/teams`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ teamVersionIds: nextTeamVersionIds })
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || (state.locale === "en" ? "Mount failed." : "挂载失败"));
-        clearDirty("project-form");
-        status.textContent = state.locale === "en" ? "Team version released and mounted." : "团队版本已发布并挂载。";
-        navigate(`/projects/${encodeURIComponent(collaborationProjectId)}`);
-        return true;
-      } catch (error) {
-        if (isAbort(error)) return false;
-        status.textContent = state.locale === "en" ? `Team version released but not mounted: ${error.message || "Mount failed."}` : `团队版本已发布，但尚未挂载：${error.message || "挂载失败"}`;
-        if (button) button.disabled = false;
-        return false;
-      }
-    };
-    const mountStatus = document.createElement("p");
-    mountStatus.id = "team-mount-status";
-    mountStatus.className = state.studioRoute ? "form-status studio-mount-status" : "form-status";
-    mountStatus.setAttribute("role", "status");
-    mountStatus.setAttribute("aria-live", "polite");
-    mountStatus.hidden = true;
-    if (state.studioRoute) {
-      const workspaceNav = root.querySelector(".studio-workspace-nav");
-      if (workspaceNav) workspaceNav.after(mountStatus);
-      else root.append(mountStatus);
-    } else {
-      $("#project-edit-status")?.after(mountStatus);
-    }
-    if (collaborationProjectId && adjustmentParams.get("mount") === "1" && confirmed) {
-      void mountReleasedVersion({ disabled: false });
-    }
-    const confirm = $("#confirm-project"); confirm?.addEventListener("click", () => navigate(`/studio/teams/${encodeURIComponent(projectId)}/release${location.search}`));
-    if (collaborationProjectId && adjustmentParams.get("adjust") === "1") state.teamStudioDialog?.("assistant");
-  } catch (error) { if (isAbort(error)) return; root.innerHTML = `<div class="run-error">${esc(error.message || (state.locale === "en" ? "Unable to load the team design." : "团队设计读取失败。"))}</div>`; }
 }
 
 function projectTaskStatusLabel(status) {
@@ -4750,23 +1906,51 @@ function runEventSummary(eventsPayload) {
   }).join("");
 }
 
+function readableRunOutput(value) {
+  let parsed = value;
+  if (typeof value === "string") {
+    try { parsed = JSON.parse(value); } catch { return value; }
+  }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const teamResult = parsed.teamResult && typeof parsed.teamResult === "object" ? parsed.teamResult : parsed;
+    if (typeof teamResult.answer === "string") return teamResult.answer;
+    if (typeof teamResult.summary === "string") return teamResult.summary;
+    return JSON.stringify(parsed, null, 2);
+  }
+  return typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+}
+
 function renderTaskRunDetail(detail, run, eventsPayload) {
   if (!detail || !run) return;
   const status = run.state?.status || run.status || "planning";
   const progress = runProgress(run);
-  const mode = run.plan?.executionPolicy?.mode || run.mode || "dry-run";
+  const mode = run.plan?.executionPolicy?.mode || (run.plan?.engine === "team-ir-v2" ? "sandbox" : run.mode || "dry-run");
   const events = runEventSummary(eventsPayload);
   const summary = run.outputSummary || run.task?.outputSummary || "";
+  const readableSummary = summary ? readableRunOutput(summary) : "";
   const failure = run.state?.error || run.error || "";
   let fullResult;
   try { fullResult = detail.dataset.fullResult ? JSON.parse(detail.dataset.fullResult) : null; } catch { fullResult = detail.dataset.fullResult || ""; }
   const fullResultHtml = fullResult?.finalOutputsByRoleId
     ? renderRoleOutputs(fullResult.finalOutputsByRoleId, fullResult.finalOutputRoleOrder, "无文本输出")
-    : (typeof fullResult === "string" ? `<pre>${esc(fullResult)}</pre>` : "");
+    : (fullResult !== null && fullResult !== undefined ? `<pre>${esc(readableRunOutput(fullResult))}</pre>` : "");
   const workspaceUrl = professionalWorkspaceUrl(run.owner?.projectId || detail.dataset.projectId, run.runId);
-  mountRunTeamGraph(detail.dataset.teamVersionId || run.teamVersionId || run.task?.teamVersionId, eventsPayload, detail.dataset.taskId || run.taskId);
+  const graphTeamVersionId = detail.dataset.teamVersionId || run.teamVersionId || run.task?.teamVersionId;
+  const graphTaskId = detail.dataset.taskId || run.taskId;
+  if (run.plan?.engine === "team-ir-v2") {
+    const root = $("#project-workspace-view");
+    let graphStage = root?.querySelector(`[data-team-ir-run-graph="${CSS.escape(graphTaskId)}"]`);
+    if (!graphStage && root && graphTeamVersionId) {
+      const stageId = `project-run-graph-${createUuid()}`;
+      root.insertAdjacentHTML("beforeend", `<section class="project-panel project-graph-preview run-team-graph"><div class="panel-head"><div><span class="section-kicker">已选团队 · 任务 ${esc(graphTaskId)}</span><h2>团队协作结构</h2><p class="form-status">冻结的 Team IR v2 结构与本次运行状态。</p></div><span class="status-chip">只读</span></div><div id="${esc(stageId)}" class="graph-stage" data-team-ir-run-graph="${esc(graphTaskId)}"></div></section>`);
+      graphStage = root.querySelector(`#${CSS.escape(stageId)}`);
+    }
+    if (graphStage) void mountTeamIrRunGraph(graphTeamVersionId, graphStage, eventsPayload, run.runId);
+  } else {
+    detail.querySelector(".run-team-graph")?.remove();
+  }
   detail.dataset.runStatus = status;
-  detail.innerHTML = `<div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(status))}</strong><span class="task-run-mode-label run-mode-chip">${mode === "sandbox" ? "隔离运行" : "流程预览"}</span><span class="task-run-progress-label">${progress}%</span></div>${workspaceUrl ? `<p class="task-run-workspace-link"><a class="text-button" href="${esc(workspaceUrl)}"${/^https?:\/\//.test(workspaceUrl) ? ' target="_blank" rel="noopener"' : ""}>查看全流程</a></p>` : ""}<div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div><ul class="task-run-events">${events || "<li><span>暂无事件摘要</span></li>"}</ul>${failure ? `<p class="task-run-failure" role="status">${esc(failure)}</p>` : ""}${summary ? `<section class="task-run-output"><strong>结果摘要</strong><pre>${esc(summary)}</pre></section>` : ""}<section class="task-run-output"><strong>完整结果</strong>${fullResultHtml || `<button class="text-button" type="button" data-load-run-result>读取完整结果</button>`}</section><p class="form-status task-run-error" role="status" aria-live="polite"></p>`;
+  detail.innerHTML = `<div class="task-run-detail-head"><strong class="task-run-status">${esc(projectRunStatusLabel(status))}</strong><span class="task-run-mode-label run-mode-chip">${mode === "sandbox" ? "隔离运行" : "流程预览"}</span><span class="task-run-progress-label">${progress}%</span></div>${workspaceUrl ? `<p class="task-run-workspace-link"><a class="text-button" href="${esc(workspaceUrl)}"${/^https?:\/\//.test(workspaceUrl) ? ' target="_blank" rel="noopener"' : ""}>查看全流程</a></p>` : ""}<div class="task-run-progress" role="progressbar" aria-label="运行进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div><ul class="task-run-events">${events || "<li><span>暂无事件摘要</span></li>"}</ul>${failure ? `<p class="task-run-failure" role="status">${esc(failure)}</p>` : ""}${readableSummary ? `<section class="task-run-output"><strong>结果摘要</strong><pre>${esc(readableSummary)}</pre></section>` : ""}<section class="task-run-output"><strong>完整结果</strong>${fullResultHtml || `<button class="text-button" type="button" data-load-run-result>读取完整结果</button>`}</section><p class="form-status task-run-error" role="status" aria-live="polite"></p>`;
   if ((run.teamIrSemanticDigest || run.owner?.teamIrSemanticDigest) && detail.dataset.taskId
     && run.runId && run.runId === detail.dataset.runId) {
     void mountTeamIrRunReviews(detail, run);
@@ -4792,7 +1976,9 @@ function renderTaskRunDetail(detail, run, eventsPayload) {
 const teamIrRunReviewPanels = new Map();
 async function mountTeamIrRunReviews(detail, run) {
   const orchestration = run.plan?.team?.orchestration || run.plan?.orchestration;
-  const reviewDefinitions = Array.isArray(orchestration?.reviews) ? orchestration.reviews : [];
+  const reviewDefinitions = Array.isArray(orchestration?.reviews) ? [...orchestration.reviews] : [];
+  const activeReview = run.state?.waitingReview;
+  if (!reviewDefinitions.length && activeReview?.reviewId) reviewDefinitions.push({ id: activeReview.reviewId });
   if (!reviewDefinitions.length) return;
   const key = `${detail.dataset.projectId}/${detail.dataset.taskId}/${run.runId}`;
   let cached = teamIrRunReviewPanels.get(key);
@@ -4932,145 +2118,55 @@ function projectReadinessIssueMessage(issue) {
 
 function taskActionMarkup(task) {
   const actions = [];
-  if (["queued", "failed"].includes(task.status)) actions.push(`<label class="task-run-mode"><span>运行方式</span><select data-task-mode="${esc(task.taskId)}"><option value="dry-run">流程预览</option><option value="sandbox">隔离运行</option></select></label>`);
   if (task.status === "queued") actions.push(`<button class="secondary-button" type="button" data-task-action="start" data-task-id="${esc(task.taskId)}">开始处理</button>`);
   if (task.status === "failed" && task.currentRunId) actions.push(`<button class="secondary-button" type="button" data-task-action="retry" data-task-id="${esc(task.taskId)}">重试此任务</button>`);
-  if (["running", "planning", "waiting_review", "pause_requested"].includes(task.status)) actions.push(`<button class="secondary-button" type="button" data-task-action="pause" data-task-id="${esc(task.taskId)}">暂停</button>`);
-  if (["pause_requested", "paused"].includes(task.status)) actions.push(`<button class="secondary-button" type="button" data-task-action="resume" data-task-id="${esc(task.taskId)}">继续</button>`);
-  if (["waiting_review", "paused"].includes(task.status)) actions.push(`<button class="secondary-button" type="button" data-task-action="review" data-task-id="${esc(task.taskId)}">人工审核</button>`);
-  if (["queued", "running", "planning", "pause_requested", "waiting_review", "paused", "cancel_requested"].includes(task.status)) actions.push(`<button class="secondary-button danger-button" type="button" data-task-action="cancel" data-task-id="${esc(task.taskId)}">取消</button>`);
+  if (task.status === "waiting_review") actions.push(`<button class="secondary-button" type="button" data-task-action="review" data-task-id="${esc(task.taskId)}">人工审核</button>`);
+  if (["queued", "running", "planning", "waiting_review", "paused", "cancel_requested"].includes(task.status)) actions.push(`<button class="secondary-button danger-button" type="button" data-task-action="cancel" data-task-id="${esc(task.taskId)}">取消</button>`);
   if (task.status !== "deleted") actions.push(`<button class="text-button task-delete-button" type="button" data-task-action="delete" data-task-id="${esc(task.taskId)}">删除</button>`);
   return `${actions.join("")}<p class="form-status task-action-status" role="status" aria-live="polite"></p>`;
 }
 
 async function openTaskReview(projectId, taskId, task = {}) {
-  const pageRequest = state.activeRequest;
-  const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const dialog = document.createElement("dialog");
-  dialog.className = "task-review-dialog";
-  dialog.innerHTML = `<form method="dialog" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">任务审核</span><h2>确认这次交付</h2></div><button class="text-button" value="cancel" aria-label="关闭">关闭</button></div><label>审核结果<select name="decision"><option value="approve">通过并继续</option><option value="rework">退回修改</option><option value="terminate">终止任务</option></select></label><label>给执行团队的反馈<textarea name="comment" rows="5" maxlength="4000" placeholder="说明通过条件、需要修改的内容或终止原因"></textarea></label><p class="form-status" id="task-review-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" value="cancel">取消</button><button class="primary-button" value="submit">提交审核</button></div></form>`;
-  document.body.append(dialog);
-  let releaseTrap;
-  let releaseScroll;
-  const cleanup = () => {
-    releaseTrap?.();
-    releaseScroll?.();
-    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
-    dialog.remove();
-    if (activeTaskReviewClose === closeDialog) activeTaskReviewClose = null;
-  };
-  const closeDialog = (returnValue = "cancel") => {
-    if (dialog.open) dialog.close(returnValue);
-    else cleanup();
-  };
-  activeTaskReviewClose = closeDialog;
-  dialog.showModal();
-  releaseScroll = lockBodyScroll();
-  releaseTrap = trapFocus(dialog, { initial: "select", onEscape: () => dialog.close("cancel") });
-  const form = dialog.querySelector("form");
-  const status = dialog.querySelector("#task-review-status");
-  const context = document.createElement("section");
-  context.className = "task-review-context";
-  context.setAttribute("aria-live", "polite");
-  context.innerHTML = '<p class="empty-note">Loading review request and Run events...</p>';
-  form.querySelector("label")?.before(context);
-  let reviews = [];
-  let reviewIdSelect = null;
-  try {
-    const contextResponse = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/review`);
-    const reviewContext = await contextResponse.json();
-    if (!contextResponse.ok) throw new Error(reviewContext.error || "Unable to load review context.");
-    reviews = reviewContext.reviews || [];
-    const reviewSelect = document.createElement("label");
-    reviewSelect.innerHTML = '<span>Review request</span><select name="reviewId"></select>';
-    reviewIdSelect = reviewSelect.querySelector("select");
-    reviewIdSelect.innerHTML = reviews.length ? reviews.map((review) => `<option value="${esc(review.reviewId)}">${esc(review.roleId || review.reviewId)} · ${esc(review.currentStatus)}${review.recoveryDecision ? " · recovery" : ""}</option>`).join("") : '<option value="">Latest task feedback</option>';
-    form.querySelector("[name=decision]")?.closest("label")?.before(reviewSelect);
-    const decisionSelect = form.querySelector("[name=decision]");
-    const commentInput = form.querySelector("[name=comment]");
-    const submitReview = form.querySelector('button[value="submit"]');
-    const updateReviewActions = () => {
-      const selectedReview = reviews.find((review) => review.reviewId === reviewIdSelect.value);
-      const recovering = Boolean(selectedReview?.recoveryDecision);
-      const allowed = recovering ? [selectedReview.recoveryDecision] : selectedReview?.allowedDecisions || [];
-      const previousDecision = decisionSelect.value;
-      const focusWillBeDisabled = !allowed.length && document.activeElement === decisionSelect;
-      decisionSelect.innerHTML = allowed.length
-        ? allowed.map((decision) => `<option value="${esc(decision)}">${esc(({ approve: "Approve and continue", rework: "Return for revision", pause: "Pause", terminate: "Terminate" })[decision] || decision)}</option>`).join("")
-        : '<option value="" selected>No actions are available for this review request</option>';
-      if (allowed.includes(previousDecision)) decisionSelect.value = previousDecision;
-      if (recovering) {
-        decisionSelect.value = selectedReview.recoveryDecision;
-        commentInput.value = selectedReview.recoveryComment || "";
-        commentInput.disabled = true;
-      } else {
-        commentInput.disabled = false;
-      }
-      decisionSelect.disabled = allowed.length === 0 || recovering;
-      reviewIdSelect.disabled = recovering;
-      if (submitReview) submitReview.disabled = allowed.length === 0;
-      if (focusWillBeDisabled) form.querySelector('button[value="cancel"]')?.focus({ preventScroll: true });
-    };
-    reviewIdSelect.addEventListener("change", updateReviewActions);
-    updateReviewActions();
-    let events = [];
-    if (reviewContext.runId) {
-      const eventsPayload = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(reviewContext.runId)}/events?limit=100`).then((item) => item.json());
-      events = eventsPayload.events || [];
-    }
-    const reviewRows = reviews.map((review) => `<section><strong>${esc(review.roleId || "Review role")} · ${esc(review.currentStatus)}</strong><p>${esc(review.selectedEvent || "Human review checkpoint")}</p>${review.draftResult ? `<pre>${esc(JSON.stringify(review.draftResult, null, 2))}</pre>` : ""}${review.humanReviewContext ? `<pre>${esc(JSON.stringify(review.humanReviewContext, null, 2))}</pre>` : ""}</section>`).join("");
-    const eventRows = events.slice(-12).reverse().map((entry) => {
-      const record = entry.record || entry;
-      return `<li><strong>${esc(record.roleId || record.nodeId || record.type || "Run event")}</strong> ${esc(record.message || record.summary || record.event || record.status || "Updated")}</li>`;
-    }).join("");
-    context.innerHTML = `<p class="panel-intro">Task ${esc(task.taskNumber || taskId)} · Run ${esc(reviewContext.runId || task.currentRunId || "n/a")} · ${esc(task.teamName || "Team")}</p>${reviews.some((review) => review.recoveryDecision) ? '<p class="form-status">A review decision was recorded; retry the same decision to finish Task recovery.</p>' : ""}${reviewRows || '<p class="empty-note">No active review request was returned. A decision cannot be submitted.</p>'}<h3>Recent events</h3><ul>${eventRows || "<li>No Run events available.</li>"}</ul>`;
-  } catch (error) {
-    const decisionSelect = form.querySelector("[name=decision]");
-    const focusWillBeDisabled = document.activeElement === decisionSelect;
-    decisionSelect.replaceChildren(new Option("No active review request", ""));
-    decisionSelect.disabled = true;
-    const submitReview = form.querySelector('button[value="submit"]');
-    if (submitReview) submitReview.disabled = true;
-    if (focusWillBeDisabled) form.querySelector('button[value="cancel"]')?.focus({ preventScroll: true });
-    if (!isAbort(error)) context.innerHTML = `<p class="run-error">${esc(error.message || "Unable to load review context.")}</p>`;
+  const row = document.querySelector(`#project-workspace-view [data-task-record="${CSS.escape(String(taskId))}"]`);
+  const detail = row?.querySelector(".task-run-detail");
+  const runId = task.currentRunId || detail?.dataset.runId;
+  const status = row?.querySelector(".task-action-status");
+  if (!runId || !detail) {
+    if (status) status.textContent = "当前任务没有可审核的 Team IR v2 运行记录。";
+    return;
   }
-  form.addEventListener("submit", async (event) => {
-    if (event.submitter?.value !== "submit") return;
-    event.preventDefault();
-    const payload = Object.fromEntries(new FormData(form).entries());
-    const selectedReview = reviews.find((review) => review.reviewId === reviewIdSelect?.value);
-    if (selectedReview?.recoveryDecision) {
-      payload.reviewId = selectedReview.reviewId;
-      payload.decision = selectedReview.recoveryDecision;
-      payload.comment = selectedReview.recoveryComment || "";
+  try {
+    const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}`);
+    const run = await response.json();
+    if (!response.ok) throw new Error(run.error || "Team IR v2 运行记录读取失败。");
+    const activeReview = run.state?.waitingReview;
+    if (run.plan?.engine !== "team-ir-v2" || !run.owner?.teamIrSemanticDigest
+      || run.state?.status !== "waiting_human_review" || !activeReview?.reviewId) {
+      if (status) status.textContent = "当前运行没有待处理的 Team IR v2 审核请求。";
+      return;
     }
-    if (!payload.reviewId) delete payload.reviewId;
-    try {
-      const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      const result = await response.json();
-      if (!response.ok) { status.textContent = result.error || "审核提交失败"; return; }
-      dialog.close("submit");
-      if (isCurrentRequest(pageRequest)) {
-        await renderProjectRun(projectId, pageRequest);
-        const taskRow = $("#project-workspace-view")?.querySelector(`.task-record-row:has([data-task-id="${CSS.escape(String(taskId))}"])`);
-        const taskStatus = taskRow?.querySelector(".status-chip");
-        taskStatus?.setAttribute("tabindex", "-1");
-        taskStatus?.focus({ preventScroll: true });
-      }
-    } catch (error) {
-      if (isAbort(error)) return;
-      status.textContent = error.message || "审核提交失败";
+    detail.dataset.projectId = projectId;
+    detail.dataset.taskId = taskId;
+    detail.dataset.selectedRunId = runId;
+    await mountTeamIrRunReviews(detail, run);
+    const panel = detail.querySelector("[data-team-ir-run-reviews]");
+    const reviewForm = panel?.querySelector(`form[data-review-id="${CSS.escape(String(activeReview.reviewId))}"]`);
+    if (!panel || !reviewForm) {
+      if (status) status.textContent = "此审核请求已处理或已过期。";
+      return;
     }
-  });
-  dialog.addEventListener("close", cleanup, { once: true });
+    status.textContent = "已打开当前运行的 Team IR v2 审核请求。";
+    reviewForm.scrollIntoView({ block: "center", behavior: "smooth" });
+    reviewForm.querySelector("select[name=decision]")?.focus({ preventScroll: true });
+  } catch (error) {
+    if (!isAbort(error) && status) status.textContent = error.message || "Team IR v2 审核读取失败。";
+  }
 }
 
-let activeTaskReviewClose = null;
 function closeActiveDialogs() {
   closeDrawer();
   closeMobileNav();
   closeTopbarMore();
-  activeTaskReviewClose?.("route");
   document.querySelector("#collaboration-task-dialog[open]")?.close();
   document.querySelector("[data-deliverable-viewer][open]")?.close();
 }
@@ -5217,7 +2313,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "无法打开团队编辑");
-        navigate(`/studio/teams/${encodeURIComponent(payload.teamVersion.teamVersionId || payload.sourceTeamVersionId)}/design?collaborationProjectId=${encodeURIComponent(projectId)}&adjust=1&edit=1`);
+        navigate(`/studio/teams/${encodeURIComponent(payload.teamVersion.teamVersionId || payload.sourceTeamVersionId)}/ir?collaborationProjectId=${encodeURIComponent(projectId)}&adjust=1&edit=1`);
       } catch (error) {
         if (isAbort(error)) return;
         showToast(error.message || "无法打开团队编辑");
@@ -5305,8 +2401,84 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   }
   const collaborationTaskForm = $("#collaboration-task-form");
   const collaborationTaskDialog = $("#collaboration-task-dialog");
+  const taskArtifactReferences = new Map();
+  const artifactControls = document.createElement("section");
+  artifactControls.className = "task-artifact-inputs";
+  artifactControls.innerHTML = '<div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h3>任务输入附件</h3></div></div><div class="form-actions"><label>输入槽位<select data-task-artifact-slot disabled><option value="">正在读取输入槽位...</option></select></label><label class="secondary-button material-upload-button">选择文件<input type="file" data-task-artifact-file hidden accept="text/plain,text/markdown,.txt,.md"></label><button class="secondary-button" type="button" data-task-add-artifact disabled>添加附件</button></div><div class="material-list" data-task-artifact-list></div><p class="form-status" data-task-artifact-status role="status" aria-live="polite"></p>';
+  collaborationTaskForm?.querySelector('textarea[name="input"]')?.closest("label")?.after(artifactControls);
   bindDirtyForm(collaborationTaskForm, () => setDirty("collaboration-task-form"));
-  root.querySelector("[data-open-task-dialog]")?.addEventListener("click", () => collaborationTaskDialog?.showModal());
+  const artifactSlotSelect = artifactControls.querySelector("[data-task-artifact-slot]");
+  const artifactFileInput = artifactControls.querySelector("[data-task-artifact-file]");
+  const artifactStatus = artifactControls.querySelector("[data-task-artifact-status]");
+  const artifactList = artifactControls.querySelector("[data-task-artifact-list]");
+  const addArtifactButton = artifactControls.querySelector("[data-task-add-artifact]");
+  const renderTaskArtifactReferences = () => {
+    artifactList.innerHTML = [...taskArtifactReferences.entries()].map(([slotId, item]) => `<div class="material-row"><div><strong>${esc(slotId)}</strong><span>${esc(item.filename)} · ${item.size} bytes</span></div><button class="text-button" type="button" data-remove-task-artifact="${esc(slotId)}" aria-label="移除 ${esc(slotId)} 附件">移除</button></div>`).join("");
+    artifactList.querySelectorAll("[data-remove-task-artifact]").forEach((button) => button.addEventListener("click", () => {
+      taskArtifactReferences.delete(button.dataset.removeTaskArtifact);
+      renderTaskArtifactReferences();
+    }));
+  };
+  const loadTaskArtifactSlots = async () => {
+    const teamVersionId = collaborationTaskForm?.elements.teamVersionId?.value;
+    artifactSlotSelect.disabled = true;
+    addArtifactButton.disabled = true;
+    artifactSlotSelect.innerHTML = '<option value="">正在读取输入槽位...</option>';
+    artifactStatus.textContent = "";
+    if (!teamVersionId) return;
+    try {
+      const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/artifacts/run-input-slots?teamVersionId=${encodeURIComponent(teamVersionId)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "输入附件槽位读取失败");
+      const slots = (payload.slots || []).filter((slot) => slot.cardinality === "single");
+      artifactSlotSelect.innerHTML = slots.length
+        ? slots.map((slot) => `<option value="${esc(slot.slotId)}">${esc(slot.slotId)}${slot.required ? " · 必填" : " · 可选"}</option>`).join("")
+        : '<option value="">该团队没有支持的单文件输入槽位</option>';
+      artifactSlotSelect.disabled = slots.length === 0;
+      addArtifactButton.disabled = slots.length === 0;
+      artifactControls.hidden = slots.length === 0;
+    } catch (error) {
+      if (!isAbort(error)) artifactStatus.textContent = error.message || "输入附件槽位读取失败";
+    }
+  };
+  root.querySelector("[data-open-task-dialog]")?.addEventListener("click", () => {
+    taskArtifactReferences.clear();
+    renderTaskArtifactReferences();
+    collaborationTaskDialog?.showModal();
+    void loadTaskArtifactSlots();
+  });
+  collaborationTaskForm?.elements.teamVersionId?.addEventListener("change", () => {
+    taskArtifactReferences.clear();
+    renderTaskArtifactReferences();
+    void loadTaskArtifactSlots();
+  });
+  addArtifactButton?.addEventListener("click", async () => {
+    const file = artifactFileInput.files?.[0];
+    const slotId = artifactSlotSelect.value;
+    if (!file || !slotId) { artifactStatus.textContent = "请选择输入槽位和文件。"; return; }
+    if (!file.size || file.size > 512 * 1024) { artifactStatus.textContent = "附件需为非空文本文件，且不超过 512 KiB。"; return; }
+    addArtifactButton.disabled = true;
+    artifactStatus.textContent = "正在登记附件...";
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/artifacts/run-input`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ teamVersionId: collaborationTaskForm.elements.teamVersionId.value, slotId, mediaType: file.type || (file.name.endsWith(".md") ? "text/markdown" : "text/plain"), contentBase64: btoa(binary) })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "附件登记失败");
+      taskArtifactReferences.set(slotId, { filename: file.name, size: file.size, reference: { artifactId: payload.artifactId, mediaType: payload.mediaType } });
+      artifactFileInput.value = "";
+      artifactStatus.textContent = "附件已登记到所选输入槽位。";
+      renderTaskArtifactReferences();
+    } catch (error) {
+      if (!isAbort(error)) artifactStatus.textContent = error.message || "附件登记失败";
+    } finally {
+      addArtifactButton.disabled = artifactSlotSelect.disabled;
+    }
+  });
   collaborationTaskDialog?.querySelectorAll("[data-close-task-dialog]").forEach((button) => button.addEventListener("click", () => collaborationTaskDialog.close()));
   const uploadMaterials = async (event) => {
     const input = event.currentTarget;
@@ -5335,6 +2507,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     const submit = form.querySelector("button[type=submit]");
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.idempotencyKey = createUuid();
+    payload.attachments = Object.fromEntries([...taskArtifactReferences.entries()].map(([slotId, item]) => [slotId, item.reference]));
     submit.disabled = true;
     status.textContent = "正在添加任务...";
     try {
@@ -5343,6 +2516,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       if (!isCurrentRequest(pageRequest)) return;
       if (!response.ok) { status.textContent = taskActionErrorMessage(result.error); return; }
       clearDirty("collaboration-task-form");
+      taskArtifactReferences.clear();
       collaborationTaskDialog.close();
       form.reset();
       await renderProjectRun(projectId, pageRequest);
@@ -5363,13 +2537,14 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       if (!confirmed) return;
     }
     button.disabled = true;
-    const requestedMode = root.querySelector(`[data-task-mode="${CSS.escape(taskId)}"]`)?.value || "dry-run";
+    const requestedMode = "sandbox";
     const rowStatus = button.closest(".task-record-row")?.querySelector(".task-action-status");
     try {
       if (["start", "retry"].includes(action)) {
-        const ready = await confirmTeamRuntimeReadiness(task?.teamVersionId, undefined, pageRequest);
+        const team = teams.find((item) => item.teamVersionId === task?.teamVersionId);
+        const ready = await confirmTeamRuntimeReadiness(task?.teamId || team?.teamId, task?.teamVersionId, pageRequest);
         if (!ready) {
-          if (rowStatus && isCurrentRequest(pageRequest)) rowStatus.textContent = state.locale === "en" ? "Run cancelled; review the team role model bindings before retrying." : "已取消运行；请检查团队角色模型配置后重试。";
+          if (rowStatus && isCurrentRequest(pageRequest)) rowStatus.textContent = "Team IR v2 readiness could not be verified.";
           return;
         }
       }
@@ -5428,12 +2603,12 @@ async function renderProjectRun(projectId, pageRequest = state.activeRequest) {
       }
       return;
     }
-    navigate(`/studio/teams/${encodeURIComponent(projectId)}/design`);
+    navigate(`/studio/teams/${encodeURIComponent(projectId)}/ir`);
   } catch (error) { if (isAbort(error)) return; root.innerHTML = `<div class="run-error">${esc(error.message || "运行工作区读取失败")}</div>`; }
 }
 
 function syncRoute() {
-  disposeStudioGraphs();
+
   const pageRequest = beginPageRequest();
   const currentPath = location.pathname.replace(/\/$/, "") || "/";
   const path = currentPath;
@@ -5454,11 +2629,6 @@ function syncRoute() {
   if (path === "/studio/new") {
     setView("new-project");
     renderPageFrame($("#new-project-view"), "E", renderNewProject(pageRequest));
-    return;
-  }
-  if (path === "/studio/ir/new") {
-    setView("new-project");
-    renderPageFrame($("#new-project-view"), "E", renderNewProject(pageRequest, "ir-v2"));
     return;
   }
   if (path === "/studio/roles") {
@@ -5483,12 +2653,6 @@ function syncRoute() {
     });
     return;
   }
-  const studioDesignMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/design$/);
-  if (studioDesignMatch) {
-    setView("studio");
-    renderPageFrame($("#studio-view"), "B", renderProjectStudio(studioDesignMatch[1], pageRequest));
-    return;
-  }
   const studioInfoMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/info$/);
   if (studioInfoMatch) {
     setView("studio");
@@ -5505,18 +2669,6 @@ function syncRoute() {
   if (studioReleaseMatch) {
     setView("studio");
     renderPageFrame($("#studio-view"), "D", renderStudioReleaseGate(studioReleaseMatch[1], pageRequest));
-    return;
-  }
-  const studioRunDetailMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/run\/([a-z0-9-]+)$/);
-  if (studioRunDetailMatch) {
-    setView("studio");
-    renderPageFrame($("#studio-view"), "C", renderStudioRunDetail(studioRunDetailMatch[1], studioRunDetailMatch[2], pageRequest));
-    return;
-  }
-  const studioRunMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/run$/);
-  if (studioRunMatch) {
-    setView("studio");
-    renderPageFrame($("#studio-view"), "C", renderStudioRunPage(studioRunMatch[1], pageRequest));
     return;
   }
   const projectTeamsMatch = path.match(/^\/projects\/([a-z0-9-]+)\/teams$/);
@@ -5544,7 +2696,7 @@ function syncRoute() {
   else if (path === "/history") { state.view = "history"; frameExistingPage($("#history-view"), "A"); void renderHistory(pageRequest); }
   else if (path === "/examples") frameExistingPage($("#examples-view"), "A");
   setView(state.view);
-  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioReleaseMatch && !studioRunMatch && !studioRunDetailMatch && path !== "/studio/new" && path !== "/studio/ir/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
+  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioInfoMatch && !studioIrMatch && !studioReleaseMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
 let drawerReleaseTrap;
 let drawerReleaseScroll;

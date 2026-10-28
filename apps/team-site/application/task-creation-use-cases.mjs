@@ -1,7 +1,7 @@
 import { assertCollaborationProject } from "../domain/project.mjs";
 import { assertCanonicalTeamVersionId } from "../domain/team.mjs";
 
-export function createTaskCreationUseCases({ projectStore, taskStore, fingerprintRequest }) {
+export function createTaskCreationUseCases({ projectStore, taskStore, fingerprintRequest, validateRunInputAttachments }) {
   if (typeof projectStore?.getProject !== "function"
     || typeof projectStore?.withProjectWriteLock !== "function"
     || typeof projectStore?.saveProjectMetadata !== "function") {
@@ -12,7 +12,7 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
   }
 
   return Object.freeze({
-    async createProjectTask(projectId, { input, teamVersionId, idempotencyKey } = {}) {
+    async createProjectTask(projectId, { input, teamVersionId, idempotencyKey, attachments = {} } = {}) {
       const taskInput = String(input || "").trim();
       if (!taskInput || taskInput.length > 4000) throw new Error("Task input must contain 1 to 4,000 characters.");
       const requestedTeamVersionId = String(teamVersionId || "").trim();
@@ -30,12 +30,22 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
           || !/^[a-f0-9]{64}$/i.test(String(team.compiledPlanDigest || ""))) {
           throw new Error("TEAM_IR_V2_REQUIRED: create a Task with a TeamVersion that has a frozen, compiled Team IR v2 snapshot.");
         }
+        if (!attachments || typeof attachments !== "object" || Array.isArray(attachments)) {
+          throw new Error("TASK_ARTIFACT_INPUT_INVALID: Task Artifact inputs must map declared slot IDs to opaque references.");
+        }
+        if (typeof validateRunInputAttachments === "function") {
+          attachments = await validateRunInputAttachments({ project, team, attachments });
+        } else if (Object.keys(attachments).length) {
+          throw new Error("TASK_ARTIFACT_VALIDATION_UNAVAILABLE: registered Artifact validation is not configured.");
+        }
+        const frozenAttachments = Object.fromEntries(Object.entries(attachments).sort(([left], [right]) => left.localeCompare(right)));
 
         const requestKey = idempotencyKey ? String(idempotencyKey).trim().slice(0, 160) : "";
         const requestFingerprint = fingerprintRequest(JSON.stringify({
           projectId,
           input: taskInput,
-          teamVersionId: team.teamVersionId
+          teamVersionId: team.teamVersionId,
+          attachments: frozenAttachments
         }));
         const existing = (project.taskRecords || []).find((item) => requestKey && item.idempotencyKey === requestKey);
         if (existing) {
@@ -55,6 +65,7 @@ export function createTaskCreationUseCases({ projectStore, taskStore, fingerprin
           taskNumber: project.nextTaskNumber,
           projectId,
           input: taskInput,
+          runInputAttachments: frozenAttachments,
           teamId: team.teamId,
           teamVersionId: team.teamVersionId,
           teamVersionNumber: team.teamVersionNumber,

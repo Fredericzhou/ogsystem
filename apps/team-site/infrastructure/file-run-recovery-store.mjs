@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promise
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { loadProjectRunState, updateProjectRunState } from "../../../dist/runtime/project-run-state.js";
+import { FileTeamRunStore } from "../../../dist/team-ir/index.js";
 import { readProjectRunOwnerFile } from "./project-run-evidence-paths.mjs";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
 
@@ -22,13 +22,6 @@ export function createFileRunRecoveryStore({ projectsRoot = resolve(process.env.
     return assertSafeEvidencePath(root, [projectId], { kind: "directory", label: "Project" });
   }
 
-  async function assertRunStateFile(projectId, runId, { allowMissing = false } = {}) {
-    runDirectory(projectId, runId);
-    return assertSafeEvidencePath(root, [projectId, ".ogs", "runs", runId, "control", "state.json"], {
-      kind: "file", allowMissingFinal: allowMissing, label: "Run state"
-    });
-  }
-
   async function assertProjectWriteLockPath(projectId) {
     await assertSafeEvidencePath(root, [projectId, ".site"], { kind: "directory", label: "Project metadata" });
     await assertSafeEvidencePath(root, [projectId, ".site", "project-write.lock"], {
@@ -40,6 +33,88 @@ export function createFileRunRecoveryStore({ projectsRoot = resolve(process.env.
     await assertProjectDirectory(projectId);
     const project = { projectId, workdir: resolve(root, projectId) };
     return readProjectRunOwnerFile(project, runId);
+  }
+
+  async function readTeamIrV2Record(projectId, runId) {
+    const stateDirectory = join(runDirectory(projectId, runId), "team-ir-v2-state");
+    try {
+      await assertSafeEvidencePath(root, [projectId, ".ogs", "runs", runId, "team-ir-v2-state", `${runId}.json`], {
+        kind: "file", label: "Team IR v2 Run state"
+      });
+      return await new FileTeamRunStore(stateDirectory).load(runId);
+    } catch (error) {
+      if (error?.code === "ENOENT") return undefined;
+      throw error;
+    }
+  }
+
+  function projectTaskState(record, owner) {
+    const status = record.status === "waiting_human_review" ? "waiting_review"
+      : record.status === "paused_input_required" ? "paused"
+      : record.status === "queued" ? "planning"
+      : record.status;
+    return {
+      version: 1,
+      runId: record.runId,
+      attemptNumber: owner.attemptNumber,
+      status,
+      startedAt: record.status === "queued" ? undefined : new Date(record.createdAt).toISOString(),
+      updatedAt: new Date(record.updatedAt).toISOString(),
+      finishedAt: ["completed", "failed", "cancelled"].includes(record.status) ? new Date(record.updatedAt).toISOString() : undefined,
+      error: record.events.findLast((event) => event.type === "run.failing")?.data?.code,
+      result: record.result,
+      resultWritten: record.resultWritten,
+      taskReservation: {
+        kind: "task-attempt",
+        projectId: owner.projectId,
+        taskId: owner.taskId,
+        teamVersionId: owner.teamVersionId,
+        runId: record.runId
+      },
+      teamIrV2: true
+    };
+  }
+
+  async function updateTeamIrV2State(projectId, runId, update) {
+    const stateDirectory = join(runDirectory(projectId, runId), "team-ir-v2-state");
+    const store = new FileTeamRunStore(stateDirectory);
+    const owner = await readRunOwner(projectId, runId);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const record = await store.load(runId);
+      if (!record) return undefined;
+      const projected = projectTaskState(record, owner);
+      const next = update(projected);
+      if (next === projected || next.status === projected.status) return projected;
+      if (next.status !== "failed") throw new Error("RUN_RECOVERY_TRANSITION_INVALID: Team IR v2 recovery only supports fail-closed interruption.");
+      const timestamp = Date.parse(next.updatedAt) || Date.now();
+      const updated = structuredClone(record);
+      updated.revision += 1;
+      updated.status = "failed";
+      updated.terminalIntent = "failed";
+      updated.updatedAt = timestamp;
+      updated.result = undefined;
+      updated.resultWritten = false;
+      delete updated.pendingResult;
+      updated.error = next.error;
+      for (const invocation of Object.values(updated.invocations || {})) {
+        if (invocation.status !== "running") continue;
+        invocation.status = "failed";
+        invocation.error = "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART";
+        invocation.outcomeUnknown = true;
+        updated.events.push({
+          id: `${invocation.id}:restart-outcome-unknown`, type: "binding.outcome_unknown", at: timestamp,
+          data: { reason: "scheduler_recovery_found_active_invocation" }
+        });
+      }
+      if (!updated.events.some((event) => event.id === `${runId}:failure-intent`)) {
+        updated.events.push({ id: `${runId}:failure-intent`, type: "run.failing", at: timestamp, data: { code: next.error } });
+      }
+      if (!updated.events.some((event) => event.id === `${runId}:settled:failed`)) {
+        updated.events.push({ id: `${runId}:settled:failed`, type: "run.failed", at: timestamp });
+      }
+      if (await store.compareAndSet(runId, record.revision, updated)) return projectTaskState(updated, owner);
+    }
+    throw new Error("RUN_RECOVERY_BUSY: Team IR v2 Run changed during interruption recovery.");
   }
 
   async function readJsonFile(path, { allowMissing = false } = {}) {
@@ -93,21 +168,18 @@ export function createFileRunRecoveryStore({ projectsRoot = resolve(process.env.
           });
         }
       }
-      return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+      const runIds = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+      const v2RunIds = [];
+      for (const runId of runIds) {
+        if (await readTeamIrV2Record(projectId, runId)) v2RunIds.push(runId);
+      }
+      return v2RunIds;
     },
     async readRunState(projectId, runId) {
-      const runDir = runDirectory(projectId, runId);
       await assertProjectDirectory(projectId);
-      try {
-        await assertRunStateFile(projectId, runId);
-      } catch (error) {
-        if (error?.code === "ENOENT") return undefined;
-        throw error;
-      }
-      return loadProjectRunState(runDir).catch((error) => {
-        if (error?.code === "ENOENT") return undefined;
-        throw error;
-      });
+      const teamIrRun = await readTeamIrV2Record(projectId, runId);
+      if (teamIrRun) return projectTaskState(teamIrRun, await readRunOwner(projectId, runId));
+      return undefined;
     },
     async readRunOwner(projectId, runId) {
       await assertProjectDirectory(projectId);
@@ -115,11 +187,10 @@ export function createFileRunRecoveryStore({ projectsRoot = resolve(process.env.
       return readProjectRunOwnerFile(project, runId);
     },
     async updateRunState(projectId, runId, update) {
-      const runDir = runDirectory(projectId, runId);
       await assertProjectDirectory(projectId);
       await assertProjectWriteLockPath(projectId);
-      await assertRunStateFile(projectId, runId);
-      return updateProjectRunState(runDir, update);
+      if (await readTeamIrV2Record(projectId, runId)) return updateTeamIrV2State(projectId, runId, update);
+      throw new Error("TEAM_IR_V2_REQUIRED: Project Task recovery requires a Team IR v2 checkpoint.");
     },
     async removeRunDirectory(projectId, runId) {
       const runDir = runDirectory(projectId, runId);

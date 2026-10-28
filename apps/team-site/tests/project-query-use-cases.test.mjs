@@ -20,8 +20,8 @@ test("Project query composes Run attempt history and projects the current Run st
     taskAttemptStore: {
       async readAttempt(_projectId, _taskId, runId) {
         return runId === "run-1"
-          ? { state: { status: "failed", attemptNumber: 1, error: "transient", updatedAt: "old" }, plan: { executionPolicy: { mode: "dry-run" } }, outputSummary: "old summary" }
-          : { state: { status: "completed", attemptNumber: 2, startedAt: "started", finishedAt: "finished", updatedAt: "latest" }, plan: { executionPolicy: { mode: "sandbox" } }, outputSummary: "latest summary" };
+          ? { state: { status: "failed", attemptNumber: 1, error: "transient", updatedAt: "old" }, plan: { engine: "team-ir-v2", executionPolicy: { mode: "dry-run" } }, outputSummary: "old summary" }
+          : { state: { status: "completed", attemptNumber: 2, startedAt: "started", finishedAt: "finished", updatedAt: "latest" }, plan: { engine: "team-ir-v2" }, outputSummary: "latest summary" };
       }
     },
     waitForActiveTaskWorker: async () => false
@@ -72,4 +72,32 @@ test("Project query marks a terminal task whose Run evidence is missing", async 
   const [task] = (await useCases.getProject("project-1")).taskRecords;
   assert.equal(task.runEvidenceMissing, true);
   assert.equal(task.runAttempts[0].evidenceAvailable, false);
+});
+
+test("Project query surfaces Team IR v2 requirement when an attempt reader rejects an old Run", async () => {
+  let legacyReaderCalls = 0;
+  const useCases = createProjectQueryUseCases({
+    projectStore: {
+      async getProject() {
+        return {
+          projectType: "collaboration",
+          projectId: "project-1",
+          taskRecords: [{ taskId: "task-1", status: "completed", currentRunId: "run-old", runIds: ["run-old"] }]
+        };
+      }
+    },
+    taskAttemptStore: {
+      async readAttempt() {
+        throw new Error("TEAM_IR_V2_REQUIRED: Project Task attempts must use a Team IR v2 Run.");
+      },
+      async readLegacyAttempt() { legacyReaderCalls += 1; }
+    },
+    waitForActiveTaskWorker: async () => false
+  });
+
+  const [task] = (await useCases.getProject("project-1")).taskRecords;
+  assert.equal(task.runAttempts[0].status, "unknown");
+  assert.equal(task.runAttempts[0].error, "TEAM_IR_V2_REQUIRED: Project Task attempts must use a Team IR v2 Run.");
+  assert.equal(task.runEvidenceMissing, true);
+  assert.equal(legacyReaderCalls, 0);
 });

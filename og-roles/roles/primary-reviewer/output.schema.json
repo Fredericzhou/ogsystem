@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "track": { "type": "string", "enum": ["standard", "clinical", "skip"] },
+    "comment": { "type": "string", "minLength": 1 }
+  },
+  "required": ["track", "comment"],
+  "additionalProperties": false
+}

@@ -1,4 +1,29 @@
+function isLocalSameOrigin(request) {
+  const address = String(request.socket?.remoteAddress || request.connection?.remoteAddress || "").toLowerCase();
+  if (!(address === "127.0.0.1" || address === "::1" || /^::ffff:127\./.test(address))) return false;
+  const origin = request.headers?.origin;
+  if (!origin) return true;
+  try { return new URL(origin).host === request.headers?.host; }
+  catch { return false; }
+}
+
 export async function handleTeamIrSimulationRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases }) {
+  const artifactSlots = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir\/simulation-artifact-slots$/);
+  if (artifactSlots && request.method === "GET") {
+    try { sendJson(response, 200, await useCases.listRunInputArtifactSlots(artifactSlots[1])); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to list Simulation Artifact slots." }); }
+    return true;
+  }
+  const artifactUpload = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir\/simulation-artifacts\/run-input$/);
+  if (artifactUpload && request.method === "POST") {
+    if (!isLocalSameOrigin(request)) {
+      sendJson(response, 403, { error: "TEAM_IR_SIMULATION_ARTIFACT_UPLOAD_FORBIDDEN: upload requires a same-origin loopback Studio session." });
+      return true;
+    }
+    try { sendJson(response, 201, await useCases.registerSimulationInputArtifact(artifactUpload[1], await readBody(request, 1024 * 1024))); }
+    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to register Simulation input Artifact." }); }
+    return true;
+  }
   const recovery = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir\/simulations\/recover$/);
   if (recovery && request.method === "POST") {
     try {

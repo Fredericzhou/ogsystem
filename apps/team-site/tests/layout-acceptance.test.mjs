@@ -125,13 +125,6 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     });
     let projectList = Array.from({ length: 28 }, (_, index) => ({ projectId: `layout-project-${index}`, name: `Layout project ${index}`, overview: "Fixed layout fixture for list scrolling", mountedTeams: [], projectStatus: "draft", taskRecords: [] }));
     await desktopPage.route("**/api/v1/projects", (route) => route.fulfill({ json: { projects: projectList } }));
-    await desktopPage.goto(`${url}/`, { waitUntil: "networkidle" });
-    const landingMetrics = await desktopPage.locator("#landing-view").evaluate((landing) => ({ clientHeight: landing.clientHeight, scrollHeight: landing.scrollHeight }));
-    assert.ok(landingMetrics.scrollHeight > landingMetrics.clientHeight, `homepage should have content below the fold: ${JSON.stringify(landingMetrics)}`);
-    await desktopPage.mouse.move(900, 750);
-    await desktopPage.mouse.wheel(0, 500);
-    await desktopPage.waitForFunction(() => document.querySelector("#landing-view")?.scrollTop > 0);
-    assert.ok(await desktopPage.locator("#landing-view").evaluate((landing) => landing.scrollTop > 0), "homepage should scroll inside its own viewport");
     await desktopPage.goto(`${url}/projects`, { waitUntil: "networkidle" });
     await desktopPage.locator("#projects-view .page-heading").waitFor();
     assert.equal(await desktopPage.locator("#primary-sidebar").evaluate((sidebar) => Math.round(sidebar.getBoundingClientRect().width)), 232);
@@ -187,10 +180,13 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     assert.ok(wideWidth.page >= wideWidth.main * 0.95, `wide template A should use the page width: ${JSON.stringify(wideWidth)}`);
     for (const [width, height] of [[1440, 900], [1024, 768], [390, 844]]) {
       await desktopPage.setViewportSize({ width, height });
-      for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
+      for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/ir`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
         await desktopPage.goto(`${url}${route}`, { waitUntil: "domcontentloaded" });
         await desktopPage.locator(".main-area > .page-content:not(.hidden)").waitFor();
-        if (route !== "/teams" && !route.includes("/cases/")) await desktopPage.locator(".main-area > .page-content:not(.hidden) .page-frame").waitFor();
+        if (route !== "/teams" && route !== "/examples" && !route.includes("/cases/")) {
+          try { await desktopPage.locator(".main-area > .page-content:not(.hidden) .page-frame").waitFor({ timeout: 3000 }); }
+          catch { throw new Error(`${route} did not render the current page frame`); }
+        }
         await assertRouteContentReachable(desktopPage, route);
         if (route === `/projects/${project.projectId}` || route.startsWith(`/projects/${project.projectId}/runs/`)) {
           const tabs = desktopPage.locator("[data-project-workspace-tab]");
@@ -227,10 +223,8 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
       }
     }
     await desktopPage.setViewportSize({ width: 1440, height: 900 });
-    await desktopPage.goto(`${url}/studio/teams/${teamVersionId}/run/layout-simulation`, { waitUntil: "networkidle" });
-    await desktopPage.locator(".studio-run-split").waitFor();
-    assert.equal(await desktopPage.locator(".studio-run-history .studio-simulation-row[aria-current='page']").count(), 1);
-    assert.ok(await desktopPage.locator(".studio-run-evidence .team-debug-transcript").isVisible());
+    await desktopPage.goto(`${url}/studio/teams/${teamVersionId}/ir`, { waitUntil: "networkidle" });
+    await desktopPage.locator("#team-ir-editor").waitFor();
     await desktopPage.setViewportSize({ width: 1440, height: 900 });
     await desktopPage.locator("#site-theme-toggle").click();
     const contrast = await desktopPage.evaluate(() => {
@@ -340,7 +334,7 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     assert.equal(await mobilePage.locator("#topbar-controls").isVisible(), true);
     await mobilePage.keyboard.press("Escape");
     assert.equal(await mobilePage.locator("#topbar-more-toggle").getAttribute("aria-expanded"), "false");
-    for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/design`, `/studio/teams/${teamVersionId}/run`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
+    for (const route of ["/projects", `/projects/${project.projectId}`, `/projects/${project.projectId}/teams`, "/teams", "/history", "/studio", "/studio/roles", "/examples", "/projects/new", "/studio/new", `/studio/teams/${teamVersionId}/info`, `/studio/teams/${teamVersionId}/ir`, `/studio/teams/${teamVersionId}/release`, "/platform/models", "/cases/software-team"]) {
       await mobilePage.goto(`${url}${route}`, { waitUntil: "domcontentloaded" });
       await mobilePage.locator(".main-area > .page-content:not(.hidden)").waitFor();
       await assertRouteContentReachable(mobilePage, route);

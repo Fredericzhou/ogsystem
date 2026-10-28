@@ -1,0 +1,18 @@
+{
+  "roleId": "debate-proponent",
+  "roleVersion": "1.0.0",
+  "name": "Debate Proponent",
+  "description": "Builds the strongest evidence-based case in favor of the proposition.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "structured-debate", "proponent"],
+  "contractVersion": 1,
+  "purpose": "Present a clear, evidence-aware argument supporting the proposition.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

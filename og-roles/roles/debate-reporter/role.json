@@ -1,0 +1,18 @@
+{
+  "roleId": "debate-reporter",
+  "roleVersion": "1.0.0",
+  "name": "Debate Reporter",
+  "description": "Reports the final debate outcome and the strongest considerations on each side.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "structured-debate", "reporting"],
+  "contractVersion": 1,
+  "purpose": "Write a balanced summary from a final judge decision and debate record.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

@@ -19,12 +19,6 @@ export async function handleTaskRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const reviewContextMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/review$/);
-  if (reviewContextMatch && request.method === "GET") {
-    try { sendJson(response, 200, await useCases.getProjectTaskReviewContext(reviewContextMatch[1], reviewContextMatch[2])); }
-    catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read Task review context." }); }
-    return true;
-  }
   if (itemMatch && request.method === "DELETE") {
     try {
       sendJson(response, 200, publicTask(await useCases.deleteProjectTask(itemMatch[1], itemMatch[2])));
@@ -34,15 +28,13 @@ export async function handleTaskRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const actionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|cancel|review|retry)$/);
+  const actionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|cancel|retry)$/);
   if (!actionMatch || request.method !== "POST") return false;
   try {
     const [, projectId, taskId, action] = actionMatch;
     const payload = await readBody(request);
-    const result = action === "review"
-      ? await useCases.reviewProjectTask(projectId, taskId, payload)
-      : action === "retry"
-        ? await useCases.retryProjectTask(projectId, taskId, payload)
+    const result = action === "retry"
+      ? await useCases.retryProjectTask(projectId, taskId, payload)
       : action === "start"
         ? await useCases.startProjectTask(projectId, taskId, payload)
         : await useCases.controlProjectTask(projectId, taskId, action);

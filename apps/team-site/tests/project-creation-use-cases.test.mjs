@@ -21,7 +21,6 @@ test("Project creation initializes its reserved workspace and tolerates an alrea
       },
       async inspectWorkspace() { return { hasProject: workspaceCalls > 0, isProjectValid: workspaceCalls > 0 }; }
     },
-    caseMaterializer: { async materialize() {} },
     projectQuery: { async getProject() { return metadata; } }
   });
 
@@ -33,4 +32,15 @@ test("Project creation initializes its reserved workspace and tolerates an alrea
   assert.equal(replayed.ogsProjectId, "studio-project-1");
   assert.equal(workspaceCalls, 1);
   assert.equal(removed, false);
+});
+
+test("Project creation rejects legacy Case materialization requests", async () => {
+  let created = false;
+  const useCases = createProjectCreationUseCases({
+    projectStore: { async createProject() { created = true; }, async saveProjectMetadata() {}, async removeProjectData() {} },
+    workspaceStore: { async createWorkspace() {} },
+    projectQuery: { async getProject() {} }
+  });
+  await assert.rejects(useCases.createProject({ name: "Legacy", caseId: "software-team" }), /TEAM_IR_V2_REQUIRED/);
+  assert.equal(created, false);
 });

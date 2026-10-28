@@ -2,11 +2,10 @@ function slug(value) {
   return String(value || "new-team").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "new-team";
 }
 
-export function createProjectCreationUseCases({ projectStore, workspaceStore, caseMaterializer, projectQuery }) {
+export function createProjectCreationUseCases({ projectStore, workspaceStore, projectQuery }) {
   for (const [name, port, operations] of [
     ["Project persistence", projectStore, ["createProject", "saveProjectMetadata", "removeProjectData"]],
     ["Visualizer workspace", workspaceStore, ["createWorkspace"]],
-    ["Case materializer", caseMaterializer, ["materialize"]],
     ["Project query", projectQuery, ["getProject"]]
   ]) {
     for (const operation of operations) {
@@ -16,6 +15,7 @@ export function createProjectCreationUseCases({ projectStore, workspaceStore, ca
 
   return Object.freeze({
     async createProject(input) {
+      if (input.caseId) throw new Error("TEAM_IR_V2_REQUIRED: create a TeamVersion from a native Team IR v2 fixture.");
       const project = await projectStore.createProject(input);
       try {
         const existingWorkspace = typeof workspaceStore.inspectWorkspace === "function"
@@ -31,7 +31,6 @@ export function createProjectCreationUseCases({ projectStore, workspaceStore, ca
           });
           await projectStore.saveProjectMetadata(project.projectId, { ...project, ogsProjectId: workspace.projectId });
         }
-        if (input.caseId) await caseMaterializer.materialize(input.caseId, project.workdir, input.locale === "en" ? "en" : "zh-CN");
         return projectQuery.getProject(project.projectId);
       } catch (error) {
         const latest = await projectQuery.getProject(project.projectId).catch(() => undefined);

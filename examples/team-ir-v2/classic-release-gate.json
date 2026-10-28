@@ -4,8 +4,8 @@
   "runInput": {
     "dataSchema": {
       "type": "object",
-      "properties": { "change": { "type": "string", "minLength": 1 } },
-      "required": ["change"],
+      "properties": { "request": { "type": "string", "minLength": 1 } },
+      "required": ["request"],
       "additionalProperties": false
     },
     "preferencesSchema": { "type": "object", "additionalProperties": true },
@@ -33,8 +33,8 @@
         "default": {
           "dataSchema": {
             "type": "object",
-            "properties": { "change": { "type": "string", "minLength": 1 } },
-            "required": ["change"],
+            "properties": { "request": { "type": "string", "minLength": 1 } },
+            "required": ["request"],
             "additionalProperties": false
           }
         }
@@ -59,7 +59,7 @@
       "id": "run-to-gate",
       "from": { "kind": "run" },
       "to": { "kind": "agent", "agentId": "release-gate", "inputPort": "default" },
-      "map": { "data": { "change": { "$ref": "$.run.input.change" } } },
+      "map": { "data": { "request": { "$ref": "$.run.input.request" } } },
       "when": { "priority": 0 },
       "delivery": { "deadlineMs": 180000 }
     },
@@ -107,7 +107,7 @@
     {
       "id": "binding:release-gate",
       "kind": "model",
-      "modelRef": "sandbox/default",
+      "modelRef": "codex-gateway/gpt-6-luna",
       "attemptTimeoutMs": 120000,
       "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } }
     }

@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdtemp, readFile, readdir, rm, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, rename, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
-import { convertTaskFixtureToLegacySnapshot } from "./legacy-run-fixture.mjs";
 
 const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -25,7 +24,7 @@ const markerPath = process.env.OGS_TEST_ACTIVE_RUN_MARKER;
 let held = false;
 fs.promises.rename = async (source, target, ...args) => {
   const targetPath = String(target).replaceAll("\\\\", "/");
-  if (!held && markerPath && targetPath.endsWith("/control/state.json")) {
+  if (!held && markerPath && targetPath.includes("/team-ir-v2-state/") && targetPath.endsWith(".json")) {
     let state;
     try { state = JSON.parse(fs.readFileSync(String(source), "utf8")); } catch { state = undefined; }
     const result = await originalRename(source, target, ...args);
@@ -40,24 +39,6 @@ fs.promises.rename = async (source, target, ...args) => {
 };
 syncBuiltinESMExports();
 `;
-const renameFaultPreload = `
-import fs from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
-const originalRename = fs.promises.rename.bind(fs.promises);
-let remaining = Number(process.env.OGS_TEST_CONTROL_RENAME_FAULT_COUNT || 0);
-fs.promises.rename = async (source, target, ...args) => {
-  const targetPath = String(target).replaceAll("\\\\", "/");
-  if (remaining > 0 && targetPath.includes("/control/requests/")) {
-    remaining -= 1;
-    const error = new Error("Injected control request write failure.");
-    error.code = "EIO";
-    throw error;
-  }
-  return originalRename(source, target, ...args);
-};
-syncBuiltinESMExports();
-`;
-
 async function writeJsonAtomic(path, value) {
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -75,7 +56,7 @@ async function waitForServer(server, getOutput) {
   throw new Error(`Team Site server did not become ready: ${getOutput()}`);
 }
 
-async function spawnServer(projectsRoot, { preloadPath, controlWriteFault = false, activeRunMarker } = {}) {
+async function spawnServer(projectsRoot, { preloadPath, activeRunMarker } = {}) {
   let output = "";
   const args = [...(preloadPath ? ["--import", pathToFileURL(preloadPath).href] : []), "server.mjs"];
   const server = spawn(process.execPath, args, {
@@ -85,8 +66,7 @@ async function spawnServer(projectsRoot, { preloadPath, controlWriteFault = fals
       PORT: "0",
       OGS_SITE_PROJECTS_DIR: projectsRoot,
       OGS_PLATFORM_CONFIG_DIR: projectsRoot,
-      OGS_TEST_CONTROL_RENAME_FAULT_COUNT: controlWriteFault ? "1" : "0",
-      OGS_DEBUG_PROJECT_WRITE_LOCK: controlWriteFault ? "1" : "",
+      OGS_TEAM_IR_V2_RESOLVER_MODULE: fileURLToPath(new URL("./team-ir-v2-task-test-resolver.mjs", import.meta.url)),
       OGS_TEST_ACTIVE_RUN_MARKER: activeRunMarker || ""
     },
     windowsHide: true,
@@ -124,21 +104,6 @@ async function waitForFile(path, timeoutMs = 15000) {
   throw new Error(`Timed out waiting for file: ${path}`);
 }
 
-async function waitForWriteLockRelease(project) {
-  const lockPath = join(project.workdir, ".site", "project-write.lock");
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 5000) {
-    try {
-      await access(lockPath);
-      await new Promise((resolveWait) => setTimeout(resolveWait, 25));
-    } catch (error) {
-      if (error?.code === "ENOENT") return;
-      throw error;
-    }
-  }
-  throw new Error(`Project write lock was not released: ${await readFile(lockPath, "utf8").catch(() => "missing")}`);
-}
-
 async function waitForPersistedTaskStatus(project, taskId, status) {
   const metadataPath = join(project.workdir, ".site", "project.json");
   const startedAt = Date.now();
@@ -149,22 +114,6 @@ async function waitForPersistedTaskStatus(project, taskId, status) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 25));
   }
   throw new Error(`Task ${taskId} did not persist status ${status}.`);
-}
-
-async function postUntilProjectLockIsFree(url) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    let response;
-    try {
-      response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(5000) });
-    } catch (error) {
-      throw new Error(`Successful control request did not return: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (response.status !== 409) return response;
-    const payload = await response.clone().json().catch(() => ({}));
-    if (!/Project lock is active/.test(payload.error || "")) return response;
-    await new Promise((resolveWait) => setTimeout(resolveWait, 25));
-  }
-  throw new Error("Project write lock did not become available for the successful control retry.");
 }
 
 async function createFixture(projectsRoot, label) {
@@ -193,7 +142,6 @@ async function createFixture(projectsRoot, label) {
     input: "Create a durable Run that can be inspected after restart.",
     teamVersionId: team.teamVersionId
   });
-  await convertTaskFixtureToLegacySnapshot({ project, team, task });
   return { store, project, task, team };
 }
 
@@ -201,7 +149,7 @@ async function startTask(baseUrl, projectId, taskId, key) {
   const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/tasks/${taskId}/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mode: "dry-run", idempotencyKey: key })
+    body: JSON.stringify({ mode: "sandbox", idempotencyKey: key })
   });
   const payload = await response.json();
   assert.equal(response.status, 202, JSON.stringify(payload));
@@ -224,97 +172,12 @@ async function retryTask(baseUrl, projectId, taskId, key) {
   const response = await fetch(`${baseUrl}/api/v1/projects/${projectId}/tasks/${taskId}/retry`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mode: "dry-run", idempotencyKey: key })
+    body: JSON.stringify({ mode: "sandbox", idempotencyKey: key })
   });
   const payload = await response.json();
   assert.equal(response.status, 202, JSON.stringify(payload));
   return payload;
 }
-
-async function forceTaskActiveSnapshot(project, task, team, runId) {
-  const runStatePath = join(project.workdir, ".ogs", "runs", runId, "control", "state.json");
-  const runState = JSON.parse(await readFile(runStatePath, "utf8"));
-  const projectPath = join(project.workdir, ".site", "project.json");
-  const metadata = JSON.parse(await readFile(projectPath, "utf8"));
-  metadata.taskRecords = metadata.taskRecords.map((record) => record.taskId === task.taskId
-    ? { ...record, status: "running", currentRunId: runId, runIds: [runId], teamVersionId: team.teamVersionId, lastError: null, completedAt: null }
-    : record);
-  await Promise.all([
-    writeJsonAtomic(runStatePath, { ...runState, status: "running", error: undefined, finishedAt: undefined, updatedAt: new Date().toISOString() }),
-    writeJsonAtomic(projectPath, metadata)
-  ]);
-  return { runId, runStatePath, projectPath };
-}
-
-test("Task control write failure leaves control and Run projections unchanged until a successful request", { timeout: 90000 }, async () => {
-  const testRoot = await mkdtemp(join(tmpdir(), "ogs-task-control-write-boundary-"));
-  const projectsRoot = join(testRoot, "projects");
-  const preloadPath = join(testRoot, "rename-fault.mjs");
-  await writeFile(preloadPath, renameFaultPreload, "utf8");
-  const { project, task, team } = await createFixture(projectsRoot, "Control Failure");
-  let running;
-
-  try {
-    running = await spawnServer(projectsRoot, { preloadPath, controlWriteFault: true });
-    await startTask(running.baseUrl, project.projectId, task.taskId, "control-fault-start");
-    const terminal = await waitForCompletedTask(running.baseUrl, project.projectId, task.taskId);
-    await waitForPersistedTaskStatus(project, task.taskId, "completed");
-    await waitForWriteLockRelease(project);
-    const { runId, runStatePath } = await forceTaskActiveSnapshot(project, task, team, terminal.currentRunId);
-    assert.ok(runId);
-    const controlDir = join(project.workdir, ".ogs", "runs", runId, "control", "requests");
-    const controlUrl = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/pause`;
-    const failedResponse = await fetch(controlUrl, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    const failedPayload = await failedResponse.json();
-    assert.equal(failedResponse.status, 400, JSON.stringify(failedPayload));
-    assert.match(failedPayload.error, /Injected control request write failure/);
-    await waitForWriteLockRelease(project);
-
-    const failedStateOnDisk = JSON.parse(await readFile(runStatePath, "utf8"));
-    assert.equal(failedStateOnDisk.status, "running");
-    assert.deepEqual((await readdir(controlDir).catch(() => [])).filter((name) => name.endsWith(".json")), []);
-    const runUrl = `${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}/runs/${runId}`;
-    const firstRunRead = await fetch(runUrl).then((response) => response.json());
-    const secondRunRead = await fetch(runUrl).then((response) => response.json());
-    assert.equal(firstRunRead.state.status, "running");
-    assert.deepEqual(secondRunRead.state, firstRunRead.state);
-    const firstTaskRead = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}`).then((response) => response.json());
-    const secondTaskRead = await fetch(`${running.baseUrl}/api/v1/projects/${project.projectId}/tasks/${task.taskId}`).then((response) => response.json());
-    assert.equal(firstTaskRead.status, "running");
-    assert.deepEqual(secondTaskRead, firstTaskRead);
-    await waitForWriteLockRelease(project);
-
-    let successResponse;
-    try {
-      successResponse = await postUntilProjectLockIsFree(controlUrl);
-    } catch (error) {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${running.getOutput()}`);
-    }
-    assert.equal(successResponse.status, 200, JSON.stringify(await successResponse.clone().json()));
-    const controlledTask = await successResponse.json();
-    assert.equal(controlledTask.status, "pause_requested");
-    const successfulState = JSON.parse(await readFile(runStatePath, "utf8"));
-    assert.equal(successfulState.status, "pause_requested");
-    const requests = (await readdir(controlDir)).filter((name) => name.endsWith(".json"));
-    assert.equal(requests.length, 1);
-    assert.equal(JSON.parse(await readFile(join(controlDir, requests[0]), "utf8")).action, "pause");
-    recordRecoveryEvidence("control request write failure", {
-      projectId: project.projectId,
-      taskId: task.taskId,
-      runId,
-      taskStateAfterFailure: firstTaskRead.status,
-      runStateOnDiskAfterFailure: failedStateOnDisk.status,
-      runStateApiAfterFailure: firstRunRead.state.status,
-      committedControlRequestsAfterFailure: 0,
-      retryControlState: controlledTask.status,
-      committedControlRequestsAfterRecovery: requests.length
-    });
-  } finally {
-    await stopServer(running?.server);
-    await rm(testRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    await assert.rejects(readFile(testRoot), { code: "ENOENT" });
-  }
-});
 
 test("startup recovery repairs missing Run state and stale Task projection, then supports retry and repeat recovery", { timeout: 120000 }, async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "ogs-task-run-recovery-boundaries-"));
@@ -333,7 +196,7 @@ test("startup recovery repairs missing Run state and stale Task projection, then
     assert.equal(staleStart.taskId, second.task.taskId);
 
     const missingRunId = missingTerminal.currentRunId;
-    const missingRunStatePath = join(first.project.workdir, ".ogs", "runs", missingRunId, "control", "state.json");
+    const missingRunStatePath = join(first.project.workdir, ".ogs", "runs", missingRunId, "team-ir-v2-state", `${missingRunId}.json`);
     const missingProjectPath = join(first.project.workdir, ".site", "project.json");
     const missingMetadata = JSON.parse(await readFile(missingProjectPath, "utf8"));
     missingMetadata.taskRecords = missingMetadata.taskRecords.map((record) => record.taskId === first.task.taskId
@@ -343,22 +206,16 @@ test("startup recovery repairs missing Run state and stale Task projection, then
     await unlink(missingRunStatePath);
 
     const staleRunId = staleTerminal.currentRunId;
-    const staleRunStatePath = join(second.project.workdir, ".ogs", "runs", staleRunId, "control", "state.json");
+    const staleRunStatePath = join(second.project.workdir, ".ogs", "runs", staleRunId, "team-ir-v2-state", `${staleRunId}.json`);
     const staleRunState = JSON.parse(await readFile(staleRunStatePath, "utf8"));
-    assert.deepEqual(staleRunState.taskReservation, {
-      kind: "task-attempt",
-      projectId: second.project.projectId,
-      taskId: second.task.taskId,
-      teamVersionId: second.team.teamVersionId,
-      runId: staleRunId
-    });
+    assert.equal(staleRunState.runId, staleRunId);
     const staleProjectPath = join(second.project.workdir, ".site", "project.json");
     const staleMetadata = JSON.parse(await readFile(staleProjectPath, "utf8"));
     staleMetadata.taskRecords = staleMetadata.taskRecords.map((record) => record.taskId === second.task.taskId
       ? { ...record, status: "completed", currentRunId: staleRunId, runIds: [staleRunId], teamVersionId: second.team.teamVersionId, lastError: null }
       : record);
     await Promise.all([
-      writeJsonAtomic(staleRunStatePath, { ...staleRunState, status: "running", error: undefined, finishedAt: undefined, updatedAt: new Date().toISOString() }),
+      writeJsonAtomic(staleRunStatePath, { ...staleRunState, revision: staleRunState.revision + 1, status: "running", error: undefined, terminalIntent: undefined, result: undefined, updatedAt: new Date().toISOString() }),
       writeJsonAtomic(staleProjectPath, staleMetadata)
     ]);
 
@@ -382,38 +239,46 @@ test("startup recovery repairs missing Run state and stale Task projection, then
     const staleRun = await fetch(`${running.baseUrl}/api/v1/projects/${second.project.projectId}/tasks/${staleTask.taskId}/runs/${staleRunId}`).then((response) => response.json());
     assert.equal(staleRun.state.status, "failed");
     assert.match(staleRun.state.error, /RUNNER_RESTARTED/);
-    assert.deepEqual(JSON.parse(await readFile(staleRunStatePath, "utf8")), staleRun.state);
+    const recoveredStaleCheckpoint = JSON.parse(await readFile(staleRunStatePath, "utf8"));
+    assert.equal(recoveredStaleCheckpoint.runId, staleRun.runId);
+    assert.equal(recoveredStaleCheckpoint.status, "failed");
+    assert.match(recoveredStaleCheckpoint.events.findLast((event) => event.type === "run.failing").data.code, /RUNNER_RESTARTED/);
 
-    const missingRetry = await retryTask(running.baseUrl, first.project.projectId, first.task.taskId, "missing-state-retry");
-    assert.notEqual(missingRetry.currentRunId, missingRunId);
+    const missingRetryResponse = await fetch(`${running.baseUrl}/api/v1/projects/${first.project.projectId}/tasks/${first.task.taskId}/retry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "sandbox", idempotencyKey: "missing-state-retry" })
+    });
+    assert.equal(missingRetryResponse.status, 400);
+    assert.match((await missingRetryResponse.json()).error, /TEAM_IR_V2_REQUIRED|RUN_NOT_FOUND/);
     const staleRetry = await retryTask(running.baseUrl, second.project.projectId, second.task.taskId, "stale-projection-retry");
     assert.notEqual(staleRetry.currentRunId, staleRunId);
-    const missingAfterRetry = await waitForCompletedTask(running.baseUrl, first.project.projectId, first.task.taskId);
+    const missingAfterRecovery = await fetch(`${running.baseUrl}/api/v1/projects/${first.project.projectId}/tasks/${first.task.taskId}`).then((response) => response.json());
+    assert.equal(missingAfterRecovery.status, "failed");
     const staleAfterRetry = await waitForCompletedTask(running.baseUrl, second.project.projectId, second.task.taskId);
     await Promise.all([
-      waitForPersistedTaskStatus(first.project, first.task.taskId, "completed"),
+      waitForPersistedTaskStatus(first.project, first.task.taskId, "failed"),
       waitForPersistedTaskStatus(second.project, second.task.taskId, "completed")
     ]);
-    assert.deepEqual(missingAfterRetry.runIds, [missingRunId, missingAfterRetry.currentRunId]);
+    assert.equal(missingAfterRecovery.currentRunId, missingRunId);
+    assert.deepEqual(missingAfterRecovery.runIds, [missingRunId]);
     assert.deepEqual(staleAfterRetry.runIds, [staleRunId, staleAfterRetry.currentRunId]);
 
     const missingMetadataAfterRetry = await readFile(missingProjectPath, "utf8");
     const staleMetadataAfterRetry = await readFile(staleProjectPath, "utf8");
-    const missingRunAfterRetry = await readFile(join(first.project.workdir, ".ogs", "runs", missingAfterRetry.currentRunId, "control", "state.json"), "utf8");
-    const staleRunAfterRetry = await readFile(join(second.project.workdir, ".ogs", "runs", staleAfterRetry.currentRunId, "control", "state.json"), "utf8");
+    const staleRunAfterRetry = await readFile(join(second.project.workdir, ".ogs", "runs", staleAfterRetry.currentRunId, "team-ir-v2-state", `${staleAfterRetry.currentRunId}.json`), "utf8");
     await stopServer(running.server);
     running = await spawnServer(projectsRoot);
     assert.equal(await readFile(missingProjectPath, "utf8"), missingMetadataAfterRetry);
     assert.equal(await readFile(staleProjectPath, "utf8"), staleMetadataAfterRetry);
-    assert.equal(await readFile(join(first.project.workdir, ".ogs", "runs", missingAfterRetry.currentRunId, "control", "state.json"), "utf8"), missingRunAfterRetry);
-    assert.equal(await readFile(join(second.project.workdir, ".ogs", "runs", staleAfterRetry.currentRunId, "control", "state.json"), "utf8"), staleRunAfterRetry);
+    assert.equal(await readFile(join(second.project.workdir, ".ogs", "runs", staleAfterRetry.currentRunId, "team-ir-v2-state", `${staleAfterRetry.currentRunId}.json`), "utf8"), staleRunAfterRetry);
     recordRecoveryEvidence("missing Run state and stale Task projection", {
       missingProjectId: first.project.projectId,
       missingTaskId: first.task.taskId,
       missingRunId,
       missingTaskStateAfterRecovery: missingTask.status,
       missingRunApiStatus: missingRunResponse.status,
-      missingRetryRunId: missingAfterRetry.currentRunId,
+      missingRetryRejected: true,
       staleProjectId: second.project.projectId,
       staleTaskId: second.task.taskId,
       staleRunId,
@@ -446,7 +311,7 @@ test("process termination during a live Run is recovered from durable state, que
     const runId = marker.runId;
     assert.equal(marker.status, "running");
 
-    const runStatePath = join(project.workdir, ".ogs", "runs", runId, "control", "state.json");
+    const runStatePath = join(project.workdir, ".ogs", "runs", runId, "team-ir-v2-state", `${runId}.json`);
     const projectPath = join(project.workdir, ".site", "project.json");
     const activeRunStateText = await readFile(runStatePath, "utf8");
     const activeRunState = JSON.parse(activeRunStateText);
@@ -482,7 +347,6 @@ test("process termination during a live Run is recovered from durable state, que
     running.server.kill("SIGKILL");
     await once(running.server, "exit");
     running = undefined;
-    await new Promise((resolveWait) => setTimeout(resolveWait, 31000));
 
     running = await spawnServer(projectsRoot);
     const recoveredTaskResponse = await fetchAfterRestart(taskUrl.replace(/http:\/\/127\.0\.0\.1:\d+/, running.baseUrl));
@@ -513,7 +377,10 @@ test("process termination during a live Run is recovered from durable state, que
     assert.equal(recoveredEvents.taskId, task.taskId);
     assert.equal(recoveredEvents.runId, runId);
     const recoveredRunStateText = await readFile(runStatePath, "utf8");
-    assert.deepEqual(JSON.parse(recoveredRunStateText), failedRun.state);
+    const recoveredCheckpoint = JSON.parse(recoveredRunStateText);
+    assert.equal(recoveredCheckpoint.runId, runId);
+    assert.equal(recoveredCheckpoint.status, "failed");
+    assert.match(recoveredCheckpoint.events.findLast((event) => event.type === "run.failing").data.code, /RUNNER_RESTARTED/);
 
     const retryReservation = await retryTask(running.baseUrl, project.projectId, task.taskId, "live-process-recovery-retry");
     assert.notEqual(retryReservation.currentRunId, runId);
@@ -524,7 +391,7 @@ test("process termination during a live Run is recovered from durable state, que
     assert.deepEqual(oldRunAfterRetry.state, failedRun.state);
     const projectAfterRetry = await readFile(projectPath, "utf8");
     const oldRunAfterRetryText = await readFile(runStatePath, "utf8");
-    const newRunStatePath = join(projectsRoot, project.projectId, ".ogs", "runs", completedTask.currentRunId, "control", "state.json");
+    const newRunStatePath = join(projectsRoot, project.projectId, ".ogs", "runs", completedTask.currentRunId, "team-ir-v2-state", `${completedTask.currentRunId}.json`);
     const newRunAfterRetryText = await readFile(newRunStatePath, "utf8");
 
     await stopServer(running.server);

@@ -1,6 +1,9 @@
 export function errorStatus(error) {
   const message = error instanceof Error ? error.message : String(error);
   const code = typeof error?.code === "string" ? error.code : "";
+  if (["ARTIFACT_ACCESS_DENIED", "ARTIFACT_PRINCIPAL_UNAVAILABLE"].includes(code) || /ARTIFACT_ACCESS_DENIED|ARTIFACT_PRINCIPAL_UNAVAILABLE/.test(message)) return 403;
+  if (["ARTIFACT_SLOT_UNKNOWN", "ARTIFACT_MEDIA_TYPE_INCOMPATIBLE", "ARTIFACT_CARDINALITY_UNSUPPORTED", "ARTIFACT_CONTENT_INVALID", "RUN_INPUT_ARTIFACT_REQUIRED"].includes(code)) return 422;
+  if (/TEAM_IR_SNAPSHOT_MISMATCH/.test(message)) return 409;
   if (code === "REVIEW_UNAUTHORIZED") return 403;
   if (code === "REVIEW_NOT_FOUND") return 404;
   if (["REVIEW_CONFLICT", "REVIEW_STALE_TOKEN", "REVIEW_TIMEOUT", "REVIEW_IDEMPOTENCY_CONFLICT"].includes(code)) return 409;

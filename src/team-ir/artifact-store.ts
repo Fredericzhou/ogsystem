@@ -46,6 +46,7 @@ export interface ArtifactStore {
     content: Uint8Array;
     authorizeUpload: () => boolean | Promise<boolean>;
   }): Promise<TeamArtifactReference>;
+  validateRunInputAttachments(args: { team: TeamIrDocument; projectId: string; attachments: Record<string, unknown> }): Promise<Record<string, TeamArtifactReference>>;
   bindRunInputAttachments(args: { team: TeamIrDocument; owner: TeamArtifactOwner; attachments: Record<string, unknown> }): Promise<Record<string, TeamArtifactReference>>;
   validateReference(args: { team: TeamIrDocument; owner: TeamArtifactOwner; kind: "agent-input" | "agent-output" | "run-result"; agentId?: string; portId?: string; slotId: string; reference: unknown }): Promise<TeamArtifactReference>;
   createInvocationResolver(args: { owner: TeamArtifactOwner; allowedArtifacts: readonly TeamArtifactReference[] }): Promise<TeamArtifactResolver>;
@@ -231,20 +232,27 @@ export class TeamArtifactStore implements ArtifactStore {
 
   async bindRunInputAttachments(args: { team: TeamIrDocument; owner: TeamArtifactOwner; attachments: Record<string, unknown> }): Promise<Record<string, TeamArtifactReference>> {
     assertOwner(args.owner);
+    const normalized = await this.validateRunInputAttachments({ team: args.team, projectId: args.owner.projectId, attachments: args.attachments });
+    this.runInputGrants.set(`${args.owner.projectId}:${args.owner.runId}`, new Set(Object.values(normalized).map((item) => item.artifactId)));
+    await this.args.backend.bindRunInput(args.owner, Object.values(normalized).map((item) => item.artifactId));
+    return normalized;
+  }
+
+  async validateRunInputAttachments(args: { team: TeamIrDocument; projectId: string; attachments: Record<string, unknown> }): Promise<Record<string, TeamArtifactReference>> {
+    assertProjectId(args.projectId);
     validateRequiredSlots(args.team, args.attachments);
     const normalized: Record<string, TeamArtifactReference> = {};
     for (const [slotId, value] of Object.entries(args.attachments)) {
       const slot = getSlot(args.team, "run-input", undefined, undefined, slotId);
+      if (slot.cardinality !== "single") throw new TeamArtifactError("ARTIFACT_CARDINALITY_UNSUPPORTED", "Project Task inputs currently support only single Artifact slots.");
       const ref = reference(value);
       const metadata = (await this.args.backend.get(ref.artifactId))?.metadata;
-      if (!metadata || metadata.projectId !== args.owner.projectId || metadata.kind !== "run-input" || metadata.slotId !== slotId || metadata.mediaType !== ref.mediaType) {
+      if (!metadata || metadata.projectId !== args.projectId || metadata.kind !== "run-input" || metadata.slotId !== slotId || metadata.mediaType !== ref.mediaType) {
         throw new TeamArtifactError("ARTIFACT_ACCESS_DENIED", "Run input Artifact is not registered for this Project and slot.");
       }
       assertAcceptedMediaType(metadata.mediaType, slot.acceptedMediaTypes);
       normalized[slotId] = { artifactId: metadata.artifactId, mediaType: metadata.mediaType };
     }
-    this.runInputGrants.set(`${args.owner.projectId}:${args.owner.runId}`, new Set(Object.values(normalized).map((item) => item.artifactId)));
-    await this.args.backend.bindRunInput(args.owner, Object.values(normalized).map((item) => item.artifactId));
     return normalized;
   }
 

@@ -4,7 +4,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileRunRecoveryStore } from "../infrastructure/file-run-recovery-store.mjs";
-import { saveProjectRunState } from "../../../dist/runtime/project-run-state.js";
+import { FileTeamRunStore } from "../../../dist/team-ir/index.js";
 
 async function withTempDirectory(action) {
   const root = await mkdtemp(join(tmpdir(), "ogs-run-recovery-store-"));
@@ -19,13 +19,20 @@ async function createProjectRun(root, projectId = "project-1", runId = "run-1") 
   const projectRoot = join(root, projectId);
   const runDir = join(projectRoot, ".ogs", "runs", runId);
   await mkdir(join(projectRoot, ".site"), { recursive: true });
-  await mkdir(join(runDir, "control"), { recursive: true });
+  const stateDirectory = join(runDir, "team-ir-v2-state");
+  await mkdir(stateDirectory, { recursive: true });
   await writeFile(join(projectRoot, ".site", "project.json"), JSON.stringify({ projectType: "collaboration", taskRecords: [] }), "utf8");
   await writeFile(join(runDir, "run-owner.json"), JSON.stringify({
     version: 1, runKind: "project_task", projectId, taskId: "task-1", taskNumber: 1,
     attemptNumber: 1, teamVersionId: "team-1", runId
   }), "utf8");
-  await saveProjectRunState(runDir, { status: "running", taskReservation: { kind: "task-attempt", projectId, taskId: "task-1", teamVersionId: "team-1", runId }, nodes: {}, attempts: [], reviews: [] });
+  await new FileTeamRunStore(stateDirectory).create({
+    runId, projectId, revision: 0, status: "running", compiledPlanDigest: "b".repeat(64),
+    createdAt: Date.now(), updatedAt: Date.now(),
+    runInput: { task: "Recovery fixture", input: {}, preferences: {}, attachments: {} },
+    activeExecutionBudgetMs: 60000, activeExecutionMs: 10,
+    loopStates: {}, invocations: {}, events: []
+  });
   return { projectRoot, runDir };
 }
 
@@ -99,8 +106,8 @@ test("recovery store rejects linked state and refuses to delete linked Run direc
     const { runDir } = await createProjectRun(root);
     const store = createFileRunRecoveryStore({ projectsRoot: root });
     const outsideState = join(root, "outside-state.json");
-    await writeFile(outsideState, JSON.stringify({ status: "running" }), "utf8");
-    const statePath = join(runDir, "control", "state.json");
+    await writeFile(outsideState, JSON.stringify({ runId: "run-1", revision: 0, status: "running", createdAt: Date.now(), updatedAt: Date.now() }), "utf8");
+    const statePath = join(runDir, "team-ir-v2-state", "run-1.json");
     await rm(statePath);
     if (!await linkOrSkip(t, outsideState, statePath, "file")) return;
     await assert.rejects(store.readRunState("project-1", "run-1"), /RUN_EVIDENCE_LINK_NOT_ALLOWED/);
@@ -108,8 +115,8 @@ test("recovery store rejects linked state and refuses to delete linked Run direc
     await rm(statePath);
 
     const outsideRun = join(root, "outside-run");
-    await mkdir(join(outsideRun, "control"), { recursive: true });
-    await writeFile(join(outsideRun, "control", "state.json"), JSON.stringify({ status: "running" }));
+    await mkdir(join(outsideRun, "team-ir-v2-state"), { recursive: true });
+    await writeFile(join(outsideRun, "team-ir-v2-state", "run-1.json"), JSON.stringify({ runId: "run-1", revision: 0, status: "running", createdAt: Date.now(), updatedAt: Date.now() }));
     await writeFile(join(outsideRun, "run-owner.json"), JSON.stringify({
       version: 1, runKind: "project_task", projectId: "project-1", taskId: "task-1", taskNumber: 1,
       attemptNumber: 1, teamVersionId: "team-1", runId: "run-1"
@@ -117,6 +124,6 @@ test("recovery store rejects linked state and refuses to delete linked Run direc
     await rm(runDir, { recursive: true });
     if (!await linkOrSkip(t, outsideRun, runDir, process.platform === "win32" ? "junction" : "dir")) return;
     await assert.rejects(store.removeRunDirectory("project-1", "run-1"), /RUN_EVIDENCE_LINK_NOT_ALLOWED/);
-    assert.equal(JSON.parse(await readFile(join(outsideRun, "control", "state.json"), "utf8")).status, "running");
+    assert.equal(JSON.parse(await readFile(join(outsideRun, "team-ir-v2-state", "run-1.json"), "utf8")).status, "running");
   });
 });

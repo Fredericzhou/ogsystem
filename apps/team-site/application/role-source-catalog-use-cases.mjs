@@ -1,6 +1,6 @@
 const TEAM_ROLE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-export function createRoleSourceCatalogUseCases({ store, adapters = {}, copyRoleSourceToDraft, runRoleTrial }) {
+export function createRoleSourceCatalogUseCases({ store, adapters = {}, copyRoleSourceToDraft }) {
   if (!store) throw new TypeError("Role source catalog use cases require a catalog store.");
   return Object.freeze({
     listRoleSources: () => store.listSources(),
@@ -29,11 +29,6 @@ export function createRoleSourceCatalogUseCases({ store, adapters = {}, copyRole
         ...(Array.isArray(payload.allowedTools) ? { allowedTools: payload.allowedTools } : {}),
         ...(payload.identityConfirmed === true ? { identityConfirmed: true } : {})
       });
-    },
-    async trialRoleSourceRole(payload) {
-      if (typeof runRoleTrial !== "function") throw new Error("ROLE_TRIAL_UNAVAILABLE");
-      const converted = await this.convertRoleSourceRole({ ...payload, events: ["ROLE_TRIAL_COMPLETE"], allowedTools: [], identityConfirmed: true });
-      return runRoleTrial({ converted, task: payload.task, input: payload.input, userPreferences: payload.userPreferences });
     },
     async copyRoleSourceRoleToDraft(payload) {
       if (typeof copyRoleSourceToDraft !== "function") throw new Error("ROLE_SOURCE_COPY_UNAVAILABLE");

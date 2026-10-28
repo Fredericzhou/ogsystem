@@ -5,7 +5,6 @@ import { join } from "node:path";
 import test from "node:test";
 import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
 import { withCollaborationProjectUseCases } from "./collaboration-project-test-helpers.mjs";
-import { createProjectPackageOperations } from "./package-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 
 async function waitForTerminal(store, projectId, runId) {
@@ -20,7 +19,7 @@ async function waitForTerminal(store, projectId, runId) {
   throw new Error("Run did not reach a terminal state in time.");
 }
 
-test("collaboration project creation, batch materials, export, and async run reservation", async () => {
+test("collaboration project creation, batch materials, and asynchronous Task execution", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-contract-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const repository = await import(`../infrastructure/file-project-store.mjs?contract-test=${Date.now()}`);
@@ -48,19 +47,12 @@ test("collaboration project creation, batch materials, export, and async run res
     assert.deepEqual(materials.map((item) => item.filename), ["brief/notes.md", "data.json"]);
     assert.ok(materials.every((item) => item.path.startsWith("workspace/files/")));
 
-    const bundle = await createProjectPackageOperations(store).exportProjectBundle(project.projectId);
-    assert.equal(bundle.mode, "project-v2");
-    assert.equal(bundle.project.materials.length, 2);
-    assert.equal(typeof bundle.project.projectDefinitionDigest, "string");
-    assert.equal(bundle.packageDigest.length, 64);
-    assert.equal(bundle.project.projectDefinitionDigest, (await store.getProject(project.projectId)).projectDefinitionDigest);
-
     const task = await store.createProjectTask(project.projectId, {
       input: "Summarize the brief.",
       teamVersionId: team.projectId,
       idempotencyKey: "contract-run"
     });
-    const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "dry-run" });
+    const reserved = await store.startProjectTask(project.projectId, task.taskId, { mode: "sandbox" });
     assert.ok(["planning", "running", "completed"].includes(reserved.status));
     assert.ok(reserved.currentRunId);
     const observed = await store.getProjectRun(project.projectId, task.taskId, reserved.currentRunId);

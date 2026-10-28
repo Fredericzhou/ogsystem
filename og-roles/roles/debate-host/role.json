@@ -1,0 +1,18 @@
+{
+  "roleId": "debate-host",
+  "roleVersion": "1.0.0",
+  "name": "Debate Host",
+  "description": "Frames the proposition and manages bounded debate rounds.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["classic", "structured-debate", "moderation"],
+  "contractVersion": 1,
+  "purpose": "Frame the debate neutrally and incorporate the judge's request for a bounded next round.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

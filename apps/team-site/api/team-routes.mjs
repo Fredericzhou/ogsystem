@@ -1,4 +1,9 @@
 export async function handleTeamRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
+  if (/^\/api\/v1\/team-versions\/[a-z0-9-]+\/(?:design(?:\/.*)?|graph|chat|release-baselines(?:\/.*)?)$/.test(url.pathname)) {
+    sendJson(response, 409, { error: "TEAM_IR_V2_REQUIRED: Team definitions are authored through the native Team IR v2 API." });
+    return true;
+  }
+
   const teamIrMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir(?:\/(validate))?$/);
   if (teamIrMatch && request.method === "GET" && !teamIrMatch[2]) {
     try {
@@ -39,85 +44,12 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const batchCancelMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
-  if (batchCancelMatch && request.method === "POST") {
-    try {
-      sendJson(response, 200, { batch: await useCases.cancelReleaseBaselineBatch(batchCancelMatch[1], batchCancelMatch[2]) });
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to cancel release baseline batch." });
-    }
-    return true;
-  }
-  const batchStatusMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/latest$/);
-  if (batchStatusMatch && request.method === "GET") {
-    try {
-      sendJson(response, 200, await useCases.getReleaseBaselineBatchStatus(batchStatusMatch[1]));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read release baseline batch." });
-    }
-    return true;
-  }
-  const batchStartMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches$/);
-  if (batchStartMatch && request.method === "POST") {
-    try {
-      const body = await readBody(request, 1024 * 1024);
-      sendJson(response, 202, { batch: await useCases.startReleaseBaselineBatch(batchStartMatch[1], body) });
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to start release baseline batch." });
-    }
-    return true;
-  }
-  const comparisonMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/comparison$/);
-  if (comparisonMatch && request.method === "GET") {
-    try {
-      sendJson(response, 200, await useCases.compareReleaseBaselines(comparisonMatch[1], url.searchParams.get("target") || "parent_version"));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to compare release baselines." });
-    }
-    return true;
-  }
   const releaseReadinessMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-readiness$/);
   if (releaseReadinessMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getTeamReleaseReadiness(releaseReadinessMatch[1]));
     } catch (error) {
       sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to verify TeamVersion release readiness." });
-    }
-    return true;
-  }
-  const releaseBaselinesMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines$/);
-  if (releaseBaselinesMatch && request.method === "GET") {
-    try {
-      sendJson(response, 200, await useCases.getReleaseBaselineScenarios(releaseBaselinesMatch[1]));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read release baselines." });
-    }
-    return true;
-  }
-  if (releaseBaselinesMatch && request.method === "PUT") {
-    try {
-      sendJson(response, 200, await useCases.saveReleaseBaselineScenarios(releaseBaselinesMatch[1], await readBody(request, 2 * 1024 * 1024)));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save release baselines." });
-    }
-    return true;
-  }
-  const graphMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/graph$/);
-  if (graphMatch && request.method === "GET") {
-    try {
-      sendJson(response, 200, await useCases.getTeamGraph(graphMatch[1], url.searchParams.get("locale") || "zh-CN"));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to load TeamVersion graph." });
-    }
-    return true;
-  }
-  const chatMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/chat$/);
-  if (chatMatch && request.method === "POST") {
-    try {
-      const upstream = await useCases.chatTeamAssistant(chatMatch[1], await readBody(request, 4 * 1024 * 1024));
-      sendJson(response, upstream.status, upstream.body);
-    } catch (error) {
-      sendJson(response, 502, { error: `TEAM_ASSISTANT_UNAVAILABLE: ${error instanceof Error ? error.message : "Request failed."}` });
     }
     return true;
   }

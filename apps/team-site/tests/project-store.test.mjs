@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { acquireActiveRunLock } from "../../../dist/runtime/project-run-lock.js";
 import { withTaskCreationUseCases } from "./task-creation-test-helpers.mjs";
 import { withProjectUpdateUseCases } from "./project-update-test-helpers.mjs";
-import { createTeamDesignUseCasesForStore } from "./team-design-test-helpers.mjs";
-import { createTeamPackageOperations } from "./package-test-helpers.mjs";
 import { withCollaborationProjectUseCases } from "./collaboration-project-test-helpers.mjs";
 import { withTeamLifecycleUseCases } from "./team-lifecycle-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 import { createFileRunQueryStore } from "../infrastructure/file-run-query-store.mjs";
 
-test("site creates a persistent project and snapshots materials; runs require a Project Task", async () => {
+test("native Team IR v2 is required before material access or direct Project Run", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-projects-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withProjectMaterialUseCases(withProjectUpdateUseCases(await import("../infrastructure/file-project-store.mjs?test=" + Date.now()), projectsRoot));
@@ -39,16 +37,18 @@ test("site creates a persistent project and snapshots materials; runs require a 
     const changed = await store.updateProject(project.projectId, { overview: "A changed objective." });
     assert.equal(changed.teamVersionStatus, "draft");
     await store.confirmProjectTeam(project.projectId);
-    const material = await store.addProjectMaterial(project.projectId, {
-      filename: "brief.md",
-      content: "# Brief\nUse the supplied facts only.\n",
-      contentType: "text/markdown"
-    });
-    assert.equal(material.status, "indexed");
+    await assert.rejects(
+      () => store.addProjectMaterial(project.projectId, {
+        filename: "brief.md",
+        content: "# Brief\nUse the supplied facts only.\n",
+        contentType: "text/markdown"
+      }),
+      /TEAM_IR_V2_REQUIRED/
+    );
 
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Summarize the brief.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
+      /TEAM_IR_V2_REQUIRED/
     );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
@@ -70,7 +70,7 @@ test("classic team use creates a confirmed asset; Studio runs use the Simulation
     assert.equal(frozenVersion.compiledPlanDigest, project.compiledPlanDigest);
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Prepare a concise delivery plan.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
+      /TEAM_IR_V2_REQUIRED/
     );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
@@ -88,7 +88,7 @@ test("legacy TeamVersion cloning into project workspaces is not exposed", async 
   }
 });
 
-test("project readiness is separate from structure confirmation and gates sandbox runs", async () => {
+test("project readiness blocks runs when the native Team IR v2 inspector is unavailable", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-readiness-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withTaskCreationUseCases(await import("../infrastructure/file-project-store.mjs?readiness=" + Date.now()));
@@ -107,32 +107,15 @@ test("project readiness is separate from structure confirmation and gates sandbo
     }).getProjectReadiness(project.projectId);
     assert.equal(readiness.teamVersionStatus, "released");
     assert.equal(readiness.canDryRun, false);
-    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_ROLE_PACKAGE_INVALID"));
-    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_CATALOG_INVALID"));
+    assert.ok(readiness.blockers.some((issue) => issue.code === "TEAM_IR_V2_STORE_UNAVAILABLE"));
     assert.equal(Object.hasOwn(readiness, "workdir"), false);
     const issueMessages = readiness.blockers.map((issue) => issue.message).join("\n");
     assert.equal(issueMessages.includes(project.workdir), false);
-    assert.match(issueMessages, /Check role\.json/);
-    assert.match(issueMessages, /\.ogs\/model-catalog\.json/);
+    assert.match(issueMessages, /Team IR v2 storage is not configured/);
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Sandbox check.", mode: "sandbox" }),
-      /PROJECT_RUN_OWNER_INVALID/
+      /TEAM_IR_V2_REQUIRED/
     );
-    const collaboration = await store.createCollaborationProject({
-      name: "Blocked collaboration project",
-      overview: "Readiness must block before a Task reserves a Run.",
-      teamVersionIds: [project.teamVersionId]
-    });
-    const task = await store.createProjectTask(collaboration.projectId, {
-      input: "Run only after readiness passes.",
-      teamVersionId: project.teamVersionId,
-      idempotencyKey: "readiness-before-reserve"
-    });
-    await assert.rejects(() => store.startProjectTask(collaboration.projectId, task.taskId, { mode: "sandbox" }), /PROJECT_NOT_READY/);
-    const blockedTask = await store.getProjectTask(collaboration.projectId, task.taskId);
-    assert.equal(blockedTask.status, "queued");
-    assert.equal(blockedTask.currentRunId, null);
-    assert.deepEqual(blockedTask.runIds, []);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }
@@ -150,88 +133,14 @@ test("classic team templates can be confirmed and are not executed outside Studi
     assert.equal(confirmed.teamVersionStatus, "released");
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Run the copied classic team.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
+      /TEAM_IR_V2_REQUIRED/
     );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }
 });
 
-test("Team package round-trip does not create a Run outside a Project Task", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-project-roundtrip-"));
-  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = withProjectMaterialUseCases(withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?roundtrip=" + Date.now())));
-  const packages = createTeamPackageOperations(store);
-  try {
-    const project = await store.createProject({ name: "Roundtrip Team", overview: "Produce a concise brief.", templateId: "empty" });
-    await store.confirmProjectTeam(project.projectId);
-    await store.addProjectMaterial(project.projectId, { filename: "brief.md", content: "facts", contentType: "text/markdown" });
-    await assert.rejects(
-      () => store.startProjectRun(project.projectId, { prompt: "Summarize facts.", mode: "dry-run", idempotencyKey: "same-request" }),
-      /PROJECT_RUN_OWNER_INVALID/
-    );
-    const bundle = await packages.exportTeamPackage(project.projectId);
-    assert.equal(bundle.mode, "team-v2");
-    const { packageDigest: _roundtripDigest, ...roundtripWithoutDigest } = bundle;
-    const imported = await packages.importTeamPackage({ ...roundtripWithoutDigest, team: { ...bundle.team, project: { ...bundle.team.project, name: "Roundtrip Team Imported" } } });
-    assert.equal(imported.teamVersionStatus, "draft");
-    assert.equal(imported.source, "imported");
-    await assert.rejects(() => store.startProjectRun(imported.projectId, { prompt: "blocked" }), /PROJECT_RUN_OWNER_INVALID/);
-    await store.confirmProjectTeam(imported.projectId);
-    await assert.rejects(
-      () => store.startProjectRun(imported.projectId, { prompt: "Run the imported team.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
-    );
-  } finally {
-    await rm(projectsRoot, { recursive: true, force: true });
-  }
-});
-
-test("project bundles carry executable role and contract assets without importing the old project identity", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-package-assets-"));
-  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = withProjectMaterialUseCases(withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?package-assets=" + Date.now())));
-  const packages = createTeamPackageOperations(store);
-  try {
-    const project = await store.createProject({ name: "Executable Team", overview: "Package executable assets.", templateId: "empty" });
-    const roleDir = join(project.workdir, "og-roles", "roles", "package-role");
-    await mkdir(roleDir, { recursive: true });
-    await writeFile(join(roleDir, "role.json"), JSON.stringify({ roleId: "package-role", roleVersion: "1.0.0" }), "utf8");
-    await writeFile(join(roleDir, "agent.md"), "Role agent instructions.", "utf8");
-    await writeFile(join(roleDir, "prompt.md"), "Discuss token budgets.", "utf8");
-    await writeFile(join(roleDir, "output.schema.json"), JSON.stringify({ type: "object" }), "utf8");
-    await mkdir(join(project.workdir, ".ogs", "contracts"), { recursive: true });
-    await writeFile(join(project.workdir, ".ogs", "contracts", "handoff.json"), JSON.stringify({ version: 1, contracts: [] }), "utf8");
-    await mkdir(join(project.workdir, ".ogs", "systems"), { recursive: true });
-    await mkdir(join(project.workdir, ".ogs", "subsystems"), { recursive: true });
-    await writeFile(join(project.workdir, ".ogs", "semantics.yaml"), "version: 1\nsystemId: package\nsystemVersion: 1.0.0\n", "utf8");
-    await writeFile(join(project.workdir, ".ogs", "models.json"), JSON.stringify({ version: 1, models: [] }), "utf8");
-    await writeFile(join(project.workdir, ".ogs", "systems", "nested.mmd"), "%% system.id=nested\n%% system.version=1.0.0\n", "utf8");
-    await writeFile(join(project.workdir, ".ogs", "subsystems", "child.json"), JSON.stringify({ version: 1 }), "utf8");
-
-    const bundle = await packages.exportTeamPackage(project.projectId);
-    assert.ok(bundle.team.executableFiles.some((file) => file.path.endsWith("package-role/prompt.md")));
-    assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/contracts/handoff.json"));
-    assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/semantics.yaml"));
-    assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/models.json"));
-    assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/systems/nested.mmd"));
-    assert.ok(bundle.team.executableFiles.some((file) => file.path === ".ogs/subsystems/child.json"));
-    const { packageDigest: _assetsDigest, ...assetsWithoutDigest } = bundle;
-    const imported = await packages.importTeamPackage({ ...assetsWithoutDigest, team: { ...bundle.team, project: { ...bundle.team.project, name: "Executable Team Imported" } } });
-    assert.notEqual(imported.projectId, project.projectId);
-    assert.equal(JSON.parse(await readFile(join(imported.workdir, ".ogs", "project.json"), "utf8")).projectId, imported.ogsProjectId);
-    assert.equal(await readFile(join(imported.workdir, "og-roles", "roles", "package-role", "prompt.md"), "utf8"), "Discuss token budgets.");
-    assert.equal(await readFile(join(imported.workdir, ".ogs", "contracts", "handoff.json"), "utf8"), JSON.stringify({ version: 1, contracts: [] }));
-    assert.equal(await readFile(join(imported.workdir, ".ogs", "semantics.yaml"), "utf8"), "version: 1\nsystemId: package\nsystemVersion: 1.0.0\n");
-    assert.equal(await readFile(join(imported.workdir, ".ogs", "systems", "nested.mmd"), "utf8"), "%% system.id=nested\n%% system.version=1.0.0\n");
-    assert.equal(JSON.parse(await readFile(join(imported.workdir, ".site", "project.json"), "utf8")).teamVersionStatus, "draft");
-    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(imported.workdir, ".site", "project.json"), "utf8")), "projectStatus"), false);
-  } finally {
-    await rm(projectsRoot, { recursive: true, force: true });
-  }
-});
-
-test("legacy direct Run control is rejected without a Project Task owner", async () => {
+test("direct Run control is rejected without a Project Task owner", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-control-intent-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?control-intent=" + Date.now()));
@@ -240,84 +149,7 @@ test("legacy direct Run control is rejected without a Project Task owner", async
     await store.confirmProjectTeam(project.projectId);
     await assert.rejects(
       () => store.startProjectRun(project.projectId, { prompt: "Run the control test.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
-    );
-  } finally {
-    await rm(projectsRoot, { recursive: true, force: true });
-  }
-});
-
-test("project asset digest detects role package changes and credential validation is field based", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-digest-import-"));
-  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?digest-import=" + Date.now()));
-  const packages = createTeamPackageOperations(store);
-    const { computeProjectAssetDigest } = await import("../../../dist/runtime/project-asset-digest.js?digest-import=" + Date.now());
-  try {
-    const project = await store.createProject({ name: "Digest Team", overview: "Check package assets.", templateId: "empty" });
-    const confirmed = await store.confirmProjectTeam(project.projectId);
-    const digestBeforeSemanticEdit = await computeProjectAssetDigest(project.workdir);
-    const modelCatalogPath = join(project.workdir, ".ogs", "model-catalog.json");
-    const modelCatalog = JSON.parse(await readFile(modelCatalogPath, "utf8"));
-    await writeFile(modelCatalogPath, JSON.stringify({ ...modelCatalog, generatedAt: "2099-01-01T00:00:00.000Z" }, null, 2), "utf8");
-    assert.equal(await computeProjectAssetDigest(project.workdir), digestBeforeSemanticEdit,
-      "refreshing the environment model catalog must not invalidate confirmed team assets");
-    await writeFile(join(project.workdir, ".ogs", "semantics.yaml"), "version: 1\nsystem:\n  systemId: digest-team\n  systemVersion: 1.0.0\n", "utf8");
-    assert.notEqual(await computeProjectAssetDigest(project.workdir), digestBeforeSemanticEdit);
-    await mkdir(join(project.workdir, "og-roles", "roles", "digest-role"), { recursive: true });
-    await writeFile(join(project.workdir, "og-roles", "roles", "digest-role", "prompt.md"), "Discuss token budgets and password policy.", "utf8");
-    await assert.rejects(
-      () => store.startProjectRun(project.projectId, { prompt: "Should be blocked.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
-    );
-    await assert.rejects(
-      () => store.startProjectRun(project.projectId, { prompt: "Semantic asset changed.", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
-    );
-    const bundle = {
-      mode: "team-v2",
-      team: {
-        systemSource: await readFile(join(project.workdir, "system.mmd"), "utf8"),
-        project: { name: "Imported", overview: "Discuss token budgets and password policy." }
-      }
-    };
-    const imported = await packages.importTeamPackage(bundle);
-    assert.equal(imported.teamVersionStatus, "draft");
-    await assert.rejects(
-      () => packages.importTeamPackage({ ...bundle, team: { ...bundle.team, project: { apiKey: "secret-value" } } }),
-      /credential field is not accepted/
-    );
-    assert.equal(typeof confirmed.projectDigest, "string");
-  } finally {
-    await rm(projectsRoot, { recursive: true, force: true });
-  }
-});
-
-test("site design editing invalidates confirmation and run control rejects terminal resume", async () => {
-  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-design-control-"));
-  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
-  const store = withTeamLifecycleUseCases(await import("../infrastructure/file-project-store.mjs?design-control=" + Date.now()));
-  try {
-    const project = await store.createProject({ name: "Editable Team", overview: "Edit structure", templateId: "minimal" });
-    const designUseCases = createTeamDesignUseCasesForStore(store, projectsRoot);
-    const design = await designUseCases.getTeamDesign(project.projectId);
-    assert.equal(design.authoring.version, 1);
-    const saved = await designUseCases.saveTeamDesign(project.projectId, {
-      systemSource: design.systemSource,
-      expectedTeamVersionDigest: design.teamVersionDigest
-    });
-    assert.equal(saved.teamVersionStatus, "draft");
-    await assert.rejects(
-      () => designUseCases.saveTeamDesign(project.projectId, {
-        systemSource: design.systemSource,
-        expectedTeamVersionDigest: "stale-team-digest"
-      }),
-      /TEAM_VERSION_DIGEST_CONFLICT/
-    );
-    await store.confirmProjectTeam(project.projectId);
-    await assert.rejects(
-      () => store.startProjectRun(project.projectId, { prompt: "check terminal control", mode: "dry-run" }),
-      /PROJECT_RUN_OWNER_INVALID/
+      /TEAM_IR_V2_REQUIRED/
     );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
@@ -335,11 +167,11 @@ test("Project Run resume requires a persisted Task owner before validating a sna
     await assert.rejects(
       () => store.startProjectRun(project.projectId, {
         prompt: "Validate this run.",
-        mode: "dry-run",
+        mode: "sandbox",
         resumeRunId: "unowned-run",
         resumeRunDir: outsideRoot
       }),
-      /PROJECT_RUN_OWNER_INVALID/
+      /TEAM_IR_V2_REQUIRED/
     );
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
@@ -359,10 +191,10 @@ test("v2 Collaboration Tasks execute their bound TeamVersion through the determi
     const project = await store.createCollaborationProject({ name: "Task Control Project", workspaceKey: "task-control", teamVersionIds: [teamA.projectId] });
     const first = await store.createProjectTask(project.projectId, { input: "Analyze input", teamVersionId: teamA.projectId, idempotencyKey: "task-a" });
     const second = await store.createProjectTask(project.projectId, { input: "Review output", teamVersionId: teamA.projectId, idempotencyKey: "task-b" });
-    const firstStarted = await store.startProjectTask(project.projectId, first.taskId, { mode: "dry-run" });
+    const firstStarted = await store.startProjectTask(project.projectId, first.taskId, { mode: "sandbox" });
     assert.equal(firstStarted.status, "planning");
     await store.waitForActiveTaskWorker(project.projectId, first.taskId);
-    const secondStarted = await store.startProjectTask(project.projectId, second.taskId, { mode: "dry-run" });
+    const secondStarted = await store.startProjectTask(project.projectId, second.taskId, { mode: "sandbox" });
     assert.equal(secondStarted.status, "planning");
     await store.waitForActiveTaskWorker(project.projectId, second.taskId);
     const firstCompleted = await store.getProjectTask(project.projectId, first.taskId);
@@ -385,11 +217,8 @@ test("v2 Collaboration Tasks execute their bound TeamVersion through the determi
     assert.equal(running.status, "running");
     const blocked = await store.createProjectTask(project.projectId, { input: "Must wait", teamVersionId: teamA.projectId, idempotencyKey: "task-blocked" });
     await assert.rejects(() => store.controlProjectTask(project.projectId, blocked.taskId, "start"), /PROJECT_TASK_CONCURRENCY_LIMIT/);
-    assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "pause")).status, "paused");
-    await assert.rejects(
-      () => store.reviewProjectTask(project.projectId, manual.taskId, { decision: "approve", comment: "继续处理" }),
-      /TASK_REVIEW_NOT_ALLOWED/
-    );
+    await assert.rejects(() => store.controlProjectTask(project.projectId, manual.taskId, "pause"), /TASK_CONTROL_INVALID/);
+    assert.equal(store.reviewProjectTask, undefined);
     assert.equal((await store.controlProjectTask(project.projectId, manual.taskId, "cancel")).status, "cancelled");
     assert.equal((await store.controlProjectTask(project.projectId, blocked.taskId, "start")).status, "running");
   } finally {
@@ -426,11 +255,8 @@ test("task controls enforce one active task, durable idempotency, and terminal b
     const runningTask = starts.find((result) => result.status === "fulfilled").value;
     const waitingTask = runningTask.taskId === first.taskId ? second : first;
     const waitingKey = runningTask.taskId === first.taskId ? "boundary-2" : "boundary-1";
-    assert.equal((await store.controlProjectTask(project.projectId, runningTask.taskId, "pause")).status, "paused");
-    await assert.rejects(
-      () => store.reviewProjectTask(project.projectId, runningTask.taskId, { decision: "approve", comment: "人工确认后继续" }),
-      /TASK_REVIEW_NOT_ALLOWED/
-    );
+    await assert.rejects(() => store.controlProjectTask(project.projectId, runningTask.taskId, "pause"), /TASK_CONTROL_INVALID/);
+    assert.equal(store.reviewProjectTask, undefined);
     await store.controlProjectTask(project.projectId, runningTask.taskId, "cancel");
     assert.equal((await store.controlProjectTask(project.projectId, waitingTask.taskId, "start")).status, "running");
     await assert.rejects(() => store.controlProjectTask(project.projectId, runningTask.taskId, "resume"), /TASK_CONTROL_INVALID/);

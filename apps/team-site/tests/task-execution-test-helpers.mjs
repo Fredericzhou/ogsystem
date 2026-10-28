@@ -2,31 +2,22 @@ import { createTaskExecutionUseCases } from "../application/task-execution-use-c
 import { createFileTaskExecutionStore } from "../infrastructure/file-task-execution-store.mjs";
 import { taskWorkers } from "../infrastructure/in-memory-task-workers.mjs";
 import { createTaskExecutionIdentifiers } from "../infrastructure/task-execution-identifiers.mjs";
-import { createRuntimeTaskExecutionReadiness } from "../infrastructure/runtime-task-execution-readiness.mjs";
 import { withProjectRunUseCases } from "./project-run-test-helpers.mjs";
 import { createProjectQueryUseCases } from "../application/project-query-use-cases.mjs";
 import { createProjectCreationUseCases } from "../application/project-creation-use-cases.mjs";
-import { createFileRecentRunStore } from "../infrastructure/file-recent-run-store.mjs";
-import { createV2AwareTaskAttemptStore } from "./v2-task-run-test-adapters.mjs";
+import { createTeamIrTaskAttemptStore } from "../infrastructure/v2-aware-task-attempt-store.mjs";
 import { projectVisualizerStore } from "../infrastructure/project-visualizer-store.mjs";
-import { caseTeamMaterializer } from "../infrastructure/case-team-materializer.mjs";
 import { waitForActiveTaskWorker } from "../infrastructure/in-memory-task-workers.mjs";
-import { createFilePackageStore } from "../infrastructure/file-package-store.mjs";
-import { computeTeamPackageCoreDigest } from "../infrastructure/package-integrity.mjs";
-import { normalizeMaterialPath } from "../domain/material-path.mjs";
 import { createRuntimeTeamIrProjectRunExecutor } from "../infrastructure/runtime-team-ir-project-run-executor.mjs";
 import { classicSoftwareTeamClosure, classicSoftwareTeamIr, classicSoftwareTeamSnapshot, createClassicSoftwareTeamFakeBindings } from "./team-ir-test-runtime.mjs";
 
 const projectCreationComposed = Symbol.for("ogs.team-site.test.project-creation-composed");
 
-export function withTaskExecutionUseCases(repository) {
+export function withTaskExecutionUseCases(repository, { teamIrStore } = {}) {
   const projectsRoot = repository.fileProjectStoreInternals.projectsRoot;
   const projectQueries = createProjectQueryUseCases({
     projectStore: { getProject: repository.getProject },
-    taskAttemptStore: createV2AwareTaskAttemptStore({
-      projectsRoot,
-      legacyStore: createFileRecentRunStore({ projectsRoot })
-    }),
+    taskAttemptStore: createTeamIrTaskAttemptStore({ projectsRoot }),
     waitForActiveTaskWorker,
     workspaceInspector: projectVisualizerStore.inspectWorkspace
   });
@@ -40,7 +31,6 @@ export function withTaskExecutionUseCases(repository) {
       createWorkspace: projectVisualizerStore.createWorkspace,
       inspectWorkspace: projectVisualizerStore.inspectWorkspace
     },
-    caseMaterializer: caseTeamMaterializer,
     projectQuery: { getProject: projectQueries.getProject }
   });
   repository = {
@@ -48,13 +38,7 @@ export function withTaskExecutionUseCases(repository) {
     createProject: projectCreation?.createProject || repository.createProject,
     [projectCreationComposed]: true,
     getProject: projectQueries.getProject,
-    getProjectTask: projectQueries.getProjectTask,
-    filePackageStore: createFilePackageStore({
-      projectStore: repository.fileProjectStoreInternals,
-      visualizer: projectVisualizerStore,
-      packageIntegrity: { computeTeamPackageCoreDigest },
-      normalizeMaterialPath
-    })
+    getProjectTask: projectQueries.getProjectTask
   };
   repository = withProjectRunUseCases(repository);
   const attemptStore = createFileTaskExecutionStore({
@@ -66,7 +50,7 @@ export function withTaskExecutionUseCases(repository) {
   });
   const runtimeTeamIrRunStore = createRuntimeTeamIrProjectRunExecutor({
     teamStore: { getTeamVersion: repository.getProject },
-    teamIrStore: {
+    teamIrStore: teamIrStore || {
       async read() {
         return { teamIR: classicSoftwareTeamIr, semanticDigest: classicSoftwareTeamSnapshot.teamIrSemanticDigest };
       }
@@ -87,9 +71,8 @@ export function withTaskExecutionUseCases(repository) {
       teamStore: { getTeamVersion: repository.getProject },
       attemptStore,
       workerStore: taskWorkers,
-      runStore: { execute: repository.startProjectRun },
       teamIrRunStore,
-      readiness: createRuntimeTaskExecutionReadiness(),
+      readiness: { async inspect() { return { canDryRun: true, blockers: [] }; }, async requireCurrentConfirmation() {} },
       identifiers: createTaskExecutionIdentifiers()
     })
   };
