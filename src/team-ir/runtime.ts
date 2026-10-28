@@ -197,6 +197,7 @@ function retryable(policy: Record<string, unknown>, error: unknown): boolean {
 export class TeamRuntime {
   private readonly activeCancellationSignals = new Map<string, () => void>();
   private readonly failureCancellationRuns = new Map<string, Promise<void>>();
+  private readonly joinTimeoutWaiters = new Map<string, AbortController>();
 
   constructor(private readonly args: { store: TeamRunStore; clock: TeamClock; bindings: Record<string, TeamBinding>; artifactStore?: ArtifactStore; reviewRuntime?: TeamReviewRuntime }) {}
 
@@ -274,6 +275,7 @@ export class TeamRuntime {
       record.terminalIntent = "cancelled";
       event(record, `${runId}:cancel-intent`, "run.cancelling", this.args.clock.now());
     });
+    this.disarmRunJoinTimeouts(runId);
     for (const invocation of Object.values(record.invocations)) {
       if (invocation.status !== "running") continue;
       const binding = this.args.bindings[invocation.bindingId];
@@ -636,6 +638,7 @@ export class TeamRuntime {
     const arrivedHandoffs = new Set(checkpoint?.arrivedHandoffs ?? []);
     const reviewContexts = new Map(Object.entries(checkpoint?.reviewContexts ?? {}));
     const joinRounds = new Map(Object.entries(checkpoint?.joinRounds ?? {}));
+    for (const [roundKey, round] of joinRounds) this.armJoinTimeout(runId, roundKey, round);
     let pending = checkpoint ? [...checkpoint.pending] : selectTeamHandoffs(plan, { kind: "run" }, {}, runInput);
     const visited = new Map(Object.entries(checkpoint?.visited ?? {}));
     const quorumJoin = loops.length === 0 && quorumJoins.length === 1 ? quorumJoins[0] : undefined;
@@ -644,10 +647,56 @@ export class TeamRuntime {
     if (!checkpoint) await this.update(runId, (record) => {
       record.scheduler = { pending: [...pending], sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {}, reviewContexts: {}, joinRounds: {} };
     });
+    const startJoinForPredecessor = async (agentId: string): Promise<void> => {
+      for (const join of joinDefinitions) {
+        if (loops.length > 0 || !isRecord(join.scope) || join.scope.kind !== "run") continue;
+        const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds.map(String) : [];
+        if (!sourceIds.some((id) => {
+          const edge = plan.handoffsById.get(id);
+          return isRecord(edge?.from) && edge.from.kind === "agent" && edge.from.agentId === agentId;
+        })) continue;
+        const joinId = String(join.id);
+        const roundKey = joinId;
+        const targetAgent = plan.team.agents.find((agent) => agent.id === join.agentId) as Record<string, unknown> | undefined;
+        const targetPorts = isRecord(targetAgent?.inputPorts) ? targetAgent.inputPorts : {};
+        const targetPort = isRecord(targetPorts[String(join.inputPort)]) ? targetPorts[String(join.inputPort)] as Record<string, unknown> : {};
+        const requiredFields = isRecord(targetPort.dataSchema) && Array.isArray(targetPort.dataSchema.required) ? targetPort.dataSchema.required as string[] : [];
+        const targetArtifactSlots = isRecord(targetPort.artifactSlots) ? targetPort.artifactSlots as Record<string, Record<string, unknown>> : {};
+        const requiredArtifactSlots = Object.entries(targetArtifactSlots).filter(([, slot]) => slot.required === true).map(([slotId]) => slotId);
+        const requiredSourceIds = sourceIds.filter((id) => {
+          const edge = plan.handoffsById.get(id)!;
+          const map = isRecord(edge.map) ? edge.map : {};
+          const data = isRecord(map.data) ? map.data : {};
+          const artifacts = isRecord(map.artifacts) ? map.artifacts : {};
+          return Object.keys(data).some((field) => requiredFields.includes(field))
+            || Object.keys(artifacts).some((slotId) => requiredArtifactSlots.includes(slotId));
+        });
+        const baseMapping = isRecord(join.baseMapping) ? join.baseMapping : {};
+        let persistedRound!: TeamJoinRound;
+        await this.update(runId, (record) => {
+          const rounds = record.scheduler!.joinRounds ?? (record.scheduler!.joinRounds = {});
+          let round = rounds[roundKey] ?? createTeamJoinRound({
+            joinId, runId, lineage: "run", mode: String(join.mode) as "all_of" | "quorum_of",
+            handoffIds: sourceIds, threshold: typeof join.threshold === "number" ? join.threshold : undefined,
+            timeoutMs: Number(join.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
+            baseMapping: {
+              data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput)) as Record<string, unknown> : {},
+              artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput)) as Record<string, unknown> : {}
+            }
+          });
+          round = applyTeamJoinEvent(round, { type: "predecessor_activated", at: this.args.clock.now() });
+          rounds[roundKey] = structuredClone(round);
+          persistedRound = round;
+        });
+        joinRounds.set(roundKey, persistedRound);
+        this.armJoinTimeout(runId, roundKey, persistedRound);
+      }
+    };
     const executeEdge = async (handoffId: string, source?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, review?: { decision: "approve" | "reject"; feedback?: unknown }, artifactOverride?: Record<string, unknown>): Promise<TeamRunRecord> => {
       const handoff = plan.handoffsById.get(handoffId);
       const target = handoff && isRecord(handoff.to) ? handoff.to : undefined;
       if (!target || target.kind !== "agent" || !loopId || !loopMembers.has(String(target.agentId))) {
+        if (target?.kind === "agent") await startJoinForPredecessor(String(target.agentId));
         return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, { review, artifactOverride });
       }
       const current = (await this.args.store.load(runId))!;
@@ -742,8 +791,8 @@ export class TeamRuntime {
           result = await executeEdge(handoffId, source, undefined, isRecord(handoff.from) ? reviewContexts.get(sourceKey(handoff.from)) : undefined);
         } catch (error) {
           const current = await this.args.store.load(runId);
-          if (current?.status !== "paused_input_required") throw error;
-          result = current;
+          if (current?.status === "paused_input_required" || (current?.status === "failing" && current.terminalIntent === "failed")) result = current;
+          else throw error;
         }
         if (result.status === "paused_input_required") await this.cancelSiblingInvocations(runId, `${runId}:${handoffId}`);
         if (result.status === "failing" && (await this.args.store.load(runId))?.terminalIntent === "failed") {
@@ -789,6 +838,8 @@ export class TeamRuntime {
               await this.update(runId, (record) => {
                 record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [String(quorumJoin!.id)]: structuredClone(round) };
               });
+              if (round.status === "collecting") this.armJoinTimeout(runId, String(quorumJoin!.id), round);
+              else this.disarmJoinTimeout(runId, String(quorumJoin!.id));
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${String(quorumJoin!.id)}`, round.failure?.code ?? "JOIN_FAILED");
               if (round.status === "ready" && round.merged && !quorumTargetInvoked.has(String(quorumJoin!.id))) {
                 quorumTargetInvoked.add(String(quorumJoin!.id));
@@ -808,7 +859,10 @@ export class TeamRuntime {
         return result;
       }));
       const afterInvocations = await this.args.store.load(runId);
-      if (afterInvocations?.status === "paused_input_required") return afterInvocations;
+      if (afterInvocations?.status === "paused_input_required") {
+        this.disarmRunJoinTimeouts(runId);
+        return afterInvocations;
+      }
       const failed = invocations.find((record) => record.status !== "running");
       if (failed) return failed.status === "failing" ? this.settle(runId) : failed;
       for (const handoffId of immediate) {
@@ -881,6 +935,8 @@ export class TeamRuntime {
         await this.update(runId, (record) => {
           record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [roundKey]: structuredClone(round) };
         });
+        if (round.status === "collecting") this.armJoinTimeout(runId, roundKey, round);
+        else this.disarmJoinTimeout(runId, roundKey);
         if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${String(join.id)}`, round.failure?.code ?? "JOIN_FAILED");
         if (round.status !== "ready" || !round.merged) return this.failScheduler(runId, `${runId}:join:${String(join.id)}`, "JOIN_NOT_READY");
         const drivingHandoff = sourceIds[0];
@@ -912,6 +968,7 @@ export class TeamRuntime {
               record.waitingReview = { reviewId, lineage: "run" };
               event(record, `${runId}:review:${reviewId}:waiting`, "run.waiting_human_review", this.args.clock.now(), { reviewId, deadlineAt: review.deadlineAt });
             });
+            this.disarmRunJoinTimeouts(runId);
             return (await this.args.store.load(runId))!;
           }
           if (review.status !== "approved") return this.failScheduler(runId, `${runId}:review:${reviewId}`, review.status === "timed_out" ? "REVIEW_TIMEOUT" : "REVIEW_REJECTED");
@@ -944,6 +1001,8 @@ export class TeamRuntime {
               await this.update(runId, (record) => {
                 record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [String(quorumJoin.id)]: structuredClone(round!) };
               });
+              if (round.status === "collecting") this.armJoinTimeout(runId, String(quorumJoin.id), round);
+              else this.disarmJoinTimeout(runId, String(quorumJoin.id));
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${String(quorumJoin.id)}`, round.failure?.code ?? "JOIN_FAILED");
             }
           }
@@ -1001,11 +1060,13 @@ export class TeamRuntime {
     if (!complete.resultWritten && (plan.team.executionPolicy as Record<string, unknown>).resultMode === "required") {
       return this.failScheduler(runId, `${runId}:scheduler`, "RUN_RESULT_REQUIRED");
     }
-    return this.update(runId, (record) => {
+    const completed = await this.update(runId, (record) => {
       if (record.status !== "running") throw new TeamRunConflictError(`Cannot complete Run in ${record.status}`);
       record.status = "completed";
       event(record, `${runId}:settled:completed`, "run.completed", this.args.clock.now());
     });
+    this.disarmRunJoinTimeouts(runId);
+    return completed;
   }
 
   private async failScheduler(runId: string, invocationId: string, code: string): Promise<TeamRunRecord> {
@@ -1044,6 +1105,52 @@ export class TeamRuntime {
           remoteTaskId: record.pendingInput?.remoteTaskId
         });
       });
+    }
+  }
+
+  private armJoinTimeout(runId: string, roundKey: string, round: TeamJoinRound): void {
+    if (round.status !== "collecting" || round.deadlineAt === undefined) return;
+    const waiterKey = `${runId}:${roundKey}`;
+    if (this.joinTimeoutWaiters.has(waiterKey)) return;
+    const controller = new AbortController();
+    this.joinTimeoutWaiters.set(waiterKey, controller);
+    const remaining = Math.max(0, round.deadlineAt - this.args.clock.now());
+    void this.args.clock.sleep(remaining, controller.signal).then(async () => {
+      if (controller.signal.aborted) return;
+      let timedOut: TeamJoinRound | undefined;
+      await this.update(runId, (record) => {
+        const current = record.scheduler?.joinRounds?.[roundKey];
+        if (!current) return;
+        const next = applyTeamJoinEvent(current, { type: "tick", at: this.args.clock.now() });
+        if (next !== current) {
+          record.scheduler!.joinRounds![roundKey] = structuredClone(next);
+        }
+        timedOut = next;
+      });
+      if (timedOut?.failure?.code !== "JOIN_TIMEOUT") return;
+      await this.fail(runId, `${runId}:join:${roundKey}`, "JOIN_TIMEOUT");
+      await this.cancelActiveInvocationsAfterFailure(runId, `${runId}:join:${roundKey}`);
+      const current = await this.args.store.load(runId);
+      if (current?.status === "failing" && !Object.values(current.invocations).some((invocation) => invocation.status === "running")) {
+        await this.settle(runId);
+      }
+    }).catch(() => undefined).finally(() => {
+      if (this.joinTimeoutWaiters.get(waiterKey) === controller) this.joinTimeoutWaiters.delete(waiterKey);
+    });
+  }
+
+  private disarmJoinTimeout(runId: string, roundKey: string): void {
+    const waiterKey = `${runId}:${roundKey}`;
+    const controller = this.joinTimeoutWaiters.get(waiterKey);
+    if (!controller) return;
+    this.joinTimeoutWaiters.delete(waiterKey);
+    controller.abort();
+  }
+
+  private disarmRunJoinTimeouts(runId: string): void {
+    const prefix = `${runId}:`;
+    for (const waiterKey of this.joinTimeoutWaiters.keys()) {
+      if (waiterKey.startsWith(prefix)) this.disarmJoinTimeout(runId, waiterKey.slice(prefix.length));
     }
   }
 
@@ -1109,7 +1216,7 @@ export class TeamRuntime {
   }
 
   private async fail(runId: string, invocationId: string, code: string, outcomeUnknown = false): Promise<TeamRunRecord> {
-    return this.update(runId, (record) => {
+    const failed = await this.update(runId, (record) => {
       if (record.status === "cancelling" || record.status === "cancelled" || record.status === "paused_input_required") {
         event(record, `${invocationId}:late-failure:${code}`, "invocation.late_failure_ignored", this.args.clock.now(), { code });
         return;
@@ -1120,10 +1227,12 @@ export class TeamRuntime {
       if (invocation) { invocation.status = "failed"; invocation.error = code; invocation.outcomeUnknown = outcomeUnknown; }
       event(record, `${runId}:failure-intent`, "run.failing", this.args.clock.now(), { code });
     });
+    if (failed.status === "failing" || terminal.has(failed.status)) this.disarmRunJoinTimeouts(runId);
+    return failed;
   }
 
   async settle(runId: string): Promise<TeamRunRecord> {
-    return this.update(runId, (record) => {
+    const settled = await this.update(runId, (record) => {
       if (Object.values(record.invocations).some((invocation) => invocation.status === "running")) {
         throw new TeamRunConflictError("Cannot settle before active invocations have been closed");
       }
@@ -1132,5 +1241,7 @@ export class TeamRuntime {
       else throw new TeamRunConflictError(`Run ${record.status} cannot settle`);
       event(record, `${runId}:settled:${record.status}`, `run.${record.status}`, this.args.clock.now());
     });
+    this.disarmRunJoinTimeouts(runId);
+    return settled;
   }
 }
