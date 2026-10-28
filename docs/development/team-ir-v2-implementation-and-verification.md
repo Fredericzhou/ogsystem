@@ -485,6 +485,16 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 
 **此增量未覆盖：** 真实 Sandbox UAT 仍不可执行：没有配置可信 `OGS_TEAM_IR_V2_RESOLVER_MODULE`，仓库没有接入 Team IR 的真实隔离 Sandbox Binding，部分经典场景角色包不存在，Project Task 输入合同不接 Artifact。默认新建仍缺原生 v2 草稿 API 并走旧 `/design`；阶段 3 发布门未通过前不切换默认入口。不得将本地 Fake、Stub A2A 或浏览器验收称为真实 UAT。
 
+### 2026-10-28：最新版 Studio 浏览器验收与旧运行索引归档
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 3：当前 v2 Studio 页面浏览器验收 | 通过（隔离浏览器合同） | `pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`，1/1。390px Playwright 流程覆盖 `/studio/new` 建 TeamVersion 后进入 v2 编辑器、Agent/端口/Handoff 编辑、显式映射建议接受、服务端校验、保存后重开与 semantic digest 一致、legacy API 拒绝；测试断言无浏览器 page error。测试使用临时目录和 browser fake resolver | 这是本地隔离页面/API 合同验收，不是生产用户流程；没有可信 resolver、生产 Sandbox Binding、真实发布与 Project Task，不计作真实 Sandbox UAT。自由布局拖线、Join/Loop/Review/Artifact 的完整可视编辑仍未完成 |
+| 旧版本运行数据清理 | 通过（从活动 workspace 移除，可恢复归档） | 根 `.ogs/runs/` 的 256 个旧 Runtime Run 目录及生成索引 `.ogs/runs-index.json` 已移至 `/tmp/team-ir-v2-legacy-runs-20261028`；runtime 配置不变，示例目录中受版本控制的 `.ogs/` fixtures 保留 | 归档未永久销毁；系统此前拒绝永久递归删除。若需永久销毁，需经用户确认后由本机明确清理归档 |
+| 最新页面人工验收入口 | 待用户验收 | 当前浏览器合同可由上述 Playwright 复现；隔离 Team Site 服务将以独立临时项目目录启动，生产 resolver 缺失时保持 fail closed | 用户需确认最新页面信息层级、表单/连线编辑和窄屏体验；人工页面观感确认不替代生产发布与 Sandbox UAT |
+
+**阶段结论：** 本次关闭当前 Studio 浏览器合同验收和旧运行索引与数据的活动 workspace 清理；没有改变默认作者入口。阶段 1、2 仍部分通过，阶段 3、4 仍未完成，真实 Sandbox UAT 未运行。不得据此宣称 Team IR v2 发布完成。
+
 ### YYYY-MM-DD：阶段 / 任务标识
 
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |
