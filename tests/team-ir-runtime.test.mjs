@@ -104,6 +104,56 @@ test("active Run resume rejects a changed compiled dependency digest without sid
   assert.equal(calls, 0);
 });
 
+test("FileTeamRunStore recovery rejects package, Binding, adapter, and Schema digest drift before side effects", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-closure-drift-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const baseOptions = {
+    packageDigests: { "role:worker@1": "package-v1" },
+    bindingDigests: { "binding:worker": "binding-v1" },
+    adapterVersions: { model: "adapter-v1" },
+    schemaDigests: { "schemas/worker-output.json": "schema-v1" }
+  };
+  const driftCases = [
+    ["package", (options) => { options.packageDigests["role:worker@1"] = "package-v2"; }],
+    ["binding", (options) => { options.bindingDigests["binding:worker"] = "binding-v2"; }],
+    ["adapter", (options) => { options.adapterVersions.model = "adapter-v2"; }],
+    ["schema", (options) => { options.schemaDigests["schemas/worker-output.json"] = "schema-v2"; }]
+  ];
+
+  for (const [dimension, mutate] of driftCases) {
+    let bindingCalls = 0;
+    const runsRoot = join(root, dimension);
+    const originalStore = new FileTeamRunStore(runsRoot);
+    const bindings = { "binding:worker": { async invoke() {
+      bindingCalls += 1;
+      return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected" } } };
+    } } };
+    const originalOptions = structuredClone(baseOptions);
+    const changedOptions = structuredClone(baseOptions);
+    mutate(changedOptions);
+    const originalPlan = compileTeamIr(team(), originalOptions);
+    const changedPlan = compileTeamIr(team(), changedOptions);
+    assert.notEqual(originalPlan.compiledPlanDigest, changedPlan.compiledPlanDigest, `${dimension} drift must alter the plan digest`);
+
+    const firstRuntime = new TeamRuntime({ store: originalStore, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+    const runId = `closure-drift-${dimension}`;
+    await firstRuntime.createRun(originalPlan, { runId, task: "recover frozen closure", input: { prompt: "hello" } });
+    await firstRuntime.claim(runId, originalPlan.compiledPlanDigest);
+    const beforeRecovery = await originalStore.load(runId);
+
+    const recoveryRuntime = new TeamRuntime({
+      store: new FileTeamRunStore(runsRoot),
+      clock: { now: () => 200, sleep: () => new Promise(() => {}) },
+      bindings
+    });
+    await assert.rejects(recoveryRuntime.executeRun(changedPlan, runId), (error) =>
+      error.name === "TeamRunConflictError" && error.message === "compiledPlanDigest mismatch",
+    `${dimension} drift must fail recovery with the stable digest conflict`);
+    assert.deepEqual(await originalStore.load(runId), beforeRecovery, `${dimension} drift must not mutate the persisted Run`);
+    assert.equal(bindingCalls, 0, `${dimension} drift must be rejected before Binding invocation`);
+  }
+});
+
 test("Runtime persists invocation, retries transport failure and completes once", async () => {
   let calls = 0;
   const { runtime, store } = setup({
