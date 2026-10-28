@@ -994,7 +994,19 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .ir-structure-graph > .panel-head { align-items: center; margin-bottom: 14px; }
 .ir-structure-graph h2 { font-size: 17px; margin: 3px 0 0; }
 .ir-graph-nodes { align-items: stretch; display: flex; flex-wrap: wrap; gap: 10px; }
+.ir-graph-canvas { background-color: var(--canvas); background-image: radial-gradient(var(--line) .7px, transparent .7px); background-size: 18px 18px; border: 1px solid var(--line); min-height: 420px; min-width: 880px; overflow: auto; position: relative; }
+.ir-graph-canvas .ir-graph-nodes { display: block; height: 100%; min-height: 420px; min-width: 880px; position: relative; width: 100%; }
+.ir-graph-wires { height: 100%; inset: 0; min-height: 420px; min-width: 880px; overflow: visible; pointer-events: none; position: absolute; width: 100%; z-index: 0; }
+.ir-graph-wire { fill: none; stroke: var(--mint); stroke-width: 2; opacity: .72; }
 .ir-graph-node-wrap { display: grid; gap: 5px; min-width: min(190px, 100%); }
+.ir-graph-canvas .ir-graph-node-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 2px 8px #18251b14; left: 0; min-width: 220px; padding: 8px; position: absolute; top: 0; width: 230px; z-index: 1; }
+.ir-graph-canvas .ir-graph-node-wrap > .ir-graph-node { cursor: grab; width: 100%; }
+.ir-graph-canvas .ir-graph-node-wrap > .ir-graph-node:active { cursor: grabbing; }
+.ir-graph-port-list { display: grid; gap: 5px; }
+.ir-graph-port-list > div { align-items: center; display: flex; flex-wrap: wrap; gap: 4px; }
+.ir-graph-port { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); cursor: crosshair; font: inherit; font-size: 11px; max-width: 100%; overflow-wrap: anywhere; padding: 4px 7px; }
+.ir-graph-port.output-port { border-color: color-mix(in srgb, var(--mint) 58%, var(--line)); }
+.ir-graph-port.input-port { border-color: color-mix(in srgb, var(--coral) 58%, var(--line)); }
 .ir-graph-port-picker { color: var(--muted); display: grid; font-size: 11px; gap: 3px; min-width: 0; }
 .ir-graph-port-picker select { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: inherit; min-height: 34px; min-width: 0; padding: 5px 8px; width: 100%; }
 .ir-graph-node-actions { display: flex; flex-wrap: wrap; gap: 6px 10px; }
@@ -1038,7 +1050,8 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 @media (max-width: 600px) {
   .ir-structure-graph { padding: 12px; }
   .ir-structure-graph > .panel-head { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .ir-graph-nodes { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .ir-graph-canvas { min-height: 420px; min-width: 0; }
+  .ir-graph-canvas .ir-graph-nodes { min-height: 420px; min-width: 880px; }
   .ir-graph-node-wrap { min-width: 0; }
   .ir-graph-node { min-width: 0; width: 100%; }
   .ir-graph-edges { margin-left: 8px; padding-left: 9px; }

@@ -10,6 +10,7 @@ export interface TeamArtifactReference {
 
 export interface TeamArtifactBlobBackend {
   put(artifactId: string, content: Uint8Array, metadata: ArtifactMetadata): Promise<void>;
+  commitOutput(artifactId: string, publicationId: string): Promise<void>;
   get(artifactId: string): Promise<{ content: Uint8Array; metadata: ArtifactMetadata } | undefined>;
   bindRunInput(owner: TeamArtifactOwner, artifactIds: readonly string[]): Promise<void>;
   getRunInputGrant(owner: TeamArtifactOwner): Promise<readonly string[]>;
@@ -29,6 +30,17 @@ export interface TeamArtifactResolver {
 export type TeamArtifactOwner = { projectId: string; runId: string };
 
 export interface ArtifactStore {
+  prepareOutput(args: {
+    team: TeamIrDocument;
+    owner: TeamArtifactOwner;
+    agentId: string;
+    outputPortId: string;
+    slotId: string;
+    mediaType: string;
+    content: Uint8Array;
+    publicationId: string;
+  }): Promise<TeamArtifactReference>;
+  commitOutput(args: { owner: TeamArtifactOwner; reference: TeamArtifactReference; publicationId: string }): Promise<void>;
   registerOutput(args: {
     team: TeamIrDocument;
     owner: TeamArtifactOwner;
@@ -113,6 +125,8 @@ export type ArtifactMetadata = {
   agentId?: string;
   portId?: string;
   slotId?: string;
+  publicationId?: string;
+  publicationState?: "prepared" | "committed";
 };
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -160,6 +174,12 @@ export class MemoryTeamArtifactBackend implements TeamArtifactBlobBackend {
     this.blobs.set(artifactId, { content: Uint8Array.from(content), metadata: structuredClone(metadata) });
   }
 
+  async commitOutput(artifactId: string, publicationId: string): Promise<void> {
+    const stored = this.blobs.get(artifactId);
+    if (!stored || stored.metadata.publicationId !== publicationId) throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Artifact publication intent does not match.");
+    stored.metadata.publicationState = "committed";
+  }
+
   async get(artifactId: string): Promise<{ content: Uint8Array; metadata: ArtifactMetadata } | undefined> {
     const stored = this.blobs.get(artifactId);
     return stored ? { content: Uint8Array.from(stored.content), metadata: structuredClone(stored.metadata) } : undefined;
@@ -195,13 +215,41 @@ export class TeamArtifactStore implements ArtifactStore {
     mediaType: string;
     content: Uint8Array;
   }): Promise<TeamArtifactReference> {
+    const publicationId = randomUUID();
+    const ref = await this.prepareOutput({ ...args, publicationId });
+    await this.commitOutput({ owner: args.owner, reference: ref, publicationId });
+    return ref;
+  }
+
+  async prepareOutput(args: {
+    team: TeamIrDocument;
+    owner: TeamArtifactOwner;
+    agentId: string;
+    outputPortId: string;
+    slotId: string;
+    mediaType: string;
+    content: Uint8Array;
+    publicationId: string;
+  }): Promise<TeamArtifactReference> {
     assertOwner(args.owner);
+    if (!SAFE_ID.test(args.publicationId)) throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Artifact publication ID is invalid.");
     const slot = getSlot(args.team, "agent-output", args.agentId, args.outputPortId, args.slotId);
     assertAcceptedMediaType(args.mediaType, slot.mediaTypes);
     return this.register(args.mediaType, args.content, {
       projectId: args.owner.projectId, runId: args.owner.runId, kind: "agent-output",
-      agentId: args.agentId, portId: args.outputPortId, slotId: args.slotId
+      agentId: args.agentId, portId: args.outputPortId, slotId: args.slotId,
+      publicationId: args.publicationId, publicationState: "prepared"
     });
+  }
+
+  async commitOutput(args: { owner: TeamArtifactOwner; reference: TeamArtifactReference; publicationId: string }): Promise<void> {
+    assertOwner(args.owner);
+    const ref = reference(args.reference);
+    await this.args.backend.commitOutput(ref.artifactId, args.publicationId);
+    const metadata = (await this.args.backend.get(ref.artifactId))?.metadata;
+    if (!metadata || metadata.projectId !== args.owner.projectId || metadata.runId !== args.owner.runId || metadata.publicationState !== "committed") {
+      throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Artifact publication did not commit for this Run.");
+    }
   }
 
   async registerRunInput(args: {
@@ -266,16 +314,16 @@ export class TeamArtifactStore implements ArtifactStore {
       throw new TeamArtifactError("ARTIFACT_ACCESS_DENIED", "Artifact reference does not belong to this Project.");
     }
     if (args.kind === "agent-output") {
-      if (metadata.kind !== "agent-output" || metadata.runId !== args.owner.runId || metadata.agentId !== args.agentId || metadata.portId !== args.portId || metadata.slotId !== args.slotId) {
+      if (metadata.kind !== "agent-output" || metadata.runId !== args.owner.runId || metadata.agentId !== args.agentId || metadata.portId !== args.portId || metadata.slotId !== args.slotId || metadata.publicationState !== "committed") {
         throw new TeamArtifactError("ARTIFACT_ACCESS_DENIED", "Artifact was not registered by the declared Agent output slot in this Run.");
       }
       assertAcceptedMediaType(metadata.mediaType, slot.mediaTypes);
     } else if (args.kind === "run-result") {
-      if (metadata.kind !== "agent-output" || metadata.runId !== args.owner.runId) throw new TeamArtifactError("ARTIFACT_ACCESS_DENIED", "Run result Artifact must be produced in this Run.");
+      if (metadata.kind !== "agent-output" || metadata.runId !== args.owner.runId || metadata.publicationState !== "committed") throw new TeamArtifactError("ARTIFACT_ACCESS_DENIED", "Run result Artifact must be committed in this Run.");
       assertAcceptedMediaType(metadata.mediaType, slot.acceptedMediaTypes);
     } else {
       const isRunInput = metadata.kind === "run-input" && metadata.slotId && runInputGrant.includes(metadata.artifactId);
-      const isCurrentRunOutput = metadata.kind === "agent-output" && metadata.runId === args.owner.runId;
+      const isCurrentRunOutput = metadata.kind === "agent-output" && metadata.runId === args.owner.runId && metadata.publicationState === "committed";
       if (!isRunInput && !isCurrentRunOutput) {
         throw new TeamArtifactError("ARTIFACT_ACCESS_DENIED", "Artifact is not authorized for this Agent input slot and Run.");
       }
@@ -291,7 +339,7 @@ export class TeamArtifactStore implements ArtifactStore {
     for (const item of args.allowedArtifacts) {
       const metadata = (await this.args.backend.get(item.artifactId))?.metadata;
       const isRunInputGrant = inputGrant.includes(item.artifactId);
-      const sameRunOutput = metadata?.kind === "agent-output" && metadata.projectId === args.owner.projectId && metadata.runId === args.owner.runId;
+      const sameRunOutput = metadata?.kind === "agent-output" && metadata.projectId === args.owner.projectId && metadata.runId === args.owner.runId && metadata.publicationState === "committed";
       if (!metadata || metadata.projectId !== args.owner.projectId || metadata.mediaType !== item.mediaType || (!isRunInputGrant && !sameRunOutput)) {
         throw new TeamArtifactError("ARTIFACT_REFERENCE_INVALID", "Invocation Artifact reference is unknown or has conflicting metadata.");
       }
@@ -312,7 +360,8 @@ export class TeamArtifactStore implements ArtifactStore {
 
   async getReference(artifactId: string): Promise<TeamArtifactReference | undefined> {
     const metadata = (await this.args.backend.get(artifactId))?.metadata;
-    return metadata ? Object.freeze({ artifactId: metadata.artifactId, mediaType: metadata.mediaType }) : undefined;
+    return metadata && (metadata.kind === "run-input" || metadata.publicationState === "committed")
+      ? Object.freeze({ artifactId: metadata.artifactId, mediaType: metadata.mediaType }) : undefined;
   }
 }
 
@@ -367,6 +416,13 @@ export class FileTeamArtifactStore extends TeamArtifactStore {
         await mkdir(resolve(path, ".."), { recursive: true });
         await writeFile(path, content, { flag: "wx" });
         await writeAtomic(indexPath(id), JSON.stringify({ metadata, contentPath: path }));
+      },
+      commitOutput: async (id, publicationId) => {
+        const stored = await backend.get(id);
+        if (!stored || stored.metadata.publicationId !== publicationId) throw new TeamArtifactError("ARTIFACT_PUBLICATION_INVALID", "Artifact publication intent does not match.");
+        if (stored.metadata.publicationState === "committed") return;
+        const path = indexPath(id);
+        await writeAtomic(path, JSON.stringify({ metadata: { ...stored.metadata, publicationState: "committed" }, contentPath: blobPath(stored.metadata) }));
       },
       get: async (id) => {
         artifactId(id);

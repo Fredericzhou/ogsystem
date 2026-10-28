@@ -78,6 +78,11 @@ test("invocation resolver can read only explicitly allowed Artifacts and verifie
   const blobs = new Map();
   const backend = {
     async put(id, bytes, metadata) { blobs.set(id, { content: Uint8Array.from(bytes), metadata: structuredClone(metadata) }); },
+    async commitOutput(id, publicationId) {
+      const stored = blobs.get(id);
+      if (!stored || stored.metadata.publicationId !== publicationId) throw new Error("publication mismatch");
+      stored.metadata.publicationState = "committed";
+    },
     async get(id) { const value = blobs.get(id); return value && { content: Uint8Array.from(value.content), metadata: structuredClone(value.metadata) }; },
     async bindRunInput() {},
     async getRunInputGrant() { return []; }
@@ -124,6 +129,62 @@ test("FileTeamArtifactStore persists blob, metadata, Project ownership and Run g
   const fileList = await readFile(join(root, "index", `${ref.artifactId}.json`), "utf8");
   assert.equal(fileList.includes("persisted"), false);
   assert.equal(fileList.includes("contentDigest"), true);
+});
+
+test("prepared output Artifacts remain private until the publication intent commits", async () => {
+  const backend = new MemoryTeamArtifactBackend();
+  const store = new TeamArtifactStore({ backend });
+  const owner = { projectId: "project-1", runId: "run-1" };
+  const publicationId = "publication-1";
+  const reference = await store.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId
+  });
+  assert.equal(await store.getReference(reference.artifactId), undefined);
+  await assert.rejects(store.createInvocationResolver({ owner, allowedArtifacts: [reference] }),
+    (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_REFERENCE_INVALID");
+  await store.commitOutput({ owner, reference, publicationId });
+  await store.commitOutput({ owner, reference, publicationId });
+  assert.deepEqual(await store.getReference(reference.artifactId), reference);
+  const resolver = await store.createInvocationResolver({ owner, allowedArtifacts: [reference] });
+  assert.equal(Buffer.from(await resolver.read(reference.artifactId)).toString(), "prepared");
+});
+
+test("blob and index write interruptions never expose an uncommitted Artifact", async (t) => {
+  for (const faultPoint of ["after-blob", "after-index"]) {
+    await t.test(faultPoint, async () => {
+      const blobs = new Map();
+      const index = new Map();
+      const backend = {
+        async put(id, content, metadata) {
+          blobs.set(id, Uint8Array.from(content));
+          if (faultPoint === "after-blob") throw new Error("injected blob write interruption");
+          index.set(id, structuredClone(metadata));
+          throw new Error("injected index write interruption");
+        },
+        async commitOutput() { throw new Error("must not commit an interrupted prepare"); },
+        async get(id) {
+          const metadata = index.get(id);
+          return metadata && { content: Uint8Array.from(blobs.get(id)), metadata: structuredClone(metadata) };
+        },
+        async bindRunInput() {},
+        async getRunInputGrant() { return []; }
+      };
+      const store = new TeamArtifactStore({ backend });
+      const owner = { projectId: "project-1", runId: `run-${faultPoint}` };
+      await assert.rejects(store.prepareOutput({
+        team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+        mediaType: "text/markdown", content: Buffer.from("interrupted"), publicationId: `pub-${faultPoint}`
+      }));
+      if (index.size) {
+        const [storedId] = index.keys();
+        await assert.rejects(store.createInvocationResolver({ owner, allowedArtifacts: [{ artifactId: storedId, mediaType: "text/markdown" }] }),
+          (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_REFERENCE_INVALID");
+      }
+      assert.equal(blobs.size, 1);
+      assert.equal(index.size, faultPoint === "after-index" ? 1 : 0);
+    });
+  }
 });
 
 test("Run input Artifact grants are immutable, idempotent, and linearized across File store instances", async (t) => {

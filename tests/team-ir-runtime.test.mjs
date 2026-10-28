@@ -162,7 +162,7 @@ test("a single Review gates a bounded parallel fan-out until its decision is dur
     }]))
   });
   const completed = await resumed.executeRun(compileTeamIr(value), "review-fanout");
-  assert.equal(completed.status, "completed");
+  assert.equal(completed.status, "completed", JSON.stringify(completed.events));
   assert.equal(workerCalls, 1, "review resume must reuse the completed source invocation");
   assert.deepEqual(calls.sort(), ["auditor", "backup", "worker"]);
   assert.equal(completed.events.filter((entry) => entry.type === "run.waiting_human_review").length, 1);
@@ -1523,9 +1523,9 @@ test("Artifact registered before a failed completion checkpoint is not published
   const plan = compileTeamIr(value);
   const artifactStore = new FileTeamArtifactStore(join(root, "artifacts"));
   let registeredReference;
-  const registerOutput = artifactStore.registerOutput.bind(artifactStore);
-  artifactStore.registerOutput = async (args) => {
-    registeredReference = await registerOutput(args);
+  const prepareOutput = artifactStore.prepareOutput.bind(artifactStore);
+  artifactStore.prepareOutput = async (args) => {
+    registeredReference = await prepareOutput(args);
     return registeredReference;
   };
   const backingStore = new FileTeamRunStore(join(root, "runs"));
@@ -1570,6 +1570,92 @@ test("Artifact registered before a failed completion checkpoint is not published
   assert.equal(bindingCalls, 1, "a result whose completion checkpoint failed must not be retried after restart");
   assert.equal(JSON.stringify(recovered).includes("private uncommitted report"), false);
   assert.equal(JSON.stringify(recovered).includes(registeredReference.artifactId), false, "the uncommitted Artifact reference is not exposed in the Run record");
+  assert.equal(await new FileTeamArtifactStore(join(root, "artifacts")).getReference(registeredReference.artifactId), undefined, "an Artifact prepared before the failed Run CAS remains unpublished");
+});
+
+test("Artifact publication recovers when Run CAS commits but its response is lost", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-cas-lost-response-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.executionPolicy.resultMode = "allow_empty";
+  value.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } }
+  ];
+  value.orchestration.routes = [];
+  const plan = compileTeamIr(value);
+  const backingStore = new FileTeamRunStore(join(root, "runs"));
+  let loseResponse = true;
+  const faultyStore = {
+    create: (...args) => backingStore.create(...args),
+    load: (...args) => backingStore.load(...args),
+    compareAndSet: async (runId, revision, record) => {
+      const committed = await backingStore.compareAndSet(runId, revision, record);
+      if (committed && loseResponse && record.invocations[`${runId}:start`]?.artifactPublication?.status === "pending") {
+        loseResponse = false;
+        throw new Error("injected lost Run CAS response");
+      }
+      return committed;
+    }
+  };
+  let bindingCalls = 0;
+  const binding = { async invoke() {
+    bindingCalls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "ok" }, artifacts: { report: { mediaType: "text/markdown", content: Buffer.from("durable report") } } } };
+  } };
+  const artifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const clock = { now: () => 100, sleep: async () => undefined };
+  const runtime = new TeamRuntime({ store: faultyStore, clock, bindings: { "binding:worker": binding }, artifactStore: artifacts });
+  await runtime.createRun(plan, { runId: "artifact-cas-lost", projectId: "project-1", task: "check", input: { prompt: "check" } });
+  const completed = await runtime.executeRun(plan, "artifact-cas-lost");
+  assert.equal(completed.status, "completed", JSON.stringify({ events: completed.events, invocations: completed.invocations }));
+  assert.equal(bindingCalls, 1);
+  const invocation = completed.invocations["artifact-cas-lost:start"];
+  assert.equal(invocation.artifactPublication.status, "committed");
+  const ref = invocation.output.output.artifacts.report;
+  const resolver = await new FileTeamArtifactStore(join(root, "artifacts")).createInvocationResolver({
+    owner: { projectId: "project-1", runId: "artifact-cas-lost" }, allowedArtifacts: [ref]
+  });
+  assert.equal(Buffer.from(await resolver.read(ref.artifactId)).toString(), "durable report");
+});
+
+test("pending Artifact publication is committed idempotently after process restart", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-commit-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.executionPolicy.resultMode = "allow_empty";
+  value.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } }
+  ];
+  value.orchestration.routes = [];
+  const plan = compileTeamIr(value);
+  const runs = new FileTeamRunStore(join(root, "runs"));
+  const artifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const registerCommit = artifacts.commitOutput.bind(artifacts);
+  let failAfterCommit = true;
+  artifacts.commitOutput = async (args) => {
+    await registerCommit(args);
+    if (failAfterCommit) {
+      failAfterCommit = false;
+      throw new Error("injected lost Artifact commit response");
+    }
+  };
+  let bindingCalls = 0;
+  const binding = { async invoke() {
+    bindingCalls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "ok" }, artifacts: { report: { mediaType: "text/markdown", content: Buffer.from("recoverable report") } } } };
+  } };
+  const clock = { now: () => 100, sleep: async () => undefined };
+  const runtime = new TeamRuntime({ store: runs, clock, bindings: { "binding:worker": binding }, artifactStore: artifacts });
+  await runtime.createRun(plan, { runId: "artifact-commit-recovery", projectId: "project-1", task: "check", input: { prompt: "check" } });
+  await assert.rejects(runtime.executeRun(plan, "artifact-commit-recovery"), /injected lost Artifact commit response/);
+  const interrupted = await runs.load("artifact-commit-recovery");
+  assert.equal(interrupted.invocations["artifact-commit-recovery:start"].artifactPublication.status, "pending");
+  const recovered = await new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock, bindings: { "binding:worker": binding }, artifactStore: new FileTeamArtifactStore(join(root, "artifacts")) }).executeRun(plan, "artifact-commit-recovery");
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.invocations["artifact-commit-recovery:start"].artifactPublication.status, "committed");
+  assert.equal(bindingCalls, 1);
 });
 
 test("Artifact invocation resolver failure is attributed before Binding invocation", async (t) => {

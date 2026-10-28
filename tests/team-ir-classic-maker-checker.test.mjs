@@ -65,7 +65,7 @@ test("classic Maker-Checker reject, revise, and approve survives Run and Review 
   now += 6000;
 
   const review1 = await new FileTeamReviewStore(reviewRoot).load(`${runId}:maker-checker-review:run:1`);
-  await makeReviewRuntime().decide({
+  const rejectInput = {
     runId,
     reviewId: "maker-checker-review",
     loopRound: 1,
@@ -75,7 +75,11 @@ test("classic Maker-Checker reject, revise, and approve survives Run and Review 
     decision: "reject",
     feedback: { comments: "Add the release compatibility note." },
     plan
-  });
+  };
+  const rejected = await makeReviewRuntime().decide(rejectInput);
+  assert.deepEqual(await makeReviewRuntime().decide(rejectInput), rejected,
+    "a lost reject response must replay the same durable decision");
+  assert.equal(rejected.events.filter((item) => item.type === "review.reject").length, 1);
 
   const waiting2 = await makeRuntime().executeRun(plan, runId);
   assert.equal(waiting2.status, "waiting_human_review");

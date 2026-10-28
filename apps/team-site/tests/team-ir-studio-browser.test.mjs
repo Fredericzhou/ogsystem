@@ -134,6 +134,16 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator('[name="agent-0-package"]').inputValue(), "role:worker@1");
     assert.equal(await page.locator('[name="agent-0-binding"]').inputValue(), "binding:worker");
     assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).bindings[0].modelRef, "codex-gateway/gpt-6-luna");
+    const graphCanvas = page.locator("[data-ir-graph-canvas]");
+    assert.ok(await graphCanvas.evaluate((canvas) => canvas.scrollWidth > canvas.clientWidth), "narrow viewports keep a usable horizontally scrollable graph canvas");
+    const runNode = page.locator('[data-ir-layout-node="run"] > .ir-graph-node');
+    const runBox = await runNode.boundingBox();
+    await page.mouse.move(runBox.x + runBox.width / 2, runBox.y + runBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(runBox.x + runBox.width / 2 + 42, runBox.y + runBox.height / 2 + 26);
+    await page.mouse.up();
+    assert.match(await page.locator('[data-ir-layout-node="run"]').getAttribute("style"), /left:\s*66px;\s*top:\s*50px/);
+    assert.ok(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "{}").run?.x === 66, await graphCanvas.getAttribute("data-layout-key")), "node layout persists locally outside the Team IR payload");
     const teamIdInput = page.locator('[name="team-id"]');
     await teamIdInput.fill("bad team");
     const invalidAgentValidation = page.waitForResponse((response) => response.request().method() === "POST"
@@ -166,6 +176,8 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].from, { kind: "run" });
     assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].to, { kind: "agent", agentId: "worker", inputPort: "default" });
     assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].map, { data: {} }, "generated edge keeps data mapping explicit");
+    await page.locator(".ir-graph-wire").waitFor();
+    assert.match(await page.locator(".ir-graph-wire").getAttribute("d"), /^M /, "Handoff geometry connects explicit canvas port anchors");
     assert.equal(generatedContracts.bindings.find((binding) => binding.id === "binding:worker")?.modelRef, "codex-gateway/gpt-6-luna");
     await page.locator('[name="handoff-0-id"]').fill("run-to-worker");
     const runMapping = page.locator('[name="handoff-0-mapping"]');
@@ -390,7 +402,7 @@ export async function resolveBindings({ teamIR }) {
       ["revise", "exit", "handoff-4"], "an existing route must continue to list every outgoing Handoff");
     await page.locator('[data-ir-link-source-port="0"]').selectOption("BLOCKED");
     await page.locator('[data-ir-link-target-port="0"]').selectOption("audit");
-    await page.locator('[data-ir-connect-source-agent-index="0"]').dragTo(page.locator('[data-ir-connect-target-agent-index="0"]'));
+    await page.locator('[data-ir-port-source-agent-index="0"][data-ir-port="BLOCKED"]').dragTo(page.locator('[data-ir-port-target-agent-index="0"][data-ir-port="audit"]'));
     assert.equal(await page.locator("[data-ir-handoff]").count(), 5);
     const selectedPortContracts = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     assert.deepEqual(selectedPortContracts.handoffContracts["handoff-5"].from,

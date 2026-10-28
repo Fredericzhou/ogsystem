@@ -2,9 +2,9 @@
 
 OGS Projects 与 OGS Studio 共用一个 Origin 和 SPA Shell。OGS Studio 面向团队工程，负责团队草稿、图谱设计、Simulation 调试、诊断和发布；Projects 面向业务协作，负责项目材料、Task 生命周期和业务结果。模型发现和默认设置由共享 Platform 页面提供：
 
-当前 API 以最新业务数据格式为准，不承诺通用旧 schema/API 字段兼容。Team catalog 会识别一类旧版已发布团队元数据（`projectStatus=confirmed` 且同时存在 `projectDigest` 与 `confirmedAt`），并将其投影为 `released` TeamVersion；这不是通用数据迁移。应用启动不会自动删除用户数据。
+当前 API 和 Team catalog 只接受原生 Team IR v2 TeamVersion；旧版确认状态、Mermaid Team 定义和旧运行格式不会被识别、迁移或用于发布与执行。应用启动不会自动删除工作区数据。
 
-- **OGS Studio**：创建和编辑团队草稿，配置角色执行与编排参数、角色资产包、Context Map 和 Flow Contract/Schema，运行隔离 Simulation、查看历史并发布 TeamVersion。“AI 构建”与“调试”弹窗独立；交互式调试后台运行并增量保存脱敏角色事件，历史可回放逐角色输入/输出与失败诊断。历史清理只删除已结束的交互式调试，不删除运行中记录或 Sandbox 发布证明。
+- **OGS Studio**：创建和编辑 Team IR v2 草稿，配置 Agent、端口、Handoff、路由、Join、Loop、Review 与结果合同，运行隔离 Simulation、查看历史并发布 TeamVersion。结构视图支持节点自由布局及端口连线；高级 JSON 与结构化字段编辑共享同一份 Team IR 草稿。
 - **OGS Projects**：创建协作项目，挂载已发布 TeamVersion，管理项目材料、Task 生命周期和业务结果。
 - **团队工程**：团队仓库、团队创建和角色仓库分别管理 Team 草稿/发布版本、工程设计入口和不可变角色模板。
 - **角色来源**：角色仓库默认展示 Aura-huang/agency-agents-cn，可在“角色源”筛选中切换到其他已配置来源或查看全部来源。CN 来源在新平台配置中预登记；首次使用时需到“平台配置 > 角色源配置”手动同步。同步后的上游快照只读，复制到 Team Draft 后才可编辑。
@@ -50,7 +50,7 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 | OGS Studio | `/studio` | 团队工程台，管理团队草稿、图谱设计、Simulation 和发布版本 |
 | 已发布团队目录 | `/teams` | 浏览已发布团队版本及案例 |
 | 创建团队 | `/studio/new` | 通过自然语言创建团队草案 |
-| 团队设计 | `/studio/teams/:id/design` | 图谱、角色执行与编排、Context Map、角色资产包和 Flow Contract/Schema 编辑；保存后可校验、Simulation 并进入发布门禁 |
+| 团队设计 | `/studio/teams/:id/ir` | Team IR v2 草稿编辑、结构视图、校验、Simulation 与发布门禁 |
 | Studio Simulation | `/studio/teams/:teamVersionId/run`、`/studio/teams/:teamVersionId/run/:simulationId` | 启动仿真并查看对应 TeamVersion 的隔离历史与回放 |
 | 项目运行历史 | `/history` | 只列出 Projects Task Runs，不混入 Studio Simulation |
 | 创建项目 | `/projects/new` | 创建工作目录并挂载已发布团队 |
