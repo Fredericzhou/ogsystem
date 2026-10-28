@@ -789,7 +789,7 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
     ...candidate.orchestration,
     joins: mergeOrchestrationRows("joins", ["id", "agentId", "inputPort", "mode", "handoffIds", "scope", "threshold", "timeoutMs", "onTimeout"]),
     loops: mergeOrchestrationRows("loops", ["id", "members", "boundaryAgentId", "entryHandoffIds", "continueHandoffIds", "exitHandoffIds", "maxRounds", "maxAgentActivations", "onExhausted"]),
-    reviews: advanced.orchestration?.reviews ?? [],
+    reviews: mergeOrchestrationRows("reviews", ["id", "at", "feedbackSchema", "timeoutMs", "onTimeout"]),
     routes
   };
   const agentContracts = advanced.agentPortContracts || {};
@@ -1170,6 +1170,20 @@ function teamIrFromEditor(form, base) {
       onExhausted: String(data.get(`loop-${index}-exhausted`) || "fail")
     };
   });
+  const reviews = [...form.querySelectorAll("[data-ir-review]")].map((row) => {
+    const index = row.dataset.irReview;
+    let position;
+    try { position = JSON.parse(String(data.get(`review-${index}-at`) || "null")); } catch { position = null; }
+    const [agentId, outputPort] = Array.isArray(position) ? position : [];
+    if (!agentId || !outputPort) throw new Error(`Review ${index + 1} requires a valid Agent output position.`);
+    return {
+      id: String(data.get(`review-${index}-id`) || "").trim(),
+      at: { kind: "agentOutput", agentId, outputPort },
+      feedbackSchema: parsePortJson(data.get(`review-${index}-feedback-schema`), `Review ${index + 1} feedback schema`),
+      timeoutMs: Number(data.get(`review-${index}-timeout`) || 0),
+      onTimeout: "fail"
+    };
+  });
   const routes = [];
   const sourceGroups = new Map();
   for (const edge of handoffs) {
@@ -1186,7 +1200,7 @@ function teamIrFromEditor(form, base) {
     ...base,
     team: { id: String(data.get("team-id") || base.team.id).trim(), version: base.team?.version || "2.0.0" },
     agents, handoffs, bindings,
-    orchestration: { routes, joins, loops, reviews: [] }
+    orchestration: { routes, joins, loops, reviews }
   };
 }
 
@@ -1221,7 +1235,22 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
       <label>Continue Handoff IDs<input name="loop-${index}-continue" value="${escText((loop.continueHandoffIds || []).join(", "))}" required${disabled}></label>
       <label>Exit Handoff IDs<input name="loop-${index}-exit" value="${escText((loop.exitHandoffIds || []).join(", "))}" required${disabled}></label>
     </div></section>`).join("");
-  return { joins, loops };
+  const reviewLocations = agents.flatMap((agent) => Object.keys(agent.outputPorts || {}).map((outputPort) => ({
+    value: JSON.stringify([agent.id, outputPort]), label: `${agent.id}.${outputPort}`
+  })));
+  const reviews = (ir.orchestration?.reviews || []).map((review, index) => {
+    const selected = reviewLocations.find((location) => location.value === JSON.stringify([review.at?.agentId || "", review.at?.outputPort || ""]))?.value || "";
+    return `<section class="project-panel ir-editor-row" data-ir-review="${index}">
+    <div class="panel-head"><h3>Review ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-review="${index}" aria-label="Remove Review" title="Remove Review"${disabled}>×</button></div>
+    <div class="ir-form-grid">
+      <label>Review ID<input name="review-${index}-id" value="${escText(review.id || "")}" required${disabled}></label>
+      <label>Position<select name="review-${index}-at" required${disabled}><option value="">Select Agent output</option>${reviewLocations.map((location) => `<option value="${escText(location.value)}"${location.value === selected ? " selected" : ""}>${escText(location.label)}</option>`).join("")}</select></label>
+      <label>Timeout (ms)<input type="number" min="1" name="review-${index}-timeout" value="${Number(review.timeoutMs || 0)}" required${disabled}></label>
+      <label>On timeout<input value="fail" readonly${disabled}></label>
+      <label class="full">Feedback schema JSON<textarea name="review-${index}-feedback-schema" rows="7" spellcheck="false" required${disabled}>${escText(JSON.stringify(review.feedbackSchema ?? {}, null, 2))}</textarea></label>
+    </div></section>`;
+  }).join("");
+  return { joins, loops, reviews };
 }
 
 function renderTeamIrEditorRows(ir, escText, editable) {
@@ -1381,7 +1410,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
       root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
-      form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section>`);
+      form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Review gates</h2></div><button class="secondary-button" type="button" data-ir-add-review${editable ? "" : " disabled"}>Add Review</button></div><div class="ir-editor-list">${rows.reviews || '<p class="empty-note">No Review gates.</p>'}</div></section>`);
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
       const syncMappingText = (handoffRow) => {
         const index = handoffRow.dataset.irHandoff;
@@ -1542,6 +1571,14 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           syncAdvancedContracts();
         } catch (error) { captureFailure(error); }
       }));
+      form.querySelectorAll("[data-ir-review] input, [data-ir-review] select, [data-ir-review] textarea").forEach((input) => {
+        input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => {
+          try {
+            draft = captureEditor();
+            syncAdvancedContracts();
+          } catch (error) { captureFailure(error); }
+        });
+      });
       const add = (kind) => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         if (kind === "agent") {
@@ -1555,6 +1592,16 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           draft.orchestration.joins.push({
             id: `join-${draft.orchestration.joins.length + 1}`, agentId: agent?.id || "", inputPort: Object.keys(agent?.inputPorts || {})[0] || "default",
             mode: "all_of", handoffIds: [], scope: { kind: "run" }, timeoutMs: 300000, onTimeout: "fail"
+          });
+        } else if (kind === "review") {
+          const agent = draft.agents.find((candidate) => Object.keys(candidate.outputPorts || {}).length > 0);
+          const outputPort = Object.keys(agent?.outputPorts || {})[0];
+          draft.orchestration.reviews.push({
+            id: `review-${draft.orchestration.reviews.length + 1}`,
+            at: { kind: "agentOutput", agentId: agent?.id || "", outputPort: outputPort || "" },
+            feedbackSchema: { type: "object", properties: {}, additionalProperties: false },
+            timeoutMs: 300000,
+            onTimeout: "fail"
           });
         } else {
           const agent = draft.agents[0];
@@ -1633,6 +1680,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       form.querySelector("[data-ir-add-handoff]")?.addEventListener("click", () => add("handoff"));
       form.querySelector("[data-ir-add-join]")?.addEventListener("click", () => add("join"));
       form.querySelector("[data-ir-add-loop]")?.addEventListener("click", () => add("loop"));
+      form.querySelector("[data-ir-add-review]")?.addEventListener("click", () => add("review"));
       form.querySelector("[data-ir-connect-source='run']")?.addEventListener("click", () => chooseConnectionSource());
       form.querySelectorAll("[data-ir-connect-source-agent-index]").forEach((button) => button.addEventListener("click", () => chooseConnectionSource(Number(button.dataset.irConnectSourceAgentIndex))));
       form.querySelectorAll("[data-ir-connect-target-agent-index]").forEach((button) => button.addEventListener("click", () => completeConnection(Number(button.dataset.irConnectTargetAgentIndex))));
@@ -1677,7 +1725,21 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       });
       form.querySelectorAll("[data-ir-remove-agent]").forEach((button) => button.addEventListener("click", () => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
-        draft.agents.splice(Number(button.dataset.irRemoveAgent), 1);
+        const index = Number(button.dataset.irRemoveAgent);
+        const agent = draft.agents[index];
+        if (!agent) return;
+        const references = [
+          ...(draft.handoffs || []).filter((handoff) => handoff.from?.agentId === agent.id || handoff.to?.agentId === agent.id).map((handoff) => `Handoff ${handoff.id}`),
+          ...(draft.orchestration.routes || []).filter((route) => route.from?.agentId === agent.id).map(() => "a Route"),
+          ...(draft.orchestration.joins || []).filter((join) => join.agentId === agent.id).map((join) => `Join ${join.id}`),
+          ...(draft.orchestration.loops || []).filter((loop) => loop.boundaryAgentId === agent.id || loop.members?.includes(agent.id)).map((loop) => `Loop ${loop.id}`),
+          ...(draft.orchestration.reviews || []).filter((review) => review.at?.agentId === agent.id).map((review) => `Review ${review.id}`)
+        ];
+        if (references.length) {
+          captureFailure(new Error(`Cannot remove Agent ${agent.id}; it is referenced by ${references.join(", ")}.`));
+          return;
+        }
+        draft.agents.splice(index, 1);
         draft.bindings = draft.bindings.filter((binding) => draft.agents.some((agent) => agent.bindingRef === binding.id));
         syncAdvancedContracts();
         redraw();
@@ -1708,6 +1770,12 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       form.querySelectorAll("[data-ir-remove-loop]").forEach((button) => button.addEventListener("click", () => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         draft.orchestration.loops.splice(Number(button.dataset.irRemoveLoop), 1);
+        syncAdvancedContracts();
+        redraw();
+      }));
+      form.querySelectorAll("[data-ir-remove-review]").forEach((button) => button.addEventListener("click", () => {
+        try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+        draft.orchestration.reviews.splice(Number(button.dataset.irRemoveReview), 1);
         syncAdvancedContracts();
         redraw();
       }));

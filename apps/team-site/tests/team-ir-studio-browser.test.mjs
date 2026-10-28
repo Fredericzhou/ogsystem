@@ -337,11 +337,23 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(contracts.bindings[0].kind, "a2a");
     assert.equal(await page.locator("[data-ir-join]").count(), 1);
     assert.equal(await page.locator("[data-ir-loop]").count(), 1);
+    assert.equal(await page.locator("[data-ir-review]").count(), 1);
+    assert.equal(await page.locator('[name="review-0-at"]').inputValue(), JSON.stringify(["writer", "DONE"]));
+    const writerIndex = advancedIr.agents.findIndex((agent) => agent.id === "writer");
+    await page.locator(`[data-ir-remove-agent="${writerIndex}"]`).click();
+    assert.match(await page.locator("[data-team-ir-status]").innerText(), /Cannot remove Agent writer; it is referenced by .*Review review-draft/);
+    assert.ok(Object.hasOwn(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts, "writer"),
+      "Agent deletion must not discard a Review's source endpoint");
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, ["revise"]);
     assert.equal(await page.locator('[name="join-0-handoffs"][value="revise"]').isChecked(), true);
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[0].entryHandoffIds, ["entry"]);
     await page.locator('[name="join-0-timeout"]').fill("6500");
     await page.locator('[name="loop-0-rounds"]').fill("4");
+    await page.locator('[name="review-0-timeout"]').fill("7500");
+    const editedFeedbackSchema = { type: "object", properties: { decision: { enum: ["approve", "revise"] }, note: { type: "string" } }, required: ["decision"], additionalProperties: false };
+    await page.locator('[name="review-0-feedback-schema"]').fill(JSON.stringify(editedFeedbackSchema, null, 2));
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.reviews[0].feedbackSchema,
+      editedFeedbackSchema, "Review feedback schema edits immediately synchronize advanced JSON");
     const structuredValidation = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
     const structuredSave = page.waitForResponse((response) => response.request().method() === "PUT"
@@ -354,13 +366,19 @@ export async function resolveBindings({ teamIR }) {
     await page.locator('[name="join-0-timeout"]').waitFor();
     assert.equal(await page.locator('[name="join-0-timeout"]').inputValue(), "6500");
     assert.equal(await page.locator('[name="loop-0-rounds"]').inputValue(), "4");
+    assert.equal(await page.locator('[name="review-0-timeout"]').inputValue(), "7500");
+    assert.deepEqual(JSON.parse(await page.locator('[name="review-0-feedback-schema"]').inputValue()), editedFeedbackSchema);
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].baseMapping,
       contracts.orchestration.joins[0].baseMapping, "structured edits preserve advanced Join fields");
     Object.assign(contracts.orchestration, JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration);
     assert.equal(contracts.orchestration.joins[0].timeoutMs, 6500);
     assert.equal(contracts.orchestration.loops[0].maxRounds, 4);
+    assert.equal(contracts.orchestration.reviews[0].timeoutMs, 7500);
+    assert.deepEqual(contracts.orchestration.reviews[0].feedbackSchema, editedFeedbackSchema);
     advancedIr.orchestration.joins[0].timeoutMs = 6500;
     advancedIr.orchestration.loops[0].maxRounds = 4;
+    advancedIr.orchestration.reviews[0].timeoutMs = 7500;
+    advancedIr.orchestration.reviews[0].feedbackSchema = editedFeedbackSchema;
 
     const advancedEdit = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     advancedEdit.orchestration.joins[0].timeoutMs = 7100;
@@ -385,6 +403,24 @@ export async function resolveBindings({ teamIR }) {
     const roundTripped = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     assert.deepEqual(roundTripped.orchestration.joins[0].handoffIds, ["revise"], "Join Handoff IDs survive a visual/JSON round trip");
     assert.deepEqual(roundTripped.orchestration.loops[0].entryHandoffIds, ["entry"], "Loop Handoff IDs survive a visual/JSON round trip");
+    assert.deepEqual(roundTripped.orchestration.reviews[0].feedbackSchema, editedFeedbackSchema, "Review feedback schema survives a visual/JSON round trip");
+
+    let emptyReviewValidationRequests = 0;
+    let emptyReviewSaveRequests = 0;
+    const countEmptyReviewRequests = (request) => {
+      if (new URL(request.url()).pathname !== `/api/v1/team-versions/${advancedId}/ir`) return;
+      if (request.method() === "POST") emptyReviewValidationRequests += 1;
+      if (request.method() === "PUT") emptyReviewSaveRequests += 1;
+    };
+    page.on("request", countEmptyReviewRequests);
+    await page.locator('[name="review-0-at"]').selectOption("");
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    await page.locator("[data-team-ir-status]").getByText(/requires a valid Agent output position/).waitFor();
+    assert.equal(emptyReviewValidationRequests, 0, "an empty Review position must be rejected before validation API");
+    assert.equal(emptyReviewSaveRequests, 0, "an empty Review position must not reach save API");
+    page.off("request", countEmptyReviewRequests);
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator('[name="review-0-at"]').waitFor();
 
     let emptyJoinSaves = 0;
     const countEmptyJoinSave = (request) => {
@@ -417,6 +453,12 @@ export async function resolveBindings({ teamIR }) {
     await page.locator('[data-ir-remove-loop="1"]').click();
     assert.equal(await page.locator("[data-ir-loop]").count(), 1);
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[0].entryHandoffIds, ["entry"]);
+    await page.locator("[data-ir-add-review]").click();
+    assert.equal(await page.locator("[data-ir-review]").count(), 2);
+    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.reviews[1].id, "review-2");
+    await page.locator('[data-ir-remove-review="1"]').click();
+    assert.equal(await page.locator("[data-ir-review]").count(), 1);
+    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.reviews[0].id, "review-draft");
 
     await page.locator('[name="join-0-timeout"]').fill("0");
     let structuredInvalidSaves = 0;
@@ -483,7 +525,7 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await advancedEditor.evaluate((element) => document.activeElement === element), true);
     assert.equal(await advancedEditor.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd)), "0");
 
-    contracts.orchestration.reviews[0].timeoutMs = 5000;
+    contracts.orchestration.reviews[0].timeoutMs = 7500;
     contracts.runInput.dataSchema.properties["bad/~key"] = { type: "not-a-json-type" };
     await advancedEditor.fill(JSON.stringify(contracts, null, 2));
     const escapedPointerValidation = page.waitForResponse((response) => response.request().method() === "POST"
