@@ -85,6 +85,25 @@ test("route selection evaluates conditions and exclusive priority deterministica
   assert.deepEqual(selectTeamHandoffs(plan, { kind: "run" }, {}, { task: "t", input: { prompt: "hi", kind: "fallback" } }), ["fallback"]);
 });
 
+test("active Run resume rejects a changed compiled dependency digest without side effects", async () => {
+  let calls = 0;
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { calls += 1; throw new Error("must not invoke"); } } }
+  });
+  const originalPlan = compileTeamIr(team(), { packageDigests: { "role:worker@1": "package-v1" } });
+  const changedPlan = compileTeamIr(team(), { packageDigests: { "role:worker@1": "package-v2" } });
+  await runtime.createRun(originalPlan, { runId: "changed-plan-run", task: "work", input: { prompt: "hello" } });
+  await runtime.claim("changed-plan-run", originalPlan.compiledPlanDigest);
+  const beforeResume = await store.load("changed-plan-run");
+
+  await assert.rejects(runtime.executeRun(changedPlan, "changed-plan-run"), /compiledPlanDigest mismatch/);
+  assert.deepEqual(await store.load("changed-plan-run"), beforeResume);
+  assert.equal(calls, 0);
+});
+
 test("Runtime persists invocation, retries transport failure and completes once", async () => {
   let calls = 0;
   const { runtime, store } = setup({
@@ -1047,6 +1066,107 @@ test("Loop parallel fan-out is rejected before member invocation to avoid unsupp
   assert.equal(result.status, "failed");
   assert.equal(result.events.find((item) => item.type === "run.failing").data.code, "TEAM_LOOP_TOPOLOGY_UNSUPPORTED");
   assert.equal(calls, 0);
+});
+
+function makerCheckerTeam() {
+  const value = loopTeam({ maxRounds: 3, onExhausted: "finish" });
+  value.agents[0].inputPorts.revise.dataSchema.properties.comments = { type: "string", minLength: 1 };
+  const revise = value.handoffs.find((handoff) => handoff.id === "revise");
+  revise.map.data.comments = { "$ref": "$.review.feedback.comments" };
+  revise.when = { condition: { op: "equals", args: [{ "$ref": "$.review.decision" }, { "$literal": "reject" }] }, priority: 0 };
+  value.handoffs.find((handoff) => handoff.id === "exit").when = {
+    condition: { op: "equals", args: [{ "$ref": "$.review.decision" }, { "$literal": "approve" }] }, priority: 1
+  };
+  value.orchestration.reviews = [{
+    id: "maker-checker-review", at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
+    feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false },
+    timeoutMs: 1000, onTimeout: "fail"
+  }];
+  return value;
+}
+
+test("Maker-Checker reject then approve uses round-scoped Review and resumes without repeating a completed invocation", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-maker-checker-review-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(makerCheckerTeam());
+  const runStore = new FileTeamRunStore(join(root, "runs"));
+  const reviewStore = new FileTeamReviewStore(join(root, "reviews"));
+  let now = 100;
+  const makeReviewRuntime = () => new TeamReviewRuntime({ store: reviewStore, now: () => now, authorizeReviewer: ({ reviewerId }) => reviewerId === "reviewer" });
+  let calls = 0;
+  const inputs = [];
+  const bindings = { "binding:worker": { async invoke(invocation) {
+    calls += 1;
+    inputs.push(invocation.input);
+    return { kind: "completed", output: { event: "DONE", data: { answer: `draft-${calls}`, again: false } } };
+  } } };
+  const runtime1 = new TeamRuntime({ store: runStore, clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime: makeReviewRuntime() });
+  const runId = "maker-checker-rounds";
+  await runtime1.createRun(plan, { runId, task: "review draft", input: { prompt: "draft" } });
+  const waiting1 = await runtime1.executeRun(plan, runId);
+  assert.equal(waiting1.status, "waiting_human_review");
+  assert.equal(waiting1.waitingReview.loopRound, 1);
+  const review1 = await reviewStore.load("maker-checker-rounds:maker-checker-review:run:1");
+  assert.ok(review1);
+  await makeReviewRuntime().decide({ runId, reviewId: "maker-checker-review", loopRound: 1, revisionToken: review1.revisionToken, idempotencyKey: "reject-1", reviewerId: "reviewer", decision: "reject", feedback: { comments: "Add a stronger qualification." }, plan });
+
+  now = 110;
+  const runtime2 = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime: makeReviewRuntime() });
+  const waiting2 = await runtime2.executeRun(plan, runId);
+  assert.equal(waiting2.status, "waiting_human_review");
+  assert.equal(waiting2.waitingReview.loopRound, 2);
+  assert.equal(calls, 2, "resume must reuse completed round 1 invocation and only run the new revision");
+  assert.deepEqual(inputs, [
+    { prompt: "draft" },
+    { answer: "draft-1", comments: "Add a stronger qualification." }
+  ]);
+  const review2 = await reviewStore.load("maker-checker-rounds:maker-checker-review:run:2");
+  assert.ok(review2);
+  await makeReviewRuntime().decide({ runId, reviewId: "maker-checker-review", loopRound: 2, revisionToken: review2.revisionToken, idempotencyKey: "approve-2", reviewerId: "reviewer", decision: "approve", plan });
+
+  now = 120;
+  const runtime3 = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime: makeReviewRuntime() });
+  const completed = await runtime3.executeRun(plan, runId);
+  assert.equal(completed.status, "completed", JSON.stringify(completed.events.filter((item) => item.type === "run.failing")));
+  assert.deepEqual(completed.result, { answer: "draft-2" });
+  assert.equal(completed.loopStates.revision.rounds, 2);
+  assert.equal(calls, 2, "approve exit must not replay the completed Maker invocation");
+  assert.equal(completed.events.filter((item) => item.type === "run.waiting_human_review").length, 2);
+  assert.equal((await reviewStore.load("maker-checker-rounds:maker-checker-review:run:1")).status, "rejected");
+  assert.equal((await reviewStore.load("maker-checker-rounds:maker-checker-review:run:2")).status, "approved");
+  assert.equal(completed.events.filter((item) => item.type === "run.review.rejected" && item.data?.loopRound === 1).length, 1);
+  assert.equal(completed.events.filter((item) => item.type === "run.review.approved" && item.data?.loopRound === 2).length, 1);
+});
+
+test("Maker-Checker Review timeout fails closed for its Loop round without repeating the Maker", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-maker-checker-timeout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(makerCheckerTeam());
+  const runStore = new FileTeamRunStore(join(root, "runs"));
+  const reviewStore = new FileTeamReviewStore(join(root, "reviews"));
+  let now = 100;
+  let calls = 0;
+  const reviewRuntime = new TeamReviewRuntime({ store: reviewStore, now: () => now, authorizeReviewer: () => true });
+  const runtime = new TeamRuntime({
+    store: runStore,
+    clock: { now: () => now, sleep: () => new Promise(() => {}) },
+    reviewRuntime,
+    bindings: { "binding:worker": { async invoke() {
+      calls += 1;
+      return { kind: "completed", output: { event: "DONE", data: { answer: "draft", again: false } } };
+    } } }
+  });
+  const runId = "maker-checker-timeout";
+  await runtime.createRun(plan, { runId, task: "review draft", input: { prompt: "draft" } });
+  const waiting = await runtime.executeRun(plan, runId);
+  assert.equal(waiting.status, "waiting_human_review");
+  assert.equal(waiting.waitingReview.loopRound, 1);
+  now = 1100;
+  const failed = await runtime.executeRun(plan, runId);
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.events.some((item) => item.type === "run.failing" && item.data?.code === "REVIEW_TIMEOUT"), true);
+  assert.equal(calls, 1);
+  assert.equal((await reviewStore.load("maker-checker-timeout:maker-checker-review:run:1")).status, "timed_out");
 });
 
 test("TeamRuntime waits for an authorized FileStore Review decision and resumes the same completed output", async (t) => {

@@ -31,6 +31,7 @@ test("compiler digest binds executable package, adapter and compiler semantics",
   const value = team();
   const base = compileTeamIr(value);
   assert.notEqual(base.compiledPlanDigest, compileTeamIr(value, { packageDigests: { "role:worker@1": "one" } }).compiledPlanDigest);
+  assert.notEqual(base.compiledPlanDigest, compileTeamIr(value, { bindingDigests: { "binding:worker": "one" } }).compiledPlanDigest);
   assert.notEqual(base.compiledPlanDigest, compileTeamIr(value, { adapterVersions: { model: "2" } }).compiledPlanDigest);
   assert.notEqual(base.compiledPlanDigest, compileTeamIr(value, { compilerSemanticsVersion: "team-ir-v2/2" }).compiledPlanDigest);
   assert.notEqual(base.compiledPlanDigest, compileTeamIr(value, { schemaDigests: { "schemas/input.json": "one" } }).compiledPlanDigest);

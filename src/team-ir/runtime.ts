@@ -79,7 +79,7 @@ export interface TeamRunRecord {
   resultWritten?: boolean;
   loopStates: Record<string, { rounds: number; agentActivations: number; previousOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; currentOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }> }>;
   scheduler?: { pending: string[]; sources: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; skippedHandoffs: string[]; arrivedHandoffs: string[]; visited: Record<string, number>; invocationIds: Record<string, string>; reviewContexts: Record<string, { decision: "approve" | "reject"; feedback?: unknown }>; joinRounds?: Record<string, TeamJoinRound> };
-  waitingReview?: { reviewId: string; lineage: string };
+  waitingReview?: { reviewId: string; lineage: string; loopRound?: number };
   invocations: Record<string, TeamInvocationState>;
   pendingInput?: { handoffId: string; agentId: string; bindingId: string; remoteTaskId: string; messageParts: unknown[]; requestedInputSchema?: unknown };
   events: TeamRunEvent[];
@@ -139,6 +139,56 @@ function latestInvocationForHandoff(record: TeamRunRecord, handoffId: string): T
     .filter((invocation) => invocation.handoffId === handoffId)
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
     .at(-1);
+}
+
+function isSupportedMakerCheckerLoop(plan: CompiledTeamPlan): boolean {
+  const orchestration = plan.team.orchestration as Record<string, unknown>;
+  const loops = Array.isArray(orchestration.loops) ? orchestration.loops.filter(isRecord) : [];
+  const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
+  const joins = Array.isArray(orchestration.joins) ? orchestration.joins : [];
+  const handoffs = [...plan.handoffsById.values()];
+  const routes = Array.isArray(orchestration.routes) ? orchestration.routes.filter(isRecord) : [];
+  if (loops.length !== 1 || reviews.length !== 1 || joins.length !== 0) return false;
+  const loop = loops[0];
+  const members = Array.isArray(loop.members) ? loop.members.map(String) : [];
+  const entryIds = Array.isArray(loop.entryHandoffIds) ? loop.entryHandoffIds.map(String) : [];
+  const continueIds = Array.isArray(loop.continueHandoffIds) ? loop.continueHandoffIds.map(String) : [];
+  const exitIds = Array.isArray(loop.exitHandoffIds) ? loop.exitHandoffIds.map(String) : [];
+  const agentId = String(loop.boundaryAgentId);
+  const review = reviews[0];
+  const at = isRecord(review.at) ? review.at : {};
+  if (members.length !== 1 || members[0] !== agentId || at.kind !== "agentOutput" || at.agentId !== agentId) return false;
+  if (entryIds.length !== 1 || continueIds.length !== 1 || exitIds.length !== 1) return false;
+  const entry = plan.handoffsById.get(entryIds[0]);
+  const revise = plan.handoffsById.get(continueIds[0]);
+  const exit = plan.handoffsById.get(exitIds[0]);
+  if (!isRecord(entry?.from) || entry.from.kind !== "run" || !isRecord(entry.to) || entry.to.kind !== "agent" || entry.to.agentId !== agentId) return false;
+  if (!isRecord(revise?.from) || revise.from.kind !== "agent" || revise.from.agentId !== agentId || revise.from.outputPort !== at.outputPort
+    || !isRecord(revise.to) || revise.to.kind !== "agent" || revise.to.agentId !== agentId || revise.to.inputPort === entry.to.inputPort) return false;
+  if (!isRecord(exit?.from) || exit.from.kind !== "agent" || exit.from.agentId !== agentId || exit.from.outputPort !== at.outputPort
+    || !isRecord(exit.to) || exit.to.kind !== "result") return false;
+  const decisionCondition = (handoff: Record<string, unknown> | undefined, decision: string): boolean => {
+    const when = isRecord(handoff?.when) ? handoff.when : {};
+    const condition = isRecord(when.condition) ? when.condition : {};
+    const args = Array.isArray(condition.args) ? condition.args : [];
+    return condition.op === "equals" && args.length === 2 && isRecord(args[0]) && args[0].$ref === "$.review.decision"
+      && isRecord(args[1]) && args[1].$literal === decision;
+  };
+  if (!decisionCondition(revise, "reject") || !decisionCondition(exit, "approve")) return false;
+  if (!isRecord(revise.map) || !isRecord(revise.map.data)
+    || !Object.values(revise.map.data).some((value) => isRecord(value) && typeof value.$ref === "string" && value.$ref.startsWith("$.review.feedback."))) return false;
+  const sourceRoute = routes.filter((route) => isRecord(route.from) && route.from.kind === "agent" && route.from.agentId === agentId && route.from.outputPort === at.outputPort);
+  const runRoute = routes.filter((route) => isRecord(route.from) && route.from.kind === "run");
+  if (sourceRoute.length !== 1 || sourceRoute[0].mode !== "exclusive_priority"
+    || !Array.isArray(sourceRoute[0].handoffIds) || sourceRoute[0].handoffIds.map(String).sort().join("\0") !== [continueIds[0], exitIds[0]].sort().join("\0")) return false;
+  if (runRoute.length !== 1 || runRoute[0].mode !== "exclusive_priority" || !Array.isArray(runRoute[0].handoffIds)
+    || runRoute[0].handoffIds.map(String).join("\0") !== entryIds.join("\0")) return false;
+  const scopedHandoffs = handoffs.filter((handoff) => {
+    const from = isRecord(handoff.from) ? handoff.from : {};
+    const to = isRecord(handoff.to) ? handoff.to : {};
+    return from.kind === "agent" && from.agentId === agentId || to.kind === "agent" && to.agentId === agentId;
+  });
+  return scopedHandoffs.every((handoff) => [entryIds[0], continueIds[0], exitIds[0]].includes(String(handoff.id)));
 }
 
 function sourceKey(source: Record<string, unknown>): string {
@@ -201,9 +251,9 @@ export class TeamRuntime {
 
   constructor(private readonly args: { store: TeamRunStore; clock: TeamClock; bindings: Record<string, TeamBinding>; artifactStore?: ArtifactStore; reviewRuntime?: TeamReviewRuntime }) {}
 
-  async getReview(runId: string, reviewId: string): Promise<TeamReviewRecord> {
+  async getReview(runId: string, reviewId: string, lineage = "run", loopRound?: number): Promise<TeamReviewRecord> {
     if (!this.args.reviewRuntime) throw new TeamRunConflictError("TEAM_REVIEW_RUNTIME_UNAVAILABLE");
-    return this.args.reviewRuntime.get({ runId, reviewId, lineage: "run" });
+    return this.args.reviewRuntime.get({ runId, reviewId, lineage, loopRound });
   }
 
   async decideReview(input: Parameters<TeamReviewRuntime["decide"]>[0]): Promise<TeamReviewRecord> {
@@ -495,13 +545,18 @@ export class TeamRuntime {
     if (initial.status === "queued") await this.claim(runId, plan.compiledPlanDigest);
     else if (initial.status === "waiting_human_review") {
       if (!this.args.reviewRuntime || !initial.waitingReview || !initial.scheduler) throw new TeamRunConflictError("TEAM_REVIEW_RESUME_UNSUPPORTED: review runtime or scheduler checkpoint is unavailable.");
-      const review = await this.args.reviewRuntime.get({ runId, reviewId: initial.waitingReview.reviewId, lineage: initial.waitingReview.lineage });
+      const review = await this.args.reviewRuntime.get({ runId, reviewId: initial.waitingReview.reviewId, lineage: initial.waitingReview.lineage, loopRound: initial.waitingReview.loopRound });
       if (review.status === "pending") return initial;
-      if (review.status !== "approved") return this.failScheduler(runId, `${runId}:review:${review.reviewId}`, review.status === "timed_out" ? "REVIEW_TIMEOUT" : "REVIEW_REJECTED");
+      if (review.status === "timed_out") return this.failScheduler(runId, `${runId}:review:${review.reviewId}`, "REVIEW_TIMEOUT");
+      if (review.status !== "approved" && !(review.status === "rejected" && isSupportedMakerCheckerLoop(plan))) {
+        return this.failScheduler(runId, `${runId}:review:${review.reviewId}`, "REVIEW_REJECTED");
+      }
       await this.update(runId, (record) => {
         record.status = "running";
         record.waitingReview = undefined;
-        event(record, `${runId}:review:${review.reviewId}:approved`, "run.review.approved", this.args.clock.now(), { reviewId: review.reviewId });
+        event(record, `${runId}:review:${review.reviewId}:${initial.waitingReview!.loopRound ?? "run"}:${review.status}`, `run.review.${review.status}`, this.args.clock.now(), {
+          reviewId: review.reviewId, loopRound: initial.waitingReview!.loopRound, decision: review.decision
+        });
       });
     }
     else if (initial.status === "running" && !initial.scheduler) throw new TeamRunConflictError("TEAM_RUN_RESUME_UNSUPPORTED: no scheduler checkpoint exists for this active Run.");
@@ -545,7 +600,8 @@ export class TeamRuntime {
       return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_QUORUM_TOPOLOGY_UNSUPPORTED");
     }
     const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
-    if (reviews.length && (!this.args.reviewRuntime || loops.length > 0 || plan.joinsByTarget.size > 0
+    const supportsMakerChecker = isSupportedMakerCheckerLoop(plan);
+    if (reviews.length && (!this.args.reviewRuntime || (loops.length > 0 && !supportsMakerChecker) || plan.joinsByTarget.size > 0
       || reviews.some((review) => {
         const at = isRecord(review.at) ? review.at : {};
         const route = plan.routesBySource.get(`agent:${String(at.agentId)}:${String(at.outputPort)}`);
@@ -801,7 +857,12 @@ export class TeamRuntime {
         const source = isRecord(handoff.from) ? sources.get(sourceKey(handoff.from)) : undefined;
         let result: TeamRunRecord;
         try {
-          result = await executeEdge(handoffId, source, undefined, isRecord(handoff.from) ? reviewContexts.get(sourceKey(handoff.from)) : undefined);
+          let reviewContext = isRecord(handoff.from) ? reviewContexts.get(sourceKey(handoff.from)) : undefined;
+          if (loopId && isRecord(handoff.from) && handoff.from.kind === "agent" && loopMembers.has(String(handoff.from.agentId))) {
+            const round = (await this.args.store.load(runId))!.loopStates[loopId].rounds;
+            reviewContext = reviewContexts.get(`${sourceKey(handoff.from)}:loop:${round}`) ?? reviewContext;
+          }
+          result = await executeEdge(handoffId, source, undefined, reviewContext);
         } catch (error) {
           const current = await this.args.store.load(runId);
           if (current?.status === "paused_input_required" || (current?.status === "failing" && current.terminalIntent === "failed")) result = current;
@@ -971,22 +1032,34 @@ export class TeamRuntime {
       for (const [source, output] of nextSources) {
         const [, agentId] = source.split(":", 3);
         const reviewDefinition = reviews.find((item) => isRecord(item.at) && item.at.agentId === agentId && item.at.outputPort === output.event);
-        let reviewContext = reviewContexts.get(source);
+        const currentLoopState = loopId ? (await this.args.store.load(runId))!.loopStates[loopId] : undefined;
+        const reviewLoopRound = reviewDefinition && supportsMakerChecker && currentLoopState && agentId === String(loop?.boundaryAgentId)
+          ? currentLoopState.rounds + 1 : undefined;
+        const reviewContextKey = reviewLoopRound === undefined ? source : `${source}:loop:${reviewLoopRound}`;
+        let reviewContext = reviewContexts.get(reviewContextKey);
         if (reviewDefinition) {
           const reviewId = String(reviewDefinition.id);
-          const review = await this.args.reviewRuntime!.openFromPlan({ plan, runId, reviewId, lineage: "run" });
+          const review = await this.args.reviewRuntime!.openFromPlan({ plan, runId, reviewId, lineage: "run", loopRound: reviewLoopRound });
           if (review.status === "pending") {
             await this.update(runId, (record) => {
               record.status = "waiting_human_review";
-              record.waitingReview = { reviewId, lineage: "run" };
-              event(record, `${runId}:review:${reviewId}:waiting`, "run.waiting_human_review", this.args.clock.now(), { reviewId, deadlineAt: review.deadlineAt });
+              record.waitingReview = { reviewId, lineage: "run", ...(reviewLoopRound === undefined ? {} : { loopRound: reviewLoopRound }) };
+              event(record, `${runId}:review:${reviewId}:${reviewLoopRound ?? "run"}:waiting`, "run.waiting_human_review", this.args.clock.now(), { reviewId, loopRound: reviewLoopRound, deadlineAt: review.deadlineAt });
             });
             this.disarmRunJoinTimeouts(runId);
             return (await this.args.store.load(runId))!;
           }
-          if (review.status !== "approved") return this.failScheduler(runId, `${runId}:review:${reviewId}`, review.status === "timed_out" ? "REVIEW_TIMEOUT" : "REVIEW_REJECTED");
+          if (review.status === "timed_out") return this.failScheduler(runId, `${runId}:review:${reviewId}`, "REVIEW_TIMEOUT");
+          if (review.status !== "approved" && !(review.status === "rejected" && supportsMakerChecker)) {
+            return this.failScheduler(runId, `${runId}:review:${reviewId}`, "REVIEW_REJECTED");
+          }
+          await this.update(runId, (record) => {
+            event(record, `${runId}:review:${reviewId}:${reviewLoopRound ?? "run"}:${review.status}`, `run.review.${review.status}`, this.args.clock.now(), {
+              reviewId, loopRound: reviewLoopRound, decision: review.decision
+            });
+          });
           reviewContext = readTeamReviewContext(review);
-          reviewContexts.set(source, reviewContext);
+          reviewContexts.set(reviewContextKey, reviewContext);
         }
         if (loopId && loopMembers.has(agentId)) {
           loopOutputs.push([agentId, structuredClone(output)]);

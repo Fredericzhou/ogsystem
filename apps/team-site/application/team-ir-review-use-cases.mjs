@@ -18,12 +18,18 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
     const project = await projectStore.getProject(projectId);
     const task = findOwnedTask(project, taskId, runId);
     const context = await resolveReviewContext({ project, task, runId, reviewId });
-    if (!context || !context.runtime || !context.plan) {
+    if (!context || !context.runtime || !context.plan || !context.runRecord) {
       throw new Error("TEAM_REVIEW_RUNTIME_UNAVAILABLE: durable Team Review runtime and frozen plan are unavailable.");
     }
     if (context.plan.compiledPlanDigest !== task.compiledPlanDigest
       || teamIRSemanticDigest(context.plan.team) !== task.teamIrSemanticDigest) {
       throw new Error("TEAM_REVIEW_PLAN_MISMATCH: Review runtime plan does not match the Task snapshot.");
+    }
+    const waitingReview = context.runRecord.waitingReview;
+    if (context.runRecord.runId !== runId || context.runRecord.status !== "waiting_human_review"
+      || !waitingReview || waitingReview.reviewId !== reviewId
+      || waitingReview.lineage !== context.lineage || waitingReview.loopRound !== context.loopRound) {
+      throw new Error("TEAM_REVIEW_CHECKPOINT_MISMATCH: current persisted Run checkpoint does not identify this Review activation.");
     }
     return { project, task, ...context };
   }
@@ -31,13 +37,15 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
   return Object.freeze({
     async getProjectTaskTeamIrReview(projectId, taskId, runId, reviewId) {
       const context = await getContext(projectId, taskId, runId, reviewId);
-      const review = await context.runtime.getReview(runId, reviewId);
+      const review = await context.runtime.getReview(runId, reviewId, context.lineage, context.loopRound);
       if (review.status !== "pending") throw new Error(`TEAM_REVIEW_NOT_PENDING: Review is ${review.status}.`);
       return {
         projectId,
         taskId,
         runId,
         reviewId,
+        lineage: context.lineage,
+        ...(context.loopRound === undefined ? {} : { loopRound: context.loopRound }),
         revision: review.revision,
         revisionToken: review.revisionToken,
         activatedAt: review.activatedAt,
@@ -52,7 +60,8 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
       const review = await context.runtime.decideReview({
         runId,
         reviewId,
-        lineage: "run",
+        lineage: context.lineage,
+        loopRound: context.loopRound,
         revisionToken: input.revisionToken,
         idempotencyKey: input.idempotencyKey,
         reviewerId: context.reviewerId,

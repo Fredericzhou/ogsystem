@@ -8,8 +8,9 @@ import { errorStatus } from "../api/error-status.mjs";
 import { createTeamLifecycleUseCases } from "../application/team-lifecycle-use-cases.mjs";
 import { createTeamIrUseCases } from "../application/team-ir-use-cases.mjs";
 import { createFileTeamIrStore } from "../infrastructure/file-team-ir-store.mjs";
+import { cases } from "../cases.mjs";
 
-test("new classic Case rejects before legacy baseline execution and removes its materialized Team on v2 release failure", async (t) => {
+for (const { id: caseId } of cases) test(`new classic Case ${caseId} rejects before legacy baseline execution and removes its materialized Team on v2 release failure`, async (t) => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-classic-case-v2-gate-"));
   t.after(() => rm(projectsRoot, { recursive: true, force: true }));
 
@@ -63,11 +64,7 @@ test("new classic Case rejects before legacy baseline execution and removes its 
     },
     teamIrRelease,
     caseCatalog: {
-      getCase: (id) => id === "software-team" ? {
-        id,
-        title: { "zh-CN": "Software delivery" },
-        detail: { scenario: { "zh-CN": "Plan a software release." } }
-      } : undefined,
+      getCase: (id) => cases.find((item) => item.id === id),
       listCases: () => []
     }
   });
@@ -76,7 +73,7 @@ test("new classic Case rejects before legacy baseline execution and removes its 
   const handled = await handleCaseRoutes({
     request: { method: "POST" },
     response: {},
-    url: new URL("http://site.test/api/v1/cases/software-team/use"),
+    url: new URL(`http://site.test/api/v1/cases/${caseId}/use`),
     readBody: async () => ({}),
     sendJson: (_response, status, payload) => sent.push({ status, payload }),
     errorStatus,
