@@ -739,6 +739,97 @@ test("quorum topologies outside the single no-Loop Join contract fail before any
   await assertUnsupportedQuorumFailsBeforeBinding(mixed, "quorum-mixed-unsupported");
 });
 
+test("multiple independent all_of Joins settle separately in one Run", async () => {
+  const value = quorumTeam();
+  value.team.id = "multiple-all-of-joins";
+  value.executionPolicy.resultMode = "allow_empty";
+  value.handoffs = value.handoffs.filter((handoff) => handoff.id !== "join-result");
+  value.orchestration.routes = value.orchestration.routes.filter((route) => route.from.kind !== "agent" || route.from.agentId !== "joiner");
+  value.orchestration.joins[0].mode = "all_of";
+  delete value.orchestration.joins[0].threshold;
+  value.orchestration.joins[0].id = "join-one";
+
+  const cloneSource = (id) => {
+    const original = value.agents.find((agent) => agent.id === id);
+    const clone = structuredClone(original);
+    clone.id = `${id}-two`;
+    clone.packageRef = `role:${clone.id}@1`;
+    clone.bindingRef = `binding:${clone.id}`;
+    value.agents.push(clone);
+    value.bindings.push({
+      id: clone.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000,
+      retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+    });
+    return clone;
+  };
+  const left = cloneSource("left");
+  const right = cloneSource("right");
+  value.agents.push({
+    id: "joiner-two", packageRef: "role:joiner-two@1", bindingRef: "binding:joiner-two",
+    inputPorts: { default: { dataSchema: { type: "object", properties: { leftValue: { type: "string" }, rightValue: { type: "string" } }, required: ["leftValue", "rightValue"], additionalProperties: false } } },
+    outputPorts: { DONE: { dataSchema: { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false } } }
+  });
+  value.bindings.push({
+    id: "binding:joiner-two", kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000,
+    retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  });
+  const addSource = (source, sourceValue) => {
+    const startId = `start-${source.id}`;
+    const joinId = `${source.id}-to-joiner-two`;
+    value.handoffs.push(
+      { id: startId, from: { kind: "run" }, to: { kind: "agent", agentId: source.id, inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
+      { id: joinId, from: { kind: "agent", agentId: source.id, outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner-two", inputPort: "default" }, map: { data: { [sourceValue]: { "$ref": "$.output.data.value" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } }
+    );
+    value.orchestration.routes.find((route) => route.from.kind === "run").handoffIds.push(startId);
+    value.orchestration.routes.push({
+      from: { kind: "agent", agentId: source.id, outputPort: "DONE" },
+      mode: "exclusive_priority", onNoMatch: "finish", handoffIds: [joinId]
+    });
+    return joinId;
+  };
+  const leftJoinId = addSource(left, "leftValue");
+  const rightJoinId = addSource(right, "rightValue");
+  value.orchestration.joins.push({
+    id: "join-two", agentId: "joiner-two", inputPort: "default", mode: "all_of",
+    handoffIds: [leftJoinId, rightJoinId], scope: { kind: "run" }, timeoutMs: 1500, onTimeout: "fail"
+  });
+
+  const plan = compileTeamIr(value);
+  const calls = [];
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: {
+      "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "left-one", include: true } } }; } },
+      "binding:right": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "right-one" } } }; } },
+      "binding:left-two": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "left-two", include: true } } }; } },
+      "binding:right-two": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "right-two" } } }; } },
+      "binding:joiner": { async invoke(invocation) {
+        calls.push(["join-one", invocation.input]);
+        return { kind: "completed", output: { event: "DONE", data: { summary: "one" } } };
+      } },
+      "binding:joiner-two": { async invoke(invocation) {
+        calls.push(["join-two", invocation.input]);
+        return { kind: "completed", output: { event: "DONE", data: { summary: "two" } } };
+      } }
+    }
+  });
+  await runtime.createRun(plan, { runId: "multiple-all-of-joins", task: "join", input: { prompt: "collect" } });
+  const result = await runtime.executeRun(plan, "multiple-all-of-joins");
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.result, undefined);
+  assert.deepEqual(calls.sort(([leftId], [rightId]) => leftId.localeCompare(rightId)), [
+    ["join-one", { leftValue: "left-one", rightValue: "right-one" }],
+    ["join-two", { leftValue: "left-two", rightValue: "right-two" }]
+  ]);
+  assert.equal(result.scheduler.joinRounds["join-one"].status, "ready");
+  assert.equal(result.scheduler.joinRounds["join-two"].status, "ready");
+  assert.deepEqual(result.scheduler.joinRounds["join-one"].merged.data, { leftValue: "left-one", rightValue: "right-one" });
+  assert.deepEqual(result.scheduler.joinRounds["join-two"].merged.data, { leftValue: "left-two", rightValue: "right-two" });
+});
+
 test("an active quorum sibling failure after target activation still fails the Run", async () => {
   const plan = compileTeamIr(quorumTeam());
   let releaseRight;

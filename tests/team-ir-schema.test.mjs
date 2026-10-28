@@ -99,6 +99,58 @@ test("execution budget must be a positive integer with a stable diagnostic point
   assert.deepEqual(validateTeamIrSchema(minimumBudget), []);
 });
 
+test("runtime budget, deadline, attempt, and backoff durations use positive integer boundaries", () => {
+  const fields = [
+    {
+      pointer: "/executionPolicy/activeExecutionBudgetMs",
+      mutate: (value, number) => { value.executionPolicy.activeExecutionBudgetMs = number; }
+    },
+    {
+      pointer: "/handoffs/0/delivery/deadlineMs",
+      mutate: (value, number) => { value.handoffs[0].delivery.deadlineMs = number; }
+    },
+    {
+      pointer: "/bindings/0/attemptTimeoutMs",
+      mutate: (value, number) => { value.bindings[0].attemptTimeoutMs = number; }
+    },
+    {
+      pointer: "/bindings/0/retry/maxAttempts",
+      mutate: (value, number) => { value.bindings[0].retry.maxAttempts = number; }
+    },
+    {
+      pointer: "/bindings/0/retry/backoff/delayMs",
+      mutate: (value, number) => {
+        value.bindings[0].retry.backoff = { mode: "constant", delayMs: number };
+      }
+    },
+    {
+      pointer: "/bindings/0/retry/backoff/initialDelayMs",
+      mutate: (value, number) => {
+        value.bindings[0].retry.backoff = { mode: "exponential", initialDelayMs: number, maxDelayMs: 1 };
+      }
+    },
+    {
+      pointer: "/bindings/0/retry/backoff/maxDelayMs",
+      mutate: (value, number) => {
+        value.bindings[0].retry.backoff = { mode: "exponential", initialDelayMs: 1, maxDelayMs: number };
+      }
+    }
+  ];
+
+  for (const { pointer, mutate } of fields) {
+    for (const number of [0, -1, 1.5]) {
+      const value = minimalTeam();
+      mutate(value, number);
+      assert.ok(validateTeamIrSchema(value).some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
+        `Expected invalid duration ${number} to point at ${pointer}`);
+    }
+
+    const minimum = minimalTeam();
+    mutate(minimum, 1);
+    assert.deepEqual(validateTeamIrSchema(minimum), [], `Expected 1 to be valid at ${pointer}`);
+  }
+});
+
 test("endpoint schema rejects implicit endpoints and malformed agent ports", () => {
   const invalidCases = [
     {
