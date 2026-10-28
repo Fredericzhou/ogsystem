@@ -115,6 +115,33 @@ test("Join deadline starts at first predecessor activation and survives snapshot
   assert.equal(timedOut.deadlineAt, 120);
 });
 
+test("Join source state is isolated by lineage and Loop round", () => {
+  const isolated = { baseMapping: {}, requiredSourceIds: [], requiredFields: [] };
+  const firstLineage = createTeamJoinRound(config({ ...isolated, lineage: "branch-a" }));
+  const secondLineage = createTeamJoinRound(config({ ...isolated, lineage: "branch-b" }));
+  const firstLoopRound = createTeamJoinRound(config({ ...isolated, lineage: "branch-a", loopRound: 1 }));
+  const secondLoopRound = createTeamJoinRound(config({ ...isolated, lineage: "branch-a", loopRound: 2 }));
+
+  assert.equal(new Set([firstLineage.key, secondLineage.key, firstLoopRound.key, secondLoopRound.key]).size, 4);
+
+  const arrivedInFirstLineage = applyTeamJoinEvent(firstLineage, {
+    type: "arrival", sourceId: "left", contribution: { data: { value: "branch-a" } }, at: 1
+  });
+  assert.equal(arrivedInFirstLineage.sourceStates.left, "arrived");
+  assert.equal(secondLineage.sourceStates.left, "pending");
+  assert.equal(firstLoopRound.sourceStates.left, "pending");
+  assert.equal(secondLoopRound.sourceStates.left, "pending");
+
+  const completedFirstLineage = applyTeamJoinEvent(arrivedInFirstLineage, {
+    type: "arrival", sourceId: "right", contribution: { data: { other: "branch-a" } }, at: 2
+  });
+  assert.equal(completedFirstLineage.status, "ready");
+  assert.equal(secondLineage.status, "collecting");
+  assert.equal(firstLoopRound.status, "collecting");
+  assert.equal(secondLoopRound.status, "collecting");
+  assert.deepEqual(completedFirstLineage.merged.data, { value: "branch-a", other: "branch-a" });
+});
+
 test("first contribution starts deadline, target conflicts fail closed, and unknown sources reject", () => {
   let round = createTeamJoinRound(config({ requiredSourceIds: [], requiredFields: [], baseMapping: { data: { same: 0 } } }));
   round = applyTeamJoinEvent(round, { type: "arrival", sourceId: "left", contribution: { data: { same: 1 } }, at: 7 });

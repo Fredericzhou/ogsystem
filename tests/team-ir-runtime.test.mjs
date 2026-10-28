@@ -381,6 +381,23 @@ test("invalid mapped input fails before Binding invocation and invalid output fa
   assert.equal(failed.invocations["run-7:start"].status, "failed");
 });
 
+test("Run checkpoint persists only a safe Binding validation diagnostic code", async () => {
+  const { runtime, store } = setup({ async invoke() {
+    throw new TeamBindingError("model response contains a private payload marker", "invalid_output", "OUTPUT_DATA_SCHEMA_INVALID");
+  } });
+  const plan = compileTeamIr(team());
+  await runtime.createRun(plan, { runId: "diagnostic-run", task: "work", input: { prompt: "hello" } });
+  await runtime.claim("diagnostic-run", plan.compiledPlanDigest);
+  await runtime.executeHandoff(plan, "diagnostic-run", "start", { task: "work", input: { prompt: "hello" } });
+  const record = await store.load("diagnostic-run");
+  const invocation = record.invocations["diagnostic-run:start"];
+  const attemptFailure = record.events.find((entry) => entry.type === "binding.attempt.failed");
+  assert.equal(invocation.error, "BINDING_INVALID_OUTPUT");
+  assert.equal(invocation.diagnosticCode, "OUTPUT_DATA_SCHEMA_INVALID");
+  assert.equal(attemptFailure.data.diagnosticCode, "OUTPUT_DATA_SCHEMA_INVALID");
+  assert.equal(JSON.stringify(record).includes("private payload marker"), false);
+});
+
 test("executeRun schedules the classic software Team through fanout, Join, and one result write", async () => {
   const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
   const plan = compileTeamIr(fixture);

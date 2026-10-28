@@ -524,10 +524,16 @@ export async function resolveBindings({ teamIR }) {
     const v2ReviewRouteCalls = [];
     let v2ReviewStatus = "pending";
     let validReviewPosts = 0;
+    let reviewReads = 0;
     await page.route("**/api/v1/projects/project-v2/tasks/task-v2/runs/run-v2/team-ir-reviews/review-draft", async (route) => {
       const request = route.request();
       v2ReviewRouteCalls.push({ method: request.method(), body: request.postDataJSON() });
       if (request.method() === "GET") {
+        reviewReads += 1;
+        if (reviewReads === 1) {
+          await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporary review query failure" }) });
+          return;
+        }
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
           projectId: "project-v2", taskId: "task-v2", runId: "run-v2", reviewId: "review-draft",
           revision: 3, revisionToken: "trusted-revision-token", activatedAt: "2026-10-28T00:00:00.000Z",
@@ -559,6 +565,9 @@ export async function resolveBindings({ teamIR }) {
         plan: { team: { orchestration: { reviews: [{ id: "review-draft" }] } } }
       });
     });
+    const reviewPanel = page.locator("[data-team-ir-run-reviews]");
+    await reviewPanel.getByText("temporary review query failure").waitFor();
+    await reviewPanel.getByRole("button", { name: "重新读取审核状态" }).click();
     await page.locator("[data-team-ir-run-reviews] h3").getByText("review-draft").waitFor();
     const reviewForm = page.locator('[data-team-ir-review="0"]');
     assert.equal(await reviewForm.locator("[name=decision]").inputValue(), "approve");
@@ -566,7 +575,7 @@ export async function resolveBindings({ teamIR }) {
     await reviewForm.locator("[name=feedback]").fill("not-json");
     await reviewForm.locator("button[type=submit]").click();
     await reviewForm.getByText("反馈必须是有效 JSON 对象。").waitFor();
-    assert.equal(v2ReviewRouteCalls.length, 1, "invalid feedback must not be sent to the server");
+    assert.equal(v2ReviewRouteCalls.length, 2, "invalid feedback must not be sent to the server");
     await reviewForm.locator("[name=feedback]").fill("{}");
     await reviewForm.locator("button[type=submit]").click();
     await reviewForm.getByText(/REVIEW_FEEDBACK_INVALID/).waitFor();
@@ -575,15 +584,15 @@ export async function resolveBindings({ teamIR }) {
     await reviewForm.getByText(/resume dispatch response was lost/).waitFor();
     await reviewForm.locator("button[type=submit]").click();
     await page.locator("[data-team-ir-run-reviews]").waitFor({ state: "detached" });
-    assert.deepEqual(v2ReviewRouteCalls.map((call) => call.method), ["GET", "POST", "POST", "POST", "GET"]);
-    assert.equal(v2ReviewRouteCalls[1].body.decision, "reject");
-    assert.deepEqual(v2ReviewRouteCalls[1].body.feedback, {});
-    assert.equal(v2ReviewRouteCalls[1].body.revisionToken, "trusted-revision-token");
-    assert.match(v2ReviewRouteCalls[1].body.idempotencyKey, /^[0-9a-f-]{36}$/i);
-    assert.equal(Object.hasOwn(v2ReviewRouteCalls[1].body, "reviewerId"), false);
-    assert.equal(v2ReviewRouteCalls[2].body.feedback.comments, "valid feedback");
-    assert.equal(v2ReviewRouteCalls[3].body.idempotencyKey, v2ReviewRouteCalls[2].body.idempotencyKey, "retry after a lost response must replay with the same idempotency key");
-    assert.equal(Object.hasOwn(v2ReviewRouteCalls[3].body, "reviewerId"), false);
+    assert.deepEqual(v2ReviewRouteCalls.map((call) => call.method), ["GET", "GET", "POST", "POST", "POST", "GET"]);
+    assert.equal(v2ReviewRouteCalls[2].body.decision, "reject");
+    assert.deepEqual(v2ReviewRouteCalls[2].body.feedback, {});
+    assert.equal(v2ReviewRouteCalls[2].body.revisionToken, "trusted-revision-token");
+    assert.match(v2ReviewRouteCalls[2].body.idempotencyKey, /^[0-9a-f-]{36}$/i);
+    assert.equal(Object.hasOwn(v2ReviewRouteCalls[2].body, "reviewerId"), false);
+    assert.equal(v2ReviewRouteCalls[3].body.feedback.comments, "valid feedback");
+    assert.equal(v2ReviewRouteCalls[4].body.idempotencyKey, v2ReviewRouteCalls[3].body.idempotencyKey, "retry after a lost response must replay with the same idempotency key");
+    assert.equal(Object.hasOwn(v2ReviewRouteCalls[4].body, "reviewerId"), false);
     assert.deepEqual(pageErrors, []);
   } finally {
     await browser?.close();

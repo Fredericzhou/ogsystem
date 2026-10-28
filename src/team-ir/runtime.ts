@@ -8,6 +8,15 @@ import type { TeamRunStatus } from "./types.js";
 import { TeamReviewRuntime, readTeamReviewContext, type TeamReviewRecord } from "./review-runtime.js";
 
 export type TeamFailureClass = "transport" | "timeout" | "rate_limited" | "server_error" | "invalid_input" | "invalid_output" | "cancelled" | "policy";
+export type TeamBindingDiagnosticCode =
+  | "OUTPUT_JSON_INVALID"
+  | "OUTPUT_ENVELOPE_INVALID"
+  | "OUTPUT_FIELD_UNDECLARED"
+  | "OUTPUT_DATA_SCHEMA_INVALID"
+  | "OUTPUT_ARTIFACT_MAP_INVALID"
+  | "OUTPUT_ARTIFACT_SLOT_INVALID"
+  | "OUTPUT_ARTIFACT_TOO_LARGE"
+  | "OUTPUT_ARTIFACT_REQUIRED";
 export type TeamBindingResult =
   | { kind: "completed"; output: { event: string; data: unknown; artifacts?: Record<string, unknown> } }
   | { kind: "input-required"; remoteTaskId: string; messageParts: unknown[]; requestedInputSchema?: unknown };
@@ -15,7 +24,7 @@ export type TeamBindingResult =
 export class TeamBindingError extends Error {
   outcomeUnknown = false;
 
-  constructor(message: string, readonly failureClass: TeamFailureClass) {
+  constructor(message: string, readonly failureClass: TeamFailureClass, readonly diagnosticCode?: TeamBindingDiagnosticCode) {
     super(message);
     this.name = "TeamBindingError";
   }
@@ -60,6 +69,7 @@ export interface TeamInvocationState {
   activeAttemptStartedAt?: number;
   output?: TeamBindingResult;
   error?: string;
+  diagnosticCode?: TeamBindingDiagnosticCode;
   outcomeUnknown?: boolean;
 }
 
@@ -447,12 +457,17 @@ export class TeamRuntime {
         } catch (error) {
           const finishedAt = this.args.clock.now();
           const actualClass = error instanceof TeamBindingError ? error.failureClass : "transport";
+          const diagnosticCode = error instanceof TeamBindingError ? error.diagnosticCode : undefined;
           const elapsed = Math.max(0, finishedAt - attemptStartedAt);
           const current = (await this.args.store.load(runId))!;
           const budgetExceeded = current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs;
           await this.update(runId, (record) => {
             record.activeExecutionMs += elapsed;
-            event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, { failureClass: actualClass, budgetExceeded });
+            event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, {
+              failureClass: actualClass,
+              ...(diagnosticCode ? { diagnosticCode } : {}),
+              budgetExceeded
+            });
           });
           if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
           const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
@@ -467,7 +482,7 @@ export class TeamRuntime {
             }
           }
           if (this.args.clock.now() >= deadlineAt || timedOut) return this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
-          return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown);
+          return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown, diagnosticCode);
         }
         const finishedAt = this.args.clock.now();
         const afterBinding = await this.args.store.load(runId);
@@ -1395,17 +1410,24 @@ export class TeamRuntime {
     }
   }
 
-  private async fail(runId: string, invocationId: string, code: string, outcomeUnknown = false): Promise<TeamRunRecord> {
+  private async fail(runId: string, invocationId: string, code: string, outcomeUnknown = false, diagnosticCode?: TeamBindingDiagnosticCode): Promise<TeamRunRecord> {
     const failed = await this.update(runId, (record) => {
       if (record.status === "cancelling" || record.status === "cancelled" || record.status === "paused_input_required") {
         event(record, `${invocationId}:late-failure:${code}`, "invocation.late_failure_ignored", this.args.clock.now(), { code });
         return;
       }
-      record.status = "failing";
-      record.terminalIntent = "failed";
+      if (record.terminalIntent !== "failed") {
+        record.status = "failing";
+        record.terminalIntent = "failed";
+        event(record, `${runId}:failure-intent`, "run.failing", this.args.clock.now(), { code });
+      }
       const invocation = record.invocations[invocationId];
-      if (invocation) { invocation.status = "failed"; invocation.error = code; invocation.outcomeUnknown = outcomeUnknown; }
-      event(record, `${runId}:failure-intent`, "run.failing", this.args.clock.now(), { code });
+      if (invocation) {
+        invocation.status = "failed";
+        invocation.error = code;
+        if (diagnosticCode) invocation.diagnosticCode = diagnosticCode;
+        invocation.outcomeUnknown = outcomeUnknown;
+      }
     });
     if (failed.status === "failing" || terminal.has(failed.status)) this.disarmRunJoinTimeouts(runId);
     return failed;

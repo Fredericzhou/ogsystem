@@ -245,7 +245,12 @@ test("Handoff endpoint kinds and Run/Result endpoint fields are exact", () => {
     { pointer: "/handoffs/0/to/kind", mutate: (value) => { value.handoffs[0].to.kind = "unknown"; } },
     { pointer: "/handoffs/1/to/agentId", mutate: (value) => { value.handoffs[1].to = { kind: "agent", inputPort: "default" }; } },
     { pointer: "/handoffs/1/to/inputPort", mutate: (value) => { value.handoffs[1].to = { kind: "agent", agentId: "worker" }; } },
-    { pointer: "/handoffs/0/to/outputPort", mutate: (value) => { value.handoffs[0].to.outputPort = "DONE"; } }
+    { pointer: "/handoffs/0/to/outputPort", mutate: (value) => { value.handoffs[0].to.outputPort = "DONE"; } },
+    { pointer: "/handoffs/0/from/agentId", mutate: (value) => { value.handoffs[0].from.agentId = "worker"; } },
+    { pointer: "/handoffs/0/from/extra", mutate: (value) => { value.handoffs[0].from.extra = true; } },
+    { pointer: "/handoffs/1/to/agentId", mutate: (value) => { value.handoffs[1].to.agentId = "worker"; } },
+    { pointer: "/handoffs/1/to/inputPort", mutate: (value) => { value.handoffs[1].to.inputPort = "default"; } },
+    { pointer: "/handoffs/1/to/extra", mutate: (value) => { value.handoffs[1].to.extra = true; } }
   ];
 
   for (const { pointer, mutate } of invalidCases) {

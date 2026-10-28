@@ -5,10 +5,8 @@ function readLocale() {
 export const state = {
   cases: [],
   eventLabels: {},
-  selected: null,
   locale: readLocale(),
   view: "workspace",
-  history: [],
   projectId: null,
   recentRuns: [],
   requestVersion: 0,

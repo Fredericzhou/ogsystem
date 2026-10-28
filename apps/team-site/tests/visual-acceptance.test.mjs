@@ -35,6 +35,17 @@ test("default Team Studio creation produces a native v2 draft on desktop and mob
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
+    const rootRedirect = await page.request.get(`${url}/`, { maxRedirects: 0 });
+    assert.equal(rootRedirect.status(), 302);
+    assert.equal(rootRedirect.headers().location, "/projects");
+    const studioEntry = await page.request.get(`${url}/studio/new`);
+    assert.equal(studioEntry.status(), 200, "the local Team Site has no interactive login flow");
+    await page.goto(url, { waitUntil: "networkidle" });
+    assert.match(page.url(), /\/projects$/);
+    await page.locator("#projects-view h1").waitFor();
+    assert.equal(await page.locator("#projects-view h1").innerText(), "协作项目");
+    assert.equal(await page.locator("#landing-view").count(), 0);
+
     await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
     assert.match(await page.locator(".new-team-heading h1").innerText(), /Team IR v2/);
     assert.doesNotMatch(await page.locator("#new-project-view").innerText(), /assistant will turn|团队助手/);

@@ -103,6 +103,8 @@ test("parallel fail-fast cancels and closes a sibling when Binding confirms canc
   const result = await running;
   assert.equal(result.status, "failed");
   assert.equal(result.terminalIntent, "failed");
+  assert.equal(result.events.find((entry) => entry.type === "run.failing")?.data.code, "BINDING_POLICY",
+    "a sibling's cancellation rejection must not replace the branch failure that started fail-fast convergence");
   assert.equal(result.invocations["fail-fast-confirmed:start-slow"].status, "failed");
   assert.equal(result.invocations["fail-fast-confirmed:start-slow"].outcomeUnknown, false);
   assert.equal(slowCalls, 1);

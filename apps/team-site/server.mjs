@@ -553,7 +553,7 @@ const server = createServer(async (request, response) => {
   })) return;
   if (request.method === "GET") {
     if (url.pathname === "/") {
-      response.writeHead(302, { location: "/teams", "cache-control": "no-store" });
+      response.writeHead(302, { location: "/projects", "cache-control": "no-store" });
       response.end();
       return;
     }

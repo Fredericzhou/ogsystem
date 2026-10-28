@@ -8,6 +8,7 @@ import type { TeamIrDiagnostic } from "./types.js";
 
 export * from "./compiler.js";
 export * from "./a2a-binding.js";
+export * from "./a2a-http-client.js";
 export * from "./file-run-store.js";
 export * from "./artifact-store.js";
 export * from "./runtime.js";

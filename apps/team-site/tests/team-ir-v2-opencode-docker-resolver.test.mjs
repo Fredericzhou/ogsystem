@@ -8,7 +8,8 @@ import {
   getDockerRunArgsForTest,
   makePrompt,
   resolveBindings,
-  resolveTeamIrReleaseClosure
+  resolveTeamIrReleaseClosure,
+  validateModelOutput
 } from "../infrastructure/team-ir-v2-opencode-docker-resolver.mjs";
 
 const fixture = JSON.parse(await readFile(new URL("../../../examples/team-ir-v2/classic-artifact-evidence.json", import.meta.url), "utf8"));
@@ -18,7 +19,7 @@ test("trusted closure verifies checked-in role package digests and pins the mode
   assert.equal(closure.complete, true);
   assert.equal(closure.packageDigests["role:advanced-worker-a@1"], "f1ab03e99bd7db6c19547b05fb0f81a4110c38c88a0211a6c17f9dd4f8f02c3a");
   assert.equal(closure.packageDigests["role:advanced-worker-b@1"], "bed3d1028ac4b1cef61876169d75fa5ed4fab3405c9710f048b6827976236c23");
-  assert.equal(closure.adapterVersions.model, "ogs-opencode-docker-adapter/1");
+  assert.equal(closure.adapterVersions.model, "ogs-opencode-docker-adapter/3");
   assert.match(closure.schemaDigests.reviewAuthorization, /^[a-f0-9]{64}$/);
   assert.equal(Object.keys(closure.bindingDigests).length, 2);
 });
@@ -34,11 +35,44 @@ test("model prompt makes the Team IR v2 envelope authoritative over legacy role 
     role: { agent: "Return {decision, request}.", prompt: "Match output.schema.json." },
     input: { task: "Review" },
     invocation: { handoffId: "run-to-judge" },
-    agent: { id: "judge", outputPorts: { JUDGMENT: { dataSchema: { type: "object" } } } }
+    agent: { id: "judge", outputPorts: { JUDGMENT: { dataSchema: { type: "object" }, artifactSlots: { report: { required: true, mediaTypes: ["text/markdown"] } } } } }
   });
   assert.ok(prompt.system.indexOf("Authoritative Team IR v2 response contract") > prompt.system.indexOf("Return {decision, request}"));
   assert.match(prompt.system, /data payload, not this envelope/);
-  assert.match(prompt.system, /event, data, and optional artifactTexts/);
+  assert.match(prompt.system, /artifactTexts when the selected event declares required Artifact slots/);
+  assert.match(prompt.system, /MUST contain a substantive body for every requiredArtifactSlot/);
+  assert.match(prompt.system, /"requiredArtifactSlots":\["report"\]/);
+});
+
+test("model output validation returns safe stable diagnostics without retaining response text", () => {
+  const agent = {
+    outputPorts: {
+      DONE: {
+        dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false },
+        artifactSlots: { report: { required: true, mediaTypes: ["text/markdown"] } }
+      }
+    }
+  };
+  const cases = [
+    ["not-json including secret-marker", "OUTPUT_JSON_INVALID"],
+    [JSON.stringify({ event: 12, data: {} }), "OUTPUT_ENVELOPE_INVALID"],
+    [JSON.stringify({ event: "DONE", data: { answer: "ok" }, secretMarker: "do-not-persist" }), "OUTPUT_FIELD_UNDECLARED"],
+    [JSON.stringify({ event: "DONE", data: { answer: 12 }, artifactTexts: { report: "report" } }), "OUTPUT_DATA_SCHEMA_INVALID"],
+    [JSON.stringify({ event: "DONE", data: { answer: "ok" }, artifactTexts: "not-a-map" }), "OUTPUT_ARTIFACT_MAP_INVALID"],
+    [JSON.stringify({ event: "DONE", data: { answer: "ok" }, artifactTexts: { undeclared: "report" } }), "OUTPUT_ARTIFACT_SLOT_INVALID"],
+    [JSON.stringify({ event: "DONE", data: { answer: "ok" } }), "OUTPUT_ARTIFACT_REQUIRED"]
+  ];
+  for (const [response, diagnosticCode] of cases) {
+    assert.throws(() => validateModelOutput(response, agent), (error) => {
+      assert.equal(error.failureClass, "invalid_output");
+      assert.equal(error.diagnosticCode, diagnosticCode);
+      assert.equal(JSON.stringify(error).includes("secret-marker"), false);
+      return true;
+    });
+  }
+  assert.equal(validateModelOutput(JSON.stringify({
+    event: "DONE", data: { answer: "ok" }, artifactTexts: { report: "# Report" }
+  }), agent).kind, "completed");
 });
 
 test("trusted closure refuses unpinned role packages and model providers", async () => {

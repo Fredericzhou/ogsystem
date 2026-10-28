@@ -24,7 +24,7 @@ export type TeamA2AMessagePart =
 
 export type TeamA2ARemoteTask = {
   id: string;
-  status: "submitted" | "working" | "input-required" | "completed" | "failed" | "canceled" | "rejected";
+  status: "submitted" | "working" | "input-required" | "auth-required" | "completed" | "failed" | "canceled" | "rejected";
   messageParts?: unknown[];
   requestedInputSchema?: unknown;
   result?: unknown;
@@ -169,6 +169,7 @@ function mapTerminal(task: TeamA2ARemoteTask, readOutput: (task: TeamA2ARemoteTa
   if (task.status === "input-required") {
     return { kind: "input-required", remoteTaskId: task.id, messageParts: task.messageParts ?? [], ...(task.requestedInputSchema === undefined ? {} : { requestedInputSchema: task.requestedInputSchema }) };
   }
+  if (task.status === "auth-required") throw new TeamBindingError("Remote A2A Task requires additional authentication.", "policy");
   if (task.status === "canceled") throw new TeamBindingError(task.errorMessage ?? "Remote A2A Task was canceled.", "cancelled");
   if (task.status === "rejected") throw new TeamBindingError(task.errorMessage ?? "Remote A2A Task was rejected by policy.", "policy");
   throw new TeamBindingError(task.errorMessage ?? task.errorCode ?? "Remote A2A Task failed.", "server_error");

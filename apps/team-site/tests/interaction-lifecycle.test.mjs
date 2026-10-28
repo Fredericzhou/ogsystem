@@ -66,7 +66,7 @@ test("dirty forms guard route changes and beforeunload", async () => {
   }
 });
 
-test("run drawer manages focus and Team IR v2 task review focuses the current Run checkpoint", async () => {
+test("Team IR v2 task review focuses the current Run checkpoint", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-interaction-modal-"));
   await seedReleasedClassicTeam(projectsRoot);
   const { server, url } = await startServer(projectsRoot);
@@ -75,25 +75,6 @@ test("run drawer manages focus and Team IR v2 task review focuses the current Ru
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`${url}/teams`, { waitUntil: "networkidle" });
-    await page.locator("#product-mode-toggle").click();
-    await page.evaluate(async () => {
-      const { openDrawer } = await import("/app/views/app.js");
-      const trigger = document.createElement("button");
-      trigger.id = "drawer-test-trigger";
-      trigger.textContent = "open";
-      document.body.append(trigger);
-      trigger.focus();
-      openDrawer(trigger);
-    });
-    await page.locator("#run-drawer.open").waitFor({ timeout: 30000 });
-    assert.equal(await page.locator("#run-drawer .drawer-panel").evaluate((panel) => panel.contains(document.activeElement)), true);
-    await page.keyboard.press("Tab");
-    assert.equal(await page.locator("#run-drawer .drawer-panel").evaluate((panel) => panel.contains(document.activeElement)), true);
-    await page.keyboard.press("Escape");
-    await page.locator("#run-drawer.open").waitFor({ state: "detached" }).catch(async () => {
-      await page.locator("#run-drawer.open").waitFor({ state: "hidden" });
-    });
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "drawer-test-trigger");
     const team = await page.request.post(`${url}/api/v1/cases/software-team/use`, { data: { locale: "zh-CN" } }).then((response) => response.json());
     const project = await page.request.post(`${url}/api/v1/projects`, { data: { name: "Review UI Project", workspaceKey: "review-ui", teamVersionIds: [team.projectId] } }).then((response) => response.json());
     const task = await page.request.post(`${url}/api/v1/projects/${project.projectId}/tasks`, { data: { input: "Review focus", teamVersionId: team.projectId, idempotencyKey: "review-focus" } }).then((response) => response.json());
