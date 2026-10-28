@@ -1010,6 +1010,103 @@ test("TeamRuntime projects authorized Artifact refs, injects an allowlist resolv
   assert.equal(Buffer.from(await resolver.read(storedOutput.artifactId)).toString(), "private report");
 });
 
+test("Artifact registered before a failed completion checkpoint is not published or retried after recovery", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-checkpoint-fault-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.runResult.dataSchema = { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false };
+  value.executionPolicy.resultMode = "required";
+  value.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.runResult.artifactSlots = { report: { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } }, artifacts: { report: { "$ref": "$.output.artifacts.report" } } } }
+  ];
+  value.orchestration.routes = [{ from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["start"] }];
+  value.bindings[0].retry = { maxAttempts: 2, retryOn: ["transport"], backoff: { mode: "none" } };
+  const plan = compileTeamIr(value);
+  const artifactStore = new FileTeamArtifactStore(join(root, "artifacts"));
+  let registeredReference;
+  const registerOutput = artifactStore.registerOutput.bind(artifactStore);
+  artifactStore.registerOutput = async (args) => {
+    registeredReference = await registerOutput(args);
+    return registeredReference;
+  };
+  const backingStore = new FileTeamRunStore(join(root, "runs"));
+  let failCompletionCheckpoint = true;
+  const faultyStore = {
+    create: (...args) => backingStore.create(...args),
+    load: (...args) => backingStore.load(...args),
+    compareAndSet: (runId, revision, record) => {
+      if (failCompletionCheckpoint && record.invocations[`${runId}:start`]?.status === "completed") {
+        failCompletionCheckpoint = false;
+        throw new Error("injected Run completion checkpoint failure");
+      }
+      return backingStore.compareAndSet(runId, revision, record);
+    }
+  };
+  let bindingCalls = 0;
+  const bindings = { "binding:worker": { async invoke() {
+    bindingCalls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "must-not-publish" }, artifacts: { report: { mediaType: "text/markdown", content: Buffer.from("private uncommitted report") } } } };
+  } } };
+  const clock = { now: () => 100, sleep: async () => undefined };
+  const firstRuntime = new TeamRuntime({ store: faultyStore, clock, bindings, artifactStore });
+  await firstRuntime.createRun(plan, { runId: "artifact-checkpoint-fault", projectId: "project-1", task: "check", input: { prompt: "check" } });
+  await assert.rejects(firstRuntime.executeRun(plan, "artifact-checkpoint-fault"), /injected Run completion checkpoint failure/);
+
+  const interrupted = await backingStore.load("artifact-checkpoint-fault");
+  assert.equal(interrupted.status, "running");
+  assert.equal(interrupted.invocations["artifact-checkpoint-fault:start"].status, "running");
+  assert.equal(interrupted.invocations["artifact-checkpoint-fault:start"].output, undefined);
+  assert.equal(interrupted.resultWritten, undefined);
+  assert.equal(interrupted.events.some((entry) => entry.type === "run.result.written"), false);
+  assert.ok(registeredReference, "the crash point occurs after Artifact registration");
+
+  const recoveredRuntime = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock, bindings, artifactStore: new FileTeamArtifactStore(join(root, "artifacts")) });
+  const recovered = await recoveredRuntime.executeRun(plan, "artifact-checkpoint-fault");
+  assert.equal(recovered.status, "failed");
+  assert.equal(recovered.result, undefined);
+  assert.equal(recovered.resultWritten, undefined);
+  assert.equal(recovered.invocations["artifact-checkpoint-fault:start"].outcomeUnknown, true);
+  assert.equal(recovered.invocations["artifact-checkpoint-fault:start"].output, undefined);
+  assert.equal(recovered.events.some((entry) => entry.type === "run.result.written"), false);
+  assert.equal(bindingCalls, 1, "a result whose completion checkpoint failed must not be retried after restart");
+  assert.equal(JSON.stringify(recovered).includes("private uncommitted report"), false);
+  assert.equal(JSON.stringify(recovered).includes(registeredReference.artifactId), false, "the uncommitted Artifact reference is not exposed in the Run record");
+});
+
+test("Artifact invocation resolver failure is attributed before Binding invocation", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-resolver-fault-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.runInput.artifactSlots = { brief: { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" } };
+  value.agents[0].inputPorts.default.artifactSlots = { sources: { required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single" } };
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } }, artifacts: { sources: { "$ref": "$.run.attachments.brief" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } }
+  ];
+  value.orchestration.routes = [{ from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["start"] }];
+  const plan = compileTeamIr(value);
+  const artifactStore = new FileTeamArtifactStore(join(root, "artifacts"));
+  const inputArtifact = await artifactStore.registerRunInput({
+    team: value, projectId: "project-1", slotId: "brief", mediaType: "text/plain", content: Buffer.from("input"), authorizeUpload: () => true
+  });
+  artifactStore.createInvocationResolver = async () => { throw new Error("injected artifact resolver failure"); };
+  let bindingCalls = 0;
+  const runtime = new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")),
+    clock: { now: () => 100, sleep: async () => undefined },
+    bindings: { "binding:worker": { async invoke() { bindingCalls += 1; return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected" } } }; } } },
+    artifactStore
+  });
+  await runtime.createRun(plan, { runId: "artifact-resolver-fault", projectId: "project-1", task: "check", input: { prompt: "check" }, attachments: { brief: inputArtifact } });
+  const failed = await runtime.executeRun(plan, "artifact-resolver-fault");
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.invocations["artifact-resolver-fault:start"].error, "ARTIFACT_RESOLVER_UNAVAILABLE");
+  assert.equal(failed.invocations["artifact-resolver-fault:start"].outcomeUnknown, false);
+  assert.equal(bindingCalls, 0);
+});
+
 test("TeamRuntime hands an Agent Artifact to one downstream allowlist and persists a cross-instance authorized result", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-handoff-"));
   t.after(() => rm(root, { recursive: true, force: true }));

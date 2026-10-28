@@ -416,22 +416,51 @@ export class TeamRuntime {
         state.activeAttemptStartedAt = attemptStartedAt;
         event(record, `${invocationId}:attempt:${attempt}:started`, "binding.attempt.started", attemptStartedAt, { attempt });
       });
+      let artifactResolver: TeamArtifactResolver | undefined;
       try {
-        const artifactResolver = Object.keys(mappedArtifacts).length
+        artifactResolver = Object.keys(mappedArtifacts).length
           ? await this.args.artifactStore!.createInvocationResolver({
             owner: { projectId: existing.projectId, runId }, allowedArtifacts: Object.values(mappedArtifacts)
           })
           : undefined;
-        const call = { runId, handoffId, agentId, bindingId, attempt, input: mapped, ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId };
-        let rejectCancelled!: (error: TeamBindingError) => void;
-        const cancellation = new Promise<never>((_resolve, reject) => { rejectCancelled = reject; });
-        this.activeCancellationSignals.set(invocationId, () => rejectCancelled(new TeamBindingError("Binding cancelled after a sibling failure", "cancelled")));
-        let result: TeamBindingResult;
-        try {
-          result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined), cancellation);
-        } finally {
-          this.activeCancellationSignals.delete(invocationId);
+      } catch (error) {
+        const code = error instanceof TeamArtifactError ? error.code : "ARTIFACT_RESOLVER_UNAVAILABLE";
+        return this.fail(runId, invocationId, code);
+      }
+      const call = { runId, handoffId, agentId, bindingId, attempt, input: mapped, ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId };
+      let rejectCancelled!: (error: TeamBindingError) => void;
+      const cancellation = new Promise<never>((_resolve, reject) => { rejectCancelled = reject; });
+      this.activeCancellationSignals.set(invocationId, () => rejectCancelled(new TeamBindingError("Binding cancelled after a sibling failure", "cancelled")));
+      let result: TeamBindingResult;
+      try {
+        result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined), cancellation);
+      } catch (error) {
+        const finishedAt = this.args.clock.now();
+        const actualClass = error instanceof TeamBindingError ? error.failureClass : "transport";
+        const elapsed = Math.max(0, finishedAt - attemptStartedAt);
+        const current = (await this.args.store.load(runId))!;
+        const budgetExceeded = current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs;
+        await this.update(runId, (record) => {
+          record.activeExecutionMs += elapsed;
+          event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, { failureClass: actualClass, budgetExceeded });
+        });
+        if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
+        const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
+        const failureIntentWon = (await this.args.store.load(runId))?.terminalIntent === "failed";
+        const canRetry = !failureIntentWon && attempt < Number(retry.maxAttempts) && retryable(retry, error)
+          && !(error instanceof TeamBindingError && (error.outcomeUnknown || error.failureClass === "cancelled"));
+        if (canRetry) {
+          const delay = retryDelayMs(retry.backoff as Record<string, unknown>, attempt - 1);
+          if (this.args.clock.now() + delay < deadlineAt) {
+            await this.args.clock.sleep(delay);
+            continue;
+          }
         }
+        if (this.args.clock.now() >= deadlineAt || timedOut) return this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
+        return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown);
+      } finally {
+        this.activeCancellationSignals.delete(invocationId);
+      }
         const finishedAt = this.args.clock.now();
         const afterBinding = await this.args.store.load(runId);
         if (afterBinding?.terminalIntent === "failed" || afterBinding?.status === "failing") {
@@ -510,30 +539,6 @@ export class TeamRuntime {
           record.activeExecutionMs += elapsed;
           event(record, `${invocationId}:completed`, record.status === "failing" ? "invocation.completed_after_failure_intent" : "handoff.completed", finishedAt, { event: result.output.event });
         });
-      } catch (error) {
-        const finishedAt = this.args.clock.now();
-        const actualClass = error instanceof TeamBindingError ? error.failureClass : "transport";
-        const elapsed = Math.max(0, finishedAt - attemptStartedAt);
-        const budgetExceeded = (await this.args.store.load(runId))!.activeExecutionMs + elapsed > (await this.args.store.load(runId))!.activeExecutionBudgetMs;
-        await this.update(runId, (record) => {
-          record.activeExecutionMs += elapsed;
-          event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, { failureClass: actualClass, budgetExceeded });
-        });
-        if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
-        const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
-        const failureIntentWon = (await this.args.store.load(runId))?.terminalIntent === "failed";
-        const canRetry = !failureIntentWon && attempt < Number(retry.maxAttempts) && retryable(retry, error)
-          && !(error instanceof TeamBindingError && (error.outcomeUnknown || error.failureClass === "cancelled"));
-        if (canRetry) {
-          const delay = retryDelayMs(retry.backoff as Record<string, unknown>, attempt - 1);
-          if (this.args.clock.now() + delay < deadlineAt) {
-            await this.args.clock.sleep(delay);
-            continue;
-          }
-        }
-        if (this.args.clock.now() >= deadlineAt || timedOut) return this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
-        return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown);
-      }
     }
     return this.fail(runId, invocationId, "BINDING_RETRIES_EXHAUSTED");
   }
