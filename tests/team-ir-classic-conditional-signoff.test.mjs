@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compileTeamIr, MemoryTeamRunStore, TeamRuntime, validateTeamIr } from "../dist/team-ir/index.js";
+import { applyTeamJoinEvent, compileTeamIr, createTeamJoinRound, MemoryTeamRunStore, TeamRuntime, validateTeamIr } from "../dist/team-ir/index.js";
 
 const fixtureUrl = new URL("../examples/team-ir-v2/classic-conditional-signoff.json", import.meta.url);
 
@@ -81,4 +81,45 @@ test("a required Join field cannot depend on a conditional candidate from a shar
   fixture.agents.find((agent) => agent.id === "signoff-chair").inputPorts.collect.dataSchema.required.push("primaryComment");
   const diagnostics = validateTeamIr(fixture);
   assert.ok(diagnostics.some((item) => item.code === "IR_JOIN_CONDITIONAL_REQUIRED_SOURCE"));
+});
+
+test("conditional signoff Join timeout keeps its deadline across recovery and ignores late sources", async () => {
+  const fixture = await loadFixture();
+  const compiledJoin = compileFixture(fixture).joinsByTarget.get("signoff-chair:collect");
+  const roundConfig = {
+    joinId: compiledJoin.id,
+    runId: "conditional-signoff-timeout-recovery",
+    lineage: "run",
+    mode: compiledJoin.mode,
+    handoffIds: compiledJoin.handoffIds,
+    timeoutMs: compiledJoin.timeoutMs,
+    requiredSourceIds: ["compliance-signoff"],
+    requiredFields: fixture.agents.find((agent) => agent.id === compiledJoin.agentId)
+      .inputPorts[compiledJoin.inputPort].dataSchema.required,
+    baseMapping: { data: { request: "request" } }
+  };
+  let round = createTeamJoinRound(roundConfig);
+  round = applyTeamJoinEvent(round, { type: "predecessor_activated", at: 100 });
+  round = applyTeamJoinEvent(round, { type: "arrival", sourceId: "primary-standard-signoff", contribution: { data: { primaryComment: "reviewed" } }, at: 110 });
+  round = applyTeamJoinEvent(round, { type: "skip", sourceId: "primary-clinical-signoff", at: 111 });
+
+  const checkpoint = structuredClone(round);
+  assert.equal(checkpoint.startedAt, 100);
+  assert.equal(checkpoint.deadlineAt, 100 + compiledJoin.timeoutMs);
+  assert.equal(checkpoint.sourceStates["primary-standard-signoff"], "arrived");
+  assert.equal(checkpoint.sourceStates["primary-clinical-signoff"], "skipped");
+  assert.equal(checkpoint.sourceStates["compliance-signoff"], "pending");
+
+  const recovered = structuredClone(checkpoint);
+  assert.equal(applyTeamJoinEvent(recovered, { type: "tick", at: checkpoint.deadlineAt - 1 }).status, "collecting");
+  const timedOut = applyTeamJoinEvent(recovered, { type: "tick", at: checkpoint.deadlineAt });
+  assert.equal(timedOut.status, "failed");
+  assert.equal(timedOut.failure.code, "JOIN_TIMEOUT");
+  assert.equal(timedOut.deadlineAt, checkpoint.deadlineAt);
+
+  const afterLateArrival = applyTeamJoinEvent(timedOut, {
+    type: "arrival", sourceId: "compliance-signoff", contribution: { data: { complianceComment: "late" } }, at: checkpoint.deadlineAt + 1
+  });
+  assert.deepEqual(afterLateArrival, timedOut);
+  assert.equal(afterLateArrival.sourceStates["compliance-signoff"], "pending");
 });
