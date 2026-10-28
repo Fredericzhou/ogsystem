@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -420,6 +420,40 @@ export async function resolveBindings({ teamIR }) {
     assert.ok(advancedLayout.content <= advancedLayout.viewport + 1, `advanced graph/editor overflows narrow viewport: ${JSON.stringify(advancedLayout)}`);
     assert.equal(await page.locator("[data-ir-graph-node]").count(), advancedIr.agents.length + 2);
     assert.ok(await page.locator("[data-ir-graph-handoff]").count() >= 2);
+
+    const nativeCreateDirectResponse = await page.goto(`${url}/studio/ir/new`, { waitUntil: "networkidle" });
+    assert.equal(nativeCreateDirectResponse.status(), 200);
+    await page.locator(".new-team-heading h1").getByText("Team IR v2").waitFor();
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    await page.locator('#studio-view a[href="/studio/ir/new"]').click();
+    await page.waitForURL(`${url}/studio/ir/new`);
+    await page.locator(".new-team-heading h1").getByText("Team IR v2").waitFor();
+    await page.locator("#new-project-form input[name=name]").fill("Native v2 draft");
+    await page.locator("#new-project-form textarea[name=overview]").fill("A native Team IR draft with a typed starter workflow.");
+    const nativeCreate = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/v1/team-ir-drafts");
+    await page.locator("#new-project-form button[type=submit]").click();
+    const nativeCreateResponse = await nativeCreate;
+    assert.equal(nativeCreateResponse.status(), 201, await nativeCreateResponse.text());
+    await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/ir$/);
+    const nativeId = page.url().match(/\/studio\/teams\/([a-z0-9-]+)\/ir$/)?.[1];
+    assert.ok(nativeId);
+    const nativeProject = await page.request.get(`${url}/api/v1/team-versions/${nativeId}`).then((response) => response.json());
+    assert.equal(nativeProject.source, "team-ir-v2");
+    assert.equal(nativeProject.templateId, "team-ir-v2");
+    const nativeIr = await page.request.get(`${url}/api/v1/team-versions/${nativeId}/ir`).then((response) => response.json());
+    assert.equal(nativeIr.teamIR.schemaVersion, 2);
+    assert.equal(nativeIr.semanticDigest, teamIRSemanticDigest(nativeIr.teamIR));
+    assert.equal(nativeIr.teamIR.agents[0].id, "worker");
+    assert.match(await readFile(join(projectsRoot, nativeId, ".ogs", "team.ir.json"), "utf8"), /"schemaVersion": 2/);
+    await assert.rejects(access(join(projectsRoot, nativeId, "system.mmd")), { code: "ENOENT" });
+    await assert.rejects(access(join(projectsRoot, nativeId, ".ogs", "authoring.json")), { code: "ENOENT" });
+    await page.reload({ waitUntil: "networkidle" });
+    assert.equal((await page.locator("[data-team-ir-digest]").innerText()).trim(), nativeIr.semanticDigest);
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    const nativeCard = page.locator(`[data-team-root-id="${nativeId}"]`);
+    await nativeCard.locator(`a[href="/studio/teams/${nativeId}/ir"]`).waitFor();
+    assert.equal(await nativeCard.locator(`a[href="/studio/teams/${nativeId}/design"]`).count(), 0);
 
     const v2ReviewRouteCalls = [];
     let v2ReviewStatus = "pending";

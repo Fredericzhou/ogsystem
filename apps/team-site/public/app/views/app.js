@@ -265,7 +265,7 @@ function labelEvent(event) { return localizedEventLabel(event, copy); }
 
 function renderPageFrame(root, template, renderPromise) {
   const route = location.pathname;
-  const isStudioCreate = route === "/studio/new";
+  const isStudioCreate = route === "/studio/new" || route === "/studio/ir/new";
   const studioWorkspace = route.match(/^\/studio\/teams\/([a-z0-9-]+)\/(info|run|release)(?:\/[a-z0-9-]+)?$/);
   const workspaceTabs = studioWorkspace ? `<div class="studio-workspace-tabs">${studioWorkspaceNav(studioWorkspace[1], studioWorkspace[2])}</div>` : "";
   const projectWorkspaceTabs = root.id === "project-workspace-view" && /^\/projects\/[a-z0-9-]+(?:\/runs\/[A-Za-z0-9._-]+)?$/.test(route)
@@ -517,6 +517,7 @@ function isProjectRoute() {
     || path === "/platform/role-sources"
     || path === "/projects/new"
     || path === "/studio/new"
+    || path === "/studio/ir/new"
     || /^\/projects\/[a-z0-9-]+\/runs\/[A-Za-z0-9._-]+$/.test(path)
     || /^\/projects\/[a-z0-9-]+(?:\/teams)?$/.test(path);
 }
@@ -525,7 +526,7 @@ function setView(view) {
   const viewMap = { projects: "projects-view", workspace: "workspace-view", studio: "studio-view", platform: "platform-view", examples: "examples-view", history: "history-view", "new-project": "new-project-view", "project-workspace": "project-workspace-view" };
   Object.entries(viewMap).forEach(([key, id]) => document.getElementById(id)?.classList.toggle("hidden", key !== view));
   $("#case-detail-view")?.classList.add("hidden");
-  const activeView = state.studioRoute ? (location.pathname === "/studio/new" ? "studio-create" : location.pathname === "/studio/roles" ? "studio-roles" : "studio") : view;
+  const activeView = state.studioRoute ? (["/studio/new", "/studio/ir/new"].includes(location.pathname) ? "studio-create" : location.pathname === "/studio/roles" ? "studio-roles" : "studio") : view;
   $$(".nav-item[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === activeView && !(activeView === "platform" && button.getAttribute("href") !== location.pathname)));
   const nav = $(`.nav-item[href="${location.pathname}"] [data-i18n]`) || $(`.nav-item[data-view="${activeView}"] [data-i18n]`);
   $("#breadcrumb-current").textContent = nav?.textContent || copy[state.locale].navTeams;
@@ -577,23 +578,31 @@ async function renderProjectCreate() {
     collaborationProjectForm.addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const teamVersionIds = form.getAll("teamVersionIds").map(String); const status = $("#collaboration-project-status"); const submit = event.currentTarget.querySelector("button[type=submit]"); if (!teamVersionIds.length) { status.textContent = "请至少选择一个已发布团队版本。"; return; } submit.disabled = true; status.textContent = "正在创建项目..."; try { const createResponse = await pageFetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), teamVersionIds }) }); const project = await createResponse.json(); if (!createResponse.ok) throw new Error(project.error || "项目创建失败"); clearDirty("collaboration-project-form"); navigate(`/projects/${encodeURIComponent(project.projectId)}`); } catch (error) { if (isAbort(error)) return; status.textContent = error.message || "项目创建失败"; submit.disabled = false; } });
   } catch (error) { if (isAbort(error)) return; if (error?.name !== "AbortError") options.innerHTML = `<p class="run-error">${esc(error.message || "无法读取团队仓库")}</p>`; }
 }
-async function renderNewProject() {
+async function renderNewProject(_pageRequest, mode = "legacy") {
   const root = $("#new-project-view");
   const english = state.locale === "en";
   const t = (en, zh) => english ? en : zh;
   root.innerHTML = `<section class="page-heading new-team-heading"><div><a class="detail-back" href="/teams" data-route="/teams">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">Team Studio · ${t("Create", "创建")}</div><h1>${t("Describe the team’s goal", "先说清团队要完成什么")}</h1><p>${t("The assistant will turn your goal into a design that you can review and refine.", "提交目标后，团队助手会先整理你的意图，再通过对话完善职责、协作关系和交付结果。")}</p></div></section><section class="project-builder new-team-builder"><form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">${t("Team design", "团队设计")}</span><h2>${t("What should this team accomplish?", "你希望团队完成什么？")}</h2><p>${t("Start with the goal. Refine the name, roles, and workflow in the design workspace.", "从目标开始，创建后可在设计工作区调整名称、角色和协作结构。")}</p></div><label>${t("Team name", "团队名称")}<input name="name" required maxlength="120" autocomplete="organization" placeholder="${t("For example: Product research team", "例如：产品研究团队")}"></label><label>${t("Team goal", "团队目标")}<textarea name="overview" required maxlength="4000" rows="6" placeholder="${t("For example: compare competitor research and produce evidence-based recommendations; researchers collect sources, analysts compare findings, and a lead reviews the result.", "例如：目标是分析竞品资料并提出行动建议；研究员负责资料整理，分析员负责比较，负责人汇总并审核；流程为收集材料、独立分析、汇总审核；输入包括竞品文档，输出为带依据的建议清单。")}"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><div class="new-team-form-footer"><p class="form-hint">${t("After creation, refine roles, workflow, and output requirements with the assistant.", "创建后可继续用自然语言调整角色、流程和输出要求。")}</p><div class="form-actions"><button class="primary-button" type="submit">${t("Create team", "创建团队")} <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`;
   const studioCreateBack = root.querySelector(".new-team-heading .detail-back");
   const createIntro = root.querySelector(".new-team-heading p");
-  if (createIntro) createIntro.textContent = t("Describe the goal, then refine the team design before release.", "描述团队目标，再完善设计并发布。");
+  if (createIntro) createIntro.textContent = mode === "ir-v2"
+    ? t("Create a native Team IR v2 draft. It stays separate from legacy team design.", "创建原生 Team IR v2 草稿，与旧版团队设计数据隔离。")
+    : t("Describe the goal, then refine the team design before release.", "描述团队目标，再完善设计并发布。");
+  const createTitle = root.querySelector(".new-team-heading h1");
+  if (createTitle && mode === "ir-v2") createTitle.textContent = t("Create a Team IR v2 draft", "新建 Team IR v2 草稿");
   const createSectionLabel = root.querySelector(".new-team-form-heading .section-kicker");
-  if (createSectionLabel) createSectionLabel.textContent = t("Team design", "团队设计");
+  if (createSectionLabel) createSectionLabel.textContent = mode === "ir-v2" ? "Team IR v2" : t("Team design", "团队设计");
+  const createFormTitle = root.querySelector(".new-team-form-heading h2");
+  if (createFormTitle && mode === "ir-v2") createFormTitle.textContent = t("Name the team and its goal", "填写团队名称与目标");
+  const createFormHint = root.querySelector(".new-team-form-heading p");
+  if (createFormHint && mode === "ir-v2") createFormHint.textContent = t("A typed starter flow is created with the draft. You can refine its roles and handoffs next.", "草稿会包含一个可编辑的类型化起始流程，创建后可继续调整角色和交接。");
   if (studioCreateBack) {
     studioCreateBack.href = "/studio";
     studioCreateBack.dataset.route = "/studio";
     studioCreateBack.textContent = state.locale === "en" ? "Back to OGS Studio" : "返回 OGS Studio";
   }
   const createDraftButton = root.querySelector("#new-project-form button[type=submit]");
-  if (createDraftButton) createDraftButton.textContent = t("Create team", "创建团队");
+  if (createDraftButton) createDraftButton.textContent = mode === "ir-v2" ? t("Create v2 draft", "创建 v2 草稿") : t("Create team", "创建团队");
   const newProjectForm = $("#new-project-form");
   bindDirtyForm(newProjectForm, () => setDirty("new-project-form"));
   newProjectForm.addEventListener("submit", async (event) => {
@@ -606,12 +615,12 @@ async function renderNewProject() {
     submit.textContent = state.locale === "en" ? "Creating team…" : "正在创建团队…";
     status.textContent = state.locale === "en" ? "Creating team…" : "正在创建团队…";
     try {
-      const response = await pageFetch("/api/v1/team-factory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) });
+      const response = await pageFetch(mode === "ir-v2" ? "/api/v1/team-ir-drafts" : "/api/v1/team-factory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) });
       const project = await response.json();
       if (!response.ok) throw new Error(project.error || "项目创建失败");
       clearDirty("new-project-form");
       state.projectId = project.projectId;
-      navigate("/studio/teams/" + encodeURIComponent(project.projectId) + "/design");
+      navigate("/studio/teams/" + encodeURIComponent(project.projectId) + (mode === "ir-v2" ? "/ir" : "/design"));
     } catch (error) { if (isAbort(error)) return;
       status.textContent = error.message || t("Team creation failed.", "团队创建失败。");
     } finally {
@@ -730,7 +739,7 @@ function teamCard(team, area) {
       ? `<a class="secondary-button team-view-button" href="/studio/teams/${id}/info" data-route="/studio/teams/${id}/info">${state.locale === "en" ? "View team" : "查看团队"}</a>${deleteButton}`
       : `${meta.status === "released"
         ? `<button class="primary-button" type="button" data-team-action="edit" data-team-id="${id}">${state.locale === "en" ? "Edit team" : "编辑团队"}</button><button class="secondary-button" type="button" data-team-action="archive" data-team-id="${id}">${esc(copy[state.locale].archiveVersion)}</button>`
-        : `<a class="primary-button" href="/studio/teams/${id}/design" data-route="/studio/teams/${id}/design">${esc(copy[state.locale].continueEditing)}</a>`}${deleteButton}`;
+        : (() => { const route = `/studio/teams/${id}/${team.source === "team-ir-v2" ? "ir" : "design"}`; return `<a class="primary-button" href="${route}" data-route="${route}">${esc(copy[state.locale].continueEditing)}</a>`; })()}${deleteButton}`;
   const statusClass = meta.displayStatus === "released" ? "released" : meta.displayStatus;
   return `<article class="team-version-card project-asset-surface" data-team-root-id="${esc(team.teamRootId || team.teamId || team.projectId)}" data-team-status="${esc(meta.displayStatus)}" data-team-builtin="${team.builtIn ? "true" : "false"}"><div class="asset-card-top"><span class="asset-mark">O</span><span class="status-chip ${esc(statusClass)}">${esc(meta.label)}</span></div><div class="asset-title-row"><h2>${title}</h2><span class="version-badge">${esc(meta.version)}</span></div><p>${esc(team.overview || "")}</p><div class="asset-card-meta"><span>${team.builtIn ? (state.locale === "en" ? "Built-in team" : "内置经典团队") : esc(meta.hint)}</span><span>${team.updatedAt ? new Date(team.updatedAt).toLocaleDateString(state.locale) : ""}</span></div><div class="asset-card-actions">${actions}</div></article>`;
 }
@@ -1072,6 +1081,12 @@ async function renderStudioOverview() {
   const root = $("#studio-view");
   root.dataset.template = "A";
   root.innerHTML = `<section class="page-frame" data-template="A" data-fit><div class="page-frame-body" data-layout-scroll><section class="project-library-toolbar studio-repository-toolbar"><div class="repository-heading"><div class="eyebrow">${esc(copy[state.locale].factoryEyebrow)}</div><h1>${esc(copy[state.locale].factoryTitle)}</h1><p>${esc(copy[state.locale].factoryIntro)}</p></div><div class="project-library-filters repository-actions"><label><span class="sr-only">${state.locale === "en" ? "Search teams" : "搜索团队"}</span><input id="studio-team-search" type="search" placeholder="${state.locale === "en" ? "Search teams" : "搜索团队"}"></label><label><span class="sr-only">${state.locale === "en" ? "Filter status" : "筛选状态"}</span><select id="studio-team-status"><option value="all">${state.locale === "en" ? "All statuses" : "全部状态"}</option><option value="released">${esc(copy[state.locale].releasedLabel)}</option><option value="draft">${state.locale === "en" ? "Designing" : "设计中"}</option><option value="archived">${esc(copy[state.locale].archivedLabel)}</option></select></label><a class="primary-button" href="/studio/new" data-route="/studio/new">${esc(copy[state.locale].createTeam)}</a></div></section><div id="studio-grid" class="project-library-grid"><div class="project-loading" role="status">${state.locale === "en" ? "Loading team repository…" : "正在读取团队仓库…"}</div></div></div></section>`;
+  const nativeDraftLink = document.createElement("a");
+  nativeDraftLink.className = "secondary-button";
+  nativeDraftLink.href = "/studio/ir/new";
+  nativeDraftLink.dataset.route = "/studio/ir/new";
+  nativeDraftLink.textContent = state.locale === "en" ? "New Team IR v2" : "新建 Team IR v2";
+  root.querySelector(".repository-actions")?.append(nativeDraftLink);
   const grid = $("#studio-grid");
   const statusFilter = $("#studio-team-status");
   const draftOption = statusFilter?.querySelector('option[value="draft"]');
@@ -5441,6 +5456,11 @@ function syncRoute() {
     renderPageFrame($("#new-project-view"), "E", renderNewProject(pageRequest));
     return;
   }
+  if (path === "/studio/ir/new") {
+    setView("new-project");
+    renderPageFrame($("#new-project-view"), "E", renderNewProject(pageRequest, "ir-v2"));
+    return;
+  }
   if (path === "/studio/roles") {
     setView("studio");
     renderPageFrame($("#studio-view"), "A", renderSharedResourcePage($("#studio-view"), "roles", state.locale, navigate));
@@ -5524,7 +5544,7 @@ function syncRoute() {
   else if (path === "/history") { state.view = "history"; frameExistingPage($("#history-view"), "A"); void renderHistory(pageRequest); }
   else if (path === "/examples") frameExistingPage($("#examples-view"), "A");
   setView(state.view);
-  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioReleaseMatch && !studioRunMatch && !studioRunDetailMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
+  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/examples", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioReleaseMatch && !studioRunMatch && !studioRunDetailMatch && path !== "/studio/new" && path !== "/studio/ir/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
 let drawerReleaseTrap;
 let drawerReleaseScroll;

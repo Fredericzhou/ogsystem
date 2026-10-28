@@ -492,8 +492,10 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
     getProject,
     listProjects,
     createProject,
+    createNativeTeamIrProject: createFileProjectRecord,
     saveProjectMetadata,
     removeProject,
+    removeProjectData,
     withProjectWriteLock
   },
   packageStore: { exportTeamPackage, loadTeamPackage },
@@ -670,6 +672,7 @@ const server = createServer(async (request, response) => {
     }
     const isStudioRoute = url.pathname === "/studio"
       || url.pathname === "/studio/new"
+      || url.pathname === "/studio/ir/new"
       || url.pathname === "/studio/roles"
       || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|ir|run(?:\/[a-z0-9._-]+)?|release|simulations)\/?$/.test(url.pathname)
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);

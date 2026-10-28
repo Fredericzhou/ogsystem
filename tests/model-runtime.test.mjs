@@ -63,7 +63,7 @@ test("adapter persists run artifacts for project-selected model roles", async ()
     path.resolve(runDir, "roles", "debate-minimalist", "role.md"),
     "utf8"
   );
-  assert.match(minimalistRole, /modelId: gpt-5\.6-sol/);
+  assert.match(minimalistRole, /modelId: gpt-6-luna/);
   assert.match(minimalistRole, /preferredModelTags:/);
 
   const minimalistInbox = await readFile(

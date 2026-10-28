@@ -794,7 +794,7 @@ Example:
   "roles": {
     "test-operator": {
       "backend": "codex",
-      "modelId": "gpt-5.6-sol"
+      "modelId": "gpt-6-luna"
     }
   }
 }

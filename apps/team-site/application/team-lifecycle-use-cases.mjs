@@ -125,6 +125,32 @@ export function createTeamLifecycleUseCases({
     return irSnapshot;
   }
 
+  function createStarterTeamIr(teamVersionId) {
+    const requestSchema = { type: "object", properties: { request: { type: "string" } }, required: ["request"], additionalProperties: false };
+    const summarySchema = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
+    return {
+      schemaVersion: 2,
+      team: { id: teamVersionId, version: "2.0.0" },
+      runInput: { dataSchema: requestSchema, preferencesSchema: { type: "object", additionalProperties: true }, artifactSlots: {} },
+      runResult: { dataSchema: summarySchema, artifactSlots: {} },
+      executionPolicy: { resultMode: "required", activeExecutionBudgetMs: 900000 },
+      agents: [{
+        id: "worker", packageRef: "role:worker@1", bindingRef: "binding:worker",
+        inputPorts: { default: { dataSchema: requestSchema } },
+        outputPorts: { DONE: { dataSchema: summarySchema } }
+      }],
+      handoffs: [
+        { id: "run-to-worker", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { request: { $ref: "$.run.input.request" } } }, when: { priority: 0 }, delivery: { deadlineMs: 300000 } },
+        { id: "worker-to-result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { summary: { $ref: "$.output.data.summary" } } }, when: { priority: 0 } }
+      ],
+      orchestration: { routes: [
+        { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["run-to-worker"] },
+        { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["worker-to-result"] }
+      ], joins: [], loops: [], reviews: [] },
+      bindings: [{ id: "binding:worker", kind: "model", modelRef: "sandbox/default", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }]
+    };
+  }
+
   async function confirmProjectTeam(projectId, options = {}) {
     const initial = await projectStore.getProject(projectId);
     if (!initial || initial.teamProjectId) throw new Error("TEAM_VERSION_NOT_FOUND: the requested TeamVersion does not exist.");
@@ -244,6 +270,37 @@ export function createTeamLifecycleUseCases({
         source: "team-factory",
         locale: locale === "en" ? "en" : "zh-CN"
       });
+    },
+
+    async createTeamIrDraft({ name, overview = "", locale = "zh-CN" } = {}) {
+      if (typeof projectStore.createNativeTeamIrProject !== "function"
+        || typeof teamIrRelease?.saveTeamIr !== "function" || typeof projectStore.removeProjectData !== "function") {
+        throw new Error("TEAM_IR_DRAFT_CREATION_UNAVAILABLE: native v2 draft persistence and compensation are not configured.");
+      }
+      const normalizedName = String(name || "").trim().slice(0, 120);
+      if (!normalizedName) throw new Error("TEAM_NAME_REQUIRED: enter a name for the Team draft.");
+      const project = await projectStore.createNativeTeamIrProject({
+        name: normalizedName,
+        overview: String(overview || "").trim().slice(0, 4000),
+        templateId: "team-ir-v2",
+        source: "team-ir-v2",
+        locale: locale === "en" ? "en" : "zh-CN"
+      });
+      try {
+        const result = await teamIrRelease.saveTeamIr(project.projectId, {
+          teamIR: createStarterTeamIr(project.projectId),
+          expectedSemanticDigest: null
+        });
+        if (!result.saved) throw new Error("TEAM_IR_DRAFT_INVALID: the starter Team IR failed validation.");
+        return await projectStore.getProject(project.projectId);
+      } catch (error) {
+        try {
+          await projectStore.removeProjectData(project.projectId);
+        } catch (cleanupError) {
+          throw new Error(`TEAM_IR_DRAFT_COMPENSATION_FAILED: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`, { cause: error });
+        }
+        throw error;
+      }
     },
 
     async createClassicTeamProject(input) {

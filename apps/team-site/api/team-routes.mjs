@@ -267,6 +267,21 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/v1/team-ir-drafts") {
+    try {
+      const payload = await readBody(request);
+      const team = await useCases.createTeamIrDraft({
+        name: payload.name,
+        overview: payload.overview,
+        locale: payload.locale
+      });
+      sendJson(response, 201, publicProject(team));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create Team IR v2 draft." });
+    }
+    return true;
+  }
+
   const editMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/edit$/);
   if (editMatch && request.method === "POST") {
     try {

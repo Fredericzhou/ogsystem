@@ -48,6 +48,16 @@ test("Team collection routes list factory teams, create drafts, and query reposi
   assert.deepEqual(harness.sent[2].payload, { teams: [{ projectId: "team-1", public: true }], stats: { total: 1 }, pagination: { page: 1 } });
 });
 
+test("native Team IR draft route delegates to v2 creation without reusing legacy creation", async () => {
+  const calls = [];
+  const harness = routeHarness({
+    createTeamIrDraft: async (input) => (calls.push(input), { projectId: "native-v2", source: "team-ir-v2" })
+  });
+  assert.equal(await harness.invoke("POST", "/api/v1/team-ir-drafts", { name: "Native v2", overview: "Typed team", locale: "en" }), true);
+  assert.deepEqual(harness.sent[0], { status: 201, payload: { projectId: "native-v2", source: "team-ir-v2", public: true } });
+  assert.deepEqual(calls, [{ name: "Native v2", overview: "Typed team", locale: "en" }]);
+});
+
 test("Team version actions preserve their statuses, IDs, bodies, and error mapping", async () => {
   const calls = [];
   const harness = routeHarness({

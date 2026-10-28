@@ -14,9 +14,16 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
       created.push(project);
       return project;
     },
+    async createNativeTeamIrProject(input) {
+      calls.push(["create-native-v2", input]);
+      const project = { projectId: `native-${created.length + 1}`, workdir: `/tmp/native-${created.length + 1}`, ...input };
+      created.push(project);
+      return project;
+    },
     async saveProjectMetadata(id, metadata) { calls.push(["save", id, metadata]); return { ...metadata, projectId: id }; },
     async withProjectWriteLock(_id, _operation, action) { return action(); },
     async removeProject(id) { calls.push(["remove", id]); },
+    async removeProjectData(id) { calls.push(["remove-project-data", id]); },
   };
   const packageStore = {
     async exportTeamPackage(workdir) { calls.push(["export", workdir]); return { bundle: true }; },
@@ -44,7 +51,8 @@ function setup({ projects = [], team, loaded = { validation: { ok: true } }, rel
         calls.push(["team-ir-compile", teamVersionId]);
         return { teamVersionId, teamIrSemanticDigest: "a".repeat(64), compiledPlanDigest: "b".repeat(64), compilerSemanticsVersion: "team-ir-v2/1" };
       },
-      async copyTeamIr(sourceId, destinationWorkdir) { calls.push(["team-ir-copy", sourceId, destinationWorkdir]); return { copied: true }; }
+      async copyTeamIr(sourceId, destinationWorkdir) { calls.push(["team-ir-copy", sourceId, destinationWorkdir]); return { copied: true }; },
+      async saveTeamIr(teamVersionId, input) { calls.push(["team-ir-save", teamVersionId, input]); return { saved: true }; }
     },
     caseMaterializer,
     caseCatalog: { getCase: (id) => id === "sample" ? caseSpec : undefined, listCases: () => [caseSpec] },
@@ -67,6 +75,32 @@ test("Team draft creation uses the Team lifecycle contract and normalizes suppor
     name: "Support Team", overview: "Coordinate support.", templateId: "empty", source: "team-factory", locale: "en"
   });
   await assert.rejects(() => harness.useCases.createTeamDraft({ name: "   " }), /TEAM_NAME_REQUIRED/);
+});
+
+test("native Team IR draft creation persists a typed starter without invoking legacy creation", async () => {
+  const harness = setup();
+  const draft = await harness.useCases.createTeamIrDraft({ name: "  V2 Team  ", overview: "  Typed workflow  ", locale: "en" });
+  assert.equal(draft.projectId, "native-1");
+  assert.deepEqual(harness.calls.find(([kind]) => kind === "create-native-v2")[1], {
+    name: "V2 Team", overview: "Typed workflow", templateId: "team-ir-v2", source: "team-ir-v2", locale: "en"
+  });
+  assert.equal(harness.calls.some(([kind]) => kind === "create"), false);
+  const saved = harness.calls.find(([kind]) => kind === "team-ir-save");
+  assert.equal(saved[1], "native-1");
+  assert.equal(saved[2].teamIR.schemaVersion, 2);
+  assert.equal(saved[2].teamIR.team.id, "native-1");
+  assert.equal(saved[2].teamIR.agents.length, 1);
+  assert.equal(saved[2].expectedSemanticDigest, null);
+});
+
+test("native Team IR draft creation compensates when its starter IR cannot be saved", async () => {
+  const harness = setup({ teamIrRelease: {
+    async getTeamIrReleaseSnapshot() {},
+    async copyTeamIr() {},
+    async saveTeamIr() { throw new Error("TEAM_IR_STORE_WRITE_FAILED"); }
+  } });
+  await assert.rejects(harness.useCases.createTeamIrDraft({ name: "Broken v2" }), /TEAM_IR_STORE_WRITE_FAILED/);
+  assert.deepEqual(harness.calls.find(([kind]) => kind === "remove-project-data"), ["remove-project-data", "native-1"]);
 });
 
 test("TeamVersion fork numbers the next immutable version and imports into an empty workspace", async () => {
