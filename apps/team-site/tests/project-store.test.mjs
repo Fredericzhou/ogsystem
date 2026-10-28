@@ -10,6 +10,11 @@ import { withCollaborationProjectUseCases } from "./collaboration-project-test-h
 import { withTeamLifecycleUseCases } from "./team-lifecycle-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 import { createFileRunQueryStore } from "../infrastructure/file-run-query-store.mjs";
+import { projectVisualizerStore } from "../infrastructure/project-visualizer-store.mjs";
+
+test("Team Site workspace adapter does not expose legacy Team package operations", () => {
+  assert.deepEqual(Object.keys(projectVisualizerStore).sort(), ["createWorkspace", "inspectWorkspace"]);
+});
 
 test("native Team IR v2 is required before material access or direct Project Run", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-projects-"));

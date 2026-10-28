@@ -162,6 +162,15 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await runMapping.inputValue(), "");
     await runSuggestion.click();
     assert.equal(await runMapping.inputValue(), "request=$.run.input.request");
+    assert.equal(await page.locator('[data-ir-map-row="0"] [data-ir-map-target]').inputValue(), "request");
+    assert.equal(await page.locator('[data-ir-map-row="0"] [data-ir-map-source]').inputValue(), "$.run.input.request");
+    await page.locator('[data-ir-handoff="0"] [data-ir-map-remove]').click();
+    assert.equal(await runMapping.inputValue(), "", "removing a field row removes its mapping");
+    await page.locator('[data-ir-map-add="0"]').click();
+    const addedMapRow = page.locator('[data-ir-handoff="0"] [data-ir-map-row]');
+    await addedMapRow.locator('[data-ir-map-target]').selectOption("request");
+    await addedMapRow.locator('[data-ir-map-source]').selectOption("$.run.input.request");
+    assert.equal(await runMapping.inputValue(), "request=$.run.input.request", "field selections update the Team IR mapping");
     await page.locator('[data-ir-connect-source-agent-index="0"]').click();
     await page.locator('[data-ir-connect-target="result"]').click();
     await page.locator('[name="handoff-1-id"]').fill("worker-to-result");
@@ -194,16 +203,8 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator('[name="agent-0-id"]').inputValue(), "worker");
     assert.equal(await page.locator('[data-ir-handoff]').count(), 2);
     assert.equal((await page.locator("[data-team-ir-digest]").innerText()).trim(), expectedDigest);
-    await page.locator('[name="handoff-0-mapping"]').fill("request=$.run.input.unknown");
-    const basicInvalidValidation = page.waitForResponse((response) => response.request().method() === "POST"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/validate`);
-    await page.locator('#team-ir-editor button[type="submit"]').click();
-    const basicInvalidBody = await (await basicInvalidValidation).json();
-    assert.equal(basicInvalidBody.ok, false, JSON.stringify(basicInvalidBody));
-    await page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").first().click();
-    assert.equal(await page.locator('[name="handoff-0-mapping"]').evaluate((element) => document.activeElement === element), true);
-    assert.equal(await page.locator('[name="handoff-0-mapping"]').inputValue(), "request=$.run.input.unknown");
-    await page.locator('[name="handoff-0-mapping"]').fill("request=$.run.input.request");
+    assert.equal(await page.locator('[data-ir-handoff="0"] [data-ir-map-target]').inputValue(), "request");
+    assert.equal(await page.locator('[data-ir-handoff="0"] [data-ir-map-source]').inputValue(), "$.run.input.request");
     const blockedReadiness = await page.request.post(`${url}/api/v1/team-versions/${teamVersionId}/release`, { data: {} });
     assert.notEqual(blockedReadiness.status(), 200);
     assert.match((await blockedReadiness.json()).error, /TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED/);
@@ -371,14 +372,11 @@ export async function resolveBindings({ teamIR }) {
     incompatibleContracts.agentPortContracts.writer.inputPorts.draft.dataSchema.properties.prompt.pattern = "^target-";
     incompatibleContracts.handoffContracts.entry.map.data = {};
     await advancedEditor.fill(JSON.stringify(incompatibleContracts, null, 2));
-    const advancedEntryMapping = page.locator('[name="handoff-0-mapping"]');
-    await advancedEntryMapping.fill("");
     await page.locator('[data-ir-map-suggest="0"]').click();
     await page.locator('[data-ir-map-suggestions="0"]').getByText("No compatible required fields with matching names.").waitFor();
     assert.equal(await page.locator('[data-ir-map-accept="prompt"]').count(), 0,
       "same-name fields with incompatible pattern constraints must not be suggested");
     await advancedEditor.fill(JSON.stringify(contracts, null, 2));
-    await advancedEntryMapping.fill("prompt=$.run.input.prompt");
 
     contracts.orchestration.reviews[0].timeoutMs = 0;
     await advancedEditor.fill(JSON.stringify(contracts, null, 2));
@@ -481,7 +479,7 @@ export async function resolveBindings({ teamIR }) {
     await page.locator('[data-ir-graph-node="agent"][data-agent-id="writer"]').click();
     assert.equal(await page.locator('[name="agent-0-id"]').evaluate((element) => document.activeElement === element), true);
     await page.locator('[data-ir-graph-handoff="0"]').click();
-    assert.equal(await page.locator('[name="handoff-0-mapping"]').evaluate((element) => document.activeElement === element), true);
+    assert.equal(await page.locator('[data-ir-handoff="0"] [data-ir-map-target]').evaluate((element) => document.activeElement === element), true);
     await page.locator("[data-ir-graph-node=result]").click();
     assert.equal(await advancedEditor.evaluate((element) => document.activeElement === element), true);
     await page.setViewportSize({ width: 390, height: 844 });

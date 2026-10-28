@@ -180,11 +180,11 @@ test("runtime budget, deadline, attempt, and backoff durations use positive inte
   ];
 
   for (const { pointer, mutate } of fields) {
-    for (const number of [0, -1, 1.5]) {
+    for (const number of [0, -1, 1.5, null, "1", true]) {
       const value = minimalTeam();
       mutate(value, number);
       assert.ok(validateTeamIrSchema(value).some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
-        `Expected invalid duration ${number} to point at ${pointer}`);
+        `Expected invalid duration ${JSON.stringify(number)} to point at ${pointer}`);
     }
 
     const minimum = minimalTeam();
