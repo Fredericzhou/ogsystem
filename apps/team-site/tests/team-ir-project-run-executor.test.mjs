@@ -18,7 +18,7 @@ const closure = {
   schemaDigests: {}
 };
 
-async function makeHarness(t, { transformTeamIr = (value) => value, resolveBindings: resolveBindingsOverride } = {}) {
+async function makeHarness(t, { transformTeamIr = (value) => value, resolveBindings: resolveBindingsOverride, authorizeTeamIrReviewer } = {}) {
   const root = await mkdtemp(resolve(tmpdir(), "ogs-team-ir-project-run-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const projectRoot = resolve(root, "project-1");
@@ -53,12 +53,95 @@ async function makeHarness(t, { transformTeamIr = (value) => value, resolveBindi
     teamStore: { async getTeamVersion() { return team; } },
     teamIrStore: { async read() { return { teamIR, semanticDigest: team.teamIrSemanticDigest }; } },
     resolveReleaseClosure: async () => closure,
+    authorizeTeamIrReviewer,
     resolveBindings: resolveBindingsOverride ?? (async () => Object.fromEntries(Object.entries(outputs).map(([agentId, output]) => [`binding:${agentId}`, {
       async invoke() { return { kind: "completed", output }; }
     }])))
   });
   return { root, project, task, team, plan, executor };
 }
+
+function withSingleAgentReview(value) {
+  const planner = value.agents.find((agent) => agent.id === "planner");
+  value.agents = [planner];
+  value.handoffs = [
+    value.handoffs.find((handoff) => handoff.id === "run-to-planner"),
+    {
+      id: "planner-to-result",
+      from: { kind: "agent", agentId: "planner", outputPort: "PLAN" },
+      to: { kind: "result" },
+      map: { data: { summary: { $ref: "$.output.data.plan" } } }
+    }
+  ];
+  value.bindings = [value.bindings.find((binding) => binding.id === "binding:planner")];
+  value.orchestration.routes = [];
+  value.orchestration.joins = [];
+  value.orchestration.loops = [];
+  value.orchestration.reviews = [{
+    id: "planner-review",
+    at: { kind: "agentOutput", agentId: "planner", outputPort: "PLAN" },
+    feedbackSchema: { type: "object", properties: { comments: { type: "string" } }, required: [], additionalProperties: false },
+    timeoutMs: 60000,
+    onTimeout: "fail"
+  }];
+  return value;
+}
+
+test("Project Task Review persists activation and resumes the same Run and attempt after approval", async (t) => {
+  const h = await makeHarness(t, {
+    transformTeamIr: withSingleAgentReview,
+    authorizeTeamIrReviewer: async ({ reviewerId, principal }) => reviewerId === principal.id && reviewerId === "reviewer-1"
+  });
+  const options = {
+    runId: "run-1", teamVersionId: "team-v1", taskId: "task-1", taskNumber: 1, attemptNumber: 1,
+    teamIrSemanticDigest: h.team.teamIrSemanticDigest, compiledPlanDigest: h.team.compiledPlanDigest,
+    mode: "sandbox", prompt: "Implement the feature."
+  };
+  const waiting = await h.executor.execute(h.project, options);
+  assert.equal(waiting.state.status, "waiting_human_review");
+  const principal = { id: "reviewer-1", issuer: "test" };
+  const context = await h.executor.getReviewContext({ project: h.project, task: h.task, runId: "run-1", reviewId: "planner-review", principal });
+  const review = await context.runtime.getReview("run-1", "planner-review", context.lineage, context.loopRound);
+  const decided = await context.runtime.decideReview({
+    runId: "run-1", reviewId: "planner-review", lineage: context.lineage, loopRound: context.loopRound,
+    revisionToken: review.revisionToken, idempotencyKey: "approve-lead", reviewerId: principal.id,
+    decision: "approve", plan: context.plan
+  });
+  assert.equal(decided.status, "approved");
+  const [resumed, replayed] = await Promise.all([
+    context.resumeTeamIrRun({ dispatchId: "run-1:team-review:planner-review:run:run" }),
+    context.resumeTeamIrRun({ dispatchId: "run-1:team-review:planner-review:run:run" })
+  ]);
+  assert.equal(resumed.state.status, "completed");
+  assert.equal(replayed.state.status, "completed");
+  assert.equal(resumed.state.runId, "run-1");
+  assert.equal(resumed.owner.attemptNumber, 1);
+  assert.equal(Object.keys(resumed.teamRun.invocations).length, 1, "the completed agent call is not repeated during same-Run review recovery");
+  assert.deepEqual(resumed.result.teamResult, { summary: "implement" });
+  assert.equal(Object.keys(replayed.teamRun.invocations).length, 1, "replaying the committed dispatch reads the same terminal Run");
+  assert.throws(() => context.resumeTeamIrRun({ dispatchId: "forged-dispatch" }), /TEAM_REVIEW_DISPATCH_ID_INVALID/);
+});
+
+test("Project Task Review recovery rejects a principal without trusted reviewer authorization", async (t) => {
+  const h = await makeHarness(t, {
+    transformTeamIr: withSingleAgentReview
+  });
+  await h.executor.execute(h.project, {
+    runId: "run-1", teamVersionId: "team-v1", taskId: "task-1", taskNumber: 1, attemptNumber: 1,
+    teamIrSemanticDigest: h.team.teamIrSemanticDigest, compiledPlanDigest: h.team.compiledPlanDigest,
+    mode: "sandbox", prompt: "Implement the feature."
+  });
+  const context = await h.executor.getReviewContext({
+    project: h.project, task: h.task, runId: "run-1", reviewId: "planner-review",
+    principal: { id: "unauthorized", issuer: "test" }
+  });
+  const review = await context.runtime.getReview("run-1", "planner-review", context.lineage, context.loopRound);
+  await assert.rejects(context.runtime.decideReview({
+    runId: "run-1", reviewId: "planner-review", lineage: context.lineage, loopRound: context.loopRound,
+    revisionToken: review.revisionToken, idempotencyKey: "unauthorized-approve", reviewerId: "unauthorized",
+    decision: "approve", plan: context.plan
+  }), (error) => error.code === "REVIEW_UNAUTHORIZED");
+});
 
 test("Team IR Project Run executor verifies frozen digests and persists a full Run under Project evidence", async (t) => {
   const h = await makeHarness(t);

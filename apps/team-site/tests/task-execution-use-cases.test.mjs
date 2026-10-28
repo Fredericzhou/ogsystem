@@ -179,6 +179,51 @@ test("Team IR human-review wait maps to Task waiting_review while preserving the
   assert.deepEqual(completed.result.teamRun.waitingReview, { reviewId: "maker-checker-review", lineage: "run", loopRound: 1 });
 });
 
+test("Review recovery serializes same-attempt dispatch and projects the resumed Team Run back to its Task", async () => {
+  const semanticDigest = "a".repeat(64);
+  const compiledPlanDigest = "b".repeat(64);
+  const task = {
+    taskId: "task-1", taskNumber: 1, input: "Do the work", status: "waiting_review", currentRunId: "run-1",
+    runIds: ["run-1"], teamVersionId: "team-v1", teamIrSemanticDigest: semanticDigest, compiledPlanDigest
+  };
+  let active = 0;
+  let maxActive = 0;
+  let call = 0;
+  const teamIrRunStore = {
+    async resume(_project, options) {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      call += 1;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 5));
+      active -= 1;
+      assert.deepEqual({ runId: options.runId, attemptNumber: options.attemptNumber, reviewId: options.reviewId, dispatchId: options.dispatchId }, {
+        runId: "run-1", attemptNumber: 1, reviewId: "review-1", dispatchId: "run-1:team-review:review-1:run:run"
+      });
+      return {
+        state: { runId: "run-1", status: call === 1 ? "waiting_human_review" : "completed" },
+        result: { teamResult: { summary: "done" } }
+      };
+    }
+  };
+  const testHarness = harness({ team: { teamIrSemanticDigest: semanticDigest, compiledPlanDigest }, teamIrRunStore });
+  testHarness.project.taskRecords[0] = task;
+  const recovery = {
+    reviewId: "review-1", lineage: "run", dispatchId: "run-1:team-review:review-1:run:run"
+  };
+  const [first, second] = await Promise.all([
+    testHarness.useCases.resumeProjectTaskRun("project-1", "task-1", "run-1", recovery),
+    testHarness.useCases.resumeProjectTaskRun("project-1", "task-1", "run-1", recovery)
+  ]);
+  assert.equal(maxActive, 1);
+  assert.equal(call, 2);
+  assert.deepEqual([first.state.status, second.state.status], ["waiting_review", "completed"]);
+  assert.equal(testHarness.calls.filter(([name]) => name === "reserve").length, 0);
+  const completed = testHarness.calls.filter(([name]) => name === "complete");
+  assert.equal(completed.length, 2);
+  assert.deepEqual(completed.map(([, input]) => input.result.state.status), ["waiting_review", "completed"]);
+  assert.equal(testHarness.project.taskRecords[0].currentRunId, "run-1");
+});
+
 test("Task Run reservation rejects linked Project evidence roots before committing the Task", async (t) => {
   const root = await mkdtemp(resolve(tmpdir(), "ogs-task-reservation-link-"));
   const projectRoot = resolve(root, "project-1");

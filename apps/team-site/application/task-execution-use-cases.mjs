@@ -10,6 +10,7 @@ export function createTaskExecutionUseCases({
   identifiers,
   now = () => new Date().toISOString()
 }) {
+  const resumeTails = new Map();
   for (const [name, port, operations] of [
     ["Project", projectStore, ["getProject"]],
     ["TeamVersion", teamStore, ["getTeamVersion"]],
@@ -38,6 +39,21 @@ export function createTaskExecutionUseCases({
       : status === "cancelling" ? "cancel_requested"
       : status;
     return taskStatus === status ? result : { ...result, state: { ...result.state, status: taskStatus } };
+  }
+
+  async function withResumeLock(key, operation) {
+    const previous = resumeTails.get(key) || Promise.resolve();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const tail = previous.catch(() => undefined).then(() => gate);
+    resumeTails.set(key, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (resumeTails.get(key) === tail) resumeTails.delete(key);
+    }
   }
 
   return Object.freeze({
@@ -147,6 +163,57 @@ export function createTaskExecutionUseCases({
       workerStore.set(workerKey, worker);
       void worker.catch(() => undefined);
       return task;
+    },
+
+    async resumeProjectTaskRun(projectId, taskId, runId, { reviewId, lineage, loopRound, dispatchId } = {}) {
+      if (typeof teamIrRunStore?.resume !== "function") {
+        throw new Error("TEAM_IR_V2_RESUME_UNAVAILABLE: same-Run Project Task recovery is not connected.");
+      }
+      if (typeof dispatchId !== "string" || !dispatchId.trim()) throw new Error("TEAM_REVIEW_DISPATCH_ID_INVALID: a stable resume dispatch ID is required.");
+      const workerKey = `${projectId}:${taskId}`;
+      return withResumeLock(workerKey, async () => {
+        await workerStore.wait(workerKey);
+        let finishWorker;
+        const recoveryWorker = new Promise((resolveWorker) => { finishWorker = resolveWorker; });
+        workerStore.set(workerKey, recoveryWorker);
+        try {
+          const project = await projectStore.getProject(projectId);
+          const task = findTask(project, taskId);
+          if (task.currentRunId !== runId || !(task.runIds || []).includes(runId)) {
+            throw new Error("TEAM_REVIEW_RUN_NOT_FOUND: Run does not belong to the active Project Task attempt.");
+          }
+          if (!task.teamIrSemanticDigest || !task.compiledPlanDigest) {
+            throw new Error("TEAM_REVIEW_V2_REQUIRED: Run is not bound to a frozen Team IR v2 plan.");
+          }
+          const attemptNumber = (task.runIds || []).indexOf(runId) + 1;
+          const result = await teamIrRunStore.resume({ ...project, projectId }, {
+            prompt: task.input,
+            mode: "sandbox",
+            runId,
+            taskId,
+            taskNumber: task.taskNumber,
+            attemptNumber,
+            teamVersionId: task.teamVersionId,
+            teamIrSemanticDigest: task.teamIrSemanticDigest,
+            compiledPlanDigest: task.compiledPlanDigest,
+            reviewId,
+            lineage,
+            loopRound,
+            dispatchId
+          });
+          const projected = taskStatusFromRun(result);
+          await attemptStore.completeAttempt({
+            projectId, taskId, runId,
+            startedAt: task.startedAt || result.state?.startedAt || now(),
+            result: projected,
+            now: now()
+          });
+          return projected;
+        } finally {
+          if (workerStore.get(workerKey) === recoveryWorker) workerStore.delete(workerKey);
+          finishWorker();
+        }
+      });
     }
   });
 }

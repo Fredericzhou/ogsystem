@@ -23,7 +23,7 @@ test("Team IR v2 resolver module requires an absolute path and both trusted func
   assert.equal(typeof resolvers.resolveBindings, "function");
   assert.equal(Object.isFrozen(resolvers), true);
   const reviewModulePath = join(directory, "review-resolver.mjs");
-  await writeFile(reviewModulePath, "export const resolveTeamIrReleaseClosure = () => ({}); export const resolveBindings = () => ({}); export const resolveTeamIrReviewContext = () => ({ runtime, plan, reviewerId, runRecord, lineage, loopRound });\n", "utf8");
+  await writeFile(reviewModulePath, "export const resolveTeamIrReleaseClosure = () => ({}); export const resolveBindings = () => ({}); export const authorizeTeamIrReviewer = () => true;\n", "utf8");
   const reviewResolvers = await loadTeamIrV2Resolvers(reviewModulePath);
-  assert.equal(typeof reviewResolvers.resolveTeamIrReviewContext, "function");
+  assert.equal(typeof reviewResolvers.authorizeTeamIrReviewer, "function");
 });

@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { compileTeamIr, MemoryTeamReviewStore, TeamReviewRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
-import { createTeamIrReviewUseCases } from "../application/team-ir-review-use-cases.mjs";
-import { handleTeamIrReviewRoutes } from "../api/team-ir-review-routes.mjs";
+import { createBasicControlPlaneIdentityProvider } from "../../../dist/runtime/identity.js";
+import { createProjectTaskTeamIrReviewContextResolver, createTeamIrReviewUseCases } from "../application/team-ir-review-use-cases.mjs";
+import { createTeamIrReviewPrincipalResolver, handleTeamIrReviewRoutes } from "../api/team-ir-review-routes.mjs";
 
 const fixtureUrl = new URL("../../../examples/team-ir-v2/classic-software-team.json", import.meta.url);
+const testPrincipal = { id: "reviewer-1", issuer: "test" };
 
 async function setup({ reviewerId = "reviewer-1", authorized = true, loopRound, includeResume = true, resumeTeamIrRun } = {}) {
   const teamIR = JSON.parse(await readFile(fixtureUrl, "utf8"));
@@ -37,18 +39,22 @@ async function setup({ reviewerId = "reviewer-1", authorized = true, loopRound, 
     teamIrSemanticDigest: teamIRSemanticDigest(teamIR), compiledPlanDigest: plan.compiledPlanDigest
   };
   const resumeCalls = [];
-  const useCases = createTeamIrReviewUseCases({
+  const coreUseCases = createTeamIrReviewUseCases({
     projectStore: { getProject: async () => ({ projectId: "project-1", taskRecords: [task] }) },
     resolveReviewContext: async () => ({
       runtime: projectRuntime, plan, reviewerId, runRecord, lineage: "run", loopRound,
       ...(includeResume ? { resumeTeamIrRun: resumeTeamIrRun || (async (input) => {
         resumeCalls.push(input);
-        return { runId: input.runId, status: "running" };
+        return { state: { runId: input.runId, status: "running" }, teamRun: { privateCheckpoint: true }, store: { internal: true } };
       }) } : {})
     })
   });
+  const useCases = {
+    getProjectTaskTeamIrReview: (...args) => coreUseCases.getProjectTaskTeamIrReview(...args, testPrincipal),
+    decideProjectTaskTeamIrReview: (...args) => coreUseCases.decideProjectTaskTeamIrReview(...args, testPrincipal)
+  };
   const pending = await runtime.openFromPlan({ plan, runId: "run-1", reviewId: "planner-review" });
-  return { plan, runtime, useCases, pending, task, resumeCalls };
+  return { plan, runtime, useCases, pending, task, runRecord, resumeCalls };
 }
 
 test("owner scoped Team IR Review API reads pending state and validates reject feedback and revision", async () => {
@@ -65,13 +71,14 @@ test("owner scoped Team IR Review API reads pending state and validates reject f
   }), (error) => error.code === "REVIEW_FEEDBACK_INVALID");
   assert.equal((await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review")).status, "pending");
   const decided = await useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
-    decision: "reject", revisionToken: pending.revisionToken, idempotencyKey: "reject-1", feedback: { comments: "Revise tests." }
+    decision: "reject", revisionToken: pending.revisionToken, idempotencyKey: "reject-1", feedback: { comments: "Revise tests." }, reviewerId: "forged-reviewer"
   });
   assert.equal(decided.status, "rejected");
   assert.deepEqual(decided.resumedRun, { runId: "run-1", status: "running" });
   assert.equal(resumeCalls.length, 1);
   assert.equal((await runtime.get({ runId: "run-1", reviewId: "planner-review" })).status, "rejected",
     "the durable Review decision must be visible before same-Run resume dispatch");
+  assert.equal((await runtime.get({ runId: "run-1", reviewId: "planner-review" })).reviewerId, testPrincipal.id);
   assert.equal(resumeCalls[0].dispatchId, "run-1:team-review:planner-review:run:run");
   await assert.rejects(useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
     decision: "approve", revisionToken: pending.revisionToken, idempotencyKey: "stale"
@@ -101,6 +108,23 @@ test("Team IR Review decision fails closed without resume dispatch and retries a
   assert.equal(attempts, 2);
 });
 
+test("Team IR Review replays the same idempotency key after Run completion and returns only a public Run projection", async () => {
+  const { useCases, pending, runRecord, resumeCalls } = await setup();
+  const request = { decision: "approve", revisionToken: pending.revisionToken, idempotencyKey: "approve-lost-response" };
+  const first = await useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", request);
+  assert.deepEqual(first.resumedRun, { runId: "run-1", status: "running" });
+  runRecord.status = "completed";
+  runRecord.waitingReview = undefined;
+  runRecord.events = [{ type: "run.review.approved", data: { reviewId: "planner-review" } }];
+  const replay = await useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", request);
+  assert.equal(replay.status, "approved");
+  assert.deepEqual(replay.resumedRun, { runId: "run-1", status: "running" });
+  assert.equal(resumeCalls.length, 2);
+  assert.equal(resumeCalls[0].dispatchId, resumeCalls[1].dispatchId);
+  assert.equal(Object.hasOwn(replay.resumedRun, "teamRun"), false);
+  assert.equal(Object.hasOwn(replay.resumedRun, "store"), false);
+});
+
 test("Team IR Review API rejects wrong owner, changed plan, and unauthorized reviewer", async () => {
   const { useCases, task } = await setup();
   await assert.rejects(useCases.getProjectTaskTeamIrReview("project-1", "task-1", "other-run", "planner-review"), /TEAM_REVIEW_RUN_NOT_FOUND/);
@@ -112,7 +136,7 @@ test("Team IR Review API rejects wrong owner, changed plan, and unauthorized rev
       lineage: "run"
     })
   });
-  await assert.rejects(wrongPlan.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review"), /TEAM_REVIEW_PLAN_MISMATCH/);
+  await assert.rejects(wrongPlan.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", testPrincipal), /TEAM_REVIEW_PLAN_MISMATCH/);
   const denied = await setup({ authorized: false });
   await assert.rejects(denied.useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
     decision: "approve", revisionToken: denied.pending.revisionToken, idempotencyKey: "denied"
@@ -125,7 +149,7 @@ test("Team IR Review API fails closed when Project Task runtime recovery is unav
     projectStore: { getProject: async () => ({ taskRecords: [task] }) },
     resolveReviewContext: async () => undefined
   });
-  await assert.rejects(unavailable.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review"), /TEAM_REVIEW_RUNTIME_UNAVAILABLE/);
+  await assert.rejects(unavailable.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", testPrincipal), /TEAM_REVIEW_RUNTIME_UNAVAILABLE/);
 });
 
 test("Team IR Review API scopes the same reviewId to the persisted Maker-Checker round", async () => {
@@ -149,28 +173,28 @@ test("Team IR Review API scopes the same reviewId to the persisted Maker-Checker
   const first = await runtime.open({ runId: "run-1", reviewId: "planner-review", lineage: "run", loopRound: 1, timeoutMs: 10000 });
   const second = await runtime.open({ runId: "run-1", reviewId: "planner-review", lineage: "run", loopRound: 2, timeoutMs: 10000 });
 
-  const firstPending = await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review");
+  const firstPending = await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", testPrincipal);
   assert.equal(firstPending.revisionToken, first.revisionToken);
   assert.equal(firstPending.loopRound, 1);
   await useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
     decision: "reject", revisionToken: first.revisionToken, idempotencyKey: "round-1", feedback: { comments: "Revise round one." }
-  });
+  }, testPrincipal);
   assert.equal((await runtime.get({ runId: "run-1", reviewId: "planner-review", lineage: "run", loopRound: 2 })).status, "pending");
 
   runRecord.waitingReview.loopRound = 2;
   context.loopRound = 2;
-  const secondPending = await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review");
+  const secondPending = await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", testPrincipal);
   assert.equal(secondPending.revisionToken, second.revisionToken);
   assert.equal(secondPending.loopRound, 2);
   await assert.rejects(useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
     decision: "approve", revisionToken: first.revisionToken, idempotencyKey: "stale-round"
-  }), (error) => error.code === "REVIEW_STALE_TOKEN" || error.code === "REVIEW_CONFLICT");
+  }, testPrincipal), (error) => error.code === "REVIEW_STALE_TOKEN" || error.code === "REVIEW_CONFLICT");
 
   runRecord.waitingReview.loopRound = 3;
-  await assert.rejects(useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review"), /TEAM_REVIEW_CHECKPOINT_MISMATCH/);
+  await assert.rejects(useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", testPrincipal), /TEAM_REVIEW_CHECKPOINT_MISMATCH/);
 });
 
-test("Team IR Review route is separate from legacy review and forwards owner path and decision payload", async () => {
+test("Team IR Review route authenticates a trusted principal and ignores body reviewer identity", async () => {
   const calls = [];
   const useCases = {
     async getProjectTaskTeamIrReview(...args) { calls.push(["get", ...args]); return { status: "pending" }; },
@@ -178,7 +202,7 @@ test("Team IR Review route is separate from legacy review and forwards owner pat
   };
   for (const [method, suffix, body, expectedStatus] of [
     ["GET", "", undefined, 200],
-    ["POST", "", { decision: "approve", revisionToken: "rev-1", idempotencyKey: "req-1" }, 200]
+    ["POST", "", { decision: "approve", revisionToken: "rev-1", idempotencyKey: "req-1", reviewerId: "forged-reviewer" }, 200]
   ]) {
     const response = { statusCode: 0, payload: null, writeHead(status) { this.statusCode = status; }, end(raw) { this.payload = JSON.parse(raw); } };
     const handled = await handleTeamIrReviewRoutes({
@@ -187,14 +211,104 @@ test("Team IR Review route is separate from legacy review and forwards owner pat
       readBody: async () => body,
       sendJson: (res, status, payload) => { res.writeHead(status); res.end(JSON.stringify(payload)); },
       errorStatus: () => 500,
-      useCases
+      useCases,
+      resolvePrincipal: async () => testPrincipal
     });
     assert.equal(handled, true);
     assert.equal(response.statusCode, expectedStatus);
   }
   assert.deepEqual(calls, [
-    ["get", "project-1", "task-1", "run-1", "planner-review"],
-    ["decide", "project-1", "task-1", "run-1", "planner-review", { decision: "approve", revisionToken: "rev-1", idempotencyKey: "req-1" }]
+    ["get", "project-1", "task-1", "run-1", "planner-review", testPrincipal],
+    ["decide", "project-1", "task-1", "run-1", "planner-review", { decision: "approve", revisionToken: "rev-1", idempotencyKey: "req-1", reviewerId: "forged-reviewer" }, testPrincipal]
   ]);
+  const unauthenticatedResponse = { statusCode: 0, writeHead(status) { this.statusCode = status; }, end() {} };
+  await handleTeamIrReviewRoutes({
+    request: { method: "GET" }, response: unauthenticatedResponse,
+    url: new URL("http://localhost/api/v1/projects/project-1/tasks/task-1/runs/run-1/team-ir-reviews/planner-review"),
+    sendJson: (res, status) => res.writeHead(status), useCases
+  });
+  assert.equal(unauthenticatedResponse.statusCode, 401);
   assert.equal(await handleTeamIrReviewRoutes({ request: { method: "GET" }, url: new URL("http://localhost/api/v1/projects/project-1/tasks/task-1/review") }), false);
+});
+
+test("Team IR Review principal resolver trusts loopback locally, remote Basic auth, and fails closed otherwise", async () => {
+  const local = createTeamIrReviewPrincipalResolver({ createLocalPrincipal: () => ({ id: "local:operator", issuer: "ogs:local" }) });
+  assert.deepEqual(await local({ socket: { remoteAddress: "::ffff:127.0.0.1" } }), { id: "local:operator", issuer: "ogs:local" });
+  assert.equal(await local({ socket: { remoteAddress: "203.0.113.9" } }), null);
+
+  const remote = createTeamIrReviewPrincipalResolver({
+    createLocalPrincipal: () => ({ id: "local:operator", issuer: "ogs:local" }),
+    basicIdentityProvider: createBasicControlPlaneIdentityProvider({ username: "reviewer", password: "correct horse battery staple" })
+  });
+  assert.equal(await remote({ socket: { remoteAddress: "203.0.113.9" } }), null);
+  const credential = `Basic ${Buffer.from("reviewer:correct horse battery staple").toString("base64")}`;
+  assert.equal(await remote({
+    socket: { remoteAddress: "203.0.113.9", encrypted: false },
+    headers: { authorization: credential }
+  }), null, "Basic credentials are not accepted over the Team Site's plain HTTP socket");
+  assert.deepEqual(await remote({
+    socket: { remoteAddress: "203.0.113.9", encrypted: true },
+    headers: { authorization: credential }
+  }), { id: "reviewer", issuer: "ogs:basic-auth", displayName: "reviewer" });
+
+  const authorizedPrincipals = [];
+  const routeUseCases = {
+    async getProjectTaskTeamIrReview(_projectId, _taskId, _runId, _reviewId, principal) {
+      authorizedPrincipals.push(principal);
+      return { status: "pending" };
+    }
+  };
+  for (const [request, expectedStatus] of [
+    [{ method: "GET", socket: { remoteAddress: "127.0.0.1", encrypted: false } }, 200],
+    [{ method: "GET", socket: { remoteAddress: "203.0.113.9", encrypted: false }, headers: { authorization: credential } }, 401],
+    [{ method: "GET", socket: { remoteAddress: "203.0.113.9", encrypted: true }, headers: { authorization: credential } }, 200]
+  ]) {
+    const response = { statusCode: 0, writeHead(status) { this.statusCode = status; }, end() {} };
+    await handleTeamIrReviewRoutes({
+      request, response,
+      url: new URL("http://site.test/api/v1/projects/project-1/tasks/task-1/runs/run-1/team-ir-reviews/planner-review"),
+      sendJson: (res, status) => res.writeHead(status), useCases: routeUseCases, resolvePrincipal: remote
+    });
+    assert.equal(response.statusCode, expectedStatus);
+  }
+  assert.deepEqual(authorizedPrincipals, [
+    { id: "local:operator", issuer: "ogs:local" },
+    { id: "reviewer", issuer: "ogs:basic-auth", displayName: "reviewer" }
+  ]);
+});
+
+test("Team IR Review composition forwards the frozen checkpoint to the same Task resume bridge", async () => {
+  const calls = [];
+  const contextResolver = createProjectTaskTeamIrReviewContextResolver({
+    teamIrProjectRunExecutor: {
+      async getReviewContext(input) {
+        calls.push(["context", input]);
+        return { lineage: "run", loopRound: 2, resumeTeamIrRun: async () => assert.fail("executor resume must not bypass Task projection") };
+      }
+    },
+    getTaskExecutionUseCases: () => ({
+      async resumeProjectTaskRun(...args) { calls.push(["resume", ...args]); return { state: { status: "waiting_review" } }; }
+    })
+  });
+  const input = {
+    project: { projectId: "project-1" },
+    task: { taskId: "task-1" },
+    runId: "run-1", reviewId: "maker-checker", principal: testPrincipal
+  };
+  const context = await contextResolver(input);
+  const result = await context.resumeTeamIrRun({ dispatchId: "run-1:team-review:maker-checker:run:2" });
+  assert.equal(result.state.status, "waiting_review");
+  assert.deepEqual(calls, [
+    ["context", input],
+    ["resume", "project-1", "task-1", "run-1", {
+      reviewId: "maker-checker", lineage: "run", loopRound: 2, dispatchId: "run-1:team-review:maker-checker:run:2"
+    }]
+  ]);
+});
+
+test("Team Site production composition injects the v2 executor, Task resume bridge, and authenticated Review route", async () => {
+  const source = await readFile(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.match(source, /teamIrRunStore:\s*teamIrProjectRunExecutor/);
+  assert.match(source, /getTaskExecutionUseCases:\s*\(\)\s*=>\s*taskExecutionUseCases/);
+  assert.match(source, /resolvePrincipal:\s*resolveTeamIrReviewPrincipal/);
 });

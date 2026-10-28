@@ -9,15 +9,46 @@ function findOwnedTask(project, taskId, runId) {
   return task;
 }
 
+function publicRunProjection(value) {
+  const state = value?.state || value;
+  return {
+    runId: state?.runId,
+    status: state?.status,
+    ...(state?.startedAt ? { startedAt: state.startedAt } : {}),
+    ...(state?.finishedAt ? { finishedAt: state.finishedAt } : {}),
+    ...(state?.error ? { error: state.error } : {}),
+    ...(value?.result !== undefined ? { result: value.result } : {})
+  };
+}
+
+export function createProjectTaskTeamIrReviewContextResolver({ teamIrProjectRunExecutor, getTaskExecutionUseCases }) {
+  if (typeof teamIrProjectRunExecutor?.getReviewContext !== "function" || typeof getTaskExecutionUseCases !== "function") {
+    throw new TypeError("Team IR Review recovery bridge requires the durable executor and Task execution use cases.");
+  }
+  return async (input) => {
+    const context = await teamIrProjectRunExecutor.getReviewContext(input);
+    return {
+      ...context,
+      resumeTeamIrRun: ({ dispatchId }) => getTaskExecutionUseCases().resumeProjectTaskRun(
+        input.project.projectId, input.task.taskId, input.runId,
+        { reviewId: input.reviewId, lineage: context.lineage, loopRound: context.loopRound, dispatchId }
+      )
+    };
+  };
+}
+
 export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext }) {
   if (typeof projectStore?.getProject !== "function" || typeof resolveReviewContext !== "function") {
     throw new TypeError("Team IR Review use cases require Project lookup and a trusted Review runtime resolver.");
   }
 
-  async function getContext(projectId, taskId, runId, reviewId) {
+  async function getContext(projectId, taskId, runId, reviewId, principal) {
+    if (!principal || typeof principal.id !== "string" || !principal.id.trim()) {
+      throw new Error("TEAM_REVIEW_PRINCIPAL_UNAVAILABLE: authenticated reviewer identity is unavailable.");
+    }
     const project = await projectStore.getProject(projectId);
     const task = findOwnedTask(project, taskId, runId);
-    const context = await resolveReviewContext({ project, task, runId, reviewId });
+    const context = await resolveReviewContext({ project, task, runId, reviewId, principal });
     if (!context || !context.runtime || !context.plan || !context.runRecord) {
       throw new Error("TEAM_REVIEW_RUNTIME_UNAVAILABLE: durable Team Review runtime and frozen plan are unavailable.");
     }
@@ -26,19 +57,23 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
       throw new Error("TEAM_REVIEW_PLAN_MISMATCH: Review runtime plan does not match the Task snapshot.");
     }
     const waitingReview = context.runRecord.waitingReview;
-    if (context.runRecord.runId !== runId || context.runRecord.status !== "waiting_human_review"
-      || !waitingReview || waitingReview.reviewId !== reviewId
-      || waitingReview.lineage !== context.lineage || waitingReview.loopRound !== context.loopRound) {
+    const decisionEvent = context.runRecord.events?.findLast((item) =>
+      (item.type === "run.review.approved" || item.type === "run.review.rejected") && item.data?.reviewId === reviewId
+    );
+    const activeCheckpointMatches = context.runRecord.status === "waiting_human_review"
+      && waitingReview?.reviewId === reviewId
+      && waitingReview.lineage === context.lineage && waitingReview.loopRound === context.loopRound;
+    const committedDecisionMatches = context.runRecord.status !== "waiting_human_review" && Boolean(decisionEvent);
+    if (context.runRecord.runId !== runId || (!activeCheckpointMatches && !committedDecisionMatches)) {
       throw new Error("TEAM_REVIEW_CHECKPOINT_MISMATCH: current persisted Run checkpoint does not identify this Review activation.");
     }
     return { project, task, ...context };
   }
 
   return Object.freeze({
-    async getProjectTaskTeamIrReview(projectId, taskId, runId, reviewId) {
-      const context = await getContext(projectId, taskId, runId, reviewId);
+    async getProjectTaskTeamIrReview(projectId, taskId, runId, reviewId, principal) {
+      const context = await getContext(projectId, taskId, runId, reviewId, principal);
       const review = await context.runtime.getReview(runId, reviewId, context.lineage, context.loopRound);
-      if (review.status !== "pending") throw new Error(`TEAM_REVIEW_NOT_PENDING: Review is ${review.status}.`);
       return {
         projectId,
         taskId,
@@ -54,9 +89,8 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
       };
     },
 
-    async decideProjectTaskTeamIrReview(projectId, taskId, runId, reviewId, input = {}) {
-      const context = await getContext(projectId, taskId, runId, reviewId);
-      if (!context.reviewerId) throw new Error("TEAM_REVIEW_PRINCIPAL_UNAVAILABLE: authenticated reviewer identity is unavailable.");
+    async decideProjectTaskTeamIrReview(projectId, taskId, runId, reviewId, input = {}, principal) {
+      const context = await getContext(projectId, taskId, runId, reviewId, principal);
       if (["approve", "reject"].includes(input.decision) && typeof context.resumeTeamIrRun !== "function") {
         throw new Error("TEAM_REVIEW_RESUME_UNAVAILABLE: trusted same-Run resume dispatch is unavailable; no decision was recorded.");
       }
@@ -67,7 +101,7 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
         loopRound: context.loopRound,
         revisionToken: input.revisionToken,
         idempotencyKey: input.idempotencyKey,
-        reviewerId: context.reviewerId,
+        reviewerId: principal.id,
         decision: input.decision,
         ...(Object.hasOwn(input, "feedback") ? { feedback: input.feedback } : {}),
         plan: context.plan
@@ -91,7 +125,7 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
       }
       return {
         projectId, taskId, runId, reviewId, status: review.status, decision: review.decision, revision: review.revision,
-        ...(resumedRun === undefined ? {} : { resumedRun })
+        ...(resumedRun === undefined ? {} : { resumedRun: publicRunProjection(resumedRun) })
       };
     }
   });

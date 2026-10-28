@@ -28,7 +28,7 @@ import { createVisualizerAdapter } from "./infrastructure/visualizer-adapter.mjs
 import { resolveTeamStudioModelRef } from "./capabilities/team-studio-model.mjs";
 import { handleProjectRoutes } from "./api/project-routes.mjs";
 import { handleTaskRoutes } from "./api/task-routes.mjs";
-import { handleTeamIrReviewRoutes } from "./api/team-ir-review-routes.mjs";
+import { createTeamIrReviewPrincipalResolver, handleTeamIrReviewRoutes } from "./api/team-ir-review-routes.mjs";
 import { handleRunRoutes } from "./api/run-routes.mjs";
 import { handleTeamRoutes } from "./api/team-routes.mjs";
 import { handleTeamIrSimulationRoutes } from "./api/team-ir-simulation-routes.mjs";
@@ -60,7 +60,7 @@ import { createFileTeamIrStore } from "./infrastructure/file-team-ir-store.mjs";
 import { createFileTeamIrSimulationStore } from "./infrastructure/file-team-ir-simulation-store.mjs";
 import { createTeamIrStudioSimulationUseCases } from "./application/team-ir-studio-simulation-use-cases.mjs";
 import { createRuntimeTeamIrProjectRunExecutor } from "./infrastructure/runtime-team-ir-project-run-executor.mjs";
-import { createTeamIrReviewUseCases } from "./application/team-ir-review-use-cases.mjs";
+import { createProjectTaskTeamIrReviewContextResolver, createTeamIrReviewUseCases } from "./application/team-ir-review-use-cases.mjs";
 import { createRuntimeTeamIrStudioSimulation } from "./infrastructure/runtime-team-ir-studio-simulation.mjs";
 import { loadTeamIrV2Resolvers } from "./infrastructure/team-ir-v2-resolvers.mjs";
 import { isProcessAlive } from "./infrastructure/process-liveness.mjs";
@@ -119,7 +119,7 @@ import { createProjectCreationUseCases } from "./application/project-creation-us
 import { createFileRunRecoveryStore } from "./infrastructure/file-run-recovery-store.mjs";
 import { createRuntimeTaskReviewStore } from "./infrastructure/runtime-task-review-store.mjs";
 import { listHumanReviews, writeHumanReviewDecision } from "../../dist/runtime/project-lifecycle.js";
-import { createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
+import { createBasicControlPlaneIdentityProvider, createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
 import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../../dist/runtime/role-repo.js";
 import { isRuntimeOnlyErrorEvent } from "../../dist/runtime/error-flow-utils.js";
 import { parseMarkdownRole, convertMarkdownRole } from "../../tools/agent-source/markdown-role-adapter.mjs";
@@ -142,6 +142,13 @@ const visualizer = createVisualizerAdapter({
 });
 const discoveryWorkdir = process.env.OGS_VIS_WORKDIR || join(process.env.LOCALAPPDATA || process.cwd(), "OGSystem", "visualizer-workspace");
 const siteProjectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
+const teamIrReviewBasicIdentityProvider = process.env.OGS_TEAM_IR_REVIEW_USERNAME && process.env.OGS_TEAM_IR_REVIEW_PASSWORD
+  ? createBasicControlPlaneIdentityProvider({ username: process.env.OGS_TEAM_IR_REVIEW_USERNAME, password: process.env.OGS_TEAM_IR_REVIEW_PASSWORD })
+  : undefined;
+const resolveTeamIrReviewPrincipal = createTeamIrReviewPrincipalResolver({
+  createLocalPrincipal: createLocalControlPlanePrincipal,
+  basicIdentityProvider: teamIrReviewBasicIdentityProvider
+});
 const platformConfigRoot = resolve(process.env.OGS_PLATFORM_CONFIG_DIR || join(siteProjectsRoot, ".site"));
 const taskAttemptStore = createFileRecentRunStore({ projectsRoot: siteProjectsRoot });
 const projectQueryUseCases = createProjectQueryUseCases({
@@ -209,11 +216,16 @@ const teamIrProjectRunExecutor = createRuntimeTeamIrProjectRunExecutor({
   teamStore: { getTeamVersion: getProject },
   teamIrStore,
   resolveReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure,
-  resolveBindings: teamIrV2Resolvers.resolveBindings
+  resolveBindings: teamIrV2Resolvers.resolveBindings,
+  authorizeTeamIrReviewer: teamIrV2Resolvers.authorizeTeamIrReviewer
 });
+let taskExecutionUseCases;
 const teamIrReviewUseCases = createTeamIrReviewUseCases({
   projectStore: { getProject },
-  resolveReviewContext: teamIrV2Resolvers.resolveTeamIrReviewContext || (async () => undefined)
+  resolveReviewContext: createProjectTaskTeamIrReviewContextResolver({
+    teamIrProjectRunExecutor,
+    getTaskExecutionUseCases: () => taskExecutionUseCases
+  })
 });
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
@@ -228,7 +240,7 @@ const projectMaterialUseCases = createProjectMaterialUseCases({
   materialStore: createFileProjectMaterialStore({ computeProjectDefinitionDigest }),
   confirmation: { assertCurrent: taskExecutionReadiness.requireCurrentConfirmation }
 });
-const taskExecutionUseCases = createTaskExecutionUseCases({
+taskExecutionUseCases = createTaskExecutionUseCases({
   projectStore: { getProject },
   teamStore: { getTeamVersion: getProject },
   attemptStore: createFileTaskExecutionStore({ projectStore: { getProject, withProjectWriteLock, saveTaskRecord } }),
@@ -617,7 +629,8 @@ const server = createServer(async (request, response) => {
   })) return;
   if (await handleTeamIrReviewRoutes({
     request, response, url, readBody, sendJson, errorStatus,
-    useCases: teamIrReviewUseCases
+    useCases: teamIrReviewUseCases,
+    resolvePrincipal: resolveTeamIrReviewPrincipal
   })) return;
   if (await handleRunRoutes({
     request, response, url, readBody, sendJson, errorStatus,

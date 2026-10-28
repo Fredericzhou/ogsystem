@@ -12,8 +12,8 @@ export async function loadTeamIrV2Resolvers(modulePath = process.env.OGS_TEAM_IR
   return Object.freeze({
     resolveTeamIrReleaseClosure: loaded.resolveTeamIrReleaseClosure,
     resolveBindings: loaded.resolveBindings,
-    ...(typeof loaded.resolveTeamIrReviewContext === "function"
-      ? { resolveTeamIrReviewContext: loaded.resolveTeamIrReviewContext }
+    ...(typeof loaded.authorizeTeamIrReviewer === "function"
+      ? { authorizeTeamIrReviewer: loaded.authorizeTeamIrReviewer }
       : {})
   });
 }

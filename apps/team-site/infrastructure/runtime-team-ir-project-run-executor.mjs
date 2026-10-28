@@ -1,6 +1,7 @@
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
-import { compileTeamIr, FileTeamRunStore, TeamRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { join, resolve } from "node:path";
+import { compileTeamIr, FileTeamReviewStore, FileTeamRunStore, TeamReviewRuntime, TeamRuntime, teamIRSemanticDigest } from "../../../dist/team-ir/index.js";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
 
 function assertRunId(value) {
@@ -18,7 +19,47 @@ function defaultSleep(ms, signal) {
   });
 }
 
-export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, resolveReleaseClosure, resolveBindings, clock = { now: Date.now, sleep: defaultSleep } }) {
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code !== "ESRCH"; }
+}
+
+async function acquireRunResumeLock(projectRoot, runRelative, stateDirectory, runId, waitMs = 10000) {
+  const segments = [...runRelative, "team-ir-v2-state", `review-resume-${runId}.lock`];
+  const lockPath = resolve(stateDirectory, `review-resume-${runId}.lock`);
+  const deadline = Date.now() + waitMs;
+  while (true) {
+    await assertSafeEvidencePath(projectRoot, segments, { kind: "directory", allowMissingFinal: true, label: "Team IR v2 Review recovery lock" });
+    try {
+      await mkdir(lockPath);
+      await assertSafeEvidencePath(projectRoot, segments, { kind: "directory", label: "Team IR v2 Review recovery lock" });
+      await writeFile(resolve(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, host: hostname(), createdAt: Date.now() }), { encoding: "utf8", flag: "wx" });
+      return async () => rm(lockPath, { recursive: true, force: true });
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        await rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
+        throw error;
+      }
+      await assertSafeEvidencePath(projectRoot, segments, { kind: "directory", label: "Team IR v2 Review recovery lock" });
+      let owner;
+      try {
+        await assertSafeEvidencePath(projectRoot, [...segments, "owner.json"], { kind: "file", label: "Team IR v2 Review recovery lock owner" });
+        owner = JSON.parse(await readFile(resolve(lockPath, "owner.json"), "utf8"));
+      } catch (readError) {
+        if (readError?.code !== "ENOENT") throw readError;
+      }
+      if (owner?.host === hostname() && Number.isInteger(owner.pid) && !processIsAlive(owner.pid)) {
+        await rm(lockPath, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) throw new Error("TEAM_REVIEW_RESUME_BUSY: another process owns the same-Run recovery lock.");
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    }
+  }
+}
+
+export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, resolveReleaseClosure, resolveBindings, authorizeTeamIrReviewer, clock = { now: Date.now, sleep: defaultSleep } }) {
   if (typeof teamStore?.getTeamVersion !== "function" || typeof teamIrStore?.read !== "function") {
     throw new TypeError("Team IR Project Run executor requires TeamVersion and Team IR stores.");
   }
@@ -29,9 +70,7 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
     }
   }
 
-  return Object.freeze({
-    assertAvailable: assertResolversAvailable,
-    async execute(project, options) {
+  async function prepare(project, options, principal) {
       const { runId, teamVersionId, taskId, taskNumber, attemptNumber, teamIrSemanticDigest, compiledPlanDigest } = options;
       assertRunId(runId);
       if (options.mode !== "sandbox") throw new Error("TEAM_IR_V2_SANDBOX_REQUIRED: Team IR Project Runs require explicit sandbox execution mode.");
@@ -83,25 +122,146 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
       }
       await assertSafeEvidencePath(projectRoot, [...runRelative, "team-ir-v2-state"], { kind: "directory", label: "Team IR v2 Run state" });
       const store = new FileTeamRunStore(stateDirectory);
-      const runtime = new TeamRuntime({ store, clock, bindings });
+      const reviewDefinitions = stored.teamIR.orchestration?.reviews || [];
+      let reviewRuntime;
+      if (reviewDefinitions.length > 0) {
+        const reviewDirectory = join(stateDirectory, "reviews");
+        await mkdir(reviewDirectory, { recursive: true });
+        await assertSafeEvidencePath(projectRoot, [...runRelative, "team-ir-v2-state", "reviews"], { kind: "directory", label: "Team IR v2 Review state" });
+        reviewRuntime = new TeamReviewRuntime({
+          store: new FileTeamReviewStore(reviewDirectory),
+          now: clock.now,
+          authorizeReviewer: async (authorization) => Boolean(
+            principal && principal.id === authorization.reviewerId
+            && typeof authorizeTeamIrReviewer === "function"
+            && await authorizeTeamIrReviewer({ ...authorization, project, taskId, team, teamIR: stored.teamIR, principal })
+          )
+        });
+      }
+      const runtime = new TeamRuntime({ store, clock, bindings, reviewRuntime });
+      return { projectRoot, runRelative, stateDirectory, store, runtime, plan, team, teamIR: stored.teamIR, runId, taskId, taskNumber, attemptNumber, teamVersionId, teamIrSemanticDigest, compiledPlanDigest };
+  }
+
+  async function execute(project, options) {
+      const prepared = await prepare(project, options);
       const input = { request: String(options.prompt || "") };
-      await runtime.createRun(plan, { runId, task: String(options.prompt || ""), input });
-      const record = await runtime.executeRun(plan, runId);
+      await prepared.runtime.createRun(prepared.plan, { runId: options.runId, projectId: project.projectId, task: String(options.prompt || ""), input });
+      const record = await prepared.runtime.executeRun(prepared.plan, options.runId);
       return {
         state: {
           status: record.status,
-          runId,
-          attemptNumber,
-          teamVersionId,
-          teamIrSemanticDigest,
-          compiledPlanDigest,
+          runId: options.runId,
+          attemptNumber: options.attemptNumber,
+          teamVersionId: options.teamVersionId,
+          teamIrSemanticDigest: options.teamIrSemanticDigest,
+          compiledPlanDigest: options.compiledPlanDigest,
           startedAt: new Date(record.createdAt).toISOString(),
           finishedAt: new Date(record.updatedAt).toISOString(),
           error: record.events.findLast((item) => item.type === "run.failing")?.data?.code
         },
         result: record.result === undefined ? null : { teamResult: record.result },
         teamRun: record,
-        owner: { kind: "project_task", projectId: project.projectId, taskId, taskNumber, attemptNumber, teamVersionId }
+        owner: { kind: "project_task", projectId: project.projectId, taskId: options.taskId, taskNumber: options.taskNumber, attemptNumber: options.attemptNumber, teamVersionId: options.teamVersionId }
+      };
+  }
+
+  async function resume(project, options, principal) {
+    const prepared = await prepare(project, options, principal);
+    const current = await prepared.store.load(options.runId);
+    if (!current) throw new Error("TEAM_REVIEW_RUN_NOT_FOUND: persisted Team Run checkpoint is unavailable.");
+    const lineage = options.lineage || current.waitingReview?.lineage || "run";
+    const loopRound = options.loopRound ?? current.waitingReview?.loopRound;
+    const expectedDispatchId = `${options.runId}:team-review:${options.reviewId}:${lineage}:${loopRound ?? "run"}`;
+    const decisionAlreadyApplied = current.events.some((item) =>
+      item.type === "run.review.approved" || item.type === "run.review.rejected"
+        ? item.data?.reviewId === options.reviewId && item.data?.loopRound === loopRound
+        : false
+    );
+    if (options.dispatchId !== expectedDispatchId || (!current.waitingReview && !decisionAlreadyApplied)) {
+      throw new Error("TEAM_REVIEW_DISPATCH_ID_INVALID: Review resume must match a persisted activation and stable dispatch ID.");
+    }
+    if (current.waitingReview && (current.waitingReview.reviewId !== options.reviewId
+      || current.waitingReview.lineage !== lineage || current.waitingReview.loopRound !== loopRound)) {
+      throw new Error("TEAM_REVIEW_CHECKPOINT_MISMATCH: persisted Review activation changed before resume.");
+    }
+    const release = await acquireRunResumeLock(prepared.projectRoot, prepared.runRelative, prepared.stateDirectory, options.runId);
+    let record;
+    try {
+      record = await prepared.runtime.executeRun(prepared.plan, options.runId);
+    } finally {
+      await release();
+    }
+    return {
+      state: {
+        status: record.status,
+        runId: options.runId,
+        attemptNumber: options.attemptNumber,
+        teamVersionId: options.teamVersionId,
+        teamIrSemanticDigest: options.teamIrSemanticDigest,
+        compiledPlanDigest: options.compiledPlanDigest,
+        startedAt: new Date(record.createdAt).toISOString(),
+        finishedAt: new Date(record.updatedAt).toISOString(),
+        error: record.events.findLast((item) => item.type === "run.failing")?.data?.code
+      },
+      result: record.result === undefined ? null : { teamResult: record.result },
+      teamRun: record,
+      owner: { kind: "project_task", projectId: project.projectId, taskId: options.taskId, taskNumber: options.taskNumber, attemptNumber: options.attemptNumber, teamVersionId: options.teamVersionId }
+    };
+  }
+
+  return Object.freeze({
+    assertAvailable: assertResolversAvailable,
+    execute,
+    resume,
+    async getReviewContext({ project, task, runId, reviewId, principal }) {
+      const prepared = await prepare(project, {
+        runId,
+        teamVersionId: task.teamVersionId,
+        taskId: task.taskId,
+        taskNumber: task.taskNumber,
+        attemptNumber: task.runIds?.indexOf(runId) + 1,
+        teamIrSemanticDigest: task.teamIrSemanticDigest,
+        compiledPlanDigest: task.compiledPlanDigest,
+        mode: "sandbox"
+      }, principal);
+      const runRecord = await prepared.store.load(runId);
+      const decisionEvent = runRecord?.events.findLast((item) =>
+        (item.type === "run.review.approved" || item.type === "run.review.rejected") && item.data?.reviewId === reviewId
+      );
+      const waitingReview = runRecord?.waitingReview;
+      const activeReviewMatches = runRecord?.status === "waiting_human_review" && waitingReview?.reviewId === reviewId;
+      const committedDecisionMatches = runRecord?.status !== "waiting_human_review" && Boolean(decisionEvent);
+      if (!runRecord || runRecord.runId !== runId || (!activeReviewMatches && !committedDecisionMatches)) {
+        throw new Error("TEAM_REVIEW_CHECKPOINT_MISMATCH: current persisted Run checkpoint does not identify this Review activation.");
+      }
+      const lineage = waitingReview?.lineage || "run";
+      const loopRound = waitingReview?.loopRound ?? decisionEvent?.data?.loopRound;
+      return {
+        runtime: prepared.runtime,
+        plan: prepared.plan,
+        runRecord,
+        lineage,
+        loopRound,
+        resumeTeamIrRun: ({ dispatchId }) => {
+          if (dispatchId !== `${runId}:team-review:${reviewId}:${lineage}:${loopRound ?? "run"}`) {
+            throw new Error("TEAM_REVIEW_DISPATCH_ID_INVALID: Review resume dispatch ID is not stable for this activation.");
+          }
+          return resume(project, {
+            runId,
+            teamVersionId: task.teamVersionId,
+            taskId: task.taskId,
+            taskNumber: task.taskNumber,
+            attemptNumber: task.runIds?.indexOf(runId) + 1,
+            teamIrSemanticDigest: task.teamIrSemanticDigest,
+            compiledPlanDigest: task.compiledPlanDigest,
+            mode: "sandbox",
+            prompt: task.input,
+            reviewId,
+            lineage,
+            loopRound,
+            dispatchId
+          }, principal);
+        }
       };
     }
   });
