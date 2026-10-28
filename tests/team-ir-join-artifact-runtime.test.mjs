@@ -155,7 +155,12 @@ test("quorum Join passes only selected source Artifacts plus baseMapping through
   try {
     await within(rightStartedPromise, "right source activation");
     await within(joinStartedPromise, "quorum target activation");
-    assert.deepEqual(reads.sort(), [["brief", "base brief"], ["leftDoc", "left report"]]);
+    const sourceReads = reads.filter(([slot]) => ["leftDoc", "rightDoc"].includes(slot));
+    assert.equal(sourceReads.length, 1, "quorum projects exactly one selected source Artifact");
+    assert.deepEqual(reads.sort(), [
+      ["brief", "base brief"],
+      sourceReads[0][0] === "leftDoc" ? ["leftDoc", "left report"] : ["rightDoc", "late right report"]
+    ]);
   } finally {
     releaseRight?.();
     await within(running.catch(() => undefined), "quorum Run settlement");
@@ -163,9 +168,12 @@ test("quorum Join passes only selected source Artifacts plus baseMapping through
   const result = await running;
   assert.equal(result.status, "completed", JSON.stringify(result.events.filter((entry) => entry.type === "run.failing")));
   const round = (await new FileTeamRunStore(join(fixture.root, "runs")).load("join-artifact-quorum_of")).scheduler.joinRounds.collect;
-  assert.equal(round.merged.artifacts.leftDoc.sourceHandoffId, "left-join");
-  assert.equal(Object.hasOwn(round.merged.artifacts, "rightDoc"), false);
-  assert.equal(round.audit.some((entry) => entry.type === "join.source.late_arrival" && entry.sourceId === "right-join"), true);
+  const selectedSlot = reads.find(([slot]) => ["leftDoc", "rightDoc"].includes(slot))[0];
+  const selectedHandoff = selectedSlot === "leftDoc" ? "left-join" : "right-join";
+  const lateHandoff = selectedSlot === "leftDoc" ? "right-join" : "left-join";
+  assert.equal(round.merged.artifacts[selectedSlot].sourceHandoffId, selectedHandoff);
+  assert.equal(Object.keys(round.merged.artifacts).filter((slot) => ["leftDoc", "rightDoc"].includes(slot)).length, 1);
+  assert.equal(round.audit.some((entry) => entry.type === "join.source.late_arrival" && entry.sourceId === lateHandoff), true);
 });
 
 test("Join Artifact mappings fail before source invocation when no ArtifactStore is configured", async (t) => {
