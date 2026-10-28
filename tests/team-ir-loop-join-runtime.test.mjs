@@ -52,6 +52,17 @@ async function fixture() {
   return JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-structured-debate.json", import.meta.url), "utf8"));
 }
 
+async function quorumDebateFixture({ threshold = 1, timeoutMs = 300000 } = {}) {
+  const team = await fixture();
+  const join = team.orchestration.joins[0];
+  join.mode = "quorum_of";
+  join.threshold = threshold;
+  join.timeoutMs = timeoutMs;
+  const targetPort = team.agents.find((agent) => agent.id === join.agentId).inputPorts[join.inputPort];
+  targetPort.dataSchema.required = [];
+  return team;
+}
+
 function debateBindings({ failJudge = false, onJudge } = {}) {
   let proponentRound = 0;
   let opponentRound = 0;
@@ -330,6 +341,159 @@ test("FileTeamRunStore recovery preserves a Loop Join round deadline and waits o
   assert.equal(result.status, "failed");
   assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
   assert.deepEqual(cancels, { proponent: 1, opponent: 1 });
+});
+
+test("Loop quorum Join triggers once at threshold and keeps a late source out of the merged input", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-quorum-late-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await quorumDebateFixture({ threshold: 1 });
+  const plan = compileTeamIr(team);
+  let releaseOpponent;
+  let opponentStarted;
+  const opponentStartedPromise = new Promise((resolve) => { opponentStarted = resolve; });
+  let judgeStarted;
+  const judgeStartedPromise = new Promise((resolve) => { judgeStarted = resolve; });
+  const judgeInputs = [];
+  const calls = { judge: 0 };
+  const bindings = {
+    "binding:debate-host": { async invoke(invocation) { return { kind: "completed", output: { event: "BRIEF", data: { brief: invocation.input.brief } } }; } },
+    "binding:proponent": { async invoke() { return { kind: "completed", output: { event: "ARGUMENT", data: { argument: "first contribution" } } }; } },
+    "binding:opponent": { async invoke() {
+      opponentStarted();
+      await new Promise((resolve) => { releaseOpponent = resolve; });
+      return { kind: "completed", output: { event: "ARGUMENT", data: { argument: "late contribution" } } };
+    } },
+    "binding:neutral-judge": { async invoke(invocation) {
+      calls.judge += 1;
+      judgeInputs.push(invocation.input);
+      judgeStarted();
+      return { kind: "completed", output: { event: "JUDGMENT", data: {
+        decision: "final", request: "conclude", proponentSummary: "included", opponentSummary: "not included", rationale: "threshold met"
+      } } };
+    } },
+    "binding:debate-reporter": { async invoke() { return { kind: "completed", output: { event: "REPORT", data: { summary: "reported" } } }; } }
+  };
+  const store = new FileTeamRunStore(join(root, "runs"));
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "loop-quorum-late", task: "debate", input: { request: "Assess the proposal" } });
+  const running = runtime.executeRun(plan, "loop-quorum-late");
+  try {
+    await within(opponentStartedPromise, "late quorum source activation");
+    await within(judgeStartedPromise, "Loop quorum target starts at threshold");
+    assert.deepEqual(judgeInputs, [{ proponentArgument: "first contribution" }]);
+  } finally {
+    releaseOpponent?.();
+  }
+  const result = await within(running, "Loop quorum settlement");
+  const round = result.scheduler.joinRounds["debate-positions:1"];
+  assert.equal(result.status, "completed");
+  assert.equal(calls.judge, 1);
+  assert.equal(round.mode, "quorum_of");
+  assert.equal(round.threshold, 1);
+  assert.equal(round.status, "ready");
+  assert.deepEqual(round.merged.data, { proponentArgument: "first contribution" });
+  assert.equal(round.sourceStates["opponent-to-judge"], "arrived");
+  assert.equal(round.audit.some((entry) => entry.type === "join.source.late_arrival" && entry.sourceId === "opponent-to-judge"), true);
+});
+
+test("Loop quorum Join timeout fails the Run and cancels the outstanding round source", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-quorum-timeout-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await quorumDebateFixture({ threshold: 2, timeoutMs: 50 });
+  const plan = compileTeamIr(team);
+  const clock = fakeClock(100);
+  const store = new FileTeamRunStore(join(root, "runs"));
+  let opponentStarted;
+  const opponentStartedPromise = new Promise((resolve) => { opponentStarted = resolve; });
+  const cancels = { opponent: 0 };
+  let judgeCalls = 0;
+  const bindings = {
+    "binding:debate-host": { async invoke(invocation) { return { kind: "completed", output: { event: "BRIEF", data: { brief: invocation.input.brief } } }; } },
+    "binding:proponent": { async invoke() { return { kind: "completed", output: { event: "ARGUMENT", data: { argument: "one" } } }; } },
+    "binding:opponent": {
+      async invoke() { opponentStarted(); return new Promise(() => {}); },
+      async cancel() { cancels.opponent += 1; return true; }
+    },
+    "binding:neutral-judge": { async invoke() { judgeCalls += 1; throw new Error("quorum target must not run before threshold"); } },
+    "binding:debate-reporter": { async invoke() { throw new Error("reporter must not run after timeout"); } }
+  };
+  const runtime = new TeamRuntime({ store, clock, bindings });
+  await runtime.createRun(plan, { runId: "loop-quorum-timeout", task: "debate", input: { request: "Assess the proposal" } });
+  const running = runtime.executeRun(plan, "loop-quorum-timeout");
+  await within(opponentStartedPromise, "second quorum source activation");
+  await until(async () => (await store.load("loop-quorum-timeout")).scheduler.joinRounds["debate-positions:1"]?.deadlineAt === 150, "persisted Loop quorum deadline");
+  clock.advanceTo(150);
+  const result = await within(running, "Loop quorum timeout settlement");
+  assert.equal(result.status, "failed");
+  assert.equal(result.scheduler.joinRounds["debate-positions:1"].failure.code, "JOIN_TIMEOUT");
+  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
+  assert.equal(cancels.opponent, 1);
+  assert.equal(judgeCalls, 0);
+});
+
+test("FileTeamRunStore restores the remaining deadline for a collecting Loop quorum Join", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-quorum-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const team = await quorumDebateFixture({ threshold: 2, timeoutMs: 50 });
+  const plan = compileTeamIr(team);
+  const runId = "loop-quorum-recovery";
+  const runsRoot = join(root, "runs");
+  const firstStore = new FileTeamRunStore(runsRoot);
+  const firstRuntime = new TeamRuntime({
+    store: firstStore,
+    clock: fakeClock(100),
+    bindings: Object.fromEntries(team.agents.map((agent) => [agent.bindingRef, { async invoke() { throw new Error("checkpoint setup must not invoke bindings"); } }]))
+  });
+  await firstRuntime.createRun(plan, { runId, task: "debate", input: { request: "Assess the proposal" } });
+  await firstRuntime.claim(runId, plan.compiledPlanDigest);
+  const round = applyTeamJoinEvent(createTeamJoinRound({
+    joinId: "debate-positions", runId, lineage: "run", loopRound: 1, mode: "quorum_of", threshold: 2,
+    handoffIds: ["proponent-to-judge", "opponent-to-judge"], timeoutMs: 50, requiredSourceIds: []
+  }), { type: "predecessor_activated", at: 100 });
+  const checkpoint = await firstStore.load(runId);
+  const expectedRevision = checkpoint.revision;
+  checkpoint.loopStates["debate-rounds"] = {
+    rounds: 1, agentActivations: 1,
+    previousOutputs: { "debate-host": { event: "BRIEF", data: { brief: "persisted brief" } } },
+    currentOutputs: {}
+  };
+  checkpoint.scheduler.pending = ["host-to-proponent", "host-to-opponent"];
+  checkpoint.scheduler.sources = { "agent:debate-host:BRIEF": { event: "BRIEF", data: { brief: "persisted brief" } } };
+  checkpoint.scheduler.visited = {};
+  checkpoint.scheduler.invocationIds = {};
+  checkpoint.scheduler.joinRounds = { "debate-positions:1": round };
+  checkpoint.revision = expectedRevision + 1;
+  assert.equal(await firstStore.compareAndSet(runId, expectedRevision, checkpoint), true);
+
+  const clock = fakeClock(125);
+  let opponentStarted;
+  const opponentStartedPromise = new Promise((resolve) => { opponentStarted = resolve; });
+  const cancels = { opponent: 0 };
+  const bindings = {
+    "binding:debate-host": { async invoke() { throw new Error("host output is restored from the checkpoint"); } },
+    "binding:proponent": { async invoke() { return { kind: "completed", output: { event: "ARGUMENT", data: { argument: "one" } } }; } },
+    "binding:opponent": {
+      async invoke() { opponentStarted(); return new Promise(() => {}); },
+      async cancel() { cancels.opponent += 1; return true; }
+    },
+    "binding:neutral-judge": { async invoke() { throw new Error("quorum threshold must not be reached"); } },
+    "binding:debate-reporter": { async invoke() { throw new Error("reporter must not run after timeout"); } }
+  };
+  const recovered = new TeamRuntime({ store: new FileTeamRunStore(runsRoot), clock, bindings });
+  const running = recovered.executeRun(plan, runId);
+  await within(opponentStartedPromise, "recovered outstanding Loop source");
+  const restored = await firstStore.load(runId);
+  assert.equal(restored.scheduler.joinRounds["debate-positions:1"].startedAt, 100);
+  assert.equal(restored.scheduler.joinRounds["debate-positions:1"].deadlineAt, 150);
+  clock.advanceTo(149);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await firstStore.load(runId)).status, "running");
+  assert.equal(cancels.opponent, 0);
+  clock.advanceTo(150);
+  const result = await within(running, "recovered Loop quorum timeout settlement");
+  assert.equal(result.status, "failed");
+  assert.equal(result.scheduler.joinRounds["debate-positions:1"].failure.code, "JOIN_TIMEOUT");
+  assert.equal(cancels.opponent, 1);
 });
 
 test("Loop Join checkpoint recovers a committed round without repeating its contribution calls", async (t) => {

@@ -643,7 +643,11 @@ export class TeamRuntime {
     const quorumJoins = Array.isArray(orchestration.joins)
       ? orchestration.joins.filter((join) => isRecord(join) && join.mode === "quorum_of") as Record<string, unknown>[]
       : [];
-    if (quorumJoins.length > 0 && loops.length > 0) {
+    const loopScopedQuorum = loops.length === 1 && joinDefinitions.length === 1
+      && quorumJoins.length === 1 && joinDefinitions[0] === quorumJoins[0]
+      && isRecord(quorumJoins[0].scope) && quorumJoins[0].scope.kind === "loop"
+      && quorumJoins[0].scope.loopId === loops[0].id;
+    if (quorumJoins.length > 0 && loops.length > 0 && !loopScopedQuorum) {
       return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_QUORUM_TOPOLOGY_UNSUPPORTED");
     }
     const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
@@ -680,7 +684,7 @@ export class TeamRuntime {
       const loopJoin = loopJoins.length === 1 ? loopJoins[0] : undefined;
       const loopJoinSources = Array.isArray(loopJoin?.handoffIds) ? loopJoin.handoffIds.map(String) : [];
       const joinTarget = loopJoin ? `${String(loopJoin.agentId)}:${String(loopJoin.inputPort)}` : undefined;
-      const supportedLoopJoin = Boolean(loopJoin && joinDefinitions.length === 1 && loopJoin.mode === "all_of"
+      const supportedLoopJoin = Boolean(loopJoin && joinDefinitions.length === 1 && (loopJoin.mode === "all_of" || loopJoin.mode === "quorum_of")
         && isRecord(loopJoin.scope) && loopJoin.scope.loopId === loop.id
         && members.includes(String(loopJoin.agentId)) && loopJoinSources.length > 0
         && loopJoinSources.every((id) => {
@@ -885,11 +889,13 @@ export class TeamRuntime {
           continue;
         }
         if (handoff.to.kind !== "agent") return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_ENDPOINT_UNSUPPORTED");
-        if (loopJoin && loopJoinSourceIds.has(handoffId)) {
+        if (loopJoin && loopJoinSourceIds.has(handoffId) && loopJoin.mode !== "quorum_of") {
           const key = `${String(handoff.to.agentId)}:${String(handoff.to.inputPort)}`;
           const group = joins.find((items) => isRecord(items[0]?.to) && `${String(items[0].to.agentId)}:${String(items[0].to.inputPort)}` === key);
           if (group) group.push(handoff);
           else joins.push([handoff]);
+        } else if (loopJoin && loopJoinSourceIds.has(handoffId) && loopJoin.mode === "quorum_of") {
+          immediate.push(handoffId);
         } else if (plan.joinsByTarget.has(`${String(handoff.to.agentId)}:${String(handoff.to.inputPort)}`)) {
           const key = `${String(handoff.to.agentId)}:${String(handoff.to.inputPort)}`;
           const group = joins.find((items) => isRecord(items[0]?.to) && `${String(items[0].to.agentId)}:${String(items[0].to.inputPort)}` === key);
@@ -926,12 +932,19 @@ export class TeamRuntime {
             const selected = selectTeamHandoffs(plan, source, output, runInput);
             for (const quorumJoin of quorumJoins) {
               const quorumJoinId = String(quorumJoin.id);
+              const scopedLoopJoin = loopJoin === quorumJoin;
+              const currentLoopState = scopedLoopJoin ? (await this.args.store.load(runId))!.loopStates[loopId!] : undefined;
+              const loopRound = scopedLoopJoin ? Math.max(1, currentLoopState!.rounds) : undefined;
+              const roundKey = loopRound === undefined ? quorumJoinId : `${quorumJoinId}:${loopRound}`;
+              const loopPrevious = currentLoopState
+                ? Object.fromEntries(Object.entries(currentLoopState.previousOutputs).map(([previousAgentId, previousOutput]) => [previousAgentId, { output: previousOutput }]))
+                : undefined;
               const quorumJoinSourceIds = new Set((quorumJoin.handoffIds as string[]).map(String));
               const sourceId = selected.find((id) => quorumJoinSourceIds.has(id));
               if (!sourceId) continue;
               const edge = plan.handoffsById.get(sourceId)!;
               const map = isRecord(edge.map) ? edge.map : {};
-              const data = map.data === undefined ? {} : evaluateTeamValueExpr(map.data, valueContext(runInput, output));
+              const data = map.data === undefined ? {} : evaluateTeamValueExpr(map.data, valueContext(runInput, output, loopPrevious));
               const targetAgent = plan.team.agents.find((agent) => agent.id === quorumJoin.agentId) as Record<string, unknown>;
               const targetPort = (targetAgent.inputPorts as Record<string, Record<string, unknown>>)[String(quorumJoin.inputPort)];
               const requiredFields = isRecord(targetPort?.dataSchema) && Array.isArray(targetPort.dataSchema.required) ? targetPort.dataSchema.required as string[] : [];
@@ -945,27 +958,27 @@ export class TeamRuntime {
                   || Object.keys(artifacts).some((slotId) => requiredArtifactSlots.includes(slotId));
               });
               const baseMapping = isRecord(quorumJoin.baseMapping) ? quorumJoin.baseMapping : {};
-              let round = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
-                joinId: quorumJoinId, runId, lineage: "run", mode: "quorum_of",
+              let round = joinRounds.get(roundKey) ?? createTeamJoinRound({
+                joinId: quorumJoinId, runId, lineage: "run", ...(loopRound === undefined ? {} : { loopRound }), mode: "quorum_of",
                 handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
                 timeoutMs: Number(quorumJoin.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
                 baseMapping: {
-                  data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput)) as Record<string, unknown> : {},
-                  artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput)) as Record<string, unknown> : {}
+                  data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput, undefined, loopPrevious)) as Record<string, unknown> : {},
+                  artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput, undefined, loopPrevious)) as Record<string, unknown> : {}
                 }
               });
               const artifactMappings = isRecord(map.artifacts) ? map.artifacts : {};
-              const artifacts = Object.fromEntries(Object.entries(artifactMappings).map(([slotId, expression]) => [slotId, evaluateTeamValueExpr(expression, valueContext(runInput, output))]));
+              const artifacts = Object.fromEntries(Object.entries(artifactMappings).map(([slotId, expression]) => [slotId, evaluateTeamValueExpr(expression, valueContext(runInput, output, loopPrevious))]));
               round = applyTeamJoinEvent(round, { type: "arrival", sourceId, contribution: { data: isRecord(data) ? data : {}, artifacts }, at: this.args.clock.now() });
-              joinRounds.set(quorumJoinId, round);
+              joinRounds.set(roundKey, round);
               await this.update(runId, (record) => {
-                record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [quorumJoinId]: structuredClone(round) };
+                record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [roundKey]: structuredClone(round) };
               });
-              if (round.status === "collecting") this.armJoinTimeout(runId, quorumJoinId, round);
-              else this.disarmJoinTimeout(runId, quorumJoinId);
+              if (round.status === "collecting") this.armJoinTimeout(runId, roundKey, round);
+              else this.disarmJoinTimeout(runId, roundKey);
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${quorumJoinId}`, round.failure?.code ?? "JOIN_FAILED");
-              if (round.status === "ready" && round.merged && !quorumTargetInvoked.has(quorumJoinId)) {
-                quorumTargetInvoked.add(quorumJoinId);
+              if (round.status === "ready" && round.merged && !quorumTargetInvoked.has(roundKey)) {
+                quorumTargetInvoked.add(roundKey);
                 const artifactOverride = Object.fromEntries(Object.entries(round.merged.artifacts ?? {}).map(([slotId, envelope]) => [
                   slotId, isRecord(envelope) && Object.prototype.hasOwnProperty.call(envelope, "value") ? envelope.value : envelope
                 ]));
@@ -1150,6 +1163,7 @@ export class TeamRuntime {
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${joinId}`, round.failure?.code ?? "JOIN_FAILED");
             }
             for (const quorumJoin of quorumJoins.filter((join) => (join.handoffIds as string[]).includes(handoffId))) {
+              if (loopJoin === quorumJoin) continue;
               const quorumJoinId = String(quorumJoin.id);
               let round = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
                 joinId: quorumJoinId, runId, lineage: "run", mode: "quorum_of",
