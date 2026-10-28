@@ -275,7 +275,7 @@ test("executeRun schedules the classic software Team through fanout, Join, and o
   assert.equal((await store.load("classic-run")).status, "completed");
 });
 
-test("executeRun waits for a conditional Join source to be explicitly skipped before merging optional contributions", async () => {
+test("Join tracks selected and skipped Handoffs separately when candidates share one source endpoint", async () => {
   const value = team();
   const agent = (id, inputSchema, outputSchema) => ({
     id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`,
@@ -287,22 +287,23 @@ test("executeRun waits for a conditional Join source to be explicitly skipped be
       { type: "object", properties: { include: { type: "boolean" }, value: { type: "string" } }, required: ["include", "value"], additionalProperties: false }),
     agent("right", { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false },
       { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false }),
-    agent("joiner", { type: "object", properties: { leftValue: { type: "string" }, rightValue: { type: "string" } }, required: [], additionalProperties: false },
+    agent("joiner", { type: "object", properties: { leftValue: { type: "string" }, otherLeftValue: { type: "string" }, rightValue: { type: "string" } }, required: [], additionalProperties: false },
       { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false })
   ];
   value.handoffs = [
     { id: "start-left", from: { kind: "run" }, to: { kind: "agent", agentId: "left", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
     { id: "start-right", from: { kind: "run" }, to: { kind: "agent", agentId: "right", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
     { id: "left-join", from: { kind: "agent", agentId: "left", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { leftValue: { "$ref": "$.output.data.value" } } }, when: { condition: { op: "equals", args: [{ "$ref": "$.output.data.include" }, { "$literal": true }] }, priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "left-other", from: { kind: "agent", agentId: "left", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { otherLeftValue: { "$ref": "$.output.data.value" } } }, when: { condition: { op: "equals", args: [{ "$ref": "$.output.data.include" }, { "$literal": false }] }, priority: 1 }, delivery: { deadlineMs: 2000 } },
     { id: "right-join", from: { kind: "agent", agentId: "right", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { rightValue: { "$ref": "$.output.data.value" } } }, delivery: { deadlineMs: 2000 } },
     { id: "join-result", from: { kind: "agent", agentId: "joiner", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { summary: { "$ref": "$.output.data.summary" } } } }
   ];
   value.orchestration = {
     routes: [
       { from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-left", "start-right"] },
-      { from: { kind: "agent", agentId: "left", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: ["left-join"] }
+      { from: { kind: "agent", agentId: "left", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: ["left-join", "left-other"] }
     ],
-    joins: [{ id: "optional-join", agentId: "joiner", inputPort: "default", mode: "all_of", handoffIds: ["left-join", "right-join"], scope: { kind: "run" }, timeoutMs: 2000, onTimeout: "fail" }],
+    joins: [{ id: "optional-join", agentId: "joiner", inputPort: "default", mode: "all_of", handoffIds: ["left-join", "left-other", "right-join"], scope: { kind: "run" }, timeoutMs: 2000, onTimeout: "fail" }],
     loops: [], reviews: []
   };
   value.runResult.dataSchema = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
@@ -328,8 +329,9 @@ test("executeRun waits for a conditional Join source to be explicitly skipped be
   await runtime.createRun(plan, { runId: "optional-join", task: "check", input: { prompt: "check" } });
   const completed = await runtime.executeRun(plan, "optional-join");
   assert.equal(completed.status, "completed", JSON.stringify(completed.events.filter((entry) => entry.type === "run.failing")));
-  assert.deepEqual(seenJoinInputs, [{ rightValue: "keep" }]);
-  assert.equal(Object.values(completed.invocations).some((invocation) => invocation.handoffId === "left-join" && invocation.agentId === "joiner"), true);
+  assert.deepEqual(seenJoinInputs, [{ otherLeftValue: "omit", rightValue: "keep" }]);
+  assert.equal(completed.scheduler.skippedHandoffs.includes("left-join"), true);
+  assert.equal(completed.scheduler.arrivedHandoffs.includes("left-other"), true);
 
   value.agents[2].inputPorts.default.dataSchema.required = ["leftValue"];
   assert.throws(() => compileTeamIr(value), /Team IR compilation failed/);
