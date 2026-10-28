@@ -110,7 +110,21 @@ export async function resolveBindings({ teamIR }) {
     await page.locator('[name="agent-0-input-fields"]').fill("request");
     await page.locator('[name="agent-0-output-fields"]').fill("summary");
 
-    await page.locator("[data-ir-add-handoff]").click();
+    await page.locator('[data-ir-connect-target-agent-index="0"]').click();
+    assert.match(await page.locator("[data-ir-connect-status]").innerText(), /先选择来源/);
+    assert.equal(await page.locator("[data-ir-handoff]").count(), 0, "target-first selection must not create an edge");
+    await page.locator('[data-ir-connect-source="run"]').click();
+    assert.match(await page.locator("[data-ir-connect-status]").innerText(), /来源已选择/);
+    await page.locator("[data-ir-connect-cancel]").click();
+    assert.match(await page.locator("[data-ir-connect-status]").innerText(), /连接已取消/);
+    assert.equal(await page.locator("[data-ir-handoff]").count(), 0, "cancel must discard the selected source");
+    await page.locator('[data-ir-connect-source="run"]').click();
+    await page.locator('[data-ir-connect-target-agent-index="0"]').click();
+    assert.equal(await page.locator("[data-ir-handoff]").count(), 1);
+    const generatedContracts = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].from, { kind: "run" });
+    assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].to, { kind: "agent", agentId: "worker", inputPort: "default" });
+    assert.deepEqual(generatedContracts.handoffContracts["handoff-1"].map, { data: {} }, "generated edge keeps data mapping explicit");
     await page.locator('[name="handoff-0-id"]').fill("run-to-worker");
     const runMapping = page.locator('[name="handoff-0-mapping"]');
     assert.equal(await runMapping.inputValue(), "", "mapping suggestions must not become semantics before acceptance");
@@ -216,6 +230,17 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(contracts.orchestration.reviews[0].id, "review-draft");
     assert.equal(contracts.agentPortContracts.writer.outputPorts.DONE.artifactSlots.report.required, false);
     assert.equal(contracts.bindings[0].kind, "a2a");
+
+    await page.locator('[data-ir-connect-source-agent-index="0"]').click();
+    await page.locator('[data-ir-connect-target-agent-index="0"]').click();
+    assert.equal(await page.locator("[data-ir-handoff]").count(), 4, "same-Agent distinct-port Loop handoffs remain authorable");
+    const selfLoopContracts = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    assert.deepEqual(selfLoopContracts.handoffContracts["handoff-4"].from, { kind: "agent", agentId: "writer", outputPort: "DONE" });
+    assert.deepEqual(selfLoopContracts.handoffContracts["handoff-4"].to, { kind: "agent", agentId: "writer", inputPort: "draft" });
+    assert.deepEqual(selfLoopContracts.orchestration.routes.find((route) => route.from.kind === "agent" && route.from.outputPort === "DONE").handoffIds,
+      ["revise", "exit", "handoff-4"], "an existing route must continue to list every outgoing Handoff");
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator("[data-ir-advanced-json]").waitFor();
 
     const incompatibleContracts = structuredClone(contracts);
     incompatibleContracts.runInput.dataSchema.properties.prompt.pattern = "^source-";

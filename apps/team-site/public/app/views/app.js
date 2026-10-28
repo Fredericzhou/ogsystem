@@ -1529,18 +1529,19 @@ function renderTeamIrEditorRows(ir, escText, editable) {
   return { agents, handoffs };
 }
 
-function renderTeamIrStructureGraph(ir, escText) {
+function renderTeamIrStructureGraph(ir, escText, editable) {
+  const disabled = editable ? "" : " disabled";
   const nodes = [
-    `<button class="ir-graph-node run" type="button" data-ir-graph-node="run"><span>Run</span><small>输入 · ${escText(ir.team?.id || "Team")}</small></button>`,
-    ...(ir.agents || []).map((agent) => `<button class="ir-graph-node agent" type="button" data-ir-graph-node="agent" data-agent-id="${escText(agent.id)}"><span>${escText(agent.id)}</span><small>${escText(agent.packageRef || "Agent")}</small></button>`),
-    `<button class="ir-graph-node result" type="button" data-ir-graph-node="result"><span>Run Result</span><small>最终输出</small></button>`
+    `<div class="ir-graph-node-wrap"><button class="ir-graph-node run" type="button" data-ir-graph-node="run"><span>Run</span><small>输入 · ${escText(ir.team?.id || "Team")}</small></button><button class="text-button" type="button" data-ir-connect-source="run"${disabled}>设为来源</button></div>`,
+    ...(ir.agents || []).map((agent, index) => `<div class="ir-graph-node-wrap"><button class="ir-graph-node agent" type="button" data-ir-graph-node="agent" data-agent-id="${escText(agent.id)}"><span>${escText(agent.id)}</span><small>${escText(agent.packageRef || "Agent")}</small></button><div class="ir-graph-node-actions"><button class="text-button" type="button" data-ir-connect-source-agent-index="${index}"${disabled}>设为来源</button><button class="text-button" type="button" data-ir-connect-target-agent-index="${index}"${disabled}>设为目标</button></div></div>`),
+    `<div class="ir-graph-node-wrap"><button class="ir-graph-node result" type="button" data-ir-graph-node="result"><span>Run Result</span><small>最终输出</small></button><button class="text-button" type="button" data-ir-connect-target="result"${disabled}>设为目标</button></div>`
   ].join("");
   const edges = (ir.handoffs || []).map((handoff, index) => {
     const from = handoff.from?.kind === "run" ? "Run" : handoff.from?.agentId || "Agent";
     const to = handoff.to?.kind === "result" ? "Run Result" : handoff.to?.agentId || "Agent";
     return `<button class="ir-graph-edge" type="button" data-ir-graph-handoff="${index}"><code>${escText(handoff.id)}</code><span>${escText(from)} <b aria-hidden="true">→</b> ${escText(to)}</span></button>`;
   }).join("");
-  return `<section class="ir-structure-graph" aria-labelledby="ir-structure-graph-title"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2 id="ir-structure-graph-title">结构图</h2></div><span class="form-hint">只读投影 · Run / Agent / Handoff</span></div><div class="ir-graph-nodes" aria-label="Run and Agent nodes">${nodes}</div><div class="ir-graph-edges" aria-label="Handoff edges">${edges || '<p class="empty-note">尚未定义 Handoff。</p>'}</div></section>`;
+  return `<section class="ir-structure-graph" aria-labelledby="ir-structure-graph-title"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2 id="ir-structure-graph-title">结构图</h2></div><span class="form-hint">Run / Agent / Handoff</span></div><p class="form-status" data-ir-connect-status role="status" aria-live="polite">选择来源后，再选择目标以创建 Handoff。</p><button class="text-button" type="button" data-ir-connect-cancel${disabled}>取消连接</button><div class="ir-graph-nodes" aria-label="Run and Agent nodes">${nodes}</div><div class="ir-graph-edges" aria-label="Handoff edges">${edges || '<p class="empty-note">尚未定义 Handoff。</p>'}</div></section>`;
 }
 
 function focusTeamIrGraphSelection(form, draft, selection) {
@@ -1627,10 +1628,11 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     let draft = stored.teamIR || starterTeamIr(teamVersionId);
     let expectedSemanticDigest = stored.semanticDigest ?? null;
     const editable = team.teamVersionStatus === "draft";
+    let pendingConnectionSource;
     const redraw = () => {
       const rows = renderTeamIrEditorRows(draft, esc, editable);
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor">${renderTeamIrStructureGraph(draft, esc)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor">${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
       form.querySelectorAll("[data-ir-graph-node]").forEach((button) => button.addEventListener("click", () => {
@@ -1695,8 +1697,71 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         syncAdvancedContracts();
         redraw();
       };
+      const chooseConnectionSource = (agentIndex) => {
+        try {
+          const current = captureEditor();
+          if (agentIndex === undefined) pendingConnectionSource = { kind: "run" };
+          else {
+            const agent = current.agents[agentIndex];
+            const outputPort = Object.keys(agent?.outputPorts || {})[0];
+            if (!agent || !outputPort) throw new Error(`Agent at row ${agentIndex + 1} has no output port to connect.`);
+            pendingConnectionSource = { kind: "agent", agentId: agent.id, outputPort };
+          }
+          form.querySelector("[data-ir-connect-status]").textContent = `来源已选择：${pendingConnectionSource.kind === "run" ? "Run" : `${pendingConnectionSource.agentId}.${pendingConnectionSource.outputPort}`}。现在选择目标。`;
+        } catch (error) { captureFailure(error); }
+      };
+      const completeConnection = (agentIndex) => {
+        const status = form.querySelector("[data-ir-connect-status]");
+        if (!pendingConnectionSource) {
+          status.textContent = "请先选择来源，再选择目标。";
+          return;
+        }
+        try {
+          const current = captureEditor();
+          let target;
+          if (agentIndex === "result") target = { kind: "result" };
+          else {
+            const agent = current.agents[agentIndex];
+            const inputPort = Object.keys(agent?.inputPorts || {})[0];
+            if (!agent || !inputPort) throw new Error(`Agent at row ${agentIndex + 1} has no input port to connect.`);
+            target = { kind: "agent", agentId: agent.id, inputPort };
+          }
+          const endpointKey = (endpoint) => endpoint.kind === "run" ? "run" : `agent:${endpoint.agentId}:${endpoint.outputPort || endpoint.inputPort}`;
+          const sourceKey = endpointKey(pendingConnectionSource);
+          const existingRoute = current.orchestration.routes.find((route) => endpointKey(route.from) === sourceKey);
+          const handoffId = `handoff-${current.handoffs.length + 1}`;
+          const existingPriorities = current.handoffs
+            .filter((handoff) => endpointKey(handoff.from) === sourceKey)
+            .map((handoff) => Number(handoff.when?.priority ?? -1));
+          const priority = existingPriorities.length ? Math.max(...existingPriorities) + 1 : 0;
+          current.handoffs.push({
+            id: handoffId,
+            from: structuredClone(pendingConnectionSource),
+            to: target,
+            map: { data: {} },
+            ...(existingRoute && existingRoute.mode === "exclusive_priority" ? { when: { priority } } : {}),
+            delivery: { deadlineMs: 300000 }
+          });
+          if (existingRoute) existingRoute.handoffIds.push(handoffId);
+          draft = current;
+          pendingConnectionSource = undefined;
+          syncAdvancedContracts();
+          redraw();
+          const updatedForm = root.querySelector("#team-ir-editor");
+          updatedForm.querySelector("[data-ir-connect-status]").textContent = `已创建 ${handoffId} 草稿。请补充字段映射并通过保存校验。`;
+          updatedForm.querySelector(`[data-ir-handoff="${current.handoffs.length - 1}"] input[name$="-id"]`)?.focus();
+        } catch (error) { captureFailure(error); }
+      };
       form.querySelector("[data-ir-add-agent]")?.addEventListener("click", () => add("agent"));
       form.querySelector("[data-ir-add-handoff]")?.addEventListener("click", () => add("handoff"));
+      form.querySelector("[data-ir-connect-source='run']")?.addEventListener("click", () => chooseConnectionSource());
+      form.querySelectorAll("[data-ir-connect-source-agent-index]").forEach((button) => button.addEventListener("click", () => chooseConnectionSource(Number(button.dataset.irConnectSourceAgentIndex))));
+      form.querySelectorAll("[data-ir-connect-target-agent-index]").forEach((button) => button.addEventListener("click", () => completeConnection(Number(button.dataset.irConnectTargetAgentIndex))));
+      form.querySelector("[data-ir-connect-target='result']")?.addEventListener("click", () => completeConnection("result"));
+      form.querySelector("[data-ir-connect-cancel]")?.addEventListener("click", () => {
+        pendingConnectionSource = undefined;
+        form.querySelector("[data-ir-connect-status]").textContent = "连接已取消；Team IR 未更改。";
+      });
       form.querySelectorAll("[data-ir-remove-agent]").forEach((button) => button.addEventListener("click", () => {
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         draft.agents.splice(Number(button.dataset.irRemoveAgent), 1);

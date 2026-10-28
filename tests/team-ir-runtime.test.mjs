@@ -305,7 +305,7 @@ test("a cancellation intent that wins the Result CAS race prevents Result commit
     create: (record) => backing.create(record),
     load: (runId) => backing.load(runId),
     async compareAndSet(runId, expectedRevision, record) {
-      if (record.resultWritten && !paused) {
+      if (record.status === "completed" && record.resultWritten && !paused) {
         paused = true;
         reachedResultCommit();
         await resultCommitGate;
@@ -327,12 +327,59 @@ test("a cancellation intent that wins the Result CAS race prevents Result commit
   const cancelled = await runtime.cancel("result-cancel-race");
   assert.equal(cancelled.status, "cancelling");
   releaseResultCommit();
-  await assert.rejects(execution, /Cannot write Run Result in cancelling/);
+  await assert.rejects(execution, /Cannot complete Run in cancelling/);
   const persisted = await store.load("result-cancel-race");
   assert.equal(persisted.status, "cancelling");
   assert.equal(persisted.resultWritten, undefined);
   assert.equal(persisted.result, undefined);
+  assert.deepEqual(persisted.pendingResult, { value: { answer: "late" }, handoffId: "result" });
   assert.equal(persisted.events.some((item) => item.type === "run.result.written"), false);
+  const settled = await runtime.settle("result-cancel-race");
+  assert.equal(settled.status, "cancelled");
+  assert.equal(settled.pendingResult, undefined);
+  assert.equal(settled.resultWritten, undefined);
+  assert.equal(settled.result, undefined);
+  assert.equal(settled.events.some((item) => item.type === "run.result.written"), false);
+});
+
+test("a crash before terminal commit keeps Result private and recovery commits it without repeating the Binding", async () => {
+  const backing = new MemoryTeamRunStore();
+  let failTerminalCommit = true;
+  const store = {
+    create: (record) => backing.create(record),
+    load: (runId) => backing.load(runId),
+    async compareAndSet(runId, expectedRevision, record) {
+      if (record.status === "completed" && failTerminalCommit) {
+        failTerminalCommit = false;
+        throw new Error("simulated crash before terminal commit");
+      }
+      return backing.compareAndSet(runId, expectedRevision, record);
+    }
+  };
+  let calls = 0;
+  const runtime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { calls += 1; return { kind: "completed", output: { event: "DONE", data: { answer: "durable" } } }; } } }
+  });
+  const value = team();
+  value.handoffs.push({ id: "result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } });
+  const plan = compileTeamIr(value);
+  await runtime.createRun(plan, { runId: "result-crash-recovery", task: "recover", input: { prompt: "check" } });
+  await assert.rejects(runtime.executeRun(plan, "result-crash-recovery"), /simulated crash/);
+  const interrupted = await backing.load("result-crash-recovery");
+  assert.equal(interrupted.status, "running");
+  assert.equal(interrupted.result, undefined, JSON.stringify(interrupted));
+  assert.equal(interrupted.resultWritten, undefined);
+  assert.deepEqual(interrupted.pendingResult, { value: { answer: "durable" }, handoffId: "result" });
+  const recovered = await new TeamRuntime({ store: backing, clock: { now: () => 200, sleep: () => new Promise(() => {}) }, bindings: { "binding:worker": { async invoke() { calls += 1; throw new Error("must not replay"); } } } }).executeRun(plan, "result-crash-recovery");
+  assert.equal(recovered.status, "completed");
+  assert.deepEqual(recovered.result, { answer: "durable" });
+  assert.equal(recovered.resultWritten, true);
+  assert.equal(recovered.pendingResult, undefined);
+  assert.equal(calls, 1);
+  assert.equal(recovered.events.filter((item) => item.type === "run.result.written").length, 1);
+  assert.equal(recovered.events.filter((item) => item.type === "run.completed").length, 1);
 });
 
 test("Join tracks selected and skipped Handoffs separately when candidates share one source endpoint", async () => {

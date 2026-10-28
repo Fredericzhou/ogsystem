@@ -153,6 +153,32 @@ test("Task execution sends frozen v2 digests to the Project-owned Team IR execut
   assert.deepEqual(completed[1].result.result, { teamResult: { summary: "v2 result" } });
 });
 
+test("Team IR human-review wait maps to Task waiting_review while preserving the Runtime checkpoint", async () => {
+  const semanticDigest = "a".repeat(64);
+  const compiledPlanDigest = "b".repeat(64);
+  const waitingRun = {
+    runId: "run-1", status: "waiting_human_review",
+    waitingReview: { reviewId: "maker-checker-review", lineage: "run", loopRound: 1 }
+  };
+  const teamIrRunStore = { async execute() {
+    return {
+      state: { status: "waiting_human_review", runId: "run-1", teamIrSemanticDigest: semanticDigest, compiledPlanDigest },
+      result: null,
+      teamRun: waitingRun
+    };
+  } };
+  const testHarness = harness({ team: { teamIrSemanticDigest: semanticDigest, compiledPlanDigest }, teamIrRunStore });
+  Object.assign(testHarness.project.taskRecords[0], { teamIrSemanticDigest: semanticDigest, compiledPlanDigest });
+
+  await testHarness.useCases.startProjectTask("project-1", "task-1", { mode: "sandbox" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const completed = testHarness.calls.find(([name]) => name === "complete")[1];
+  assert.equal(completed.result.state.status, "waiting_review");
+  assert.equal(completed.result.teamRun.status, "waiting_human_review");
+  assert.deepEqual(completed.result.teamRun.waitingReview, { reviewId: "maker-checker-review", lineage: "run", loopRound: 1 });
+});
+
 test("Task Run reservation rejects linked Project evidence roots before committing the Task", async (t) => {
   const root = await mkdtemp(resolve(tmpdir(), "ogs-task-reservation-link-"));
   const projectRoot = resolve(root, "project-1");

@@ -30,6 +30,16 @@ export function createTaskExecutionUseCases({
     return task;
   }
 
+  function taskStatusFromRun(result) {
+    const status = result.state?.status;
+    const taskStatus = status === "waiting_human_review" ? "waiting_review"
+      : status === "paused_input_required" ? "paused"
+      : status === "failing" ? "running"
+      : status === "cancelling" ? "cancel_requested"
+      : status;
+    return taskStatus === status ? result : { ...result, state: { ...result.state, status: taskStatus } };
+  }
+
   return Object.freeze({
     async startProjectTask(projectId, taskId, { mode = "dry-run", retrySourceRunId, retryInputs, retrySourceRoot, materialSnapshotPolicy, idempotencyKey } = {}) {
       if (!["dry-run", "sandbox"].includes(mode)) throw new Error("TASK_MODE_INVALID: unsupported task mode.");
@@ -124,7 +134,10 @@ export function createTaskExecutionUseCases({
                 compiledPlanDigest: task.compiledPlanDigest
               })
             : await runStore.execute(projectId, runOptions);
-          await attemptStore.completeAttempt({ projectId, taskId, runId: reservedRunId, startedAt: task.startedAt || result.state?.startedAt || now(), result, now: now() });
+          await attemptStore.completeAttempt({
+            projectId, taskId, runId: reservedRunId, startedAt: task.startedAt || result.state?.startedAt || now(),
+            result: taskStatusFromRun(result), now: now()
+          });
         } catch (error) {
           await attemptStore.failAttempt({ projectId, taskId, runId: reservedRunId, error, now: now() }).catch(() => undefined);
         } finally {

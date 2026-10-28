@@ -77,6 +77,7 @@ export interface TeamRunRecord {
   terminalIntent?: "failed" | "cancelled";
   result?: unknown;
   resultWritten?: boolean;
+  pendingResult?: { value: unknown; handoffId: string };
   loopStates: Record<string, { rounds: number; agentActivations: number; previousOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; currentOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }> }>;
   scheduler?: { pending: string[]; sources: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; skippedHandoffs: string[]; arrivedHandoffs: string[]; visited: Record<string, number>; invocationIds: Record<string, string>; reviewContexts: Record<string, { decision: "approve" | "reject"; feedback?: unknown }>; joinRounds?: Record<string, TeamJoinRound> };
   waitingReview?: { reviewId: string; lineage: string; loopRound?: number };
@@ -826,15 +827,16 @@ export class TeamRuntime {
             return this.failScheduler(runId, `${runId}:scheduler`, "RUN_RESULT_ARTIFACT_REQUIRED");
           }
           const current = await this.args.store.load(runId);
-          if (current?.resultWritten) continue;
+          if (current?.resultWritten || current?.pendingResult) continue;
           await this.update(runId, (record) => {
             if (record.status !== "running" || record.terminalIntent !== undefined) {
               throw new TeamRunConflictError(`Cannot write Run Result in ${record.status}`);
             }
-            if (record.resultWritten) throw new TeamRunConflictError("Run result already written");
-            record.result = Object.keys(mappedArtifacts).length ? { data: mapped, artifacts: mappedArtifacts } : mapped;
-            record.resultWritten = true;
-            event(record, `${runId}:result-written`, "run.result.written", this.args.clock.now(), { handoffId });
+            if (record.resultWritten || record.pendingResult) throw new TeamRunConflictError("Run result already selected");
+            record.pendingResult = {
+              value: Object.keys(mappedArtifacts).length ? { data: mapped, artifacts: mappedArtifacts } : mapped,
+              handoffId
+            };
           });
           continue;
         }
@@ -1143,11 +1145,17 @@ export class TeamRuntime {
 
     const complete = await this.args.store.load(runId);
     if (!complete) throw new Error(`Unknown Team Run '${runId}'`);
-    if (!complete.resultWritten && (plan.team.executionPolicy as Record<string, unknown>).resultMode === "required") {
+    if (!complete.pendingResult && (plan.team.executionPolicy as Record<string, unknown>).resultMode === "required") {
       return this.failScheduler(runId, `${runId}:scheduler`, "RUN_RESULT_REQUIRED");
     }
     const completed = await this.update(runId, (record) => {
       if (record.status !== "running") throw new TeamRunConflictError(`Cannot complete Run in ${record.status}`);
+      if (record.pendingResult) {
+        record.result = record.pendingResult.value;
+        record.resultWritten = true;
+        event(record, `${runId}:result-written`, "run.result.written", this.args.clock.now(), { handoffId: record.pendingResult.handoffId });
+        delete record.pendingResult;
+      }
       record.status = "completed";
       event(record, `${runId}:settled:completed`, "run.completed", this.args.clock.now());
     });
@@ -1327,6 +1335,7 @@ export class TeamRuntime {
       if (record.status === "failing" && record.terminalIntent === "failed") record.status = "failed";
       else if (record.status === "cancelling" && record.terminalIntent === "cancelled") record.status = "cancelled";
       else throw new TeamRunConflictError(`Run ${record.status} cannot settle`);
+      delete record.pendingResult;
       event(record, `${runId}:settled:${record.status}`, `run.${record.status}`, this.args.clock.now());
     });
     this.disarmRunJoinTimeouts(runId);
