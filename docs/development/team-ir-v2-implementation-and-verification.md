@@ -1,7 +1,7 @@
 # Team IR v2 落地与验证台账
 
 基线日期：2026-10-29
-状态：实施中；阶段 0 通过，阶段 1、2 部分通过，阶段 3、4 进行中；结构化辩论、Maker-Checker、Software Team adapter /3、条件会签的真实 Project Task UAT 与全仓回归新增通过，远端 A2A 和其他发布门仍未完成
+状态：实施中；阶段 0 通过，阶段 1、2 部分通过，阶段 3、4 进行中；结构化辩论、Maker-Checker、Software Team adapter /3、条件会签、阶段放行 PASS/REJECT 的真实 Project Task UAT 与全仓回归新增通过，远端 A2A 和其他发布门仍未完成
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
@@ -686,6 +686,16 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 回归生成数据与工作区 | 已清理测试产物 | 全仓回归新生成的 18 个 `.ogs/runs/` Runtime 目录（约 3.2 MB）和 `.ogs/runs-index.json` 已移入系统废纸篓；原有 `.ogs/model-selection.json` 用户改动保留 | 废纸篓提供短期恢复；本轮未改动或提交本机模型选择配置 |
 
 **阶段结论：** 本轮补齐若干阶段 1/2 定向边界证据，但不支持将阶段 1、2 标为通过。阶段 3/4、全部经典场景真实 UAT、独立 Review 身份、远端 A2A、发布门和旧源码剩余清理仍未闭合。
+
+### 2026-10-29：阶段放行 PASS/REJECT 真实 Project Task UAT
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 真实 Team IR v2 保存/重开、Simulation 与发布 | 通过（隔离本机 Team Site） | Team Site `127.0.0.1:4174` 使用全新 `/tmp/team-ir-v2-release-gate-uat-20261029` 数据根及已验证 Docker/OpenCode resolver。TeamVersion `classic-release-gate-uat-1e32a752`，semantic digest `e13495b474668be6fd0d023b73fae4f80d32429194d4f6229a9c42925fcc5015`、compiled digest `87d706b6ce5d239edce9a5737103cc122a9b7fd356f853f8bc32dfd10377a41a`；保存后重读 digest 相同。第一次 Simulation 因材料不足触发角色 `ABSTAIN`，Run 正确以 required Result 缺失失败；该次不计通过。补充每项已验证的释放证据后 Simulation `b1f91b31-590f-41d8-8438-f09357024966` completed 且写入结果，随后同 digest 发布 | API 导入最新 fixture，不是逐字段 Studio 编辑；初次 ABSTAIN 失败保留作诊断证据 |
+| Project mount 与 PASS 路由真实模型 Task | 通过（真实 Task 结果） | Project `classic-release-gate-project-uat-27800137` mount 上述 released TeamVersion；Task `20261029-042733-4ffe1872` / Run `20261029-042733-2fae3851` completed，Result API `available=true`，决策 `PASS`、summary 191 字符，`run.result.written` 的 `handoffId=gate-pass-result` | 本机 Docker bridge 未强制网络 egress allowlist；只检查了决策与摘要非空，未保存模型正文；本场景没有跨进程重启查询 |
+| 同一 Project 的 REJECT 路由真实模型 Task | 通过（真实 Task 结果） | Task `20261029-042813-6868a558` / Run `20261029-042813-2d8cdc57` 使用明确阻断证据，completed；Result API `available=true`，决策 `REJECT`、summary 204 字符，`run.result.written` 的 `handoffId=gate-reject-result` | 与 PASS 相同的网络隔离限制；未对自然语言理由做语义抽查 |
+
+**阶段结论：** 阶段放行团队的真实 Project Task 现证明 PASS/REJECT 两条互斥结果路径、唯一 Result 写入和持久路由 handoff ID；不代替 Release Gate 对活动并行失败、checkpoint 重启、通用结果冲突和其它经典场景的独立验收。阶段 1/2 仍部分通过，阶段 3/4 仍进行中。
 
 ## 6. Codex / 实施代理工作约定
 
