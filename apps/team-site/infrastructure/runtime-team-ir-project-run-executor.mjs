@@ -178,19 +178,20 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
     const prepared = await prepare(project, options, principal);
     const current = await prepared.store.load(options.runId);
     if (!current) throw new Error("TEAM_REVIEW_RUN_NOT_FOUND: persisted Team Run checkpoint is unavailable.");
-    const lineage = options.lineage || current.waitingReview?.lineage || "run";
-    const loopRound = options.loopRound ?? current.waitingReview?.loopRound;
+    const waitingReviews = current.waitingReviews || (current.waitingReview ? [current.waitingReview] : []);
+    const activeReview = waitingReviews.find((item) => item.reviewId === options.reviewId);
+    const lineage = options.lineage || activeReview?.lineage || current.waitingReview?.lineage || "run";
+    const loopRound = options.loopRound ?? activeReview?.loopRound ?? current.waitingReview?.loopRound;
     const expectedDispatchId = `${options.runId}:team-review:${options.reviewId}:${lineage}:${loopRound ?? "run"}`;
     const decisionAlreadyApplied = current.events.some((item) =>
       item.type === "run.review.approved" || item.type === "run.review.rejected"
         ? item.data?.reviewId === options.reviewId && item.data?.loopRound === loopRound
         : false
     );
-    if (options.dispatchId !== expectedDispatchId || (!current.waitingReview && !decisionAlreadyApplied)) {
+    if (options.dispatchId !== expectedDispatchId || (!activeReview && !decisionAlreadyApplied)) {
       throw new Error("TEAM_REVIEW_DISPATCH_ID_INVALID: Review resume must match a persisted activation and stable dispatch ID.");
     }
-    if (current.waitingReview && (current.waitingReview.reviewId !== options.reviewId
-      || current.waitingReview.lineage !== lineage || current.waitingReview.loopRound !== loopRound)) {
+    if (activeReview && (activeReview.lineage !== lineage || activeReview.loopRound !== loopRound)) {
       throw new Error("TEAM_REVIEW_CHECKPOINT_MISMATCH: persisted Review activation changed before resume.");
     }
     const release = await acquireRunResumeLock(prepared.projectRoot, prepared.runRelative, prepared.stateDirectory, options.runId);
@@ -261,13 +262,14 @@ export function createRuntimeTeamIrProjectRunExecutor({ teamStore, teamIrStore, 
       const decisionEvent = runRecord?.events.findLast((item) =>
         (item.type === "run.review.approved" || item.type === "run.review.rejected") && item.data?.reviewId === reviewId
       );
-      const waitingReview = runRecord?.waitingReview;
-      const activeReviewMatches = runRecord?.status === "waiting_human_review" && waitingReview?.reviewId === reviewId;
-      const committedDecisionMatches = runRecord?.status !== "waiting_human_review" && Boolean(decisionEvent);
+      const waitingReviews = runRecord?.waitingReviews || (runRecord?.waitingReview ? [runRecord.waitingReview] : []);
+      const waitingReview = waitingReviews.find((item) => item.reviewId === reviewId);
+      const activeReviewMatches = runRecord?.status === "waiting_human_review" && Boolean(waitingReview);
+      const committedDecisionMatches = Boolean(decisionEvent);
       if (!runRecord || runRecord.runId !== runId || (!activeReviewMatches && !committedDecisionMatches)) {
         throw new Error("TEAM_REVIEW_CHECKPOINT_MISMATCH: current persisted Run checkpoint does not identify this Review activation.");
       }
-      const lineage = waitingReview?.lineage || "run";
+      const lineage = waitingReview?.lineage || decisionEvent?.data?.lineage || "run";
       const loopRound = waitingReview?.loopRound ?? decisionEvent?.data?.loopRound;
       return {
         runtime: prepared.runtime,

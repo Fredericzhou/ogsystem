@@ -108,6 +108,22 @@ test("Team IR Review decision fails closed without resume dispatch and retries a
   assert.equal(attempts, 2);
 });
 
+test("Team IR Review API resolves a requested activation from the persisted waitingReviews set", async () => {
+  const { useCases, pending, runRecord, resumeCalls } = await setup();
+  runRecord.waitingReviews = [
+    { reviewId: "another-review", lineage: "run" },
+    { reviewId: "planner-review", lineage: "run" }
+  ];
+  runRecord.waitingReview = runRecord.waitingReviews[0];
+  const current = await useCases.getProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review");
+  assert.equal(current.status, "pending");
+  const decided = await useCases.decideProjectTaskTeamIrReview("project-1", "task-1", "run-1", "planner-review", {
+    decision: "approve", revisionToken: pending.revisionToken, idempotencyKey: "approve-parallel-review"
+  });
+  assert.equal(decided.status, "approved");
+  assert.equal(resumeCalls[0].dispatchId, "run-1:team-review:planner-review:run:run");
+});
+
 test("Team IR Review replays the same idempotency key after Run completion and returns only a public Run projection", async () => {
   const { useCases, pending, runRecord, resumeCalls } = await setup();
   const request = { decision: "approve", revisionToken: pending.revisionToken, idempotencyKey: "approve-lost-response" };

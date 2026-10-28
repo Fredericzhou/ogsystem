@@ -54,7 +54,6 @@ for (const { id: caseId } of cases) test(`new classic Team ${caseId} provisions 
   });
   const useCases = createTeamLifecycleUseCases({
     projectStore,
-    packageStore: { async exportTeamPackage() {}, async loadTeamPackage() {} },
     locks: {
       withWorkspaceBindingLock: async (action) => action(),
       withTeamVersionLock: async (_id, action) => action(),

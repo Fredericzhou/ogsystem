@@ -27,7 +27,7 @@ import {
 } from "../dist/visualizer/request-body.js";
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
-import { loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
+import { saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
 
 test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
   const parsed = parseStudioChatToMmdRequest({
@@ -3373,7 +3373,7 @@ test("visualizer request body helpers keep JSON parsing limits and errors explic
   assert.deepEqual(body, { hello: "world" });
 });
 
-test("project persistence keeps Save As and bundle import from replacing canonical design unexpectedly", async () => {
+test("project persistence keeps Save As from replacing canonical design unexpectedly", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-persistence-regression-"));
   try {
     await seedProjectFixture(workdir);
@@ -3381,23 +3381,10 @@ test("project persistence keeps Save As and bundle import from replacing canonic
     await saveProjectSystemSource({ workdir, systemSource: canonicalSource });
     const designPath = path.join(workdir, "system.design.json");
     const beforeSaveAs = JSON.parse(await readFile(designPath, "utf8"));
-    const staleRoleAssetPath = path.join(workdir, "og-roles", "roles", "demo-analyst", "agent.md");
-    await stat(staleRoleAssetPath);
-
     const copySource = canonicalSource.replace("system.version=1.0.0", "system.version=2.0.0");
     await saveProjectSystemSource({ workdir, systemSource: copySource, saveAsPath: "drafts/system-copy.mmd" });
     assert.deepEqual(JSON.parse(await readFile(designPath, "utf8")), beforeSaveAs);
     assert.equal(await readFile(path.join(workdir, "system.mmd"), "utf8"), canonicalSource);
-
-    await loadTeamPackage({
-      workdir,
-      bundle: {
-        mode: "team-v2",
-        team: { systemSource: canonicalSource, executableFiles: [] }
-      }
-    });
-    await assert.rejects(() => stat(designPath), { code: "ENOENT" });
-    await assert.rejects(() => stat(staleRoleAssetPath), { code: "ENOENT" });
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }

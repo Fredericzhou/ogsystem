@@ -85,7 +85,7 @@ test("route selection evaluates conditions and exclusive priority deterministica
   assert.deepEqual(selectTeamHandoffs(plan, { kind: "run" }, {}, { task: "t", input: { prompt: "hi", kind: "fallback" } }), ["fallback"]);
 });
 
-test("Review on a parallel fan-out route fails closed before any Binding invocation", async (t) => {
+test("a single Review gates a bounded parallel fan-out until its decision is durable", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-review-fanout-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const value = team();
@@ -113,39 +113,115 @@ test("Review on a parallel fan-out route fails closed before any Binding invocat
   value.orchestration.reviews = [{
     id: "worker-review",
     at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
-    feedbackSchema: { type: "object" },
+    feedbackSchema: { type: "object", properties: { comments: { type: "string" } }, additionalProperties: false },
     timeoutMs: 1000,
     onTimeout: "fail"
   }];
 
   let plan;
   try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
-  const reviewRuntime = new TeamReviewRuntime({
-    store: new FileTeamReviewStore(join(root, "reviews")),
-    now: () => 100,
-    authorizeReviewer: () => true
-  });
+  let now = 100;
+  const makeReviewRuntime = () => new TeamReviewRuntime({ store: new FileTeamReviewStore(join(root, "reviews")), now: () => now, authorizeReviewer: ({ reviewerId }) => reviewerId === "reviewer-1" });
   const calls = [];
+  let workerCalls = 0;
   const runtime = new TeamRuntime({
-    store: new MemoryTeamRunStore(),
-    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
-    reviewRuntime,
+    store: new FileTeamRunStore(join(root, "runs")),
+    clock: { now: () => now, sleep: () => new Promise(() => {}) },
+    reviewRuntime: makeReviewRuntime(),
     bindings: Object.fromEntries(["worker", "auditor", "backup"].map((id) => [`binding:${id}`, {
       async invoke() {
+        if (id === "worker") workerCalls += 1;
         calls.push(id);
-        return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected" } } };
+        return { kind: "completed", output: { event: "DONE", data: { answer: id === "worker" ? "approved plan" : id } } };
       }
     }]))
   });
   await runtime.createRun(plan, { runId: "review-fanout", task: "review fan-out", input: { prompt: "hello" } });
 
-  const result = await runtime.executeRun(plan, "review-fanout");
-  assert.equal(result.status, "failed");
-  assert.equal(result.events.filter((entry) => entry.type === "run.failing").length, 1);
-  assert.equal(result.events.find((entry) => entry.type === "run.failing").data.code, "TEAM_REVIEW_TOPOLOGY_UNSUPPORTED");
-  assert.equal(result.events.filter((entry) => entry.type === "run.failed").length, 1);
-  assert.deepEqual(calls, [], "unsupported Review/fan-out topology must be rejected before any Binding runs");
-  await assert.rejects(reviewRuntime.get({ runId: "review-fanout", reviewId: "worker-review" }), /does not exist/i);
+  const waiting = await runtime.executeRun(plan, "review-fanout");
+  assert.equal(waiting.status, "waiting_human_review");
+  assert.deepEqual(calls, ["worker"], "downstream fan-out must not start before review approval");
+  const pending = await runtime.getReview("review-fanout", "worker-review");
+  const reviewer = makeReviewRuntime();
+  await reviewer.decide({
+    runId: "review-fanout", reviewId: "worker-review", revisionToken: pending.revisionToken,
+    idempotencyKey: "approve-fanout", reviewerId: "reviewer-1", decision: "approve", plan: compileTeamIr(value)
+  });
+
+  now += 1;
+  const resumed = new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")),
+    clock: { now: () => now, sleep: () => new Promise(() => {}) },
+    reviewRuntime: makeReviewRuntime(),
+    bindings: Object.fromEntries(["worker", "auditor", "backup"].map((id) => [`binding:${id}`, {
+      async invoke() {
+        if (id === "worker") workerCalls += 1;
+        calls.push(id);
+        return { kind: "completed", output: { event: "DONE", data: { answer: id === "worker" ? "approved plan" : id } } };
+      }
+    }]))
+  });
+  const completed = await resumed.executeRun(compileTeamIr(value), "review-fanout");
+  assert.equal(completed.status, "completed");
+  assert.equal(workerCalls, 1, "review resume must reuse the completed source invocation");
+  assert.deepEqual(calls.sort(), ["auditor", "backup", "worker"]);
+  assert.equal(completed.events.filter((entry) => entry.type === "run.waiting_human_review").length, 1);
+});
+
+test("parallel Run fan-out persists independent Reviews and resumes only after all are approved", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-parallel-gates-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.agents.push({
+    id: "auditor", packageRef: "role:auditor@1", bindingRef: "binding:auditor",
+    inputPorts: { default: { dataSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false } } },
+    outputPorts: { DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } } }
+  });
+  value.bindings.push({ ...structuredClone(value.bindings[0]), id: "binding:auditor" });
+  value.handoffs = value.handoffs.filter((handoff) => handoff.id !== "fallback");
+  delete value.handoffs.find((handoff) => handoff.id === "start").when;
+  value.handoffs.push({
+    id: "run-to-auditor", from: { kind: "run" }, to: { kind: "agent", agentId: "auditor", inputPort: "default" },
+    map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 }
+  });
+  value.orchestration.routes = [{ from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start", "run-to-auditor"] }];
+  value.orchestration.reviews = ["worker", "auditor"].map((agentId) => ({
+    id: `${agentId}-review`, at: { kind: "agentOutput", agentId, outputPort: "DONE" },
+    feedbackSchema: { type: "object" }, timeoutMs: 1000, onTimeout: "fail"
+  }));
+  const plan = compileTeamIr(value);
+  const calls = [];
+  const store = new FileTeamRunStore(join(root, "runs"));
+  const makeReviewRuntime = () => new TeamReviewRuntime({ store: new FileTeamReviewStore(join(root, "reviews")), now: () => 100, authorizeReviewer: () => true });
+  const makeRuntime = () => new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    reviewRuntime: makeReviewRuntime(),
+    bindings: Object.fromEntries(["worker", "auditor"].map((agentId) => [`binding:${agentId}`, {
+      async invoke() { calls.push(agentId); return { kind: "completed", output: { event: "DONE", data: { answer: agentId } } }; }
+    }]))
+  });
+  const runtime = makeRuntime();
+  await runtime.createRun(plan, { runId: "parallel-review-gates", task: "review branches", input: { prompt: "hello" } });
+  const waiting = await runtime.executeRun(plan, "parallel-review-gates");
+  assert.equal(waiting.status, "waiting_human_review");
+  assert.deepEqual(waiting.waitingReviews.map(({ reviewId }) => reviewId).sort(), ["auditor-review", "worker-review"]);
+  assert.deepEqual(calls.sort(), ["auditor", "worker"]);
+  const reviews = makeReviewRuntime();
+  const workerReview = await reviews.get({ runId: "parallel-review-gates", reviewId: "worker-review" });
+  await reviews.decide({ runId: "parallel-review-gates", reviewId: "worker-review", revisionToken: workerReview.revisionToken,
+    idempotencyKey: "approve-worker", reviewerId: "reviewer", decision: "approve", plan });
+  const partiallyApproved = await makeRuntime().executeRun(plan, "parallel-review-gates");
+  assert.equal(partiallyApproved.status, "waiting_human_review", "one approved gate must not release any downstream work");
+  assert.deepEqual(calls.sort(), ["auditor", "worker"]);
+  const auditorReview = await reviews.get({ runId: "parallel-review-gates", reviewId: "auditor-review" });
+  await reviews.decide({ runId: "parallel-review-gates", reviewId: "auditor-review", revisionToken: auditorReview.revisionToken,
+    idempotencyKey: "approve-auditor", reviewerId: "reviewer", decision: "approve", plan });
+  const completed = await makeRuntime().executeRun(plan, "parallel-review-gates");
+  assert.equal(completed.status, "completed");
+  assert.deepEqual(calls.sort(), ["auditor", "worker"]);
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.events.filter((entry) => entry.type === "run.waiting_human_review").length, 2);
 });
 
 test("active Run resume rejects a changed compiled dependency digest without side effects", async () => {

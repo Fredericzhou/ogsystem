@@ -85,6 +85,9 @@ export function createFileRunQueryStore({ projectsRoot }) {
         ...(teamRun.status === "waiting_human_review" && teamRun.waitingReview
           ? { waitingReview: teamRun.waitingReview }
           : {}),
+        ...(teamRun.status === "waiting_human_review" && teamRun.waitingReviews?.length
+          ? { waitingReviews: teamRun.waitingReviews }
+          : {}),
         compiledPlanDigest: teamRun.compiledPlanDigest,
         teamIrSemanticDigest: teamRun.teamIrSemanticDigest,
         events: teamRun.events

@@ -92,6 +92,7 @@ export interface TeamRunRecord {
   loopStates: Record<string, { rounds: number; agentActivations: number; previousOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; currentOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }> }>;
   scheduler?: { pending: string[]; sources: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; skippedHandoffs: string[]; arrivedHandoffs: string[]; visited: Record<string, number>; invocationIds: Record<string, string>; reviewContexts: Record<string, { decision: "approve" | "reject"; feedback?: unknown }>; joinRounds?: Record<string, TeamJoinRound> };
   waitingReview?: { reviewId: string; lineage: string; loopRound?: number };
+  waitingReviews?: Array<{ reviewId: string; lineage: string; loopRound?: number }>;
   invocations: Record<string, TeamInvocationState>;
   pendingInput?: { handoffId: string; agentId: string; bindingId: string; remoteTaskId: string; messageParts: unknown[]; requestedInputSchema?: unknown };
   events: TeamRunEvent[];
@@ -201,6 +202,58 @@ function isSupportedMakerCheckerLoop(plan: CompiledTeamPlan): boolean {
     return from.kind === "agent" && from.agentId === agentId || to.kind === "agent" && to.agentId === agentId;
   });
   return scopedHandoffs.every((handoff) => [entryIds[0], continueIds[0], exitIds[0]].includes(String(handoff.id)));
+}
+
+function isSupportedReviewBeforeFanout(plan: CompiledTeamPlan): boolean {
+  const orchestration = plan.team.orchestration as Record<string, unknown>;
+  const loops = Array.isArray(orchestration.loops) ? orchestration.loops : [];
+  const joins = Array.isArray(orchestration.joins) ? orchestration.joins : [];
+  const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
+  const routes = Array.isArray(orchestration.routes) ? orchestration.routes.filter(isRecord) : [];
+  const fanouts = routes.filter((route) => route.mode === "parallel_fanout");
+  if (loops.length !== 0 || joins.length !== 0 || routes.length < 1 || fanouts.length !== 1) return false;
+
+  const fanout = fanouts[0];
+  const fanoutSource = isRecord(fanout.from) ? fanout.from : {};
+  const fanoutIds = Array.isArray(fanout.handoffIds) ? fanout.handoffIds.map(String) : [];
+  if (fanoutSource.kind === "run" && routes.length === 1 && reviews.length >= 2 && fanoutIds.length === reviews.length) {
+    const agents = fanoutIds.map((id) => {
+      const handoff = plan.handoffsById.get(id);
+      return handoff && isRecord(handoff.to) && handoff.to.kind === "agent" ? String(handoff.to.agentId) : undefined;
+    });
+    const reviewedAgents = reviews.map((review) => {
+      const at = isRecord(review.at) ? review.at : {};
+      return at.kind === "agentOutput" ? String(at.agentId) : undefined;
+    });
+    return agents.every((agent) => agent !== undefined)
+      && new Set(agents).size === agents.length
+      && reviewedAgents.every((agent) => agent !== undefined && agents.includes(agent))
+      && new Set(reviewedAgents).size === reviewedAgents.length;
+  }
+  if (reviews.length !== 1 || routes.length !== 2) return false;
+
+  const review = reviews[0];
+  const at = isRecord(review.at) ? review.at : {};
+  if (at.kind !== "agentOutput") return false;
+  const agentId = String(at.agentId);
+  const outputPort = String(at.outputPort);
+  if (fanoutSource.kind !== "agent" || fanoutSource.agentId !== agentId || fanoutSource.outputPort !== outputPort) return false;
+  if (fanoutIds.length < 2 || new Set(fanoutIds).size !== fanoutIds.length) return false;
+  const targets = fanoutIds.map((id) => {
+    const handoff = plan.handoffsById.get(id);
+    return handoff && isRecord(handoff.from) && handoff.from.kind === "agent" && handoff.from.agentId === agentId
+      && handoff.from.outputPort === outputPort && isRecord(handoff.to) && handoff.to.kind === "agent"
+      ? String(handoff.to.agentId) : undefined;
+  });
+  if (targets.some((target) => target === undefined) || new Set(targets).size !== targets.length) return false;
+
+  const runRoute = routes.find((route) => isRecord(route.from) && route.from.kind === "run");
+  if (!runRoute || runRoute.mode !== "exclusive_priority") return false;
+  const runHandoffIds = Array.isArray(runRoute.handoffIds) ? runRoute.handoffIds.map(String) : [];
+  return runHandoffIds.length > 0 && runHandoffIds.every((id) => {
+    const handoff = plan.handoffsById.get(id);
+    return handoff && isRecord(handoff.to) && handoff.to.kind === "agent" && handoff.to.agentId === agentId;
+  });
 }
 
 function sourceKey(source: Record<string, unknown>): string {
@@ -591,19 +644,42 @@ export class TeamRuntime {
     if (terminal.has(initial.status)) return initial;
     if (initial.status === "queued") await this.claim(runId, plan.compiledPlanDigest);
     else if (initial.status === "waiting_human_review") {
-      if (!this.args.reviewRuntime || !initial.waitingReview || !initial.scheduler) throw new TeamRunConflictError("TEAM_REVIEW_RESUME_UNSUPPORTED: review runtime or scheduler checkpoint is unavailable.");
-      const review = await this.args.reviewRuntime.get({ runId, reviewId: initial.waitingReview.reviewId, lineage: initial.waitingReview.lineage, loopRound: initial.waitingReview.loopRound });
-      if (review.status === "pending") return initial;
-      if (review.status === "timed_out") return this.failScheduler(runId, `${runId}:review:${review.reviewId}`, "REVIEW_TIMEOUT");
-      if (review.status !== "approved" && !(review.status === "rejected" && isSupportedMakerCheckerLoop(plan))) {
-        return this.failScheduler(runId, `${runId}:review:${review.reviewId}`, "REVIEW_REJECTED");
+      const waitingReviews = initial.waitingReviews ?? (initial.waitingReview ? [initial.waitingReview] : []);
+      if (!this.args.reviewRuntime || waitingReviews.length === 0 || !initial.scheduler) throw new TeamRunConflictError("TEAM_REVIEW_RESUME_UNSUPPORTED: review runtime or scheduler checkpoint is unavailable.");
+      const reviewResults = await Promise.all(waitingReviews.map(async (waiting) => ({
+        waiting,
+        review: await this.args.reviewRuntime!.get({ runId, reviewId: waiting.reviewId, lineage: waiting.lineage, loopRound: waiting.loopRound })
+      })));
+      const pendingReviews = reviewResults.filter(({ review }) => review.status === "pending");
+      if (pendingReviews.length > 0) {
+        await this.update(runId, (record) => {
+          record.waitingReviews = pendingReviews.map(({ waiting }) => waiting);
+          record.waitingReview = record.waitingReviews[0];
+        });
+        return (await this.args.store.load(runId))!;
       }
+      const timedOut = reviewResults.find(({ review }) => review.status === "timed_out");
+      if (timedOut) return this.failScheduler(runId, `${runId}:review:${timedOut.review.reviewId}`, "REVIEW_TIMEOUT");
+      const rejected = reviewResults.find(({ review }) => review.status !== "approved" && !(review.status === "rejected" && isSupportedMakerCheckerLoop(plan)));
+      if (rejected) return this.failScheduler(runId, `${runId}:review:${rejected.review.reviewId}`, "REVIEW_REJECTED");
+      const definitions = Array.isArray((plan.team.orchestration as Record<string, unknown>).reviews)
+        ? (plan.team.orchestration as Record<string, unknown>).reviews as Array<Record<string, unknown>> : [];
       await this.update(runId, (record) => {
         record.status = "running";
         record.waitingReview = undefined;
-        event(record, `${runId}:review:${review.reviewId}:${initial.waitingReview!.loopRound ?? "run"}:${review.status}`, `run.review.${review.status}`, this.args.clock.now(), {
-          reviewId: review.reviewId, loopRound: initial.waitingReview!.loopRound, decision: review.decision
-        });
+        record.waitingReviews = undefined;
+        const contexts = { ...record.scheduler!.reviewContexts };
+        for (const { waiting, review } of reviewResults) {
+          event(record, `${runId}:review:${review.reviewId}:${waiting.loopRound ?? "run"}:${review.status}`, `run.review.${review.status}`, this.args.clock.now(), {
+            reviewId: review.reviewId, loopRound: waiting.loopRound, decision: review.decision
+          });
+          const definition = definitions.find((item) => item.id === review.reviewId);
+          const at = isRecord(definition?.at) ? definition.at : undefined;
+          if (at && at.kind === "agentOutput" && typeof at.agentId === "string" && typeof at.outputPort === "string") {
+            contexts[`agent:${at.agentId}:${at.outputPort}`] = readTeamReviewContext(review);
+          }
+        }
+        record.scheduler!.reviewContexts = contexts;
       });
     }
     else if (initial.status === "running" && !initial.scheduler) throw new TeamRunConflictError("TEAM_RUN_RESUME_UNSUPPORTED: no scheduler checkpoint exists for this active Run.");
@@ -651,18 +727,14 @@ export class TeamRuntime {
       return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_QUORUM_TOPOLOGY_UNSUPPORTED");
     }
     const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
+    const routes = Array.isArray(orchestration.routes) ? orchestration.routes.filter(isRecord) : [];
+    const fanoutRoutes = routes.filter((route) => route.mode === "parallel_fanout");
     const supportsMakerChecker = isSupportedMakerCheckerLoop(plan);
     if (reviews.length && (!this.args.reviewRuntime || (loops.length > 0 && !supportsMakerChecker) || plan.joinsByTarget.size > 0
-      || reviews.some((review) => {
-        const at = isRecord(review.at) ? review.at : {};
-        const route = plan.routesBySource.get(`agent:${String(at.agentId)}:${String(at.outputPort)}`);
-        return route?.mode === "parallel_fanout";
-      }))) {
+      || fanoutRoutes.length > 0 && !isSupportedReviewBeforeFanout(plan))) {
       return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_REVIEW_TOPOLOGY_UNSUPPORTED");
     }
 
-    const routes = Array.isArray(orchestration.routes) ? orchestration.routes.filter(isRecord) : [];
-    const fanoutRoutes = routes.filter((route) => route.mode === "parallel_fanout");
     if (fanoutRoutes.length > 0 && loops.length === 0 && reviews.length === 0) {
       const fanout = fanoutRoutes.length === 1 ? fanoutRoutes[0] : undefined;
       const targets = fanout && Array.isArray(fanout.handoffIds)
@@ -1092,6 +1164,45 @@ export class TeamRuntime {
         if (invocation?.status === "completed") arrivedHandoffs.add(drivingHandoff);
         if (invocation?.status === "completed" && invocation.output?.kind === "completed") {
           nextSources.set(`agent:${invocation.agentId}:${invocation.output.output.event}`, invocation.output.output);
+        }
+      }
+
+      const parallelRunReviewGate = reviews.length > 1 && fanoutRoutes.length === 1
+        && isRecord(fanoutRoutes[0].from) && fanoutRoutes[0].from.kind === "run";
+      if (parallelRunReviewGate) {
+        const activatedReviews = [...nextSources].flatMap(([source, output]) => {
+          const [, agentId] = source.split(":", 3);
+          const definition = reviews.find((item) => isRecord(item.at) && item.at.agentId === agentId && item.at.outputPort === output.event);
+          return definition ? [{ source, output, definition, reviewId: String(definition.id) }] : [];
+        });
+        const reviewResults = await Promise.all(activatedReviews.map(async (activation) => ({
+          ...activation,
+          review: await this.args.reviewRuntime!.openFromPlan({ plan, runId, reviewId: activation.reviewId, lineage: "run" })
+        })));
+        const pendingReviews = reviewResults.filter(({ review }) => review.status === "pending");
+        const rejectedReview = reviewResults.find(({ review }) => review.status === "rejected" || review.status === "timed_out");
+        if (rejectedReview) {
+          return this.failScheduler(runId, `${runId}:review:${rejectedReview.review.reviewId}`,
+            rejectedReview.review.status === "timed_out" ? "REVIEW_TIMEOUT" : "REVIEW_REJECTED");
+        }
+        for (const { source, review } of reviewResults) {
+          if (review.status === "approved") reviewContexts.set(source, readTeamReviewContext(review));
+        }
+        if (pendingReviews.length > 0) {
+          const waitingReviews = pendingReviews.map(({ review }) => ({ reviewId: review.reviewId, lineage: "run" }));
+          await this.update(runId, (record) => {
+            record.status = "waiting_human_review";
+            record.waitingReviews = waitingReviews;
+            record.waitingReview = waitingReviews.find(({ reviewId }) => pendingReviews.some((item) => item.review.reviewId === reviewId));
+            record.scheduler!.reviewContexts = Object.fromEntries(reviewContexts);
+            for (const { review } of pendingReviews) {
+              event(record, `${runId}:review:${review.reviewId}:run:waiting`, "run.waiting_human_review", this.args.clock.now(), {
+                reviewId: review.reviewId, deadlineAt: review.deadlineAt
+              });
+            }
+          });
+          this.disarmRunJoinTimeouts(runId);
+          return (await this.args.store.load(runId))!;
         }
       }
 

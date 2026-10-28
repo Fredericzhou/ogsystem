@@ -56,7 +56,8 @@ export function createTeamIrReviewUseCases({ projectStore, resolveReviewContext 
       || teamIRSemanticDigest(context.plan.team) !== task.teamIrSemanticDigest) {
       throw new Error("TEAM_REVIEW_PLAN_MISMATCH: Review runtime plan does not match the Task snapshot.");
     }
-    const waitingReview = context.runRecord.waitingReview;
+    const waitingReviews = context.runRecord.waitingReviews || (context.runRecord.waitingReview ? [context.runRecord.waitingReview] : []);
+    const waitingReview = waitingReviews.find((item) => item.reviewId === reviewId);
     const decisionEvent = context.runRecord.events?.findLast((item) =>
       (item.type === "run.review.approved" || item.type === "run.review.rejected") && item.data?.reviewId === reviewId
     );

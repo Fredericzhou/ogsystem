@@ -1963,7 +1963,7 @@ const teamIrRunReviewPanels = new Map();
 async function mountTeamIrRunReviews(detail, run) {
   const orchestration = run.plan?.team?.orchestration || run.plan?.orchestration;
   const reviewDefinitions = Array.isArray(orchestration?.reviews) ? [...orchestration.reviews] : [];
-  const activeReview = run.state?.waitingReview;
+  const activeReview = run.state?.waitingReview || run.state?.waitingReviews?.[0];
   if (!reviewDefinitions.length && activeReview?.reviewId) reviewDefinitions.push({ id: activeReview.reviewId });
   if (!reviewDefinitions.length) return;
   const key = `${detail.dataset.projectId}/${detail.dataset.taskId}/${run.runId}`;
@@ -2137,7 +2137,7 @@ async function openTaskReview(projectId, taskId, task = {}) {
     const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}`);
     const run = await response.json();
     if (!response.ok) throw new Error(run.error || "Team IR v2 运行记录读取失败。");
-    const activeReview = run.state?.waitingReview;
+    const activeReview = run.state?.waitingReview || run.state?.waitingReviews?.[0];
     if (run.plan?.engine !== "team-ir-v2" || !run.owner?.teamIrSemanticDigest
       || run.state?.status !== "waiting_human_review" || !activeReview?.reviewId) {
       if (status) status.textContent = "当前运行没有待处理的 Team IR v2 审核请求。";
