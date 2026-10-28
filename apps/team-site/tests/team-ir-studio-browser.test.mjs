@@ -112,13 +112,26 @@ export async function resolveBindings({ teamIR }) {
 
     await page.locator("[data-ir-add-handoff]").click();
     await page.locator('[name="handoff-0-id"]').fill("run-to-worker");
-    await page.locator('[name="handoff-0-mapping"]').fill("request=$.run.input.request");
+    const runMapping = page.locator('[name="handoff-0-mapping"]');
+    assert.equal(await runMapping.inputValue(), "", "mapping suggestions must not become semantics before acceptance");
+    await page.locator('[data-ir-map-suggest="0"]').click();
+    const runSuggestion = page.locator('[data-ir-map-accept="request"]');
+    await runSuggestion.waitFor();
+    assert.equal(await runMapping.inputValue(), "");
+    await runSuggestion.click();
+    assert.equal(await runMapping.inputValue(), "request=$.run.input.request");
     await page.locator("[data-ir-add-handoff]").click();
     await page.locator('[name="handoff-1-id"]').fill("worker-to-result");
     await page.locator('[name="handoff-1-from-agent"]').selectOption("worker");
     await page.locator('[name="handoff-1-from-port"]').fill("DONE");
     await page.locator('[name="handoff-1-to-agent"]').selectOption("@result");
-    await page.locator('[name="handoff-1-mapping"]').fill("summary=$.output.data.summary");
+    const resultMapping = page.locator('[name="handoff-1-mapping"]');
+    await page.locator('[data-ir-map-suggest="1"]').click();
+    const resultSuggestion = page.locator('[data-ir-map-accept="summary"]');
+    await resultSuggestion.waitFor();
+    assert.equal(await resultMapping.inputValue(), "");
+    await resultSuggestion.click();
+    assert.equal(await resultMapping.inputValue(), "summary=$.output.data.summary");
 
     const validationResponse = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/validate`);
@@ -203,6 +216,20 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(contracts.orchestration.reviews[0].id, "review-draft");
     assert.equal(contracts.agentPortContracts.writer.outputPorts.DONE.artifactSlots.report.required, false);
     assert.equal(contracts.bindings[0].kind, "a2a");
+
+    const incompatibleContracts = structuredClone(contracts);
+    incompatibleContracts.runInput.dataSchema.properties.prompt.pattern = "^source-";
+    incompatibleContracts.agentPortContracts.writer.inputPorts.draft.dataSchema.properties.prompt.pattern = "^target-";
+    incompatibleContracts.handoffContracts.entry.map.data = {};
+    await advancedEditor.fill(JSON.stringify(incompatibleContracts, null, 2));
+    const advancedEntryMapping = page.locator('[name="handoff-0-mapping"]');
+    await advancedEntryMapping.fill("");
+    await page.locator('[data-ir-map-suggest="0"]').click();
+    await page.locator('[data-ir-map-suggestions="0"]').getByText("No compatible required fields with matching names.").waitFor();
+    assert.equal(await page.locator('[data-ir-map-accept="prompt"]').count(), 0,
+      "same-name fields with incompatible pattern constraints must not be suggested");
+    await advancedEditor.fill(JSON.stringify(contracts, null, 2));
+    await advancedEntryMapping.fill("prompt=$.run.input.prompt");
 
     contracts.orchestration.reviews[0].timeoutMs = 0;
     await advancedEditor.fill(JSON.stringify(contracts, null, 2));

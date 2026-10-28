@@ -1689,6 +1689,8 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .ir-form-grid label { display: grid; gap: 5px; min-width: 0; }
 .ir-form-grid label.full { grid-column: 1 / -1; }
 .ir-form-grid input, .team-ir-editor > .project-panel input { max-width: 100%; min-width: 0; }
+.ir-map-suggestions { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+.ir-map-suggestions .text-button { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
 .team-ir-editor code[data-team-ir-digest] { max-width: 100%; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .ir-structure-graph { padding: 12px; }

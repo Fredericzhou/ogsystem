@@ -107,6 +107,24 @@ test("endpoint schema rejects implicit endpoints and malformed agent ports", () 
   assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/handoffs/0/to/inputPort"));
 });
 
+test("Handoff endpoint kinds and Run/Result endpoint fields are exact", () => {
+  const invalidCases = [
+    { pointer: "/handoffs/0/from/kind", mutate: (value) => { value.handoffs[0].from.kind = "result"; } },
+    { pointer: "/handoffs/0/from/agentId", mutate: (value) => { value.handoffs[0].from.agentId = "worker"; } },
+    { pointer: "/handoffs/1/to/kind", mutate: (value) => { value.handoffs[1].to.kind = "run"; } },
+    { pointer: "/handoffs/1/to/outputPort", mutate: (value) => { value.handoffs[1].to.outputPort = "DONE"; } },
+    { pointer: "/handoffs/1/from/kind", mutate: (value) => { value.handoffs[1].from.kind = "run"; } }
+  ];
+
+  for (const { pointer, mutate } of invalidCases) {
+    const value = minimalTeam();
+    mutate(value);
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
+      `Expected an exact endpoint diagnostic at ${pointer}, got ${JSON.stringify(diagnostics)}`);
+  }
+});
+
 test("schema supports only single-cardinality declared artifact slots", () => {
   const value = minimalTeam();
   value.runInput.artifactSlots = { brief: { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } };

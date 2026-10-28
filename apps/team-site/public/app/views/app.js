@@ -1418,6 +1418,42 @@ function fieldsFromSchema(schema) {
   return Object.keys(schema?.properties || {}).join(", ");
 }
 
+function stableTeamIrSchemaValue(value) {
+  if (Array.isArray(value)) return value.map(stableTeamIrSchemaValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableTeamIrSchemaValue(value[key])]));
+  }
+  return value;
+}
+
+function hasTeamIrSchemaReference(value) {
+  if (Array.isArray(value)) return value.some(hasTeamIrSchemaReference);
+  if (!value || typeof value !== "object") return false;
+  return Object.hasOwn(value, "$ref") || Object.values(value).some(hasTeamIrSchemaReference);
+}
+
+function teamIrAutoMappingCandidates(ir, handoff) {
+  const sourceSchema = handoff.from.kind === "run"
+    ? ir.runInput?.dataSchema
+    : ir.agents.find((agent) => agent.id === handoff.from.agentId)?.outputPorts?.[handoff.from.outputPort]?.dataSchema;
+  const targetSchema = handoff.to.kind === "result"
+    ? ir.runResult?.dataSchema
+    : ir.agents.find((agent) => agent.id === handoff.to.agentId)?.inputPorts?.[handoff.to.inputPort]?.dataSchema;
+  const sourceProperties = sourceSchema?.properties || {};
+  const targetProperties = targetSchema?.properties || {};
+  const sourceRequired = new Set(sourceSchema?.required || []);
+  const sourceRoot = handoff.from.kind === "run" ? "$.run.input" : "$.output.data";
+  const alreadyMapped = new Set(Object.keys(handoff.map?.data || {}));
+  const canAssign = (source, target) => {
+    if (!source || !target || hasTeamIrSchemaReference(source) || hasTeamIrSchemaReference(target)) return false;
+    return JSON.stringify(stableTeamIrSchemaValue(source)) === JSON.stringify(stableTeamIrSchemaValue(target));
+  };
+  return Object.keys(targetProperties).filter((field) => sourceRequired.has(field)
+    && Object.hasOwn(sourceProperties, field) && !alreadyMapped.has(field)
+    && canAssign(sourceProperties[field], targetProperties[field]))
+    .map((field) => ({ target: field, reference: `${sourceRoot}.${field}` }));
+}
+
 function teamIrFromEditor(form, base) {
   const data = new FormData(form);
   const agents = [...form.querySelectorAll("[data-ir-agent]")].map((row) => {
@@ -1488,7 +1524,7 @@ function renderTeamIrEditorRows(ir, escText, editable) {
     const condition = edge.when?.condition?.args?.[0]?.$ref || "";
     const conditionField = condition.split(".").at(-1) || "";
     const conditionValue = edge.when?.condition?.args?.[1]?.$literal ?? "";
-    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<input name="handoff-${index}-from-port" value="${escText(edge.from?.outputPort || "START")}"${editable ? "" : " disabled"}></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<input name="handoff-${index}-to-port" value="${escText(edge.to?.inputPort || "default")}"${editable ? "" : " disabled"}></label><label class="full">Field mappings<input name="handoff-${index}-mapping" value="${escText(mapping)}" placeholder="request=$.run.input.request"${editable ? "" : " disabled"}><span class="field-hint">Use targetField=$.run.input.field or targetField=$.output.data.field. Run task stays immutable.</span></label><label>Condition field<input name="handoff-${index}-condition-field" value="${escText(conditionField)}" placeholder="Leave blank for unconditional"${editable ? "" : " disabled"}></label><label>Equals value<input name="handoff-${index}-condition-value" value="${escText(conditionValue)}"${editable ? "" : " disabled"}></label><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
+    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<input name="handoff-${index}-from-port" value="${escText(edge.from?.outputPort || "START")}"${editable ? "" : " disabled"}></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<input name="handoff-${index}-to-port" value="${escText(edge.to?.inputPort || "default")}"${editable ? "" : " disabled"}></label><label class="full">Field mappings<input name="handoff-${index}-mapping" value="${escText(mapping)}" placeholder="request=$.run.input.request"${editable ? "" : " disabled"}><span class="field-hint">Use targetField=$.run.input.field or targetField=$.output.data.field. Run task stays immutable.</span>${editable ? `<button class="secondary-button" type="button" data-ir-map-suggest="${index}">Suggest same-name fields</button><div class="ir-map-suggestions" data-ir-map-suggestions="${index}" aria-live="polite"></div>` : ""}</label><label>Condition field<input name="handoff-${index}-condition-field" value="${escText(conditionField)}" placeholder="Leave blank for unconditional"${editable ? "" : " disabled"}></label><label>Equals value<input name="handoff-${index}-condition-value" value="${escText(conditionValue)}"${editable ? "" : " disabled"}></label><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
   }).join("");
   return { agents, handoffs };
 }
@@ -1602,6 +1638,26 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       }));
       form.querySelectorAll("[data-ir-graph-handoff]").forEach((button) => button.addEventListener("click", () => {
         focusTeamIrGraphSelection(form, draft, { kind: "handoff", index: Number(button.dataset.irGraphHandoff) });
+      }));
+      form.querySelectorAll("[data-ir-map-suggest]").forEach((button) => button.addEventListener("click", () => {
+        try {
+          const current = captureEditor();
+          const handoffIndex = Number(button.dataset.irMapSuggest);
+          const handoff = current.handoffs[handoffIndex];
+          const suggestions = form.querySelector(`[data-ir-map-suggestions="${handoffIndex}"]`);
+          const candidates = handoff ? teamIrAutoMappingCandidates(current, handoff) : [];
+          if (!candidates.length) {
+            suggestions.innerHTML = '<span class="field-hint">No compatible required fields with matching names.</span>';
+            return;
+          }
+          suggestions.innerHTML = candidates.map((candidate) => `<button class="text-button" type="button" data-ir-map-accept="${esc(candidate.target)}" data-ir-map-ref="${esc(candidate.reference)}">Add ${esc(candidate.target)} ← ${esc(candidate.reference)}</button>`).join("");
+          suggestions.querySelectorAll("[data-ir-map-accept]").forEach((accept) => accept.addEventListener("click", () => {
+            const mapping = form.querySelector(`[name="handoff-${handoffIndex}-mapping"]`);
+            const currentText = mapping.value.trim();
+            mapping.value = [currentText, `${accept.dataset.irMapAccept}=${accept.dataset.irMapRef}`].filter(Boolean).join(", ");
+            suggestions.innerHTML = '<span class="field-hint">Mapping added. Save and verify to include it in Team IR.</span>';
+          }));
+        } catch (error) { captureFailure(error); }
       }));
       const showDiagnostics = (diagnostics = []) => {
         const list = form.querySelector("[data-team-ir-diagnostics]");
