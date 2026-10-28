@@ -516,7 +516,7 @@ const teamAdjustmentUseCases = createTeamAdjustmentUseCases({
 });
 const teamVersionSaveUseCases = createTeamVersionSaveUseCases({
   teamCatalog,
-  designUseCases: teamDesignUseCases,
+  teamMetadataUseCases: teamDesignUseCases,
   lifecycleUseCases: teamLifecycleUseCases,
   withTeamVersionSaveLock: teamLifecycleLocks.withTeamVersionSaveLock,
   removeProject,
@@ -608,7 +608,6 @@ const server = createServer(async (request, response) => {
       ...teamVersionSaveUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
       getTeamVersion: teamVersionSaveUseCases.getTeamVersionForSave,
-      getTeamDesign: teamVersionSaveUseCases.getTeamDesignForSave,
       archiveTeamVersion: teamVersionLifecycleUseCases.archiveTeamVersion,
       deleteTeamVersion: teamVersionLifecycleUseCases.deleteTeamVersion,
       deleteTeam: teamVersionLifecycleUseCases.deleteTeam

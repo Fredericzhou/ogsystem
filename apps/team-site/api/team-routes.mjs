@@ -1,5 +1,4 @@
 export async function handleTeamRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
-  const isTeamIrV2 = (body) => body?.schemaVersion === 2 || body?.teamIR?.schemaVersion === 2;
   const teamIrMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir(?:\/(validate))?$/);
   if (teamIrMatch && request.method === "GET" && !teamIrMatch[2]) {
     try {
@@ -122,8 +121,8 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const teamVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)(?:\/(design(?:\/validate)?|release|archive|edit))?$/);
-  if (teamVersionMatch && request.method === "GET" && !teamVersionMatch[2]) {
+  const teamVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)$/);
+  if (teamVersionMatch && request.method === "GET") {
     try {
       sendJson(response, 200, publicProject(await useCases.getTeamVersion(teamVersionMatch[1])));
     } catch (error) {
@@ -131,7 +130,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  if (teamVersionMatch && request.method === "PATCH" && !teamVersionMatch[2]) {
+  if (teamVersionMatch && request.method === "PATCH") {
     try {
       sendJson(response, 200, publicProject(await useCases.updateTeamMetadata(teamVersionMatch[1], await readBody(request))));
     } catch (error) {
@@ -139,7 +138,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  if (teamVersionMatch && request.method === "DELETE" && !teamVersionMatch[2]) {
+  if (teamVersionMatch && request.method === "DELETE") {
     try {
       sendJson(response, 200, await useCases.deleteTeamVersion(teamVersionMatch[1]));
     } catch (error) {
@@ -151,72 +150,18 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  if (teamVersionMatch && teamVersionMatch[2] === "design" && request.method === "GET") {
-    try {
-      sendJson(response, 200, await useCases.getTeamDesign(teamVersionMatch[1], url.searchParams.get("locale") || "zh-CN"));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to load TeamVersion design." });
-    }
-    return true;
-  }
-  if (teamVersionMatch && teamVersionMatch[2] === "design/validate" && request.method === "POST") {
-    try {
-      const body = await readBody(request, 4 * 1024 * 1024);
-      if (isTeamIrV2(body)) {
-        sendJson(response, 409, { error: "TEAM_IR_VERSION_UNSUPPORTED_HERE: use the Team IR v2 validate endpoint and rebuild the legacy design through Studio." });
-        return true;
-      }
-      sendJson(response, 200, await useCases.validateTeamDesign(teamVersionMatch[1], body));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to validate TeamVersion design." });
-    }
-    return true;
-  }
-  if (teamVersionMatch && teamVersionMatch[2] === "design" && request.method === "PUT") {
-    try {
-      const body = await readBody(request, 4 * 1024 * 1024);
-      if (isTeamIrV2(body)) {
-        sendJson(response, 409, { error: "TEAM_IR_VERSION_UNSUPPORTED_HERE: use the Team IR v2 endpoint and rebuild the legacy design through Studio." });
-        return true;
-      }
-      sendJson(response, 200, await useCases.saveTeamDesign(teamVersionMatch[1], body));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save TeamVersion design." });
-    }
-    return true;
-  }
   const saveVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/save$/);
   if (saveVersionMatch && request.method === "PUT") {
     try {
-      const body = await readBody(request, 8 * 1024 * 1024);
-      if (isTeamIrV2(body)) {
-        sendJson(response, 409, { error: "TEAM_IR_VERSION_UNSUPPORTED_HERE: use the Team IR v2 endpoint and rebuild the legacy design through Studio." });
-        return true;
-      }
+      const body = await readBody(request, 1024 * 1024);
       sendJson(response, 200, await useCases.saveTeamVersion(saveVersionMatch[1], body));
     } catch (error) {
-      sendJson(response, errorStatus(error), {
+      const status = /TEAM_IR_V2_REQUIRED/.test(error instanceof Error ? error.message : String(error)) ? 409 : errorStatus(error);
+      sendJson(response, status, {
         error: error instanceof Error ? error.message : "Unable to save TeamVersion.",
         ...(error?.code ? { code: error.code } : {}),
         ...(error?.blockedProjects ? { blockedProjects: error.blockedProjects } : {})
       });
-    }
-    return true;
-  }
-  const assetsMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/design\/assets$/);
-  if (assetsMatch && request.method === "GET") {
-    try {
-      sendJson(response, 200, await useCases.getTeamDesignAssets(assetsMatch[1]));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read TeamVersion assets." });
-    }
-    return true;
-  }
-  if (assetsMatch && request.method === "PUT") {
-    try {
-      sendJson(response, 200, await useCases.saveTeamDesignAssets(assetsMatch[1], await readBody(request, 4 * 1024 * 1024)));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save TeamVersion assets." });
     }
     return true;
   }
@@ -248,21 +193,6 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
         ...(error?.code ? { code: error.code } : {}),
         ...(error?.blockedProjects ? { blockedProjects: error.blockedProjects } : {})
       });
-    }
-    return true;
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/v1/team-factory") {
-    try {
-      const payload = await readBody(request);
-      const team = await useCases.createTeamDraft({
-        name: payload.name,
-        overview: payload.overview,
-        locale: payload.locale
-      });
-      sendJson(response, 201, publicProject(team));
-    } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to create team draft." });
     }
     return true;
   }

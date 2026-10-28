@@ -46,7 +46,7 @@ async function hashTree(root) {
   return createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 
-test("legacy Team API keeps create/read/save/validate contracts and rejects v2 payloads without calling legacy writers", async () => {
+test("legacy authoring API has no creation, read, validate, or write dispatch", async () => {
   const calls = [];
   const harness = routeHarness({
     createTeamDraft: async (input) => (calls.push(["create", input]), { projectId: "team-draft" }),
@@ -56,29 +56,20 @@ test("legacy Team API keeps create/read/save/validate contracts and rejects v2 p
     saveTeamDesign: async (id, input) => (calls.push(["save", id, input]), { teamVersionId: id, saved: true })
   });
 
-  assert.equal(await harness.invoke("POST", "/api/v1/team-factory", { name: "Legacy team", overview: "Existing contract" }), true);
-  assert.equal(harness.sent.at(-1).status, 201);
-  assert.equal(await harness.invoke("GET", "/api/v1/team-versions/legacy-v1"), true);
-  assert.equal(harness.sent.at(-1).payload.teamVersionStatus, "draft");
-  assert.equal(await harness.invoke("GET", "/api/v1/team-versions/legacy-v1/design?locale=en"), true);
-  assert.equal(await harness.invoke("POST", "/api/v1/team-versions/legacy-v1/design/validate", { authoring: { roles: {} } }), true);
-  assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/legacy-v1/design", { authoring: { roles: {} } }), true);
-  assert.deepEqual(calls.map(([name]) => name), ["create", "read", "design", "validate", "save"]);
-
-  const legacyWritesBefore = calls.filter(([name]) => ["validate", "save"].includes(name)).length;
   for (const [method, path, body] of [
-    ["POST", "/api/v1/team-versions/legacy-v1/design/validate", { teamIR: { schemaVersion: 2 } }],
-    ["PUT", "/api/v1/team-versions/legacy-v1/design", { teamIR: { schemaVersion: 2 } }],
-    ["PUT", "/api/v1/team-versions/legacy-v1/save", { schemaVersion: 2 }]
+    ["POST", "/api/v1/team-factory", { name: "Legacy team", overview: "Existing contract" }],
+    ["GET", "/api/v1/team-versions/legacy-v1/design?locale=en"],
+    ["POST", "/api/v1/team-versions/legacy-v1/design/validate", { authoring: { roles: {} } }],
+    ["PUT", "/api/v1/team-versions/legacy-v1/design", { authoring: { roles: {} } }],
+    ["GET", "/api/v1/team-versions/legacy-v1/design/assets"],
+    ["PUT", "/api/v1/team-versions/legacy-v1/design/assets", { assets: {} }]
   ]) {
-    assert.equal(await harness.invoke(method, path, body), true);
-    assert.equal(harness.sent.at(-1).status, 409);
-    assert.match(harness.sent.at(-1).payload.error, /TEAM_IR_VERSION_UNSUPPORTED_HERE/);
+    assert.equal(await harness.invoke(method, path, body), false);
   }
-  assert.equal(calls.filter(([name]) => ["validate", "save"].includes(name)).length, legacyWritesBefore);
+  assert.deepEqual(calls, []);
 });
 
-test("missing v2 document reads empty and release snapshots fail closed without creating IR files", async (t) => {
+test("missing v2 document reads and release snapshots fail closed without creating IR files", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-legacy-compat-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = createFileTeamIrStore();
@@ -88,9 +79,7 @@ test("missing v2 document reads empty and release snapshots fail closed without 
     teamIrStore: store,
     withTeamVersionLock: async (_id, action) => action()
   });
-  assert.deepEqual(await useCases.getTeamIr("legacy-team"), {
-    teamVersionId: "legacy-team", teamIR: null, semanticDigest: null
-  });
+  await assert.rejects(useCases.getTeamIr("legacy-team"), /TEAM_IR_V2_REQUIRED/);
   await assert.rejects(useCases.getTeamIrReleaseSnapshot("legacy-team"), /TEAM_IR_V2_REQUIRED/);
   await assert.rejects(readFile(join(teamRoot, ".ogs", "team.ir.json")), { code: "ENOENT" });
 });
@@ -116,7 +105,8 @@ test("legacy Run evidence stays byte-for-byte unchanged across v2 API, mount, Ta
     async releaseTeamVersion() { throw new Error("TEAM_IR_V2_REQUIRED: rebuild this TeamVersion."); }
   });
   assert.equal(await teamApi.invoke("GET", `/api/v1/team-versions/${teamId}/ir`), true);
-  assert.deepEqual(teamApi.sent.at(-1).payload.teamIR, null);
+  assert.match(teamApi.sent.at(-1).payload.error, /TEAM_IR_V2_REQUIRED/);
+  assert.equal(teamApi.sent.at(-1).status, 400);
   assert.equal(await teamApi.invoke("POST", `/api/v1/team-versions/${teamId}/ir/validate`, { teamIR: { schemaVersion: 2 } }), true);
   assert.equal(teamApi.sent.at(-1).status, 200);
   assert.equal(await teamApi.invoke("POST", `/api/v1/team-versions/${teamId}/release`), true);

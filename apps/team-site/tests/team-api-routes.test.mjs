@@ -28,24 +28,22 @@ function routeHarness(useCases) {
   };
 }
 
-test("Team collection routes list factory teams, create drafts, and query repository", async () => {
+test("Team collection routes list factory teams and query repository without legacy draft creation", async () => {
   const calls = [];
   const harness = routeHarness({
     listTeamFactory: async () => [{ projectId: "draft-1" }],
     queryTeamRepository: async (filters) => (calls.push(["query", filters]), { teams: [{ projectId: "team-1" }], stats: { total: 1 }, pagination: { page: 1 } }),
-    createTeamDraft: async (input) => (calls.push(["createTeamDraft", input]), { projectId: "draft-2" })
+    createTeamDraft: async () => { throw new Error("legacy draft creation must not be called"); }
   });
 
   assert.equal(await harness.invoke("GET", "/api/v1/team-factory"), true);
   assert.deepEqual(harness.sent[0], { status: 200, payload: { teams: [{ projectId: "draft-1", public: true }] } });
 
-  assert.equal(await harness.invoke("POST", "/api/v1/team-factory", { name: "Ops", overview: "Coordinate work", locale: "en" }), true);
-  assert.equal(harness.sent[1].status, 201);
-  assert.deepEqual(calls[0], ["createTeamDraft", { name: "Ops", overview: "Coordinate work", locale: "en" }]);
+  assert.equal(await harness.invoke("POST", "/api/v1/team-factory", { name: "Ops", overview: "Coordinate work", locale: "en" }), false);
 
   assert.equal(await harness.invoke("GET", "/api/v1/team-repository?query=ops&category=engineering&sort=name&page=2&pageSize=5"), true);
-  assert.deepEqual(calls[1], ["query", { query: "ops", category: "engineering", status: "all", sort: "name", page: "2", pageSize: "5" }]);
-  assert.deepEqual(harness.sent[2].payload, { teams: [{ projectId: "team-1", public: true }], stats: { total: 1 }, pagination: { page: 1 } });
+  assert.deepEqual(calls[0], ["query", { query: "ops", category: "engineering", status: "all", sort: "name", page: "2", pageSize: "5" }]);
+  assert.deepEqual(harness.sent[1].payload, { teams: [{ projectId: "team-1", public: true }], stats: { total: 1 }, pagination: { page: 1 } });
 });
 
 test("native Team IR draft route delegates to v2 creation without reusing legacy creation", async () => {
@@ -100,47 +98,44 @@ test("Team version actions preserve their statuses, IDs, bodies, and error mappi
   const saveFailure = routeHarness({ saveTeamVersion: async () => { throw staleSave; } });
   assert.equal(await saveFailure.invoke("PUT", "/api/v1/team-versions/team-v1/save", { authoring: {} }), true);
   assert.deepEqual(saveFailure.sent[0], { status: 409, payload: { error: staleSave.message } });
+
+  const oldDesignSave = routeHarness({ saveTeamVersion: async () => { throw new Error("TEAM_IR_V2_REQUIRED: TeamVersion content must be authored and saved through Team IR v2."); } });
+  assert.equal(await oldDesignSave.invoke("PUT", "/api/v1/team-versions/team-v1/save", { authoring: {} }), true);
+  assert.equal(oldDesignSave.sent[0].status, 409);
 });
 
-test("Team design routes use TeamVersion identity and keep writes outside the Project API", async () => {
+test("TeamVersion metadata routes remain available while Mermaid design routes are removed", async () => {
   const calls = [];
   const harness = routeHarness({
     getTeamVersion: async (id) => (calls.push(["getTeam", id]), { projectId: id, teamVersionId: id }),
     updateTeamMetadata: async (...args) => (calls.push(["updateTeamMetadata", ...args]), { teamVersionId: args[0], ...args[1] }),
-    getTeamDesign: async (...args) => (calls.push(["design", ...args]), { authoring: true }),
     getTeamGraph: async (...args) => (calls.push(["getTeamGraph", ...args]), { graph: true }),
     chatTeamAssistant: async (...args) => (calls.push(["chatTeamAssistant", ...args]), { status: 202, body: { accepted: true } }),
-    validateTeamDesign: async (...args) => (calls.push(["validate", ...args]), { ok: true }),
-    saveTeamDesign: async (...args) => (calls.push(["save", ...args]), { teamVersionId: args[0], saved: true }),
-    saveTeamVersion: async (...args) => (calls.push(["saveTeamVersion", ...args]), { teamVersionId: args[0], createdDraft: true }),
-    getTeamDesignAssets: async (...args) => (calls.push(["assets", ...args]), { roles: {}, contracts: "" }),
-    saveTeamDesignAssets: async (...args) => (calls.push(["saveAssets", ...args]), { roles: {}, contracts: "" })
+    saveTeamVersion: async (...args) => (calls.push(["saveTeamVersion", ...args]), { teamVersionId: args[0], createdDraft: true })
   });
 
   assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1"), true);
   assert.equal(await harness.invoke("PATCH", "/api/v1/team-versions/team-v1", { name: "Team", overview: "Purpose" }), true);
   assert.deepEqual(calls[0], ["getTeam", "team-v1"]);
   assert.deepEqual(calls[1], ["updateTeamMetadata", "team-v1", { name: "Team", overview: "Purpose" }]);
-  assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/design?locale=en"), true);
-  assert.deepEqual(calls[2], ["design", "team-v1", "en"]);
-  assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-v1/design/validate", { authoring: {} }), true);
-  assert.deepEqual(calls[3], ["validate", "team-v1", { authoring: {} }]);
-  assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/design", { authoring: {}, expectedTeamVersionDigest: "digest" }), true);
-  assert.deepEqual(calls[4], ["save", "team-v1", { authoring: {}, expectedTeamVersionDigest: "digest" }]);
-  assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/design/assets"), true);
-  assert.deepEqual(calls[5], ["assets", "team-v1"]);
+  for (const [method, path, body] of [
+    ["GET", "/api/v1/team-versions/team-v1/design?locale=en"],
+    ["POST", "/api/v1/team-versions/team-v1/design/validate", { authoring: {} }],
+    ["PUT", "/api/v1/team-versions/team-v1/design", { authoring: {}, expectedTeamVersionDigest: "digest" }],
+    ["GET", "/api/v1/team-versions/team-v1/design/assets"],
+    ["PUT", "/api/v1/team-versions/team-v1/design/assets", { assets: { contracts: "{}" } }]
+  ]) assert.equal(await harness.invoke(method, path, body), false, `${method} ${path} must not dispatch legacy Mermaid design API`);
+
   assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/save", { name: "Team", expectedTeamVersionDigest: "digest-1" }), true);
-  assert.deepEqual(calls[6], ["saveTeamVersion", "team-v1", { name: "Team", expectedTeamVersionDigest: "digest-1" }]);
-  assert.equal(await harness.invoke("PUT", "/api/v1/team-versions/team-v1/design/assets", { assets: { contracts: "{}" } }), true);
-  assert.deepEqual(calls[7], ["saveAssets", "team-v1", { assets: { contracts: "{}" } }]);
+  assert.deepEqual(calls[2], ["saveTeamVersion", "team-v1", { name: "Team", expectedTeamVersionDigest: "digest-1" }]);
   assert.equal(await harness.invoke("GET", "/api/v1/projects/team-v1/team/design"), false);
   assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/graph?locale=en"), true);
   assert.equal(await harness.invoke("POST", "/api/v1/team-versions/team-v1/chat", { message: "adjust" }), true);
-  assert.deepEqual(calls[8], ["getTeamGraph", "team-v1", "en"]);
-  assert.deepEqual(calls[9], ["chatTeamAssistant", "team-v1", { message: "adjust" }]);
+  assert.deepEqual(calls[3], ["getTeamGraph", "team-v1", "en"]);
+  assert.deepEqual(calls[4], ["chatTeamAssistant", "team-v1", { message: "adjust" }]);
 });
 
-test("Team IR routes use version-scoped endpoints and legacy design endpoints reject v2 documents", async () => {
+test("Team IR routes remain version-scoped while legacy design routes have no compatibility dispatch", async () => {
   const calls = [];
   const harness = routeHarness({
     getTeamIr: async (id) => (calls.push(["get-ir", id]), { teamVersionId: id, teamIR: null, semanticDigest: null }),
@@ -162,12 +157,9 @@ test("Team IR routes use version-scoped endpoints and legacy design endpoints re
 
   for (const [method, path, body] of [
     ["POST", "/api/v1/team-versions/team-v1/design/validate", { schemaVersion: 2 }],
-    ["PUT", "/api/v1/team-versions/team-v1/design", { teamIR: { schemaVersion: 2 } }],
-    ["PUT", "/api/v1/team-versions/team-v1/save", { schemaVersion: 2 }]
+    ["PUT", "/api/v1/team-versions/team-v1/design", { teamIR: { schemaVersion: 2 } }]
   ]) {
-    assert.equal(await harness.invoke(method, path, body), true);
-    assert.equal(harness.sent.at(-1).status, 409);
-    assert.match(harness.sent.at(-1).payload.error, /TEAM_IR_VERSION_UNSUPPORTED_HERE/);
+    assert.equal(await harness.invoke(method, path, body), false);
   }
 });
 
