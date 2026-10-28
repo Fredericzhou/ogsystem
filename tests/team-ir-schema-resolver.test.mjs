@@ -92,3 +92,18 @@ test("fails closed for network refs hidden inside a referenced schema closure", 
   });
   assert.throws(() => resolver.compile("#/$defs/unsafe"), /Network and absolute schema references are forbidden/);
 });
+
+test("schema resolver failures expose stable error codes for forbidden, out-of-scope, missing and unsupported resources", () => {
+  const resolver = new TeamSchemaResolver({
+    teamDocument,
+    packageSchemas: {
+      "schemas/legacy.json": { $schema: "http://json-schema.org/draft-07/schema#", type: "string" }
+    }
+  });
+  const expectCode = (callback, code) => assert.throws(callback, (error) => error instanceof TeamSchemaResolverError && error.code === code);
+  expectCode(() => resolver.resolve("https://example.test/schema.json"), "IR_SCHEMA_REF_FORBIDDEN");
+  expectCode(() => resolver.resolve("../outside.json"), "IR_SCHEMA_PATH_OUT_OF_SCOPE");
+  expectCode(() => resolver.resolve("schemas/missing.json"), "IR_UNKNOWN_SCHEMA_REF");
+  expectCode(() => resolver.compile("schemas/legacy.json"), "IR_SCHEMA_DIALECT_UNSUPPORTED");
+  expectCode(() => new TeamSchemaResolver({ teamDocument: { $defs: { invalid: { value: undefined } } } }), "IR_SCHEMA_INVALID");
+});

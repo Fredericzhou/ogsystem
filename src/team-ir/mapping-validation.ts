@@ -533,6 +533,36 @@ function loopPreviousDominates(args: {
   if (consumer === boundary && !(typeof handoffId === "string" && continueIds.has(handoffId))) return false;
 
   const handoffs = records(args.document.handoffs);
+  const orchestration = isRecord(args.document.orchestration) ? args.document.orchestration : {};
+  const joins = records(orchestration.joins);
+  const loopId = args.loop.id;
+  const loopHandoffs = new Set(handoffs.filter((candidate) => {
+    const source = isRecord(candidate.from) ? candidate.from : {};
+    const target = isRecord(candidate.to) ? candidate.to : {};
+    return (source.kind === "agent" && typeof source.agentId === "string" && memberSet.has(source.agentId))
+      || (target.kind === "agent" && typeof target.agentId === "string" && memberSet.has(target.agentId));
+  }).map((candidate) => candidate.id));
+  if (joins.some((join) => {
+    const scope = isRecord(join.scope) ? join.scope : {};
+    const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds : [];
+    return scope.kind === "loop" && scope.loopId === loopId
+      || (typeof join.agentId === "string" && memberSet.has(join.agentId))
+      || sourceIds.some((id) => loopHandoffs.has(id));
+  })) return false;
+
+  const routes = records(orchestration.routes);
+  for (const route of routes) {
+    const source = isRecord(route.from) ? route.from : {};
+    if (route.mode !== "parallel_fanout" || source.kind !== "agent" || typeof source.agentId !== "string" || !memberSet.has(source.agentId)) continue;
+    const ids = Array.isArray(route.handoffIds) ? route.handoffIds : [];
+    const internalTargets = ids.filter((id) => {
+      const candidate = handoffs.find((item) => item.id === id);
+      const target = candidate && isRecord(candidate.to) ? candidate.to : {};
+      return target.kind === "agent" && typeof target.agentId === "string" && memberSet.has(target.agentId);
+    });
+    if (internalTargets.length > 1) return false;
+  }
+
   const internalEdges: Array<{ from: string; to: string; conditional: boolean }> = [];
   for (const candidate of handoffs) {
     const source = isRecord(candidate.from) ? candidate.from : {};

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compileTeamIr, createTeamA2ABinding, FileTeamArtifactStore, FileTeamRunStore, MemoryTeamArtifactBackend, MemoryTeamRunStore, TeamArtifactStore, TeamBindingError, TeamRuntime, selectTeamHandoffs } from "../dist/team-ir/index.js";
+import { compileTeamIr, createTeamA2ABinding, FileTeamArtifactStore, FileTeamReviewStore, FileTeamRunStore, MemoryTeamArtifactBackend, MemoryTeamRunStore, TeamArtifactStore, TeamBindingError, TeamReviewRuntime, TeamRuntime, selectTeamHandoffs } from "../dist/team-ir/index.js";
 
 function team() {
   return {
@@ -233,6 +233,66 @@ test("executeRun schedules the classic software Team through fanout, Join, and o
   assert.equal((await store.load("classic-run")).status, "completed");
 });
 
+test("executeRun waits for a conditional Join source to be explicitly skipped before merging optional contributions", async () => {
+  const value = team();
+  const agent = (id, inputSchema, outputSchema) => ({
+    id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`,
+    inputPorts: { default: { dataSchema: inputSchema } },
+    outputPorts: { DONE: { dataSchema: outputSchema } }
+  });
+  value.agents = [
+    agent("left", { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false },
+      { type: "object", properties: { include: { type: "boolean" }, value: { type: "string" } }, required: ["include", "value"], additionalProperties: false }),
+    agent("right", { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false },
+      { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false }),
+    agent("joiner", { type: "object", properties: { leftValue: { type: "string" }, rightValue: { type: "string" } }, required: [], additionalProperties: false },
+      { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false })
+  ];
+  value.handoffs = [
+    { id: "start-left", from: { kind: "run" }, to: { kind: "agent", agentId: "left", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "start-right", from: { kind: "run" }, to: { kind: "agent", agentId: "right", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "left-join", from: { kind: "agent", agentId: "left", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { leftValue: { "$ref": "$.output.data.value" } } }, when: { condition: { op: "equals", args: [{ "$ref": "$.output.data.include" }, { "$literal": true }] }, priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "right-join", from: { kind: "agent", agentId: "right", outputPort: "DONE" }, to: { kind: "agent", agentId: "joiner", inputPort: "default" }, map: { data: { rightValue: { "$ref": "$.output.data.value" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "join-result", from: { kind: "agent", agentId: "joiner", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { summary: { "$ref": "$.output.data.summary" } } } }
+  ];
+  value.orchestration = {
+    routes: [
+      { from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-left", "start-right"] },
+      { from: { kind: "agent", agentId: "left", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "finish", handoffIds: ["left-join"] }
+    ],
+    joins: [{ id: "optional-join", agentId: "joiner", inputPort: "default", mode: "all_of", handoffIds: ["left-join", "right-join"], scope: { kind: "run" }, timeoutMs: 2000, onTimeout: "fail" }],
+    loops: [], reviews: []
+  };
+  value.runResult.dataSchema = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
+  value.executionPolicy.resultMode = "required";
+  value.bindings = value.agents.map((item) => ({ id: item.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
+  const seenJoinInputs = [];
+  const bindings = Object.fromEntries(value.agents.map((item) => [`binding:${item.id}`, {
+    async invoke() {
+      if (item.id === "left") return { kind: "completed", output: { event: "DONE", data: { include: false, value: "omit" } } };
+      if (item.id === "right") return { kind: "completed", output: { event: "DONE", data: { value: "keep" } } };
+      return { kind: "completed", output: { event: "DONE", data: { summary: "joined" } } };
+    }
+  }]));
+  const originalJoinInvoke = bindings["binding:joiner"].invoke;
+  bindings["binding:joiner"].invoke = async (invocation) => {
+    seenJoinInputs.push(invocation.input);
+    return originalJoinInvoke();
+  };
+  let plan;
+  try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  const store = new MemoryTeamRunStore();
+  const runtime = new TeamRuntime({ store, clock: { now: () => 10, sleep: () => new Promise(() => {}) }, bindings });
+  await runtime.createRun(plan, { runId: "optional-join", task: "check", input: { prompt: "check" } });
+  const completed = await runtime.executeRun(plan, "optional-join");
+  assert.equal(completed.status, "completed", JSON.stringify(completed.events.filter((entry) => entry.type === "run.failing")));
+  assert.deepEqual(seenJoinInputs, [{ rightValue: "keep" }]);
+  assert.equal(Object.values(completed.invocations).some((invocation) => invocation.handoffId === "left-join" && invocation.agentId === "joiner"), true);
+
+  value.agents[2].inputPorts.default.dataSchema.required = ["leftValue"];
+  assert.throws(() => compileTeamIr(value), /Team IR compilation failed/);
+});
+
 test("TeamRuntime projects authorized Artifact refs, injects an allowlist resolver, registers output and persists only opaque result refs", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-run-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -288,6 +348,71 @@ test("TeamRuntime projects authorized Artifact refs, injects an allowlist resolv
     owner: { projectId: "project-1", runId: "artifact-run" }, allowedArtifacts: [storedOutput]
   });
   assert.equal(Buffer.from(await resolver.read(storedOutput.artifactId)).toString(), "private report");
+});
+
+test("TeamRuntime hands an Agent Artifact to one downstream allowlist and persists a cross-instance authorized result", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-handoff-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  const worker = value.agents[0];
+  worker.outputPorts.DONE.artifactSlots = { draft: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.agents.push({
+    id: "reviewer", packageRef: "role:reviewer@1", bindingRef: "binding:reviewer",
+    inputPorts: {
+      default: {
+        dataSchema: structuredClone(worker.inputPorts.default.dataSchema),
+        artifactSlots: { sources: { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } }
+      }
+    },
+    outputPorts: {
+      DONE: {
+        dataSchema: structuredClone(worker.outputPorts.DONE.dataSchema),
+        artifactSlots: { final: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } }
+      }
+    }
+  });
+  value.runResult.dataSchema = { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false };
+  value.runResult.artifactSlots = { report: { required: true, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.executionPolicy.resultMode = "required";
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "review", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "agent", agentId: "reviewer", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } }, artifacts: { sources: { "$ref": "$.output.artifacts.draft" } } }, delivery: { deadlineMs: 2000 } },
+    { id: "result", from: { kind: "agent", agentId: "reviewer", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } }, artifacts: { report: { "$ref": "$.output.artifacts.final" } } } }
+  ];
+  value.orchestration.routes = [{ from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["start"] }];
+  value.bindings = value.agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
+  let plan;
+  try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  const artifactsRoot = join(root, "artifacts");
+  const artifacts = new FileTeamArtifactStore(artifactsRoot);
+  const reads = [];
+  const bindings = {
+    "binding:worker": { async invoke() {
+      return { kind: "completed", output: { event: "DONE", data: { answer: "drafted" }, artifacts: { draft: { mediaType: "text/markdown", content: Buffer.from("private draft") } } } };
+    } },
+    "binding:reviewer": { async invoke(invocation) {
+      const reference = invocation.input.artifacts.sources;
+      reads.push(Buffer.from(await invocation.artifactResolver.read(reference.artifactId)).toString());
+      await assert.rejects(invocation.artifactResolver.read("art_00000000-0000-0000-0000-000000000000"), (error) => error?.code === "ARTIFACT_ACCESS_DENIED");
+      return { kind: "completed", output: { event: "DONE", data: { answer: "reviewed" }, artifacts: { final: { mediaType: "text/markdown", content: Buffer.from("private final") } } } };
+    } }
+  };
+  const runtime = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings, artifactStore: artifacts });
+  await runtime.createRun(plan, { runId: "artifact-handoff-run", projectId: "project-1", task: "review", input: { prompt: "review" } });
+  const completed = await runtime.executeRun(plan, "artifact-handoff-run");
+  assert.equal(completed.status, "completed", JSON.stringify(completed.events.filter((item) => item.type === "run.failing")));
+  assert.deepEqual(reads, ["private draft"]);
+  assert.equal(completed.result.data.answer, "reviewed");
+  assert.deepEqual(Object.keys(completed.result.artifacts.report).sort(), ["artifactId", "mediaType"]);
+  assert.equal(JSON.stringify(completed).includes("private draft"), false);
+  assert.equal(JSON.stringify(completed).includes("private final"), false);
+
+  const reopenedArtifacts = new FileTeamArtifactStore(artifactsRoot);
+  const persistedResult = await new FileTeamRunStore(join(root, "runs")).load("artifact-handoff-run");
+  const resultRef = persistedResult.result.artifacts.report;
+  const resolver = await reopenedArtifacts.createInvocationResolver({ owner: { projectId: "project-1", runId: "artifact-handoff-run" }, allowedArtifacts: [resultRef] });
+  assert.equal(Buffer.from(await resolver.read(resultRef.artifactId)).toString(), "private final");
+  await assert.rejects(reopenedArtifacts.createInvocationResolver({ owner: { projectId: "other-project", runId: "artifact-handoff-run" }, allowedArtifacts: [resultRef] }), (error) => error?.code === "ARTIFACT_REFERENCE_INVALID");
 });
 
 function loopTeam({ maxRounds = 3, maxAgentActivations = 4, onExhausted = "fail" } = {}) {
@@ -371,10 +496,203 @@ test("Loop activation budget exhaustion fails closed before the next member call
   assert.equal(result.loopStates.revision.agentActivations, 1);
 });
 
-test("active Run re-entry is rejected until scheduler checkpoint recovery exists", async () => {
-  const { runtime } = setup({ async invoke() { throw new Error("must not invoke"); } });
+test("active Run re-entry without a scheduler checkpoint is rejected without side effects", async () => {
+  let calls = 0;
+  const { runtime, store } = setup({ async invoke() { calls += 1; throw new Error("must not invoke"); } });
   const plan = compileTeamIr(loopTeam());
   await runtime.createRun(plan, { runId: "loop-resume", task: "revise", input: { prompt: "draft" } });
+  const queued = await store.load("loop-resume");
+  const expectedRevision = queued.revision;
+  delete queued.scheduler;
+  queued.revision += 1;
+  assert.equal(await store.compareAndSet("loop-resume", expectedRevision, queued), true);
   await runtime.claim("loop-resume", plan.compiledPlanDigest);
-  await assert.rejects(runtime.executeRun(plan, "loop-resume"), /TEAM_RUN_RESUME_UNSUPPORTED/);
+  const before = await store.load("loop-resume");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(runtime.executeRun(plan, "loop-resume"), /TEAM_RUN_RESUME_UNSUPPORTED: no scheduler checkpoint exists/);
+    assert.deepEqual(await store.load("loop-resume"), before);
+  }
+  assert.equal(calls, 0);
+});
+
+test("scheduler recovery cancels an active invocation and settles an unknown outcome without replay", async () => {
+  let cancels = 0;
+  let calls = 0;
+  const { runtime, store } = setup({
+    async invoke() { calls += 1; throw new Error("must not replay unknown invocation"); },
+    async cancel() { cancels += 1; return true; }
+  });
+  const plan = compileTeamIr(team());
+  await runtime.createRun(plan, { runId: "unknown-run", task: "recover", input: { prompt: "recover" } });
+  await runtime.claim("unknown-run", plan.compiledPlanDigest);
+  const claimed = await store.load("unknown-run");
+  claimed.scheduler = { pending: ["start"], sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {} };
+  claimed.invocations["unknown-run:start"] = {
+    id: "unknown-run:start", handoffId: "start", agentId: "worker", bindingId: "binding:worker",
+    status: "running", deadlineAt: 2000, attempt: 1
+  };
+  claimed.revision += 1;
+  assert.equal(await store.compareAndSet("unknown-run", claimed.revision - 1, claimed), true);
+
+  const result = await runtime.executeRun(plan, "unknown-run");
+  assert.equal(result.status, "failed");
+  assert.equal(result.invocations["unknown-run:start"].status, "failed");
+  assert.equal(result.invocations["unknown-run:start"].outcomeUnknown, true);
+  assert.equal(result.invocations["unknown-run:start"].error, "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART");
+  assert.equal(cancels, 1);
+  assert.equal(calls, 0);
+});
+
+test("scheduler checkpoint resumes from a completed invocation across FileTeamRunStore instances without repeating the Binding call", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-scheduler-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(loopTeam());
+  const firstStore = new FileTeamRunStore(root);
+  let crashAfterCompletedInvocation = true;
+  const crashStore = {
+    create: (...args) => firstStore.create(...args),
+    load: (...args) => firstStore.load(...args),
+    async compareAndSet(...args) {
+      const [runId, expectedRevision, record] = args;
+      const committed = await firstStore.compareAndSet(runId, expectedRevision, record);
+      if (committed && crashAfterCompletedInvocation && Object.values(record.invocations).some((invocation) => invocation.status === "completed")) {
+        crashAfterCompletedInvocation = false;
+        throw new Error("simulated process crash after invocation commit");
+      }
+      return committed;
+    }
+  };
+  let calls = 0;
+  const binding = { async invoke() {
+    calls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: `round-${calls}`, again: calls < 3 } } };
+  } };
+  const firstRuntime = new TeamRuntime({ store: crashStore, clock: { now: () => 10, sleep: () => new Promise(() => {}) }, bindings: { "binding:worker": binding } });
+  await firstRuntime.createRun(plan, { runId: "recovered-run", task: "recover", input: { prompt: "recover" } });
+  await assert.rejects(firstRuntime.executeRun(plan, "recovered-run"), /simulated process crash/);
+  const crashed = await firstStore.load("recovered-run");
+  assert.equal(crashed.status, "running");
+  assert.equal(crashed.scheduler.pending[0], "entry");
+  assert.equal(crashed.invocations["recovered-run:entry:loop:revision:activation:1"].status, "completed");
+  assert.equal(crashed.loopStates.revision.agentActivations, 1);
+  assert.equal(crashed.loopStates.revision.rounds, 0);
+
+  const secondStore = new FileTeamRunStore(root);
+  const secondRuntime = new TeamRuntime({ store: secondStore, clock: { now: () => 20, sleep: () => new Promise(() => {}) }, bindings: { "binding:worker": binding } });
+  const resumed = await secondRuntime.executeRun(plan, "recovered-run");
+  assert.equal(resumed.status, "completed");
+  assert.equal(calls, 3);
+  assert.deepEqual(resumed.result, { answer: "round-3" });
+  assert.equal(resumed.loopStates.revision.rounds, 3);
+  assert.equal(resumed.loopStates.revision.agentActivations, 3);
+  assert.deepEqual(resumed.invocations["recovered-run:entry:loop:revision:activation:1"].output, { kind: "completed", output: { event: "DONE", data: { answer: "round-1", again: true } } });
+});
+
+test("Loop-scoped Join continuation is rejected before member invocation with a stable failure", async () => {
+  let calls = 0;
+  const { runtime } = setup({ async invoke() {
+    calls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected", again: false } } };
+  } });
+  const value = loopTeam();
+  value.agents[0].inputPorts.revise.dataSchema.required = [];
+  value.handoffs.find((handoff) => handoff.id === "revise").map.data.answer = { "$ref": "$.output.data.answer" };
+  value.orchestration.joins = [{
+    id: "revision-join", agentId: "worker", inputPort: "revise", mode: "all_of",
+    handoffIds: ["revise"], scope: { kind: "loop", loopId: "revision" }, timeoutMs: 2000, onTimeout: "fail"
+  }];
+  let plan;
+  try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  await runtime.createRun(plan, { runId: "loop-join", task: "revise", input: { prompt: "draft" } });
+  const result = await runtime.executeRun(plan, "loop-join");
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.find((item) => item.type === "run.failing").data.code, "TEAM_LOOP_TOPOLOGY_UNSUPPORTED");
+  assert.equal(calls, 0);
+  const settled = result.events.filter((item) => item.type === "run.failed");
+  assert.equal(settled.length, 1);
+});
+
+test("Loop parallel fan-out is rejected before member invocation to avoid unsupported multi-lineage history", async () => {
+  let calls = 0;
+  const { runtime } = setup({ async invoke() {
+    calls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected", again: false } } };
+  } });
+  const value = loopTeam();
+  value.orchestration.routes.find((route) => route.from.kind === "agent").mode = "parallel_fanout";
+  delete value.handoffs.find((handoff) => handoff.id === "revise").when.priority;
+  delete value.handoffs.find((handoff) => handoff.id === "exit").when;
+  const plan = compileTeamIr(value);
+  await runtime.createRun(plan, { runId: "loop-fanout", task: "revise", input: { prompt: "draft" } });
+  const result = await runtime.executeRun(plan, "loop-fanout");
+  assert.equal(result.status, "failed");
+  assert.equal(result.events.find((item) => item.type === "run.failing").data.code, "TEAM_LOOP_TOPOLOGY_UNSUPPORTED");
+  assert.equal(calls, 0);
+});
+
+test("TeamRuntime waits for an authorized FileStore Review decision and resumes the same completed output", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-runtime-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.agents[0].outputPorts.DONE.dataSchema = { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false };
+  value.agents.push({
+    id: "reviewer", packageRef: "role:reviewer@1", bindingRef: "binding:reviewer",
+    inputPorts: { default: { dataSchema: { type: "object", properties: { approval: { type: "string", enum: ["approve", "reject"] }, comments: { type: "string" } }, required: ["approval"], additionalProperties: false } } },
+    outputPorts: { DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } } }
+  });
+  value.runResult.dataSchema = { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false };
+  value.executionPolicy.resultMode = "required";
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "after-review", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "agent", agentId: "reviewer", inputPort: "default" }, map: { data: { approval: { "$ref": "$.review.decision" }, comments: { "$ref": "$.review.feedback.comments" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "result", from: { kind: "agent", agentId: "reviewer", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } }
+  ];
+  value.orchestration.routes = [
+    { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["start"] },
+    { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["after-review"] }
+  ];
+  value.orchestration.reviews = [{ id: "worker-review", at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" }, feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false }, timeoutMs: 5000, onTimeout: "fail" }];
+  value.bindings = value.agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "models/default", attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
+  let plan;
+  try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
+  let now = 100;
+  const reviewRoot = join(root, "reviews");
+  let token = 0;
+  const reviewRuntime = new TeamReviewRuntime({ store: new FileTeamReviewStore(reviewRoot), now: () => now, makeRevisionToken: () => `review-token-${++token}`, authorizeReviewer: async ({ reviewerId }) => reviewerId === "reviewer-1" });
+  let workerCalls = 0;
+  const seenInputs = [];
+  const bindings = {
+    "binding:worker": { async invoke() { workerCalls += 1; return { kind: "completed", output: { event: "DONE", data: { answer: "draft" } } }; } },
+    "binding:reviewer": { async invoke(invocation) { seenInputs.push(invocation.input); return { kind: "completed", output: { event: "DONE", data: { answer: "approved result" } } }; } }
+  };
+  const runRoot = join(root, "runs");
+  const firstRuntime = new TeamRuntime({ store: new FileTeamRunStore(runRoot), clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime });
+  await firstRuntime.createRun(plan, { runId: "review-run", task: "review", input: { prompt: "review" } });
+  const waiting = await firstRuntime.executeRun(plan, "review-run");
+  assert.equal(waiting.status, "waiting_human_review");
+  assert.equal(workerCalls, 1);
+  assert.equal(seenInputs.length, 0);
+  const pending = await firstRuntime.getReview("review-run", "worker-review");
+
+  await assert.rejects(firstRuntime.decideReview({ runId: "review-run", reviewId: "worker-review", revisionToken: pending.revisionToken, idempotencyKey: "denied", reviewerId: "intruder", decision: "approve", plan }), (error) => error.code === "REVIEW_UNAUTHORIZED");
+  const reviewerAfterRestart = new TeamReviewRuntime({ store: new FileTeamReviewStore(reviewRoot), now: () => now, makeRevisionToken: () => `restart-token-${++token}`, authorizeReviewer: async ({ reviewerId }) => reviewerId === "reviewer-1" });
+  await reviewerAfterRestart.decide({ runId: "review-run", reviewId: "worker-review", revisionToken: pending.revisionToken, idempotencyKey: "approved-1", reviewerId: "reviewer-1", decision: "approve", feedback: { comments: "Proceed" }, plan });
+  now += 1;
+  const resumedRuntime = new TeamRuntime({ store: new FileTeamRunStore(runRoot), clock: { now: () => now, sleep: () => new Promise(() => {}) }, bindings, reviewRuntime: reviewerAfterRestart });
+  const completed = await resumedRuntime.executeRun(plan, "review-run");
+  assert.equal(completed.status, "completed");
+  assert.equal(workerCalls, 1, "completed source invocation must not be repeated after review wait");
+  assert.deepEqual(seenInputs, [{ approval: "approve", comments: "Proceed" }]);
+  assert.deepEqual(completed.result, { answer: "approved result" });
+  assert.equal(completed.events.filter((item) => item.type === "run.waiting_human_review").length, 1);
+
+  await resumedRuntime.createRun(plan, { runId: "rejected-review-run", task: "review", input: { prompt: "review" } });
+  const rejectedWaiting = await resumedRuntime.executeRun(plan, "rejected-review-run");
+  assert.equal(rejectedWaiting.status, "waiting_human_review");
+  const rejectedPending = await resumedRuntime.getReview("rejected-review-run", "worker-review");
+  await reviewerAfterRestart.decide({ runId: "rejected-review-run", reviewId: "worker-review", revisionToken: rejectedPending.revisionToken, idempotencyKey: "rejected-1", reviewerId: "reviewer-1", decision: "reject", feedback: { comments: "Revise first" }, plan });
+  const rejectedRun = await resumedRuntime.executeRun(plan, "rejected-review-run");
+  assert.equal(rejectedRun.status, "failed");
+  assert.equal(rejectedRun.events.find((item) => item.type === "run.failing").data.code, "REVIEW_REJECTED");
+  assert.equal(seenInputs.length, 1, "a rejected Review must not invoke downstream Agents");
 });

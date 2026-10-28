@@ -1405,7 +1405,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     const redraw = () => {
       const rows = renderTeamIrEditorRows(draft, esc, editable);
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor"><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor"><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><label>Run input JSON<textarea data-ir-simulation-input rows="8" spellcheck="false">{"request":""}</textarea></label><label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
       const showDiagnostics = (diagnostics = []) => {
@@ -1483,6 +1483,48 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           if (submit?.isConnected) submit.disabled = !editable;
         }
       });
+      const simulation = root.querySelector("[data-team-ir-simulation]");
+      const simulationStatus = simulation.querySelector("[data-ir-simulation-status]");
+      const renderSimulation = (record) => {
+        simulation.querySelector("[data-ir-simulation-evidence]").innerHTML = `<h3>${esc(record.status || "unknown")} · ${esc(record.simulationId || "")}</h3>${record.error ? `<p class="form-status" role="alert">${esc(record.error)}</p>` : ""}<pre>${esc(JSON.stringify({ result: record.result, events: record.events }, null, 2))}</pre>`;
+      };
+      const refreshSimulationHistory = async () => {
+        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load Team IR Simulations.");
+        const rows = (result.simulations || []).sort((left, right) => right.updatedAt - left.updatedAt);
+        simulation.querySelector("[data-ir-simulation-history]").innerHTML = rows.length
+          ? `<h3>Recent simulations</h3><ul class="studio-event-list">${rows.map((item) => `<li><button type="button" class="text-button" data-ir-simulation-id="${esc(item.simulationId)}">${esc(item.status)} · ${esc(item.simulationId)}</button> <code>${esc(item.compiledPlanDigest || "")}</code></li>`).join("")}</ul>`
+          : "";
+        simulation.querySelectorAll("[data-ir-simulation-id]").forEach((button) => button.addEventListener("click", async () => {
+          try {
+            const detailResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations/${encodeURIComponent(button.dataset.irSimulationId)}`);
+            const detail = await detailResponse.json();
+            if (!detailResponse.ok) throw new Error(detail.error || "Unable to load Simulation evidence.");
+            renderSimulation(detail);
+          } catch (error) { simulationStatus.textContent = error.message || "Unable to load Simulation evidence."; }
+        }));
+      };
+      simulation.querySelector("[data-ir-simulation-run]").addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        simulationStatus.textContent = "Running Team IR v2 Simulation…";
+        try {
+          const input = JSON.parse(simulation.querySelector("[data-ir-simulation-input]").value);
+          const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ input, task: simulation.querySelector("[data-ir-simulation-task]").value })
+          });
+          const record = await response.json();
+          if (!response.ok) throw new Error(record.error || "Unable to run Team IR v2 Simulation.");
+          renderSimulation(record);
+          simulationStatus.textContent = record.error || `Simulation ${record.status}.`;
+          await refreshSimulationHistory();
+        } catch (error) {
+          simulationStatus.textContent = error instanceof SyntaxError ? "Run input must be valid JSON." : (error.message || "Unable to run Simulation.");
+        } finally { button.disabled = false; }
+      });
+      refreshSimulationHistory().catch((error) => { simulationStatus.textContent = error.message || "Simulation history is unavailable."; });
     };
     redraw();
   } catch (error) {
@@ -1823,6 +1865,16 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
   const english = state.locale === "en";
   if (!root.querySelector(".page-heading")) root.innerHTML = `<div class="project-loading">${english ? "Checking TeamVersion configuration…" : "正在检查团队版本配置…"}</div>`;
   try {
+    const [versionResponse, irResponse] = await Promise.all([
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`)
+    ]);
+    const [version, storedIr] = await Promise.all([versionResponse.json(), irResponse.json()]);
+    if (!versionResponse.ok) throw new Error(version.error || "TeamVersion not found.");
+    if (irResponse.ok && storedIr.teamIR?.schemaVersion === 2) {
+      await renderStudioTeamIrReleaseGate(teamVersionId, version, storedIr, pageRequest);
+      return;
+    }
     const [teamResponse, designResponse, baselineResponse, readinessResponse, batchResponse, comparisonResponse] = await Promise.all([
       pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
       pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design?locale=${encodeURIComponent(state.locale)}`),
@@ -2042,6 +2094,51 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
     if (isAbort(error)) return;
     root.innerHTML = `<div class="run-error">${esc(error.message || "Unable to validate TeamVersion.")}</div>`;
   }
+}
+
+async function renderStudioTeamIrReleaseGate(teamVersionId, team, stored, pageRequest) {
+  const root = $("#studio-view");
+  const english = state.locale === "en";
+  const t = (en, zh) => english ? en : zh;
+  const base = `/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`;
+  const studioIrUrl = `/studio/teams/${encodeURIComponent(teamVersionId)}/ir`;
+  const [snapshotResponse, readinessResponse, validationResponse] = await Promise.all([
+    pageFetch(`${base}/ir/release-snapshot`),
+    pageFetch(`${base}/release-readiness`),
+    pageFetch(`${base}/ir/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: stored.teamIR }) })
+  ]);
+  const [snapshot, readiness, validation] = await Promise.all([
+    snapshotResponse.json(), readinessResponse.json(), validationResponse.json()
+  ]);
+  if (pageRequest && !isCurrentRequest(pageRequest)) return;
+  const released = team.teamVersionStatus === "released";
+  const diagnostics = validation.diagnostics || snapshot.diagnostics || [];
+  const blockers = [
+    ...(validation.ok === false ? [t("Team IR validation has blocking diagnostics.", "Team IR 校验存在阻断诊断。")]: []),
+    ...(!snapshotResponse.ok ? [snapshot.error || t("The immutable Team IR release snapshot is unavailable.", "不可变 Team IR 发布快照不可用。")]: []),
+    ...(!readinessResponse.ok ? [readiness.error || t("Release readiness could not be verified.", "无法验证发布就绪状态。")]: []),
+    ...(readiness.ready !== true && readinessResponse.ok ? [readiness.reason || t("Required v2 release evidence is missing.", "缺少 v2 发布所需证据。")]: [])
+  ];
+  const canRelease = !released && validation.ok === true && snapshotResponse.ok && readinessResponse.ok && readiness.ready === true;
+  const diagnosticRows = diagnostics.map((item) => `<li><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> ${esc(item.message || "")}</li>`).join("");
+  const blockerRows = blockers.map((item) => `<li>${esc(item)}</li>`).join("");
+  root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${studioIrUrl}" data-route="${studioIrUrl}">← ${t("Team IR v2", "Team IR v2")}</a><div class="eyebrow">OGS Studio · v${team.teamVersionNumber || 1}</div><h1>${t("Team IR v2 release gate", "Team IR v2 发布检查")}</h1><p>${esc(team.name || team.teamName || "")}</p></div><span class="status-chip ${released ? "released" : canRelease ? "completed" : "warning"}">${released ? t("Released", "已发布") : canRelease ? t("Ready", "就绪") : t("Blocked", "受阻")}</span></section>${studioWorkspaceNav(teamVersionId, "release")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Immutable v2 release contract", "不可变 v2 发布合同")}</span><h2>${t("Team IR and dependency closure", "Team IR 与依赖闭包")}</h2></div></div><dl class="studio-version-facts"><div><dt>Team IR semantic digest</dt><dd><code>${esc(stored.semanticDigest || "—")}</code></dd></div><div><dt>Compiled plan digest</dt><dd><code>${esc(snapshot.compiledPlanDigest || "—")}</code></dd></div></dl>${diagnosticRows ? `<ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics>${diagnosticRows}</ul>` : `<p class="form-status" role="status">${t("No blocking Team IR diagnostics.", "Team IR 没有阻断诊断。")}</p>`}${blockerRows ? `<ul class="studio-event-list" data-release-blockers>${blockerRows}</ul>` : ""}<p class="form-status" id="studio-release-status" role="status" aria-live="polite"></p><div class="form-actions">${released ? `<span class="form-hint">${t("Released TeamVersions are immutable.", "已发布 TeamVersion 不可变。")}</span>` : `<button class="primary-button" id="studio-release-button" type="button" ${canRelease ? "" : "disabled"}>${t("Release TeamVersion", "发布团队版本")}</button>`}</div></section>`;
+  const releaseButton = root.querySelector("#studio-release-button");
+  releaseButton?.addEventListener("click", async () => {
+    releaseButton.disabled = true;
+    root.querySelector("#studio-release-status").textContent = t("Releasing TeamVersion…", "正在发布团队版本…");
+    try {
+      const response = await pageFetch(`${base}/release`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || t("Unable to release TeamVersion.", "无法发布团队版本。"));
+      await renderStudioReleaseGate(teamVersionId, pageRequest);
+    } catch (error) {
+      if (!isAbort(error)) {
+        root.querySelector("#studio-release-status").textContent = error.message || t("Unable to release TeamVersion.", "无法发布团队版本。");
+        releaseButton.disabled = false;
+      }
+    }
+  });
 }
 
 function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredModels = []) {

@@ -63,8 +63,23 @@ test("source path lookup rejects unknown fields and disallowed reference roots",
   team.handoffs[0].map.data.query = { "$ref": "$.output.data.answer" };
   team.handoffs[1].map.data.answer = { "$ref": "$.output.data.notDeclared" };
   const diagnostics = validate(team);
-  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_REF_SCOPE_INVALID"));
-  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_SOURCE_MISSING"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_REF_SCOPE_INVALID" && item.pointer === "/handoffs/0/map/data/query"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_SOURCE_MISSING" && item.pointer === "/handoffs/1/map/data/answer"));
+});
+
+test("mapping diagnostics distinguish malformed references, missing Schemas and Artifact references in data", () => {
+  const malformed = baseTeam();
+  malformed.handoffs[0].map.data.query = { "$ref": "$..bad" };
+  assert.ok(validate(malformed).some((item) => item.code === "IR_MAPPING_REF_INVALID" && item.pointer === "/handoffs/0/map/data/query"));
+
+  const unknownSchema = baseTeam();
+  unknownSchema.$defs.input = { "$ref": "schemas/missing.json#/$defs/input" };
+  assert.ok(validate(unknownSchema).some((item) => item.code === "IR_UNKNOWN_SCHEMA_REF" && item.pointer === "/handoffs/0/map/data"));
+
+  const artifactInData = baseTeam();
+  artifactInData.agents[0].outputPorts.DONE.artifactSlots = { report: { required: false, mediaTypes: ["text/plain"], cardinality: "single" } };
+  artifactInData.handoffs[1].map.data.answer = { "$ref": "$.output.artifacts.report" };
+  assert.ok(validate(artifactInData).some((item) => item.code === "IR_MAPPING_ARTIFACT_IN_DATA" && item.pointer === "/handoffs/1/map/data/answer"));
 });
 
 test("source optionality and simple type direction are checked against required targets", () => {
@@ -72,8 +87,8 @@ test("source optionality and simple type direction are checked against required 
   team.handoffs[0].map.data.query = { "$ref": "$.run.input.optionalNote" };
   team.handoffs[1].map.data.answer = { "$ref": "$.output.data.count" };
   const found = validate(team);
-  assert.ok(found.some((item) => item.code === "IR_MAPPING_OPTIONAL_TO_REQUIRED"));
-  assert.ok(found.some((item) => item.code === "IR_MAPPING_TYPE_INCOMPATIBLE"));
+  assert.ok(found.some((item) => item.code === "IR_MAPPING_OPTIONAL_TO_REQUIRED" && item.pointer === "/handoffs/0/map/data/query"));
+  assert.ok(found.some((item) => item.code === "IR_MAPPING_TYPE_INCOMPATIBLE" && item.pointer === "/handoffs/1/map/data/answer"));
 });
 
 test("literal mappings check nested object and array item types at the target pointer", () => {
@@ -126,8 +141,8 @@ test("missing and unknown target fields are diagnosed", () => {
   team.handoffs[0].map.data = { extra: { "$literal": "x" } };
   team.handoffs[1].map.data = {};
   const found = validate(team);
-  assert.ok(found.some((item) => item.code === "IR_MAPPING_REQUIRED_FIELD_MISSING"));
-  assert.ok(found.some((item) => item.code === "IR_MAPPING_TARGET_FIELD_UNKNOWN"));
+  assert.ok(found.some((item) => item.code === "IR_MAPPING_REQUIRED_FIELD_MISSING" && item.pointer === "/handoffs/0/map/data/query"));
+  assert.ok(found.some((item) => item.code === "IR_MAPPING_TARGET_FIELD_UNKNOWN" && item.pointer === "/handoffs/0/map/data/extra"));
 });
 
 test("references resolve package schemas relative to their containing schema resource", () => {
@@ -180,15 +195,15 @@ test("Join detects duplicate providers, missing required contributions and optio
   };
   team.orchestration.routes = [{ from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["from-worker"] }];
 
-  const found = codes(team);
-  assert.ok(found.includes("IR_JOIN_FIELD_CONFLICT"));
-  assert.ok(found.includes("IR_JOIN_CONDITIONAL_REQUIRED_SOURCE"));
-  assert.ok(found.includes("IR_JOIN_REQUIRED_FIELD_MISSING"));
+  const diagnostics = validate(team);
+  assert.ok(diagnostics.some((item) => item.code === "IR_JOIN_FIELD_CONFLICT" && item.pointer === "/orchestration/joins/0"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_JOIN_CONDITIONAL_REQUIRED_SOURCE" && item.pointer === "/handoffs/0/map/data/first"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_JOIN_REQUIRED_FIELD_MISSING" && item.pointer === "/orchestration/joins/0"));
 
   team.orchestration.joins[0].baseMapping.data.first = { "$ref": "$.output.data.answer" };
   const baseMappingDiagnostics = validate(team);
-  assert.ok(baseMappingDiagnostics.some((item) => item.code === "IR_MAPPING_REF_SCOPE_INVALID"));
-  assert.ok(baseMappingDiagnostics.some((item) => item.code === "IR_JOIN_FIELD_CONFLICT"));
+  assert.ok(baseMappingDiagnostics.some((item) => item.code === "IR_MAPPING_REF_SCOPE_INVALID" && item.pointer === "/orchestration/joins/0/baseMapping/data/first"));
+  assert.ok(baseMappingDiagnostics.some((item) => item.code === "IR_JOIN_FIELD_CONFLICT" && item.pointer === "/orchestration/joins/0"));
 });
 
 test("Join single-source contribution is checked with baseMapping as one complete field union", () => {
@@ -256,7 +271,7 @@ test("quorum contributions that may arrive after threshold cannot fill required 
     { id: "collector-result", from: { kind: "agent", agentId: "collector", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } }
   ];
   team.orchestration.joins = [{ id: "quorum", agentId: "collector", inputPort: "collect", mode: "quorum_of", threshold: 1, handoffIds: ["worker-contributor", "other-contributor"] }];
-  assert.ok(codes(team).includes("IR_QUORUM_FIELD_MUST_BE_OPTIONAL"));
+  assert.ok(validate(team).some((item) => item.code === "IR_QUORUM_FIELD_MUST_BE_OPTIONAL" && item.pointer === "/handoffs/0/map/data/answer"));
 });
 
 test("Join required fields cannot rely on a source behind a conditional Run route", () => {
@@ -294,7 +309,7 @@ test("Join required fields cannot rely on a source behind a conditional Run rout
   team.orchestration.routes = [{ from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-worker", "start-relay"] }];
   team.orchestration.joins = [{ id: "collect", agentId: "collector", inputPort: "collect", mode: "all_of", handoffIds: ["worker-join", "relay-join"] }];
 
-  assert.ok(codes(team).includes("IR_JOIN_CONDITIONAL_REQUIRED_SOURCE"));
+  assert.ok(validate(team).some((item) => item.code === "IR_JOIN_CONDITIONAL_REQUIRED_SOURCE" && item.pointer === "/handoffs/3/map/data/relayAnswer"));
 });
 
 test("Join required fields cannot rely on a source Agent with no guaranteed activation path", () => {
@@ -320,7 +335,7 @@ test("Join required fields cannot rely on a source Agent with no guaranteed acti
   ];
   team.orchestration.joins = [{ id: "collect", agentId: "worker", inputPort: "collect", mode: "all_of", handoffIds: ["orphan-join"] }];
 
-  assert.ok(codes(team).includes("IR_JOIN_CONDITIONAL_REQUIRED_SOURCE"));
+  assert.ok(validate(team).some((item) => item.code === "IR_JOIN_CONDITIONAL_REQUIRED_SOURCE" && item.pointer === "/handoffs/1/map/data/answer"));
 });
 
 function loopTeam() {
@@ -367,21 +382,57 @@ test("Loop previous reference rejects a bypass path, external initialization and
     map: { data: { query: { "$ref": "$.loop.previous.reviewer.output.data.note" } } }
   });
   bypass.agents[1].outputPorts.REVIEWED.dataSchema = { type: "object", properties: { note: { type: "string" } }, required: ["note"] };
-  assert.ok(codes(bypass).includes("IR_LOOP_PREVIOUS_NOT_DOMINATED"));
+  assert.ok(validate(bypass).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/4/map/data/query"));
 
   const external = loopTeam();
   external.orchestration.loops[0].members = ["reviewer"];
   external.orchestration.loops[0].boundaryAgentId = "reviewer";
   external.orchestration.loops[0].entryHandoffIds = ["loop-entry"];
-  assert.ok(codes(external).includes("IR_LOOP_REF_OUT_OF_SCOPE"));
+  assert.ok(validate(external).some((item) => item.code === "IR_LOOP_REF_OUT_OF_SCOPE" && item.pointer === "/handoffs/2/map/data/query"));
 
   const noInitializer = loopTeam();
   noInitializer.handoffs = noInitializer.handoffs.filter((item) => item.id !== "to-reviewer");
-  assert.ok(codes(noInitializer).includes("IR_LOOP_PREVIOUS_NOT_DOMINATED"));
+  assert.ok(validate(noInitializer).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/1/map/data/query"));
 
   const conditional = loopTeam();
   conditional.handoffs.find((item) => item.id === "to-reviewer").when = { condition: { op: "equals", args: ["x", "y"] } };
-  assert.ok(codes(conditional).includes("IR_LOOP_PREVIOUS_NOT_DOMINATED"));
+  assert.ok(validate(conditional).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/2/map/data/query"));
+});
+
+test("Loop previous references fail closed across Join aggregation and multi-lineage fan-out", () => {
+  const joined = loopTeam();
+  joined.orchestration.joins = [{
+    id: "reviewer-input",
+    agentId: "reviewer",
+    inputPort: "default",
+    mode: "all_of",
+    handoffIds: ["to-reviewer"],
+    scope: { kind: "loop", loopId: "revision-loop" }
+  }];
+  assert.ok(validate(joined).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/2/map/data/query"));
+
+  const branched = loopTeam();
+  branched.agents.push({
+    id: "editor",
+    packageRef: "role:editor@1",
+    bindingRef: "binding:worker",
+    inputPorts: { default: { dataSchema: { type: "object" } } },
+    outputPorts: { DONE: { dataSchema: { type: "object" } } }
+  });
+  branched.handoffs.push({
+    id: "to-editor",
+    from: { kind: "agent", agentId: "writer", outputPort: "DONE" },
+    to: { kind: "agent", agentId: "editor", inputPort: "default" },
+    map: {}
+  });
+  branched.orchestration.loops[0].members.push("editor");
+  branched.orchestration.routes = [{
+    from: { kind: "agent", agentId: "writer", outputPort: "DONE" },
+    mode: "parallel_fanout",
+    onNoMatch: "fail",
+    handoffIds: ["to-reviewer", "to-editor", "loop-finish"]
+  }];
+  assert.ok(validate(branched).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/2/map/data/query"));
 });
 
 test("artifact mappings enforce required slots and media type compatibility", () => {
@@ -389,12 +440,25 @@ test("artifact mappings enforce required slots and media type compatibility", ()
   team.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/plain"], cardinality: "single" } };
   team.runResult.artifactSlots = { report: { required: true, acceptedMediaTypes: ["application/json"], cardinality: "single" } };
   team.handoffs[1].map.artifacts = { report: { "$ref": "$.output.artifacts.report" } };
-  assert.ok(codes(team).includes("IR_MAPPING_ARTIFACT_MEDIA_TYPE_INCOMPATIBLE"));
+  assert.ok(validate(team).some((item) => item.code === "IR_MAPPING_ARTIFACT_MEDIA_TYPE_INCOMPATIBLE" && item.pointer === "/handoffs/1/map/artifacts/report"));
 
   team.runResult.artifactSlots.report.acceptedMediaTypes = ["text/plain"];
   assert.ok(!codes(team).includes("IR_MAPPING_ARTIFACT_MEDIA_TYPE_INCOMPATIBLE"));
   delete team.handoffs[1].map.artifacts;
-  assert.ok(codes(team).includes("IR_MAPPING_REQUIRED_ARTIFACT_MISSING"));
+  assert.ok(validate(team).some((item) => item.code === "IR_MAPPING_REQUIRED_ARTIFACT_MISSING" && item.pointer === "/handoffs/1/map/artifacts/report"));
+});
+
+test("Artifact mappings report unknown targets and non-Artifact sources at exact slots", () => {
+  const team = baseTeam();
+  team.agents[0].outputPorts.DONE.artifactSlots = { report: { required: false, mediaTypes: ["text/plain"], cardinality: "single" } };
+  team.runResult.artifactSlots = { report: { required: false, acceptedMediaTypes: ["text/plain"], cardinality: "single" } };
+  team.handoffs[1].map.artifacts = {
+    unknown: { "$ref": "$.output.artifacts.report" },
+    report: { "$ref": "$.output.data.answer" }
+  };
+  const diagnostics = validate(team);
+  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_ARTIFACT_TARGET_UNKNOWN" && item.pointer === "/handoffs/1/map/artifacts/unknown"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_MAPPING_ARTIFACT_SOURCE_INVALID" && item.pointer === "/handoffs/1/map/artifacts/report"));
 });
 
 test("route conditions resolve source paths and enforce route scope while exists permits optional properties", () => {
@@ -416,10 +480,16 @@ test("route conditions resolve source paths and enforce route scope while exists
   assert.ok(!codes(team).includes("IR_MAPPING_SOURCE_MISSING"));
 
   team.handoffs[1].when.condition = { op: "equals", args: [{ "$ref": "$.run.input.query" }, { "$literal": "x" }] };
-  assert.ok(codes(team).includes("IR_MAPPING_REF_SCOPE_INVALID"));
+  assert.ok(validate(team).some((item) => item.code === "IR_MAPPING_REF_SCOPE_INVALID" && item.pointer === "/handoffs/1/when/condition/args/0"));
 
   team.handoffs[1].when.condition = { op: "equals", args: [{ "$ref": "$.output.data.absent" }, { "$literal": "x" }] };
-  assert.ok(codes(team).includes("IR_MAPPING_SOURCE_MISSING"));
+  assert.ok(validate(team).some((item) => item.code === "IR_MAPPING_SOURCE_MISSING" && item.pointer === "/handoffs/1/when/condition/args/0"));
+
+  team.handoffs[1].when.condition = { op: "equals", args: [{ "$ref": "$.output.data.maybe", extra: true }, { "$literal": "x" }] };
+  assert.ok(validate(team).some((item) => item.code === "IR_ROUTE_CONDITION_INVALID" && item.pointer === "/handoffs/1/when/condition/args/0"));
+
+  team.handoffs[1].when.condition = { op: "equals", args: [{ "$ref": "$.output.data.maybe" }, { "$literal": "x" }] };
+  assert.ok(validate(team).some((item) => item.code === "IR_ROUTE_CONDITION_INPUT_MAY_BE_MISSING" && item.pointer === "/handoffs/1/when/condition/args/0" && item.severity === "warning"));
 });
 
 test("complex target constraints retain a runtime validation warning", () => {

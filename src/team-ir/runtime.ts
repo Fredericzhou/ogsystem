@@ -5,6 +5,7 @@ import { applyTeamJoinEvent, createTeamJoinRound, type TeamJoinRound } from "./j
 import type { ArtifactStore, TeamArtifactResolver } from "./artifact-store.js";
 import { TeamArtifactError } from "./artifact-store.js";
 import type { TeamRunStatus } from "./types.js";
+import { TeamReviewRuntime, readTeamReviewContext, type TeamReviewRecord } from "./review-runtime.js";
 
 export type TeamFailureClass = "transport" | "timeout" | "rate_limited" | "server_error" | "invalid_input" | "invalid_output" | "cancelled" | "policy";
 export type TeamBindingResult =
@@ -77,6 +78,8 @@ export interface TeamRunRecord {
   result?: unknown;
   resultWritten?: boolean;
   loopStates: Record<string, { rounds: number; agentActivations: number; previousOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; currentOutputs: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }> }>;
+  scheduler?: { pending: string[]; sources: Record<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>; skippedHandoffs: string[]; arrivedHandoffs: string[]; visited: Record<string, number>; invocationIds: Record<string, string>; reviewContexts: Record<string, { decision: "approve" | "reject"; feedback?: unknown }> };
+  waitingReview?: { reviewId: string; lineage: string };
   invocations: Record<string, TeamInvocationState>;
   pendingInput?: { handoffId: string; agentId: string; bindingId: string; remoteTaskId: string; messageParts: unknown[]; requestedInputSchema?: unknown };
   events: TeamRunEvent[];
@@ -142,20 +145,21 @@ function sourceKey(source: Record<string, unknown>): string {
   return source.kind === "run" ? "run" : `agent:${String(source.agentId)}:${String(source.outputPort)}`;
 }
 
-function valueContext(input: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: unknown, loopPrevious?: Record<string, unknown>) {
+function valueContext(input: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: unknown, loopPrevious?: Record<string, unknown>, review?: { decision: "approve" | "reject"; feedback?: unknown }) {
   return {
     run: { task: input.task, input: input.input, preferences: input.preferences ?? {}, attachments: input.attachments ?? {} },
     ...(output === undefined ? {} : { output }),
-    ...(loopPrevious === undefined ? {} : { loop: { previous: loopPrevious } })
+    ...(loopPrevious === undefined ? {} : { loop: { previous: loopPrevious } }),
+    ...(review === undefined ? {} : { review })
   };
 }
 
-export function selectTeamHandoffs(plan: CompiledTeamPlan, source: Record<string, unknown>, output: { event?: string; data?: unknown; artifacts?: unknown }, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, allowedHandoffIds?: readonly string[]): string[] {
+export function selectTeamHandoffs(plan: CompiledTeamPlan, source: Record<string, unknown>, output: { event?: string; data?: unknown; artifacts?: unknown }, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, allowedHandoffIds?: readonly string[], review?: { decision: "approve" | "reject"; feedback?: unknown }): string[] {
   const route = plan.routesBySource.get(sourceKey(source));
   const candidates = Array.isArray(route?.handoffIds) ? route.handoffIds as string[] :
     [...plan.handoffsById.values()].filter((handoff) => isRecord(handoff.from) && sourceKey(handoff.from) === sourceKey(source)).map((handoff) => String(handoff.id));
   const allowed = allowedHandoffIds ? new Set(allowedHandoffIds) : undefined;
-  const context = valueContext(runInput, output);
+  const context = valueContext(runInput, output, undefined, review);
   const eligible: Array<{ id: string; priority: number }> = [];
   for (const id of candidates) {
     if (allowed && !allowed.has(id)) continue;
@@ -191,7 +195,17 @@ function retryable(policy: Record<string, unknown>, error: unknown): boolean {
 }
 
 export class TeamRuntime {
-  constructor(private readonly args: { store: TeamRunStore; clock: TeamClock; bindings: Record<string, TeamBinding>; artifactStore?: ArtifactStore }) {}
+  constructor(private readonly args: { store: TeamRunStore; clock: TeamClock; bindings: Record<string, TeamBinding>; artifactStore?: ArtifactStore; reviewRuntime?: TeamReviewRuntime }) {}
+
+  async getReview(runId: string, reviewId: string): Promise<TeamReviewRecord> {
+    if (!this.args.reviewRuntime) throw new TeamRunConflictError("TEAM_REVIEW_RUNTIME_UNAVAILABLE");
+    return this.args.reviewRuntime.get({ runId, reviewId, lineage: "run" });
+  }
+
+  async decideReview(input: Parameters<TeamReviewRuntime["decide"]>[0]): Promise<TeamReviewRecord> {
+    if (!this.args.reviewRuntime) throw new TeamRunConflictError("TEAM_REVIEW_RUNTIME_UNAVAILABLE");
+    return this.args.reviewRuntime.decide(input);
+  }
 
   async createRun(plan: CompiledTeamPlan, input: { runId: string; projectId?: string; task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }): Promise<TeamRunRecord> {
     const now = this.args.clock.now();
@@ -219,7 +233,9 @@ export class TeamRuntime {
       createdAt: now, updatedAt: now,
       runInput: normalizedInput,
       activeExecutionBudgetMs: Number((plan.team.executionPolicy as Record<string, unknown>).activeExecutionBudgetMs),
-      activeExecutionMs: 0, invocations: {}, loopStates: {}, events: []
+      activeExecutionMs: 0, invocations: {}, loopStates: {},
+      scheduler: { pending: selectTeamHandoffs(plan, { kind: "run" }, {}, normalizedInput), sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {}, reviewContexts: {} },
+      events: []
     } as TeamRunRecord;
     event(record, `${record.runId}:created`, "run.created", now, { compiledPlanDigest: record.compiledPlanDigest });
     await this.args.store.create(record);
@@ -277,7 +293,7 @@ export class TeamRuntime {
     return (await this.args.store.load(runId))!;
   }
 
-  async executeHandoff(plan: CompiledTeamPlan, runId: string, handoffId: string, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, options: { invocationId?: string; loopPrevious?: Record<string, unknown> } = {}): Promise<TeamRunRecord> {
+  async executeHandoff(plan: CompiledTeamPlan, runId: string, handoffId: string, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, options: { invocationId?: string; loopPrevious?: Record<string, unknown>; review?: { decision: "approve" | "reject"; feedback?: unknown } } = {}): Promise<TeamRunRecord> {
     const handoff = plan.handoffsById.get(handoffId);
     if (!handoff || !isRecord(handoff.to) || handoff.to.kind !== "agent") throw new Error(`Unknown Agent Handoff '${handoffId}'`);
     const target = handoff.to;
@@ -296,7 +312,7 @@ export class TeamRuntime {
     if (existing.compiledPlanDigest !== plan.compiledPlanDigest) throw new TeamRunConflictError("compiledPlanDigest mismatch");
     const canonicalRunInput = existing.runInput;
     const deadlineAt = now + Number(delivery.deadlineMs);
-    const context = valueContext(canonicalRunInput, output, options.loopPrevious);
+    const context = valueContext(canonicalRunInput, output, options.loopPrevious, options.review);
     const mapping = isRecord(handoff.map) ? handoff.map : {};
     const mappedData = inputOverride ?? (mapping.data === undefined ? {} : evaluateTeamValueExpr(mapping.data, context));
     if (mappedData === MISSING_TEAM_VALUE) throw new TeamBindingError("Handoff input mapping resolved to missing", "invalid_input");
@@ -319,6 +335,9 @@ export class TeamRuntime {
     }
     const mapped = Object.keys(mappedArtifacts).length ? { data: mappedData, artifacts: mappedArtifacts } : mappedData;
     const invocationId = options.invocationId ?? `${runId}:${handoffId}`;
+    const priorInvocation = existing.invocations[invocationId];
+    if (priorInvocation?.status === "completed") return existing;
+    if (priorInvocation) throw new TeamRunConflictError(`Cannot execute Handoff '${handoffId}' in ${priorInvocation.status}; its outcome requires recovery handling.`);
     try {
       assertValidTeamPayload(plan, { kind: "agent-input", agentId, portId: String(target.inputPort) }, mappedData);
     } catch (error) {
@@ -437,16 +456,60 @@ export class TeamRuntime {
     const initial = await this.args.store.load(runId);
     if (!initial) throw new Error(`Unknown Team Run '${runId}'`);
     if (initial.compiledPlanDigest !== plan.compiledPlanDigest) throw new TeamRunConflictError("compiledPlanDigest mismatch");
+    if (initial.status === "completed") return initial;
     if (initial.status === "queued") await this.claim(runId, plan.compiledPlanDigest);
-    else if (initial.status === "running") throw new TeamRunConflictError("TEAM_RUN_RESUME_UNSUPPORTED: the scheduler cannot safely resume an active Run yet.");
+    else if (initial.status === "waiting_human_review") {
+      if (!this.args.reviewRuntime || !initial.waitingReview || !initial.scheduler) throw new TeamRunConflictError("TEAM_REVIEW_RESUME_UNSUPPORTED: review runtime or scheduler checkpoint is unavailable.");
+      const review = await this.args.reviewRuntime.get({ runId, reviewId: initial.waitingReview.reviewId, lineage: initial.waitingReview.lineage });
+      if (review.status === "pending") return initial;
+      if (review.status !== "approved") return this.failScheduler(runId, `${runId}:review:${review.reviewId}`, review.status === "timed_out" ? "REVIEW_TIMEOUT" : "REVIEW_REJECTED");
+      await this.update(runId, (record) => {
+        record.status = "running";
+        record.waitingReview = undefined;
+        event(record, `${runId}:review:${review.reviewId}:approved`, "run.review.approved", this.args.clock.now(), { reviewId: review.reviewId });
+      });
+    }
+    else if (initial.status === "running" && !initial.scheduler) throw new TeamRunConflictError("TEAM_RUN_RESUME_UNSUPPORTED: no scheduler checkpoint exists for this active Run.");
+    else if (initial.status === "running") {
+      const active = Object.values(initial.invocations).filter((invocation) => invocation.status === "running");
+      if (active.length) {
+        for (const invocation of active) {
+          const binding = this.args.bindings[invocation.bindingId];
+          if (binding?.cancel) {
+            try {
+              await binding.cancel({ runId, handoffId: invocation.handoffId, agentId: invocation.agentId, bindingId: invocation.bindingId, attempt: invocation.attempt, input: undefined, idempotencyKey: invocation.id });
+            } catch { /* Outcome remains unknown even if cancellation was attempted. */ }
+          }
+        }
+        await this.update(runId, (record) => {
+          record.status = "failing";
+          record.terminalIntent = "failed";
+          for (const invocation of active) {
+            const current = record.invocations[invocation.id];
+            if (current?.status !== "running") continue;
+            current.status = "failed";
+            current.error = "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART";
+            current.outcomeUnknown = true;
+            event(record, `${invocation.id}:restart-outcome-unknown`, "binding.outcome_unknown", this.args.clock.now(), { reason: "scheduler_recovery_found_active_invocation" });
+          }
+          event(record, `${runId}:failure-intent`, "run.failing", this.args.clock.now(), { code: "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART" });
+        });
+        return this.settle(runId);
+      }
+    }
     else if (initial.status === "paused_input_required") throw new TeamRunConflictError("TEAM_RUN_INPUT_REQUIRED_NEW_RUN: input-required Runs cannot resume; create a new Run with the revised input.");
     else throw new TeamRunConflictError(`Cannot execute Run in ${initial.status}`);
 
     const orchestration = plan.team.orchestration as Record<string, unknown>;
     const loops = Array.isArray(orchestration.loops) ? orchestration.loops.filter(isRecord) : [];
-    const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews : [];
-    if (reviews.length) {
-      return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_FEATURE_UNSUPPORTED");
+    const reviews = Array.isArray(orchestration.reviews) ? orchestration.reviews.filter(isRecord) : [];
+    if (reviews.length && (!this.args.reviewRuntime || loops.length > 0 || plan.joinsByTarget.size > 0
+      || reviews.some((review) => {
+        const at = isRecord(review.at) ? review.at : {};
+        const route = plan.routesBySource.get(`agent:${String(at.agentId)}:${String(at.outputPort)}`);
+        return route?.mode === "parallel_fanout";
+      }))) {
+      return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_REVIEW_TOPOLOGY_UNSUPPORTED");
     }
 
     if (loops.length > 1 || loops.some((loop) => {
@@ -478,28 +541,43 @@ export class TeamRuntime {
 
     const runInput = initial.runInput;
     const sources = new Map<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>();
-    let pending = selectTeamHandoffs(plan, { kind: "run" }, {}, runInput);
-    const visited = new Map<string, number>();
-    const executeEdge = async (handoffId: string, source?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown): Promise<TeamRunRecord> => {
+    const checkpoint = (await this.args.store.load(runId))?.scheduler;
+    for (const [key, value] of Object.entries(checkpoint?.sources ?? {})) sources.set(key, structuredClone(value));
+    const skippedHandoffs = new Set(checkpoint?.skippedHandoffs ?? []);
+    const arrivedHandoffs = new Set(checkpoint?.arrivedHandoffs ?? []);
+    const reviewContexts = new Map(Object.entries(checkpoint?.reviewContexts ?? {}));
+    let pending = checkpoint ? [...checkpoint.pending] : selectTeamHandoffs(plan, { kind: "run" }, {}, runInput);
+    const visited = new Map(Object.entries(checkpoint?.visited ?? {}));
+    if (!checkpoint) await this.update(runId, (record) => {
+      record.scheduler = { pending: [...pending], sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {}, reviewContexts: {} };
+    });
+    const executeEdge = async (handoffId: string, source?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, review?: { decision: "approve" | "reject"; feedback?: unknown }): Promise<TeamRunRecord> => {
       const handoff = plan.handoffsById.get(handoffId);
       const target = handoff && isRecord(handoff.to) ? handoff.to : undefined;
       if (!target || target.kind !== "agent" || !loopId || !loopMembers.has(String(target.agentId))) {
-        return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride);
+        return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, { review });
       }
       const current = (await this.args.store.load(runId))!;
       const state = current.loopStates[loopId];
-      if (state.agentActivations >= Number(loop.maxAgentActivations)) return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
-      const nextActivation = state.agentActivations + 1;
-      await this.update(runId, (record) => {
-        const currentState = record.loopStates[loopId];
-        currentState.agentActivations = nextActivation;
-        event(record, `${runId}:loop:${loopId}:activation:${nextActivation}`, "loop.agent.activated", this.args.clock.now(), { agentId: target.agentId, handoffId });
-      });
+      let invocationId = current.scheduler?.invocationIds[handoffId];
+      if (!invocationId) {
+        if (state.agentActivations >= Number(loop.maxAgentActivations)) return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
+        const nextActivation = state.agentActivations + 1;
+        invocationId = `${runId}:${handoffId}:loop:${loopId}:activation:${nextActivation}`;
+        await this.update(runId, (record) => {
+          record.loopStates[loopId].agentActivations = nextActivation;
+          record.scheduler!.invocationIds[handoffId] = invocationId!;
+          event(record, `${runId}:loop:${loopId}:activation:${nextActivation}`, "loop.agent.activated", this.args.clock.now(), { agentId: target.agentId, handoffId });
+        });
+      }
+      const existingInvocation = current.invocations[invocationId];
+      if (existingInvocation?.status === "completed") return current;
       const latest = (await this.args.store.load(runId))!.loopStates[loopId];
       const previous = Object.fromEntries(Object.entries(latest.previousOutputs).map(([agentId, output]) => [agentId, { output }]));
       return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, {
-        invocationId: `${runId}:${handoffId}:loop:${loopId}:activation:${nextActivation}`,
-        loopPrevious: previous
+        invocationId,
+        loopPrevious: previous,
+        review
       });
     };
     let rounds = 0;
@@ -539,7 +617,7 @@ export class TeamRuntime {
             return this.failScheduler(runId, `${runId}:scheduler`, "RUN_RESULT_ARTIFACT_REQUIRED");
           }
           const current = await this.args.store.load(runId);
-          if (current?.resultWritten) return this.failScheduler(runId, `${runId}:scheduler`, "RUN_RESULT_CONFLICT");
+          if (current?.resultWritten) continue;
           await this.update(runId, (record) => {
             if (record.resultWritten) throw new TeamRunConflictError("Run result already written");
             record.result = Object.keys(mappedArtifacts).length ? { data: mapped, artifacts: mappedArtifacts } : mapped;
@@ -562,7 +640,7 @@ export class TeamRuntime {
         const source = isRecord(handoff.from) ? sources.get(sourceKey(handoff.from)) : undefined;
         let result: TeamRunRecord;
         try {
-          result = await executeEdge(handoffId, source);
+          result = await executeEdge(handoffId, source, undefined, isRecord(handoff.from) ? reviewContexts.get(sourceKey(handoff.from)) : undefined);
         } catch (error) {
           const current = await this.args.store.load(runId);
           if (current?.status !== "paused_input_required") throw error;
@@ -579,6 +657,7 @@ export class TeamRuntime {
         const handoff = plan.handoffsById.get(handoffId)!;
         const invocation = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId);
         if (invocation?.status !== "completed" || invocation.output?.kind !== "completed") continue;
+        arrivedHandoffs.add(handoffId);
         const output = invocation.output.output;
         nextSources.set(`agent:${invocation.agentId}:${output.event}`, output);
       }
@@ -589,7 +668,9 @@ export class TeamRuntime {
         if (!firstTarget) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_HANDOFF_INVALID");
         const join = plan.joinsByTarget.get(`${String(firstTarget.agentId)}:${String(firstTarget.inputPort)}`)!;
         const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds as string[] : [];
-        if (sourceIds.some((id) => !group.some((item) => item.id === id))) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_JOIN_SOURCE_SET_UNSUPPORTED");
+        if (sourceIds.some((id) => !arrivedHandoffs.has(id) && !skippedHandoffs.has(id))) {
+          continue;
+        }
         const targetAgent = plan.team.agents.find((agent) => agent.id === join.agentId) as Record<string, unknown>;
         const targetPort = (targetAgent.inputPorts as Record<string, Record<string, unknown>>)[String(join.inputPort)];
         const requiredFields = isRecord(targetPort?.dataSchema) && Array.isArray(targetPort.dataSchema.required) ? targetPort.dataSchema.required as string[] : [];
@@ -608,7 +689,7 @@ export class TeamRuntime {
         round = applyTeamJoinEvent(round, { type: "predecessor_activated", at });
         for (const id of sourceIds) {
           const edge = plan.handoffsById.get(id)!;
-          const source = isRecord(edge.from) ? sources.get(sourceKey(edge.from)) : undefined;
+          const source = arrivedHandoffs.has(id) && isRecord(edge.from) ? sources.get(sourceKey(edge.from)) : undefined;
           if (!source) {
             round = applyTeamJoinEvent(round, { type: "skip", sourceId: id, at: this.args.clock.now() });
             continue;
@@ -623,31 +704,50 @@ export class TeamRuntime {
         const targetRecord = await executeEdge(drivingHandoff, undefined, round.merged.data ?? {});
         if (targetRecord.status !== "running") return targetRecord.status === "failing" ? this.settle(runId) : targetRecord;
         const invocation = latestInvocationForHandoff((await this.args.store.load(runId))!, drivingHandoff);
+        if (invocation?.status === "completed") arrivedHandoffs.add(drivingHandoff);
         if (invocation?.status === "completed" && invocation.output?.kind === "completed") {
           nextSources.set(`agent:${invocation.agentId}:${invocation.output.output.event}`, invocation.output.output);
         }
       }
 
       const outgoing: string[] = [];
+      const loopOutputs: Array<[string, { event: string; data: unknown; artifacts?: Record<string, unknown> }]> = [];
+      let projectedRounds = loopId ? (await this.args.store.load(runId))!.loopStates[loopId].rounds : 0;
       for (const [source, output] of nextSources) {
         const [, agentId] = source.split(":", 3);
-        if (loopId && loopMembers.has(agentId)) {
-          await this.update(runId, (record) => {
-            const state = record.loopStates[loopId];
-            state.currentOutputs[agentId] = structuredClone(output);
-            if (agentId === String(loop.boundaryAgentId)) {
-              state.rounds += 1;
-              state.previousOutputs = structuredClone(state.currentOutputs);
-              state.currentOutputs = {};
-              event(record, `${runId}:loop:${loopId}:round:${state.rounds}`, "loop.round.completed", this.args.clock.now(), { boundaryAgentId: agentId });
-            }
-          });
+        const reviewDefinition = reviews.find((item) => isRecord(item.at) && item.at.agentId === agentId && item.at.outputPort === output.event);
+        let reviewContext = reviewContexts.get(source);
+        if (reviewDefinition) {
+          const reviewId = String(reviewDefinition.id);
+          const review = await this.args.reviewRuntime!.openFromPlan({ plan, runId, reviewId, lineage: "run" });
+          if (review.status === "pending") {
+            await this.update(runId, (record) => {
+              record.status = "waiting_human_review";
+              record.waitingReview = { reviewId, lineage: "run" };
+              event(record, `${runId}:review:${reviewId}:waiting`, "run.waiting_human_review", this.args.clock.now(), { reviewId, deadlineAt: review.deadlineAt });
+            });
+            return (await this.args.store.load(runId))!;
+          }
+          if (review.status !== "approved") return this.failScheduler(runId, `${runId}:review:${reviewId}`, review.status === "timed_out" ? "REVIEW_TIMEOUT" : "REVIEW_REJECTED");
+          reviewContext = readTeamReviewContext(review);
+          reviewContexts.set(source, reviewContext);
         }
-        const selected = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput);
         if (loopId && loopMembers.has(agentId)) {
-          const state = (await this.args.store.load(runId))!.loopStates[loopId];
+          loopOutputs.push([agentId, structuredClone(output)]);
+          if (agentId === String(loop.boundaryAgentId)) projectedRounds += 1;
+        }
+        const selected = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, undefined, reviewContext);
+        const selectedSet = new Set(selected);
+        for (const handoffId of selected) arrivedHandoffs.add(handoffId);
+        for (const [handoffId, handoff] of plan.handoffsById) {
+          if (isRecord(handoff.from) && handoff.from.kind === "agent"
+            && handoff.from.agentId === agentId && handoff.from.outputPort === output.event
+            && !selectedSet.has(handoffId)) skippedHandoffs.add(handoffId);
+        }
+        if (loopId && loopMembers.has(agentId)) {
           const continueSelected = selected.filter((id) => loopContinues.has(id));
-          if (continueSelected.length && state.rounds >= Number(loop.maxRounds)) {
+          const state = (await this.args.store.load(runId))!.loopStates[loopId];
+          if (continueSelected.length && projectedRounds >= Number(loop.maxRounds)) {
             if (loop.onExhausted !== "finish") return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
             const exits = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, [...loopExits]);
             if (!exits.length) return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
@@ -666,6 +766,28 @@ export class TeamRuntime {
       }
       pending = [...new Set(outgoing)];
       for (const [key, value] of nextSources) sources.set(key, value);
+      await this.update(runId, (record) => {
+        const state = loopId ? record.loopStates[loopId] : undefined;
+        for (const [agentId, output] of loopOutputs) {
+          if (!state) break;
+          state.currentOutputs[agentId] = structuredClone(output);
+          if (agentId === String(loop?.boundaryAgentId)) {
+            state.rounds += 1;
+            state.previousOutputs = structuredClone(state.currentOutputs);
+            state.currentOutputs = {};
+            event(record, `${runId}:loop:${loopId}:round:${state.rounds}`, "loop.round.completed", this.args.clock.now(), { boundaryAgentId: agentId });
+          }
+        }
+        record.scheduler = {
+          pending: [...pending],
+          sources: Object.fromEntries([...sources].map(([key, value]) => [key, structuredClone(value)])),
+          skippedHandoffs: [...skippedHandoffs].sort(),
+          arrivedHandoffs: [...arrivedHandoffs].sort(),
+          visited: Object.fromEntries(visited),
+          invocationIds: {},
+          reviewContexts: Object.fromEntries(reviewContexts)
+        };
+      });
     }
 
     const complete = await this.args.store.load(runId);

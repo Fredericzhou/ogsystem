@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compileTeamIr, MemoryTeamReviewStore, TeamReviewError, TeamReviewRuntime, readTeamReviewContext } from "../dist/team-ir/index.js";
+import { compileTeamIr, FileTeamReviewStore, MemoryTeamReviewStore, TeamReviewError, TeamReviewRuntime, readTeamReviewContext } from "../dist/team-ir/index.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 async function setup({ authorized = true } = {}) {
   const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
@@ -103,4 +106,34 @@ test("review waiting state is independent from active execution budget and can b
   assert.equal(cancelled.status, "cancelled");
   assert.equal(cancelled.deadlineAt, pending.deadlineAt);
   assert.equal("activeExecutionMs" in cancelled, false, "review control records do not mutate Run active execution accounting");
+});
+
+test("FileTeamReviewStore recovers decisions across instances and CAS admits one concurrent reviewer", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-store-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store1 = new FileTeamReviewStore(root);
+  const first = new TeamReviewRuntime({ store: store1, now: () => 100, makeRevisionToken: () => "rev-1", authorizeReviewer: async () => true });
+  const pending = await first.open({ runId: "file-run", reviewId: "planner-review", timeoutMs: 1000 });
+  const store2 = new FileTeamReviewStore(root);
+  const second = new TeamReviewRuntime({ store: store2, now: () => 101, makeRevisionToken: () => "rev-2", authorizeReviewer: async () => true });
+  const request = { runId: "file-run", reviewId: "planner-review", revisionToken: pending.revisionToken, idempotencyKey: "approve-1", reviewerId: "reviewer-1", decision: "approve", plan: (await setup()).plan };
+  const outcomes = await Promise.allSettled([first.decide(request), second.decide(request)]);
+  assert.equal(outcomes.filter((item) => item.status === "fulfilled").length, 2, "same idempotent decision may be replayed");
+  const reopened = new TeamReviewRuntime({ store: new FileTeamReviewStore(root), now: () => 102, authorizeReviewer: async () => true });
+  const record = await reopened.get({ runId: "file-run", reviewId: "planner-review" });
+  assert.equal(record.status, "approved");
+  assert.equal(record.revision, 1);
+  assert.equal(record.events.filter((item) => item.type === "review.approve").length, 1);
+
+  const plan = (await setup()).plan;
+  const casPending = await reopened.open({ runId: "cas-run", reviewId: "planner-review", timeoutMs: 1000 });
+  const competing = new TeamReviewRuntime({ store: new FileTeamReviewStore(root), now: () => 103, authorizeReviewer: async () => true });
+  const decisions = await Promise.allSettled([
+    reopened.decide({ runId: "cas-run", reviewId: "planner-review", revisionToken: casPending.revisionToken, idempotencyKey: "cas-approve", reviewerId: "reviewer-1", decision: "approve", plan }),
+    competing.decide({ runId: "cas-run", reviewId: "planner-review", revisionToken: casPending.revisionToken, idempotencyKey: "cas-reject", reviewerId: "reviewer-2", decision: "reject", feedback: { comments: "Revise." }, plan })
+  ]);
+  assert.equal(decisions.filter((item) => item.status === "fulfilled").length, 1);
+  const casResult = await competing.get({ runId: "cas-run", reviewId: "planner-review" });
+  assert.ok(["approved", "rejected"].includes(casResult.status));
+  assert.equal(casResult.revision, 1);
 });

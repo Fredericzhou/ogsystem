@@ -30,6 +30,7 @@ import { handleProjectRoutes } from "./api/project-routes.mjs";
 import { handleTaskRoutes } from "./api/task-routes.mjs";
 import { handleRunRoutes } from "./api/run-routes.mjs";
 import { handleTeamRoutes } from "./api/team-routes.mjs";
+import { handleTeamIrSimulationRoutes } from "./api/team-ir-simulation-routes.mjs";
 import { errorStatus } from "./api/error-status.mjs";
 import { handleStudioSimulationRoutes } from "./api/studio-simulation-routes.mjs";
 import { handlePackageRoutes } from "./api/package-routes.mjs";
@@ -55,7 +56,11 @@ import { createTeamDesignUseCases } from "./application/team-design-use-cases.mj
 import { createTeamIrUseCases } from "./application/team-ir-use-cases.mjs";
 import { createFileTeamDesignAssetStore } from "./infrastructure/file-team-design-asset-store.mjs";
 import { createFileTeamIrStore } from "./infrastructure/file-team-ir-store.mjs";
+import { createFileTeamIrSimulationStore } from "./infrastructure/file-team-ir-simulation-store.mjs";
+import { createTeamIrStudioSimulationUseCases } from "./application/team-ir-studio-simulation-use-cases.mjs";
 import { createRuntimeTeamIrProjectRunExecutor } from "./infrastructure/runtime-team-ir-project-run-executor.mjs";
+import { createRuntimeTeamIrStudioSimulation } from "./infrastructure/runtime-team-ir-studio-simulation.mjs";
+import { loadTeamIrV2Resolvers } from "./infrastructure/team-ir-v2-resolvers.mjs";
 import { isProcessAlive } from "./infrastructure/process-liveness.mjs";
 import { createFileTeamVersionLifecycle } from "./infrastructure/file-team-version-lifecycle.mjs";
 import { createPlatformUseCases } from "./application/platform-use-cases.mjs";
@@ -197,9 +202,12 @@ const collaborationProjectUseCases = createCollaborationProjectUseCases({
 const taskExecutionReadiness = createRuntimeTaskExecutionReadiness();
 const teamDesignProjector = createVisualizerProjectDesignProjector();
 const teamIrStore = createFileTeamIrStore();
+const teamIrV2Resolvers = await loadTeamIrV2Resolvers();
 const teamIrProjectRunExecutor = createRuntimeTeamIrProjectRunExecutor({
   teamStore: { getTeamVersion: getProject },
-  teamIrStore
+  teamIrStore,
+  resolveReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure,
+  resolveBindings: teamIrV2Resolvers.resolveBindings
 });
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
@@ -357,7 +365,17 @@ const teamDesignUseCases = createTeamDesignUseCases({
 const teamIrUseCases = createTeamIrUseCases({
   teamCatalog,
   teamIrStore,
-  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock
+  withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
+  resolveTeamIrReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure
+});
+const teamIrStudioSimulationUseCases = createTeamIrStudioSimulationUseCases({
+  teamCatalog,
+  teamIrStore,
+  simulationStore: createFileTeamIrSimulationStore({ projectsRoot: siteProjectsRoot }),
+  resolveReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure,
+  resolveBindings: teamIrV2Resolvers.resolveBindings,
+  identifiers: { simulationId: randomUUID },
+  simulationRunner: createRuntimeTeamIrStudioSimulation()
 });
 const agencyNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
 const agencyCnNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
@@ -463,7 +481,10 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
   packageStore: { exportTeamPackage, loadTeamPackage },
   locks: teamLifecycleLocks,
   confirmation: createRuntimeTeamConfirmation(),
-  releaseEvidence: studioSimulationUseCases,
+  releaseEvidence: {
+    ...studioSimulationUseCases,
+    validateTeamIrReleaseEvidence: (input) => teamIrStudioSimulationUseCases.validateReleaseEvidence(input)
+  },
   teamIrRelease: teamIrUseCases,
   caseMaterializer: caseTeamMaterializer,
   caseCatalog: { getCase: (caseId) => cases.find((item) => item.id === caseId), listCases: () => cases },
@@ -553,6 +574,10 @@ const server = createServer(async (request, response) => {
     request, response, url, readBody, sendJson, errorStatus,
     useCases: studioSimulationUseCases
   })) return;
+  if (await handleTeamIrSimulationRoutes({
+    request, response, url, readBody, sendJson, errorStatus,
+    useCases: teamIrStudioSimulationUseCases
+  })) return;
   if (await handleTeamRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
     useCases: {
@@ -640,6 +665,7 @@ const studioSimulationRetentionDays = Number.parseInt(process.env.OGS_STUDIO_SIM
 teamLifecycleUseCases.provisionBuiltInTeamTemplates()
   .then(() => runRecoveryUseCases.recoverOrphanedRuns())
   .then(() => studioSimulationUseCases.recoverInterruptedSimulations())
+  .then(() => teamIrStudioSimulationUseCases.recoverAllInterruptedSimulations())
   .then(() => Number.isFinite(studioSimulationRetentionDays) && studioSimulationRetentionDays > 0
     ? studioSimulationUseCases.cleanupExpiredSimulations({ retentionDays: studioSimulationRetentionDays })
     : undefined)

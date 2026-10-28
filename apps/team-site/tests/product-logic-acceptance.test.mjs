@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
@@ -36,6 +37,28 @@ async function closeServer(server, projectsRoot, browser) {
   server.kill();
   await once(server, "exit").catch(() => undefined);
   await rm(projectsRoot, { recursive: true, force: true });
+}
+
+async function hashTree(root) {
+  const files = [];
+  async function visit(directory, prefix = "") {
+    const entries = await readdir(directory, { withFileTypes: true }).catch((error) => {
+      if (error?.code === "ENOENT") return [];
+      throw error;
+    });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path, relativePath);
+      else if (entry.isFile()) {
+        const digest = createHash("sha256").update(await readFile(path)).digest("hex");
+        files.push([relativePath, digest]);
+      }
+    }
+  }
+  await visit(root);
+  return createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 
 test("Team Site serves current configuration routes and retires unused resource pages", async () => {
@@ -351,11 +374,14 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.equal(await page.locator("#studio-release-button").count(), 0, "a legacy TeamVersion must not expose the v2 release action");
     assert.equal(await page.getByRole("link", { name: "在 Team IR v2 中重建" }).getAttribute("href"), `/studio/teams/${team.projectId}/ir`);
     const legacyDesignBeforeRelease = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
+    const legacyWorkspaceDigestBeforeRelease = await hashTree(join(projectsRoot, team.projectId));
     const releaseResponse = await page.request.post(`${url}/api/v1/team-versions/${team.projectId}/release`);
     assert.equal(releaseResponse.status(), 400);
     assert.match((await releaseResponse.json()).error, /TEAM_IR_V2_REQUIRED:.*rebuild it in the v2 authoring flow/);
     const legacyDesignAfterRelease = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     assert.deepEqual(legacyDesignAfterRelease.authoring, legacyDesignBeforeRelease.authoring, "a rejected legacy release must not rewrite the saved legacy design");
+    assert.equal(await hashTree(join(projectsRoot, team.projectId)), legacyWorkspaceDigestBeforeRelease,
+      "a rejected v2 release must not change legacy Team files or historical Run evidence");
     await assert.rejects(readFile(join(projectsRoot, team.projectId, ".ogs", "team.ir.json")), { code: "ENOENT" }, "a rejected release must not create a v2 document");
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(await page.evaluate(() => window.__productUnhandled), []);

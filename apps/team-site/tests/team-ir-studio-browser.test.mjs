@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,7 @@ function advancedTeamIr(teamVersionId) {
     }],
     handoffs: [
       { id: "entry", from: { kind: "run" }, to: { kind: "agent", agentId: "writer", inputPort: "draft" }, map: { data: { prompt: { $ref: "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 10000 } },
-      { id: "revise", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "agent", agentId: "writer", inputPort: "revise" }, map: { data: { answer: { $ref: "$.loop.previous.writer.output.data.answer" } } }, when: { condition: { op: "equals", args: [{ $ref: "$.output.data.again" }, { $literal: true }] }, priority: 0 }, delivery: { deadlineMs: 10000 } },
+      { id: "revise", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "agent", agentId: "writer", inputPort: "revise" }, map: { data: { answer: { $ref: "$.run.input.prompt" } } }, when: { condition: { op: "equals", args: [{ $ref: "$.output.data.again" }, { $literal: true }] }, priority: 0 }, delivery: { deadlineMs: 10000 } },
       { id: "exit", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { $ref: "$.output.data.answer" } }, artifacts: { report: { $ref: "$.output.artifacts.report" } } }, when: { priority: 1 } }
     ],
     orchestration: {
@@ -48,10 +48,28 @@ function advancedTeamIr(teamVersionId) {
 
 test("Team IR v2 Studio validates, saves, reopens and preserves v2 API boundaries on mobile", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-ir-studio-browser-"));
+  const resolverPath = join(projectsRoot, "test-resolver.mjs");
+  await writeFile(resolverPath, `
+export async function resolveTeamIrReleaseClosure({ teamIR }) {
+  return {
+    complete: true,
+    packageDigests: Object.fromEntries(teamIR.agents.map((agent) => [agent.packageRef, "${"a".repeat(64)}"])),
+    bindingDigests: Object.fromEntries(teamIR.bindings.map((binding) => [binding.id, "${"b".repeat(64)}"])),
+    adapterVersions: Object.fromEntries([...new Set(teamIR.bindings.map((binding) => binding.kind))].map((kind) => [kind, "browser-fake/1"]))
+  };
+}
+export async function resolveBindings({ teamIR }) {
+  return Object.fromEntries(teamIR.agents.map((agent) => {
+    const [event, port] = Object.entries(agent.outputPorts)[0];
+    const data = Object.fromEntries(Object.entries(port.dataSchema?.properties || {}).map(([key, schema]) => [key, schema.type === "string" ? "Simulation result" : schema.type === "boolean" ? false : null]));
+    return [agent.bindingRef, { async invoke() { return { kind: "completed", output: { event, data } }; } }];
+  }));
+}
+`, "utf8");
   const port = await reserveBrowserSafePort();
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: String(port), OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
+    env: { ...process.env, PORT: String(port), OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot, OGS_TEAM_IR_V2_RESOLVER_MODULE: resolverPath },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -123,6 +141,29 @@ test("Team IR v2 Studio validates, saves, reopens and preserves v2 API boundarie
     assert.equal(await page.locator('[name="agent-0-id"]').inputValue(), "worker");
     assert.equal(await page.locator('[data-ir-handoff]').count(), 2);
     assert.equal((await page.locator("[data-team-ir-digest]").innerText()).trim(), expectedDigest);
+    const blockedReadiness = await page.request.post(`${url}/api/v1/team-versions/${teamVersionId}/release`, { data: {} });
+    assert.notEqual(blockedReadiness.status(), 200);
+    assert.match((await blockedReadiness.json()).error, /TEAM_IR_V2_RELEASE_EVIDENCE_REQUIRED/);
+    const simulationResponse = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/simulations`);
+    await page.locator("[data-ir-simulation-run]").click();
+    const simulationResponseValue = await simulationResponse;
+    const simulation = await simulationResponseValue.json();
+    assert.equal(simulationResponseValue.status(), 200, JSON.stringify(simulation));
+    assert.equal(simulation.status, "completed", JSON.stringify(simulation));
+    assert.equal(simulation.run.resultWritten, true);
+    await page.locator("[data-ir-simulation-evidence] h3").getByText(simulation.simulationId).waitFor();
+    await page.locator("[data-ir-simulation-history]").getByText(simulation.simulationId, { exact: false }).first().waitFor();
+    await page.goto(`${url}/studio/teams/${teamVersionId}/release`, { waitUntil: "networkidle" });
+    await page.locator("h1").filter({ hasText: "Team IR v2" }).waitFor();
+    assert.equal(await page.locator("#studio-release-button").isDisabled(), false);
+    await page.locator("#studio-release-button").click();
+    await page.locator("#studio-view .status-chip.released").waitFor();
+    const released = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}`).then((response) => response.json());
+    assert.equal(released.teamVersionStatus, "released");
+    const releaseSnapshot = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}/ir/release-snapshot`);
+    assert.equal(releaseSnapshot.status(), 200);
+    await page.goto(`${url}/studio/teams/${teamVersionId}/ir`, { waitUntil: "networkidle" });
     const layout = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
     assert.ok(layout.content <= layout.viewport + 1, `mobile page overflows horizontally: ${JSON.stringify(layout)}`);
 
@@ -170,9 +211,13 @@ test("Team IR v2 Studio validates, saves, reopens and preserves v2 API boundarie
 
     contracts.orchestration.reviews[0].timeoutMs = 5000;
     await advancedEditor.fill(JSON.stringify(contracts, null, 2));
+    const advancedValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
     const advancedSave = page.waitForResponse((response) => response.request().method() === "PUT"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`);
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`).catch(() => null);
     await page.locator('#team-ir-editor button[type="submit"]').click();
+    const advancedValidationBody = await (await advancedValidation).json();
+    assert.equal(advancedValidationBody.ok, true, JSON.stringify(advancedValidationBody.diagnostics));
     assert.equal((await advancedSave).status(), 200);
     await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
     await page.reload({ waitUntil: "networkidle" });

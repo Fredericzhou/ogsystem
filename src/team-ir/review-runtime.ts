@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { CompiledTeamPlan } from "./compiler.js";
 import { assertValidTeamPayload } from "./payload-validation.js";
+import { randomUUID as uuid } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 export type TeamReviewDecision = "approve" | "reject";
 export type TeamReviewStatus = "pending" | "approved" | "rejected" | "timed_out" | "cancelled";
@@ -64,6 +67,60 @@ export class MemoryTeamReviewStore implements TeamReviewStore {
     if (!current || current.revision !== expectedRevision) return false;
     this.records.set(key, structuredClone(record));
     return true;
+  }
+}
+
+export class FileTeamReviewStore implements TeamReviewStore {
+  private readonly root: string;
+  constructor(rootDirectory: string) { this.root = resolve(rootDirectory); }
+  private path(key: string): string { return join(this.root, `${encodeURIComponent(key)}.json`); }
+  async create(record: TeamReviewRecord): Promise<void> {
+    await mkdir(this.root, { recursive: true });
+    const path = this.path(record.key);
+    const lock = `${path}.lock`;
+    let acquired = false;
+    try {
+      await mkdir(lock);
+      acquired = true;
+      try {
+        await readFile(path, "utf8");
+        throw new TeamReviewError("REVIEW_CONFLICT", "Review activation already exists.");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      await this.write(path, record);
+    } finally { if (acquired) await rm(lock, { recursive: true, force: true }); }
+  }
+  async load(key: string): Promise<TeamReviewRecord | undefined> {
+    try { return JSON.parse(await readFile(this.path(key), "utf8")) as TeamReviewRecord; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+  }
+  async compareAndSet(key: string, expectedRevision: number, record: TeamReviewRecord): Promise<boolean> {
+    await mkdir(this.root, { recursive: true });
+    const path = this.path(key);
+    const lock = `${path}.lock`;
+    let acquired = false;
+    try {
+      await mkdir(lock);
+      acquired = true;
+      const current = await this.load(key);
+      if (!current || current.revision !== expectedRevision) return false;
+      await this.write(path, record);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw error;
+    } finally { if (acquired) await rm(lock, { recursive: true, force: true }); }
+  }
+  private async write(path: string, record: TeamReviewRecord): Promise<void> {
+    const temporary = `${path}.${uuid()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify(record)}\n`, { encoding: "utf8", flag: "wx" });
+      await rename(temporary, path);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 }
 

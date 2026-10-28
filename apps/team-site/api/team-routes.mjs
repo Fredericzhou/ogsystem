@@ -26,6 +26,19 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
+  const teamIrReleaseSnapshotMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir\/release-snapshot$/);
+  if (teamIrReleaseSnapshotMatch && request.method === "GET") {
+    try {
+      sendJson(response, 200, await useCases.getTeamIrReleaseSnapshot(teamIrReleaseSnapshotMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), {
+        error: error instanceof Error ? error.message : "Unable to verify Team IR release snapshot.",
+        ...(error?.code ? { code: error.code } : {}),
+        ...(Array.isArray(error?.diagnostics) ? { diagnostics: error.diagnostics } : {})
+      });
+    }
+    return true;
+  }
 
   const batchCancelMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
   if (batchCancelMatch && request.method === "POST") {

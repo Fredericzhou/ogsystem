@@ -47,7 +47,7 @@ test("endpoint schema rejects implicit endpoints and malformed agent ports", () 
   value.handoffs[0].to = { kind: "agent", agentId: "worker" };
   const diagnostics = validateTeamIrSchema(value);
   assert.ok(diagnostics.length > 0);
-  assert.ok(diagnostics.some((item) => item.pointer.startsWith("/handoffs/0/to")));
+  assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/handoffs/0/to/inputPort"));
 });
 
 test("schema supports only single-cardinality declared artifact slots", () => {
@@ -69,14 +69,14 @@ test("condition schema is closed and enforces operator argument arity", () => {
   };
   assert.deepEqual(validateTeamIrSchema(value), []);
   value.handoffs[0].when.condition.args[0].extra = true;
-  assert.ok(validateTeamIrSchema(value).some((item) => item.pointer.includes("/when/condition")));
+  assert.ok(validateTeamIrSchema(value).some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/handoffs/0/when/condition/args/0/extra"));
 });
 
 test("agent handoffs and Join declarations require explicit bounded deadlines", () => {
   const value = minimalTeam();
   delete value.handoffs[0].delivery;
   let diagnostics = validateTeamIrSchema(value);
-  assert.ok(diagnostics.some((item) => item.pointer === "/handoffs/0/delivery"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/handoffs/0/delivery"));
 
   value.handoffs[0].delivery = { deadlineMs: 10000 };
   value.orchestration.joins = [{
@@ -86,13 +86,13 @@ test("agent handoffs and Join declarations require explicit bounded deadlines", 
   assert.deepEqual(validateTeamIrSchema(value), []);
   delete value.orchestration.joins[0].scope;
   diagnostics = validateTeamIrSchema(value);
-  assert.ok(diagnostics.some((item) => item.pointer === "/orchestration/joins/0/scope"));
+  assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/orchestration/joins/0/scope"));
 });
 
 test("Binding retry policy distinguishes initial attempt from configured retries", () => {
   const value = minimalTeam();
   value.bindings[0].retry = { maxAttempts: 2, retryOn: [], backoff: { mode: "none" } };
-  assert.ok(validateTeamIrSchema(value).some((item) => item.pointer.startsWith("/bindings/0/retry/retryOn")));
+  assert.ok(validateTeamIrSchema(value).some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/bindings/0/retry/retryOn"));
   value.bindings[0].retry.retryOn = ["timeout"];
   assert.deepEqual(validateTeamIrSchema(value), []);
 });
