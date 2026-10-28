@@ -408,6 +408,8 @@ export async function resolveBindings({ teamIR }) {
     assert.ok(await page.locator("[data-ir-graph-handoff]").count() >= 2);
 
     const v2ReviewRouteCalls = [];
+    let v2ReviewStatus = "pending";
+    let validReviewPosts = 0;
     await page.route("**/api/v1/projects/project-v2/tasks/task-v2/runs/run-v2/team-ir-reviews/review-draft", async (route) => {
       const request = route.request();
       v2ReviewRouteCalls.push({ method: request.method(), body: request.postDataJSON() });
@@ -415,10 +417,16 @@ export async function resolveBindings({ teamIR }) {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
           projectId: "project-v2", taskId: "task-v2", runId: "run-v2", reviewId: "review-draft",
           revision: 3, revisionToken: "trusted-revision-token", activatedAt: "2026-10-28T00:00:00.000Z",
-          deadlineAt: "2026-10-28T01:00:00.000Z", status: "pending"
+          deadlineAt: "2026-10-28T01:00:00.000Z", status: v2ReviewStatus
         }) });
       } else if (request.postDataJSON()?.feedback?.comments === "valid feedback") {
-        await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "REVIEW_STALE_TOKEN: review changed" }) });
+        validReviewPosts += 1;
+        if (validReviewPosts === 1) {
+          v2ReviewStatus = "rejected";
+          await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "resume dispatch response was lost" }) });
+        } else {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "rejected", decision: "reject", revision: 4, resumedRun: { runId: "run-v2", status: "completed" } }) });
+        }
       } else {
         await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "REVIEW_FEEDBACK_INVALID: comments required" }) });
       }
@@ -450,14 +458,18 @@ export async function resolveBindings({ teamIR }) {
     await reviewForm.getByText(/REVIEW_FEEDBACK_INVALID/).waitFor();
     await reviewForm.locator("[name=feedback]").fill('{"comments":"valid feedback"}');
     await reviewForm.locator("button[type=submit]").click();
-    await reviewForm.getByText(/修订令牌已过期/).waitFor();
-    assert.deepEqual(v2ReviewRouteCalls.map((call) => call.method), ["GET", "POST", "POST"]);
+    await reviewForm.getByText(/resume dispatch response was lost/).waitFor();
+    await reviewForm.locator("button[type=submit]").click();
+    await page.locator("[data-team-ir-run-reviews]").waitFor({ state: "detached" });
+    assert.deepEqual(v2ReviewRouteCalls.map((call) => call.method), ["GET", "POST", "POST", "POST", "GET"]);
     assert.equal(v2ReviewRouteCalls[1].body.decision, "reject");
     assert.deepEqual(v2ReviewRouteCalls[1].body.feedback, {});
     assert.equal(v2ReviewRouteCalls[1].body.revisionToken, "trusted-revision-token");
     assert.match(v2ReviewRouteCalls[1].body.idempotencyKey, /^[0-9a-f-]{36}$/i);
     assert.equal(Object.hasOwn(v2ReviewRouteCalls[1].body, "reviewerId"), false);
     assert.equal(v2ReviewRouteCalls[2].body.feedback.comments, "valid feedback");
+    assert.equal(v2ReviewRouteCalls[3].body.idempotencyKey, v2ReviewRouteCalls[2].body.idempotencyKey, "retry after a lost response must replay with the same idempotency key");
+    assert.equal(Object.hasOwn(v2ReviewRouteCalls[3].body, "reviewerId"), false);
     assert.deepEqual(pageErrors, []);
   } finally {
     await browser?.close();

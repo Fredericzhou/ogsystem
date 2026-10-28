@@ -4800,7 +4800,7 @@ async function mountTeamIrRunReviews(detail, run) {
     }));
     const reviews = await cached.loading;
     if (!panel.isConnected || detail.dataset.selectedRunId && detail.dataset.selectedRunId !== run.runId) return;
-    const pending = reviews.filter(Boolean);
+    const pending = reviews.filter((review) => review?.status === "pending");
     if (!pending.length) { panel.remove(); teamIrRunReviewPanels.delete(key); return; }
     status.textContent = "存在待处理的 v2 审核请求。";
     list.innerHTML = pending.map((review, index) => `<form data-team-ir-review="${index}" data-review-id="${esc(review.reviewId)}"><h3>${esc(review.reviewId)}</h3><p>激活时间：${esc(review.activatedAt || "未知")} · 截止时间：${esc(review.deadlineAt || "未设置")} · 修订 ${esc(review.revision)}</p><label>审核决定<select name="decision"><option value="approve">通过</option><option value="reject">拒绝并反馈</option></select></label><label data-review-feedback hidden>拒绝反馈（JSON 对象）<textarea name="feedback" rows="4" placeholder='{"comments":"请补充……"}'></textarea></label><p class="form-status" data-review-status role="status" aria-live="polite"></p><button class="primary-button" type="submit">提交 v2 审核</button></form>`).join("");
@@ -4809,6 +4809,8 @@ async function mountTeamIrRunReviews(detail, run) {
       const decision = form.elements.decision;
       const feedbackField = form.querySelector("[data-review-feedback]");
       const feedback = form.elements.feedback;
+      let submissionSignature = "";
+      let submissionIdempotencyKey = "";
       decision.addEventListener("change", () => { feedbackField.hidden = decision.value !== "reject"; feedback.required = decision.value === "reject"; });
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -4819,13 +4821,18 @@ async function mountTeamIrRunReviews(detail, run) {
           catch { resultStatus.textContent = "反馈必须是有效 JSON 对象。"; return; }
           if (!feedbackValue || typeof feedbackValue !== "object" || Array.isArray(feedbackValue)) { resultStatus.textContent = "反馈必须是 JSON 对象。"; return; }
         }
+        const nextSignature = JSON.stringify({ decision: decision.value, feedback: feedbackValue });
+        if (nextSignature !== submissionSignature) {
+          submissionSignature = nextSignature;
+          submissionIdempotencyKey = createUuid();
+        }
         const button = form.querySelector("button[type=submit]");
         button.disabled = true;
         resultStatus.textContent = "正在提交...";
         try {
           const response = await pageFetch(`${base}/${encodeURIComponent(review.reviewId)}`, {
             method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ decision: decision.value, revisionToken: review.revisionToken, idempotencyKey: createUuid(), ...(feedbackValue ? { feedback: feedbackValue } : {}) })
+            body: JSON.stringify({ decision: decision.value, revisionToken: review.revisionToken, idempotencyKey: submissionIdempotencyKey, ...(feedbackValue ? { feedback: feedbackValue } : {}) })
           });
           const payload = await response.json();
           if (!response.ok) {
@@ -4846,6 +4853,13 @@ async function mountTeamIrRunReviews(detail, run) {
           }
           resultStatus.textContent = `审核已记录：${payload.status}（修订 ${payload.revision}）。`;
           form.querySelectorAll("input, select, textarea, button").forEach((control) => { control.disabled = true; });
+          panel.remove();
+          teamIrRunReviewPanels.delete(key);
+          if (document.querySelector("#project-workspace-view")?.contains(detail)) {
+            await renderProjectRun(detail.dataset.projectId, state.activeRequest);
+          } else {
+            await mountTeamIrRunReviews(detail, run);
+          }
         } catch (error) {
           if (!isAbort(error)) resultStatus.textContent = error.message || "审核提交失败。";
           button.disabled = false;
