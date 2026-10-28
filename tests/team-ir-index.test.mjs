@@ -61,6 +61,79 @@ test("public validator preserves nested Schema reference pointers for missing, o
   }
 });
 
+test("public validator maps resolver failures to pointers across every embedded Schema root", () => {
+  const cases = [
+    {
+      pointer: "/runInput/preferencesSchema/properties/prefs/$ref",
+      mutate(value, reference) {
+        value.runInput.preferencesSchema = { type: "object", properties: { prefs: { "$ref": reference } } };
+      }
+    },
+    {
+      pointer: "/runResult/dataSchema/properties/result/$ref",
+      mutate(value, reference) {
+        value.runResult.dataSchema = { type: "object", properties: { result: { "$ref": reference } } };
+      }
+    },
+    {
+      pointer: "/agents/0/inputPorts/default/dataSchema/properties/request/$ref",
+      mutate(value, reference) {
+        value.agents[0].inputPorts.default.dataSchema = { type: "object", properties: { request: { "$ref": reference } } };
+      }
+    },
+    {
+      pointer: "/agents/0/outputPorts/DONE/dataSchema/properties/response/$ref",
+      mutate(value, reference) {
+        value.agents[0].outputPorts.DONE.dataSchema = { type: "object", properties: { response: { "$ref": reference } } };
+      }
+    },
+    {
+      pointer: "/orchestration/reviews/0/feedbackSchema/properties/comment/$ref",
+      mutate(value, reference) {
+        value.orchestration.reviews = [{
+          id: "review",
+          at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
+          feedbackSchema: { type: "object", properties: { comment: { "$ref": reference } }, additionalProperties: false },
+          timeoutMs: 1000,
+          onTimeout: "fail"
+        }];
+      }
+    },
+    {
+      pointer: "/runInput/dataSchema/properties/payload~1name~0draft/$ref",
+      mutate(value, reference) {
+        value.runInput.dataSchema = { type: "object", properties: { "payload/name~draft": { "$ref": reference } } };
+      }
+    }
+  ];
+  const references = [
+    ["schemas/missing.json#/$defs/item", "IR_UNKNOWN_SCHEMA_REF"],
+    ["#/$defs/~2invalid", "IR_UNKNOWN_SCHEMA_REF"]
+  ];
+
+  for (const { pointer, mutate } of cases) {
+    for (const [reference, code] of references) {
+      const value = team();
+      mutate(value, reference);
+      const diagnostics = validateTeamIr(value);
+      assert.ok(diagnostics.some((item) => item.code === code && item.pointer === pointer),
+        `${reference} should map ${code} to ${pointer}: ${JSON.stringify(diagnostics)}`);
+    }
+  }
+});
+
+test("public validator maps an unsupported external Schema dialect to each referencing field", () => {
+  const value = team();
+  value.runResult.dataSchema = { "$ref": "schemas/legacy.json" };
+  const diagnostics = validateTeamIr(value, {
+    packageSchemas: {
+      "schemas/legacy.json": { $schema: "http://json-schema.org/draft-07/schema#", type: "object" }
+    }
+  });
+  assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_DIALECT_UNSUPPORTED"
+    && item.pointer === "/runResult/dataSchema/$ref"), JSON.stringify(diagnostics));
+});
+
 test("classic software Team IR fixture compiles parallel required Join sources", async () => {
   const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
   const diagnostics = validateTeamIr(fixture);
