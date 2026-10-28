@@ -595,11 +595,11 @@ async function renderPlatformConfig() {
     const missingBackends = [!hasCodexModel && "Codex", !hasOpenCodeModel && "OpenCode"].filter(Boolean);
     const requirementMessage = missingBackends.length
       ? (state.locale === "en"
-        ? `No ${missingBackends.join(" or ")} model has passed a live availability probe. Probe discovered models before using them. Team Assistant requires OpenCode.`
-        : `尚无通过实际请求验证的 ${missingBackends.join(" 或 ")} 模型。请对发现的模型执行可用性探测；团队助手对话需要 OpenCode。`)
+        ? `No ${missingBackends.join(" or ")} model has passed a live availability probe. Probe discovered models before using them.`
+        : `尚无通过实际请求验证的 ${missingBackends.join(" 或 ")} 模型。请对发现的模型执行可用性探测。`)
       : (state.locale === "en"
-        ? "Codex and OpenCode models have passed live availability probes. Team Assistant uses OpenCode."
-        : "Codex 和 OpenCode 均有模型通过实际请求验证；团队助手对话使用 OpenCode。");
+        ? "Codex and OpenCode models have passed live availability probes."
+        : "Codex 和 OpenCode 均有模型通过实际请求验证。");
     $("#platform-models .platform-model-requirement")?.remove();
     $("#platform-models").insertAdjacentHTML("afterbegin", `<p class="form-hint platform-model-requirement" role="status">${esc(requirementMessage)}</p>`);
     $("#platform-discovery-meta").textContent = `上次检查：${formatDiscoveryTime(discovery.generatedAt)}${discovery.stale ? " · 建议刷新" : ""}`;
@@ -1720,23 +1720,6 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
   }
 }
 
-function studioSimulationErrorText(message) {
-  const detail = String(message || "");
-  const code = detail.match(/^([A-Z][A-Z0-9_]+)(?::|$)/)?.[1];
-  const messages = {
-    STUDIO_SIMULATION_INPUT_INVALID: ["Enter a debug request between 1 and 1,200 characters.", "请输入 1 到 1,200 个字符的调试任务。"],
-    STUDIO_SIMULATION_NOT_FOUND: ["This TeamVersion or debug run could not be found.", "找不到此团队版本或调试记录。"],
-    STUDIO_SIMULATION_TEAM_VERSION_UNAVAILABLE: ["This TeamVersion is not available for a debug run.", "此团队版本当前不可用于调试。"],
-    STUDIO_SIMULATION_TEAM_DIGEST_INVALID: ["The TeamVersion package failed its integrity check.", "团队版本包未通过完整性校验。"],
-    STUDIO_SIMULATION_TEAM_DIGEST_UNAVAILABLE: ["The TeamVersion package could not be read for debugging.", "无法读取团队版本包，暂不能运行调试。"],
-    MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"],
-    TEAM_ASSISTANT_MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"]
-  };
-  if (code && messages[code]) return messages[code][state.locale === "en" ? 0 : 1];
-  if (code) return state.locale === "en" ? "The debug run could not be completed. Check the TeamVersion and retry." : "调试无法完成，请检查团队版本后重试。";
-  return detail || (state.locale === "en" ? "The debug run could not be completed. Try again." : "调试无法完成，请重试。");
-}
-
 async function renderStudioReleaseGate(teamVersionId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
   const english = state.locale === "en";
@@ -1842,17 +1825,6 @@ function projectRunStatusLabel(status) {
 
 function projectTaskStatusLabel(status) {
   return ({ queued: "待执行", running: "处理中", planning: "准备处理中", pause_requested: "正在暂停", waiting_review: "待人工审核", paused: "已暂停，可继续", completed: "已完成", failed: "处理失败", cancel_requested: "正在取消", cancelled: "已取消", deleted: "已删除" })[status] || status || "待执行";
-}
-
-function teamStudioErrorMarkup(message) {
-  const detail = String(message || "团队操作暂时不可用");
-  if (detail.includes("TEAM_ASSISTANT_MODEL_UNAVAILABLE")) {
-    return '部署环境尚未发现可运行的 OpenCode 模型。请确认 OpenCode 已安装并登录，再到<a href="/platform" data-route="/platform">平台设置</a>刷新底座与模型后重试。';
-  }
-  if (detail.includes("TEAM_ASSISTANT_UNAVAILABLE") || /fetch failed/i.test(detail)) {
-    return `团队助手无法连接 Visualizer。请启动 Visualizer，或在启动 Team Site 时将 OGS_VIS_URL 配置为可访问的服务地址。<br><small>${esc(detail)}</small> <a href="/platform" data-route="/platform">检查运行底座与模型</a>`;
-  }
-  return esc(detail);
 }
 
 function runProgress(run) {

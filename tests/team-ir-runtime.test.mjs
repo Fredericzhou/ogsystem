@@ -544,6 +544,56 @@ test("a crash before terminal commit keeps Result private and recovery commits i
   assert.equal(recovered.events.filter((item) => item.type === "run.completed").length, 1);
 });
 
+test("FileTeamRunStore restores pending Result after a new store instance without replaying the Binding", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-file-result-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, "runs");
+  const backing = new FileTeamRunStore(directory);
+  let failTerminalCommit = true;
+  const store = {
+    create: (record) => backing.create(record),
+    load: (runId) => backing.load(runId),
+    compareAndSet(runId, expectedRevision, record) {
+      if (record.status === "completed" && failTerminalCommit) {
+        failTerminalCommit = false;
+        throw new Error("simulated FileTeamRunStore terminal commit crash");
+      }
+      return backing.compareAndSet(runId, expectedRevision, record);
+    }
+  };
+  let calls = 0;
+  const value = team();
+  value.handoffs.push({ id: "result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } });
+  const plan = compileTeamIr(value);
+  const firstRuntime = new TeamRuntime({
+    store,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { calls += 1; return { kind: "completed", output: { event: "DONE", data: { answer: "file-durable" } } }; } } }
+  });
+  await firstRuntime.createRun(plan, { runId: "file-result-recovery", task: "recover", input: { prompt: "check" } });
+  await assert.rejects(firstRuntime.executeRun(plan, "file-result-recovery"), /simulated FileTeamRunStore terminal commit crash/);
+
+  const restartedStore = new FileTeamRunStore(directory);
+  const interrupted = await restartedStore.load("file-result-recovery");
+  assert.equal(interrupted.status, "running");
+  assert.equal(interrupted.result, undefined);
+  assert.equal(interrupted.resultWritten, undefined);
+  assert.deepEqual(interrupted.pendingResult, { value: { answer: "file-durable" }, handoffId: "result" });
+
+  const recovered = await new TeamRuntime({
+    store: restartedStore,
+    clock: { now: () => 200, sleep: () => new Promise(() => {}) },
+    bindings: { "binding:worker": { async invoke() { calls += 1; throw new Error("must not replay"); } } }
+  }).executeRun(plan, "file-result-recovery");
+  assert.equal(recovered.status, "completed");
+  assert.deepEqual(recovered.result, { answer: "file-durable" });
+  assert.equal(recovered.resultWritten, true);
+  assert.equal(recovered.pendingResult, undefined);
+  assert.equal(calls, 1);
+  assert.equal(recovered.events.filter((item) => item.type === "run.result.written").length, 1);
+  assert.equal(recovered.events.filter((item) => item.type === "run.completed").length, 1);
+});
+
 test("a lost response after terminal Result commit returns the committed Result without replay", async () => {
   const backing = new MemoryTeamRunStore();
   let loseCommitResponse = true;

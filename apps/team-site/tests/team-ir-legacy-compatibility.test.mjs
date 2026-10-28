@@ -46,6 +46,12 @@ async function hashTree(root) {
   return createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 
+test("Team Site browser entry contains no removed Team Assistant or legacy authoring handlers", async () => {
+  const source = await readFile(new URL("../public/app/views/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /Team Assistant|团队助手|TEAM_ASSISTANT_(?:MODEL_UNAVAILABLE|UNAVAILABLE)/);
+  assert.doesNotMatch(source, /studioSimulationErrorText|teamStudioErrorMarkup|release-baselines|\/api\/v1\/team-versions\/[^`]*\/(?:design|graph|chat)/);
+});
+
 test("legacy authoring API has no creation, read, validate, or write dispatch", async () => {
   const calls = [];
   const harness = routeHarness({
