@@ -406,7 +406,21 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 阶段 3：Review 决定到同 Run 恢复派发 | 部分通过（注入式 API 合同） | `apps/team-site/application/team-ir-review-use-cases.mjs` 要求可信 context 提供 `resumeTeamIrRun`，缺少时决定不落盘；决定持久化后调用并携带稳定 `dispatchId`。`apps/team-site/tests/team-ir-review-api.test.mjs` 验证决定对 resume hook 可见、dispatch 失败后同幂等请求可重试，API 聚焦回归 6/6 | 生产 resolver 尚未注入 Review context 和同 Run 恢复调度桥；真实身份与 Task 最终状态端到端尚未验收 |
 | 阶段 4：经典模板保护原生 v2 IR | 通过（模板覆盖防护窄合同） | `apps/team-site/application/team-lifecycle-use-cases.mjs` 对已存在的原生 `schemaVersion: 2` 模板停止旧 Mermaid materializer 覆写；IR 读取错误 fail closed。`apps/team-site/tests/team-lifecycle-use-cases.test.mjs` 覆盖保留原生 v2、检查失败不覆盖，并保留 legacy stale template rematerialization 正例；生命周期聚焦测试 16/16 | 仅防止经典模板 provisioning 覆盖已存在的 v2 IR；活动 Case 原生 v2 成功路径、默认作者入口与模板统一切换仍未完成，阶段 4 保持进行中且默认切换关闭 |
 
-本轮验证：`pnpm test`：856 个顶层测试、870 个含子测试项，869 通过、0 失败、1 项 Windows-only 跳过，退出码 0。Team Site 串行 spec 回归最近为 485 通过、0 失败、0 跳过，退出码 0。聚焦回归：端点引用 17/17，Schema 非法端点矩阵 12/12，映射 validation 23/23，fail-fast Runtime 3/3，Studio browser 1/1，multi-Join Runtime 34/34，预算边界 Schema 13/13。真实 resolver 与 Sandbox UAT 仍受本机 resolver 缺失、Codex CLI 未登录和 OpenCode 0 凭据阻塞。
+本轮验证：`pnpm test`：856 个顶层测试、870 个含子测试项，869 通过、0 失败、1 项 Windows-only 跳过，退出码 0。Team Site 串行 spec 回归最近为 485 通过、0 失败、0 跳过，退出码 0。聚焦回归：端点引用 17/17，Schema 非法端点矩阵 12/12，映射 validation 23/23，fail-fast Runtime 3/3，Studio browser 1/1，multi-Join Runtime 34/34，预算边界 Schema 13/13。该快照当时把 Codex 登录状态和 OpenCode auth store 状态列为 UAT 条件；后续自定义 provider 实测及回归见下节。真实 resolver 与 Sandbox UAT 尚未完成。
+
+### 2026-10-28：Codex 自定义 provider 与登录态隔离回归
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| Codex 自定义 provider 与 `codex login status` 解耦 | 通过（模型发现窄合同） | `tests/codex-app-server.test.mjs` 的 fake app-server 对 `login/status` 请求返回错误；模型分页发现仍成功，并断言发现路径不会调用 `login/status`。`node --test tests/codex-app-server.test.mjs`，2/2 | 该回归锁定发现路径不依赖 Codex 登录态；实际模型调用另有本机 CLI 探测证据，不代表 Sandbox UAT 已通过 |
+| Codex CLI 自定义 provider 模型调用 | 通过（本机模型探测） | `gpt-6-luna` 自定义 provider 配置不要求 OpenAI 登录；`codex login status` 为未登录时，`codex exec --ephemeral --sandbox read-only --model gpt-6-luna ...` 仍返回预期响应 | 证明 CLI 模型调用可用，不证明 Team IR production resolver 或真实 Sandbox Task 已接线 |
+| OpenCode serve 持久 provider 模型调用 | 通过（本机模型探测） | 用户级 OpenCode 配置使用自定义 `fedgroup/gpt-6-luna` provider；本机 `opencode serve` 通过 SDK session/prompt 返回预期响应。Bearer 由本机启动脚本从 Codex 配置提取并仅注入进程环境，未写入仓库配置 | 不证明 Team Site production resolver/Binding 已配置；不构成真实 Sandbox UAT |
+| 经典团队真实 Sandbox UAT | 受阻 / 未运行 | 模型认证链已验证可用；当前阻塞是 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 未配置，以及 production closure、Sandbox evidence、Project Task Binding 与真实 Task 调度/恢复链未接线 | 配置可信 resolver 并完成 Studio 保存/重开、发布、Project 挂载、真实 Sandbox Task 成功与受控失败/重试、重启后查询及结果审核；Fake 或 CLI 探测不计入真实 UAT |
+
+**运行环境：** macOS，本机 Codex custom provider `gpt-6-luna` 与 OpenCode serve `fedgroup/gpt-6-luna`；未读取或提交任何凭据。\
+**变更范围：** 新增 Codex app-server 登录态隔离回归；更新本台账，区分历史登录状态观察与当前 UAT 阻塞。\
+**验证：** `node --test tests/codex-app-server.test.mjs`，2/2；`pnpm test`，871 项（含子测试）中 870 通过、0 失败、1 项 Windows-only 跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot`，退出码 0；`git diff --check` 通过。\
+**未覆盖与风险：** 真实 Sandbox UAT 仍未运行；production resolver、Sandbox evidence、Project Task Binding 与真实 Task 调度/恢复链未接线。阶段 1、2 仍部分通过，阶段 3、4 未完成，默认入口切换保持关闭。
 
 ### YYYY-MM-DD：阶段 / 任务标识
 

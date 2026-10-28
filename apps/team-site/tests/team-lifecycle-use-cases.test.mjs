@@ -264,6 +264,41 @@ test("classic template provisioning preserves an existing native Team IR v2 docu
   assert.equal(harness.calls.some(([name]) => name === "team-ir-copy" || name === "export" || name === "load"), false);
 });
 
+test("repeated classic template provisioning keeps the existing native Team IR v2 contract unchanged", async () => {
+  const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
+  const authoredIr = {
+    schemaVersion: 2,
+    team: { id: "authored-v2", version: "2.0.0" },
+    orchestration: { joins: [{ id: "authored-join", handoffIds: ["alpha", "beta"] }], loops: [] }
+  };
+  const original = structuredClone(authoredIr);
+  let inspections = 0;
+  const harness = setup({
+    projects: [template],
+    teamIrRelease: {
+      async getTeamIr() {
+        inspections += 1;
+        return { teamIR: authoredIr, semanticDigest: "v2-semantic-digest" };
+      },
+      async getTeamIrReleaseSnapshot() { throw new Error("unused"); },
+      async copyTeamIr() { assert.fail("reprovisioning must not copy or replace authored Team IR"); }
+    },
+    caseMaterializer: {
+      async isCurrent() { return false; },
+      async materialize() { assert.fail("stale legacy Mermaid must not trigger v2 template rematerialization"); }
+    }
+  });
+
+  const first = await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true, locale: "zh-CN" });
+  const second = await harness.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true, locale: "en" });
+
+  assert.equal(first, template);
+  assert.equal(second, template);
+  assert.equal(inspections, 2, "each startup provisioning pass rechecks the persisted IR contract");
+  assert.deepEqual(authoredIr, original);
+  assert.equal(harness.calls.some(([name]) => ["export", "load", "create", "remove"].includes(name)), false);
+});
+
 test("classic template provisioning fails closed when native IR inspection fails", async () => {
   const template = { projectId: "classic-template-v2", workdir: "/templates/classic-v2", source: "classic-template", caseId: "sample", name: "Sample Team", teamVersionStatus: "draft" };
   const harness = setup({

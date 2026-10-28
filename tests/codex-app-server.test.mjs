@@ -31,10 +31,13 @@ class FakeAppServerProcess extends EventEmitter {
     if (!message.method) return;
     this.requests.push(message);
     const respond = (result) => this.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n`);
+    const reject = (code, error) => this.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code, message: error } })}\n`);
     if (message.method === "model/list") {
       respond(message.params.cursor
         ? { data: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol" }] }
         : { data: [{ id: "gpt-6-astra" }], nextCursor: "page-2" });
+    } else if (message.method === "login/status") {
+      reject(-32001, "Codex login is unavailable for the configured provider");
     } else if (message.method === "thread/start") {
       respond({ thread: { id: "thread-new" } });
     } else if (message.method === "thread/resume") {
@@ -76,6 +79,19 @@ test("Codex app-server paginates models and resumes a persistent thread between 
     assert.match(first.stdout, /"event":"DONE"/);
     assert.deepEqual(child.requests.filter((entry) => entry.method.startsWith("thread/")).map((entry) => entry.method), ["thread/start", "thread/resume"]);
     assert.equal(child.requests.filter((entry) => entry.method === "turn/start").length, 2);
+  } finally {
+    await client.close();
+  }
+});
+
+test("Codex model discovery does not require a Codex login-status check", async () => {
+  const child = new FakeAppServerProcess();
+  const client = new CodexAppServerClient(child);
+  try {
+    const models = await client.listModels();
+    assert.ok(models.some((model) => model.id === "gpt-6-astra"));
+    assert.ok(models.some((model) => model.id === "gpt-5.6-sol"));
+    assert.equal(child.requests.some((request) => request.method === "login/status"), false);
   } finally {
     await client.close();
   }
