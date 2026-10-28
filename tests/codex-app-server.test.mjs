@@ -84,13 +84,26 @@ test("Codex app-server paginates models and resumes a persistent thread between 
   }
 });
 
-test("Codex model discovery does not require a Codex login-status check", async () => {
+test("custom-provider Codex model execution does not require a Codex login session", async () => {
   const child = new FakeAppServerProcess();
   const client = new CodexAppServerClient(child);
   try {
     const models = await client.listModels();
     assert.ok(models.some((model) => model.id === "gpt-6-astra"));
     assert.ok(models.some((model) => model.id === "gpt-5.6-sol"));
+
+    const result = await client.execute({
+      roleId: "planner",
+      prompt: "return a short status",
+      schema: {},
+      modelId: "gpt-6-luna",
+      cwd: process.cwd(),
+      timeoutMs: 1000
+    });
+
+    assert.match(result.stdout, /"event":"DONE"/);
+    assert.equal(child.requests.find((request) => request.method === "thread/start")?.params.model, "gpt-6-luna");
+    assert.equal(child.requests.find((request) => request.method === "turn/start")?.params.model, "gpt-6-luna");
     assert.equal(child.requests.some((request) => request.method === "login/status"), false);
   } finally {
     await client.close();
