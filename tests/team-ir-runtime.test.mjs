@@ -739,7 +739,9 @@ test("quorum topologies outside the single no-Loop Join contract fail before any
   await assertUnsupportedQuorumFailsBeforeBinding(mixed, "quorum-mixed-unsupported");
 });
 
-test("multiple independent all_of Joins settle separately in one Run", async () => {
+test("multiple independent all_of Joins recover after a ready round checkpoint", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-multiple-join-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
   const value = quorumTeam();
   value.team.id = "multiple-all-of-joins";
   value.executionPolicy.resultMode = "allow_empty";
@@ -796,30 +798,72 @@ test("multiple independent all_of Joins settle separately in one Run", async () 
 
   const plan = compileTeamIr(value);
   const calls = [];
-  const store = new MemoryTeamRunStore();
-  const runtime = new TeamRuntime({
-    store,
-    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
-    bindings: {
-      "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "left-one", include: true } } }; } },
-      "binding:right": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "right-one" } } }; } },
-      "binding:left-two": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "left-two", include: true } } }; } },
-      "binding:right-two": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "right-two" } } }; } },
-      "binding:joiner": { async invoke(invocation) {
-        calls.push(["join-one", invocation.input]);
-        return { kind: "completed", output: { event: "DONE", data: { summary: "one" } } };
-      } },
-      "binding:joiner-two": { async invoke(invocation) {
-        calls.push(["join-two", invocation.input]);
-        return { kind: "completed", output: { event: "DONE", data: { summary: "two" } } };
-      } }
+  const sourceCalls = new Map();
+  const fileStore = new FileTeamRunStore(join(root, "runs"));
+  let crashAfterReadyJoin = true;
+  const crashStore = {
+    create: (...args) => fileStore.create(...args),
+    load: (...args) => fileStore.load(...args),
+    async compareAndSet(runId, revision, record) {
+      const committed = await fileStore.compareAndSet(runId, revision, record);
+      const joinReady = Object.values(record.scheduler?.joinRounds ?? {}).some((round) => round.status === "ready");
+      const targetStarted = Object.values(record.invocations).some((invocation) => invocation.agentId.startsWith("joiner"));
+      if (committed && crashAfterReadyJoin && joinReady && !targetStarted) {
+        crashAfterReadyJoin = false;
+        throw new Error("simulated process crash after a multi-Join ready checkpoint");
+      }
+      return committed;
     }
+  };
+  const bindings = {
+    "binding:left": { async invoke() {
+      sourceCalls.set("left", (sourceCalls.get("left") ?? 0) + 1);
+      return { kind: "completed", output: { event: "DONE", data: { value: "left-one", include: true } } };
+    } },
+    "binding:right": { async invoke() {
+      sourceCalls.set("right", (sourceCalls.get("right") ?? 0) + 1);
+      return { kind: "completed", output: { event: "DONE", data: { value: "right-one" } } };
+    } },
+    "binding:left-two": { async invoke() {
+      sourceCalls.set("left-two", (sourceCalls.get("left-two") ?? 0) + 1);
+      return { kind: "completed", output: { event: "DONE", data: { value: "left-two", include: true } } };
+    } },
+    "binding:right-two": { async invoke() {
+      sourceCalls.set("right-two", (sourceCalls.get("right-two") ?? 0) + 1);
+      return { kind: "completed", output: { event: "DONE", data: { value: "right-two" } } };
+    } },
+    "binding:joiner": { async invoke(invocation) {
+      calls.push(["join-one", invocation.input]);
+      return { kind: "completed", output: { event: "DONE", data: { summary: "one" } } };
+    } },
+    "binding:joiner-two": { async invoke(invocation) {
+      calls.push(["join-two", invocation.input]);
+      return { kind: "completed", output: { event: "DONE", data: { summary: "two" } } };
+    } }
+  };
+  const runtime = new TeamRuntime({
+    store: crashStore,
+    clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    bindings
   });
-  await runtime.createRun(plan, { runId: "multiple-all-of-joins", task: "join", input: { prompt: "collect" } });
-  const result = await runtime.executeRun(plan, "multiple-all-of-joins");
+  const runId = "multiple-all-of-joins";
+  await runtime.createRun(plan, { runId, task: "join", input: { prompt: "collect" } });
+  await assert.rejects(runtime.executeRun(plan, runId), /simulated process crash after a multi-Join ready checkpoint/);
+  const crashed = await fileStore.load(runId);
+  assert.equal(Object.values(crashed.scheduler.joinRounds).filter((round) => round.status === "ready").length, 1);
+  assert.equal(Object.values(crashed.invocations).filter((invocation) => invocation.agentId.startsWith("joiner")).length, 0);
+  assert.deepEqual([...sourceCalls.values()], [1, 1, 1, 1]);
+
+  const resumedRuntime = new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")),
+    clock: { now: () => 200, sleep: () => new Promise(() => {}) },
+    bindings
+  });
+  const result = await resumedRuntime.executeRun(plan, runId);
 
   assert.equal(result.status, "completed");
   assert.equal(result.result, undefined);
+  assert.deepEqual([...sourceCalls.values()], [1, 1, 1, 1], "recovery reuses completed source invocations");
   assert.deepEqual(calls.sort(([leftId], [rightId]) => leftId.localeCompare(rightId)), [
     ["join-one", { leftValue: "left-one", rightValue: "right-one" }],
     ["join-two", { leftValue: "left-two", rightValue: "right-two" }]
@@ -828,6 +872,7 @@ test("multiple independent all_of Joins settle separately in one Run", async () 
   assert.equal(result.scheduler.joinRounds["join-two"].status, "ready");
   assert.deepEqual(result.scheduler.joinRounds["join-one"].merged.data, { leftValue: "left-one", rightValue: "right-one" });
   assert.deepEqual(result.scheduler.joinRounds["join-two"].merged.data, { leftValue: "left-two", rightValue: "right-two" });
+  assert.equal(Object.values(result.invocations).filter((invocation) => invocation.agentId.startsWith("joiner")).length, 2);
 });
 
 test("an active quorum sibling failure after target activation still fails the Run", async () => {
