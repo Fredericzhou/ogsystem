@@ -47,6 +47,58 @@ test("cross-reference validation reports duplicate semantic IDs and unknown refe
   assert.ok(diagnostics.some((item) => item.code === "IR_UNKNOWN_PORT" && item.pointer === "/handoffs/0/to/inputPort"));
 });
 
+test("Handoff and route endpoint references diagnose each unknown Agent and port at its field pointer", () => {
+  const cases = [
+    {
+      code: "IR_UNKNOWN_AGENT",
+      pointer: "/handoffs/1/from/agentId",
+      mutate: (team) => { team.handoffs[1].from.agentId = "missing-source"; }
+    },
+    {
+      code: "IR_UNKNOWN_PORT",
+      pointer: "/handoffs/1/from/outputPort",
+      mutate: (team) => { team.handoffs[1].from.outputPort = "MISSING"; }
+    },
+    {
+      code: "IR_UNKNOWN_AGENT",
+      pointer: "/handoffs/1/to/agentId",
+      mutate: (team) => { team.handoffs[1].to = { kind: "agent", agentId: "missing-target", inputPort: "default" }; }
+    },
+    {
+      code: "IR_UNKNOWN_PORT",
+      pointer: "/handoffs/1/to/inputPort",
+      mutate: (team) => { team.handoffs[1].to = { kind: "agent", agentId: "worker", inputPort: "missing" }; }
+    },
+    {
+      code: "IR_UNKNOWN_AGENT",
+      pointer: "/orchestration/routes/0/from/agentId",
+      mutate: (team) => {
+        team.orchestration.routes = [{
+          from: { kind: "agent", agentId: "missing-route-source", outputPort: "DONE" },
+          mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["worker-result"]
+        }];
+      }
+    },
+    {
+      code: "IR_UNKNOWN_PORT",
+      pointer: "/orchestration/routes/0/from/outputPort",
+      mutate: (team) => {
+        team.orchestration.routes = [{
+          from: { kind: "agent", agentId: "worker", outputPort: "MISSING" },
+          mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["worker-result"]
+        }];
+      }
+    }
+  ];
+
+  for (const { code, pointer, mutate } of cases) {
+    const team = baseTeam();
+    mutate(team);
+    assert.ok(validateTeamIrReferences(team).some((item) => item.code === code && item.pointer === pointer),
+      `Expected ${code} at ${pointer}`);
+  }
+});
+
 test("conditional or multiple source handoffs require one route listing exactly those edges", () => {
   const team = baseTeam();
   team.handoffs[1].when = { condition: { op: "equals", args: [{ "$literal": 1 }, { "$literal": 1 }] } };
