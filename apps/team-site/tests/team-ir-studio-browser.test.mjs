@@ -390,14 +390,13 @@ export async function resolveBindings({ teamIR }) {
       ["revise", "exit", "handoff-4"], "an existing route must continue to list every outgoing Handoff");
     await page.locator('[data-ir-link-source-port="0"]').selectOption("BLOCKED");
     await page.locator('[data-ir-link-target-port="0"]').selectOption("audit");
-    await page.locator('[data-ir-connect-source-agent-index="0"]').click();
-    await page.locator('[data-ir-connect-target-agent-index="0"]').click();
+    await page.locator('[data-ir-connect-source-agent-index="0"]').dragTo(page.locator('[data-ir-connect-target-agent-index="0"]'));
     assert.equal(await page.locator("[data-ir-handoff]").count(), 5);
     const selectedPortContracts = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     assert.deepEqual(selectedPortContracts.handoffContracts["handoff-5"].from,
-      { kind: "agent", agentId: "writer", outputPort: "BLOCKED" });
+      { kind: "agent", agentId: "writer", outputPort: "BLOCKED" }, "dragging an event source uses the selected output port");
     assert.deepEqual(selectedPortContracts.handoffContracts["handoff-5"].to,
-      { kind: "agent", agentId: "writer", inputPort: "audit" });
+      { kind: "agent", agentId: "writer", inputPort: "audit" }, "dropping on an input target uses the selected input port");
     await page.reload({ waitUntil: "networkidle" });
     await page.locator("[data-ir-advanced-json]").waitFor();
 

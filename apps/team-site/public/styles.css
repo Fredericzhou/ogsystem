@@ -1004,6 +1004,8 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .ir-graph-node span { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
 .ir-graph-node small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .ir-graph-node:focus-visible, .ir-graph-edge:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.ir-graph-connection-dragging { cursor: grabbing; opacity: .55; }
+.ir-graph-connection-drop-target { background: color-mix(in srgb, var(--mint) 12%, var(--surface)); outline: 2px solid var(--mint); outline-offset: 2px; }
 .ir-graph-edges { border-left: 1px solid var(--line); display: grid; gap: 6px; margin: 12px 0 0 20px; padding-left: 14px; }
 .ir-graph-edge { align-items: center; background: var(--canvas); border: 1px solid var(--line); color: var(--ink); cursor: pointer; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; max-width: 100%; min-height: 38px; padding: 7px 10px; text-align: left; }
 .ir-graph-edge code { color: var(--muted); overflow-wrap: anywhere; }

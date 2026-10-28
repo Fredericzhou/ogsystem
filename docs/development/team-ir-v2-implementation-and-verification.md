@@ -734,6 +734,14 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 当前完整回归 | 通过 | `pnpm test`（含 build），922 个含子测试项：921 通过、0 失败、1 项 Windows-only skip，退出码 0；`pnpm --dir apps/team-site test --test-concurrency=1`，349 项：348 通过、0 失败、1 项 opt-in Docker skip，退出码 0；`git diff --check` 待本轮文档更新后重跑 | Docker UAT skip 不代表真实 Sandbox/A2A UAT；发布阶段仍有未完成门槛 |
 | 回归产物 | 已清理 | 上述回归生成的 8 个 `.ogs/runs/` Runtime 目录及 `.ogs/runs-index.json` 已移入系统废纸篓；`.ogs/model-selection.json` 本机用户改动未暂存、未提交 | 无 |
 
+### 2026-10-29：Studio 事件端口拖放连线
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 3：从结构图来源拖到目标创建 Handoff | 通过（浏览器合同切片） | `apps/team-site/public/app/views/app.js` 为 Run/Agent 来源操作及 Agent/Run Result 目标操作增加原生拖放；拖放仍复用现有连接创建路径和端口选择器，生成显式 Handoff、路由与空字段映射草稿。点击式来源/目标操作继续可用，便于键盘操作。`apps/team-site/public/styles.css` 增加拖动源与可放置目标状态。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 在 Chromium 中选择 Agent `BLOCKED` 输出和 `audit` 输入，实际 `dragTo` 后断言两个 endpoint，并继续断言 IR 保存、重载和 digest 语义；`pnpm build && pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`，1/1 | 当前结构图仍是自动排布节点卡片和 Handoff 列表，不提供节点自由布局、画布上的独立端口桩/连线几何编辑；Review 使用外部身份的完整 Project Task 浏览器验收也仍未完成 |
+
+**阶段结论：** 本轮闭合事件端口拖放创建 Handoff 的浏览器合同，不宣称完整 Studio 完成。现有浏览器 resolver 是隔离测试 Fake，只证明页面/API 和 Runtime 模拟合同；生产 Review 用户操作仍需配置并验收真实身份主体、授权决策和服务重启后的待审恢复。阶段 3 继续进行中。
+
 ## 6. Codex / 实施代理工作约定
 
 为减少中途停留后丢失进度，每次委派或启动实施都应引用本文件和目标阶段，并要求：

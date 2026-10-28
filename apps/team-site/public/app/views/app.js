@@ -1245,16 +1245,16 @@ function renderTeamIrStructureGraph(ir, escText, editable) {
     return `<label class="ir-graph-port-picker"><span>${label}</span><select ${attribute}="${index}" aria-label="${label} ${escText(agentId)}"${disabled}>${entries.map((port) => `<option value="${escText(port)}">${escText(port)}</option>`).join("")}</select></label>`;
   };
   const nodes = [
-    `<div class="ir-graph-node-wrap"><button class="ir-graph-node run" type="button" data-ir-graph-node="run"><span>Run</span><small>输入 · ${escText(ir.team?.id || "Team")}</small></button><button class="text-button" type="button" data-ir-connect-source="run"${disabled}>设为来源</button></div>`,
-    ...(ir.agents || []).map((agent, index) => `<div class="ir-graph-node-wrap"><button class="ir-graph-node agent" type="button" data-ir-graph-node="agent" data-agent-id="${escText(agent.id)}"><span>${escText(agent.id)}</span><small>${escText(agent.packageRef || "Agent")}</small></button>${portPicker(agent.outputPorts, "source", index, agent.id)}${portPicker(agent.inputPorts, "target", index, agent.id)}<div class="ir-graph-node-actions"><button class="text-button" type="button" data-ir-connect-source-agent-index="${index}"${disabled}>设为来源</button><button class="text-button" type="button" data-ir-connect-target-agent-index="${index}"${disabled}>设为目标</button></div></div>`),
-    `<div class="ir-graph-node-wrap"><button class="ir-graph-node result" type="button" data-ir-graph-node="result"><span>Run Result</span><small>最终输出</small></button><button class="text-button" type="button" data-ir-connect-target="result"${disabled}>设为目标</button></div>`
+    `<div class="ir-graph-node-wrap"><button class="ir-graph-node run" type="button" data-ir-graph-node="run"><span>Run</span><small>输入 · ${escText(ir.team?.id || "Team")}</small></button><button class="text-button" type="button" data-ir-connect-source="run"${editable ? ' draggable="true"' : ""}${disabled}>拖动为来源 · Run</button></div>`,
+    ...(ir.agents || []).map((agent, index) => `<div class="ir-graph-node-wrap"><button class="ir-graph-node agent" type="button" data-ir-graph-node="agent" data-agent-id="${escText(agent.id)}"><span>${escText(agent.id)}</span><small>${escText(agent.packageRef || "Agent")}</small></button>${portPicker(agent.outputPorts, "source", index, agent.id)}${portPicker(agent.inputPorts, "target", index, agent.id)}<div class="ir-graph-node-actions"><button class="text-button" type="button" data-ir-connect-source-agent-index="${index}"${editable ? ' draggable="true"' : ""}${disabled}>拖动为来源 · ${escText(agent.id)}</button><button class="text-button" type="button" data-ir-connect-target-agent-index="${index}"${editable ? ' data-ir-connect-drop-target="true"' : ""}${disabled}>设为目标 · ${escText(agent.id)}</button></div></div>`),
+    `<div class="ir-graph-node-wrap"><button class="ir-graph-node result" type="button" data-ir-graph-node="result"><span>Run Result</span><small>最终输出</small></button><button class="text-button" type="button" data-ir-connect-target="result"${editable ? ' data-ir-connect-drop-target="true"' : ""}${disabled}>设为目标 · Run Result</button></div>`
   ].join("");
   const edges = (ir.handoffs || []).map((handoff, index) => {
     const from = handoff.from?.kind === "run" ? "Run" : handoff.from?.agentId || "Agent";
     const to = handoff.to?.kind === "result" ? "Run Result" : handoff.to?.agentId || "Agent";
     return `<button class="ir-graph-edge" type="button" data-ir-graph-handoff="${index}"><code>${escText(handoff.id)}</code><span>${escText(from)} <b aria-hidden="true">→</b> ${escText(to)}</span></button>`;
   }).join("");
-  return `<section class="ir-structure-graph" aria-labelledby="ir-structure-graph-title"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2 id="ir-structure-graph-title">结构图</h2></div><span class="form-hint">Run / Agent / Handoff</span></div><p class="form-status" data-ir-connect-status role="status" aria-live="polite">选择来源后，再选择目标以创建 Handoff。</p><button class="text-button" type="button" data-ir-connect-cancel${disabled}>取消连接</button><div class="ir-graph-nodes" aria-label="Run and Agent nodes">${nodes}</div><div class="ir-graph-edges" aria-label="Handoff edges">${edges || '<p class="empty-note">尚未定义 Handoff。</p>'}</div></section>`;
+  return `<section class="ir-structure-graph" aria-labelledby="ir-structure-graph-title"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2 id="ir-structure-graph-title">结构图</h2></div><span class="form-hint">Run / Agent / Handoff</span></div><p class="form-status" data-ir-connect-status role="status" aria-live="polite">拖动来源到目标，或分别选择来源和目标创建 Handoff。</p><button class="text-button" type="button" data-ir-connect-cancel${disabled}>取消连接</button><div class="ir-graph-nodes" aria-label="Run and Agent nodes">${nodes}</div><div class="ir-graph-edges" aria-label="Handoff edges">${edges || '<p class="empty-note">尚未定义 Handoff。</p>'}</div></section>`;
 }
 
 function focusTeamIrGraphSelection(form, draft, selection) {
@@ -1537,6 +1537,36 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       form.querySelectorAll("[data-ir-connect-source-agent-index]").forEach((button) => button.addEventListener("click", () => chooseConnectionSource(Number(button.dataset.irConnectSourceAgentIndex))));
       form.querySelectorAll("[data-ir-connect-target-agent-index]").forEach((button) => button.addEventListener("click", () => completeConnection(Number(button.dataset.irConnectTargetAgentIndex))));
       form.querySelector("[data-ir-connect-target='result']")?.addEventListener("click", () => completeConnection("result"));
+      form.querySelectorAll("[draggable='true'][data-ir-connect-source], [draggable='true'][data-ir-connect-source-agent-index]").forEach((button) => {
+        button.addEventListener("dragstart", (event) => {
+          if (button.dataset.irConnectSource === "run") chooseConnectionSource();
+          else chooseConnectionSource(Number(button.dataset.irConnectSourceAgentIndex));
+          if (!pendingConnectionSource) { event.preventDefault(); return; }
+          event.dataTransfer?.setData("text/plain", JSON.stringify(pendingConnectionSource));
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = "link";
+          button.classList.add("ir-graph-connection-dragging");
+        });
+        button.addEventListener("dragend", () => button.classList.remove("ir-graph-connection-dragging"));
+      });
+      form.querySelectorAll("[data-ir-connect-drop-target='true']").forEach((button) => {
+        button.addEventListener("dragover", (event) => {
+          if (!pendingConnectionSource) return;
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "link";
+          button.classList.add("ir-graph-connection-drop-target");
+        });
+        button.addEventListener("dragleave", () => button.classList.remove("ir-graph-connection-drop-target"));
+        button.addEventListener("drop", (event) => {
+          event.preventDefault();
+          button.classList.remove("ir-graph-connection-drop-target");
+          if (!pendingConnectionSource) {
+            try { pendingConnectionSource = JSON.parse(event.dataTransfer?.getData("text/plain") || "null") || undefined; }
+            catch { pendingConnectionSource = undefined; }
+          }
+          if (button.dataset.irConnectTarget === "result") completeConnection("result");
+          else completeConnection(Number(button.dataset.irConnectTargetAgentIndex));
+        });
+      });
       form.querySelector("[data-ir-connect-cancel]")?.addEventListener("click", () => {
         pendingConnectionSource = undefined;
         form.querySelector("[data-ir-connect-status]").textContent = "连接已取消；Team IR 未更改。";
