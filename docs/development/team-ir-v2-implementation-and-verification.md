@@ -420,15 +420,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |
 | --- | --- | --- | --- |
-| Codex 自定义 provider 与 `codex login status` 解耦 | 通过（模型发现窄合同） | `tests/codex-app-server.test.mjs` 的 fake app-server 对 `login/status` 请求返回错误；模型分页发现仍成功，并断言发现路径不会调用 `login/status`。`node --test tests/codex-app-server.test.mjs`，2/2 | 该回归锁定发现路径不依赖 Codex 登录态；实际模型调用另有本机 CLI 探测证据，不代表 Sandbox UAT 已通过 |
+| Codex 自定义 provider 与 `codex login status` 解耦 | 通过（模型发现与执行窄合同） | `tests/codex-app-server.test.mjs` 的 fake app-server 对 `login/status` 请求返回错误；同一回归完成模型分页发现和 `gpt-6-luna` turn，断言 `thread/start`、`turn/start` 使用自定义模型且没有登录态请求。`node --test tests/codex-app-server.test.mjs`，2/2 | 锁定 app-server 发现/执行路径不依赖 Codex 登录态；本机 CLI 探测另证 provider API 调用可用，不代表 Sandbox UAT 已通过 |
 | Codex CLI 自定义 provider 模型调用 | 通过（本机模型探测） | `gpt-6-luna` 自定义 provider 配置不要求 OpenAI 登录；`codex login status` 为未登录时，`codex exec --ephemeral --sandbox read-only --model gpt-6-luna ...` 仍返回预期响应 | 证明 CLI 模型调用可用，不证明 Team IR production resolver 或真实 Sandbox Task 已接线 |
 | OpenCode serve 持久 provider 模型调用 | 通过（本机模型探测） | 用户级 OpenCode 配置使用自定义 `fedgroup/gpt-6-luna` provider；本机 `opencode serve` 通过 SDK session/prompt 返回预期响应。Bearer 由本机启动脚本从 Codex 配置提取并仅注入进程环境，未写入仓库配置 | 不证明 Team Site production resolver/Binding 已配置；不构成真实 Sandbox UAT |
 | 经典团队真实 Sandbox UAT | 受阻 / 未运行 | 模型认证链已验证可用；当前阻塞是 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 未配置，以及 production closure、Sandbox evidence、Project Task Binding 与真实 Task 调度/恢复链未接线 | 配置可信 resolver 并完成 Studio 保存/重开、发布、Project 挂载、真实 Sandbox Task 成功与受控失败/重试、重启后查询及结果审核；Fake 或 CLI 探测不计入真实 UAT |
 
 **运行环境：** macOS，本机 Codex custom provider `gpt-6-luna` 与 OpenCode serve `fedgroup/gpt-6-luna`；未读取或提交任何凭据。\
-**变更范围：** 新增 Codex app-server 登录态隔离回归；更新本台账，区分历史登录状态观察与当前 UAT 阻塞。\
-**验证：** `node --test tests/codex-app-server.test.mjs`，2/2；`pnpm test`，871 项（含子测试）中 870 通过、0 失败、1 项 Windows-only 跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot`，退出码 0；`git diff --check` 通过。\
+**变更范围：** 新增 Codex app-server 登录态隔离回归，以及全部活动 classic Case 的 native v2 fixture/digest pre-cutover gate；更新本台账，区分登录态回归、历史状态观察与真实 UAT 阻塞。\
+**本轮聚焦验证：** `node --test tests/codex-app-server.test.mjs`，2/2；`node --test tests/team-ir-classic-case-v2-contract.test.mjs`，3/3；`git diff --check` 通过。此前全仓记录：`pnpm test` 871 项（含子测试）中 870 通过、0 失败、1 项 Windows-only 跳过；Team Site 串行 spec 回归 485 通过、0 失败、0 跳过。\
 **未覆盖与风险：** 真实 Sandbox UAT 仍未运行；production resolver、Sandbox evidence、Project Task Binding 与真实 Task 调度/恢复链未接线。阶段 1、2 仍部分通过，阶段 3、4 未完成，默认入口切换保持关闭。
+
+| 阶段 4：活动 classic Case 原生 v2 fixture pre-cutover gate | 通过（fixture/digest 窄合同） | `tests/team-ir-classic-case-v2-contract.test.mjs` 从 `apps/team-site/cases.mjs` 读取全部活动 Case，要求每个 Case 有对应 native v2 fixture；逐项验证 schemaVersion、Team IR identity、无阻断 schema 诊断，以及 semantic digest 和带 fixture closure 的 compiled plan digest 可重复。`node --test tests/team-ir-classic-case-v2-contract.test.mjs`，3/3 | 仅验证 fixture/schema/编译合同；不代表活动 Case 的真实发布、Project 挂载、Sandbox Task 执行及失败恢复 UAT 通过，默认入口切换仍关闭 |
 
 ### YYYY-MM-DD：阶段 / 任务标识
 
