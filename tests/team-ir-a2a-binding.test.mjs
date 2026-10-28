@@ -328,6 +328,22 @@ test("A2A cancellation requests remote cancellation and reports unconfirmed outc
   assert.ok(cancelCalls >= 1);
 });
 
+test("A2A cancellation uses a persisted remote task ID when the Binding process has restarted", async () => {
+  const cancelled = [];
+  const binding = createTeamA2ABinding({
+    expectedProtocolVersion: "1.0",
+    expectedAgentVersion: "2026-10-1",
+    client: {
+      async getAgentCard() { return card(); },
+      async sendMessage() { throw new Error("not expected"); },
+      async getTask() { throw new Error("not expected"); },
+      async cancelTask(taskId) { cancelled.push(taskId); return true; }
+    }
+  });
+  assert.equal(await binding.cancel({ ...invocation, remoteTaskId: "persisted-remote-task" }), true);
+  assert.deepEqual(cancelled, ["persisted-remote-task"]);
+});
+
 test("A2A Artifact delivery fails closed without authorized bytes or when media type changed", async () => {
   const make = (artifactReader) => createTeamA2ABinding({
     expectedProtocolVersion: "1.0",

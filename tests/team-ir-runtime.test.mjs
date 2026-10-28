@@ -326,6 +326,49 @@ test("A2A input-required durably pauses, cancels fanout siblings, rejects resume
   assert.equal(remoteCalls, 2);
 });
 
+test("a restarted Runtime cancels a persisted A2A input-required task and settles the Run", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-a2a-cancel-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const document = team();
+  document.bindings[0] = {
+    id: "binding:worker", kind: "a2a", agentCardRef: "https://agents.example/reviewer/card.json",
+    attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  };
+  const plan = compileTeamIr(document);
+  const clock = { now: () => 100, sleep: () => new Promise(() => {}) };
+  const firstStore = new FileTeamRunStore(root);
+  const firstRuntime = new TeamRuntime({
+    store: firstStore,
+    clock,
+    bindings: { "binding:worker": { async invoke() {
+      return { kind: "input-required", remoteTaskId: "remote-persisted-1", messageParts: [{ text: "Need a scope" }] };
+    } } }
+  });
+  await firstRuntime.createRun(plan, { runId: "a2a-cancel-restart", task: "Review", input: { prompt: "review this" } });
+  const paused = await firstRuntime.executeRun(plan, "a2a-cancel-restart");
+  assert.equal(paused.status, "paused_input_required");
+
+  let cancelledTaskId;
+  const restarted = new TeamRuntime({
+    store: new FileTeamRunStore(root),
+    clock,
+    bindings: { "binding:worker": {
+      async invoke() { throw new Error("paused invocation must not replay"); },
+      async cancel(invocation) {
+        cancelledTaskId = invocation.remoteTaskId;
+        assert.equal(invocation.idempotencyKey, "a2a-cancel-restart:start");
+        return true;
+      }
+    } }
+  });
+  const cancelled = await restarted.cancel("a2a-cancel-restart");
+  assert.equal(cancelledTaskId, "remote-persisted-1");
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.invocations["a2a-cancel-restart:start"].status, "cancelled");
+  assert.equal(cancelled.invocations["a2a-cancel-restart:start"].outcomeUnknown, false);
+  assert.equal(cancelled.events.filter((event) => event.type === "run.cancelled").length, 1);
+});
+
 test("timeout starts failure intent; cancellation and failure settle only their winning intent", async () => {
   const { runtime } = setup({ async invoke() { return new Promise(() => {}); } });
   const plan = compileTeamIr(team());

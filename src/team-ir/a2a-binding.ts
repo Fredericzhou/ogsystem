@@ -243,10 +243,15 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
     },
     async cancel(invocation: TeamBindingInvocation): Promise<boolean> {
       const control = controls.get(invocation.idempotencyKey);
-      if (!control) return false;
+      if (!control) {
+        return typeof invocation.remoteTaskId === "string" && invocation.remoteTaskId.length > 0
+          ? options.client.cancelTask(invocation.remoteTaskId).catch(() => false)
+          : false;
+      }
       control.cancelled = true;
-      if (!control.taskId) return false;
-      return cancelRemoteTask(control, control.taskId);
+      const taskId = control.taskId ?? invocation.remoteTaskId;
+      if (!taskId) return false;
+      return cancelRemoteTask(control, taskId);
     }
   });
 }

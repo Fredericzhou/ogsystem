@@ -39,6 +39,7 @@ export interface TeamBindingInvocation {
   input: unknown;
   artifactResolver?: TeamArtifactResolver;
   idempotencyKey: string;
+  remoteTaskId?: string;
 }
 
 export interface TeamBinding {
@@ -330,6 +331,8 @@ export class TeamRuntime {
   }
 
   async cancel(runId: string): Promise<TeamRunRecord> {
+    const before = await this.args.store.load(runId);
+    if (!before) throw new Error(`Unknown Team Run '${runId}'`);
     const record = await this.update(runId, (record) => {
       if (terminal.has(record.status) || record.status === "failing" || record.status === "cancelling") throw new TeamRunConflictError(`Cannot cancel Run in ${record.status}`);
       record.status = "cancelling";
@@ -338,25 +341,37 @@ export class TeamRuntime {
     });
     this.disarmRunJoinTimeouts(runId);
     for (const invocation of Object.values(record.invocations)) {
-      if (invocation.status !== "running") continue;
+      if (invocation.status !== "running" && invocation.status !== "input-required") continue;
       const binding = this.args.bindings[invocation.bindingId];
+      const remoteTaskId = invocation.output?.kind === "input-required" ? invocation.output.remoteTaskId : undefined;
       let confirmed = false;
       if (binding?.cancel) {
         try {
           confirmed = await binding.cancel({
             runId, handoffId: invocation.handoffId, agentId: invocation.agentId, bindingId: invocation.bindingId,
-            attempt: invocation.attempt, input: undefined, idempotencyKey: invocation.id
+            attempt: invocation.attempt, input: undefined, idempotencyKey: invocation.id, ...(remoteTaskId ? { remoteTaskId } : {})
           });
         } catch { confirmed = false; }
       }
+      if (confirmed) this.activeCancellationSignals.get(invocation.id)?.();
       await this.update(runId, (next) => {
         const current = next.invocations[invocation.id];
+        if (current.status !== "running" && current.status !== "input-required") return;
         current.status = "cancelled";
         current.outcomeUnknown = !confirmed;
-        event(next, `${invocation.id}:cancelled`, "invocation.cancelled", this.args.clock.now(), { outcomeUnknown: !confirmed });
+        if (remoteTaskId && next.pendingInput?.remoteTaskId === remoteTaskId) delete next.pendingInput;
+        event(next, `${invocation.id}:cancelled`, "invocation.cancelled", this.args.clock.now(), {
+          outcomeUnknown: !confirmed,
+          ...(remoteTaskId ? { remoteTaskId } : {})
+        });
       });
     }
-    return (await this.args.store.load(runId))!;
+    const current = (await this.args.store.load(runId))!;
+    if (before.status === "paused_input_required" && current.status === "cancelling"
+      && !Object.values(current.invocations).some((invocation) => invocation.status === "running")) {
+      return this.settle(runId);
+    }
+    return current;
   }
 
   async executeHandoff(plan: CompiledTeamPlan, runId: string, handoffId: string, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, options: { invocationId?: string; loopPrevious?: Record<string, unknown>; review?: { decision: "approve" | "reject"; feedback?: unknown }; artifactOverride?: Record<string, unknown> } = {}): Promise<TeamRunRecord> {
@@ -1435,6 +1450,7 @@ export class TeamRuntime {
 
   async settle(runId: string): Promise<TeamRunRecord> {
     const settled = await this.update(runId, (record) => {
+      if (terminal.has(record.status)) return;
       if (Object.values(record.invocations).some((invocation) => invocation.status === "running")) {
         throw new TeamRunConflictError("Cannot settle before active invocations have been closed");
       }

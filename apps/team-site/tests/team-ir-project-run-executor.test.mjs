@@ -173,6 +173,7 @@ test("Team IR Project Run executor rejects controls without a v2 runtime contrac
 test("Team IR Project Run query exposes an owner-scoped input-required request and no successful result", async (t) => {
   let siblingReject;
   let siblingCancelCount = 0;
+  let remoteCancelTaskId;
   const h = await makeHarness(t, {
     transformTeamIr(teamIR) {
       const binding = teamIR.bindings.find((item) => item.id === "binding:implementer");
@@ -188,7 +189,7 @@ test("Team IR Project Run query exposes an owner-scoped input-required request a
           while (!siblingReject) await new Promise((resolve) => setTimeout(resolve, 0));
           return { kind: "input-required", remoteTaskId: "remote-need-input", messageParts: [{ text: "Which API version?" }], requestedInputSchema: { type: "object", required: ["apiVersion"] } };
         },
-        async cancel() { return true; }
+        async cancel(invocation) { remoteCancelTaskId = invocation.remoteTaskId; return true; }
       },
       "binding:tester": {
         invoke() { return new Promise((_resolve, reject) => { siblingReject = reject; }); },
@@ -226,6 +227,14 @@ test("Team IR Project Run query exposes an owner-scoped input-required request a
     owner: { kind: "project_task", projectId: "project-1" }, taskId: "task-1", runId: "run-1"
   });
   assert.equal(hiddenResult, undefined);
+
+  const cancelled = await h.executor.control(h.project, {
+    runId: "run-1", taskId: "task-1", taskNumber: 1, attemptNumber: 1, teamVersionId: "team-v1", mode: "sandbox",
+    teamIrSemanticDigest: h.team.teamIrSemanticDigest, compiledPlanDigest: h.plan.compiledPlanDigest
+  }, "cancel");
+  assert.equal(remoteCancelTaskId, "remote-need-input");
+  assert.equal(cancelled.state.status, "cancelled");
+  assert.equal(cancelled.teamRun.pendingInput, undefined);
 });
 
 test("Team IR Project Run executor rejects incomplete closures and compiled digest drift before invoking Bindings", async (t) => {
