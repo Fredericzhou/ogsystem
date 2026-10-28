@@ -110,9 +110,25 @@ test("classic structured debate runs two Loop rounds through all_of Join, rebutt
   assert.equal(result.loopStates["debate-rounds"].rounds, 2);
   assert.equal(Object.values(result.invocations).filter((invocation) => invocation.agentId === "neutral-judge").length, 2);
   const persisted = await new FileTeamRunStore(join(root, "runs")).load("classic-debate");
-  assert.equal(persisted.scheduler.joinRounds["debate-positions:1"].status, "ready");
-  assert.deepEqual(persisted.scheduler.joinRounds["debate-positions:1"].merged.data, { proponentArgument: "pro-1", opponentArgument: "con-1" });
-  assert.equal(persisted.scheduler.joinRounds["debate-positions:2"].status, "ready");
+  const firstRound = persisted.scheduler.joinRounds["debate-positions:1"];
+  const secondRound = persisted.scheduler.joinRounds["debate-positions:2"];
+  assert.equal(firstRound.key, "debate-positions:classic-debate:run:1");
+  assert.equal(secondRound.key, "debate-positions:classic-debate:run:2");
+  assert.notEqual(firstRound.key, secondRound.key);
+  assert.equal(firstRound.status, "ready");
+  assert.equal(secondRound.status, "ready");
+  assert.deepEqual(firstRound.sourceStates, { "proponent-to-judge": "arrived", "opponent-to-judge": "arrived" });
+  assert.deepEqual(secondRound.sourceStates, { "proponent-to-judge": "arrived", "opponent-to-judge": "arrived" });
+  assert.deepEqual(firstRound.contributions, {
+    "proponent-to-judge": { data: { proponentArgument: "pro-1" }, artifacts: {} },
+    "opponent-to-judge": { data: { opponentArgument: "con-1" }, artifacts: {} }
+  });
+  assert.deepEqual(secondRound.contributions, {
+    "proponent-to-judge": { data: { proponentArgument: "pro-2" }, artifacts: {} },
+    "opponent-to-judge": { data: { opponentArgument: "con-2" }, artifacts: {} }
+  });
+  assert.deepEqual(firstRound.merged.data, { proponentArgument: "pro-1", opponentArgument: "con-1" });
+  assert.deepEqual(secondRound.merged.data, { proponentArgument: "pro-2", opponentArgument: "con-2" });
 });
 
 test("classic structured debate fails the Run when the Loop Join target fails", async (t) => {

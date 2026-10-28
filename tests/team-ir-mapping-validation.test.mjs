@@ -446,6 +446,14 @@ test("artifact mappings enforce required slots and media type compatibility", ()
   assert.ok(!codes(team).includes("IR_MAPPING_ARTIFACT_MEDIA_TYPE_INCOMPATIBLE"));
   delete team.handoffs[1].map.artifacts;
   assert.ok(validate(team).some((item) => item.code === "IR_MAPPING_REQUIRED_ARTIFACT_MISSING" && item.pointer === "/handoffs/1/map/artifacts/report"));
+
+  team.agents[0].outputPorts.DONE.artifactSlots.report.required = false;
+  team.handoffs[1].map.artifacts = { report: { "$ref": "$.output.artifacts.report" } };
+  assert.ok(validate(team).some((item) => item.code === "IR_MAPPING_OPTIONAL_TO_REQUIRED" && item.pointer === "/handoffs/1/map/artifacts/report"));
+
+  team.runResult.artifactSlots.report.required = false;
+  delete team.handoffs[1].map.artifacts;
+  assert.ok(!codes(team).includes("IR_MAPPING_REQUIRED_ARTIFACT_MISSING"));
 });
 
 test("Artifact mappings report unknown targets and non-Artifact sources at exact slots", () => {

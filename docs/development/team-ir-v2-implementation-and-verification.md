@@ -343,6 +343,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 本轮局部验证：`pnpm build`；`node --test tests/team-ir-runtime.test.mjs` 29/29；Result/File Run Store 测试 33/33；`node --test tests/team-ir-schema.test.mjs tests/team-ir-result-mode.test.mjs` 12/12；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；Runtime/Store/Schema/Review/Browser 综合聚焦套件 52/52。集成后 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0；`pnpm test`：857 tests，856 pass、0 fail、1 Windows-only skip，退出码 0。
 阶段结论：阶段 0 通过；阶段 1、2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受 resolver/模型认证条件阻塞。
 
+### 2026-10-28：Run Artifact 消费合同、双轮 Join 隔离与 Studio 结构投影
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 1：Run input/result Artifact 消费端 Schema | 通过（静态合同切片） | `schemas/team-ir-v2.schema.json` 新增 `acceptedArtifactSlots`，Run input 和 Run result 要求 `acceptedMediaTypes` 且拒绝 producer-only `mediaTypes`。`tests/team-ir-schema.test.mjs` 对两种消费端精确 pointer 正反例；`tests/team-ir-mapping-validation.test.mjs` 覆盖媒体兼容、不匹配、required 缺失、optional source→required target 拒绝及 optional target 正例。聚焦 Schema/Mapping/Runtime/Loop Join 回归 67/67 | 运行时 Artifact 媒体登记与跨存储事务不属于本静态切片；其他完整规范语义矩阵仍未闭合 |
+| 阶段 2：双轮 Loop Join 来源隔离 | 通过（单 Loop Run lineage 窄合同） | `tests/team-ir-loop-join-runtime.test.mjs` 对经典结构化辩论两轮断言 Join key 含 Run/lineage/round，各轮 sourceStates、contributions、merged data 只保留各自 pro/con 输出；Loop Join suite 6/6 | Runtime 仍限单 Run lineage 的受限串行拓扑；没有多个并发 lineage 的实现/证明，继续 fail closed |
+| 阶段 3：Team IR v2 结构图节点/边定位 | 通过（只读投影窄合同） | `apps/team-site/public/app/views/app.js` 从 Team IR 投影 Run、Agent、Run Result 节点及 Handoff 列表；点击定位到 Team/Agent/Handoff 表单或 Result 高级 JSON。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 在 1280px 验证节点和边定位、390px 验证无横溢与节点/边数量；浏览器 1/1 | 当前是只读结构投影，不支持自由布局事件桩连线、直接拖拽建边、自动映射及 Join/Loop/Review/Artifact 可视化编辑；这些仍是阶段 3 任务 |
+
+本轮聚焦验证：`pnpm build && node --test tests/team-ir-schema.test.mjs tests/team-ir-mapping-validation.test.mjs tests/team-ir-loop-join-runtime.test.mjs tests/team-ir-runtime.test.mjs`，67/67；Studio Playwright 专项 1/1；`git diff --check` 通过。集成后 `pnpm test`：858 tests，857 pass、0 fail、1 Windows-only skip，退出码 0；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=dot` 退出码 0（dot reporter 不提供精确计数）。
+阶段结论：阶段 0 通过；阶段 1、2 部分通过；阶段 3 进行中；阶段 4 进行中且默认切换关闭。真实 Sandbox UAT 仍受 resolver/模型认证条件阻塞。
+
 ### YYYY-MM-DD：阶段 / 任务标识
 
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |

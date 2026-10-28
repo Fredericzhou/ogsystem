@@ -51,7 +51,7 @@ test("Run input, result, and execution policy contracts accept complete shapes a
   };
   complete.runResult = {
     dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
-    artifactSlots: { report: { required: false, mediaTypes: ["text/markdown"], cardinality: "single" } }
+    artifactSlots: { report: { required: false, acceptedMediaTypes: ["text/markdown"], cardinality: "single" } }
   };
   complete.executionPolicy = { resultMode: "allow_empty", activeExecutionBudgetMs: 1 };
   assert.deepEqual(parseTeamIr(complete).diagnostics, []);
@@ -113,6 +113,27 @@ test("schema supports only single-cardinality declared artifact slots", () => {
   assert.deepEqual(validateTeamIrSchema(value), []);
   value.runInput.artifactSlots.brief.cardinality = "many";
   assert.ok(validateTeamIrSchema(value).some((item) => item.pointer === "/runInput/artifactSlots/brief/cardinality"));
+});
+
+test("Run input and result Artifact slots require consumer acceptedMediaTypes", () => {
+  for (const [contract, pointer] of [
+    ["runInput", "/runInput/artifactSlots/brief/acceptedMediaTypes"],
+    ["runResult", "/runResult/artifactSlots/report/acceptedMediaTypes"]
+  ]) {
+    const value = minimalTeam();
+    const slotId = contract === "runInput" ? "brief" : "report";
+    value[contract].artifactSlots = {
+      [slotId]: { required: true, mediaTypes: ["text/plain"], cardinality: "single" }
+    };
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
+      `Expected consumer Artifact slot to require acceptedMediaTypes at ${pointer}, got ${JSON.stringify(diagnostics)}`);
+
+    value[contract].artifactSlots[slotId] = {
+      required: true, acceptedMediaTypes: ["text/plain"], cardinality: "single"
+    };
+    assert.deepEqual(validateTeamIrSchema(value), []);
+  }
 });
 
 test("condition schema is closed and enforces operator argument arity", () => {

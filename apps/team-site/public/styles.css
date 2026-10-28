@@ -1663,6 +1663,21 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-workspace-nav a:hover { color: var(--text); }
 .studio-workspace-nav a[aria-current="page"] { border-color: var(--mint); color: var(--text); font-weight: 650; }
 .team-ir-editor { display: grid; gap: 16px; }
+.ir-structure-graph { background: var(--surface); border: 1px solid var(--line); min-width: 0; padding: 16px; }
+.ir-structure-graph > .panel-head { align-items: center; margin-bottom: 14px; }
+.ir-structure-graph h2 { font-size: 17px; margin: 3px 0 0; }
+.ir-graph-nodes { align-items: stretch; display: flex; flex-wrap: wrap; gap: 10px; }
+.ir-graph-node { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--blue); color: var(--ink); cursor: pointer; display: grid; gap: 5px; min-height: 68px; min-width: min(190px, 100%); padding: 10px 12px; text-align: left; }
+.ir-graph-node.run { border-left-color: #238251; }
+.ir-graph-node.result { border-left-color: var(--coral); }
+.ir-graph-node span { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.ir-graph-node small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.ir-graph-node:focus-visible, .ir-graph-edge:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.ir-graph-edges { border-left: 1px solid var(--line); display: grid; gap: 6px; margin: 12px 0 0 20px; padding-left: 14px; }
+.ir-graph-edge { align-items: center; background: var(--canvas); border: 1px solid var(--line); color: var(--ink); cursor: pointer; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; max-width: 100%; min-height: 38px; padding: 7px 10px; text-align: left; }
+.ir-graph-edge code { color: var(--muted); overflow-wrap: anywhere; }
+.ir-graph-edge span { overflow-wrap: anywhere; }
+.ir-graph-edge b { color: var(--coral); padding: 0 4px; }
 .team-ir-editor .project-panel, .ir-editor-section { min-width: 0; }
 .ir-editor-section { border-bottom: 1px solid var(--line); padding-bottom: 16px; }
 .ir-editor-section > .panel-head { align-items: center; display: flex; justify-content: space-between; gap: 12px; }
@@ -1675,6 +1690,13 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .ir-form-grid label.full { grid-column: 1 / -1; }
 .ir-form-grid input, .team-ir-editor > .project-panel input { max-width: 100%; min-width: 0; }
 .team-ir-editor code[data-team-ir-digest] { max-width: 100%; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .ir-structure-graph { padding: 12px; }
+  .ir-structure-graph > .panel-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .ir-graph-nodes { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .ir-graph-node { min-width: 0; width: 100%; }
+  .ir-graph-edges { margin-left: 8px; padding-left: 9px; }
+}
 .ir-advanced-contracts { display: grid; gap: 10px; min-width: 0; }
 .ir-advanced-contracts > summary { cursor: pointer; font-size: 15px; font-weight: 650; }
 .ir-advanced-contracts > label { display: grid; gap: 6px; min-width: 0; }

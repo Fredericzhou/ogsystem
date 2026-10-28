@@ -66,6 +66,16 @@
       "propertyNames": { "$ref": "#/$defs/id" },
       "additionalProperties": { "$ref": "#/$defs/artifactSlot" }
     },
+    "acceptedArtifactSlots": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": {
+        "allOf": [
+          { "$ref": "#/$defs/artifactSlot" },
+          { "required": ["acceptedMediaTypes"], "not": { "required": ["mediaTypes"] } }
+        ]
+      }
+    },
     "runInput": {
       "type": "object",
       "additionalProperties": false,
@@ -73,7 +83,7 @@
       "properties": {
         "dataSchema": { "$ref": "#/$defs/dataSchema" },
         "preferencesSchema": { "$ref": "#/$defs/dataSchema" },
-        "artifactSlots": { "$ref": "#/$defs/artifactSlots" }
+        "artifactSlots": { "$ref": "#/$defs/acceptedArtifactSlots" }
       }
     },
     "runResult": {
@@ -82,7 +92,7 @@
       "required": ["dataSchema", "artifactSlots"],
       "properties": {
         "dataSchema": { "$ref": "#/$defs/dataSchema" },
-        "artifactSlots": { "$ref": "#/$defs/artifactSlots" }
+        "artifactSlots": { "$ref": "#/$defs/acceptedArtifactSlots" }
       }
     },
     "port": {

@@ -260,8 +260,20 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(advancedReopened.teamIR.handoffs.find((handoff) => handoff.id === "exit").map.artifacts, advancedIr.handoffs.find((handoff) => handoff.id === "exit").map.artifacts);
     assert.deepEqual(advancedReopened.teamIR.handoffs, advancedIr.handoffs);
     assert.deepEqual(advancedReopened.teamIR.bindings, advancedIr.bindings);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator("[data-ir-graph-node=run]").click();
+    assert.equal(await page.locator('[name="team-id"]').evaluate((element) => document.activeElement === element), true);
+    await page.locator('[data-ir-graph-node="agent"][data-agent-id="writer"]').click();
+    assert.equal(await page.locator('[name="agent-0-id"]').evaluate((element) => document.activeElement === element), true);
+    await page.locator('[data-ir-graph-handoff="0"]').click();
+    assert.equal(await page.locator('[name="handoff-0-mapping"]').evaluate((element) => document.activeElement === element), true);
+    await page.locator("[data-ir-graph-node=result]").click();
+    assert.equal(await advancedEditor.evaluate((element) => document.activeElement === element), true);
+    await page.setViewportSize({ width: 390, height: 844 });
     const advancedLayout = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
-    assert.ok(advancedLayout.content <= advancedLayout.viewport + 1, `advanced contract editor overflows mobile viewport: ${JSON.stringify(advancedLayout)}`);
+    assert.ok(advancedLayout.content <= advancedLayout.viewport + 1, `advanced graph/editor overflows narrow viewport: ${JSON.stringify(advancedLayout)}`);
+    assert.equal(await page.locator("[data-ir-graph-node]").count(), advancedIr.agents.length + 2);
+    assert.ok(await page.locator("[data-ir-graph-handoff]").count() >= 2);
 
     const v2ReviewRouteCalls = [];
     await page.route("**/api/v1/projects/project-v2/tasks/task-v2/runs/run-v2/team-ir-reviews/review-draft", async (route) => {
