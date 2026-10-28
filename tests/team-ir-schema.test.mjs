@@ -100,17 +100,43 @@ test("execution budget must be a positive integer with a stable diagnostic point
 });
 
 test("endpoint schema rejects implicit endpoints and malformed agent ports", () => {
-  const value = minimalTeam();
-  value.handoffs[0].to = { kind: "agent", agentId: "worker" };
-  const diagnostics = validateTeamIrSchema(value);
-  assert.ok(diagnostics.length > 0);
-  assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/handoffs/0/to/inputPort"));
+  const invalidCases = [
+    {
+      pointer: "/handoffs/0/to/inputPort",
+      mutate: (value) => { value.handoffs[0].to = { kind: "agent", agentId: "worker" }; }
+    },
+    {
+      pointer: "/handoffs/1/from/outputPort",
+      mutate: (value) => { delete value.handoffs[1].from.outputPort; }
+    },
+    {
+      pointer: "/handoffs/0/to/agentId",
+      mutate: (value) => { delete value.handoffs[0].to.agentId; }
+    },
+    {
+      pointer: "/handoffs/1/from/extra",
+      mutate: (value) => { value.handoffs[1].from.extra = true; }
+    },
+    {
+      pointer: "/handoffs/0/to/extra",
+      mutate: (value) => { value.handoffs[0].to.extra = true; }
+    }
+  ];
+
+  for (const { pointer, mutate } of invalidCases) {
+    const value = minimalTeam();
+    mutate(value);
+    const diagnostics = validateTeamIrSchema(value);
+    assert.ok(diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === pointer),
+      `Expected an exact endpoint diagnostic at ${pointer}, got ${JSON.stringify(diagnostics)}`);
+  }
 });
 
 test("Handoff endpoint kinds and Run/Result endpoint fields are exact", () => {
   const invalidCases = [
     { pointer: "/handoffs/0/from/kind", mutate: (value) => { value.handoffs[0].from.kind = "result"; } },
     { pointer: "/handoffs/0/from/agentId", mutate: (value) => { value.handoffs[0].from.agentId = "worker"; } },
+    { pointer: "/handoffs/0/from/outputPort", mutate: (value) => { value.handoffs[0].from.outputPort = "DONE"; } },
     { pointer: "/handoffs/1/to/kind", mutate: (value) => { value.handoffs[1].to.kind = "run"; } },
     { pointer: "/handoffs/1/to/outputPort", mutate: (value) => { value.handoffs[1].to.outputPort = "DONE"; } },
     { pointer: "/handoffs/1/from/kind", mutate: (value) => { value.handoffs[1].from.kind = "run"; } }
