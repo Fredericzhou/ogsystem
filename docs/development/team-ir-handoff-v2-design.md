@@ -681,9 +681,8 @@ v2 端到端测试通过后，移除无 v2 调用方的旧 `FlowContractFile`、
 `SystemDesignDocument` 解析和旧编译路径，包括 `flow-contract.ts`、`semantic-ir-compiler.ts`。
 更新模板、示例、手册、CLI/API 合同和发布说明。不得加入迁移命令或兼容读取器。
 
-**完成标准：** 仓库只有一个作者模型和编译入口；生产路径以稳定诊断码拒绝旧 Team 配置且不覆盖旧文件；
-所有活动示例使用 v2。发布切换按版本级兼容矩阵验收，不要求源码删除、入口切换和示例替换集中在同一次
-合并或提交中。
+**完成标准：** 仓库只有一个作者模型和编译入口；最新版本只使用 v2 Team IR，不提供历史 Team/Run 读取兼容或数据迁移；
+不因初始化/发布覆盖无关文件。所有活动示例使用 v2。发布切换以最新版本的场景、API、Runtime 与浏览器验收为准。
 
 ## 10. 验收矩阵
 
@@ -697,8 +696,23 @@ v2 端到端测试通过后，移除无 v2 调用方的旧 `FlowContractFile`、
 | Runtime | 本地文本/结构化 handoff、条件 Run 入口、结果唯一次数/静默收敛/显式空结果策略/结果冲突、Artifact 来源/越权拒绝/受控产出登记、无效输入失败关闭、审核暂停/批准/拒绝/反馈校验/独立超时/活跃预算冻结、deadline、Binding 重试耗尽、错误归属、取消、checkpoint replay |
 | A2A | Agent Card、Task 创建/状态映射、input-required 持久暂停/请求信息暴露/不支持续接/取消、completed/failed/canceled、Artifact 映射、deadline、重复调用幂等 |
 | Studio | 事件桩连线、自动映射、缺项定位、Handoff 编辑、Join 汇总、Loop 端口、发布诊断、窄屏、保存重开 |
-| 数据边界 | 旧配置拒绝并给出重建提示；Team IR 创建/发布不改动 `.ogs/runs/`；无迁移副作用 |
+| 数据边界 | 最新版本只读写 v2；不兼容或读取旧 Team/Run 数据，不迁移数据；初始化/发布不覆盖无关路径 |
 | 发布 | 活动模板/示例/文档均使用 v2；编译器、API、Runtime、Team Site 和浏览器验收通过；`git diff --check` 通过 |
+
+### 10.1 最新经典团队真实运行集
+
+经典团队真实运行按 v2 语义覆盖组织，不限于当前三项旧案例。最新版本的经典团队集必须包含以下场景；可新增或重构案例以形成语义清楚、可重复运行的 Team IR v2 fixture。该集合不承诺兼容旧案例配置、历史 Team/Run 数据或旧身份；不提供数据迁移。旧数据可以不再被最新版本读取，验收只要求新版本创建和运行不执行隐式迁移或覆盖无关文件。
+
+| 经典团队场景 | 必须覆盖的真实运行语义 |
+| --- | --- |
+| 软件交付与证据团队 | 显式 Run/Agent 映射、并行 fan-out、required `all_of`、Run Artifact 输入、受控产出、下游 invocation allowlist、Artifact provenance、唯一 Result；注入一次 Binding 失败以验证 retry/deadline 和失败归属 |
+| 条件会签专家团队 | 条件路由、同一 source endpoint 的多候选 Handoff、required/optional `skipped`、`all_of` 零到达与必需缺席、`quorum_of` 早满足/不可达/迟到来源、Join timeout 与恢复 |
+| 结构化辩论团队 | 同 Scope/lineage 的 bounded Loop、上一轮唯一成功输出引用、Loop-scope Join、互斥出口、预算耗尽、Loop checkpoint 重启恢复 |
+| Maker-Checker 质量门团队 | Review 授权暂停、approve/reject feedback Schema、reject/revise Loop、同 Run 恢复、稳定幂等重放、Review timeout fail closed、等待不消耗 active budget、服务重启后待审与结果查询 |
+| 远程补件协作团队 | pinned A2A Agent Card、Message Parts/Artifact、Task 状态与幂等、`input-required` 持久暂停和取消、输入改变后创建新 Run；若无可用兼容远端，真实远端验收保持未通过，Fake Adapter 只证明合同 |
+| 阶段放行与结果团队 | `exclusive_priority` 与 `onNoMatch`、完整 PASS/REJECT 结果、`required`/`allow_empty`、并发结果冲突拒绝、活动分支失败收敛、checkpoint replay 和 digest drift fail closed |
+
+每个场景要同时有确定性 Fake Binding 语义断言和真实 Sandbox Project Task 运行证据。真实场景通过不抵消任何未通过的诊断、恢复或 API/Studio 合同测试。模型 marker、Fake Binding、Studio Simulation 或本地 `mode: sandbox` 标记不算真实 Sandbox 运行。若某场景依赖暂不支持的组合拓扑，应先实现并通过定向状态机/恢复测试；不得从 UAT 集合中删除或把 fail-closed 拒绝记为支持。
 
 ## 11. 固定默认值
 

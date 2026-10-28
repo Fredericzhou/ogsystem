@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 2,
+  "team": {
+    "id": "classic-artifact-evidence",
+    "version": "2.0.0"
+  },
+  "runInput": {
+    "dataSchema": {
+      "type": "object",
+      "properties": {
+        "request": { "type": "string", "minLength": 1 }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "preferencesSchema": { "type": "object", "additionalProperties": true },
+    "artifactSlots": {
+      "brief": {
+        "required": true,
+        "acceptedMediaTypes": ["text/markdown"],
+        "cardinality": "single"
+      }
+    }
+  },
+  "runResult": {
+    "dataSchema": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 }
+      },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "artifactSlots": {
+      "report": {
+        "required": true,
+        "acceptedMediaTypes": ["text/markdown"],
+        "cardinality": "single"
+      }
+    }
+  },
+  "executionPolicy": {
+    "resultMode": "required",
+    "activeExecutionBudgetMs": 300000
+  },
+  "agents": [
+    {
+      "id": "evidence-analyst",
+      "packageRef": "role:advanced-worker-a@1",
+      "bindingRef": "binding:evidence-analyst",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "request": { "type": "string" }
+            },
+            "required": ["request"],
+            "additionalProperties": false
+          },
+          "artifactSlots": {
+            "brief": {
+              "required": true,
+              "acceptedMediaTypes": ["text/markdown"],
+              "cardinality": "single"
+            }
+          }
+        },
+        "collect": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "request": { "type": "string" },
+              "analysis": { "type": "string" }
+            },
+            "required": ["request", "analysis"],
+            "additionalProperties": false
+          },
+          "artifactSlots": {
+            "draft": {
+              "required": true,
+              "acceptedMediaTypes": ["text/markdown"],
+              "cardinality": "single"
+            }
+          }
+        }
+      },
+      "outputPorts": {
+        "A_DONE": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "analysis": { "type": "string", "minLength": 1 }
+            },
+            "required": ["analysis"],
+            "additionalProperties": false
+          },
+          "artifactSlots": {
+            "draft": {
+              "required": true,
+              "mediaTypes": ["text/markdown"],
+              "cardinality": "single"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "evidence-editor",
+      "packageRef": "role:advanced-worker-b@1",
+      "bindingRef": "binding:evidence-editor",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "request": { "type": "string" },
+              "analysis": { "type": "string" }
+            },
+            "required": ["request", "analysis"],
+            "additionalProperties": false
+          },
+          "artifactSlots": {
+            "draft": {
+              "required": true,
+              "acceptedMediaTypes": ["text/markdown"],
+              "cardinality": "single"
+            }
+          }
+        }
+      },
+      "outputPorts": {
+        "B_DONE": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "summary": { "type": "string", "minLength": 1 }
+            },
+            "required": ["summary"],
+            "additionalProperties": false
+          },
+          "artifactSlots": {
+            "report": {
+              "required": true,
+              "mediaTypes": ["text/markdown"],
+              "cardinality": "single"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "handoffs": [
+    {
+      "id": "run-to-analyst",
+      "from": { "kind": "run" },
+      "to": { "kind": "agent", "agentId": "evidence-analyst", "inputPort": "default" },
+      "map": {
+        "data": { "request": { "$ref": "$.run.input.request" } },
+        "artifacts": { "brief": { "$ref": "$.run.attachments.brief" } }
+      },
+      "when": { "priority": 0 },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "analyst-to-editor",
+      "from": { "kind": "agent", "agentId": "evidence-analyst", "outputPort": "A_DONE" },
+      "to": { "kind": "agent", "agentId": "evidence-editor", "inputPort": "default" },
+      "map": {
+        "data": {
+          "request": { "$ref": "$.run.input.request" },
+          "analysis": { "$ref": "$.output.data.analysis" }
+        },
+        "artifacts": { "draft": { "$ref": "$.output.artifacts.draft" } }
+      },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "editor-to-result",
+      "from": { "kind": "agent", "agentId": "evidence-editor", "outputPort": "B_DONE" },
+      "to": { "kind": "result" },
+      "map": {
+        "data": { "summary": { "$ref": "$.output.data.summary" } },
+        "artifacts": { "report": { "$ref": "$.output.artifacts.report" } }
+      }
+    }
+  ],
+  "orchestration": {
+    "routes": [
+      {
+        "from": { "kind": "run" },
+        "mode": "exclusive_priority",
+        "onNoMatch": "fail",
+        "handoffIds": ["run-to-analyst"]
+      }
+    ],
+    "joins": [],
+    "loops": [],
+    "reviews": []
+  },
+  "bindings": [
+    {
+      "id": "binding:evidence-analyst",
+      "kind": "model",
+      "modelRef": "codex-gateway/gpt-6-luna",
+      "attemptTimeoutMs": 120000,
+      "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } }
+    },
+    {
+      "id": "binding:evidence-editor",
+      "kind": "model",
+      "modelRef": "codex-gateway/gpt-6-luna",
+      "attemptTimeoutMs": 120000,
+      "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } }
+    }
+  ]
+}

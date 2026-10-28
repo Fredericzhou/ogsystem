@@ -344,6 +344,38 @@ test("executeRun schedules the classic software Team through fanout, Join, and o
   assert.equal((await store.load("classic-run")).status, "completed");
 });
 
+test("classic software Team retries a transient planner failure before completing the joined Result", async () => {
+  const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
+  const plan = compileTeamIr(fixture);
+  const attempts = { planner: 0 };
+  const outputs = {
+    implementer: { event: "IMPLEMENTED", data: { changes: "Implemented the requested change." } },
+    tester: { event: "TESTED", data: { tests: "All checks passed." } },
+    lead: { event: "DELIVERED", data: { summary: "Implemented and verified." } }
+  };
+  const bindings = Object.fromEntries(Object.entries(outputs).map(([agentId, output]) => [
+    `binding:${agentId}`,
+    { async invoke() { return { kind: "completed", output }; } }
+  ]));
+  bindings["binding:planner"] = {
+    async invoke() {
+      attempts.planner += 1;
+      if (attempts.planner === 1) throw new TeamBindingError("temporary upstream error", "transport");
+      return { kind: "completed", output: { event: "PLAN", data: { plan: "Implement the request." } } };
+    }
+  };
+  const { runtime, store } = setup(bindings);
+  await runtime.createRun(plan, { runId: "classic-retry", task: "Implement a small change", input: { request: "Add a greeting endpoint" } });
+  const result = await runtime.executeRun(plan, "classic-retry");
+
+  assert.equal(result.status, "completed", JSON.stringify(result.events.filter((item) => item.type === "run.failing")));
+  assert.equal(result.invocations["classic-retry:run-to-planner"].attempt, 2);
+  assert.equal(attempts.planner, 2);
+  assert.deepEqual(result.result, { summary: "Implemented and verified." });
+  assert.equal(result.events.filter((item) => item.type === "run.result.written").length, 1);
+  assert.equal((await store.load("classic-retry")).status, "completed");
+});
+
 test("a cancellation intent that wins the Result CAS race prevents Result commit", async () => {
   const backing = new MemoryTeamRunStore();
   let reachedResultCommit;
@@ -640,6 +672,73 @@ test("FileTeamRunStore recovery arms a collecting Join with only its persisted r
   assert.equal(result.status, "failed");
   assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_TIMEOUT"), true);
   assert.equal(cancels.right, 1);
+});
+
+test("Join timeout confirmed during invocation publication prevents the Binding from starting", async () => {
+  for (const cancellationConfirmed of [true, false]) {
+    const runId = `join-timeout-publish-cancel-${cancellationConfirmed ? "confirmed" : "unconfirmed"}`;
+    const rightInvocationId = `${runId}:start-right`;
+    const backing = new MemoryTeamRunStore();
+    let reachedRunningCheckpoint;
+    const runningCheckpointReached = new Promise((resolve) => { reachedRunningCheckpoint = resolve; });
+    let releaseRunningCheckpoint;
+    const runningCheckpointGate = new Promise((resolve) => { releaseRunningCheckpoint = resolve; });
+    let checkpointPaused = false;
+    const store = {
+      create: (record) => backing.create(record),
+      load: (id) => backing.load(id),
+      async compareAndSet(id, revision, record) {
+        const committed = await backing.compareAndSet(id, revision, record);
+        if (committed && id === runId && !checkpointPaused
+          && record.invocations?.[rightInvocationId]?.status === "running"
+          && record.invocations[rightInvocationId].attempt === 0) {
+          checkpointPaused = true;
+          reachedRunningCheckpoint();
+          await runningCheckpointGate;
+        }
+        return committed;
+      }
+    };
+    const clock = fakeClock(100);
+    let rightCalls = 0;
+    let finishRight;
+    const rightResponse = new Promise((resolve) => { finishRight = resolve; });
+    let cancelRight;
+    const rightCancellationAttempted = new Promise((resolve) => { cancelRight = resolve; });
+    const cancels = { right: 0 };
+    const bindings = {
+      "binding:left": { async invoke() { return { kind: "completed", output: { event: "DONE", data: { value: "first", include: true } } }; } },
+      "binding:right": {
+        async invoke() { rightCalls += 1; return rightResponse; },
+        async cancel() { cancels.right += 1; cancelRight(); return cancellationConfirmed; }
+      },
+      "binding:joiner": { async invoke() { throw new Error("Join target must not run after timeout"); } }
+    };
+    const plan = compileTeamIr(joinTimeoutTeam("quorum_of"));
+    const runtime = new TeamRuntime({ store, clock, bindings });
+    await runtime.createRun(plan, { runId, task: "check", input: { prompt: "check" } });
+    const running = runtime.executeRun(plan, runId);
+    try {
+      await withinTimeout(runningCheckpointReached, "right running checkpoint publication");
+      assert.equal(rightCalls, 0, "the Binding has not started while its running checkpoint is being published");
+      clock.advanceTo(150);
+      await withinTimeout(rightCancellationAttempted, "cancellation attempt in the publication window");
+    } finally {
+      releaseRunningCheckpoint();
+    }
+
+    if (!cancellationConfirmed) {
+      await until(() => rightCalls === 1, "unconfirmed cancellation leaves the Binding active");
+      finishRight({ kind: "completed", output: { event: "DONE", data: { value: "late" } } });
+    }
+    const result = await withinTimeout(running, "Run settlement after publication-window cancellation");
+    assert.equal(result.status, "failed");
+    assert.equal(result.scheduler.joinRounds.quorum.failure.code, "JOIN_TIMEOUT");
+    assert.equal(result.invocations[rightInvocationId].status, "failed");
+    assert.equal(rightCalls, cancellationConfirmed ? 0 : 1,
+      cancellationConfirmed ? "confirmed cancellation before Binding start must not invoke it later" : "unconfirmed cancellation must not suppress an active Binding");
+    assert.equal(cancels.right, 1);
+  }
 });
 
 async function assertUnsupportedQuorumFailsBeforeBinding(teamValue, runId) {

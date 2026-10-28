@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 2,
+  "team": { "id": "classic-maker-checker", "version": "2.0.0" },
+  "runInput": {
+    "dataSchema": {
+      "type": "object",
+      "properties": { "prompt": { "type": "string", "minLength": 1 } },
+      "required": ["prompt"],
+      "additionalProperties": false
+    },
+    "preferencesSchema": { "type": "object", "additionalProperties": true },
+    "artifactSlots": {}
+  },
+  "runResult": {
+    "dataSchema": {
+      "type": "object",
+      "properties": { "answer": { "type": "string", "minLength": 1 } },
+      "required": ["answer"],
+      "additionalProperties": false
+    },
+    "artifactSlots": {}
+  },
+  "executionPolicy": { "resultMode": "required", "activeExecutionBudgetMs": 900000 },
+  "agents": [
+    {
+      "id": "maker",
+      "packageRef": "role:maker@1",
+      "bindingRef": "binding:maker",
+      "inputPorts": {
+        "draft": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "prompt": { "type": "string", "minLength": 1 } },
+            "required": ["prompt"],
+            "additionalProperties": false
+          }
+        },
+        "revise": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "answer": { "type": "string", "minLength": 1 },
+              "comments": { "type": "string", "minLength": 1 }
+            },
+            "required": ["answer"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "DONE": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "answer": { "type": "string", "minLength": 1 },
+              "again": { "type": "boolean" }
+            },
+            "required": ["answer", "again"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "handoffs": [
+    {
+      "id": "entry",
+      "from": { "kind": "run" },
+      "to": { "kind": "agent", "agentId": "maker", "inputPort": "draft" },
+      "map": { "data": { "prompt": { "$ref": "$.run.input.prompt" } } },
+      "when": { "priority": 0 },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "revise",
+      "from": { "kind": "agent", "agentId": "maker", "outputPort": "DONE" },
+      "to": { "kind": "agent", "agentId": "maker", "inputPort": "revise" },
+      "map": {
+        "data": {
+          "answer": { "$ref": "$.loop.previous.maker.output.data.answer" },
+          "comments": { "$ref": "$.review.feedback.comments" }
+        }
+      },
+      "when": {
+        "condition": {
+          "op": "equals",
+          "args": [{ "$ref": "$.review.decision" }, { "$literal": "reject" }]
+        },
+        "priority": 0
+      },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "exit",
+      "from": { "kind": "agent", "agentId": "maker", "outputPort": "DONE" },
+      "to": { "kind": "result" },
+      "map": { "data": { "answer": { "$ref": "$.output.data.answer" } } },
+      "when": {
+        "condition": {
+          "op": "equals",
+          "args": [{ "$ref": "$.review.decision" }, { "$literal": "approve" }]
+        },
+        "priority": 1
+      }
+    }
+  ],
+  "orchestration": {
+    "routes": [
+      { "from": { "kind": "run" }, "mode": "exclusive_priority", "onNoMatch": "fail", "handoffIds": ["entry"] },
+      { "from": { "kind": "agent", "agentId": "maker", "outputPort": "DONE" }, "mode": "exclusive_priority", "onNoMatch": "fail", "handoffIds": ["revise", "exit"] }
+    ],
+    "joins": [],
+    "loops": [
+      {
+        "id": "revision",
+        "members": ["maker"],
+        "boundaryAgentId": "maker",
+        "entryHandoffIds": ["entry"],
+        "continueHandoffIds": ["revise"],
+        "exitHandoffIds": ["exit"],
+        "maxRounds": 3,
+        "maxAgentActivations": 4,
+        "onExhausted": "finish"
+      }
+    ],
+    "reviews": [
+      {
+        "id": "maker-checker-review",
+        "at": { "kind": "agentOutput", "agentId": "maker", "outputPort": "DONE" },
+        "feedbackSchema": {
+          "type": "object",
+          "properties": { "comments": { "type": "string", "minLength": 1 } },
+          "required": ["comments"],
+          "additionalProperties": false
+        },
+        "timeoutMs": 10000,
+        "onTimeout": "fail"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "id": "binding:maker",
+      "kind": "model",
+      "modelRef": "sandbox/default",
+      "attemptTimeoutMs": 60000,
+      "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } }
+    }
+  ]
+}

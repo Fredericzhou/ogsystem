@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 2,
+  "team": { "id": "classic-conditional-signoff", "version": "2.0.0" },
+  "runInput": {
+    "dataSchema": {
+      "type": "object",
+      "properties": { "request": { "type": "string", "minLength": 1 } },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "preferencesSchema": { "type": "object", "additionalProperties": true },
+    "artifactSlots": {}
+  },
+  "runResult": {
+    "dataSchema": {
+      "type": "object",
+      "properties": { "summary": { "type": "string", "minLength": 1 } },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "artifactSlots": {}
+  },
+  "executionPolicy": { "resultMode": "required", "activeExecutionBudgetMs": 300000 },
+  "agents": [
+    {
+      "id": "primary-reviewer",
+      "packageRef": "role:primary-reviewer@1",
+      "bindingRef": "binding:primary-reviewer",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "request": { "type": "string" } },
+            "required": ["request"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "REVIEW": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "track": { "type": "string", "enum": ["standard", "clinical", "skip"] },
+              "comment": { "type": "string", "minLength": 1 }
+            },
+            "required": ["track", "comment"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "compliance-reviewer",
+      "packageRef": "role:compliance-reviewer@1",
+      "bindingRef": "binding:compliance-reviewer",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "request": { "type": "string" } },
+            "required": ["request"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "REVIEW": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "track": { "type": "string", "enum": ["standard", "clinical", "skip"] },
+              "comment": { "type": "string", "minLength": 1 }
+            },
+            "required": ["track", "comment"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "signoff-chair",
+      "packageRef": "role:signoff-chair@1",
+      "bindingRef": "binding:signoff-chair",
+      "inputPorts": {
+        "collect": {
+          "dataSchema": {
+            "type": "object",
+            "properties": {
+              "request": { "type": "string" },
+              "primaryComment": { "type": "string" },
+              "clinicalComment": { "type": "string" },
+              "complianceComment": { "type": "string" }
+            },
+            "required": ["request", "complianceComment"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "SIGNED_OFF": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "summary": { "type": "string", "minLength": 1 } },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "handoffs": [
+    {
+      "id": "run-to-primary",
+      "from": { "kind": "run" },
+      "to": { "kind": "agent", "agentId": "primary-reviewer", "inputPort": "default" },
+      "map": { "data": { "request": { "$ref": "$.run.input.request" } } },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "run-to-compliance",
+      "from": { "kind": "run" },
+      "to": { "kind": "agent", "agentId": "compliance-reviewer", "inputPort": "default" },
+      "map": { "data": { "request": { "$ref": "$.run.input.request" } } },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "primary-standard-signoff",
+      "from": { "kind": "agent", "agentId": "primary-reviewer", "outputPort": "REVIEW" },
+      "to": { "kind": "agent", "agentId": "signoff-chair", "inputPort": "collect" },
+      "map": { "data": { "primaryComment": { "$ref": "$.output.data.comment" } } },
+      "when": { "condition": { "op": "equals", "args": [{ "$ref": "$.output.data.track" }, { "$literal": "standard" }] }, "priority": 0 },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "primary-clinical-signoff",
+      "from": { "kind": "agent", "agentId": "primary-reviewer", "outputPort": "REVIEW" },
+      "to": { "kind": "agent", "agentId": "signoff-chair", "inputPort": "collect" },
+      "map": { "data": { "clinicalComment": { "$ref": "$.output.data.comment" } } },
+      "when": { "condition": { "op": "equals", "args": [{ "$ref": "$.output.data.track" }, { "$literal": "clinical" }] }, "priority": 1 },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "compliance-signoff",
+      "from": { "kind": "agent", "agentId": "compliance-reviewer", "outputPort": "REVIEW" },
+      "to": { "kind": "agent", "agentId": "signoff-chair", "inputPort": "collect" },
+      "map": { "data": { "complianceComment": { "$ref": "$.output.data.comment" } } },
+      "when": { "priority": 0 },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "signoff-result",
+      "from": { "kind": "agent", "agentId": "signoff-chair", "outputPort": "SIGNED_OFF" },
+      "to": { "kind": "result" },
+      "map": { "data": { "summary": { "$ref": "$.output.data.summary" } } }
+    }
+  ],
+  "orchestration": {
+    "routes": [
+      { "from": { "kind": "run" }, "mode": "parallel_fanout", "onNoMatch": "fail", "handoffIds": ["run-to-primary", "run-to-compliance"] },
+      { "from": { "kind": "agent", "agentId": "primary-reviewer", "outputPort": "REVIEW" }, "mode": "exclusive_priority", "onNoMatch": "finish", "handoffIds": ["primary-standard-signoff", "primary-clinical-signoff"] },
+      { "from": { "kind": "agent", "agentId": "compliance-reviewer", "outputPort": "REVIEW" }, "mode": "exclusive_priority", "onNoMatch": "finish", "handoffIds": ["compliance-signoff"] }
+    ],
+    "joins": [
+      { "id": "conditional-signoff", "agentId": "signoff-chair", "inputPort": "collect", "mode": "all_of", "handoffIds": ["primary-standard-signoff", "primary-clinical-signoff", "compliance-signoff"], "scope": { "kind": "run" }, "baseMapping": { "data": { "request": { "$ref": "$.run.input.request" } } }, "timeoutMs": 90000, "onTimeout": "fail" }
+    ],
+    "loops": [],
+    "reviews": []
+  },
+  "bindings": [
+    { "id": "binding:primary-reviewer", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 60000, "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } } },
+    { "id": "binding:compliance-reviewer", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 60000, "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } } },
+    { "id": "binding:signoff-chair", "kind": "model", "modelRef": "codex-gateway/gpt-6-luna", "attemptTimeoutMs": 60000, "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } } }
+  ]
+}

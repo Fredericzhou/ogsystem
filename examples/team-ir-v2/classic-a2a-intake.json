@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 2,
+  "team": { "id": "classic-a2a-intake", "version": "2.0.0" },
+  "runInput": {
+    "dataSchema": {
+      "type": "object",
+      "properties": { "request": { "type": "string", "minLength": 1 } },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "preferencesSchema": { "type": "object", "additionalProperties": true },
+    "artifactSlots": {}
+  },
+  "runResult": {
+    "dataSchema": {
+      "type": "object",
+      "properties": { "summary": { "type": "string", "minLength": 1 } },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "artifactSlots": {}
+  },
+  "executionPolicy": { "resultMode": "required", "activeExecutionBudgetMs": 180000 },
+  "agents": [
+    {
+      "id": "remote-intake",
+      "packageRef": "role:imported.agency.legal-client-intake@1.0.0",
+      "bindingRef": "binding:remote-intake",
+      "inputPorts": {
+        "default": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "request": { "type": "string", "minLength": 1 } },
+            "required": ["request"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "outputPorts": {
+        "INTAKE_COMPLETE": {
+          "dataSchema": {
+            "type": "object",
+            "properties": { "summary": { "type": "string", "minLength": 1 } },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "handoffs": [
+    {
+      "id": "run-to-remote-intake",
+      "from": { "kind": "run" },
+      "to": { "kind": "agent", "agentId": "remote-intake", "inputPort": "default" },
+      "map": { "data": { "request": { "$ref": "$.run.input.request" } } },
+      "when": { "priority": 0 },
+      "delivery": { "deadlineMs": 120000 }
+    },
+    {
+      "id": "intake-to-result",
+      "from": { "kind": "agent", "agentId": "remote-intake", "outputPort": "INTAKE_COMPLETE" },
+      "to": { "kind": "result" },
+      "map": { "data": { "summary": { "$ref": "$.output.data.summary" } } }
+    }
+  ],
+  "orchestration": {
+    "routes": [
+      {
+        "from": { "kind": "run" },
+        "mode": "exclusive_priority",
+        "onNoMatch": "fail",
+        "handoffIds": ["run-to-remote-intake"]
+      }
+    ],
+    "joins": [],
+    "loops": [],
+    "reviews": []
+  },
+  "bindings": [
+    {
+      "id": "binding:remote-intake",
+      "kind": "a2a",
+      "agentCardRef": "https://agents.example/intake/agent-card.json",
+      "attemptTimeoutMs": 90000,
+      "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } },
+      "capabilities": {
+        "inputMediaTypes": ["application/json"],
+        "outputMediaTypes": ["application/json"],
+        "protocolCapabilities": ["cancel"]
+      }
+    }
+  ]
+}

@@ -399,68 +399,76 @@ export class TeamRuntime {
     } catch (error) {
       return this.fail(runId, invocationId, "AGENT_INPUT_SCHEMA_INVALID");
     }
-    await this.update(runId, (record) => {
-      if (record.status !== "running") throw new TeamRunConflictError(`Cannot execute Handoff in ${record.status}`);
-      if (record.invocations[invocationId]) throw new TeamRunConflictError("Handoff invocation already exists");
-      record.invocations[invocationId] = { id: invocationId, handoffId, agentId, bindingId, status: "running", deadlineAt, attempt: 0 };
-      event(record, `${invocationId}:activated`, "handoff.activated", now, { deadlineAt });
-    });
-
-    for (let attempt = 1; attempt <= Number(retry.maxAttempts); attempt += 1) {
-      const attemptStartedAt = this.args.clock.now();
-      const left = deadlineAt - attemptStartedAt;
-      if (left <= 0) return this.fail(runId, invocationId, "HANDOFF_DEADLINE_EXCEEDED");
+    let cancellationRequested = false;
+    let rejectCancellation: ((error: TeamBindingError) => void) | undefined;
+    const cancellationError = () => new TeamBindingError("Binding cancelled after a sibling failure", "cancelled");
+    const requestCancellation = () => {
+      cancellationRequested = true;
+      rejectCancellation?.(cancellationError());
+    };
+    this.activeCancellationSignals.set(invocationId, requestCancellation);
+    try {
       await this.update(runId, (record) => {
-        const state = record.invocations[invocationId];
-        state.attempt = attempt;
-        state.activeAttemptStartedAt = attemptStartedAt;
-        event(record, `${invocationId}:attempt:${attempt}:started`, "binding.attempt.started", attemptStartedAt, { attempt });
+        if (record.status !== "running") throw new TeamRunConflictError(`Cannot execute Handoff in ${record.status}`);
+        if (record.invocations[invocationId]) throw new TeamRunConflictError("Handoff invocation already exists");
+        record.invocations[invocationId] = { id: invocationId, handoffId, agentId, bindingId, status: "running", deadlineAt, attempt: 0 };
+        event(record, `${invocationId}:activated`, "handoff.activated", now, { deadlineAt });
       });
-      let artifactResolver: TeamArtifactResolver | undefined;
-      try {
-        artifactResolver = Object.keys(mappedArtifacts).length
-          ? await this.args.artifactStore!.createInvocationResolver({
-            owner: { projectId: existing.projectId, runId }, allowedArtifacts: Object.values(mappedArtifacts)
-          })
-          : undefined;
-      } catch (error) {
-        const code = error instanceof TeamArtifactError ? error.code : "ARTIFACT_RESOLVER_UNAVAILABLE";
-        return this.fail(runId, invocationId, code);
-      }
-      const call = { runId, handoffId, agentId, bindingId, attempt, input: mapped, ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId };
-      let rejectCancelled!: (error: TeamBindingError) => void;
-      const cancellation = new Promise<never>((_resolve, reject) => { rejectCancelled = reject; });
-      this.activeCancellationSignals.set(invocationId, () => rejectCancelled(new TeamBindingError("Binding cancelled after a sibling failure", "cancelled")));
-      let result: TeamBindingResult;
-      try {
-        result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined), cancellation);
-      } catch (error) {
-        const finishedAt = this.args.clock.now();
-        const actualClass = error instanceof TeamBindingError ? error.failureClass : "transport";
-        const elapsed = Math.max(0, finishedAt - attemptStartedAt);
-        const current = (await this.args.store.load(runId))!;
-        const budgetExceeded = current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs;
+
+      for (let attempt = 1; attempt <= Number(retry.maxAttempts); attempt += 1) {
+        const attemptStartedAt = this.args.clock.now();
+        const left = deadlineAt - attemptStartedAt;
+        if (left <= 0) return this.fail(runId, invocationId, "HANDOFF_DEADLINE_EXCEEDED");
         await this.update(runId, (record) => {
-          record.activeExecutionMs += elapsed;
-          event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, { failureClass: actualClass, budgetExceeded });
+          const state = record.invocations[invocationId];
+          state.attempt = attempt;
+          state.activeAttemptStartedAt = attemptStartedAt;
+          event(record, `${invocationId}:attempt:${attempt}:started`, "binding.attempt.started", attemptStartedAt, { attempt });
         });
-        if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
-        const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
-        const failureIntentWon = (await this.args.store.load(runId))?.terminalIntent === "failed";
-        const canRetry = !failureIntentWon && attempt < Number(retry.maxAttempts) && retryable(retry, error)
-          && !(error instanceof TeamBindingError && (error.outcomeUnknown || error.failureClass === "cancelled"));
-        if (canRetry) {
-          const delay = retryDelayMs(retry.backoff as Record<string, unknown>, attempt - 1);
-          if (this.args.clock.now() + delay < deadlineAt) {
-            await this.args.clock.sleep(delay);
-            continue;
-          }
+        let artifactResolver: TeamArtifactResolver | undefined;
+        try {
+          artifactResolver = Object.keys(mappedArtifacts).length
+            ? await this.args.artifactStore!.createInvocationResolver({
+              owner: { projectId: existing.projectId, runId }, allowedArtifacts: Object.values(mappedArtifacts)
+            })
+            : undefined;
+        } catch (error) {
+          const code = error instanceof TeamArtifactError ? error.code : "ARTIFACT_RESOLVER_UNAVAILABLE";
+          return this.fail(runId, invocationId, code);
         }
-        if (this.args.clock.now() >= deadlineAt || timedOut) return this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
-        return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown);
-      } finally {
-        this.activeCancellationSignals.delete(invocationId);
-      }
+        const call = { runId, handoffId, agentId, bindingId, attempt, input: mapped, ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId };
+        const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+        void cancellation.catch(() => undefined);
+        if (cancellationRequested) requestCancellation();
+        let result: TeamBindingResult;
+        try {
+          if (cancellationRequested) throw cancellationError();
+          result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined), cancellation);
+        } catch (error) {
+          const finishedAt = this.args.clock.now();
+          const actualClass = error instanceof TeamBindingError ? error.failureClass : "transport";
+          const elapsed = Math.max(0, finishedAt - attemptStartedAt);
+          const current = (await this.args.store.load(runId))!;
+          const budgetExceeded = current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs;
+          await this.update(runId, (record) => {
+            record.activeExecutionMs += elapsed;
+            event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, { failureClass: actualClass, budgetExceeded });
+          });
+          if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
+          const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
+          const failureIntentWon = (await this.args.store.load(runId))?.terminalIntent === "failed";
+          const canRetry = !failureIntentWon && attempt < Number(retry.maxAttempts) && retryable(retry, error)
+            && !(error instanceof TeamBindingError && (error.outcomeUnknown || error.failureClass === "cancelled"));
+          if (canRetry) {
+            const delay = retryDelayMs(retry.backoff as Record<string, unknown>, attempt - 1);
+            if (this.args.clock.now() + delay < deadlineAt) {
+              await this.args.clock.sleep(delay);
+              continue;
+            }
+          }
+          if (this.args.clock.now() >= deadlineAt || timedOut) return this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
+          return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown);
+        }
         const finishedAt = this.args.clock.now();
         const afterBinding = await this.args.store.load(runId);
         if (afterBinding?.terminalIntent === "failed" || afterBinding?.status === "failing") {
@@ -539,8 +547,11 @@ export class TeamRuntime {
           record.activeExecutionMs += elapsed;
           event(record, `${invocationId}:completed`, record.status === "failing" ? "invocation.completed_after_failure_intent" : "handoff.completed", finishedAt, { event: result.output.event });
         });
+      }
+      return this.fail(runId, invocationId, "BINDING_RETRIES_EXHAUSTED");
+    } finally {
+      if (this.activeCancellationSignals.get(invocationId) === requestCancellation) this.activeCancellationSignals.delete(invocationId);
     }
-    return this.fail(runId, invocationId, "BINDING_RETRIES_EXHAUSTED");
   }
 
   async executeRun(plan: CompiledTeamPlan, runId: string): Promise<TeamRunRecord> {
@@ -1150,6 +1161,48 @@ export class TeamRuntime {
 
     const complete = await this.args.store.load(runId);
     if (!complete) throw new Error(`Unknown Team Run '${runId}'`);
+    if (loops.length === 0) {
+      for (const join of joinDefinitions) {
+        if (!isRecord(join.scope) || join.scope.kind !== "run") continue;
+        const joinId = String(join.id);
+        const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds.map(String) : [];
+        if (sourceIds.length === 0 || !sourceIds.every((id) => skippedHandoffs.has(id))) continue;
+        const targetAgent = plan.team.agents.find((agent) => agent.id === join.agentId) as Record<string, unknown> | undefined;
+        const targetPorts = isRecord(targetAgent?.inputPorts) ? targetAgent.inputPorts : {};
+        const targetPort = isRecord(targetPorts[String(join.inputPort)]) ? targetPorts[String(join.inputPort)] as Record<string, unknown> : {};
+        const requiredFields = isRecord(targetPort.dataSchema) && Array.isArray(targetPort.dataSchema.required) ? targetPort.dataSchema.required as string[] : [];
+        const targetArtifactSlots = isRecord(targetPort.artifactSlots) ? targetPort.artifactSlots as Record<string, Record<string, unknown>> : {};
+        const requiredArtifactSlots = Object.entries(targetArtifactSlots).filter(([, slot]) => slot.required === true).map(([slotId]) => slotId);
+        const requiredSourceIds = sourceIds.filter((id) => {
+          const edge = plan.handoffsById.get(id)!;
+          const map = isRecord(edge.map) ? edge.map : {};
+          const data = isRecord(map.data) ? map.data : {};
+          const artifacts = isRecord(map.artifacts) ? map.artifacts : {};
+          return Object.keys(data).some((field) => requiredFields.includes(field))
+            || Object.keys(artifacts).some((slotId) => requiredArtifactSlots.includes(slotId));
+        });
+        const baseMapping = isRecord(join.baseMapping) ? join.baseMapping : {};
+        let round = joinRounds.get(joinId) ?? createTeamJoinRound({
+          joinId, runId, lineage: "run", mode: String(join.mode) as "all_of" | "quorum_of",
+          handoffIds: sourceIds, threshold: typeof join.threshold === "number" ? join.threshold : undefined,
+          timeoutMs: Number(join.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
+          baseMapping: {
+            data: isRecord(baseMapping.data) ? evaluateTeamValueExpr(baseMapping.data, valueContext(runInput)) as Record<string, unknown> : {},
+            artifacts: isRecord(baseMapping.artifacts) ? evaluateTeamValueExpr(baseMapping.artifacts, valueContext(runInput)) as Record<string, unknown> : {}
+          }
+        });
+        const at = this.args.clock.now();
+        round = applyTeamJoinEvent(round, { type: "predecessor_activated", at });
+        for (const id of sourceIds) {
+          if (round.sourceStates[id] === "pending") round = applyTeamJoinEvent(round, { type: "skip", sourceId: id, at: this.args.clock.now() });
+        }
+        joinRounds.set(joinId, round);
+        await this.update(runId, (record) => {
+          record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [joinId]: structuredClone(round) };
+        });
+        if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${joinId}`, round.failure?.code ?? "JOIN_FAILED");
+      }
+    }
     if (!complete.pendingResult && (plan.team.executionPolicy as Record<string, unknown>).resultMode === "required") {
       return this.failScheduler(runId, `${runId}:scheduler`, "RUN_RESULT_REQUIRED");
     }

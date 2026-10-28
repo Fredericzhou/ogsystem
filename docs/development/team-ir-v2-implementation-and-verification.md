@@ -42,7 +42,7 @@
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 正例/反例 fixtures 覆盖设计方案全部阻断诊断；路径作用域与受支持 JSON Schema 子集明确 | 部分通过 |
 | 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 顺序、条件路由、fan-out、Join、Loop、结果、失败、恢复和 A2A 合同测试通过；不经旧编译器语义路径 | 部分通过（进行中） |
 | 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和语义 digest 一致；浏览器验收覆盖核心作者流程和窄屏 | 进行中 |
-| 4. 切换与清理 | CLI/API/Studio 默认入口、模板、示例、文档和旧配置拒绝行为 | 版本兼容矩阵通过；历史 Run 只读；活动示例均为 v2；无意外迁移或覆盖 | 进行中；默认切换仍关闭 |
+| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 最新版本干净 workspace 下创建、保存、发布、挂载、运行和查询通过；不要求历史数据读取兼容，不做数据迁移；无意外覆盖无关路径 | 进行中；默认切换仍关闭 |
 
 ### 阶段门
 
@@ -50,8 +50,8 @@
 - 阶段 1 未通过前，不开始依赖未冻结语义的 Studio 大规模实现；确需并行时记录风险和受影响合同。
 - 阶段 2 未通过前，不把 v2 场景描述为端到端可用。
 - 阶段 3 未通过前，不切换默认产品作者入口。
-- 阶段 4 未通过前，不宣称 v2 发布完成或旧配置断代完成。
-- 阶段间可以有经评审的并行工作，但不得跳过前置合同、验收证据或兼容矩阵。
+- 阶段 4 未通过前，不宣称最新 v2 发布完成。
+- 阶段间可以有经评审的并行工作，但不得跳过前置合同、验收证据或最新版本入口/API 合同矩阵。
 
 ## 4. 验证要求
 
@@ -61,7 +61,7 @@
 - **Runtime 状态机**：使用确定性 Fake Binding，不依赖真实模型、网络时序或不可控服务。断言终态、激活集合、Join 来源状态、结果写入次数、审计事件和 checkpoint 内容。
 - **恢复与幂等**：对关键状态边界注入中断，验证恢复不重复执行已提交副作用、不改变路由选择，并验证编译闭包变化时拒绝继续。
 - **Studio / API**：分别覆盖服务端合同与真实浏览器交互；保存后重载并比较规范化 IR、诊断和 digest。
-- **安全与历史数据**：验证 Artifact 越权读取失败、旧 Team 配置明确拒绝、历史 Run 查询不依赖当前项目定义且保持只读。
+- **版本边界**：验证最新版本只创建/读取 v2 Team IR，不迁移或覆盖无关数据；不要求读取旧 Team 配置或历史 Run。Artifact 授权仍须验证越权读取失败。
 - **完整回归**：阶段验收使用当时仓库定义的完整测试命令；记录精确命令、退出码、通过/失败/跳过数量和运行环境。若完整套件耗时或环境不适用，必须列出替代范围及未覆盖测试，不能称为完整通过。
 
 ### 本地 Team IR v2 Resolver 配置
@@ -81,9 +81,13 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 人工审核 | 审核暂停、授权决定、反馈映射、独立 timeout、活跃预算冻结 | 控制面/API 测试、Runtime 集成、浏览器审核流程 |
 | A2A 待补件 | `paused_input_required` 持久化、不支持续接、取消和新 Run 边界 | Fake A2A Agent 测试、状态/审计检查、API 验收 |
 | Team-as-a-Service | 仅在远程服务实际暴露兼容 A2A 合同时验证上层调用 | Agent Card 合同、Binding 集成测试；不得宣称 Team 自动发布能力 |
-| 经典团队真实运行 | 用 v2 原生 Team IR 重建一个有代表性的经典团队（优先软件研发），经 Studio 保存/重开、发布、项目挂载和 Task 启动，以真实 Sandbox Binding 完成一次端到端运行；校验多角色交接、并行/Join、结果和持久化归属 | 隔离环境运行记录、Team/Plan digest、模型与 Binding 标识、Project/Task/Run ID、角色与 Join 状态、结果/Artifact 摘要、重启后查询证据及人工结果检查清单 |
+| 最新经典团队真实运行集 | 完整场景定义见设计方案 §10.1；至少覆盖软件交付与 Artifact、条件会签与同端点候选 Handoff、结构化辩论 Loop、Maker-Checker Review/revise、远程 A2A 补件、阶段放行与结果策略。不限于当前三例，可新增场景 Team | 每个场景的隔离 Sandbox Project Task 记录、Team/Plan digest、模型与 Binding 标识、Project/Task/Run ID、关键角色/Join/Review/Loop/A2A/Artifact 状态、失败/重试或恢复证据、人工检查结论 |
 
 每个场景都需列出前置条件、输入、预期状态变化、预期终态、失败分支、证据链接和未覆盖范围。演示成功不能替代失败路径验收。
+
+#### 最新版本范围澄清（2026-10-28）
+
+最新版本按全新设计交付，不承诺读取或运行历史 Team 配置和历史 Run，不提供兼容层或迁移流程。历史 Run 查询和旧 API 兼容测试是既有证据记录，不再是阶段 4 的发布门槛；最新版本新建/发布流程不得主动迁移、改写或删除用户无关文件。阶段 4 只验最新格式入口和新 workspace 全链路。
 
 #### v2 语义覆盖追溯
 
@@ -437,17 +441,37 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 验收项 | 状态 | 实现与证据 | 剩余工作 |
 | --- | --- | --- | --- |
 | 阶段 1：Handoff endpoint oneOf 诊断矩阵 | 通过（窄矩阵） | 提交 `d90a8ca`；`tests/team-ir-schema.test.mjs` 覆盖缺失/未知 kind、Run/Result 跨分支字段、Agent source/target 必需字段及方向错误的精确 JSON Pointer；`pnpm build && node --test tests/team-ir-schema.test.mjs`，13/13 | 复杂 Schema 推理、其它完整字段组合和全部静态诊断追溯仍未闭合，阶段 1 部分通过 |
+| 阶段 1：公开 Schema resolver 诊断与 pointer 保真 | 通过（公开 validator 窄矩阵） | 提交 `83d1621`；`tests/team-ir-index.test.mjs` 从公开 `validateTeamIr` 入口覆盖 runInput preferences、runResult、Agent input/output、Review feedback 的嵌套 resolver 诊断，转义 `/`、`~` key、缺失资源、坏 pointer escape 及外部 Draft-07 dialect；`pnpm build && node --test tests/team-ir-index.test.mjs`，7/7 | 未穷举所有嵌套 Schema 构造和阻断 code 组合；阶段 1 仍部分通过 |
 | 阶段 1/2：依赖闭包漂移后恢复拒绝 | 通过（四类 digest 窄矩阵） | 提交 `1ec5535`；`tests/team-ir-runtime.test.mjs` 以新 FileTeamRunStore/Runtime 实例分别改变 package、Binding、adapter、Schema digest；均以 `compiledPlanDigest mismatch` 拒绝，持久记录不变且 Binding 调用数为 0；`pnpm build && node --test tests/team-ir-runtime.test.mjs`，35/35 | 尚无生产 resolver 真实依赖闭包及所有 checkpoint/漂移时序矩阵，阶段 1/2 保持部分通过 |
 | 阶段 2：多 all_of Join ready checkpoint 恢复 | 通过（no-Loop Run-scope 窄拓扑） | 提交 `f30776b`；FileTeamRunStore 在 Join ready CAS 落盘、目标 invocation 创建前注入崩溃，第二 Runtime 实例恢复两个 Join，不重跑来源 Binding，并各执行一次目标；Runtime 聚焦回归 34/34 | Loop/multi-Join、quorum/multi-Join、active target invocation 恢复及 Artifact 跨存储原子性仍未覆盖 |
+| 阶段 2：Artifact 登记后的完成 checkpoint 故障边界 | 通过（fail-closed 恢复合同） | 提交 `119e281`；分离 Binding invoke 与 Artifact resolver/Run completion checkpoint 错误边界；FileTeamRunStore 故障注入证明完成 CAS 失败不被误当成 Binding retry，跨实例恢复将结果未知 invocation fail closed，不重跑 Binding、不发布 Artifact ref/Run Result。`pnpm build && node --test tests/team-ir-runtime.test.mjs`，37/37 | 跨存储不具备事务；可能遗留随机 ID、未引用 blob/index 孤儿。本项不宣称物理回收或 exactly-once |
 | 阶段 3：Project Task Review 持久恢复与身份 | 部分通过（生产组合根合同） | 提交 `97be5a2`；从 Project-owned File Run/Review Store 和冻结 Plan 重建 Review context；同 Run/attempt 恢复、Task 状态投影、稳定 dispatch/idempotency 重放、loopback principal、TLS-only remote Basic 和不可信 body reviewerId 拒绝均有覆盖。聚焦 33/33；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`，493/493 | 无可信 resolver/evidence/Sandbox Binding，远程身份服务及真实 Review/Task UAT 未接线；Studio Review UI、跨主机锁语义未闭合 |
 | 阶段 4：活动 classic Case v2 fixture pre-cutover gate | 通过（fixture/digest 窄合同） | 提交 `b1fd9e7`；测试从活动 Case inventory 校验全部三个 native v2 fixture、无阻断诊断、semantic digest 和 compiled plan digest 稳定；3/3 | 只验证静态 fixture/编译合同；生产发布/挂载/Task 未通过，默认入口和活动模板切换仍关闭 |
 | Codex 自定义 provider 与登录态隔离 | 通过（本机探测和自动化窄合同） | 提交 `6cdcb81`；Codex custom provider 在 `codex login status` 未登录时，CLI `codex exec` 返回预期输出；fake app-server 的 `login/status` 返回错误时，模型发现和 `gpt-6-luna` turn 仍成功。OpenCode serve `fedgroup/gpt-6-luna` 经 SDK session/prompt 返回预期文本。未读取或提交凭据 | 模型调用可用不等于 Team IR Binding/Sandbox UAT；不应把 Codex login status 或 OpenCode CLI auth store 作为自定义 provider 可用性的判定条件 |
+| Codex/OpenCode 本机 provider 真实请求与配置 | 通过（本机模型连通性） | 2026-10-28：Codex CLI `CODEX_MODEL_OK`；独立 OpenCode CLI 读取 `~/.config/opencode/gpt6-luna-client.json` 返回 `OPENCODE_MODEL_OK`；本机 OpenCode serve SDK session/prompt 返回 `OPENCODE_SERVE_MODEL_OK`。修正 OpenCode 客户端配置为 `codex-gateway/gpt-6-luna` 的 provider 块，配置保留于用户目录且权限为 `0600`；服务健康检查带认证 `200`、未认证 `401`。命令和路径见 `docs/development/local-model-provider-setup.md` | 只证明模型服务可请求；不构成 resolver、Sandbox Binding、发布或 Project Task UAT |
+| 无用 provider 清理审计 | 完成（无安全删除项） | 只读审计确认 Codex/OpenCode 是实际执行及在线探测后端；Claude/Antigravity 仍在发现和选择合同中；OpenCode provider/model namespace 动态发现；`og-models/` 仍被测试与 Skill 示例引用 | 本轮不删除产品 provider、发现合同或 legacy fixtures；未发现本地 provider 配置以外的可安全清理项 |
 | 经典团队真实 Sandbox UAT readiness | 受阻 / 未运行 | 本机检查未发现 Sandbox Binding 实现/依赖；`OGS_TEAM_IR_V2_RESOLVER_MODULE` 未设置；Team Site 4173、OpenCode serve 4097 在监听，3000 未监听。三个活动 fixture 的 synthetic `role:software-*` packageRef 不存在于本地 `og-roles`。本地 `mode: sandbox` 只是运行选项，不能证明实际隔离；没有启动 Project Task 或将 CLI/model probe 记作 UAT | 需要受信任 resolver 提供固定 package/binding/schema digests、release evidence validator 和真实隔离 Sandbox Binding；为活动 Case 提供不可变角色包；之后从 Studio 保存/重开、真实 evidence、发布、挂载、Project Task 成功及受控失败/重试、服务重启后查询并人工审核 |
-| 阶段 3：v2 Review 响应丢失后的浏览器恢复 | 通过（UI 重放窄合同） | `apps/team-site/public/app/views/app.js` 对每个决定/反馈签名保留稳定 `idempotencyKey`；服务端错误后重复提交相同内容复用 key，内容变更则新建 key。成功后清除旧面板并刷新项目 Run/Task，已完成 Review 不再展示可操作表单。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 模拟服务端已提交 reject 但 503 响应丢失，断言重试 key 相同、未发送 reviewerId，成功后 panel 消失；`pnpm build && node --test apps/team-site/tests/team-ir-studio-browser.test.mjs apps/team-site/tests/team-ir-review-api.test.mjs`，11/11；`git diff --check` 通过 | 本轮未重跑 Team Site 全量套件；生产 resolver、真实 Sandbox UAT 与完整浏览器审核身份环境仍未完成 |
+| 阶段 3：v2 Review 响应丢失后的浏览器恢复 | 通过（UI 重放窄合同） | 提交 `fe7ce19`；`apps/team-site/public/app/views/app.js` 对每个决定/反馈签名保留稳定 `idempotencyKey`；错误后相同内容复用 key、内容变更产生新 key；成功后刷新 Run/Task，已完成 Review 不再显示表单。Playwright 模拟服务端已提交 reject 但 503 响应丢失，断言同 key 重试、请求不含 reviewerId、成功后 panel 消失；定向 11/11 | 真实 resolver、Sandbox UAT 和真实身份环境仍未完成；本次 UI/Fake route 测试不是生产审核 UAT |
 
 **本轮全量回归：** `pnpm test`，构建成功；859 个顶层测试、873 个含子测试项，872 通过、0 失败、1 项 Windows-only skip，退出码 0。Team Site 串行回归再次运行退出码 0；精确计数使用 agent 在同一代码提交基线记录的 493/493。`git diff --check` 待最终提交前执行。
 
 **当前阶段状态：** 阶段 0 通过；阶段 1、2 部分通过；阶段 3、4 进行中，默认入口切换关闭。真实 Sandbox UAT 因缺少可信 resolver、真实 Sandbox Binding/evidence 和匹配活动角色包而不可执行；不能据模型连通或 Fake/本地运行宣布发布完成。
+
+### 2026-10-28：最新经典团队集扩充与条件 Join 结算
+
+| 场景 | Fixture / 验收证据 | 覆盖结论与边界 |
+| --- | --- | --- |
+| 软件交付与 Artifact | `classic-software-team.json` + `tests/team-ir-runtime.test.mjs`（成功 fan-out/Join、单次结果及 planner transport 失败后第 2 次尝试成功）；`classic-artifact-evidence.json` + `tests/team-ir-classic-artifact-evidence.test.mjs` | Fake Runtime 覆盖场景级 retry、fan-out/Join/唯一结果，以及 Run Artifact grant、producer provenance、allowlist 拒绝、opaque Result ref。未在经典场景级注入 deadline timeout；Artifact 场景不覆盖生产上传 UI、Project Task 附件输入或 Sandbox 存储 |
+| 条件会签与同端点候选 Handoff | `classic-conditional-signoff.json` + `tests/team-ir-classic-conditional-signoff.test.mjs` | 覆盖同一 source endpoint 按 Handoff ID 记录 arrived/skipped、optional 字段省略、required source 拒绝及全跳过 `JOIN_NO_ARRIVALS`。全跳过路径此前落为 `RUN_RESULT_REQUIRED`，本轮补了 Join checkpoint/failure 收敛 |
+| 结构化辩论 Loop | 活动 Case `structured-debate` fixture + `tests/team-ir-loop-join-runtime.test.mjs`、`tests/team-ir-classic-case-v2-contract.test.mjs` | 有限范围的 Loop + all_of Join、多轮、互斥出口和恢复；不扩展为 Loop 内多 lineage/fan-out 或任意 Join 组合 |
+| Maker-Checker / revise | `classic-maker-checker.json` + `tests/team-ir-classic-maker-checker.test.mjs`、`tests/team-ir-runtime.test.mjs` | Fake File Run/Review Store 重建覆盖 reject -> revise -> approve 和已完成 Maker 不重跑；未证明生产身份服务、Task 审核 UI 或 Sandbox 重启 UAT |
+| A2A 待补件 | `classic-a2a-intake.json` + `tests/team-ir-classic-a2a-intake.test.mjs` | Stub A2A client 覆盖 pinned card 合同、持久 `input-required`、审计脱敏、拒绝同 Run 续接、新 Run 输入和活动远端 Task 取消；未连接真实远端 A2A 服务 |
+| 阶段门禁与结果策略 | `classic-release-gate.json` + `tests/team-ir-classic-release-gate.test.mjs` | 覆盖 PASS/REJECT 唯一路由、`required`/`allow_empty` 和并行 Result 的静态冲突拒绝；并发写冲突运行时竞态仍由通用 Runtime 证据覆盖，不在本 fixture 宣称通过 |
+| 场景级真实 Sandbox Project Task UAT | 六类场景的 v2 fixtures | 未运行。可信 resolver、真实 Sandbox Binding/evidence、缺失角色包和 Project Task Artifact 输入合同仍阻塞；Fake、Stub A2A、模型 CLI 请求及本地 `mode: sandbox` 不计作真实 UAT |
+
+**本轮实现：** `src/team-ir/runtime.ts` 在 Run-scope Join 的全部来源被条件跳过时，先持久化 Join round 并由 Join 状态机产生 `JOIN_NO_ARRIVALS`；`tests/team-ir-runtime.test.mjs` 另覆盖 invocation running checkpoint 发布期间的 timeout cancellation 闸门。修正 Conditional Signoff 独占路由 priority，并将 Release Gate 的 fake clock 改为不保留真实 timeout timer。
+
+**聚焦验证：** `pnpm build` 通过；`node --test tests/team-ir-runtime.test.mjs`，39/39；六个新增经典场景及活动 Case 聚焦回归，16/16；全仓 `pnpm test`，878 个顶层测试、892 含子测试，891 通过、0 失败、1 项 Windows 专项跳过；Team Site 串行 spec，493/493；`git diff --check` 通过。真实 Sandbox UAT 未运行，阶段 1、2 仍部分通过，阶段 3、4 仍未完成。
 
 ### YYYY-MM-DD：阶段 / 任务标识
 
