@@ -978,6 +978,12 @@ function teamIrJsonPointerRange(source, parts) {
 
 function teamIrBasicControl(form, ir, parts) {
   if (!parts?.length) return null;
+  const reflectValue = (target, value) => {
+    if (target && target.type !== "checkbox" && target.tagName !== "TEXTAREA") {
+      target.value = Array.isArray(value) ? value.join(", ") : value == null ? "" : String(value);
+    }
+    return target;
+  };
   const [root, indexText, section, member, detail] = parts;
   const index = Number(indexText);
   if (root === "team" && parts[1] === "id") return form.querySelector('[name="team-id"]');
@@ -1018,13 +1024,35 @@ function teamIrBasicControl(form, ir, parts) {
       if (member === "condition") return form.querySelector(`[name="handoff-${index}-condition-field"]`);
     }
   }
+  if (root === "orchestration" && Number.isInteger(Number(section))) {
+    const orchestrationIndex = Number(section);
+    if (indexText === "joins" && ir.orchestration?.joins?.[orchestrationIndex]) {
+      const fields = { id: "id", agentId: "agent", inputPort: "port", mode: "mode", threshold: "threshold", timeoutMs: "timeout", scope: "scope-kind", handoffIds: "handoffs" };
+      if (fields[member]) {
+        const value = member === "scope" ? ir.orchestration.joins[orchestrationIndex].scope?.kind : ir.orchestration.joins[orchestrationIndex][member];
+        return reflectValue(form.querySelector(`[name="join-${orchestrationIndex}-${fields[member]}"]`), value);
+      }
+      if (member === "scope" && detail === "loopId") return reflectValue(form.querySelector(`[name="join-${orchestrationIndex}-scope-loop"]`), ir.orchestration.joins[orchestrationIndex].scope?.loopId);
+    }
+    if (indexText === "loops" && ir.orchestration?.loops?.[orchestrationIndex]) {
+      const fields = { id: "id", boundaryAgentId: "boundary", members: "members", maxRounds: "rounds", maxAgentActivations: "activations", onExhausted: "exhausted", entryHandoffIds: "entry", continueHandoffIds: "continue", exitHandoffIds: "exit" };
+      if (fields[member]) return reflectValue(form.querySelector(`[name="loop-${orchestrationIndex}-${fields[member]}"]`), ir.orchestration.loops[orchestrationIndex][member]);
+    }
+    if (indexText === "reviews" && ir.orchestration?.reviews?.[orchestrationIndex]) {
+      const fields = { id: "id", at: "at", timeoutMs: "timeout", feedbackSchema: "feedback-schema", onTimeout: "timeout" };
+      if (fields[member] && member !== "at" && member !== "feedbackSchema") return reflectValue(form.querySelector(`[name="review-${orchestrationIndex}-${fields[member]}"]`), ir.orchestration.reviews[orchestrationIndex][member]);
+      if (member === "at" && ["agentId", "outputPort"].includes(detail)) {
+        return form.querySelector(`[name="review-${orchestrationIndex}-at"]`);
+      }
+    }
+  }
   return null;
 }
 
 function focusTeamIrDiagnostic(form, ir, pointer) {
   const revealTarget = (target) => {
     target.focus({ preventScroll: true });
-    target.select?.();
+    if (target.tagName === "TEXTAREA" || ["text", "search", "url", "tel", "password"].includes(target.type)) target.select?.();
     target.scrollIntoView({
       block: "center",
       behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"

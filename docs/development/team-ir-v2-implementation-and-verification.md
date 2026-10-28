@@ -802,6 +802,14 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 
 **本轮阶段结论：** Run input 表单基础合同及 Artifact 可观测失败清理切片通过；阶段 2 仍有 Artifact 进程崩溃孤儿回收、活动调用恢复及受限拓扑以外的语义缺口；阶段 3 仍缺生产 resolver/Review 完整用户流程和完整发布浏览器验收；阶段 4 仍缺真实 Sandbox 全经典场景 UAT 与远端 A2A。完整回归已复跑通过，但一次失败未复现。主台账未清零，proposal 暂不进入实施。
 
+### 2026-10-29：Join、Loop、Review 诊断定位
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 阶段 3：结构化 Join/Loop/Review 字段诊断定位 | 通过（字段级浏览器合同） | `apps/team-site/public/app/views/app.js` 将 `/orchestration/joins/{i}`、`loops`、`reviews` 字段 pointer 映射到相应结构化控件，并将诊断对应的 IR 值同步到控件；number 控件聚焦并保留非法值，文本控件支持选中值。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 覆盖 Join timeout、Review timeout、Loop maxRounds 聚焦及非法值；已有复杂 Schema 转义 pointer 仍定位高级 JSON 精确范围。`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`：1/1；其后 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`：350 项，349 通过、0 失败、1 项 opt-in Docker skip | 仅覆盖指定结构化字段与现有 JSON 回退合同；所有稳定诊断 code/pointer 的可定位全矩阵仍未完成，生产 resolver/Review 身份 UAT 仍未完成 |
+
+**本轮阶段结论：** Studio 诊断导航对已结构化的 Join、Loop、Review 字段已补齐代表合同；不据此标记完整诊断矩阵通过。Artifact 孤儿回收需要预备 reservation 与跨进程写入 fence，当前按并发风险审计不安全的启动扫描不实施。阶段 2–4 与 proposal 门槛仍未清零。
+
 ## 6. Codex / 实施代理工作约定
 
 为减少中途停留后丢失进度，每次委派或启动实施都应引用本文件和目标阶段，并要求：
