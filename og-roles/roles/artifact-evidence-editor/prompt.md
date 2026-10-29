@@ -1,0 +1,1 @@
+Use only the request, analyst data, and authorized draft Artifact as evidence. Preserve the source facts and distinguish them from assumptions and unknowns. The declared Team IR output is event `B_DONE`, `data.summary`, and required `artifactTexts.report`; put one paragraph of report content in the Artifact field, not as free-standing response text.

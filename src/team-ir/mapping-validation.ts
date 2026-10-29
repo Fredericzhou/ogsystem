@@ -542,13 +542,31 @@ function loopPreviousDominates(args: {
     return (source.kind === "agent" && typeof source.agentId === "string" && memberSet.has(source.agentId))
       || (target.kind === "agent" && typeof target.agentId === "string" && memberSet.has(target.agentId));
   }).map((candidate) => candidate.id));
-  if (joins.some((join) => {
+  const relatedJoins = joins.filter((join) => {
     const scope = isRecord(join.scope) ? join.scope : {};
     const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds : [];
     return scope.kind === "loop" && scope.loopId === loopId
       || (typeof join.agentId === "string" && memberSet.has(join.agentId))
       || sourceIds.some((id) => loopHandoffs.has(id));
-  })) return false;
+  });
+  let loopJoinTarget: string | undefined;
+  if (relatedJoins.length > 0) {
+    const source = isRecord(args.handoff.from) ? args.handoff.from : {};
+    const loopSourceJoin = relatedJoins.find((join) => {
+      const scope = isRecord(join.scope) ? join.scope : {};
+      const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds : [];
+      if (scope.kind !== "loop" || scope.loopId !== loopId) return false;
+      if (sourceIds.includes(handoffId) && source.kind === "agent" && source.agentId === args.anchorAgentId) return true;
+      if (args.baseMapping || source.kind !== "agent" || source.agentId !== join.agentId || join.mode !== "all_of") return false;
+      return sourceIds.filter((id) => {
+        const edge = handoffs.find((item) => item.id === id);
+        const from = edge && isRecord(edge.from) ? edge.from : {};
+        return from.kind === "agent" && from.agentId === args.anchorAgentId;
+      }).length === 1;
+    });
+    if (!loopSourceJoin) return false;
+    loopJoinTarget = typeof loopSourceJoin.agentId === "string" ? loopSourceJoin.agentId : undefined;
+  }
 
   const routes = records(orchestration.routes);
   for (const route of routes) {
@@ -560,7 +578,13 @@ function loopPreviousDominates(args: {
       const target = candidate && isRecord(candidate.to) ? candidate.to : {};
       return target.kind === "agent" && typeof target.agentId === "string" && memberSet.has(target.agentId);
     });
-    if (internalTargets.length > 1) return false;
+    if (internalTargets.length > 1 && joins.length === 0) return false;
+    const targetEndpoints = internalTargets.map((id) => {
+      const candidate = handoffs.find((item) => item.id === id);
+      const target = candidate && isRecord(candidate.to) ? candidate.to : {};
+      return target.kind === "agent" ? `${String(target.agentId)}:${String(target.inputPort)}` : "";
+    });
+    if (new Set(targetEndpoints).size !== targetEndpoints.length) return false;
   }
 
   const internalEdges: Array<{ from: string; to: string; conditional: boolean }> = [];
@@ -584,7 +608,8 @@ function loopPreviousDominates(args: {
   for (const id of continueIds) {
     const candidate = handoffs.find((item) => item.id === id);
     const source = candidate && isRecord(candidate.from) ? candidate.from : undefined;
-    if (source?.kind === "agent" && typeof source.agentId === "string" && reachesWithout(boundary, source.agentId, args.anchorAgentId, edges)) return false;
+    if (source?.kind === "agent" && typeof source.agentId === "string" && source.agentId !== loopJoinTarget
+      && reachesWithout(boundary, source.agentId, args.anchorAgentId, edges)) return false;
   }
   return true;
 }

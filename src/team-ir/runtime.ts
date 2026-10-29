@@ -11,9 +11,21 @@ import { TeamReviewRuntime, readTeamReviewContext, type TeamReviewRecord } from 
 export type TeamFailureClass = "transport" | "timeout" | "rate_limited" | "server_error" | "invalid_input" | "invalid_output" | "cancelled" | "policy";
 export type TeamBindingDiagnosticCode =
   | "OUTPUT_JSON_INVALID"
+  | "OUTPUT_JSON_EMPTY"
+  | "OUTPUT_JSON_MARKDOWN_FENCE"
+  | "OUTPUT_JSON_NON_OBJECT_TEXT"
+  | "OUTPUT_JSON_SYNTAX"
+  | "OUTPUT_PARTS_UNSUPPORTED"
+  | "OUTPUT_PARTS_UNEXPECTED_TOOL"
+  | "OUTPUT_PARTS_MULTIPLE_STRUCTURED"
+  | "OUTPUT_PARTS_INVALID_TEXT_SIDECAR"
+  | "OUTPUT_TEXT_MISSING"
   | "OUTPUT_ENVELOPE_INVALID"
   | "OUTPUT_FIELD_UNDECLARED"
   | "OUTPUT_DATA_SCHEMA_INVALID"
+  | "OUTPUT_DATA_TYPE_INVALID"
+  | "OUTPUT_DATA_REQUIRED"
+  | "OUTPUT_DATA_FIELD_UNDECLARED"
   | "OUTPUT_ARTIFACT_MAP_INVALID"
   | "OUTPUT_ARTIFACT_SLOT_INVALID"
   | "OUTPUT_ARTIFACT_TOO_LARGE"
@@ -25,7 +37,7 @@ export type TeamBindingResult =
 export class TeamBindingError extends Error {
   outcomeUnknown = false;
 
-  constructor(message: string, readonly failureClass: TeamFailureClass, readonly diagnosticCode?: TeamBindingDiagnosticCode) {
+  constructor(message: string, readonly failureClass: TeamFailureClass, readonly diagnosticCode?: TeamBindingDiagnosticCode, readonly diagnosticPointer?: string) {
     super(message);
     this.name = "TeamBindingError";
   }
@@ -41,6 +53,7 @@ export interface TeamBindingInvocation {
   artifactResolver?: TeamArtifactResolver;
   idempotencyKey: string;
   remoteTaskId?: string;
+  onRemoteTaskId?(remoteTaskId: string): Promise<void>;
 }
 
 export interface TeamBinding {
@@ -63,15 +76,18 @@ export interface TeamRunEvent {
 export interface TeamInvocationState {
   id: string;
   handoffId: string;
+  lineage?: string;
   agentId: string;
   bindingId: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled" | "input-required";
   deadlineAt: number;
   attempt: number;
+  remoteTaskId?: string;
   activeAttemptStartedAt?: number;
   output?: TeamBindingResult;
   error?: string;
   diagnosticCode?: TeamBindingDiagnosticCode;
+  diagnosticPointer?: string;
   outcomeUnknown?: boolean;
   artifactPublication?: {
     id: string;
@@ -154,9 +170,9 @@ function event(record: TeamRunRecord, id: string, type: string, now: number, dat
   record.events.push({ id, type, at: now, ...(data === undefined ? {} : { data }) });
 }
 
-function latestInvocationForHandoff(record: TeamRunRecord, handoffId: string): TeamInvocationState | undefined {
+function latestInvocationForHandoff(record: TeamRunRecord, handoffId: string, lineage?: string): TeamInvocationState | undefined {
   return Object.values(record.invocations)
-    .filter((invocation) => invocation.handoffId === handoffId)
+    .filter((invocation) => invocation.handoffId === handoffId && (lineage === undefined || (invocation.lineage ?? "run") === lineage))
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
     .at(-1);
 }
@@ -311,6 +327,38 @@ function sourceKey(source: Record<string, unknown>): string {
   return source.kind === "run" ? "run" : `agent:${String(source.agentId)}:${String(source.outputPort)}`;
 }
 
+const WORK_LINEAGE_SEPARATOR = "\u001f";
+
+function workKey(handoffId: string, lineage = "run"): string {
+  return lineage === "run" ? handoffId : `${lineage}${WORK_LINEAGE_SEPARATOR}${handoffId}`;
+}
+
+function workItem(value: string): { handoffId: string; lineage: string } {
+  const separator = value.lastIndexOf(WORK_LINEAGE_SEPARATOR);
+  return separator < 0
+    ? { handoffId: value, lineage: "run" }
+    : { handoffId: value.slice(separator + 1), lineage: value.slice(0, separator) };
+}
+
+function lineageSourceKey(source: Record<string, unknown>, lineage: string): string {
+  const endpoint = sourceKey(source);
+  return lineage === "run" ? endpoint : `${lineage}${WORK_LINEAGE_SEPARATOR}${endpoint}`;
+}
+
+function sourceLineage(key: string): { lineage: string; endpoint: string } {
+  const separator = key.lastIndexOf(WORK_LINEAGE_SEPARATOR);
+  return separator < 0 ? { lineage: "run", endpoint: key } : { lineage: key.slice(0, separator), endpoint: key.slice(separator + 1) };
+}
+
+function loopLineageKey(loopId: string, lineage: string): string {
+  return lineage === "run" ? loopId : `${loopId}${WORK_LINEAGE_SEPARATOR}${lineage}`;
+}
+
+function childLineage(lineage: string, handoffId: string): string {
+  const branch = `branch:${handoffId}`;
+  return lineage.endsWith(`/${branch}`) ? lineage : `${lineage}/${branch}`;
+}
+
 function valueContext(input: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: unknown, loopPrevious?: Record<string, unknown>, review?: { decision: "approve" | "reject"; feedback?: unknown }) {
   return {
     run: { task: input.task, input: input.input, preferences: input.preferences ?? {}, attachments: input.attachments ?? {} },
@@ -362,6 +410,9 @@ function retryable(policy: Record<string, unknown>, error: unknown): boolean {
 
 export class TeamRuntime {
   private readonly activeCancellationSignals = new Map<string, () => void>();
+  private readonly activeBindingCancellations = new Map<string, () => Promise<boolean | undefined>>();
+  private readonly activeInvocationSettled = new Map<string, Promise<void>>();
+  private readonly activeRunCancellations = new Map<string, Promise<TeamRunRecord>>();
   private readonly failureCancellationRuns = new Map<string, Promise<void>>();
   private readonly joinTimeoutWaiters = new Map<string, AbortController>();
 
@@ -435,6 +486,15 @@ export class TeamRuntime {
   }
 
   async cancel(runId: string): Promise<TeamRunRecord> {
+    const active = this.activeRunCancellations.get(runId);
+    if (active) return active;
+    const cancellation = this.cancelRun(runId);
+    this.activeRunCancellations.set(runId, cancellation);
+    try { return await cancellation; }
+    finally { if (this.activeRunCancellations.get(runId) === cancellation) this.activeRunCancellations.delete(runId); }
+  }
+
+  private async cancelRun(runId: string): Promise<TeamRunRecord> {
     const before = await this.args.store.load(runId);
     if (!before) throw new Error(`Unknown Team Run '${runId}'`);
     const record = await this.update(runId, (record) => {
@@ -447,9 +507,11 @@ export class TeamRuntime {
     for (const invocation of Object.values(record.invocations)) {
       if (invocation.status !== "running" && invocation.status !== "input-required") continue;
       const binding = this.args.bindings[invocation.bindingId];
-      const remoteTaskId = invocation.output?.kind === "input-required" ? invocation.output.remoteTaskId : undefined;
+      const remoteTaskId = invocation.remoteTaskId ?? (invocation.output?.kind === "input-required" ? invocation.output.remoteTaskId : undefined);
       let confirmed = false;
-      if (binding?.cancel) {
+      const activeCancel = this.activeBindingCancellations.get(invocation.id);
+      if (activeCancel) confirmed = (await activeCancel()) === true;
+      else if (binding?.cancel) {
         try {
           confirmed = await binding.cancel({
             runId, handoffId: invocation.handoffId, agentId: invocation.agentId, bindingId: invocation.bindingId,
@@ -457,7 +519,19 @@ export class TeamRuntime {
           });
         } catch { confirmed = false; }
       }
-      if (confirmed) this.activeCancellationSignals.get(invocation.id)?.();
+      const active = this.activeInvocationSettled.get(invocation.id);
+      if (confirmed) {
+        this.activeCancellationSignals.get(invocation.id)?.();
+        if (active) await active;
+      } else {
+        const remaining = Math.max(0, invocation.deadlineAt - this.args.clock.now());
+        if (active) {
+          const controller = new AbortController();
+          try { await Promise.race([active, this.args.clock.sleep(remaining, controller.signal)]); }
+          finally { controller.abort(); }
+        }
+        else if (remaining > 0) await this.args.clock.sleep(remaining);
+      }
       await this.update(runId, (next) => {
         const current = next.invocations[invocation.id];
         if (current.status !== "running" && current.status !== "input-required") return;
@@ -470,15 +544,68 @@ export class TeamRuntime {
         });
       });
     }
-    const current = (await this.args.store.load(runId))!;
-    if (before.status === "paused_input_required" && current.status === "cancelling"
-      && !Object.values(current.invocations).some((invocation) => invocation.status === "running")) {
-      return this.settle(runId);
-    }
-    return current;
+    await this.cancelWaitingReviews(runId);
+    let current = (await this.args.store.load(runId))!;
+    if (current.status !== "cancelling" || current.terminalIntent !== "cancelled") return current;
+    if (Object.values(current.invocations).some((invocation) => invocation.status === "running" || invocation.status === "input-required")) return current;
+    current = await this.recoverArtifactPublications(current);
+    return this.settle(runId);
   }
 
-  async executeHandoff(plan: CompiledTeamPlan, runId: string, handoffId: string, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, options: { invocationId?: string; loopPrevious?: Record<string, unknown>; review?: { decision: "approve" | "reject"; feedback?: unknown }; artifactOverride?: Record<string, unknown> } = {}): Promise<TeamRunRecord> {
+  private async cancelWaitingReviews(runId: string): Promise<void> {
+    if (!this.args.reviewRuntime) return;
+    const record = await this.args.store.load(runId);
+    const waiting = record?.waitingReviews ?? (record?.waitingReview ? [record.waitingReview] : []);
+    for (const item of waiting) {
+      try {
+        await this.args.reviewRuntime.cancel({ runId, reviewId: item.reviewId, lineage: item.lineage, loopRound: item.loopRound });
+      } catch { /* A concurrent decision is already durable and remains authoritative. */ }
+    }
+  }
+
+  private async recoverCancellation(runId: string): Promise<TeamRunRecord> {
+    const snapshot = await this.args.store.load(runId);
+    if (!snapshot || snapshot.status !== "cancelling" || snapshot.terminalIntent !== "cancelled") {
+      throw new TeamRunConflictError("TEAM_RUN_CANCELLATION_RECOVERY_UNAVAILABLE");
+    }
+    for (const invocation of Object.values(snapshot.invocations)) {
+      if (invocation.status !== "running" && invocation.status !== "input-required") continue;
+      const binding = this.args.bindings[invocation.bindingId];
+      const remoteTaskId = invocation.remoteTaskId ?? (invocation.output?.kind === "input-required" ? invocation.output.remoteTaskId : undefined);
+      let confirmed = false;
+      if (binding?.cancel) {
+        try {
+          confirmed = await binding.cancel({
+            runId, handoffId: invocation.handoffId, agentId: invocation.agentId, bindingId: invocation.bindingId,
+            attempt: invocation.attempt, input: undefined, idempotencyKey: invocation.id, ...(remoteTaskId ? { remoteTaskId } : {})
+          });
+        } catch { confirmed = false; }
+      }
+      if (!confirmed) {
+        const remaining = Math.max(0, invocation.deadlineAt - this.args.clock.now());
+        if (remaining > 0) await this.args.clock.sleep(remaining);
+      }
+      await this.update(runId, (record) => {
+        const current = record.invocations[invocation.id];
+        if (current.status !== "running" && current.status !== "input-required") return;
+        current.status = "cancelled";
+        current.outcomeUnknown = !confirmed;
+        if (remoteTaskId && record.pendingInput?.remoteTaskId === remoteTaskId) delete record.pendingInput;
+        event(record, `${invocation.id}:recovered-cancelled`, "invocation.cancelled_after_restart", this.args.clock.now(), {
+          outcomeUnknown: !confirmed,
+          ...(remoteTaskId ? { remoteTaskId } : {})
+        });
+      });
+    }
+    await this.cancelWaitingReviews(runId);
+    const closed = await this.args.store.load(runId);
+    if (!closed || closed.status !== "cancelling" || closed.terminalIntent !== "cancelled") return closed!;
+    if (Object.values(closed.invocations).some((invocation) => invocation.status === "running" || invocation.status === "input-required")) return closed;
+    await this.recoverArtifactPublications(closed);
+    return this.settle(runId);
+  }
+
+  async executeHandoff(plan: CompiledTeamPlan, runId: string, handoffId: string, runInput: { task: string; input: unknown; preferences?: unknown; attachments?: Record<string, unknown> }, output?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, options: { invocationId?: string; lineage?: string; loopPrevious?: Record<string, unknown>; review?: { decision: "approve" | "reject"; feedback?: unknown }; artifactOverride?: Record<string, unknown> } = {}): Promise<TeamRunRecord> {
     const handoff = plan.handoffsById.get(handoffId);
     if (!handoff || !isRecord(handoff.to) || handoff.to.kind !== "agent") throw new Error(`Unknown Agent Handoff '${handoffId}'`);
     const target = handoff.to;
@@ -530,6 +657,9 @@ export class TeamRuntime {
     }
     let cancellationRequested = false;
     let rejectCancellation: ((error: TeamBindingError) => void) | undefined;
+    let resolveInvocationSettled!: () => void;
+    const invocationSettled = new Promise<void>((resolve) => { resolveInvocationSettled = resolve; });
+    this.activeInvocationSettled.set(invocationId, invocationSettled);
     const cancellationError = () => new TeamBindingError("Binding cancelled after a sibling failure", "cancelled");
     const requestCancellation = () => {
       cancellationRequested = true;
@@ -540,7 +670,7 @@ export class TeamRuntime {
       await this.update(runId, (record) => {
         if (record.status !== "running") throw new TeamRunConflictError(`Cannot execute Handoff in ${record.status}`);
         if (record.invocations[invocationId]) throw new TeamRunConflictError("Handoff invocation already exists");
-        record.invocations[invocationId] = { id: invocationId, handoffId, agentId, bindingId, status: "running", deadlineAt, attempt: 0 };
+        record.invocations[invocationId] = { id: invocationId, handoffId, agentId, bindingId, status: "running", deadlineAt, attempt: 0, ...(options.lineage && options.lineage !== "run" ? { lineage: options.lineage } : {}) };
         event(record, `${invocationId}:activated`, "handoff.activated", now, { deadlineAt });
       });
 
@@ -565,18 +695,72 @@ export class TeamRuntime {
           const code = error instanceof TeamArtifactError ? error.code : "ARTIFACT_RESOLVER_UNAVAILABLE";
           return this.fail(runId, invocationId, code);
         }
-        const call = { runId, handoffId, agentId, bindingId, attempt, input: mapped, ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId };
+        const call = {
+          runId, handoffId, agentId, bindingId, attempt, input: mapped,
+          ...(artifactResolver ? { artifactResolver } : {}), idempotencyKey: invocationId,
+          onRemoteTaskId: async (remoteTaskId: string) => {
+            await this.update(runId, (record) => {
+              const state = record.invocations[invocationId];
+              if (!state || (state.remoteTaskId && state.remoteTaskId !== remoteTaskId)) {
+                throw new TeamRunConflictError("A2A invocation remote Task association changed");
+              }
+              if (state.remoteTaskId === remoteTaskId) return;
+              state.remoteTaskId = remoteTaskId;
+              event(record, `${invocationId}:remote-task:${attempt}`, "binding.remote_task.associated", this.args.clock.now(), { remoteTaskId });
+            });
+          }
+        };
+        let cancelPromise: Promise<boolean | undefined> | undefined;
+        const cancelBinding = () => {
+          if (!cancelPromise) cancelPromise = Promise.resolve()
+            .then(() => binding.cancel ? binding.cancel(call) : undefined)
+            .catch(() => false);
+          return cancelPromise;
+        };
+        this.activeBindingCancellations.set(invocationId, cancelBinding);
         const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
         void cancellation.catch(() => undefined);
         if (cancellationRequested) requestCancellation();
+        let bindingOutcomeSettled = false;
+        let lateAuditEnabled = false;
+        let lateAuditStarted = false;
+        let lateOutcomeKind: "completion" | "failure" | undefined;
+        const auditLateOutcome = () => {
+          if (!lateAuditEnabled || lateAuditStarted || !lateOutcomeKind) return;
+          lateAuditStarted = true;
+          void this.update(runId, (record) => {
+            const state = record.invocations[invocationId];
+            if (!state || state.status === "running") return;
+            const eventId = `${invocationId}:late-${lateOutcomeKind}-ignored`;
+            if (record.events.some((entry) => entry.id === eventId)) return;
+            event(record, eventId, `invocation.late_${lateOutcomeKind}_ignored`, this.args.clock.now(), {
+              reason: record.status === "paused_input_required" ? "input_required_sibling_cancel" : record.status
+            });
+          }).catch(() => undefined);
+        };
         let result: TeamBindingResult;
         try {
           if (cancellationRequested) throw cancellationError();
-          result = await this.withTimeout(binding.invoke(call), Math.min(attemptTimeoutMs, left), () => binding.cancel ? binding.cancel(call) : Promise.resolve(undefined), cancellation);
+          let rawBindingPromise: Promise<TeamBindingResult>;
+          try { rawBindingPromise = binding.invoke(call); }
+          catch (error) { rawBindingPromise = Promise.reject(error); }
+          const bindingPromise = Promise.resolve(rawBindingPromise).then((value) => {
+            bindingOutcomeSettled = true;
+            lateOutcomeKind = "completion";
+            auditLateOutcome();
+            return value;
+          }, (error: unknown) => {
+            bindingOutcomeSettled = true;
+            lateOutcomeKind = "failure";
+            auditLateOutcome();
+            throw error;
+          });
+          result = await this.withTimeout(bindingPromise, Math.min(attemptTimeoutMs, left), cancelBinding, cancellation);
         } catch (error) {
           const finishedAt = this.args.clock.now();
           const actualClass = error instanceof TeamBindingError ? error.failureClass : "transport";
           const diagnosticCode = error instanceof TeamBindingError ? error.diagnosticCode : undefined;
+          const diagnosticPointer = error instanceof TeamBindingError ? error.diagnosticPointer : undefined;
           const elapsed = Math.max(0, finishedAt - attemptStartedAt);
           const current = (await this.args.store.load(runId))!;
           const budgetExceeded = current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs;
@@ -585,13 +769,14 @@ export class TeamRuntime {
             event(record, `${invocationId}:attempt:${attempt}:failed`, "binding.attempt.failed", finishedAt, {
               failureClass: actualClass,
               ...(diagnosticCode ? { diagnosticCode } : {}),
+              ...(diagnosticPointer ? { diagnosticPointer } : {}),
               budgetExceeded
             });
           });
           if (budgetExceeded) return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
           const timedOut = error instanceof TeamBindingError && error.failureClass === "timeout";
           const failureIntentWon = (await this.args.store.load(runId))?.terminalIntent === "failed";
-          const canRetry = !failureIntentWon && attempt < Number(retry.maxAttempts) && retryable(retry, error)
+          const canRetry = !failureIntentWon && current.status === "running" && attempt < Number(retry.maxAttempts) && retryable(retry, error)
             && !(error instanceof TeamBindingError && (error.outcomeUnknown || error.failureClass === "cancelled"));
           if (canRetry) {
             const delay = retryDelayMs(retry.backoff as Record<string, unknown>, attempt - 1);
@@ -600,8 +785,13 @@ export class TeamRuntime {
               continue;
             }
           }
-          if (this.args.clock.now() >= deadlineAt || timedOut) return this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
-          return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown, diagnosticCode);
+          if (this.args.clock.now() >= deadlineAt || timedOut) {
+            const failed = await this.fail(runId, invocationId, this.args.clock.now() >= deadlineAt ? "HANDOFF_DEADLINE_EXCEEDED" : "BINDING_ATTEMPT_TIMEOUT", error instanceof TeamBindingError && error.outcomeUnknown);
+            lateAuditEnabled = !bindingOutcomeSettled && failed.status === "paused_input_required";
+            auditLateOutcome();
+            return failed;
+          }
+          return this.fail(runId, invocationId, `BINDING_${actualClass.toUpperCase()}`, error instanceof TeamBindingError && error.outcomeUnknown, diagnosticCode, diagnosticPointer);
         }
         const finishedAt = this.args.clock.now();
         const afterBinding = await this.args.store.load(runId);
@@ -616,13 +806,20 @@ export class TeamRuntime {
         }
         if (result.kind === "input-required") {
           return this.update(runId, (record) => {
-            if (record.terminalIntent === "failed" || record.status === "failing") return;
-            record.status = "paused_input_required";
-            record.pendingInput = { handoffId, agentId, bindingId, ...result };
-            record.invocations[invocationId].status = "input-required";
-            record.invocations[invocationId].output = result;
+            if (record.terminalIntent === "failed" || record.status === "failing" || terminal.has(record.status)) return;
+            const invocation = record.invocations[invocationId];
+            invocation.status = "input-required";
+            invocation.output = result;
             record.activeExecutionMs += Math.max(0, finishedAt - attemptStartedAt);
-            event(record, `${invocationId}:input-required`, "run.paused_input_required", finishedAt, { handoffId, remoteTaskId: result.remoteTaskId });
+            if (record.status === "running" && record.terminalIntent === undefined) {
+              record.status = "paused_input_required";
+              record.pendingInput = { handoffId, agentId, bindingId, ...result };
+              event(record, `${invocationId}:input-required`, "run.paused_input_required", finishedAt, { handoffId, remoteTaskId: result.remoteTaskId });
+            } else if (record.status === "paused_input_required") {
+              event(record, `${invocationId}:input-required-after-pause`, "invocation.input_required_after_pause", finishedAt, {
+                handoffId, remoteTaskId: result.remoteTaskId, pendingRemoteTaskId: record.pendingInput?.remoteTaskId
+              });
+            }
           });
         }
         try {
@@ -713,6 +910,11 @@ export class TeamRuntime {
           const state = record.invocations[invocationId];
           if (record.status === "paused_input_required" || record.status === "cancelling" || record.status === "cancelled"
             || state.status !== "running") {
+            if (record.status === "paused_input_required" && state.status === "running") {
+              state.status = "cancelled";
+              state.error = "INPUT_REQUIRED_SIBLING_CANCELLED";
+              state.outcomeUnknown = false;
+            }
             event(record, `${invocationId}:late-completion-ignored`, "invocation.late_completion_ignored", finishedAt, {
               runStatus: record.status,
               invocationStatus: state.status
@@ -748,7 +950,10 @@ export class TeamRuntime {
       }
       return this.fail(runId, invocationId, "BINDING_RETRIES_EXHAUSTED");
     } finally {
+      this.activeBindingCancellations.delete(invocationId);
       if (this.activeCancellationSignals.get(invocationId) === requestCancellation) this.activeCancellationSignals.delete(invocationId);
+      if (this.activeInvocationSettled.get(invocationId) === invocationSettled) this.activeInvocationSettled.delete(invocationId);
+      resolveInvocationSettled();
     }
   }
 
@@ -837,6 +1042,7 @@ export class TeamRuntime {
     if (initial.compiledPlanDigest !== plan.compiledPlanDigest) throw new TeamRunConflictError("compiledPlanDigest mismatch");
     initial = await this.recoverArtifactPublications(initial);
     if (terminal.has(initial.status)) return initial;
+    if (initial.status === "cancelling" && initial.terminalIntent === "cancelled") return this.recoverCancellation(runId);
     if (initial.status === "queued") await this.claim(runId, plan.compiledPlanDigest);
     else if (initial.status === "waiting_human_review") {
       const waitingReviews = initial.waitingReviews ?? (initial.waitingReview ? [initial.waitingReview] : []);
@@ -892,7 +1098,11 @@ export class TeamRuntime {
           const binding = this.args.bindings[invocation.bindingId];
           if (binding?.cancel) {
             try {
-              await binding.cancel({ runId, handoffId: invocation.handoffId, agentId: invocation.agentId, bindingId: invocation.bindingId, attempt: invocation.attempt, input: undefined, idempotencyKey: invocation.id });
+              await binding.cancel({
+                runId, handoffId: invocation.handoffId, agentId: invocation.agentId, bindingId: invocation.bindingId,
+                attempt: invocation.attempt, input: undefined, idempotencyKey: invocation.id,
+                ...(invocation.remoteTaskId ? { remoteTaskId: invocation.remoteTaskId } : {})
+              });
             } catch { /* Outcome remains unknown even if cancellation was attempted. */ }
           }
         }
@@ -952,7 +1162,20 @@ export class TeamRuntime {
       }
     }
 
-    if (loops.length > 1 || loops.some((loop) => {
+    const sequentialLoopTransition = loops.length === 2 && (() => {
+      const [first, second] = loops;
+      const firstMembers = new Set(Array.isArray(first.members) ? first.members.map(String) : []);
+      const secondMembers = new Set(Array.isArray(second.members) ? second.members.map(String) : []);
+      const secondEntryIds = Array.isArray(second.entryHandoffIds) ? second.entryHandoffIds.map(String) : [];
+      const firstExitIds = Array.isArray(first.exitHandoffIds) ? first.exitHandoffIds.map(String) : [];
+      if (secondEntryIds.length !== 1 || firstExitIds.length !== 1 || !firstMembers.size || !secondMembers.size) return false;
+      const entry = plan.handoffsById.get(secondEntryIds[0]);
+      return Boolean(entry && firstExitIds[0] === secondEntryIds[0] && isRecord(entry.from) && entry.from.kind === "agent"
+        && firstMembers.has(String(entry.from.agentId)) && String(entry.from.agentId) === String(first.boundaryAgentId)
+        && isRecord(entry.to) && entry.to.kind === "agent" && secondMembers.has(String(entry.to.agentId)));
+    })();
+    if (loops.length > 1 && (!sequentialLoopTransition || joinDefinitions.length > 0 || reviews.length > 0)
+      || loops.some((loop) => {
       const members = Array.isArray(loop.members) ? loop.members : [];
       const continueIds = Array.isArray(loop.continueHandoffIds) ? loop.continueHandoffIds : [];
       const entries = Array.isArray(loop.entryHandoffIds) ? loop.entryHandoffIds : [];
@@ -961,18 +1184,41 @@ export class TeamRuntime {
       const loopJoin = loopJoins.length === 1 ? loopJoins[0] : undefined;
       const loopJoinSources = Array.isArray(loopJoin?.handoffIds) ? loopJoin.handoffIds.map(String) : [];
       const joinTarget = loopJoin ? `${String(loopJoin.agentId)}:${String(loopJoin.inputPort)}` : undefined;
+      const boundaryFanouts = routes.filter((route) => isRecord(route.from) && route.from.kind === "agent"
+        && route.from.agentId === loop.boundaryAgentId && route.mode === "parallel_fanout");
+      const fanoutTargets = boundaryFanouts.length === 1 && Array.isArray(boundaryFanouts[0].handoffIds)
+        ? (boundaryFanouts[0].handoffIds as unknown[]).map((id) => plan.handoffsById.get(String(id)))
+        : [];
+      const fanoutTargetKeys = fanoutTargets.map((edge) => isRecord(edge?.to) && edge.to.kind === "agent"
+        ? `${String(edge.to.agentId)}:${String(edge.to.inputPort)}` : "");
+      const fanoutAgentIds = fanoutTargets.map((edge) => isRecord(edge?.to) && edge.to.kind === "agent" ? String(edge.to.agentId) : "");
+      const joinedBranchAgentIds = loopJoinSources.map((id) => {
+        const edge = plan.handoffsById.get(id);
+        return isRecord(edge?.from) && edge.from.kind === "agent" ? String(edge.from.agentId) : "";
+      });
+      const entryRoute = routes.find((route) => isRecord(route.from) && route.from.kind === "run"
+        && route.mode === "parallel_fanout" && Array.isArray(route.handoffIds)
+        && [...route.handoffIds].map(String).sort().join("\0") === [...entries].map(String).sort().join("\0"));
+      const entryTargets = entries.map((id) => plan.handoffsById.get(String(id)));
+      const supportedLoopEntries = entries.length === 1 || Boolean(entryRoute && entries.length > 1
+        && entryTargets.every((edge) => isRecord(edge?.to) && edge.to.kind === "agent"
+          && edge.to.agentId === loop.boundaryAgentId)
+        && new Set(entryTargets.map((edge) => isRecord(edge?.to) ? `${String(edge.to.agentId)}:${String(edge.to.inputPort)}` : "")).size === 1);
       const supportedLoopJoin = Boolean(loopJoin && joinDefinitions.length === 1 && (loopJoin.mode === "all_of" || loopJoin.mode === "quorum_of")
         && isRecord(loopJoin.scope) && loopJoin.scope.loopId === loop.id
         && members.includes(String(loopJoin.agentId)) && loopJoinSources.length > 0
+        && fanoutTargets.length > 1 && fanoutTargets.every((edge) => isRecord(edge?.to) && edge.to.kind === "agent" && members.includes(String(edge.to.agentId)))
+        && new Set(fanoutTargetKeys).size === fanoutTargetKeys.length
+        && new Set(fanoutAgentIds).size === fanoutAgentIds.length
+        && [...new Set(joinedBranchAgentIds)].sort().join("\0") === [...new Set(fanoutAgentIds)].sort().join("\0")
         && loopJoinSources.every((id) => {
           const source = plan.handoffsById.get(id);
           return source && isRecord(source.from) && source.from.kind === "agent" && members.includes(String(source.from.agentId))
             && isRecord(source.to) && source.to.kind === "agent" && `${String(source.to.agentId)}:${String(source.to.inputPort)}` === joinTarget;
         })
-        && ((plan.team.orchestration as Record<string, unknown>).routes as Record<string, unknown>[])
-          .filter((route) => isRecord(route.from) && route.from.kind === "agent" && route.from.agentId === loop.boundaryAgentId && route.mode === "parallel_fanout").length === 1);
+      );
       const edges = [...entries, ...continueIds, ...exits].map((id) => plan.handoffsById.get(String(id)));
-      return members.length < 1 || continueIds.length !== 1 || entries.length !== 1 || exits.length < 1
+      return members.length < 1 || continueIds.length !== 1 || !supportedLoopEntries || exits.length < 1
         || edges.some((edge) => !edge || (isRecord(edge.to) && edge.to.kind === "agent" && plan.joinsByTarget.has(`${String(edge.to.agentId)}:${String(edge.to.inputPort)}`)))
         || continueIds.some((id) => !plan.handoffsById.has(String(id)))
         || loopJoins.length > 0 && !supportedLoopJoin
@@ -1010,8 +1256,19 @@ export class TeamRuntime {
     const loopMembers = new Set(loop && Array.isArray(loop.members) ? loop.members.map(String) : []);
     const loopContinues = new Set(loop && Array.isArray(loop.continueHandoffIds) ? loop.continueHandoffIds.map(String) : []);
     const loopExits = new Set(loop && Array.isArray(loop.exitHandoffIds) ? loop.exitHandoffIds.map(String) : []);
-    const loopState = loopId ? (initial.loopStates[loopId] ?? { rounds: 0, agentActivations: 0, previousOutputs: {}, currentOutputs: {} }) : undefined;
-    if (loopId && !initial.loopStates[loopId]) await this.update(runId, (record) => { record.loopStates[loopId] = structuredClone(loopState!); });
+    const loopsByMember = new Map<string, Record<string, unknown>>();
+    for (const definition of loops) {
+      for (const member of Array.isArray(definition.members) ? definition.members : []) loopsByMember.set(String(member), definition);
+    }
+    const loopForAgent = (agentId: string): Record<string, unknown> | undefined => loopsByMember.get(agentId);
+    const loopStateFor = (record: TeamRunRecord, definition: Record<string, unknown>, lineage = "run") => record.loopStates[loopLineageKey(String(definition.id), lineage)];
+    const loopPreviousFor = (state: NonNullable<ReturnType<typeof loopStateFor>>) =>
+      Object.fromEntries(Object.entries(state.previousOutputs).map(([agentId, output]) => [agentId, { output }]));
+    const emptyLoopState = { rounds: 0, agentActivations: 0, previousOutputs: {}, currentOutputs: {} };
+    for (const definition of loops) {
+      const id = String(definition.id);
+      if (!initial.loopStates[id]) await this.update(runId, (record) => { record.loopStates[id] = structuredClone(emptyLoopState); });
+    }
 
     const runInput = initial.runInput;
     const sources = new Map<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>();
@@ -1022,14 +1279,34 @@ export class TeamRuntime {
     const reviewContexts = new Map(Object.entries(checkpoint?.reviewContexts ?? {}));
     const joinRounds = new Map(Object.entries(checkpoint?.joinRounds ?? {}));
     for (const [roundKey, round] of joinRounds) this.armJoinTimeout(runId, roundKey, round);
-    let pending = checkpoint ? [...checkpoint.pending] : selectTeamHandoffs(plan, { kind: "run" }, {}, runInput);
+    const initialPending = checkpoint ? [...checkpoint.pending] : selectTeamHandoffs(plan, { kind: "run" }, {}, runInput);
+    let pending = initialPending;
+    if (Object.keys(initial.invocations).length === 0) {
+      const targetGroups = new Map<string, string[]>();
+      for (const handoffId of initialPending) {
+        const edge = plan.handoffsById.get(handoffId);
+        const target = isRecord(edge?.to) ? edge.to : {};
+        if (target.kind !== "agent" || plan.joinsByTarget.has(`${String(target.agentId)}:${String(target.inputPort)}`)) continue;
+        const key = `${String(target.agentId)}:${String(target.inputPort)}`;
+        targetGroups.set(key, [...(targetGroups.get(key) ?? []), handoffId]);
+      }
+      pending = initialPending.map((handoffId) => {
+        const edge = plan.handoffsById.get(handoffId);
+        const target = isRecord(edge?.to) ? edge.to : {};
+        const key = `${String(target.agentId)}:${String(target.inputPort)}`;
+        return (targetGroups.get(key)?.length ?? 0) > 1 ? workKey(handoffId, childLineage("run", handoffId)) : handoffId;
+      });
+      if (pending.join("\0") !== initialPending.join("\0")) {
+        await this.update(runId, (record) => { record.scheduler!.pending = [...pending]; });
+      }
+    }
     const visited = new Map(Object.entries(checkpoint?.visited ?? {}));
     const quorumJoinSources = new Set(quorumJoins.flatMap((join) => Array.isArray(join.handoffIds) ? join.handoffIds.map(String) : []));
     const quorumTargetInvoked = new Set<string>();
     if (!checkpoint) await this.update(runId, (record) => {
       record.scheduler = { pending: [...pending], sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {}, reviewContexts: {}, joinRounds: {} };
     });
-    const startJoinForPredecessor = async (agentId: string): Promise<void> => {
+    const startJoinForPredecessor = async (agentId: string, lineage: string): Promise<void> => {
       for (const join of joinDefinitions) {
         if (!isRecord(join.scope)) continue;
         const runScoped = join.scope.kind === "run" && loops.length === 0;
@@ -1041,10 +1318,10 @@ export class TeamRuntime {
           return isRecord(edge?.from) && edge.from.kind === "agent" && edge.from.agentId === agentId;
         })) continue;
         const joinId = String(join.id);
-        const currentLoopState = loopScoped ? (await this.args.store.load(runId))?.loopStates[loopId!] : undefined;
+        const currentLoopState = loopScoped ? (await this.args.store.load(runId))?.loopStates[loopLineageKey(loopId!, lineage)] : undefined;
         if (loopScoped && !currentLoopState) return;
         const loopRound = loopScoped ? Math.max(1, currentLoopState!.rounds) : undefined;
-        const roundKey = loopRound === undefined ? joinId : `${joinId}:${loopRound}`;
+        const roundKey = loopRound === undefined ? joinId : lineage === "run" ? `${joinId}:${loopRound}` : `${joinId}:${lineage}:${loopRound}`;
         const targetAgent = plan.team.agents.find((agent) => agent.id === join.agentId) as Record<string, unknown> | undefined;
         const targetPorts = isRecord(targetAgent?.inputPorts) ? targetAgent.inputPorts : {};
         const targetPort = isRecord(targetPorts[String(join.inputPort)]) ? targetPorts[String(join.inputPort)] as Record<string, unknown> : {};
@@ -1067,7 +1344,7 @@ export class TeamRuntime {
         await this.update(runId, (record) => {
           const rounds = record.scheduler!.joinRounds ?? (record.scheduler!.joinRounds = {});
           let round = rounds[roundKey] ?? createTeamJoinRound({
-            joinId, runId, lineage: "run", ...(loopRound === undefined ? {} : { loopRound }), mode: String(join.mode) as "all_of" | "quorum_of",
+            joinId, runId, lineage, ...(loopRound === undefined ? {} : { loopRound }), mode: String(join.mode) as "all_of" | "quorum_of",
             handoffIds: sourceIds, threshold: typeof join.threshold === "number" ? join.threshold : undefined,
             timeoutMs: Number(join.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
             baseMapping: {
@@ -1083,56 +1360,72 @@ export class TeamRuntime {
         this.armJoinTimeout(runId, roundKey, persistedRound);
       }
     };
-    const executeEdge = async (handoffId: string, source?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, review?: { decision: "approve" | "reject"; feedback?: unknown }, artifactOverride?: Record<string, unknown>): Promise<TeamRunRecord> => {
+    const executeEdge = async (handoffId: string, lineage = "run", source?: { event: string; data: unknown; artifacts?: Record<string, unknown> }, inputOverride?: unknown, review?: { decision: "approve" | "reject"; feedback?: unknown }, artifactOverride?: Record<string, unknown>): Promise<TeamRunRecord> => {
       const handoff = plan.handoffsById.get(handoffId);
       const target = handoff && isRecord(handoff.to) ? handoff.to : undefined;
-      if (!target || target.kind !== "agent" || !loopId || !loopMembers.has(String(target.agentId))) {
-        if (target?.kind === "agent") await startJoinForPredecessor(String(target.agentId));
-        return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, { review, artifactOverride });
+      const targetLoop = target?.kind === "agent" ? loopForAgent(String(target.agentId)) : undefined;
+      if (!target || target.kind !== "agent" || !targetLoop) {
+        if (target?.kind === "agent") await startJoinForPredecessor(String(target.agentId), lineage);
+        return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, {
+          ...(lineage === "run" ? {} : { invocationId: `${runId}:${handoffId}:lineage:${lineage}` }),
+          lineage, review, artifactOverride
+        });
       }
       const current = (await this.args.store.load(runId))!;
-      const state = current.loopStates[loopId];
-      let invocationId = current.scheduler?.invocationIds[handoffId];
+      const targetLoopId = String(targetLoop.id);
+      const stateKey = loopLineageKey(targetLoopId, lineage);
+      const state = current.loopStates[stateKey] ?? emptyLoopState;
+      const activationKey = workKey(handoffId, lineage);
+      let invocationId = current.scheduler?.invocationIds[activationKey];
       if (!invocationId) {
-        if (state.agentActivations >= Number(loop.maxAgentActivations)) return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
+        if (state.agentActivations >= Number(targetLoop.maxAgentActivations)) return this.failScheduler(runId, `${runId}:loop:${targetLoopId}`, "LOOP_EXHAUSTED");
         const nextActivation = state.agentActivations + 1;
-        invocationId = `${runId}:${handoffId}:loop:${loopId}:activation:${nextActivation}`;
+        invocationId = `${runId}:${handoffId}:loop:${targetLoopId}:${lineage}:activation:${nextActivation}`;
+        if (lineage === "run") invocationId = `${runId}:${handoffId}:loop:${targetLoopId}:activation:${nextActivation}`;
         await this.update(runId, (record) => {
-          record.loopStates[loopId].agentActivations = nextActivation;
-          record.scheduler!.invocationIds[handoffId] = invocationId!;
-          event(record, `${runId}:loop:${loopId}:activation:${nextActivation}`, "loop.agent.activated", this.args.clock.now(), { agentId: target.agentId, handoffId });
+          record.loopStates[stateKey] ??= structuredClone(emptyLoopState);
+          record.loopStates[stateKey].agentActivations = nextActivation;
+          record.scheduler!.invocationIds[activationKey] = invocationId!;
+          event(record, `${runId}:loop:${targetLoopId}:${lineage}:activation:${nextActivation}`, "loop.agent.activated", this.args.clock.now(), { agentId: target.agentId, handoffId, lineage });
         });
       }
       const existingInvocation = current.invocations[invocationId];
       if (existingInvocation?.status === "completed") return current;
-      const latest = (await this.args.store.load(runId))!.loopStates[loopId];
-      const previous = Object.fromEntries(Object.entries(latest.previousOutputs).map(([agentId, output]) => [agentId, { output }]));
-      await startJoinForPredecessor(String(target.agentId));
+      const latest = (await this.args.store.load(runId))!.loopStates[stateKey] ?? emptyLoopState;
+      const previous = loopPreviousFor(latest);
+      await startJoinForPredecessor(String(target.agentId), lineage);
       return this.executeHandoff(plan, runId, handoffId, runInput, source, inputOverride, {
         invocationId,
+        lineage,
         loopPrevious: previous,
         review,
         artifactOverride
       });
     };
     let rounds = 0;
+    const schedulerBudget = plan.handoffsById.size + loops.reduce((sum, definition) => sum + Number(definition.maxAgentActivations ?? 1), 0) + 1;
     while (pending.length) {
-      if (++rounds > plan.handoffsById.size + Number(loop?.maxAgentActivations ?? 1) + 1) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_CYCLE_UNSUPPORTED");
+      if (++rounds > schedulerBudget) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_CYCLE_UNSUPPORTED");
       const nextSources = new Map<string, { event: string; data: unknown; artifacts?: Record<string, unknown> }>();
-      const joins: Record<string, unknown>[][] = [];
+      const joins: Array<{ lineage: string; items: Record<string, unknown>[] }> = [];
       const immediate: string[] = [];
-      for (const handoffId of pending.sort()) {
-        const visits = (visited.get(handoffId) ?? 0) + 1;
-        visited.set(handoffId, visits);
-        const repeatedLoopEdge = loopId && isRecord(plan.handoffsById.get(handoffId)?.from)
-          && isRecord(plan.handoffsById.get(handoffId)?.to)
-          && loopMembers.has(String((plan.handoffsById.get(handoffId)!.from as Record<string, unknown>).agentId))
-          && loopMembers.has(String((plan.handoffsById.get(handoffId)!.to as Record<string, unknown>).agentId));
+      for (const pendingKey of pending.sort()) {
+        const { handoffId, lineage } = workItem(pendingKey);
+        const visits = (visited.get(pendingKey) ?? 0) + 1;
+        visited.set(pendingKey, visits);
+        const repeatedEdge = plan.handoffsById.get(handoffId);
+        const repeatedSourceLoop = repeatedEdge && isRecord(repeatedEdge.from) && repeatedEdge.from.kind === "agent"
+          ? loopForAgent(String(repeatedEdge.from.agentId)) : undefined;
+        const repeatedTargetLoop = repeatedEdge && isRecord(repeatedEdge.to) && repeatedEdge.to.kind === "agent"
+          ? loopForAgent(String(repeatedEdge.to.agentId)) : undefined;
+        const repeatedLoopEdge = repeatedSourceLoop && repeatedSourceLoop === repeatedTargetLoop
+          && isRecord(repeatedEdge?.from)
+          && isRecord(repeatedEdge?.to);
         if (visits > 1 && !repeatedLoopEdge) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_CYCLE_UNSUPPORTED");
         const handoff = plan.handoffsById.get(handoffId);
         if (!handoff || !isRecord(handoff.to)) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_HANDOFF_INVALID");
         if (handoff.to.kind === "result") {
-          const source = isRecord(handoff.from) ? sources.get(sourceKey(handoff.from)) : undefined;
+          const source = isRecord(handoff.from) ? sources.get(lineageSourceKey(handoff.from, lineage)) : undefined;
           if (!source) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_RESULT_SOURCE_MISSING");
           const map = isRecord(handoff.map) ? handoff.map : {};
           const mapped = map.data === undefined ? {} : evaluateTeamValueExpr(map.data, valueContext(runInput, source));
@@ -1168,51 +1461,52 @@ export class TeamRuntime {
         if (handoff.to.kind !== "agent") return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_ENDPOINT_UNSUPPORTED");
         if (loopJoin && loopJoinSourceIds.has(handoffId) && loopJoin.mode !== "quorum_of") {
           const key = `${String(handoff.to.agentId)}:${String(handoff.to.inputPort)}`;
-          const group = joins.find((items) => isRecord(items[0]?.to) && `${String(items[0].to.agentId)}:${String(items[0].to.inputPort)}` === key);
-          if (group) group.push(handoff);
-          else joins.push([handoff]);
+          const group = joins.find((entry) => entry.lineage === lineage && isRecord(entry.items[0]?.to) && `${String(entry.items[0].to.agentId)}:${String(entry.items[0].to.inputPort)}` === key);
+          if (group) group.items.push(handoff);
+          else joins.push({ lineage, items: [handoff] });
         } else if (loopJoin && loopJoinSourceIds.has(handoffId) && loopJoin.mode === "quorum_of") {
-          immediate.push(handoffId);
+          immediate.push(pendingKey);
         } else if (plan.joinsByTarget.has(`${String(handoff.to.agentId)}:${String(handoff.to.inputPort)}`)) {
           const key = `${String(handoff.to.agentId)}:${String(handoff.to.inputPort)}`;
-          const group = joins.find((items) => isRecord(items[0]?.to) && `${String(items[0].to.agentId)}:${String(items[0].to.inputPort)}` === key);
-          if (group) group.push(handoff);
-          else joins.push([handoff]);
-        } else immediate.push(handoffId);
+          const group = joins.find((entry) => entry.lineage === lineage && isRecord(entry.items[0]?.to) && `${String(entry.items[0].to.agentId)}:${String(entry.items[0].to.inputPort)}` === key);
+          if (group) group.items.push(handoff);
+          else joins.push({ lineage, items: [handoff] });
+        } else immediate.push(pendingKey);
       }
 
-      const invocations = await Promise.all(immediate.map(async (handoffId) => {
+      const invocations = await Promise.all(immediate.map(async (pendingKey) => {
+        const { handoffId, lineage } = workItem(pendingKey);
         const handoff = plan.handoffsById.get(handoffId)!;
-        const source = isRecord(handoff.from) ? sources.get(sourceKey(handoff.from)) : undefined;
+        const source = isRecord(handoff.from) ? sources.get(lineageSourceKey(handoff.from, lineage)) : undefined;
         let result: TeamRunRecord;
         try {
-          let reviewContext = isRecord(handoff.from) ? reviewContexts.get(sourceKey(handoff.from)) : undefined;
+          let reviewContext = isRecord(handoff.from) ? reviewContexts.get(lineageSourceKey(handoff.from, lineage)) : undefined;
           if (loopId && isRecord(handoff.from) && handoff.from.kind === "agent" && loopMembers.has(String(handoff.from.agentId))) {
-            const round = (await this.args.store.load(runId))!.loopStates[loopId].rounds;
-            reviewContext = reviewContexts.get(`${sourceKey(handoff.from)}:loop:${round}`) ?? reviewContext;
+            const round = (await this.args.store.load(runId))!.loopStates[loopLineageKey(loopId, lineage)].rounds;
+            reviewContext = reviewContexts.get(`${lineageSourceKey(handoff.from, lineage)}:loop:${round}`) ?? reviewContext;
           }
-          result = await executeEdge(handoffId, source, undefined, reviewContext);
+          result = await executeEdge(handoffId, lineage, source, undefined, reviewContext);
         } catch (error) {
           const current = await this.args.store.load(runId);
           if (current?.status === "paused_input_required" || (current?.status === "failing" && current.terminalIntent === "failed")) result = current;
           else throw error;
         }
-        if (result.status === "paused_input_required") await this.cancelSiblingInvocations(runId, `${runId}:${handoffId}`);
+        if (result.status === "paused_input_required") await this.cancelSiblingInvocations(runId);
         if (result.status === "failing" && (await this.args.store.load(runId))?.terminalIntent === "failed") {
           await this.cancelActiveInvocationsAfterFailure(runId, `${runId}:${handoffId}`);
         }
         if (quorumJoins.length > 0 && result.status === "running") {
-          const completed = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId);
+          const completed = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId, lineage);
           if (completed?.status === "completed" && completed.output?.kind === "completed") {
             const output = completed.output.output;
             const source = { kind: "agent", agentId: completed.agentId, outputPort: output.event };
             const selected = selectTeamHandoffs(plan, source, output, runInput);
-            for (const quorumJoin of quorumJoins) {
+          for (const quorumJoin of quorumJoins) {
               const quorumJoinId = String(quorumJoin.id);
               const scopedLoopJoin = loopJoin === quorumJoin;
-              const currentLoopState = scopedLoopJoin ? (await this.args.store.load(runId))!.loopStates[loopId!] : undefined;
+              const currentLoopState = scopedLoopJoin ? (await this.args.store.load(runId))!.loopStates[loopLineageKey(loopId!, lineage)] : undefined;
               const loopRound = scopedLoopJoin ? Math.max(1, currentLoopState!.rounds) : undefined;
-              const roundKey = loopRound === undefined ? quorumJoinId : `${quorumJoinId}:${loopRound}`;
+              const roundKey = loopRound === undefined ? quorumJoinId : lineage === "run" ? `${quorumJoinId}:${loopRound}` : `${quorumJoinId}:${lineage}:${loopRound}`;
               const loopPrevious = currentLoopState
                 ? Object.fromEntries(Object.entries(currentLoopState.previousOutputs).map(([previousAgentId, previousOutput]) => [previousAgentId, { output: previousOutput }]))
                 : undefined;
@@ -1236,7 +1530,7 @@ export class TeamRuntime {
               });
               const baseMapping = isRecord(quorumJoin.baseMapping) ? quorumJoin.baseMapping : {};
               const initialRound = joinRounds.get(roundKey) ?? createTeamJoinRound({
-                joinId: quorumJoinId, runId, lineage: "run", ...(loopRound === undefined ? {} : { loopRound }), mode: "quorum_of",
+                joinId: quorumJoinId, runId, lineage, ...(loopRound === undefined ? {} : { loopRound }), mode: "quorum_of",
                 handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
                 timeoutMs: Number(quorumJoin.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
                 baseMapping: {
@@ -1261,11 +1555,11 @@ export class TeamRuntime {
                 const artifactOverride = Object.fromEntries(Object.entries(round.merged.artifacts ?? {}).map(([slotId, envelope]) => [
                   slotId, isRecord(envelope) && Object.prototype.hasOwnProperty.call(envelope, "value") ? envelope.value : envelope
                 ]));
-                const driven = await executeEdge((quorumJoin.handoffIds as string[])[0], undefined, round.merged.data ?? {}, undefined, artifactOverride);
+                const driven = await executeEdge((quorumJoin.handoffIds as string[])[0], lineage, undefined, round.merged.data ?? {}, undefined, artifactOverride);
                 if (driven.status !== "running") return driven;
-                const targetInvocation = latestInvocationForHandoff((await this.args.store.load(runId))!, (quorumJoin.handoffIds as string[])[0]);
+                const targetInvocation = latestInvocationForHandoff((await this.args.store.load(runId))!, (quorumJoin.handoffIds as string[])[0], lineage);
                 if (targetInvocation?.status === "completed" && targetInvocation.output?.kind === "completed") {
-                  nextSources.set(`agent:${targetInvocation.agentId}:${targetInvocation.output.output.event}`, targetInvocation.output.output);
+                  nextSources.set(lineageSourceKey({ kind: "agent", agentId: targetInvocation.agentId, outputPort: targetInvocation.output.output.event }, lineage), targetInvocation.output.output);
                 }
               }
             }
@@ -1278,31 +1572,38 @@ export class TeamRuntime {
         this.disarmRunJoinTimeouts(runId);
         return afterInvocations;
       }
+      if (afterInvocations?.status === "cancelling" && afterInvocations.terminalIntent === "cancelled") {
+        const cancellation = this.activeRunCancellations.get(runId);
+        return cancellation ? cancellation : afterInvocations;
+      }
       const failed = invocations.find((record) => record.status !== "running");
       if (failed) return failed.status === "failing" ? this.settle(runId) : failed;
-      for (const handoffId of immediate) {
+      for (const pendingKey of immediate) {
+        const { handoffId, lineage } = workItem(pendingKey);
         const handoff = plan.handoffsById.get(handoffId)!;
-        const invocation = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId);
+        const invocation = latestInvocationForHandoff((await this.args.store.load(runId))!, handoffId, lineage);
         if (invocation?.status !== "completed" || invocation.output?.kind !== "completed") continue;
-        arrivedHandoffs.add(handoffId);
+        arrivedHandoffs.add(pendingKey);
         const output = invocation.output.output;
-        nextSources.set(`agent:${invocation.agentId}:${output.event}`, output);
+        nextSources.set(lineageSourceKey({ kind: "agent", agentId: invocation.agentId, outputPort: output.event }, lineage), output);
       }
 
-      for (const group of joins) {
+      for (const joinGroup of joins) {
+        const group = joinGroup.items;
+        const lineage = joinGroup.lineage;
         const first = group[0];
         const firstTarget = isRecord(first?.to) ? first.to : undefined;
         if (!firstTarget) return this.failScheduler(runId, `${runId}:scheduler`, "TEAM_SCHEDULER_HANDOFF_INVALID");
         const join = plan.joinsByTarget.get(`${String(firstTarget.agentId)}:${String(firstTarget.inputPort)}`)!;
         const sourceIds = Array.isArray(join.handoffIds) ? join.handoffIds as string[] : [];
         const scopedLoopJoin = loopJoin && String(join.id) === String(loopJoin.id);
-        const currentLoopState = scopedLoopJoin ? (await this.args.store.load(runId))!.loopStates[loopId!] : undefined;
+        const currentLoopState = scopedLoopJoin ? (await this.args.store.load(runId))!.loopStates[loopLineageKey(loopId!, lineage)] : undefined;
         const loopRound = scopedLoopJoin ? Math.max(1, currentLoopState!.rounds) : undefined;
-        const roundKey = scopedLoopJoin ? `${String(join.id)}:${String(loopRound)}` : String(join.id);
+        const roundKey = scopedLoopJoin ? lineage === "run" ? `${String(join.id)}:${String(loopRound)}` : `${String(join.id)}:${lineage}:${String(loopRound)}` : String(join.id);
         const currentRound = joinRounds.get(roundKey);
         if (sourceIds.some((id) => scopedLoopJoin
           ? !group.some((edge) => String(edge.id) === id) && currentRound?.sourceStates[id] !== "skipped"
-          : !arrivedHandoffs.has(id) && !skippedHandoffs.has(id))) {
+          : !arrivedHandoffs.has(workKey(id, lineage)) && !skippedHandoffs.has(workKey(id, lineage)))) {
           continue;
         }
         const targetAgent = plan.team.agents.find((agent) => agent.id === join.agentId) as Record<string, unknown>;
@@ -1322,7 +1623,7 @@ export class TeamRuntime {
           ? Object.fromEntries(Object.entries(currentLoopState.previousOutputs).map(([agentId, output]) => [agentId, { output }]))
           : undefined;
         let round = joinRounds.get(roundKey) ?? createTeamJoinRound({
-          joinId: String(join.id), runId, lineage: "run", ...(loopRound === undefined ? {} : { loopRound }), mode: String(join.mode) as "all_of" | "quorum_of",
+          joinId: String(join.id), runId, lineage, ...(loopRound === undefined ? {} : { loopRound }), mode: String(join.mode) as "all_of" | "quorum_of",
           handoffIds: sourceIds, threshold: typeof join.threshold === "number" ? join.threshold : undefined,
           timeoutMs: Number(join.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
           baseMapping: {
@@ -1341,16 +1642,16 @@ export class TeamRuntime {
             continue;
           }
           const source = scopedLoopJoin
-            ? isRecord(edge.from) ? sources.get(sourceKey(edge.from)) : undefined
-            : arrivedHandoffs.has(id) && isRecord(edge.from) ? sources.get(sourceKey(edge.from)) : undefined;
+            ? isRecord(edge.from) ? sources.get(lineageSourceKey(edge.from, lineage)) : undefined
+            : arrivedHandoffs.has(workKey(id, lineage)) && isRecord(edge.from) ? sources.get(lineageSourceKey(edge.from, lineage)) : undefined;
           if (!source) {
             round = applyTeamJoinEvent(round, { type: "skip", sourceId: id, at: this.args.clock.now() });
             continue;
           }
           const map = isRecord(edge.map) ? edge.map : {};
-          const data = map.data === undefined ? {} : evaluateTeamValueExpr(map.data, valueContext(runInput, source));
+          const data = map.data === undefined ? {} : evaluateTeamValueExpr(map.data, valueContext(runInput, source, loopPrevious));
           const artifactMappings = isRecord(map.artifacts) ? map.artifacts : {};
-          const artifacts = Object.fromEntries(Object.entries(artifactMappings).map(([slotId, expression]) => [slotId, evaluateTeamValueExpr(expression, valueContext(runInput, source))]));
+          const artifacts = Object.fromEntries(Object.entries(artifactMappings).map(([slotId, expression]) => [slotId, evaluateTeamValueExpr(expression, valueContext(runInput, source, loopPrevious))]));
           round = applyTeamJoinEvent(round, { type: "arrival", sourceId: id, contribution: { data: isRecord(data) ? data : {}, artifacts }, at: this.args.clock.now() });
         }
         joinRounds.set(roundKey, round);
@@ -1365,12 +1666,12 @@ export class TeamRuntime {
         const artifactOverride = Object.fromEntries(Object.entries(round.merged.artifacts ?? {}).map(([slotId, envelope]) => [
           slotId, isRecord(envelope) && Object.prototype.hasOwnProperty.call(envelope, "value") ? envelope.value : envelope
         ]));
-        const targetRecord = await executeEdge(drivingHandoff, undefined, round.merged.data ?? {}, undefined, artifactOverride);
+        const targetRecord = await executeEdge(drivingHandoff, lineage, undefined, round.merged.data ?? {}, undefined, artifactOverride);
         if (targetRecord.status !== "running") return targetRecord.status === "failing" ? this.settle(runId) : targetRecord;
-        const invocation = latestInvocationForHandoff((await this.args.store.load(runId))!, drivingHandoff);
-        if (invocation?.status === "completed") arrivedHandoffs.add(drivingHandoff);
+        const invocation = latestInvocationForHandoff((await this.args.store.load(runId))!, drivingHandoff, lineage);
+        if (invocation?.status === "completed") arrivedHandoffs.add(workKey(drivingHandoff, lineage));
         if (invocation?.status === "completed" && invocation.output?.kind === "completed") {
-          nextSources.set(`agent:${invocation.agentId}:${invocation.output.output.event}`, invocation.output.output);
+          nextSources.set(lineageSourceKey({ kind: "agent", agentId: invocation.agentId, outputPort: invocation.output.output.event }, lineage), invocation.output.output);
         }
       }
 
@@ -1414,12 +1715,15 @@ export class TeamRuntime {
       }
 
       const outgoing: string[] = [];
-      const loopOutputs: Array<[string, { event: string; data: unknown; artifacts?: Record<string, unknown> }]> = [];
-      let projectedRounds = loopId ? (await this.args.store.load(runId))!.loopStates[loopId].rounds : 0;
+      const loopOutputs: Array<[string, string, string, { event: string; data: unknown; artifacts?: Record<string, unknown> }]> = [];
+      const projectedRounds = new Map<string, number>();
       for (const [source, output] of nextSources) {
-        const [, agentId] = source.split(":", 3);
+        const { lineage, endpoint } = sourceLineage(source);
+        const [, agentId] = endpoint.split(":", 3);
+        const outputLoop = loopForAgent(agentId);
+        const outputLoopId = outputLoop ? String(outputLoop.id) : undefined;
         const reviewDefinition = reviews.find((item) => isRecord(item.at) && item.at.agentId === agentId && item.at.outputPort === output.event);
-        const currentLoopState = loopId ? (await this.args.store.load(runId))!.loopStates[loopId] : undefined;
+        const currentLoopState = loopId ? (await this.args.store.load(runId))!.loopStates[loopLineageKey(loopId, lineage)] : undefined;
         const reviewLoopRound = reviewDefinition && supportsMakerChecker && currentLoopState && agentId === String(loop?.boundaryAgentId)
           ? currentLoopState.rounds + 1 : undefined;
         const reviewContextKey = reviewLoopRound === undefined ? source : `${source}:loop:${reviewLoopRound}`;
@@ -1448,27 +1752,33 @@ export class TeamRuntime {
           reviewContext = readTeamReviewContext(review);
           reviewContexts.set(reviewContextKey, reviewContext);
         }
-        if (loopId && loopMembers.has(agentId)) {
-          loopOutputs.push([agentId, structuredClone(output)]);
-          if (agentId === String(loop.boundaryAgentId)) projectedRounds += 1;
+        if (outputLoop && outputLoopId) {
+          loopOutputs.push([outputLoopId, lineage, agentId, structuredClone(output)]);
+          if (agentId === String(outputLoop.boundaryAgentId)) {
+            const state = (await this.args.store.load(runId))!.loopStates[loopLineageKey(outputLoopId, lineage)];
+            const stateKey = loopLineageKey(outputLoopId, lineage);
+            projectedRounds.set(stateKey, (projectedRounds.get(stateKey) ?? state.rounds) + 1);
+          }
         }
         const selected = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, undefined, reviewContext);
         const selectedSet = new Set(selected);
         for (const handoffId of selected) {
-          arrivedHandoffs.add(handoffId);
-          skippedHandoffs.delete(handoffId);
+          const selectedKey = workKey(handoffId, lineage);
+          arrivedHandoffs.add(selectedKey);
+          skippedHandoffs.delete(selectedKey);
         }
         for (const [handoffId, handoff] of plan.handoffsById) {
           if (isRecord(handoff.from) && handoff.from.kind === "agent"
             && handoff.from.agentId === agentId && handoff.from.outputPort === output.event
             && !selectedSet.has(handoffId)) {
-            skippedHandoffs.add(handoffId);
-            arrivedHandoffs.delete(handoffId);
+            const skippedKey = workKey(handoffId, lineage);
+            skippedHandoffs.add(skippedKey);
+            arrivedHandoffs.delete(skippedKey);
             if (loopJoin && loopJoinSourceIds.has(handoffId)) {
-              const currentLoopState = (await this.args.store.load(runId))!.loopStates[loopId!];
+              const currentLoopState = (await this.args.store.load(runId))!.loopStates[loopLineageKey(loopId!, lineage)];
               const loopRound = Math.max(1, currentLoopState.rounds);
               const joinId = String(loopJoin.id);
-              const roundKey = `${joinId}:${loopRound}`;
+              const roundKey = lineage === "run" ? `${joinId}:${loopRound}` : `${joinId}:${lineage}:${loopRound}`;
               let round = joinRounds.get(roundKey);
               if (!round) return this.failScheduler(runId, `${runId}:join:${joinId}`, "JOIN_ROUND_MISSING");
               round = applyTeamJoinEvent(round, { type: "skip", sourceId: handoffId, at: this.args.clock.now() });
@@ -1484,7 +1794,7 @@ export class TeamRuntime {
               if (loopJoin === quorumJoin) continue;
               const quorumJoinId = String(quorumJoin.id);
               const initialRound = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
-                joinId: quorumJoinId, runId, lineage: "run", mode: "quorum_of",
+                joinId: quorumJoinId, runId, lineage, mode: "quorum_of",
                 handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
                 timeoutMs: Number(quorumJoin.timeoutMs)
               });
@@ -1501,39 +1811,68 @@ export class TeamRuntime {
             }
           }
         }
-        if (loopId && loopMembers.has(agentId)) {
-          const continueSelected = selected.filter((id) => loopContinues.has(id));
-          const state = (await this.args.store.load(runId))!.loopStates[loopId];
-          if (continueSelected.length && projectedRounds >= Number(loop.maxRounds)) {
-            if (loop.onExhausted !== "finish") return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
-            const exits = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, [...loopExits]);
-            if (!exits.length) return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
-            outgoing.push(...exits);
+        if (outputLoop && outputLoopId) {
+          const continueIds = new Set(Array.isArray(outputLoop.continueHandoffIds) ? outputLoop.continueHandoffIds.map(String) : []);
+          const exitIds = Array.isArray(outputLoop.exitHandoffIds) ? outputLoop.exitHandoffIds.map(String) : [];
+          const continueSelected = selected.filter((id) => continueIds.has(id));
+          const state = (await this.args.store.load(runId))!.loopStates[loopLineageKey(outputLoopId, lineage)];
+          const projected = projectedRounds.get(loopLineageKey(outputLoopId, lineage)) ?? state.rounds;
+          if (continueSelected.length && projected >= Number(outputLoop.maxRounds)) {
+            if (outputLoop.onExhausted !== "finish") return this.failScheduler(runId, `${runId}:loop:${outputLoopId}`, "LOOP_EXHAUSTED");
+            const exits = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, exitIds);
+            if (!exits.length) return this.failScheduler(runId, `${runId}:loop:${outputLoopId}`, "LOOP_EXHAUSTED");
+            outgoing.push(...exits.map((id) => workKey(id, lineage)));
             continue;
           }
-          if (state.agentActivations >= Number(loop.maxAgentActivations) && continueSelected.length) {
-            if (loop.onExhausted !== "finish") return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
-            const exits = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, [...loopExits]);
-            if (!exits.length) return this.failScheduler(runId, `${runId}:loop:${loopId}`, "LOOP_EXHAUSTED");
-            outgoing.push(...exits);
+          if (state.agentActivations >= Number(outputLoop.maxAgentActivations) && continueSelected.length) {
+            if (outputLoop.onExhausted !== "finish") return this.failScheduler(runId, `${runId}:loop:${outputLoopId}`, "LOOP_EXHAUSTED");
+            const exits = selectTeamHandoffs(plan, { kind: "agent", agentId, outputPort: output.event }, output, runInput, exitIds);
+            if (!exits.length) return this.failScheduler(runId, `${runId}:loop:${outputLoopId}`, "LOOP_EXHAUSTED");
+            outgoing.push(...exits.map((id) => workKey(id, lineage)));
             continue;
           }
         }
-        if (quorumJoins.length > 0) outgoing.push(...selected.filter((id) => !quorumJoinSources.has(id)));
-        else outgoing.push(...selected);
+        const selectedOutgoing = quorumJoins.length > 0 ? selected.filter((id) => !quorumJoinSources.has(id)) : selected;
+        outgoing.push(...selectedOutgoing.map((id) => workKey(id, lineage)));
       }
-      pending = [...new Set(outgoing)];
+      const outgoingSet = [...new Set(outgoing)];
+      const concurrentTargets = new Map<string, string[]>();
+      for (const item of outgoingSet) {
+        const { handoffId, lineage } = workItem(item);
+        const edge = plan.handoffsById.get(handoffId);
+        const target = isRecord(edge?.to) ? edge.to : {};
+        if (target.kind !== "agent" || plan.joinsByTarget.has(`${String(target.agentId)}:${String(target.inputPort)}`)) continue;
+        const key = `${lineage}${WORK_LINEAGE_SEPARATOR}${String(target.agentId)}:${String(target.inputPort)}`;
+        concurrentTargets.set(key, [...(concurrentTargets.get(key) ?? []), item]);
+      }
+      pending = outgoingSet.map((item) => {
+        const { handoffId, lineage } = workItem(item);
+        const edge = plan.handoffsById.get(handoffId);
+        const target = isRecord(edge?.to) ? edge.to : {};
+        if (target.kind !== "agent" || plan.joinsByTarget.has(`${String(target.agentId)}:${String(target.inputPort)}`)) return item;
+        const key = `${lineage}${WORK_LINEAGE_SEPARATOR}${String(target.agentId)}:${String(target.inputPort)}`;
+        if ((concurrentTargets.get(key)?.length ?? 0) < 2) return item;
+        const forkedLineage = childLineage(lineage, handoffId);
+        if (isRecord(edge?.from)) {
+          const endpoint = lineageSourceKey(edge.from, lineage);
+          const source = nextSources.get(endpoint) ?? sources.get(endpoint);
+          if (source) sources.set(lineageSourceKey(edge.from, forkedLineage), structuredClone(source));
+        }
+        return workKey(handoffId, forkedLineage);
+      });
       for (const [key, value] of nextSources) sources.set(key, value);
       await this.update(runId, (record) => {
-        const state = loopId ? record.loopStates[loopId] : undefined;
-        for (const [agentId, output] of loopOutputs) {
+        for (const [stateLoopId, lineage, agentId, output] of loopOutputs) {
+          const definition = loops.find((item) => String(item.id) === stateLoopId);
+          const stateKey = loopLineageKey(stateLoopId, lineage);
+          const state = record.loopStates[stateKey] ??= structuredClone(emptyLoopState);
           if (!state) break;
           state.currentOutputs[agentId] = structuredClone(output);
-          if (agentId === String(loop?.boundaryAgentId)) {
+          if (agentId === String(definition?.boundaryAgentId)) {
             state.rounds += 1;
             state.previousOutputs = structuredClone(state.currentOutputs);
             state.currentOutputs = {};
-            event(record, `${runId}:loop:${loopId}:round:${state.rounds}`, "loop.round.completed", this.args.clock.now(), { boundaryAgentId: agentId });
+            event(record, lineage === "run" ? `${runId}:loop:${stateLoopId}:round:${state.rounds}` : `${runId}:loop:${stateLoopId}:${lineage}:round:${state.rounds}`, "loop.round.completed", this.args.clock.now(), { boundaryAgentId: agentId, lineage });
           }
         }
         record.scheduler = {
@@ -1617,14 +1956,22 @@ export class TeamRuntime {
     return this.settle(runId);
   }
 
-  private async cancelSiblingInvocations(runId: string, pausedInvocationId: string): Promise<void> {
+  private async cancelSiblingInvocations(runId: string): Promise<void> {
     const snapshot = await this.args.store.load(runId);
     if (!snapshot || snapshot.status !== "paused_input_required") return;
+    const pausedInvocation = Object.values(snapshot.invocations).find((invocation) => invocation.status === "input-required"
+      && invocation.handoffId === snapshot.pendingInput?.handoffId
+      && invocation.agentId === snapshot.pendingInput?.agentId
+      && invocation.output?.kind === "input-required"
+      && invocation.output.remoteTaskId === snapshot.pendingInput?.remoteTaskId);
+    if (!pausedInvocation) return;
     for (const invocation of Object.values(snapshot.invocations)) {
-      if (invocation.id === pausedInvocationId || invocation.status !== "running") continue;
+      if (invocation.id === pausedInvocation.id || invocation.status !== "running") continue;
       const binding = this.args.bindings[invocation.bindingId];
       let confirmed = false;
-      if (binding?.cancel) {
+      const activeCancel = this.activeBindingCancellations.get(invocation.id);
+      if (activeCancel) confirmed = (await activeCancel()) === true;
+      else if (binding?.cancel) {
         try {
           confirmed = await binding.cancel({
             runId,
@@ -1633,13 +1980,33 @@ export class TeamRuntime {
             bindingId: invocation.bindingId,
             attempt: invocation.attempt,
             input: undefined,
-            idempotencyKey: invocation.id
+            idempotencyKey: invocation.id,
+            ...(invocation.remoteTaskId ? { remoteTaskId: invocation.remoteTaskId } : {})
           });
         } catch { confirmed = false; }
       }
+      if (confirmed) this.activeCancellationSignals.get(invocation.id)?.();
+      const active = this.activeInvocationSettled.get(invocation.id);
+      if (active) await active;
+      else if (!confirmed) {
+        const remaining = Math.max(0, invocation.deadlineAt - this.args.clock.now());
+        if (remaining > 0) await this.args.clock.sleep(remaining);
+      }
       await this.update(runId, (record) => {
         const current = record.invocations[invocation.id];
-        if (record.status !== "paused_input_required" || current.status !== "running") return;
+        if (record.status !== "paused_input_required") return;
+        if (current.status === "input-required") {
+          if (confirmed) {
+            current.status = "cancelled";
+            current.outcomeUnknown = false;
+            event(record, `${invocation.id}:input-required-cancelled`, "invocation.cancelled_for_input_required", this.args.clock.now(), {
+              outcomeUnknown: false,
+              remoteTaskId: current.output?.kind === "input-required" ? current.output.remoteTaskId : undefined
+            });
+          }
+          return;
+        }
+        if (current.status !== "running") return;
         current.status = "cancelled";
         current.outcomeUnknown = !confirmed;
         event(record, `${invocation.id}:input-required-cancelled`, "invocation.cancelled_for_input_required", this.args.clock.now(), {
@@ -1726,7 +2093,8 @@ export class TeamRuntime {
             bindingId: invocation.bindingId,
             attempt: invocation.attempt,
             input: undefined,
-            idempotencyKey: invocation.id
+            idempotencyKey: invocation.id,
+            ...(invocation.remoteTaskId ? { remoteTaskId: invocation.remoteTaskId } : {})
           });
         } catch { confirmed = false; }
       }
@@ -1759,10 +2127,22 @@ export class TeamRuntime {
     }
   }
 
-  private async fail(runId: string, invocationId: string, code: string, outcomeUnknown = false, diagnosticCode?: TeamBindingDiagnosticCode): Promise<TeamRunRecord> {
+  private async fail(runId: string, invocationId: string, code: string, outcomeUnknown = false, diagnosticCode?: TeamBindingDiagnosticCode, diagnosticPointer?: string): Promise<TeamRunRecord> {
     const failed = await this.update(runId, (record) => {
       if (record.status === "cancelling" || record.status === "cancelled" || record.status === "paused_input_required") {
         event(record, `${invocationId}:late-failure:${code}`, "invocation.late_failure_ignored", this.args.clock.now(), { code });
+        if (record.status === "paused_input_required") {
+          const invocation = record.invocations[invocationId];
+          if (invocation?.status === "running") {
+            invocation.status = "cancelled";
+            invocation.error = code;
+            invocation.outcomeUnknown = outcomeUnknown;
+            event(record, `${invocationId}:input-required-cancelled`, "invocation.cancelled_for_input_required", this.args.clock.now(), {
+              outcomeUnknown,
+              remoteTaskId: record.pendingInput?.remoteTaskId
+            });
+          }
+        }
         return;
       }
       if (record.terminalIntent !== "failed") {
@@ -1775,6 +2155,7 @@ export class TeamRuntime {
         invocation.status = "failed";
         invocation.error = code;
         if (diagnosticCode) invocation.diagnosticCode = diagnosticCode;
+        if (diagnosticPointer) invocation.diagnosticPointer = diagnosticPointer;
         invocation.outcomeUnknown = outcomeUnknown;
       }
     });
@@ -1792,6 +2173,11 @@ export class TeamRuntime {
       else if (record.status === "cancelling" && record.terminalIntent === "cancelled") record.status = "cancelled";
       else throw new TeamRunConflictError(`Run ${record.status} cannot settle`);
       delete record.pendingResult;
+      if (record.status === "cancelled") {
+        record.waitingReview = undefined;
+        record.waitingReviews = undefined;
+        delete record.pendingInput;
+      }
       event(record, `${runId}:settled:${record.status}`, `run.${record.status}`, this.args.clock.now());
     });
     this.disarmRunJoinTimeouts(runId);

@@ -460,7 +460,8 @@ Run 作用域的 key 是 `(runId, lineage)`，Loop 作用域的 key 是 `(runId,
   exitHandoffIds, maxRounds, maxAgentActivations, onExhausted }`。`entryHandoffIds` 从 Scope 外进入
   `boundaryAgentId`；`continueHandoffIds` 是 Scope 内驱动下一轮边界执行的回边；`exitHandoffIds` 从成员
   离开 Scope。三个 Handoff ID 集合必须互斥，所引用边的端点必须与 Scope 成员和边界一致；Scope 内不在
-  三个集合中的边不得跨越边界。Scope 嵌套首版不支持。
+  三个集合中的边不得跨越边界。Scope 嵌套首版不支持；不同 Scope 的 `members` 必须互不重叠，避免
+  同一 Agent 同时归属多个 Loop 状态域。嵌套或成员重叠均在发布前拒绝。
 - `maxRounds` 包含首轮，且按 `boundaryAgentId` 在同一 Run/lineage 内成功完成的轮次计数；首个成功边界执行
   是 Loop 第 1 轮。`maxAgentActivations` 是该 Run/lineage/Scope 内所有成员 Agent 调用总数上限，重试 attempt
   不重复计为逻辑激活。超过任一上限时按 `onExhausted` 处理；`fail` 使 Run 失败，`finish` 仅可从声明的

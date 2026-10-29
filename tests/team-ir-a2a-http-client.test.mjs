@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { TaskState } from "@a2a-js/sdk";
@@ -296,6 +299,75 @@ test("A2A client interoperates with an independent official SDK Agent service pr
     input: { request: "ignored on replay" },
     idempotencyKey: "separate-service-idempotency"
   }), result, "same idempotency key replays the cached typed result without another remote Task");
+});
+
+test("A2A same-key retry after the remote accepted a message but lost its response does not repeat the Agent effect", async (t) => {
+  const secret = "separate-process-loss-test-secret";
+  const directory = await mkdtemp(join(tmpdir(), "team-ir-a2a-idempotency-"));
+  const requestLog = join(directory, "requests.jsonl");
+  const executionLog = join(directory, "executions.jsonl");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const serverProcess = spawn(process.execPath, [fileURLToPath(new URL("./fixtures/team-ir-a2a-http-agent-service.mjs", import.meta.url))], {
+    env: {
+      ...process.env,
+      TEAM_IR_A2A_TEST_SECRET: secret,
+      TEAM_IR_A2A_TEST_DROP_FIRST_SEND_RESPONSE: "1",
+      TEAM_IR_A2A_TEST_REQUEST_LOG: requestLog,
+      TEAM_IR_A2A_TEST_EXECUTION_LOG: executionLog,
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const stderr = [];
+  serverProcess.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+  const lines = createInterface({ input: serverProcess.stdout });
+  t.after(async () => {
+    lines.close();
+    if (serverProcess.exitCode === null) serverProcess.kill("SIGTERM");
+    if (serverProcess.exitCode === null) await new Promise((resolve) => serverProcess.once("exit", resolve));
+  });
+  const endpoint = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("A2A Agent service startup timed out")), 5000);
+    serverProcess.once("error", (error) => { clearTimeout(timer); reject(error); });
+    serverProcess.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error("A2A Agent service exited before ready: " + code + " " + Buffer.concat(stderr).toString("utf8")));
+    });
+    lines.once("line", (line) => {
+      clearTimeout(timer);
+      if (!line.startsWith("READY http://127.0.0.1:")) reject(new Error("Unexpected A2A Agent readiness line"));
+      else resolve(line.slice("READY ".length));
+    });
+  });
+  const client = createTeamA2AHttpClient({ endpoint, authorization: "Bearer " + secret });
+  const card = await client.getAgentCard();
+  const binding = createTeamA2ABinding({
+    client,
+    expectedProtocolVersion: card.protocolVersion,
+    expectedAgentVersion: card.version,
+    inputMediaTypes: ["application/json"],
+    outputMediaTypes: ["application/json", "text/plain"],
+    pollIntervalMs: 1,
+    sleep: async (ms) => new Promise((resolve) => setTimeout(resolve, Math.min(ms, 5)))
+  });
+  const invocation = {
+    runId: "response-loss-run",
+    handoffId: "remote-intake",
+    agentId: "remote-intake",
+    bindingId: "binding:remote-intake",
+    attempt: 1,
+    input: { request: "accepted before the HTTP response was lost" },
+    idempotencyKey: "response-loss-stable-key"
+  };
+  const firstAttempt = await binding.invoke(invocation).then((value) => ({ value }), (error) => ({ error }));
+  assert.ok(firstAttempt.error, "the client must observe a lost response rather than a successful acknowledgement");
+  const result = await binding.invoke(invocation);
+  assert.equal(result.kind, "completed");
+  assert.deepEqual(result.output.data, { summary: "accepted: accepted before the HTTP response was lost" });
+  const requests = (await readFile(requestLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  const sends = requests.filter((entry) => /(?:message\/send|sendmessage)/i.test(entry.rpcMethod || ""));
+  assert.equal(sends.length, 2, "the client makes one explicit retry after the lost response: " + JSON.stringify(requests));
+  assert.deepEqual(sends.map((entry) => entry.idempotencyKey), [invocation.idempotencyKey, invocation.idempotencyKey]);
+  assert.equal((await readFile(executionLog, "utf8")).trim().split("\n").length, 1, "the Agent executes the accepted message only once");
 });
 
 test("A2A HTTP client rejects a card interface outside the configured origin before sending credentials", async (t) => {

@@ -25,6 +25,9 @@ const agentCard = {
 
 const executor = {
   async execute(requestContext, eventBus) {
+    if (process.env.TEAM_IR_A2A_TEST_EXECUTION_LOG) {
+      await appendFile(process.env.TEAM_IR_A2A_TEST_EXECUTION_LOG, JSON.stringify({ taskId: requestContext.taskId }) + "\n", "utf8");
+    }
     const parts = requestContext.userMessage.parts || [];
     const request = parts.find((part) => part.content?.$case === "data")?.content?.value;
     const summary = typeof request?.request === "string" ? "accepted: " + request.request : "accepted";
@@ -78,6 +81,8 @@ const executor = {
 
 const requestHandler = new DefaultRequestHandler(agentCard, new InMemoryTaskStore(), executor);
 const transport = new JsonRpcTransportHandler(requestHandler);
+const idempotentResponses = new Map();
+let droppedResponse = false;
 const handler = async (request, response) => {
   const authorized = request.headers.authorization === "Bearer " + secret;
   if (process.env.TEAM_IR_A2A_TEST_REQUEST_LOG) {
@@ -102,10 +107,27 @@ const handler = async (request, response) => {
   for await (const chunk of request) chunks.push(chunk);
   try {
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const teamMetadata = body?.params?.metadata?.["team.ir"] ?? body?.params?.message?.metadata?.["team.ir"];
+    const messageId = body?.params?.message?.messageId;
+    const isSendMessage = typeof body.method === "string" && /(?:message\/send|sendmessage)/i.test(body.method);
+    const idempotencyKey = typeof teamMetadata?.idempotencyKey === "string"
+      ? teamMetadata.idempotencyKey
+      : typeof messageId === "string" ? messageId : undefined;
     if (process.env.TEAM_IR_A2A_TEST_REQUEST_LOG) {
-      await appendFile(process.env.TEAM_IR_A2A_TEST_REQUEST_LOG, JSON.stringify({ method: request.method, url: request.url, rpcMethod: body.method, authorized }) + "\n", "utf8");
+      await appendFile(process.env.TEAM_IR_A2A_TEST_REQUEST_LOG, JSON.stringify({ method: request.method, url: request.url, rpcMethod: body.method, idempotencyKey, authorized }) + "\n", "utf8");
+    }
+    if (isSendMessage && idempotencyKey && idempotentResponses.has(idempotencyKey)) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ...idempotentResponses.get(idempotencyKey), id: body.id }));
+      return;
     }
     const result = await transport.handle(body, new ServerCallContext({ requestedVersion: "1.0" }));
+    if (isSendMessage && idempotencyKey) idempotentResponses.set(idempotencyKey, result);
+    if (process.env.TEAM_IR_A2A_TEST_DROP_FIRST_SEND_RESPONSE === "1" && isSendMessage && !droppedResponse) {
+      droppedResponse = true;
+      response.destroy();
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(result));
   } catch {

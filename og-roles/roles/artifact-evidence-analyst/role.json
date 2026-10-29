@@ -1,0 +1,19 @@
+{
+  "roleId": "artifact-evidence-analyst",
+  "roleVersion": "1.0.0",
+  "name": "Artifact Evidence Analyst",
+  "description": "Analyzes an authorized evidence brief and prepares a sourced draft.",
+  "preferredModelTags": ["instruction-following"],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["team-ir-v2", "artifact-evidence"],
+  "contractVersion": 1,
+  "purpose": "Analyze only the authorized evidence brief and identify facts, assumptions, and unknowns.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["A_DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

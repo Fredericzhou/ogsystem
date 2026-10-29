@@ -18,33 +18,33 @@ function advancedTeamIr(teamVersionId) {
     schemaVersion: 2,
     team: { id: teamVersionId, version: "2.0.0" },
     runInput: { dataSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false }, preferencesSchema: { type: "object" }, artifactSlots: { brief: slot } },
-    runResult: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false }, artifactSlots: { report: slot } },
+    runResult: { dataSchema: { type: "object", properties: { answer: { type: "string" }, evidence: { type: "object", properties: { source: { type: "string" }, labels: { type: "array", items: { type: "string" } } }, required: ["source", "labels"], additionalProperties: false } }, required: ["answer"], additionalProperties: false }, artifactSlots: { report: slot } },
     executionPolicy: { resultMode: "required", activeExecutionBudgetMs: 30000 },
     agents: [{
       id: "writer", packageRef: "role:writer@1", bindingRef: "binding:writer",
       inputPorts: {
         draft: { dataSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"], additionalProperties: false }, artifactSlots: { sources: slot } },
-        revise: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: [], additionalProperties: false } },
+        revise: { dataSchema: { type: "object", properties: { answer: { type: "string" }, comments: { type: "string" }, status: { type: "string" }, metadata: { type: "object", properties: { summary: { type: "string" }, labels: { type: "array", items: { type: "string" } } }, required: ["summary", "labels"], additionalProperties: false } }, required: [], additionalProperties: false } },
         audit: { dataSchema: { type: "object", properties: { reason: { type: "string" } }, required: [], additionalProperties: false } }
       },
       outputPorts: {
-        DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" }, again: { type: "boolean" } }, required: ["answer", "again"], additionalProperties: false }, artifactSlots: { report: outputSlot } },
+        DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" }, again: { type: "boolean" }, evidence: { type: "object", properties: { source: { type: "string" }, labels: { type: "array", items: { type: "string" } } }, required: ["source", "labels"], additionalProperties: false } }, required: ["answer", "again", "evidence"], additionalProperties: false }, artifactSlots: { report: outputSlot } },
         BLOCKED: { dataSchema: { type: "object", properties: { reason: { type: "string" } }, required: [], additionalProperties: false } }
       }
     }],
     handoffs: [
       { id: "entry", from: { kind: "run" }, to: { kind: "agent", agentId: "writer", inputPort: "draft" }, map: { data: { prompt: { $ref: "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 10000 } },
-      { id: "revise", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "agent", agentId: "writer", inputPort: "revise" }, map: { data: { answer: { $ref: "$.run.input.prompt" } } }, when: { condition: { op: "equals", args: [{ $ref: "$.output.data.again" }, { $literal: true }] }, priority: 0 }, delivery: { deadlineMs: 10000 } },
-      { id: "exit", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { $ref: "$.output.data.answer" } }, artifacts: { report: { $ref: "$.output.artifacts.report" } } }, when: { priority: 1 } }
+      { id: "revise", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "agent", agentId: "writer", inputPort: "revise" }, map: { data: { answer: { $ref: "$.output.data.answer" }, comments: { $ref: "$.review.feedback.comments" } } }, when: { condition: { op: "equals", args: [{ $ref: "$.review.decision" }, { $literal: "reject" }] }, priority: 0 }, delivery: { deadlineMs: 10000 } },
+      { id: "exit", from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { $ref: "$.output.data.answer" } }, artifacts: { report: { $ref: "$.output.artifacts.report" } } }, when: { condition: { op: "equals", args: [{ $ref: "$.review.decision" }, { $literal: "approve" }] }, priority: 1 } }
     ],
     orchestration: {
       routes: [
         { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["entry"] },
         { from: { kind: "agent", agentId: "writer", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["revise", "exit"] }
       ],
-      joins: [{ id: "revision-input", agentId: "writer", inputPort: "revise", mode: "all_of", handoffIds: ["revise"], scope: { kind: "loop", loopId: "revision" }, timeoutMs: 5000, onTimeout: "fail" }],
-      loops: [{ id: "revision", members: ["writer"], boundaryAgentId: "writer", entryHandoffIds: ["entry"], continueHandoffIds: ["revise"], exitHandoffIds: ["exit"], maxRounds: 3, maxAgentActivations: 6, onExhausted: "fail" }],
-      reviews: [{ id: "review-draft", at: { kind: "agentOutput", agentId: "writer", outputPort: "DONE" }, feedbackSchema: { type: "object", properties: { decision: { enum: ["approve", "reject"] } }, required: ["decision"], additionalProperties: false }, timeoutMs: 5000, onTimeout: "fail" }]
+      joins: [],
+      loops: [{ id: "revision", members: ["writer"], boundaryAgentId: "writer", entryHandoffIds: ["entry"], continueHandoffIds: ["revise"], exitHandoffIds: ["exit"], maxRounds: 3, maxAgentActivations: 4, onExhausted: "finish" }],
+      reviews: [{ id: "review-draft", at: { kind: "agentOutput", agentId: "writer", outputPort: "DONE" }, feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false }, timeoutMs: 5000, onTimeout: "fail" }]
     },
     bindings: [{ id: "binding:writer", kind: "a2a", agentCardRef: "https://agents.example/card.json", attemptTimeoutMs: 10000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }]
   };
@@ -73,20 +73,28 @@ export async function resolveA2AAgent() {
     agentCard: a2aCard,
     client: {
       async getAgentCard() { return a2aCard; },
-      async sendMessage() { return { id: "browser-task", status: "completed", result: { event: "DONE", data: { answer: "Simulation result", again: false } } }; },
-      async getTask(taskId) { return { id: taskId, status: "completed", result: { event: "DONE", data: { answer: "Simulation result", again: false } } }; },
+      async sendMessage() { return { id: "browser-task", status: "completed", result: { event: "DONE", data: { answer: "Simulation result", again: false, evidence: { source: "Simulation result", labels: ["Simulation result"] } } } }; },
+      async getTask(taskId) { return { id: taskId, status: "completed", result: { event: "DONE", data: { answer: "Simulation result", again: false, evidence: { source: "Simulation result", labels: ["Simulation result"] } } } }; },
       async cancelTask() { return true; }
     }
   };
 }
 export async function resolveBindings({ teamIR }) {
+  const valueForSchema = (schema) => {
+    if (schema.type === "object") return Object.fromEntries(Object.entries(schema.properties || {}).map(([key, child]) => [key, valueForSchema(child)]));
+    if (schema.type === "array") return [valueForSchema(schema.items || {})];
+    if (schema.type === "boolean") return false;
+    if (schema.type === "integer" || schema.type === "number") return 1;
+    return "Simulation result";
+  };
   return Object.fromEntries(teamIR.agents.map((agent) => {
     const event = Object.hasOwn(agent.outputPorts, "ALT_DONE") ? "ALT_DONE" : Object.keys(agent.outputPorts)[0];
     const port = agent.outputPorts[event];
-    const data = Object.fromEntries(Object.entries(port.dataSchema?.properties || {}).map(([key, schema]) => [key, schema.type === "string" ? "Simulation result" : schema.type === "boolean" ? false : null]));
+    const data = valueForSchema(port.dataSchema || { type: "object", properties: {} });
     return [agent.bindingRef, { async invoke(invocation) {
       if (invocation.artifactResolver) {
-        const reference = invocation.input.artifacts.sources;
+        const reference = invocation.input.artifacts?.sources;
+        if (!reference) throw new Error("Missing mapped input artifact for " + invocation.handoffId + ": " + JSON.stringify(invocation.input));
         await invocation.artifactResolver.read(reference.artifactId);
       }
       return { kind: "completed", output: { event, data } };
@@ -145,6 +153,13 @@ export async function resolveBindings({ teamIR }) {
     await page.mouse.up();
     assert.match(await page.locator('[data-ir-layout-node="run"]').getAttribute("style"), /left:\s*66px;\s*top:\s*50px/);
     assert.ok(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "{}").run?.x === 66, await graphCanvas.getAttribute("data-layout-key")), "node layout persists locally outside the Team IR payload");
+    await page.locator("[data-ir-add-agent]").click();
+    assert.equal(await page.locator('[name="agent-1-package"]').inputValue(), "");
+    assert.equal(await page.locator('[name="agent-1-binding"]').inputValue(), "");
+    const addedAgentContracts = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    assert.equal(addedAgentContracts.bindings.some((binding) => binding.id === "binding:agent-2" || binding.modelRef === "codex-gateway/gpt-6-luna" && binding.id !== "binding:worker"), false,
+      "a new Agent must not invent package or model Binding references");
+    await page.locator('[data-ir-remove-agent="1"]').click();
     const teamIdInput = page.locator('[name="team-id"]');
     await teamIdInput.fill("bad team");
     const invalidAgentValidation = page.waitForResponse((response) => response.request().method() === "POST"
@@ -153,6 +168,7 @@ export async function resolveBindings({ teamIR }) {
     const invalidAgentBody = await (await invalidAgentValidation).json();
     assert.equal(invalidAgentBody.ok, false);
     const teamDiagnostic = page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").filter({ hasText: "/team/id" }).first();
+    assert.ok(invalidAgentBody.diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/team/id"), JSON.stringify(invalidAgentBody.diagnostics));
     await teamDiagnostic.waitFor();
     await teamDiagnostic.click();
     assert.equal(await teamIdInput.evaluate((element) => document.activeElement === element), true);
@@ -163,7 +179,7 @@ export async function resolveBindings({ teamIR }) {
     const alternatePort = page.locator('[data-ir-port-row="outputPorts"][data-ir-port-index="1"]');
     await alternatePort.locator('input[name$="-id"]').fill("ALT_DONE");
     await alternatePort.locator('textarea[name$="-schema"]').fill(JSON.stringify({
-      type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false
+      type: "object", properties: { summary: { type: "string" }, evidence: { type: "object", properties: { source: { type: "string" } }, required: ["source"], additionalProperties: false } }, required: ["summary", "evidence"], additionalProperties: false
     }));
     await alternatePort.locator('textarea[name$="-artifacts"]').fill(JSON.stringify({
       trace: { required: false, mediaTypes: ["text/plain"], cardinality: "single" }
@@ -227,6 +243,38 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await resultMapping.inputValue(), "");
     await resultSuggestion.click();
     assert.equal(await resultMapping.inputValue(), "summary=$.output.data.summary");
+    const valueSetup = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    valueSetup.runResult.dataSchema.properties.evidence = {
+      type: "object",
+      properties: { source: { type: "string" }, labels: { type: "array", items: { type: "string" } } },
+      required: ["source", "labels"],
+      additionalProperties: false
+    };
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(valueSetup, null, 2));
+    await page.locator('[data-ir-map-add="1"]').click();
+    const evidenceMapping = page.locator('[data-ir-handoff="1"] [data-ir-map-row]').last();
+    await evidenceMapping.locator('[data-ir-map-target]').selectOption("evidence");
+    await evidenceMapping.locator('[data-ir-value-kind]').selectOption("object");
+    await evidenceMapping.locator('[data-ir-value-node][data-ir-value-depth="0"] [data-ir-value-add="object"]').click();
+    await evidenceMapping.locator("[data-ir-value-entry]").first().locator('[data-ir-value-object-key]').fill("source");
+    await evidenceMapping.locator("[data-ir-value-entry]").first().locator('[data-ir-value-object-key]').press("Tab");
+    const firstEvidenceField = evidenceMapping.locator('[data-ir-value-node][data-ir-value-depth="1"]').first();
+    await firstEvidenceField.locator('[data-ir-value-kind]').selectOption("reference");
+    await firstEvidenceField.locator('[data-ir-value-ref-path]').fill("$.output.data.evidence.source");
+    await evidenceMapping.locator('[data-ir-value-node][data-ir-value-depth="0"] [data-ir-value-add="object"]').click();
+    await evidenceMapping.locator("[data-ir-value-entry]").nth(1).locator('[data-ir-value-object-key]').fill("labels");
+    await evidenceMapping.locator("[data-ir-value-entry]").nth(1).locator('[data-ir-value-object-key]').press("Tab");
+    const secondEvidenceField = evidenceMapping.locator('[data-ir-value-node][data-ir-value-depth="1"]').nth(1);
+    await secondEvidenceField.locator('[data-ir-value-kind]').selectOption("array");
+    await secondEvidenceField.locator('[data-ir-value-add="array"]').click();
+    const evidenceArrayItem = secondEvidenceField.locator('[data-ir-value-node][data-ir-value-depth="2"]');
+    await evidenceArrayItem.locator('[data-ir-value-literal]').fill('"verified"');
+    const nestedEvidence = {
+      source: { $ref: "$.output.data.evidence.source" },
+      labels: [{ $literal: "verified" }]
+    };
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).handoffContracts["worker-to-result"].map.data.evidence, nestedEvidence,
+      "nested references, object construction, array construction and literals sync to Advanced JSON");
 
     const validationResponse = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir/validate`);
@@ -237,7 +285,7 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(validationBody.ok, true, JSON.stringify(validationBody.diagnostics));
     const savedTeamIr = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     assert.deepEqual(savedTeamIr.agentPortContracts.worker.outputPorts.ALT_DONE.dataSchema, {
-      type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false
+      type: "object", properties: { summary: { type: "string" }, evidence: { type: "object", properties: { source: { type: "string" } }, required: ["source"], additionalProperties: false } }, required: ["summary", "evidence"], additionalProperties: false
     });
     assert.deepEqual(savedTeamIr.agentPortContracts.worker.outputPorts.ALT_DONE.artifactSlots, {
       trace: { required: false, mediaTypes: ["text/plain"], cardinality: "single" }
@@ -245,8 +293,9 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(savedTeamIr.agentPortContracts.worker.inputPorts.SECOND_INPUT.dataSchema, {
       type: "object", properties: { note: { type: "string" } }, required: ["note"], additionalProperties: false
     });
-    assert.deepEqual(savedTeamIr.handoffContracts["handoff-2"].from,
+    assert.deepEqual(savedTeamIr.handoffContracts["worker-to-result"].from,
       { kind: "agent", agentId: "worker", outputPort: "ALT_DONE" }, "Handoff uses the selected non-first output port");
+    assert.deepEqual(savedTeamIr.handoffContracts["worker-to-result"].map.data, { summary: { $ref: "$.output.data.summary" }, evidence: nestedEvidence });
     const saveResponse = await page.waitForResponse((response) => response.request().method() === "PUT"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir`, { timeout: 5000 });
     assert.equal(saveResponse.status(), 200, await saveResponse.text());
@@ -266,6 +315,8 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts.worker.inputPorts.SECOND_INPUT.dataSchema, {
       type: "object", properties: { note: { type: "string" } }, required: ["note"], additionalProperties: false
     }, "additional Agent input ports survive save and reopen");
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).handoffContracts["worker-to-result"].map.data, { summary: { $ref: "$.output.data.summary" }, evidence: nestedEvidence },
+      "nested ValueExpr tree survives save and reopen with the stored digest");
     await page.locator('[data-ir-remove-port="0"][data-ir-port-direction="outputPorts"][data-ir-port-index="1"]').click();
     assert.match(await page.locator("[data-team-ir-status]").innerText(), /Cannot remove ALT_DONE; it is referenced by Handoff worker-to-result/);
     assert.ok(Object.hasOwn(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts.worker.outputPorts, "ALT_DONE"),
@@ -349,6 +400,26 @@ export async function resolveBindings({ teamIR }) {
     const layout = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
     assert.ok(layout.content <= layout.viewport + 1, `mobile page overflows horizontally: ${JSON.stringify(layout)}`);
 
+    const sourceIrBeforeFork = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}/ir`).then((response) => response.json());
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    const forkResponse = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/edit`);
+    await page.locator(`[data-team-action="edit"][data-team-id="${teamVersionId}"]`).click();
+    const forkResponseValue = await forkResponse;
+    const forkedVersion = await forkResponseValue.json();
+    assert.equal(forkResponseValue.status(), 201, JSON.stringify(forkedVersion));
+    await page.waitForURL(new RegExp(`/studio/teams/${forkedVersion.projectId}/ir$`));
+    await page.locator("#team-ir-editor").waitFor();
+    assert.equal(await page.locator('[data-ir-advanced-json]').isDisabled(), false);
+    const sourceAfterFork = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}`).then((response) => response.json());
+    const sourceIrAfterFork = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}/ir`).then((response) => response.json());
+    const forkedIr = await page.request.get(`${url}/api/v1/team-versions/${forkedVersion.projectId}/ir`).then((response) => response.json());
+    assert.equal(sourceAfterFork.teamVersionStatus, "released");
+    assert.equal(sourceIrAfterFork.semanticDigest, sourceIrBeforeFork.semanticDigest);
+    assert.equal(forkedIr.semanticDigest, sourceIrBeforeFork.semanticDigest, "fork starts from the exact source Team IR contract");
+    assert.equal(forkedVersion.teamVersionStatus, "draft");
+    assert.equal(forkedVersion.parentTeamVersionId, teamVersionId);
+
     const legacy = await page.request.post(`${url}/api/v1/team-versions/${teamVersionId}/design/validate`, {
       data: { schemaVersion: 2, teamIR: reopened.teamIR }
     });
@@ -359,14 +430,75 @@ export async function resolveBindings({ teamIR }) {
       data: { name: "IR v2 Advanced Contracts", overview: "Round-trip advanced Team IR contracts." }
     }).then((response) => response.json());
     const advancedId = advancedTeam.projectId;
+    const joinTeam = await page.request.post(`${url}/api/v1/team-ir-drafts`, {
+      data: { name: "IR v2 Join Contracts", overview: "Round-trip a supported Run-scope Join." }
+    }).then((response) => response.json());
+    const joinId = joinTeam.projectId;
+    const joinIr = JSON.parse(await readFile(new URL("../../../examples/team-ir-v2/classic-conditional-signoff.json", import.meta.url), "utf8"));
+    joinIr.team.id = joinId;
+    joinIr.runInput.dataSchema.properties.tag = { type: "string" };
+    joinIr.agents.find((agent) => agent.id === "signoff-chair").inputPorts.collect.dataSchema.properties.sourceTag = { type: "string" };
+    const joinInitial = await page.request.get(`${url}/api/v1/team-versions/${joinId}/ir`).then((response) => response.json());
+    const joinSeed = await page.request.put(`${url}/api/v1/team-versions/${joinId}/ir`, {
+      data: { teamIR: joinIr, expectedSemanticDigest: joinInitial.semanticDigest }
+    });
+    assert.equal(joinSeed.status(), 200, await joinSeed.text());
+    await page.goto(`${url}/studio/teams/${joinId}/ir`, { waitUntil: "networkidle" });
+    const signoffJoin = page.locator("[data-ir-join]").first();
+    await signoffJoin.waitFor();
+    assert.equal(await signoffJoin.locator("[data-ir-join-base-row]").count(), 1);
+    await signoffJoin.locator("[data-ir-join-base-add]").click();
+    assert.equal(await signoffJoin.locator("[data-ir-join-base-row]").count(), 2);
+    const addedJoinMapping = signoffJoin.locator("[data-ir-join-base-row]").last();
+    await addedJoinMapping.locator("[data-ir-join-base-target]").selectOption("sourceTag");
+    await addedJoinMapping.locator("[data-ir-value-ref-path]").fill("$.run.input.tag");
+    const joinValidationResponse = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${joinId}/ir/validate`);
+    let joinSaveObserved = false;
+    const observeJoinSave = (request) => {
+      if (request.method() === "PUT" && new URL(request.url()).pathname === `/api/v1/team-versions/${joinId}/ir`) joinSaveObserved = true;
+    };
+    page.on("request", observeJoinSave);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const joinValidationBody = await (await joinValidationResponse).json();
+    assert.equal(joinValidationBody.ok, true, JSON.stringify(joinValidationBody.diagnostics));
+    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    page.off("request", observeJoinSave);
+    assert.equal(joinSaveObserved, true);
+    await page.reload({ waitUntil: "networkidle" });
+    assert.equal(await page.locator("[data-ir-join-base-row]").count(), 2, "Run-scope Join field edits survive save and reopen");
+    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].baseMapping.data.sourceTag.$ref,
+      "$.run.input.tag");
+    const invalidJoinMapping = structuredClone(joinIr);
+    invalidJoinMapping.orchestration.joins[0].baseMapping.data.request.$ref = "$.run.input.missing";
+    const joinDiagnosticResponse = await page.request.post(`${url}/api/v1/team-versions/${joinId}/ir/validate`, { data: { teamIR: invalidJoinMapping } });
+    const joinDiagnosticBody = await joinDiagnosticResponse.json();
+    assert.ok(joinDiagnosticBody.diagnostics.some((item) => item.code === "IR_MAPPING_SOURCE_MISSING"
+      && item.pointer === "/orchestration/joins/0/baseMapping/data/request"), JSON.stringify(joinDiagnosticBody.diagnostics));
+
     const advancedIr = advancedTeamIr(advancedId);
-    advancedIr.runInput.artifactSlots.brief = { ...advancedIr.runInput.artifactSlots.brief, required: true };
-    advancedIr.agents[0].inputPorts.draft.artifactSlots.sources = {
-      ...advancedIr.agents[0].inputPorts.draft.artifactSlots.sources, required: true
-    };
-    advancedIr.handoffs.find((handoff) => handoff.id === "entry").map.artifacts = {
-      sources: { $ref: "$.run.attachments.brief" }
-    };
+    const conditionSummaries = await page.evaluate(async () => {
+      const { teamIrConditionSummary } = await import("/app/views/app.js");
+      const ref = { $ref: "$.run.input.decision" };
+      const pass = { $literal: "PASS" };
+      return [
+        teamIrConditionSummary({ op: "equals", args: [ref, pass] }),
+        teamIrConditionSummary({ op: "notEquals", args: [ref, pass] }),
+        teamIrConditionSummary({ op: "and", args: [{ op: "equals", args: [ref, pass] }, { op: "exists", args: [{ $ref: "$.run.input.note" }] }] }),
+        teamIrConditionSummary({ op: "or", args: [{ op: "equals", args: [ref, pass] }, { op: "notEquals", args: [ref, pass] }] }),
+        teamIrConditionSummary({ op: "not", args: [{ op: "exists", args: [{ $ref: "$.run.input.note" }] }] }),
+        teamIrConditionSummary({ op: "exists", args: [{ $ref: "$.run.input.note" }] })
+      ];
+    });
+    assert.deepEqual(conditionSummaries, [
+      '$.run.input.decision equals "PASS"',
+      '$.run.input.decision does not equal "PASS"',
+      '($.run.input.decision equals "PASS" AND $.run.input.note exists (the path must be present; explicit null counts as present))',
+      '($.run.input.decision equals "PASS" OR $.run.input.decision does not equal "PASS")',
+      'NOT ($.run.input.note exists (the path must be present; explicit null counts as present))',
+      '$.run.input.note exists (the path must be present; explicit null counts as present)'
+    ]);
+    advancedIr.handoffs.find((handoff) => handoff.id === "exit").when.priority = 1;
     const advancedStored = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir`).then((response) => response.json());
     const seeded = await page.request.put(`${url}/api/v1/team-versions/${advancedId}/ir`, {
       data: { teamIR: advancedIr, expectedSemanticDigest: advancedStored.semanticDigest }
@@ -376,60 +508,79 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(seededBody.saved, true, JSON.stringify(seededBody.diagnostics));
     await page.goto(`${url}/studio/teams/${advancedId}/ir`, { waitUntil: "networkidle" });
     await page.locator("[data-ir-advanced-json]").waitFor();
+    const unsupportedCombined = structuredClone(advancedIr);
+    unsupportedCombined.orchestration.joins.push({ id: "maker-checker-join", agentId: "writer", inputPort: "revise", mode: "all_of", handoffIds: ["revise"], scope: { kind: "run" }, timeoutMs: 5000, onTimeout: "fail" });
+    const unsupportedResponse = await page.request.post(`${url}/api/v1/team-versions/${advancedId}/ir/validate`, { data: { teamIR: unsupportedCombined } });
+    const unsupportedBody = await unsupportedResponse.json();
+    assert.equal(unsupportedResponse.status(), 200);
+    assert.ok(unsupportedBody.diagnostics.some((item) => item.code === "IR_REVIEW_TOPOLOGY_UNSUPPORTED" && item.pointer === "/orchestration/reviews/0"), JSON.stringify(unsupportedBody.diagnostics));
+    assert.ok(unsupportedBody.diagnostics.some((item) => item.code === "IR_LOOP_TOPOLOGY_UNSUPPORTED" && item.pointer === "/orchestration/loops/0"), JSON.stringify(unsupportedBody.diagnostics));
+    const unsupportedSave = await page.request.put(`${url}/api/v1/team-versions/${advancedId}/ir`, {
+      data: { teamIR: unsupportedCombined, expectedSemanticDigest: advancedStored.semanticDigest }
+    });
+    assert.notEqual(unsupportedSave.status(), 200, "unsupported Loop + Join + Review must be blocked before it can be released");
     const advancedEditor = page.locator("[data-ir-advanced-json]");
     const contracts = JSON.parse(await advancedEditor.inputValue());
-    assert.equal(contracts.orchestration.joins[0].id, "revision-input");
+    assert.equal(contracts.orchestration.joins.length, 0);
     assert.equal(contracts.orchestration.loops[0].id, "revision");
     assert.equal(contracts.orchestration.reviews[0].id, "review-draft");
     assert.equal(contracts.agentPortContracts.writer.outputPorts.DONE.artifactSlots.report.required, false);
     assert.equal(contracts.bindings[0].kind, "a2a");
-    assert.equal(await page.locator("[data-ir-join]").count(), 1);
+    assert.equal(await page.locator("[data-ir-join]").count(), 0);
     assert.equal(await page.locator("[data-ir-loop]").count(), 1);
     assert.equal(await page.locator("[data-ir-review]").count(), 1);
     assert.equal(await page.locator('[name="review-0-at"]').inputValue(), JSON.stringify(["writer", "DONE"]));
+    assert.equal(await page.locator("[data-ir-output-contract-hint]").count(), 1);
+    assert.match(await page.locator("[data-ir-output-contract-hint]").innerText(), /Binding 必须返回单个 JSON 对象.*event.*data.*artifactTexts/);
+    assert.match(await page.locator("[data-ir-output-contract-hint]").innerText(), /Provider 需支持该输出 Schema/);
     const writerIndex = advancedIr.agents.findIndex((agent) => agent.id === "writer");
     await page.locator(`[data-ir-remove-agent="${writerIndex}"]`).click();
     assert.match(await page.locator("[data-team-ir-status]").innerText(), /Cannot remove Agent writer; it is referenced by .*Review review-draft/);
     assert.ok(Object.hasOwn(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).agentPortContracts, "writer"),
       "Agent deletion must not discard a Review's source endpoint");
-    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, ["revise"]);
-    assert.equal(await page.locator('[name="join-0-handoffs"][value="revise"]').isChecked(), true);
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[0].entryHandoffIds, ["entry"]);
-    await page.locator('[name="join-0-timeout"]').fill("6500");
     await page.locator('[name="loop-0-rounds"]').fill("4");
     await page.locator('[name="review-0-timeout"]').fill("7500");
-    const editedFeedbackSchema = { type: "object", properties: { decision: { enum: ["approve", "revise"] }, note: { type: "string" } }, required: ["decision"], additionalProperties: false };
+    const editedFeedbackSchema = { type: "object", properties: { comments: { type: "string", minLength: 1 }, evidence: { type: "string" } }, required: ["comments"], additionalProperties: false };
     await page.locator('[name="review-0-feedback-schema"]').fill(JSON.stringify(editedFeedbackSchema, null, 2));
+    await page.locator('[name="handoff-1-priority"]').fill("3");
+    const editedCondition = {
+      op: "equals",
+      args: [{ $ref: "$.review.decision" }, { $literal: "reject" }]
+    };
     assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.reviews[0].feedbackSchema,
       editedFeedbackSchema, "Review feedback schema edits immediately synchronize advanced JSON");
     const structuredValidation = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
-    const structuredSave = page.waitForResponse((response) => response.request().method() === "PUT"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`);
     await page.locator('#team-ir-editor button[type="submit"]').click();
     const structuredBody = await (await structuredValidation).json();
     assert.equal(structuredBody.ok, true, JSON.stringify(structuredBody.diagnostics));
-    assert.equal((await structuredSave).status(), 200);
+    const structuredSave = page.waitForResponse((response) => response.request().method() === "PUT"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`);
+    const structuredSaveResponse = await structuredSave;
+    assert.equal(structuredSaveResponse.status(), 200);
+    const structuredSavedBody = structuredSaveResponse.request().postDataJSON();
+    assert.deepEqual(structuredSavedBody.teamIR.handoffs.find((handoff) => handoff.id === "revise").when.condition,
+      editedCondition);
+    assert.equal(structuredSavedBody.teamIR.handoffs.find((handoff) => handoff.id === "revise").when.priority, 3);
     await page.reload({ waitUntil: "networkidle" });
-    await page.locator('[name="join-0-timeout"]').waitFor();
-    assert.equal(await page.locator('[name="join-0-timeout"]').inputValue(), "6500");
+    assert.match(await page.locator('[data-ir-condition-summary="1"]').innerText(), /review\.decision equals "reject"/);
     assert.equal(await page.locator('[name="loop-0-rounds"]').inputValue(), "4");
     assert.equal(await page.locator('[name="review-0-timeout"]').inputValue(), "7500");
     assert.deepEqual(JSON.parse(await page.locator('[name="review-0-feedback-schema"]').inputValue()), editedFeedbackSchema);
-    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].baseMapping,
-      contracts.orchestration.joins[0].baseMapping, "structured edits preserve advanced Join fields");
+    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).handoffContracts.revise.when.condition,
+      editedCondition, "nested Handoff condition edits survive save and reopen");
     Object.assign(contracts.orchestration, JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration);
-    assert.equal(contracts.orchestration.joins[0].timeoutMs, 6500);
     assert.equal(contracts.orchestration.loops[0].maxRounds, 4);
     assert.equal(contracts.orchestration.reviews[0].timeoutMs, 7500);
     assert.deepEqual(contracts.orchestration.reviews[0].feedbackSchema, editedFeedbackSchema);
-    advancedIr.orchestration.joins[0].timeoutMs = 6500;
     advancedIr.orchestration.loops[0].maxRounds = 4;
     advancedIr.orchestration.reviews[0].timeoutMs = 7500;
     advancedIr.orchestration.reviews[0].feedbackSchema = editedFeedbackSchema;
+    advancedIr.handoffs.find((handoff) => handoff.id === "revise").when.condition = editedCondition;
+    advancedIr.handoffs.find((handoff) => handoff.id === "revise").when.priority = 3;
 
     const advancedEdit = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
-    advancedEdit.orchestration.joins[0].timeoutMs = 7100;
     advancedEdit.orchestration.loops[0].maxRounds = 5;
     await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(advancedEdit, null, 2));
     const advancedEditValidation = page.waitForResponse((response) => response.request().method() === "POST"
@@ -442,14 +593,10 @@ export async function resolveBindings({ teamIR }) {
     const advancedEditSaveResponse = await advancedEditSave;
     assert.equal(advancedEditSaveResponse.status(), 200);
     const advancedEditSavedBody = advancedEditSaveResponse.request().postDataJSON();
-    assert.equal(advancedEditSavedBody.teamIR.orchestration.joins[0].timeoutMs, 7100);
     assert.equal(advancedEditSavedBody.teamIR.orchestration.loops[0].maxRounds, 5);
     await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
-    await page.locator('[name="join-0-timeout"]').waitFor();
-    assert.equal(await page.locator('[name="join-0-timeout"]').inputValue(), "7100", "advanced Join edits flow back to the structured row");
     assert.equal(await page.locator('[name="loop-0-rounds"]').inputValue(), "5", "advanced Loop edits flow back to the structured row");
     const roundTripped = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
-    assert.deepEqual(roundTripped.orchestration.joins[0].handoffIds, ["revise"], "Join Handoff IDs survive a visual/JSON round trip");
     assert.deepEqual(roundTripped.orchestration.loops[0].entryHandoffIds, ["entry"], "Loop Handoff IDs survive a visual/JSON round trip");
     assert.deepEqual(roundTripped.orchestration.reviews[0].feedbackSchema, editedFeedbackSchema, "Review feedback schema survives a visual/JSON round trip");
 
@@ -470,31 +617,6 @@ export async function resolveBindings({ teamIR }) {
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[name="review-0-at"]').waitFor();
 
-    let emptyJoinSaves = 0;
-    const countEmptyJoinSave = (request) => {
-      if (request.method() === "PUT" && new URL(request.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`) emptyJoinSaves += 1;
-    };
-    page.on("request", countEmptyJoinSave);
-    await page.locator('[name="join-0-handoffs"][value="revise"]').uncheck();
-    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, [],
-      "Join checkbox changes immediately synchronize advanced JSON");
-    const emptyJoinValidation = page.waitForResponse((response) => response.request().method() === "POST"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
-    await page.locator('#team-ir-editor button[type="submit"]').click();
-    const emptyJoinBody = await (await emptyJoinValidation).json();
-    assert.equal(emptyJoinBody.ok, false, JSON.stringify(emptyJoinBody.diagnostics));
-    assert.equal(emptyJoinSaves, 0, "an empty Join source selection must not reach save API");
-    page.off("request", countEmptyJoinSave);
-    await page.reload({ waitUntil: "networkidle" });
-    assert.equal(await page.locator('[name="join-0-handoffs"][value="revise"]').isChecked(), true,
-      "saved Join source selection is restored after reopen");
-
-    await page.locator("[data-ir-add-join]").click();
-    assert.equal(await page.locator("[data-ir-join]").count(), 2);
-    assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[1].id, "join-2");
-    await page.locator('[data-ir-remove-join="1"]').click();
-    assert.equal(await page.locator("[data-ir-join]").count(), 1);
-    assert.deepEqual(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.joins[0].handoffIds, ["revise"]);
     await page.locator("[data-ir-add-loop]").click();
     assert.equal(await page.locator("[data-ir-loop]").count(), 2);
     assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.loops[1].id, "loop-2");
@@ -508,24 +630,6 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator("[data-ir-review]").count(), 1);
     assert.equal(JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue()).orchestration.reviews[0].id, "review-draft");
 
-    await page.locator('[name="join-0-timeout"]').fill("0");
-    let structuredInvalidSaves = 0;
-    page.on("request", (request) => {
-      if (request.method() === "PUT" && new URL(request.url()).pathname === `/api/v1/team-versions/${advancedId}/ir`) structuredInvalidSaves += 1;
-    });
-    const structuredInvalidValidation = page.waitForResponse((response) => response.request().method() === "POST"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
-    await page.locator('#team-ir-editor button[type="submit"]').click();
-    const structuredInvalid = await (await structuredInvalidValidation).json();
-    assert.equal(structuredInvalid.ok, false);
-    assert.ok(structuredInvalid.diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === "/orchestration/joins/0/timeoutMs"), JSON.stringify(structuredInvalid.diagnostics));
-    assert.equal(structuredInvalidSaves, 0, "invalid structured contracts must not reach save API");
-    await page.locator('[data-team-ir-diagnostics] .ir-diagnostic').first().waitFor();
-    assert.equal(await page.locator("[data-team-ir-diagnostics]").isVisible(), true, "server diagnostics are shown for invalid structured contracts");
-    await page.locator('[data-team-ir-diagnostics] .ir-diagnostic').filter({ hasText: "/orchestration/joins/0/timeoutMs" }).click();
-    const joinTimeout = page.locator('[name="join-0-timeout"]');
-    assert.equal(await joinTimeout.evaluate((element) => document.activeElement === element), true);
-    assert.equal(await joinTimeout.inputValue(), "0");
     await page.reload({ waitUntil: "networkidle" });
 
     await page.locator('[data-ir-connect-source-agent-index="0"]').click();
@@ -593,6 +697,42 @@ export async function resolveBindings({ teamIR }) {
 
     await page.reload({ waitUntil: "networkidle" });
     const pointerContracts = JSON.parse(await advancedEditor.inputValue());
+    pointerContracts.handoffContracts.entry.map.data.prompt.$ref = "$.run.input.missing";
+    await advancedEditor.fill(JSON.stringify(pointerContracts, null, 2));
+    const handoffMappingValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const handoffMappingBody = await (await handoffMappingValidation).json();
+    assert.equal(handoffMappingBody.ok, false);
+    const handoffMappingDiagnostic = handoffMappingBody.diagnostics.find((item) => item.pointer === "/handoffs/0/map/data/prompt");
+    assert.ok(handoffMappingDiagnostic, JSON.stringify(handoffMappingBody.diagnostics));
+    assert.equal(handoffMappingDiagnostic.code, "IR_MAPPING_SOURCE_MISSING");
+    await page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").filter({ hasText: handoffMappingDiagnostic.pointer }).first().click();
+    const handoffMappingReference = page.locator('[data-ir-handoff="0"] [data-ir-map-row]').first().locator('[data-ir-value-direct-ref]');
+    assert.equal(await handoffMappingReference.evaluate((element) => document.activeElement === element), true,
+      "a missing reference path should focus the structured reference editor");
+    assert.equal(await handoffMappingReference.inputValue(), "$.run.input.missing");
+
+    pointerContracts.handoffContracts.entry.map.data.prompt.$ref = "$.run.input.prompt";
+    pointerContracts.handoffContracts.revise.when.condition.args[0].$ref = "$.output.data.missing";
+    await advancedEditor.fill(JSON.stringify(pointerContracts, null, 2));
+    const handoffConditionValidation = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
+    await page.locator('#team-ir-editor button[type="submit"]').click();
+    const handoffConditionBody = await (await handoffConditionValidation).json();
+    assert.equal(handoffConditionBody.ok, false);
+    const handoffConditionDiagnostic = handoffConditionBody.diagnostics.find((item) => item.pointer.startsWith("/handoffs/1/when/condition"));
+    assert.ok(handoffConditionDiagnostic, JSON.stringify(handoffConditionBody.diagnostics));
+    assert.equal(handoffConditionDiagnostic.code, "IR_MAPPING_SOURCE_MISSING");
+    await page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").filter({ hasText: handoffConditionDiagnostic.pointer }).first().click();
+    const conditionOperator = page.locator('[data-ir-condition-editor="1"] [data-ir-condition-root="true"] [data-ir-condition-op]').first();
+    assert.equal(await conditionOperator.evaluate((element) => document.activeElement === element), true,
+      "condition diagnostics must focus the live structured AST editor");
+
+    pointerContracts.handoffContracts.revise.when.condition = {
+      op: "equals",
+      args: [{ $ref: "$.review.decision" }, { $literal: "reject" }]
+    };
     pointerContracts.runInput.dataSchema.properties["bad/~key"] = { type: "not-a-json-type" };
     await advancedEditor.fill(JSON.stringify(pointerContracts, null, 2));
     const escapedPointerValidation = page.waitForResponse((response) => response.request().method() === "POST"
@@ -601,11 +741,14 @@ export async function resolveBindings({ teamIR }) {
     const escapedPointerBody = await (await escapedPointerValidation).json();
     assert.equal(escapedPointerBody.ok, false);
     const escapedPointer = "/runInput/dataSchema/properties/bad~1~0key/type";
+    assert.ok(escapedPointerBody.diagnostics.some((item) => item.code === "IR_SCHEMA_INVALID" && item.pointer === escapedPointer), JSON.stringify(escapedPointerBody.diagnostics));
     const escapedDiagnostic = page.locator("[data-team-ir-diagnostics] button.ir-diagnostic").filter({ hasText: escapedPointer }).first();
+    await escapedDiagnostic.waitFor();
     await escapedDiagnostic.click();
     assert.equal(await advancedEditor.evaluate((element) => element.value.slice(element.selectionStart, element.selectionEnd)), '"not-a-json-type"');
 
     delete pointerContracts.runInput.dataSchema.properties["bad/~key"];
+    pointerContracts.handoffContracts.revise.when.condition = structuredClone(advancedIr.handoffs.find((handoff) => handoff.id === "revise").when.condition);
     await advancedEditor.fill(JSON.stringify(pointerContracts, null, 2));
     const advancedValidation = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/validate`);
@@ -620,7 +763,7 @@ export async function resolveBindings({ teamIR }) {
     const advancedReopened = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir`).then((response) => response.json());
     assert.equal(advancedReopened.semanticDigest, teamIRSemanticDigest(advancedReopened.teamIR));
     assert.deepEqual(advancedReopened.teamIR.orchestration.loops, [{ ...advancedIr.orchestration.loops[0], maxRounds: 5 }]);
-    assert.deepEqual(advancedReopened.teamIR.orchestration.joins, [{ ...advancedIr.orchestration.joins[0], timeoutMs: 7100 }]);
+    assert.deepEqual(advancedReopened.teamIR.orchestration.joins, []);
     assert.deepEqual(advancedReopened.teamIR.orchestration.reviews, advancedIr.orchestration.reviews);
     assert.deepEqual(advancedReopened.teamIR.orchestration.routes, advancedIr.orchestration.routes);
     assert.deepEqual(advancedReopened.teamIR.runInput.artifactSlots, advancedIr.runInput.artifactSlots);
@@ -632,9 +775,13 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(advancedReopened.teamIR.bindings, advancedIr.bindings);
     const artifactUatIr = structuredClone(advancedReopened.teamIR);
     artifactUatIr.handoffs = artifactUatIr.handoffs.filter((handoff) => ["entry", "exit"].includes(handoff.id));
+    artifactUatIr.handoffs.find((handoff) => handoff.id === "entry").map.artifacts = {
+      sources: { $ref: "$.run.attachments.brief" }
+    };
     artifactUatIr.handoffs.find((handoff) => handoff.id === "exit").map = {
       data: { answer: { $ref: "$.output.data.answer" } }
     };
+    artifactUatIr.handoffs.find((handoff) => handoff.id === "exit").when = { priority: 0 };
     artifactUatIr.orchestration = {
       routes: [
         { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["entry"] },
@@ -646,6 +793,10 @@ export async function resolveBindings({ teamIR }) {
     });
     const artifactUatSaved = await artifactUatSave.json();
     assert.equal(artifactUatSave.status(), 200, JSON.stringify(artifactUatSaved));
+    assert.equal(artifactUatSaved.saved, true, JSON.stringify(artifactUatSaved.diagnostics));
+    const artifactUatStored = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir`).then((response) => response.json());
+    assert.deepEqual(artifactUatStored.teamIR.handoffs.find((handoff) => handoff.id === "entry").map.artifacts,
+      { sources: { $ref: "$.run.attachments.brief" } });
     await page.reload({ waitUntil: "networkidle" });
     const browserArtifactSlotsResponse = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir/simulation-artifact-slots`);
     const browserArtifactSlots = await browserArtifactSlotsResponse.json();
@@ -665,9 +816,16 @@ export async function resolveBindings({ teamIR }) {
     const artifactSimulationResponse = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${advancedId}/ir/simulations`);
     await page.locator("[data-ir-simulation-run]").click();
-    const artifactSimulation = await (await artifactSimulationResponse).json();
+    const artifactSimulationResponseValue = await artifactSimulationResponse;
+    const artifactSimulationRequest = artifactSimulationResponseValue.request().postDataJSON();
+    assert.deepEqual(Object.keys(artifactSimulationRequest.attachments), ["brief"]);
+    const artifactSimulation = await artifactSimulationResponseValue.json();
     assert.equal(artifactSimulation.status, "completed", JSON.stringify(artifactSimulation));
     assert.deepEqual(Object.keys(artifactSimulation.attachments), ["brief"]);
+    assert.deepEqual(artifactSimulationRequest.attachments.brief, {
+      artifactId: artifactSimulation.attachments.brief.artifactId,
+      mediaType: "text/markdown"
+    });
     assert.match(artifactSimulation.attachments.brief.artifactId, /^art_[a-f0-9-]+$/);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator("[data-ir-graph-node=run]").click();
@@ -684,6 +842,20 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator("[data-ir-graph-node]").count(), advancedIr.agents.length + 2);
     assert.ok(await page.locator("[data-ir-graph-handoff]").count() >= 2);
 
+    await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    const studioClassicCases = await page.locator("[data-studio-classic-case]").evaluateAll((elements) => elements.map((element) => element.dataset.studioClassicCase));
+    assert.deepEqual(studioClassicCases, ["software-team", "expert-consultation", "structured-debate", "a2a-intake", "artifact-evidence", "conditional-signoff", "maker-checker", "release-gate"]);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), "classic Team entries fit the narrow Studio viewport");
+    const classicTemplateResponse = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/v1/cases/structured-debate/template");
+    await page.locator('[data-classic-team-template="structured-debate"]').click();
+    const classicTemplate = await (await classicTemplateResponse).json();
+    await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/ir$/);
+    const classicTemplateId = page.url().match(/\/studio\/teams\/([a-z0-9-]+)\/ir$/)?.[1];
+    assert.equal(classicTemplate.projectId, classicTemplateId);
+    await page.locator("#team-ir-editor").waitFor();
+    assert.equal(await page.locator("[data-ir-agent]").count(), 5);
+    assert.equal((await page.locator("[data-team-ir-digest]").innerText()).trim().length, 64);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
     await page.locator('#studio-view a[href="/studio/new"]').click();
     await page.waitForURL(`${url}/studio/new`);
@@ -716,6 +888,19 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await nativeCard.locator(`a[href="/studio/teams/${nativeId}/design"]`).count(), 0);
 
     const v2ReviewRouteCalls = [];
+    const diagnosticMessages = await page.evaluate(async () => {
+      const { teamBindingDiagnosticMessage } = await import("/app/views/app.js");
+      return {
+        zh: teamBindingDiagnosticMessage("OUTPUT_JSON_SYNTAX", "zh-CN"),
+        en: teamBindingDiagnosticMessage("OUTPUT_JSON_MARKDOWN_FENCE", "en"),
+        unsupported: teamBindingDiagnosticMessage("OUTPUT_PARTS_UNSUPPORTED", "zh-CN"),
+        unknown: teamBindingDiagnosticMessage("UNKNOWN_DIAGNOSTIC", "en")
+      };
+    });
+    assert.match(diagnosticMessages.zh, /JSON 语法无效/);
+    assert.match(diagnosticMessages.en, /Markdown fences/);
+    assert.match(diagnosticMessages.unsupported, /Provider 是否支持结构化 JSON 输出/);
+    assert.equal(diagnosticMessages.unknown, "");
     let v2ReviewStatus = "pending";
     let validReviewPosts = 0;
     let reviewReads = 0;

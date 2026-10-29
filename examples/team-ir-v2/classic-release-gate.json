@@ -15,7 +15,7 @@
     "dataSchema": {
       "type": "object",
       "properties": {
-        "decision": { "type": "string", "enum": ["PASS", "REJECT"] },
+        "decision": { "type": "string", "enum": ["PASS", "REJECT", "ABSTAIN"] },
         "summary": { "type": "string", "minLength": 1 }
       },
       "required": ["decision", "summary"],
@@ -92,12 +92,27 @@
         "condition": { "op": "equals", "args": [{ "$ref": "$.output.data.decision" }, { "$literal": "REJECT" }] },
         "priority": 1
       }
+    },
+    {
+      "id": "gate-abstain-result",
+      "from": { "kind": "agent", "agentId": "release-gate", "outputPort": "GATE_DECISION" },
+      "to": { "kind": "result" },
+      "map": {
+        "data": {
+          "decision": { "$ref": "$.output.data.decision" },
+          "summary": { "$ref": "$.output.data.summary" }
+        }
+      },
+      "when": {
+        "condition": { "op": "equals", "args": [{ "$ref": "$.output.data.decision" }, { "$literal": "ABSTAIN" }] },
+        "priority": 2
+      }
     }
   ],
   "orchestration": {
     "routes": [
       { "from": { "kind": "run" }, "mode": "exclusive_priority", "onNoMatch": "fail", "handoffIds": ["run-to-gate"] },
-      { "from": { "kind": "agent", "agentId": "release-gate", "outputPort": "GATE_DECISION" }, "mode": "exclusive_priority", "onNoMatch": "finish", "handoffIds": ["gate-pass-result", "gate-reject-result"] }
+      { "from": { "kind": "agent", "agentId": "release-gate", "outputPort": "GATE_DECISION" }, "mode": "exclusive_priority", "onNoMatch": "finish", "handoffIds": ["gate-pass-result", "gate-reject-result", "gate-abstain-result"] }
     ],
     "joins": [],
     "loops": [],

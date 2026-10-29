@@ -12,10 +12,6 @@ async function readStdin() {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function basicAuth(username, password) {
-  return "Basic " + Buffer.from(username + ":" + password).toString("base64");
-}
-
 async function requestJson(url, options) {
   const response = await fetch(url, { ...options, redirect: "error", signal: AbortSignal.timeout(120_000) });
   if (!response.ok) throw new Error("provider_http_" + response.status);
@@ -27,9 +23,11 @@ async function requestJson(url, options) {
 let stage = "input";
 try {
   const input = await readStdin();
-  if (input.endpoint !== "http://host.docker.internal:4096" || input.model !== "codex-gateway/gpt-6-luna") throw new Error("endpoint_not_allowed");
-  if (typeof input.password !== "string" || input.password.length < 16) throw new Error("credential_invalid");
-  const headers = { authorization: basicAuth("opencode", input.password), "content-type": "application/json" };
+  if (input.endpoint !== "http://team-ir-egress:4318" || input.model !== "codex-gateway/gpt-6-luna") throw new Error("endpoint_not_allowed");
+  if (!input.tools || typeof input.tools !== "object" || Array.isArray(input.tools)
+    || Object.keys(input.tools).length === 0 || Object.values(input.tools).some((enabled) => enabled !== false)) throw new Error("tools_not_disabled");
+  if (input.format?.type !== "json_schema" || !input.format.schema || typeof input.format.schema !== "object") throw new Error("output_format_not_structured");
+  const headers = { "content-type": "application/json" };
   stage = "session";
   const created = await requestJson(input.endpoint + "/session", {
     method: "POST", headers, body: JSON.stringify({ title: "Team IR model invocation" })
@@ -40,7 +38,9 @@ try {
     method: "POST", headers,
     body: JSON.stringify({
       model: { providerID: "codex-gateway", modelID: "gpt-6-luna" },
-      tools: {},
+      tools: input.tools,
+      format: input.format,
+      options: { structuredOutputMode: "outputFormat" },
       system: input.system,
       parts: [{ type: "text", text: input.prompt }]
     })
@@ -54,16 +54,28 @@ try {
   stage = "map_part_types";
   const partKinds = parts.map((part) => part?.type ?? "unknown").join("_");
   stage = "check_text_presence";
-  if (!parts.some((part) => part?.type === "text") || parts.some((part) => !["text", "reasoning", "step-start", "step-finish"].includes(part?.type))) throw new Error("response_parts_" + partKinds.slice(0, 80));
-  stage = "check_text_values";
-  if (parts.some((part) => part.type === "text" && typeof part.text !== "string")) throw new Error("response_text_invalid");
-  stage = "collect_text";
-  const text = parts.filter((part) => part.type === "text").map((part) => part.text).join("");
+  const structured = parts.filter((part) => part.type === "tool" && part.tool === "StructuredOutput");
+  const hasUnexpectedTool = parts.some((part) => part.type === "tool" && part.tool !== "StructuredOutput");
+  let text;
+  if (structured.length) {
+    if (hasUnexpectedTool) throw new Error("response_parts_unexpected_tool");
+    if (structured.length !== 1) throw new Error("response_parts_multiple_structured");
+    const result = structured[0].state;
+    if (result?.status !== "completed" || !result.input || typeof result.input !== "object" || Array.isArray(result.input)) throw new Error("response_text_invalid");
+    text = JSON.stringify(result.input);
+  } else {
+    if (hasUnexpectedTool) throw new Error("response_parts_unexpected_tool");
+    if (!parts.some((part) => part?.type === "text") || parts.some((part) => !["text", "reasoning", "step-start", "step-finish"].includes(part?.type))) throw new Error("response_parts_unsupported_type");
+    stage = "check_text_values";
+    if (parts.some((part) => part.type === "text" && typeof part.text !== "string")) throw new Error("response_text_invalid");
+    stage = "collect_text";
+    text = parts.filter((part) => part.type === "text").map((part) => part.text).join("");
+  }
   stage = "emit";
   if (Buffer.byteLength(text) > MAX_OUTPUT_BYTES) throw new Error("model_output_limit");
   process.stdout.write(JSON.stringify({ text }));
 } catch (error) {
-  const code = typeof error?.message === "string" && /^(input_limit|endpoint_not_allowed|credential_invalid|session_invalid|provider_http_[0-9]{3}|provider_response_limit|response_parts_missing|response_parts_invalid|response_text_invalid|response_parts_[a-z_0-9-]+|model_output_limit)$/.test(error.message)
+  const code = typeof error?.message === "string" && /^(input_limit|endpoint_not_allowed|credential_invalid|tools_not_disabled|output_format_not_structured|session_invalid|provider_http_[0-9]{3}|provider_response_limit|response_parts_missing|response_parts_invalid|response_text_invalid|response_parts_[a-z_0-9-]+|model_output_limit)$/.test(error.message)
     ? error.message
     : "adapter_" + stage + "_" + String(error?.name || "error").toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 30);
   process.stderr.write("TEAM_MODEL_ADAPTER_FAILED:" + code + "\n");

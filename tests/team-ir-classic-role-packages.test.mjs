@@ -10,7 +10,7 @@ import { loadRolePackage } from "../dist/runtime/role-repo.js";
 const fixturesDir = path.resolve("examples/team-ir-v2");
 const roleRoot = path.resolve("og-roles/roles");
 const addedRoleIds = new Set([
-  "cardiology-expert", "chief-reviewer", "compliance-reviewer", "consultation-dispatcher",
+  "artifact-evidence-analyst", "artifact-evidence-editor", "cardiology-expert", "chief-reviewer", "compliance-reviewer", "consultation-dispatcher",
   "debate-host", "debate-opponent", "debate-proponent", "debate-reporter", "imaging-expert",
   "maker", "neurology-expert", "neutral-judge", "primary-reviewer", "release-gate",
   "signoff-chair", "software-implementer", "software-lead", "software-planner", "software-tester"
@@ -71,8 +71,9 @@ test("latest classic Team IR fixtures resolve immutable packaged role contracts 
       const outputSchema = await loadJson(path.join(roleDir, manifest.outputSchema));
       assert.equal(outputSchema.type, "object", `${roleId} output contract must be a JSON object`);
       if (addedRoleIds.has(roleId)) {
-        const [outputPort] = Object.values(agent.outputPorts);
-        assert.deepEqual(outputSchema, outputPort.dataSchema, `${roleId} contract must match its classic fixture output`);
+        const outputSchemas = Object.values(agent.outputPorts).map((outputPort) => outputPort.dataSchema);
+        const expectedSchema = outputSchemas.length === 1 ? outputSchemas[0] : { type: "object", oneOf: outputSchemas };
+        assert.deepEqual(outputSchema, expectedSchema, `${roleId} contract must match its classic fixture outputs`);
       }
       roleDigests.set(agent.packageRef, await packageDigest(roleDir));
     }

@@ -1,0 +1,1 @@
+Use only the request and authorized brief Artifact as evidence. Separate directly stated facts from assumptions. The declared Team IR output is event `A_DONE`, `data.analysis`, and required `artifactTexts.draft`; put one paragraph of draft content in the Artifact field, not as free-standing response text.

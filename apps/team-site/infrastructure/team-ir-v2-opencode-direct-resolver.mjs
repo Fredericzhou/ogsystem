@@ -5,17 +5,23 @@ import {
   authorizeTeamIrReviewer,
   loadRole,
   makePrompt,
+  outputJsonSchema,
   validateModelOutput
 } from "./team-ir-v2-opencode-docker-resolver.mjs";
 
 const HERE = new URL("./team-ir-v2-opencode-docker-pins.json", import.meta.url);
 const PINS = JSON.parse(await readFile(HERE, "utf8"));
+const TOOL_PINS = JSON.parse(await readFile(new URL("./team-ir-v2-opencode-tool-pins.json", import.meta.url), "utf8"));
 const ENDPOINT = "http://127.0.0.1:4096";
 const MODEL_REF = PINS.modelRef;
-const ADAPTER_VERSION = "ogs-opencode-direct-adapter/1";
+const ADAPTER_VERSION = "ogs-opencode-direct-adapter/14";
 const MAX_ARTIFACT_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const running = new Map();
+
+function disabledTools() {
+  return Object.fromEntries(TOOL_PINS.toolIds.map((toolId) => [toolId, false]));
+}
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -104,13 +110,25 @@ async function requestJson(url, { headers, body, signal }) {
 function getResponseText(response) {
   const parts = response?.parts;
   if (!Array.isArray(parts) || parts.some((part) => !part || typeof part !== "object" || typeof part.type !== "string")) {
-    throw new TeamBindingError("OpenCode response parts are invalid.", "invalid_output");
+    throw new TeamBindingError("OpenCode response parts are invalid.", "invalid_output", "OUTPUT_PARTS_UNSUPPORTED");
   }
+  const structured = parts.filter((part) => part.type === "tool" && part.tool === "StructuredOutput");
+  const hasUnexpectedTool = parts.some((part) => part.type === "tool" && part.tool !== "StructuredOutput");
+  if (structured.length) {
+    if (hasUnexpectedTool) throw new TeamBindingError("OpenCode returned an additional tool call with structured output.", "invalid_output", "OUTPUT_PARTS_UNEXPECTED_TOOL");
+    if (structured.length !== 1) throw new TeamBindingError("OpenCode returned multiple structured outputs.", "invalid_output", "OUTPUT_PARTS_MULTIPLE_STRUCTURED");
+    const result = structured[0].state;
+    if (result?.status !== "completed" || !result.input || typeof result.input !== "object" || Array.isArray(result.input)) {
+      throw new TeamBindingError("OpenCode structured response is incomplete.", "invalid_output", "OUTPUT_TEXT_MISSING");
+    }
+    return JSON.stringify(result.input);
+  }
+  if (hasUnexpectedTool) throw new TeamBindingError("OpenCode returned an unexpected tool call instead of text output.", "invalid_output", "OUTPUT_PARTS_UNEXPECTED_TOOL");
   if (!parts.some((part) => part.type === "text") || parts.some((part) => !["text", "reasoning", "step-start", "step-finish"].includes(part.type))) {
-    throw new TeamBindingError("OpenCode response contains unsupported parts.", "invalid_output");
+    throw new TeamBindingError("OpenCode response contains no usable text output part.", "invalid_output", "OUTPUT_PARTS_UNSUPPORTED");
   }
   if (parts.some((part) => part.type === "text" && typeof part.text !== "string")) {
-    throw new TeamBindingError("OpenCode response text is invalid.", "invalid_output");
+    throw new TeamBindingError("OpenCode response text is invalid.", "invalid_output", "OUTPUT_TEXT_MISSING");
   }
   return parts.filter((part) => part.type === "text").map((part) => part.text).join("");
 }
@@ -184,7 +202,9 @@ export async function resolveBindings({ teamIR, closure }) {
             signal: controller.signal,
             body: {
               model: { providerID, modelID },
-              tools: {},
+              tools: disabledTools(),
+              format: { type: "json_schema", schema: outputJsonSchema(agent) },
+              options: { structuredOutputMode: "outputFormat" },
               system: prompt.system,
               parts: [{ type: "text", text: prompt.prompt }]
             }
@@ -205,4 +225,8 @@ export async function resolveBindings({ teamIR, closure }) {
     };
   }
   return bindings;
+}
+
+export function getOpenCodeDisabledToolsForTest() {
+  return disabledTools();
 }

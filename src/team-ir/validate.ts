@@ -1,4 +1,5 @@
 import type { TeamIrDiagnostic, TeamIrDocument } from "./types.js";
+import { validateTeamIrRuntimeTopologies } from "./runtime-topology-validation.js";
 
 type RecordValue = Record<string, unknown>;
 type Endpoint = { kind?: unknown; agentId?: unknown; outputPort?: unknown };
@@ -364,6 +365,20 @@ export function validateTeamIrReferences(document: TeamIrDocument): TeamIrDiagno
     }
   }
 
+  for (let index = 0; index < loops.length; index += 1) {
+    const members = new Set(items(loops[index].members).filter((id): id is string => typeof id === "string"));
+    for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
+      const sharedMembers = items(loops[otherIndex].members).filter((id): id is string => typeof id === "string" && members.has(id));
+      if (sharedMembers.length) {
+        diagnostics.push(diagnostic(
+          "IR_LOOP_SCOPE_OVERLAP_UNSUPPORTED",
+          `/orchestration/loops/${index}/members`,
+          `Loop Scope '${String(loops[index].id)}' overlaps Loop Scope '${String(loops[otherIndex].id)}' at Agent '${sharedMembers[0]}'. Nested or overlapping Loop Scopes are unsupported.`
+        ));
+      }
+    }
+  }
+
   for (const [index, review] of reviews.entries()) {
     const at = isRecord(review.at) ? review.at : {};
     const agentId = at.agentId;
@@ -374,6 +389,8 @@ export function validateTeamIrReferences(document: TeamIrDocument): TeamIrDiagno
       diagnostics.push(diagnostic("IR_UNKNOWN_PORT", `/orchestration/reviews/${index}/at/outputPort`, `Unknown Review output port '${outputPort}' on Agent '${agentId}'.`, "Use a declared output port.", [agentId as string]));
     }
   }
+
+  diagnostics.push(...validateTeamIrRuntimeTopologies(document));
 
   return diagnostics;
 }

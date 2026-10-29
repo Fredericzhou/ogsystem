@@ -46,7 +46,7 @@
   "agents": [
     {
       "id": "evidence-analyst",
-      "packageRef": "role:advanced-worker-a@1",
+      "packageRef": "role:artifact-evidence-analyst@1",
       "bindingRef": "binding:evidence-analyst",
       "inputPorts": {
         "default": {
@@ -107,7 +107,7 @@
     },
     {
       "id": "evidence-editor",
-      "packageRef": "role:advanced-worker-b@1",
+      "packageRef": "role:artifact-evidence-editor@1",
       "bindingRef": "binding:evidence-editor",
       "inputPorts": {
         "default": {

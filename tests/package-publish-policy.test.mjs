@@ -17,6 +17,8 @@ test("package publish whitelist includes the built-in and classic Team IR role s
     "og-roles/roles/advanced-reviewer/**",
     "og-roles/roles/advanced-worker-a/**",
     "og-roles/roles/advanced-worker-b/**",
+    "og-roles/roles/artifact-evidence-analyst/**",
+    "og-roles/roles/artifact-evidence-editor/**",
     "og-roles/roles/cardiology-expert/**",
     "og-roles/roles/chief-reviewer/**",
     "og-roles/roles/compliance-reviewer/**",

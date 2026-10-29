@@ -1,0 +1,19 @@
+{
+  "roleId": "artifact-evidence-editor",
+  "roleVersion": "1.0.0",
+  "name": "Artifact Evidence Editor",
+  "description": "Edits a report using only the authorized request and evidence inputs.",
+  "preferredModelTags": ["instruction-following"],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["team-ir-v2", "artifact-evidence"],
+  "contractVersion": 1,
+  "purpose": "Produce a concise report that preserves facts, assumptions, and unknowns from the authorized evidence.",
+  "responsibility": { "kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": [] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["B_DONE"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

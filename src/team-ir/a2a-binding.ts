@@ -66,6 +66,7 @@ export type TeamA2ABindingOptions = {
 
 type InvocationControl = {
   cancelled: boolean;
+  sendMessageStarted?: boolean;
   taskId?: string;
   promise?: Promise<TeamBindingResult>;
   terminalResult?: TeamBindingResult;
@@ -210,8 +211,15 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
         });
         const parts = await encodeInput(invocation.input, options.artifactReader, invocation.artifactResolver);
         if (control.cancelled) throw new TeamBindingError("A2A invocation canceled before task submission.", "cancelled");
+        control.sendMessageStarted = true;
         const submitted = await options.client.sendMessage({ messageId: invocation.idempotencyKey, idempotencyKey: invocation.idempotencyKey, parts });
+        control.sendMessageStarted = false;
         control.taskId = submitted.id;
+        try { await invocation.onRemoteTaskId?.(submitted.id); }
+        catch (error) {
+          if (error instanceof TeamBindingError) error.outcomeUnknown = true;
+          throw error;
+        }
         if (control.cancelled) {
           const confirmed = await cancelRemoteTask(control, submitted.id);
           const error = new TeamBindingError("A2A invocation canceled during task submission.", "cancelled");
@@ -234,9 +242,14 @@ export function createTeamA2ABinding(options: TeamA2ABindingOptions): TeamBindin
         return result;
       })().catch((error) => {
         control.promise = undefined;
-        if (error instanceof TeamBindingError) throw error;
+        const submissionMayHaveCommitted = control.sendMessageStarted === true
+          && !(isRecord(error) && typeof error.status === "number" && error.status < 500);
+        if (error instanceof TeamBindingError) {
+          if (submissionMayHaveCommitted) error.outcomeUnknown = true;
+          throw error;
+        }
         const mapped = new TeamBindingError(error instanceof Error ? error.message : String(error), classifyError(error));
-        mapped.outcomeUnknown = control.taskId !== undefined;
+        mapped.outcomeUnknown = control.taskId !== undefined || submissionMayHaveCommitted;
         throw mapped;
       });
       return control.promise;

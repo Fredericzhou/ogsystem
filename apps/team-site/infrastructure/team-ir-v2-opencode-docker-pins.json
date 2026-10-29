@@ -1,16 +1,16 @@
 {
   "image": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
-  "adapterVersion": "ogs-opencode-docker-adapter/3",
+  "adapterVersion": "ogs-opencode-docker-adapter/20",
   "modelRef": "codex-gateway/gpt-6-luna",
   "endpoint": "http://host.docker.internal:4096",
   "packages": {
-    "role:advanced-worker-a@1": {
-      "directory": "og-roles/roles/advanced-worker-a",
-      "digest": "f1ab03e99bd7db6c19547b05fb0f81a4110c38c88a0211a6c17f9dd4f8f02c3a"
+    "role:artifact-evidence-analyst@1": {
+      "directory": "og-roles/roles/artifact-evidence-analyst",
+      "digest": "96f3e76ec53b374de7f63671fca1de4145834f65d461413bc2d85a78120bba64"
     },
-    "role:advanced-worker-b@1": {
-      "directory": "og-roles/roles/advanced-worker-b",
-      "digest": "bed3d1028ac4b1cef61876169d75fa5ed4fab3405c9710f048b6827976236c23"
+    "role:artifact-evidence-editor@1": {
+      "directory": "og-roles/roles/artifact-evidence-editor",
+      "digest": "8b0a19174adeb80cc6dea5325d85c6a9fad47919c6e51539265919e864f85445"
     },
     "role:imported.agency.legal-client-intake@1.0.0": {
       "directory": "og-roles/roles/imported.agency.legal-client-intake",
@@ -50,11 +50,11 @@
     },
     "role:maker@1": {
       "directory": "og-roles/roles/maker",
-      "digest": "9776daa3ec301d49e8512edecb1c5366ed7757ea661ec522170c745a669953d0"
+      "digest": "22fa4e1e71faf876b5773939140a29656a0ad455835b8ec8309efe0569dee53f"
     },
     "role:release-gate@1": {
       "directory": "og-roles/roles/release-gate",
-      "digest": "ab2a08b16986f94373d71e3c025bf7a8a63d2bc008cd47fb23edafa74ecf3787"
+      "digest": "7f293c927f47bca1946cbc736cb529c192d277e499d5f0a49825af0e6390a7bd"
     },
     "role:software-planner@1": {
       "directory": "og-roles/roles/software-planner",
@@ -86,7 +86,7 @@
     },
     "role:neutral-judge@1": {
       "directory": "og-roles/roles/neutral-judge",
-      "digest": "671eec563831699ad2717b3b97774704d4c778025434912571afe5e8352b20bb"
+      "digest": "74d68902221cddc3f386f4b2c8fe879c636598dbf58dafa0d05849f0248359aa"
     },
     "role:debate-reporter@1": {
       "directory": "og-roles/roles/debate-reporter",

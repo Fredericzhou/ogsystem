@@ -6,18 +6,13 @@ import { createBasicControlPlaneIdentityProvider } from "../../../dist/runtime/i
 import { createProjectTaskTeamIrReviewContextResolver, createTeamIrReviewUseCases } from "../application/team-ir-review-use-cases.mjs";
 import { createTeamIrReviewPrincipalResolver, handleTeamIrReviewRoutes } from "../api/team-ir-review-routes.mjs";
 
-const fixtureUrl = new URL("../../../examples/team-ir-v2/classic-software-team.json", import.meta.url);
+const fixtureUrl = new URL("../../../examples/team-ir-v2/classic-maker-checker.json", import.meta.url);
 const testPrincipal = { id: "reviewer-1", issuer: "test" };
 
 async function setup({ reviewerId = "reviewer-1", authorized = true, loopRound, includeResume = true, resumeTeamIrRun } = {}) {
   const teamIR = JSON.parse(await readFile(fixtureUrl, "utf8"));
-  teamIR.orchestration.reviews = [{
-    id: "planner-review",
-    at: { kind: "agentOutput", agentId: "planner", outputPort: "PLAN" },
-    feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false },
-    timeoutMs: 10000,
-    onTimeout: "fail"
-  }];
+  teamIR.orchestration.reviews[0].id = "planner-review";
+  teamIR.orchestration.reviews[0].timeoutMs = 10000;
   const plan = compileTeamIr(teamIR);
   let token = 0;
   const runtime = new TeamReviewRuntime({

@@ -1,12 +1,28 @@
 {
   "type": "object",
-  "properties": {
-    "decision": { "type": "string", "enum": ["rebuttal", "final"] },
-    "request": { "type": "string", "minLength": 1 },
-    "proponentSummary": { "type": "string", "minLength": 1 },
-    "opponentSummary": { "type": "string", "minLength": 1 },
-    "rationale": { "type": "string", "minLength": 1 }
-  },
-  "required": ["decision", "request", "proponentSummary", "opponentSummary", "rationale"],
-  "additionalProperties": false
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "decision": { "type": "string", "const": "rebuttal" },
+        "request": { "type": "string", "minLength": 1 },
+        "proponentSummary": { "type": "string", "minLength": 1 },
+        "opponentSummary": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "required": ["decision", "request", "proponentSummary", "opponentSummary", "rationale"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "decision": { "type": "string", "const": "final" },
+        "proponentSummary": { "type": "string", "minLength": 1 },
+        "opponentSummary": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "required": ["decision", "proponentSummary", "opponentSummary", "rationale"],
+      "additionalProperties": false
+    }
+  ]
 }

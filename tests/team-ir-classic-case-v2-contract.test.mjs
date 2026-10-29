@@ -63,24 +63,32 @@ test("classic expert consultation compiles a stable optional-field quorum contra
   assert.equal(repeated.compiledPlanDigest, plan.compiledPlanDigest);
 });
 
-test("classic structured debate compiles an all-of bounded loop and exclusive decision routes", async () => {
+test("classic structured debate compiles typed rebuttal and final outputs in a bounded loop", async () => {
   const fixture = await loadFixture("classic-structured-debate");
   const plan = compileValid(fixture);
   const repeated = compileTeamIr(fixture);
   const join = plan.joinsByTarget.get("neutral-judge:review");
   const loop = plan.loopsById.get("debate-rounds");
-  const route = plan.routesBySource.get("agent:neutral-judge:JUDGMENT");
+  const judge = fixture.agents.find((agent) => agent.id === "neutral-judge");
+  const rebuttalSchema = judge.outputPorts.REBUTTAL.dataSchema;
+  const finalSchema = judge.outputPorts.FINAL.dataSchema;
 
   assert.equal(join.mode, "all_of");
   assert.deepEqual(join.handoffIds, ["proponent-to-judge", "opponent-to-judge"]);
   assert.equal(loop.boundaryAgentId, "debate-host");
   assert.deepEqual(loop.entryHandoffIds, ["run-to-host"]);
   assert.deepEqual(loop.continueHandoffIds, ["judge-to-host"]);
-  assert.deepEqual(loop.exitHandoffIds, ["judge-to-reporter"]);
+  assert.deepEqual(loop.exitHandoffIds, ["judge-to-reporter", "exhausted-rebuttal-to-reporter"]);
   assert.equal(loop.maxRounds, 2);
-  assert.deepEqual(route.handoffIds, ["judge-to-host", "judge-to-reporter"]);
+  assert.deepEqual(Object.keys(judge.outputPorts), ["REBUTTAL", "FINAL"]);
+  assert.ok(rebuttalSchema.required.includes("request"));
+  assert.equal(finalSchema.required.includes("request"), false);
+  assert.equal(finalSchema.properties.decision.const, "final");
+  assert.equal(rebuttalSchema.properties.decision.const, "rebuttal");
+  assert.deepEqual(plan.routesBySource.get("agent:neutral-judge:REBUTTAL").handoffIds, ["judge-to-host", "exhausted-rebuttal-to-reporter"]);
+  assert.equal(plan.routesBySource.has("agent:neutral-judge:FINAL"), false);
   const exitHandoff = fixture.handoffs.find((handoff) => handoff.id === "judge-to-reporter");
-  assert.deepEqual(exitHandoff.when, { priority: 1 });
+  assert.equal(exitHandoff.from.outputPort, "FINAL");
   assert.deepEqual(Object.keys(exitHandoff.map.data), ["decision", "proponentSummary", "opponentSummary", "rationale"]);
   assert.match(plan.compiledPlanDigest, /^[a-f0-9]{64}$/);
   assert.equal(repeated.compiledPlanDigest, plan.compiledPlanDigest);

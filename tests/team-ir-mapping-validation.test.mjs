@@ -421,7 +421,7 @@ test("Loop previous reference rejects a bypass path, external initialization and
   assert.ok(validate(conditional).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/2/map/data/query"));
 });
 
-test("Loop previous references fail closed across Join aggregation and multi-lineage fan-out", () => {
+test("Loop previous references are branch-local across declared Joins and reject sibling branches", () => {
   const joined = loopTeam();
   joined.orchestration.joins = [{
     id: "reviewer-input",
@@ -431,7 +431,7 @@ test("Loop previous references fail closed across Join aggregation and multi-lin
     handoffIds: ["to-reviewer"],
     scope: { kind: "loop", loopId: "revision-loop" }
   }];
-  assert.ok(validate(joined).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/2/map/data/query"));
+  assert.ok(!validate(joined).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED"));
 
   const branched = loopTeam();
   branched.agents.push({
@@ -455,6 +455,7 @@ test("Loop previous references fail closed across Join aggregation and multi-lin
     handoffIds: ["to-reviewer", "to-editor", "loop-finish"]
   }];
   assert.ok(validate(branched).some((item) => item.code === "IR_LOOP_PREVIOUS_NOT_DOMINATED" && item.pointer === "/handoffs/2/map/data/query"));
+
 });
 
 test("artifact mappings enforce required slots and media type compatibility", () => {

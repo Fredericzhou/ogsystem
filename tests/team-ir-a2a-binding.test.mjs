@@ -135,6 +135,30 @@ test("A2A transport errors are classified for the Binding retry policy", async (
   await assert.rejects(make(503).invoke({ ...invocation, idempotencyKey: "run-2:handoff-1" }), (error) => error.failureClass === "server_error");
 });
 
+test("A2A submission response loss reports unknown outcome and retry keeps the invocation key", async () => {
+  const sentKeys = [];
+  let sends = 0;
+  const binding = createTeamA2ABinding({
+    expectedProtocolVersion: "1.0",
+    expectedAgentVersion: "2026-10-1",
+    client: {
+      async getAgentCard() { return card(); },
+      async sendMessage(message) {
+        sends += 1;
+        sentKeys.push(message.idempotencyKey);
+        if (sends === 1) throw new Error("connection closed after request write");
+        return task("completed", { result: { event: "DONE", data: {} } });
+      },
+      async getTask() { throw new Error("not expected"); },
+      async cancelTask() { return true; }
+    }
+  });
+
+  await assert.rejects(binding.invoke(invocation), (error) => error.failureClass === "transport" && error.outcomeUnknown === true);
+  assert.deepEqual(await binding.invoke(invocation), { kind: "completed", output: { event: "DONE", data: {} } });
+  assert.deepEqual(sentKeys, [invocation.idempotencyKey, invocation.idempotencyKey]);
+});
+
 test("A2A input-required returns the durable remote task and requested input contract", async () => {
   const binding = createTeamA2ABinding({
     expectedProtocolVersion: "1.0",
@@ -146,10 +170,12 @@ test("A2A input-required returns the durable remote task and requested input con
       async cancelTask() { return true; }
     }
   });
-  assert.deepEqual(await binding.invoke(invocation), {
+  let associatedTaskId;
+  assert.deepEqual(await binding.invoke({ ...invocation, async onRemoteTaskId(taskId) { associatedTaskId = taskId; } }), {
     kind: "input-required", remoteTaskId: "remote-task-1", messageParts: [{ text: "Please clarify" }],
     requestedInputSchema: { type: "object", required: ["scope"] }
   });
+  assert.equal(associatedTaskId, "remote-task-1");
 });
 
 test("A2A Binding polls working Tasks and maps completed, failed, canceled, and rejected states", async () => {
@@ -238,7 +264,7 @@ test("A2A output Artifacts reject malformed bytes and media outside the pinned o
     (error) => error.failureClass === "policy");
 });
 
-test("Team Runtime Handoff attempt deadline cancels the active A2A Task", async () => {
+test("Team Runtime Handoff deadline cancels the active A2A Task", async () => {
   let now = 0;
   const sleepers = new Set();
   const clock = {
@@ -286,11 +312,11 @@ test("Team Runtime Handoff attempt deadline cancels the active A2A Task", async 
     executionPolicy: { resultMode: "required", activeExecutionBudgetMs: 1000 },
     agents: [{ id: "remote", packageRef: "role:remote@1", bindingRef: "binding:remote", inputPorts: { default: { dataSchema: { type: "object", properties: { question: { type: "string" } }, required: ["question"], additionalProperties: false } } }, outputPorts: { DONE: { dataSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } } } }],
     handoffs: [
-      { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "remote", inputPort: "default" }, map: { data: { question: { "$ref": "$.run.input.question" } } }, when: { priority: 0 }, delivery: { deadlineMs: 100 } },
+      { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "remote", inputPort: "default" }, map: { data: { question: { "$ref": "$.run.input.question" } } }, when: { priority: 0 }, delivery: { deadlineMs: 20 } },
       { id: "finish", from: { kind: "agent", agentId: "remote", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } } }
     ],
     orchestration: { routes: [{ from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["start"] }], joins: [], loops: [], reviews: [] },
-    bindings: [{ id: "binding:remote", kind: "a2a", agentCardRef: "https://agents.example/card.json", attemptTimeoutMs: 20, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }, capabilities: { inputMediaTypes: ["application/json"], outputMediaTypes: ["application/json"], protocolCapabilities: ["cancel"] } }]
+    bindings: [{ id: "binding:remote", kind: "a2a", agentCardRef: "https://agents.example/card.json", attemptTimeoutMs: 100, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }, capabilities: { inputMediaTypes: ["application/json"], outputMediaTypes: ["application/json"], protocolCapabilities: ["cancel"] } }]
   };
   const runtime = new TeamRuntime({ store: new MemoryTeamRunStore(), clock, bindings: { "binding:remote": a2a } });
   const plan = compileTeamIr(team);
@@ -301,7 +327,7 @@ test("Team Runtime Handoff attempt deadline cancels the active A2A Task", async 
   const result = await executing;
 
   assert.equal(result.status, "failed");
-  assert.equal(result.events.find((event) => event.type === "run.failing")?.data?.code, "BINDING_ATTEMPT_TIMEOUT");
+  assert.equal(result.events.find((event) => event.type === "run.failing")?.data?.code, "HANDOFF_DEADLINE_EXCEEDED");
   assert.equal(result.invocations["a2a-deadline-run:start"].outcomeUnknown, false);
   assert.equal(remoteCancelCalls, 1);
 });

@@ -1,6 +1,6 @@
 # Team IR v2 Studio 作者体验方案
 
-状态：提案，供阶段 3 设计与实现使用
+状态：设计交付完成；实现与机器验收状态以实施台账为准
 范围：严格基于已冻结的 Team IR v2 Schema、Compiler、Runtime 与发布合同，设计面向普通用户的配置体验，并为未来 AI 草稿生成预留入口。
 
 ## 1. 目标
@@ -241,3 +241,26 @@ AI 可以独立推进，但不能成为发布或运行通道。任何阶段都�
 Team IR 字段和运行语义以[Team IR v2 Handoff 设计方案](team-ir-handoff-v2-design.md)为准；静态拓扑、显式数据映射、Join 和 Loop 边界以[协作边界 ADR](adr-team-ir-collaboration-boundaries.md)为准；阶段进展和实际证据以[落地与验证台账](team-ir-v2-implementation-and-verification.md)为准。
 
 本提案只规定 Studio 如何呈现和编辑既有 v2 合同，不批准任何 IR Schema 扩展、Runtime 新语义、兼容迁移或产品默认入口切换。若实现中发现现有 v2 合同无法支撑所需交互，先更新设计/ADR 并完成评审，再修改 Studio。
+
+## 12. 当前落地映射与闭合状态
+
+本节把提案要求映射到当前实现，避免把设计完成误读为发布完成。状态只在有对应代码和验证证据时标为已实现；真实模型、外部身份和人工用户研究不由浏览器 Fake 或确定性测试替代。
+
+| 提案能力 | 当前实现/证据 | 状态与闭合条件 |
+| --- | --- | --- |
+| 单一 v2 草稿、保存重开、semantic digest/CAS | `/studio/new`、`/studio/teams/:id/ir`、Team IR API；Studio Chromium 覆盖保存、重开、digest、窄屏；Docker `/19` 两轮同 root 已覆盖 validate/save/reopen | 已实现并通过机器验收 |
+| 多端口、条件 AST、递归 ValueExpr、Join/Loop/Review 编辑 | Studio 结构化编辑器和 Advanced JSON round-trip；`team-ir-studio-browser.test.mjs` 覆盖条件、递归映射、Join、Maker-Checker；不支持混合拓扑在发布前给稳定 code/pointer | 已实现受支持切片；不支持拓扑必须继续 fail closed，不得由 UI 快捷操作生成 |
+| 诊断定位与 Artifact 输入 | 浏览器定位基础字段、JSON Pointer、Review/条件/映射诊断；Artifact 上传后保存映射并在 Simulation/Project Task 读取；可信 Docker resolver 真实矩阵通过 | 已实现并通过机器验收；诊断按适用 code/pointer 覆盖，不要求笛卡尔穷举 |
+| 已发布版本编辑/fork | 已发布版本编辑创建新 draft，源版本 status/digest 不变；Studio 和 Docker 同 root 均有 fork 断言 | 已实现；默认作者入口已使用 v2 |
+| Project Task 生命周期和旧格式无写入 | Docker `/19` 两轮七场景同 root 覆盖 validate/save/reopen、Simulation/Release、mount/Task、Review、retry、重启查询、fork、旧 API/旧格式拒绝及 tree digest 不变 | 已实现并通过机器验收 |
+| 结构化模型输出 | resolver 固定 `{event,data,artifactTexts}`、严格校验、无正文日志、不修补/不对 invalid_output 重试；Docker egress relay 和 Binding smoke 通过；请求固定 `format:json_schema` 与 `options.structuredOutputMode=outputFormat` | 框架合同已实现并通过真实 `/19` 两轮矩阵；本机 OpenCode 1.18.20 使用原生 `@ai-sdk/openai` provider 与 `supportsStructuredOutputs:true`。兼容 provider 缺 `event` 的历史失败保留为回归证据 |
+| A2A pause/cancel/restart | remoteTaskId checkpoint、first-pause owner、迟到 sibling 收敛、重启取消和 outcome unknown 已有 FileStore/Fake/本机 HTTPS 证据 | 本机合同通过；跨主机 CAS 与外部 Agent exactly-once 不在本轮范围 |
+| 普通用户和 AI 作者验收 | 提案已冻结任务、阈值、主持规则和 AI diff 边界 | 待人工用户研究/复核；不得用机器测试代替 5 人任务门，也不得在人工复核前切默认入口 |
+
+### 12.1 机器验收闭合与人工复核
+
+1. 已完成：使用原生 `@ai-sdk/openai` provider（`supportsStructuredOutputs:true`）和 direct `/13`、Docker `/19` pins，七场景 Docker Project Task 连续两轮 7/7；每轮均完成受控失败重试、重启查询和同 root fork/legacy no-write。
+2. 已完成：Sandbox egress probe 1/1；Runtime/拓扑/A2A 定向门、Studio Chromium、Team Site 全量回归和 `git diff --check` 通过。远端 A2A 与生产身份提供方明确排除在本轮范围。
+3. 后置人工步骤：按本提案第 10 节执行非技术用户任务和最终人工复核；该步骤不再阻塞机器实现、发布合同或自动化验收。
+
+机器验收已经闭合；最终人工复核完成后再形成面向用户的发布签字。设计不引入兼容迁移或旧 Team 读取，standalone OGSystem Mermaid/Project Package 能力仍是独立范围，不属于 Team IR v2 产品入口。

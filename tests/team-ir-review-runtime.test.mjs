@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { compileTeamIr, FileTeamReviewStore, MemoryTeamReviewStore, TeamReviewError, TeamReviewRuntime, readTeamReviewContext } from "../dist/team-ir/index.js";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -7,10 +6,42 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 async function setup({ authorized = true } = {}) {
-  const fixture = JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
+  const agents = ["planner", "lead"];
+  const fixture = {
+    schemaVersion: 2,
+    team: { id: "review-runtime", version: "1.0.0" },
+    runInput: { dataSchema: { type: "object" }, preferencesSchema: { type: "object" }, artifactSlots: {} },
+    runResult: { dataSchema: { type: "object" }, artifactSlots: {} },
+    executionPolicy: { resultMode: "allow_empty", activeExecutionBudgetMs: 10000 },
+    agents: agents.map((id) => ({
+      id,
+      packageRef: `role:${id}@1`,
+      bindingRef: `binding:${id}`,
+      inputPorts: { default: { dataSchema: { type: "object" } } },
+      outputPorts: { DONE: { dataSchema: { type: "object" } } }
+    })),
+    handoffs: agents.map((id) => ({
+      id: `run-to-${id}`,
+      from: { kind: "run" },
+      to: { kind: "agent", agentId: id, inputPort: "default" },
+      map: {},
+      delivery: { deadlineMs: 3000 }
+    })),
+    orchestration: {
+      routes: [{
+        from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail",
+        handoffIds: agents.map((id) => `run-to-${id}`)
+      }],
+      joins: [], loops: [], reviews: []
+    },
+    bindings: agents.map((id) => ({
+      id: `binding:${id}`, kind: "model", modelRef: "models/review-runtime", attemptTimeoutMs: 1000,
+      retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+    }))
+  };
   fixture.orchestration.reviews = [
-    { id: "planner-review", at: { kind: "agentOutput", agentId: "planner", outputPort: "PLAN" }, feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false }, timeoutMs: 1000, onTimeout: "fail" },
-    { id: "lead-review", at: { kind: "agentOutput", agentId: "lead", outputPort: "DELIVERED" }, feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false }, timeoutMs: 2000, onTimeout: "fail" }
+    { id: "planner-review", at: { kind: "agentOutput", agentId: "planner", outputPort: "DONE" }, feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false }, timeoutMs: 1000, onTimeout: "fail" },
+    { id: "lead-review", at: { kind: "agentOutput", agentId: "lead", outputPort: "DONE" }, feedbackSchema: { type: "object", properties: { comments: { type: "string", minLength: 1 } }, required: ["comments"], additionalProperties: false }, timeoutMs: 2000, onTimeout: "fail" }
   ];
   const plan = compileTeamIr(fixture);
   let now = 100;

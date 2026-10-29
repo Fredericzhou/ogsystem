@@ -203,6 +203,32 @@ test("a single Review gates a bounded parallel fan-out until its decision is dur
   assert.equal(completed.events.filter((entry) => entry.type === "run.waiting_human_review").length, 1);
 });
 
+test("cancelling a Run in Review closes the pending Review before committing the cancelled terminal state", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-review-cancel-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.orchestration.reviews = [{
+    id: "worker-review", at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
+    feedbackSchema: { type: "object", properties: { comments: { type: "string" } }, additionalProperties: false },
+    timeoutMs: 1000, onTimeout: "fail"
+  }];
+  const plan = compileTeamIr(value);
+  const reviewRuntime = new TeamReviewRuntime({ store: new FileTeamReviewStore(join(root, "reviews")), now: () => 100,
+    authorizeReviewer: ({ reviewerId }) => reviewerId === "reviewer" });
+  const runtime = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => 100, sleep: () => new Promise(() => {}) },
+    reviewRuntime, bindings: { "binding:worker": { async invoke() {
+      return { kind: "completed", output: { event: "DONE", data: { answer: "ready" } } };
+    } } } });
+  await runtime.createRun(plan, { runId: "review-cancel", task: "cancel review", input: { prompt: "review" } });
+  const waiting = await runtime.executeRun(plan, "review-cancel");
+  assert.equal(waiting.status, "waiting_human_review");
+  assert.equal((await runtime.getReview("review-cancel", "worker-review")).status, "pending");
+  const cancelled = await runtime.cancel("review-cancel");
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.waitingReviews, undefined);
+  assert.equal((await runtime.getReview("review-cancel", "worker-review")).status, "cancelled");
+});
+
 test("parallel Run fan-out persists independent Reviews and resumes only after all are approved", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-review-parallel-gates-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -548,6 +574,178 @@ test("A2A input-required durably pauses, cancels fanout siblings, rejects resume
   assert.equal(remoteCalls, 2);
 });
 
+test("the first A2A input-required pause wins when a sibling also requests input", async () => {
+  const document = a2aFanoutTeam();
+  document.bindings[1] = {
+    id: "binding:sibling", kind: "a2a", agentCardRef: "https://agents.example/sibling/card.json",
+    attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  };
+  const plan = compileTeamIr(document);
+  const store = new MemoryTeamRunStore();
+  let resolvePrimary;
+  let resolveSibling;
+  let primaryStarted = false;
+  let siblingStarted = false;
+  const primaryCancelTaskIds = [];
+  let siblingCancelCalls = 0;
+  const bindings = {
+    "binding:worker": {
+      invoke() { primaryStarted = true; return new Promise((resolve) => { resolvePrimary = resolve; }); },
+      async cancel(input) { primaryCancelTaskIds.push(input.remoteTaskId); return true; }
+    },
+    "binding:sibling": {
+      invoke() { siblingStarted = true; return new Promise((resolve) => { resolveSibling = resolve; }); },
+      async cancel(input) {
+        siblingCancelCalls += 1;
+        if (siblingCancelCalls === 1) {
+          assert.equal(input.remoteTaskId, undefined);
+          return false;
+        }
+        assert.equal(input.remoteTaskId, "sibling-input-task");
+        return true;
+      }
+    }
+  };
+  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  const runId = "a2a-first-pause-wins";
+  await runtime.createRun(plan, { runId, task: "request two reviews", input: { prompt: "review this" } });
+  const executing = runtime.executeRun(plan, runId);
+  await until(() => primaryStarted && siblingStarted, "both A2A fanout invocations start");
+  resolvePrimary({ kind: "input-required", remoteTaskId: "primary-input-task", messageParts: [{ text: "Need primary scope" }] });
+  await until(() => store.load(runId).then((record) => record.status === "paused_input_required" && siblingCancelCalls === 1), "first pause and sibling cancel request");
+  resolveSibling({ kind: "input-required", remoteTaskId: "sibling-input-task", messageParts: [{ text: "Need sibling scope" }] });
+
+  const paused = await executing;
+  assert.equal(paused.status, "paused_input_required");
+  assert.equal(paused.pendingInput.remoteTaskId, "primary-input-task");
+  assert.equal(paused.invocations[`${runId}:sibling-start`].status, "input-required");
+  assert.equal(paused.invocations[`${runId}:sibling-start`].output.remoteTaskId, "sibling-input-task");
+
+  const cancelled = await runtime.cancel(runId);
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.invocations[`${runId}:remote-start`].status, "cancelled");
+  assert.equal(cancelled.invocations[`${runId}:sibling-start`].status, "cancelled");
+  assert.deepEqual(primaryCancelTaskIds, ["primary-input-task"]);
+  assert.equal(siblingCancelCalls, 2);
+});
+
+test("A2A pause and failure intents are linearized by whichever intent commits first", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-a2a-intent-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(a2aFanoutTeam());
+
+  for (const winner of ["pause", "failure"]) {
+    let resolveRemote;
+    let rejectSibling;
+    let remoteStarted = false;
+    let siblingStarted = false;
+    const remoteResult = new Promise((resolve) => { resolveRemote = resolve; });
+    const siblingResult = new Promise((_resolve, reject) => { rejectSibling = reject; });
+    const clock = fakeClock(100);
+    const store = new FileTeamRunStore(join(root, winner));
+    const runtime = new TeamRuntime({
+      store,
+      clock,
+      bindings: {
+        "binding:worker": { async invoke() { remoteStarted = true; return remoteResult; } },
+        "binding:sibling": { async invoke() { siblingStarted = true; return siblingResult; } }
+      }
+    });
+    const runId = `a2a-${winner}-wins`;
+    await runtime.createRun(plan, { runId, task: "review", input: { prompt: "review this" } });
+    const execution = runtime.executeRun(plan, runId);
+    await until(() => remoteStarted && siblingStarted, `${winner} race invocations start`);
+
+    if (winner === "pause") {
+      resolveRemote({ kind: "input-required", remoteTaskId: "remote-input", messageParts: [] });
+      await until(() => store.load(runId).then((record) => record.status === "paused_input_required"), "pause intent commit");
+      rejectSibling(new TeamBindingError("sibling failed after pause", "server_error"));
+    } else {
+      rejectSibling(new TeamBindingError("sibling failed before pause", "server_error"));
+      await until(() => store.load(runId).then((record) => record.terminalIntent === "failed"), "failure intent commit");
+      resolveRemote({ kind: "input-required", remoteTaskId: "late-remote-input", messageParts: [] });
+    }
+
+    const settled = await withinTimeout(execution, `${winner} intent settlement`);
+    const persisted = await store.load(runId);
+    if (winner === "pause") {
+      assert.equal(settled.status, "paused_input_required");
+      assert.equal(settled.pendingInput.remoteTaskId, "remote-input");
+      assert.equal(persisted.terminalIntent, undefined);
+      assert.equal(persisted.resultWritten, undefined);
+      assert.equal(persisted.events.some((entry) => entry.type === "run.failing"), false);
+      assert.equal(persisted.events.some((entry) => entry.type === "invocation.late_failure_ignored"), true);
+    } else {
+      assert.equal(settled.status, "failed");
+      assert.equal(settled.terminalIntent, "failed");
+      assert.equal(settled.pendingInput, undefined);
+      assert.equal(settled.events.some((entry) => entry.type === "run.paused_input_required"), false);
+      assert.equal(settled.events.some((entry) => entry.type === "invocation.late_completion_ignored"), true);
+    }
+  }
+});
+
+test("A2A pause retains an unconfirmed sibling until its original deadline and audits a late result", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-a2a-pause-sibling-deadline-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const document = a2aFanoutTeam();
+  document.bindings.forEach((binding) => { binding.attemptTimeoutMs = 100; });
+  document.handoffs.forEach((handoff) => { handoff.delivery.deadlineMs = 300; });
+  const plan = compileTeamIr(document);
+  const clock = fakeClock(100);
+  const store = new FileTeamRunStore(root);
+  let siblingStarted = false;
+  let cancelRequests = 0;
+  let resolveRemote;
+  const remoteResult = new Promise((resolve) => { resolveRemote = resolve; });
+  let resolveSibling;
+  const siblingResult = new Promise((resolve) => { resolveSibling = resolve; });
+  const runtime = new TeamRuntime({
+    store,
+    clock,
+    bindings: {
+      "binding:worker": { async invoke() { return remoteResult; } },
+      "binding:sibling": {
+        async invoke() { siblingStarted = true; return siblingResult; },
+        async cancel() { cancelRequests += 1; return false; }
+      }
+    }
+  });
+  const runId = "a2a-pause-unconfirmed-sibling";
+  await runtime.createRun(plan, { runId, task: "review", input: { prompt: "review this" } });
+  const execution = runtime.executeRun(plan, runId);
+  await until(() => siblingStarted, "sibling invocation start");
+  resolveRemote({ kind: "input-required", remoteTaskId: "remote-paused-task", messageParts: [] });
+  await until(() => cancelRequests === 1, "unconfirmed sibling cancellation request");
+  await until(() => store.load(runId).then((record) => record.status === "paused_input_required"), "persisted input-required pause");
+  const violations = [];
+  const beforeDeadline = await store.load(runId);
+  if (beforeDeadline.status !== "paused_input_required") violations.push("Run did not durably pause");
+  if (cancelRequests !== 1) violations.push("sibling cancellation was not requested exactly once before deadline");
+  if (beforeDeadline.invocations[`${runId}:sibling-start`].status !== "running") violations.push("unconfirmed sibling was closed before deadline");
+  if (beforeDeadline.invocations[`${runId}:sibling-start`].outcomeUnknown !== undefined) violations.push("outcomeUnknown was recorded before deadline");
+
+  clock.advanceTo(199);
+  await new Promise((resolve) => setImmediate(resolve));
+  const beforeAttemptTimeout = await store.load(runId);
+  if (beforeAttemptTimeout.invocations[`${runId}:sibling-start`].status !== "running") violations.push("sibling did not remain active until its original attempt deadline");
+
+  clock.advanceTo(200);
+  await withinTimeout(execution, "sibling deadline settlement");
+  await until(() => store.load(runId).then((record) => record.invocations[`${runId}:sibling-start`].outcomeUnknown === true), "original attempt deadline settlement");
+  resolveSibling({ kind: "completed", output: { event: "DONE", data: { answer: "late sibling result" } } });
+  await until(() => store.load(runId).then((record) => record.events.some((entry) => entry.type === "invocation.late_completion_ignored")), "late sibling completion audit");
+
+  const afterLateResult = await store.load(runId);
+  if (afterLateResult.status !== "paused_input_required") violations.push("late sibling result changed the paused Run");
+  if (afterLateResult.invocations[`${runId}:sibling-start`].status !== "cancelled") violations.push("deadline-expired sibling did not close as cancelled");
+  if (afterLateResult.invocations[`${runId}:sibling-start`].outcomeUnknown !== true) violations.push("deadline-expired sibling did not preserve unknown outcome");
+  if (afterLateResult.invocations[`${runId}:sibling-start`].output !== undefined) violations.push("late sibling output was persisted");
+  if (!afterLateResult.events.some((entry) => entry.type === "invocation.late_completion_ignored")) violations.push("late sibling completion was not audited");
+  if (afterLateResult.resultWritten !== undefined) violations.push("paused Run wrote a Result");
+  assert.deepEqual(violations, []);
+});
+
 test("a restarted Runtime cancels a persisted A2A input-required task and settles the Run", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-a2a-cancel-recovery-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -557,38 +755,100 @@ test("a restarted Runtime cancels a persisted A2A input-required task and settle
     attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
   };
   const plan = compileTeamIr(document);
-  const clock = { now: () => 100, sleep: () => new Promise(() => {}) };
+  let now = 100;
+  const clock = { now: () => now, sleep: () => new Promise(() => {}) };
   const firstStore = new FileTeamRunStore(root);
   const firstRuntime = new TeamRuntime({
     store: firstStore,
     clock,
     bindings: { "binding:worker": { async invoke() {
-      return { kind: "input-required", remoteTaskId: "remote-persisted-1", messageParts: [{ text: "Need a scope" }] };
+      return {
+        kind: "input-required", remoteTaskId: "remote-persisted-1",
+        messageParts: [{ text: "Need a scope" }], requestedInputSchema: { type: "object", required: ["scope"] }
+      };
     } } }
   });
   await firstRuntime.createRun(plan, { runId: "a2a-cancel-restart", task: "Review", input: { prompt: "review this" } });
   const paused = await firstRuntime.executeRun(plan, "a2a-cancel-restart");
   assert.equal(paused.status, "paused_input_required");
+  assert.deepEqual(paused.pendingInput, {
+    handoffId: "start", agentId: "worker", bindingId: "binding:worker", remoteTaskId: "remote-persisted-1",
+    kind: "input-required", messageParts: [{ text: "Need a scope" }], requestedInputSchema: { type: "object", required: ["scope"] }
+  });
+  now = 5000;
+  assert.equal((await firstStore.load("a2a-cancel-restart")).status, "paused_input_required",
+    "the original Handoff deadline must not expire an input-required paused Run");
 
   let cancelledTaskId;
+  const restartedBinding = createTeamA2ABinding({
+    expectedProtocolVersion: "1.0", expectedAgentVersion: "v1",
+    client: {
+      async getAgentCard() { throw new Error("paused cancellation must not discover the Agent Card"); },
+      async sendMessage() { throw new Error("paused cancellation must not create a new Task"); },
+      async getTask() { throw new Error("paused cancellation must not poll a Task"); },
+      async cancelTask(taskId) { cancelledTaskId = taskId; return true; }
+    }
+  });
   const restarted = new TeamRuntime({
     store: new FileTeamRunStore(root),
     clock,
-    bindings: { "binding:worker": {
-      async invoke() { throw new Error("paused invocation must not replay"); },
-      async cancel(invocation) {
-        cancelledTaskId = invocation.remoteTaskId;
-        assert.equal(invocation.idempotencyKey, "a2a-cancel-restart:start");
-        return true;
-      }
-    } }
+    bindings: { "binding:worker": restartedBinding }
   });
+  const beforeResume = await new FileTeamRunStore(root).load("a2a-cancel-restart");
+  await assert.rejects(restarted.executeRun(plan, "a2a-cancel-restart"), /TEAM_RUN_INPUT_REQUIRED_NEW_RUN/);
+  assert.deepEqual(await new FileTeamRunStore(root).load("a2a-cancel-restart"), beforeResume,
+    "restart must not mutate or resume the persisted input-required checkpoint");
   const cancelled = await restarted.cancel("a2a-cancel-restart");
   assert.equal(cancelledTaskId, "remote-persisted-1");
   assert.equal(cancelled.status, "cancelled");
   assert.equal(cancelled.invocations["a2a-cancel-restart:start"].status, "cancelled");
   assert.equal(cancelled.invocations["a2a-cancel-restart:start"].outcomeUnknown, false);
   assert.equal(cancelled.events.filter((event) => event.type === "run.cancelled").length, 1);
+});
+
+test("restart cancellation of a persisted A2A input-required Task keeps an unconfirmed outcome unknown", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-a2a-cancel-unknown-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const document = team();
+  document.bindings[0] = {
+    id: "binding:worker", kind: "a2a", agentCardRef: "https://agents.example/reviewer/card.json",
+    attemptTimeoutMs: 1000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  };
+  const plan = compileTeamIr(document);
+  let now = 100;
+  const clock = { now: () => now, sleep: () => new Promise(() => {}) };
+  const firstStore = new FileTeamRunStore(root);
+  const firstRuntime = new TeamRuntime({
+    store: firstStore, clock,
+    bindings: { "binding:worker": { async invoke() {
+      return { kind: "input-required", remoteTaskId: "remote-unconfirmed-task", messageParts: [{ text: "Need scope" }] };
+    } } }
+  });
+  const runId = "a2a-cancel-unknown-restart";
+  await firstRuntime.createRun(plan, { runId, task: "Review", input: { prompt: "review this" } });
+  assert.equal((await firstRuntime.executeRun(plan, runId)).status, "paused_input_required");
+  now = 5000;
+
+  let cancelledTaskId;
+  const restartedBinding = createTeamA2ABinding({
+    expectedProtocolVersion: "1.0", expectedAgentVersion: "v1",
+    client: {
+      async getAgentCard() { throw new Error("cancel must not invoke the Agent"); },
+      async sendMessage() { throw new Error("cancel must not create a new Task"); },
+      async getTask() { throw new Error("cancel must not poll the Task"); },
+      async cancelTask(taskId) { cancelledTaskId = taskId; return false; }
+    }
+  });
+  const cancelled = await new TeamRuntime({
+    store: new FileTeamRunStore(root), clock, bindings: { "binding:worker": restartedBinding }
+  }).cancel(runId);
+
+  assert.equal(cancelledTaskId, "remote-unconfirmed-task");
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.invocations[`${runId}:start`].status, "cancelled");
+  assert.equal(cancelled.invocations[`${runId}:start`].outcomeUnknown, true);
+  assert.equal(cancelled.pendingInput, undefined);
+  assert.equal(cancelled.resultWritten, undefined);
 });
 
 test("timeout starts failure intent; cancellation and failure settle only their winning intent", async () => {
@@ -752,21 +1012,18 @@ test("a cancellation intent that wins the Result CAS race prevents Result commit
   const execution = runtime.executeRun(plan, "result-cancel-race");
   await resultCommitReached;
   const cancelled = await runtime.cancel("result-cancel-race");
-  assert.equal(cancelled.status, "cancelling");
+  assert.equal(cancelled.status, "cancelled");
   releaseResultCommit();
-  await assert.rejects(execution, /Cannot complete Run in cancelling/);
+  await assert.rejects(execution, /Cannot complete Run in cancelled/);
   const persisted = await store.load("result-cancel-race");
-  assert.equal(persisted.status, "cancelling");
+  assert.equal(persisted.status, "cancelled");
   assert.equal(persisted.resultWritten, undefined);
   assert.equal(persisted.result, undefined);
-  assert.deepEqual(persisted.pendingResult, { value: { answer: "late" }, handoffId: "result" });
   assert.equal(persisted.events.some((item) => item.type === "run.result.written"), false);
-  const settled = await runtime.settle("result-cancel-race");
-  assert.equal(settled.status, "cancelled");
-  assert.equal(settled.pendingResult, undefined);
-  assert.equal(settled.resultWritten, undefined);
-  assert.equal(settled.result, undefined);
-  assert.equal(settled.events.some((item) => item.type === "run.result.written"), false);
+  assert.equal(persisted.pendingResult, undefined);
+  assert.equal(persisted.resultWritten, undefined);
+  assert.equal(persisted.result, undefined);
+  assert.equal(persisted.events.some((item) => item.type === "run.result.written"), false);
 });
 
 test("a crash before terminal commit keeps Result private and recovery commits it without repeating the Binding", async () => {
@@ -1224,22 +1481,11 @@ test("an unconfirmed Join timeout keeps a late successful source from invoking t
 });
 
 async function assertUnsupportedQuorumFailsBeforeBinding(teamValue, runId) {
-  let calls = 0;
-  let plan;
-  try { plan = compileTeamIr(teamValue); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
-  const bindings = Object.fromEntries(teamValue.agents.map((agent) => [agent.bindingRef, {
-    async invoke() {
-      calls += 1;
-      return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected" } } };
-    }
-  }]));
-  const store = new MemoryTeamRunStore();
-  const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
-  await runtime.createRun(plan, { runId, task: "check", input: { prompt: "check" } });
-  const result = await runtime.executeRun(plan, runId);
-  assert.equal(result.status, "failed");
-  assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "TEAM_QUORUM_TOPOLOGY_UNSUPPORTED"), true);
-  assert.equal(calls, 0);
+  assert.throws(() => compileTeamIr(teamValue), (error) => {
+    const diagnostics = error.diagnostics || error.issues || [];
+    return diagnostics.some((item) => item.code === "IR_JOIN_TOPOLOGY_UNSUPPORTED"
+      && item.pointer === "/orchestration/joins/0");
+  }, runId);
 }
 
 test("quorum Join starts at threshold and persists the selected contributions and original deadline across FileTeamRunStore instances", async (t) => {
@@ -1297,7 +1543,7 @@ test("quorum Join fails when conditional source skips make the threshold unreach
   assert.equal(result.events.some((entry) => entry.type === "run.failing" && entry.data?.code === "JOIN_QUORUM_UNREACHABLE"), true);
 });
 
-test("quorum Join with Loop fails before any Binding call", async () => {
+test("quorum Join with an unsupported Loop is rejected before Runtime creation", async () => {
   const withLoop = quorumTeam();
   withLoop.handoffs = withLoop.handoffs.filter((handoff) => handoff.id !== "join-result");
   withLoop.orchestration.routes = withLoop.orchestration.routes.filter((route) => route.from.kind !== "agent" || route.from.agentId !== "joiner");
@@ -1758,6 +2004,61 @@ test("Artifact registered before a failed completion checkpoint is not published
   await assert.rejects(readFile(join(root, "artifacts", "projects", "project-1", "runs", "artifact-checkpoint-fault", "artifacts", `${registeredReference.artifactId}.bin`)), { code: "ENOENT" });
 });
 
+test("Artifact reservation before the Run checkpoint is retained for a live invocation then reclaimed after fail-closed recovery", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-reservation-checkpoint-fault-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  const plan = compileTeamIr(value);
+  const runId = "artifact-reservation-checkpoint-fault";
+  const owner = { projectId: "project-1", runId };
+  const runs = new FileTeamRunStore(join(root, "runs"));
+  const artifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const reserveOutputPublication = artifacts.reserveOutputPublication.bind(artifacts);
+  let reservation;
+  artifacts.reserveOutputPublication = async (args) => {
+    reservation = await reserveOutputPublication(args);
+    throw new Error("simulated process stop after Artifact reservation");
+  };
+  let bindingCalls = 0;
+  let cancelCalls = 0;
+  const binding = {
+    async invoke() {
+      bindingCalls += 1;
+      return { kind: "completed", output: { event: "DONE", data: { answer: "ok" }, artifacts: { report: { mediaType: "text/markdown", content: Buffer.from("uncheckpointed report") } } } };
+    },
+    async cancel() { cancelCalls += 1; return true; }
+  };
+  const clock = { now: () => 100, sleep: async () => undefined };
+  const firstRuntime = new TeamRuntime({ store: runs, clock, bindings: { "binding:worker": binding }, artifactStore: artifacts });
+  await firstRuntime.createRun(plan, { runId, projectId: owner.projectId, task: "recover reservation", input: { prompt: "check" } });
+  await assert.rejects(firstRuntime.executeRun(plan, runId), /simulated process stop after Artifact reservation/);
+  assert.ok(reservation);
+  const interrupted = await runs.load(runId);
+  assert.equal(interrupted.invocations[`${runId}:start`].status, "running");
+  assert.equal(interrupted.invocations[`${runId}:start`].artifactPublication, undefined);
+
+  const reopenedArtifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const beforeSettle = await reopenedArtifacts.recoverOutputPublications({ owner, retainedPublicationIds: [], liveInvocationIds: [`${runId}:start`] });
+  assert.equal(beforeSettle[0].state, "reserved");
+  assert.deepEqual(beforeSettle[0].artifactIds, []);
+
+  const recovered = await new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")), clock, bindings: { "binding:worker": binding },
+    artifactStore: new FileTeamArtifactStore(join(root, "artifacts"))
+  }).executeRun(plan, runId);
+  assert.equal(recovered.status, "failed");
+  assert.equal(recovered.invocations[`${runId}:start`].outcomeUnknown, true);
+  assert.equal(recovered.invocations[`${runId}:start`].error, "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART");
+  assert.equal(bindingCalls, 1, "unknown active Binding work is not replayed");
+  assert.equal(cancelCalls, 1);
+  const afterSettle = await reopenedArtifacts.recoverOutputPublications({ owner, retainedPublicationIds: [], liveInvocationIds: [] });
+  assert.equal(afterSettle[0].state, "aborted");
+  assert.deepEqual(afterSettle[0].artifactIds, []);
+  await assert.rejects(reopenedArtifacts.reserveOutputPublication({ owner, invocationId: `${runId}:start`, publicationId: reservation.publicationId }),
+    (error) => error?.code === "ARTIFACT_RESERVATION_CONFLICT");
+});
+
 test("Artifact publication recovers when Run CAS commits but its response is lost", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-cas-lost-response-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -2055,6 +2356,33 @@ function loopTeam({ maxRounds = 3, maxAgentActivations = 4, onExhausted = "fail"
   return value;
 }
 
+function sequentialLoopTeam() {
+  const value = loopTeam({ maxRounds: 4, maxAgentActivations: 8, onExhausted: "fail" });
+  const second = structuredClone(value.agents[0]);
+  second.id = "worker-two";
+  second.packageRef = "role:worker-two@1";
+  second.bindingRef = "binding:worker-two";
+  value.agents.push(second);
+  value.bindings.push({ ...structuredClone(value.bindings[0]), id: "binding:worker-two" });
+  value.handoffs = [
+    value.handoffs.find((handoff) => handoff.id === "entry"),
+    value.handoffs.find((handoff) => handoff.id === "revise"),
+    { id: "enter-second", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "agent", agentId: "worker-two", inputPort: "draft" }, map: { data: { prompt: { "$ref": "$.output.data.answer" } } }, when: { priority: 1 }, delivery: { deadlineMs: 2000 } },
+    { id: "revise-second", from: { kind: "agent", agentId: "worker-two", outputPort: "DONE" }, to: { kind: "agent", agentId: "worker-two", inputPort: "revise" }, map: { data: { answer: { "$ref": "$.loop.previous.worker-two.output.data.answer" } } }, when: { condition: { op: "equals", args: [{ "$ref": "$.output.data.again" }, { "$literal": true }] }, priority: 0 }, delivery: { deadlineMs: 2000 } },
+    { id: "finish", from: { kind: "agent", agentId: "worker-two", outputPort: "DONE" }, to: { kind: "result" }, map: { data: { answer: { "$ref": "$.output.data.answer" } } }, when: { priority: 1 } }
+  ];
+  value.orchestration.routes = [
+    { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["entry"] },
+    { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["revise", "enter-second"] },
+    { from: { kind: "agent", agentId: "worker-two", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["revise-second", "finish"] }
+  ];
+  value.orchestration.loops = [
+    { id: "first", members: ["worker"], boundaryAgentId: "worker", entryHandoffIds: ["entry"], continueHandoffIds: ["revise"], exitHandoffIds: ["enter-second"], maxRounds: 4, maxAgentActivations: 8, onExhausted: "fail" },
+    { id: "second", members: ["worker-two"], boundaryAgentId: "worker-two", entryHandoffIds: ["enter-second"], continueHandoffIds: ["revise-second"], exitHandoffIds: ["finish"], maxRounds: 4, maxAgentActivations: 8, onExhausted: "fail" }
+  ];
+  return value;
+}
+
 test("Loop executes bounded sequential rounds and resolves only the immediately previous output", async () => {
   const seen = [];
   let round = 0;
@@ -2072,6 +2400,71 @@ test("Loop executes bounded sequential rounds and resolves only the immediately 
   assert.equal(result.loopStates.revision.rounds, 3);
   assert.equal(result.loopStates.revision.agentActivations, 3);
   assert.equal((await store.load("loop-run")).loopStates.revision.rounds, 3);
+});
+
+test("two sequential independent Loops keep their rounds, activations, and previous outputs isolated", async () => {
+  const seen = { worker: [], "worker-two": [] };
+  const calls = { worker: 0, "worker-two": 0 };
+  const bindings = Object.fromEntries(Object.keys(calls).map((agentId) => [`binding:${agentId}`, { async invoke(args) {
+    calls[agentId] += 1;
+    seen[agentId].push(args.input);
+    return { kind: "completed", output: { event: "DONE", data: { answer: `${agentId}-${calls[agentId]}`, again: calls[agentId] === 1 } } };
+  } }]));
+  const { runtime } = setup(bindings);
+  const plan = compileTeamIr(sequentialLoopTeam());
+  await runtime.createRun(plan, { runId: "two-loop-run", task: "revise twice", input: { prompt: "start" } });
+  const result = await runtime.executeRun(plan, "two-loop-run");
+  assert.equal(result.status, "completed", JSON.stringify(result.events.filter((item) => item.type === "run.failing")));
+  assert.deepEqual(result.result, { answer: "worker-two-2" });
+  assert.deepEqual(seen.worker, [{ prompt: "start" }, { answer: "worker-1" }]);
+  assert.deepEqual(seen["worker-two"], [{ prompt: "worker-2" }, { answer: "worker-two-1" }]);
+  assert.deepEqual(result.loopStates.first, { rounds: 2, agentActivations: 2, previousOutputs: { worker: { event: "DONE", data: { answer: "worker-2", again: false } } }, currentOutputs: {} });
+  assert.deepEqual(result.loopStates.second, { rounds: 2, agentActivations: 2, previousOutputs: { "worker-two": { event: "DONE", data: { answer: "worker-two-2", again: false } } }, currentOutputs: {} });
+  assert.ok(result.events.some((item) => item.id === "two-loop-run:loop:first:round:2"));
+  assert.ok(result.events.some((item) => item.id === "two-loop-run:loop:second:round:2"));
+});
+
+test("FileTeamRunStore resumes a ready invocation checkpoint in the second sequential Loop", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-two-loop-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(sequentialLoopTeam());
+  const firstStore = new FileTeamRunStore(root);
+  let crashAfterSecondEntry = true;
+  const crashStore = {
+    create: (...args) => firstStore.create(...args),
+    load: (...args) => firstStore.load(...args),
+    async compareAndSet(...args) {
+      const [runId, expectedRevision, record] = args;
+      const committed = await firstStore.compareAndSet(runId, expectedRevision, record);
+      if (committed && crashAfterSecondEntry && record.invocations["two-loop-recovery:enter-second:loop:second:activation:1"]?.status === "completed") {
+        crashAfterSecondEntry = false;
+        throw new Error("simulated crash after second Loop invocation commit");
+      }
+      return committed;
+    }
+  };
+  const calls = { worker: 0, "worker-two": 0 };
+  const bindings = Object.fromEntries(Object.keys(calls).map((agentId) => [`binding:${agentId}`, { async invoke() {
+    calls[agentId] += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: `${agentId}-${calls[agentId]}`, again: calls[agentId] === 1 } } };
+  } }]));
+  const firstRuntime = new TeamRuntime({ store: crashStore, clock: { now: () => 10, sleep: () => new Promise(() => {}) }, bindings });
+  await firstRuntime.createRun(plan, { runId: "two-loop-recovery", task: "recover", input: { prompt: "start" } });
+  await assert.rejects(firstRuntime.executeRun(plan, "two-loop-recovery"), /simulated crash after second Loop invocation commit/);
+  const crashed = await firstStore.load("two-loop-recovery");
+  assert.equal(crashed.scheduler.pending[0], "enter-second");
+  assert.equal(crashed.loopStates.first.rounds, 2);
+  assert.equal(crashed.loopStates.second.rounds, 0);
+  assert.equal(crashed.loopStates.second.agentActivations, 1);
+  assert.equal(crashed.invocations["two-loop-recovery:enter-second:loop:second:activation:1"].status, "completed");
+
+  const resumed = await new TeamRuntime({ store: new FileTeamRunStore(root), clock: { now: () => 20, sleep: () => new Promise(() => {}) }, bindings }).executeRun(plan, "two-loop-recovery");
+  assert.equal(resumed.status, "completed", JSON.stringify(resumed.events.filter((item) => item.type === "run.failing")));
+  assert.deepEqual(resumed.result, { answer: "worker-two-2" });
+  assert.deepEqual(calls, { worker: 2, "worker-two": 2 });
+  assert.equal(resumed.loopStates.first.rounds, 2);
+  assert.equal(resumed.loopStates.second.rounds, 2);
+  assert.equal(resumed.loopStates.second.agentActivations, 2);
 });
 
 test("Loop exhaustion fails closed and finish selects a declared exit only", async () => {
@@ -2213,6 +2606,62 @@ test("active invocation recovery stays fail-closed when cancellation is unavaila
   }
 });
 
+test("FileTeamRunStore persists the active A2A Task association for restart cancellation without replay", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-a2a-active-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const document = team();
+  document.bindings[0] = {
+    id: "binding:worker", kind: "a2a", agentCardRef: "https://agents.example/reviewer/card.json",
+    attemptTimeoutMs: 5000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } }
+  };
+  const plan = compileTeamIr(document);
+  const store = new FileTeamRunStore(root);
+  const clock = { now: () => 100, sleep: () => new Promise(() => {}) };
+  let sends = 0;
+  const initialBinding = createTeamA2ABinding({
+    expectedProtocolVersion: "1.0", expectedAgentVersion: "v1",
+    sleep: () => new Promise(() => {}),
+    client: {
+      async getAgentCard() {
+        return { protocolVersion: "1.0", name: "Reviewer", version: "v1", defaultInputModes: ["application/json"], defaultOutputModes: ["application/json"], capabilities: { streaming: false, pushNotifications: false } };
+      },
+      async sendMessage() { sends += 1; return { id: "active-a2a-task", status: "working" }; },
+      async getTask() { throw new Error("polling stays pending during simulated process loss"); },
+      async cancelTask() { return false; }
+    }
+  });
+  const firstRuntime = new TeamRuntime({ store, clock, bindings: { "binding:worker": initialBinding } });
+  const runId = "active-a2a-restart";
+  await firstRuntime.createRun(plan, { runId, task: "review", input: { prompt: "review this" } });
+  const firstExecution = firstRuntime.executeRun(plan, runId);
+  firstExecution.catch(() => undefined);
+  await until(() => store.load(runId).then((record) => record.invocations[`${runId}:start`]?.remoteTaskId === "active-a2a-task"), "durable remote Task association");
+
+  let cancelTaskId;
+  let replayed = 0;
+  const restartedBinding = createTeamA2ABinding({
+    expectedProtocolVersion: "1.0", expectedAgentVersion: "v1",
+    client: {
+      async getAgentCard() { throw new Error("recovery cancellation must not rediscover the Agent Card"); },
+      async sendMessage() { replayed += 1; throw new Error("recovery must not replay message/send"); },
+      async getTask() { throw new Error("recovery must not poll or resume the active Task"); },
+      async cancelTask(taskId) { cancelTaskId = taskId; return true; }
+    }
+  });
+  const recovered = await new TeamRuntime({
+    store: new FileTeamRunStore(root), clock, bindings: { "binding:worker": restartedBinding }
+  }).executeRun(plan, runId);
+
+  assert.equal(cancelTaskId, "active-a2a-task");
+  assert.equal(recovered.status, "failed");
+  assert.equal(recovered.invocations[`${runId}:start`].remoteTaskId, "active-a2a-task");
+  assert.equal(recovered.invocations[`${runId}:start`].outcomeUnknown, true,
+    "confirmed cancellation does not prove whether the remote Agent already caused side effects");
+  assert.equal(recovered.invocations[`${runId}:start`].error, "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART");
+  assert.equal(sends, 1);
+  assert.equal(replayed, 0);
+});
+
 test("scheduler checkpoint resumes from a completed invocation across FileTeamRunStore instances without repeating the Binding call", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-scheduler-recovery-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -2258,12 +2707,7 @@ test("scheduler checkpoint resumes from a completed invocation across FileTeamRu
   assert.deepEqual(resumed.invocations["recovered-run:entry:loop:revision:activation:1"].output, { kind: "completed", output: { event: "DONE", data: { answer: "round-1", again: true } } });
 });
 
-test("Loop-scoped Join continuation is rejected before member invocation with a stable failure", async () => {
-  let calls = 0;
-  const { runtime } = setup({ async invoke() {
-    calls += 1;
-    return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected", again: false } } };
-  } });
+test("unsupported Loop-scoped Join topology has a stable publish-time diagnostic", async () => {
   const value = loopTeam();
   value.agents[0].inputPorts.revise.dataSchema.required = [];
   value.handoffs.find((handoff) => handoff.id === "revise").map.data.answer = { "$ref": "$.output.data.answer" };
@@ -2271,33 +2715,21 @@ test("Loop-scoped Join continuation is rejected before member invocation with a 
     id: "revision-join", agentId: "worker", inputPort: "revise", mode: "all_of",
     handoffIds: ["revise"], scope: { kind: "loop", loopId: "revision" }, timeoutMs: 2000, onTimeout: "fail"
   }];
-  let plan;
-  try { plan = compileTeamIr(value); } catch (error) { throw new Error(JSON.stringify(error.diagnostics || error.issues || error.message)); }
-  await runtime.createRun(plan, { runId: "loop-join", task: "revise", input: { prompt: "draft" } });
-  const result = await runtime.executeRun(plan, "loop-join");
-  assert.equal(result.status, "failed");
-  assert.equal(result.events.find((item) => item.type === "run.failing").data.code, "TEAM_LOOP_TOPOLOGY_UNSUPPORTED");
-  assert.equal(calls, 0);
-  const settled = result.events.filter((item) => item.type === "run.failed");
-  assert.equal(settled.length, 1);
+  assert.throws(() => compileTeamIr(value), (error) => {
+    const diagnostic = (error.diagnostics || error.issues || []).find((item) => item.code === "IR_LOOP_TOPOLOGY_UNSUPPORTED");
+    return diagnostic?.pointer === "/orchestration/loops/0";
+  });
 });
 
-test("Loop parallel fan-out is rejected before member invocation to avoid unsupported multi-lineage history", async () => {
-  let calls = 0;
-  const { runtime } = setup({ async invoke() {
-    calls += 1;
-    return { kind: "completed", output: { event: "DONE", data: { answer: "unexpected", again: false } } };
-  } });
+test("unsupported Loop internal parallel fan-out has a stable publish-time diagnostic", async () => {
   const value = loopTeam();
   value.orchestration.routes.find((route) => route.from.kind === "agent").mode = "parallel_fanout";
   delete value.handoffs.find((handoff) => handoff.id === "revise").when.priority;
   delete value.handoffs.find((handoff) => handoff.id === "exit").when;
-  const plan = compileTeamIr(value);
-  await runtime.createRun(plan, { runId: "loop-fanout", task: "revise", input: { prompt: "draft" } });
-  const result = await runtime.executeRun(plan, "loop-fanout");
-  assert.equal(result.status, "failed");
-  assert.equal(result.events.find((item) => item.type === "run.failing").data.code, "TEAM_LOOP_TOPOLOGY_UNSUPPORTED");
-  assert.equal(calls, 0);
+  assert.throws(() => compileTeamIr(value), (error) => {
+    const diagnostic = (error.diagnostics || error.issues || []).find((item) => item.code === "IR_LOOP_TOPOLOGY_UNSUPPORTED");
+    return diagnostic?.pointer === "/orchestration/loops/0";
+  });
 });
 
 function makerCheckerTeam() {
@@ -2405,6 +2837,19 @@ test("Maker-Checker Review timeout fails closed for its Loop round without repea
   assert.equal(failed.events.some((item) => item.type === "run.failing" && item.data?.code === "REVIEW_TIMEOUT"), true);
   assert.equal(calls, 1);
   assert.equal((await reviewStore.load("maker-checker-timeout:maker-checker-review:run:1")).status, "timed_out");
+});
+
+test("Review mixed with an unsupported Maker-Checker Join is rejected before publication", () => {
+  const value = makerCheckerTeam();
+  value.orchestration.joins = [{
+    id: "extra-review-join", agentId: "worker", inputPort: "revise", mode: "all_of",
+    handoffIds: ["revise"], scope: { kind: "run" }, timeoutMs: 1000, onTimeout: "fail"
+  }];
+  assert.throws(() => compileTeamIr(value), (error) => {
+    const diagnostics = error.diagnostics || error.issues || [];
+    return diagnostics.some((item) => item.code === "IR_REVIEW_TOPOLOGY_UNSUPPORTED"
+      && item.pointer === "/orchestration/reviews/0");
+  });
 });
 
 test("TeamRuntime waits for an authorized FileStore Review decision and resumes the same completed output", async (t) => {

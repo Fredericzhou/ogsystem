@@ -52,6 +52,37 @@ async function fixture() {
   return JSON.parse(await readFile(new URL("../examples/team-ir-v2/classic-structured-debate.json", import.meta.url), "utf8"));
 }
 
+async function branchHistoryDebateFixture() {
+  const team = await fixture();
+  const port = team.agents.find((agent) => agent.id === "neutral-judge").inputPorts.review;
+  port.dataSchema.properties.proponentPriorArgument = { type: "string" };
+  port.dataSchema.properties.opponentPriorArgument = { type: "string" };
+  team.handoffs.find((handoff) => handoff.id === "proponent-to-judge").map.data.proponentPriorArgument = {
+    "$ref": "$.loop.previous.proponent.output.data.argument"
+  };
+  team.handoffs.find((handoff) => handoff.id === "opponent-to-judge").map.data.opponentPriorArgument = {
+    "$ref": "$.loop.previous.opponent.output.data.argument"
+  };
+  return team;
+}
+
+async function parallelLineageDebateFixture() {
+  const team = await branchHistoryDebateFixture();
+  team.runInput.dataSchema.properties.requestAlt = { type: "string", minLength: 1 };
+  team.runInput.dataSchema.required.push("requestAlt");
+  team.handoffs.push({
+    id: "run-to-host-alt", from: { kind: "run" }, to: { kind: "agent", agentId: "debate-host", inputPort: "default" },
+    map: { data: { brief: { "$ref": "$.run.input.requestAlt" } } }, delivery: { deadlineMs: 180000 }
+  });
+  team.orchestration.routes.unshift({
+    from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["run-to-host", "run-to-host-alt"]
+  });
+  team.orchestration.loops[0].entryHandoffIds.push("run-to-host-alt");
+  team.executionPolicy.resultMode = "allow_empty";
+  team.handoffs = team.handoffs.filter((handoff) => handoff.id !== "reporter-to-result");
+  return team;
+}
+
 async function quorumDebateFixture({ threshold = 1, timeoutMs = 300000 } = {}) {
   const team = await fixture();
   const join = team.orchestration.joins[0];
@@ -85,7 +116,14 @@ function debateBindings({ failJudge = false, onJudge } = {}) {
       if (failJudge) throw new TeamBindingError("judge unavailable", "policy");
       const output = onJudge ? await onJudge(invocation, calls.filter(([agentId]) => agentId === "neutral-judge").length) : undefined;
       const turn = calls.filter(([agentId]) => agentId === "neutral-judge").length;
-      return { kind: "completed", output: { event: "JUDGMENT", data: output ?? { decision: turn === 1 ? "rebuttal" : "final", request: turn === 1 ? "address the strongest objection" : "prepare the conclusion", proponentSummary: `proponent summary ${turn}`, opponentSummary: `opponent summary ${turn}`, rationale: `judge rationale ${turn}` } } };
+      const data = output ?? {
+        decision: turn === 1 ? "rebuttal" : "final",
+        ...(turn === 1 ? { request: "address the strongest objection" } : {}),
+        proponentSummary: `proponent summary ${turn}`,
+        opponentSummary: `opponent summary ${turn}`,
+        rationale: `judge rationale ${turn}`
+      };
+      return { kind: "completed", output: { event: data.decision === "rebuttal" ? "REBUTTAL" : "FINAL", data } };
     } },
     "binding:debate-reporter": { async invoke(invocation) {
       calls.push(["debate-reporter", invocation.input]);
@@ -367,8 +405,8 @@ test("Loop quorum Join triggers once at threshold and keeps a late source out of
       calls.judge += 1;
       judgeInputs.push(invocation.input);
       judgeStarted();
-      return { kind: "completed", output: { event: "JUDGMENT", data: {
-        decision: "final", request: "conclude", proponentSummary: "included", opponentSummary: "not included", rationale: "threshold met"
+      return { kind: "completed", output: { event: "FINAL", data: {
+        decision: "final", proponentSummary: "included", opponentSummary: "not included", rationale: "threshold met"
       } } };
     } },
     "binding:debate-reporter": { async invoke() { return { kind: "completed", output: { event: "REPORT", data: { summary: "reported" } } }; } }
@@ -531,6 +569,152 @@ test("Loop Join checkpoint recovers a committed round without repeating its cont
   assert.equal(calls.filter(([agentId]) => agentId === "proponent" || agentId === "opponent").length, contributionCallsBeforeResume + 2);
   assert.equal(resumed.scheduler.joinRounds["debate-positions:1"].deadlineAt, 100 + 300000);
   assert.equal(resumed.scheduler.joinRounds["debate-positions:2"].deadlineAt, 200 + 300000);
+});
+
+test("Loop fanout keeps branch-local previous outputs through a ready Join checkpoint restart", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-loop-lineage-recover-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(await branchHistoryDebateFixture());
+  const fileStore = new FileTeamRunStore(join(root, "runs"));
+  let crashAfterJoinCheckpoint = true;
+  const crashStore = {
+    create: (...args) => fileStore.create(...args),
+    load: (...args) => fileStore.load(...args),
+    async compareAndSet(runId, revision, record) {
+      const committed = await fileStore.compareAndSet(runId, revision, record);
+      const readyRound = Object.values(record.scheduler?.joinRounds ?? {}).some((round) => round.status === "ready");
+      if (committed && crashAfterJoinCheckpoint && readyRound && !Object.values(record.invocations).some((invocation) => invocation.agentId === "neutral-judge")) {
+        crashAfterJoinCheckpoint = false;
+        throw new Error("simulated process crash after branch Join checkpoint");
+      }
+      return committed;
+    }
+  };
+  const { calls, bindings } = debateBindings();
+  const firstRuntime = new TeamRuntime({ store: crashStore, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await firstRuntime.createRun(plan, { runId: "lineage-debate", task: "debate", input: { request: "Assess the proposal" } });
+  await assert.rejects(within(firstRuntime.executeRun(plan, "lineage-debate"), "branch checkpoint crash"), /simulated process crash/);
+  const crashed = await fileStore.load("lineage-debate");
+  const firstRound = crashed.scheduler.joinRounds["debate-positions:1"];
+  assert.equal(firstRound.status, "ready");
+  assert.equal(firstRound.lineage, "run");
+  const contributionCallsBeforeResume = calls.filter(([agentId]) => agentId === "proponent" || agentId === "opponent").length;
+
+  const resumedRuntime = new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => 200, sleep: () => new Promise(() => {}) }, bindings });
+  const resumed = await within(resumedRuntime.executeRun(plan, "lineage-debate"), "branch Join recovery");
+  assert.equal(resumed.status, "completed", JSON.stringify(resumed.events.filter((entry) => entry.type === "run.failing")));
+  assert.equal(calls.filter(([agentId]) => agentId === "proponent" || agentId === "opponent").length, contributionCallsBeforeResume + 2);
+  assert.deepEqual(calls.filter(([agentId]) => agentId === "neutral-judge").map(([, input]) => input), [
+    { proponentArgument: "pro-1", opponentArgument: "con-1" },
+    { proponentArgument: "pro-2", opponentArgument: "con-2", proponentPriorArgument: "pro-1", opponentPriorArgument: "con-1" }
+  ]);
+  assert.equal(resumed.scheduler.joinRounds["debate-positions:2"].lineage, "run");
+  assert.deepEqual(resumed.scheduler.joinRounds["debate-positions:2"].merged.data, {
+    proponentArgument: "pro-2", opponentArgument: "con-2", proponentPriorArgument: "pro-1", opponentPriorArgument: "con-1"
+  });
+});
+
+test("parallel Loop entries isolate same-boundary lineages and Loop Join recovery", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-parallel-loop-lineages-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = compileTeamIr(await parallelLineageDebateFixture());
+  const fileStore = new FileTeamRunStore(join(root, "runs"));
+  let crashAfterEntryInvocations = true;
+  let crashAfterJoinCheckpoint = true;
+  const crashStore = {
+    create: (...args) => fileStore.create(...args),
+    load: (...args) => fileStore.load(...args),
+    async compareAndSet(runId, revision, record) {
+      const committed = await fileStore.compareAndSet(runId, revision, record);
+      const completedHosts = Object.values(record.invocations).filter((invocation) => invocation.agentId === "debate-host" && invocation.status === "completed");
+      if (committed && crashAfterEntryInvocations && completedHosts.length === 2
+        && !Object.values(record.invocations).some((invocation) => invocation.agentId !== "debate-host")) {
+        crashAfterEntryInvocations = false;
+        throw new Error("simulated crash after both entry invocations");
+      }
+      const readyRound = Object.values(record.scheduler?.joinRounds ?? {}).some((round) => round.status === "ready");
+      if (committed && crashAfterJoinCheckpoint && readyRound && !Object.values(record.invocations).some((invocation) => invocation.agentId === "neutral-judge")) {
+        crashAfterJoinCheckpoint = false;
+        throw new Error("simulated crash after one lineage Join checkpoint");
+      }
+      return committed;
+    }
+  };
+  const judgeInputs = [];
+  const calls = new Map();
+  let hostCalls = 0;
+  const branchName = (brief) => brief.split(/-(?:revise|pro|con)-/)[0];
+  const next = (key) => (calls.set(key, (calls.get(key) ?? 0) + 1), calls.get(key));
+  const bindings = {
+    "binding:debate-host": { async invoke(invocation) {
+      hostCalls += 1;
+      return { kind: "completed", output: { event: "BRIEF", data: { brief: invocation.input.brief } } };
+    } },
+    "binding:proponent": { async invoke(invocation) {
+      const name = branchName(invocation.input.brief);
+      return { kind: "completed", output: { event: "ARGUMENT", data: { argument: `${name}-pro-${next(`${name}:pro`)}` } } };
+    } },
+    "binding:opponent": { async invoke(invocation) {
+      const name = branchName(invocation.input.brief);
+      return { kind: "completed", output: { event: "ARGUMENT", data: { argument: `${name}-con-${next(`${name}:con`)}` } } };
+    } },
+    "binding:neutral-judge": { async invoke(invocation) {
+      const input = invocation.input;
+      judgeInputs.push(input);
+      const name = branchName(input.proponentArgument);
+      const turn = input.proponentPriorArgument ? 2 : 1;
+      return { kind: "completed", output: { event: "REBUTTAL", data: {
+        decision: "rebuttal", request: `${name}-revise-${turn}`,
+        proponentSummary: `pro-${turn}`, opponentSummary: `con-${turn}`, rationale: `reason-${turn}`
+      } } };
+    } },
+    "binding:debate-reporter": { async invoke() {
+      return { kind: "completed", output: { event: "REPORT", data: { summary: "closed" } } };
+    } }
+  };
+  const firstRuntime = new TeamRuntime({ store: crashStore, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings });
+  await firstRuntime.createRun(plan, { runId: "parallel-loop-lineages", task: "debate", input: { request: "alpha", requestAlt: "beta" } });
+  await assert.rejects(within(firstRuntime.executeRun(plan, "parallel-loop-lineages"), "entry invocation crash"), /simulated crash after both entry invocations/);
+  const entryCrashed = await fileStore.load("parallel-loop-lineages");
+  assert.equal(hostCalls, 2);
+  const persistedEntryLineages = entryCrashed.scheduler.pending.map((key) => key.slice(0, key.indexOf("\u001f")));
+  assert.equal(new Set(persistedEntryLineages).size, 2);
+  assert.ok(persistedEntryLineages.every((lineage) => lineage.includes("branch:run-to-host")));
+  await assert.rejects(within(new TeamRuntime({ store: crashStore, clock: { now: () => 150, sleep: () => new Promise(() => {}) }, bindings })
+    .executeRun(plan, "parallel-loop-lineages"), "lineage Join crash"), /simulated crash after one lineage Join checkpoint/);
+  assert.equal(hostCalls, 2, "completed entry calls are not replayed after scheduler restart");
+  const crashed = await fileStore.load("parallel-loop-lineages");
+  const readyRounds = Object.values(crashed.scheduler.joinRounds).filter((round) => round.status === "ready");
+  assert.equal(readyRounds.length, 1);
+  const firstLineage = readyRounds[0].lineage;
+  assert.match(firstLineage, /run-to-host/);
+  const branchCallsBeforeResume = [...calls.values()].reduce((sum, count) => sum + count, 0);
+
+  const resumed = await within(new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")), clock: { now: () => 200, sleep: () => new Promise(() => {}) }, bindings
+  }).executeRun(plan, "parallel-loop-lineages"), "lineage Join recovery");
+  assert.equal(resumed.status, "completed", JSON.stringify(resumed.events.filter((entry) => entry.type === "run.failing")));
+  assert.equal(hostCalls, 4, "only the two second-round host calls occur after Join checkpoint restart");
+  assert.equal([...calls.values()].reduce((sum, count) => sum + count, 0), branchCallsBeforeResume + 4);
+  const roundOne = Object.values(resumed.scheduler.joinRounds).filter((round) => round.loopRound === 1 && round.status === "ready");
+  const roundTwo = Object.values(resumed.scheduler.joinRounds).filter((round) => round.loopRound === 2 && round.status === "ready");
+  assert.equal(roundOne.length, 2);
+  assert.equal(roundTwo.length, 2);
+  assert.equal(new Set(roundOne.map((round) => round.lineage)).size, 2);
+  assert.equal(new Set(roundTwo.map((round) => round.lineage)).size, 2);
+  const inputsByBranch = new Map();
+  for (const input of judgeInputs) {
+    const name = branchName(input.proponentArgument);
+    inputsByBranch.set(name, [...(inputsByBranch.get(name) ?? []), input]);
+  }
+  for (const [name, inputs] of inputsByBranch) {
+    assert.equal(inputs.length, 2, `${name} judge activation count`);
+    assert.equal(inputs[1].proponentPriorArgument, `${name}-pro-1`);
+    assert.equal(inputs[1].opponentPriorArgument, `${name}-con-1`);
+  }
+  for (const lineage of new Set(roundOne.map((round) => round.lineage))) {
+    assert.equal(resumed.loopStates[`debate-rounds\u001f${lineage}`].rounds, 2);
+  }
 });
 
 test("Join readiness tracks selected and skipped handoff IDs when two sources share one endpoint", async (t) => {

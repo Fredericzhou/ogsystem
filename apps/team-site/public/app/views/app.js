@@ -249,7 +249,7 @@ async function renderDetailGraph(item) {
 async function createProjectFromCase(caseId, action, button) {
   if (button) button.disabled = true;
   try {
-    const response = await pageFetch("/api/v1/cases/" + encodeURIComponent(caseId) + "/" + action, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const response = await pageFetch("/api/v1/cases/" + encodeURIComponent(caseId) + "/" + action, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ locale: state.locale }) });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法创建团队。");
     navigate(action === "use" ? "/projects/new?team=" + encodeURIComponent(payload.projectId) : "/studio/teams/" + encodeURIComponent(payload.projectId) + "/ir");
@@ -406,7 +406,14 @@ function bindTeamActions(root) {
         if (!window.confirm(message)) { button.disabled = false; return; }
       }
       if (action === "edit") {
-        navigate(`/studio/teams/${encodeURIComponent(id)}/ir?edit=1`);
+        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(id)}/edit`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}"
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Unable to create a draft version.");
+        navigate(`/studio/teams/${encodeURIComponent(payload.projectId)}/ir`);
         return;
       }
       const isDraftDelete = action === "delete" && button.dataset.teamStatus === "draft";
@@ -682,7 +689,12 @@ async function renderPlatformConfig() {
 async function renderStudioOverview() {
   const root = $("#studio-view");
   root.dataset.template = "A";
-  root.innerHTML = `<section class="page-frame" data-template="A" data-fit><div class="page-frame-body" data-layout-scroll><section class="project-library-toolbar studio-repository-toolbar"><div class="repository-heading"><div class="eyebrow">${esc(copy[state.locale].factoryEyebrow)}</div><h1>${esc(copy[state.locale].factoryTitle)}</h1><p>${esc(copy[state.locale].factoryIntro)}</p></div><div class="project-library-filters repository-actions"><label><span class="sr-only">${state.locale === "en" ? "Search teams" : "搜索团队"}</span><input id="studio-team-search" type="search" placeholder="${state.locale === "en" ? "Search teams" : "搜索团队"}"></label><label><span class="sr-only">${state.locale === "en" ? "Filter status" : "筛选状态"}</span><select id="studio-team-status"><option value="all">${state.locale === "en" ? "All statuses" : "全部状态"}</option><option value="released">${esc(copy[state.locale].releasedLabel)}</option><option value="draft">${state.locale === "en" ? "Designing" : "设计中"}</option><option value="archived">${esc(copy[state.locale].archivedLabel)}</option></select></label><a class="primary-button" href="/studio/new" data-route="/studio/new">${esc(copy[state.locale].createTeam)}</a></div></section><div id="studio-grid" class="project-library-grid"><div class="project-loading" role="status">${state.locale === "en" ? "Loading team repository…" : "正在读取团队仓库…"}</div></div></div></section>`;
+  root.innerHTML = `<section class="page-frame" data-template="A" data-fit><div class="page-frame-body" data-layout-scroll><section class="project-library-toolbar studio-repository-toolbar"><div class="repository-heading"><div class="eyebrow">${esc(copy[state.locale].factoryEyebrow)}</div><h1>${esc(copy[state.locale].factoryTitle)}</h1><p>${esc(copy[state.locale].factoryIntro)}</p></div><div class="project-library-filters repository-actions"><label><span class="sr-only">${state.locale === "en" ? "Search teams" : "搜索团队"}</span><input id="studio-team-search" type="search" placeholder="${state.locale === "en" ? "Search teams" : "搜索团队"}"></label><label><span class="sr-only">${state.locale === "en" ? "Filter status" : "筛选状态"}</span><select id="studio-team-status"><option value="all">${state.locale === "en" ? "All statuses" : "全部状态"}</option><option value="released">${esc(copy[state.locale].releasedLabel)}</option><option value="draft">${state.locale === "en" ? "Designing" : "设计中"}</option><option value="archived">${esc(copy[state.locale].archivedLabel)}</option></select></label><a class="primary-button" href="/studio/new" data-route="/studio/new">${esc(copy[state.locale].createTeam)}</a></div></section><section class="classic-team-section studio-classic-section"><div class="section-header"><div><div class="section-kicker">${state.locale === "en" ? "Built-in v2 teams" : "内置 v2 经典团队"}</div><h2>${state.locale === "en" ? "Start from a collaboration pattern" : "从经典协作场景开始"}</h2></div></div><div class="classic-team-grid" id="studio-classic-teams"></div></section><div id="studio-grid" class="project-library-grid"><div class="project-loading" role="status">${state.locale === "en" ? "Loading team repository…" : "正在读取团队仓库…"}</div></div></div></section>`;
+  const classicGrid = $("#studio-classic-teams");
+  classicGrid.innerHTML = state.cases.map((item) => `<article class="classic-team-card" data-studio-classic-case="${esc(item.id)}"><a class="classic-team-preview" href="/cases/${encodeURIComponent(item.id)}" data-route="/cases/${encodeURIComponent(item.id)}" aria-label="${esc(text(item.title))}">${caseGraphThumbnail(item)}<span class="classic-team-arrow" aria-hidden="true">↗</span></a><div class="classic-team-card-top"><span class="asset-mark">${esc(icon[item.icon] || "✦")}</span><span class="status-chip">${state.locale === "en" ? "Built-in" : "内置 v2"}</span></div><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="classic-team-meta"><span>${item.roles.length} ${state.locale === "en" ? "roles" : "个角色"}</span></div><button class="secondary-button" type="button" data-classic-team-template="${esc(item.id)}">${state.locale === "en" ? "Create a version" : "创建可编辑版本"}</button></article>`).join("");
+  classicGrid.querySelectorAll("[data-classic-team-template]").forEach((button) => button.addEventListener("click", () => {
+    void createProjectFromCase(button.dataset.classicTeamTemplate, "template", button);
+  }));
   const grid = $("#studio-grid");
   const statusFilter = $("#studio-team-status");
   const draftOption = statusFilter?.querySelector('option[value="draft"]');
@@ -787,7 +799,7 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   };
   candidate.orchestration = {
     ...candidate.orchestration,
-    joins: mergeOrchestrationRows("joins", ["id", "agentId", "inputPort", "mode", "handoffIds", "scope", "threshold", "timeoutMs", "onTimeout"]),
+    joins: mergeOrchestrationRows("joins", ["id", "agentId", "inputPort", "mode", "handoffIds", "scope", "threshold", "baseMapping", "timeoutMs", "onTimeout"]),
     loops: mergeOrchestrationRows("loops", ["id", "members", "boundaryAgentId", "entryHandoffIds", "continueHandoffIds", "exitHandoffIds", "maxRounds", "maxAgentActivations", "onExhausted"]),
     reviews: mergeOrchestrationRows("reviews", ["id", "at", "feedbackSchema", "timeoutMs", "onTimeout"]),
     routes
@@ -822,17 +834,19 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
     const stored = handoffContracts[handoff.id] || {};
     const oldHandoff = (previous.handoffs || []).find((item) => item.id === handoff.id);
     const data = new FormData(form);
-    const oldConditionRef = oldHandoff?.when?.condition?.args?.[0]?.$ref || "";
-    const oldConditionField = oldConditionRef.split(".").at(-1) || "";
-    const oldConditionValue = String(oldHandoff?.when?.condition?.args?.[1]?.$literal ?? "");
-    const conditionFormUnchanged = String(data.get(`handoff-${index}-condition-field`) || "").trim() === oldConditionField
-      && String(data.get(`handoff-${index}-condition-value`) || "") === oldConditionValue
-      && Number(data.get(`handoff-${index}-priority`) || 0) === Number(oldHandoff?.when?.priority ?? 0);
+    const priority = Number(data.get(`handoff-${index}-priority`) || 0);
+    const storedWhen = stored.when ?? oldHandoff?.when;
+    const conditionChanged = JSON.stringify(handoff.when?.condition) !== JSON.stringify(oldHandoff?.when?.condition);
+    const priorityChanged = priority !== Number(oldHandoff?.when?.priority ?? 0);
+    const mergedWhen = storedWhen ? { ...storedWhen, ...(priorityChanged ? { priority } : {}) } : {};
+    const when = conditionChanged
+      ? handoff.when?.condition ? { ...mergedWhen, condition: handoff.when.condition, priority } : undefined
+      : storedWhen ? (priorityChanged ? { ...storedWhen, priority } : storedWhen) : handoff.when;
     const mapFormUnchanged = JSON.stringify(handoff.map?.data || {}) === JSON.stringify(oldHandoff?.map?.data || {});
     const merged = {
       ...stored,
       ...handoff,
-      when: conditionFormUnchanged ? stored.when : handoff.when,
+      when,
       delivery: { ...(handoff.delivery || {}), ...(stored.delivery || {}) },
       map: { ...(stored.map || {}), ...handoff.map, data: mapFormUnchanged ? (stored.map?.data || handoff.map?.data || {}) : (handoff.map?.data || {}), ...(stored.map?.artifacts ? { artifacts: stored.map.artifacts } : {}) }
     };
@@ -855,6 +869,101 @@ function teamIrSimulationSchemaFields(dataSchema) {
     || Object.keys(schema).some((key) => !["type", "title", "description", "default", "minimum", "maximum", "minLength", "maxLength"].includes(key)))) return null;
   if (Object.keys(dataSchema).some((key) => !["type", "properties", "required", "additionalProperties", "title", "description"].includes(key))) return null;
   return fields;
+}
+
+function teamIrConditionValueSummary(value) {
+  if (value && typeof value === "object" && typeof value.$ref === "string" && Object.keys(value).length === 1) return value.$ref;
+  if (value && typeof value === "object" && Object.hasOwn(value, "$literal") && Object.keys(value).length === 1) return JSON.stringify(value.$literal);
+  return JSON.stringify(value);
+}
+
+export function teamIrConditionSummary(condition) {
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) return "Always selected";
+  const args = Array.isArray(condition.args) ? condition.args : [];
+  if (condition.op === "equals" || condition.op === "notEquals") {
+    const operator = condition.op === "equals" ? "equals" : "does not equal";
+    return `${teamIrConditionValueSummary(args[0])} ${operator} ${teamIrConditionValueSummary(args[1])}`;
+  }
+  if (condition.op === "and" || condition.op === "or") {
+    const operator = condition.op === "and" ? " AND " : " OR ";
+    return `(${args.map(teamIrConditionSummary).join(operator)})`;
+  }
+  if (condition.op === "not") return `NOT (${teamIrConditionSummary(args[0])})`;
+  if (condition.op === "exists") {
+    const reference = args[0]?.$ref || "<invalid reference>";
+    return `${reference} exists (the path must be present; explicit null counts as present)`;
+  }
+  return JSON.stringify(condition);
+}
+
+function teamIrConditionEditorSupported(condition, depth = 0) {
+  if (depth > 8) return false;
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) return true;
+  const args = condition.args;
+  if (condition.op === "equals" || condition.op === "notEquals") return Array.isArray(args) && args.length === 2 && args.every((value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      && ((Object.keys(value).length === 1 && typeof value.$ref === "string") || (Object.keys(value).length === 1 && Object.hasOwn(value, "$literal"))));
+  if (condition.op === "exists") return Array.isArray(args) && args.length === 1 && typeof args[0]?.$ref === "string";
+  if (condition.op === "not") return Array.isArray(args) && args.length === 1 && teamIrConditionEditorSupported(args[0], depth + 1);
+  if (condition.op === "and" || condition.op === "or") return Array.isArray(args) && args.length >= 1 && args.length <= 16
+    && args.every((item) => teamIrConditionEditorSupported(item, depth + 1));
+  return false;
+}
+
+function renderTeamIrConditionExpr(value, esc, editable) {
+  const isRef = value && typeof value === "object" && typeof value.$ref === "string" && Object.keys(value).length === 1;
+  const raw = isRef ? value.$ref : JSON.stringify(value && typeof value === "object" && Object.hasOwn(value, "$literal") ? value.$literal : "");
+  return `<div class="ir-condition-expr"><select data-ir-condition-expr-kind aria-label="Condition value kind"${editable ? "" : " disabled"}><option value="ref"${isRef ? " selected" : ""}>Path</option><option value="literal"${isRef ? "" : " selected"}>Literal JSON</option></select><input data-ir-condition-expr-value aria-label="Condition path or literal JSON" value="${esc(raw)}"${editable ? "" : " disabled"}></div>`;
+}
+
+function renderTeamIrConditionNode(condition, esc, editable, root = false, depth = 0) {
+  const supported = teamIrConditionEditorSupported(condition, depth);
+  if (!supported) return `<div class="ir-condition-node ir-condition-unsupported"><span>Condition uses an expression not available in this editor. Edit it in Advanced JSON.</span></div>`;
+  const op = condition?.op || "";
+  const args = Array.isArray(condition?.args) ? condition.args : [];
+  const options = `<option value=""${!op ? " selected" : ""}>Always selected</option><option value="equals"${op === "equals" ? " selected" : ""}>equals</option><option value="notEquals"${op === "notEquals" ? " selected" : ""}>does not equal</option><option value="exists"${op === "exists" ? " selected" : ""}>exists</option><option value="and"${op === "and" ? " selected" : ""}>all conditions (AND)</option><option value="or"${op === "or" ? " selected" : ""}>any condition (OR)</option><option value="not"${op === "not" ? " selected" : ""}>not</option>`;
+  let content = "";
+  if (op === "equals" || op === "notEquals") content = `${renderTeamIrConditionExpr(args[0], esc, editable)}<span class="ir-condition-operator">${op === "equals" ? "equals" : "does not equal"}</span>${renderTeamIrConditionExpr(args[1], esc, editable)}`;
+  else if (op === "exists") content = renderTeamIrConditionExpr(args[0], esc, editable);
+  else if (op === "not") content = `<div class="ir-condition-child">${renderTeamIrConditionNode(args[0], esc, editable, false, depth + 1)}</div>`;
+  else if (op === "and" || op === "or") content = `<div class="ir-condition-children">${args.map((child) => `<div class="ir-condition-child">${renderTeamIrConditionNode(child, esc, editable, false, depth + 1)}${editable && args.length > 1 ? '<button class="text-button" type="button" data-ir-condition-remove-child>Remove condition</button>' : ""}</div>`).join("")}</div>${editable && args.length < 16 ? '<button class="secondary-button" type="button" data-ir-condition-add-child>Add condition</button>' : ""}`;
+  return `<div class="ir-condition-node" data-ir-condition-node${root ? ' data-ir-condition-root="true"' : ""}><label class="ir-condition-op-label">${root ? "Condition" : "Condition group"}<select data-ir-condition-op aria-label="Condition operator"${editable ? "" : " disabled"}>${options}</select></label>${content}</div>`;
+}
+
+function readTeamIrConditionExpr(container) {
+  const kind = container.querySelector("[data-ir-condition-expr-kind]")?.value;
+  const raw = container.querySelector("[data-ir-condition-expr-value]")?.value ?? "";
+  if (kind === "ref") return { $ref: raw.trim() };
+  try { return { $literal: JSON.parse(raw) }; }
+  catch { throw new Error("Condition literal must be valid JSON."); }
+}
+
+function readTeamIrConditionNode(container, depth = 0) {
+  if (depth > 8) throw new Error("Condition nesting is limited to 8 levels in the structured editor.");
+  const op = container.querySelector(":scope > .ir-condition-op-label [data-ir-condition-op]")?.value || "";
+  if (!op) return undefined;
+  if (op === "equals" || op === "notEquals") {
+    const expressions = [...container.querySelectorAll(":scope > .ir-condition-expr")];
+    if (expressions.length !== 2) throw new Error("Condition comparison requires two values.");
+    return { op, args: expressions.map(readTeamIrConditionExpr) };
+  }
+  if (op === "exists") {
+    const expression = container.querySelector(":scope > .ir-condition-expr");
+    const value = expression && readTeamIrConditionExpr(expression);
+    if (!value?.$ref) throw new Error("Exists requires a data path.");
+    return { op, args: [value] };
+  }
+  if (op === "not") {
+    const child = container.querySelector(":scope > .ir-condition-child > [data-ir-condition-node]");
+    return { op, args: [child ? readTeamIrConditionNode(child, depth + 1) : { op: "exists", args: [{ $ref: "$.run.input.value" }] }] };
+  }
+  if (op === "and" || op === "or") {
+    const children = [...container.querySelectorAll(":scope > .ir-condition-children > .ir-condition-child > [data-ir-condition-node]")]
+      .map((child) => readTeamIrConditionNode(child, depth + 1)).filter(Boolean);
+    if (!children.length) throw new Error("Condition group needs at least one condition.");
+    return { op, args: children };
+  }
+  return undefined;
 }
 
 function renderTeamIrSimulationInput(schema, value, esc) {
@@ -1017,16 +1126,60 @@ function teamIrBasicControl(form, ir, parts) {
     if (section === "map" && member === "data") {
       const rows = [...form.querySelectorAll(`[data-ir-handoff="${index}"] [data-ir-map-row]`)];
       const selected = rows.find((row) => row.querySelector("[data-ir-map-target]")?.value === detail);
-      return selected?.querySelector("[data-ir-map-target]") || rows[0]?.querySelector("[data-ir-map-target]") || null;
+      if (!selected) return null;
+      const suffix = parts.slice(5);
+      const reserved = suffix.at(-1) === "$ref" || suffix.at(-1) === "$literal" ? suffix.pop() : null;
+      const node = [...selected.querySelectorAll("[data-ir-value-node]")].find((candidate) => JSON.stringify(JSON.parse(candidate.dataset.irValuePath || "[]")) === JSON.stringify(suffix));
+      if (!node) return null;
+      const expression = teamIrValueAtPath(edge.map?.data?.[detail], suffix);
+      if (reserved === "$ref" || (!reserved && typeof expression?.$ref === "string")) {
+        const reference = node.querySelector("[data-ir-value-direct-ref]");
+        if (reference && typeof expression?.$ref === "string") {
+          if (![...reference.options].some((option) => option.value === expression.$ref)) reference.add(new Option(expression.$ref, expression.$ref));
+          return reflectValue(reference, expression.$ref);
+        }
+        const path = node.querySelector("[data-ir-value-ref-path]");
+        if (path && typeof expression?.$ref === "string") return reflectValue(path, expression.$ref);
+        return reference || path || node.querySelector("[data-ir-value-kind]");
+      }
+      if (reserved === "$ref") return node.querySelector("[data-ir-value-direct-ref], [data-ir-value-ref-path]") || node.querySelector("[data-ir-value-kind]");
+      if (reserved === "$literal") return node.querySelector("[data-ir-value-literal]") || node.querySelector("[data-ir-value-kind]");
+      if (suffix.length) return node.querySelector("[data-ir-value-kind]");
+      return node.querySelector("[data-ir-value-direct-ref], [data-ir-value-ref-path], [data-ir-value-kind]");
     }
     if (section === "when") {
       if (member === "priority") return form.querySelector(`[name="handoff-${index}-priority"]`);
-      if (member === "condition") return form.querySelector(`[name="handoff-${index}-condition-field"]`);
+      if (member === "condition") return form.querySelector(`[data-ir-condition-editor="${index}"] [data-ir-condition-root] [data-ir-condition-op]`);
     }
   }
   if (root === "orchestration" && Number.isInteger(Number(section))) {
     const orchestrationIndex = Number(section);
     if (indexText === "joins" && ir.orchestration?.joins?.[orchestrationIndex]) {
+      const joinRow = form.querySelector(`[data-ir-join="${orchestrationIndex}"]`);
+      if (member === "baseMapping" && detail === "data" && typeof parts[5] === "string") {
+        const mappingRow = [...(joinRow?.querySelectorAll("[data-ir-join-base-row]") || [])]
+          .find((candidate) => candidate.querySelector("[data-ir-join-base-target]")?.value === parts[5]);
+        if (mappingRow) {
+          const mapping = ir.orchestration.joins[orchestrationIndex].baseMapping?.data?.[parts[5]];
+          const suffix = parts.slice(6);
+          const reserved = suffix.at(-1) === "$ref" || suffix.at(-1) === "$literal" ? suffix.pop() : null;
+          const valueNode = [...mappingRow.querySelectorAll("[data-ir-value-node]")]
+            .find((candidate) => JSON.stringify(JSON.parse(candidate.dataset.irValuePath || "[]")) === JSON.stringify(suffix));
+          if (valueNode) {
+            if (reserved === "$ref") return valueNode.querySelector("[data-ir-value-direct-ref], [data-ir-value-ref-path]") || valueNode.querySelector("[data-ir-value-kind]");
+            if (reserved === "$literal") return valueNode.querySelector("[data-ir-value-literal]") || valueNode.querySelector("[data-ir-value-kind]");
+            if (suffix.length) return valueNode.querySelector("[data-ir-value-kind]");
+          }
+          if (typeof mapping?.$ref === "string") {
+            const source = mappingRow.querySelector("[data-ir-join-base-source]");
+            if (source && ![...source.options].some((option) => option.value === mapping.$ref.split(".").at(-1))) {
+              source.add(new Option(mapping.$ref.split(".").at(-1), mapping.$ref.split(".").at(-1)));
+            }
+            if (source) return reflectValue(source, mapping.$ref.split(".").at(-1));
+          }
+          return mappingRow.querySelector("[data-ir-value-kind], [data-ir-value-ref-path], [data-ir-value-literal], [data-ir-join-base-target]");
+        }
+      }
       const fields = { id: "id", agentId: "agent", inputPort: "port", mode: "mode", threshold: "threshold", timeoutMs: "timeout", scope: "scope-kind", handoffIds: "handoffs" };
       if (fields[member]) {
         const value = member === "scope" ? ir.orchestration.joins[orchestrationIndex].scope?.kind : ir.orchestration.joins[orchestrationIndex][member];
@@ -1039,9 +1192,9 @@ function teamIrBasicControl(form, ir, parts) {
       if (fields[member]) return reflectValue(form.querySelector(`[name="loop-${orchestrationIndex}-${fields[member]}"]`), ir.orchestration.loops[orchestrationIndex][member]);
     }
     if (indexText === "reviews" && ir.orchestration?.reviews?.[orchestrationIndex]) {
-      const fields = { id: "id", at: "at", timeoutMs: "timeout", feedbackSchema: "feedback-schema", onTimeout: "timeout" };
-      if (fields[member] && member !== "at" && member !== "feedbackSchema") return reflectValue(form.querySelector(`[name="review-${orchestrationIndex}-${fields[member]}"]`), ir.orchestration.reviews[orchestrationIndex][member]);
-      if (member === "at" && ["agentId", "outputPort"].includes(detail)) {
+      const fields = { id: "id", timeoutMs: "timeout", feedbackSchema: "feedback-schema", onTimeout: "on-timeout" };
+      if (fields[member]) return reflectValue(form.querySelector(`[name="review-${orchestrationIndex}-${fields[member]}"]`), ir.orchestration.reviews[orchestrationIndex][member]);
+      if (member === "at") {
         return form.querySelector(`[name="review-${orchestrationIndex}-at"]`);
       }
     }
@@ -1099,14 +1252,111 @@ function teamIrHandoffMappingFields(ir, handoff) {
   return { sourceFields, targetFields, sourceRoot };
 }
 
+const TEAM_IR_VALUE_EDITOR_MAX_DEPTH = 6;
+const TEAM_IR_VALUE_EDITOR_MAX_ITEMS = 16;
+
+function teamIrValueExprKind(value) {
+  if (Array.isArray(value)) return "array";
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value);
+    if (keys.length === 1 && keys[0] === "$ref" && typeof value.$ref === "string") return "reference";
+    if (keys.length === 1 && keys[0] === "$literal") return "literal";
+    if (keys.includes("$ref") || keys.includes("$literal")) return "unsupported";
+    return "object";
+  }
+  return "literal";
+}
+
+function teamIrValueExprEditable(value, depth = 0) {
+  if (depth > TEAM_IR_VALUE_EDITOR_MAX_DEPTH) return false;
+  const kind = teamIrValueExprKind(value);
+  if (kind === "unsupported") return false;
+  if (kind === "reference" || kind === "literal") return true;
+  if (kind === "array") return value.length <= TEAM_IR_VALUE_EDITOR_MAX_ITEMS && value.every((item) => teamIrValueExprEditable(item, depth + 1));
+  const entries = Object.entries(value);
+  return entries.length <= TEAM_IR_VALUE_EDITOR_MAX_ITEMS && entries.every(([, item]) => teamIrValueExprEditable(item, depth + 1));
+}
+
+function renderTeamIrValueExprNode(value, options, escText, editable, depth = 0, path = []) {
+  const kind = teamIrValueExprKind(value);
+  const pathValue = escText(JSON.stringify(path));
+  const disabled = editable ? "" : " disabled";
+  const kindOptions = [["reference", "Reference"], ["literal", "Literal"], ["object", "Object"], ["array", "Array"]]
+    .map(([option, label]) => `<option value="${option}"${kind === option ? " selected" : ""}>${label}</option>`).join("");
+  let content = "";
+  if (kind === "reference") {
+    const direct = depth === 0 && options.directRefs?.find((item) => item.reference === value.$ref);
+    if (direct) {
+      const sourceAttr = options.kind === "handoff" ? "data-ir-map-source" : "data-ir-join-base-source";
+      content = `<label>${options.kind === "handoff" ? "Source field" : "Run input field"}<select ${sourceAttr} data-ir-value-direct-ref aria-label="${escText(options.directLabel)}"${disabled}><option value="">Choose field</option>${options.directRefs.map((item) => `<option value="${escText(item.value)}"${item.reference === value.$ref ? " selected" : ""}>${escText(item.label)}</option>`).join("")}</select></label>`;
+    } else {
+      content = `<label>Reference path<input data-ir-value-ref-path value="${escText(value.$ref)}" placeholder="$.run.input.field"${disabled}></label>`;
+    }
+  } else if (kind === "literal") {
+    const literal = value && typeof value === "object" && Object.hasOwn(value, "$literal") ? value.$literal : value;
+    content = `<label>JSON value<textarea data-ir-value-literal rows="3" spellcheck="false"${disabled}>${escText(JSON.stringify(literal, null, 2))}</textarea></label>`;
+  } else if (kind === "object") {
+    const entries = Object.entries(value);
+    content = `<div class="ir-value-children">${entries.map(([key, child], index) => `<div class="ir-value-child" data-ir-value-entry><label>Property<input data-ir-value-object-key value="${escText(key)}" aria-label="Object property ${index + 1}"${disabled}></label>${renderTeamIrValueExprNode(child, options, escText, editable, depth + 1, [...path, key])}<button class="icon-button" type="button" data-ir-value-remove aria-label="Remove object property ${escText(key)}" title="Remove property"${disabled}>×</button></div>`).join("")}</div><button class="text-button" type="button" data-ir-value-add="object"${disabled || depth >= TEAM_IR_VALUE_EDITOR_MAX_DEPTH || entries.length >= TEAM_IR_VALUE_EDITOR_MAX_ITEMS ? " disabled" : ""}>Add property</button>`;
+  } else if (kind === "array") {
+    content = `<div class="ir-value-children">${value.map((child, index) => `<div class="ir-value-child" data-ir-value-entry>${renderTeamIrValueExprNode(child, options, escText, editable, depth + 1, [...path, String(index)])}<button class="icon-button" type="button" data-ir-value-remove aria-label="Remove array item ${index + 1}" title="Remove item"${disabled}>×</button></div>`).join("")}</div><button class="text-button" type="button" data-ir-value-add="array"${disabled || depth >= TEAM_IR_VALUE_EDITOR_MAX_DEPTH || value.length >= TEAM_IR_VALUE_EDITOR_MAX_ITEMS ? " disabled" : ""}>Add item</button>`;
+  } else {
+    content = '<p class="field-hint">This value is outside the structured editor grammar. Edit it in Advanced JSON.</p>';
+  }
+  return `<div class="ir-value-node" data-ir-value-node data-ir-value-path="${pathValue}" data-ir-value-depth="${depth}"><label>Value type<select data-ir-value-kind aria-label="Mapping value type"${disabled}>${kindOptions}</select></label>${content}<p class="field-hint" data-ir-value-error hidden></p></div>`;
+}
+
+function teamIrValueAtPath(value, path) {
+  return path.reduce((current, key) => current?.[key], value);
+}
+
+function teamIrSetValueAtPath(value, path, replacement) {
+  if (!path.length) return replacement;
+  const parent = teamIrValueAtPath(value, path.slice(0, -1));
+  if (parent && typeof parent === "object") parent[path.at(-1)] = replacement;
+  return value;
+}
+
+function teamIrDeleteValueAtPath(value, path) {
+  if (!path.length) return value;
+  const parent = teamIrValueAtPath(value, path.slice(0, -1));
+  const key = path.at(-1);
+  if (Array.isArray(parent)) parent.splice(Number(key), 1);
+  else if (parent && typeof parent === "object") delete parent[key];
+  return value;
+}
+
 function renderTeamIrMappingRow(index, rowIndex, fields, values, escText, editable) {
   const targetOptions = [...new Set([...fields.targetFields, values.target].filter(Boolean))];
-  const sourceOptions = [
-    ...fields.sourceFields.map((field) => `${fields.sourceRoot}.${field}`),
-    ...(values.reference && !fields.sourceFields.some((field) => `${fields.sourceRoot}.${field}` === values.reference) ? [values.reference] : [])
-  ];
-  const optionList = (items, selected) => `<option value="">Choose field</option>${items.map((item) => `<option value="${escText(item)}"${item === selected ? " selected" : ""}>${escText(item)}</option>`).join("")}`;
-  return `<div class="ir-map-row" data-ir-map-row="${rowIndex}"><label>Target field<select data-ir-map-target aria-label="Handoff ${index + 1} target field"${editable ? "" : " disabled"}>${optionList(targetOptions, values.target)}</select></label><label>Source field<select data-ir-map-source aria-label="Handoff ${index + 1} source field"${editable ? "" : " disabled"}>${optionList(sourceOptions, values.reference)}</select></label><button class="icon-button" type="button" data-ir-map-remove aria-label="Remove field mapping" title="Remove field mapping"${editable ? "" : " disabled"}>×</button></div>`;
+  const targetList = `<option value="">Choose field</option>${targetOptions.map((item) => `<option value="${escText(item)}"${item === values.target ? " selected" : ""}>${escText(item)}</option>`).join("")}`;
+  const expression = values.expression ?? { $ref: values.reference || "" };
+  const editorOptions = {
+    kind: "handoff",
+    directRefs: fields.sourceFields.map((field) => ({ value: `${fields.sourceRoot}.${field}`, reference: `${fields.sourceRoot}.${field}`, label: `${fields.sourceRoot}.${field}` })),
+    directLabel: `Handoff ${index + 1} source field`
+  };
+  return `<div class="ir-map-row ir-value-map-row" data-ir-map-row="${rowIndex}"><label>Target field<select data-ir-map-target aria-label="Handoff ${index + 1} target field"${editable ? "" : " disabled"}>${targetList}</select></label><div class="ir-value-editor" data-ir-value-editor><input type="hidden" data-ir-value-state value="${escText(JSON.stringify(expression))}">${renderTeamIrValueExprNode(expression, editorOptions, escText, editable)}</div><button class="icon-button" type="button" data-ir-map-remove aria-label="Remove field mapping" title="Remove field mapping"${editable ? "" : " disabled"}>×</button></div>`;
+}
+
+function teamIrJoinBaseMappingFields(ir, join) {
+  const agent = ir.agents.find((item) => item.id === join.agentId);
+  const targetSchema = agent?.inputPorts?.[join.inputPort]?.dataSchema;
+  return {
+    sourceFields: Object.keys(ir.runInput?.dataSchema?.properties || {}),
+    targetFields: Object.keys(targetSchema?.properties || {})
+  };
+}
+
+function renderTeamIrJoinBaseMappingRow(index, rowIndex, fields, values, escText, editable) {
+  const targetOptions = [...new Set([...fields.targetFields, values.target].filter(Boolean))];
+  const targetList = `<option value="">Choose field</option>${targetOptions.map((item) => `<option value="${escText(item)}"${item === values.target ? " selected" : ""}>${escText(item)}</option>`).join("")}`;
+  const expression = values.expression ?? { $ref: values.source ? `$.run.input.${values.source}` : "" };
+  const editorOptions = {
+    kind: "join",
+    directRefs: fields.sourceFields.map((field) => ({ value: field, reference: `$.run.input.${field}`, label: field })),
+    directLabel: `Join ${index + 1} base mapping source`
+  };
+  return `<div class="ir-map-row ir-value-map-row" data-ir-join-base-row="${rowIndex}"><label>Join target field<select data-ir-join-base-target aria-label="Join ${index + 1} base mapping target"${editable ? "" : " disabled"}>${targetList}</select></label><div class="ir-value-editor" data-ir-value-editor><input type="hidden" data-ir-value-state value="${escText(JSON.stringify(expression))}">${renderTeamIrValueExprNode(expression, editorOptions, escText, editable)}</div><button class="icon-button" type="button" data-ir-join-base-remove aria-label="Remove Join base mapping" title="Remove field mapping"${editable ? "" : " disabled"}>×</button></div>`;
 }
 
 function stableTeamIrSchemaValue(value) {
@@ -1147,6 +1397,12 @@ function teamIrAutoMappingCandidates(ir, handoff) {
 
 function teamIrFromEditor(form, base) {
   const data = new FormData(form);
+  let advanced = {};
+  let advancedHandoffContracts = {};
+  try {
+    advanced = JSON.parse(form.querySelector("[data-ir-advanced-json]")?.value || "{}");
+    advancedHandoffContracts = advanced.handoffContracts || {};
+  } catch { /* The advanced editor reports invalid JSON through its own validation path. */ }
   const parsePortJson = (value, label) => {
     try { return JSON.parse(value); }
     catch (error) { throw new Error(`${label} must be valid JSON: ${error.message}`); }
@@ -1167,13 +1423,13 @@ function teamIrFromEditor(form, base) {
     return {
       id,
       packageRef: String(data.get(`agent-${index}-package`) || "").trim(),
-      bindingRef: String(data.get(`agent-${index}-binding`) || `binding:${id}`).trim(),
+      bindingRef: String(data.get(`agent-${index}-binding`) || "").trim(),
       inputPorts: readPorts("inputPorts"),
       outputPorts: readPorts("outputPorts")
     };
   });
-  const bindings = agents.map((agent) => ({ id: agent.bindingRef, kind: "model", modelRef: "codex-gateway/gpt-6-luna", attemptTimeoutMs: 120000,
-    retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } }));
+  const bindingIds = new Set(agents.map((agent) => agent.bindingRef).filter(Boolean));
+  const bindings = (advanced.bindings || []).filter((binding) => bindingIds.has(binding.id));
   const handoffs = [...form.querySelectorAll("[data-ir-handoff]")].map((row) => {
     const index = row.dataset.irHandoff;
     const fromAgentId = String(data.get(`handoff-${index}-from-agent`) || "");
@@ -1181,17 +1437,25 @@ function teamIrFromEditor(form, base) {
     const toAgentId = String(data.get(`handoff-${index}-to-agent`) || "");
     const toPort = String(data.get(`handoff-${index}-to-port`) || "").trim();
     const id = String(data.get(`handoff-${index}-id`) || "").trim();
-    const fields = String(data.get(`handoff-${index}-mapping`) || "").split(",").map((item) => item.trim()).filter(Boolean);
     const preservedMap = JSON.parse(row.querySelector("[data-ir-map-preserved]")?.value || "{}");
-    const map = { data: { ...preservedMap, ...Object.fromEntries(fields.map((field) => {
-      const [target, source] = field.split("=").map((item) => item.trim());
-      return [target, { $ref: source }];
-    }).filter(([target, source]) => target && source)) } };
+    const mapData = { ...preservedMap };
+    for (const mappingRow of row.querySelectorAll("[data-ir-map-row]")) {
+      const invalidValue = mappingRow.querySelector("[data-ir-value-error]:not([hidden])");
+      if (invalidValue) throw new Error(invalidValue.textContent || `Handoff ${index + 1} mapping is invalid.`);
+      const target = mappingRow.querySelector("[data-ir-map-target]")?.value;
+      const expression = parsePortJson(mappingRow.querySelector("[data-ir-value-state]")?.value || "null", `Handoff ${index + 1} mapping`);
+      if (target && !(expression && typeof expression === "object" && !Array.isArray(expression) && expression.$ref === "")) mapData[target] = expression;
+    }
+    const map = { data: mapData };
     const from = fromAgentId ? { kind: "agent", agentId: fromAgentId, outputPort: fromPort } : { kind: "run" };
     const to = toAgentId === "@result" ? { kind: "result" } : { kind: "agent", agentId: toAgentId, inputPort: toPort };
-    const conditionField = String(data.get(`handoff-${index}-condition-field`) || "").trim();
-    const conditionValue = String(data.get(`handoff-${index}-condition-value`) || "");
-    const when = conditionField ? { condition: { op: "equals", args: [{ $ref: fromAgentId ? `$.output.data.${conditionField}` : `$.run.input.${conditionField}` }, { $literal: conditionValue }] }, priority: Number(data.get(`handoff-${index}-priority`) || 0) } : undefined;
+    const conditionNode = row.querySelector("[data-ir-condition-root]");
+    const condition = conditionNode ? readTeamIrConditionNode(conditionNode) : advancedHandoffContracts[id]?.when?.condition;
+    const oldWhen = advancedHandoffContracts[id]?.when;
+    const priority = Number(data.get(`handoff-${index}-priority`) || 0);
+    const when = conditionNode
+      ? condition ? { condition, priority } : undefined
+      : oldWhen?.condition ? { ...oldWhen, priority } : undefined;
     return { id, from, to, map, ...(when ? { when } : {}), ...(to.kind === "agent" ? { delivery: { deadlineMs: 300000 } } : {}) };
   });
   const joins = [...form.querySelectorAll("[data-ir-join]")].map((row) => {
@@ -1199,6 +1463,17 @@ function teamIrFromEditor(form, base) {
     const id = String(data.get(`join-${index}-id`) || "").trim();
     const mode = String(data.get(`join-${index}-mode`) || "all_of");
     const handoffIds = data.getAll(`join-${index}-handoffs`).map((item) => String(item));
+    const advancedJoin = (advanced.orchestration?.joins || []).find((item) => item.id === id) || {};
+    let preservedBaseMapping = {};
+    try { preservedBaseMapping = JSON.parse(row.querySelector("[data-ir-join-base-preserved]")?.value || "{}"); } catch { /* Advanced JSON validation reports malformed values. */ }
+    const baseMappingData = { ...preservedBaseMapping };
+    for (const mappingRow of row.querySelectorAll("[data-ir-join-base-row]")) {
+      const invalidValue = mappingRow.querySelector("[data-ir-value-error]:not([hidden])");
+      if (invalidValue) throw new Error(invalidValue.textContent || `Join ${index + 1} base mapping is invalid.`);
+      const target = mappingRow.querySelector("[data-ir-join-base-target]")?.value;
+      const expression = parsePortJson(mappingRow.querySelector("[data-ir-value-state]")?.value || "null", `Join ${index + 1} base mapping`);
+      if (target && !(expression && typeof expression === "object" && !Array.isArray(expression) && expression.$ref === "")) baseMappingData[target] = expression;
+    }
     return {
       id,
       agentId: String(data.get(`join-${index}-agent`) || "").trim(),
@@ -1207,6 +1482,7 @@ function teamIrFromEditor(form, base) {
       handoffIds,
       scope: { kind: String(data.get(`join-${index}-scope-kind`) || "run"), ...(String(data.get(`join-${index}-scope-loop`) || "").trim() ? { loopId: String(data.get(`join-${index}-scope-loop`)).trim() } : {}) },
       ...(mode === "quorum_of" ? { threshold: Number(data.get(`join-${index}-threshold`)) } : {}),
+      ...(Object.keys(baseMappingData).length || advancedJoin.baseMapping ? { baseMapping: { data: baseMappingData } } : {}),
       timeoutMs: Number(data.get(`join-${index}-timeout`) || 0),
       onTimeout: "fail"
     };
@@ -1266,7 +1542,17 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
   const agents = ir.agents || [];
   const handoffs = ir.handoffs || [];
   const agentOptions = (selected) => agents.map((agent) => `<option value="${escText(agent.id)}"${agent.id === selected ? " selected" : ""}>${escText(agent.id)}</option>`).join("");
-  const joins = (ir.orchestration?.joins || []).map((join, index) => `<section class="project-panel ir-editor-row" data-ir-join="${index}">
+  const joins = (ir.orchestration?.joins || []).map((join, index) => {
+    const fields = teamIrJoinBaseMappingFields(ir, join);
+    const baseData = join.baseMapping?.data || {};
+    const simpleMappings = [];
+    const preserved = {};
+    for (const [target, mapping] of Object.entries(baseData)) {
+      if (teamIrValueExprEditable(mapping)) simpleMappings.push({ target, expression: mapping });
+      else preserved[target] = mapping;
+    }
+    const mappingRows = simpleMappings.map((mapping, rowIndex) => renderTeamIrJoinBaseMappingRow(index, rowIndex, fields, mapping, escText, editable)).join("");
+    return `<section class="project-panel ir-editor-row" data-ir-join="${index}">
     <div class="panel-head"><h3>Join ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-join="${index}" aria-label="Remove Join" title="Remove Join"${disabled}>×</button></div>
     <div class="ir-form-grid">
       <label>Join ID<input name="join-${index}-id" value="${escText(join.id || "")}" required${disabled}></label>
@@ -1278,7 +1564,9 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
       <label>Scope<select name="join-${index}-scope-kind"${disabled}><option value="run"${join.scope?.kind !== "loop" ? " selected" : ""}>Run</option><option value="loop"${join.scope?.kind === "loop" ? " selected" : ""}>Loop</option></select></label>
       <label>Scope Loop ID<input name="join-${index}-scope-loop" value="${escText(join.scope?.loopId || "")}"${disabled}></label>
       <fieldset class="full ir-join-handoffs"><legend>Contributing Handoffs</legend>${handoffs.length ? handoffs.map((handoff) => `<label class="ir-handoff-choice"><input type="checkbox" name="join-${index}-handoffs" value="${escText(handoff.id)}"${(join.handoffIds || []).includes(handoff.id) ? " checked" : ""}${disabled}><span>${escText(handoff.id)}</span></label>`).join("") : '<p class="empty-note">No Handoffs are defined.</p>'}</fieldset>
-    </div></section>`).join("");
+      <fieldset class="full"><legend>Base mapping from Run input</legend><input type="hidden" data-ir-join-base-preserved value="${escText(JSON.stringify(preserved))}"><div data-ir-join-base-mappings>${mappingRows}</div><button class="secondary-button" type="button" data-ir-join-base-add${disabled}>Add field mapping</button></fieldset>
+    </div></section>`;
+  }).join("");
   const loops = (ir.orchestration?.loops || []).map((loop, index) => `<section class="project-panel ir-editor-row" data-ir-loop="${index}">
     <div class="panel-head"><h3>Loop ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-loop="${index}" aria-label="Remove Loop" title="Remove Loop"${disabled}>×</button></div>
     <div class="ir-form-grid">
@@ -1303,7 +1591,7 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
       <label>Review ID<input name="review-${index}-id" value="${escText(review.id || "")}" required${disabled}></label>
       <label>Position<select name="review-${index}-at" required${disabled}><option value="">Select Agent output</option>${reviewLocations.map((location) => `<option value="${escText(location.value)}"${location.value === selected ? " selected" : ""}>${escText(location.label)}</option>`).join("")}</select></label>
       <label>Timeout (ms)<input type="number" min="1" name="review-${index}-timeout" value="${Number(review.timeoutMs || 0)}" required${disabled}></label>
-      <label>On timeout<input value="fail" readonly${disabled}></label>
+      <label>On timeout<input name="review-${index}-on-timeout" value="${escText(review.onTimeout || "fail")}" readonly${disabled}></label>
       <label class="full">Feedback schema JSON<textarea name="review-${index}-feedback-schema" rows="7" spellcheck="false" required${disabled}>${escText(JSON.stringify(review.feedbackSchema ?? {}, null, 2))}</textarea></label>
     </div></section>`;
   }).join("");
@@ -1312,8 +1600,11 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
 
 function renderTeamIrEditorRows(ir, escText, editable) {
   const agents = (ir.agents || []).map((agent, index) => {
-    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${Object.entries(ports || {}).map(([portId, port], portIndex) => `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><label>Data schema JSON<textarea name="agent-${index}-${direction}-${portIndex}-schema" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea></label><label>Artifact slots JSON<textarea name="agent-${index}-${direction}-${portIndex}-artifacts" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea></label></section>`).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
-    return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<input name="agent-${index}-package" value="${escText(agent.packageRef)}" required${editable ? "" : " disabled"}></label><label>Binding reference<input name="agent-${index}-binding" value="${escText(agent.bindingRef)}" required${editable ? "" : " disabled"}></label>${renderPorts("inputPorts", agent.inputPorts)}${renderPorts("outputPorts", agent.outputPorts)}</div></section>`;
+    const outputContractHint = state.locale === "en"
+      ? "Each event schema defines its data payload. The Binding must return one JSON object: event, matching data, and artifactTexts (use an empty object when none are produced). The configured provider must support this output schema; results are validated again by Team IR. Markdown fences and surrounding text are rejected."
+      : "每个事件 Schema 描述该事件的 data。Binding 必须返回单个 JSON 对象，包含 event、匹配的 data 和 artifactTexts（没有 Artifact 时传空对象）。所配置的 Provider 需支持该输出 Schema；Team IR 仍会再次校验。Markdown 围栏和前后说明会被拒绝。";
+    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${direction === "outputPorts" ? `<p class="field-hint" data-ir-output-contract-hint>${esc(outputContractHint)}</p>` : ""}${Object.entries(ports || {}).map(([portId, port], portIndex) => `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><label>Data schema JSON<textarea name="agent-${index}-${direction}-${portIndex}-schema" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea></label><label>Artifact slots JSON<textarea name="agent-${index}-${direction}-${portIndex}-artifacts" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea></label></section>`).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
+    return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<input name="agent-${index}-package" value="${escText(agent.packageRef || "")}" placeholder="Select a verified role package" required${editable ? "" : " disabled"}>${agent.packageRef ? "" : '<small class="field-hint">Unconfigured; validation and release are blocked.</small>'}</label><label>Binding reference<input name="agent-${index}-binding" value="${escText(agent.bindingRef || "")}" placeholder="Select a configured Binding" required${editable ? "" : " disabled"}>${agent.bindingRef ? "" : '<small class="field-hint">Unconfigured; validation and release are blocked.</small>'}</label>${renderPorts("inputPorts", agent.inputPorts)}${renderPorts("outputPorts", agent.outputPorts)}</div></section>`;
   }).join("");
   const agentOptions = (selected, allowRun = false) => `${allowRun ? `<option value=""${!selected ? " selected" : ""}>Run START</option>` : ""}${(ir.agents || []).map((agent) => `<option value="${escText(agent.id)}"${selected === agent.id ? " selected" : ""}>${escText(agent.id)}</option>`).join("")}${allowRun ? '<option value="@result"' + (selected === "@result" ? " selected" : "") + ">Run result</option>" : ""}`;
   const handoffs = (ir.handoffs || []).map((edge, index) => {
@@ -1323,18 +1614,15 @@ function renderTeamIrEditorRows(ir, escText, editable) {
     const preservedMappings = {};
     const visualMappings = [];
     for (const [target, expr] of Object.entries(edge.map?.data || {})) {
-      const prefix = `${mappingFields.sourceRoot}.`;
-      if (typeof expr?.$ref === "string" && expr.$ref.startsWith(prefix)
-        && mappingFields.sourceFields.includes(expr.$ref.slice(prefix.length))) {
-        visualMappings.push({ target, reference: expr.$ref });
+      if (teamIrValueExprEditable(expr)) {
+        visualMappings.push({ target, expression: expr });
       } else preservedMappings[target] = expr;
     }
-    const mapping = visualMappings.map(({ target, reference }) => `${target}=${reference}`).join(", ");
+    const mapping = visualMappings.map(({ target, expression }) => expression?.$ref ? `${target}=${expression.$ref}` : "").filter(Boolean).join(", ");
     const mappingRows = visualMappings.map((values, rowIndex) => renderTeamIrMappingRow(index, rowIndex, mappingFields, values, escText, editable)).join("");
-    const condition = edge.when?.condition?.args?.[0]?.$ref || "";
-    const conditionField = condition.split(".").at(-1) || "";
-    const conditionValue = edge.when?.condition?.args?.[1]?.$literal ?? "";
-    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<input name="handoff-${index}-from-port" value="${escText(edge.from?.outputPort || "START")}"${editable ? "" : " disabled"}></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<input name="handoff-${index}-to-port" value="${escText(edge.to?.inputPort || "default")}"${editable ? "" : " disabled"}></label><div class="ir-map-editor full"><span class="ir-map-editor-title">Field mappings</span><input type="hidden" name="handoff-${index}-mapping" value="${escText(mapping)}"><input type="hidden" data-ir-map-preserved value="${escText(JSON.stringify(preservedMappings))}"><div data-ir-map-rows="${index}">${mappingRows}</div><div class="ir-map-editor-actions">${editable ? `<button class="secondary-button" type="button" data-ir-map-add="${index}"${mappingFields.targetFields.length && mappingFields.sourceFields.length ? "" : " disabled"}>Add field mapping</button><button class="text-button" type="button" data-ir-map-suggest="${index}">Suggest same-name fields</button>` : ""}</div><span class="field-hint">Map a target field from a declared Run input or Agent output. Run task stays immutable.</span><div class="ir-map-suggestions" data-ir-map-suggestions="${index}" aria-live="polite"></div></div><label>Condition field<input name="handoff-${index}-condition-field" value="${escText(conditionField)}" placeholder="Leave blank for unconditional"${editable ? "" : " disabled"}></label><label>Equals value<input name="handoff-${index}-condition-value" value="${escText(conditionValue)}"${editable ? "" : " disabled"}></label><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
+    const conditionSummary = edge.when?.condition ? teamIrConditionSummary(edge.when.condition) : "Always selected";
+    const conditionEditor = renderTeamIrConditionNode(edge.when?.condition, escText, editable, true);
+    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<input name="handoff-${index}-from-port" value="${escText(edge.from?.outputPort || "START")}"${editable ? "" : " disabled"}></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<input name="handoff-${index}-to-port" value="${escText(edge.to?.inputPort || "default")}"${editable ? "" : " disabled"}></label><div class="ir-map-editor full"><span class="ir-map-editor-title">Field mappings</span><input type="hidden" name="handoff-${index}-mapping" value="${escText(mapping)}"><input type="hidden" data-ir-map-preserved value="${escText(JSON.stringify(preservedMappings))}"><div data-ir-map-rows="${index}">${mappingRows}</div><div class="ir-map-editor-actions">${editable ? `<button class="secondary-button" type="button" data-ir-map-add="${index}"${mappingFields.targetFields.length && mappingFields.sourceFields.length ? "" : " disabled"}>Add field mapping</button><button class="text-button" type="button" data-ir-map-suggest="${index}">Suggest same-name fields</button>` : ""}</div><span class="field-hint">Map a target field from a declared Run input or Agent output. Run task stays immutable.</span><div class="ir-map-suggestions" data-ir-map-suggestions="${index}" aria-live="polite"></div></div><div class="ir-condition-editor full" data-ir-condition-editor="${index}">${conditionEditor}<p class="field-hint" data-ir-condition-summary="${index}">${escText(conditionSummary)}</p><p class="field-hint">Structured conditions support up to 8 nested levels and 16 items per group. Other expressions remain available in Advanced JSON.</p></div><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
   }).join("");
   return { agents, handoffs };
 }
@@ -1474,17 +1762,50 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         const index = handoffRow.dataset.irHandoff;
         const values = [...handoffRow.querySelectorAll("[data-ir-map-row]")].map((row) => {
           const target = row.querySelector("[data-ir-map-target]")?.value;
-          const reference = row.querySelector("[data-ir-map-source]")?.value;
-          return target && reference ? `${target}=${reference}` : "";
+          let expression;
+          try { expression = JSON.parse(row.querySelector("[data-ir-value-state]")?.value || "null"); } catch { return ""; }
+          return target && typeof expression?.$ref === "string" && expression.$ref ? `${target}=${expression.$ref}` : "";
         }).filter(Boolean);
         handoffRow.querySelector(`[name="handoff-${index}-mapping"]`).value = values.join(", ");
       };
-      const bindMappingRow = (handoffRow, mapRow) => {
-        mapRow.querySelectorAll("[data-ir-map-target], [data-ir-map-source]").forEach((select) => select.addEventListener("change", () => syncMappingText(handoffRow)));
-        mapRow.querySelector("[data-ir-map-remove]")?.addEventListener("click", () => {
-          mapRow.remove();
-          syncMappingText(handoffRow);
-        });
+      const valueEditorOptions = (mapRow) => {
+        const handoffRow = mapRow.closest("[data-ir-handoff]");
+        if (handoffRow) {
+          const handoff = draft.handoffs[Number(handoffRow.dataset.irHandoff)];
+          const fields = teamIrHandoffMappingFields(draft, handoff);
+          return { kind: "handoff", directRefs: fields.sourceFields.map((field) => ({ value: `${fields.sourceRoot}.${field}`, reference: `${fields.sourceRoot}.${field}`, label: `${fields.sourceRoot}.${field}` })), directLabel: "Handoff source field" };
+        }
+        const joinRow = mapRow.closest("[data-ir-join]");
+        const join = draft.orchestration.joins[Number(joinRow?.dataset.irJoin)];
+        const fields = teamIrJoinBaseMappingFields(draft, join);
+        return { kind: "join", directRefs: fields.sourceFields.map((field) => ({ value: field, reference: `$.run.input.${field}`, label: field })), directLabel: "Join base mapping source" };
+      };
+      const valuePath = (node) => JSON.parse(node?.dataset.irValuePath || "[]");
+      const valueNodeAtPath = (mapRow, path) => [...mapRow.querySelectorAll("[data-ir-value-node]")]
+        .find((node) => JSON.stringify(valuePath(node)) === JSON.stringify(path));
+      const rowValue = (mapRow) => JSON.parse(mapRow.querySelector("[data-ir-value-state]")?.value || "null");
+      const saveValue = (mapRow, expression, changedPath = [], rerender = false) => {
+        const state = mapRow.querySelector("[data-ir-value-state]");
+        state.value = JSON.stringify(expression);
+        if (rerender) {
+          const previousNode = valueNodeAtPath(mapRow, changedPath);
+          if (previousNode) previousNode.outerHTML = renderTeamIrValueExprNode(teamIrValueAtPath(expression, changedPath), valueEditorOptions(mapRow), esc, editable, changedPath.length, changedPath);
+        }
+        const handoffRow = mapRow.closest("[data-ir-handoff]");
+        if (handoffRow) syncMappingText(handoffRow);
+        try {
+          draft = captureEditor();
+          syncAdvancedContracts();
+        } catch (error) { captureFailure(error); }
+      };
+      const removeHandoffMappingRow = (mapRow) => {
+        const handoffRow = mapRow?.closest("[data-ir-handoff]");
+        mapRow?.remove();
+        if (handoffRow) syncMappingText(handoffRow);
+        try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
+      };
+      const bindHandoffMappingRow = (mapRow) => {
+        mapRow?.querySelector("[data-ir-map-remove]")?.addEventListener("click", () => removeHandoffMappingRow(mapRow));
       };
       const addMappingRow = (handoffIndex, target = "", reference = "") => {
         const current = captureEditor();
@@ -1493,13 +1814,120 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         const row = form.querySelector(`[data-ir-handoff="${handoffIndex}"]`);
         const container = row.querySelector(`[data-ir-map-rows="${handoffIndex}"]`);
         const fields = teamIrHandoffMappingFields(current, handoff);
-        container.insertAdjacentHTML("beforeend", renderTeamIrMappingRow(handoffIndex, container.children.length, fields, { target, reference }, esc, editable));
+        const expression = { $ref: reference || fields.sourceFields[0] ? reference || `${fields.sourceRoot}.${fields.sourceFields[0]}` : "" };
+        container.insertAdjacentHTML("beforeend", renderTeamIrMappingRow(handoffIndex, container.children.length, fields, { target, expression }, esc, editable));
         const mapRow = container.lastElementChild;
-        bindMappingRow(row, mapRow);
+        bindHandoffMappingRow(mapRow);
         syncMappingText(row);
         mapRow.querySelector("[data-ir-map-target]")?.focus();
       };
-      form.querySelectorAll("[data-ir-map-row]").forEach((mapRow) => bindMappingRow(mapRow.closest("[data-ir-handoff]"), mapRow));
+      form.querySelectorAll("[data-ir-map-row]").forEach(bindHandoffMappingRow);
+      form.addEventListener("change", (event) => {
+        const mapRow = event.target.closest("[data-ir-map-row], [data-ir-join-base-row]");
+        if (!mapRow) return;
+        if (event.target.matches("[data-ir-map-target], [data-ir-join-base-target]")) {
+          const handoffRow = mapRow.closest("[data-ir-handoff]");
+          if (handoffRow) syncMappingText(handoffRow);
+          try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
+          return;
+        }
+        if (event.target.matches("[data-ir-value-object-key]")) {
+          const entry = event.target.closest("[data-ir-value-entry]");
+          const childNode = entry?.querySelector("[data-ir-value-node]");
+          if (!childNode) return;
+          const childPath = valuePath(childNode);
+          const previousKey = childPath.at(-1);
+          const nextKey = event.target.value.trim();
+          let expression = rowValue(mapRow);
+          const parent = teamIrValueAtPath(expression, childPath.slice(0, -1));
+          const error = childNode.querySelector("[data-ir-value-error]");
+          if (!nextKey || nextKey === "$ref" || nextKey === "$literal" || (nextKey !== previousKey && Object.hasOwn(parent, nextKey))) {
+            error.hidden = false;
+            error.textContent = "Property names must be non-empty, unique, and cannot use reserved ValueExpr keys.";
+            event.target.value = previousKey;
+            return;
+          }
+          if (nextKey !== previousKey) {
+            const entries = Object.entries(parent).map(([key, child]) => [key === previousKey ? nextKey : key, child]);
+            expression = teamIrSetValueAtPath(expression, childPath.slice(0, -1), Object.fromEntries(entries));
+          }
+          saveValue(mapRow, expression, childPath.slice(0, -1), true);
+          return;
+        }
+        const node = event.target.closest("[data-ir-value-node]");
+        if (!node) return;
+        const path = valuePath(node);
+        let expression = rowValue(mapRow);
+        let value = teamIrValueAtPath(expression, path);
+        if (event.target.matches("[data-ir-value-kind]")) {
+          const nextKind = event.target.value;
+          value = nextKind === "reference" ? { $ref: value?.$ref || valueEditorOptions(mapRow).directRefs[0]?.reference || "" }
+            : nextKind === "literal" ? { $literal: null }
+              : nextKind === "object" ? {} : [];
+        } else if (event.target.matches("[data-ir-value-direct-ref]")) {
+          const option = valueEditorOptions(mapRow).directRefs.find((item) => item.value === event.target.value);
+          value = { $ref: option?.reference || "" };
+        }
+        expression = teamIrSetValueAtPath(expression, path, value);
+        saveValue(mapRow, expression, path, true);
+      });
+      form.addEventListener("input", (event) => {
+        const mapRow = event.target.closest("[data-ir-map-row], [data-ir-join-base-row]");
+        const node = event.target.closest("[data-ir-value-node]");
+        if (!mapRow || !node) return;
+        const path = valuePath(node);
+        let expression = rowValue(mapRow);
+        let replacement;
+        if (event.target.matches("[data-ir-value-ref-path]")) replacement = { $ref: event.target.value };
+        else if (event.target.matches("[data-ir-value-literal]")) {
+          try {
+            replacement = { $literal: JSON.parse(event.target.value) };
+            const error = node.querySelector("[data-ir-value-error]");
+            error.hidden = true;
+            error.textContent = "";
+          } catch (error) {
+            const message = node.querySelector("[data-ir-value-error]");
+            message.hidden = false;
+            message.textContent = `Literal must be valid JSON: ${error.message}`;
+            return;
+          }
+        } else return;
+        expression = teamIrSetValueAtPath(expression, path, replacement);
+        const state = mapRow.querySelector("[data-ir-value-state]");
+        state.value = JSON.stringify(expression);
+        const handoffRow = mapRow.closest("[data-ir-handoff]");
+        if (handoffRow) syncMappingText(handoffRow);
+        try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
+      });
+      form.addEventListener("click", (event) => {
+        const mapRow = event.target.closest("[data-ir-map-row], [data-ir-join-base-row]");
+        if (!mapRow) return;
+        const node = event.target.closest("[data-ir-value-node]");
+        const add = event.target.closest("[data-ir-value-add]");
+        const remove = event.target.closest("[data-ir-value-remove]");
+        if (!node || (!add && !remove)) {
+          if (event.target.closest("[data-ir-map-remove]")) {
+            removeHandoffMappingRow(event.target.closest("[data-ir-map-row]"));
+          }
+          return;
+        }
+        const path = valuePath(node);
+        const expression = rowValue(mapRow);
+        const value = teamIrValueAtPath(expression, path);
+        if (add) {
+          if (add.dataset.irValueAdd === "object" && Object.keys(value).length < TEAM_IR_VALUE_EDITOR_MAX_ITEMS) {
+            let key = "field";
+            for (let suffix = 2; Object.hasOwn(value, key); suffix += 1) key = `field${suffix}`;
+            value[key] = { $literal: null };
+          } else if (add.dataset.irValueAdd === "array" && value.length < TEAM_IR_VALUE_EDITOR_MAX_ITEMS) value.push({ $literal: null });
+          else return;
+        } else {
+          const entryNode = remove.closest("[data-ir-value-entry]")?.querySelector("[data-ir-value-node]");
+          if (!entryNode) return;
+          teamIrDeleteValueAtPath(expression, valuePath(entryNode));
+        }
+        saveValue(mapRow, expression, path, true);
+      });
       form.querySelectorAll("[data-ir-map-add]").forEach((button) => button.addEventListener("click", () => {
         addMappingRow(Number(button.dataset.irMapAdd));
       }));
@@ -1623,12 +2051,110 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       const syncAdvancedContracts = () => {
         form.querySelector("[data-ir-advanced-json]").value = JSON.stringify(teamIrAdvancedContracts(draft), null, 2);
       };
+      const refreshHandoffConditionSummary = (index, condition) => {
+        const summary = form.querySelector(`[data-ir-condition-summary="${index}"]`);
+        if (summary) summary.textContent = condition ? teamIrConditionSummary(condition) : "Always selected";
+      };
+      const defaultCondition = (op) => {
+        if (op === "equals" || op === "notEquals") return { op, args: [{ $ref: "$.run.input.value" }, { $literal: "" }] };
+        if (op === "exists") return { op, args: [{ $ref: "$.run.input.value" }] };
+        if (op === "not") return { op, args: [{ op: "exists", args: [{ $ref: "$.run.input.value" }] }] };
+        if (op === "and" || op === "or") return { op, args: [defaultCondition("exists"), defaultCondition("exists")] };
+        return undefined;
+      };
+      const updateConditionNode = (container, condition, target = container.querySelector(":scope > [data-ir-condition-node]")) => {
+        const isRoot = target?.hasAttribute("data-ir-condition-root") ?? true;
+        if (target) target.outerHTML = renderTeamIrConditionNode(condition, esc, editable, isRoot);
+        else if (condition) container.insertAdjacentHTML("afterbegin", renderTeamIrConditionNode(condition, esc, editable, true));
+      };
+      form.addEventListener("click", (event) => {
+        const add = event.target.closest("[data-ir-condition-add-child]");
+        const remove = event.target.closest("[data-ir-condition-remove-child]");
+        if (!add && !remove) return;
+        const editor = event.target.closest("[data-ir-condition-editor]");
+        const root = editor?.querySelector("[data-ir-condition-root]");
+        if (!editor || !root) return;
+        try {
+          const condition = readTeamIrConditionNode(root);
+          if (!condition || (condition.op !== "and" && condition.op !== "or")) return;
+          if (add) condition.args.push(defaultCondition("exists"));
+          else {
+            const child = remove.closest(".ir-condition-child");
+            const children = [...root.querySelectorAll(":scope > .ir-condition-children > .ir-condition-child")];
+            const index = children.indexOf(child);
+            if (index >= 0 && condition.args.length > 1) condition.args.splice(index, 1);
+          }
+          updateConditionNode(editor, condition);
+          draft = captureEditor();
+          syncAdvancedContracts();
+          refreshHandoffConditionSummary(Number(editor.dataset.irConditionEditor), condition);
+        } catch (error) { captureFailure(error); }
+      });
+      form.addEventListener("change", (event) => {
+        const editor = event.target.closest("[data-ir-condition-editor]");
+        if (!editor || !event.target.matches("[data-ir-condition-op]")) return;
+        try {
+          const condition = defaultCondition(event.target.value);
+          updateConditionNode(editor, condition, event.target.closest("[data-ir-condition-node]"));
+          draft = captureEditor();
+          syncAdvancedContracts();
+          refreshHandoffConditionSummary(Number(editor.dataset.irConditionEditor), condition);
+        } catch (error) { captureFailure(error); }
+      });
+      form.addEventListener("input", (event) => {
+        const editor = event.target.closest("[data-ir-condition-editor]");
+        if (!editor || !event.target.matches("[data-ir-condition-expr-value]")) return;
+        try {
+          draft = captureEditor();
+          syncAdvancedContracts();
+          refreshHandoffConditionSummary(Number(editor.dataset.irConditionEditor), draft.handoffs[Number(editor.dataset.irConditionEditor)]?.when?.condition);
+        } catch (error) { captureFailure(error); }
+      });
       form.querySelectorAll(".ir-join-handoffs input[type=checkbox]").forEach((input) => input.addEventListener("change", () => {
         try {
           draft = captureEditor();
           syncAdvancedContracts();
         } catch (error) { captureFailure(error); }
       }));
+      form.addEventListener("change", (event) => {
+        if (!event.target.matches("[data-ir-join-base-target], [data-ir-join-base-source]")) return;
+        try {
+          draft = captureEditor();
+          syncAdvancedContracts();
+        } catch (error) { captureFailure(error); }
+      });
+      const removeBaseMapping = (button) => {
+        button.addEventListener("click", () => {
+          try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+          const row = button.closest("[data-ir-join]");
+          const joinIndex = Number(row?.dataset.irJoin);
+          const join = draft.orchestration.joins[joinIndex];
+          const mappingIndex = Number(button.closest("[data-ir-join-base-row]")?.dataset.irJoinBaseRow);
+          const mappings = [...row.querySelectorAll("[data-ir-join-base-row]")];
+          const target = mappings[mappingIndex]?.querySelector("[data-ir-join-base-target]")?.value;
+          if (target) delete join?.baseMapping?.data?.[target];
+          button.closest("[data-ir-join-base-row]")?.remove();
+          if (join?.baseMapping && !Object.keys(join.baseMapping.data || {}).length) delete join.baseMapping;
+          syncAdvancedContracts();
+        });
+      };
+      const addBaseMapping = (button) => {
+        button.addEventListener("click", () => {
+          try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
+          const row = button.closest("[data-ir-join]");
+          const joinIndex = Number(row?.dataset.irJoin);
+          const join = draft.orchestration.joins[joinIndex];
+          if (!join) return;
+          const fields = teamIrJoinBaseMappingFields(draft, join);
+          const mappings = row.querySelector("[data-ir-join-base-mappings]");
+          const nextIndex = mappings.querySelectorAll("[data-ir-join-base-row]").length;
+          mappings.insertAdjacentHTML("beforeend", renderTeamIrJoinBaseMappingRow(joinIndex, nextIndex, fields, {}, esc, true));
+          removeBaseMapping(mappings.querySelector(`[data-ir-join-base-row="${nextIndex}"] [data-ir-join-base-remove]`));
+          syncAdvancedContracts();
+        });
+      };
+      form.querySelectorAll("[data-ir-join-base-add]").forEach(addBaseMapping);
+      form.querySelectorAll("[data-ir-join-base-remove]").forEach(removeBaseMapping);
       form.querySelectorAll("[data-ir-review] input, [data-ir-review] select, [data-ir-review] textarea").forEach((input) => {
         input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => {
           try {
@@ -1641,8 +2167,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         try { draft = captureEditor(); } catch (error) { captureFailure(error); return; }
         if (kind === "agent") {
           const id = `agent-${draft.agents.length + 1}`;
-          draft.agents.push({ id, packageRef: `role:${id}@1`, bindingRef: `binding:${id}`, inputPorts: { default: { dataSchema: schemaFromFields("request") } }, outputPorts: { DONE: { dataSchema: schemaFromFields("summary") } } });
-          draft.bindings.push({ id: `binding:${id}`, kind: "model", modelRef: "codex-gateway/gpt-6-luna", attemptTimeoutMs: 120000, retry: { maxAttempts: 1, retryOn: [], backoff: { mode: "none" } } });
+          draft.agents.push({ id, packageRef: "", bindingRef: "", inputPorts: { default: { dataSchema: schemaFromFields("request") } }, outputPorts: { DONE: { dataSchema: schemaFromFields("summary") } } });
         } else if (kind === "handoff") {
           draft.handoffs.push({ id: `handoff-${draft.handoffs.length + 1}`, from: { kind: "run" }, to: { kind: "agent", agentId: draft.agents[0]?.id || "", inputPort: "default" }, map: { data: {} }, delivery: { deadlineMs: 300000 } });
         } else if (kind === "join") {
@@ -1967,6 +2492,8 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         try {
           const advanced = JSON.parse(event.currentTarget.value);
           refreshSimulationInput(advanced.runInput?.dataSchema);
+          const contracts = advanced.handoffContracts || {};
+          draft.handoffs.forEach((handoff, index) => refreshHandoffConditionSummary(index, contracts[handoff.id]?.when?.condition));
         } catch { /* The editor may be temporarily incomplete while typing. */ }
       });
       const simulationArtifactInputs = document.createElement("section");
@@ -2205,12 +2732,39 @@ function runProgress(run) {
   return nodes.length ? Math.round((done / nodes.length) * 100) : 0;
 }
 
+export function teamBindingDiagnosticMessage(code, locale = state.locale) {
+  const messages = {
+    OUTPUT_JSON_INVALID: { en: "The response was not valid JSON.", zh: "模型响应不是有效 JSON。" },
+    OUTPUT_JSON_EMPTY: { en: "The model returned an empty response.", zh: "模型返回了空响应。" },
+    OUTPUT_JSON_MARKDOWN_FENCE: { en: "Remove Markdown fences from the model response.", zh: "模型响应包含 Markdown 代码围栏。" },
+    OUTPUT_JSON_NON_OBJECT_TEXT: { en: "Return one JSON object without surrounding text.", zh: "请只返回一个 JSON 对象，不要添加前后说明。" },
+    OUTPUT_JSON_SYNTAX: { en: "The response started as an object but had invalid JSON syntax.", zh: "响应以对象开头，但 JSON 语法无效。" },
+    OUTPUT_PARTS_UNSUPPORTED: { en: "The model returned no usable text output; check that the configured provider supports structured JSON output.", zh: "模型没有返回可用文本；请检查所配置的 Provider 是否支持结构化 JSON 输出。" },
+    OUTPUT_PARTS_UNEXPECTED_TOOL: { en: "The provider returned a tool call instead of only structured output.", zh: "Provider 在结构化结果之外返回了工具调用。" },
+    OUTPUT_PARTS_MULTIPLE_STRUCTURED: { en: "The provider returned more than one structured result.", zh: "Provider 返回了多个结构化结果。" },
+    OUTPUT_PARTS_INVALID_TEXT_SIDECAR: { en: "The provider returned an invalid text sidecar with structured output.", zh: "Provider 在结构化结果旁返回了无效文本 part。" },
+    OUTPUT_TEXT_MISSING: { en: "The model response did not contain text output.", zh: "模型响应中缺少文本输出。" },
+    OUTPUT_ENVELOPE_INVALID: { en: "The response does not match the Team IR event envelope.", zh: "响应不符合 Team IR 事件封套。" },
+    OUTPUT_DATA_SCHEMA_INVALID: { en: "The event data did not match its output schema.", zh: "事件数据不符合对应的输出 Schema。" },
+    OUTPUT_DATA_TYPE_INVALID: { en: "An event data value had the wrong type.", zh: "事件数据中的值类型不符合要求。" },
+    OUTPUT_DATA_REQUIRED: { en: "A required event data field was missing.", zh: "事件数据缺少必需字段。" },
+    OUTPUT_DATA_FIELD_UNDECLARED: { en: "Event data included an undeclared field.", zh: "事件数据包含未声明字段。" },
+    OUTPUT_ARTIFACT_REQUIRED: { en: "A required text Artifact was missing.", zh: "缺少必需的文本 Artifact。" }
+  };
+  const message = messages[code];
+  return message ? message[locale === "en" ? "en" : "zh"] : "";
+}
+
 function runEventSummary(eventsPayload) {
   return (eventsPayload?.events || []).slice(-4).reverse().map((entry) => {
-    const record = entry?.record || entry || {};
+    const raw = entry?.record || entry || {};
+    const record = raw.event && typeof raw.event === "object" ? { ...raw, ...raw.event } : raw;
     const event = record.event || record.type || record.status || "运行更新";
     const role = record.roleId || record.roleName || record.nodeId || "运行器";
-    const detail = record.message || record.summary || record.error || record.selectedEvent || "状态已更新";
+    const diagnostic = record.data?.diagnosticCode || record.diagnosticCode;
+    const detailText = teamBindingDiagnosticMessage(diagnostic) || record.message || record.summary || record.error || record.selectedEvent || "状态已更新";
+    const pointer = record.data?.diagnosticPointer || record.diagnosticPointer;
+    const detail = pointer ? `${detailText} (${pointer})` : detailText;
     return `<li><strong>${esc(role)}</strong><span>${esc(event)} · ${esc(detail)}</span></li>`;
   }).join("");
 }
@@ -2722,6 +3276,8 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   const collaborationTaskForm = $("#collaboration-task-form");
   const collaborationTaskDialog = $("#collaboration-task-dialog");
   const taskArtifactReferences = new Map();
+  let taskArtifactSlots = [];
+  let taskArtifactSlotsReady = false;
   const artifactControls = document.createElement("section");
   artifactControls.className = "task-artifact-inputs";
   artifactControls.innerHTML = '<div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h3>任务输入附件</h3></div></div><div class="form-actions"><label>输入槽位<select data-task-artifact-slot disabled><option value="">正在读取输入槽位...</option></select></label><label class="secondary-button material-upload-button">选择文件<input type="file" data-task-artifact-file hidden accept="text/plain,text/markdown,.txt,.md"></label><button class="secondary-button" type="button" data-task-add-artifact disabled>添加附件</button></div><div class="material-list" data-task-artifact-list></div><p class="form-status" data-task-artifact-status role="status" aria-live="polite"></p>';
@@ -2741,6 +3297,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   };
   const loadTaskArtifactSlots = async () => {
     const teamVersionId = collaborationTaskForm?.elements.teamVersionId?.value;
+    taskArtifactSlotsReady = false;
     artifactSlotSelect.disabled = true;
     addArtifactButton.disabled = true;
     artifactSlotSelect.innerHTML = '<option value="">正在读取输入槽位...</option>';
@@ -2751,6 +3308,8 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "输入附件槽位读取失败");
       const slots = (payload.slots || []).filter((slot) => slot.cardinality === "single");
+      taskArtifactSlots = slots;
+      taskArtifactSlotsReady = true;
       artifactSlotSelect.innerHTML = slots.length
         ? slots.map((slot) => `<option value="${esc(slot.slotId)}">${esc(slot.slotId)}${slot.required ? " · 必填" : " · 可选"}</option>`).join("")
         : '<option value="">该团队没有支持的单文件输入槽位</option>';
@@ -2758,6 +3317,7 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
       addArtifactButton.disabled = slots.length === 0;
       artifactControls.hidden = slots.length === 0;
     } catch (error) {
+      taskArtifactSlots = [];
       if (!isAbort(error)) artifactStatus.textContent = error.message || "输入附件槽位读取失败";
     }
   };
@@ -2824,6 +3384,15 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     event.preventDefault();
     const form = event.currentTarget;
     const status = $("#collaboration-task-status");
+    if (!taskArtifactSlotsReady) {
+      status.textContent = "请等待输入附件槽位加载完成。";
+      return;
+    }
+    const missingRequiredSlot = taskArtifactSlots.find((slot) => slot.required && !taskArtifactReferences.has(slot.slotId));
+    if (missingRequiredSlot) {
+      status.textContent = `请先添加必填附件：${missingRequiredSlot.slotId}`;
+      return;
+    }
     const submit = form.querySelector("button[type=submit]");
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.idempotencyKey = createUuid();

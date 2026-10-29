@@ -101,7 +101,11 @@ test("legacy Run evidence stays byte-for-byte unchanged across v2 API, mount, Ta
   await mkdir(legacyRun, { recursive: true });
   await writeFile(join(legacyRun, "run-plan.json"), JSON.stringify({ version: 1, source: "legacy-mermaid", graph: "flowchart TD" }));
   await writeFile(join(legacyRun, "state.json"), JSON.stringify({ status: "completed", outputs: [{ text: "historical result" }] }));
+  await writeFile(join(teamRoot, "system.mmd"), "flowchart TD\n  A[Legacy] --> B[Run]\n");
+  await mkdir(join(teamRoot, ".ogs"), { recursive: true });
+  await writeFile(join(teamRoot, ".ogs", "authoring.json"), JSON.stringify({ schemaVersion: 1, scenario: "legacy" }));
   const historicalTeamRunDigest = await hashTree(join(teamRoot, ".ogs", "runs"));
+  const legacyWorkspaceDigest = await hashTree(teamRoot);
 
   const irUseCases = createTeamIrUseCases({
     teamCatalog: { getTeamVersion: async () => ({ teamVersionId: teamId, teamRootId: teamId, projectType: "team", teamVersionStatus: "released", workdir: teamRoot }) },
@@ -119,6 +123,17 @@ test("legacy Run evidence stays byte-for-byte unchanged across v2 API, mount, Ta
   assert.equal(teamApi.sent.at(-1).status, 200);
   assert.equal(await teamApi.invoke("POST", `/api/v1/team-versions/${teamId}/release`), true);
   assert.equal(teamApi.sent.at(-1).status, 400);
+  for (const [method, path, body] of [
+    ["GET", `/api/v1/team-versions/${teamId}/design?locale=en`],
+    ["POST", `/api/v1/team-versions/${teamId}/design/validate`, { authoring: { roles: {} } }],
+    ["PUT", `/api/v1/team-versions/${teamId}/design`, { authoring: { roles: {} } }],
+    ["GET", `/api/v1/team-versions/${teamId}/design/assets`],
+    ["PUT", `/api/v1/team-versions/${teamId}/design/assets`, { assets: {} }]
+  ]) {
+    assert.equal(await teamApi.invoke(method, path, body), true);
+    assert.equal(teamApi.sent.at(-1).status, 409);
+    assert.match(teamApi.sent.at(-1).payload.error, /TEAM_IR_V2_REQUIRED/);
+  }
 
   let project = {
     projectId: "project-legacy-mount", projectType: "collaboration", nextTaskNumber: 1,
@@ -151,6 +166,8 @@ test("legacy Run evidence stays byte-for-byte unchanged across v2 API, mount, Ta
   assert.deepEqual(project.taskRecords, []);
   assert.equal(await hashTree(join(teamRoot, ".ogs", "runs")), historicalTeamRunDigest,
     "IR inspection, rejected release, mount lookup, and rejected Task creation must not migrate or rewrite legacy Team Runs");
+  assert.equal(await hashTree(teamRoot), legacyWorkspaceDigest,
+    "v2/legacy API rejection, mount lookup, and Task creation must leave the complete legacy Team workspace unchanged");
 
   const historyProject = join(root, "history-project");
   const historyRun = join(historyProject, ".ogs", "runs", "run-1");

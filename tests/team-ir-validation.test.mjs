@@ -192,8 +192,10 @@ test("Join accepts the exact inbound Handoff set and rejects omitted or unrelate
   ];
   team.orchestration.routes = [
     { from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-worker", "start-reviewer"] },
-    { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["worker-to-review", "worker-result"] }
+    { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["worker-to-review", "worker-result"] }
   ];
+  team.handoffs[2].when = { condition: { op: "exists", args: [{ "$ref": "$.output.data.ready" }] }, priority: 0 };
+  team.handoffs[3].when = { priority: 1 };
   team.orchestration.joins = [{
     id: "review-join",
     agentId: "reviewer",
@@ -203,6 +205,11 @@ test("Join accepts the exact inbound Handoff set and rejects omitted or unrelate
   }];
 
   assert.deepEqual(validateTeamIrReferences(team), []);
+
+  team.orchestration.routes[1].mode = "parallel_fanout";
+  assert.ok(validateTeamIrReferences(team).some((item) => item.code === "IR_PARALLEL_TOPOLOGY_UNSUPPORTED"
+    && item.pointer === "/orchestration/routes"));
+  team.orchestration.routes[1].mode = "exclusive_priority";
 
   team.orchestration.joins[0].handoffIds = ["worker-to-review"];
   assert.ok(validateTeamIrReferences(team).some((item) => item.code === "IR_JOIN_UNDECLARED_INBOUND" && item.pointer === "/handoffs/1/to"));
@@ -239,10 +246,12 @@ test("Loop declarations validate members, disjoint boundary sets and edge direct
   }];
   team.orchestration.routes = [{
     from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
-    mode: "parallel_fanout",
+    mode: "exclusive_priority",
     onNoMatch: "fail",
     handoffIds: ["inside", "exit"]
   }];
+  team.handoffs[1].when = { condition: { op: "exists", args: [{ "$ref": "$.output.data.continue" }] }, priority: 0 };
+  team.handoffs[3].when = { priority: 1 };
   assert.deepEqual(validateTeamIrReferences(team), []);
 
   team.orchestration.loops[0].members = ["worker", "missing"];
@@ -251,6 +260,149 @@ test("Loop declarations validate members, disjoint boundary sets and edge direct
   assert.ok(diagnostics.some((item) => item.code === "IR_UNKNOWN_AGENT" && item.pointer === "/orchestration/loops/0/members/1"));
   assert.ok(diagnostics.some((item) => item.code === "IR_LOOP_CONTINUE_INVALID" && item.pointer === "/orchestration/loops/0/continueHandoffIds"));
   assert.ok(diagnostics.some((item) => item.code === "IR_LOOP_BOUNDARY_HANDOFF_UNDECLARED" && item.pointer === "/handoffs/1"));
+});
+
+test("overlapping Loop Scopes fail validation at the later member declaration", () => {
+  const team = baseTeam();
+  team.agents.push({
+    id: "checker",
+    packageRef: "role:checker@1",
+    bindingRef: "binding:worker",
+    inputPorts: { default: { dataSchema: { type: "object" } } },
+    outputPorts: { DONE: { dataSchema: { type: "object" } } }
+  });
+  team.orchestration.loops = [
+    { id: "first", members: ["worker"], boundaryAgentId: "worker", entryHandoffIds: [], continueHandoffIds: [], exitHandoffIds: [] },
+    { id: "second", members: ["worker", "checker"], boundaryAgentId: "checker", entryHandoffIds: [], continueHandoffIds: [], exitHandoffIds: [] }
+  ];
+
+  const diagnostics = validateTeamIrReferences(team);
+  assert.ok(diagnostics.some((item) => item.code === "IR_LOOP_SCOPE_OVERLAP_UNSUPPORTED"
+    && item.pointer === "/orchestration/loops/1/members"));
+
+  team.orchestration.loops[1].members = ["checker"];
+  assert.equal(validateTeamIrReferences(team).some((item) => item.code === "IR_LOOP_SCOPE_OVERLAP_UNSUPPORTED"), false);
+});
+
+test("sequential Loop topology rejects reused members before compilation", () => {
+  const team = baseTeam();
+  team.handoffs.push({
+    id: "handoff-between",
+    from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+    to: { kind: "agent", agentId: "worker", inputPort: "default" },
+    map: {}
+  });
+  team.orchestration.loops = [
+    { id: "first", members: ["worker"], boundaryAgentId: "worker", entryHandoffIds: ["start-worker"], continueHandoffIds: [], exitHandoffIds: ["handoff-between"] },
+    { id: "second", members: ["worker"], boundaryAgentId: "worker", entryHandoffIds: ["handoff-between"], continueHandoffIds: [], exitHandoffIds: ["worker-result"] }
+  ];
+  const diagnostics = validateTeamIrReferences(team);
+  assert.ok(diagnostics.some((item) => item.code === "IR_LOOP_TOPOLOGY_UNSUPPORTED"
+    && item.pointer === "/orchestration/loops"));
+});
+
+function singleLoopTeam() {
+  const team = baseTeam();
+  team.agents[0].inputPorts.revise = { dataSchema: { type: "object" } };
+  team.handoffs = [
+    { id: "entry", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: {} },
+    {
+      id: "continue",
+      from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+      to: { kind: "agent", agentId: "worker", inputPort: "revise" },
+      map: {},
+      when: { priority: 0, condition: { op: "exists", args: [{ "$ref": "$.output.data.again" }] } }
+    },
+    { id: "exit", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: {}, when: { priority: 1 } }
+  ];
+  team.orchestration.routes = [
+    { from: { kind: "run" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["entry"] },
+    { from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: ["continue", "exit"] }
+  ];
+  team.handoffs[0].when = { priority: 0 };
+  team.orchestration.loops = [{
+    id: "revision",
+    members: ["worker"],
+    boundaryAgentId: "worker",
+    entryHandoffIds: ["entry"],
+    continueHandoffIds: ["continue"],
+    exitHandoffIds: ["exit"],
+    maxRounds: 3,
+    maxAgentActivations: 4,
+    onExhausted: "fail"
+  }];
+  return team;
+}
+
+test("Runtime topology diagnostics accept supported shapes and pin unsupported codes and pointers", () => {
+  const supportedLoop = singleLoopTeam();
+  assert.deepEqual(validateTeamIrReferences(supportedLoop), []);
+
+  const unsupportedLoopJoin = structuredClone(supportedLoop);
+  unsupportedLoopJoin.agents[0].inputPorts.collect = { dataSchema: { type: "object" } };
+  unsupportedLoopJoin.handoffs.push({
+    id: "join-input",
+    from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+    to: { kind: "agent", agentId: "worker", inputPort: "collect" },
+    map: {},
+    when: { priority: 1, condition: { op: "exists", args: [{ "$ref": "$.output.data.join" }] } }
+  });
+  unsupportedLoopJoin.orchestration.routes[1].handoffIds.push("join-input");
+  unsupportedLoopJoin.handoffs.find((handoff) => handoff.id === "exit").when.priority = 2;
+  unsupportedLoopJoin.orchestration.joins = [{
+    id: "loop-join", agentId: "worker", inputPort: "collect", mode: "all_of",
+    handoffIds: ["join-input"], scope: { kind: "loop", loopId: "revision" }
+  }];
+  assert.ok(validateTeamIrReferences(unsupportedLoopJoin).some((item) => item.code === "IR_LOOP_TOPOLOGY_UNSUPPORTED"
+    && item.pointer === "/orchestration/loops/0"));
+
+  const simpleReview = baseTeam();
+  simpleReview.orchestration.reviews = [{
+    id: "worker-review", at: { kind: "agentOutput", agentId: "worker", outputPort: "DONE" },
+    feedbackSchema: { type: "object" }, timeoutMs: 1000, onTimeout: "fail"
+  }];
+  assert.deepEqual(validateTeamIrReferences(simpleReview), []);
+
+  const unsupportedReview = singleLoopTeam();
+  unsupportedReview.orchestration.reviews = structuredClone(simpleReview.orchestration.reviews);
+  assert.ok(validateTeamIrReferences(unsupportedReview).some((item) => item.code === "IR_REVIEW_TOPOLOGY_UNSUPPORTED"
+    && item.pointer === "/orchestration/reviews/0"));
+});
+
+test("Parallel topology diagnostics accept one Agent fan-out and reject unsupported fan-out shapes", () => {
+  const supported = baseTeam();
+  supported.agents.push({
+    id: "reviewer", packageRef: "role:reviewer@1", bindingRef: "binding:worker",
+    inputPorts: { default: { dataSchema: { type: "object" } } },
+    outputPorts: { DONE: { dataSchema: { type: "object" } } }
+  });
+  supported.handoffs = [
+    { id: "start-worker", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: {} },
+    { id: "start-reviewer", from: { kind: "run" }, to: { kind: "agent", agentId: "reviewer", inputPort: "default" }, map: {} },
+    { id: "worker-result", from: { kind: "agent", agentId: "worker", outputPort: "DONE" }, to: { kind: "result" }, map: {} },
+    { id: "reviewer-result", from: { kind: "agent", agentId: "reviewer", outputPort: "DONE" }, to: { kind: "result" }, map: {} }
+  ];
+  supported.orchestration.routes = [
+    { from: { kind: "run" }, mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["start-worker", "start-reviewer"] }
+  ];
+  supported.handoffs = supported.handoffs.filter((handoff) => handoff.id !== "reviewer-result");
+  assert.deepEqual(validateTeamIrReferences(supported), []);
+
+  const multipleFanouts = structuredClone(supported);
+  multipleFanouts.orchestration.routes.push({
+    from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+    mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["worker-result"]
+  });
+  assert.ok(validateTeamIrReferences(multipleFanouts).some((item) => item.code === "IR_PARALLEL_TOPOLOGY_UNSUPPORTED"
+    && item.pointer === "/orchestration/routes"));
+
+  const nonAgentTarget = baseTeam();
+  nonAgentTarget.orchestration.routes = [{
+    from: { kind: "agent", agentId: "worker", outputPort: "DONE" },
+    mode: "parallel_fanout", onNoMatch: "fail", handoffIds: ["worker-result"]
+  }];
+  assert.ok(validateTeamIrReferences(nonAgentTarget).some((item) => item.code === "IR_PARALLEL_TOPOLOGY_UNSUPPORTED"
+    && item.pointer === "/orchestration/routes"));
 });
 
 test("Review declarations resolve the Agent output endpoint", () => {
