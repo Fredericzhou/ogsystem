@@ -32,7 +32,7 @@ async function packageDigest(directory) {
   return hash.digest("hex");
 }
 
-async function loadRole(packageRef) {
+export async function loadRole(packageRef) {
   const pin = PINS.packages[packageRef];
   if (!pin) throw new Error("TEAM_IR_PACKAGE_NOT_ALLOWLISTED: " + packageRef);
   const directory = resolve(ROOT, pin.directory);

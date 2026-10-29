@@ -12,6 +12,14 @@
 
 每次实施工作都更新本文件：开始前确认阶段和验收项；完成后记录代码位置、测试命令、结果、日期和未覆盖边界。不能用旧版能力相似、单元测试通过或文档写完来代替 v2 自身验收。
 
+### 当前验收执行选择（2026-10-29）
+
+- 普通真实模型与 Project Task 产品流程先使用直连 OpenCode 的本机 resolver `apps/team-site/infrastructure/team-ir-v2-opencode-direct-resolver.mjs`；它不证明 Docker 容器隔离。
+- Review 产品流程使用自动化测试主体调用 Review API 完成 approve/reject/revise，不要求外部身份提供方；不据此声称真实人工身份或生产身份授权已验收。UAT 中需要人工审核的步骤由自动化测试主体完成，业务输出检查也采用后续可重复的断言/检查规则，不安排手动审核步骤。
+- A2A 先以两个独立本机服务验证 Agent Card、认证、任务状态、结果和 Artifact 的协议互通；不要求外部供应方服务。
+- Docker Sandbox 专项验收留到其它功能和流程问题处理完后最后执行。需要容器边界证据时，仍须使用 Docker 或经批准的等效隔离运行时。
+- 上述选择是验收顺序和范围，不是通过证据。每项仍须完成相应实现、后续自动检查并追加结果；需要人工审核决定的产品流程由自动化测试主体提交决定，人工身份认证不在本轮验收范围。
+
 状态含义：
 
 - **未开始**：没有 v2 实现和有效验收证据。
@@ -31,7 +39,7 @@
 | Team IR v2 设计方案 | 已冻结为实施基线 | `docs/development/team-ir-handoff-v2-design.md`；阶段 0 语义复核完成，包含并行 Review、A2A 暂停/兄弟调用、重试/deadline 与失败竞态决策 |
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
 | v2 Schema / Compiler / Runtime | 部分通过 | 阶段 1 Schema/Compiler 静态合同已通过设计 §10 阶段门审计（86/86 聚焦测试）；阶段 2 Runtime 仍部分通过。多个独立 Run-scope `all_of`/`quorum_of` Join、单 Loop-scope quorum、无 Loop/Join 的 Run-entry parallel fan-out + 多独立 Review gate、Run-scope all-of Join 目标 Review 和 Artifact publication intent/CAS/恢复协议已支持。一般 Loop 多 lineage、更多 Review/Join 组合、跨进程活动调用和 prepared Artifact 物理回收仍未闭合，见追溯矩阵 |
-| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、自由布局端口画布、多 input/output port 的 Schema/Artifact slot 编辑、Review gate 创建/编辑、高级 JSON 同步及 Simulation Run input 基础标量表单均有浏览器证据。引用中的 Agent/port 删除会阻止并说明原因；完整生产发布浏览器矩阵、Review 身份 UAT、诊断全矩阵、复杂条件/映射的渐进式结构化编辑仍未闭合 |
+| Studio v2 作者体验 | 进行中 | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、自由布局端口画布、多 input/output port 的 Schema/Artifact slot 编辑、Review gate 创建/编辑、高级 JSON 同步及 Simulation Run input 基础标量表单均有浏览器证据。引用中的 Agent/port 删除会阻止并说明原因；完整发布浏览器矩阵、自动化测试主体驱动的 Review 产品流程、诊断全矩阵、复杂条件/映射的渐进式结构化编辑仍未闭合；生产身份系统不在本轮验收范围 |
 | v2 端到端或发布验收 | 部分通过 | 真实 Docker/OpenCode resolver 已完成 Release Gate、Artifact Evidence、专家会诊、条件会签、结构化辩论、Maker-Checker reject/revise/approve 和软件交付 fan-out/Join 的 Project Task。Software Team adapter /3 Project Task 已成功完成且结果写入；此前 adapter /2 两次失败记录保留作历史，见本日 UAT 记录。Artifact 输入固定快照、同 Run Review 恢复、幂等重放与重启查询已有真实 UAT。Maker-Checker 使用本机 OS principal，不代表独立审核用户/外部身份服务。Artifact Evidence provenance、远端 A2A 和全部经典场景矩阵仍未通过 |
 
 ## 3. 实施与验收状态
@@ -43,7 +51,7 @@
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 通过；阶段 1 审计及 86/86 聚焦测试确认硬门闭合，见 2026-10-29 阶段 1 追溯复核记录 |
 | 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑不能算支持；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 部分通过；独立 Run-scope 多 Join、单 Loop/Loop-scope quorum、Run-entry fan-out + 多 Review、Run-scope all-of Join 目标 Review 和 Artifact publication intent/commit 恢复已支持；其它 Review/Join/Loop 组合、一般 Loop 多 lineage、prepared Artifact 回收和跨进程活动调用恢复仍未闭合 |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；生产 resolver 下完成保存、发布、Project Task 和 Review 用户流程 | 进行中；自由布局端口画布、多端口合同、Review gate 编辑和 Simulation Run input 基础标量表单已有浏览器合同；Review 用户流程和完整生产发布浏览器矩阵未闭合 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 进行中；自由布局端口画布、多端口合同、Review gate 编辑和 Simulation Run input 基础标量表单已有浏览器合同；自动化 Review 产品流程和完整发布浏览器矩阵未闭合。独立生产身份系统不属于本轮范围 |
 | 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；旧 Team 配置不迁移、不覆盖无关路径 | 进行中；默认创建、fork、Case/template 已切 v2；无调用方旧 Team Author/Run 模块已清理；standalone OGS System/CLI 有独立用例而保留；远端 A2A 真实 UAT 未闭合 |
 
 ### 阶段门
@@ -809,6 +817,17 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 阶段 3：结构化 Join/Loop/Review 字段诊断定位 | 通过（字段级浏览器合同） | `apps/team-site/public/app/views/app.js` 将 `/orchestration/joins/{i}`、`loops`、`reviews` 字段 pointer 映射到相应结构化控件，并将诊断对应的 IR 值同步到控件；number 控件聚焦并保留非法值，文本控件支持选中值。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 覆盖 Join timeout、Review timeout、Loop maxRounds 聚焦及非法值；已有复杂 Schema 转义 pointer 仍定位高级 JSON 精确范围。`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`：1/1；其后 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`：350 项，349 通过、0 失败、1 项 opt-in Docker skip | 仅覆盖指定结构化字段与现有 JSON 回退合同；所有稳定诊断 code/pointer 的可定位全矩阵仍未完成，生产 resolver/Review 身份 UAT 仍未完成 |
 
 **本轮阶段结论：** Studio 诊断导航对已结构化的 Join、Loop、Review 字段已补齐代表合同；不据此标记完整诊断矩阵通过。Artifact 孤儿回收需要预备 reservation 与跨进程写入 fence，当前按并发风险审计不安全的启动扫描不实施。阶段 2–4 与 proposal 门槛仍未清零。
+
+### 2026-10-29：直连模型 Binding 与后续验收顺序
+
+| 验收项 | 状态 | 实现与证据 | 剩余工作 |
+| --- | --- | --- | --- |
+| 本机 OpenCode 直连 Model Binding | 定向合同通过；真实 Project Task 部分通过 | 新增 `apps/team-site/infrastructure/team-ir-v2-opencode-direct-resolver.mjs`：从 Team Site 进程直接调用 `127.0.0.1:4096`，每次 Binding invocation 创建新 OpenCode session；复用固定角色包 digest、工具关闭、Artifact 授权读取和 Team IR 输出校验；不启动 Docker。`pnpm build && pnpm --dir apps/team-site exec node --test tests/team-ir-v2-opencode-direct-resolver.test.mjs` 通过 2/2，测试断言两次调用获得并使用不同 session ID。隔离 Team Site 的真实 OpenCode Simulation `0449d426-c7e7-4b84-ba51-83a4a962ebe2` 完成；真实 Project Task `20261029-131107-5347b6b9` / Run `20261029-131107-1f564d5a` 以 completed 结束，Team IR digest `1aca6f2bb8bcf8c73bde536bf901d010ca2d94678a74d528d2a3d759c343e531`、compiled plan digest `e42f7658c9b586e0511dc4e197081091909dfe1a770a78d36bf6bd57e1f68cea`；Team Site 重启后同一 Run result 仍可查询 | 业务结果检查发现输出只给需求与验证计划，并明确称实现/验证未证实，因此本次只证明真实模型端到端执行与重启查询，不计为软件交付场景成功 UAT；没有完成失败/重试场景；不提供 Docker 隔离证据 |
+| A2A 两服务本机协议互通 | 通过（独立 SDK Agent 子进程） | `tests/fixtures/team-ir-a2a-http-agent-service.mjs` 在独立子进程运行官方 A2A SDK Agent；`tests/team-ir-a2a-http-client.test.mjs` 覆盖无认证拒绝、Agent Card、认证、SendMessage、Task polling、typed envelope、Artifact slot 与内容映射、幂等重放。首次执行 5/6，错误为 SDK Task 映射把同一 Artifact 同时暴露在 typed result 和 messageParts；`src/team-ir/a2a-http-client.ts` 现将已进入 typed result 的 slot 从 messageParts 去重，保留 Binding 对重复 slot 的拒绝。`pnpm build && node --test tests/team-ir-a2a-http-client.test.mjs` 通过 6/6 | 本地双服务协议合同已通过；远端 HTTPS Agent 与 A2A Sandbox Project Task 仍无服务可执行，保留外部阻塞 |
+| Review 产品流程自动验收 | API/浏览器合同通过；真实 Review Task 未通过 UAT | `node --test apps/team-site/tests/team-ir-review-api.test.mjs apps/team-site/tests/team-ir-project-run-executor.test.mjs`：23/23；`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`：1/1，包含 reject feedback、幂等重放与查询合同。评审主体由本机自动化身份驱动，不据此声称生产身份授权已验收 | 真实 Review Team Project Task 的 reject/revise/approve、重启后待审/结果查询场景仍未在真实 resolver 下完成 |
+| Docker Sandbox 专项 | Binding 级真实模型检查通过；Sandbox Project Task UAT 未完成 | 最后执行 `OGS_TEAM_IR_V2_DOCKER_BINDING_UAT=1 OGS_TEAM_IR_V2_OPENCODE_PASSWORD_FILE=... node --test apps/team-site/tests/team-ir-v2-opencode-docker-resolver.test.mjs`：9/9。真实容器模型调用返回 `A_DONE`，输出 Schema 通过并生成 `text/markdown` draft Artifact；隔离边界的无宿主挂载、只读根文件系统、资源和权限限制合同通过 | 此次仅为单次 Binding 级容器 UAT，不是 release → Sandbox Project Task 全链路；8 个经典场景的成功、受控失败/重试及重启查询仍缺 |
+| 阶段 2：并发 quorum Join Artifact 贡献 | 已修复并行 checkpoint 丢失 | `src/team-ir/runtime.ts` 对并发 quorum arrival/skip 使用 RunRecord CAS 回调内的最新持久 round 合并，不再用两个 Binding 回调各自的旧 round 覆盖。首次 `pnpm test` 在 `tests/team-ir-join-artifact-runtime.test.mjs` 的 quorum Artifact provenance 断言失败；定向复现 20 次中第 5 次复现。修复后 `pnpm build` 和同一测试文件连续 20 次均通过 | 本切片通过；其它已在第 2 节列出的 Runtime 恢复与拓扑缺口仍未清零 |
+| 本轮完整回归 | 确定性套件通过；首轮失败已定位修复 | 首次 `pnpm test`：945 项中 943 通过、1 失败、1 Windows 专项跳过，退出码 1；失败项为 quorum Join Artifact 贡献被并发旧 checkpoint 覆盖。修复后日志复跑 `pnpm test`：945 项中 944 通过、0 失败、1 Windows 专项跳过，退出码 0。`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec`：352 项中 351 通过、0 失败、1 opt-in Docker skip，退出码 0；直连 resolver 2/2、A2A 双进程 6/6、Review API/Project Run 23/23、Studio 浏览器 1/1、Docker opt-in 9/9 均通过。`git diff --check` 通过 | 这些回归不能代替 8 个经典场景的真实 Project Task UAT，也不能解除远端 A2A 服务的外部阻塞 |
 
 ## 6. Codex / 实施代理工作约定
 

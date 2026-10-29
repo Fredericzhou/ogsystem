@@ -1141,7 +1141,7 @@ export class TeamRuntime {
                   || Object.keys(artifacts).some((slotId) => requiredArtifactSlots.includes(slotId));
               });
               const baseMapping = isRecord(quorumJoin.baseMapping) ? quorumJoin.baseMapping : {};
-              let round = joinRounds.get(roundKey) ?? createTeamJoinRound({
+              const initialRound = joinRounds.get(roundKey) ?? createTeamJoinRound({
                 joinId: quorumJoinId, runId, lineage: "run", ...(loopRound === undefined ? {} : { loopRound }), mode: "quorum_of",
                 handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
                 timeoutMs: Number(quorumJoin.timeoutMs), requiredSourceIds, requiredFields, requiredArtifactSlots,
@@ -1152,11 +1152,13 @@ export class TeamRuntime {
               });
               const artifactMappings = isRecord(map.artifacts) ? map.artifacts : {};
               const artifacts = Object.fromEntries(Object.entries(artifactMappings).map(([slotId, expression]) => [slotId, evaluateTeamValueExpr(expression, valueContext(runInput, output, loopPrevious))]));
-              round = applyTeamJoinEvent(round, { type: "arrival", sourceId, contribution: { data: isRecord(data) ? data : {}, artifacts }, at: this.args.clock.now() });
-              joinRounds.set(roundKey, round);
+              let round = initialRound;
               await this.update(runId, (record) => {
+                const storedRound = record.scheduler!.joinRounds?.[roundKey] ?? initialRound;
+                round = applyTeamJoinEvent(storedRound, { type: "arrival", sourceId, contribution: { data: isRecord(data) ? data : {}, artifacts }, at: this.args.clock.now() });
                 record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [roundKey]: structuredClone(round) };
               });
+              joinRounds.set(roundKey, round);
               if (round.status === "collecting") this.armJoinTimeout(runId, roundKey, round);
               else this.disarmJoinTimeout(runId, roundKey);
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${quorumJoinId}`, round.failure?.code ?? "JOIN_FAILED");
@@ -1387,16 +1389,18 @@ export class TeamRuntime {
             for (const quorumJoin of quorumJoins.filter((join) => (join.handoffIds as string[]).includes(handoffId))) {
               if (loopJoin === quorumJoin) continue;
               const quorumJoinId = String(quorumJoin.id);
-              let round = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
+              const initialRound = joinRounds.get(quorumJoinId) ?? createTeamJoinRound({
                 joinId: quorumJoinId, runId, lineage: "run", mode: "quorum_of",
                 handoffIds: quorumJoin.handoffIds as string[], threshold: Number(quorumJoin.threshold),
                 timeoutMs: Number(quorumJoin.timeoutMs)
               });
-              round = applyTeamJoinEvent(round, { type: "skip", sourceId: handoffId, at: this.args.clock.now() });
-              joinRounds.set(quorumJoinId, round);
+              let round = initialRound;
               await this.update(runId, (record) => {
+                const storedRound = record.scheduler!.joinRounds?.[quorumJoinId] ?? initialRound;
+                round = applyTeamJoinEvent(storedRound, { type: "skip", sourceId: handoffId, at: this.args.clock.now() });
                 record.scheduler!.joinRounds = { ...(record.scheduler!.joinRounds ?? {}), [quorumJoinId]: structuredClone(round!) };
               });
+              joinRounds.set(quorumJoinId, round);
               if (round.status === "collecting") this.armJoinTimeout(runId, quorumJoinId, round);
               else this.disarmJoinTimeout(runId, quorumJoinId);
               if (round.status === "failed") return this.failScheduler(runId, `${runId}:join:${quorumJoinId}`, round.failure?.code ?? "JOIN_FAILED");

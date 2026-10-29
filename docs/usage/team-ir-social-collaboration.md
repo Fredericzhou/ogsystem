@@ -21,6 +21,12 @@ Team IR 将这类协作表达为一组可检查、可运行、可追溯的责任
 | 档案按需调阅 | 每次 Agent attempt 的 Artifact 读取白名单 | Agent 只能通过受控 Resolver 读取本次交接给它的材料；文件编号本身不代表访问权限 |
 | 复工要确认依据未变 | `compiledPlanDigest` 和运行检查点 | Schema、角色包、Binding 或编译语义变化时，不会静默用新规则续跑旧任务 |
 
+### 交接历史与角色记忆
+
+共享的 Run `task` 是所有 Agent 可见的不可变公共上下文。某个 Role 在前一轮产生的草稿、测试结果或审核意见，只有在 Team IR 通过 Handoff、Loop 上一轮引用或 Artifact 显式交付时，才成为后续调用的输入。`$.loop.previous` 只提供同一 Loop Scope 和 lineage 中紧邻上一轮的成功输出；Runtime 不自动注入完整对话历史或累计所有审核反馈。
+
+Team 可以把需要保留的工作记忆声明为端口 Schema 中的普通字段，例如未解决缺陷、已尝试修复和最近测试结果，再由 Role 输出并映射到下一轮。这样的记忆是可检查、可持久化的业务状态。底层模型 session 是否复用属于 Binding 实现细节，不构成 v2 的默认 Role 记忆语义；正确性不得依赖未声明的 session 历史。
+
 ## 典型场景
 
 ### 市场研究与报告

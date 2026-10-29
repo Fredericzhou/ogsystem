@@ -17,6 +17,19 @@ The password file must be readable by the Team Site process and have mode 0600. 
 
 Start the local OpenCode serve on 127.0.0.1:4096 with Basic Auth and start Team Site in the same environment. The resolver only accepts the checked-in model reference and endpoint. The container adapter calls the fixed OpenCode session creation and message endpoints and disables OpenCode tools for each prompt.
 
+## Choosing a local execution path
+
+Team IR v2 does not require Docker. This checked-in resolver is the Docker-backed local Binding; Docker is needed when the acceptance specifically covers this container boundary. For ordinary local model and Project Task behavior UAT, use the host-side resolver below. It calls the same OpenCode serve endpoints directly and creates a fresh session per Binding invocation. This avoids starting a Docker container for every invocation while preserving v2's fresh-session behavior.
+
+Configure it with the same owner-only password file:
+
+    export OGS_TEAM_IR_V2_RESOLVER_MODULE="$PWD/apps/team-site/infrastructure/team-ir-v2-opencode-direct-resolver.mjs"
+    export OGS_TEAM_IR_V2_OPENCODE_PASSWORD_FILE="$HOME/.config/opencode/gpt6-luna-serve.env"
+
+A direct-host run can verify Team behavior with the real model and OpenCode service, but it does not verify container restrictions, filesystem isolation, or qualify as Docker Sandbox UAT. Keep Docker UAT as a separate final check of the container boundary.
+
+Keep the direct-host resolver fail-closed as well: pin the allowed model and endpoint, load credentials from an owner-only file, disable tools, validate the response envelope and Team IR output Schema, and avoid logging prompts, credentials, or model output. The resolver runs in the Team Site process, so its code has that process's host permissions. Choose this path only when that trust boundary is acceptable.
+
 ## Fixed HTTP contract
 
 The host-side serve address is `http://127.0.0.1:4096`; the isolated Docker container reaches that same listener as `http://host.docker.internal:4096`. The adapter sends HTTP Basic authentication with username `opencode` and the password read from `OGS_TEAM_IR_V2_OPENCODE_PASSWORD_FILE`.
@@ -27,6 +40,18 @@ The host-side serve address is `http://127.0.0.1:4096`; the isolated Docker cont
 | `POST` | `/session/{id}/message` | Model `{providerID:"codex-gateway",modelID:"gpt-6-luna"}`, `tools:{}`, system prompt, and one text part containing the invocation prompt |
 
 The adapter rejects redirects, uses a 120-second request timeout, limits request and response bodies to 2 MiB, and never puts the password in the HTTP path or request body. The Team Site resolver fixes the endpoint, model, and allowed request paths in source and pins. The OpenCode health endpoint is only a diagnostic and is not used as model-execution evidence.
+
+## Invocation, session, and startup cost
+
+The current adapter creates a fresh Docker container and a fresh OpenCode session for each model Binding invocation. A Team Run does not keep a container alive for each Role. This follows the v2 invocation contract: Role identity is stable, while cross-invocation state must be passed explicitly through Run task, Handoff data/Artifacts, review feedback, or the declared immediate Loop predecessor. The current v2 scope does not rely on provider session history as Role memory.
+
+Starting a container adds process and Docker daemon overhead to each invocation. The pinned image is reused from the local image cache after it is available; there is no per-call image build. Actual startup cost depends on the host, Docker backend, image cache, concurrency, and workload. This setup has no benchmark establishing a fixed cost, and model/provider latency may dominate. Measure end-to-end latency and peak concurrent container count using the expected Run and Loop workload before changing the lifecycle.
+
+Keep invocation containers short-lived when isolation and clean per-call state are the priority. Do not make a container persistent solely to retain Role conversation history. If latency measurements justify session reuse, it can be evaluated separately from container lifetime, but persistent OpenCode session state would introduce a new memory contract and must be explicitly scoped, checkpointed, recovered, bounded, and cleaned up before it can be relied on by a Team Run.
+
+If container startup is material for the target workload and container-boundary evidence is not required, prefer a separately implemented and reviewed direct-host resolver over a long-lived container pool. This keeps the isolation claim accurate and avoids adding container lifecycle management just to reuse OpenCode sessions.
+
+The current direct-host resolver reuses the same pinned role packages and output validation, but runs its HTTP adapter in the Team Site process. Review that process trust boundary before using it outside a trusted local environment.
 
 ## Container boundary
 

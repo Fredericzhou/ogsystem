@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { TaskState } from "@a2a-js/sdk";
 import { AgentEvent, DefaultRequestHandler, InMemoryTaskStore, JsonRpcTransportHandler, ServerCallContext } from "@a2a-js/sdk/server";
-import { createTeamA2AHttpClient } from "../dist/team-ir/index.js";
+import { createTeamA2AHttpClient, createTeamA2ABinding } from "../dist/team-ir/index.js";
 
 async function listen(handler) {
   const server = createServer(handler);
@@ -216,6 +219,83 @@ test("A2A HTTP client completes a localhost round trip against the official SDK 
   assert.deepEqual(result.result, { event: "REVIEWED", data: { accepted: true } });
   assert.ok(seenAuthorization.length >= 3, "discovery, send, and polling calls use configured auth");
   assert.ok(seenAuthorization.every((authorization) => authorization === "Bearer localhost-secret"));
+});
+
+test("A2A client interoperates with an independent official SDK Agent service process", async (t) => {
+  const secret = "separate-process-test-secret";
+  const serverProcess = spawn(process.execPath, [fileURLToPath(new URL("./fixtures/team-ir-a2a-http-agent-service.mjs", import.meta.url))], {
+    env: { ...process.env, TEAM_IR_A2A_TEST_SECRET: secret },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(async () => {
+    lines.close();
+    if (serverProcess.exitCode === null) serverProcess.kill("SIGTERM");
+    if (serverProcess.exitCode === null) await new Promise((resolve) => serverProcess.once("exit", resolve));
+  });
+  const stderr = [];
+  serverProcess.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+  const lines = createInterface({ input: serverProcess.stdout });
+  const endpoint = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("A2A Agent service startup timed out")), 5000);
+    serverProcess.once("error", (error) => { clearTimeout(timer); reject(error); });
+    serverProcess.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error("A2A Agent service exited before ready: " + code + " " + Buffer.concat(stderr).toString("utf8")));
+    });
+    lines.once("line", (line) => {
+      clearTimeout(timer);
+      if (!line.startsWith("READY http://127.0.0.1:")) reject(new Error("Unexpected A2A Agent readiness line"));
+      else resolve(line.slice("READY ".length));
+    });
+  });
+  const unauthorized = await fetch(endpoint + "/.well-known/agent-card.json");
+  assert.equal(unauthorized.status, 401, "the independent Agent service requires authentication for Agent Card discovery");
+  const client = createTeamA2AHttpClient({ endpoint, authorization: "Bearer " + secret, acceptedOutputModes: ["application/json", "text/plain"] });
+  let polls = 0;
+  const trackedClient = {
+    ...client,
+    async getTask(taskId) {
+      polls += 1;
+      return client.getTask(taskId);
+    }
+  };
+  const agentCard = await client.getAgentCard();
+  assert.equal(agentCard.name, "Local Team IR test agent");
+  assert.equal(agentCard.version, "1.0.0");
+  const binding = createTeamA2ABinding({
+    client: trackedClient,
+    expectedProtocolVersion: agentCard.protocolVersion,
+    expectedAgentVersion: agentCard.version,
+    inputMediaTypes: ["application/json"],
+    outputMediaTypes: ["application/json", "text/plain"],
+    pollIntervalMs: 1,
+    sleep: async (ms) => new Promise((resolve) => setTimeout(resolve, Math.min(ms, 5)))
+  });
+  const result = await binding.invoke({
+    runId: "separate-service-run",
+    handoffId: "remote-intake",
+    agentId: "remote-intake",
+    bindingId: "binding:remote-intake",
+    attempt: 1,
+    input: { request: "check protocol handoff" },
+    idempotencyKey: "separate-service-idempotency"
+  });
+  assert.equal(result.kind, "completed");
+  assert.deepEqual(result.output, {
+    event: "INTAKE_COMPLETE",
+    data: { summary: "accepted: check protocol handoff" },
+    artifacts: { evidence: { mediaType: "text/plain", content: new Uint8Array(Buffer.from("independent agent evidence")) } }
+  });
+  assert.ok(polls >= 1, "the A2A Binding polls the independent Agent Task until completion");
+  assert.deepEqual(await binding.invoke({
+    runId: "separate-service-run",
+    handoffId: "remote-intake",
+    agentId: "remote-intake",
+    bindingId: "binding:remote-intake",
+    attempt: 1,
+    input: { request: "ignored on replay" },
+    idempotencyKey: "separate-service-idempotency"
+  }), result, "same idempotency key replays the cached typed result without another remote Task");
 });
 
 test("A2A HTTP client rejects a card interface outside the configured origin before sending credentials", async (t) => {

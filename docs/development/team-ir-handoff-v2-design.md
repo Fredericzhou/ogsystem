@@ -227,6 +227,14 @@ Agent 是可复用的责任参与方。图上的节点不是合同；合同属�
 - Runtime 可向 Agent 暴露当前拓扑中有出边的 `allowedOutputPorts`，并拒绝未声明或未允许的输出事件。
   该集合是输出合同，不是安全授权边界。
 
+### 3.1.1 显式交接历史与 Role 记忆
+
+- Agent/Role 是 Team 中稳定的逻辑责任身份；这不隐含跨调用的模型会话或对话记忆。每次激活都按当前调用合同执行，Binding 可以使用新的模型请求或 session。
+- v2 的跨调用连续性通过可审计的显式状态实现：不可变 Run `task`、当前 Handoff 映射的数据和 Artifact、显式投影的 Run 字段、审核反馈，以及受 Loop Scope 和 lineage 限定的 `$.loop.previous`。
+- `$.loop.previous` 只表示同一 Run、lineage、Loop Scope 中紧邻上一轮的唯一成功输出，不是完整历史查询。审核反馈只在对应审核结果之后通过 `$.review.*` 显式映射；Runtime 不会自动把所有历史审核意见或模型 transcript 注入后续调用。
+- Team 作者可以在端口 Schema 中声明业务所需的历史/记忆字段，并通过 Handoff 传递上一轮输出中的这些字段及新反馈。Runtime 校验和保存这些类型化输入/输出；如何总结或更新记忆由 Agent 输出合同明确约定。未声明的 provider session 状态不能作为正确性或恢复依据。
+- 本版不定义 Role 级隐式持久会话、自动累计所有轮次反馈或 provider transcript 恢复。若后续加入此类能力，必须明确其作用域（Run、Role、lineage）、并发规则、持久化/恢复、重试幂等、上下文保留与清理策略，并纳入语义 digest 和验收矩阵。
+
 ### 3.2 Handoff 定义
 
 每个 Handoff 恰有一个发送端和一个接收端。端点类型为 `run`、`agent` 或 `result`；Agent 端点必须

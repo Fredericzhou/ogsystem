@@ -110,7 +110,7 @@ function mapTask(task: Task): TeamA2ARemoteTask {
         : state === TaskState.TASK_STATE_COMPLETED ? "completed"
           : state === TaskState.TASK_STATE_CANCELED ? "canceled"
             : state === TaskState.TASK_STATE_REJECTED ? "rejected" : "failed";
-  const allParts = [
+  const messageParts = [
     ...task.history.flatMap((message) => message.parts.map(mapPart)),
     ...(task.status?.message?.parts ?? []).map(mapPart),
     ...task.artifacts.flatMap((artifact) => artifact.parts.map((part) => ({ ...mapPart(part), ...artifactPartMetadata(artifact) }))),
@@ -122,11 +122,12 @@ function mapTask(task: Task): TeamA2ARemoteTask {
   const result = output
     ? { event: output.event, data: output.data, ...(files.length ? { artifacts: Object.fromEntries(files.map((part) => [part.slotId, part])) } : {}) }
     : undefined;
+  const resultArtifactSlots = new Set(result ? files.map((part) => part.slotId) : []);
   const teamTask = metadata(metadata(task.metadata)[TEAM_IR_METADATA]);
   return {
     id: task.id,
     status,
-    ...(allParts.length ? { messageParts: allParts } : {}),
+    ...(messageParts.length ? { messageParts: messageParts.filter((part) => part.kind !== "file" || typeof part.slotId !== "string" || !resultArtifactSlots.has(part.slotId)) } : {}),
     ...(teamTask.requestedInputSchema === undefined ? {} : { requestedInputSchema: teamTask.requestedInputSchema }),
     ...(result ? { result } : {}),
     ...(TERMINAL_FAILURE_STATES.has(state ?? TaskState.UNRECOGNIZED) ? { errorCode: `A2A_TASK_STATE_${state}` } : {}),
