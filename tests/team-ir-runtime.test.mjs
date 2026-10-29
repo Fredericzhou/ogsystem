@@ -1843,6 +1843,96 @@ test("pending Artifact publication is committed idempotently after process resta
   assert.equal(bindingCalls, 1);
 });
 
+test("Run publication checkpoint recovers when Artifact finish commits but the Run update never starts", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-finish-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.executionPolicy.resultMode = "allow_empty";
+  value.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } }
+  ];
+  value.orchestration.routes = [];
+  const plan = compileTeamIr(value);
+  const runs = new FileTeamRunStore(join(root, "runs"));
+  const artifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const finishOutputPublication = artifacts.finishOutputPublication.bind(artifacts);
+  let loseFinishResponse = true;
+  artifacts.finishOutputPublication = async (args) => {
+    await finishOutputPublication(args);
+    if (loseFinishResponse) {
+      loseFinishResponse = false;
+      throw new Error("injected process stop after Artifact finish");
+    }
+  };
+  let bindingCalls = 0;
+  const binding = { async invoke() {
+    bindingCalls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "ok" }, artifacts: { report: { mediaType: "text/markdown", content: Buffer.from("finished report") } } } };
+  } };
+  const clock = { now: () => 100, sleep: async () => undefined };
+  const runtime = new TeamRuntime({ store: runs, clock, bindings: { "binding:worker": binding }, artifactStore: artifacts });
+  await runtime.createRun(plan, { runId: "artifact-finish-recovery", projectId: "project-1", task: "check", input: { prompt: "check" } });
+  await assert.rejects(runtime.executeRun(plan, "artifact-finish-recovery"), /injected process stop after Artifact finish/);
+  const interrupted = await runs.load("artifact-finish-recovery");
+  assert.equal(interrupted.invocations["artifact-finish-recovery:start"].artifactPublication.status, "pending");
+
+  const recovered = await new TeamRuntime({
+    store: new FileTeamRunStore(join(root, "runs")), clock, bindings: { "binding:worker": binding },
+    artifactStore: new FileTeamArtifactStore(join(root, "artifacts"))
+  }).executeRun(plan, "artifact-finish-recovery");
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.invocations["artifact-finish-recovery:start"].artifactPublication.status, "committed");
+  assert.equal(bindingCalls, 1);
+});
+
+test("Artifact publication activates and commits from the Run intent after a crash before activation", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-activation-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const value = team();
+  value.executionPolicy.resultMode = "allow_empty";
+  value.agents[0].outputPorts.DONE.artifactSlots = { report: { required: true, mediaTypes: ["text/markdown"], cardinality: "single" } };
+  value.handoffs = [
+    { id: "start", from: { kind: "run" }, to: { kind: "agent", agentId: "worker", inputPort: "default" }, map: { data: { prompt: { "$ref": "$.run.input.prompt" } } }, when: { priority: 0 }, delivery: { deadlineMs: 2000 } }
+  ];
+  value.orchestration.routes = [];
+  const plan = compileTeamIr(value);
+  const runs = new FileTeamRunStore(join(root, "runs"));
+  const artifacts = new FileTeamArtifactStore(join(root, "artifacts"));
+  const activateOutputPublication = artifacts.activateOutputPublication.bind(artifacts);
+  let failActivation = true;
+  artifacts.activateOutputPublication = async (args) => {
+    if (failActivation) {
+      failActivation = false;
+      throw new Error("simulated crash before Artifact activation");
+    }
+    return activateOutputPublication(args);
+  };
+  let bindingCalls = 0;
+  const binding = { async invoke() {
+    bindingCalls += 1;
+    return { kind: "completed", output: { event: "DONE", data: { answer: "ok" }, artifacts: { report: { mediaType: "text/markdown", content: Buffer.from("activation recovery report") } } } };
+  } };
+  const clock = { now: () => 100, sleep: async () => undefined };
+  const runtime = new TeamRuntime({ store: runs, clock, bindings: { "binding:worker": binding }, artifactStore: artifacts });
+  await runtime.createRun(plan, { runId: "artifact-activation-recovery", projectId: "project-1", task: "check", input: { prompt: "check" } });
+  await assert.rejects(runtime.executeRun(plan, "artifact-activation-recovery"), /simulated crash before Artifact activation/);
+  const interrupted = await runs.load("artifact-activation-recovery");
+  assert.equal(interrupted.invocations["artifact-activation-recovery:start"].status, "completed");
+  assert.equal(interrupted.invocations["artifact-activation-recovery:start"].artifactPublication.status, "pending");
+  assert.equal(interrupted.invocations["artifact-activation-recovery:start"].artifactPublication.reservation.fencingGeneration, 1);
+
+  const recovered = await new TeamRuntime({ store: new FileTeamRunStore(join(root, "runs")), clock, bindings: { "binding:worker": binding }, artifactStore: new FileTeamArtifactStore(join(root, "artifacts")) }).executeRun(plan, "artifact-activation-recovery");
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.invocations["artifact-activation-recovery:start"].artifactPublication.status, "committed");
+  assert.equal(bindingCalls, 1);
+  const reference = recovered.invocations["artifact-activation-recovery:start"].output.output.artifacts.report;
+  const resolver = await new FileTeamArtifactStore(join(root, "artifacts")).createInvocationResolver({
+    owner: { projectId: "project-1", runId: "artifact-activation-recovery" }, allowedArtifacts: [reference]
+  });
+  assert.equal(Buffer.from(await resolver.read(reference.artifactId)).toString(), "activation recovery report");
+});
+
 test("Artifact invocation resolver failure is attributed before Binding invocation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-resolver-fault-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -2076,6 +2166,51 @@ test("FileTeamRunStore recovery attempts cancel but keeps an active invocation o
   assert.deepEqual(reopened, result);
   assert.equal(cancels, 1);
   assert.equal(calls, 0);
+});
+
+test("active invocation recovery stays fail-closed when cancellation is unavailable or unconfirmed", async (t) => {
+  const cases = [
+    { name: "missing", cancel: undefined },
+    { name: "unconfirmed", cancel: async () => false },
+    { name: "throws", cancel: async () => { throw new Error("cancel transport failed"); } }
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async (subtest) => {
+      const root = await mkdtemp(join(tmpdir(), `team-ir-active-recovery-${scenario.name}-`));
+      subtest.after(() => rm(root, { recursive: true, force: true }));
+      const runId = `unknown-${scenario.name}`;
+      const store = new FileTeamRunStore(root);
+      let calls = 0;
+      let cancels = 0;
+      const binding = {
+        async invoke() { calls += 1; throw new Error("must not replay unknown invocation"); },
+        ...(scenario.cancel ? { async cancel(input) { cancels += 1; assert.equal(input.idempotencyKey, `${runId}:start`); return scenario.cancel(); } } : {})
+      };
+      const plan = compileTeamIr(team());
+      const runtime = new TeamRuntime({ store, clock: { now: () => 100, sleep: () => new Promise(() => {}) }, bindings: { "binding:worker": binding } });
+      await runtime.createRun(plan, { runId, task: "recover", input: { prompt: "recover" } });
+      await runtime.claim(runId, plan.compiledPlanDigest);
+      const claimed = await store.load(runId);
+      claimed.scheduler = { pending: ["start"], sources: {}, skippedHandoffs: [], arrivedHandoffs: [], visited: {}, invocationIds: {} };
+      claimed.invocations[`${runId}:start`] = {
+        id: `${runId}:start`, handoffId: "start", agentId: "worker", bindingId: "binding:worker",
+        status: "running", deadlineAt: 2000, attempt: 1
+      };
+      claimed.revision += 1;
+      assert.equal(await store.compareAndSet(runId, claimed.revision - 1, claimed), true);
+
+      const recovered = await new TeamRuntime({ store: new FileTeamRunStore(root), clock: { now: () => 500, sleep: () => new Promise(() => {}) }, bindings: { "binding:worker": binding } }).executeRun(plan, runId);
+      assert.equal(recovered.status, "failed");
+      assert.equal(recovered.invocations[`${runId}:start`].outcomeUnknown, true);
+      assert.equal(recovered.invocations[`${runId}:start`].error, "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART");
+      assert.equal(calls, 0);
+      assert.equal(cancels, scenario.cancel ? 1 : 0);
+      const reopened = await new TeamRuntime({ store: new FileTeamRunStore(root), clock: { now: () => 600, sleep: () => new Promise(() => {}) }, bindings: { "binding:worker": binding } }).executeRun(plan, runId);
+      assert.deepEqual(reopened, recovered);
+      assert.equal(calls, 0);
+      assert.equal(cancels, scenario.cancel ? 1 : 0);
+    });
+  }
 });
 
 test("scheduler checkpoint resumes from a completed invocation across FileTeamRunStore instances without repeating the Binding call", async (t) => {

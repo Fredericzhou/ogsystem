@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { compileTeamIr, createTeamA2ABinding, FileTeamRunStore, TeamRuntime } from "../dist/team-ir/index.js";
+import { compileTeamIr, createTeamA2ABinding, FileTeamArtifactStore, FileTeamRunStore, TeamRuntime } from "../dist/team-ir/index.js";
 
 const fixtureUrl = new URL("../examples/team-ir-v2/classic-a2a-intake.json", import.meta.url);
 
@@ -17,7 +17,7 @@ function card() {
     name: "Remote intake service",
     version: "2026-10-1",
     defaultInputModes: ["application/json"],
-    defaultOutputModes: ["application/json"],
+    defaultOutputModes: ["application/json", "text/plain"],
     capabilities: { streaming: false, pushNotifications: false }
   };
 }
@@ -32,6 +32,7 @@ function withinTimeout(promise, label, timeoutMs = 5000) {
 function makeRuntime(root, binding) {
   return new TeamRuntime({
     store: new FileTeamRunStore(root),
+    artifactStore: new FileTeamArtifactStore(join(root, "artifacts")),
     clock: { now: () => Date.now(), sleep: () => new Promise(() => {}) },
     bindings: { "binding:remote-intake": binding }
   });
@@ -58,7 +59,7 @@ test("input-required persists the request, keeps it out of audit events, and req
     expectedProtocolVersion: "1.0",
     expectedAgentVersion: "2026-10-1",
     inputMediaTypes: ["application/json"],
-    outputMediaTypes: ["application/json"],
+    outputMediaTypes: ["application/json", "text/plain"],
     client: {
       async getAgentCard() { return card(); },
       async sendMessage(message) {
@@ -72,7 +73,14 @@ test("input-required persists the request, keeps it out of audit events, and req
             requestedInputSchema: { type: "object", properties: { location: { type: "string" } }, required: ["location"] }
           };
         }
-        return { id: `remote-task-${sends}`, status: "completed", result: { event: "INTAKE_COMPLETE", data: { summary: "Intake completed for the clarified location." } } };
+        return {
+          id: `remote-task-${sends}`, status: "completed",
+          result: {
+            event: "INTAKE_COMPLETE",
+            data: { summary: "Intake completed for the clarified location." },
+            artifacts: { evidence: { mediaType: "text/plain", bytesBase64: Buffer.from("clarified location evidence").toString("base64") } }
+          }
+        };
       },
       async getTask() { throw new Error("No polling is expected in this scenario."); },
       async cancelTask() { return true; }
@@ -106,8 +114,10 @@ test("input-required persists the request, keeps it out of audit events, and req
   });
   assert.equal(changedInputRun.runInput.input.request, "Open a service case for the north branch.");
   const completed = await makeRuntime(root, binding).executeRun(plan, changedInputRunId);
-  assert.equal(completed.status, "completed");
-  assert.deepEqual(completed.result, { summary: "Intake completed for the clarified location." });
+  assert.equal(completed.status, "completed", JSON.stringify({ status: completed.status, error: completed.error, events: completed.events.slice(-5) }));
+  assert.equal(completed.result.data.summary, "Intake completed for the clarified location.");
+  assert.equal(completed.result.artifacts.evidence.mediaType, "text/plain");
+  assert.match(completed.result.artifacts.evidence.artifactId, /^art_/);
   assert.equal(sends, 2, "changed input must start an independent remote Task with a new idempotency key");
 });
 

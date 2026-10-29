@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -76,8 +76,28 @@ test("Task Artifact validation accepts only registered same-Project slot referen
 
 test("invocation resolver can read only explicitly allowed Artifacts and verifies content integrity", async () => {
   const blobs = new Map();
+  const publications = new Map();
   const backend = {
-    async put(id, bytes, metadata) { blobs.set(id, { content: Uint8Array.from(bytes), metadata: structuredClone(metadata) }); },
+    async reservePublication(owner, invocationId, publicationId) {
+      const key = `${owner.projectId}:${owner.runId}:${publicationId}`;
+      const existing = publications.get(key);
+      if (existing) return structuredClone(existing.token);
+      const token = { ...owner, invocationId, publicationId, fencingGeneration: 1 };
+      publications.set(key, { token, state: "reserved", artifacts: [] });
+      return structuredClone(token);
+    },
+    async activatePublication(token, ids) {
+      const item = publications.get(`${token.projectId}:${token.runId}:${token.publicationId}`);
+      item.state = "pending";
+      assert.deepEqual([...item.artifacts].sort(), [...ids].sort());
+    },
+    async finishPublication(token) { publications.get(`${token.projectId}:${token.runId}:${token.publicationId}`).state = "committed"; },
+    async abortPublication(token) { publications.get(`${token.projectId}:${token.runId}:${token.publicationId}`).state = "aborted"; },
+    async recoverPublications() { return []; },
+    async put(id, bytes, metadata) {
+      publications.get(`${metadata.projectId}:${metadata.runId}:${metadata.publicationId}`).artifacts.push(id);
+      blobs.set(id, { content: Uint8Array.from(bytes), metadata: structuredClone(metadata) });
+    },
     async commitOutput(id, publicationId) {
       const stored = blobs.get(id);
       if (!stored || stored.metadata.publicationId !== publicationId) throw new Error("publication mismatch");
@@ -136,13 +156,15 @@ test("prepared output Artifacts remain private until the publication intent comm
   const store = new TeamArtifactStore({ backend });
   const owner = { projectId: "project-1", runId: "run-1" };
   const publicationId = "publication-1";
+  const reservation = await store.reserveOutputPublication({ owner, invocationId: "writer-invocation", publicationId });
   const reference = await store.prepareOutput({
     team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
-    mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId
+    mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId, reservation
   });
   assert.equal(await store.getReference(reference.artifactId), undefined);
   await assert.rejects(store.createInvocationResolver({ owner, allowedArtifacts: [reference] }),
     (error) => error instanceof TeamArtifactError && error.code === "ARTIFACT_REFERENCE_INVALID");
+  await store.activateOutputPublication({ reservation, references: [reference] });
   await store.commitOutput({ owner, reference, publicationId });
   await store.commitOutput({ owner, reference, publicationId });
   assert.deepEqual(await store.getReference(reference.artifactId), reference);
@@ -192,6 +214,148 @@ test("File Artifact abort removes both prepared index and blob", async (t) => {
   await assert.rejects(readFile(join(root, "projects", owner.projectId, "runs", owner.runId, "artifacts", `${reference.artifactId}.bin`)), { code: "ENOENT" });
 });
 
+test("File Artifact publication reservations fence stale writers across store instances", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-fence-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const first = new FileTeamArtifactStore(root);
+  const second = new FileTeamArtifactStore(root);
+  const owner = { projectId: "project-1", runId: "run-fenced" };
+  const reservation = await first.reserveOutputPublication({ owner, invocationId: "writer-invocation", publicationId: "fenced-publication" });
+  const reference = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("prepared"), publicationId: reservation.publicationId,
+    invocationId: reservation.invocationId, reservation
+  });
+  const forged = { ...reservation, fencingGeneration: "stale-generation" };
+  await assert.rejects(second.abortOutputPublication({ reservation: forged }),
+    (error) => error?.code === "ARTIFACT_RESERVATION_STALE");
+  assert.ok(await readFile(join(root, "index", `${reference.artifactId}.json`)));
+  await second.abortOutputPublication({ reservation });
+  await assert.rejects(first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("late write"), publicationId: reservation.publicationId,
+    invocationId: reservation.invocationId, reservation
+  }), (error) => error?.code === "ARTIFACT_RESERVATION_STALE");
+  await assert.rejects(first.abortOutputPublication({ reservation }),
+    (error) => error?.code === "ARTIFACT_RESERVATION_STALE");
+  await assert.rejects(readFile(join(root, "index", `${reference.artifactId}.json`)), { code: "ENOENT" });
+  await assert.rejects(readFile(join(root, "projects", owner.projectId, "runs", owner.runId, "artifacts", `${reference.artifactId}.bin`)), { code: "ENOENT" });
+});
+
+test("File Artifact recovery and prepare serialize across independent store instances", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-fence-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const writer = new FileTeamArtifactStore(root);
+  const recovery = new FileTeamArtifactStore(root);
+  const owner = { projectId: "project-1", runId: "run-fence-race" };
+  const reservation = await writer.reserveOutputPublication({ owner, invocationId: "race-invocation", publicationId: "race-publication" });
+  let prepared;
+  const contenders = await Promise.allSettled([
+    writer.prepareOutput({
+      team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+      mediaType: "text/markdown", content: Buffer.from("race"), publicationId: reservation.publicationId, reservation
+    }).then((reference) => { prepared = reference; }),
+    recovery.recoverOutputPublications({ owner, retainedPublicationIds: [], liveInvocationIds: [] })
+  ]);
+  assert.equal(contenders.filter((item) => item.status === "rejected").length <= 1, true);
+  const reconciled = await recovery.recoverOutputPublications({ owner, retainedPublicationIds: [], liveInvocationIds: [] });
+  assert.equal(reconciled[0].state, "aborted");
+  if (prepared) {
+    await assert.rejects(readFile(join(root, "index", `${prepared.artifactId}.json`)), { code: "ENOENT" });
+    await assert.rejects(readFile(join(root, "projects", owner.projectId, "runs", owner.runId, "artifacts", `${prepared.artifactId}.bin`)), { code: "ENOENT" });
+  }
+});
+
+test("File Artifact recovery keeps live and retained publications, then reclaims only abandoned prepared outputs", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-recovery-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const first = new FileTeamArtifactStore(root);
+  const second = new FileTeamArtifactStore(root);
+  const owner = { projectId: "project-1", runId: "run-recovery" };
+  const live = await first.reserveOutputPublication({ owner, invocationId: "run-recovery:worker:loop:1", publicationId: "live-publication" });
+  const liveRef = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("live"), publicationId: live.publicationId, reservation: live
+  });
+  const retained = await first.reserveOutputPublication({ owner, invocationId: "retained-invocation", publicationId: "retained-publication" });
+  const retainedRef = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("pending"), publicationId: retained.publicationId, reservation: retained
+  });
+  await first.activateOutputPublication({ reservation: retained, references: [retainedRef] });
+  const abandoned = await first.reserveOutputPublication({ owner, invocationId: "settled-invocation", publicationId: "abandoned-publication" });
+  const abandonedRef = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("orphan"), publicationId: abandoned.publicationId, reservation: abandoned
+  });
+
+  const whileLive = await second.recoverOutputPublications({ owner, retainedPublicationIds: [retained.publicationId], liveInvocationIds: [live.invocationId] });
+  assert.equal(whileLive.find((item) => item.reservation.publicationId === live.publicationId).state, "reserved");
+  assert.equal(whileLive.find((item) => item.reservation.publicationId === retained.publicationId).state, "pending");
+  assert.equal(whileLive.find((item) => item.reservation.publicationId === abandoned.publicationId).state, "aborted");
+  assert.ok(await readFile(join(root, "index", `${liveRef.artifactId}.json`)));
+  assert.ok(await readFile(join(root, "index", `${retainedRef.artifactId}.json`)));
+  await assert.rejects(readFile(join(root, "index", `${abandonedRef.artifactId}.json`)), { code: "ENOENT" });
+
+  const afterSettle = await second.recoverOutputPublications({ owner, retainedPublicationIds: [retained.publicationId], liveInvocationIds: [] });
+  assert.equal(afterSettle.find((item) => item.reservation.publicationId === live.publicationId).state, "aborted");
+  await assert.rejects(readFile(join(root, "index", `${liveRef.artifactId}.json`)), { code: "ENOENT" });
+  assert.equal(afterSettle.find((item) => item.reservation.publicationId === retained.publicationId).state, "pending");
+  const repeated = await second.recoverOutputPublications({ owner, retainedPublicationIds: [retained.publicationId], liveInvocationIds: [] });
+  assert.equal(repeated.find((item) => item.reservation.publicationId === live.publicationId).state, "aborted");
+  await assert.rejects(second.recoverOutputPublications({ owner, retainedPublicationIds: [live.publicationId], liveInvocationIds: [] }),
+    (error) => error?.code === "ARTIFACT_RESERVATION_INVALID");
+});
+
+test("File Artifact recovery preserves committed publications and fails closed for missing or corrupt reservations", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "team-ir-artifact-reservation-integrity-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const first = new FileTeamArtifactStore(root);
+  const second = new FileTeamArtifactStore(root);
+  const owner = { projectId: "project-1", runId: "run-integrity" };
+  const committed = await first.registerOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("committed")
+  });
+  const committedId = (await second.recoverOutputPublications({ owner, retainedPublicationIds: [], liveInvocationIds: [] }))[0].reservation.publicationId;
+  assert.equal((await second.getReference(committed.artifactId)).artifactId, committed.artifactId);
+  assert.equal(committedId.length > 0, true);
+
+  const interruptedCommit = await first.reserveOutputPublication({ owner, invocationId: "partial-commit-invocation", publicationId: "partial-commit-publication" });
+  const committedBeforeFinish = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("commit response lost"), publicationId: interruptedCommit.publicationId, reservation: interruptedCommit
+  });
+  await first.activateOutputPublication({ reservation: interruptedCommit, references: [committedBeforeFinish] });
+  await first.commitOutput({ owner, reference: committedBeforeFinish, publicationId: interruptedCommit.publicationId });
+  const interruptedRecovery = await second.recoverOutputPublications({ owner, retainedPublicationIds: [], liveInvocationIds: [] });
+  assert.equal(interruptedRecovery.find((item) => item.reservation.publicationId === interruptedCommit.publicationId).state, "pending");
+  assert.equal((await second.getReference(committedBeforeFinish.artifactId)).artifactId, committedBeforeFinish.artifactId);
+
+  const missing = await first.reserveOutputPublication({ owner, invocationId: "missing-invocation", publicationId: "missing-publication" });
+  const missingRef = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("missing journal"), publicationId: missing.publicationId, reservation: missing
+  });
+  const missingPath = join(root, "projects", owner.projectId, "runs", owner.runId, "publications", `${missing.publicationId}.json`);
+  await rm(missingPath, { force: true });
+  await assert.rejects(second.recoverOutputPublications({ owner, retainedPublicationIds: [missing.publicationId], liveInvocationIds: [] }),
+    (error) => error?.code === "ARTIFACT_RESERVATION_INVALID");
+  assert.ok(await readFile(join(root, "index", `${missingRef.artifactId}.json`)));
+
+  const corrupt = await first.reserveOutputPublication({ owner, invocationId: "corrupt-invocation", publicationId: "corrupt-publication" });
+  const corruptRef = await first.prepareOutput({
+    team: team(), owner, agentId: "writer", outputPortId: "DONE", slotId: "report",
+    mediaType: "text/markdown", content: Buffer.from("corrupt journal"), publicationId: corrupt.publicationId, reservation: corrupt
+  });
+  const corruptPath = join(root, "projects", owner.projectId, "runs", owner.runId, "publications", `${corrupt.publicationId}.json`);
+  await writeFile(corruptPath, "{broken", "utf8");
+  await assert.rejects(second.abortOutputPublication({ reservation: corrupt }),
+    (error) => error?.code === "ARTIFACT_RESERVATION_INVALID");
+  assert.ok(await readFile(join(root, "index", `${corruptRef.artifactId}.json`)));
+  assert.ok(await readFile(join(root, "index", `${committed.artifactId}.json`)));
+});
+
 test("File Artifact abort cleans blob-only and index-only prepared writes", async (t) => {
   for (const partial of ["blob-only", "index-only"]) {
     await t.test(partial, async (t) => {
@@ -218,8 +382,19 @@ test("blob and index write interruptions never expose an uncommitted Artifact", 
     await t.test(faultPoint, async () => {
       const blobs = new Map();
       const index = new Map();
+      const publications = new Map();
       const backend = {
+        async reservePublication(owner, invocationId, publicationId) {
+          const reservation = { ...owner, invocationId, publicationId, fencingGeneration: `fence-${publicationId}` };
+          publications.set(publicationId, { reservation, state: "reserved", artifactIds: [] });
+          return reservation;
+        },
+        async activatePublication(reservation) { publications.get(reservation.publicationId).state = "pending"; },
+        async finishPublication(reservation) { publications.get(reservation.publicationId).state = "committed"; },
+        async abortPublication(reservation) { publications.get(reservation.publicationId).state = "aborted"; },
+        async recoverPublications() { return []; },
         async put(id, content, metadata) {
+          publications.get(metadata.publicationId).artifactIds.push(id);
           blobs.set(id, Uint8Array.from(content));
           if (faultPoint === "after-blob") throw new Error("injected blob write interruption");
           index.set(id, structuredClone(metadata));

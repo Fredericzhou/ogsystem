@@ -3,7 +3,7 @@ import { evaluateTeamCondition, evaluateTeamValueExpr, MISSING_TEAM_VALUE } from
 import type { CompiledTeamPlan } from "./compiler.js";
 import { assertValidTeamPayload } from "./payload-validation.js";
 import { applyTeamJoinEvent, createTeamJoinRound, type TeamJoinRound } from "./join-runtime.js";
-import type { ArtifactStore, TeamArtifactResolver } from "./artifact-store.js";
+import type { ArtifactStore, TeamArtifactPublicationReservation, TeamArtifactResolver } from "./artifact-store.js";
 import { TeamArtifactError } from "./artifact-store.js";
 import type { TeamRunStatus } from "./types.js";
 import { TeamReviewRuntime, readTeamReviewContext, type TeamReviewRecord } from "./review-runtime.js";
@@ -73,7 +73,12 @@ export interface TeamInvocationState {
   error?: string;
   diagnosticCode?: TeamBindingDiagnosticCode;
   outcomeUnknown?: boolean;
-  artifactPublication?: { id: string; artifacts: Record<string, { artifactId: string; mediaType: string }>; status: "pending" | "committed" };
+  artifactPublication?: {
+    id: string;
+    reservation: TeamArtifactPublicationReservation;
+    artifacts: Record<string, { artifactId: string; mediaType: string }>;
+    status: "reserved" | "pending" | "committed" | "aborted";
+  };
 }
 
 export interface TeamRunRecord {
@@ -636,28 +641,55 @@ export class TeamRuntime {
           });
         }
         const registeredArtifacts: Record<string, { artifactId: string; mediaType: string }> = {};
-        const publicationId = result.output.artifacts === undefined ? undefined : randomUUID();
-        const abortPreparedArtifacts = async (): Promise<void> => {
-          if (!publicationId || !this.args.artifactStore) return;
-          await Promise.allSettled(Object.values(registeredArtifacts).map((reference) => this.args.artifactStore!.abortOutput({
-            owner: { projectId: existing.projectId, runId }, reference, publicationId
-          })));
-        };
-        if (result.output.artifacts !== undefined) {
-          if (!isRecord(result.output.artifacts) || !this.args.artifactStore) return this.fail(runId, invocationId, "ARTIFACT_STORE_REQUIRED");
+        if (result.output.artifacts !== undefined && !isRecord(result.output.artifacts)) return this.fail(runId, invocationId, "ARTIFACT_OUTPUT_INVALID");
+        const artifactEntries = isRecord(result.output.artifacts) ? Object.entries(result.output.artifacts) : [];
+        if (artifactEntries.length && !this.args.artifactStore) return this.fail(runId, invocationId, "ARTIFACT_STORE_REQUIRED");
+        const publicationId = artifactEntries.length ? randomUUID() : undefined;
+        let reservation: TeamArtifactPublicationReservation | undefined;
+        if (publicationId) {
+          reservation = await this.args.artifactStore!.reserveOutputPublication({
+            owner: { projectId: existing.projectId, runId }, invocationId, publicationId
+          });
           try {
-            for (const [slotId, value] of Object.entries(result.output.artifacts)) {
+            await this.update(runId, (record) => {
+              const state = record.invocations[invocationId];
+              if (state.status !== "running") throw new TeamRunConflictError("Cannot reserve Artifacts for a non-active invocation.");
+              state.artifactPublication = { id: publicationId, reservation: reservation!, artifacts: {}, status: "reserved" };
+            });
+          } catch (error) {
+            const persisted = (await this.args.store.load(runId))?.invocations[invocationId]?.artifactPublication;
+            if (persisted?.id !== publicationId || persisted.status !== "reserved") {
+              await this.args.artifactStore!.abortOutputPublication({ reservation });
+              throw error;
+            }
+          }
+        }
+        const abortPublication = async (): Promise<void> => {
+          if (!reservation || !this.args.artifactStore) return;
+          try {
+            await this.args.artifactStore.abortOutputPublication({ reservation });
+            await this.update(runId, (record) => {
+              const publication = record.invocations[invocationId]?.artifactPublication;
+              if (publication && publication.id === publicationId && publication.status === "reserved") publication.status = "aborted";
+            });
+          } catch {
+            // Recovery reconciles the durable reservation after the invocation is settled.
+          }
+        };
+        if (publicationId && reservation) {
+          try {
+            for (const [slotId, value] of artifactEntries) {
               if (!isRecord(value) || typeof value.mediaType !== "string" || !(value.content instanceof Uint8Array)) {
                 throw new TeamArtifactError("ARTIFACT_OUTPUT_INVALID", "Agent output Artifact is invalid.");
               }
-              registeredArtifacts[slotId] = await this.args.artifactStore.prepareOutput({
+              registeredArtifacts[slotId] = await this.args.artifactStore!.prepareOutput({
                 team: plan.team, owner: { projectId: existing.projectId, runId }, agentId,
                 outputPortId: result.output.event, slotId, mediaType: value.mediaType, content: value.content,
-                publicationId: publicationId!
+                publicationId, invocationId, reservation
               });
             }
           } catch (error) {
-            await abortPreparedArtifacts();
+            await abortPublication();
             if (error instanceof TeamArtifactError) return this.fail(runId, invocationId, error.code);
             throw error;
           }
@@ -666,13 +698,13 @@ export class TeamRuntime {
           && isRecord((agent.outputPorts[result.output.event] as Record<string, unknown>).artifactSlots)
           ? (agent.outputPorts[result.output.event] as Record<string, unknown>).artifactSlots as Record<string, Record<string, unknown>> : {};
         if (Object.entries(outputSlots).some(([slotId, slot]) => slot.required === true && !registeredArtifacts[slotId])) {
-          await abortPreparedArtifacts();
+          await abortPublication();
           return this.fail(runId, invocationId, "AGENT_OUTPUT_ARTIFACT_REQUIRED");
         }
         const current = (await this.args.store.load(runId))!;
         const elapsed = Math.max(0, finishedAt - attemptStartedAt);
         if (current.activeExecutionMs + elapsed > current.activeExecutionBudgetMs) {
-          await abortPreparedArtifacts();
+          await abortPublication();
           return this.fail(runId, invocationId, "ACTIVE_EXECUTION_BUDGET_EXCEEDED");
         }
         let completed: TeamRunRecord;
@@ -691,8 +723,8 @@ export class TeamRuntime {
           state.output = result.kind === "completed"
             ? { ...result, output: { ...result.output, ...(Object.keys(registeredArtifacts).length ? { artifacts: registeredArtifacts } : {}) } }
             : result;
-          if (publicationId && Object.keys(registeredArtifacts).length) {
-            state.artifactPublication = { id: publicationId, artifacts: registeredArtifacts, status: "pending" };
+          if (publicationId && reservation && Object.keys(registeredArtifacts).length) {
+            state.artifactPublication = { id: publicationId, reservation, artifacts: registeredArtifacts, status: "pending" };
           }
           record.activeExecutionMs += elapsed;
           event(record, `${invocationId}:completed`, record.status === "failing" ? "invocation.completed_after_failure_intent" : "handoff.completed", finishedAt, { event: result.output.event });
@@ -700,11 +732,17 @@ export class TeamRuntime {
         } catch (error) {
           const persisted = await this.args.store.load(runId);
           const publication = persisted?.invocations[invocationId]?.artifactPublication;
-          if (!publicationId || !persisted || persisted.invocations[invocationId]?.status !== "completed" || publication?.id !== publicationId) {
-            await abortPreparedArtifacts();
+          if (!publicationId || !persisted || persisted.invocations[invocationId]?.status !== "completed" || publication?.id !== publicationId || publication.status !== "pending") {
+            await abortPublication();
             throw error;
           }
           completed = persisted;
+        }
+        const intent = completed.invocations[invocationId]?.artifactPublication;
+        if (publicationId && reservation && intent?.id === publicationId && intent.status === "pending") {
+          await this.args.artifactStore!.activateOutputPublication({ reservation, references: Object.values(registeredArtifacts) });
+        } else if (publicationId) {
+          await abortPublication();
         }
         return this.commitInvocationArtifacts(completed, invocationId);
       }
@@ -716,13 +754,15 @@ export class TeamRuntime {
 
   private async commitInvocationArtifacts(record: TeamRunRecord, invocationId: string): Promise<TeamRunRecord> {
     const publication = record.invocations[invocationId]?.artifactPublication;
-    if (!publication || publication.status === "committed") return record;
+    if (!publication || publication.status === "committed" || publication.status === "aborted") return record;
     if (!this.args.artifactStore) throw new TeamArtifactError("ARTIFACT_STORE_REQUIRED", "Artifact publication recovery requires an ArtifactStore.");
+    await this.args.artifactStore.activateOutputPublication({ reservation: publication.reservation, references: Object.values(publication.artifacts) });
     for (const reference of Object.values(publication.artifacts)) {
       await this.args.artifactStore.commitOutput({
         owner: { projectId: record.projectId, runId: record.runId }, reference, publicationId: publication.id
       });
     }
+    await this.args.artifactStore.finishOutputPublication({ reservation: publication.reservation });
     return this.update(record.runId, (current) => {
       const state = current.invocations[invocationId];
       if (state.artifactPublication?.id === publication.id) state.artifactPublication.status = "committed";
@@ -730,10 +770,63 @@ export class TeamRuntime {
   }
 
   private async recoverArtifactPublications(record: TeamRunRecord): Promise<TeamRunRecord> {
-    let current = record;
+    if (!this.args.artifactStore) {
+      if (Object.values(record.invocations).some((invocation) => invocation.artifactPublication
+        && invocation.artifactPublication.status !== "aborted")) {
+        throw new TeamArtifactError("ARTIFACT_STORE_REQUIRED", "Artifact publication recovery requires an ArtifactStore.");
+      }
+      return record;
+    }
+    const retainedPublicationIds = Object.values(record.invocations)
+      .filter((invocation) => invocation.artifactPublication && invocation.artifactPublication.status !== "aborted"
+        && (invocation.artifactPublication.status !== "reserved" || invocation.status === "running"))
+      .map((invocation) => invocation.artifactPublication!.id);
+    const liveInvocationIds = Object.values(record.invocations)
+      .filter((invocation) => invocation.status === "running")
+      .map((invocation) => invocation.id);
+    const recovered = await this.args.artifactStore.recoverOutputPublications({
+      owner: { projectId: record.projectId, runId: record.runId }, retainedPublicationIds, liveInvocationIds
+    });
+    for (const invocation of Object.values(record.invocations)) {
+      const publication = invocation.artifactPublication;
+      if (!publication || publication.status === "aborted") continue;
+      const backend = recovered.find((item) => item.reservation.publicationId === publication.id);
+      if (!backend || backend.reservation.invocationId !== invocation.id) {
+        throw new TeamArtifactError("ARTIFACT_RESERVATION_INVALID", "Run and Artifact publication checkpoints do not match.");
+      }
+      if (backend.state === "aborted") {
+        if (publication.status === "reserved" && invocation.status !== "running") {
+          await this.update(record.runId, (current) => {
+            const state = current.invocations[invocation.id]?.artifactPublication;
+            if (state && state.id === publication.id && state.status === "reserved") state.status = "aborted";
+          });
+          continue;
+        }
+        throw new TeamArtifactError("ARTIFACT_RESERVATION_INVALID", "Run intent references an aborted Artifact publication.");
+      }
+      if (backend.reservation.fencingGeneration !== publication.reservation.fencingGeneration) {
+        throw new TeamArtifactError("ARTIFACT_RESERVATION_INVALID", "Run and Artifact publication fencing tokens do not match.");
+      }
+      if (publication.status === "reserved" && invocation.status !== "running") {
+        await this.args.artifactStore.abortOutputPublication({ reservation: publication.reservation });
+        await this.update(record.runId, (current) => {
+          const state = current.invocations[invocation.id]?.artifactPublication;
+          if (state?.id === publication.id && state.status === "reserved") state.status = "aborted";
+        });
+      }
+    }
+    let current = (await this.args.store.load(record.runId))!;
     for (const invocation of Object.values(record.invocations)) {
       if (invocation.artifactPublication?.status !== "pending") continue;
-      current = await this.commitInvocationArtifacts(current, invocation.id);
+      const backend = recovered.find((item) => item.reservation.publicationId === invocation.artifactPublication!.id);
+      if (backend?.state === "committed") {
+        current = await this.update(record.runId, (latest) => {
+          const publication = latest.invocations[invocation.id]?.artifactPublication;
+          if (publication && publication.id === invocation.artifactPublication!.id) publication.status = "committed";
+        });
+      } else {
+        current = await this.commitInvocationArtifacts(current, invocation.id);
+      }
     }
     return current;
   }
@@ -816,7 +909,8 @@ export class TeamRuntime {
           }
           event(record, `${runId}:failure-intent`, "run.failing", this.args.clock.now(), { code: "BINDING_OUTCOME_UNKNOWN_AFTER_RESTART" });
         });
-        return this.settle(runId);
+        const settled = await this.settle(runId);
+        return this.recoverArtifactPublications(settled);
       }
     }
     else if (initial.status === "paused_input_required") throw new TeamRunConflictError("TEAM_RUN_INPUT_REQUIRED_NEW_RUN: input-required Runs cannot resume; create a new Run with the revised input.");

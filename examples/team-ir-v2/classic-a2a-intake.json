@@ -18,7 +18,13 @@
       "required": ["summary"],
       "additionalProperties": false
     },
-    "artifactSlots": {}
+    "artifactSlots": {
+      "evidence": {
+        "required": false,
+        "acceptedMediaTypes": ["text/plain"],
+        "cardinality": "single"
+      }
+    }
   },
   "executionPolicy": { "resultMode": "required", "activeExecutionBudgetMs": 180000 },
   "agents": [
@@ -43,6 +49,13 @@
             "properties": { "summary": { "type": "string", "minLength": 1 } },
             "required": ["summary"],
             "additionalProperties": false
+          },
+          "artifactSlots": {
+            "evidence": {
+              "required": false,
+              "mediaTypes": ["text/plain"],
+              "cardinality": "single"
+            }
           }
         }
       }
@@ -61,7 +74,10 @@
       "id": "intake-to-result",
       "from": { "kind": "agent", "agentId": "remote-intake", "outputPort": "INTAKE_COMPLETE" },
       "to": { "kind": "result" },
-      "map": { "data": { "summary": { "$ref": "$.output.data.summary" } } }
+      "map": {
+        "data": { "summary": { "$ref": "$.output.data.summary" } },
+        "artifacts": { "evidence": { "$ref": "$.output.artifacts.evidence" } }
+      }
     }
   ],
   "orchestration": {
@@ -86,7 +102,7 @@
       "retry": { "maxAttempts": 1, "retryOn": [], "backoff": { "mode": "none" } },
       "capabilities": {
         "inputMediaTypes": ["application/json"],
-        "outputMediaTypes": ["application/json"],
+        "outputMediaTypes": ["application/json", "text/plain"],
         "protocolCapabilities": ["cancel"]
       }
     }

@@ -9,7 +9,7 @@ const card = {
   name: "Intake Agent",
   version: "2.4.1",
   defaultInputModes: ["application/json"],
-  defaultOutputModes: ["application/json"],
+  defaultOutputModes: ["application/json", "text/plain"],
   capabilities: { streaming: false, pushNotifications: false }
 };
 
