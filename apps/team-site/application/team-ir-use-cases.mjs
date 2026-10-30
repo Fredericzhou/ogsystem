@@ -1,4 +1,4 @@
-import { compileTeamIr, teamIRSemanticDigest, validateTeamIr } from "../../../dist/team-ir/index.js";
+import { classifyTeamIrDiagnostics, compileTeamIr, teamIRSemanticDigest, validateTeamIr } from "../../../dist/team-ir/index.js";
 
 export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersionLock, resolveTeamIrReleaseClosure }) {
   if (typeof teamCatalog?.getTeamVersion !== "function") throw new TypeError("Team IR requires a TeamVersion catalog.");
@@ -85,9 +85,10 @@ export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersion
     async validateTeamIr(teamVersionId, teamIR) {
       await readTeam(teamVersionId);
       const diagnostics = validateTeamIr(teamIR);
+      const status = classifyTeamIrDiagnostics(diagnostics);
       return {
         teamVersionId,
-        ok: !diagnostics.some((diagnostic) => diagnostic.severity === "error"),
+        ...status,
         semanticDigest: teamIR && typeof teamIR === "object" ? teamIRSemanticDigest(teamIR) : null,
         diagnostics
       };
@@ -101,11 +102,12 @@ export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersion
         const current = await teamIrStore.read({ workdir: team.workdir });
         if (expectedSemanticDigest !== current.semanticDigest) throw new Error("TEAM_IR_DIGEST_CONFLICT: Team IR changed in another editor.");
         const diagnostics = validateTeamIr(teamIR);
-        if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
-          return { teamVersionId, saved: false, semanticDigest: null, diagnostics };
+        const status = classifyTeamIrDiagnostics(diagnostics);
+        if (!status.draftSaveable) {
+          return { teamVersionId, ...status, saved: false, semanticDigest: null, diagnostics };
         }
         const { semanticDigest } = await teamIrStore.save({ workdir: team.workdir, teamIR });
-        return { teamVersionId, saved: true, semanticDigest, diagnostics };
+        return { teamVersionId, ...status, saved: true, semanticDigest, diagnostics };
       });
     }
   });

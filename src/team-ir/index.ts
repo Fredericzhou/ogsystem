@@ -23,6 +23,7 @@ export * from "./schema-resolver.js";
 export * from "./schema.js";
 export * from "./types.js";
 export * from "./validate.js";
+export * from "./draft-status.js";
 
 function collectSchemas(document: Record<string, unknown>): Array<{ schema: unknown; pointer: string }> {
   const output: Array<{ schema: unknown; pointer: string }> = [];

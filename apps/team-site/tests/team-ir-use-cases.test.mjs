@@ -41,6 +41,35 @@ test("Team IR use cases validate, save with semantic CAS, and read by TeamVersio
   }
 });
 
+test("Team IR use cases persist structurally valid drafts with semantic diagnostics", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-team-ir-draft-"));
+  try {
+    const teamIrStore = createFileTeamIrStore();
+    const useCases = createTeamIrUseCases({
+      teamCatalog: { getTeamVersion: async (id) => ({ teamVersionId: id, teamRootId: "team-root", projectType: "team", teamVersionStatus: "draft", workdir: root }) },
+      teamIrStore,
+      withTeamVersionLock: async (_id, action) => action()
+    });
+    const draft = { ...fixture, handoffs: fixture.handoffs.map((handoff, index) => index === 0
+      ? { ...handoff, map: { ...handoff.map, data: {} } }
+      : handoff) };
+    const checked = await useCases.validateTeamIr("team-v1", draft);
+    assert.equal(checked.ok, false);
+    assert.equal(checked.draftSaveable, true);
+    assert.equal(checked.releaseReady, false);
+    assert.equal(checked.hasStructuralErrors, false);
+    assert.equal(checked.hasSemanticErrors, true);
+    const saved = await useCases.saveTeamIr("team-v1", { teamIR: draft, expectedSemanticDigest: null });
+    assert.equal(saved.saved, true);
+    assert.equal(saved.draftSaveable, true);
+    assert.equal(saved.releaseReady, false);
+    assert.equal(saved.semanticDigest, checked.semanticDigest);
+    assert.deepEqual((await useCases.getTeamIr("team-v1")).teamIR, draft);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Team IR use cases reject collaboration projects and immutable TeamVersions", async () => {
   const base = { teamVersionId: "team-v1", workdir: "/unused", projectType: "team", teamVersionStatus: "draft" };
   let current = {};
