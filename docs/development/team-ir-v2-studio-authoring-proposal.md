@@ -248,19 +248,20 @@ Team IR 字段和运行语义以[Team IR v2 Handoff 设计方案](team-ir-handof
 
 | 提案能力 | 当前实现/证据 | 状态与闭合条件 |
 | --- | --- | --- |
-| 单一 v2 草稿、保存重开、semantic digest/CAS | `/studio/new`、`/studio/teams/:id/ir`、Team IR API；Studio Chromium 覆盖保存、重开、digest、窄屏；Docker `/19` 两轮同 root 已覆盖 validate/save/reopen | 已实现并通过机器验收 |
+| 单一 v2 草稿、保存重开、semantic digest/CAS | `/studio/new`、`/studio/teams/:id/ir`、Team IR API；Studio Chromium 覆盖保存、重开、digest、窄屏；Docker `/20` 连续两轮同 root 已覆盖 validate/save/reopen | 已实现并通过当前机器门 |
 | 多端口、条件 AST、递归 ValueExpr、Join/Loop/Review 编辑 | Studio 结构化编辑器和 Advanced JSON round-trip；`team-ir-studio-browser.test.mjs` 覆盖条件、递归映射、Join、Maker-Checker；不支持混合拓扑在发布前给稳定 code/pointer | 已实现受支持切片；不支持拓扑必须继续 fail closed，不得由 UI 快捷操作生成 |
-| 诊断定位与 Artifact 输入 | 浏览器定位基础字段、JSON Pointer、Review/条件/映射诊断；Artifact 上传后保存映射并在 Simulation/Project Task 读取；可信 Docker resolver 真实矩阵通过 | 已实现并通过机器验收；诊断按适用 code/pointer 覆盖，不要求笛卡尔穷举 |
+| 诊断定位与 Artifact 输入 | 浏览器定位基础字段、JSON Pointer、Review/条件/映射诊断；Artifact 上传后保存映射并在 Simulation/Project Task 读取；Docker `/20` 连续两轮矩阵通过 | 已实现并通过当前机器门；前两轮轮换 `BINDING_INVALID_OUTPUT` 失败作为保留回归，诊断必须原样呈现，不得隐式修复 |
 | 已发布版本编辑/fork | 已发布版本编辑创建新 draft，源版本 status/digest 不变；Studio 和 Docker 同 root 均有 fork 断言 | 已实现；默认作者入口已使用 v2 |
-| Project Task 生命周期和旧格式无写入 | Docker `/19` 两轮七场景同 root 覆盖 validate/save/reopen、Simulation/Release、mount/Task、Review、retry、重启查询、fork、旧 API/旧格式拒绝及 tree digest 不变 | 已实现并通过机器验收 |
-| 结构化模型输出 | resolver 固定 `{event,data,artifactTexts}`、严格校验、无正文日志、不修补/不对 invalid_output 重试；Docker egress relay 和 Binding smoke 通过；请求固定 `format:json_schema` 与 `options.structuredOutputMode=outputFormat` | 框架合同已实现并通过真实 `/19` 两轮矩阵；本机 OpenCode 1.18.20 使用原生 `@ai-sdk/openai` provider 与 `supportsStructuredOutputs:true`。兼容 provider 缺 `event` 的历史失败保留为回归证据 |
+| Project Task 生命周期和旧格式无写入 | Docker `/20` 连续两轮七场景同 root 覆盖 validate/save/reopen、Simulation/Release、mount/Task、Review、retry、重启查询、fork、旧 API/旧格式拒绝及 tree digest 不变；direct `/14` 7/7 对照通过 | 已实现并通过当前机器门 |
+| 结构化模型输出 | resolver 固定 `{event,data,artifactTexts}`、严格校验、无正文日志、不修补/不对 invalid_output 重试；Docker egress relay 和 Binding smoke 通过；请求固定 `format:json_schema` 与 `options.structuredOutputMode=outputFormat` | 框架合同与当前 Docker `/20` 连续两轮机器门通过；前两轮轮换失败仍保留。Studio 显示 provider/adapter pin、阶段和 diagnostic code/pointer；本机 OpenCode 使用原生 provider 与 `supportsStructuredOutputs:true` |
 | A2A pause/cancel/restart | remoteTaskId checkpoint、first-pause owner、迟到 sibling 收敛、重启取消和 outcome unknown 已有 FileStore/Fake/本机 HTTPS 证据 | 本机合同通过；跨主机 CAS 与外部 Agent exactly-once 不在本轮范围 |
 | 普通用户和 AI 作者验收 | 提案已冻结任务、阈值、主持规则和 AI diff 边界 | 待人工用户研究/复核；不得用机器测试代替 5 人任务门，也不得在人工复核前切默认入口 |
 
 ### 12.1 机器验收闭合与人工复核
 
-1. 已完成：使用原生 `@ai-sdk/openai` provider（`supportsStructuredOutputs:true`）和 direct `/13`、Docker `/19` pins，七场景 Docker Project Task 连续两轮 7/7；每轮均完成受控失败重试、重启查询和同 root fork/legacy no-write。
-2. 已完成：Sandbox egress probe 1/1；Runtime/拓扑/A2A 定向门、Studio Chromium、Team Site 全量回归和 `git diff --check` 通过。远端 A2A 与生产身份提供方明确排除在本轮范围。
-3. 后置人工步骤：按本提案第 10 节执行非技术用户任务和最终人工复核；该步骤不再阻塞机器实现、发布合同或自动化验收。
+1. 当前 pin 的 direct `/14` 对照矩阵已通过：无并发运行七个经典场景，`scenarioFailures=[]`，`restartQueries=8`，并完成 Review、Loop、Artifact、controlled retry、fork 和 legacy no-write 断言。
+2. Docker `/20` egress probe 已通过 1/1，镜像和模型 pin 已记录。前两轮真实矩阵各 6/7，`expert-consultation` 与 `structured-debate` 轮换出现 `BINDING_INVALID_OUTPUT`；失败原样保留，严格 envelope/schema 校验保持 fail closed。随后第三、第四轮连续 7/7，覆盖全部七场景、重启查询、Review、Loop、Artifact、controlled retry、fork 和 legacy no-write。
+3. Studio 必须把 Binding/provider、adapter pin、diagnostic code/pointer 和失败阶段显示给作者，并保留原始失败上下文；不得把模型输出失败伪装成可编辑的成功草稿，也不得通过隐式修复改变 IR 语义。
+4. Docker `/20` 连续两轮 7/7、direct `/14` 对照 7/7、egress probe 和最新工作树回归均已通过，阶段 3/4 的机器发布门闭合；按本提案第 10 节执行的非技术用户任务和最终人工复核仍是后置产品步骤。远端 A2A 与生产身份提供方明确排除在本轮范围。
 
-机器验收已经闭合；最终人工复核完成后再形成面向用户的发布签字。设计不引入兼容迁移或旧 Team 读取，standalone OGSystem Mermaid/Project Package 能力仍是独立范围，不属于 Team IR v2 产品入口。
+设计不引入兼容迁移或旧 Team 读取，standalone OGSystem Mermaid/Project Package 能力仍是独立范围，不属于 Team IR v2 产品入口。

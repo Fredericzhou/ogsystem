@@ -1,7 +1,7 @@
 # Team IR v2 落地与验证台账
 
 基线日期：2026-10-30
-状态：机器验收完成；阶段 0、1、2、3、4 均通过，默认 Team Studio 入口已切换为 v2；最终人工复核在全部机器门通过后进行。本机 HTTPS 双进程 A2A Project Task UAT 已通过，外部远端 A2A 服务不属于本轮发布门。历史 `/17`、`/18` provider 失败保留；根因已定位为 OpenCode `@ai-sdk/openai-compatible` 未可靠履约 structured output，当前本机 serve/client 已切换原生 `@ai-sdk/openai` 并设置 provider 级 `supportsStructuredOutputs:true`。当前 adapter 为 direct `/13`、Docker `/19`，请求固定 `format:json_schema`、`options.structuredOutputMode=outputFormat`，resolver 继续严格校验，不补字段、不提取正文、不对 `invalid_output` 自动重试。Docker 模型容器使用 per-invocation internal network，直连公网被拒；固定窄 relay 可到本机 OpenCode serve，任意路径、目标和 CONNECT 被拒。relay 的 host bridge egress 是部署运维边界，不影响本轮模型容器隔离门。
+状态：当前 HEAD 的确定性机器回归通过；历史 Docker `/19` 真实发布门已连续两轮 7/7，但当前代码 pin 已是 direct `/14`、Docker `/20`，尚未用这两个 pin 重跑真实模型矩阵，因此当前 HEAD 的真实发布门待复验。阶段 0、1 及确定性 Runtime/Studio/API 合同通过，阶段 3、4 的当前 pin 验收未闭合；默认 Team Studio 入口代码已切换为 v2，最终人工复核仍后置。本机 HTTPS 双进程 A2A Project Task UAT 已通过，外部远端 A2A 服务不属于本轮发布门。历史 `/17`、`/18` provider 失败保留；根因已定位为 OpenCode `@ai-sdk/openai-compatible` 未可靠履约 structured output，当前本机 serve/client 已切换原生 `@ai-sdk/openai` 并设置 provider 级 `supportsStructuredOutputs:true`。请求固定 `format:json_schema`、`options.structuredOutputMode=outputFormat`，resolver 继续严格校验，不补字段、不提取正文、不对 `invalid_output` 自动重试。Docker 模型容器使用 per-invocation internal network，直连公网被拒；固定窄 relay 可到本机 OpenCode serve，任意路径、目标和 CONNECT 被拒。relay 的 host bridge egress 是部署运维边界，不影响模型容器隔离门。
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
@@ -51,7 +51,7 @@
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
 | v2 Schema / Compiler / Runtime | 通过（支持矩阵 + 发布前拒绝矩阵） | 阶段 1 Schema/Compiler 静态合同 86/86；阶段 2 Runtime/Loop/Join/fail-fast 与拓扑诊断 114/114，A2A pause/cancel/restart 与迟到结果 85/85。支持范围由精确 allowlist 定义；嵌套、重叠及其它未支持 Review/Join/Loop/fan-out 组合在编译前稳定 fail closed，顺序 Loop 复用成员也拒绝；外部副作用 outcome unknown 按设计不重放。 |
 | Studio v2 作者体验 | 通过（机器验收） | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、自由布局端口画布、多 input/output port Schema/Artifact slot、Review gate 控件、递归 ValueExpr 映射、条件 AST、Artifact 上传、Simulation/Release/Project Task 和 fork 均有 Chromium/真实 Docker 证据。诊断按适用 code/pointer 定位到结构化控件或 Advanced JSON；不要求穷举 code × pointer 笛卡尔组合。外部身份系统不属于本轮合同，最终人工用户任务复核后置。 |
-| v2 端到端或发布验收 | 通过（机器发布门） | Docker `/19` 七场景连续两轮 7/7；每轮完成 Chromium Simulation/Release、Project Task、结果/Artifact/Loop/Review 断言、Release Gate controlled failure/retry、8 条重启查询及同 root fork/legacy no-write 断言。Sandbox egress probe 1/1；Team Site 362/362 非跳过项；外部远端 A2A 与生产身份提供方按范围排除。 |
+| v2 端到端或发布验收 | 通过（当前 pin 机器门） | Docker `/20` 第三、第四轮连续 7/7；每轮完成 Chromium Simulation/Release、Project Task、结果/Artifact/Loop/Review 断言、Release Gate controlled failure/retry、8 条重启查询及同 root fork/legacy no-write 断言。direct `/14` 对照 7/7；Sandbox egress probe 1/1；Team Site 非跳过项通过；外部远端 A2A 与生产身份提供方按范围排除。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败保留为稳定性回归记录。 |
 
 ## 3. 实施与验收状态
 
@@ -62,8 +62,8 @@
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 通过；阶段 1 审计及 86/86 聚焦测试确认硬门闭合，见 2026-10-29 阶段 1 追溯复核记录 |
 | 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑必须在发布前稳定拒绝；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 通过；支持范围与 fail-closed 拒绝矩阵固定，拓扑诊断 114/114，A2A pause/cancel/restart 85/85；顺序 Loop 复用成员、嵌套/重叠 Loop 与其它混合组合均有稳定诊断，不把拒绝项描述为支持。 |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 通过（机器验收）；Studio Chromium、真实 Docker resolver、Artifact、Review 控件定位和 fork 流程均通过；外部身份系统和最终人工用户研究后置，不阻断机器发布门。 |
-| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；当前入口拒绝旧 Team 格式且不改写无关路径 | 通过（机器验收）；默认 `/studio/new`、Case/template、版本 fork 已使用 v2；Docker `/19` 两轮同 root 运行覆盖保存/重开、发布、挂载、Task、Review、retry、重启查询、fork 及 legacy no-write；Team Site 全量回归通过。standalone OGSystem Mermaid/Project Package 仍是独立非 Team 路径。 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 通过（当前 pin 机器门）；确定性 Studio/API、direct `/14` 和 Docker `/20` 连续两轮真实流程均通过。外部身份系统和最终人工用户研究后置。 |
+| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；当前入口拒绝旧 Team 格式且不改写无关路径 | 通过（当前 pin 机器门）；默认 `/studio/new`、Case/template、版本 fork 已使用 v2，Docker `/20` 连续两轮覆盖同 root 生命周期、旧格式拒绝和无写入。standalone OGSystem Mermaid/Project Package 仍是独立非 Team 路径。 |
 
 ### 阶段门
 
@@ -1198,6 +1198,43 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 | Runtime / Studio / 全量机器回归 | 通过 | Runtime/Loop/Join/fail-fast/拓扑诊断 114/114；Team Site `pnpm --dir apps/team-site test --test-concurrency=1`：366 个含子测试项，362 通过、0 失败、4 项明确 opt-in 跳过；Studio Chromium 1/1；egress 1/1；最终 `pnpm test`：979 个含子测试项，978 通过、0 失败、1 项 Windows 专项跳过，退出码 0；`git diff --check` 通过。 |
 
 本记录闭合阶段 2、3、4 的机器验收门。阶段 2 的“通过”表示支持 allowlist 和未支持拓扑的发布前稳定拒绝均已验证，不表示 Runtime 支持任意 Loop/Join/Review 组合；阶段 3 的“通过”表示机器作者/发布合同，人工用户研究按提案规定在机器门之后执行；外部远端 A2A、生产身份提供方不属于本轮范围。
+
+### 2026-10-30：当前 HEAD 审核与 pin 证据校准
+
+| 检查项 | 结果 | 结论 |
+| --- | --- | --- |
+| 当前工作树与提交 | `HEAD c4fdf33`；本次审核前 `.ogs/model-selection.json` 曾偏离，现已恢复为 `gpt-6-luna` | 已与 Team IR resolver 的 `codex-gateway/gpt-6-luna` 保持一致；模型选择恢复不改变当前 HEAD 的 pin 真实矩阵待复验结论 |
+| 当前 resolver pin | Docker `ogs-opencode-docker-adapter/20`；direct `ogs-opencode-direct-adapter/14` | 静态 resolver/pin 合同 19/19 通过；pin 版本与历史 `/19` 真实矩阵不同，不能复用为当前 HEAD 的真实发布证据 |
+| 当前 HEAD 全仓确定性回归 | `pnpm test`：979 项，978 通过、0 失败、1 项 Windows 专项跳过，退出码 0 | 代码级回归未发现；Windows 跳过不影响本机结论 |
+| 当前 HEAD Team Site 回归 | `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`：366 项，362 通过、0 失败、4 项明确 opt-in 跳过，退出码 0 | Team Site 确定性合同通过；跳过项包含真实 Docker/A2A 环境门 |
+| 当前 pin 真实模型矩阵 | 未运行；Docker Project Task 与 egress 探针均为 opt-in skip | 当前 HEAD 的 `/20` Docker 七场景两轮、`/14` direct 对照矩阵及其 digest/重启/fork/no-write 证据待补 |
+
+**当前待办清单：**
+
+1. 在本机 OpenCode serve、密码文件和 Docker daemon 均可用时，用 Docker `/20` 重跑 egress probe 及七场景 Project Task 矩阵至少连续两轮；保留 Project/Task/Run ID、semantic/compiled digest、8 条重启查询、controlled retry、fork 和 legacy no-write 断言。
+2. 用 direct `/14` 重跑同一七场景对照矩阵至少一轮；若作为发布门使用，也按 Docker 的连续稳定性要求执行两轮。
+3. 将当前 pin 的真实结果追加到本台账，并以实际结果重新判定阶段 3、4；在此之前不得把当前 HEAD 标为“发布完成”。
+4. 当前 pin 机器门全部通过后，再进行最终人工产品流程复核；外部远端 A2A 和生产身份仍按本轮范围排除。
+
+### 2026-10-30：Docker `/20` 与 direct `/14` 当前 pin 真实矩阵
+
+| 检查项 | 结果 | 证据与结论 |
+| --- | --- | --- |
+| Docker `/20` egress 与服务健康 | 通过 | `OGS_TEAM_IR_V2_DOCKER_EGRESS_PROBE=1 node --test apps/team-site/tests/team-ir-v2-opencode-docker-egress.test.mjs`：1/1；未认证健康请求 401，Basic Auth 200。镜像 `node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914`，model `codex-gateway/gpt-6-luna`。 |
+| Docker `/20` 七场景第 1 轮 | 未通过（6/7） | software、structured-debate、artifact-evidence、conditional-signoff、maker-checker、release-gate 通过；`expert-consultation` 在 Project Task 运行阶段以 `RUN_FAILED:BINDING_INVALID_OUTPUT` 失败。Release Gate controlled failure/retry、重启查询、fork 和 legacy no-write 断言通过；`restartQueries=7`。失败记录不得被成功场景覆盖。 |
+| Docker `/20` 七场景第 2 轮 | 未通过（6/7） | software、expert-consultation、artifact-evidence、conditional-signoff、maker-checker、release-gate 通过；`structured-debate` 在 Simulation 阶段以 `SIMULATION_FAILED:BINDING_INVALID_OUTPUT` 失败。Release Gate controlled failure/retry、重启查询、fork 和 legacy no-write 断言通过；`restartQueries=7`。失败场景与第 1 轮轮换，未触发正文提取、字段补全或 `invalid_output` 自动重试。 |
+| direct `/14` 对照矩阵 | 通过（7/7） | 单独、无并发运行七场景：`scenarioFailures=[]`、`restartQueries=8`，Review/Loop/Artifact、controlled retry、服务重启查询、fork 和 legacy no-write 断言全部通过；完整 TAP 为 2/2。 |
+| 当前 pin 阶段结论 | 未闭合 | direct `/14` 通过不能替代 Docker 发布门。Docker 两轮失败均为严格结构化输出合同错误且场景轮换，根因归类为 provider 履约稳定性；框架继续 fail closed，Studio 应展示 Binding/provider、adapter pin、阶段和 diagnostic code/pointer，不做隐式修复。阶段 3、4 保持进行中，待 Docker 连续两轮 7/7 及最终回归后再改为通过。 |
+
+本轮结果说明模型输出稳定性仍是当前发布门的实际阻塞点，而不是固定 fixture/schema 或 Runtime fallback 缺陷。失败证据只保留脱敏诊断和调用元数据，不保留或提取模型正文；任何降低 schema、补字段、正文解析或自动重试 `invalid_output` 的改动均不符合验收范围。
+
+### 2026-10-30：当前 pin 连续 Docker 机器门闭合
+
+在上述两轮失败记录之后，Docker `/20` 又按无并发顺序完成第三、第四轮，连续两轮均为 7/7，`scenarioFailures=[]`、`restartQueries=8`，并通过 Review、Loop、Artifact、Release Gate controlled failure/retry、服务重启查询、版本 fork 和 legacy no-write。第三轮与第四轮的七个场景均覆盖 `software-team`、`expert-consultation`、`structured-debate`、`artifact-evidence`、`conditional-signoff`、`maker-checker`、`release-gate`；第四轮原始 TAP 保存在 `/tmp/team-ir-docker20-round4.log`，其运行记录和 digest 已由 harness 输出保存。
+
+当前 pin 结论：Docker `/20` 连续稳定门和 direct `/14` 对照 7/7 均通过，Sandbox egress probe 1/1 通过；阶段 3、4 的机器验收门闭合。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败继续作为 provider 稳定性回归证据保留，不改变严格 fail-closed 语义。最终全仓、Team Site 和 Studio 回归完成后，再进行提案规定的人工产品复核。
+
+最终回归结果：`pnpm test` 979 项中 978 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 366 项中 362 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。当前工作树的机器验收闭合，剩余步骤是提案第 10 节规定的人工产品复核与提交基线。
 
 ## 6. Codex / 实施代理工作约定
 
