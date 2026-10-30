@@ -1,7 +1,7 @@
 # Team IR v2 落地与验证台账
 
 基线日期：2026-10-30
-状态：当前 HEAD 的确定性机器回归通过；历史 Docker `/19` 真实发布门已连续两轮 7/7，但当前代码 pin 已是 direct `/14`、Docker `/20`，尚未用这两个 pin 重跑真实模型矩阵，因此当前 HEAD 的真实发布门待复验。阶段 0、1 及确定性 Runtime/Studio/API 合同通过，阶段 3、4 的当前 pin 验收未闭合；默认 Team Studio 入口代码已切换为 v2，最终人工复核仍后置。本机 HTTPS 双进程 A2A Project Task UAT 已通过，外部远端 A2A 服务不属于本轮发布门。历史 `/17`、`/18` provider 失败保留；根因已定位为 OpenCode `@ai-sdk/openai-compatible` 未可靠履约 structured output，当前本机 serve/client 已切换原生 `@ai-sdk/openai` 并设置 provider 级 `supportsStructuredOutputs:true`。请求固定 `format:json_schema`、`options.structuredOutputMode=outputFormat`，resolver 继续严格校验，不补字段、不提取正文、不对 `invalid_output` 自动重试。Docker 模型容器使用 per-invocation internal network，直连公网被拒；固定窄 relay 可到本机 OpenCode serve，任意路径、目标和 CONNECT 被拒。relay 的 host bridge egress 是部署运维边界，不影响模型容器隔离门。
+状态：当前 pin 的机器验收完成；Docker `/20` egress 通过，七场景连续两轮 7/7，direct `/14` 对照 7/7，阶段 0、1、2、3、4 的机器门均通过；最终人工产品复核仍后置。本机 HTTPS 双进程 A2A Project Task UAT 已通过，外部远端 A2A 服务不属于本轮发布门。前两轮 `/20` provider `BINDING_INVALID_OUTPUT` 失败保留；根因按 provider 履约稳定性记录，未放宽 structured output 合同。当前本机 serve/client 使用原生 `@ai-sdk/openai` 并设置 provider 级 `supportsStructuredOutputs:true`。请求固定 `format:json_schema`、`options.structuredOutputMode=outputFormat`，resolver 继续严格校验，不补字段、不提取正文、不对 `invalid_output` 自动重试。Docker 模型容器使用 per-invocation internal network，直连公网被拒；固定窄 relay 可到本机 OpenCode serve，任意路径、目标和 CONNECT 被拒。relay 的 host bridge egress 是部署运维边界，不影响模型容器隔离门。
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
@@ -1199,22 +1199,22 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 本记录闭合阶段 2、3、4 的机器验收门。阶段 2 的“通过”表示支持 allowlist 和未支持拓扑的发布前稳定拒绝均已验证，不表示 Runtime 支持任意 Loop/Join/Review 组合；阶段 3 的“通过”表示机器作者/发布合同，人工用户研究按提案规定在机器门之后执行；外部远端 A2A、生产身份提供方不属于本轮范围。
 
-### 2026-10-30：当前 HEAD 审核与 pin 证据校准
+### 2026-10-30：当前 HEAD 审核与 pin 证据校准（前置快照已闭合）
 
 | 检查项 | 结果 | 结论 |
 | --- | --- | --- |
-| 当前工作树与提交 | `HEAD c4fdf33`；本次审核前 `.ogs/model-selection.json` 曾偏离，现已恢复为 `gpt-6-luna` | 已与 Team IR resolver 的 `codex-gateway/gpt-6-luna` 保持一致；模型选择恢复不改变当前 HEAD 的 pin 真实矩阵待复验结论 |
-| 当前 resolver pin | Docker `ogs-opencode-docker-adapter/20`；direct `ogs-opencode-direct-adapter/14` | 静态 resolver/pin 合同 19/19 通过；pin 版本与历史 `/19` 真实矩阵不同，不能复用为当前 HEAD 的真实发布证据 |
+| 当前工作树与提交 | `HEAD b8fe01d`；工作树干净；`.ogs/model-selection.json` 为 `gpt-6-luna` | 已与 Team IR resolver 的 `codex-gateway/gpt-6-luna` 保持一致；提交包含机器验收闭合记录与 Studio 提案同步 |
+| 当前 resolver pin | Docker `ogs-opencode-docker-adapter/20`；direct `ogs-opencode-direct-adapter/14` | 静态 resolver/pin 合同 19/19 通过；随后已完成当前 pin 的真实矩阵，历史 `/19` 结果仅作历史记录 |
 | 当前 HEAD 全仓确定性回归 | `pnpm test`：979 项，978 通过、0 失败、1 项 Windows 专项跳过，退出码 0 | 代码级回归未发现；Windows 跳过不影响本机结论 |
 | 当前 HEAD Team Site 回归 | `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`：366 项，362 通过、0 失败、4 项明确 opt-in 跳过，退出码 0 | Team Site 确定性合同通过；跳过项包含真实 Docker/A2A 环境门 |
-| 当前 pin 真实模型矩阵 | 未运行；Docker Project Task 与 egress 探针均为 opt-in skip | 当前 HEAD 的 `/20` Docker 七场景两轮、`/14` direct 对照矩阵及其 digest/重启/fork/no-write 证据待补 |
+| 当前 pin 真实模型矩阵 | 已完成 | Docker `/20` egress 1/1，第三、第四轮连续 7/7；direct `/14` 7/7。Project/Task/Run、digest、重启、retry、fork 和 legacy no-write 证据见紧随其后的当前 pin 记录 |
 
-**当前待办清单：**
+**前置审核快照中的待办已完成：**
 
-1. 在本机 OpenCode serve、密码文件和 Docker daemon 均可用时，用 Docker `/20` 重跑 egress probe 及七场景 Project Task 矩阵至少连续两轮；保留 Project/Task/Run ID、semantic/compiled digest、8 条重启查询、controlled retry、fork 和 legacy no-write 断言。
-2. 用 direct `/14` 重跑同一七场景对照矩阵至少一轮；若作为发布门使用，也按 Docker 的连续稳定性要求执行两轮。
-3. 将当前 pin 的真实结果追加到本台账，并以实际结果重新判定阶段 3、4；在此之前不得把当前 HEAD 标为“发布完成”。
-4. 当前 pin 机器门全部通过后，再进行最终人工产品流程复核；外部远端 A2A 和生产身份仍按本轮范围排除。
+1. Docker `/20` egress 与七场景连续两轮机器门已完成。
+2. direct `/14` 七场景对照矩阵已完成。
+3. 当前 pin 结果已追加，阶段 3、4 机器门已改为通过。
+4. 剩余仅为提案规定的最终人工产品复核；外部远端 A2A 和生产身份仍按本轮范围排除。
 
 ### 2026-10-30：Docker `/20` 与 direct `/14` 当前 pin 真实矩阵
 
