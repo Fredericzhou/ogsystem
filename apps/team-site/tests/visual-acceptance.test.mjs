@@ -44,7 +44,7 @@ test("default Team Studio creation produces a native v2 draft on desktop and mob
     assert.match(page.url(), /\/projects$/);
     await page.locator("#projects-view h1").waitFor();
     assert.equal(await page.locator("#projects-view h1").innerText(), "协作项目");
-    assert.equal(await page.locator("#landing-view").count(), 0);
+    assert.equal(await page.locator("#landing-view:not(.hidden)").count(), 0);
 
     await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
     assert.match(await page.locator(".new-team-heading h1").innerText(), /Team IR v2/);
@@ -53,7 +53,8 @@ test("default Team Studio creation produces a native v2 draft on desktop and mob
     await page.locator("#new-project-form textarea[name=overview]").fill("Produce a concise, evidence-backed recommendation.");
     await page.locator("#new-project-form button[type=submit]").click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/ir$/);
-    await page.locator("#team-ir-editor").waitFor();
+    await page.locator(".studio-design-workbench").waitFor();
+    await page.locator("#project-graph-stage svg").first().waitFor();
     const teamId = page.url().match(/\/teams\/([a-z0-9-]+)\/ir$/)?.[1];
     const [team, stored] = await Promise.all([
       page.request.get(`${url}/api/v1/team-versions/${teamId}`).then((response) => response.json()),

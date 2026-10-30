@@ -224,7 +224,8 @@ test("Team Site shell keeps navigation accessible and resilient to storage restr
     }
     await desktopPage.setViewportSize({ width: 1440, height: 900 });
     await desktopPage.goto(`${url}/studio/teams/${teamVersionId}/ir`, { waitUntil: "networkidle" });
-    await desktopPage.locator("#team-ir-editor").waitFor();
+    await desktopPage.locator(".studio-design-workbench").waitFor();
+    await desktopPage.locator("#project-graph-stage svg").first().waitFor();
     await desktopPage.setViewportSize({ width: 1440, height: 900 });
     await desktopPage.locator("#site-theme-toggle").click();
     const contrast = await desktopPage.evaluate(() => {

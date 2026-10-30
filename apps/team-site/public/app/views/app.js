@@ -8,6 +8,9 @@ import { labelEvent as localizedEventLabel, text } from "../i18n.js";
 import { createRouter } from "../router.js";
 import { renderSharedResourcePage } from "./shared-resources.js";
 import { renderPlatformRoleSources } from "./platform-role-sources.js";
+import { END_ID, START_ID, applyTeamIrPatch, graphAuthoringToTeamIr, readGraphLayout, teamIrToGraphAuthoring, writeGraphLayout } from "../team-ir-graph-adapter.js";
+let studioGraphLoad;
+const mountedStudioGraphs = new Set();
 let fallbackUuidCounter = 0;
 function createUuid() {
   const cryptoApi = globalThis.crypto;
@@ -20,6 +23,37 @@ function createUuid() {
   }
   fallbackUuidCounter += 1;
   return `fallback-${Date.now().toString(36)}-${fallbackUuidCounter.toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+function ensureStudioGraphBundle() {
+  if (window.OGSStudioGraphBundle?.mountStudioX6Bridge) return Promise.resolve();
+  if (!studioGraphLoad) studioGraphLoad = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "/assets/ogs-studio-graph.js";
+    script.onload = () => resolve();
+    script.onerror = () => { studioGraphLoad = null; reject(new Error("Studio graph engine could not be loaded.")); };
+    document.head.append(script);
+  });
+  return studioGraphLoad;
+}
+function mountStudioGraph(root, options) {
+  const mount = window.OGSStudioGraphBundle?.mountStudioX6Bridge;
+  if (!mount) return undefined;
+  let currentOptions = { ...options };
+  mount(root, currentOptions);
+  mountedStudioGraphs.add(root);
+  return Object.freeze({
+    update(changes) {
+      currentOptions = { ...currentOptions, ...changes };
+      mount(root, currentOptions);
+    },
+    setRuntimeProgress(events) { window.OGSStudioGraphBundle?.setStudioX6RuntimeProgress?.(root, events); },
+    focusRuntimeHandoff(handoffId) { window.OGSStudioGraphBundle?.focusStudioX6RuntimeHandoff?.(root, handoffId); }
+  });
+}
+function disposeStudioGraphs() {
+  const dispose = window.OGSStudioGraphBundle?.disposeStudioX6Bridge;
+  for (const stage of mountedStudioGraphs) dispose?.(stage);
+  mountedStudioGraphs.clear();
 }
 function professionalWorkspaceUrl(projectId, runId = "") {
   if (!projectId || !runId) return "";
@@ -158,6 +192,40 @@ Object.assign(copy.en, {
   targetHint: "Include the goal, role relationships, rough workflow, inputs, and expected outputs so the team structure can be generated accurately.",
   advancedWorkspace: "View full run"
 });
+
+const graphLabels = {
+  "zh-CN": {
+    viewportGroup: "图谱视图", editGroup: "编辑图谱", teamConfiguration: "团队配置",
+    zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布",
+    autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局",
+    topologyOrder: "流转顺序", technicalDetails: "Handoff 编号", enabled: "开启", disabled: "关闭",
+    layoutSwitched: "已切换为{layout}布局", generate: "AI 构建", debugRun: "仿真", close: "关闭", debugRunShort: "仿真",
+    quickOpen: "快速定位", quickOpenPlaceholder: "搜索 Agent 或 Handoff", quickOpenEmpty: "没有匹配的 Agent 或 Handoff。",
+    quickOpenRole: "Agent", quickOpenFlow: "Handoff", contextEditRole: "编辑 Agent", contextEditFlow: "编辑 Handoff",
+    contextInsertRole: "插入 Agent", contextDelete: "删除", minimap: "图谱导航", addRole: "新增 Agent", addEdge: "新增 Handoff",
+    editSelection: "编辑所选", editRole: "编辑 Agent", editEdge: "编辑 Handoff", deleteSelection: "删除所选", undo: "撤销", redo: "重做",
+    validateWorkbench: "校验", saveWorkbench: "保存", ready: "就绪", graphUnavailable: "图谱不可用", graphReady: "图谱已载入",
+    fixMermaidBeforeGraphEditing: "请先修复结构诊断，再编辑图谱。", noRolesAvailable: "请先添加 Agent。", selectRoleBeforeAddingEdge: "请先选择 Agent，再新增 Handoff。",
+    invalidConnection: "无效的 Handoff 端点。", entryRoleDeletionBlocked: "不能删除入口 Agent。", invalidEdgeEndpoints: "Handoff 端点无效。",
+    duplicateRoleId: "Agent ID 已存在。", invalidRoleId: "Agent ID 格式无效。", duplicateEdge: "该 Handoff 已存在。", invalidEventType: "输出 Port 无效。",
+    deleteRoleConfirm: "确定删除 Agent {roleId} 吗？", editBlocked: "通过结构校验后才能编辑图谱。", exportPng: "导出 PNG", boundaryEntry: "Run", boundaryEnd: "Result"
+  },
+  en: {
+    viewportGroup: "Graph view", editGroup: "Edit graph", teamConfiguration: "Team configuration",
+    zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph",
+    autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout",
+    topologyOrder: "Handoff order", technicalDetails: "Handoff ID", enabled: "On", disabled: "Off", layoutSwitched: "Switched to {layout} layout",
+    generate: "AI Build", debugRun: "Simulation", close: "Close", debugRunShort: "Simulation", quickOpen: "Quick locate",
+    quickOpenPlaceholder: "Search Agents or Handoffs", quickOpenEmpty: "No matching Agents or Handoffs.", quickOpenRole: "Agent", quickOpenFlow: "Handoff",
+    contextEditRole: "Edit Agent", contextEditFlow: "Edit Handoff", contextInsertRole: "Insert Agent", contextDelete: "Delete", minimap: "Graph navigator",
+    addRole: "Add Agent", addEdge: "Add Handoff", editSelection: "Edit selected", editRole: "Edit Agent", editEdge: "Edit Handoff", deleteSelection: "Delete selected",
+    undo: "Undo", redo: "Redo", validateWorkbench: "Validate", saveWorkbench: "Save", ready: "Ready", graphUnavailable: "Graph unavailable", graphReady: "Graph loaded",
+    fixMermaidBeforeGraphEditing: "Fix structural diagnostics before editing the graph.", noRolesAvailable: "Add an Agent first.", selectRoleBeforeAddingEdge: "Select an Agent before adding a Handoff.",
+    invalidConnection: "Invalid Handoff endpoints.", entryRoleDeletionBlocked: "The entry Agent cannot be deleted.", invalidEdgeEndpoints: "Invalid Handoff endpoints.",
+    duplicateRoleId: "Agent ID already exists.", invalidRoleId: "Invalid Agent ID.", duplicateEdge: "That Handoff already exists.", invalidEventType: "Invalid output Port.",
+    deleteRoleConfirm: "Delete Agent {roleId}?", editBlocked: "Pass structural validation before editing the graph.", exportPng: "Export PNG", boundaryEntry: "Run", boundaryEnd: "Result"
+  }
+};
 
 function labelEvent(event) { return localizedEventLabel(event, copy); }
 
@@ -1863,7 +1931,145 @@ async function renderStudioTeamInfo(teamVersionId, pageRequest = state.activeReq
   }
 }
 
+async function renderStudioTeamIrWorkbench(teamVersionId, pageRequest = state.activeRequest) {
+  const root = $("#studio-view");
+  const english = state.locale === "en";
+  const t = (en, zh) => english ? en : zh;
+  root.innerHTML = '<div class="project-loading">' + t("Loading Team IR v2 graph…", "正在读取 Team IR v2 图谱…") + '</div>';
+    const [teamResponse, irResponse, catalogResponse] = await Promise.all([
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/catalog`)
+    ]);
+    const [team, stored, catalog] = await Promise.all([teamResponse.json(), irResponse.json(), catalogResponse.json()]);
+    if (!teamResponse.ok) throw new Error(team.error || t("Unable to load TeamVersion.", "无法读取团队版本。"));
+    if (!irResponse.ok || stored.teamIR?.schemaVersion !== 2) throw new Error(stored.error || "TEAM_IR_V2_REQUIRED");
+    if (pageRequest && !isCurrentRequest(pageRequest)) return;
+    const editable = team.teamVersionStatus === "draft";
+    let draft = structuredClone(stored.teamIR);
+    let expectedSemanticDigest = stored.semanticDigest || null;
+    let selectedRoleId = "";
+    let selectedFlowId = "";
+    let graph;
+    let dirty = false;
+    const layout = readGraphLayout(team.teamId || draft.team?.id || teamVersionId, teamVersionId);
+    const knownPackages = new Map((catalog?.packages || []).map((item) => [item.ref, item]));
+    const knownBindings = new Map((catalog?.bindings || []).map((item) => [item.ref, item]));
+    for (const agent of draft.agents || []) {
+      if (agent.packageRef && !knownPackages.has(agent.packageRef)) knownPackages.set(agent.packageRef, { ref: agent.packageRef, label: agent.packageRef, version: "saved" });
+      if (agent.bindingRef && !knownBindings.has(agent.bindingRef)) knownBindings.set(agent.bindingRef, { ref: agent.bindingRef, label: agent.bindingRef, modelRef: "saved" });
+    }
+    const packageOptions = [...knownPackages.values()].map((item) => `<option value="${esc(item.ref)}">${esc(item.label || item.ref)} · ${esc(item.version || "")}</option>`).join("");
+    const bindingOptions = [...knownBindings.values()].map((item) => `<option value="${esc(item.ref)}">${esc(item.label || item.ref)} · ${esc(item.modelRef || "")}</option>`).join("");
+    const renderInspector = () => {
+      const inspector = root.querySelector("#studio-property-inspector");
+      if (!inspector) return;
+      const role = draft.agents?.find((item) => item.id === selectedRoleId);
+      const flow = draft.handoffs?.find((item) => item.id === selectedFlowId);
+      if (!role && !flow) {
+        inspector.innerHTML = `<div class="studio-inspector-empty"><strong>${t("Select an Agent or Handoff", "选择 Agent 或 Handoff")}</strong><p>${t("The graph keeps the original layout. v2 semantics are edited here.", "图谱保留原版布局，v2 语义在此处编辑。")}</p></div>`;
+        return;
+      }
+      if (role) {
+        const inputPorts = Object.keys(role.inputPorts || {}).map((id) => `<li><code>${esc(id)}</code></li>`).join("") || `<li>${t("None", "暂无")}</li>`;
+        const outputPorts = Object.keys(role.outputPorts || {}).map((id) => `<li><code>${esc(id)}</code></li>`).join("") || `<li>${t("None", "暂无")}</li>`;
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Agent</span><h2>${esc(role.id)}</h2></div><span class="status-chip">v2</span></div><label class="field"><span>${t("Package", "角色包")}</span><select data-v2-role-package ${editable ? "" : "disabled"}><option value="">${t("Select a trusted package", "选择可信角色包")}</option>${packageOptions}</select></label><label class="field"><span>${t("Binding", "Binding")}</span><select data-v2-role-binding ${editable ? "" : "disabled"}><option value="">${t("Select a trusted binding", "选择可信 Binding")}</option>${bindingOptions}</select></label><div class="studio-port-summary"><div><strong>${t("Input Ports", "输入 Port")}</strong><ul>${inputPorts}</ul></div><div><strong>${t("Output Ports", "输出 Port")}</strong><ul>${outputPorts}</ul></div></div><p class="field-hint">${t("Port schemas and advanced contracts remain in Advanced JSON.", "Port Schema 与高级合同保留在高级 JSON 中。")}</p></section>`;
+        const packageSelect = inspector.querySelector("[data-v2-role-package]");
+        const bindingSelect = inspector.querySelector("[data-v2-role-binding]");
+        if (packageSelect) { packageSelect.value = role.packageRef || ""; packageSelect.addEventListener("change", () => applyRoleField("packageRef", packageSelect.value)); }
+        if (bindingSelect) { bindingSelect.value = role.bindingRef || ""; bindingSelect.addEventListener("change", () => applyRoleField("bindingRef", bindingSelect.value)); }
+        return;
+      }
+      const fromLabel = flow.from?.kind === "run" ? "Run" : `${flow.from?.agentId || "?"}.${flow.from?.outputPort || "?"}`;
+      const toLabel = flow.to?.kind === "result" ? "Result" : `${flow.to?.agentId || "?"}.${flow.to?.inputPort || "?"}`;
+      inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Handoff</span><h2>${esc(flow.id)}</h2></div><span class="status-chip">v2</span></div><dl class="studio-version-facts"><div><dt>${t("From", "来源")}</dt><dd><code>${esc(fromLabel)}</code></dd></div><div><dt>${t("To", "目标")}</dt><dd><code>${esc(toLabel)}</code></dd></div></dl><label class="field"><span>${t("Condition JSON", "条件 JSON")}</span><textarea data-v2-flow-condition rows="8" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(flow.when?.condition || null, null, 2))}</textarea></label><label class="field"><span>${t("Mapping JSON", "映射 JSON")}</span><textarea data-v2-flow-map rows="8" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(flow.map || { data: {} }, null, 2))}</textarea></label><button class="secondary-button" type="button" data-v2-apply-flow ${editable ? "" : "disabled"}>${t("Apply Handoff", "应用 Handoff")}</button><p class="form-status" data-v2-inspector-status role="status"></p></section>`;
+        inspector.querySelector("[data-v2-apply-flow]")?.addEventListener("click", () => {
+          const conditionField = inspector.querySelector("[data-v2-flow-condition]");
+          const mapField = inspector.querySelector("[data-v2-flow-map]");
+          const statusField = inspector.querySelector("[data-v2-inspector-status]");
+          let condition;
+          let map;
+          try { condition = JSON.parse(conditionField.value); map = JSON.parse(mapField.value); } catch (error) { statusField.textContent = error.message || t("Invalid JSON.", "JSON 无效。"); return; }
+          const result = applyTeamIrPatch(draft, { op: "update", collection: "handoffs", id: flow.id, fields: { when: condition ? { ...(flow.when || {}), condition } : undefined, map } });
+          if (!result.ok) { statusField.textContent = result.error; return; }
+          draft = result.teamIR; dirty = true; redraw();
+          statusField.textContent = t("Handoff updated.", "Handoff 已更新。");
+        });
+    };
+    const applyRoleField = (field, value) => {
+      const result = applyTeamIrPatch(draft, { op: "update", collection: "agents", id: selectedRoleId, fields: { [field]: value || undefined } });
+      if (!result.ok) { showToast(result.error); return; }
+      draft = result.teamIR; dirty = true; redraw();
+    };
+    const graphMarkup = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">OGS Studio · ${esc(team.name || team.teamName || teamVersionId)}</div><h1>${t("Team graph", "团队图谱")}</h1><p>${t("Original graph workspace with Team IR v2 semantics.", "沿用原版图谱工作台，语义由 Team IR v2 提供。")}</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? t("Design", "设计中") : t("Released", "已发布")}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<div class="studio-design-workbench-host"><div class="studio-design-workbench"><section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2>${t("Collaboration graph", "团队协作图谱")}</h2><p id="project-design-status" class="form-status" role="status">${t("Loading graph…", "正在加载图谱…")}</p></div><div class="form-actions"><button type="button" class="secondary-button" data-v2-open-inspector>${t("Inspector", "属性")}</button><button type="button" class="primary-button" data-v2-save ${editable ? "" : "disabled"}>${t("Save", "保存")}</button></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="${t("Team IR v2 graph", "Team IR v2 团队图谱")}"></div><p class="preview-note">${t("Drag nodes to change layout only. Select an Agent or Handoff to edit v2 semantics.", "拖动节点只改变布局；选择 Agent 或 Handoff 编辑 v2 语义。")}</p></section><aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="${t("Team configuration", "团队配置")}" aria-hidden="true"><div class="studio-asset-drawer-head"><strong>${t("Team configuration", "团队配置")}</strong><button type="button" class="close-button" data-v2-close-inspector aria-label="${t("Close", "关闭")}">×</button></div><div id="studio-assets-property-view"><section class="studio-property-inspector" id="studio-property-inspector"></section><div class="studio-asset-editor-actions"><span class="form-hint">${t("Layout is local and excluded from semantic digest.", "布局只保存在本机，不进入语义 digest。")}</span><button type="button" class="primary-button" data-v2-save-inspector ${editable ? "" : "disabled"}>${t("Save", "保存")}</button></div></div></aside></div></div><section class="project-panel" data-v2-diagnostics><div class="panel-head"><div><span class="section-kicker">${t("Validation", "校验")}</span><h2>${t("Team IR diagnostics", "Team IR 诊断")}</h2></div></div><ul class="studio-event-list ir-diagnostics" data-v2-diagnostics-list></ul><p class="form-status" data-v2-status role="status" aria-live="polite"></p></section>`;
+    root.innerHTML = graphMarkup;
+    const stage = root.querySelector("#project-graph-stage");
+    const status = root.querySelector("#project-design-status");
+    await ensureStudioGraphBundle();
+    const redraw = () => {
+      const authoring = teamIrToGraphAuthoring(draft, layout);
+      graph?.update({ authoring, labels: graphLabels[state.locale], selectedRoleId, selectedFlowKey: selectedFlowId });
+      renderInspector();
+    };
+    const save = async () => {
+      const buttons = [...root.querySelectorAll("[data-v2-save], [data-v2-save-inspector]")];
+      if (!editable || !dirty) return;
+      buttons.forEach((button) => { button.disabled = true; });
+      try {
+        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: draft, expectedSemanticDigest }) });
+        const payload = await response.json();
+        if (!response.ok || !payload.saved) throw new Error(payload.error || t("Team IR draft was not saved.", "Team IR 草稿未保存。"));
+        expectedSemanticDigest = payload.semanticDigest || expectedSemanticDigest; dirty = false;
+        root.querySelector("[data-v2-status]").textContent = payload.releaseReady === false ? t("Draft saved; release diagnostics remain.", "草稿已保存；仍有发布诊断。") : t("Saved and release-ready.", "已保存，可发布。");
+        renderDiagnostics(payload.diagnostics || []);
+      } catch (error) { root.querySelector("[data-v2-status]").textContent = error.message || t("Unable to save.", "保存失败。"); }
+      finally { buttons.filter((button) => button.isConnected).forEach((button) => { button.disabled = false; }); }
+    };
+    const renderDiagnostics = (diagnostics) => {
+      const list = root.querySelector("[data-v2-diagnostics-list]");
+      list.innerHTML = (diagnostics || []).map((item) => `<li><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> ${esc(item.message || "")}</li>`).join("") || `<li>${t("No diagnostics.", "暂无诊断。")}</li>`;
+    };
+    const selectFlow = (flowKey) => {
+      const flow = (draft.handoffs || []).find((handoff) => {
+        const source = handoff.from?.kind === "run" ? START_ID : handoff.from?.agentId;
+        const target = handoff.to?.kind === "result" ? END_ID : handoff.to?.agentId;
+        const eventType = handoff.from?.kind === "agent" ? handoff.from.outputPort : "START";
+        return flowKey === handoff.id || flowKey === `${source}:${eventType}:${target}`;
+      });
+      if (!flow) return;
+      selectedFlowId = flow.id; selectedRoleId = "";
+      root.querySelector("#studio-asset-drawer")?.classList.add("is-open");
+      root.querySelector("#studio-asset-drawer")?.setAttribute("aria-hidden", "false");
+      renderInspector();
+    };
+    stage.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-cell-id]") : null;
+      const flowId = target?.getAttribute("data-cell-id") || "";
+      if (flowId && (draft.handoffs || []).some((handoff) => handoff.id === flowId)) selectFlow(flowId);
+    });
+    graph = mountStudioGraph(stage, {
+      mode: "product-edit", authoring: teamIrToGraphAuthoring(draft, layout), readOnly: !editable,
+      initialLayoutMode: "flow", defaultAutoLayout: true, defaultAutoLayoutRequestId: 1,
+      labels: graphLabels[state.locale], onSelectRole: (id) => { selectedRoleId = id; selectedFlowId = ""; root.querySelector("#studio-asset-drawer")?.classList.add("is-open"); root.querySelector("#studio-asset-drawer")?.setAttribute("aria-hidden", "false"); renderInspector(); },
+      onSelectFlow: selectFlow,
+      onApplyCanvas: async (canvas) => { for (const node of (canvas?.nodes || [])) if (node?.id) { writeGraphLayout(team.teamId || draft.team?.id || teamVersionId, teamVersionId, node.id, { x: node.x, y: node.y, width: node.width, height: node.height }); } },
+      onApplyCommand: async (result) => { const next = graphAuthoringToTeamIr(draft, result.authoring); draft = next; dirty = true; redraw(); },
+      onSaveWorkbench: save, canSaveWorkbench: editable, onToggleFullscreen: async () => { if (document.fullscreenElement) await document.exitFullscreen(); else await stage.requestFullscreen(); },
+      onStatusChange: (message) => { if (status) status.textContent = message; }, onToast: (tone, message) => showToast(message)
+    });
+    root.querySelector("[data-v2-save]")?.addEventListener("click", save);
+    root.querySelector("[data-v2-save-inspector]")?.addEventListener("click", save);
+    root.querySelector("[data-v2-open-inspector]")?.addEventListener("click", () => { const drawer = root.querySelector("#studio-asset-drawer"); drawer?.classList.add("is-open"); drawer?.setAttribute("aria-hidden", "false"); });
+    root.querySelector("[data-v2-close-inspector]")?.addEventListener("click", () => { const drawer = root.querySelector("#studio-asset-drawer"); drawer?.classList.remove("is-open"); drawer?.setAttribute("aria-hidden", "true"); });
+    renderDiagnostics([]); renderInspector();
+    return;
+}
+
 async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeRequest) {
+  return renderStudioTeamIrWorkbench(teamVersionId, pageRequest);
+}
+
+async function renderStudioTeamIrLongForm(teamVersionId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
   root.innerHTML = '<div class="project-loading">Loading Team IR v2…</div>';
   try {

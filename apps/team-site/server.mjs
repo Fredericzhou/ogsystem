@@ -492,6 +492,19 @@ async function serveStatic(pathname, response) {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
+  if (request.method === "GET" && url.pathname === "/assets/ogs-studio-graph.js") {
+    try {
+      response.writeHead(200, {
+        "content-type": "text/javascript; charset=utf-8",
+        "cache-control": "no-cache",
+        "x-content-type-options": "nosniff"
+      });
+      response.end(await readFile(resolve(root, "../../dist/visualizer/studio-client/studio-graph.js")));
+    } catch {
+      sendJson(response, 503, { error: "Build OGSystem before starting the team site." });
+    }
+    return;
+  }
   if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases })) return;
   if (await handleRoleSourceAdminRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases, scheduler: roleSourceSyncScheduler })) return;
   if (await handleRoleSourceCatalogRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases })) return;

@@ -1264,7 +1264,7 @@ The visualizer is a lightweight read-mostly observability server. It renders pro
 
 历史 Team Site Studio 设计页曾使用 `/studio/teams/:id/design` 和 `PUT /api/v1/team-versions/:teamVersionId/save`，其图形岛与旧 Team authoring 文档仅供历史记录参考；当前 Team IR v2 作者入口和保存合同见下方说明。旧路径不会创建或改写 Team IR v2 数据。
 
-**Team IR v2 Studio 当前入口：** 新建团队使用 `/studio/new`，可选择空白草稿或 8 个已校验经典 Team IR v2 模板；编辑使用 `/studio/teams/:teamVersionId/ir`，发布检查使用 `/studio/teams/:teamVersionId/release`。模板和“参考经典团队”操作始终创建独立草稿，不覆盖当前版本。编辑器从受信 resolver 读取不含凭据的 Package/Binding 目录，提供多端口、端点、条件 AST、递归映射、Join `baseMapping` 归属、Schema/Artifact 快速编辑和 Advanced JSON；结构有效但语义不完整的草稿可保存，结构错误由服务端拒绝，Simulation/发布仍要求服务端 `releaseReady`。快速 Schema/Artifact 编辑先读取最新 Advanced JSON 基线；空名、非法名或重复名不会提交部分结果，成功重命名保留原元数据。旧 `/design`、`/graph`、`/chat` Team API 不属于 v2 作者入口并按兼容策略拒绝；完整 A1 普通用户任务验收仍以开发台账为准。
+**Team IR v2 Studio 当前入口：** 新建团队使用 `/studio/new`，可选择空白草稿或 8 个已校验经典 Team IR v2 模板；编辑使用 `/studio/teams/:teamVersionId/ir`，发布检查使用 `/studio/teams/:teamVersionId/release`。编辑页保留原版图谱工作台的画布、工具栏和属性抽屉：拖动节点只保存本机布局，选择 Agent 或 Handoff 后在右侧检查器编辑 v2 语义。模板和“参考经典团队”操作始终创建独立草稿，不覆盖当前版本。编辑器从受信 resolver 读取不含凭据的 Package/Binding 目录，提供多端口、端点、条件 AST、递归映射、Join `baseMapping` 归属、Schema/Artifact 快速编辑和 Advanced JSON；结构有效但语义不完整的草稿可保存，结构错误由服务端拒绝，Simulation/发布仍要求服务端 `releaseReady`。快速 Schema/Artifact 编辑先读取最新 Advanced JSON 基线；空名、非法名或重复名不会提交部分结果，成功重命名保留原元数据。旧 `/design`、`/graph`、`/chat` Team API 不属于 v2 作者入口并按兼容策略拒绝；完整 A1 普通用户任务验收仍以开发台账为准。
 
 The optional topology-order overlay assigns stable sequence badges to flows. Automatic routing reserves extra clearance around roles and boundaries so loop-flow labels have room beside their paths. The overlay affects graph presentation only and can be toggled from the graph toolbar.
 

@@ -325,6 +325,11 @@ body { min-width: 0; }
 .page-frame-tabs .studio-workspace-nav { align-items: center; border: 0; display: flex; flex: 1 1 auto; gap: 4px; margin: 0; min-width: 0; overflow-x: auto; }
 .page-frame-tabs a { align-items: center; border-bottom: 2px solid transparent; color: var(--muted); display: inline-flex; flex: 0 0 auto; font-size: 12px; min-height: 36px; padding: 0 10px; text-decoration: none; white-space: nowrap; }
 .page-frame-tabs a[aria-current="page"] { border-bottom-color: var(--mint); color: var(--ink); font-weight: 650; }
+.studio-run-split { display: grid; gap: 16px; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); height: 100%; min-height: 0; }
+.studio-run-history { border-right: 1px solid var(--line); min-height: 0; overflow: auto; padding-right: 12px; }
+.studio-run-history h2 { font-size: 14px; margin: 0 0 10px; }
+.studio-run-history .studio-simulation-row.selected { background: var(--mint-soft); border-color: var(--mint); }
+.studio-run-evidence { min-height: 0; overflow: auto; }
 .page-frame[data-template="C"] .page-frame-body { overflow: auto; }
 .page-frame-body { min-height: 0; overflow: hidden; padding-top: 10px; }
 .page-frame-body[data-layout-scroll] { overflow: auto; overscroll-behavior: contain; }
@@ -351,6 +356,9 @@ body { min-width: 0; }
 .repository-actions { flex-wrap: wrap; }
 .repository-actions .import-project-button { align-items: center; cursor: pointer; display: inline-flex; justify-content: center; }
 .repository-actions .import-project-button input { display: none; }
+.studio-design-page .page-frame[data-template="B"] .page-frame-body { overflow: hidden; }
+.studio-design-page .studio-design-workbench-host { height: 100%; min-height: 0; }
+.studio-design-page .studio-design-workbench-host .studio-design-workbench { height: 100%; max-width: none; min-height: 0; }
 .page-frame[data-template="E"] .page-frame-body { display: grid; gap: 24px; grid-template-columns: minmax(0, 880px) minmax(240px, 1fr); overflow: auto; }
 .page-frame-primary { min-width: 0; }
 .page-frame-primary .project-builder { margin-top: 0; max-width: none; }
@@ -412,15 +420,36 @@ body { min-width: 0; }
   .page-frame-tabs a { min-height: 44px; padding: 0 10px; }
   .page-frame[data-template="E"] .page-frame-body { grid-template-columns: minmax(0, 1fr); }
   .page-frame-aside { border-left: 0; border-top: 1px solid var(--line); padding: 16px 0 0; }
+  .studio-design-page .page-frame-header { align-items: flex-start; flex-direction: column; gap: 8px; max-width: 100%; min-width: 0; }
+  .studio-design-page .page-frame-header h1 { font-size: 20px; }
+  .studio-design-page .studio-design-actions { box-sizing: border-box; display: flex; flex-wrap: nowrap; gap: 8px; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; padding-bottom: 4px; scrollbar-width: none; width: 100%; }
+  .studio-design-page .studio-design-actions::-webkit-scrollbar { display: none; }
+  .studio-design-page .studio-design-actions > * { flex: 0 0 auto; justify-content: center; min-height: 44px; padding: 0 14px; white-space: nowrap; }
+  .studio-graph-toolbar button,
+  .studio-graph-toolbar select { min-height: 44px; min-width: 44px; padding: 6px 10px; }
   .page-frame[data-template="C"] .page-frame-body { overflow: auto; }
   #project-workspace-view .page-frame[data-template="B"] .page-frame-body { overflow: auto; }
   #project-workspace-view .project-detail-sections { overflow: visible; }
   #project-workspace-view .project-detail-sections > .project-panel { overflow: visible; }
+  .studio-run-split { display: block; height: auto; }
+  .studio-run-history { display: none; }
 }
 @media (pointer: coarse) {
   .main-area .page-content :is(button, a[href], input:not([type="checkbox"]):not([type="radio"]), select, textarea, [role="button"]) { min-height: 44px; }
   .main-area .page-content .task-record-actions .text-button { min-height: 44px; padding: 8px 11px; }
   .main-area .page-content .task-record-actions .task-delete-button { min-height: 44px; min-width: 44px; padding: 8px; }
+  .studio-design-workbench-host .studio-asset-drawer button,
+  .studio-design-workbench-host .team-debug-panel button { min-height: 44px; min-width: 44px; }
+  .studio-design-workbench-host .studio-asset-drawer .primary-button,
+  .studio-design-workbench-host .studio-asset-drawer .secondary-button,
+  .studio-design-workbench-host .team-debug-panel .primary-button,
+  .studio-design-workbench-host .team-debug-panel .secondary-button { min-height: 44px; }
+  .studio-design-workbench-host .studio-asset-drawer input,
+  .studio-design-workbench-host .studio-asset-drawer select,
+  .studio-design-workbench-host .studio-asset-drawer textarea,
+  .studio-design-workbench-host .team-debug-panel input,
+  .studio-design-workbench-host .team-debug-panel select,
+  .studio-design-workbench-host .team-debug-panel textarea { font-size: 16px; min-height: 44px; }
   .main-area .page-content button,
   .main-area .page-content input:not([type="checkbox"]):not([type="radio"]),
   .main-area .page-content select,

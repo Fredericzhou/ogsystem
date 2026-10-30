@@ -1286,6 +1286,17 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 项目模型同步现在优先选择已验证的 `gpt-6-luna`，不再按发现目录顺序把其它模型写入新项目默认值；模型选择/恢复/投影测试中的任意模型场景使用 `synthetic-model`，避免旧模型名称重新进入真实运行配置。A1 的 5 人独立任务验收仍是唯一未完成的产品体验硬门，不能据此宣称整体产品完成。
 
+### 2026-10-31：原版图谱工作台恢复与 v2 适配层接入
+
+本轮恢复 Studio 的原版图谱外壳和交互尺度，未恢复旧 Team 语义或旧写入 API：
+
+- `/studio/teams/:id/ir` 现在使用原版工作台布局、图谱画布、工具栏和属性抽屉；Team IR v2 仍是唯一语义事实源。图谱由 `team-ir-graph-adapter.js` 从 IR 派生，布局只保存在浏览器 `localStorage` 的 `ogs.team-ir-v2.layout.v1:<teamId>:<teamVersionId>:<nodeId>` 键中，不进入 semantic digest。
+- Agent、Handoff 的修改通过显式 typed patch 操作应用；失败返回原草稿，不做通用深合并。未知字段和高级合同在 `Team IR → graph view model → typed patch → Team IR` 往返中保留。图谱新增对象在缺少可信 Package/Binding 时保持未配置，由服务端结构诊断阻止保存/发布。
+- Team Site 恢复 `/assets/ogs-studio-graph.js` 构建产物入口；Visualizer 的 Team package 导入同时恢复路径、符号链接和权限边界检查，作为独立安全边界验收。
+- 页面文案明确区分“拖动只改变布局”和“选择 Agent/Handoff 编辑 v2 语义”；不支持的 Runtime 拓扑仍由服务端诊断裁决，页面不暗示可运行。
+
+本轮新增适配层回归：`node --test apps/team-site/tests/team-ir-graph-adapter.test.mjs`（3/3）；`node --check apps/team-site/public/app/views/app.js`、`node --check apps/team-site/public/app/team-ir-graph-adapter.js`、`pnpm build` 和 `git diff --check` 均通过。浏览器冒烟已确认 Team IR v2 图谱画布实际渲染、Agent 选择器和原版工作台布局可见。当前 A1 人工任务验收仍未完成，不能把 Studio 整体标为通过。
+
 ## 6. Codex / 实施代理工作约定
 
 为减少中途停留后丢失进度，每次委派或启动实施都应引用本文件和目标阶段，并要求：
@@ -1329,3 +1340,12 @@ docs/development/team-ir-v2-implementation-and-verification.md。
 - 台账、设计文档、ADR、使用文档、示例和实际实现保持一致。
 
 “代码已合并”“主要测试通过”“示例能跑”或“本轮没有报错”均不足以单独满足发布完成定义。
+
+### 2026-10-31：原版图谱入口回归与当前工作树最终验证
+
+- `/studio/teams/:id/ir` 保持原版图谱工作台作为交互外壳。X6 边点击在浏览器事件未冒泡时由工作台根节点按 Handoff ID 做同一选择回调兜底；语义仍只通过 Team IR typed patch 修改。移动端打开属性抽屉后，保存动作同时出现在抽屉底部，避免顶部工具栏被抽屉覆盖。
+- 旧案例详情页的只读结构图不再裁剪长图内容；旧布局和视觉验收断言已改为验证当前图谱工作台与真实 SVG 画布，不恢复已废弃的 `#team-ir-editor` 长表单。
+- 适配层回归：`node --test apps/team-site/tests/team-ir-graph-adapter.test.mjs` 3/3；Studio Chromium `node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；布局验收 `node --test apps/team-site/tests/layout-acceptance.test.mjs` 1/1；默认创建视觉验收 `node --test apps/team-site/tests/visual-acceptance.test.mjs` 1/1。
+- 当前工作树最终确定性回归：`pnpm build` 通过；Team Site `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 376 项，372 通过、0 失败、4 项明确 opt-in 跳过；全仓 `pnpm test` 980 项，979 通过、0 失败、1 项 Windows 专项跳过；`git diff --check` 通过。
+- 服务已按当前构建启动：Team Site `http://127.0.0.1:4173`，Visualizer `http://127.0.0.1:3337`，本机 OpenCode `http://127.0.0.1:4096` 保持运行且未被清理。当前活动模型配置仍固定为 `gpt-6-luna`。
+- 本记录只闭合原版 Studio 外壳接入和确定性回归；A1 人工体验门、完整 i18n、复杂拓扑作者引导和最终人工产品复核仍未完成，不把 Studio 或产品整体标为通过。
