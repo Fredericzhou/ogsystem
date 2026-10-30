@@ -17,5 +17,6 @@ export function errorStatus(error) {
   if (/PROJECT_NOT_READY|DELIVERABLE_RUN_NOT_SUCCESSFUL|DELIVERABLE_RESULT_UNAVAILABLE/i.test(message)) return 422;
   if (/not found|NOT_FOUND|TASK_NOT_FOUND|TEAM_VERSION_NOT_FOUND|DELIVERABLE_NOT_FOUND/i.test(message)) return 404;
   if (/REAL_RUN_UNSUPPORTED/i.test(message)) return 501;
+  if (/TEAM_IR_AUTHORING_CATALOG_UNAVAILABLE|TEAM_IR_AUTHORING_CATALOG_INVALID/i.test(message)) return 501;
   return 400;
 }

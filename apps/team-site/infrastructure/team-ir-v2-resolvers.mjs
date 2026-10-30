@@ -49,6 +49,9 @@ export async function loadTeamIrV2Resolvers(modulePath = process.env.OGS_TEAM_IR
   return Object.freeze({
     resolveTeamIrReleaseClosure,
     resolveBindings,
+    ...(typeof loaded.getTeamIrAuthoringCatalog === "function"
+      ? { getTeamIrAuthoringCatalog: loaded.getTeamIrAuthoringCatalog }
+      : {}),
     ...(typeof loaded.authorizeTeamIrReviewer === "function"
       ? { authorizeTeamIrReviewer: loaded.authorizeTeamIrReviewer }
       : {})

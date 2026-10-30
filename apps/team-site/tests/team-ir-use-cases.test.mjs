@@ -70,6 +70,41 @@ test("Team IR use cases persist structurally valid drafts with semantic diagnost
   }
 });
 
+test("Team IR authoring catalog returns only trusted package and Binding summaries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-team-ir-catalog-"));
+  try {
+    const useCases = createTeamIrUseCases({
+      teamCatalog: { getTeamVersion: async (id) => ({ teamVersionId: id, projectType: "team", workdir: root }) },
+      teamIrStore: { read: async () => ({ teamIR: null }), save: async () => ({}) },
+      withTeamVersionLock: async (_id, action) => action(),
+      getTeamIrAuthoringCatalog: async () => ({
+        version: "resolver/1",
+      packages: [{ ref: "role:writer@1", digest: "a".repeat(64), directory: "/private/roles" }],
+      bindings: [{ ref: "binding:model", kind: "model", modelRef: "codex-gateway/gpt-6-luna", adapterVersion: "adapter/1", password: "must-not-leak" }]
+      })
+    });
+    const catalog = await useCases.getTeamIrAuthoringCatalog("team-v1");
+    assert.deepEqual(catalog, {
+      teamVersionId: "team-v1",
+      catalogVersion: "resolver/1",
+      packages: [{ ref: "role:writer@1", digest: "a".repeat(64) }],
+      bindings: [{ ref: "binding:model", kind: "model", modelRef: "codex-gateway/gpt-6-luna", adapterVersion: "adapter/1" }]
+    });
+    assert.equal(JSON.stringify(catalog).includes("password"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Team IR authoring catalog fails closed when resolver catalog is unavailable", async () => {
+  const useCases = createTeamIrUseCases({
+    teamCatalog: { getTeamVersion: async () => ({ projectType: "team", workdir: "/unused" }) },
+    teamIrStore: { read: async () => ({ teamIR: null }), save: async () => ({}) },
+    withTeamVersionLock: async (_id, action) => action()
+  });
+  await assert.rejects(useCases.getTeamIrAuthoringCatalog("team-v1"), /TEAM_IR_AUTHORING_CATALOG_UNAVAILABLE/);
+});
+
 test("Team IR use cases reject collaboration projects and immutable TeamVersions", async () => {
   const base = { teamVersionId: "team-v1", workdir: "/unused", projectType: "team", teamVersionStatus: "draft" };
   let current = {};

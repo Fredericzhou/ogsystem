@@ -10,6 +10,7 @@ import {
   getOpenCodeDisabledToolsForTest,
   getDockerRunArgsForTest,
   getDockerEgressProxySourceForTest,
+  getTeamIrAuthoringCatalog,
   makePrompt,
   outputJsonSchema,
   resolveBindings,
@@ -18,6 +19,15 @@ import {
 } from "../infrastructure/team-ir-v2-opencode-docker-resolver.mjs";
 
 const fixture = JSON.parse(await readFile(new URL("../../../examples/team-ir-v2/classic-artifact-evidence.json", import.meta.url), "utf8"));
+
+test("Docker resolver exposes a credential-free authoring catalog from immutable pins", () => {
+  const catalog = getTeamIrAuthoringCatalog();
+  assert.equal(catalog.version, "team-ir-authoring-catalog/1");
+  assert.ok(catalog.packages.length > 0);
+  assert.ok(catalog.packages.every((item) => /^[a-f0-9]{64}$/.test(item.digest)));
+  assert.deepEqual(catalog.bindings, [{ ref: "binding:model", label: "codex-gateway/gpt-6-luna", version: "ogs-opencode-docker-adapter/20", kind: "model", modelRef: "codex-gateway/gpt-6-luna", adapterVersion: "ogs-opencode-docker-adapter/20" }]);
+  assert.equal(JSON.stringify(catalog).match(/password|secret|token|credential|authorization|endpoint|directory/i), null);
+});
 
 test("trusted closure verifies checked-in role package digests and pins the model adapter", async () => {
   const closure = await resolveTeamIrReleaseClosure({ teamIR: fixture });

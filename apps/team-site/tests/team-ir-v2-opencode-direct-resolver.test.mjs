@@ -4,12 +4,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  getTeamIrAuthoringCatalog,
   getOpenCodeDisabledToolsForTest,
   resolveBindings,
   resolveTeamIrReleaseClosure
 } from "../infrastructure/team-ir-v2-opencode-direct-resolver.mjs";
 
 const fixture = JSON.parse(await readFile(new URL("../../../examples/team-ir-v2/classic-software-team.json", import.meta.url), "utf8"));
+
+test("direct resolver exposes a credential-free authoring catalog from immutable pins", () => {
+  const catalog = getTeamIrAuthoringCatalog();
+  assert.equal(catalog.version, "team-ir-authoring-catalog/1");
+  assert.ok(catalog.packages.length > 0);
+  assert.ok(catalog.packages.every((item) => /^[a-f0-9]{64}$/.test(item.digest)));
+  assert.deepEqual(catalog.bindings, [{ ref: "binding:model", label: "codex-gateway/gpt-6-luna", version: "ogs-opencode-direct-adapter/14", kind: "model", modelRef: "codex-gateway/gpt-6-luna", adapterVersion: "ogs-opencode-direct-adapter/14" }]);
+  assert.equal(JSON.stringify(catalog).match(/password|secret|token|credential|authorization|endpoint|directory/i), null);
+});
 
 test("direct-host resolver pins the model closure without Docker image dependencies", async () => {
   const closure = await resolveTeamIrReleaseClosure({ teamIR: fixture });

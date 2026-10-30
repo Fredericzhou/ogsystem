@@ -188,13 +188,15 @@ AI 只能选择 v2 已支持的原语和字段。对任意动态组队、隐式�
 - 条件 AST 无损保留；结构化编辑器未覆盖完整表达式时，不得把复杂条件重建为简化条件。
 - 新 Agent 不注入固定 `packageRef`、`bindingRef` 或 `modelRef`。没有目录选择时，新 Agent 只存在于编辑器本地，不写入 IR；已经持久化的 Agent 引用仍按服务端诊断和依赖闭包处理。
 - 用浏览器回归测试覆盖加载、编辑其它字段、保存、重开后的语义 digest 和关键合同字段稳定性。此闸门使用结构和语义均有效的 fixture；带诊断草稿的持久化合同另由 A1 API 前置任务覆盖。
+- 快速 Schema 编辑只能合并用户修改的基础字段，必须保留嵌套属性、枚举、描述、examples、约束和其它未知字段；Artifact 槽位重命名必须保留原槽位的媒体类型、必需性、cardinality 和其它已知元数据。快速编辑新增字段/槽位使用唯一建议名，重复名称不得静默覆盖。
+- Join 归属矩阵必须把 `baseMapping.data` 作为 Run input 提供方纳入字段提供者、冲突和到达状态；它是服务端诊断的只读投影，不另行定义 Join 语义。
 
 通过 A0 前不开放会重写这些字段的普通用户配置路径，不将当前页面描述为安全的完整作者体验。
 
 ### 阶段 A1a：作者前置能力
 
 - 结构有效但有语义诊断的草稿可保存；结构错误拒绝写入；保存响应返回 `ok`、`draftSaveable`、`releaseReady`、`diagnostics` 和 `semanticDigest`。前端把 `/ir/validate` 作为诊断预览，PUT 响应是唯一保存判定；`expectedSemanticDigest` 冲突必须保持拒绝。
-- Agent 的 `packageRef`/`bindingRef` 使用当前已加载引用集合的选择器；外部 Package/Binding 联合目录接线仍是 A1a 未完成项。未配置的新 Agent 保持编辑器本地，不写入 IR，不生成空引用或伪造引用。
+- Agent 的 `packageRef`/`bindingRef` 使用受信 resolver 提供的无凭据 Package/Binding 目录选择器；目录不可用时 fail closed，已保存引用仍可显示。未配置的新 Agent 保持编辑器本地，不写入 IR，不生成空引用或伪造引用。
 - 多 input/output port、Handoff source/target endpoint、Review output 使用选择器；Schema 和 Artifact 槽位提供简单合同的结构化低门槛编辑，复杂合同保留 Advanced JSON。
 - Join 最低归属矩阵展示“目标字段/Artifact slot × 来源 Handoff”，标注 required/optional、保证到达/可能跳过、缺失和重复提供方。矩阵是只读解释，服务端诊断仍是信任边界。
 - 删除被引用 Agent/Port/Handoff 时先显示影响范围；确认后原子清理已知 Route、Join、Loop、Review 引用，取消保持草稿不变。
@@ -205,6 +207,7 @@ AI 只能选择 v2 已支持的原语和字段。对任意动态组队、隐式�
 - 提供从 IR 派生的 Agent 输入可见性视图，并明确 `$.run.task` 的固定可见范围；文案不得暗示权限隔离或保密语义。
 - 提供草稿级单步/事务撤销，撤销后断言 semantic digest 恢复到应用前值；完整历史 undo/redo、未保存提示和异常恢复属于阶段 B。
 - 提供完整条件 AST 协作摘要和稳定的中英文 i18n；无法无损转成白话时显示结构化表达式。
+- 当前已实现经典模板入口（空白草稿与 8 个已校验案例均创建独立 v2 draft）、编辑页“参考经典团队/创建新版本”入口，以及 Team IR 编辑器核心标题、操作和状态的中英文切换；完整协作摘要、全量 i18n 和 5 人任务验收仍是未完成项。
 - 通过第 10 节的 5 人任务验收后，才能把 A1 标为完成。A1a 和 A1b 的状态与证据只在实施台账记录。
 
 ### 阶段 B：真实协作画布与完整 v2 编辑
@@ -249,6 +252,6 @@ Team IR 字段和运行语义以[Team IR v2 Handoff 设计方案](team-ir-handof
 
 本节不复制运行证据或维护第二份状态表。当前实现、阶段状态、真实模型矩阵、失败记录、A1a/A1b 未完成项和最终回归均以[Team IR v2 落地与验证台账](team-ir-v2-implementation-and-verification.md)为唯一事实来源。
 
-当前口径：机器发布门已通过；Studio A0 部分完成；A1a/A1b 尚未完成；不能称产品整体完成。外部远端 A2A、生产身份提供方和 5 人人工任务验收按第 10 节及台账范围执行。
+当前口径：机器发布门已通过；Studio A0 已完成本轮数据正确性回归，A1a 已完成目录/端口/低门槛编辑切片，A1b 已完成模板入口和核心 i18n 切片；A1a/A1b 的完整作者能力与 5 人人工任务验收尚未完成，不能称产品整体完成。外部远端 A2A、生产身份提供方和 5 人人工任务验收按第 10 节及台账范围执行。
 
 设计不引入兼容迁移或旧 Team 读取，standalone OGSystem Mermaid/Project Package 能力仍是独立范围，不属于 Team IR v2 产品入口。

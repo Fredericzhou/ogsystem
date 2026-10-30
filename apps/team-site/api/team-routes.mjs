@@ -4,6 +4,19 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
+  const teamIrCatalogMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir\/catalog$/);
+  if (teamIrCatalogMatch && request.method === "GET") {
+    try {
+      sendJson(response, 200, await useCases.getTeamIrAuthoringCatalog(teamIrCatalogMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), {
+        error: error instanceof Error ? error.message : "Unable to read the Team IR authoring catalog.",
+        ...(error?.code ? { code: error.code } : {})
+      });
+    }
+    return true;
+  }
+
   const teamIrMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/ir(?:\/(validate))?$/);
   if (teamIrMatch && request.method === "GET" && !teamIrMatch[2]) {
     try {

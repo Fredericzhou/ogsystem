@@ -169,6 +169,31 @@ test("Team IR routes remain version-scoped while legacy design routes are reject
   }
 });
 
+test("Team IR authoring catalog route delegates and maps unavailable catalogs", async () => {
+  const calls = [];
+  const harness = routeHarness({
+    getTeamIrAuthoringCatalog: async (id) => (calls.push(id), {
+      teamVersionId: id,
+      catalogVersion: "resolver/1",
+      packages: [{ ref: "role:writer@1", digest: "a".repeat(64) }],
+      bindings: [{ ref: "binding:model", kind: "model", modelRef: "codex-gateway/gpt-6-luna", adapterVersion: "adapter/1" }]
+    })
+  });
+  assert.equal(await harness.invoke("GET", "/api/v1/team-versions/team-v1/ir/catalog"), true);
+  assert.equal(harness.sent[0].status, 200);
+  assert.deepEqual(calls, ["team-v1"]);
+  assert.equal(harness.sent[0].payload.packages[0].digest, "a".repeat(64));
+
+  const unavailable = new Error("TEAM_IR_AUTHORING_CATALOG_UNAVAILABLE: resolver catalog is not configured.");
+  unavailable.code = "TEAM_IR_AUTHORING_CATALOG_UNAVAILABLE";
+  const failing = routeHarness({ getTeamIrAuthoringCatalog: async () => { throw unavailable; } });
+  assert.equal(await failing.invoke("GET", "/api/v1/team-versions/team-v1/ir/catalog"), true);
+  assert.deepEqual(failing.sent[0], {
+    status: 501,
+    payload: { error: unavailable.message, code: unavailable.code }
+  });
+});
+
 test("legacy release baseline routes are rejected in favor of Team IR v2 evidence", async () => {
   const route = routeHarness({
     getReleaseBaselineScenarios: async () => { throw new Error("legacy baseline route invoked"); },

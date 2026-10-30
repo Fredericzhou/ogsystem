@@ -161,6 +161,23 @@ export async function resolveTeamIrReleaseClosure({ teamIR }) {
   };
 }
 
+// Only immutable package and adapter summaries are exposed to Studio. The
+// local serve credential and endpoint remain resolver-internal.
+export function getTeamIrAuthoringCatalog() {
+  return {
+    version: "team-ir-authoring-catalog/1",
+    packages: Object.entries(PINS.packages || {}).map(([ref, pin]) => ({ ref, label: ref, version: ref.split("@").at(-1) || "1", digest: pin.digest })),
+    bindings: [{
+      ref: "binding:model",
+      label: MODEL_REF,
+      version: ADAPTER_VERSION,
+      kind: "model",
+      modelRef: PINS.modelRef,
+      adapterVersion: ADAPTER_VERSION
+    }]
+  };
+}
+
 export { authorizeTeamIrReviewer };
 
 export async function resolveBindings({ teamIR, closure }) {

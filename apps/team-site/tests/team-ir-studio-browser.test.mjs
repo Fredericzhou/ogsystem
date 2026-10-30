@@ -127,6 +127,20 @@ export async function resolveBindings({ teamIR }) {
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
     await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
+    const templateChoices = page.locator('input[name="templateCaseId"]');
+    assert.equal(await templateChoices.count(), 9, "new Team IR drafts expose a blank option and all eight classic templates");
+    await page.locator('input[name="templateCaseId"][value="software-team"]').check();
+    await page.locator("#new-project-form input[name=name]").fill("Template browser draft");
+    await page.locator("#new-project-form textarea[name=overview]").fill("Verify a classic template creates an independent Team IR v2 draft.");
+    await page.locator("#new-project-form button[type=submit]").click();
+    await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/ir$/);
+    const templateDraftId = page.url().match(/\/studio\/teams\/([a-z0-9-]+)\/ir$/)?.[1];
+    assert.ok(templateDraftId);
+    const templateDraft = await page.request.get(`${url}/api/v1/team-versions/${templateDraftId}`).then((response) => response.json());
+    assert.equal(templateDraft.teamVersionStatus, "draft");
+    assert.equal(templateDraft.caseId, "software-team");
+
+    await page.goto(`${url}/studio/new`, { waitUntil: "networkidle" });
     await page.locator("#new-project-form input[name=name]").fill("IR v2 Browser UAT");
     await page.locator("#new-project-form textarea[name=overview]").fill("Create a simple versioned Team IR and verify it after reopening.");
     await page.locator("#new-project-form button[type=submit]").click();
@@ -299,7 +313,7 @@ export async function resolveBindings({ teamIR }) {
     const saveResponse = await page.waitForResponse((response) => response.request().method() === "PUT"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir`, { timeout: 5000 });
     assert.equal(saveResponse.status(), 200, await saveResponse.text());
-    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.getByText(/(?:Saved and reopened|已保存并重开) ·/, { exact: false }).waitFor();
 
     const reopened = await page.request.get(`${url}/api/v1/team-versions/${teamVersionId}/ir`).then((response) => response.json());
     const expectedDigest = teamIRSemanticDigest(reopened.teamIR);
@@ -360,7 +374,7 @@ export async function resolveBindings({ teamIR }) {
     const saveSimulationSchema = page.waitForResponse((response) => response.request().method() === "PUT"
       && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/ir`);
     assert.equal((await saveSimulationSchema).status(), 200);
-    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.getByText(/(?:Saved and reopened|已保存并重开) ·/, { exact: false }).waitFor();
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('[data-ir-simulation-field="request"]').waitFor();
     assert.equal(await page.locator('[data-ir-simulation-field="count"]').inputValue(), "3", "schema defaults are restored after save and reopen");
@@ -447,6 +461,8 @@ export async function resolveBindings({ teamIR }) {
     const signoffJoin = page.locator("[data-ir-join]").first();
     await signoffJoin.waitFor();
     assert.equal(await signoffJoin.locator("[data-ir-join-base-row]").count(), 1);
+    const ownershipRequest = signoffJoin.locator(".ir-join-ownership tbody tr").filter({ hasText: "request" }).first();
+    assert.match(await ownershipRequest.innerText(), /Run input/, "Join ownership includes fields supplied by baseMapping");
     await signoffJoin.locator("[data-ir-join-base-add]").click();
     assert.equal(await signoffJoin.locator("[data-ir-join-base-row]").count(), 2);
     const addedJoinMapping = signoffJoin.locator("[data-ir-join-base-row]").last();
@@ -462,7 +478,7 @@ export async function resolveBindings({ teamIR }) {
     await page.locator('#team-ir-editor button[type="submit"]').click();
     const joinValidationBody = await (await joinValidationResponse).json();
     assert.equal(joinValidationBody.ok, true, JSON.stringify(joinValidationBody.diagnostics));
-    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.getByText(/(?:Saved and reopened|已保存并重开) ·/, { exact: false }).waitFor();
     page.off("request", observeJoinSave);
     assert.equal(joinSaveObserved, true);
     await page.reload({ waitUntil: "networkidle" });
@@ -477,6 +493,9 @@ export async function resolveBindings({ teamIR }) {
       && item.pointer === "/orchestration/joins/0/baseMapping/data/request"), JSON.stringify(joinDiagnosticBody.diagnostics));
 
     const advancedIr = advancedTeamIr(advancedId);
+    const advancedWriter = advancedIr.agents.find((agent) => agent.id === "writer");
+    advancedWriter.inputPorts.revise.dataSchema.properties.answer.description = "Preserve this advanced description";
+    advancedWriter.inputPorts.revise.dataSchema.properties.answer.examples = ["reviewed answer"];
     const conditionSummaries = await page.evaluate(async () => {
       const { teamIrConditionSummary } = await import("/app/views/app.js");
       const ref = { $ref: "$.run.input.decision" };
@@ -530,6 +549,23 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator("[data-ir-loop]").count(), 1);
     assert.equal(await page.locator("[data-ir-review]").count(), 1);
     assert.equal(await page.locator('[name="review-0-at"]').inputValue(), JSON.stringify(["writer", "DONE"]));
+    const reviseSchemaQuick = page.locator('[data-ir-schema-quick][data-ir-schema-target="agent-0-inputPorts-1-schema"]');
+    await reviseSchemaQuick.locator('[data-ir-schema-name]').first().fill("answerRenamed");
+    let revisedSchema = JSON.parse(await page.locator('[data-ir-schema-textarea][name="agent-0-inputPorts-1-schema"]').inputValue());
+    assert.equal(revisedSchema.properties.answerRenamed.description, "Preserve this advanced description");
+    assert.deepEqual(revisedSchema.properties.answerRenamed.examples, ["reviewed answer"]);
+    await reviseSchemaQuick.locator('[data-ir-schema-name]').first().fill("answer");
+    const reportArtifactQuick = page.locator('[data-ir-artifact-quick][data-ir-artifact-target="agent-0-outputPorts-0-artifacts"]');
+    const reportArtifactName = reportArtifactQuick.locator('[data-ir-artifact-name]').first();
+    const reportArtifactBefore = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue()).report;
+    await reportArtifactName.fill("reportRenamed");
+    await reportArtifactQuick.locator('[data-ir-artifact-media]').first().fill("text/markdown, text/plain");
+    let renamedSlots = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue());
+    assert.deepEqual(renamedSlots.reportRenamed.cardinality, reportArtifactBefore.cardinality);
+    assert.equal(renamedSlots.reportRenamed.required, reportArtifactBefore.required);
+    assert.deepEqual(renamedSlots.reportRenamed.mediaTypes, ["text/markdown", "text/plain"]);
+    await reportArtifactName.fill("report");
+    await reportArtifactQuick.locator('[data-ir-artifact-media]').first().fill((reportArtifactBefore.mediaTypes || reportArtifactBefore.acceptedMediaTypes || []).join(", "));
     assert.equal(await page.locator("[data-ir-output-contract-hint]").count(), 1);
     assert.match(await page.locator("[data-ir-output-contract-hint]").innerText(), /Binding 必须返回单个 JSON 对象.*event.*data.*artifactTexts/);
     assert.match(await page.locator("[data-ir-output-contract-hint]").innerText(), /Provider 需支持该输出 Schema/);
@@ -594,7 +630,7 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(advancedEditSaveResponse.status(), 200);
     const advancedEditSavedBody = advancedEditSaveResponse.request().postDataJSON();
     assert.equal(advancedEditSavedBody.teamIR.orchestration.loops[0].maxRounds, 5);
-    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.getByText(/(?:Saved and reopened|已保存并重开) ·/, { exact: false }).waitFor();
     assert.equal(await page.locator('[name="loop-0-rounds"]').inputValue(), "5", "advanced Loop edits flow back to the structured row");
     const roundTripped = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
     assert.deepEqual(roundTripped.orchestration.loops[0].entryHandoffIds, ["entry"], "Loop Handoff IDs survive a visual/JSON round trip");
@@ -758,7 +794,7 @@ export async function resolveBindings({ teamIR }) {
     const advancedValidationBody = await (await advancedValidation).json();
     assert.equal(advancedValidationBody.ok, true, JSON.stringify(advancedValidationBody.diagnostics));
     assert.equal((await advancedSave).status(), 200);
-    await page.getByText("Saved and reopened ·", { exact: false }).waitFor();
+    await page.getByText(/(?:Saved and reopened|已保存并重开) ·/, { exact: false }).waitFor();
     await page.reload({ waitUntil: "networkidle" });
     const advancedReopened = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir`).then((response) => response.json());
     assert.equal(advancedReopened.semanticDigest, teamIRSemanticDigest(advancedReopened.teamIR));

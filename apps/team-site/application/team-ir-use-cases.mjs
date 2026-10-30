@@ -1,6 +1,6 @@
 import { classifyTeamIrDiagnostics, compileTeamIr, teamIRSemanticDigest, validateTeamIr } from "../../../dist/team-ir/index.js";
 
-export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersionLock, resolveTeamIrReleaseClosure }) {
+export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersionLock, resolveTeamIrReleaseClosure, getTeamIrAuthoringCatalog }) {
   if (typeof teamCatalog?.getTeamVersion !== "function") throw new TypeError("Team IR requires a TeamVersion catalog.");
   if (typeof teamIrStore?.read !== "function" || typeof teamIrStore?.save !== "function") throw new TypeError("Team IR requires a Team IR store.");
   if (typeof withTeamVersionLock !== "function") throw new TypeError("Team IR requires a TeamVersion lock.");
@@ -11,7 +11,51 @@ export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersion
     return team;
   }
 
+  async function readAuthoringCatalog(teamVersionId) {
+    const team = await readTeam(teamVersionId);
+    if (typeof getTeamIrAuthoringCatalog !== "function") {
+      const error = new Error("TEAM_IR_AUTHORING_CATALOG_UNAVAILABLE: a trusted Team IR authoring catalog is not configured.");
+      error.code = "TEAM_IR_AUTHORING_CATALOG_UNAVAILABLE";
+      throw error;
+    }
+    const catalog = await getTeamIrAuthoringCatalog({ teamVersionId, team });
+    if (!catalog || typeof catalog !== "object" || !Array.isArray(catalog.packages) || !Array.isArray(catalog.bindings)) {
+      const error = new Error("TEAM_IR_AUTHORING_CATALOG_INVALID: the trusted Team IR authoring catalog is invalid.");
+      error.code = "TEAM_IR_AUTHORING_CATALOG_INVALID";
+      throw error;
+    }
+    const digest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+    const packages = catalog.packages.map((item) => ({
+      ref: typeof item?.ref === "string" ? item.ref : "",
+      ...(typeof item?.label === "string" ? { label: item.label } : {}),
+      ...(typeof item?.version === "string" ? { version: item.version } : {}),
+      digest: item?.digest
+    })).filter((item) => item.ref && digest(item.digest)).sort((left, right) => left.ref.localeCompare(right.ref));
+    const bindings = catalog.bindings.map((item) => ({
+      ref: typeof item?.ref === "string" ? item.ref : "",
+      kind: typeof item?.kind === "string" ? item.kind : "",
+      ...(typeof item?.label === "string" ? { label: item.label } : {}),
+      ...(typeof item?.version === "string" ? { version: item.version } : {}),
+      ...(typeof item?.modelRef === "string" ? { modelRef: item.modelRef } : {}),
+      ...(typeof item?.adapterVersion === "string" ? { adapterVersion: item.adapterVersion } : {})
+    })).filter((item) => item.ref && item.kind && (item.modelRef || item.adapterVersion)).sort((left, right) => left.ref.localeCompare(right.ref));
+    if (!packages.length || !bindings.length) {
+      const error = new Error("TEAM_IR_AUTHORING_CATALOG_INVALID: the trusted Team IR authoring catalog has no usable package or Binding entries.");
+      error.code = "TEAM_IR_AUTHORING_CATALOG_INVALID";
+      throw error;
+    }
+    return {
+      teamVersionId,
+      catalogVersion: typeof catalog.version === "string" && catalog.version.trim() ? catalog.version : "team-ir-authoring-catalog/1",
+      packages,
+      bindings
+    };
+  }
+
   return Object.freeze({
+    async getTeamIrAuthoringCatalog(teamVersionId) {
+      return readAuthoringCatalog(teamVersionId);
+    },
     async getTeamIr(teamVersionId) {
       const team = await readTeam(teamVersionId);
       const stored = await teamIrStore.read({ workdir: team.workdir });

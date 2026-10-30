@@ -435,6 +435,24 @@ export async function resolveTeamIrReleaseClosure({ teamIR }) {
   };
 }
 
+// The authoring catalog is intentionally a summary of immutable resolver pins.
+// Runtime credentials, endpoints, container paths and environment values never
+// cross this boundary.
+export function getTeamIrAuthoringCatalog() {
+  return {
+    version: "team-ir-authoring-catalog/1",
+    packages: Object.entries(PINS.packages).map(([ref, pin]) => ({ ref, label: ref, version: ref.split("@").at(-1) || "1", digest: pin.digest })),
+    bindings: [{
+      ref: "binding:model",
+      label: PINS.modelRef,
+      version: PINS.adapterVersion,
+      kind: "model",
+      modelRef: PINS.modelRef,
+      adapterVersion: PINS.adapterVersion
+    }]
+  };
+}
+
 export async function authorizeTeamIrReviewer({ principal }) {
   return principal?.issuer === "ogs:local" && /^local:[A-Za-z0-9._-]+$/.test(String(principal.id || ""));
 }

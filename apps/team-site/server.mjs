@@ -293,7 +293,8 @@ const teamIrUseCases = createTeamIrUseCases({
   teamCatalog,
   teamIrStore,
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
-  resolveTeamIrReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure
+  resolveTeamIrReleaseClosure: teamIrV2Resolvers.resolveTeamIrReleaseClosure,
+  getTeamIrAuthoringCatalog: teamIrV2Resolvers.getTeamIrAuthoringCatalog
 });
 const teamIrStudioSimulationUseCases = createTeamIrStudioSimulationUseCases({
   teamCatalog,

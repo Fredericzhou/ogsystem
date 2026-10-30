@@ -332,7 +332,8 @@ async function renderNewProject(_pageRequest) {
   const root = $("#new-project-view");
   const english = state.locale === "en";
   const t = (en, zh) => english ? en : zh;
-  root.innerHTML = `<section class="page-heading new-team-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Back to OGS Studio", "返回 OGS Studio")}</a><div class="eyebrow">Team Studio · ${t("Create", "创建")}</div><h1>${t("Create a Team IR v2 draft", "新建 Team IR v2 草稿")}</h1><p>${t("Create a native Team IR v2 draft with a typed starter workflow.", "创建原生 Team IR v2 草稿，并从类型化流程开始。")}</p></div></section><section class="project-builder new-team-builder"><form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">Team IR v2</span><h2>${t("Name the team and its goal", "填写团队名称与目标")}</h2><p>${t("A typed starter flow is created with the draft. Refine its roles and handoffs next.", "草稿会包含一个可编辑的类型化起始流程，创建后可继续调整角色和交接。")}</p></div><label>${t("Team name", "团队名称")}<input name="name" required maxlength="120" autocomplete="organization" placeholder="${t("For example: Product research team", "例如：产品研究团队")}"></label><label>${t("Team goal", "团队目标")}<textarea name="overview" required maxlength="4000" rows="6" placeholder="${t("For example: compare competitor research and produce evidence-based recommendations; researchers collect sources, analysts compare findings, and a lead reviews the result.", "例如：分析竞品资料并提出行动建议；明确角色职责、交接顺序、输入材料和结果格式。")}"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small></label><div class="new-team-form-footer"><div class="form-actions"><button class="primary-button" type="submit">${t("Create v2 draft", "创建 v2 草稿")} <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`;
+  const classicChoices = (state.cases || []).map((item) => `<label class="classic-template-choice"><input type="radio" name="templateCaseId" value="${esc(item.id)}"><span class="classic-template-choice-body"><strong>${esc(text(item.title))}</strong><small>${esc(text(item.short))}</small><span class="classic-team-meta"><span>${item.roles.length} ${t("roles", "个角色")}</span></span></span></label>`).join("");
+  root.innerHTML = `<section class="page-heading new-team-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Back to OGS Studio", "返回 OGS Studio")}</a><div class="eyebrow">Team Studio · ${t("Create", "创建")}</div><h1>${t("Create a Team IR v2 draft", "新建 Team IR v2 草稿")}</h1><p>${t("Start with a blank typed workflow or copy a built-in team into a new draft.", "从空白类型化流程开始，或复制内置经典团队为新的可编辑草稿。")}</p></div></section><section class="project-builder new-team-builder"><form id="new-project-form" class="project-form"><div class="new-team-form-heading"><span class="section-kicker">Team IR v2</span><h2>${t("Choose a starting point", "选择起点")}</h2><p>${t("A template always creates a separate draft; this page never overwrites an existing version.", "选择模板只会创建新的草稿，不会覆盖已有版本。")}</p></div><fieldset class="classic-template-picker"><legend>${t("Starting point", "起始方式")}</legend><label class="classic-template-choice classic-template-blank"><input type="radio" name="templateCaseId" value="" checked><span class="classic-template-choice-body"><strong>${t("Blank draft", "空白草稿")}</strong><small>${t("Create the minimal native Team IR v2 starter workflow.", "创建最小原生 Team IR v2 起始流程。")}</span></label>${classicChoices || `<p class="empty-note">${t("No built-in teams are available.", "暂无内置经典团队。")}</p>`}</fieldset><label>${t("Team name", "团队名称")}<input name="name" required maxlength="120" autocomplete="organization" placeholder="${t("For example: Product research team", "例如：产品研究团队")}"></label><label>${t("Team goal", "团队目标")}<textarea name="overview" required maxlength="4000" rows="6" placeholder="${t("For example: compare competitor research and produce evidence-based recommendations; researchers collect sources, analysts compare findings, and a lead reviews the result.", "例如：分析竞品资料并提出行动建议；明确角色职责、交接顺序、输入材料和结果格式。")}"></textarea><small class="field-hint">${esc(copy[state.locale].targetHint)}</small><div class="new-team-form-footer"><div class="form-actions"><button class="primary-button" type="submit">${t("Create v2 draft", "创建 v2 草稿")} <span aria-hidden="true">→</span></button></div></div><p class="form-status" id="new-project-status" role="status" aria-live="polite"></p></form></section>`;
   const newProjectForm = $("#new-project-form");
   bindDirtyForm(newProjectForm, () => setDirty("new-project-form"));
   newProjectForm.addEventListener("submit", async (event) => {
@@ -345,7 +346,10 @@ async function renderNewProject(_pageRequest) {
     submit.textContent = state.locale === "en" ? "Creating team…" : "正在创建团队…";
     status.textContent = state.locale === "en" ? "Creating team…" : "正在创建团队…";
     try {
-      const response = await pageFetch("/api/v1/team-ir-drafts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) });
+      const templateCaseId = String(form.get("templateCaseId") || "").trim();
+      const response = templateCaseId
+        ? await pageFetch(`/api/v1/cases/${encodeURIComponent(templateCaseId)}/template`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) })
+        : await pageFetch("/api/v1/team-ir-drafts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: form.get("name"), overview: form.get("overview"), locale: state.locale }) });
       const project = await response.json();
       if (!response.ok) throw new Error(project.error || "项目创建失败");
       clearDirty("new-project-form");
@@ -1430,7 +1434,17 @@ function teamIrFromEditor(form, base) {
     };
   });
   const bindingIds = new Set(agents.map((agent) => agent.bindingRef).filter(Boolean));
-  const bindings = (advanced.bindings || []).filter((binding) => bindingIds.has(binding.id));
+  const bindings = (advanced.bindings || []).filter((binding) => bindingIds.has(binding.id)).map((binding) => structuredClone(binding));
+  // A trusted catalog may expose a new immutable Binding ref before the
+  // current draft has a concrete entry for it. Reuse the existing Binding
+  // contract as the explicit seed; the user still has to select the ref and
+  // the server remains authoritative for closure validation.
+  const bindingTemplate = advanced.bindings?.find((binding) => binding && typeof binding === "object");
+  for (const bindingId of bindingIds) {
+    if (!bindings.some((binding) => binding.id === bindingId) && bindingTemplate) {
+      bindings.push({ ...structuredClone(bindingTemplate), id: bindingId });
+    }
+  }
   const handoffs = [...form.querySelectorAll("[data-ir-handoff]")].map((row) => {
     const index = row.dataset.irHandoff;
     const fromAgentId = String(data.get(`handoff-${index}-from-agent`) || "");
@@ -1545,11 +1559,14 @@ function renderTeamIrJoinOwnershipMatrix(ir, join, escText) {
   const required = new Set(targetPort?.dataSchema?.required || []);
   const targetArtifacts = targetPort?.artifactSlots || {};
   const sourceHandoffs = (join.handoffIds || []).map((id) => (ir.handoffs || []).find((handoff) => handoff.id === id)).filter(Boolean);
+  const baseMappingData = join.baseMapping?.data || {};
   const rows = [];
   for (const field of Object.keys(targetProperties)) {
     const providers = sourceHandoffs.filter((handoff) => Object.hasOwn(handoff.map?.data || {}, field));
+    const baseProvider = Object.hasOwn(baseMappingData, field) ? ["Run input"] : [];
+    const providerLabels = [...baseProvider, ...providers.map((handoff) => handoff.id)];
     const conditional = providers.some((handoff) => handoff.when?.condition);
-    rows.push({ field, kind: "field", required: required.has(field), providers: providers.map((handoff) => handoff.id), conditional });
+    rows.push({ field, kind: "field", required: required.has(field), providers: providerLabels, conditional });
   }
   for (const slot of Object.keys(targetArtifacts)) {
     const providers = sourceHandoffs.filter((handoff) => Object.hasOwn(handoff.map?.artifacts || {}, slot));
@@ -1635,8 +1652,8 @@ function renderTeamIrSchemaQuickEditor(schema, target, escText, editable) {
     : [];
   if (!properties.length && schema?.type !== "object") return "";
   const required = new Set(Array.isArray(schema?.required) ? schema.required : []);
-  const rows = properties.map(([name, value], index) => `<div class="ir-schema-field" data-ir-schema-field><input data-ir-schema-name value="${escText(name)}" aria-label="Schema field ${index + 1} name"${editable ? "" : " disabled"}><select data-ir-schema-type aria-label="Schema field ${index + 1} type"${editable ? "" : " disabled"}>${["string", "number", "integer", "boolean"].map((type) => `<option value="${type}"${value.type === type ? " selected" : ""}>${type}</option>`).join("")}</select><label class="checkbox-label"><input type="checkbox" data-ir-schema-required${required.has(name) ? " checked" : ""}${editable ? "" : " disabled"}>Required</label><button type="button" class="icon-button" data-ir-schema-remove aria-label="Remove schema field" title="Remove schema field"${editable ? "" : " disabled"}>×</button></div>`).join("");
-  return `<div class="ir-schema-quick" data-ir-schema-quick data-ir-schema-target="${escText(target)}"><div class="panel-head"><strong>Common fields</strong><span class="field-hint">Structured editor for simple fields; advanced constraints stay in JSON.</span></div><div data-ir-schema-fields>${rows}</div><button type="button" class="text-button" data-ir-schema-add${editable ? "" : " disabled"}>Add field</button></div>`;
+  const rows = properties.map(([name, value], index) => `<div class="ir-schema-field" data-ir-schema-field data-ir-schema-original="${escText(name)}"><input data-ir-schema-name value="${escText(name)}" aria-label="Schema field ${index + 1} name"${editable ? "" : " disabled"}><select data-ir-schema-type aria-label="Schema field ${index + 1} type"${editable ? "" : " disabled"}>${["string", "number", "integer", "boolean"].map((type) => `<option value="${type}"${value.type === type ? " selected" : ""}>${type}</option>`).join("")}</select><label class="checkbox-label"><input type="checkbox" data-ir-schema-required${required.has(name) ? " checked" : ""}${editable ? "" : " disabled"}>Required</label><button type="button" class="icon-button" data-ir-schema-remove aria-label="Remove schema field" title="Remove schema field"${editable ? "" : " disabled"}>×</button></div>`).join("");
+  return `<div class="ir-schema-quick" data-ir-schema-quick data-ir-schema-target="${escText(target)}" data-ir-schema-managed="${escText(JSON.stringify(properties.map(([name]) => name)))}"><div class="panel-head"><strong>Common fields</strong><span class="field-hint">Structured editor for simple fields; advanced constraints stay in JSON.</span></div><div data-ir-schema-fields>${rows}</div><button type="button" class="text-button" data-ir-schema-add${editable ? "" : " disabled"}>Add field</button></div>`;
 }
 
 function renderTeamIrArtifactQuickEditor(artifactSlots, target, direction, escText, editable) {
@@ -1650,9 +1667,13 @@ function renderTeamIrArtifactQuickEditor(artifactSlots, target, direction, escTe
   return `<div class="ir-artifact-quick" data-ir-artifact-quick data-ir-artifact-target="${escText(target)}" data-ir-artifact-media-key="${mediaKey}"><div class="panel-head"><strong>Common Artifact slots</strong><span class="field-hint">Edit slot name, accepted media types, cardinality and required status; advanced fields remain in JSON.</span></div><div data-ir-artifact-fields>${rows}</div><button type="button" class="text-button" data-ir-artifact-add${editable ? "" : " disabled"}>Add Artifact slot</button></div>`;
 }
 
-function renderTeamIrEditorRows(ir, escText, editable) {
-  const packageRefs = [...new Set((ir.agents || []).map((agent) => String(agent.packageRef || "").trim()).filter(Boolean))].sort();
+function renderTeamIrEditorRows(ir, escText, editable, authoringCatalog = null) {
+  const packageRefs = [...new Set([
+    ...(authoringCatalog?.packages || []).map((item) => String(item.ref || "").trim()),
+    ...(ir.agents || []).map((agent) => String(agent.packageRef || "").trim())
+  ].filter(Boolean))].sort();
   const bindingRefs = [...new Set([
+    ...(authoringCatalog?.bindings || []).map((item) => String(item.ref || "").trim()),
     ...(ir.bindings || []).map((binding) => String(binding.id || "").trim()),
     ...(ir.agents || []).map((agent) => String(agent.bindingRef || "").trim())
   ].filter(Boolean))].sort();
@@ -1855,6 +1876,14 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     if (!irResponse.ok) throw new Error(stored.error || "Unable to load Team IR v2.");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
     if (stored.teamIR?.schemaVersion !== 2) throw new Error("TEAM_IR_V2_REQUIRED: TeamVersion must contain a native Team IR v2 document.");
+    let authoringCatalog = null;
+    try {
+      const catalogResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/catalog`);
+      const catalog = await catalogResponse.json();
+      if (catalogResponse.ok && Array.isArray(catalog.packages) && Array.isArray(catalog.bindings)) authoringCatalog = catalog;
+    } catch (error) {
+      if (isAbort(error)) throw error;
+    }
     let draft = stored.teamIR;
     let expectedSemanticDigest = stored.semanticDigest ?? null;
     const editable = team.teamVersionStatus === "draft";
@@ -1863,11 +1892,43 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     let undoDraft;
     const undoStack = [];
     const redraw = () => {
-      const rows = renderTeamIrEditorRows(draft, esc, editable);
+      const t = (en, zh) => state.locale === "en" ? en : zh;
+      const rows = renderTeamIrEditorRows(draft, esc, editable, authoringCatalog);
       Object.assign(rows, renderTeamIrOrchestrationRows(draft, esc, editable));
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section>${renderTeamIrCollaborationSummary(draft, esc)}<details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button><button class="secondary-button" type="button" data-ir-undo${undoDraft ? "" : " hidden"}>Undo last suggestion</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p>${renderTeamIrSimulationInput(draft.runInput?.dataSchema, simulationInputValue, esc)}<label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
+      const versionActions = editable
+        ? `<button class="secondary-button" type="button" data-ir-reference-classic>${state.locale === "en" ? "Reference a classic team" : "参考经典团队"}</button>`
+        : `<button class="primary-button" type="button" data-ir-create-version>${state.locale === "en" ? "Create a new version" : "创建新版本"}</button><button class="secondary-button" type="button" data-ir-reference-classic>${state.locale === "en" ? "Reference a classic team" : "参考经典团队"}</button>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("OGS Studio", "OGS Studio")}</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>${t("Versioned, typed handoffs and execution policy for this TeamVersion.", "版本化的类型交接与执行策略，用于此 TeamVersion。")}</p><div class="form-actions ir-version-actions">${versionActions}</div></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? t("Design", "设计中") : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Team", "团队")}</span><h2>${t("Team identity and Run input", "团队信息与运行输入")}</h2></div></div><div class="ir-form-grid"><label>${t("Team ID", "团队 ID")}<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">${t("Agents and ports", "Agent 与端口")}</span><h2>${t("Team responsibilities", "团队职责")}</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>${t("Add Agent", "添加 Agent")}</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">${t("Add at least one Agent.", "请至少添加一个 Agent。")}</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">${t("Handoffs", "Handoff")}</span><h2>${t("Explicit field mapping", "显式字段映射")}</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>${t("Add Handoff", "添加 Handoff")}</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">${t("Add Run-to-Agent and result handoffs.", "请添加 Run 到 Agent 及结果 Handoff。")}</p>`}</div></section>${renderTeamIrCollaborationSummary(draft, esc)}<details class="project-panel ir-advanced-contracts" open><summary>${t("Join, Loop, Review, Artifact and A2A contracts", "Join、Loop、Review、Artifact 与 A2A 合同")}</summary><p class="form-hint">${t("Edit the v2 JSON fields below. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.", "编辑下方 v2 JSON 字段。上方编辑会保留高级字段；保存前由服务端报告 Schema 与语义诊断。")}</p><label>${t("Advanced contracts JSON", "高级合同 JSON")}<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">${t("Save and verify", "保存并验证")}</button><button class="secondary-button" type="button" data-ir-undo${undoDraft ? "" : " hidden"}>${t("Undo last suggestion", "撤销上次建议")}</button>` : `<span class="form-hint">${t("Released TeamVersions are read-only.", "已发布 TeamVersion 为只读。")}</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || t("Not saved", "尚未保存"))}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">${t("Sandbox", "沙箱")}</span><h2>${t("Team IR v2 Simulation", "Team IR v2 仿真")}</h2></div></div><p class="form-hint">${t("Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.", "Studio 沙箱仿真会自动通过 Review 门；项目任务 Review 需要已认证的审核人。")}</p>${renderTeamIrSimulationInput(draft.runInput?.dataSchema, simulationInputValue, esc)}<label>${t("Task", "任务")}<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>${t("Run Simulation", "运行仿真")}</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
+      root.querySelector("[data-ir-create-version]")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/edit`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to create a new TeamVersion.");
+          navigate(`/studio/teams/${encodeURIComponent(payload.projectId)}/ir`);
+        } catch (error) {
+          if (isAbort(error)) return;
+          button.disabled = false;
+          showToast(error.message || "Unable to create a new TeamVersion.");
+        }
+      });
+      root.querySelector("[data-ir-reference-classic]")?.addEventListener("click", () => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "confirm-dialog ir-template-dialog";
+        dialog.innerHTML = `<div class="dialog-head"><div><span class="section-kicker">${state.locale === "en" ? "Team IR v2" : "Team IR v2"}</span><h2>${state.locale === "en" ? "Reference a classic team" : "参考经典团队"}</h2><p class="form-hint">${state.locale === "en" ? "Choose a built-in team to create a separate draft. This TeamVersion stays unchanged." : "选择内置团队创建独立草稿；当前 TeamVersion 不会被修改。"}</p></div><button type="button" class="close-button" data-close-ir-template aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="classic-template-dialog-grid">${(state.cases || []).map((item) => `<button type="button" class="classic-template-dialog-item" data-ir-template-case="${esc(item.id)}"><strong>${esc(text(item.title))}</strong><span>${esc(text(item.short))}</span></button>`).join("")}</div>`;
+        document.body.append(dialog);
+        const close = () => { dialog.close(); dialog.remove(); };
+        dialog.querySelector("[data-close-ir-template]")?.addEventListener("click", close);
+        dialog.querySelectorAll("[data-ir-template-case]").forEach((button) => button.addEventListener("click", () => {
+          close();
+          void createProjectFromCase(button.dataset.irTemplateCase, "template", button);
+        }));
+        dialog.addEventListener("close", () => dialog.remove(), { once: true });
+        dialog.showModal();
+      });
       form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", renderTeamIrDerivedViews(draft, esc));
       form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Review gates</h2></div><button class="secondary-button" type="button" data-ir-add-review${editable ? "" : " disabled"}>Add Review</button></div><div class="ir-editor-list">${rows.reviews || '<p class="empty-note">No Review gates.</p>'}</div></section>`);
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
@@ -1877,22 +1938,49 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         draft = previous;
         undoDraft = undefined;
         redraw();
-        root.querySelector("[data-team-ir-status]").textContent = "Undid last structured edit; save to persist.";
+        root.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? "Undid last structured edit; save to persist." : "已撤销上次结构化编辑；保存后才会持久化。";
       });
       const syncQuickSchema = (editor) => {
         const target = editor.dataset.irSchemaTarget;
         const textarea = form.querySelector(`[data-ir-schema-textarea][name="${CSS.escape(target)}"]`);
         if (!textarea) return;
-        const properties = {};
+        let current;
+        try { current = JSON.parse(textarea.value || "{}"); } catch { current = {}; }
+        const sourceProperties = { ...(current.properties && typeof current.properties === "object" && !Array.isArray(current.properties) ? current.properties : {}) };
+        let managedBefore = [];
+        try {
+          const parsed = JSON.parse(editor.dataset.irSchemaManaged || "[]");
+          if (Array.isArray(parsed)) managedBefore = parsed.filter((name) => typeof name === "string");
+        } catch { /* A malformed editor marker must not affect Advanced JSON. */ }
+        const properties = { ...sourceProperties };
         const required = [];
-        for (const row of editor.querySelectorAll("[data-ir-schema-field]")) {
+        const quickNames = new Set();
+        const rows = [...editor.querySelectorAll("[data-ir-schema-field]")];
+        for (const original of managedBefore) delete properties[original];
+        for (const row of rows) {
           const name = row.querySelector("[data-ir-schema-name]")?.value.trim();
           const type = row.querySelector("[data-ir-schema-type]")?.value;
           if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
-          properties[name] = { type };
+          if (quickNames.has(name)) {
+            form.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? `Schema field names must be unique: ${name}.` : `Schema 字段名必须唯一：${name}。`;
+            return;
+          }
+          quickNames.add(name);
+          const original = row.dataset.irSchemaOriginal || "";
+          const previous = original && sourceProperties[original] && typeof sourceProperties[original] === "object" ? sourceProperties[original] : {};
+          if (original && original !== name) delete properties[original];
+          properties[name] = { ...previous, type };
           if (row.querySelector("[data-ir-schema-required]")?.checked) required.push(name);
+          row.dataset.irSchemaOriginal = name;
         }
-        textarea.value = JSON.stringify({ type: "object", properties, ...(required.length ? { required } : {}), additionalProperties: false }, null, 2);
+        const previousRequired = Array.isArray(current.required) ? current.required : [];
+        const preservedRequired = previousRequired.filter((name) => !managedBefore.includes(name));
+        const nextSchema = { ...current, type: current.type || "object", properties };
+        const nextRequired = [...new Set([...preservedRequired, ...required])];
+        if (nextRequired.length || Object.hasOwn(current, "required")) nextSchema.required = nextRequired;
+        else delete nextSchema.required;
+        editor.dataset.irSchemaManaged = JSON.stringify([...quickNames]);
+        textarea.value = JSON.stringify(nextSchema, null, 2);
         try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
       };
       const syncQuickArtifacts = (editor) => {
@@ -1903,9 +1991,15 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         try { current = JSON.parse(textarea.value || "{}") || {}; } catch { /* Advanced JSON validation reports malformed values. */ }
         const mediaKey = editor.dataset.irArtifactMediaKey || "acceptedMediaTypes";
         const slots = {};
+        const names = new Set();
         for (const row of editor.querySelectorAll("[data-ir-artifact-field]")) {
           const name = row.querySelector("[data-ir-artifact-name]")?.value.trim();
           if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
+          if (names.has(name)) {
+            form.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? `Artifact slot names must be unique: ${name}.` : `Artifact 槽位名必须唯一：${name}。`;
+            return;
+          }
+          names.add(name);
           const original = row.dataset.irArtifactOriginal;
           const spec = { ...(current[original] && typeof current[original] === "object" ? current[original] : {}) };
           const mediaTypes = row.querySelector("[data-ir-artifact-media]")?.value.split(",").map((item) => item.trim()).filter(Boolean) || [];
@@ -1913,6 +2007,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           spec.cardinality = row.querySelector("[data-ir-artifact-cardinality]")?.value || "single";
           spec.required = row.querySelector("[data-ir-artifact-required]")?.checked === true;
           slots[name] = spec;
+          row.dataset.irArtifactOriginal = name;
         }
         textarea.value = JSON.stringify(slots, null, 2);
         try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
@@ -1936,7 +2031,12 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         const editor = event.target.closest("[data-ir-schema-quick]");
         if (!editor) return;
         if (removeField) removeField.closest("[data-ir-schema-field]")?.remove();
-        else editor.querySelector("[data-ir-schema-fields]")?.insertAdjacentHTML("beforeend", '<div class="ir-schema-field" data-ir-schema-field><input data-ir-schema-name value="field" aria-label="New schema field name"><select data-ir-schema-type aria-label="New schema field type"><option value="string">string</option><option value="number">number</option><option value="integer">integer</option><option value="boolean">boolean</option></select><label class="checkbox-label"><input type="checkbox" data-ir-schema-required>Required</label><button type="button" class="icon-button" data-ir-schema-remove aria-label="Remove schema field" title="Remove schema field">×</button></div>');
+        else {
+          const names = new Set([...editor.querySelectorAll("[data-ir-schema-name]")].map((input) => input.value.trim()));
+          let name = "field";
+          for (let suffix = 2; names.has(name); suffix += 1) name = `field${suffix}`;
+          editor.querySelector("[data-ir-schema-fields]")?.insertAdjacentHTML("beforeend", `<div class="ir-schema-field" data-ir-schema-field data-ir-schema-original=""><input data-ir-schema-name value="${escText(name)}" aria-label="New schema field name"><select data-ir-schema-type aria-label="New schema field type"><option value="string">string</option><option value="number">number</option><option value="integer">integer</option><option value="boolean">boolean</option></select><label class="checkbox-label"><input type="checkbox" data-ir-schema-required>Required</label><button type="button" class="icon-button" data-ir-schema-remove aria-label="Remove schema field" title="Remove schema field">×</button></div>`);
+        }
         syncQuickSchema(editor);
       });
       form.addEventListener("click", (event) => {
@@ -1946,7 +2046,12 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         const editor = event.target.closest("[data-ir-artifact-quick]");
         if (!editor) return;
         if (removeSlot) removeSlot.closest("[data-ir-artifact-field]")?.remove();
-        else editor.querySelector("[data-ir-artifact-fields]")?.insertAdjacentHTML("beforeend", '<div class="ir-artifact-field" data-ir-artifact-field data-ir-artifact-original=""><input data-ir-artifact-name value="slot" aria-label="New Artifact slot name"><input data-ir-artifact-media value="text/plain" placeholder="text/plain, text/markdown" aria-label="New Artifact slot media types"><select data-ir-artifact-cardinality aria-label="New Artifact slot cardinality"><option value="single" selected>single</option><option value="many">many</option></select><label class="checkbox-label"><input type="checkbox" data-ir-artifact-required>Required</label><button type="button" class="icon-button" data-ir-artifact-remove aria-label="Remove Artifact slot" title="Remove Artifact slot">x</button></div>');
+        else {
+          const names = new Set([...editor.querySelectorAll("[data-ir-artifact-name]")].map((input) => input.value.trim()));
+          let name = "slot";
+          for (let suffix = 2; names.has(name); suffix += 1) name = `slot${suffix}`;
+          editor.querySelector("[data-ir-artifact-fields]")?.insertAdjacentHTML("beforeend", `<div class="ir-artifact-field" data-ir-artifact-field data-ir-artifact-original=""><input data-ir-artifact-name value="${escText(name)}" aria-label="New Artifact slot name"><input data-ir-artifact-media value="text/plain" placeholder="text/plain, text/markdown" aria-label="New Artifact slot media types"><select data-ir-artifact-cardinality aria-label="New Artifact slot cardinality"><option value="single" selected>single</option><option value="many">many</option></select><label class="checkbox-label"><input type="checkbox" data-ir-artifact-required>Required</label><button type="button" class="icon-button" data-ir-artifact-remove aria-label="Remove Artifact slot" title="Remove Artifact slot">x</button></div>`);
+        }
         syncQuickArtifacts(editor);
       });
       const syncMappingText = (handoffRow) => {
@@ -2217,7 +2322,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           suggestions.querySelectorAll("[data-ir-map-accept]").forEach((accept) => accept.addEventListener("click", () => {
             undoDraft = structuredClone(draft);
             addMappingRow(handoffIndex, accept.dataset.irMapAccept, accept.dataset.irMapRef);
-            suggestions.innerHTML = '<span class="field-hint">Mapping added. Save and verify to include it in Team IR.</span>';
+            suggestions.innerHTML = `<span class="field-hint">${state.locale === "en" ? "Mapping added. Save and verify to include it in Team IR." : "已添加映射。保存并验证后才会写入 Team IR。"}</span>`;
             form.querySelector("[data-ir-undo]")?.removeAttribute("hidden");
           }));
         } catch (error) { captureFailure(error); }
@@ -2251,7 +2356,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         }));
       };
       const captureFailure = (error) => {
-        form.querySelector("[data-team-ir-status]").textContent = error.message || "Unable to read Team IR form.";
+          form.querySelector("[data-team-ir-status]").textContent = error.message || (state.locale === "en" ? "Unable to read Team IR form." : "无法读取 Team IR 表单。" );
       };
       const syncAdvancedContracts = () => {
         form.querySelector("[data-ir-advanced-json]").value = JSON.stringify(teamIrAdvancedContracts(draft), null, 2);
@@ -2668,7 +2773,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           const saved = await saveResponse.json();
           showDiagnostics(saved.diagnostics || []);
           if (!saveResponse.ok || !saved.saved) {
-            status.textContent = saved.error || "Team IR draft was not saved.";
+            status.textContent = saved.error || (state.locale === "en" ? "Team IR draft was not saved." : "Team IR 草稿未保存。" );
             return;
           }
           const reloadResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`);
@@ -2679,12 +2784,12 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           redraw();
           showDiagnostics(saved.diagnostics || preview.diagnostics || [], root.querySelector("#team-ir-editor"));
           const readiness = saved.releaseReady === false
-            ? (saved.draftSaveable ? "Draft saved; release readiness still has diagnostics." : "Draft saved.")
-            : "Saved and release-ready.";
-          root.querySelector("[data-team-ir-status]").textContent = `Saved and reopened · ${expectedSemanticDigest} · ${readiness}`;
+            ? (saved.draftSaveable ? (state.locale === "en" ? "Draft saved; release readiness still has diagnostics." : "草稿已保存；发布就绪仍有诊断。") : (state.locale === "en" ? "Draft saved." : "草稿已保存。"))
+            : (state.locale === "en" ? "Saved and release-ready." : "已保存，可发布。" );
+          root.querySelector("[data-team-ir-status]").textContent = `${state.locale === "en" ? "Saved and reopened" : "已保存并重开"} · ${expectedSemanticDigest} · ${readiness}`;
         } catch (error) {
           if (isAbort(error)) return;
-          status.textContent = error.message || "Unable to save Team IR v2.";
+          status.textContent = error.message || (state.locale === "en" ? "Unable to save Team IR v2." : "无法保存 Team IR v2。" );
         } finally {
           if (submit?.isConnected) submit.disabled = !editable;
         }
@@ -2840,7 +2945,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
       simulation.querySelector("[data-ir-simulation-run]").addEventListener("click", async (event) => {
         const button = event.currentTarget;
         button.disabled = true;
-        simulationStatus.textContent = "Running Team IR v2 Simulation…";
+        simulationStatus.textContent = state.locale === "en" ? "Running Team IR v2 Simulation…" : "正在运行 Team IR v2 仿真…";
         try {
           const input = readSimulationInput(true);
           const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`, {

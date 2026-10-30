@@ -50,7 +50,7 @@
 | Team IR v2 设计方案 | 已冻结为实施基线 | `docs/development/team-ir-handoff-v2-design.md`；阶段 0 语义复核完成，包含并行 Review、A2A 暂停/兄弟调用、重试/deadline 与失败竞态决策 |
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
 | v2 Schema / Compiler / Runtime | 通过（支持矩阵 + 发布前拒绝矩阵） | 阶段 1 Schema/Compiler 静态合同 86/86；阶段 2 Runtime/Loop/Join/fail-fast 与拓扑诊断 114/114，A2A pause/cancel/restart 与迟到结果 85/85。支持范围由精确 allowlist 定义；嵌套、重叠及其它未支持 Review/Join/Loop/fan-out 组合在编译前稳定 fail closed，顺序 Loop 复用成员也拒绝；外部副作用 outcome unknown 按设计不重放。 |
-| Studio v2 作者体验 | 部分完成（机器合同通过，A1 未完成） | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、端口画布、多 input/output port、递归 ValueExpr 映射、条件 AST、Artifact 上传、Simulation/Release/Project Task 和 fork 有确定性或真实场景证据。当前新增了服务端分层草稿保存、CAS 状态、目录/端点选择器和 Join 最低归属矩阵；复杂 Schema/Artifact 低门槛编辑、完整诊断矩阵、模板/摘要/撤销/i18n 和 5 人任务验收仍未完成。 |
+| Studio v2 作者体验 | 部分完成（机器合同通过，A1 未完成） | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、端口画布、多 input/output port、递归 ValueExpr 映射、条件 AST、Artifact 上传、Simulation/Release/Project Task 和 fork 有确定性或真实场景证据。当前已接入无凭据 Package/Binding 目录、端点选择器、Join `baseMapping` 归属矩阵、保留高级字段的 Schema/Artifact 快速编辑、8 个经典模板入口和核心中英文 i18n；完整诊断矩阵、复杂拓扑作者引导、全量 i18n 和 5 人任务验收仍未完成。 |
 | v2 端到端或发布验收 | 通过（当前 pin 机器门） | Docker `/20` 第三、第四轮连续 7/7；每轮完成 Chromium Simulation/Release、Project Task、结果/Artifact/Loop/Review 断言、Release Gate controlled failure/retry、8 条重启查询及同 root fork/legacy no-write 断言。direct `/14` 对照 7/7；Sandbox egress probe 1/1；Team Site 非跳过项通过；外部远端 A2A 与生产身份提供方按范围排除。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败保留为稳定性回归记录。 |
 
 ## 3. 实施与验收状态
@@ -62,7 +62,7 @@
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 通过；阶段 1 审计及 86/86 聚焦测试确认硬门闭合，见 2026-10-29 阶段 1 追溯复核记录 |
 | 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑必须在发布前稳定拒绝；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 通过；支持范围与 fail-closed 拒绝矩阵固定，拓扑诊断 114/114，A2A pause/cancel/restart 85/85；顺序 Loop 复用成员、嵌套/重叠 Loop 与其它混合组合均有稳定诊断，不把拒绝项描述为支持。 |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 部分通过：当前 pin 机器发布门通过，A0 有证据；A1a/A1b 作者能力和人工任务门未完成。 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 部分通过：当前 pin 机器发布门通过；A0 快速编辑数据正确性、A1a 目录/低门槛编辑和 A1b 模板/核心 i18n 有回归证据；完整诊断矩阵、复杂拓扑作者引导和人工任务门未完成。 |
 | 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；当前入口拒绝旧 Team 格式且不改写无关路径 | 机器门通过；产品整体待 A1 作者体验和最终人工复核完成。默认 `/studio/new`、Case/template、版本 fork 已使用 v2，Docker `/20` 连续两轮覆盖同 root 生命周期、旧格式拒绝和无写入。standalone OGSystem Mermaid/Project Package 仍是独立非 Team 路径。 |
 
 ### 阶段门
@@ -1244,9 +1244,20 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 | A1a 目录与结构化选择 | 部分完成 | Agent packageRef/bindingRef、Handoff 端点和 Review 输出使用当前已加载引用集合的选择器；未配置的新 Agent 保存前被阻止，不写入空引用。Join 增加只读的目标字段 × 来源 Handoff 归属矩阵，标注 required/optional、保证/可能跳过、缺失和重复来源；端口 Artifact 槽位支持常见媒体类型、cardinality 和 required 的结构化编辑，复杂合同仍保留 Advanced JSON；服务端诊断仍是信任边界。完整 Package/Binding 外部联合目录接线和 Run/Result 全合同编辑仍未完成。 |
 | 引用删除清理 | 通过（作者交互切片） | 删除被引用 Agent/Port 时先显示影响范围，确认后原子清理已知 Handoff、Route、Join、Loop、Review 引用；取消保持草稿不变。未知引用仍由结构诊断拒绝。 |
 | A1b 体验增量 | 部分完成 | Studio 增加从 IR 派生的 Handoff/Agent 输入摘要、`$.run.task` 可见性提示和每条 Result Handoff 的必需字段/Artifact 完整性预览，并支持撤销最近一次自动映射建议；这些视图明确由服务端诊断裁决。完整模板覆盖、输入汇总工作流、全量 i18n 和 5 人任务验收仍未完成。 |
-| 当前回归 | 通过（聚焦） | `pnpm build`、Team IR use-case 测试通过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`node --check apps/team-site/public/app/views/app.js` 通过。随后 Team Site 全量为 368 项中 364 通过、0 失败、4 项 opt-in 跳过；全仓仍为 979 项中 978 通过、0 失败、1 项 Windows 跳过。 |
+| 当前回归 | 通过（全量） | `pnpm build`、`node --check apps/team-site/public/app/views/app.js`、`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`（1/1）、Team Site `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`（373 项，369 通过、0 失败、4 项明确 opt-in 跳过）和全仓 `pnpm test`（979 项，978 通过、0 失败、1 项 Windows 跳过）均通过；`git diff --check` 通过。 |
 
 本记录不把 A1a/A1b 增量描述为整体 Studio 完成。A1b 的完整模板覆盖、输入汇总工作流、全量 i18n 和 5 人任务验收仍未完成；提案状态以 `docs/development/team-ir-v2-studio-authoring-proposal.md` 的单一台账链接为准。
+
+### 2026-10-30：Studio A0/A1 作者切片与快速编辑回归
+
+本轮在既有机器发布门之后完成 Studio 作者体验的可审查增量，未改变 Team IR v2 Schema、Compiler 或 Runtime 语义：
+
+- 可信目录：新增 `GET /api/v1/team-versions/:id/ir/catalog` 及注入式 `TeamIrAuthoringCatalog`。direct/Docker resolver 只暴露 Package `ref/label/version/digest` 和 Binding `ref/label/version/modelRef/adapterVersion` 摘要，不暴露 endpoint、目录路径、凭据或提示词；目录不可用或无有效条目时 fail closed。编辑页将目录与当前 IR 引用合并为选择器，新 Agent 没有选择仍不能保存。
+- 经典模板：`/studio/new` 提供空白草稿和全部 8 个经典 Team IR v2 案例；编辑页“参考经典团队”和已发布版本“创建新版本”均通过独立 draft/fork，不覆盖当前版本。模板浏览器回归实际调用 `classic-software-team` API 并确认新版本为 draft。
+- 作者体验：Team IR 编辑器核心标题、操作、保存/撤销/仿真状态支持中英文；Join 归属矩阵把 `baseMapping.data` 作为 Run input 提供方；Schema 快速编辑只合并用户修改的基础字段并保留高级约束，Artifact 槽位重命名保留原元数据并更新原始键，新增字段/槽位生成唯一建议名且重复名称不静默覆盖。
+- 回归：`node --check apps/team-site/public/app/views/app.js` 通过；目录/API/resolver 聚焦测试 39 通过、1 项 opt-in Docker skip；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1 通过，覆盖模板入口、Join `baseMapping` 归属、Schema 高级字段保留、Artifact 重命名元数据和窄屏编辑；随后 Team Site 全量 373 项中 369 通过、0 失败、4 项明确 opt-in 跳过，全仓 979 项中 978 通过、0 失败、1 项 Windows 跳过，`git diff --check` 通过。
+
+本记录不把 A1 标为完成：完整诊断 code/pointer 矩阵、复杂拓扑作者引导、全量 Studio i18n 和第 10 节 5 人独立任务验收仍未完成；最终人工复核必须在所有机器门和回归通过后进行。
 
 ## 6. Codex / 实施代理工作约定
 
