@@ -1199,7 +1199,7 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 本记录闭合阶段 2、3、4 的机器验收门。阶段 2 的“通过”表示支持 allowlist 和未支持拓扑的发布前稳定拒绝均已验证，不表示 Runtime 支持任意 Loop/Join/Review 组合；阶段 3 的“通过”表示机器作者/发布合同，人工用户研究按提案规定在机器门之后执行；外部远端 A2A、生产身份提供方不属于本轮范围。
 
-### 2026-10-30：当前 HEAD 审核与 pin 证据校准（前置快照，后由后续记录闭合）
+### 2026-10-30：当前 HEAD 审核与 pin 证据校准（历史前置快照，后由后续记录闭合）
 
 | 检查项 | 结果 | 结论 |
 | --- | --- | --- |
@@ -1232,9 +1232,9 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 在上述两轮失败记录之后，Docker `/20` 又按无并发顺序完成第三、第四轮，连续两轮均为 7/7，`scenarioFailures=[]`、`restartQueries=8`，并通过 Review、Loop、Artifact、Release Gate controlled failure/retry、服务重启查询、版本 fork 和 legacy no-write。第三轮与第四轮的七个场景均覆盖 `software-team`、`expert-consultation`、`structured-debate`、`artifact-evidence`、`conditional-signoff`、`maker-checker`、`release-gate`；第四轮原始 TAP 保存在 `/tmp/team-ir-docker20-round4.log`，其运行记录和 digest 已由 harness 输出保存。
 
-当前 pin 结论：Docker `/20` 连续稳定门和 direct `/14` 对照 7/7 均通过，Sandbox egress probe 1/1 通过；阶段 3、4 的机器验收门闭合。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败继续作为 provider 稳定性回归证据保留，不改变严格 fail-closed 语义。全仓、Team Site 和 Studio 回归通过，并已提交于 `8f2b36d`；剩余为提案规定的人工产品复核。
+当前 pin 结论：Docker `/20` 连续稳定门和 direct `/14` 对照 7/7 均通过，Sandbox egress probe 1/1 通过；阶段 3、4 的机器验收门闭合。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败继续作为 provider 稳定性回归证据保留，不改变严格 fail-closed 语义。全仓、Team Site 和 Studio 回归通过，并已提交于 `333b564`；剩余为提案规定的人工产品复核。
 
-最终回归结果：`pnpm test` 979 项中 978 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 368 项中 364 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。机器验收记录已提交，剩余步骤是提案第 10 节规定的人工产品复核。
+最终回归结果：`pnpm test` 980 项中 979 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 373 项中 369 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。机器验收记录已提交，剩余步骤是提案第 10 节规定的人工产品复核。
 
 ### 2026-10-30：A1a 草稿契约与 Studio 低门槛编辑增量
 
@@ -1244,7 +1244,7 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 | A1a 目录与结构化选择 | 部分完成 | Agent packageRef/bindingRef、Handoff 端点和 Review 输出使用当前已加载引用集合的选择器；未配置的新 Agent 保存前被阻止，不写入空引用。Join 增加只读的目标字段 × 来源 Handoff 归属矩阵，标注 required/optional、保证/可能跳过、缺失和重复来源；端口 Artifact 槽位支持常见媒体类型、cardinality 和 required 的结构化编辑，复杂合同仍保留 Advanced JSON；服务端诊断仍是信任边界。完整 Package/Binding 外部联合目录接线和 Run/Result 全合同编辑仍未完成。 |
 | 引用删除清理 | 通过（作者交互切片） | 删除被引用 Agent/Port 时先显示影响范围，确认后原子清理已知 Handoff、Route、Join、Loop、Review 引用；取消保持草稿不变。未知引用仍由结构诊断拒绝。 |
 | A1b 体验增量 | 部分完成 | Studio 增加从 IR 派生的 Handoff/Agent 输入摘要、`$.run.task` 可见性提示和每条 Result Handoff 的必需字段/Artifact 完整性预览，并支持撤销最近一次自动映射建议；这些视图明确由服务端诊断裁决。完整模板覆盖、输入汇总工作流、全量 i18n 和 5 人任务验收仍未完成。 |
-| 当前回归 | 通过（全量） | `pnpm build`、`node --check apps/team-site/public/app/views/app.js`、`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`（1/1）、Team Site `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`（373 项，369 通过、0 失败、4 项明确 opt-in 跳过）和全仓 `pnpm test`（979 项，978 通过、0 失败、1 项 Windows 跳过）均通过；`git diff --check` 通过。 |
+| 本切片回归（历史快照） | 通过（当时全量） | `pnpm build`、`node --check apps/team-site/public/app/views/app.js`、`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`（1/1）、Team Site `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`（373 项，369 通过、0 失败、4 项明确 opt-in 跳过）和当时全仓 `pnpm test`（979 项，978 通过、0 失败、1 项 Windows 跳过）均通过；`git diff --check` 通过。当前权威最终回归见本节后续记录。 |
 
 本记录不把 A1a/A1b 增量描述为整体 Studio 完成。A1b 的完整模板覆盖、输入汇总工作流、全量 i18n 和 5 人任务验收仍未完成；提案状态以 `docs/development/team-ir-v2-studio-authoring-proposal.md` 的单一台账链接为准。
 
@@ -1255,7 +1255,7 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 - 可信目录：新增 `GET /api/v1/team-versions/:id/ir/catalog` 及注入式 `TeamIrAuthoringCatalog`。direct/Docker resolver 只暴露 Package `ref/label/version/digest` 和 Binding `ref/label/version/modelRef/adapterVersion` 摘要，不暴露 endpoint、目录路径、凭据或提示词；目录不可用或无有效条目时 fail closed。编辑页将目录与当前 IR 引用合并为选择器，新 Agent 没有选择仍不能保存。
 - 经典模板：`/studio/new` 提供空白草稿和全部 8 个经典 Team IR v2 案例；编辑页“参考经典团队”和已发布版本“创建新版本”均通过独立 draft/fork，不覆盖当前版本。模板浏览器回归实际调用 `classic-software-team` API 并确认新版本为 draft。
 - 作者体验：Team IR 编辑器核心标题、操作、保存/撤销/仿真状态支持中英文；Join 归属矩阵把 `baseMapping.data` 作为 Run input 提供方；Schema 快速编辑只合并用户修改的基础字段并保留高级约束，Artifact 槽位重命名保留原元数据并更新原始键，新增字段/槽位生成唯一建议名且重复名称不静默覆盖。
-- 回归：`node --check apps/team-site/public/app/views/app.js` 通过；目录/API/resolver 聚焦测试 39 通过、1 项 opt-in Docker skip；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1 通过，覆盖模板入口、Join `baseMapping` 归属、Schema 高级字段保留、Artifact 重命名元数据和窄屏编辑；随后 Team Site 全量 373 项中 369 通过、0 失败、4 项明确 opt-in 跳过，全仓 979 项中 978 通过、0 失败、1 项 Windows 跳过，`git diff --check` 通过。
+- 回归：`node --check apps/team-site/public/app/views/app.js` 通过；目录/API/resolver 聚焦测试 39 通过、1 项 opt-in Docker skip；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1 通过，覆盖模板入口、Join `baseMapping` 归属、Schema 高级字段保留、Artifact 重命名元数据和窄屏编辑；随后 Team Site 全量 373 项中 369 通过、0 失败、4 项明确 opt-in 跳过，全仓 980 项中 979 通过、0 失败、1 项 Windows 跳过，`git diff --check` 通过。
 
 本记录不把 A1 标为完成：完整诊断 code/pointer 矩阵、复杂拓扑作者引导、全量 Studio i18n 和第 10 节 5 人独立任务验收仍未完成；最终人工复核必须在所有机器门和回归通过后进行。
 
