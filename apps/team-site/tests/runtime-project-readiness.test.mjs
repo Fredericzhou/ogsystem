@@ -50,3 +50,17 @@ test("native Team IR v2 readiness fails closed when its resolver is missing", as
   assert.equal(readiness.canDryRun, false);
   assert.equal(readiness.blockers[0].code, "TEAM_IR_V2_RESOLVER_UNAVAILABLE");
 });
+
+test("saved semantic drafts remain non-runnable until diagnostics are cleared", async () => {
+  const { classicSoftwareTeamIr } = await import("./team-ir-test-runtime.mjs");
+  const draft = structuredClone(classicSoftwareTeamIr);
+  draft.handoffs = draft.handoffs.filter((handoff) => handoff.to?.kind !== "result");
+  const inspector = createRuntimeProjectReadinessInspector({
+    teamIrStore: { read: async () => ({ teamIR: draft }) },
+    resolveReleaseClosure: async () => { throw new Error("closure must not be reached for a diagnostic draft"); },
+    resolveBindings: async () => { throw new Error("bindings must not be reached for a diagnostic draft"); }
+  });
+  const readiness = await inspector.inspect("/teams/software-v2", { teamVersionId: "software-v2" });
+  assert.equal(readiness.canDryRun, false);
+  assert.equal(readiness.blockers[0].code, "IR_RESULT_REQUIRED_MISSING");
+});

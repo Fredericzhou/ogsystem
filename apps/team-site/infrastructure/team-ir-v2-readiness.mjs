@@ -1,4 +1,4 @@
-import { compileTeamIr, teamIRSemanticDigest, validateTeamIr } from "../../../dist/team-ir/index.js";
+import { classifyTeamIrDiagnostics, compileTeamIr, teamIRSemanticDigest, validateTeamIr } from "../../../dist/team-ir/index.js";
 
 function blocker(code, message) {
   return { code, severity: "blocker", message };
@@ -15,13 +15,14 @@ export async function inspectTeamIrV2Readiness({ workdir, team, teamIrStore, res
   }
 
   const diagnostics = validateTeamIr(teamIR);
+  const status = classifyTeamIrDiagnostics(diagnostics);
   const blockers = diagnostics.filter((item) => item.severity === "error").map((item) => ({
     code: item.code,
     severity: "blocker",
     message: item.message,
     ...(item.pointer ? { pointer: item.pointer } : {})
   }));
-  if (blockers.length) return { canDryRun: false, blockers, warnings: [], missingBindings: [] };
+  if (!status.draftSaveable || blockers.length) return { canDryRun: false, blockers, warnings: [], missingBindings: [] };
   if (typeof resolveReleaseClosure !== "function" || typeof resolveBindings !== "function") {
     return { canDryRun: false, blockers: [blocker("TEAM_IR_V2_RESOLVER_UNAVAILABLE", "Trusted Team IR v2 resolver is not configured.")], warnings: [], missingBindings: [] };
   }

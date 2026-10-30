@@ -44,7 +44,7 @@ Studio 应让普通用户通过引导式配置完成常见 Team，同时让高�
 - 右侧检查器，按当前选中的 IR 对象展示适用字段、可选项、来源/目标和所需合同。
 - 任务清单/诊断侧栏，使用面向用户的说明、下一步动作和修复预览；稳定诊断 code 与 JSON Pointer 可展开查看，并可跳转到控件或高级 JSON。
 
-表单和高级 IR 编辑始终同步到单一草稿。高级 JSON 无法解析时保留原文和上一个有效结构视图，不覆盖草稿。A1 的最小撤销针对单一草稿编辑事务；完整撤销/重做、未保存修改提示和异常恢复在阶段 B 提供。
+表单和高级 IR 编辑始终同步到单一草稿。高级 JSON 无法解析时保留原文和上一个有效结构视图，不覆盖草稿。A1b 的最小撤销针对单一草稿编辑事务；完整撤销/重做、未保存修改提示和异常恢复在阶段 B 提供。
 
 提供从当前 IR 确定性生成的只读协作摘要，例如“当 researcher 的 status 为 ready 时，将 findings 交给 writer”。摘要由已声明的 Agent、Handoff、条件和映射按固定模板拼接，不调用 LLM；不支持白话化的条件必须显示为可展开的条件说明，不得省略。模板、快捷操作与 AI diff 预览也使用同一摘要帮助用户核对变更。
 
@@ -80,7 +80,7 @@ Studio 应让普通用户通过引导式配置完成常见 Team，同时让高�
 ### 4.2 添加 Agent 和端口
 
 - Agent 必须从当前可用目录选择 v2 可解析的角色包和 Binding；目录项写入对应的 `packageRef`、`bindingRef`。没有可信目录项时保持未配置并阻止发布，不得写死某个模型或凭空生成可解析引用。展示引用摘要和版本，不把角色包提示词或凭据写入 IR。
-- 端口 ID、输出事件 ID 和 Schema 字段名是 IR 语义标识。创建时可按稳定规则生成易读建议并立即显示；重命名必须同步更新相关 Handoff、route、Join、Loop 和引用，或在无法证明安全更新时拒绝操作。
+- 端口 ID、输出事件 ID 和 Schema 字段名是 IR 语义标识。创建时可按稳定规则生成易读建议并立即显示；重命名必须同步更新相关 Handoff、route、Join、Loop 和引用。删除被引用对象时先列出影响范围，确认后原子清理已知引用，取消则保持草稿不变；无法证明安全更新时拒绝操作。
 - JSON Schema 表单覆盖常见的 `type`、`properties`、`required`、`items` 等内容，并支持完整高级编辑。未支持的组合通过诊断和 Runtime 校验提示表达，不猜测 Schema 蕴含关系。
 
 ### 4.3 创建 Handoff 与映射
@@ -134,10 +134,21 @@ Studio 应让普通用户通过引导式配置完成常见 Team，同时让高�
 
 ## 7. 保存、预检、Simulation 与发布
 
-1. 每次编辑更新单一 Team IR v2 草稿。A1 提供草稿级最小撤销，至少能撤销刚应用的自动映射建议；更广泛的跨对象 undo/redo、历史浏览和异常恢复属于阶段 B。
+1. 每次编辑更新单一 Team IR v2 草稿。A1b 提供草稿级最小撤销，至少能撤销刚应用的自动映射建议；更广泛的跨对象 undo/redo、历史浏览和异常恢复属于阶段 B。
 2. 本地预检调用与服务端相同版本的 Schema/Compiler；结果包含诊断 code、JSON Pointer、Team semantic digest 和编译计划 digest，并区分“可保存草稿”与“可 Simulation/发布”。
 3. 保存 API 分两级校验：可解析且符合 v2 JSON Schema、IR 内部引用及 Schema `$ref` 可解析的文档可保存为草稿，并在保存响应和重开/校验响应中提供可重算的语义诊断；诊断是 IR 的派生结果，不写入 IR，也不纳入 digest。缺映射、缺必需贡献等可修复的阻断诊断不阻止草稿持久化。不能解析、Schema 无效或内部/Schema 引用无法解析的文档拒绝保存。外部 package/Binding 目录或 resolver 尚不能确认的依赖作为显式诊断保留在草稿，但必须阻止 Simulation/发布。浏览器状态不是信任边界。
 4. `expectedSemanticDigest` 始终与当前已保存草稿比较，作为并发编辑的 compare-and-set 条件；检查在写入前原子完成。带诊断草稿保存成功后返回该草稿新的 semantic digest，下一次保存必须携带这个新值。诊断是否阻断发布不改变 digest 冲突语义；冲突时不覆盖新版本。
+
+保存状态的真值表：
+
+| 情况 | `ok` | `draftSaveable` | `releaseReady` | `saved` |
+| --- | --- | --- | --- | --- |
+| 结构错误（Schema、内部引用、无法解析的 ValueExpr） | false | false | false | false |
+| 结构有效但有语义诊断（缺映射、缺必需贡献、不支持拓扑） | false | true | false | true |
+| 无 IR 诊断但依赖闭包未解析 | true | true | false | true |
+| 无 IR 诊断且依赖闭包完整 | true | true | true | true |
+
+`ok` 只表示没有 IR error 诊断；`releaseReady` 还要求可信依赖闭包和发布证据。读取、Simulation、发布、挂载和 Task 必须重新执行服务端校验，不能把 `draftSaveable` 当作可运行。
 5. Simulation 和发布要求完整静态校验/Compiler 无阻断诊断。Simulation 运行明确版本的编译计划，并将证据绑定到 semantic digest 和 `compiledPlanDigest`；Fake resolver/Binding 证据清晰标注为测试或预览，不能冒充生产 Sandbox 发布证据。
 6. 发布只接受校验通过、依赖闭包可信且所需 release evidence 满足策略的版本。发布失败保留可编辑草稿，不覆盖无关旧数据。
 7. 重开时由保存的 IR 重建结构视图与表单；presentation 状态与语义 IR 分离，semantic digest 应稳定。
@@ -168,41 +179,33 @@ AI 只能选择 v2 已支持的原语和字段。对任意动态组队、隐式�
 
 ## 9. 当前页面差距与实施顺序
 
-当前 `/ir` 页面已具备 v2 草稿读取、基础结构投影、Source/Target 连接、保存校验、诊断跳转和高级 JSON round-trip 的垂直切片，但不是普通用户可完整配置的作者工作台。当前代码中可见的具体差距包括：
-
-- Agent 基础表单只投影首个 input/output port；其余端口只能通过高级 JSON 编辑。
-- `packageRef`、`bindingRef` 使用文本框，没有接目录选择；新增 Agent 的草稿还会写入固定角色引用和固定 `modelRef`，不是按本地已解析资源选择。
-- Handoff 映射输入为 `target=$.ref` 文本；条件表单只投影一个比较并用最后路径段重建，复杂 v2 条件可能被错误表达或有损处理。
-- Join 与 Loop 的目标端口/来源集合有逗号分隔文本；完整 Handoff ID 和成员关系没有结构化选择器。
-- 结构视图是节点与边按钮列表，不是可拖拽画布；端口选项虽有选择器，但当前连接流程仍需来源/目标两步。
-- Review 没有对应的结构化创建/编辑表单；Simulation 的 Run 输入 JSON 需手写，而 task 已有独立文本控件。
-- 当前表单与高级 JSON 的数据投影需要重点验证无损往返；条件表单若不能编辑完整 AST，必须保留原条件并禁止有损重建；不支持字段必须保留，不可因重绘而被简化表单覆盖。
-
-这些是界面/API 接线缺口，不要求修改 Team IR v2 的语义合同。尤其条件丢失、多端口丢弃和固定 Binding 默认值属于数据正确性风险，须先通过 A0 正确性闸门再扩大作者能力。
+当前 `/ir` 页面已经有多端口呈现、条件 AST、递归 ValueExpr、端点选择、诊断定位、Artifact Simulation 和 Advanced JSON round-trip 的确定性切片，但仍不是完整的普通用户作者工作台。实现分为 A1a 前置能力和 A1b 体验能力；两者都不改变 Team IR v2 语义。
 
 ### 阶段 A0：数据正确性闸门
 
 - 表单与高级 IR JSON 双向往返无损；未知/暂不支持字段必须保留，无法安全编辑时明确只读。
 - 修复多端口 Agent 的读取、呈现、保存和重开，不得只投影首端口后覆盖其余端口。
 - 条件 AST 无损保留；结构化编辑器未覆盖完整表达式时，不得把复杂条件重建为简化条件。
-- 新 Agent 不注入固定 `packageRef`、`bindingRef` 或 `modelRef`；没有已确认目录选择时保持未配置并显示阻断项。
+- 新 Agent 不注入固定 `packageRef`、`bindingRef` 或 `modelRef`。没有目录选择时，新 Agent 只存在于编辑器本地，不写入 IR；已经持久化的 Agent 引用仍按服务端诊断和依赖闭包处理。
 - 用浏览器回归测试覆盖加载、编辑其它字段、保存、重开后的语义 digest 和关键合同字段稳定性。此闸门使用结构和语义均有效的 fixture；带诊断草稿的持久化合同另由 A1 API 前置任务覆盖。
 
 通过 A0 前不开放会重写这些字段的普通用户配置路径，不将当前页面描述为安全的完整作者体验。
 
-### 阶段 A1：面向大众的低门槛入口
+### 阶段 A1a：作者前置能力
 
-- 提供已校验的 v2 场景模板/经典案例入口；生成结果先进入单一可审阅草稿。
-- 增加“结构有效草稿可保存、发布必须零阻断”的服务端分层校验能力，连同诊断持久化/返回、浏览器保存路径和 `expectedSemanticDigest` 并发冲突行为一起实现。当前 API 将所有 error 诊断都作为保存拒绝条件，不能只改前端；该后端/API 改造是 A1 前置任务。
-- 先确认并接入可用角色包和 Binding 目录：当前已有 Studio 角色来源列表、版本及角色读取 API，但尚未确认存在 Team IR 专用 package/binding 联合目录或模型 Binding 目录 API。需明确来源、可解析性、版本固定和权限过滤；缺失的目录/API 能力列为 A1 后端前置任务。不可将浏览角色来源 API 误当作完整 Binding resolver 目录。
-- 提供多端口、Handoff 端口、Join `handoffIds`、Loop 成员及 entry/continue/exit 的结构化选择。
-- 字段映射使用路径树/目标字段选择器；建立连线时直接应用唯一兼容映射建议，标记并可撤销；歧义时再要求选择。
-- 提供草稿级单步/事务撤销，用于撤销自动映射建议等刚应用的编辑；不要求 A1 提供完整历史浏览或跨会话 undo/redo。
-- Simulation 输入表单从 `runInput` Schema 生成，非结构化 `task` 保持独立输入；输出按事件和 Agent 时间线展示。
-- 用待办清单解释 required/optional 缺项，保留稳定诊断 code/pointer；完整表单和高级 IR round-trip 必须无损。
-- 生成覆盖完整 v2 条件 AST 的确定性协作摘要，并以黄金用例测试六种运算、嵌套 `and`/`or`/`not` 组合，以及 `exists` 对缺失路径与显式 `null` 的区别；结果必须符合 v2 语义。不能无损转换成白话时显示结构化表达式。
-- 统一用户可见术语和中英文 i18n；使用本节术语表，IR 字段名作为可展开的高级说明，而非混杂在普通操作文案中。
-- 以非技术用户任务测试验证大众可用性，具体阈值见第 10 节。
+- 结构有效但有语义诊断的草稿可保存；结构错误拒绝写入；保存响应返回 `ok`、`draftSaveable`、`releaseReady`、`diagnostics` 和 `semanticDigest`。前端把 `/ir/validate` 作为诊断预览，PUT 响应是唯一保存判定；`expectedSemanticDigest` 冲突必须保持拒绝。
+- Agent 的 `packageRef`/`bindingRef` 使用当前已加载引用集合的选择器；外部 Package/Binding 联合目录接线仍是 A1a 未完成项。未配置的新 Agent 保持编辑器本地，不写入 IR，不生成空引用或伪造引用。
+- 多 input/output port、Handoff source/target endpoint、Review output 使用选择器；Schema 和 Artifact 槽位提供简单合同的结构化低门槛编辑，复杂合同保留 Advanced JSON。
+- Join 最低归属矩阵展示“目标字段/Artifact slot × 来源 Handoff”，标注 required/optional、保证到达/可能跳过、缺失和重复提供方。矩阵是只读解释，服务端诊断仍是信任边界。
+- 删除被引用 Agent/Port/Handoff 时先显示影响范围；确认后原子清理已知 Route、Join、Loop、Review 引用，取消保持草稿不变。
+
+### 阶段 A1b：体验能力
+
+- 提供已校验 v2 场景模板/经典案例入口、互斥分流呈现、输入汇总工作流和 Result 缺失字段提示；这些是现有 IR 原语的结构化编辑和只读解释，不新增 Runtime 语义。
+- 提供从 IR 派生的 Agent 输入可见性视图，并明确 `$.run.task` 的固定可见范围；文案不得暗示权限隔离或保密语义。
+- 提供草稿级单步/事务撤销，撤销后断言 semantic digest 恢复到应用前值；完整历史 undo/redo、未保存提示和异常恢复属于阶段 B。
+- 提供完整条件 AST 协作摘要和稳定的中英文 i18n；无法无损转成白话时显示结构化表达式。
+- 通过第 10 节的 5 人任务验收后，才能把 A1 标为完成。A1a 和 A1b 的状态与证据只在实施台账记录。
 
 ### 阶段 B：真实协作画布与完整 v2 编辑
 
@@ -244,24 +247,8 @@ Team IR 字段和运行语义以[Team IR v2 Handoff 设计方案](team-ir-handof
 
 ## 12. 当前落地映射与闭合状态
 
-本节把提案要求映射到当前实现，避免把设计完成误读为发布完成。状态只在有对应代码和验证证据时标为已实现；真实模型、外部身份和人工用户研究不由浏览器 Fake 或确定性测试替代。
+本节不复制运行证据或维护第二份状态表。当前实现、阶段状态、真实模型矩阵、失败记录、A1a/A1b 未完成项和最终回归均以[Team IR v2 落地与验证台账](team-ir-v2-implementation-and-verification.md)为唯一事实来源。
 
-| 提案能力 | 当前实现/证据 | 状态与闭合条件 |
-| --- | --- | --- |
-| 单一 v2 草稿、保存重开、semantic digest/CAS | `/studio/new`、`/studio/teams/:id/ir`、Team IR API；Studio Chromium 覆盖保存、重开、digest、窄屏；Docker `/20` 连续两轮同 root 已覆盖 validate/save/reopen | 已实现并通过当前机器门 |
-| 多端口、条件 AST、递归 ValueExpr、Join/Loop/Review 编辑 | Studio 结构化编辑器和 Advanced JSON round-trip；`team-ir-studio-browser.test.mjs` 覆盖条件、递归映射、Join、Maker-Checker；不支持混合拓扑在发布前给稳定 code/pointer | 已实现受支持切片；不支持拓扑必须继续 fail closed，不得由 UI 快捷操作生成 |
-| 诊断定位与 Artifact 输入 | 浏览器定位基础字段、JSON Pointer、Review/条件/映射诊断；Artifact 上传后保存映射并在 Simulation/Project Task 读取；Docker `/20` 连续两轮矩阵通过 | 已实现并通过当前机器门；前两轮轮换 `BINDING_INVALID_OUTPUT` 失败作为保留回归，诊断必须原样呈现，不得隐式修复 |
-| 已发布版本编辑/fork | 已发布版本编辑创建新 draft，源版本 status/digest 不变；Studio 和 Docker 同 root 均有 fork 断言 | 已实现；默认作者入口已使用 v2 |
-| Project Task 生命周期和旧格式无写入 | Docker `/20` 连续两轮七场景同 root 覆盖 validate/save/reopen、Simulation/Release、mount/Task、Review、retry、重启查询、fork、旧 API/旧格式拒绝及 tree digest 不变；direct `/14` 7/7 对照通过 | 已实现并通过当前机器门 |
-| 结构化模型输出 | resolver 固定 `{event,data,artifactTexts}`、严格校验、无正文日志、不修补/不对 invalid_output 重试；Docker egress relay 和 Binding smoke 通过；请求固定 `format:json_schema` 与 `options.structuredOutputMode=outputFormat` | 框架合同与当前 Docker `/20` 连续两轮机器门通过；前两轮轮换失败仍保留。Studio 显示 provider/adapter pin、阶段和 diagnostic code/pointer；本机 OpenCode 使用原生 provider 与 `supportsStructuredOutputs:true` |
-| A2A pause/cancel/restart | remoteTaskId checkpoint、first-pause owner、迟到 sibling 收敛、重启取消和 outcome unknown 已有 FileStore/Fake/本机 HTTPS 证据 | 本机合同通过；跨主机 CAS 与外部 Agent exactly-once 不在本轮范围 |
-| 普通用户和 AI 作者验收 | 提案已冻结任务、阈值、主持规则和 AI diff 边界 | 待人工用户研究/复核；不得用机器测试代替 5 人任务门，也不得在人工复核前切默认入口 |
-
-### 12.1 机器验收闭合与人工复核
-
-1. 当前 pin 的 direct `/14` 对照矩阵已通过：无并发运行七个经典场景，`scenarioFailures=[]`，`restartQueries=8`，并完成 Review、Loop、Artifact、controlled retry、fork 和 legacy no-write 断言。
-2. Docker `/20` egress probe 已通过 1/1，镜像和模型 pin 已记录。前两轮真实矩阵各 6/7，`expert-consultation` 与 `structured-debate` 轮换出现 `BINDING_INVALID_OUTPUT`；失败原样保留，严格 envelope/schema 校验保持 fail closed。随后第三、第四轮连续 7/7，覆盖全部七场景、重启查询、Review、Loop、Artifact、controlled retry、fork 和 legacy no-write。
-3. Studio 必须把 Binding/provider、adapter pin、diagnostic code/pointer 和失败阶段显示给作者，并保留原始失败上下文；不得把模型输出失败伪装成可编辑的成功草稿，也不得通过隐式修复改变 IR 语义。
-4. Docker `/20` 连续两轮 7/7、direct `/14` 对照 7/7、egress probe 和最新工作树回归均已通过，阶段 3/4 的机器发布门闭合；按本提案第 10 节执行的非技术用户任务和最终人工复核仍是后置产品步骤。远端 A2A 与生产身份提供方明确排除在本轮范围。
+当前口径：机器发布门已通过；Studio A0 部分完成；A1a/A1b 尚未完成；不能称产品整体完成。外部远端 A2A、生产身份提供方和 5 人人工任务验收按第 10 节及台账范围执行。
 
 设计不引入兼容迁移或旧 Team 读取，standalone OGSystem Mermaid/Project Package 能力仍是独立范围，不属于 Team IR v2 产品入口。

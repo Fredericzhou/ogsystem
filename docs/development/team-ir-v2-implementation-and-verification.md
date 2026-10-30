@@ -1,7 +1,7 @@
 # Team IR v2 落地与验证台账
 
 基线日期：2026-10-30
-状态：当前 pin 的机器验收完成；Docker `/20` egress 通过，七场景连续两轮 7/7，direct `/14` 对照 7/7，阶段 0、1、2、3、4 的机器门均通过；最终人工产品复核仍后置。本机 HTTPS 双进程 A2A Project Task UAT 已通过，外部远端 A2A 服务不属于本轮发布门。前两轮 `/20` provider `BINDING_INVALID_OUTPUT` 失败保留；根因按 provider 履约稳定性记录，未放宽 structured output 合同。当前本机 serve/client 使用原生 `@ai-sdk/openai` 并设置 provider 级 `supportsStructuredOutputs:true`。请求固定 `format:json_schema`、`options.structuredOutputMode=outputFormat`，resolver 继续严格校验，不补字段、不提取正文、不对 `invalid_output` 自动重试。Docker 模型容器使用 per-invocation internal network，直连公网被拒；固定窄 relay 可到本机 OpenCode serve，任意路径、目标和 CONNECT 被拒。relay 的 host bridge egress 是部署运维边界，不影响模型容器隔离门。
+状态：当前 pin 的机器发布门完成；Docker `/20` egress 通过，七场景连续两轮 7/7，direct `/14` 对照 7/7。本机 HTTPS 双进程 A2A Project Task UAT 已通过，外部远端 A2A 服务不属于本轮发布门。机器门完成不等于 Studio 产品完成：A0 仍是部分完成，A1a/A1b 尚未完成，最终人工产品复核仍后置。前两轮 `/20` provider `BINDING_INVALID_OUTPUT` 失败保留；根因按 provider 履约稳定性记录，未放宽 structured output 合同。当前本机 serve/client 使用原生 `@ai-sdk/openai` 并设置 provider 级 `supportsStructuredOutputs:true`。请求固定 `format:json_schema`、`options.structuredOutputMode=outputFormat`，resolver 继续严格校验，不补字段、不提取正文、不对 `invalid_output` 自动重试。Docker 模型容器使用 per-invocation internal network，直连公网被拒；固定窄 relay 可到本机 OpenCode serve，任意路径、目标和 CONNECT 被拒。relay 的 host bridge egress 是部署运维边界，不影响模型容器隔离门。
 范围：记录 Team IR v2 从设计批准到发布切换的实施状态、验证证据和未完成项。
 
 ## 1. 使用方式与权威来源
@@ -50,7 +50,7 @@
 | Team IR v2 设计方案 | 已冻结为实施基线 | `docs/development/team-ir-handoff-v2-design.md`；阶段 0 语义复核完成，包含并行 Review、A2A 暂停/兄弟调用、重试/deadline 与失败竞态决策 |
 | 协作边界 ADR | 已批准为实施基线 | `docs/development/adr-team-ir-collaboration-boundaries.md` |
 | v2 Schema / Compiler / Runtime | 通过（支持矩阵 + 发布前拒绝矩阵） | 阶段 1 Schema/Compiler 静态合同 86/86；阶段 2 Runtime/Loop/Join/fail-fast 与拓扑诊断 114/114，A2A pause/cancel/restart 与迟到结果 85/85。支持范围由精确 allowlist 定义；嵌套、重叠及其它未支持 Review/Join/Loop/fan-out 组合在编译前稳定 fail closed，顺序 Loop 复用成员也拒绝；外部副作用 outcome unknown 按设计不重放。 |
-| Studio v2 作者体验 | 通过（机器验收） | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、自由布局端口画布、多 input/output port Schema/Artifact slot、Review gate 控件、递归 ValueExpr 映射、条件 AST、Artifact 上传、Simulation/Release/Project Task 和 fork 均有 Chromium/真实 Docker 证据。诊断按适用 code/pointer 定位到结构化控件或 Advanced JSON；不要求穷举 code × pointer 笛卡尔组合。外部身份系统不属于本轮合同，最终人工用户任务复核后置。 |
+| Studio v2 作者体验 | 部分完成（机器合同通过，A1 未完成） | `/studio/new` 创建原生 v2，团队版本进入 `/studio/teams/:id/ir`；保存重开、诊断定位、窄屏、端口画布、多 input/output port、递归 ValueExpr 映射、条件 AST、Artifact 上传、Simulation/Release/Project Task 和 fork 有确定性或真实场景证据。当前新增了服务端分层草稿保存、CAS 状态、目录/端点选择器和 Join 最低归属矩阵；复杂 Schema/Artifact 低门槛编辑、完整诊断矩阵、模板/摘要/撤销/i18n 和 5 人任务验收仍未完成。 |
 | v2 端到端或发布验收 | 通过（当前 pin 机器门） | Docker `/20` 第三、第四轮连续 7/7；每轮完成 Chromium Simulation/Release、Project Task、结果/Artifact/Loop/Review 断言、Release Gate controlled failure/retry、8 条重启查询及同 root fork/legacy no-write 断言。direct `/14` 对照 7/7；Sandbox egress probe 1/1；Team Site 非跳过项通过；外部远端 A2A 与生产身份提供方按范围排除。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败保留为稳定性回归记录。 |
 
 ## 3. 实施与验收状态
@@ -62,8 +62,8 @@
 | 0. 设计冻结 | 批准根 Schema、术语、ADR 和版本兼容策略 | 设计评审清单无未决语义冲突；规范示例和运行/API 规则一致；审批状态明确 | 通过 |
 | 1. Team IR 包 | `src/team-ir/` 类型、Schema、解析器、引用解析、静态校验、诊断、规范化和 digest | 设计方案第 10 节所有阻断语义有稳定 code/pointer 与正反例；复杂 Schema 由运行时校验承接，不要求静态任意蕴含推理 | 通过；阶段 1 审计及 86/86 聚焦测试确认硬门闭合，见 2026-10-29 阶段 1 追溯复核记录 |
 | 2. Compiler / Runtime | `CompiledTeamPlan`、端口投影、Handoff、Join、Loop、审核、错误、Artifact、Checkpoint 和恢复 | 支持拓扑的状态机与恢复合同通过；明确拒绝的拓扑必须在发布前稳定拒绝；所有并行故障、Result/Artifact 及 A2A 边界符合设计 | 通过；支持范围与 fail-closed 拒绝矩阵固定，拓扑诊断 114/114，A2A pause/cancel/restart 85/85；顺序 Loop 复用成员、嵌套/重叠 Loop 与其它混合组合均有稳定诊断，不把拒绝项描述为支持。 |
-| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 通过（当前 pin 机器门）；确定性 Studio/API、direct `/14` 和 Docker `/20` 连续两轮真实流程均通过。外部身份系统和最终人工用户研究后置。 |
-| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；当前入口拒绝旧 Team 格式且不改写无关路径 | 通过（当前 pin 机器门）；默认 `/studio/new`、Case/template、版本 fork 已使用 v2，Docker `/20` 连续两轮覆盖同 root 生命周期、旧格式拒绝和无写入。standalone OGSystem Mermaid/Project Package 仍是独立非 Team 路径。 |
+| 3. Studio / 发布 | Team IR 作者模型、预检、编辑、模拟、发布、读取与重开 | Studio 与服务端诊断和 digest 一致；浏览器覆盖当前入口/窄屏；受信 resolver 下完成保存、发布、Project Task 和自动化 Review 产品流程 | 部分通过：当前 pin 机器发布门通过，A0 有证据；A1a/A1b 作者能力和人工任务门未完成。 |
+| 4. 切换与清理 | CLI/API/Studio 默认入口、最新经典团队集、模板、示例和文档切到 v2 | 干净 workspace 下创建、保存、发布、挂载、运行和查询；当前入口拒绝旧 Team 格式且不改写无关路径 | 机器门通过；产品整体待 A1 作者体验和最终人工复核完成。默认 `/studio/new`、Case/template、版本 fork 已使用 v2，Docker `/20` 连续两轮覆盖同 root 生命周期、旧格式拒绝和无写入。standalone OGSystem Mermaid/Project Package 仍是独立非 Team 路径。 |
 
 ### 阶段门
 
@@ -1234,7 +1234,19 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 当前 pin 结论：Docker `/20` 连续稳定门和 direct `/14` 对照 7/7 均通过，Sandbox egress probe 1/1 通过；阶段 3、4 的机器验收门闭合。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败继续作为 provider 稳定性回归证据保留，不改变严格 fail-closed 语义。全仓、Team Site 和 Studio 回归通过，并已提交于 `8f2b36d`；剩余为提案规定的人工产品复核。
 
-最终回归结果：`pnpm test` 979 项中 978 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 366 项中 362 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。机器验收记录已提交，剩余步骤是提案第 10 节规定的人工产品复核。
+最终回归结果：`pnpm test` 979 项中 978 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 368 项中 364 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。机器验收记录已提交，剩余步骤是提案第 10 节规定的人工产品复核。
+
+### 2026-10-30：A1a 草稿契约与 Studio 低门槛编辑增量
+
+| 项目 | 结果 | 证据与剩余边界 |
+| --- | --- | --- |
+| 两级保存与 CAS | 通过（确定性切片） | `src/team-ir/draft-status.ts` 统一区分结构诊断与语义诊断；结构错误拒绝写入，结构有效但语义不完整的草稿返回 `saved/draftSaveable/ok/releaseReady/diagnostics/semanticDigest` 并可 CAS 重开。`apps/team-site/tests/team-ir-use-cases.test.mjs` 覆盖语义草稿保存、结构拒绝和 digest 冲突；前端 PUT 由服务端决定，预览校验不再拦截保存。Simulation/Release/Task 仍严格要求无阻断诊断和完整依赖闭包。 |
+| A1a 目录与结构化选择 | 部分完成 | Agent packageRef/bindingRef、Handoff 端点和 Review 输出使用当前已加载引用集合的选择器；未配置的新 Agent 保存前被阻止，不写入空引用。Join 增加只读的目标字段 × 来源 Handoff 归属矩阵，标注 required/optional、保证/可能跳过、缺失和重复来源；端口 Artifact 槽位支持常见媒体类型、cardinality 和 required 的结构化编辑，复杂合同仍保留 Advanced JSON；服务端诊断仍是信任边界。完整 Package/Binding 外部联合目录接线和 Run/Result 全合同编辑仍未完成。 |
+| 引用删除清理 | 通过（作者交互切片） | 删除被引用 Agent/Port 时先显示影响范围，确认后原子清理已知 Handoff、Route、Join、Loop、Review 引用；取消保持草稿不变。未知引用仍由结构诊断拒绝。 |
+| A1b 体验增量 | 部分完成 | Studio 增加从 IR 派生的 Handoff/Agent 输入摘要、`$.run.task` 可见性提示和每条 Result Handoff 的必需字段/Artifact 完整性预览，并支持撤销最近一次自动映射建议；这些视图明确由服务端诊断裁决。完整模板覆盖、输入汇总工作流、全量 i18n 和 5 人任务验收仍未完成。 |
+| 当前回归 | 通过（聚焦） | `pnpm build`、Team IR use-case 测试通过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`node --check apps/team-site/public/app/views/app.js` 通过。随后 Team Site 全量为 368 项中 364 通过、0 失败、4 项 opt-in 跳过；全仓仍为 979 项中 978 通过、0 失败、1 项 Windows 跳过。 |
+
+本记录不把 A1a/A1b 增量描述为整体 Studio 完成。A1b 的完整模板覆盖、输入汇总工作流、全量 i18n 和 5 人任务验收仍未完成；提案状态以 `docs/development/team-ir-v2-studio-authoring-proposal.md` 的单一台账链接为准。
 
 ## 6. Codex / 实施代理工作约定
 

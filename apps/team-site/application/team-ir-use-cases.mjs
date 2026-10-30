@@ -107,7 +107,16 @@ export function createTeamIrUseCases({ teamCatalog, teamIrStore, withTeamVersion
           return { teamVersionId, ...status, saved: false, semanticDigest: null, diagnostics };
         }
         const { semanticDigest } = await teamIrStore.save({ workdir: team.workdir, teamIR });
-        return { teamVersionId, ...status, saved: true, semanticDigest, diagnostics };
+        let releaseReady = false;
+        if (status.ok && typeof resolveTeamIrReleaseClosure === "function") {
+          try {
+            const closure = await resolveTeamIrReleaseClosure({ team, teamIR });
+            releaseReady = closure?.complete === true;
+          } catch {
+            releaseReady = false;
+          }
+        }
+        return { teamVersionId, ...status, releaseReady, saved: true, semanticDigest, diagnostics };
       });
     }
   });

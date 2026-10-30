@@ -1285,10 +1285,11 @@ function renderTeamIrValueExprNode(value, options, escText, editable, depth = 0,
     .map(([option, label]) => `<option value="${option}"${kind === option ? " selected" : ""}>${label}</option>`).join("");
   let content = "";
   if (kind === "reference") {
-    const direct = depth === 0 && options.directRefs?.find((item) => item.reference === value.$ref);
+    const directRefs = depth === 0 && options.directRefs ? [...options.directRefs, ...(value.$ref && !options.directRefs.some((item) => item.reference === value.$ref) ? [{ value: value.$ref, reference: value.$ref, label: `${value.$ref} (review)` }] : [])] : [];
+    const direct = directRefs.find((item) => item.reference === value.$ref);
     if (direct) {
       const sourceAttr = options.kind === "handoff" ? "data-ir-map-source" : "data-ir-join-base-source";
-      content = `<label>${options.kind === "handoff" ? "Source field" : "Run input field"}<select ${sourceAttr} data-ir-value-direct-ref aria-label="${escText(options.directLabel)}"${disabled}><option value="">Choose field</option>${options.directRefs.map((item) => `<option value="${escText(item.value)}"${item.reference === value.$ref ? " selected" : ""}>${escText(item.label)}</option>`).join("")}</select></label>`;
+      content = `<label>${options.kind === "handoff" ? "Source field" : "Run input field"}<select ${sourceAttr} data-ir-value-direct-ref aria-label="${escText(options.directLabel)}"${disabled}><option value="">Choose field</option>${directRefs.map((item) => `<option value="${escText(item.value)}"${item.reference === value.$ref ? " selected" : ""}>${escText(item.label)}</option>`).join("")}</select></label>`;
     } else {
       content = `<label>Reference path<input data-ir-value-ref-path value="${escText(value.$ref)}" placeholder="$.run.input.field"${disabled}></label>`;
     }
@@ -1537,6 +1538,35 @@ function teamIrFromEditor(form, base) {
   };
 }
 
+function renderTeamIrJoinOwnershipMatrix(ir, join, escText) {
+  const targetAgent = (ir.agents || []).find((agent) => agent.id === join.agentId);
+  const targetPort = targetAgent?.inputPorts?.[join.inputPort];
+  const targetProperties = targetPort?.dataSchema?.properties || {};
+  const required = new Set(targetPort?.dataSchema?.required || []);
+  const targetArtifacts = targetPort?.artifactSlots || {};
+  const sourceHandoffs = (join.handoffIds || []).map((id) => (ir.handoffs || []).find((handoff) => handoff.id === id)).filter(Boolean);
+  const rows = [];
+  for (const field of Object.keys(targetProperties)) {
+    const providers = sourceHandoffs.filter((handoff) => Object.hasOwn(handoff.map?.data || {}, field));
+    const conditional = providers.some((handoff) => handoff.when?.condition);
+    rows.push({ field, kind: "field", required: required.has(field), providers: providers.map((handoff) => handoff.id), conditional });
+  }
+  for (const slot of Object.keys(targetArtifacts)) {
+    const providers = sourceHandoffs.filter((handoff) => Object.hasOwn(handoff.map?.artifacts || {}, slot));
+    const conditional = providers.some((handoff) => handoff.when?.condition);
+    rows.push({ field: slot, kind: "artifact", required: targetArtifacts[slot]?.required === true, providers: providers.map((handoff) => handoff.id), conditional });
+  }
+  if (!rows.length) return '<p class="field-hint">Target Schema has no declared fields or Artifact slots. The server remains authoritative for Join diagnostics.</p>';
+  const body = rows.map((row) => {
+    const missing = row.required && row.providers.length === 0;
+    const conflict = row.providers.length > 1;
+    const arrival = row.providers.length === 0 ? "Missing" : row.conditional ? "May be skipped" : "Guaranteed";
+    const state = missing ? "Missing provider" : conflict ? "Conflict" : "";
+    return `<tr class="${missing || conflict ? "is-warning" : ""}"><th scope="row">${escText(row.field)}<small>${row.kind === "artifact" ? "Artifact" : "Data"}</small></th><td>${row.required ? "Required" : "Optional"}</td><td>${arrival}</td><td>${escText(row.providers.join(", ") || "—")}</td><td>${escText(state)}</td></tr>`;
+  }).join("");
+  return `<div class="ir-join-ownership"><div class="panel-head"><strong>Join field ownership</strong><span class="field-hint">Read-only view; server diagnostics decide save and release.</span></div><div class="ir-join-ownership-scroll"><table><thead><tr><th>Target</th><th>Required</th><th>Arrival</th><th>Sources</th><th>Check</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+}
+
 function renderTeamIrOrchestrationRows(ir, escText, editable) {
   const disabled = editable ? "" : " disabled";
   const agents = ir.agents || [];
@@ -1565,6 +1595,7 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
       <label>Scope Loop ID<input name="join-${index}-scope-loop" value="${escText(join.scope?.loopId || "")}"${disabled}></label>
       <fieldset class="full ir-join-handoffs"><legend>Contributing Handoffs</legend>${handoffs.length ? handoffs.map((handoff) => `<label class="ir-handoff-choice"><input type="checkbox" name="join-${index}-handoffs" value="${escText(handoff.id)}"${(join.handoffIds || []).includes(handoff.id) ? " checked" : ""}${disabled}><span>${escText(handoff.id)}</span></label>`).join("") : '<p class="empty-note">No Handoffs are defined.</p>'}</fieldset>
       <fieldset class="full"><legend>Base mapping from Run input</legend><input type="hidden" data-ir-join-base-preserved value="${escText(JSON.stringify(preserved))}"><div data-ir-join-base-mappings>${mappingRows}</div><button class="secondary-button" type="button" data-ir-join-base-add${disabled}>Add field mapping</button></fieldset>
+      <div class="full">${renderTeamIrJoinOwnershipMatrix(ir, join, escText)}</div>
     </div></section>`;
   }).join("");
   const loops = (ir.orchestration?.loops || []).map((loop, index) => `<section class="project-panel ir-editor-row" data-ir-loop="${index}">
@@ -1598,6 +1629,27 @@ function renderTeamIrOrchestrationRows(ir, escText, editable) {
   return { joins, loops, reviews };
 }
 
+function renderTeamIrSchemaQuickEditor(schema, target, escText, editable) {
+  const properties = schema?.type === "object" && schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+    ? Object.entries(schema.properties).filter(([, value]) => value && typeof value === "object" && ["string", "number", "integer", "boolean"].includes(value.type))
+    : [];
+  if (!properties.length && schema?.type !== "object") return "";
+  const required = new Set(Array.isArray(schema?.required) ? schema.required : []);
+  const rows = properties.map(([name, value], index) => `<div class="ir-schema-field" data-ir-schema-field><input data-ir-schema-name value="${escText(name)}" aria-label="Schema field ${index + 1} name"${editable ? "" : " disabled"}><select data-ir-schema-type aria-label="Schema field ${index + 1} type"${editable ? "" : " disabled"}>${["string", "number", "integer", "boolean"].map((type) => `<option value="${type}"${value.type === type ? " selected" : ""}>${type}</option>`).join("")}</select><label class="checkbox-label"><input type="checkbox" data-ir-schema-required${required.has(name) ? " checked" : ""}${editable ? "" : " disabled"}>Required</label><button type="button" class="icon-button" data-ir-schema-remove aria-label="Remove schema field" title="Remove schema field"${editable ? "" : " disabled"}>×</button></div>`).join("");
+  return `<div class="ir-schema-quick" data-ir-schema-quick data-ir-schema-target="${escText(target)}"><div class="panel-head"><strong>Common fields</strong><span class="field-hint">Structured editor for simple fields; advanced constraints stay in JSON.</span></div><div data-ir-schema-fields>${rows}</div><button type="button" class="text-button" data-ir-schema-add${editable ? "" : " disabled"}>Add field</button></div>`;
+}
+
+function renderTeamIrArtifactQuickEditor(artifactSlots, target, direction, escText, editable) {
+  const mediaKey = direction === "outputPorts" ? "mediaTypes" : "acceptedMediaTypes";
+  const slots = artifactSlots && typeof artifactSlots === "object" && !Array.isArray(artifactSlots) ? artifactSlots : {};
+  const rows = Object.entries(slots).map(([slotId, spec], index) => {
+    const value = spec && typeof spec === "object" && !Array.isArray(spec) ? spec : {};
+    const mediaTypes = Array.isArray(value[mediaKey]) ? value[mediaKey] : (Array.isArray(value.mediaTypes) ? value.mediaTypes : (Array.isArray(value.acceptedMediaTypes) ? value.acceptedMediaTypes : []));
+    return `<div class="ir-artifact-field" data-ir-artifact-field data-ir-artifact-original="${escText(slotId)}"><input data-ir-artifact-name value="${escText(slotId)}" aria-label="Artifact slot ${index + 1} name"${editable ? "" : " disabled"}><input data-ir-artifact-media value="${escText(mediaTypes.join(", "))}" placeholder="text/plain, text/markdown" aria-label="Artifact slot ${index + 1} media types"${editable ? "" : " disabled"}><select data-ir-artifact-cardinality aria-label="Artifact slot ${index + 1} cardinality"${editable ? "" : " disabled"}><option value="single"${value.cardinality !== "many" ? " selected" : ""}>single</option><option value="many"${value.cardinality === "many" ? " selected" : ""}>many</option></select><label class="checkbox-label"><input type="checkbox" data-ir-artifact-required${value.required === true ? " checked" : ""}${editable ? "" : " disabled"}>Required</label><button type="button" class="icon-button" data-ir-artifact-remove aria-label="Remove Artifact slot" title="Remove Artifact slot"${editable ? "" : " disabled"}>x</button></div>`;
+  }).join("");
+  return `<div class="ir-artifact-quick" data-ir-artifact-quick data-ir-artifact-target="${escText(target)}" data-ir-artifact-media-key="${mediaKey}"><div class="panel-head"><strong>Common Artifact slots</strong><span class="field-hint">Edit slot name, accepted media types, cardinality and required status; advanced fields remain in JSON.</span></div><div data-ir-artifact-fields>${rows}</div><button type="button" class="text-button" data-ir-artifact-add${editable ? "" : " disabled"}>Add Artifact slot</button></div>`;
+}
+
 function renderTeamIrEditorRows(ir, escText, editable) {
   const packageRefs = [...new Set((ir.agents || []).map((agent) => String(agent.packageRef || "").trim()).filter(Boolean))].sort();
   const bindingRefs = [...new Set([
@@ -1612,7 +1664,7 @@ function renderTeamIrEditorRows(ir, escText, editable) {
     const outputContractHint = state.locale === "en"
       ? "Each event schema defines its data payload. The Binding must return one JSON object: event, matching data, and artifactTexts (use an empty object when none are produced). The configured provider must support this output schema; results are validated again by Team IR. Markdown fences and surrounding text are rejected."
       : "每个事件 Schema 描述该事件的 data。Binding 必须返回单个 JSON 对象，包含 event、匹配的 data 和 artifactTexts（没有 Artifact 时传空对象）。所配置的 Provider 需支持该输出 Schema；Team IR 仍会再次校验。Markdown 围栏和前后说明会被拒绝。";
-    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${direction === "outputPorts" ? `<p class="field-hint" data-ir-output-contract-hint>${esc(outputContractHint)}</p>` : ""}${Object.entries(ports || {}).map(([portId, port], portIndex) => `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><label>Data schema JSON<textarea name="agent-${index}-${direction}-${portIndex}-schema" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea></label><label>Artifact slots JSON<textarea name="agent-${index}-${direction}-${portIndex}-artifacts" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea></label></section>`).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
+    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${direction === "outputPorts" ? `<p class="field-hint" data-ir-output-contract-hint>${esc(outputContractHint)}</p>` : ""}${Object.entries(ports || {}).map(([portId, port], portIndex) => { const schemaTarget = `agent-${index}-${direction}-${portIndex}-schema`; const artifactTarget = `agent-${index}-${direction}-${portIndex}-artifacts`; return `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><label>Data schema JSON<textarea data-ir-schema-textarea name="${schemaTarget}" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea>${renderTeamIrSchemaQuickEditor(port.dataSchema, schemaTarget, escText, editable)}<label>Artifact slots JSON<textarea data-ir-artifact-textarea name="${artifactTarget}" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea>${renderTeamIrArtifactQuickEditor(port.artifactSlots, artifactTarget, direction, escText, editable)}</label></section>`; }).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
     return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<select name="agent-${index}-package" required${editable ? "" : " disabled"}>${catalogOptions(packageRefs, agent.packageRef, "Select a verified role package")}</select>${agent.packageRef ? "" : '<small class="field-hint">Choose a catalog entry before saving this Agent.</small>'}</label><label>Binding reference<select name="agent-${index}-binding" required${editable ? "" : " disabled"}>${catalogOptions(bindingRefs, agent.bindingRef, "Select a configured Binding")}</select>${agent.bindingRef ? "" : '<small class="field-hint">Choose a catalog entry before saving this Agent.</small>'}</label>${renderPorts("inputPorts", agent.inputPorts)}${renderPorts("outputPorts", agent.outputPorts)}</div></section>`;
   }).join("");
   const agentOptions = (selected, allowRun = false) => `${allowRun ? `<option value=""${!selected ? " selected" : ""}>Run START</option>` : ""}${(ir.agents || []).map((agent) => `<option value="${escText(agent.id)}"${selected === agent.id ? " selected" : ""}>${escText(agent.id)}</option>`).join("")}${allowRun ? '<option value="@result"' + (selected === "@result" ? " selected" : "") + ">Run result</option>" : ""}`;
@@ -1673,6 +1725,48 @@ function renderTeamIrStructureGraph(ir, escText, editable) {
   }).join("");
   const edgeRows = (ir.handoffs || []).map((handoff, index) => `<button class="ir-graph-edge" type="button" data-ir-graph-handoff="${index}"><code>${escText(handoff.id)}</code><span>${escText(handoff.from?.agentId || "Run")}.${escText(handoff.from?.outputPort || "START")} <b aria-hidden="true">→</b> ${escText(handoff.to?.agentId || "Run Result")}.${escText(handoff.to?.inputPort || "Result")}</span></button>`).join("");
   return `<section class="ir-structure-graph" aria-labelledby="ir-structure-graph-title"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2 id="ir-structure-graph-title">结构图</h2></div><span class="form-hint">节点位置仅保存在本机</span></div><p class="form-status" data-ir-connect-status role="status" aria-live="polite">拖动端口锚点创建 Handoff；也可选择来源和目标。</p><button class="text-button" type="button" data-ir-connect-cancel${disabled}>取消连接</button><div class="ir-graph-canvas" data-ir-graph-canvas data-layout-key="${escText(layoutKey)}"><svg class="ir-graph-wires" aria-hidden="true" data-ir-graph-wires></svg><div class="ir-graph-nodes" aria-label="Run and Agent nodes">${nodes}</div></div><div class="ir-graph-edges" aria-label="Handoff edges">${edgeRows || '<p class="empty-note">尚未定义 Handoff。</p>'}</div></section>`;
+}
+
+function renderTeamIrDerivedViews(ir, escText) {
+  const handoffSummary = (ir.handoffs || []).map((handoff) => {
+    const from = handoff.from?.kind === "run" ? "Run" : `${handoff.from?.agentId || "?"}.${handoff.from?.outputPort || "?"}`;
+    const to = handoff.to?.kind === "result" ? "Run result" : `${handoff.to?.agentId || "?"}.${handoff.to?.inputPort || "?"}`;
+    const fields = Object.keys(handoff.map?.data || {});
+    const condition = handoff.when?.condition ? teamIrConditionSummary(handoff.when.condition) : "Always selected";
+    return `<li><strong>${escText(handoff.id)}</strong><span>${escText(from)} → ${escText(to)} · ${escText(condition)} · fields: ${escText(fields.join(", ") || "none")}</span></li>`;
+  }).join("");
+  const visibility = (ir.agents || []).map((agent) => {
+    const incoming = (ir.handoffs || []).filter((handoff) => handoff.to?.kind === "agent" && handoff.to.agentId === agent.id);
+    const fields = [...new Set(incoming.flatMap((handoff) => Object.keys(handoff.map?.data || {})))];
+    return `<li><strong>${escText(agent.id)}</strong><span>${escText(fields.join(", ") || "no mapped fields yet")}</span></li>`;
+  }).join("");
+  const resultRequired = Array.isArray(ir.runResult?.dataSchema?.required) ? ir.runResult.dataSchema.required : [];
+  const requiredSlots = Object.entries(ir.runResult?.artifactSlots || {})
+    .filter(([, slot]) => slot?.required === true)
+    .map(([slot]) => slot);
+  const resultChecks = (ir.handoffs || []).filter((handoff) => handoff.to?.kind === "result").map((handoff) => {
+    const missing = [
+      ...resultRequired.filter((field) => !Object.hasOwn(handoff.map?.data || {}, field)).map((field) => `field ${field}`),
+      ...requiredSlots.filter((slot) => !Object.hasOwn(handoff.map?.artifacts || {}, slot)).map((slot) => `Artifact ${slot}`)
+    ];
+    return `<li class="${missing.length ? "is-warning" : "is-ready"}"><strong>${escText(handoff.id)}</strong><span>${escText(missing.length ? `Missing: ${missing.join(", ")}` : "Complete result contract")}</span></li>`;
+  }).join("");
+  return `<section class="ir-derived-views"><div class="ir-derived-view"><div class="panel-head"><strong>Collaboration summary</strong><span class="field-hint">Derived from the saved IR; it does not change execution.</span></div><ul class="ir-derived-list">${handoffSummary || "<li>No Handoffs defined.</li>"}</ul></div><div class="ir-derived-view"><div class="panel-head"><strong>Agent input visibility</strong><span class="field-hint"><code>$.run.task</code> is visible to every Agent; mapped fields below are explicit.</span></div><ul class="ir-derived-list">${visibility || "<li>No Agents defined.</li>"}</ul></div><div class="ir-derived-view"><div class="panel-head"><strong>Result completeness</strong><span class="field-hint">Preview only; Compiler diagnostics decide whether a Result Handoff is valid.</span></div><ul class="ir-derived-list">${resultChecks || "<li>No Result Handoff defined.</li>"}</ul></div></section>`;
+}
+
+function renderTeamIrCollaborationSummary(ir, escText) {
+  const handoffRows = (ir.handoffs || []).map((handoff) => {
+    const from = handoff.from?.kind === "run" ? "Run input" : `${handoff.from?.agentId || "?"}.${handoff.from?.outputPort || "?"}`;
+    const to = handoff.to?.kind === "result" ? "Run result" : `${handoff.to?.agentId || "?"}.${handoff.to?.inputPort || "?"}`;
+    const fields = Object.keys(handoff.map?.data || {});
+    const condition = handoff.when?.condition ? teamIrConditionSummary(handoff.when.condition) : "Always selected";
+    return `<li><strong>${escText(from)} → ${escText(to)}</strong><span>${escText(fields.length ? `Fields: ${fields.join(", ")}` : "No data fields mapped")} · ${escText(condition)}</span></li>`;
+  }).join("");
+  const visibilityRows = (ir.agents || []).map((agent) => {
+    const inputs = Object.entries(agent.inputPorts || {}).map(([port, contract]) => `${port}: ${Object.keys(contract.dataSchema?.properties || {}).join(", ") || "no declared fields"}`).join("; ");
+    return `<li><strong>${escText(agent.id)}</strong><span>${escText(inputs || "No input ports declared")}</span></li>`;
+  }).join("");
+  return `<section class="ir-editor-section ir-collaboration-summary"><div class="panel-head"><div><span class="section-kicker">Collaboration view</span><h2>Inputs, handoffs and visibility</h2></div></div><div class="ir-summary-grid"><div><h3>Handoffs</h3><ul class="ir-summary-list">${handoffRows || "<li>No Handoffs defined.</li>"}</ul></div><div><h3>Agent inputs</h3><p class="field-hint"><code>$.run.task</code> is visible to every Agent by contract; this view does not provide isolation or secrecy.</p><ul class="ir-summary-list">${visibilityRows || "<li>No Agents defined.</li>"}</ul></div></div></section>`;
 }
 
 function focusTeamIrGraphSelection(form, draft, selection) {
@@ -1766,14 +1860,95 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
     const editable = team.teamVersionStatus === "draft";
     let simulationInputValue = {};
     let pendingConnectionSource;
+    let undoDraft;
+    const undoStack = [];
     const redraw = () => {
       const rows = renderTeamIrEditorRows(draft, esc, editable);
       Object.assign(rows, renderTeamIrOrchestrationRows(draft, esc, editable));
       const advancedContracts = esc(JSON.stringify(teamIrAdvancedContracts(draft), null, 2));
-      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section><details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p>${renderTeamIrSimulationInput(draft.runInput?.dataSchema, simulationInputValue, esc)}<label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
+      root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← OGS Studio</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>Team IR v2</h1><p>Versioned, typed handoffs and execution policy for this TeamVersion.</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? "Design" : esc(team.teamVersionStatus)}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<form id="team-ir-editor" class="team-ir-editor" novalidate>${renderTeamIrStructureGraph(draft, esc, editable)}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">Team</span><h2>Team identity and Run input</h2></div></div><div class="ir-form-grid"><label>Team ID<input name="team-id" value="${esc(draft.team?.id || teamVersionId)}" required${editable ? "" : " disabled"}></label></div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Agents and ports</span><h2>Team responsibilities</h2></div><button class="secondary-button" type="button" data-ir-add-agent${editable ? "" : " disabled"}>Add Agent</button></div><div class="ir-editor-list">${rows.agents || `<p class="empty-note">Add at least one Agent.</p>`}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Handoffs</span><h2>Explicit field mapping</h2></div><button class="secondary-button" type="button" data-ir-add-handoff${editable ? "" : " disabled"}>Add Handoff</button></div><div class="ir-editor-list">${rows.handoffs || `<p class="empty-note">Add Run-to-Agent and result handoffs.</p>`}</div></section>${renderTeamIrCollaborationSummary(draft, esc)}<details class="project-panel ir-advanced-contracts" open><summary>Join, Loop, Review, Artifact and A2A contracts</summary><p class="form-hint">Edit the v2 JSON fields below. This contract object includes run input/result, execution policy, orchestration, complete port and handoff contracts, and all Bindings. Advanced values are preserved while the fields above are edited; server validation reports schema and semantic diagnostics before saving.</p><label>Advanced contracts JSON<textarea data-ir-advanced-json rows="24" spellcheck="false"${editable ? "" : " disabled"}>${advancedContracts}</textarea></label></details><ul class="studio-event-list ir-diagnostics" data-team-ir-diagnostics aria-live="polite" hidden></ul><p class="form-status" data-team-ir-status role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">Save and verify</button><button class="secondary-button" type="button" data-ir-undo${undoDraft ? "" : " hidden"}>Undo last suggestion</button>` : `<span class="form-hint">Released TeamVersions are read-only.</span>`}<code data-team-ir-digest>${esc(expectedSemanticDigest || "Not saved")}</code></div></form><section class="project-panel" data-team-ir-simulation><div class="panel-head"><div><span class="section-kicker">Sandbox</span><h2>Team IR v2 Simulation</h2></div></div><p class="form-hint">Studio Sandbox Simulation automatically approves Review gates. Project Task Reviews require an authenticated reviewer.</p>${renderTeamIrSimulationInput(draft.runInput?.dataSchema, simulationInputValue, esc)}<label>Task<input data-ir-simulation-task value="" maxlength="4000"></label><p class="form-status" data-ir-simulation-status role="status" aria-live="polite"></p><div class="form-actions"><button class="primary-button" type="button" data-ir-simulation-run>Run Simulation</button></div><div data-ir-simulation-evidence></div><div data-ir-simulation-history></div></section>`;
       const form = root.querySelector("#team-ir-editor");
+      form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", renderTeamIrDerivedViews(draft, esc));
       form.querySelector(".ir-advanced-contracts")?.insertAdjacentHTML("beforebegin", `<section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Join contracts</h2></div><button class="secondary-button" type="button" data-ir-add-join${editable ? "" : " disabled"}>Add Join</button></div><div class="ir-editor-list">${rows.joins || '<p class="empty-note">No Join contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Loop contracts</h2></div><button class="secondary-button" type="button" data-ir-add-loop${editable ? "" : " disabled"}>Add Loop</button></div><div class="ir-editor-list">${rows.loops || '<p class="empty-note">No Loop contracts.</p>'}</div></section><section class="ir-editor-section"><div class="panel-head"><div><span class="section-kicker">Orchestration</span><h2>Review gates</h2></div><button class="secondary-button" type="button" data-ir-add-review${editable ? "" : " disabled"}>Add Review</button></div><div class="ir-editor-list">${rows.reviews || '<p class="empty-note">No Review gates.</p>'}</div></section>`);
       const captureEditor = () => teamIrWithAdvancedContracts(form, teamIrFromEditor(form, draft), draft);
+      form.querySelector("[data-ir-undo]")?.addEventListener("click", () => {
+        const previous = undoStack.pop() || undoDraft;
+        if (!previous) return;
+        draft = previous;
+        undoDraft = undefined;
+        redraw();
+        root.querySelector("[data-team-ir-status]").textContent = "Undid last structured edit; save to persist.";
+      });
+      const syncQuickSchema = (editor) => {
+        const target = editor.dataset.irSchemaTarget;
+        const textarea = form.querySelector(`[data-ir-schema-textarea][name="${CSS.escape(target)}"]`);
+        if (!textarea) return;
+        const properties = {};
+        const required = [];
+        for (const row of editor.querySelectorAll("[data-ir-schema-field]")) {
+          const name = row.querySelector("[data-ir-schema-name]")?.value.trim();
+          const type = row.querySelector("[data-ir-schema-type]")?.value;
+          if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
+          properties[name] = { type };
+          if (row.querySelector("[data-ir-schema-required]")?.checked) required.push(name);
+        }
+        textarea.value = JSON.stringify({ type: "object", properties, ...(required.length ? { required } : {}), additionalProperties: false }, null, 2);
+        try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
+      };
+      const syncQuickArtifacts = (editor) => {
+        const target = editor.dataset.irArtifactTarget;
+        const textarea = form.querySelector(`[data-ir-artifact-textarea][name="${CSS.escape(target)}"]`);
+        if (!textarea) return;
+        let current = {};
+        try { current = JSON.parse(textarea.value || "{}") || {}; } catch { /* Advanced JSON validation reports malformed values. */ }
+        const mediaKey = editor.dataset.irArtifactMediaKey || "acceptedMediaTypes";
+        const slots = {};
+        for (const row of editor.querySelectorAll("[data-ir-artifact-field]")) {
+          const name = row.querySelector("[data-ir-artifact-name]")?.value.trim();
+          if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
+          const original = row.dataset.irArtifactOriginal;
+          const spec = { ...(current[original] && typeof current[original] === "object" ? current[original] : {}) };
+          const mediaTypes = row.querySelector("[data-ir-artifact-media]")?.value.split(",").map((item) => item.trim()).filter(Boolean) || [];
+          spec[mediaKey] = mediaTypes;
+          spec.cardinality = row.querySelector("[data-ir-artifact-cardinality]")?.value || "single";
+          spec.required = row.querySelector("[data-ir-artifact-required]")?.checked === true;
+          slots[name] = spec;
+        }
+        textarea.value = JSON.stringify(slots, null, 2);
+        try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
+      };
+      form.addEventListener("input", (event) => {
+        const editor = event.target.closest("[data-ir-schema-quick]");
+        if (editor) syncQuickSchema(editor);
+        const artifactEditor = event.target.closest("[data-ir-artifact-quick]");
+        if (artifactEditor) syncQuickArtifacts(artifactEditor);
+      });
+      form.addEventListener("change", (event) => {
+        const editor = event.target.closest("[data-ir-schema-quick]");
+        if (editor) syncQuickSchema(editor);
+        const artifactEditor = event.target.closest("[data-ir-artifact-quick]");
+        if (artifactEditor) syncQuickArtifacts(artifactEditor);
+      });
+      form.addEventListener("click", (event) => {
+        const addField = event.target.closest("[data-ir-schema-add]");
+        const removeField = event.target.closest("[data-ir-schema-remove]");
+        if (!addField && !removeField) return;
+        const editor = event.target.closest("[data-ir-schema-quick]");
+        if (!editor) return;
+        if (removeField) removeField.closest("[data-ir-schema-field]")?.remove();
+        else editor.querySelector("[data-ir-schema-fields]")?.insertAdjacentHTML("beforeend", '<div class="ir-schema-field" data-ir-schema-field><input data-ir-schema-name value="field" aria-label="New schema field name"><select data-ir-schema-type aria-label="New schema field type"><option value="string">string</option><option value="number">number</option><option value="integer">integer</option><option value="boolean">boolean</option></select><label class="checkbox-label"><input type="checkbox" data-ir-schema-required>Required</label><button type="button" class="icon-button" data-ir-schema-remove aria-label="Remove schema field" title="Remove schema field">×</button></div>');
+        syncQuickSchema(editor);
+      });
+      form.addEventListener("click", (event) => {
+        const addSlot = event.target.closest("[data-ir-artifact-add]");
+        const removeSlot = event.target.closest("[data-ir-artifact-remove]");
+        if (!addSlot && !removeSlot) return;
+        const editor = event.target.closest("[data-ir-artifact-quick]");
+        if (!editor) return;
+        if (removeSlot) removeSlot.closest("[data-ir-artifact-field]")?.remove();
+        else editor.querySelector("[data-ir-artifact-fields]")?.insertAdjacentHTML("beforeend", '<div class="ir-artifact-field" data-ir-artifact-field data-ir-artifact-original=""><input data-ir-artifact-name value="slot" aria-label="New Artifact slot name"><input data-ir-artifact-media value="text/plain" placeholder="text/plain, text/markdown" aria-label="New Artifact slot media types"><select data-ir-artifact-cardinality aria-label="New Artifact slot cardinality"><option value="single" selected>single</option><option value="many">many</option></select><label class="checkbox-label"><input type="checkbox" data-ir-artifact-required>Required</label><button type="button" class="icon-button" data-ir-artifact-remove aria-label="Remove Artifact slot" title="Remove Artifact slot">x</button></div>');
+        syncQuickArtifacts(editor);
+      });
       const syncMappingText = (handoffRow) => {
         const index = handoffRow.dataset.irHandoff;
         const values = [...handoffRow.querySelectorAll("[data-ir-map-row]")].map((row) => {
@@ -1827,6 +2002,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         const current = captureEditor();
         const handoff = current.handoffs[handoffIndex];
         if (!handoff) return;
+        undoStack.push(structuredClone(current));
         const row = form.querySelector(`[data-ir-handoff="${handoffIndex}"]`);
         const container = row.querySelector(`[data-ir-map-rows="${handoffIndex}"]`);
         const fields = teamIrHandoffMappingFields(current, handoff);
@@ -1836,6 +2012,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         bindHandoffMappingRow(mapRow);
         syncMappingText(row);
         mapRow.querySelector("[data-ir-map-target]")?.focus();
+        form.querySelector("[data-ir-undo]")?.removeAttribute("disabled");
       };
       form.querySelectorAll("[data-ir-map-row]").forEach(bindHandoffMappingRow);
       form.addEventListener("change", (event) => {
@@ -2038,23 +2215,35 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           }
           suggestions.innerHTML = candidates.map((candidate) => `<button class="text-button" type="button" data-ir-map-accept="${esc(candidate.target)}" data-ir-map-ref="${esc(candidate.reference)}">Add ${esc(candidate.target)} ← ${esc(candidate.reference)}</button>`).join("");
           suggestions.querySelectorAll("[data-ir-map-accept]").forEach((accept) => accept.addEventListener("click", () => {
+            undoDraft = structuredClone(draft);
             addMappingRow(handoffIndex, accept.dataset.irMapAccept, accept.dataset.irMapRef);
             suggestions.innerHTML = '<span class="field-hint">Mapping added. Save and verify to include it in Team IR.</span>';
+            form.querySelector("[data-ir-undo]")?.removeAttribute("hidden");
           }));
         } catch (error) { captureFailure(error); }
       }));
-      const showDiagnostics = (diagnostics = []) => {
-        const list = form.querySelector("[data-team-ir-diagnostics]");
+      const showDiagnostics = (diagnostics = [], targetForm = form) => {
+        const list = targetForm.querySelector("[data-team-ir-diagnostics]");
+        let resultStatus = targetForm.querySelector("[data-ir-result-completeness]");
+        if (!resultStatus) {
+          list.insertAdjacentHTML("afterend", '<p class="form-status" data-ir-result-completeness role="status" aria-live="polite" hidden></p>');
+          resultStatus = targetForm.querySelector("[data-ir-result-completeness]");
+        }
+        const resultDiagnostics = diagnostics.filter((item) => item.code === "IR_RESULT_REQUIRED_MISSING" || item.code === "IR_RESULT_CONFLICT");
+        resultStatus.hidden = resultDiagnostics.length === 0;
+        resultStatus.textContent = resultDiagnostics.length
+          ? `Result completeness: ${resultDiagnostics.map((item) => `${item.code} ${item.pointer || "/"}`).join("; ")}`
+          : "";
         list.innerHTML = diagnostics.map((item, index) => `<li><button type="button" class="ir-diagnostic" data-ir-diagnostic-index="${index}"><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> <span>${esc(item.message || "")}</span></button></li>`).join("");
         list.hidden = diagnostics.length === 0;
         list.querySelectorAll("[data-ir-diagnostic-index]").forEach((button) => button.addEventListener("click", () => {
           const item = diagnostics[Number(button.dataset.irDiagnosticIndex)];
           if (!item) return;
           try {
-            const current = captureEditor();
-            focusTeamIrDiagnostic(form, current, item.pointer || "/");
+            const current = teamIrWithAdvancedContracts(targetForm, teamIrFromEditor(targetForm, draft), draft);
+            focusTeamIrDiagnostic(targetForm, current, item.pointer || "/");
           } catch {
-            const advanced = form.querySelector("[data-ir-advanced-json]");
+            const advanced = targetForm.querySelector("[data-ir-advanced-json]");
             advanced?.closest("details") && (advanced.closest("details").open = true);
             advanced?.focus();
             advanced?.setSelectionRange(0, Math.min(advanced.value.length, 1));
@@ -2334,9 +2523,25 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           ...(draft.orchestration.loops || []).filter((loop) => loop.boundaryAgentId === agent.id || loop.members?.includes(agent.id)).map((loop) => `Loop ${loop.id}`),
           ...(draft.orchestration.reviews || []).filter((review) => review.at?.agentId === agent.id).map((review) => `Review ${review.id}`)
         ];
-        if (references.length) {
+        if (references.length && !window.confirm(`Agent ${agent.id} is referenced by ${references.join(", ")}. Remove it and clean these references?`)) {
           captureFailure(new Error(`Cannot remove Agent ${agent.id}; it is referenced by ${references.join(", ")}.`));
           return;
+        }
+        if (references.length) {
+          const removedHandoffs = new Set((draft.handoffs || [])
+            .filter((handoff) => handoff.from?.agentId === agent.id || handoff.to?.agentId === agent.id)
+            .map((handoff) => handoff.id));
+          draft.handoffs = draft.handoffs.filter((handoff) => !removedHandoffs.has(handoff.id));
+          draft.orchestration.routes = draft.orchestration.routes
+            .filter((route) => route.from?.agentId !== agent.id)
+            .map((route) => ({ ...route, handoffIds: route.handoffIds.filter((id) => !removedHandoffs.has(id)) }))
+            .filter((route) => route.handoffIds.length);
+          draft.orchestration.joins = draft.orchestration.joins.filter((join) => join.agentId !== agent.id)
+            .map((join) => ({ ...join, handoffIds: join.handoffIds.filter((id) => !removedHandoffs.has(id)) }));
+          draft.orchestration.loops = draft.orchestration.loops
+            .filter((loop) => loop.boundaryAgentId !== agent.id)
+            .map((loop) => ({ ...loop, members: loop.members.filter((id) => id !== agent.id), entryHandoffIds: loop.entryHandoffIds.filter((id) => !removedHandoffs.has(id)), continueHandoffIds: loop.continueHandoffIds.filter((id) => !removedHandoffs.has(id)), exitHandoffIds: loop.exitHandoffIds.filter((id) => !removedHandoffs.has(id)) }));
+          draft.orchestration.reviews = draft.orchestration.reviews.filter((review) => review.at?.agentId !== agent.id);
         }
         draft.agents.splice(index, 1);
         draft.bindings = draft.bindings.filter((binding) => draft.agents.some((agent) => agent.bindingRef === binding.id));
@@ -2408,9 +2613,27 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
               ...(draft.orchestration.routes || []).filter((route) => route.from?.kind === "agent" && route.from.agentId === agent.id && route.from.outputPort === portId).map((route) => "a Route"),
               ...(draft.orchestration.reviews || []).filter((review) => review.at?.kind === "agentOutput" && review.at.agentId === agent.id && review.at.outputPort === portId).map((review) => `Review ${review.id}`)
             ];
-        if (references.length) {
+        if (references.length && !window.confirm(`${portId} is referenced by ${references.join(", ")}. Remove it and clean these references?`)) {
           captureFailure(new Error(`Cannot remove ${portId}; it is referenced by ${references.join(", ")}.`));
           return;
+        }
+        if (references.length) {
+          const isSource = direction === "outputPorts";
+          const removedHandoffs = new Set((draft.handoffs || [])
+            .filter((handoff) => isSource
+              ? handoff.from?.agentId === agent.id && handoff.from.outputPort === portId
+              : handoff.to?.agentId === agent.id && handoff.to.inputPort === portId)
+            .map((handoff) => handoff.id));
+          draft.handoffs = draft.handoffs.filter((handoff) => !removedHandoffs.has(handoff.id));
+          draft.orchestration.routes = draft.orchestration.routes
+            .filter((route) => !(isSource && route.from?.agentId === agent.id && route.from.outputPort === portId))
+            .map((route) => ({ ...route, handoffIds: route.handoffIds.filter((id) => !removedHandoffs.has(id)) }))
+            .filter((route) => route.handoffIds.length);
+          draft.orchestration.joins = draft.orchestration.joins
+            .map((join) => ({ ...join, handoffIds: join.handoffIds.filter((id) => !removedHandoffs.has(id)) }))
+            .filter((join) => !(join.agentId === agent.id && !isSource && join.inputPort === portId));
+          draft.orchestration.reviews = draft.orchestration.reviews
+            .filter((review) => !(isSource && review.at?.agentId === agent.id && review.at.outputPort === portId));
         }
         delete agent[direction][portId];
         syncAdvancedContracts();
@@ -2424,9 +2647,21 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         showDiagnostics();
         try {
           const candidate = captureEditor();
-          // The server owns the draft/release decision. A structurally valid draft
-          // may be saved with semantic diagnostics, so client-side validation must
-          // not prevent the PUT from reaching the use case.
+          const unconfiguredAgents = (candidate.agents || []).filter((agent) => !String(agent.packageRef || "").trim() || !String(agent.bindingRef || "").trim());
+          if (unconfiguredAgents.length) {
+            status.textContent = state.locale === "en"
+              ? `Configure a Package and Binding before saving: ${unconfiguredAgents.map((agent) => agent.id || "new Agent").join(", ")}.`
+              : `保存前请为以下 Agent 选择角色包和 Binding：${unconfiguredAgents.map((agent) => agent.id || "新 Agent").join("、")}`;
+            return;
+          }
+          // This preview is advisory only. The server owns the draft/release
+          // decision and the PUT below is always attempted, including semantic
+          // diagnostics that are valid to persist as a draft.
+          const previewResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/validate`, {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: candidate })
+          });
+          const preview = await previewResponse.json();
+          showDiagnostics(preview.diagnostics || []);
           const saveResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`, {
             method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: candidate, expectedSemanticDigest })
           });
@@ -2442,10 +2677,11 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           draft = reloaded.teamIR;
           expectedSemanticDigest = reloaded.semanticDigest;
           redraw();
+          showDiagnostics(saved.diagnostics || preview.diagnostics || [], root.querySelector("#team-ir-editor"));
           const readiness = saved.releaseReady === false
             ? (saved.draftSaveable ? "Draft saved; release readiness still has diagnostics." : "Draft saved.")
             : "Saved and release-ready.";
-          root.querySelector("[data-team-ir-status]").textContent = `${readiness} · ${expectedSemanticDigest}`;
+          root.querySelector("[data-team-ir-status]").textContent = `Saved and reopened · ${expectedSemanticDigest} · ${readiness}`;
         } catch (error) {
           if (isAbort(error)) return;
           status.textContent = error.message || "Unable to save Team IR v2.";

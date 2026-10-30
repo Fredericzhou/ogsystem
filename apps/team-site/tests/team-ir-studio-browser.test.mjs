@@ -676,7 +676,7 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(invalidBody.ok, false);
     await page.locator("[data-team-ir-diagnostics]").getByText("/orchestration/reviews/0/timeoutMs").waitFor();
     assert.match(await page.locator("[data-team-ir-diagnostics]").innerText(), /IR_SCHEMA_INVALID/);
-    assert.equal(invalidSaves, 0, "invalid advanced contracts must not reach save API");
+    assert.equal(invalidSaves, 1, "the server receives invalid drafts and rejects them without writing");
     await page.locator("[data-team-ir-diagnostics]").getByText("/orchestration/reviews/0/timeoutMs").click();
     const reviewTimeout = page.locator('[name="review-0-timeout"]');
     assert.equal(await reviewTimeout.evaluate((element) => document.activeElement === element), true);
@@ -798,6 +798,7 @@ export async function resolveBindings({ teamIR }) {
     assert.deepEqual(artifactUatStored.teamIR.handoffs.find((handoff) => handoff.id === "entry").map.artifacts,
       { sources: { $ref: "$.run.attachments.brief" } });
     await page.reload({ waitUntil: "networkidle" });
+    assert.ok(await page.locator("[data-ir-artifact-quick]").count() > 0, "Agent Artifact slots should expose the structured editor");
     const browserArtifactSlotsResponse = await page.request.get(`${url}/api/v1/team-versions/${advancedId}/ir/simulation-artifact-slots`);
     const browserArtifactSlots = await browserArtifactSlotsResponse.json();
     assert.equal(browserArtifactSlotsResponse.status(), 200, JSON.stringify(browserArtifactSlots));

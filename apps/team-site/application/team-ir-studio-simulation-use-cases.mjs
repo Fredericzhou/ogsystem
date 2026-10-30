@@ -1,4 +1,5 @@
 import { redactTeamIrSimulationText, redactTeamIrSimulationValue } from "../domain/team-ir-simulation-redaction.mjs";
+import { classifyTeamIrDiagnostics, validateTeamIr } from "../../../dist/team-ir/index.js";
 
 const DIGEST = /^[a-f0-9]{64}$/i;
 const ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
@@ -38,6 +39,14 @@ export function createTeamIrStudioSimulationUseCases({
     if (!["draft", "released"].includes(team.teamVersionStatus || "draft")) throw new Error("TEAM_IR_SIMULATION_TEAM_VERSION_UNAVAILABLE");
     const stored = await teamIrStore.read({ workdir: team.workdir });
     if (!stored.teamIR || stored.teamIR.schemaVersion !== 2) throw new Error("TEAM_IR_V2_REQUIRED");
+    const diagnostics = validateTeamIr(stored.teamIR);
+    const status = classifyTeamIrDiagnostics(diagnostics, { releaseClosureComplete: true });
+    if (!status.releaseReady) {
+      const error = new Error("TEAM_IR_INVALID: Team IR must have no blocking diagnostics before Simulation.");
+      error.code = "TEAM_IR_INVALID";
+      error.diagnostics = diagnostics;
+      throw error;
+    }
     const semanticDigest = simulationRunner.semanticDigest(stored.teamIR);
     if (stored.semanticDigest !== semanticDigest) throw new Error("TEAM_IR_SNAPSHOT_MISMATCH");
     if (typeof resolveReleaseClosure !== "function" || typeof resolveBindings !== "function") {
