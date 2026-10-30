@@ -2408,28 +2408,28 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         showDiagnostics();
         try {
           const candidate = captureEditor();
-          const validationResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/validate`, {
-            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: candidate })
-          });
-          const validation = await validationResponse.json();
-          showDiagnostics(validation.diagnostics || []);
-          if (!validationResponse.ok || !validation.ok) {
-            status.textContent = validation.error || "Team IR validation failed.";
-            return;
-          }
+          // The server owns the draft/release decision. A structurally valid draft
+          // may be saved with semantic diagnostics, so client-side validation must
+          // not prevent the PUT from reaching the use case.
           const saveResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`, {
             method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: candidate, expectedSemanticDigest })
           });
           const saved = await saveResponse.json();
           showDiagnostics(saved.diagnostics || []);
-          if (!saveResponse.ok || !saved.saved) throw new Error(saved.error || "Unable to save Team IR v2.");
+          if (!saveResponse.ok || !saved.saved) {
+            status.textContent = saved.error || "Team IR draft was not saved.";
+            return;
+          }
           const reloadResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`);
           const reloaded = await reloadResponse.json();
           if (!reloadResponse.ok || reloaded.semanticDigest !== saved.semanticDigest) throw new Error("Saved Team IR digest did not match the reopened document.");
           draft = reloaded.teamIR;
           expectedSemanticDigest = reloaded.semanticDigest;
           redraw();
-          root.querySelector("[data-team-ir-status]").textContent = `Saved and reopened · ${expectedSemanticDigest}`;
+          const readiness = saved.releaseReady === false
+            ? (saved.draftSaveable ? "Draft saved; release readiness still has diagnostics." : "Draft saved.")
+            : "Saved and release-ready.";
+          root.querySelector("[data-team-ir-status]").textContent = `${readiness} · ${expectedSemanticDigest}`;
         } catch (error) {
           if (isAbort(error)) return;
           status.textContent = error.message || "Unable to save Team IR v2.";
