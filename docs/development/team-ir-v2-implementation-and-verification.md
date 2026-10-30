@@ -1199,11 +1199,11 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 本记录闭合阶段 2、3、4 的机器验收门。阶段 2 的“通过”表示支持 allowlist 和未支持拓扑的发布前稳定拒绝均已验证，不表示 Runtime 支持任意 Loop/Join/Review 组合；阶段 3 的“通过”表示机器作者/发布合同，人工用户研究按提案规定在机器门之后执行；外部远端 A2A、生产身份提供方不属于本轮范围。
 
-### 2026-10-30：当前 HEAD 审核与 pin 证据校准（前置快照已闭合）
+### 2026-10-30：当前 HEAD 审核与 pin 证据校准（前置快照，后由后续记录闭合）
 
 | 检查项 | 结果 | 结论 |
 | --- | --- | --- |
-| 当前工作树与提交 | `HEAD b8fe01d`；工作树干净；`.ogs/model-selection.json` 为 `gpt-6-luna` | 已与 Team IR resolver 的 `codex-gateway/gpt-6-luna` 保持一致；提交包含机器验收闭合记录与 Studio 提案同步 |
+| 当前工作树与提交 | 最新提交 `HEAD 8f2b36d`；工作树干净；`.ogs/model-selection.json` 为 `gpt-6-luna` | 已与 Team IR resolver 的 `codex-gateway/gpt-6-luna` 保持一致；`b8fe01d` 和本次口径校正均已提交 |
 | 当前 resolver pin | Docker `ogs-opencode-docker-adapter/20`；direct `ogs-opencode-direct-adapter/14` | 静态 resolver/pin 合同 19/19 通过；随后已完成当前 pin 的真实矩阵，历史 `/19` 结果仅作历史记录 |
 | 当前 HEAD 全仓确定性回归 | `pnpm test`：979 项，978 通过、0 失败、1 项 Windows 专项跳过，退出码 0 | 代码级回归未发现；Windows 跳过不影响本机结论 |
 | 当前 HEAD Team Site 回归 | `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`：366 项，362 通过、0 失败、4 项明确 opt-in 跳过，退出码 0 | Team Site 确定性合同通过；跳过项包含真实 Docker/A2A 环境门 |
@@ -1224,7 +1224,7 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 | Docker `/20` 七场景第 1 轮 | 未通过（6/7） | software、structured-debate、artifact-evidence、conditional-signoff、maker-checker、release-gate 通过；`expert-consultation` 在 Project Task 运行阶段以 `RUN_FAILED:BINDING_INVALID_OUTPUT` 失败。Release Gate controlled failure/retry、重启查询、fork 和 legacy no-write 断言通过；`restartQueries=7`。失败记录不得被成功场景覆盖。 |
 | Docker `/20` 七场景第 2 轮 | 未通过（6/7） | software、expert-consultation、artifact-evidence、conditional-signoff、maker-checker、release-gate 通过；`structured-debate` 在 Simulation 阶段以 `SIMULATION_FAILED:BINDING_INVALID_OUTPUT` 失败。Release Gate controlled failure/retry、重启查询、fork 和 legacy no-write 断言通过；`restartQueries=7`。失败场景与第 1 轮轮换，未触发正文提取、字段补全或 `invalid_output` 自动重试。 |
 | direct `/14` 对照矩阵 | 通过（7/7） | 单独、无并发运行七场景：`scenarioFailures=[]`、`restartQueries=8`，Review/Loop/Artifact、controlled retry、服务重启查询、fork 和 legacy no-write 断言全部通过；完整 TAP 为 2/2。 |
-| 当前 pin 阶段结论 | 未闭合 | direct `/14` 通过不能替代 Docker 发布门。Docker 两轮失败均为严格结构化输出合同错误且场景轮换，根因归类为 provider 履约稳定性；框架继续 fail closed，Studio 应展示 Binding/provider、adapter pin、阶段和 diagnostic code/pointer，不做隐式修复。阶段 3、4 保持进行中，待 Docker 连续两轮 7/7 及最终回归后再改为通过。 |
+| 当前 pin 阶段结论 | 前置快照：未闭合；由后续记录闭合 | 此处记录 Docker 前两轮失败时的状态：direct `/14` 通过不能替代 Docker 发布门，失败均为严格结构化输出合同错误且场景轮换。后续 Docker 第三、第四轮连续 7/7 并完成最终回归；请以紧随其后的“当前 pin 连续 Docker 机器门闭合”记录为当前结论。 |
 
 本轮结果说明模型输出稳定性仍是当前发布门的实际阻塞点，而不是固定 fixture/schema 或 Runtime fallback 缺陷。失败证据只保留脱敏诊断和调用元数据，不保留或提取模型正文；任何降低 schema、补字段、正文解析或自动重试 `invalid_output` 的改动均不符合验收范围。
 
@@ -1232,9 +1232,9 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 
 在上述两轮失败记录之后，Docker `/20` 又按无并发顺序完成第三、第四轮，连续两轮均为 7/7，`scenarioFailures=[]`、`restartQueries=8`，并通过 Review、Loop、Artifact、Release Gate controlled failure/retry、服务重启查询、版本 fork 和 legacy no-write。第三轮与第四轮的七个场景均覆盖 `software-team`、`expert-consultation`、`structured-debate`、`artifact-evidence`、`conditional-signoff`、`maker-checker`、`release-gate`；第四轮原始 TAP 保存在 `/tmp/team-ir-docker20-round4.log`，其运行记录和 digest 已由 harness 输出保存。
 
-当前 pin 结论：Docker `/20` 连续稳定门和 direct `/14` 对照 7/7 均通过，Sandbox egress probe 1/1 通过；阶段 3、4 的机器验收门闭合。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败继续作为 provider 稳定性回归证据保留，不改变严格 fail-closed 语义。最终全仓、Team Site 和 Studio 回归完成后，再进行提案规定的人工产品复核。
+当前 pin 结论：Docker `/20` 连续稳定门和 direct `/14` 对照 7/7 均通过，Sandbox egress probe 1/1 通过；阶段 3、4 的机器验收门闭合。前两轮 6/7 的轮换 `BINDING_INVALID_OUTPUT` 失败继续作为 provider 稳定性回归证据保留，不改变严格 fail-closed 语义。全仓、Team Site 和 Studio 回归通过，并已提交于 `8f2b36d`；剩余为提案规定的人工产品复核。
 
-最终回归结果：`pnpm test` 979 项中 978 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 366 项中 362 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。当前工作树的机器验收闭合，剩余步骤是提案第 10 节规定的人工产品复核与提交基线。
+最终回归结果：`pnpm test` 979 项中 978 通过、0 失败、1 项 Windows 专项跳过；`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 366 项中 362 通过、0 失败、4 项明确 opt-in 跳过；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`git diff --check` 通过。机器验收记录已提交，剩余步骤是提案第 10 节规定的人工产品复核。
 
 ## 6. Codex / 实施代理工作约定
 
