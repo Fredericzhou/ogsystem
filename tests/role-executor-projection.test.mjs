@@ -1494,7 +1494,7 @@ test("executeRoleNode switches to the configured fallback backend", async () => 
 start[开始] -->|START| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/openai/gpt-5.4" }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "synthetic-model", fallbackModelRef: "opencode/openai/gpt-5.4" }]
   });
   const state = createInitialState(fixture.plan, "cross backend fallback prompt");
   const requests = [];

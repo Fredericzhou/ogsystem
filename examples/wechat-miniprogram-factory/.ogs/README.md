@@ -51,7 +51,7 @@ Common edits:
     "timeoutMs": 120000,
     "maxOutputBytes": 65536
   },
-  "roles": { "proposal-author": { "backend": "codex", "modelId": "gpt-5.6-sol" } }
+  "roles": { "proposal-author": { "backend": "codex", "modelId": "gpt-6-luna" } }
 }
 ```
 

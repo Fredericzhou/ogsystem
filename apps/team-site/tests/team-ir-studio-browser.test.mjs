@@ -496,6 +496,9 @@ export async function resolveBindings({ teamIR }) {
     const advancedWriter = advancedIr.agents.find((agent) => agent.id === "writer");
     advancedWriter.inputPorts.revise.dataSchema.properties.answer.description = "Preserve this advanced description";
     advancedWriter.inputPorts.revise.dataSchema.properties.answer.examples = ["reviewed answer"];
+    advancedWriter.outputPorts.DONE.artifactSlots.supplement = {
+      mediaTypes: ["text/plain"], cardinality: "single", required: false
+    };
     const conditionSummaries = await page.evaluate(async () => {
       const { teamIrConditionSummary } = await import("/app/views/app.js");
       const ref = { $ref: "$.run.input.decision" };
@@ -549,15 +552,84 @@ export async function resolveBindings({ teamIR }) {
     assert.equal(await page.locator("[data-ir-loop]").count(), 1);
     assert.equal(await page.locator("[data-ir-review]").count(), 1);
     assert.equal(await page.locator('[name="review-0-at"]').inputValue(), JSON.stringify(["writer", "DONE"]));
+    const advancedAfterLoad = JSON.parse(await page.locator("[data-ir-advanced-json]").inputValue());
+    advancedAfterLoad.agentPortContracts.writer.inputPorts.revise.dataSchema.properties.answer.description = "Added after the editor loaded";
+    advancedAfterLoad.agentPortContracts.writer.inputPorts.revise.dataSchema.properties.answer.examples = ["advanced-after-load"];
+    advancedIr.agents.find((agent) => agent.id === "writer").inputPorts.revise.dataSchema.properties.answer.description = "Added after the editor loaded";
+    advancedIr.agents.find((agent) => agent.id === "writer").inputPorts.revise.dataSchema.properties.answer.examples = ["advanced-after-load"];
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(advancedAfterLoad, null, 2));
     const reviseSchemaQuick = page.locator('[data-ir-schema-quick][data-ir-schema-target="agent-0-inputPorts-1-schema"]');
-    await reviseSchemaQuick.locator('[data-ir-schema-name]').first().fill("answerRenamed");
+
+    const advancedContractRename = structuredClone(advancedAfterLoad);
+    const reviseProperties = advancedContractRename.agentPortContracts.writer.inputPorts.revise.dataSchema.properties;
+    reviseProperties.answer2 = { ...reviseProperties.answer, type: "number", description: "Renamed by Advanced JSON" };
+    delete reviseProperties.answer;
+    advancedContractRename.agentPortContracts.writer.inputPorts.revise.dataSchema.required = ["answer2"];
+    const doneSlots = advancedContractRename.agentPortContracts.writer.outputPorts.DONE.artifactSlots;
+    doneSlots.finalReport = { ...doneSlots.report, required: true };
+    delete doneSlots.report;
+    doneSlots.auditTrail = { mediaTypes: ["application/json"], cardinality: "many", required: false };
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(advancedContractRename, null, 2));
+    const renamedSchemaJson = JSON.parse(await page.locator('[data-ir-schema-textarea][name="agent-0-inputPorts-1-schema"]').inputValue());
+    assert.ok(renamedSchemaJson.properties.answer2, JSON.stringify(renamedSchemaJson));
+    const renamedSchemaQuick = page.locator('[data-ir-schema-quick][data-ir-schema-target="agent-0-inputPorts-1-schema"]');
+    const renamedSchemaHtml = await renamedSchemaQuick.evaluate((element) => element.outerHTML);
+    assert.match(renamedSchemaHtml, /answer2/, renamedSchemaHtml);
+    const renamedAnswerIndex = await renamedSchemaQuick.locator('[data-ir-schema-name]').evaluateAll((inputs) => inputs.findIndex((input) => input.value === "answer2"));
+    assert.ok(renamedAnswerIndex >= 0, renamedSchemaHtml);
+    const renamedAnswerRow = renamedSchemaQuick.locator('[data-ir-schema-field]').nth(renamedAnswerIndex);
+    assert.equal(await renamedAnswerRow.locator('[data-ir-schema-name]').inputValue(), "answer2",
+      "Advanced JSON field renames refresh the quick editor row");
+    assert.equal(await renamedAnswerRow.locator('[data-ir-schema-type]').inputValue(), "number",
+      "Advanced JSON field type changes refresh the quick editor row");
+    assert.equal(await renamedAnswerRow.getAttribute("data-ir-schema-original"), "answer2",
+      "Advanced JSON field renames refresh the quick editor original key");
+    const renamedArtifactQuick = page.locator('[data-ir-artifact-quick][data-ir-artifact-target="agent-0-outputPorts-0-artifacts"]');
+    assert.deepEqual(await renamedArtifactQuick.locator('[data-ir-artifact-name]').evaluateAll((inputs) => inputs.map((input) => input.value)), ["supplement", "finalReport", "auditTrail"],
+      "Advanced JSON Artifact additions and renames refresh all quick rows");
+    const renamedReportIndex = await renamedArtifactQuick.locator('[data-ir-artifact-name]').evaluateAll((inputs) => inputs.findIndex((input) => input.value === "finalReport"));
+    assert.ok(renamedReportIndex >= 0);
+    const renamedReportRow = renamedArtifactQuick.locator('[data-ir-artifact-field]').nth(renamedReportIndex);
+    assert.equal(await renamedReportRow.getAttribute("data-ir-artifact-original"), "finalReport",
+      "Advanced JSON Artifact renames refresh the quick editor original key");
+    await renamedAnswerRow.locator('[data-ir-schema-required]').uncheck();
+    await renamedReportRow.locator('[data-ir-artifact-required]').uncheck();
+    const quickAfterAdvancedEdit = JSON.parse(await page.locator('[data-ir-advanced-json]').inputValue());
+    assert.equal(quickAfterAdvancedEdit.agentPortContracts.writer.inputPorts.revise.dataSchema.properties.answer2.type, "number",
+      "Quick edits after Advanced JSON changes keep the renamed Schema field");
+    assert.equal(Object.hasOwn(quickAfterAdvancedEdit.agentPortContracts.writer.inputPorts.revise.dataSchema.properties, "answer"), false);
+    assert.equal(quickAfterAdvancedEdit.agentPortContracts.writer.outputPorts.DONE.artifactSlots.finalReport.required, false,
+      "Quick edits after Advanced JSON changes keep renamed Artifact metadata");
+    assert.ok(Object.hasOwn(quickAfterAdvancedEdit.agentPortContracts.writer.outputPorts.DONE.artifactSlots, "auditTrail"),
+      "Quick edits after Advanced JSON changes keep newly added Artifact slots");
+    await page.locator("[data-ir-advanced-json]").fill(JSON.stringify(advancedAfterLoad, null, 2));
+    const reviseSchemaName = reviseSchemaQuick.locator('[data-ir-schema-name]').first();
+    await reviseSchemaName.fill("");
+    let schemaAfterEmptyName = JSON.parse(await page.locator('[data-ir-schema-textarea][name="agent-0-inputPorts-1-schema"]').inputValue());
+    assert.equal(schemaAfterEmptyName.properties.answer.description, "Added after the editor loaded", "empty Schema names do not discard the advanced baseline");
+    await reviseSchemaName.fill("invalid name");
+    schemaAfterEmptyName = JSON.parse(await page.locator('[data-ir-schema-textarea][name="agent-0-inputPorts-1-schema"]').inputValue());
+    assert.equal(schemaAfterEmptyName.properties.answer.description, "Added after the editor loaded", "invalid Schema names do not discard the advanced baseline");
+    await reviseSchemaName.fill("answerRenamed");
     let revisedSchema = JSON.parse(await page.locator('[data-ir-schema-textarea][name="agent-0-inputPorts-1-schema"]').inputValue());
-    assert.equal(revisedSchema.properties.answerRenamed.description, "Preserve this advanced description");
-    assert.deepEqual(revisedSchema.properties.answerRenamed.examples, ["reviewed answer"]);
+    assert.equal(revisedSchema.properties.answerRenamed.description, "Added after the editor loaded");
+    assert.deepEqual(revisedSchema.properties.answerRenamed.examples, ["advanced-after-load"]);
     await reviseSchemaQuick.locator('[data-ir-schema-name]').first().fill("answer");
     const reportArtifactQuick = page.locator('[data-ir-artifact-quick][data-ir-artifact-target="agent-0-outputPorts-0-artifacts"]');
-    const reportArtifactName = reportArtifactQuick.locator('[data-ir-artifact-name]').first();
+    const artifactRows = reportArtifactQuick.locator('[data-ir-artifact-field]');
+    const reportArtifactName = artifactRows.nth(0).locator('[data-ir-artifact-name]');
+    const supplementArtifactName = artifactRows.nth(1).locator('[data-ir-artifact-name]');
+    await supplementArtifactName.fill("report");
+    let duplicateSlots = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue());
+    assert.ok(Object.hasOwn(duplicateSlots, "report") && Object.hasOwn(duplicateSlots, "supplement"), "duplicate Artifact names do not commit a partial update");
+    await supplementArtifactName.fill("supplement");
     const reportArtifactBefore = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue()).report;
+    await reportArtifactName.fill("");
+    const artifactAfterEmptyName = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue());
+    assert.deepEqual(artifactAfterEmptyName.report, reportArtifactBefore, "empty Artifact names do not discard the advanced baseline");
+    await reportArtifactName.fill("invalid name");
+    const artifactAfterInvalidName = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue());
+    assert.deepEqual(artifactAfterInvalidName.report, reportArtifactBefore, "invalid Artifact names do not discard the advanced baseline");
     await reportArtifactName.fill("reportRenamed");
     await reportArtifactQuick.locator('[data-ir-artifact-media]').first().fill("text/markdown, text/plain");
     let renamedSlots = JSON.parse(await page.locator('[data-ir-artifact-textarea][name="agent-0-outputPorts-0-artifacts"]').inputValue());

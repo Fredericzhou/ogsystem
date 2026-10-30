@@ -199,21 +199,21 @@ test("Join runtime summary distinguishes multiple scopes, quorum threshold, and 
 test("Studio model selector shows runnable backend/model pairs and discovery status", () => {
   const html = renderStudioRoleConfigEditor({
     roleId: "writer",
-    editor: { roleId: "writer", data: { bindingKind: "model", backend: "codex", modelId: "gpt-5.6-sol" } },
+    editor: { roleId: "writer", data: { bindingKind: "model", backend: "codex", modelId: "synthetic-model" } },
     modelCatalog: {
       sources: [
         { backend: "codex", status: "available" },
         { backend: "claude", status: "available", detail: "CLI detected; persistent adapter unavailable." }
       ],
       models: [
-        { backend: "codex", runnable: true, modelId: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+        { backend: "codex", runnable: true, modelId: "synthetic-model", name: "Synthetic model" },
         { backend: "claude", runnable: false, modelId: "claude-sonnet", name: "Claude Sonnet" }
       ]
     }
   });
   assert.match(html, /data-role-config-field="backend"/);
   assert.match(html, /data-role-config-field="modelId"/);
-  assert.match(html, /GPT-5\.6 Sol/);
+  assert.match(html, /Synthetic model/);
   assert.doesNotMatch(html, /Claude Sonnet/);
   assert.match(html, /persistent adapter unavailable/);
 });
@@ -224,7 +224,7 @@ test("Studio defaults new role binding to Agent and prefers OpenCode when availa
     editor: { roleId: "new-role", data: {} },
     modelCatalog: {
       models: [
-        { backend: "codex", runnable: true, modelId: "gpt-5.6", name: "GPT-5.6" },
+        { backend: "codex", runnable: true, modelId: "gpt-6-luna", name: "GPT-6 Luna" },
         { backend: "opencode", runnable: true, modelId: "gpt-5.4", name: "GPT-5.4" }
       ]
     }

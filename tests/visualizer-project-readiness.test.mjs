@@ -259,7 +259,7 @@ test("project readiness blocks Codex output schemas outside the strict structure
     ]);
     await writeFile(
       path.join(workdir, ".ogs", "model-selection.json"),
-      JSON.stringify({ configVersion: "2", roles: { planner: { backend: "codex", modelId: "gpt-5.6-luna" } } }),
+      JSON.stringify({ configVersion: "2", roles: { planner: { backend: "codex", modelId: "gpt-6-luna" } } }),
       "utf8"
     );
 

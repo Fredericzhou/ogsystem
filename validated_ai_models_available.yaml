@@ -72,25 +72,15 @@ models:
       is_default: false
       sort_order: 52
       description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
-    - name: OpenAI Gateway - GPT 5.6 Luna
+    - name: OpenAI Gateway - GPT 6 Luna
       provider: openai
-      model_id: gpt-5.6-luna
+      model_id: gpt-6-luna
       api_endpoint: http://43.134.72.68:8080/v1
       api_key: null
       config: {protocol: openai_responses, disable_response_storage: true, reasoning_effort: high}
       is_active: false
       is_default: false
       sort_order: 53
-      description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
-    - name: OpenAI Gateway - GPT 5.6 Terra
-      provider: openai
-      model_id: gpt-5.6-terra
-      api_endpoint: http://43.134.72.68:8080/v1
-      api_key: null
-      config: {protocol: openai_responses, disable_response_storage: true}
-      is_active: false
-      is_default: false
-      sort_order: 54
       description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
     - name: Grok - Grok 4.5
       provider: grok

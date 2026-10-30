@@ -9,6 +9,7 @@ import { CodexAppServerClient } from "./codex-app-server.js";
 
 export const OPENCODE_MODEL_DISCOVERY_COMMAND = "opencode models --verbose";
 export const MODEL_CATALOG_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+export const PROJECT_DEFAULT_MODEL_ID = "gpt-6-luna";
 
 export type ModelDiscoveryErrorCode =
   | "MODEL_DISCOVERY_COMMAND_MISSING"
@@ -480,14 +481,14 @@ export function mergeModelCatalogWithLiveSnapshot(
 }
 
 export function chooseDefaultModelFromCatalog(catalog: ModelCatalog): ModelCatalogEntry | undefined {
-  return catalog.models.find(
-    (model) =>
-      model.runnable &&
-      model.status === "active" &&
-      model.capabilities.textInput &&
-      model.capabilities.textOutput &&
-      model.capabilities.toolcall
-  );
+  const usable = (model: ModelCatalogEntry) =>
+    model.runnable &&
+    model.status === "active" &&
+    model.capabilities.textInput &&
+    model.capabilities.textOutput &&
+    model.capabilities.toolcall;
+  return catalog.models.find((model) => usable(model) && model.modelId === PROJECT_DEFAULT_MODEL_ID)
+    ?? catalog.models.find(usable);
 }
 
 export function isModelCatalogStale(

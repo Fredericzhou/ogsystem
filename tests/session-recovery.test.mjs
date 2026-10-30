@@ -354,7 +354,7 @@ test("branch workspace isolation stores session directory under branch private w
   const system = await loadSystemFromMermaid(systemPath);
   const plan = createExecutionPlan(system, new Map([[
     system.entryRoleIds?.[0],
-    { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "codex/gpt-5.6-sol", bindingSource: "selection" }
+    { backend: "codex", modelId: "gpt-6-luna", modelRef: "codex/gpt-6-luna", bindingSource: "selection" }
   ]]));
   const runtimeConfig = validateRuntimeConfig(
     {

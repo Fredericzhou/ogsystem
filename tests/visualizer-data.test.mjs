@@ -47,7 +47,6 @@ async function seedProjectFixture(workdir) {
   await writeFile(diagnosisRolePath, JSON.stringify(diagnosisRole, null, 2), "utf8");
   for (const file of [
     "runtime.json",
-    "model-selection.json",
     "model-catalog.json",
     "laws.json",
     "user-profile.json"
@@ -56,7 +55,7 @@ async function seedProjectFixture(workdir) {
   }
   await writeFile(
     path.resolve(workdir, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "2", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }, null, 2),
+    JSON.stringify({ configVersion: "2", defaults: { backend: "codex", modelId: "gpt-6-luna" } }, null, 2),
     "utf8"
   );
   await writeFile(
@@ -845,7 +844,9 @@ async function createJoinRun(workdir) {
 
 test("visualizer data projects project and graph information", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-project-"));
+  const repoModelSelection = await readFile(path.resolve(process.cwd(), ".ogs", "model-selection.json"), "utf8");
   await seedProjectFixture(workdir);
+  assert.equal(await readFile(path.resolve(process.cwd(), ".ogs", "model-selection.json"), "utf8"), repoModelSelection, "fixture setup must not overwrite the repository model selection");
   const { runId } = await createSimulationRun(workdir);
 
   const project = await inspectProjectVisualization(workdir);

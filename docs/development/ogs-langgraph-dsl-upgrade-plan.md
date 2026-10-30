@@ -548,7 +548,7 @@ reviews:
 models:
   strong_reasoning:
     provider: openai
-    model: gpt-5.6-luna
+    model: gpt-6-luna
     variant: high
 
 roles:

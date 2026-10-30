@@ -248,7 +248,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
       configVersion: "2",
       defaults: {
         backend: "codex",
-        modelId: "gpt-5.6-sol",
+        modelId: "gpt-6-luna",
         timeoutMs: 120000,
         maxOutputBytes: 4096
       }

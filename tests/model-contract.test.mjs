@@ -7,6 +7,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import {
   MODEL_CATALOG_STALE_AFTER_MS,
   ModelDiscoveryError,
+  chooseDefaultModelFromCatalog,
   isModelCatalogStale,
   loadModelCatalog,
   mergeModelCatalogWithLiveSnapshot,
@@ -132,6 +133,14 @@ test("catalog freshness is explicit and does not rewrite the pinned selection", 
   assert.equal(loadedSelection.defaults.modelId, selection.defaults.modelId);
 });
 
+test("project defaults prefer the verified gpt-6-luna model over catalog ordering", () => {
+  const selected = chooseDefaultModelFromCatalog(catalog([
+    { ...model("codex/gpt-6-astra"), backend: "codex", modelId: "gpt-6-astra" },
+    { ...model("codex/gpt-6-luna"), backend: "codex", modelId: "gpt-6-luna" }
+  ]));
+  assert.equal(selected?.modelId, "gpt-6-luna");
+});
+
 test("catalog loading preserves canonical provider refs for OpenCode models", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-ref-"));
   const catalogPath = path.join(workdir, "model-catalog.json");
@@ -151,14 +160,14 @@ test("per-role model selection overrides the project default", () => {
     selection: {
       configVersion: "2",
       defaults: { backend: "opencode", modelId: "provider/project" },
-      roles: { mapped: { backend: "codex", modelId: "gpt-5.6-sol" }, label: { backend: "opencode", modelId: "provider/wrong" } }
+      roles: { mapped: { backend: "codex", modelId: "synthetic-model" }, label: { backend: "opencode", modelId: "provider/wrong" } }
     },
-    catalog: catalog([model("provider/project"), { ...model("codex/gpt-5.6-sol"), backend: "codex", modelId: "gpt-5.6-sol" }])
+    catalog: catalog([model("provider/project"), { ...model("codex/synthetic-model"), backend: "codex", modelId: "synthetic-model" }])
   });
 
   assert.equal(result.resolvedByRoleId.get("defaulted").modelRef, "provider/project");
   assert.equal(result.resolvedByRoleId.get("mapped").backend, "codex");
-  assert.equal(result.resolvedByRoleId.get("mapped").modelId, "gpt-5.6-sol");
+  assert.equal(result.resolvedByRoleId.get("mapped").modelId, "synthetic-model");
   assert.equal(result.resolvedByRoleId.has("label"), false);
 });
 
@@ -176,19 +185,19 @@ test("per-role model selection preserves an optional fallback model reference", 
 test("platform model defaults fill unbound roles without overriding project or role selections", () => {
   const selection = withDefaultModelSelection({
     configVersion: "2",
-    roles: { pinned: { backend: "codex", modelId: "gpt-5.6-sol" } }
+    roles: { pinned: { backend: "codex", modelId: "synthetic-model" } }
   }, { backend: "codex", modelId: "platform-default" });
   const result = resolveModelSelectionForSystem({
     system: system(["platform", "pinned"]),
     selection,
     catalog: catalog([
       { ...model("codex/platform-default"), backend: "codex", modelId: "platform-default" },
-      { ...model("codex/gpt-5.6-sol"), backend: "codex", modelId: "gpt-5.6-sol" }
+      { ...model("codex/synthetic-model"), backend: "codex", modelId: "synthetic-model" }
     ])
   });
 
   assert.equal(result.resolvedByRoleId.get("platform").modelId, "platform-default");
-  assert.equal(result.resolvedByRoleId.get("pinned").modelId, "gpt-5.6-sol");
+  assert.equal(result.resolvedByRoleId.get("pinned").modelId, "synthetic-model");
   const projectSelection = withDefaultModelSelection({
     configVersion: "2",
     defaults: { backend: "opencode", modelId: "provider/project" }

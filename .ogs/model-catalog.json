@@ -78,54 +78,6 @@
     {
       "backend": "codex",
       "runnable": true,
-      "modelId": "gpt-5.6-sol",
-      "ref": "codex/gpt-5.6-sol",
-      "provider": "codex",
-      "model": "gpt-5.6-sol",
-      "name": "GPT-5.6-Sol",
-      "status": "active",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "codex",
-      "runnable": true,
-      "modelId": "gpt-5.6-terra",
-      "ref": "codex/gpt-5.6-terra",
-      "provider": "codex",
-      "model": "gpt-5.6-terra",
-      "name": "GPT-5.6-Terra",
-      "status": "active",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "codex",
-      "runnable": true,
-      "modelId": "gpt-5.6-luna",
-      "ref": "codex/gpt-5.6-luna",
-      "provider": "codex",
-      "model": "gpt-5.6-luna",
-      "name": "GPT-5.6-Luna",
-      "status": "active",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-5.5",
       "ref": "codex/gpt-5.5",
       "provider": "codex",

@@ -1685,7 +1685,7 @@ function renderTeamIrEditorRows(ir, escText, editable, authoringCatalog = null) 
     const outputContractHint = state.locale === "en"
       ? "Each event schema defines its data payload. The Binding must return one JSON object: event, matching data, and artifactTexts (use an empty object when none are produced). The configured provider must support this output schema; results are validated again by Team IR. Markdown fences and surrounding text are rejected."
       : "每个事件 Schema 描述该事件的 data。Binding 必须返回单个 JSON 对象，包含 event、匹配的 data 和 artifactTexts（没有 Artifact 时传空对象）。所配置的 Provider 需支持该输出 Schema；Team IR 仍会再次校验。Markdown 围栏和前后说明会被拒绝。";
-    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${direction === "outputPorts" ? `<p class="field-hint" data-ir-output-contract-hint>${esc(outputContractHint)}</p>` : ""}${Object.entries(ports || {}).map(([portId, port], portIndex) => { const schemaTarget = `agent-${index}-${direction}-${portIndex}-schema`; const artifactTarget = `agent-${index}-${direction}-${portIndex}-artifacts`; return `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><label>Data schema JSON<textarea data-ir-schema-textarea name="${schemaTarget}" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea>${renderTeamIrSchemaQuickEditor(port.dataSchema, schemaTarget, escText, editable)}<label>Artifact slots JSON<textarea data-ir-artifact-textarea name="${artifactTarget}" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea>${renderTeamIrArtifactQuickEditor(port.artifactSlots, artifactTarget, direction, escText, editable)}</label></section>`; }).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
+    const renderPorts = (direction, ports) => `<fieldset class="full ir-agent-ports" data-ir-agent-ports="${index}" data-ir-port-direction="${direction}"><legend>${direction === "inputPorts" ? "Input ports" : "Output events"}</legend>${direction === "outputPorts" ? `<p class="field-hint" data-ir-output-contract-hint>${esc(outputContractHint)}</p>` : ""}${Object.entries(ports || {}).map(([portId, port], portIndex) => { const schemaTarget = `agent-${index}-${direction}-${portIndex}-schema`; const artifactTarget = `agent-${index}-${direction}-${portIndex}-artifacts`; return `<section class="ir-port-contract" data-ir-port-row="${direction}" data-ir-port-index="${portIndex}"><div class="panel-head"><strong>${direction === "inputPorts" ? "Input" : "Output"} port ${portIndex + 1}</strong><button class="icon-button" type="button" data-ir-remove-port="${index}" data-ir-port-direction="${direction}" data-ir-port-index="${portIndex}" aria-label="Remove ${direction === "inputPorts" ? "input" : "output"} port" title="Remove port"${editable ? "" : " disabled"}>×</button></div><label>Port ID<input name="agent-${index}-${direction}-${portIndex}-id" value="${escText(portId)}" required${editable ? "" : " disabled"}></label><div class="ir-port-schema-editor"><label>Data schema JSON<textarea data-ir-schema-textarea name="${schemaTarget}" rows="7" spellcheck="false" required${editable ? "" : " disabled"}>${escText(JSON.stringify(port.dataSchema ?? {}, null, 2))}</textarea></label>${renderTeamIrSchemaQuickEditor(port.dataSchema, schemaTarget, escText, editable)}</div><div class="ir-port-artifact-editor"><label>Artifact slots JSON<textarea data-ir-artifact-textarea name="${artifactTarget}" rows="5" spellcheck="false" placeholder="{}"${editable ? "" : " disabled"}>${escText(port.artifactSlots ? JSON.stringify(port.artifactSlots, null, 2) : "")}</textarea></label>${renderTeamIrArtifactQuickEditor(port.artifactSlots, artifactTarget, direction, escText, editable)}</div></section>`; }).join("")}<button class="text-button" type="button" data-ir-add-port="${index}" data-ir-port-direction="${direction}"${editable ? "" : " disabled"}>Add ${direction === "inputPorts" ? "input port" : "output event"}</button></fieldset>`;
     return `<section class="project-panel ir-editor-row" data-ir-agent="${index}"><div class="panel-head"><h3>Agent ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-agent="${index}" aria-label="Remove Agent" title="Remove Agent"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Agent ID<input name="agent-${index}-id" value="${escText(agent.id)}" required${editable ? "" : " disabled"}></label><label>Package reference<select name="agent-${index}-package" required${editable ? "" : " disabled"}>${catalogOptions(packageRefs, agent.packageRef, "Select a verified role package")}</select>${agent.packageRef ? "" : '<small class="field-hint">Choose a catalog entry before saving this Agent.</small>'}</label><label>Binding reference<select name="agent-${index}-binding" required${editable ? "" : " disabled"}>${catalogOptions(bindingRefs, agent.bindingRef, "Select a configured Binding")}</select>${agent.bindingRef ? "" : '<small class="field-hint">Choose a catalog entry before saving this Agent.</small>'}</label>${renderPorts("inputPorts", agent.inputPorts)}${renderPorts("outputPorts", agent.outputPorts)}</div></section>`;
   }).join("");
   const agentOptions = (selected, allowRun = false) => `${allowRun ? `<option value=""${!selected ? " selected" : ""}>Run START</option>` : ""}${(ir.agents || []).map((agent) => `<option value="${escText(agent.id)}"${selected === agent.id ? " selected" : ""}>${escText(agent.id)}</option>`).join("")}${allowRun ? '<option value="@result"' + (selected === "@result" ? " selected" : "") + ">Run result</option>" : ""}`;
@@ -1952,26 +1952,30 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
           const parsed = JSON.parse(editor.dataset.irSchemaManaged || "[]");
           if (Array.isArray(parsed)) managedBefore = parsed.filter((name) => typeof name === "string");
         } catch { /* A malformed editor marker must not affect Advanced JSON. */ }
-        const properties = { ...sourceProperties };
-        const required = [];
-        const quickNames = new Set();
         const rows = [...editor.querySelectorAll("[data-ir-schema-field]")];
-        for (const original of managedBefore) delete properties[original];
+        const rowValues = [];
+        const quickNames = new Set();
         for (const row of rows) {
           const name = row.querySelector("[data-ir-schema-name]")?.value.trim();
-          const type = row.querySelector("[data-ir-schema-type]")?.value;
-          if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
+          if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) {
+            form.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? "Schema field names must be non-empty and use letters, numbers, _ or -." : "Schema 字段名不能为空，且只能使用字母、数字、下划线或连字符。";
+            return;
+          }
           if (quickNames.has(name)) {
             form.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? `Schema field names must be unique: ${name}.` : `Schema 字段名必须唯一：${name}。`;
             return;
           }
           quickNames.add(name);
-          const original = row.dataset.irSchemaOriginal || "";
+          rowValues.push({ row, name, type: row.querySelector("[data-ir-schema-type]")?.value, original: row.dataset.irSchemaOriginal || "" });
+        }
+        const properties = { ...sourceProperties };
+        const required = [];
+        for (const original of managedBefore) delete properties[original];
+        for (const { row, name, type, original } of rowValues) {
           const previous = original && sourceProperties[original] && typeof sourceProperties[original] === "object" ? sourceProperties[original] : {};
           if (original && original !== name) delete properties[original];
           properties[name] = { ...previous, type };
           if (row.querySelector("[data-ir-schema-required]")?.checked) required.push(name);
-          row.dataset.irSchemaOriginal = name;
         }
         const previousRequired = Array.isArray(current.required) ? current.required : [];
         const preservedRequired = previousRequired.filter((name) => !managedBefore.includes(name));
@@ -1980,6 +1984,7 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         if (nextRequired.length || Object.hasOwn(current, "required")) nextSchema.required = nextRequired;
         else delete nextSchema.required;
         editor.dataset.irSchemaManaged = JSON.stringify([...quickNames]);
+        for (const { row, name } of rowValues) row.dataset.irSchemaOriginal = name;
         textarea.value = JSON.stringify(nextSchema, null, 2);
         try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
       };
@@ -1990,25 +1995,32 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         let current = {};
         try { current = JSON.parse(textarea.value || "{}") || {}; } catch { /* Advanced JSON validation reports malformed values. */ }
         const mediaKey = editor.dataset.irArtifactMediaKey || "acceptedMediaTypes";
-        const slots = {};
+        const rows = [...editor.querySelectorAll("[data-ir-artifact-field]")];
+        const rowValues = [];
         const names = new Set();
-        for (const row of editor.querySelectorAll("[data-ir-artifact-field]")) {
+        for (const row of rows) {
           const name = row.querySelector("[data-ir-artifact-name]")?.value.trim();
-          if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
+          if (!name || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) {
+            form.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? "Artifact slot names must be non-empty and use letters, numbers, _ or -." : "Artifact 槽位名不能为空，且只能使用字母、数字、下划线或连字符。";
+            return;
+          }
           if (names.has(name)) {
             form.querySelector("[data-team-ir-status]").textContent = state.locale === "en" ? `Artifact slot names must be unique: ${name}.` : `Artifact 槽位名必须唯一：${name}。`;
             return;
           }
           names.add(name);
-          const original = row.dataset.irArtifactOriginal;
+          rowValues.push({ row, name, original: row.dataset.irArtifactOriginal || "" });
+        }
+        const slots = {};
+        for (const { row, name, original } of rowValues) {
           const spec = { ...(current[original] && typeof current[original] === "object" ? current[original] : {}) };
           const mediaTypes = row.querySelector("[data-ir-artifact-media]")?.value.split(",").map((item) => item.trim()).filter(Boolean) || [];
           spec[mediaKey] = mediaTypes;
           spec.cardinality = row.querySelector("[data-ir-artifact-cardinality]")?.value || "single";
           spec.required = row.querySelector("[data-ir-artifact-required]")?.checked === true;
           slots[name] = spec;
-          row.dataset.irArtifactOriginal = name;
         }
+        for (const { row, name } of rowValues) row.dataset.irArtifactOriginal = name;
         textarea.value = JSON.stringify(slots, null, 2);
         try { draft = captureEditor(); syncAdvancedContracts(); } catch (error) { captureFailure(error); }
       };
@@ -2845,9 +2857,55 @@ async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeReque
         });
       };
       refreshSimulationInput(draft.runInput?.dataSchema);
+      const syncQuickEditorBaselinesFromAdvanced = (advanced) => {
+        const contracts = advanced?.agentPortContracts;
+        if (!contracts || typeof contracts !== "object" || Array.isArray(contracts)) return;
+        form.querySelectorAll("[data-ir-agent]").forEach((agentRow) => {
+          const agentIndex = agentRow.dataset.irAgent;
+          const agentId = String(form.querySelector(`[name="agent-${CSS.escape(agentIndex)}-id"]`)?.value || "").trim();
+          const agentContracts = contracts[agentId];
+          if (!agentContracts || typeof agentContracts !== "object") return;
+          for (const direction of ["inputPorts", "outputPorts"]) {
+            agentRow.querySelectorAll(`[data-ir-port-row="${direction}"]`).forEach((portRow) => {
+              const portIndex = portRow.dataset.irPortIndex;
+              const portId = String(form.querySelector(`[name="agent-${CSS.escape(agentIndex)}-${direction}-${CSS.escape(portIndex)}-id"]`)?.value || "").trim();
+              const contract = agentContracts[direction]?.[portId];
+              if (!contract || typeof contract !== "object") return;
+              const schema = form.querySelector(`[data-ir-schema-textarea][name="agent-${CSS.escape(agentIndex)}-${direction}-${CSS.escape(portIndex)}-schema"]`);
+              const artifacts = form.querySelector(`[data-ir-artifact-textarea][name="agent-${CSS.escape(agentIndex)}-${direction}-${CSS.escape(portIndex)}-artifacts"]`);
+              if (schema && contract.dataSchema !== undefined) schema.value = JSON.stringify(contract.dataSchema, null, 2);
+              if (artifacts) artifacts.value = contract.artifactSlots ? JSON.stringify(contract.artifactSlots, null, 2) : "";
+
+              // Advanced JSON is the authoritative baseline. Re-render the quick
+              // rows so their names, types, metadata keys, and original keys all
+              // point at the newly parsed contracts before the next quick edit.
+              const schemaEditor = portRow.querySelector("[data-ir-schema-quick]");
+              if (schema && schemaEditor && contract.dataSchema !== undefined) {
+                const markup = renderTeamIrSchemaQuickEditor(contract.dataSchema, schema.name, esc, editable);
+                if (markup) schemaEditor.outerHTML = markup;
+                else schemaEditor.remove();
+              } else if (schema && !schemaEditor && contract.dataSchema !== undefined) {
+                const markup = renderTeamIrSchemaQuickEditor(contract.dataSchema, schema.name, esc, editable);
+                if (markup) schema.closest(".ir-port-schema-editor")?.insertAdjacentHTML("beforeend", markup);
+              }
+              const artifactEditor = portRow.querySelector("[data-ir-artifact-quick]");
+              if (artifacts && artifactEditor) {
+                artifactEditor.outerHTML = renderTeamIrArtifactQuickEditor(
+                  contract.artifactSlots || {},
+                  artifacts.name,
+                  direction,
+                  esc,
+                  editable
+                );
+              }
+            });
+          }
+        });
+      };
       form.querySelector("[data-ir-advanced-json]")?.addEventListener("input", (event) => {
         try {
           const advanced = JSON.parse(event.currentTarget.value);
+          syncQuickEditorBaselinesFromAdvanced(advanced);
           refreshSimulationInput(advanced.runInput?.dataSchema);
           const contracts = advanced.handoffContracts || {};
           draft.handoffs.forEach((handoff, index) => refreshHandoffConditionSummary(index, contracts[handoff.id]?.when?.condition));

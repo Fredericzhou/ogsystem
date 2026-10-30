@@ -34,7 +34,7 @@ class FakeAppServerProcess extends EventEmitter {
     const reject = (code, error) => this.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code, message: error } })}\n`);
     if (message.method === "model/list") {
       respond(message.params.cursor
-        ? { data: [{ id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol" }] }
+        ? { data: [{ id: "synthetic-model", displayName: "Synthetic model" }] }
         : { data: [{ id: "gpt-6-astra" }], nextCursor: "page-2" });
     } else if (message.method === "login/status") {
       reject(-32001, "Codex login is unavailable for the configured provider");
@@ -68,7 +68,7 @@ test("Codex app-server paginates models and resumes a persistent thread between 
   try {
     assert.deepEqual(await client.listModels(), [
       { id: "gpt-6-astra", displayName: "gpt-6-astra", isDefault: false },
-      { id: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", isDefault: false }
+      { id: "synthetic-model", displayName: "Synthetic model", isDefault: false }
     ]);
 
     const first = await client.execute({ roleId: "planner", prompt: "plan", schema: {}, modelId: "gpt-6-astra", cwd: process.cwd(), timeoutMs: 1000 });
@@ -90,7 +90,7 @@ test("custom-provider Codex model execution does not require a Codex login sessi
   try {
     const models = await client.listModels();
     assert.ok(models.some((model) => model.id === "gpt-6-astra"));
-    assert.ok(models.some((model) => model.id === "gpt-5.6-sol"));
+    assert.ok(models.some((model) => model.id === "synthetic-model"));
 
     const result = await client.execute({
       roleId: "planner",

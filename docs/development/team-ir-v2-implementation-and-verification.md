@@ -513,7 +513,7 @@ Team Site 通过 `OGS_TEAM_IR_V2_RESOLVER_MODULE` 加载本地可信 ES module�
 | 阶段 3：当前 v2 Studio 页面浏览器验收 | 通过（隔离浏览器合同） | `pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`，1/1。390px Playwright 流程覆盖 `/studio/new` 建 TeamVersion 后进入 v2 编辑器、Agent/端口/Handoff 编辑、显式映射建议接受、服务端校验、保存后重开与 semantic digest 一致、legacy API 拒绝；测试断言无浏览器 page error。测试使用临时目录和 browser fake resolver | 这是本地隔离页面/API 合同验收，不是生产用户流程；没有可信 resolver、生产 Sandbox Binding、真实发布与 Project Task，不计作真实 Sandbox UAT。自由布局拖线、Join/Loop/Review/Artifact 的完整可视编辑仍未完成 |
 | 旧版本运行数据清理 | 通过（从活动 workspace 移除，可恢复归档） | 根 `.ogs/runs/` 的 256 个旧 Runtime Run 目录及生成索引 `.ogs/runs-index.json` 已移至 `/tmp/team-ir-v2-legacy-runs-20261028`；runtime 配置不变，示例目录中受版本控制的 `.ogs/` fixtures 保留 | 归档未永久销毁；系统此前拒绝永久递归删除。若需永久销毁，需经用户确认后由本机明确清理归档 |
 | 阶段 3/4：显式原生 Team IR v2 创建 | 通过（非默认入口合同） | `apps/team-site/application/team-lifecycle-use-cases.mjs` 原生创建 TeamVersion 并保存可校验 starter IR；失败时补偿删除；`POST /api/v1/team-ir-drafts`；`/studio/ir/new` 提供独立入口，团队卡续编回到 `/ir`。`apps/team-site/tests/team-ir-studio-browser.test.mjs` 验证直达路由、创建、`team.ir.json`、无 `system.mmd`/`.ogs/authoring.json`、schemaVersion 2、digest 重开和卡片路由；API routes 9/9，Studio Playwright 1/1 | 不切换 `/studio/new` 默认路径；未接生产 resolver、Sandbox Binding 或发布/Task 运行，当前只关闭原生 v2 草稿创建和数据隔离合同 |
-| Codex/OpenCode 模型发现与项目默认配置 | 通过（本机发现与默认值更新） | `pnpm exec tsx src/runtime/cli.ts models discover`：Codex 和 OpenCode 来源均 `available`，发现 GPT-6-Luna 候选 `codex/gpt-6-luna` 与 `openai/gpt-6-luna`，本机目录共 211 个模型；`.ogs/model-selection.json`、新生成的 `.ogs/README.md` 模板和使用手册默认示例统一为已验证的 GPT-6-Luna。`tests/model-runtime.test.mjs` 同步断言；`node --test tests/model-runtime.test.mjs tests/model-contract.test.mjs`，12/12 | 首次定向回归 11/12，唯一失败是旧 `gpt-5.6-sol` 硬编码期望，更新断言后 12/12。机器生成的 211 模型目录已还原，不提交用户环境快照；Claude/Antigravity 仅检测到 CLI、没有 OGS 持久适配器，不是可运行 Provider。独立 `gpt6-luna-client.json` 只含 `codex-gateway`；OpenCode 全局配置里的其他 Provider 用途不归本 Team IR 项目管理，未删除 |
+| Codex/OpenCode 模型发现与项目默认配置 | 通过（本机发现与默认值更新） | `pnpm exec tsx src/runtime/cli.ts models discover`：Codex 和 OpenCode 来源均 `available`，发现 GPT-6-Luna 候选 `codex/gpt-6-luna` 与 `openai/gpt-6-luna`，本机目录共 211 个模型；`.ogs/model-selection.json`、新生成的 `.ogs/README.md` 模板和使用手册默认示例统一为已验证的 GPT-6-Luna。`tests/model-runtime.test.mjs` 同步断言；`node --test tests/model-runtime.test.mjs tests/model-contract.test.mjs`，12/12 | 首次定向回归 11/12，唯一失败是旧模型硬编码期望，更新断言后 12/12。机器生成的 211 模型目录已还原，不提交用户环境快照；Claude/Antigravity 仅检测到 CLI、没有 OGS 持久适配器，不是可运行 Provider。独立 `gpt6-luna-client.json` 只含 `codex-gateway`；OpenCode 全局配置里的其他 Provider 用途不归本 Team IR 项目管理，未删除 |
 | 最新页面人工验收入口 | 待用户验收 | 隔离 Team Site 已运行于 `http://127.0.0.1:4180`，项目根为 `/tmp/team-ir-v2-site-uat-20261028`。可直达 `/studio/ir/new` 创建；样例 v2 作者页为 `http://127.0.0.1:4180/studio/teams/native-v2-acceptance-0596ad4f/ir`。390px 浏览器实测创建、`team.ir.json`、无 `system.mmd`、schemaVersion 2、重开 digest 一致、无横溢或 JS 错误；点击 Simulation 返回 `TEAM_IR_V2_SIMULATION_UNAVAILABLE`，且未生成 `.ogs/runs/` | 用户需确认页面信息层级、表单/连线编辑和窄屏体验；人工页面观感确认不替代生产发布与 Sandbox UAT |
 | 最新完整回归 | 通过（本轮仓库状态） | `pnpm test`：884 个顶层测试、898 含子测试，897 通过、0 失败、1 项 Windows 专项跳过；最新代码 `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=spec` 通过 496/496；另有 Studio Playwright 1/1、Team API 9/9、lifecycle 19/19、model 12/12，及手工 390px 原生创建/重开检查 | 全仓套件在最后的服务端白名单和 lifecycle 测试改动前通过；Team Site 全套与相关目标套件在这些改动后通过 |
 | 回归生成的旧格式 Run 数据 | 通过（从活动 workspace 移除，可恢复归档） | 两轮全仓回归分别在 `.ogs/runs/` 生成 8 个约 1.6 MB 的 Runtime 目录及 `.ogs/runs-index.json`；已分别移入 `/tmp/team-ir-v2-legacy-runs-20261028/post-regression-runs/` 和 `post-runtime-doc-regression/`，与原 256 个旧 Run 目录分开保存 | 归档仍可恢复、未永久销毁；系统拦截了之前的永久递归删除请求 |
@@ -1258,6 +1258,33 @@ Docker adapter 当前 pin 为 `ogs-opencode-docker-adapter/17`；Maker Role pin 
 - 回归：`node --check apps/team-site/public/app/views/app.js` 通过；目录/API/resolver 聚焦测试 39 通过、1 项 opt-in Docker skip；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1 通过，覆盖模板入口、Join `baseMapping` 归属、Schema 高级字段保留、Artifact 重命名元数据和窄屏编辑；随后 Team Site 全量 373 项中 369 通过、0 失败、4 项明确 opt-in 跳过，全仓 979 项中 978 通过、0 失败、1 项 Windows 跳过，`git diff --check` 通过。
 
 本记录不把 A1 标为完成：完整诊断 code/pointer 矩阵、复杂拓扑作者引导、全量 Studio i18n 和第 10 节 5 人独立任务验收仍未完成；最终人工复核必须在所有机器门和回归通过后进行。
+
+### 2026-10-30：快速编辑基线与名称校验回归修复
+
+本轮针对快速编辑器的状态边界修复，未改变 Team IR v2 Schema、Compiler 或 Runtime 语义：
+
+- Advanced contracts JSON 在有效解析后同步回写 Schema/Artifact 快速编辑器的独立 textarea 基线；随后修改字段名、媒体类型或槽位名时，使用最新高级合同，不会覆盖刚加入的 description、examples、枚举或其它未知字段。
+- Schema/Artifact 名称在任何写入前先完整检查非空、字符集和重复项；空名、非法名或重复 Artifact 名称只显示诊断并保留原 textarea 与原始键。Artifact 行的原始键只在整批校验成功后更新，修正重复名不会丢失元数据。
+- Schema 与 Artifact 快速编辑器的合同输入控件拆出独立容器，避免把按钮嵌套在 label 中；已有唯一默认名生成和高级字段保留逻辑继续生效。
+- Chromium 回归新增 Advanced JSON 后再编辑 Schema/Artifact、空名/非法名、重复 Artifact 名称修正及元数据保真断言；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`：1/1 通过。
+
+本轮只闭合快速编辑数据安全边界；新增默认字段/槽位的长期用户研究仍不替代第 10 节的 5 人人工任务验收，A1 仍未整体通过。
+
+### 2026-10-30：Advanced JSON 行状态同步与模型配置污染根因修复
+
+本轮补齐审核发现的最后一个快速编辑数据边界，并修复反复出现的模型 ID 回写问题：
+
+- Advanced contracts JSON 每次成功解析后，会重建对应 Schema/Artifact 快速编辑器行；字段/槽位名称、类型、媒体类型、cardinality、required 及 `data-ir-*-original` 均从最新 Advanced 合同重新生成。随后修改快速行不会把旧字段名或旧槽位集合写回，新增、删除、改名和改类型都保留在最新合同中。
+- Chromium 回归覆盖 Advanced JSON 改名/改类型、新增 Artifact 槽位后再修改快速行，以及修改后的元数据和原始键保真；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`：1/1 通过。
+- 根配置污染根因是 `tests/visualizer-data.test.mjs` 将临时 fixture 的 `model-selection.json` 符号链接到仓库根文件后再写入测试模型，写操作跟随链接覆盖了根配置。fixture 现改为独立文件并断言根 `.ogs/model-selection.json` 不变；项目默认和普通运行 fixture 固化为 `codex/gpt-6-luna`。
+
+本轮不改变 Team IR 运行语义；模型选择仍由目录发现和项目选择文件维护，但项目默认生成现在明确优先已验证的 `gpt-6-luna`，不能被测试 fixture 通过符号链接写回。A1 人工任务验收仍未完成。
+
+### 2026-10-30：最终回归与默认模型选择锁定
+
+最终工作树回归通过：`pnpm test` 980 项中 979 通过、0 失败、1 项 Windows 专项跳过；Team Site `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 373 项中 369 通过、0 失败、4 项明确 opt-in 跳过；Studio Chromium 1/1；`pnpm build` 与 `git diff --check` 通过。根 `.ogs/model-selection.json` 保持 `codex/gpt-6-luna`。
+
+项目模型同步现在优先选择已验证的 `gpt-6-luna`，不再按发现目录顺序把其它模型写入新项目默认值；模型选择/恢复/投影测试中的任意模型场景使用 `synthetic-model`，避免旧模型名称重新进入真实运行配置。A1 的 5 人独立任务验收仍是唯一未完成的产品体验硬门，不能据此宣称整体产品完成。
 
 ## 6. Codex / 实施代理工作约定
 
