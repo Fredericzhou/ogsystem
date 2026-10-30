@@ -47,9 +47,9 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 | 页面 | 地址 | 用途 |
 | --- | --- | --- |
 | OGS Projects | `/projects` | 业务协作台，管理项目、资料、Task、Review 与 Deliverables |
-| OGS Studio | `/studio` | 团队工程台，管理团队草稿、图谱设计、Simulation 和发布版本 |
+| OGS Studio | `/studio` | 团队工程台，管理 Team IR v2 草稿、协作结构、Simulation 和发布版本 |
 | 已发布团队目录 | `/teams` | 浏览已发布团队版本及案例 |
-| 创建团队 | `/studio/new` | 通过自然语言创建团队草案 |
+| 创建团队 | `/studio/new` | 选择空白草稿或 8 个经典场景模板，创建 Team IR v2 草稿 |
 | 团队设计 | `/studio/teams/:id/ir` | Team IR v2 草稿编辑、结构视图、校验、Simulation 与发布门禁 |
 | Studio Simulation | `/studio/teams/:teamVersionId/run`、`/studio/teams/:teamVersionId/run/:simulationId` | 启动仿真并查看对应 TeamVersion 的隔离历史与回放 |
 | 项目运行历史 | `/history` | 只列出 Projects Task Runs，不混入 Studio Simulation |
@@ -75,9 +75,12 @@ pnpm build
 pnpm --dir apps/team-site start
 ```
 
-本地宣传首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入。可用 `PORT` 覆盖。项目、团队设计、运行诊断和平台配置
-都从这个 Team Site Origin 进入。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 调用；它是
-内部上游服务，不是另一个产品入口。需要自定义服务地址时，在启动 Team Site 前设置 `OGS_VIS_URL`。
+本地站点首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入，团队设计从 `/studio` 进入。可用 `PORT` 覆盖。项目、Team IR v2 设计和平台配置都从这个 Team Site Origin 进入。
+运行证据诊断由独立 Visualizer 服务提供，默认地址为 `http://127.0.0.1:3337`；它不属于 Team Site 产品导航，需要单独启动：
+
+```sh
+pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3337
+```
 
 ## Tailnet 访问
 
