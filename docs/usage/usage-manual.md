@@ -77,6 +77,20 @@ Team Site 的当前入口：
 不是另一个面向用户的 Origin；可通过 `OGS_VIS_URL` 配置上游服务地址。Windows 上从仓库根目录执行
 `pnpm start:team-site:tailnet` 可启动 Team Site 并提供 Tailnet 入口。浏览器中的产品页面始终从 Team Site 地址打开。
 
+服务重启时，先停止占用对应端口的旧进程，再从仓库根目录启动：
+
+```bash
+# Team Site（产品页面）
+pnpm --dir apps/team-site start
+
+# 独立 Runtime Visualizer（仅诊断用途）
+pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3337
+```
+
+Team Site 内部上游默认使用 `4177`；独立 `ogs vis` 默认使用 `3337`。不要把两个端口当作两个产品入口，
+浏览器用户应打开 Team Site，独立 Visualizer 只用于本地运行证据诊断。Team Site 通过 `OGS_VIS_URL` 指向内部
+Visualizer 上游；独立 Visualizer 的端口由自身命令行参数决定。
+
 ## Capability Snapshot
 
 OGSystem 当前重点优化以下能力：
@@ -1262,7 +1276,7 @@ Language can be selected with `?lang=en` or `?lang=zh-CN`; the client stores the
 
 Operational notes:
 
-- live timeline updates append incrementally from `timeline.jsonl`; they no longer trigger a full run/review/log/diagnostics reload on every event
+- live updates use event cursors. Runtime history is read without timeline filters from `/events/runtime`; an open SSE connection resumes from its last cursor and file offset and parses only newly appended event lines. Timeline display still uses the filtered `timeline.jsonl` projection.
 - resume diagnostics are loaded on demand from the UI and refreshed explicitly when needed
 - sidebar run lists prefer cached / persisted index data during idle steady state instead of rescanning the runs directory on every refresh
 - project cold-start reads stay on persisted projections and no longer force a normal-page-load runs-directory scan
@@ -1273,6 +1287,8 @@ Current API/control-plane shape:
 
 - `GET /api/v1/ogs/workspace`, `/project/system`, `/project/config`, `/project/roles`
 - `GET /api/v1/ogs/runs/:runId/graph`, `/reviews`, `/reviews/:reviewId`, `/resume-diagnostics`
+- `GET /api/v1/ogs/runs/:runId/events` reads the filtered operator timeline; `GET /api/v1/ogs/runs/:runId/events/runtime` reads the unfiltered replay event stream with `cursor`/`limit` pagination.
+- `GET /api/v1/ogs/runs/:runId/stream` emits the same runtime event cursor and preserves Flow endpoint fields needed for live graph updates.
 - `POST /api/v1/ogs/runs/:runId/reviews/:reviewId/decide` reuses lifecycle review-decision validation and only records the decision; actual apply/reconcile still happens on resume/runtime.
 - `POST /api/v1/ogs/runs/:runId/stop` reuses the lifecycle stop-request entrypoint and records a stop request; it does not mean the run is already stopped.
 - `POST /api/v1/ogs/runs/reindex` rebuilds `runs-index.json`.

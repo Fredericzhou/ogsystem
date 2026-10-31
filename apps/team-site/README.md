@@ -79,6 +79,10 @@ pnpm --dir apps/team-site start
 都从这个 Team Site Origin 进入。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 调用；它是
 内部上游服务，不是另一个产品入口。需要自定义服务地址时，在启动 Team Site 前设置 `OGS_VIS_URL`。
 
+重启本地服务时，停止旧的 Team Site 进程后重新执行 `pnpm --dir apps/team-site start`；若单独运行 Runtime
+Visualizer，则使用 `pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3337`。服务重启只重建进程，
+不会清理 `.ogs/runs/` 或 Team Site 的持久化项目数据。
+
 ## Tailnet 访问
 
 Windows 上从仓库根目录执行：

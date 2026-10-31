@@ -11,6 +11,20 @@ OGSystem current architecture is usable and internally layered, but it is not ye
 
 These are related, but they are not the same problem and should not be solved with the same abstraction.
 
+## Current implementation note (2026-10-31)
+
+The Visualizer now has a narrow runtime query boundary in
+[`src/visualizer/run-query-service.ts`](../../src/visualizer/run-query-service.ts). The filesystem
+implementation remains the current adapter, while the HTTP server consumes query results rather
+than parsing run artifacts itself. Runtime history is read from append-only `events.ndjson`; the
+live stream keeps a cursor and byte offset so each poll reads only newly appended complete lines.
+Timeline filters continue to use the projected `timeline.jsonl` path, and the unfiltered
+`/events/runtime` endpoint supplies the fields needed for graph replay.
+
+This is an incremental read boundary, not a database abstraction. A future SQLite or PostgreSQL
+adapter should implement the same cursor-based runtime event query and projection DTOs; the SSE
+transport and client should not need to know whether the source is a file or a database.
+
 ## Current State
 
 ### What is already in good shape
