@@ -271,10 +271,44 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node path:first-of-type {
       transition: filter 220ms ease, stroke 220ms ease, opacity 220ms ease;
     }
-    .studio-graph-canvas .x6-node.is-runtime-active rect,
+    .studio-graph-canvas .x6-node.is-runtime-active rect:not(.studio-runtime-activity-ring),
     .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type {
       filter: drop-shadow(0 0 0.55rem rgba(56, 189, 248, 0.22));
       animation: studio-node-active-pulse 2400ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .studio-runtime-activity {
+      pointer-events: none;
+    }
+    .studio-graph-canvas .studio-runtime-activity-ring {
+      fill: none;
+      stroke: #22a6c8;
+      stroke-linejoin: round;
+      stroke-width: 2px;
+      vector-effect: non-scaling-stroke;
+      animation: studio-runtime-ring-pulse 1400ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .studio-runtime-activity-dot {
+      fill: #22a6c8;
+      stroke: #f7faf8;
+      stroke-width: 1.5px;
+      vector-effect: non-scaling-stroke;
+      animation: studio-runtime-dot-pulse 1000ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .studio-runtime-activity[data-mode="technical"] .studio-runtime-activity-ring {
+      stroke: #5b8fd8;
+      animation-duration: 2200ms;
+    }
+    .studio-graph-canvas .studio-runtime-activity[data-mode="technical"] .studio-runtime-activity-dot {
+      fill: #5b8fd8;
+      animation-duration: 1600ms;
+    }
+    .studio-graph-canvas .studio-runtime-activity[data-mode="review"] .studio-runtime-activity-ring {
+      stroke: #d39a2e;
+      animation: studio-runtime-review-pulse 1800ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .studio-runtime-activity[data-mode="review"] .studio-runtime-activity-dot {
+      fill: #d39a2e;
+      animation: none;
     }
     .studio-graph-canvas .x6-node.is-runtime-completed rect,
     .studio-graph-canvas .x6-node.is-runtime-completed path:first-of-type {
@@ -302,6 +336,8 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .studio-runtime-status-label { fill: #245b46; font-size: 10px; font-weight: 650; pointer-events: none; }
     .studio-graph-canvas .studio-runtime-status[data-status="running"] .studio-runtime-status-bg { fill: #e2f2fa; stroke: #79b7d2; }
     .studio-graph-canvas .studio-runtime-status[data-status="running"] .studio-runtime-status-label { fill: #225b72; }
+    .studio-graph-canvas .studio-runtime-status[data-status="technical_waiting"] .studio-runtime-status-bg { fill: #e8effb; stroke: #7d9fda; }
+    .studio-graph-canvas .studio-runtime-status[data-status="technical_waiting"] .studio-runtime-status-label { fill: #315b9b; }
     .studio-graph-canvas .studio-runtime-status[data-status="waiting"] .studio-runtime-status-bg,
     .studio-graph-canvas .studio-runtime-status[data-status="waiting_review"] .studio-runtime-status-bg { fill: #fff1d7; stroke: #d7a449; }
     .studio-graph-canvas .studio-runtime-status[data-status="waiting"] .studio-runtime-status-label,
@@ -385,8 +421,10 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type,
-    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-active rect,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-active rect:not(.studio-runtime-activity-ring),
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-activity-ring,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-activity-dot,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
@@ -430,6 +468,18 @@ export function injectStudioGraphStyles(): void {
       50% {
         filter: drop-shadow(0 0 0.7rem rgba(56, 189, 248, 0.35));
       }
+    }
+    @keyframes studio-runtime-ring-pulse {
+      0%, 100% { opacity: .58; stroke-width: 1.5px; }
+      50% { opacity: 1; stroke-width: 3px; }
+    }
+    @keyframes studio-runtime-dot-pulse {
+      0%, 100% { opacity: .62; }
+      50% { opacity: 1; }
+    }
+    @keyframes studio-runtime-review-pulse {
+      0%, 100% { opacity: .7; stroke-width: 2px; }
+      50% { opacity: 1; stroke-width: 3.5px; }
     }
     @keyframes studio-node-error-shake {
       0%, 100% { transform: translateX(0); }

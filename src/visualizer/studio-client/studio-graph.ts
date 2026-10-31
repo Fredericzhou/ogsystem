@@ -297,6 +297,50 @@ function runtimeStatusLabel(status: StudioRuntimeNodeState["status"], locale: st
   return status ? labels[status] || "" : "";
 }
 
+function runtimeTechnicalWaitingLabel(stage: string | undefined, locale: string): string {
+  if (locale.startsWith("en")) {
+    return stage === "cli_tool" ? "Waiting for tool" : "Waiting for model";
+  }
+  return stage === "cli_tool" ? "等待工具" : "等待模型";
+}
+
+function syncRuntimeActivityMarker(args: {
+  container: Element;
+  width: number;
+  height: number;
+  state?: StudioRuntimeNodeState;
+}): void {
+  const state = args.state;
+  const visible = Boolean(state?.active || state?.waitingReview);
+  let group = args.container.querySelector<SVGGElement>(".studio-runtime-activity");
+  if (!visible) {
+    group?.remove();
+    return;
+  }
+  if (!group) {
+    group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.classList.add("studio-runtime-activity");
+    const ring = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    ring.classList.add("studio-runtime-activity-ring");
+    ring.setAttribute("rx", "10");
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.classList.add("studio-runtime-activity-dot");
+    group.append(ring, dot);
+    args.container.append(group);
+  }
+  const ring = group.querySelector<SVGRectElement>(".studio-runtime-activity-ring");
+  const dot = group.querySelector<SVGCircleElement>(".studio-runtime-activity-dot");
+  if (!ring || !dot) return;
+  group.dataset.mode = state?.waitingReview ? "review" : state?.technicalWaiting ? "technical" : "running";
+  ring.setAttribute("x", "-5");
+  ring.setAttribute("y", "-5");
+  ring.setAttribute("width", String(args.width + 10));
+  ring.setAttribute("height", String(args.height + 10));
+  dot.setAttribute("cx", String(Math.max(8, args.width - 9)));
+  dot.setAttribute("cy", "9");
+  dot.setAttribute("r", "3.5");
+}
+
 function syncRuntimeStatusBadge(args: {
   container: Element;
   width: number;
@@ -305,7 +349,9 @@ function syncRuntimeStatusBadge(args: {
   state?: StudioRuntimeNodeState;
   locale: string;
 }): void {
-  const label = runtimeStatusLabel(args.state?.status, args.locale);
+  const label = args.state?.technicalWaiting
+    ? runtimeTechnicalWaitingLabel(args.state.technicalWaitingStage, args.locale)
+    : runtimeStatusLabel(args.state?.status, args.locale);
   const failure = [args.state?.errorCode, args.state?.errorMessage].filter(Boolean).join(": ");
   const accessibleName = [args.node.label || args.node.roleId || args.node.id, label, failure].filter(Boolean).join(" · ");
   args.container.setAttribute("aria-label", accessibleName);
@@ -329,7 +375,7 @@ function syncRuntimeStatusBadge(args: {
   const text = group.querySelector<SVGTextElement>(".studio-runtime-status-label");
   const background = group.querySelector<SVGRectElement>(".studio-runtime-status-bg");
   if (!text || !background) return;
-  group.dataset.status = args.state?.status || "";
+  group.dataset.status = args.state?.technicalWaiting ? "technical_waiting" : args.state?.status || "";
   text.textContent = label;
   text.setAttribute("x", String(args.width - 8));
   text.setAttribute("y", String(args.height - 7));
@@ -3117,6 +3163,7 @@ export class StudioGraphIsland {
       const nodeState = runtime?.nodeStates.get(node.id);
       const viewNode = viewNodesById.get(node.id);
       container.classList.toggle("is-runtime-active", Boolean(nodeState?.active));
+      container.classList.toggle("is-runtime-technical-waiting", Boolean(nodeState?.technicalWaiting));
       container.classList.toggle("is-runtime-completed", nodeState?.status === "done");
       container.classList.toggle("is-runtime-waiting-review", Boolean(nodeState?.waitingReview));
       container.classList.toggle("has-human-gate", Boolean(nodeState?.humanGateConfigured));
@@ -3145,6 +3192,7 @@ export class StudioGraphIsland {
       }
       if (viewNode) {
         const size = node.getSize();
+        syncRuntimeActivityMarker({ container, width: size.width, height: size.height, state: nodeState });
         syncRuntimeStatusBadge({ container, width: size.width, height: size.height, node: viewNode, state: nodeState, locale });
       }
     }

@@ -117,12 +117,28 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     viewModel,
     progressEvents: [
       { type: "role.started", roleId: "dispatch", branchId: "waiting-branch", executionId: "waiting-execution", attempt: 1 },
-      { type: "role_waiting", roleId: "dispatch", branchId: "waiting-branch", executionId: "waiting-execution", attempt: 1, stage: "model_provider" },
+      { type: "role_waiting", roleId: "dispatch", branchId: "waiting-branch", executionId: "waiting-execution", attempt: 1, waitKind: "technical", stage: "model_provider" },
       { type: "role.started", roleId: "dispatch", branchId: "active-branch", executionId: "active-execution", attempt: 1 }
     ]
   });
   assert.equal(technicalWait.nodeStates.get("dispatch").status, "running", "another branch keeps the shared role active while one waits");
   assert.equal(technicalWait.nodeStates.get("dispatch").active, true);
+  assert.equal(technicalWait.nodeStates.get("dispatch").technicalWaiting, true, "a technical wait remains visible while another branch is active");
+
+  const isolatedTechnicalWait = deriveStudioRuntimeVisualState({
+    authoring,
+    viewModel,
+    progressEvents: [
+      { type: "flow.activated", handoffId: "technical-flow", edgeId: entryFlow.id, fromRoleId: "__system_start__", toRoleId: "dispatch", eventType: "START", branchId: "technical-branch" },
+      { type: "role.started", roleId: "dispatch", branchId: "technical-branch", executionId: "technical-execution", attempt: 1 },
+      { type: "role_waiting", roleId: "dispatch", branchId: "technical-branch", executionId: "technical-execution", attempt: 1, waitKind: "technical", stage: "model_provider" }
+    ]
+  });
+  assert.equal(isolatedTechnicalWait.nodeStates.get("dispatch").status, "running", "technical waiting remains a running role state");
+  assert.equal(isolatedTechnicalWait.nodeStates.get("dispatch").active, true);
+  assert.equal(isolatedTechnicalWait.nodeStates.get("dispatch").technicalWaiting, true);
+  assert.equal(isolatedTechnicalWait.nodeStates.get("dispatch").technicalWaitingStage, "model_provider");
+  assert.equal(isolatedTechnicalWait.edgeStates.get(entryFlow.id).active, true, "technical waiting keeps the incoming flow active");
 
   const isolatedReview = deriveStudioRuntimeVisualState({
     authoring,

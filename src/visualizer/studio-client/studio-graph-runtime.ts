@@ -8,6 +8,8 @@ import type {
 export type StudioRuntimeNodeState = {
   status?: "active" | "running" | "waiting" | "waiting_review" | "done" | "failed" | "paused" | "pending" | "idle";
   statusLabel?: string;
+  technicalWaiting?: boolean;
+  technicalWaitingStage?: string;
   errorCode?: string;
   errorMessage?: string;
   loopCount?: number;
@@ -281,6 +283,8 @@ export function deriveStudioRuntimeVisualState(args: {
     const successfulRoles = new Set<string>();
     const failedRoles = new Set<string>();
     const waitingBranches = new Set<string>();
+    const technicalWaitingBranches = new Set<string>();
+    const technicalWaitingStageByBranch = new Map<string, string>();
     const failureByBranch = new Map<string, { roleId: string; errorCode?: string; errorMessage?: string }>();
     const waitingReviewBranches = new Set<string>();
     const selectedEntryRoles = new Set<string>();
@@ -354,6 +358,8 @@ export function deriveStudioRuntimeVisualState(args: {
         latestExecutionByBranch.set(key, String(event.executionId || ""));
         activeExecutions.set(key, { roleId: String(event.roleId || ""), executionId: event.executionId });
         waitingBranches.delete(key);
+        technicalWaitingBranches.delete(key);
+        technicalWaitingStageByBranch.delete(key);
         waitingReviewBranches.delete(key);
         failedRoles.delete(String(event.roleId || ""));
         failureByBranch.delete(key);
@@ -374,13 +380,21 @@ export function deriveStudioRuntimeVisualState(args: {
         if (event.type === "human_review_requested") {
           waitingReviewBranches.add(key);
           waitingBranches.delete(key);
+          technicalWaitingBranches.delete(key);
+          technicalWaitingStageByBranch.delete(key);
+        } else if (event.waitKind === "technical") {
+          technicalWaitingBranches.add(key);
+          technicalWaitingStageByBranch.set(key, String(event.stage || ""));
+          waitingBranches.delete(key);
         } else {
           waitingBranches.add(key);
+          technicalWaitingBranches.delete(key);
+          technicalWaitingStageByBranch.delete(key);
         }
         for (const flow of flowStateByHandoff.values()) {
           if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
           if (event.executionId && flow.executionId && event.executionId !== flow.executionId) continue;
-          flow.status = "waiting";
+          flow.status = event.type === "role_waiting" && event.waitKind === "technical" ? "active" : "waiting";
         }
       } else if (event.type === "role_retry_scheduled") {
         const key = activationKey(event);
@@ -390,6 +404,8 @@ export function deriveStudioRuntimeVisualState(args: {
         if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;
         failedRoles.delete(String(event.roleId || ""));
         waitingReviewBranches.delete(key);
+        technicalWaitingBranches.delete(key);
+        technicalWaitingStageByBranch.delete(key);
         waitingBranches.add(key);
         for (const flow of flowStateByHandoff.values()) {
           if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
@@ -401,6 +417,8 @@ export function deriveStudioRuntimeVisualState(args: {
         if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;
         waitingReviewBranches.delete(key);
         waitingBranches.delete(key);
+        technicalWaitingBranches.delete(key);
+        technicalWaitingStageByBranch.delete(key);
         for (const flow of flowStateByHandoff.values()) {
           if (flow.targetRoleId === event.roleId && flow.branchId === String(event.branchId || "") && flow.status === "waiting") {
             if (event.executionId && flow.executionId && event.executionId !== flow.executionId) continue;
@@ -418,6 +436,8 @@ export function deriveStudioRuntimeVisualState(args: {
         latestExecutionByBranch.set(key, String(event.executionId || latestExecution || ""));
         waitingReviewBranches.delete(key);
         waitingBranches.delete(key);
+        technicalWaitingBranches.delete(key);
+        technicalWaitingStageByBranch.delete(key);
         if (event.type === "role.failed") {
           const roleId = String(event.roleId || "");
           const errorCode = event.errorCode || event.errorEnvelope?.errorCode;
@@ -453,6 +473,8 @@ export function deriveStudioRuntimeVisualState(args: {
       }
       activeExecutions.clear();
       waitingBranches.clear();
+      technicalWaitingBranches.clear();
+      technicalWaitingStageByBranch.clear();
       waitingReviewBranches.clear();
     }
 
@@ -470,8 +492,11 @@ export function deriveStudioRuntimeVisualState(args: {
         const isActive = roleBranches.some(([branchKey]) => !waitingBranches.has(branchKey) && !waitingReviewBranches.has(branchKey));
         const hasWaitingReview = !isActive && roleBranches.some(([branchKey]) => waitingReviewBranches.has(branchKey));
         const isWaiting = !isActive && !hasWaitingReview && roleBranches.some(([branchKey]) => waitingBranches.has(branchKey));
+        const technicalWait = roleBranches.find(([branchKey]) => technicalWaitingBranches.has(branchKey));
         state.active = isActive;
         state.waitingReview = hasWaitingReview;
+        state.technicalWaiting = Boolean(technicalWait);
+        state.technicalWaitingStage = technicalWait ? technicalWaitingStageByBranch.get(technicalWait[0]) : undefined;
         const failure = Array.from(failureByBranch.values()).reverse().find((candidate) => candidate.roleId === node.roleId);
         state.errorCode = failure?.errorCode;
         state.errorMessage = failure?.errorMessage;
