@@ -12,7 +12,7 @@ test("platform settings adapter defaults, persists atomically, and reports malfo
   const path = join(root, ".site", "settings.json");
   try {
     const store = createFilePlatformSettings({ path });
-    assert.deepEqual(await store.read(), { defaultProvider: "codex", defaultModel: "default", timeoutSeconds: 120, retryCount: 1, runtimeApplied: false });
+    assert.deepEqual(await store.read(), { defaultProvider: "opencode", defaultModel: "gpt-6-luna", timeoutSeconds: 120, retryCount: 1, runtimeApplied: false });
     const value = { defaultProvider: "opencode", defaultModel: "model-a", timeoutSeconds: 60, retryCount: 2, runtimeApplied: false };
     await store.write(value);
     assert.equal(await readFile(path, "utf8"), `${JSON.stringify(value, null, 2)}\n`);

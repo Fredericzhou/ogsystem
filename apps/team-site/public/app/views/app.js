@@ -3052,6 +3052,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       canSaveWorkbench: true,
       historyContext: captureEditorHistoryContext(),
       rolePackages: studioRolePackages,
+      projectConfig: { modelCatalog: { models: discoveredModels } },
       labels: graphLabels[state.locale],
       commandFormLabels: graphFormLabels[state.locale],
       commandFormHost: workbench?.querySelector("#studio-command-form-host"),

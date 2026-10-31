@@ -279,16 +279,23 @@ async function getPlatformDefaultModelSelection() {
   ]);
   const models = (discovery.models || []).filter((model) => model.runnable);
   const configured = String(settings.defaultModel || "default");
+  const matchesConfiguredModel = (model) => {
+    if (model.ref === configured || model.id === configured) return true;
+    if (model.backend !== settings.defaultProvider || configured === "default") return false;
+    return model.ref?.endsWith(`/${configured}`) || model.id?.endsWith(`/${configured}`);
+  };
   const selected = configured === "default"
     ? models.find((model) => model.backend === settings.defaultProvider)
-    : models.find((model) => model.ref === configured || model.id === configured && model.backend === settings.defaultProvider);
+    : models.find(matchesConfiguredModel);
   return selected || models.length ? {
     ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.id } } : {}),
     modelCatalogGeneratedAt: discovery.generatedAt,
     modelCatalogModels: models.map((model) => ({
       backend: model.backend,
       modelId: model.id,
-      ref: model.ref || `${model.backend}/${model.id}`,
+      // UI bindings include the execution backend; runtime execution unwraps it
+      // back to OpenCode's canonical provider/model reference.
+      ref: `${model.backend}/${model.id}`,
       provider: model.provider || model.backend,
       model: model.id,
       name: model.name,

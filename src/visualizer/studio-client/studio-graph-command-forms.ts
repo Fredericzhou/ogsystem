@@ -170,7 +170,9 @@ export function createDefaultStudioCommandFormState(args: {
       roleId,
       title: rolePackage?.name || rolePackage?.roleId || "",
       bindingKind: "model",
-      modelRef: models.find((model) => model.ref.startsWith("opencode/"))?.ref || models[0]?.ref,
+      modelRef: models.find((model) => model.ref === "opencode/openai/gpt-6-luna" || model.ref.endsWith("/gpt-6-luna"))?.ref ||
+        models.find((model) => model.ref.startsWith("opencode/"))?.ref ||
+        models[0]?.ref,
       profileMode: "existing",
       newProfileId: profileIdFromRoleId(roleId)
     };
@@ -329,7 +331,10 @@ function extractStudioModelOptions(context: StudioCommandValidationContext): Stu
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => {
-      const ref = asTrimmedStringOrEmpty(entry.ref);
+      const rawRef = asTrimmedStringOrEmpty(entry.ref);
+      const backend = asTrimmedStringOrEmpty(entry.backend);
+      const modelId = asTrimmedStringOrEmpty(entry.modelId) || asTrimmedStringOrEmpty(entry.id);
+      const ref = backend && modelId ? `${backend}/${modelId}` : rawRef;
       const name = asTrimmedStringOrEmpty(entry.name);
       const provider = asTrimmedStringOrEmpty(entry.provider);
       const model = asTrimmedStringOrEmpty(entry.model);

@@ -1058,6 +1058,32 @@ test("add-edge command form reuses an event already emitted by its selected sour
   assert.equal(startState.fields.eventType, "START");
 });
 
+test("Studio add-role canonicalizes legacy OpenCode provider refs", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const state = createDefaultStudioCommandFormState({
+    kind: "add-role",
+    context: {
+      authoring,
+      projectConfig: {
+        modelCatalog: {
+          models: [{
+            backend: "opencode",
+            modelId: "openai/gpt-6-luna",
+            ref: "openai/gpt-6-luna",
+            name: "GPT-6 Luna"
+          }]
+        }
+      }
+    }
+  });
+  assert.equal(state.fields.modelRef, "opencode/openai/gpt-6-luna");
+  assert.equal(state.validation.ok, true);
+});
+
 test("Studio add-role defaults to a valid custom draft when repository roles all conflict with authoring", () => {
   const authoring = importMermaidToAuthoring({
     workdir: "/tmp/project",
