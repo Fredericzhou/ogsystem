@@ -75,14 +75,16 @@ pnpm build
 pnpm --dir apps/team-site start
 ```
 
-本地站点首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入，团队设计从 `/studio` 进入。可用 `PORT` 覆盖。项目、Team IR v2 设计和平台配置都从这个 Team Site Origin 进入。
-运行证据诊断由独立 Visualizer 服务提供，默认地址为 `http://127.0.0.1:3337`；它不属于 Team Site 产品导航，需要单独启动：
+本地 v2 站点首页为 `http://127.0.0.1:4263/`；协作项目从 `/projects` 进入，团队设计从 `/studio` 进入。可用 `PORT` 覆盖。项目、Team IR v2 设计和平台配置都从这个 Team Site Origin 进入。`4263` 与 v1 Team Site 的默认端口 `4173` 隔离。
+运行证据诊断由独立 v2 Visualizer 服务提供，默认地址为 `http://127.0.0.1:3637`；它不属于 Team Site 产品导航，需要单独启动：
 
 ```sh
-pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3337
+pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3637
 ```
 
 ## Tailnet 访问
+
+v1 的 Tailnet Team Site 使用 `4174`，v2 使用 `4264`；v2 的 Visualizer 上游使用 `4267`，与 v1 的 `4177` 分开。
 
 Windows 上从仓库根目录执行：
 
@@ -90,8 +92,8 @@ Windows 上从仓库根目录执行：
 pnpm start:team-site:tailnet
 ```
 
-脚本会将 Team Site 绑定到 `0.0.0.0:4174`，因此可通过本机 Tailnet 地址访问，例如
-`http://100.66.215.15:4174/projects`。团队设计、平台配置和运行诊断仍从该站点入口打开；Visualizer 上游服务
+脚本会将 v2 Team Site 绑定到 `0.0.0.0:4264`，因此可通过本机 Tailnet 地址访问，例如
+`http://100.66.215.15:4264/projects`。团队设计、平台配置和运行诊断仍从该站点入口打开；Visualizer 上游服务
 不作为单独的产品地址提供给用户。脚本会输出站点地址、当前节点信息和日志目录。
 
 ## 底座与模型

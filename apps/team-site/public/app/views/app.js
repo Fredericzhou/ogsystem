@@ -8,7 +8,7 @@ import { labelEvent as localizedEventLabel, text } from "../i18n.js";
 import { createRouter } from "../router.js";
 import { renderSharedResourcePage } from "./shared-resources.js";
 import { renderPlatformRoleSources } from "./platform-role-sources.js";
-import { END_ID, START_ID, applyTeamIrPatch, graphAuthoringToTeamIr, readGraphLayout, teamIrToGraphAuthoring, writeGraphLayout } from "../team-ir-graph-adapter.js";
+import { END_ID, START_ID, applyTeamIrPatch, applyTeamIrPatches, readGraphLayout, removeGraphLayout, studioConditionToTeam, teamIrToGraphAuthoring, writeGraphLayout } from "../team-ir-graph-adapter.js";
 let studioGraphLoad;
 const mountedStudioGraphs = new Set();
 let fallbackUuidCounter = 0;
@@ -49,6 +49,245 @@ function mountStudioGraph(root, options) {
     setRuntimeProgress(events) { window.OGSStudioGraphBundle?.setStudioX6RuntimeProgress?.(root, events); },
     focusRuntimeHandoff(handoffId) { window.OGSStudioGraphBundle?.focusStudioX6RuntimeHandoff?.(root, handoffId); }
   });
+}
+
+function graphEndpointFromAuthoring(authoring, roleId, side, currentHandoff, portHint = "") {
+  if (side === "from" && roleId === START_ID) return { kind: "run" };
+  if (side === "to" && roleId === END_ID) return { kind: "result" };
+  const role = authoring?.roles?.[roleId] || {};
+  const ports = side === "from" ? role.outputPorts : role.inputPorts;
+  const fallback = side === "from"
+    ? portHint || currentHandoff?.from?.outputPort || ""
+    : portHint || currentHandoff?.to?.inputPort || "";
+  if (!fallback || (Object.keys(ports || {}).length > 0 && !Object.hasOwn(ports, fallback))) return null;
+  return {
+    kind: "agent",
+    agentId: roleId,
+    ...(side === "from" ? { outputPort: fallback } : { inputPort: fallback })
+  };
+}
+
+function graphAuthoringAgentValue(authoring, roleId) {
+  const role = authoring?.roles?.[roleId] || {};
+  return {
+    packageRef: role.packageRef || "",
+    bindingRef: role.bindingRef || "",
+    inputPorts: structuredClone(role.inputPorts || {}),
+    outputPorts: structuredClone(role.outputPorts || {})
+  };
+}
+
+function graphRouteSourceKey(endpoint) {
+  if (endpoint?.kind === "run") return "run";
+  if (endpoint?.kind === "agent" && endpoint.agentId && endpoint.outputPort) {
+    return `agent:${endpoint.agentId}:${endpoint.outputPort}`;
+  }
+  return "";
+}
+
+function reconcileGraphRoutes(teamIR) {
+  const routes = Array.isArray(teamIR?.orchestration?.routes) ? teamIR.orchestration.routes : [];
+  const handoffs = Array.isArray(teamIR?.handoffs) ? teamIR.handoffs : [];
+  const groups = new Map();
+  for (const handoff of handoffs) {
+    const key = graphRouteSourceKey(handoff?.from);
+    if (!key) continue;
+    const group = groups.get(key) || { from: handoff.from, handoffs: [] };
+    group.handoffs.push(handoff);
+    groups.set(key, group);
+  }
+
+  const desiredRoutes = [];
+  const usedSources = new Set();
+  const parallelHandoffIds = new Set();
+  for (const route of routes) {
+    const sourceKey = graphRouteSourceKey(route?.from);
+    const group = groups.get(sourceKey);
+    if (!group) continue;
+    const liveIds = new Set(group.handoffs.map((handoff) => handoff.id));
+    const handoffIds = [
+      ...(Array.isArray(route.handoffIds) ? route.handoffIds.filter((id) => liveIds.has(id)) : []),
+      ...group.handoffs.map((handoff) => handoff.id).filter((id) => !route.handoffIds?.includes(id))
+    ];
+    if (!handoffIds.length) continue;
+    const nextRoute = { ...route, from: group.from, handoffIds };
+    desiredRoutes.push(nextRoute);
+    usedSources.add(sourceKey);
+    if (nextRoute.mode === "parallel_fanout") for (const id of handoffIds) parallelHandoffIds.add(id);
+  }
+
+  for (const [sourceKey, group] of groups) {
+    if (usedSources.has(sourceKey)) continue;
+    const hasCondition = group.handoffs.some((handoff) => handoff?.when && handoff.when.condition !== undefined);
+    if (group.handoffs.length < 2 && !hasCondition) continue;
+    const mode = hasCondition ? "exclusive_priority" : "parallel_fanout";
+    desiredRoutes.push({
+      from: group.from,
+      mode,
+      onNoMatch: "fail",
+      handoffIds: group.handoffs.map((handoff) => handoff.id)
+    });
+    if (mode === "parallel_fanout") for (const handoff of group.handoffs) parallelHandoffIds.add(handoff.id);
+  }
+
+  return { desiredRoutes, parallelHandoffIds };
+}
+
+function applyGraphAuthoringPatches(baseTeamIR, nextAuthoring) {
+  const before = teamIrToGraphAuthoring(baseTeamIR, {});
+  const patches = [];
+  const beforeRoles = before.roles || {};
+  const nextRoles = nextAuthoring?.roles || {};
+  const baseAgents = new Map((baseTeamIR.agents || []).map((agent) => [agent.id, agent]));
+
+  const removedRoleIds = Object.keys(beforeRoles).filter((roleId) => ![START_ID, END_ID].includes(roleId) && !Object.hasOwn(nextRoles, roleId));
+  const addedRoleIds = Object.keys(nextRoles).filter((roleId) => ![START_ID, END_ID].includes(roleId) && !baseAgents.has(roleId));
+  const renamed = new Map();
+  if (removedRoleIds.length === 1 && addedRoleIds.length === 1) {
+    const oldId = removedRoleIds[0];
+    const newId = addedRoleIds[0];
+    const oldAgent = baseAgents.get(oldId);
+    const nextRole = nextRoles[newId] || {};
+    const oldShape = JSON.stringify({ packageRef: oldAgent?.packageRef || "", bindingRef: oldAgent?.bindingRef || "", inputPorts: oldAgent?.inputPorts || {}, outputPorts: oldAgent?.outputPorts || {} });
+    const nextShape = JSON.stringify({ packageRef: nextRole.packageRef || "", bindingRef: nextRole.bindingRef || "", inputPorts: nextRole.inputPorts || {}, outputPorts: nextRole.outputPorts || {} });
+    if (oldShape === nextShape) {
+      renamed.set(oldId, newId);
+      patches.push({ op: "agent.rename", id: oldId, newId });
+    }
+  }
+
+  // Remove connected Handoffs first. The typed agent.remove operation also
+  // cleans them up, so emitting the explicit removals afterwards would fail
+  // the batch on a missing target.
+  const baseHandoffs = new Map((baseTeamIR.handoffs || []).map((handoff) => [handoff.id, handoff]));
+  const nextFlows = nextAuthoring?.flows || {};
+  for (const handoff of baseTeamIR.handoffs || []) {
+    if (Object.hasOwn(nextFlows, handoff.id)) continue;
+    patches.push({ op: "handoff.remove", id: handoff.id });
+  }
+  for (const roleId of removedRoleIds) {
+    if (!renamed.has(roleId)) patches.push({ op: "agent.remove", id: roleId });
+  }
+  for (const roleId of addedRoleIds) {
+    if ([...renamed.values()].includes(roleId)) continue;
+    const value = graphAuthoringAgentValue(nextAuthoring, roleId);
+    if (!value.packageRef || !value.bindingRef || !Object.keys(value.inputPorts).length || !Object.keys(value.outputPorts).length) {
+      return { ok: false, error: "TEAM_IR_AGENT_CONTRACT_REQUIRED", failedPatch: { op: "agent.create", id: roleId }, teamIR: structuredClone(baseTeamIR) };
+    }
+    patches.push({ op: "agent.create", id: roleId, value });
+  }
+  for (const [roleId, role] of Object.entries(nextRoles)) {
+    if ([START_ID, END_ID].includes(roleId)) continue;
+    const existing = baseAgents.get(roleId);
+    if (!existing && ![...renamed.values()].includes(roleId)) continue;
+    const sourceId = existing ? roleId : [...renamed.entries()].find(([, nextId]) => nextId === roleId)?.[0];
+    const sourceAgent = baseAgents.get(sourceId || roleId);
+    const fields = {};
+    for (const field of ["packageRef", "bindingRef", "inputPorts", "outputPorts"]) {
+      const nextValue = field === "inputPorts" || field === "outputPorts"
+        ? structuredClone(role[field] || {})
+        : role[field];
+      if (nextValue !== undefined && JSON.stringify(nextValue) !== JSON.stringify(sourceAgent?.[field])) fields[field] = nextValue;
+    }
+    if (Object.keys(fields).length) patches.push({ op: "agent.update", id: roleId, fields });
+    const currentLabel = baseTeamIR.presentation?.nodes?.[sourceId || roleId]?.label;
+    const nextLabel = role.label || role.title;
+    if (nextLabel && nextLabel !== currentLabel && nextLabel !== roleId) {
+      patches.push({ op: "presentation.nodeLabel", id: roleId, value: String(nextLabel) });
+    }
+  }
+
+  for (const [flowId, flow] of Object.entries(nextFlows)) {
+    const existing = baseHandoffs.get(flowId);
+    const from = graphEndpointFromAuthoring(nextAuthoring, flow.fromRoleId, "from", existing, flow.outputPort || flow.eventType || "");
+    const to = graphEndpointFromAuthoring(nextAuthoring, flow.toRoleId, "to", existing, flow.inputPort || flow.targetInputPort || "");
+    if (!from || !to) return { ok: false, error: "TEAM_IR_PATCH_PORT_REQUIRED", failedPatch: { op: "handoff.create", id: flowId }, teamIR: structuredClone(baseTeamIR) };
+    const when = { ...(existing?.when || {}) };
+    if (flow.condition !== undefined) when.condition = studioConditionToTeam(flow.condition);
+    else delete when.condition;
+    if (flow.priority !== undefined) when.priority = Number(flow.priority) || 0;
+    if (!Object.keys(when).length) delete when.priority;
+    const delivery = to.kind === "agent" ? (existing?.delivery || { deadlineMs: 300000 }) : undefined;
+    if (!existing) {
+      patches.push({
+        op: "handoff.create",
+        id: flowId,
+        value: {
+          from,
+          to,
+          map: { data: {} },
+          when,
+          ...(to.kind === "agent" ? { delivery: { deadlineMs: 300000 } } : {})
+        }
+      });
+    } else {
+      const endpointChanged = JSON.stringify(existing.from) !== JSON.stringify(from) || JSON.stringify(existing.to) !== JSON.stringify(to);
+      if (endpointChanged || (to.kind === "result" && existing.delivery !== undefined)) {
+        patches.push({ op: "handoff.retarget", id: flowId, from, to });
+      }
+      const fields = { when, ...(delivery ? { delivery } : {}) };
+      const currentWhen = endpointChanged ? existing.when : existing.when;
+      const currentDelivery = to.kind === "agent" ? (endpointChanged ? undefined : existing.delivery) : undefined;
+      if (JSON.stringify({ when: currentWhen, delivery: currentDelivery }) !== JSON.stringify({ when, delivery })) {
+        patches.push({ op: "handoff.update", id: flowId, fields });
+      }
+    }
+    const currentLabel = baseTeamIR.presentation?.edges?.[flowId]?.label;
+    const nextLabel = flow.label;
+    if (nextLabel && nextLabel !== currentLabel && nextLabel !== flowId) {
+      patches.push({ op: "presentation.edgeLabel", id: flowId, value: String(nextLabel) });
+    }
+  }
+
+  // The graph authoring document has no first-class Route collection. Rebuild
+  // it from the resulting Handoff endpoints so edge add/delete/retarget edits
+  // cannot leave stale, empty, or source-mismatched Route references behind.
+  const preview = applyTeamIrPatches(baseTeamIR, patches);
+  if (!preview.ok) return { ok: false, error: preview.error, failedPatch: preview.failedPatch, teamIR: structuredClone(baseTeamIR) };
+  const nextRolesById = nextAuthoring?.roles || {};
+  const existingJoins = Array.isArray(baseTeamIR.orchestration?.joins) ? baseTeamIR.orchestration.joins : [];
+  for (const [agentId, role] of Object.entries(nextRolesById)) {
+    const existingJoin = existingJoins.find((join) => join?.agentId === agentId);
+    if ([START_ID, END_ID].includes(agentId) || (!Array.isArray(role?.joinSources) && !existingJoin)) continue;
+    const inputPort = existingJoin?.inputPort || Object.keys(role.inputPorts || {})[0];
+    if (!inputPort) continue;
+    const sourceIds = new Set((Array.isArray(role.joinSources) ? role.joinSources : []).map((sourceId) => String(sourceId)));
+    const targetFlows = Object.values(nextFlows).filter((flow) =>
+      flow?.toRoleId === agentId && flow?.inputPort === inputPort
+    );
+    const hasExplicitFlowParticipation = targetFlows.some((flow) =>
+      Object.hasOwn(flow, "participatesInJoin")
+    );
+    const handoffIds = (preview.teamIR.handoffs || [])
+      .filter((handoff) => handoff?.to?.kind === "agent" && handoff.to.agentId === agentId && handoff.to.inputPort === inputPort
+        && (hasExplicitFlowParticipation
+          ? nextFlows[handoff.id]?.participatesInJoin === true
+          : sourceIds.has(String(handoff.from?.agentId || ""))))
+      .map((handoff) => handoff.id);
+    if (!handoffIds.length) {
+      if (existingJoin) patches.push({ op: "join.remove", id: existingJoin.id });
+      continue;
+    }
+    const joinId = existingJoin?.id || `join-${agentId}-${inputPort}`;
+    const value = existingJoin
+      ? { ...existingJoin, handoffIds }
+      : { agentId, inputPort, mode: role.joinMode || "all_of", ...(role.joinMin != null ? { threshold: Number(role.joinMin) } : {}), handoffIds, scope: { kind: "run" }, timeoutMs: 300000, onTimeout: "fail" };
+    patches.push({ op: "join.upsert", id: joinId, value });
+  }
+  const previewWithJoins = applyTeamIrPatches(baseTeamIR, patches);
+  if (!previewWithJoins.ok) return { ok: false, error: previewWithJoins.error, failedPatch: previewWithJoins.failedPatch, teamIR: structuredClone(baseTeamIR) };
+  const { desiredRoutes, parallelHandoffIds } = reconcileGraphRoutes(previewWithJoins.teamIR);
+  const currentRoutes = Array.isArray(previewWithJoins.teamIR.orchestration?.routes) ? previewWithJoins.teamIR.orchestration.routes : [];
+  for (const handoff of previewWithJoins.teamIR.handoffs || []) {
+    if (!parallelHandoffIds.has(handoff.id) || !handoff.when || handoff.when.condition !== undefined || !Object.hasOwn(handoff.when, "priority")) continue;
+    patches.push({ op: "handoff.update", id: handoff.id, fields: { when: undefined } });
+  }
+  for (let index = currentRoutes.length - 1; index >= 0; index -= 1) patches.push({ op: "route.remove", index });
+  for (const route of desiredRoutes) patches.push({ op: "route.upsert", from: route.from, value: route });
+  const result = applyTeamIrPatches(baseTeamIR, patches);
+  return result.ok
+    ? { ok: true, teamIR: result.teamIR, patches, layoutChanges: { removed: removedRoleIds.filter((roleId) => !renamed.has(roleId)), renamed: [...renamed.entries()] } }
+    : { ok: false, error: result.error, failedPatch: result.failedPatch, teamIR: structuredClone(baseTeamIR) };
 }
 function disposeStudioGraphs() {
   const dispose = window.OGSStudioGraphBundle?.disposeStudioX6Bridge;
@@ -199,7 +438,7 @@ const graphLabels = {
     zoomOut: "缩小", zoomIn: "放大", resetView: "重置缩放", fullscreen: "全屏", fitView: "适应画布",
     autoLayout: "自动布局", layoutModeFlow: "流程布局", layoutModeCompact: "紧凑布局", layoutModeStacked: "分层布局",
     topologyOrder: "流转顺序", technicalDetails: "Handoff 编号", enabled: "开启", disabled: "关闭",
-    layoutSwitched: "已切换为{layout}布局", generate: "AI 构建", debugRun: "仿真", close: "关闭", debugRunShort: "仿真",
+    layoutSwitched: "已切换为{layout}布局", generate: "AI构建", debugRun: "调试", close: "关闭", debugRunShort: "调试",
     quickOpen: "快速定位", quickOpenPlaceholder: "搜索 Agent 或 Handoff", quickOpenEmpty: "没有匹配的 Agent 或 Handoff。",
     quickOpenRole: "Agent", quickOpenFlow: "Handoff", contextEditRole: "编辑 Agent", contextEditFlow: "编辑 Handoff",
     contextInsertRole: "插入 Agent", contextDelete: "删除", minimap: "图谱导航", addRole: "新增 Agent", addEdge: "新增 Handoff",
@@ -215,7 +454,7 @@ const graphLabels = {
     zoomOut: "Zoom out", zoomIn: "Zoom in", resetView: "Reset zoom", fullscreen: "Fullscreen", fitView: "Fit graph",
     autoLayout: "Auto layout", layoutModeFlow: "Flow layout", layoutModeCompact: "Compact layout", layoutModeStacked: "Layered layout",
     topologyOrder: "Handoff order", technicalDetails: "Handoff ID", enabled: "On", disabled: "Off", layoutSwitched: "Switched to {layout} layout",
-    generate: "AI Build", debugRun: "Simulation", close: "Close", debugRunShort: "Simulation", quickOpen: "Quick locate",
+    generate: "AI Build", debugRun: "Debug", close: "Close", debugRunShort: "Debug", quickOpen: "Quick locate",
     quickOpenPlaceholder: "Search Agents or Handoffs", quickOpenEmpty: "No matching Agents or Handoffs.", quickOpenRole: "Agent", quickOpenFlow: "Handoff",
     contextEditRole: "Edit Agent", contextEditFlow: "Edit Handoff", contextInsertRole: "Insert Agent", contextDelete: "Delete", minimap: "Graph navigator",
     addRole: "Add Agent", addEdge: "Add Handoff", editSelection: "Edit selected", editRole: "Edit Agent", editEdge: "Edit Handoff", deleteSelection: "Delete selected",
@@ -800,12 +1039,14 @@ async function renderStudioOverview() {
 function studioWorkspaceNav(teamVersionId, active) {
   const id = encodeURIComponent(teamVersionId);
   const search = location.search;
+  const selected = active === "ir" ? "design" : active;
   const items = [
     ["info", state.locale === "en" ? "Team info" : "团队信息", "info"],
-    ["ir", "Team IR v2", "ir"],
+    ["design", state.locale === "en" ? "Design" : "设计", "design"],
+    ["run", state.locale === "en" ? "Debug history" : "调试历史", "run"],
     ["release", state.locale === "en" ? "Release" : "发布", "release"]
   ];
-  return `<nav class="studio-workspace-nav" aria-label="${state.locale === "en" ? "Team workspace" : "团队工作区"}">${items.map(([key, label, route]) => `<a href="/studio/teams/${id}/${route}${search}" data-route="/studio/teams/${id}/${route}${search}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+  return `<nav class="studio-workspace-nav" aria-label="${state.locale === "en" ? "Team workspace" : "团队工作区"}">${items.map(([key, label, route]) => `<a href="/studio/teams/${id}/${route}${search}" data-route="/studio/teams/${id}/${route}${search}"${key === selected ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }
 
 function teamIrAdvancedContracts(ir) {
@@ -840,11 +1081,27 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   candidate.runResult = advanced.runResult ?? candidate.runResult;
   candidate.executionPolicy = advanced.executionPolicy ?? candidate.executionPolicy;
   candidate.$defs = advanced.$defs ?? candidate.$defs;
+  const handoffRows = [...form.querySelectorAll("[data-ir-handoff]")];
+  const handoffOriginalIds = new Map(handoffRows.map((row) => [
+    candidate.handoffs?.[Number(row.dataset.irHandoff)]?.id,
+    row.dataset.irHandoffOriginalId || previous.handoffs?.[Number(row.dataset.irHandoff)]?.id
+  ]).filter(([nextId, oldId]) => nextId && oldId));
+  const handoffIdRenames = new Map([...handoffOriginalIds]
+    .filter(([nextId, oldId]) => oldId !== nextId)
+    .map(([nextId, oldId]) => [oldId, nextId]));
+  const rewriteHandoffIds = (value) => Array.isArray(value) ? value.map((id) => handoffIdRenames.get(id) || id) : value;
+  const rewriteOrchestrationRow = (row) => ({
+    ...row,
+    ...(Object.hasOwn(row, "handoffIds") ? { handoffIds: rewriteHandoffIds(row.handoffIds) } : {}),
+    ...(Object.hasOwn(row, "entryHandoffIds") ? { entryHandoffIds: rewriteHandoffIds(row.entryHandoffIds) } : {}),
+    ...(Object.hasOwn(row, "continueHandoffIds") ? { continueHandoffIds: rewriteHandoffIds(row.continueHandoffIds) } : {}),
+    ...(Object.hasOwn(row, "exitHandoffIds") ? { exitHandoffIds: rewriteHandoffIds(row.exitHandoffIds) } : {})
+  });
   const previousRoutes = previous.orchestration?.routes || [];
-  const storedRoutes = advanced.orchestration?.routes || [];
+  const storedRoutes = (advanced.orchestration?.routes || []).map(rewriteOrchestrationRow);
   const liveHandoffIds = new Set(candidate.handoffs.map((handoff) => handoff.id));
   const liveStoredRoutes = storedRoutes
-    .map((route) => ({ ...route, handoffIds: route.handoffIds.filter((id) => liveHandoffIds.has(id)) }))
+    .map((route) => ({ ...route, handoffIds: (Array.isArray(route.handoffIds) ? route.handoffIds : []).filter((id) => liveHandoffIds.has(id)) }))
     .filter((route) => route.handoffIds.length > 0);
   const advancedRoutesChanged = JSON.stringify(storedRoutes) !== JSON.stringify(previousRoutes);
   const generatedRoutesByKey = new Map(candidate.orchestration.routes.map((route) => [JSON.stringify(route.from), route]));
@@ -858,7 +1115,7 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
   const mergeOrchestrationRows = (key, fields) => {
     const formRows = candidate.orchestration[key] || [];
     const previousRows = previous.orchestration?.[key] || [];
-    const storedRows = advanced.orchestration?.[key] || [];
+    const storedRows = (advanced.orchestration?.[key] || []).map(rewriteOrchestrationRow);
     const rowChanged = (row, old) => fields.some((field) => JSON.stringify(row[field]) !== JSON.stringify(old?.[field]));
     if (formRows.length === previousRows.length && !formRows.some((row, index) => rowChanged(row, previousRows[index]))) return storedRows;
     return formRows.map((row, index) => {
@@ -901,19 +1158,24 @@ function teamIrWithAdvancedContracts(form, candidate, previous) {
       outputPorts: ports(agent.outputPorts, contracts.outputPorts, oldAgent?.outputPorts)
     };
   });
-  const handoffContracts = advanced.handoffContracts || {};
+  const handoffContracts = Object.fromEntries(Object.entries(advanced.handoffContracts || {})
+    .map(([id, value]) => [handoffIdRenames.get(id) || id, value]));
   candidate.handoffs = candidate.handoffs.map((handoff, index) => {
-    const stored = handoffContracts[handoff.id] || {};
-    const oldHandoff = (previous.handoffs || []).find((item) => item.id === handoff.id);
+    const originalId = handoffOriginalIds.get(handoff.id) || handoff.id;
+    const stored = handoffContracts[handoff.id] || advanced.handoffContracts?.[originalId] || {};
+    const oldHandoff = (previous.handoffs || []).find((item) => item.id === originalId);
     const data = new FormData(form);
     const priority = Number(data.get(`handoff-${index}-priority`) || 0);
     const storedWhen = stored.when ?? oldHandoff?.when;
     const conditionChanged = JSON.stringify(handoff.when?.condition) !== JSON.stringify(oldHandoff?.when?.condition);
     const priorityChanged = priority !== Number(oldHandoff?.when?.priority ?? 0);
-    const mergedWhen = storedWhen ? { ...storedWhen, ...(priorityChanged ? { priority } : {}) } : {};
-    const when = conditionChanged
-      ? handoff.when?.condition ? { ...mergedWhen, condition: handoff.when.condition, priority } : undefined
-      : storedWhen ? (priorityChanged ? { ...storedWhen, priority } : storedWhen) : handoff.when;
+    const mergedWhen = storedWhen ? { ...storedWhen } : { ...(handoff.when || {}) };
+    if (priorityChanged) mergedWhen.priority = priority;
+    if (conditionChanged) {
+      if (handoff.when?.condition && typeof handoff.when.condition === "object" && !Array.isArray(handoff.when.condition)) mergedWhen.condition = handoff.when.condition;
+      else delete mergedWhen.condition;
+    }
+    const when = Object.keys(mergedWhen).length ? mergedWhen : undefined;
     const mapFormUnchanged = JSON.stringify(handoff.map?.data || {}) === JSON.stringify(oldHandoff?.map?.data || {});
     const merged = {
       ...stored,
@@ -1513,7 +1775,16 @@ function teamIrFromEditor(form, base) {
       bindings.push({ ...structuredClone(bindingTemplate), id: bindingId });
     }
   }
-  const handoffs = [...form.querySelectorAll("[data-ir-handoff]")].map((row) => {
+  const handoffRows = [...form.querySelectorAll("[data-ir-handoff]")];
+  const handoffIdRenames = new Map(handoffRows.map((row) => {
+    const index = Number(row.dataset.irHandoff);
+    const nextId = String(data.get(`handoff-${index}-id`) || "").trim();
+    // Rows survive redraws with their original semantic id. Indexes do not:
+    // removing or reordering a Handoff shifts every later row.
+    const oldId = row.dataset.irHandoffOriginalId || base.handoffs?.[index]?.id;
+    return oldId && nextId && oldId !== nextId ? [oldId, nextId] : null;
+  }).filter(Boolean));
+  const handoffs = handoffRows.map((row) => {
     const index = row.dataset.irHandoff;
     const fromAgentId = String(data.get(`handoff-${index}-from-agent`) || "");
     const fromPort = String(data.get(`handoff-${index}-from-port`) || "").trim();
@@ -1533,8 +1804,10 @@ function teamIrFromEditor(form, base) {
     const from = fromAgentId ? { kind: "agent", agentId: fromAgentId, outputPort: fromPort } : { kind: "run" };
     const to = toAgentId === "@result" ? { kind: "result" } : { kind: "agent", agentId: toAgentId, inputPort: toPort };
     const conditionNode = row.querySelector("[data-ir-condition-root]");
-    const condition = conditionNode ? readTeamIrConditionNode(conditionNode) : advancedHandoffContracts[id]?.when?.condition;
-    const oldWhen = advancedHandoffContracts[id]?.when;
+    const previousId = row.dataset.irHandoffOriginalId || base.handoffs?.[Number(index)]?.id;
+    const preservedContract = advancedHandoffContracts[id] || (previousId ? advancedHandoffContracts[previousId] : undefined);
+    const condition = conditionNode ? readTeamIrConditionNode(conditionNode) : preservedContract?.when?.condition;
+    const oldWhen = preservedContract?.when;
     const priority = Number(data.get(`handoff-${index}-priority`) || 0);
     const when = conditionNode
       ? condition ? { condition, priority } : undefined
@@ -1545,7 +1818,7 @@ function teamIrFromEditor(form, base) {
     const index = row.dataset.irJoin;
     const id = String(data.get(`join-${index}-id`) || "").trim();
     const mode = String(data.get(`join-${index}-mode`) || "all_of");
-    const handoffIds = data.getAll(`join-${index}-handoffs`).map((item) => String(item));
+    const handoffIds = data.getAll(`join-${index}-handoffs`).map((item) => handoffIdRenames.get(String(item)) || String(item));
     const advancedJoin = (advanced.orchestration?.joins || []).find((item) => item.id === id) || {};
     let preservedBaseMapping = {};
     try { preservedBaseMapping = JSON.parse(row.querySelector("[data-ir-join-base-preserved]")?.value || "{}"); } catch { /* Advanced JSON validation reports malformed values. */ }
@@ -1572,7 +1845,7 @@ function teamIrFromEditor(form, base) {
   });
   const loops = [...form.querySelectorAll("[data-ir-loop]")].map((row) => {
     const index = row.dataset.irLoop;
-    const list = (key) => String(data.get(`loop-${index}-${key}`) || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const list = (key) => String(data.get(`loop-${index}-${key}`) || "").split(",").map((item) => handoffIdRenames.get(item.trim()) || item.trim()).filter(Boolean);
     const boundaryAgentId = String(data.get(`loop-${index}-boundary`) || "").trim();
     return {
       id: String(data.get(`loop-${index}-id`) || "").trim(),
@@ -1779,7 +2052,7 @@ function renderTeamIrEditorRows(ir, escText, editable, authoringCatalog = null) 
     const mappingRows = visualMappings.map((values, rowIndex) => renderTeamIrMappingRow(index, rowIndex, mappingFields, values, escText, editable)).join("");
     const conditionSummary = edge.when?.condition ? teamIrConditionSummary(edge.when.condition) : "Always selected";
     const conditionEditor = renderTeamIrConditionNode(edge.when?.condition, escText, editable, true);
-    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<select name="handoff-${index}-from-port"${editable ? "" : " disabled"}>${portOptions("outputPorts", edge.from?.outputPort || "START", true)}</select></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<select name="handoff-${index}-to-port"${editable ? "" : " disabled"}>${portOptions("inputPorts", edge.to?.inputPort || "default")}</select></label><div class="ir-map-editor full"><span class="ir-map-editor-title">Field mappings</span><input type="hidden" name="handoff-${index}-mapping" value="${escText(mapping)}"><input type="hidden" data-ir-map-preserved value="${escText(JSON.stringify(preservedMappings))}"><div data-ir-map-rows="${index}">${mappingRows}</div><div class="ir-map-editor-actions">${editable ? `<button class="secondary-button" type="button" data-ir-map-add="${index}"${mappingFields.targetFields.length && mappingFields.sourceFields.length ? "" : " disabled"}>Add field mapping</button><button class="text-button" type="button" data-ir-map-suggest="${index}">Suggest same-name fields</button>` : ""}</div><span class="field-hint">Map a target field from a declared Run input or Agent output. Run task stays immutable.</span><div class="ir-map-suggestions" data-ir-map-suggestions="${index}" aria-live="polite"></div></div><div class="ir-condition-editor full" data-ir-condition-editor="${index}">${conditionEditor}<p class="field-hint" data-ir-condition-summary="${index}">${escText(conditionSummary)}</p><p class="field-hint">Structured conditions support up to 8 nested levels and 16 items per group. Other expressions remain available in Advanced JSON.</p></div><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
+    return `<section class="project-panel ir-editor-row" data-ir-handoff="${index}" data-ir-handoff-original-id="${escText(edge.id)}"><div class="panel-head"><h3>Handoff ${index + 1}</h3><button class="icon-button" type="button" data-ir-remove-handoff="${index}" aria-label="Remove Handoff" title="Remove Handoff"${editable ? "" : " disabled"}>×</button></div><div class="ir-form-grid"><label>Handoff ID<input name="handoff-${index}-id" value="${escText(edge.id)}" required${editable ? "" : " disabled"}></label><label>From Agent<select name="handoff-${index}-from-agent"${editable ? "" : " disabled"}>${agentOptions(fromAgent, true)}</select></label><label>From output event<select name="handoff-${index}-from-port"${editable ? "" : " disabled"}>${portOptions("outputPorts", edge.from?.outputPort || "START", true)}</select></label><label>To Agent / endpoint<select name="handoff-${index}-to-agent"${editable ? "" : " disabled"}>${agentOptions(toAgent, false)}<option value="@result"${toAgent === "@result" ? " selected" : ""}>Run result</option></select></label><label>To input port<select name="handoff-${index}-to-port"${editable ? "" : " disabled"}>${portOptions("inputPorts", edge.to?.inputPort || "default")}</select></label><div class="ir-map-editor full"><span class="ir-map-editor-title">Field mappings</span><input type="hidden" name="handoff-${index}-mapping" value="${escText(mapping)}"><input type="hidden" data-ir-map-preserved value="${escText(JSON.stringify(preservedMappings))}"><div data-ir-map-rows="${index}">${mappingRows}</div><div class="ir-map-editor-actions">${editable ? `<button class="secondary-button" type="button" data-ir-map-add="${index}"${mappingFields.targetFields.length && mappingFields.sourceFields.length ? "" : " disabled"}>Add field mapping</button><button class="text-button" type="button" data-ir-map-suggest="${index}">Suggest same-name fields</button>` : ""}</div><span class="field-hint">Map a target field from a declared Run input or Agent output. Run task stays immutable.</span><div class="ir-map-suggestions" data-ir-map-suggestions="${index}" aria-live="polite"></div></div><div class="ir-condition-editor full" data-ir-condition-editor="${index}">${conditionEditor}<p class="field-hint" data-ir-condition-summary="${index}">${escText(conditionSummary)}</p><p class="field-hint">Structured conditions support up to 8 nested levels and 16 items per group. Other expressions remain available in Advanced JSON.</p></div><label>Priority<input type="number" min="0" name="handoff-${index}-priority" value="${Number(edge.when?.priority ?? 0)}"${editable ? "" : " disabled"}></label></div></section>`;
   }).join("");
   return { agents, handoffs };
 }
@@ -1950,20 +2223,173 @@ async function renderStudioTeamIrWorkbench(teamVersionId, pageRequest = state.ac
     let expectedSemanticDigest = stored.semanticDigest || null;
     let selectedRoleId = "";
     let selectedFlowId = "";
+    let selectedGlobalKey = "";
     let graph;
     let dirty = false;
     const layout = readGraphLayout(team.teamId || draft.team?.id || teamVersionId, teamVersionId);
     const knownPackages = new Map((catalog?.packages || []).map((item) => [item.ref, item]));
     const knownBindings = new Map((catalog?.bindings || []).map((item) => [item.ref, item]));
+    const caseMetadata = state.cases?.find((item) => item.id === team.caseId);
+    const roleLabels = Object.fromEntries((caseMetadata?.roles || []).map((role) => {
+      const label = text(role.label);
+      return [role.id, label || role.id];
+    }));
+    const edgeLabels = Object.fromEntries(Object.entries(caseMetadata?.flowLabels || {}).map(([key, label]) => [key, text(label)]));
+    const graphPresentation = { roleLabels, edgeLabels };
     for (const agent of draft.agents || []) {
       if (agent.packageRef && !knownPackages.has(agent.packageRef)) knownPackages.set(agent.packageRef, { ref: agent.packageRef, label: agent.packageRef, version: "saved" });
       if (agent.bindingRef && !knownBindings.has(agent.bindingRef)) knownBindings.set(agent.bindingRef, { ref: agent.bindingRef, label: agent.bindingRef, modelRef: "saved" });
     }
     const packageOptions = [...knownPackages.values()].map((item) => `<option value="${esc(item.ref)}">${esc(item.label || item.ref)} · ${esc(item.version || "")}</option>`).join("");
     const bindingOptions = [...knownBindings.values()].map((item) => `<option value="${esc(item.ref)}">${esc(item.label || item.ref)} · ${esc(item.modelRef || "")}</option>`).join("");
+    const applyInspectorPatch = (patch, statusField) => {
+      const result = applyTeamIrPatch(draft, patch);
+      if (!result.ok) {
+        if (statusField) statusField.textContent = result.error;
+        else showToast(result.error);
+        return false;
+      }
+      draft = result.teamIR;
+      dirty = true;
+      redraw();
+      return true;
+    };
+    const renderGlobalInspector = (inspector) => {
+      const orchestration = draft.orchestration || {};
+      const [kind, ...idParts] = selectedGlobalKey.split(":");
+      const id = idParts.join(":");
+      const routes = orchestration.routes || [];
+      const routeIndex = kind === "route" && id ? Number(id) : -1;
+      const route = Number.isInteger(routeIndex) && routeIndex >= 0 ? routes[routeIndex] : null;
+      const collection = { join: "joins", loop: "loops", review: "reviews" }[kind];
+      const entry = collection ? (orchestration[collection] || []).find((item) => item.id === id) : null;
+      const contractKey = ["runInput", "runResult", "executionPolicy"].includes(kind) ? kind : "";
+      if (kind === "route" && !route) {
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Route</span><h2>${t("Routing rules", "路由规则")}</h2></div><span class="status-chip">${routes.length}</span></div>${routes.map((item, index) => {
+          const source = item.from?.kind === "run" ? "Run" : `${item.from?.agentId || "?"}.${item.from?.outputPort || "?"}`;
+          return `<button type="button" class="studio-asset-item" data-studio-global-route="${index}"><strong>${esc(source)}</strong><span>${esc(item.mode || "route")} · ${esc(item.onNoMatch || "fail")} · ${(item.handoffIds || []).length} Handoff</span></button>`;
+        }).join("") || `<p class="studio-asset-empty">${t("No routes.", "暂无 Route。")}</p>`}</section>`;
+        inspector.querySelectorAll("[data-studio-global-route]").forEach((button) => button.addEventListener("click", () => { selectedGlobalKey = `route:${button.dataset.studioGlobalRoute}`; renderInspector(); }));
+        return;
+      }
+      if (kind === "route") {
+        const routeSource = JSON.stringify(route.from || {});
+        const candidates = (draft.handoffs || []).filter((handoff) => JSON.stringify(handoff.from || {}) === routeSource);
+        const candidateById = new Map(candidates.map((handoff) => [handoff.id, handoff]));
+        const orderedHandoffIds = [...new Set([...(route.handoffIds || []), ...candidates.map((handoff) => handoff.id)])];
+        const routeRows = orderedHandoffIds.map((handoffId, index) => {
+          const handoff = candidateById.get(handoffId) || (draft.handoffs || []).find((item) => item.id === handoffId);
+          const target = handoff?.to?.kind === "result" ? "Result" : `${handoff?.to?.agentId || "?"}.${handoff?.to?.inputPort || "?"}`;
+          const checked = (route.handoffIds || []).includes(handoffId);
+          return `<div class="studio-route-order-row" data-v2-route-row data-handoff-id="${esc(handoffId)}"><span data-studio-route-order-position>${index + 1}</span><span class="studio-route-order-name" title="${esc(handoffId)}">${esc(target)}</span><label class="field checkbox"><input type="checkbox" data-v2-route-handoff ${checked ? "checked" : ""}${editable ? "" : " disabled"}><span>${t("Use", "纳入")}</span></label><span class="studio-route-order-moves"><button type="button" class="studio-order-move" data-v2-route-move="up" aria-label="${t("Move up", "上移")}" ${index === 0 || !editable ? "disabled" : ""}>↑</button><button type="button" class="studio-order-move" data-v2-route-move="down" aria-label="${t("Move down", "下移")}" ${index === orderedHandoffIds.length - 1 || !editable ? "disabled" : ""}>↓</button></span></div>`;
+        }).join("");
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Route</span><h2>${esc(route.from?.kind === "run" ? "Run" : `${route.from?.agentId || "?"}.${route.from?.outputPort || "?"}`)}</h2></div><span class="status-chip">v2</span></div><div class="studio-inspector-fields"><label class="field"><span>${t("Mode", "模式")}</span><select data-v2-route-mode ${editable ? "" : "disabled"}><option value="exclusive_priority" ${route.mode === "exclusive_priority" ? "selected" : ""}>exclusive_priority</option><option value="parallel_fanout" ${route.mode === "parallel_fanout" ? "selected" : ""}>parallel_fanout</option></select></label><label class="field"><span>${t("No match", "无匹配时")}</span><select data-v2-route-no-match ${editable ? "" : "disabled"}><option value="fail" ${route.onNoMatch === "fail" ? "selected" : ""}>fail</option><option value="finish" ${route.onNoMatch === "finish" ? "selected" : ""}>finish</option></select></label></div><div class="studio-route-order-editor"><h3>${t("Handoff order", "Handoff 顺序")} <span class="studio-order-count">${orderedHandoffIds.length}</span></h3><div class="studio-route-order-list">${routeRows || `<p class="studio-asset-empty">${t("No Handoffs from this source.", "此来源暂无 Handoff。")}</p>`}</div></div><details class="studio-inspector-section"><summary>${t("Advanced Route JSON", "高级 Route JSON")}</summary><label class="field full"><span>${t("Route JSON", "Route JSON")}</span><textarea data-v2-route-json rows="12" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(route, null, 2))}</textarea></label></details><div class="form-actions"><button class="secondary-button" type="button" data-v2-apply-route ${editable ? "" : "disabled"}>${t("Apply route", "应用 Route")}</button><button class="danger-button" type="button" data-v2-remove-route ${editable ? "" : "disabled"}>${t("Remove route", "删除 Route")}</button></div><p class="form-status" data-v2-inspector-status role="status"></p></section>`;
+        const syncRouteOrder = () => {
+          const rows = [...inspector.querySelectorAll("[data-v2-route-row]")];
+          rows.forEach((row, index) => {
+            row.querySelector("[data-studio-route-order-position]").textContent = String(index + 1);
+            row.querySelector('[data-v2-route-move="up"]').disabled = !editable || index === 0;
+            row.querySelector('[data-v2-route-move="down"]').disabled = !editable || index === rows.length - 1;
+          });
+        };
+        inspector.querySelectorAll("[data-v2-route-move]").forEach((button) => button.addEventListener("click", () => {
+          const row = button.closest("[data-v2-route-row]");
+          const sibling = button.dataset.v2RouteMove === "up" ? row?.previousElementSibling : row?.nextElementSibling;
+          if (!row || !sibling) return;
+          if (button.dataset.v2RouteMove === "up") sibling.before(row); else sibling.after(row);
+          syncRouteOrder();
+        }));
+        inspector.querySelector("[data-v2-apply-route]")?.addEventListener("click", () => {
+          const statusField = inspector.querySelector("[data-v2-inspector-status]");
+          try {
+            const advanced = JSON.parse(inspector.querySelector("[data-v2-route-json]").value);
+            if (!advanced || typeof advanced !== "object" || Array.isArray(advanced)) throw new Error("JSON object required");
+            const handoffIds = [...inspector.querySelectorAll("[data-v2-route-row]")].filter((row) => row.querySelector("[data-v2-route-handoff]")?.checked).map((row) => row.dataset.handoffId).filter(Boolean);
+            const value = { ...advanced, from: route.from, mode: inspector.querySelector("[data-v2-route-mode]").value, onNoMatch: inspector.querySelector("[data-v2-route-no-match]").value, handoffIds };
+            if (applyInspectorPatch({ op: "route.upsert", index: routeIndex, value }, statusField)) statusField.textContent = t("Route updated.", "Route 已更新。");
+          } catch (error) { statusField.textContent = error.message || t("Invalid JSON.", "JSON 无效。"); }
+        });
+        inspector.querySelector("[data-v2-remove-route]")?.addEventListener("click", () => {
+          selectedGlobalKey = "route";
+          applyInspectorPatch({ op: "route.remove", index: routeIndex });
+        });
+        return;
+      }
+      if (collection && !entry) {
+        const entries = orchestration[collection] || [];
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">${esc(kind)}</span><h2>${t("Contracts", "合同")}</h2></div><span class="status-chip">${entries.length}</span></div>${entries.map((item) => `<button type="button" class="studio-asset-item" data-studio-global-contract="${esc(`${kind}:${item.id}`)}"><strong>${esc(item.id)}</strong><span>${esc(JSON.stringify(item.at || item.mode || item.agentId || ""))}</span></button>`).join("") || `<p class="studio-asset-empty">${t("No contracts.", "暂无合同。")}</p>`}</section>`;
+        inspector.querySelectorAll("[data-studio-global-contract]").forEach((button) => button.addEventListener("click", () => { selectedGlobalKey = button.dataset.studioGlobalContract || ""; renderInspector(); }));
+        return;
+      }
+      if (kind === "binding") {
+        const binding = (draft.bindings || []).find((item) => item.id === id);
+        if (!binding) {
+          inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Binding</span><h2>${t("Bindings", "Binding")}</h2></div><span class="status-chip">${(draft.bindings || []).length}</span></div>${(draft.bindings || []).map((item) => `<button type="button" class="studio-asset-item" data-studio-binding="${esc(item.id)}"><strong>${esc(item.id)}</strong><span>${esc(item.kind || "binding")}</span></button>`).join("") || `<p class="studio-asset-empty">${t("No bindings.", "暂无 Binding。")}</p>`}</section>`;
+          inspector.querySelectorAll("[data-studio-binding]").forEach((button) => button.addEventListener("click", () => { selectedGlobalKey = `binding:${button.dataset.studioBinding}`; renderInspector(); }));
+          return;
+        }
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Binding</span><h2>${esc(binding.id)}</h2></div><span class="status-chip">${esc(binding.kind || "v2")}</span></div><label class="field full"><span>${t("Binding JSON", "Binding JSON")}</span><textarea data-v2-global-json rows="20" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(binding, null, 2))}</textarea></label><button class="secondary-button" type="button" data-v2-apply-global ${editable ? "" : "disabled"}>${t("Apply binding", "应用 Binding")}</button><p class="form-status" data-v2-inspector-status role="status"></p></section>`;
+        inspector.querySelector("[data-v2-apply-global]")?.addEventListener("click", () => {
+          const statusField = inspector.querySelector("[data-v2-inspector-status]");
+          try {
+            const value = JSON.parse(inspector.querySelector("[data-v2-global-json]").value);
+            if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON object required");
+            const op = binding.kind === "a2a" ? "a2a.binding.update" : "binding.update";
+            if (applyInspectorPatch({ op, bindingId: binding.id, fields: value }, statusField)) statusField.textContent = t("Updated.", "已更新。");
+          } catch (error) { statusField.textContent = error.message || t("Invalid JSON.", "JSON 无效。"); }
+        });
+        return;
+      }
+      if (contractKey) {
+        const op = contractKey === "runInput" ? "runInput.update" : contractKey === "runResult" ? "runResult.update" : "executionPolicy.update";
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">${esc(contractKey)}</span><h2>${t("Global contract", "全局合同")}</h2></div><span class="status-chip">v2</span></div><label class="field full"><span>${t("JSON", "JSON")}</span><textarea data-v2-global-json rows="18" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(draft[contractKey] || {}, null, 2))}</textarea></label><button class="secondary-button" type="button" data-v2-apply-global ${editable ? "" : "disabled"}>${t("Apply contract", "应用合同")}</button><p class="form-status" data-v2-inspector-status role="status"></p></section>`;
+        inspector.querySelector("[data-v2-apply-global]")?.addEventListener("click", () => {
+          const statusField = inspector.querySelector("[data-v2-inspector-status]");
+          try {
+            const value = JSON.parse(inspector.querySelector("[data-v2-global-json]").value);
+            if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON object required");
+            const fields = Object.fromEntries(Object.keys(value).map((key) => [key, value[key]]));
+            if (applyInspectorPatch({ op, fields }, statusField)) statusField.textContent = t("Updated.", "已更新。");
+          } catch (error) { statusField.textContent = error.message || t("Invalid JSON.", "JSON 无效。"); }
+        });
+        return;
+      }
+      if (collection) {
+        const op = `${kind}.upsert`;
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">${esc(kind)}</span><h2>${esc(entry.id)}</h2></div><span class="status-chip">v2</span></div><label class="field full"><span>${t("JSON", "JSON")}</span><textarea data-v2-global-json rows="20" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(entry, null, 2))}</textarea></label><button class="secondary-button" type="button" data-v2-apply-global ${editable ? "" : "disabled"}>${t("Apply", "应用")}</button><p class="form-status" data-v2-inspector-status role="status"></p></section>`;
+        inspector.querySelector("[data-v2-apply-global]")?.addEventListener("click", () => {
+          const statusField = inspector.querySelector("[data-v2-inspector-status]");
+          try {
+            const value = JSON.parse(inspector.querySelector("[data-v2-global-json]").value);
+            if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON object required");
+            if (applyInspectorPatch({ op, id: entry.id, value }, statusField)) statusField.textContent = t("Updated.", "已更新。");
+          } catch (error) { statusField.textContent = error.message || t("Invalid JSON.", "JSON 无效。"); }
+        });
+        return;
+      }
+      const summaries = [
+        ["runInput", t("Run input", "运行输入"), draft.runInput],
+        ["runResult", t("Run result", "运行结果"), draft.runResult],
+        ["executionPolicy", t("Execution policy", "执行策略"), draft.executionPolicy],
+        ["route", t("Routes", "路由规则"), routes],
+        ["join", t("Join contracts", "Join 合同"), orchestration.joins || []],
+        ["loop", t("Loop contracts", "Loop 合同"), orchestration.loops || []],
+        ["review", t("Review gates", "Review 门",), orchestration.reviews || []],
+        ["binding", t("A2A and bindings", "A2A 与 Binding"), draft.bindings || []]
+      ];
+      inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">${t("Global", "全局")}</span><h2>${t("Team IR contracts", "Team IR 合同")}</h2></div><span class="status-chip">${esc(String((draft.agents || []).length))} Agent</span></div><p class="field-hint">${t("Open a contract to edit its v2 fields. The graph and lists remain the baseline Studio workbench.", "打开合同以编辑 v2 字段。图谱和列表保持基线 Studio 工作台结构。")}</p>${summaries.map(([key, label, value]) => `<button type="button" class="studio-asset-item" data-studio-global-key="${esc(key)}"><strong>${esc(label)}</strong><span>${esc(Array.isArray(value) ? `${value.length} items` : Object.keys(value || {}).length + " fields")}</span></button>`).join("")}</section>`;
+      inspector.querySelectorAll("[data-studio-global-key]").forEach((button) => button.addEventListener("click", () => {
+        selectedGlobalKey = button.dataset.studioGlobalKey || "";
+        renderInspector();
+      }));
+    };
     const renderInspector = () => {
       const inspector = root.querySelector("#studio-property-inspector");
       if (!inspector) return;
+      if (selectedGlobalKey) {
+        renderGlobalInspector(inspector);
+        return;
+      }
       const role = draft.agents?.find((item) => item.id === selectedRoleId);
       const flow = draft.handoffs?.find((item) => item.id === selectedFlowId);
       if (!role && !flow) {
@@ -1971,13 +2397,23 @@ async function renderStudioTeamIrWorkbench(teamVersionId, pageRequest = state.ac
         return;
       }
       if (role) {
-        const inputPorts = Object.keys(role.inputPorts || {}).map((id) => `<li><code>${esc(id)}</code></li>`).join("") || `<li>${t("None", "暂无")}</li>`;
-        const outputPorts = Object.keys(role.outputPorts || {}).map((id) => `<li><code>${esc(id)}</code></li>`).join("") || `<li>${t("None", "暂无")}</li>`;
-        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Agent</span><h2>${esc(role.id)}</h2></div><span class="status-chip">v2</span></div><label class="field"><span>${t("Package", "角色包")}</span><select data-v2-role-package ${editable ? "" : "disabled"}><option value="">${t("Select a trusted package", "选择可信角色包")}</option>${packageOptions}</select></label><label class="field"><span>${t("Binding", "Binding")}</span><select data-v2-role-binding ${editable ? "" : "disabled"}><option value="">${t("Select a trusted binding", "选择可信 Binding")}</option>${bindingOptions}</select></label><div class="studio-port-summary"><div><strong>${t("Input Ports", "输入 Port")}</strong><ul>${inputPorts}</ul></div><div><strong>${t("Output Ports", "输出 Port")}</strong><ul>${outputPorts}</ul></div></div><p class="field-hint">${t("Port schemas and advanced contracts remain in Advanced JSON.", "Port Schema 与高级合同保留在高级 JSON 中。")}</p></section>`;
+        const inputPorts = Object.entries(role.inputPorts || {}).map(([id, port]) => `<details class="studio-inspector-section" open><summary>${t("Input port", "输入端口")} <code>${esc(id)}</code></summary><textarea data-v2-port-json="input:${esc(id)}" rows="8" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(port, null, 2))}</textarea><button type="button" class="secondary-button" data-v2-apply-port="input:${esc(id)}" ${editable ? "" : "disabled"}>${t("Apply port", "应用端口")}</button></details>`).join("") || `<p class="field-hint">${t("No input ports.", "暂无输入端口。")}</p>`;
+        const outputPorts = Object.entries(role.outputPorts || {}).map(([id, port]) => `<details class="studio-inspector-section" open><summary>${t("Output port", "输出端口")} <code>${esc(id)}</code></summary><textarea data-v2-port-json="output:${esc(id)}" rows="8" spellcheck="false" ${editable ? "" : "disabled"}>${esc(JSON.stringify(port, null, 2))}</textarea><button type="button" class="secondary-button" data-v2-apply-port="output:${esc(id)}" ${editable ? "" : "disabled"}>${t("Apply port", "应用端口")}</button></details>`).join("") || `<p class="field-hint">${t("No output ports.", "暂无输出端口。")}</p>`;
+        const label = draft.presentation?.nodes?.[role.id]?.label || roleLabels[role.id] || role.id;
+        inspector.innerHTML = `<section class="studio-inspector-section"><div class="panel-head"><div><span class="section-kicker">Agent</span><h2>${esc(label)}</h2><code>${esc(role.id)}</code></div><span class="status-chip">v2</span></div><label class="field"><span>${t("Display label", "显示名称")}</span><input data-v2-role-label value="${esc(label)}" ${editable ? "" : "disabled"}></label><label class="field"><span>${t("Package", "角色包")}</span><select data-v2-role-package ${editable ? "" : "disabled"}><option value="">${t("Select a trusted package", "选择可信角色包")}</option>${packageOptions}</select></label><label class="field"><span>${t("Binding", "Binding")}</span><select data-v2-role-binding ${editable ? "" : "disabled"}><option value="">${t("Select a trusted binding", "选择可信 Binding")}</option>${bindingOptions}</select></label><p class="field-hint">${t("Ports, schemas and Artifact slots are edited in the baseline Inspector sections below.", "端口、Schema 和 Artifact 槽位在基线 Inspector 分组中编辑。")}</p></section>${inputPorts}${outputPorts}`;
+        inspector.querySelector("[data-v2-role-label]")?.addEventListener("change", (event) => applyInspectorPatch({ op: "presentation.nodeLabel", id: role.id, value: event.target.value.trim() }));
         const packageSelect = inspector.querySelector("[data-v2-role-package]");
         const bindingSelect = inspector.querySelector("[data-v2-role-binding]");
         if (packageSelect) { packageSelect.value = role.packageRef || ""; packageSelect.addEventListener("change", () => applyRoleField("packageRef", packageSelect.value)); }
         if (bindingSelect) { bindingSelect.value = role.bindingRef || ""; bindingSelect.addEventListener("change", () => applyRoleField("bindingRef", bindingSelect.value)); }
+        inspector.querySelectorAll("[data-v2-apply-port]").forEach((button) => button.addEventListener("click", () => {
+          const [direction, portId] = button.dataset.v2ApplyPort.split(":");
+          const field = inspector.querySelector(`[data-v2-port-json="${CSS.escape(`${direction}:${portId}`)}"]`);
+          try {
+            const value = JSON.parse(field.value);
+            applyInspectorPatch({ op: "agent.port.upsert", agentId: role.id, direction, portId, port: value });
+          } catch (error) { showToast(error.message || t("Invalid JSON.", "JSON 无效。")); }
+        }));
         return;
       }
       const fromLabel = flow.from?.kind === "run" ? "Run" : `${flow.from?.agentId || "?"}.${flow.from?.outputPort || "?"}`;
@@ -1990,10 +2426,10 @@ async function renderStudioTeamIrWorkbench(teamVersionId, pageRequest = state.ac
           let condition;
           let map;
           try { condition = JSON.parse(conditionField.value); map = JSON.parse(mapField.value); } catch (error) { statusField.textContent = error.message || t("Invalid JSON.", "JSON 无效。"); return; }
-          const result = applyTeamIrPatch(draft, { op: "update", collection: "handoffs", id: flow.id, fields: { when: condition ? { ...(flow.when || {}), condition } : undefined, map } });
-          if (!result.ok) { statusField.textContent = result.error; return; }
-          draft = result.teamIR; dirty = true; redraw();
-          statusField.textContent = t("Handoff updated.", "Handoff 已更新。");
+          const when = { ...(flow.when || {}) };
+          if (condition && typeof condition === "object" && !Array.isArray(condition)) when.condition = condition;
+          else delete when.condition;
+          if (applyInspectorPatch({ op: "handoff.update", id: flow.id, fields: { when: Object.keys(when).length ? when : undefined, map } }, statusField)) statusField.textContent = t("Handoff updated.", "Handoff 已更新。");
         });
     };
     const applyRoleField = (field, value) => {
@@ -2001,45 +2437,522 @@ async function renderStudioTeamIrWorkbench(teamVersionId, pageRequest = state.ac
       if (!result.ok) { showToast(result.error); return; }
       draft = result.teamIR; dirty = true; redraw();
     };
-    const graphMarkup = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">OGS Studio · ${esc(team.name || team.teamName || teamVersionId)}</div><h1>${t("Team graph", "团队图谱")}</h1><p>${t("Original graph workspace with Team IR v2 semantics.", "沿用原版图谱工作台，语义由 Team IR v2 提供。")}</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? t("Design", "设计中") : t("Released", "已发布")}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<div class="studio-design-workbench-host"><div class="studio-design-workbench"><section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">Team IR v2</span><h2>${t("Collaboration graph", "团队协作图谱")}</h2><p id="project-design-status" class="form-status" role="status">${t("Loading graph…", "正在加载图谱…")}</p></div><div class="form-actions"><button type="button" class="secondary-button" data-v2-open-inspector>${t("Inspector", "属性")}</button><button type="button" class="primary-button" data-v2-save ${editable ? "" : "disabled"}>${t("Save", "保存")}</button></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="${t("Team IR v2 graph", "Team IR v2 团队图谱")}"></div><p class="preview-note">${t("Drag nodes to change layout only. Select an Agent or Handoff to edit v2 semantics.", "拖动节点只改变布局；选择 Agent 或 Handoff 编辑 v2 语义。")}</p></section><aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="${t("Team configuration", "团队配置")}" aria-hidden="true"><div class="studio-asset-drawer-head"><strong>${t("Team configuration", "团队配置")}</strong><button type="button" class="close-button" data-v2-close-inspector aria-label="${t("Close", "关闭")}">×</button></div><div id="studio-assets-property-view"><section class="studio-property-inspector" id="studio-property-inspector"></section><div class="studio-asset-editor-actions"><span class="form-hint">${t("Layout is local and excluded from semantic digest.", "布局只保存在本机，不进入语义 digest。")}</span><button type="button" class="primary-button" data-v2-save-inspector ${editable ? "" : "disabled"}>${t("Save", "保存")}</button></div></div></aside></div></div><section class="project-panel" data-v2-diagnostics><div class="panel-head"><div><span class="section-kicker">${t("Validation", "校验")}</span><h2>${t("Team IR diagnostics", "Team IR 诊断")}</h2></div></div><ul class="studio-event-list ir-diagnostics" data-v2-diagnostics-list></ul><p class="form-status" data-v2-status role="status" aria-live="polite"></p></section>`;
+    const graphMarkup = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">OGS Studio · ${esc(team.name || team.teamName || teamVersionId)}</div><h1>${t("Team graph", "团队图谱")}</h1><p>${t("Original graph workspace with Team IR v2 semantics.", "沿用原版图谱工作台，语义由 Team IR v2 提供。")}</p></div><span class="status-chip ${editable ? "draft" : "released"}">${editable ? t("Design", "设计中") : t("Released", "已发布")}</span></section>${studioWorkspaceNav(teamVersionId, "ir")}<div class="studio-design-workbench-host"><div class="studio-design-workbench"><section class="project-panel project-graph-preview"><div class="panel-head"><div><h2>${t("Collaboration graph", "团队协作图谱")}</h2><p id="project-design-status" class="form-status" role="status">${t("Loading graph…", "正在加载图谱…")}</p></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="${t("Team IR v2 graph", "Team IR v2 团队图谱")}"></div></section><aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="${t("Team configuration", "团队配置")}" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="${t("Drag team configuration panel. Use arrow keys to move.", "拖动团队配置面板；也可使用方向键移动。")}"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="${t("Back to team configuration", "返回团队配置")}">←</button><strong>${t("Team configuration", "团队配置")}</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="${t("Close team configuration", "关闭团队配置")}">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="${t("Team configuration", "团队配置")}"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">${t("Roles", "角色")}</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">${t("Transitions", "流转")}</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">${t("Global", "全局")}</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="${t("Team configuration properties", "团队配置属性")}"></section><div class="studio-asset-editor-actions"><span class="form-hint">${t("Save changes to the current TeamVersion.", "保存当前团队版本的修改")}</span><button type="button" class="primary-button" data-studio-save-workspace ${editable ? "" : "disabled"}>${t("Save team", "保存团队")}</button></div></div></aside><aside id="team-build-panel" class="studio-asset-drawer studio-build-panel" aria-label="${t("AI Build", "AI 构建")}" aria-hidden="true"><header class="studio-asset-drawer-head team-build-panel-head" tabindex="0" aria-label="${t("Drag AI Build panel", "拖动 AI 构建面板")}"><strong>${t("AI Build", "AI 构建")}</strong><button class="close-button" type="button" data-team-build-close aria-label="${t("Close AI Build", "关闭 AI 构建")}">×</button></header><div class="studio-build-panel-content"><p class="form-hint">${t("Describe a v2 change, review the typed proposal, then apply it to the local draft.", "描述 v2 变更，检查类型化提案后再应用到本地草稿。")}</p><label class="assistant-input-label"><span>${t("Build request", "构建要求")}</span><textarea data-studio-build-prompt rows="3" maxlength="4000" placeholder="${t("For example: add a fact-checking Agent", "例如：增加一个事实核查 Agent")}"></textarea></label><label class="assistant-input-label"><span>${t("Team IR v2 patches", "Team IR v2 补丁")}</span><textarea data-studio-build-patch-json rows="10" spellcheck="false">[]</textarea></label><div class="form-actions"><button class="primary-button" type="button" data-studio-build-propose>${t("Generate proposal", "生成提案")}</button><button class="secondary-button" type="button" data-studio-build-apply disabled>${t("Apply to draft", "应用到草稿")}</button></div><p class="form-status" data-studio-build-status role="status" aria-live="polite"></p><div class="assistant-preview" data-studio-build-preview hidden></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="${t("Debug", "调试")}" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="${t("Drag debug panel", "拖动调试面板")}"><strong>${t("Debug", "调试")}</strong><button class="close-button" type="button" data-team-debug-close aria-label="${t("Close debug panel", "关闭调试面板")}">×</button></header><div class="team-debug-panel-content"><label class="assistant-input-label"><span>${t("Task", "任务")}</span><textarea data-studio-debug-task rows="3" maxlength="4000" placeholder="${t("Describe the task to simulate", "描述要仿真的任务")}"></textarea></label><label class="assistant-input-label"><span>${t("Run input JSON", "运行输入 JSON")}</span><textarea data-studio-debug-input rows="6" spellcheck="false">{}</textarea></label><p class="form-hint">${t("Runs the current Team IR v2 draft and stores isolated simulation evidence.", "运行当前 Team IR v2 草稿，并保存隔离的仿真证据。")}</p><div class="form-actions"><button class="primary-button" type="button" data-studio-debug-run>${t("Start debug", "开始调试")}</button><a class="text-button" href="/studio/teams/${encodeURIComponent(teamVersionId)}/run" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/run">${t("Debug history", "调试历史")}</a></div><p class="form-status" data-studio-debug-status role="status" aria-live="polite"></p><div data-studio-debug-result aria-live="polite"><div class="team-debug-empty-state"><strong>${t("Ready to debug", "等待开始调试")}</strong><p>${t("Enter a task and optional JSON input to run the current Team IR v2 draft.", "填写任务和可选 JSON 输入后运行当前 Team IR v2 草稿。")}</p></div></div></div></aside></div></div><section class="project-panel" data-v2-diagnostics><div class="panel-head"><div><span class="section-kicker">${t("Validation", "校验")}</span><h2>${t("Team IR diagnostics", "Team IR 诊断")}</h2></div></div><ul class="studio-event-list ir-diagnostics" data-v2-diagnostics-list></ul><p class="form-status" data-v2-status role="status" aria-live="polite"></p></section>`;
     root.innerHTML = graphMarkup;
     const stage = root.querySelector("#project-graph-stage");
+    const graphStatus = document.createElement("p");
+    graphStatus.id = "studio-graph-status";
+    graphStatus.className = "studio-graph-status-bar";
+    graphStatus.setAttribute("role", "status");
+    graphStatus.setAttribute("aria-live", "polite");
+    graphStatus.textContent = t("Graph loaded", "图谱已载入");
+    stage?.after(graphStatus);
     const status = root.querySelector("#project-design-status");
+    const workbench = root.querySelector(".studio-design-workbench");
+    const inspectorDrawer = root.querySelector("#studio-asset-drawer");
+    const buildPanel = root.querySelector("#team-build-panel");
+    const debugPanel = root.querySelector("#team-debug-dialog");
+    for (const panel of [inspectorDrawer, buildPanel, debugPanel]) panel?.classList.add("studio-workbench-panel");
+    inspectorDrawer?.querySelector(".studio-asset-drawer-head")?.classList.add("studio-workbench-panel-head");
+    buildPanel?.querySelector(".team-build-panel-head")?.classList.add("studio-workbench-panel-head");
+    debugPanel?.querySelector(".team-debug-panel-head")?.classList.add("studio-workbench-panel-head");
+    const listView = root.querySelector("#studio-assets-list-view");
+    const propertyView = root.querySelector("#studio-assets-property-view");
+    const assetBack = root.querySelector("[data-studio-assets-back]");
+    const tabs = [...root.querySelectorAll(".studio-asset-tabs [role=tab]")];
+    const setAssetView = (view) => {
+      const properties = view === "properties";
+      if (listView) listView.hidden = properties;
+      if (propertyView) propertyView.hidden = !properties;
+      if (assetBack) assetBack.hidden = !properties;
+    };
+    const flowSelectionKey = (handoff) => {
+      const source = handoff.from?.kind === "run" ? START_ID : handoff.from?.agentId || "";
+      const target = handoff.to?.kind === "result" ? END_ID : handoff.to?.agentId || "";
+      const outputPort = handoff.from?.kind === "agent" ? handoff.from.outputPort || "" : "";
+      const inputPort = handoff.to?.kind === "agent" ? handoff.to.inputPort || "" : "";
+      const base = `${source === START_ID ? "start" : source}:${handoff.from?.kind === "agent" ? handoff.from.outputPort || "" : "START"}:${target === END_ID ? "end" : target}`;
+      return outputPort || inputPort ? `${base}:${outputPort}:${inputPort}` : base;
+    };
+    const renderAssetNavigator = () => {
+      const roles = root.querySelector("#studio-assets-roles");
+      const flows = root.querySelector("#studio-assets-flows");
+      const global = root.querySelector("#studio-assets-global");
+      if (!roles || !flows || !global) return;
+      const roleRows = (draft.agents || []).map((agent) => {
+        const label = draft.presentation?.nodes?.[agent.id]?.label || roleLabels[agent.id] || agent.id;
+        const color = roleColorForId(agent.id);
+        const binding = (draft.bindings || []).find((item) => item.id === agent.bindingRef) || knownBindings.get(agent.bindingRef);
+        const bindingKind = binding?.kind === "tool" ? "exec" : ["a2a", "model"].includes(binding?.kind) ? "model" : "noop";
+        const bindingLabel = english
+          ? { model: "AI model", exec: "Execution tool", noop: "Unbound" }[bindingKind]
+          : { model: "AI 模型", exec: "执行工具", noop: "未绑定执行器" }[bindingKind];
+        return `<button type="button" class="studio-asset-row" data-studio-asset-role="${esc(agent.id)}" aria-current="${selectedRoleId === agent.id}"><span class="studio-role-avatar" style="--role-accent:${color.accent}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="7.5" r="3.3"></circle><path d="M4.5 21c.3-4.2 3-6.7 7.5-6.7s7.2 2.5 7.5 6.7z"></path></svg></span><span><strong>${esc(label)}</strong><small>${esc(bindingLabel)}</small></span></button>`;
+      }).join("");
+      roles.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${t("Search Agents", "搜索 Agent")}</span><input type="search" placeholder="${t("Search Agents", "搜索 Agent")}" aria-label="${t("Search Agents", "搜索 Agent")}"></label>${roleRows || `<p class="studio-asset-empty">${t("No Agents", "暂无 Agent")}</p>`}`;
+      const flowRows = (draft.handoffs || []).map((handoff) => {
+        const sourceRoleId = handoff.from?.kind === "run" ? START_ID : String(handoff.from?.agentId || "");
+        const targetRoleId = handoff.to?.kind === "result" ? END_ID : String(handoff.to?.agentId || "");
+        const source = sourceRoleId === START_ID ? t("Run", "开始") : (draft.presentation?.nodes?.[sourceRoleId]?.label || roleLabels[sourceRoleId] || sourceRoleId);
+        const target = targetRoleId === END_ID ? t("Result", "结束") : (draft.presentation?.nodes?.[targetRoleId]?.label || roleLabels[targetRoleId] || targetRoleId);
+        const presentationValue = draft.presentation?.edges?.[handoff.id];
+        const presentationLabel = typeof presentationValue === "string" ? presentationValue : presentationValue?.label;
+        const flowLabel = (typeof presentationLabel === "string" ? presentationLabel : text(presentationLabel))
+          || edgeLabels[handoff.id]
+          || `${source} → ${target}`;
+        return `<button type="button" class="studio-asset-row studio-flow-row" data-studio-asset-flow="${esc(handoff.id)}" aria-current="${selectedFlowId === handoff.id}"><span class="studio-flow-contract-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"></path><path d="M14 3.5v5h5M9 12h6M9 15h6M9 18c1-1 1.5 1 2.5 0 1-.9 1.5 1.2 2.5 0"></path></svg></span><span><strong>${esc(flowLabel)}</strong><small>${esc(source)} → ${esc(target)}</small></span></button>`;
+      }).join("");
+      flows.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${t("Search Handoffs", "搜索 Handoff")}</span><input type="search" placeholder="${t("Search Handoffs", "搜索 Handoff")}" aria-label="${t("Search Handoffs", "搜索 Handoff")}"></label>${flowRows || `<p class="studio-asset-empty">${t("No Handoffs", "暂无 Handoff")}</p>`}`;
+      const globalRows = [
+        ["runInput", t("Run input", "运行输入")],
+        ["runResult", t("Run result", "运行结果")],
+        ["executionPolicy", t("Execution policy", "执行策略")],
+        ["route", t("Routes", "路由规则")],
+        ["join", t("Join", "Join")],
+        ["loop", t("Loop", "Loop")],
+        ["review", t("Review", "Review")],
+        ["binding", t("A2A / Binding", "A2A / Binding")]
+      ];
+      global.innerHTML = globalRows.map(([key, label]) => `<button type="button" class="studio-asset-item" data-studio-global-entry="${esc(key)}"><strong>${esc(label)}</strong><span>${key === "join" ? `${(draft.orchestration?.joins || []).length} contracts` : key === "loop" ? `${(draft.orchestration?.loops || []).length} contracts` : key === "review" ? `${(draft.orchestration?.reviews || []).length} gates` : key === "binding" ? `${(draft.bindings || []).length} bindings` : t("Open contract", "打开合同")}</span></button>`).join("");
+      roles.querySelectorAll("[data-studio-asset-role]").forEach((button) => button.addEventListener("click", () => {
+        selectedRoleId = button.dataset.studioAssetRole || "";
+        selectedFlowId = "";
+        selectedGlobalKey = "";
+        setAssetView("properties");
+        renderInspector();
+      }));
+      flows.querySelectorAll("[data-studio-asset-flow]").forEach((button) => button.addEventListener("click", () => {
+        selectedFlowId = button.dataset.studioAssetFlow || "";
+        selectedRoleId = "";
+        selectedGlobalKey = "";
+        setAssetView("properties");
+        redraw();
+      }));
+      for (const [list, selector] of [[roles, "[data-studio-asset-role]"], [flows, "[data-studio-asset-flow]"]]) {
+        list.querySelector(".studio-asset-search input")?.addEventListener("input", (event) => {
+          const query = String(event.currentTarget.value || "").trim().toLocaleLowerCase();
+          list.querySelectorAll(selector).forEach((button) => {
+            button.hidden = Boolean(query && !button.textContent.toLocaleLowerCase().includes(query));
+          });
+        });
+      }
+      global.querySelectorAll("[data-studio-global-entry]").forEach((button) => button.addEventListener("click", () => {
+        const key = button.dataset.studioGlobalEntry || "";
+        selectedRoleId = "";
+        selectedFlowId = "";
+        selectedGlobalKey = ["join", "loop", "review"].includes(key)
+          ? `${key}:${(draft.orchestration?.[{ join: "joins", loop: "loops", review: "reviews" }[key]] || [])[0]?.id || ""}`
+          : key;
+        setAssetView("properties");
+        renderInspector();
+      }));
+    };
+    const panelDockClass = { asset: "is-asset-docked", build: "is-build-docked", debug: "is-debug-docked" };
+    const panelForKind = (kind) => ({ asset: inspectorDrawer, build: buildPanel, debug: debugPanel }[kind] || null);
+    const panelDockStates = {
+      asset: { docked: false, floatingBounds: null },
+      build: { docked: false, floatingBounds: null },
+      debug: { docked: false, floatingBounds: null }
+    };
+    let activeDockPanel = null;
+    const syncPanelDockLayout = (kind = activeDockPanel) => {
+      activeDockPanel = kind;
+      if (!workbench) return;
+      for (const className of Object.values(panelDockClass)) workbench.classList.remove(className);
+      workbench.style.removeProperty("--studio-panel-dock-width");
+      for (const panel of [inspectorDrawer, buildPanel, debugPanel]) panel?.classList.remove("is-right-docked");
+      const panel = panelForKind(kind);
+      const dockState = panelDockStates[kind];
+      if (!panel || !dockState?.docked || !panel.classList.contains("is-open")) return;
+      const host = workbench.getBoundingClientRect();
+      const preferredWidth = dockState.floatingBounds?.width || 340;
+      const maxWidth = Math.max(320, host.width - 520);
+      const dockWidth = Math.min(Math.max(320, preferredWidth), Math.min(520, maxWidth));
+      workbench.classList.add(panelDockClass[kind]);
+      workbench.style.setProperty("--studio-panel-dock-width", `${dockWidth}px`);
+      panel.classList.add("is-right-docked");
+    };
+    const closeStudioPanel = (kind, focus = false) => {
+      const panel = panelForKind(kind);
+      panelDockStates[kind].docked = false;
+      panel?.classList.remove("is-open", "is-right-docked");
+      panel?.setAttribute("aria-hidden", "true");
+      if (activeDockPanel === kind) syncPanelDockLayout(null);
+      if (focus) root.querySelector(`[data-studio-graph-action="${kind === "asset" ? "assets" : kind === "build" ? "chat-generate" : "debug-run"}"]`)?.focus({ preventScroll: true });
+    };
+    const openStudioPanel = (kind) => {
+      const panel = panelForKind(kind);
+      if (!panel || (kind !== "asset" && !editable)) return;
+      for (const other of Object.keys(panelDockClass)) if (other !== kind) closeStudioPanel(other);
+      if (kind === "asset") setAssetView("list");
+      panel.classList.add("is-open");
+      panel.setAttribute("aria-hidden", "false");
+      const docked = window.innerWidth > 760;
+      panelDockStates[kind].docked = docked;
+      if (docked) {
+        for (const property of ["left", "top", "right", "width", "height"]) panel.style.removeProperty(property);
+      }
+      syncPanelDockLayout(kind);
+      if (kind === "asset") renderAssetNavigator();
+      if (kind === "build") root.querySelector("[data-studio-build-prompt]")?.focus({ preventScroll: true });
+      if (kind === "debug") root.querySelector("[data-studio-debug-task]")?.focus({ preventScroll: true });
+    };
+    const setInspectorOpen = (open) => {
+      if (!workbench || !inspectorDrawer) return;
+      if (open) openStudioPanel("asset");
+      else closeStudioPanel("asset");
+    };
+    const beginInspectorDrag = () => {
+      if (!workbench || !inspectorDrawer) return;
+      const host = workbench.getBoundingClientRect();
+      const panel = inspectorDrawer.getBoundingClientRect();
+      if (inspectorDrawer.classList.contains("is-right-docked")) {
+        panelDockStates.asset.docked = false;
+        inspectorDrawer.classList.remove("is-right-docked");
+        syncPanelDockLayout(null);
+        inspectorDrawer.style.left = `${Math.max(0, panel.left - host.left)}px`;
+        inspectorDrawer.style.top = `${Math.max(0, panel.top - host.top)}px`;
+        inspectorDrawer.style.right = "auto";
+        inspectorDrawer.style.width = `${panel.width}px`;
+        inspectorDrawer.style.height = `${panel.height}px`;
+      }
+      return { left: panel.left - host.left, top: panel.top - host.top };
+    };
+    const finishInspectorDock = () => {
+      if (!workbench || !inspectorDrawer) return;
+      const host = workbench.getBoundingClientRect();
+      const panel = inspectorDrawer.getBoundingClientRect();
+      if (host.right - panel.right <= 44) {
+        panelDockStates.asset.floatingBounds = {
+          left: panel.left - host.left,
+          top: panel.top - host.top,
+          width: panel.width,
+          height: panel.height
+        };
+        inspectorDrawer.style.left = "";
+        inspectorDrawer.style.top = "";
+        inspectorDrawer.style.right = "";
+        inspectorDrawer.style.width = "";
+        inspectorDrawer.style.height = "";
+        panelDockStates.asset.docked = true;
+        syncPanelDockLayout("asset");
+      }
+    };
+    let inspectorDrag = null;
+    const inspectorHead = inspectorDrawer?.querySelector(".studio-asset-drawer-head");
+    inspectorHead?.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button")) return;
+      const position = beginInspectorDrag();
+      if (!position) return;
+      inspectorDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, ...position };
+      inspectorHead.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    inspectorHead?.addEventListener("pointermove", (event) => {
+      if (!inspectorDrag || inspectorDrag.pointerId !== event.pointerId || !workbench || !inspectorDrawer) return;
+      const host = workbench.getBoundingClientRect();
+      const panel = inspectorDrawer.getBoundingClientRect();
+      const maxLeft = Math.max(0, host.width - panel.width);
+      const maxTop = Math.max(0, host.height - panel.height);
+      inspectorDrawer.style.left = `${Math.min(maxLeft, Math.max(0, inspectorDrag.left + event.clientX - inspectorDrag.x))}px`;
+      inspectorDrawer.style.top = `${Math.min(maxTop, Math.max(0, inspectorDrag.top + event.clientY - inspectorDrag.y))}px`;
+    });
+    const finishInspectorDrag = (event) => {
+      if (!inspectorDrag || inspectorDrag.pointerId !== event.pointerId) return;
+      inspectorDrag = null;
+      finishInspectorDock();
+    };
+    inspectorHead?.addEventListener("pointerup", finishInspectorDrag);
+    inspectorHead?.addEventListener("pointercancel", finishInspectorDrag);
+    inspectorHead?.addEventListener("keydown", (event) => {
+      if (!inspectorDrawer || event.target.closest("button")) return;
+      const delta = event.shiftKey ? 48 : 16;
+      const moves = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
+      if (!moves[event.key]) return;
+      event.preventDefault();
+      const host = workbench.getBoundingClientRect();
+      const panel = inspectorDrawer.getBoundingClientRect();
+      const left = panel.left - host.left + moves[event.key][0];
+      const top = panel.top - host.top + moves[event.key][1];
+      if (inspectorDrawer.classList.contains("is-right-docked")) beginInspectorDrag();
+      inspectorDrawer.style.left = `${Math.max(0, Math.min(host.width - panel.width, left))}px`;
+      inspectorDrawer.style.top = `${Math.max(0, Math.min(host.height - panel.height, top))}px`;
+      inspectorDrawer.style.right = "auto";
+      finishInspectorDock();
+    });
+    const attachPanelDrag = (kind, headSelector) => {
+      const panel = panelForKind(kind);
+      const head = panel?.querySelector(headSelector);
+      if (!panel || !head || !workbench) return;
+      let drag = null;
+      const undock = () => {
+        const dockState = panelDockStates[kind];
+        const host = workbench.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        if (dockState.docked) {
+          dockState.docked = false;
+          panel.classList.remove("is-right-docked");
+          syncPanelDockLayout(null);
+          panel.style.left = `${Math.max(0, bounds.left - host.left)}px`;
+          panel.style.top = `${Math.max(0, bounds.top - host.top)}px`;
+          panel.style.right = "auto";
+          panel.style.width = `${dockState.floatingBounds?.width || bounds.width}px`;
+          panel.style.height = `${dockState.floatingBounds?.height || bounds.height}px`;
+        }
+        return { left: panel.getBoundingClientRect().left - host.left, top: panel.getBoundingClientRect().top - host.top };
+      };
+      const move = (left, top) => {
+        const host = workbench.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        panel.style.left = `${Math.min(Math.max(0, host.width - bounds.width), Math.max(0, left))}px`;
+        panel.style.top = `${Math.min(Math.max(0, host.height - bounds.height), Math.max(0, top))}px`;
+        panel.style.right = "auto";
+      };
+      const finish = (event) => {
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        drag = null;
+        const host = workbench.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        if (host.right - bounds.right <= 44) {
+          panelDockStates[kind].floatingBounds = {
+            left: bounds.left - host.left,
+            top: bounds.top - host.top,
+            width: bounds.width,
+            height: bounds.height
+          };
+          panel.style.left = "";
+          panel.style.top = "";
+          panel.style.right = "";
+          panel.style.width = "";
+          panel.style.height = "";
+          panelDockStates[kind].docked = true;
+          syncPanelDockLayout(kind);
+        }
+      };
+      head.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("button")) return;
+        const position = undock();
+        if (!position) return;
+        drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, ...position };
+        head.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      head.addEventListener("pointermove", (event) => {
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        move(drag.left + event.clientX - drag.x, drag.top + event.clientY - drag.y);
+      });
+      head.addEventListener("pointerup", finish);
+      head.addEventListener("pointercancel", finish);
+      head.addEventListener("keydown", (event) => {
+        if (event.target.closest("button")) return;
+        const delta = event.shiftKey ? 48 : 16;
+        const moves = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
+        if (!moves[event.key]) return;
+        event.preventDefault();
+        const position = undock();
+        if (position) move(position.left + moves[event.key][0], position.top + moves[event.key][1]);
+      });
+    };
+    attachPanelDrag("build", ".team-build-panel-head");
+    attachPanelDrag("debug", ".team-debug-panel-head");
+    inspectorDrawer?.querySelector("#studio-asset-drawer-close")?.addEventListener("click", () => {
+      setAssetView("list");
+      setInspectorOpen(false);
+      root.querySelector('[data-studio-graph-action="assets"]')?.focus({ preventScroll: true });
+    });
+    assetBack?.addEventListener("click", () => { selectedRoleId = ""; selectedFlowId = ""; selectedGlobalKey = ""; setAssetView("list"); renderAssetNavigator(); });
+    tabs.forEach((tab) => tab.addEventListener("click", () => {
+      const selected = tab.getAttribute("aria-controls");
+      tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+      root.querySelectorAll(".studio-asset-list").forEach((panel) => { panel.hidden = panel.id !== selected; });
+      setAssetView("list");
+    }));
+    // Keep the original asset drawer selector unique for baseline drag and docking tests.
+    buildPanel?.querySelector(".team-build-panel-head")?.classList.remove("studio-asset-drawer-head");
+    const defaultBuildPort = (name, type) => ({ dataSchema: { type: "object", properties: { [name]: { type } }, required: [name], additionalProperties: false } });
+    const nextAgentId = () => {
+      const ids = new Set((draft.agents || []).map((agent) => agent.id));
+      let index = ids.size + 1;
+      let id = `agent-${index}`;
+      while (ids.has(id)) id = `agent-${++index}`;
+      return id;
+    };
+    const proposalFromBuildRequest = (request) => {
+      const normalized = String(request || "").trim().toLocaleLowerCase();
+      if (!normalized) return { patches: [], summary: t("Enter a v2 build request or edit the patch JSON directly.", "请输入 v2 构建要求，或直接编辑补丁 JSON。") };
+      const patches = [];
+      if (/(add|create|增加|新增|添加).*(agent|role|角色)/i.test(normalized)) {
+        const id = nextAgentId();
+        patches.push({ op: "agent.create", id, value: { packageRef: "", bindingRef: "", inputPorts: { default: defaultBuildPort("request", "string") }, outputPorts: { DONE: defaultBuildPort("summary", "string") } } });
+        const source = draft.agents?.at(-1);
+        const sourceOutputPort = source?.id && Object.keys(source.outputPorts || {})[0];
+        const sourceOutputContract = sourceOutputPort ? structuredClone(source.outputPorts[sourceOutputPort]) : null;
+        if (source?.id && source.packageRef && source.bindingRef && sourceOutputPort && sourceOutputContract?.dataSchema) {
+          const inputPort = "default";
+          patches[0].value = {
+            packageRef: source.packageRef,
+            bindingRef: source.bindingRef,
+            inputPorts: { [inputPort]: sourceOutputContract },
+            outputPorts: structuredClone(source.outputPorts)
+          };
+          const handoffId = `handoff-${(draft.handoffs || []).length + 1}`;
+          patches.push({ op: "handoff.create", id: handoffId, value: { from: { kind: "agent", agentId: source.id, outputPort: sourceOutputPort }, to: { kind: "agent", agentId: id, inputPort }, map: { data: { $ref: "$.output.data" } }, when: { priority: 0 }, delivery: { deadlineMs: 300000 } } });
+          const route = (draft.orchestration?.routes || []).find((item) => JSON.stringify(item.from) === JSON.stringify({ kind: "agent", agentId: source.id, outputPort: sourceOutputPort }));
+          if (route) patches.push({ op: "route.upsert", index: draft.orchestration.routes.indexOf(route), value: { ...route, handoffIds: [...(route.handoffIds || []), handoffId] } });
+          else patches.push({ op: "route.upsert", from: { kind: "agent", agentId: source.id, outputPort: sourceOutputPort }, value: { from: { kind: "agent", agentId: source.id, outputPort: sourceOutputPort }, mode: "exclusive_priority", onNoMatch: "fail", handoffIds: [handoffId] } });
+        } else {
+          return { patches: [], summary: t("Choose an existing typed Agent first so the new Agent can inherit a trusted package, Binding and port contract.", "请先选择一个已有的类型化 Agent，新 Agent 才能继承可信的角色包、Binding 和端口合同。") };
+        }
+        patches.push({ op: "presentation.nodeLabel", id, value: "New Agent" });
+        return { patches, summary: t(`Proposed a new Agent (${id}) and a typed handoff. Review it before applying.`, `已提议新增 Agent（${id}）及类型化 Handoff，请检查后应用。`) };
+      }
+      if (/(review|审核|复核)/i.test(normalized)) {
+        const agent = (draft.agents || []).find((item) => Object.keys(item.outputPorts || {}).length);
+        const outputPort = agent && Object.keys(agent.outputPorts)[0];
+        if (!agent || !outputPort) return { patches: [], summary: t("Add an output port first so a Review gate has a typed target.", "请先添加输出端口，Review 门需要类型化的目标。") };
+        const ids = new Set((draft.orchestration?.reviews || []).map((item) => item.id));
+        let index = ids.size + 1;
+        let id = `review-${index}`;
+        while (ids.has(id)) id = `review-${++index}`;
+        patches.push({ op: "review.upsert", id, value: { id, at: { kind: "agentOutput", agentId: agent.id, outputPort }, feedbackSchema: { type: "object", properties: { comments: { type: "string" } }, additionalProperties: false }, timeoutMs: 300000, onTimeout: "fail" } });
+        return { patches, summary: t(`Proposed a Review gate at ${agent.id}.${outputPort}.`, `已提议在 ${agent.id}.${outputPort} 增加 Review 门。`) };
+      }
+      return { patches: [], summary: t("No deterministic v2 patch matched this request. Enter explicit patch JSON to continue.", "未匹配到确定的 v2 补丁，请输入明确的补丁 JSON 继续。") };
+    };
+    const buildPrompt = root.querySelector("[data-studio-build-prompt]");
+    const buildPatches = root.querySelector("[data-studio-build-patch-json]");
+    const buildStatus = root.querySelector("[data-studio-build-status]");
+    const buildPreview = root.querySelector("[data-studio-build-preview]");
+    const buildApply = root.querySelector("[data-studio-build-apply]");
+    const buildPatchField = buildPatches?.closest(".assistant-input-label");
+    if (buildPatchField) {
+      const advanced = document.createElement("details");
+      advanced.className = "studio-build-advanced";
+      advanced.innerHTML = `<summary>${t("Advanced editing", "高级编辑")}</summary>`;
+      const label = buildPatchField.querySelector("span");
+      if (label) label.textContent = t("Proposal JSON", "提案 JSON");
+      buildPatchField.replaceWith(advanced);
+      advanced.append(buildPatchField);
+    }
+    const patchOperationLabel = (patch) => ({
+      "agent.create": t("Add Agent", "新增 Agent"),
+      "agent.update": t("Update Agent", "更新 Agent"),
+      "agent.remove": t("Remove Agent", "移除 Agent"),
+      "agent.rename": t("Rename Agent", "重命名 Agent"),
+      "handoff.create": t("Add Handoff", "新增 Handoff"),
+      "handoff.update": t("Update Handoff", "更新 Handoff"),
+      "handoff.remove": t("Remove Handoff", "移除 Handoff"),
+      "route.upsert": t("Update Route", "更新 Route"),
+      "review.upsert": t("Add Review gate", "新增 Review 门")
+    }[patch?.op] || t("Team IR update", "Team IR 更新"));
+    root.querySelector("[data-studio-build-propose]")?.addEventListener("click", () => {
+      const proposal = proposalFromBuildRequest(buildPrompt?.value || "");
+      buildPatches.value = JSON.stringify(proposal.patches, null, 2);
+      buildStatus.textContent = proposal.summary;
+      buildPreview.hidden = false;
+      const rows = proposal.patches.map((patch) => {
+        const target = patch.id || patch.value?.id || (Number.isInteger(patch.index) ? `#${patch.index + 1}` : "");
+        return `<li><strong>${esc(patchOperationLabel(patch))}</strong>${target ? `<code>${esc(target)}</code>` : ""}</li>`;
+      }).join("");
+      buildPreview.innerHTML = `<div class="preview-list"><div><strong>${t("Proposal", "提案")}</strong><span>${proposal.patches.length} ${t("changes", "项变更")}</span></div><div><strong>${t("State", "状态")}</strong><span>${proposal.patches.length ? t("Ready to review", "待检查") : t("Needs explicit JSON", "需要明确 JSON")}</span></div></div>${rows ? `<ul class="studio-build-patch-list">${rows}</ul>` : ""}`;
+      buildApply.disabled = proposal.patches.length === 0;
+    });
+    buildPatches?.addEventListener("input", () => {
+      try {
+        const patches = JSON.parse(buildPatches.value || "[]");
+        buildApply.disabled = !Array.isArray(patches) || patches.length === 0;
+        if (Array.isArray(patches)) buildStatus.textContent = t("Patch JSON is ready to review.", "补丁 JSON 已准备好检查。" );
+      } catch { buildApply.disabled = true; }
+    });
+    buildApply?.addEventListener("click", () => {
+      try {
+        const patches = JSON.parse(buildPatches.value || "[]");
+        if (!Array.isArray(patches) || !patches.length) throw new Error(t("Enter at least one patch.", "请至少输入一个补丁。"));
+        const result = applyTeamIrPatches(draft, patches);
+        if (!result.ok) throw new Error(result.error || t("The v2 patch was rejected.", "v2 补丁未通过校验。"));
+        draft = result.teamIR;
+        dirty = true;
+        buildStatus.textContent = t("Applied to the local draft. Save the workbench to persist it.", "已应用到本地草稿，请保存工作台以持久化。" );
+        buildApply.disabled = true;
+        redraw();
+      } catch (error) { buildStatus.textContent = error.message || t("Patch JSON is invalid.", "补丁 JSON 无效。" ); }
+    });
+    const debugTask = root.querySelector("[data-studio-debug-task]");
+    const debugInput = root.querySelector("[data-studio-debug-input]");
+    const debugStatus = root.querySelector("[data-studio-debug-status]");
+    const debugResult = root.querySelector("[data-studio-debug-result]");
+    root.querySelector("[data-studio-debug-run]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      debugStatus.textContent = t("Running Team IR v2 simulation…", "正在运行 Team IR v2 仿真…");
+      try {
+        const input = JSON.parse(debugInput?.value || "{}");
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error(t("Run input must be a JSON object.", "运行输入必须是 JSON 对象。"));
+        if (dirty && !(await save())) throw new Error(t("Save the current draft before debugging.", "请先保存当前草稿，再开始调试。"));
+        const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, task: debugTask?.value || "" }) });
+        const record = await response.json();
+        if (!response.ok) throw new Error(record.error || t("Unable to run Team IR v2 simulation.", "无法运行 Team IR v2 仿真。"));
+        debugStatus.textContent = `${t("Simulation", "仿真")} ${record.status || "completed"}.`;
+        debugResult.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${esc(record.status || "completed")}</strong><span class="status-chip">${esc(record.simulationId || "")}</span></div><pre>${esc(JSON.stringify({ result: record.result, events: record.events }, null, 2))}</pre><div class="form-actions"><a class="secondary-button" href="/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(record.simulationId || "")}" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(record.simulationId || "")}">${t("Open run details", "查看运行详情")}</a></div></div>`;
+      } catch (error) { debugStatus.textContent = error instanceof SyntaxError ? t("Run input must be valid JSON.", "运行输入必须是有效 JSON。") : (error.message || t("Unable to run simulation.", "仿真失败。")); }
+      finally { if (button.isConnected) button.disabled = false; }
+    });
+    root.querySelector("[data-team-build-close]")?.addEventListener("click", () => closeStudioPanel("build", true));
+    root.querySelector("[data-team-debug-close]")?.addEventListener("click", () => closeStudioPanel("debug", true));
     await ensureStudioGraphBundle();
     const redraw = () => {
-      const authoring = teamIrToGraphAuthoring(draft, layout);
-      graph?.update({ authoring, labels: graphLabels[state.locale], selectedRoleId, selectedFlowKey: selectedFlowId });
+      const authoring = teamIrToGraphAuthoring(draft, layout, graphPresentation);
+      const selectedFlow = (draft.handoffs || []).find((handoff) => handoff.id === selectedFlowId);
+      graph?.update({
+        authoring,
+        labels: graphLabels[state.locale],
+        selectedRoleId,
+        selectedFlowKey: selectedFlow ? flowSelectionKey(selectedFlow) : ""
+      });
+      renderAssetNavigator();
       renderInspector();
     };
     const save = async () => {
-      const buttons = [...root.querySelectorAll("[data-v2-save], [data-v2-save-inspector]")];
-      if (!editable || !dirty) return;
+      const buttons = [...root.querySelectorAll('[data-studio-graph-action="save"], [data-studio-save-workspace]')];
+      if (!editable || !dirty) return true;
       buttons.forEach((button) => { button.disabled = true; });
       try {
         const response = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamIR: draft, expectedSemanticDigest }) });
         const payload = await response.json();
         if (!response.ok || !payload.saved) throw new Error(payload.error || t("Team IR draft was not saved.", "Team IR 草稿未保存。"));
         expectedSemanticDigest = payload.semanticDigest || expectedSemanticDigest; dirty = false;
-        root.querySelector("[data-v2-status]").textContent = payload.releaseReady === false ? t("Draft saved; release diagnostics remain.", "草稿已保存；仍有发布诊断。") : t("Saved and release-ready.", "已保存，可发布。");
+        root.querySelector("[data-v2-status]").textContent = payload.releaseReady === false ? t("Draft saved; release diagnostics remain.", "草稿已保存；仍有发布诊断。") : t("Saved and release-ready.", "草稿已保存，可发布。");
         renderDiagnostics(payload.diagnostics || []);
-      } catch (error) { root.querySelector("[data-v2-status]").textContent = error.message || t("Unable to save.", "保存失败。"); }
+        return true;
+      } catch (error) { root.querySelector("[data-v2-status]").textContent = error.message || t("Unable to save.", "保存失败。"); return false; }
       finally { buttons.filter((button) => button.isConnected).forEach((button) => { button.disabled = false; }); }
     };
     const renderDiagnostics = (diagnostics) => {
       const list = root.querySelector("[data-v2-diagnostics-list]");
-      list.innerHTML = (diagnostics || []).map((item) => `<li><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> ${esc(item.message || "")}</li>`).join("") || `<li>${t("No diagnostics.", "暂无诊断。")}</li>`;
+      const panel = root.querySelector("[data-v2-diagnostics]");
+      const items = Array.isArray(diagnostics) ? diagnostics : [];
+      list.innerHTML = items.map((item) => `<li><strong>${esc(item.severity || "error")} ${esc(item.code || "IR_DIAGNOSTIC")}</strong> <code>${esc(item.pointer || "/")}</code> ${esc(item.message || "")}</li>`).join("");
+      // Keep the baseline workbench quiet until validation produces a real finding.
+      panel.hidden = items.length === 0 && !root.querySelector("[data-v2-status]")?.textContent;
     };
     const selectFlow = (flowKey) => {
       const flow = (draft.handoffs || []).find((handoff) => {
         const source = handoff.from?.kind === "run" ? START_ID : handoff.from?.agentId;
         const target = handoff.to?.kind === "result" ? END_ID : handoff.to?.agentId;
         const eventType = handoff.from?.kind === "agent" ? handoff.from.outputPort : "START";
-        return flowKey === handoff.id || flowKey === `${source}:${eventType}:${target}`;
+        const sourceKey = source === START_ID ? "start" : source;
+        const targetKey = target === END_ID ? "end" : target;
+        const baseKey = `${sourceKey}:${eventType}:${targetKey}`;
+        const portKey = handoff.from?.kind === "agent" || handoff.to?.kind === "agent"
+          ? `${baseKey}:${handoff.from?.outputPort || ""}:${handoff.to?.inputPort || ""}`
+          : baseKey;
+        return flowKey === handoff.id || flowKey === portKey || flowKey === baseKey;
       });
       if (!flow) return;
       selectedFlowId = flow.id; selectedRoleId = "";
-      root.querySelector("#studio-asset-drawer")?.classList.add("is-open");
-      root.querySelector("#studio-asset-drawer")?.setAttribute("aria-hidden", "false");
+      selectedGlobalKey = "";
+      setInspectorOpen(true);
+      setAssetView("properties");
       renderInspector();
     };
     stage.addEventListener("click", (event) => {
@@ -2048,25 +2961,153 @@ async function renderStudioTeamIrWorkbench(teamVersionId, pageRequest = state.ac
       if (flowId && (draft.handoffs || []).some((handoff) => handoff.id === flowId)) selectFlow(flowId);
     });
     graph = mountStudioGraph(stage, {
-      mode: "product-edit", authoring: teamIrToGraphAuthoring(draft, layout), readOnly: !editable,
+      mode: "product-edit", authoring: teamIrToGraphAuthoring(draft, layout, graphPresentation), readOnly: !editable,
       initialLayoutMode: "flow", defaultAutoLayout: true, defaultAutoLayoutRequestId: 1,
-      labels: graphLabels[state.locale], onSelectRole: (id) => { selectedRoleId = id; selectedFlowId = ""; root.querySelector("#studio-asset-drawer")?.classList.add("is-open"); root.querySelector("#studio-asset-drawer")?.setAttribute("aria-hidden", "false"); renderInspector(); },
+      commandFormHost: root.querySelector("#studio-command-form-host"),
+      commandFormLabels: {
+        roleDialogTitle: t("Add Agent", "新增 Agent"), edgeDialogTitle: t("Add Handoff", "新增 Handoff"),
+        editRoleDialogTitle: t("Edit Agent", "编辑 Agent"), editEdgeDialogTitle: t("Edit Handoff", "编辑 Handoff"),
+        repositoryRole: t("Role repository", "角色仓库"), customRole: t("Custom Agent", "自定义 Agent"),
+        rolePackage: t("Role package", "角色包"), rolePackageSource: t("Use an installed trusted role package.", "使用已安装的可信角色包。"),
+        roleId: t("Agent id", "Agent ID"), title: t("Display name", "显示名称"), bindingKind: t("Binding", "Binding"),
+        modelRef: t("Model", "模型"), profileId: t("Execution profile", "执行配置"),
+        existingProfile: t("Reuse existing execution config", "复用已有执行配置"), createProfile: t("Create execution config", "创建执行配置"),
+        newProfileId: t("Generated profile id", "生成的配置 ID"), newProfileToolRef: t("Tool", "工具"),
+        newProfileTimeoutMs: t("Timeout ms", "超时毫秒"), newProfileMaxOutputBytes: t("Max output bytes", "最大输出字节数"),
+        sourceRole: t("Source Agent", "来源 Agent"), targetRole: t("Target Agent", "目标 Agent"),
+        outputPort: t("Output port", "输出端口"), inputPort: t("Input port", "输入端口"),
+        flowLabel: t("Display name", "显示名称"), eventType: t("Output port", "输出端口"),
+        runtimeOnlyErrorFlow: t("Runtime error flow", "运行时错误流转"), participatesInJoin: t("Join source", "Join 来源"),
+        cancel: t("Cancel", "取消"), create: t("Create", "创建"), save: t("Save", "保存"),
+        noRepositoryRoles: t("No trusted role packages", "暂无可信角色包"), noModels: t("No model catalog entries available.", "暂无模型目录项"),
+        noProfiles: t("No execution profiles available.", "暂无执行配置"), noTools: t("No tools available.", "暂无工具"),
+        outputTarget: t("Output target", "输出目标")
+      },
+      onCommandFormStateChange: ({ open }) => {
+        const host = root.querySelector("#studio-command-form-host");
+        if (open) {
+          openStudioPanel("asset");
+          setAssetView("properties");
+          if (host) host.hidden = false;
+        } else if (host) {
+          host.hidden = true;
+        }
+      },
+      labels: graphLabels[state.locale], onOpenTeamAssets: () => { setInspectorOpen(true); setAssetView("list"); renderAssetNavigator(); },
+      onSelectRole: (id) => { selectedRoleId = id; selectedFlowId = ""; selectedGlobalKey = ""; setInspectorOpen(true); setAssetView("properties"); renderInspector(); },
       onSelectFlow: selectFlow,
-      onApplyCanvas: async (canvas) => { for (const node of (canvas?.nodes || [])) if (node?.id) { writeGraphLayout(team.teamId || draft.team?.id || teamVersionId, teamVersionId, node.id, { x: node.x, y: node.y, width: node.width, height: node.height }); } },
-      onApplyCommand: async (result) => { const next = graphAuthoringToTeamIr(draft, result.authoring); draft = next; dirty = true; redraw(); },
+      onApplyCanvas: async (canvas) => {
+        for (const node of (canvas?.nodes || [])) if (node?.id) {
+          const value = { x: node.x, y: node.y, width: node.width, height: node.height };
+          layout[node.id] = value;
+          writeGraphLayout(team.teamId || draft.team?.id || teamVersionId, teamVersionId, node.id, value);
+        }
+      },
+      onApplyCommand: async (result) => {
+        const applied = applyGraphAuthoringPatches(draft, result.authoring);
+        if (!applied.ok) {
+          const message = applied.error === "TEAM_IR_AGENT_CONTRACT_REQUIRED"
+            ? t("Add the Agent from the typed Team IR editor so its package, Binding and ports are declared.", "请在 Team IR 类型化编辑器中添加 Agent，并先声明角色包、Binding 和端口合同。")
+            : applied.error;
+          showToast(message || t("Graph edit was rejected.", "图谱编辑被拒绝。"));
+          return;
+        }
+        const layoutTeamId = team.teamId || draft.team?.id || teamVersionId;
+        for (const roleId of applied.layoutChanges?.removed || []) {
+          delete layout[roleId];
+          removeGraphLayout(layoutTeamId, teamVersionId, roleId);
+        }
+        for (const [oldId, newId] of applied.layoutChanges?.renamed || []) {
+          const stored = layout[oldId];
+          if (stored) {
+            layout[newId] = stored;
+            writeGraphLayout(layoutTeamId, teamVersionId, newId, stored);
+          }
+          delete layout[oldId];
+          removeGraphLayout(layoutTeamId, teamVersionId, oldId);
+        }
+        draft = applied.teamIR;
+        dirty = true;
+        if (result.selectedRoleId) selectedRoleId = result.selectedRoleId;
+        if (result.selectedFlowId) {
+          selectedFlowId = result.selectedFlowId;
+        } else if (result.selectedFlowKey) {
+          const selected = (draft.handoffs || []).find((handoff) => handoff.id === result.selectedFlowKey || flowSelectionKey(handoff) === result.selectedFlowKey);
+          selectedFlowId = selected?.id || result.selectedFlowKey;
+        }
+        selectedGlobalKey = "";
+        setAssetView("properties");
+        redraw();
+      },
+      onChatGenerate: () => openStudioPanel("build"),
+      onOpenDebug: () => openStudioPanel("debug"),
+      onFocusDebugInput: () => { openStudioPanel("debug"); return true; },
       onSaveWorkbench: save, canSaveWorkbench: editable, onToggleFullscreen: async () => { if (document.fullscreenElement) await document.exitFullscreen(); else await stage.requestFullscreen(); },
       onStatusChange: (message) => { if (status) status.textContent = message; }, onToast: (tone, message) => showToast(message)
     });
-    root.querySelector("[data-v2-save]")?.addEventListener("click", save);
-    root.querySelector("[data-v2-save-inspector]")?.addEventListener("click", save);
-    root.querySelector("[data-v2-open-inspector]")?.addEventListener("click", () => { const drawer = root.querySelector("#studio-asset-drawer"); drawer?.classList.add("is-open"); drawer?.setAttribute("aria-hidden", "false"); });
-    root.querySelector("[data-v2-close-inspector]")?.addEventListener("click", () => { const drawer = root.querySelector("#studio-asset-drawer"); drawer?.classList.remove("is-open"); drawer?.setAttribute("aria-hidden", "true"); });
-    renderDiagnostics([]); renderInspector();
+    root.querySelector('[data-studio-save-workspace]')?.addEventListener("click", save);
+    renderDiagnostics([]); renderAssetNavigator(); renderInspector();
     return;
 }
 
 async function renderStudioTeamIr(teamVersionId, pageRequest = state.activeRequest) {
+  if (new URLSearchParams(location.search).get("view") === "long-form") {
+    return renderStudioTeamIrLongForm(teamVersionId, pageRequest);
+  }
   return renderStudioTeamIrWorkbench(teamVersionId, pageRequest);
+}
+
+async function renderStudioDebugHistory(teamVersionId, pageRequest = state.activeRequest) {
+  const root = $("#studio-view");
+  const english = state.locale === "en";
+  const t = (en, zh) => english ? en : zh;
+  root.innerHTML = `<div class="project-loading">${t("Loading debug history…", "正在读取调试历史…")}</div>`;
+  try {
+    const [teamResponse, simulationsResponse] = await Promise.all([
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations`)
+    ]);
+    const [team, payload] = await Promise.all([teamResponse.json(), simulationsResponse.json()]);
+    if (!teamResponse.ok) throw new Error(team.error || t("Unable to load TeamVersion.", "无法读取团队版本。"));
+    if (!simulationsResponse.ok) throw new Error(payload.error || t("Unable to load debug history.", "无法读取调试历史。"));
+    if (pageRequest && !isCurrentRequest(pageRequest)) return;
+    const simulations = Array.isArray(payload.simulations) ? payload.simulations : [];
+    const rows = simulations.map((simulation) => {
+      const simulationId = String(simulation.simulationId || "");
+      const input = simulation.input && typeof simulation.input === "object"
+        ? JSON.stringify(simulation.input)
+        : String(simulation.input || t("Team IR simulation", "Team IR 仿真"));
+      const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulationId)}`;
+      return `<a class="material-row studio-simulation-row" href="${detail}" data-route="${detail}"><div><strong>${esc(input)}</strong><div class="task-record-meta"><span class="status-chip ${esc(String(simulation.status || "unknown"))}">${esc(String(simulation.status || "unknown"))}</span><span>${esc(String(simulation.updatedAt || simulation.createdAt || ""))}</span><span>${esc(simulationId)}</span></div></div><span aria-hidden="true">→</span></a>`;
+    }).join("");
+    const status = team.teamVersionStatus || "draft";
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${t("Team repository", "团队仓库")}</a><div class="eyebrow">${esc(team.name || team.teamName || teamVersionId)} · v${esc(team.teamVersionNumber || 1)}</div><h1>${t("Debug history", "调试历史")}</h1><p>${t("Review isolated Team IR v2 simulation evidence.", "查看隔离保存的 Team IR v2 仿真证据。")}</p></div><span class="status-chip ${esc(status)}">${esc(status)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${t("Debug runs", "调试记录")}</span><h2>${t("History", "历史")}</h2></div><span class="count-badge">${simulations.length}</span></div><div class="material-list studio-simulation-list">${rows || `<p class="empty-note">${t("No simulations for this TeamVersion yet.", "此团队版本还没有仿真记录。")}</p>`}</div></section>`;
+  } catch (error) {
+    if (isAbort(error)) return;
+    root.innerHTML = `<div class="run-error">${esc(error.message || t("Unable to load debug history.", "无法读取调试历史。"))}</div>`;
+  }
+}
+
+async function renderStudioDebugDetail(teamVersionId, simulationId, pageRequest = state.activeRequest) {
+  const root = $("#studio-view");
+  const english = state.locale === "en";
+  const t = (en, zh) => english ? en : zh;
+  root.innerHTML = `<div class="project-loading">${t("Loading simulation evidence…", "正在读取仿真证据…")}</div>`;
+  try {
+    const [teamResponse, simulationResponse] = await Promise.all([
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}`),
+      pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/ir/simulations/${encodeURIComponent(simulationId)}`)
+    ]);
+    const [team, simulation] = await Promise.all([teamResponse.json(), simulationResponse.json()]);
+    if (!teamResponse.ok) throw new Error(team.error || t("Unable to load TeamVersion.", "无法读取团队版本。"));
+    if (!simulationResponse.ok) throw new Error(simulation.error || t("Unable to load simulation evidence.", "无法读取仿真证据。"));
+    if (pageRequest && !isCurrentRequest(pageRequest)) return;
+    const evidence = JSON.stringify(simulation, null, 2);
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio/teams/${encodeURIComponent(teamVersionId)}/run" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/run">← ${t("Debug history", "调试历史")}</a><div class="eyebrow">${esc(team.name || team.teamName || teamVersionId)}</div><h1>${t("Debug run", "调试运行")}</h1><p>${esc(String(simulation.updatedAt || simulation.createdAt || ""))}</p></div><span class="status-chip ${esc(String(simulation.status || "unknown"))}">${esc(String(simulation.status || "unknown"))}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${t("Simulation evidence", "仿真证据")}</span><h2>${esc(simulation.simulationId || simulationId)}</h2></div></div><pre>${esc(evidence)}</pre></section>`;
+  } catch (error) {
+    if (isAbort(error)) return;
+    root.innerHTML = `<div class="run-error">${esc(error.message || t("Unable to load simulation evidence.", "无法读取仿真证据。"))}</div>`;
+  }
 }
 
 async function renderStudioTeamIrLongForm(teamVersionId, pageRequest = state.activeRequest) {
@@ -4162,6 +5203,13 @@ function syncRoute() {
     });
     return;
   }
+  const studioDesignMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/design$/);
+  if (studioDesignMatch) {
+    const canonicalIrPath = `/studio/teams/${encodeURIComponent(studioDesignMatch[1])}/ir${location.search}${location.hash}`;
+    history.replaceState({}, "", canonicalIrPath);
+    router.syncCurrentPath();
+    return syncRoute();
+  }
   const studioInfoMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/info$/);
   if (studioInfoMatch) {
     setView("studio");
@@ -4172,6 +5220,18 @@ function syncRoute() {
   if (studioIrMatch) {
     setView("studio");
     renderPageFrame($("#studio-view"), "D", renderStudioTeamIr(studioIrMatch[1], pageRequest));
+    return;
+  }
+  const studioDebugDetailMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/run\/([a-z0-9-]+)$/);
+  if (studioDebugDetailMatch) {
+    setView("studio");
+    renderPageFrame($("#studio-view"), "D", renderStudioDebugDetail(studioDebugDetailMatch[1], studioDebugDetailMatch[2], pageRequest));
+    return;
+  }
+  const studioDebugHistoryMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/run$/);
+  if (studioDebugHistoryMatch) {
+    setView("studio");
+    renderPageFrame($("#studio-view"), "D", renderStudioDebugHistory(studioDebugHistoryMatch[1], pageRequest));
     return;
   }
   const studioReleaseMatch = path.match(/^\/studio\/teams\/([a-z0-9-]+)\/release$/);
@@ -4199,7 +5259,7 @@ function syncRoute() {
   else if (path === "/platform" || path === "/platform/models") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderPlatformConfig(pageRequest)); }
   else if (path === "/history") { state.view = "history"; frameExistingPage($("#history-view"), "A"); void renderHistory(pageRequest); }
   setView(state.view);
-  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioInfoMatch && !studioIrMatch && !studioReleaseMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
+  if (!["/projects", "/teams", "/studio", "/studio/roles", "/platform", "/platform/models", "/platform/role-sources", "/history"].includes(path) && !detailMatch && !projectRunMatch && !projectTeamsMatch && !studioDesignMatch && !studioInfoMatch && !studioIrMatch && !studioDebugDetailMatch && !studioDebugHistoryMatch && !studioReleaseMatch && path !== "/studio/new" && path !== "/projects/new") { history.replaceState({}, "", "/projects"); router.syncCurrentPath(); syncRoute(); }
 }
 function renderRoleOutputs(outputMap, roleOrder, emptyLabel) {
   if (!outputMap || typeof outputMap !== "object") return `<p>${esc(emptyLabel)}</p>`;

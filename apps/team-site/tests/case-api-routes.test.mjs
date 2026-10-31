@@ -25,11 +25,39 @@ test("case catalog returns presentation metadata and graph reads the native v2 f
   const catalog = await invoke("GET", "/api/v1/cases");
   assert.equal(catalog.handled, true);
   assert.deepEqual(catalog.sent[0].payload.cases[0].roles, [{ id: "lead", label: "Lead", description: "Coordinates" }]);
+  assert.deepEqual(catalog.sent[0].payload.cases[0].flowLabels["lead:worker"], { "zh-CN": "start", en: "start" });
   assert.equal("flows" in catalog.sent[0].payload.cases[0], false);
   assert.equal("joins" in catalog.sent[0].payload.cases[0], false);
 
   const graph = await invoke("GET", "/api/v1/cases/classic/ir");
   assert.deepEqual(graph.sent[0].payload, { teamIR: { schemaVersion: 2, team: { id: "classic" } } });
+});
+
+test("case catalog keeps the documented terminal branch mapping for split v2 handoffs", async () => {
+  const catalog = await invoke("GET", "/api/v1/cases", undefined, {
+    cases: [{
+      id: "split",
+      title: "Split",
+      roles: [
+        { id: "lead", label: "Lead", events: ["branch-a", "branch-b"] },
+        { id: "worker", label: "Worker" }
+      ],
+      detail: { roles: { lead: "Coordinates" } },
+      flows: [["lead", "worker", "START"]]
+    }],
+    teamIrFixtures: {
+      split: {
+        schemaVersion: 2,
+        team: { id: "split" },
+        agents: [{ id: "lead" }, { id: "worker" }],
+        handoffs: [
+          { id: "handoff-a", from: { kind: "agent", agentId: "lead", outputPort: "branch-a" }, to: { kind: "agent", agentId: "worker", inputPort: "in" } },
+          { id: "handoff-b", from: { kind: "agent", agentId: "lead", outputPort: "branch-b" }, to: { kind: "agent", agentId: "worker", inputPort: "in" } }
+        ]
+      }
+    }
+  });
+  assert.deepEqual(catalog.sent[0].payload.cases[0].flowLabels["handoff-b"], { "zh-CN": "任务分发", en: "Task dispatch" });
 });
 
 test("classic team actions use v2 provisioning and reject the old demo-run endpoint", async () => {

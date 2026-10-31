@@ -106,7 +106,7 @@ const classicTeamIrFixtures = Object.fromEntries(await Promise.all(cases.map(asy
   JSON.parse(await readFile(resolve(root, "../../examples/team-ir-v2", `classic-${id}.json`), "utf8"))
 ])));
 const host = process.env.HOST || "127.0.0.1";
-const port = Number.parseInt(process.env.PORT || "4173", 10);
+const port = Number.parseInt(process.env.PORT || "4263", 10);
 const discoveryWorkdir = process.env.OGS_VIS_WORKDIR || join(process.env.LOCALAPPDATA || process.cwd(), "OGSystem", "visualizer-workspace");
 const siteProjectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const teamIrReviewBasicIdentityProvider = process.env.OGS_TEAM_IR_REVIEW_USERNAME && process.env.OGS_TEAM_IR_REVIEW_PASSWORD
@@ -579,7 +579,7 @@ const server = createServer(async (request, response) => {
     const isStudioRoute = url.pathname === "/studio"
       || url.pathname === "/studio/new"
       || url.pathname === "/studio/roles"
-      || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|ir|release)\/?$/.test(url.pathname);
+      || /^\/studio\/teams\/[a-z0-9-]+\/(?:design|info|ir|release|run(?:\/[a-z0-9-]+)?)\/?$/.test(url.pathname);
     const isPlatformRoute = ["/platform", "/platform/models", "/platform/role-sources"].includes(url.pathname);
     if (url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", response);
