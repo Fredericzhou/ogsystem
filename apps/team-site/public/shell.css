@@ -356,7 +356,7 @@ body { min-width: 0; }
 .repository-actions { flex-wrap: wrap; }
 .repository-actions .import-project-button { align-items: center; cursor: pointer; display: inline-flex; justify-content: center; }
 .repository-actions .import-project-button input { display: none; }
-.studio-design-page .page-frame[data-template="B"] .page-frame-body { overflow: hidden; }
+.studio-design-page .page-frame[data-template="B"] .page-frame-body:not([data-layout-scroll]) { overflow: hidden; }
 .studio-design-page .studio-design-workbench-host { height: 100%; min-height: 0; }
 .studio-design-page .studio-design-workbench-host .studio-design-workbench { height: 100%; max-width: none; min-height: 0; }
 .page-frame[data-template="E"] .page-frame-body { display: grid; gap: 24px; grid-template-columns: minmax(0, 880px) minmax(240px, 1fr); overflow: auto; }

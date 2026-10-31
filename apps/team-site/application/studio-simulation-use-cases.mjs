@@ -308,14 +308,16 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       }
       return simulation;
     },
-    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", baselineScenarioId, expectedTeamCoreDigest, awaitCompletion = true } = {}) {
+    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", mode = "dry-run", baselineScenarioId, expectedTeamCoreDigest, awaitCompletion = true } = {}) {
       const input = String(prompt || "").trim();
       if (!input || input.length > 4000) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: enter a task between 1 and 4,000 characters.");
+      if (!["dry-run", "sandbox"].includes(mode)) throw new Error("STUDIO_SIMULATION_MODE_INVALID: choose dry-run or sandbox.");
       const startedAt = now();
       const prepared = await withLockedTeamVersion(teamVersionId, async () => {
         const snapshot = await loadTeamVersion(teamId, teamVersionId);
         if (expectedTeamCoreDigest && snapshot.teamCoreDigest !== expectedTeamCoreDigest) throw new Error("TEAM_VERSION_DIGEST_CHANGED: TeamVersion changed before baseline execution.");
         const baseline = baselineScenarioId ? findBaseline(snapshot.bundle, String(baselineScenarioId)) : null;
+        const executionMode = baseline ? "sandbox" : mode;
         if (!baseline && input.length > 1200) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: non-baseline simulations are limited to 1,200 characters.");
         if (baseline && input !== baseline.prompt) throw new Error("TEAM_RELEASE_BASELINE_INPUT_MISMATCH: baseline runs use the saved prompt.");
         if (!["draft", "released"].includes(snapshot.team.teamVersionStatus)) {
@@ -336,7 +338,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           teamId,
           teamCoreDigest: snapshot.teamCoreDigest,
           teamDigestVersion: snapshot.teamDigestVersion,
-          mode: baseline ? "sandbox" : "dry-run",
+          mode: executionMode,
           baselineScenarioId: baseline?.scenarioId || null,
           baselineRevision: baseline?.revision || null,
           baselineScenarioDigest: baseline?.scenarioDigest || null,
@@ -345,9 +347,9 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           createdAt: startedAt,
           startedAt
         });
-        return { ...snapshot, baseline, simulationId, created, runtimeEdgeIdsByTransition };
+        return { ...snapshot, baseline, executionMode, simulationId, created, runtimeEdgeIdsByTransition };
       });
-      const { team, bundle, teamCoreDigest, teamDigestVersion, baseline, simulationId, created, runtimeEdgeIdsByTransition } = prepared;
+      const { team, bundle, teamCoreDigest, teamDigestVersion, baseline, executionMode, simulationId, created, runtimeEdgeIdsByTransition } = prepared;
       const runInput = baseline ? baseline.prompt : input;
       const materialPrompt = baseline?.materials?.length
         ? `${runInput}\n\nBaseline materials:\n${baseline.materials.map((item) => `--- ${item.name} ---\n${item.content}`).join("\n\n")}`
@@ -359,7 +361,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const result = await simulationRunner.simulate(team, {
           prompt: materialPrompt, locale, simulationId, teamPackageBundle: bundle, teamCoreDigest,
           runtimeEdgeIdsByTransition,
-          mode: baseline ? "sandbox" : "dry-run",
+          mode: executionMode,
           materials: baseline?.materials || [],
           onRuntimeEvent: async (runtimeEvent) => {
             const event = runtimeEvent.type === "audit"
@@ -448,7 +450,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const state = redactStudioSimulationValue({
           status,
           runtimeStatus: rawStatus,
-          mode: baseline ? "sandbox" : "dry-run",
+          mode: executionMode,
           baselineScenarioId: baseline?.scenarioId || null,
           baselineRevision: baseline?.revision || null,
           finalOutputsByRoleId: result?.finalOutputsByRoleId || {},

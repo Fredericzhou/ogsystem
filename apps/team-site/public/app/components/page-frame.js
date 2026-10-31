@@ -8,7 +8,9 @@ export function pageFrame({ template, title, subtitle = "", back = "", status = 
 export function frameExistingPage(root, template, aside = "", tabs = "") {
   if (!root) return;
   if (root.querySelector(":scope > .page-frame")) {
-    if (root.matches(".studio-design-page")) root.querySelector(":scope > .page-frame .page-frame-body")?.removeAttribute("data-layout-scroll");
+    if (root.matches(".studio-design-page") && root.querySelector(".studio-graph-stage, .studio-graph-canvas")) {
+      root.querySelector(":scope > .page-frame .page-frame-body")?.removeAttribute("data-layout-scroll");
+    }
     return;
   }
   const heading = root.querySelector(":scope > .page-heading");
@@ -19,7 +21,8 @@ export function frameExistingPage(root, template, aside = "", tabs = "") {
   frame.dataset.fit = "";
   const body = document.createElement("div");
   body.className = "page-frame-body";
-  if (!root.matches(".studio-design-page") && !root.querySelector(".studio-design-page")) body.dataset.layoutScroll = "";
+  if ((!root.matches(".studio-design-page") && !root.querySelector(".studio-design-page"))
+    || !root.querySelector(".studio-graph-stage, .studio-graph-canvas")) body.dataset.layoutScroll = "";
   heading.classList.add("page-frame-header");
   const existingTabs = root.querySelector(":scope > .studio-workspace-nav");
   const tabMarkup = tabs || existingTabs?.outerHTML || "";
