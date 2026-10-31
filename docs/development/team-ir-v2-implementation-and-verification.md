@@ -1344,8 +1344,72 @@ docs/development/team-ir-v2-implementation-and-verification.md。
 ### 2026-10-31：原版图谱入口回归与当前工作树最终验证
 
 - `/studio/teams/:id/ir` 保持原版图谱工作台作为交互外壳。X6 边点击在浏览器事件未冒泡时由工作台根节点按 Handoff ID 做同一选择回调兜底；语义仍只通过 Team IR typed patch 修改。移动端打开属性抽屉后，保存动作同时出现在抽屉底部，避免顶部工具栏被抽屉覆盖。
-- 旧案例详情页的只读结构图不再裁剪长图内容；旧布局和视觉验收断言已改为验证当前图谱工作台与真实 SVG 画布，不恢复已废弃的 `#team-ir-editor` 长表单。
+- 旧案例详情页的只读结构图不再裁剪长图内容；正式 `/ir` 的视觉验收断言验证当前图谱工作台与真实 X6 画布，完整旧长表单合同保留在显式 `?view=long-form` 回归路径，不把它当作正式入口。
 - 适配层回归：`node --test apps/team-site/tests/team-ir-graph-adapter.test.mjs` 3/3；Studio Chromium `node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；布局验收 `node --test apps/team-site/tests/layout-acceptance.test.mjs` 1/1；默认创建视觉验收 `node --test apps/team-site/tests/visual-acceptance.test.mjs` 1/1。
 - 当前工作树最终确定性回归：`pnpm build` 通过；Team Site `pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap` 376 项，372 通过、0 失败、4 项明确 opt-in 跳过；全仓 `pnpm test` 980 项，979 通过、0 失败、1 项 Windows 专项跳过；`git diff --check` 通过。
 - 服务已按当前构建启动：Team Site `http://127.0.0.1:4173`，Visualizer `http://127.0.0.1:3337`，本机 OpenCode `http://127.0.0.1:4096` 保持运行且未被清理。当前活动模型配置仍固定为 `gpt-6-luna`。
 - 本记录只闭合原版 Studio 外壳接入和确定性回归；A1 人工体验门、完整 i18n、复杂拓扑作者引导和最终人工产品复核仍未完成，不把 Studio 或产品整体标为通过。
+
+### 2026-10-31：TeamIrPatchV1 与旧写入路径清零回归
+
+本轮按原版工作台恢复计划补齐适配器和图谱命令边界，Team IR v2 仍是唯一写入语义：
+
+- `apps/team-site/public/app/team-ir-graph-adapter.js` 覆盖计划列出的 `agent.*`、Port、Artifact、Binding/A2A、Handoff、Route、Join、Loop、Review、Run/Result、执行策略、Presentation 和 `document.replace` typed patch；字段白名单、批次原子回滚、未知字段保留、Agent/Port/Handoff 引用清理和 Agent 重命名引用迁移均由适配器完成。
+- 图谱投影使用 `Object.keys(inputPorts)` 查找 Join 目标端口，并保留 `presentation` 中文显示名、packageRef、bindingRef 以及真实 source outputPort/target inputPort。Result Handoff 不带 Agent delivery；Agent 删除/改名同步清理或迁移独立 localStorage 布局键。
+- `apps/team-site/public/app/views/app.js` 的原版图谱命令已由 typed patch 批次应用，活动运行代码不再调用 `graphAuthoringToTeamIr()`；没有真实端口时阻断连线，不猜默认首端口。布局仍使用 `ogs.team-ir-v2.layout.v1:<teamId>:<teamVersionId>:<nodeId>`，不进入 semantic digest。
+- 新增适配器与静态 guard 回归：`node --test apps/team-site/tests/team-ir-graph-adapter.test.mjs apps/team-site/tests/team-ir-studio-static-guards.test.mjs`，11/11；guard 覆盖活动 Team Site 旧 Team 写入端点、旧 `gpt-5.6` 默认和运行时旧 authoring 写入调用，并逐个检查当前 8 个 v2 fixture 的 Agent/Handoff/真实端口投影。`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs`，1/1；`node --check` 与 `git diff --check` 通过。
+
+本轮关闭适配器缺口和确定性静态门；阶段 1/2 的自由图谱作者能力仍是窄合同，完整 Join/Loop/Review/Artifact/A2A 可视编辑、复杂拓扑作者引导、完整 i18n、真实 Sandbox UAT 和 5 位非技术用户人工验收仍未完成，不把本轮结果标为 Studio 整体发布通过。
+
+### 2026-10-31：X6 多端口连线与表单命令闭环
+
+- `src/visualizer/studio-client/studio-graph-render.ts` 将 Team IR Agent 的声明输入/输出端口投影为可连接的真实 X6 port；`studio-graph.ts` 从 `getSourcePortId()` / `getTargetPortId()` 读取端口，拒绝 `connect-*` 通用桩和未知编码，不再把 synthetic flow port 当作 Team IR 端口。
+- `StudioAuthoringFlow`、GraphViewModel、canvas adapter、typed command 和 command form 贯通 `outputPort` / `inputPort`；新增/编辑边表单在声明端口的 v2 Agent 上提供端口选择器，非法或缺失端口返回 `invalid-edge-ports`。旧 Mermaid authoring 没有端口合同时保持既有兼容行为。
+- 定向证据：`node --test tests/visualizer-studio-authoring.test.mjs` 36/36；`node --test apps/team-site/tests/team-ir-graph-adapter.test.mjs apps/team-site/tests/team-ir-studio-static-guards.test.mjs` 11/11；`node --test apps/team-site/tests/team-ir-studio-browser.test.mjs` 1/1；`pnpm build`、`node --check apps/team-site/public/app/views/app.js`、`node --check apps/team-site/public/app/team-ir-graph-adapter.js` 和 `git diff --check` 通过。
+- 当前全仓确定性回归：`pnpm test` 982 项，981 通过、0 失败、1 项 Windows 专项跳过，退出码 0。一次早期定向运行因新 helper 未从兼容 barrel 导出而失败，已补导出并完成上述 36/36 复验。
+
+本轮关闭 Team IR v2 图谱多端口选择和表单命令的自动化合同；A1 人工体验门、完整 i18n、复杂拓扑作者引导、真实 Sandbox/Provider UAT 和 5 位非技术用户人工验收仍未完成。
+
+### 2026-10-31：Team Site 全量串行套件最终计数
+
+- Team Site 全量串行回归已完成：`pnpm --dir apps/team-site test --test-concurrency=1 --test-reporter=tap`，`384` 项测试，`380` 通过、`0` 失败、`4` 项明确 opt-in 跳过，退出码为 0。
+- 本次结果与前一轮定向适配器、静态 guard、浏览器和全仓回归证据一致；未改变已记录的 Studio 外壳完成边界。
+
+### 2026-10-31：按 origin/main 可视化基线恢复 Team IR 工作台结构
+
+- 基线核对以 `git show origin/main:apps/team-site/public/app/views/app.js`、`git show origin/main:apps/team-site/public/styles.css` 和从 `origin/main` `184cce2` 临时工作树启动的 `http://127.0.0.1:4176/studio/teams/new-team-50e31c05/design` 为准；该基线页返回 200 并核对到 `studio-design-workbench`、X6 画布和三 Tab。当前 v2 服务保留同一路径兼容入口，并在客户端 canonical replace 到正式 `/ir`；`origin/main` 与 `feat/studio-project-isolation` 指向 `184cce2`，本地 `main` 仍是旧的 `f7bff4a`。`f7bff4a` 只作为 Team IR v2 语义设计基线。
+- 正式 `/studio/teams/:id/ir` 现在复用基线的 `studio-design-workbench`、X6 工具栏和 `studio-asset-drawer` 结构，团队配置恢复角色/流转/全局三 Tab、340px 右停靠、标题栏拖动、键盘移动和靠右自动回停靠；Agent、真实端口、Handoff、Run/Result、执行策略、Join、Loop、Review、A2A Binding 进入 v2 Inspector/合同入口。图谱头部不再额外渲染“属性/保存”按钮，保存仍走基线工具栏和抽屉动作。
+- `apps/team-site/tests/team-ir-studio-browser.test.mjs` 从 `0224071^` 恢复为完整覆盖（当前 1142 行），没有因旧控件移除而删除 Advanced JSON、Schema/Artifact、诊断、CAS、Loop/Review、Artifact Simulation 或 digest 断言；旧长表单验证显式使用 `?view=long-form`，新增正式 `/ir` 基线和停靠断言，并补充案例角色徽标、边标签和资产标题的基线断言。
+- 定向证据：`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-browser.test.mjs`，1/1；`pnpm --dir apps/team-site exec node --test tests/team-ir-studio-static-guards.test.mjs tests/team-ir-graph-adapter.test.mjs`，12/12；`pnpm run typecheck:studio-client`，退出码 0；`node --check apps/team-site/public/app/views/app.js`、`git diff --check` 通过。4175 服务已重启并以 Playwright 1440×960/1280×900 实测 X6 画布、停靠、浮动回停靠、三 Tab 和 page error。
+
+该记录只证明原版外壳结构与当前 v2 语义入口已对齐；完整 Join/Loop/Review/Artifact/A2A 深度可视编辑、复杂拓扑作者引导、完整 i18n、真实 Sandbox/Provider UAT 和 5 位非技术用户人工验收仍未完成，不将 Studio 整体标为已完成。
+
+### 2026-10-31：审核缺口与配置控件适配
+
+- 全局资产列表新增 Route 入口；Route 列表按来源展示，Inspector 支持 JSON 应用和删除，写入仍通过 `route.upsert` / `route.remove` typed patch。
+- 图谱命令结果保留原有视觉 `selectedFlowKey`，同时返回稳定 `selectedFlowId`；正式 Team IR 工作台优先使用 Handoff ID 打开 Inspector，避免多端口 Handoff 的 key 形状不一致。
+- Binding Inspector 按 Binding `kind` 选择 `a2a.binding.update` 或通用 `binding.update`，模型/工具 Binding 不再错误走 A2A 专用校验；Binding ID 含冒号时由 Inspector 正确解析。
+- 配置抽屉控件样式重新限定在 Inspector：恢复字段纵向布局、原生 select、checkbox/radio 尺寸和操作按钮排布，避免工作台通用输入规则覆盖原版配置卡片。
+- 本次仅完成 `node --check`、`git diff --check`、Studio client typecheck 和 4175 服务手工页面核对；没有重跑完整 Team Site、Chromium 或全仓测试，不能把本记录写成完整回归通过。
+- 当前仍未验证且不得标为完成：Visualizer 浏览器验收；Visualizer Team package 导入的路径穿越、符号链接、权限安全测试；`src/visualizer` 本轮 TypeScript 改动的逐行审阅；5 位非技术用户人工验收；真实 Sandbox/Provider UAT。全仓 `pnpm test` 或 Team Site 定向通过不覆盖这些独立验收门。
+
+### 2026-10-31：v2 服务端口与 v1 隔离
+
+- Team IR v2 Team Site 当前合同为 `4263`，v2 Visualizer CLI 当前合同为 `3637`，仍可分别通过 `PORT` / `--port` 显式覆盖。早期验证曾临时使用 `4273/3437`，不再是当前默认值。
+- Tailnet 启动脚本同步使用 v2 Team Site `4264`、Visualizer 上游 `4267`，与 v1 的 `4173/4174/4177/3337` 完全隔离。打包 `ogs vis` runtime 命令仍保留 v1 `3337` 合同；v2 使用 `src/visualizer/cli.ts`。
+- 本轮实际重启并核验 v2 Team Site `http://127.0.0.1:4263`（`/` 返回 302、`/studio` 返回 200）和 Visualizer `http://127.0.0.1:3637`（`/healthz` 返回 200）；既有 v1 `4173` 进程保持运行，三端口可并行监听。
+
+### 2026-10-31：端口化 Handoff 选择与兼容展示修复
+
+- Team IR 工作台将稳定 Handoff ID 与 X6 的端口化 `studioFlowKey` 分开保存：资产抽屉继续保存 Handoff ID，重绘、画布点击、命令新增/编辑、撤销/重做统一使用 `source:event:target:outputPort:inputPort` 形式的 key；Start/End 无端口时保持三段旧 key。
+- Handoff 列表读取 `presentation.edges[id]` 的本地化对象 `.label`，不再把对象渲染为 `[object Object]`；`/studio/teams/:id/design` 现在只 canonical replace 到正式 `/ir` 入口。
+- 图谱诊断和 Semantic IR 元数据匹配同时接受端口化 key 与旧三段 key，以兼容现有运行时编译结果；新增命令、图谱元数据、浏览器 `/design` 跳转和条件分支展示覆盖。
+- 当前仍未验证且不得标为完成：Visualizer 浏览器验收；Visualizer Team package 导入的路径穿越、符号链接、权限安全测试；`src/visualizer` 本轮 TypeScript 改动的逐行审阅；8 个模板逐场景 Chromium 视觉验收；5 位非技术用户人工验收；真实 Sandbox/Provider UAT。`localizedFlowLabels` 仍是临时只读展示映射，不是 v2 语义来源。
+
+### 2026-11-01：图谱连接状态、布局滚动槽与 Visualizer 浏览器回归
+
+- 图谱连接完成后统一退出关系模式；命令失败、取消、`pointerup`/`pointercancel` 和延迟 X6 连接事件都会清理 pending edge，避免连接状态或临时边残留。边标签布局重试窗口延长到 15 次，给窄屏路由和尺寸稳定留出时间。
+- Visualizer 页面在桌面工作区统一保留稳定滚动槽；切换 Project/Design/Run/Release 或打开运行侧栏时，stage 和 console tabs 的宽度保持一致。该修复保留构建工作区的内部滚动边界，不改变图谱画布身份。
+- 浏览器回归：`pnpm run test:visualizer-browser` 的 Studio 图谱套件 17 项通过、2 项明确 opt-in 跳过；Build Layout 套件 4/4 通过，桌面和移动快照已按当前紧凑导航、移动端分组工具栏和停靠 Inspector 布局更新。
+- 同轮确定性回归：`pnpm run build` 通过；`pnpm test` 989 项中 988 通过、0 失败、1 项 Windows 专项跳过；Team Site 串行套件 393 项中 389 通过、0 失败、4 项明确 opt-in 跳过；`git diff --check` 通过。
+- 本记录只闭合本轮图谱连接状态和 Visualizer 布局回归；A1 人工体验门、完整 i18n、复杂拓扑作者引导、真实 Sandbox/Provider UAT、Visualizer package 导入安全专项和 5 位非技术用户人工验收仍未完成。

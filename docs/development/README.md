@@ -8,6 +8,7 @@ are labeled as such; current behavior is described by source code, tests, and ac
 - [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): current productization work and acceptance criteria for the accepted orchestration semantics.
 - [Team IR v2 Handoff 设计方案](team-ir-handoff-v2-design.md)：下一代 Team IR、端口与映射规则、编译器/Runtime 边界、Studio 体验、实施阶段和验收矩阵。
 - [Team IR v2 Studio 作者体验方案](team-ir-v2-studio-authoring-proposal.md)：严格基于 Team IR v2 合同的引导式可视化配置、必需/可选语义、校验发布流程及未来 AI 草稿生成边界。
+- [Team IR v2 Studio 原版图谱工作台恢复与语义替换方案](team-ir-v2-studio-original-workbench-restoration-plan.md)：按原版图谱外壳恢复 Studio，逐项替换 Team IR v2 语义，并定义 Run/Result 边界扩展、typed patch、实施阶段和验收门。
 - [Team IR v2 落地与验证台账](team-ir-v2-implementation-and-verification.md)：记录 v2 阶段状态、代码与测试证据、场景验收和发布完成门槛；不替代设计规范。
 - [面向社会分工协作的设计理念](../usage/team-ir-social-collaboration.md)：以社会分工实践解释 Team IR 的建模理念、典型场景、价值和适用边界。
 - [Team IR 协作边界 ADR](adr-team-ir-collaboration-boundaries.md)：待批准的设计提案，记录显式数据流、条件分支、Join/Loop 语义和不提供机密保证等架构取舍。

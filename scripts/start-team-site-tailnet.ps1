@@ -31,8 +31,8 @@ try {
   New-Item -ItemType Directory -Path $frameworkWorkdir -Force | Out-Null
 
   foreach ($service in @(
-    @{ Name = "team-site"; Port = 4174; Marker = "server.mjs" },
-    @{ Name = "framework"; Port = 4177; Marker = "src/visualizer/cli.ts" }
+    @{ Name = "team-site"; Port = 4264; Marker = "server.mjs" },
+    @{ Name = "framework"; Port = 4267; Marker = "src/visualizer/cli.ts" }
   )) {
     $pidPath = Join-Path $stateDir "$($service.Name).pid.json"
     if (Test-Path $pidPath) {
@@ -51,11 +51,11 @@ try {
   }
 
   $env:HOST = "0.0.0.0"
-  $env:PORT = "4174"
-  $env:OGS_VIS_URL = "http://127.0.0.1:4177"
+  $env:PORT = "4264"
+  $env:OGS_VIS_URL = "http://127.0.0.1:4267"
   $env:OGS_VIS_WORKDIR = $frameworkWorkdir
   $site = Start-Process -FilePath $node -ArgumentList @("server.mjs") -WorkingDirectory (Join-Path $repoRoot "apps/team-site") -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "team-site.log") -RedirectStandardError (Join-Path $logDir "team-site.err.log")
-  $framework = Start-Process -FilePath $node -ArgumentList @("node_modules/tsx/dist/cli.mjs", "src/visualizer/cli.ts", "--ogs-dir", $frameworkWorkdir, "--host", "127.0.0.1", "--port", "4177") -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "framework.log") -RedirectStandardError (Join-Path $logDir "framework.err.log")
+  $framework = Start-Process -FilePath $node -ArgumentList @("node_modules/tsx/dist/cli.mjs", "src/visualizer/cli.ts", "--ogs-dir", $frameworkWorkdir, "--host", "127.0.0.1", "--port", "4267") -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "framework.log") -RedirectStandardError (Join-Path $logDir "framework.err.log")
 
   @{ Id = $site.Id; StartedAt = $site.StartTime.ToUniversalTime().ToString("o") } | ConvertTo-Json | Set-Content -Encoding ascii (Join-Path $stateDir "team-site.pid.json")
   @{ Id = $framework.Id; StartedAt = $framework.StartTime.ToUniversalTime().ToString("o") } | ConvertTo-Json | Set-Content -Encoding ascii (Join-Path $stateDir "framework.pid.json")
@@ -65,8 +65,8 @@ try {
   $probeDeadline = (Get-Date).AddSeconds(10)
   do {
     Start-Sleep -Seconds 1
-    $siteProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 3 "http://127.0.0.1:4174/"
-    $frameworkProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 3 "http://127.0.0.1:4177/"
+    $siteProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 3 "http://127.0.0.1:4264/"
+    $frameworkProbe = & curl.exe -sS -o NUL -w "%{http_code}" --max-time 3 "http://127.0.0.1:4267/"
   } while (($siteProbe -ne "200" -or $frameworkProbe -ne "200") -and (Get-Date) -lt $probeDeadline)
   if ($siteProbe -ne "200" -or $frameworkProbe -ne "200") {
     throw "A service did not return HTTP 200. Inspect logs in $logDir."
@@ -74,16 +74,16 @@ try {
 
   $serveLog = Join-Path $logDir "tailscale-serve.log"
   $serveErrorLog = Join-Path $logDir "tailscale-serve.err.log"
-  $serveProcess = Start-Process -FilePath $tailscale -ArgumentList @("serve", "--bg", "http://127.0.0.1:4174") -WindowStyle Hidden -PassThru -RedirectStandardOutput $serveLog -RedirectStandardError $serveErrorLog
+  $serveProcess = Start-Process -FilePath $tailscale -ArgumentList @("serve", "--bg", "http://127.0.0.1:4264") -WindowStyle Hidden -PassThru -RedirectStandardOutput $serveLog -RedirectStandardError $serveErrorLog
   $serveCompleted = $serveProcess.WaitForExit(10000)
   if (-not $serveCompleted) { Stop-Process -Id $serveProcess.Id -Force -ErrorAction SilentlyContinue }
   $serveStatus = (& $tailscale serve status 2>$null | Out-String)
-  $serveConfigured = ($serveCompleted -and $serveProcess.ExitCode -eq 0) -or ($serveStatus -match "proxy http://127\.0\.0\.1:4174")
-  Write-Output "Team site: http://${tailnetIp}:4174/"
+  $serveConfigured = ($serveCompleted -and $serveProcess.ExitCode -eq 0) -or ($serveStatus -match "proxy http://127\.0\.0\.1:4264")
+  Write-Output "Team site: http://${tailnetIp}:4264/"
   if ($serveConfigured) {
     Write-Output "Tailnet product entry: https://${tailnetHost}/"
   } else {
-    Write-Warning "Team Site is running locally at http://127.0.0.1:4174/. Enable Tailscale Serve in the admin console to publish https://${tailnetHost}/."
+    Write-Warning "Team Site is running locally at http://127.0.0.1:4264/. Enable Tailscale Serve in the admin console to publish https://${tailnetHost}/."
     if (Test-Path $serveErrorLog) { Get-Content $serveErrorLog }
     if (Test-Path $serveLog) { Get-Content $serveLog }
   }

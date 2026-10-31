@@ -66,10 +66,15 @@ Team Site 的当前入口：
 
 | 区域 | 本机地址 | Tailnet 访问 |
 | --- | --- | --- |
-| 项目工作台 | `http://127.0.0.1:4173/projects` | `http://100.66.215.15:4174/projects` |
+| 项目工作台 | `http://127.0.0.1:4263/projects` | `http://100.66.215.15:4264/projects` |
 | OGS Studio 团队工程 | `/studio`（团队列表）、`/studio/new`（创建 Team IR v2 草稿）、`/studio/teams/:id/info`、`/studio/teams/:id/ir`、`/studio/teams/:id/run`、`/studio/teams/:id/release` | 同一 Team Site Origin |
 | OGS Projects 与项目运行历史 | `/projects`、`/projects/:id`、`/history` | 同一 Team Site Origin |
 | 平台配置 | `/platform` | 同一 Team Site Origin |
+
+v1 与 v2 的默认服务端口完全隔离：v1 Team Site/Tailnet/Visualizer upstream/`ogs vis` 使用
+`4173/4174/4177/3337`；当前 v2 Team Site/Tailnet/Visualizer upstream/Visualizer CLI 使用
+`4263/4264/4267/3637`。v2 的 Visualizer CLI 通过 `pnpm run run:visualizer` 或
+`src/visualizer/cli.ts` 启动；打包的 `ogs vis` 命令仍属于 v1/runtime 合同。
 
 主导航按“业务协作、团队工程、共享平台”分组。普通模式默认展示 Projects；切换到专业模式可访问 OGS Studio、项目运行历史和 Platform。Studio 设计与 Simulation 历史为独立页面，不嵌入协作项目的窄面板。静态结构检查不验证外部网络或 Harness 凭据；隔离运行会由服务端再次检查。
 
@@ -79,10 +84,10 @@ Team Site 的当前入口：
 pnpm build
 pnpm --dir apps/team-site start
 # 另开终端
-pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3337
+pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3637
 ```
 
-本地 Team Site 默认监听 `4173`，可通过 `PORT` 覆盖。运行证据诊断由独立 Visualizer 服务提供，默认监听本机 `3337`，不是另一个面向用户的产品 Origin。Windows 上从仓库根目录执行
+本地 v2 Team Site 默认监听 `4263`，可通过 `PORT` 覆盖。运行证据诊断由独立 v2 Visualizer 服务提供，默认监听本机 `3637`，不是另一个面向用户的产品 Origin。Windows 上从仓库根目录执行
 `pnpm start:team-site:tailnet` 可启动 Team Site 并提供 Tailnet 入口；独立 Visualizer 仍需按本手册可视化章节的 `ogs vis` 命令单独启动。浏览器中的产品页面始终从 Team Site 地址打开。
 
 ## Capability Snapshot
@@ -1234,7 +1239,7 @@ ogs visualizer --ogs-dir .
 ```
 
 当前稳定版本为 `1.0.0`（以 `ogs --version` 查看本机实际安装版本）。`ogs vis` 是给操作人员独立启动的
-运行证据诊断 CLI 服务，默认本机地址为 [`http://127.0.0.1:3337`](http://127.0.0.1:3337)；它不属于 Team Site
+历史 v1/runtime 的运行证据诊断 CLI 服务默认本机地址为 [`http://127.0.0.1:3337`](http://127.0.0.1:3337)；它不属于 Team Site
 产品导航。网站用户在同一个 Team Site Shell 中通过 `/studio/teams/:id/ir` 编辑 Team IR v2，在 `/studio/teams/:teamVersionId/run` 查看 Studio Simulation 历史，并从 Projects Task Run 页面查看业务运行证据。两类记录共享只读诊断呈现能力，但 API 与数据所有权分离。
 手机或其他设备访问 CLI 可视化时，请按下面的远程 HTTPS 配置启动，并使用证书匹配的主机名/IP。
 
@@ -1258,7 +1263,7 @@ Then run:
 ogs vis --ogs-dir . --host 0.0.0.0 --port 3337 --tls-cert ./certs/visualizer.crt --tls-key ./certs/visualizer.key
 ```
 
-Open `https://<server-hostname-or-ip>:3337`. Use a certificate trusted by the client device; a self-signed certificate is suitable only for local testing after explicitly trusting it. Keep the private key readable only by the service account. `/healthz` and `/readyz` remain unauthenticated for probes; all other paths, including `/metrics`, require Basic Auth. Do not expose the listener directly to the public internet; restrict network access to the intended operators. Loopback mode remains HTTP and uses the local OS identity.
+Open `https://<server-hostname-or-ip>:3337`. This section documents the v1/runtime `ogs vis` contract; the current v2 Visualizer CLI uses `3637` by default. Use a certificate trusted by the client device; a self-signed certificate is suitable only for local testing after explicitly trusting it. Keep the private key readable only by the service account. `/healthz` and `/readyz` remain unauthenticated for probes; all other paths, including `/metrics`, require Basic Auth. Do not expose the listener directly to the public internet; restrict network access to the intended operators. Loopback mode remains HTTP and uses the local OS identity.
 
 The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
 

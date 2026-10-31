@@ -128,10 +128,22 @@ ogs visualizer --ogs-dir .
 ```
 
 The product site, including Projects, team design, platform settings, and run diagnostics, uses one
-Team Site origin. Local development opens the team showcase at [`http://127.0.0.1:4173/`](http://127.0.0.1:4173/); Projects is at [`http://127.0.0.1:4173/projects`](http://127.0.0.1:4173/projects).
+Team Site origin. Local v2 development opens the team showcase at [`http://127.0.0.1:4263/`](http://127.0.0.1:4263/); Projects is at [`http://127.0.0.1:4263/projects`](http://127.0.0.1:4263/projects).
 For Tailnet access, use the startup command in [`apps/team-site/README.md`](apps/team-site/README.md); the site is
-exposed on `http://100.66.215.15:4174/projects`. The Visualizer service on port `4177` is a server-side upstream,
-not a separate product URL. The standalone `ogs vis` command remains available for operator diagnostics.
+exposed on `http://100.66.215.15:4264/projects`. The v2 Visualizer service on port `4267` is a server-side upstream,
+not a separate product URL. The standalone `ogs vis` command remains available for v1/runtime operator diagnostics.
+
+v1 and v2 service ports are intentionally independent:
+
+| Service | v1 | v2 |
+| --- | ---: | ---: |
+| Team Site | `4173` | `4263` |
+| Tailnet Team Site | `4174` | `4264` |
+| Visualizer upstream | `4177` | `4267` |
+| Standalone `ogs vis` (runtime) | `3337` | n/a |
+| Visualizer CLI (`src/visualizer/cli.ts`) | n/a | `3637` |
+
+The v2 Visualizer CLI is `pnpm run run:visualizer` (`src/visualizer/cli.ts`). The packaged `ogs vis` runtime command keeps the v1 `3337` contract.
 
 Stable lifecycle command anchors:
 
