@@ -3,6 +3,10 @@ import test from "node:test";
 import { handleTeamRoutes } from "../api/team-routes.mjs";
 import { errorStatus } from "../api/error-status.mjs";
 
+test("missing TeamVersion design sources return not found instead of leaking filesystem errors", () => {
+  assert.equal(errorStatus(new Error("TEAM_DESIGN_UNAVAILABLE: this TeamVersion has no system.mmd design source.")), 404);
+});
+
 function routeHarness(useCases) {
   const sent = [];
   const calls = [];

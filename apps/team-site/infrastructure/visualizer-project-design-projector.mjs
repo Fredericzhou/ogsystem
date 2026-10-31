@@ -21,7 +21,15 @@ export function createVisualizerProjectDesignProjector({
   return Object.freeze({
     async project(project, locale = "zh-CN") {
       const systemPath = join(project.workdir, "system.mmd");
-      const systemSource = await read(systemPath, "utf8");
+      let systemSource;
+      try {
+        systemSource = await read(systemPath, "utf8");
+      } catch (error) {
+        if (error?.code === "ENOENT") {
+          throw new Error("TEAM_DESIGN_UNAVAILABLE: this TeamVersion has no system.mmd design source.");
+        }
+        throw error;
+      }
       parseSystem(systemSource);
       const design = await readJson(join(project.workdir, "system.design.json"), read);
       const modelSelection = await readJson(join(project.workdir, ".ogs", "model-selection.json"), read);

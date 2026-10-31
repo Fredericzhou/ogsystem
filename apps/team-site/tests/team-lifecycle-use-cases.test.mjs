@@ -178,10 +178,12 @@ test("classic Team creation reuses a released version and provisions templates t
   assert.equal(await reuse.useCases.createClassicTeamProject({ caseId: "sample" }), existing);
   assert.equal(reuse.created.length, 0);
 
-  const template = setup();
+  const materialized = [];
+  const template = setup({ caseMaterializer: { async materialize(...args) { materialized.push(args); } } });
   const created = await template.useCases.createClassicTeamProject({ caseId: "sample", asTemplate: true });
   assert.equal(created.source, "classic-template");
   assert.equal(template.calls.some(([name]) => name === "save"), false);
+  assert.deepEqual(materialized, [["sample", created.workdir, "zh-CN"]]);
 });
 
 test("built-in template provisioning tolerates a name already owned by an existing TeamVersion", async () => {

@@ -162,9 +162,9 @@ test("Visualizer design projector ignores a saved authoring draft from another t
 });
 
 test("Visualizer design projector propagates source and Mermaid parse failures", async () => {
-  const readFailure = new Error("source missing");
+  const readFailure = Object.assign(new Error("source missing"), { code: "ENOENT" });
   const readProjector = createVisualizerProjectDesignProjector({ read: async () => { throw readFailure; } });
-  await assert.rejects(readProjector.project({ workdir: "/workspace/project" }), (error) => error === readFailure);
+  await assert.rejects(readProjector.project({ workdir: "/workspace/project" }), /TEAM_DESIGN_UNAVAILABLE: this TeamVersion has no system\.mmd design source\./);
 
   const parseFailure = new Error("invalid Mermaid");
   const parseProjector = createVisualizerProjectDesignProjector({

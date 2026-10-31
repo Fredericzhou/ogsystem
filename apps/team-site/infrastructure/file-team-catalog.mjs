@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertLatestProjectOverview } from "../domain/contracts.mjs";
@@ -65,6 +65,10 @@ async function readJson(path, fallback) {
   try { return JSON.parse(await readFile(path, "utf8")); } catch { return fallback; }
 }
 
+async function hasSystemSource(workdir) {
+  try { return (await stat(join(workdir, "system.mmd"))).isFile(); } catch { return false; }
+}
+
 export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects")) } = {}) {
   const root = resolve(projectsRoot);
 
@@ -85,6 +89,8 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
       if (teamVersionIds.has(teamVersionId)) throw new Error("TEAM_VERSION_ID_INVALID: duplicate TeamVersion identity in catalog.");
       teamVersionIds.add(teamVersionId);
       if (team.teamProjectId || (!includeCollaboration && team.projectType === "collaboration")) continue;
+      const requiresSystemSource = ["classic", "classic-template", "version-edit", "team-ir-v2"].includes(String(team.source || ""));
+      if (requiresSystemSource && !await hasSystemSource(join(root, entry.name))) continue;
       if (!includeUnreleased && (team.teamVersionStatus !== "released" || team.archivedAt)) continue;
       const runIndex = await readJson(join(root, entry.name, ".ogs", "runs-index.json"), { runs: [] });
       const runs = Array.isArray(runIndex?.runs) ? runIndex.runs : [];

@@ -87,7 +87,12 @@ export function createTeamLifecycleUseCases({
         parentTeamVersionId: existingClassic.teamVersionId
       } : {})
     });
-    if (asTemplate) return project;
+    if (asTemplate) {
+      if (typeof caseMaterializer?.materialize === "function") {
+        await caseMaterializer.materialize(caseId, project.workdir, language);
+      }
+      return project;
+    }
     if (typeof releaseEvidence?.prepareBuiltInTeamVersion !== "function") {
       throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: built-in TeamVersions require current Sandbox evidence.");
     }
