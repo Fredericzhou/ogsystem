@@ -124,6 +124,9 @@ export type StudioGraphBridgeOptions = {
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasSnapshot | null;
   viewModel?: GraphViewModel | null;
+  /** Runtime fields to overlay while keeping the editable Studio projection. */
+  runtimeViewModel?: GraphViewModel | null;
+  runtimeProgress?: readonly StudioRuntimeProgressEvent[];
   presentation?: BuildGraphViewModelArgs["presentation"];
   validation?: { ok?: unknown; diagnostics?: unknown } | null;
   selectedRoleId?: string;
@@ -226,6 +229,30 @@ const STUDIO_GRAPH_EDGE_CONNECTOR = {
     radius: 10
   }
 } as const;
+
+function runtimeEdgeKey(edge: Pick<GraphViewModel, "edges">["edges"][number]): string {
+  return `${edge.source}:${edge.eventType}:${edge.target}`;
+}
+
+function overlayRuntimeViewModel(base: GraphViewModel, runtime: GraphViewModel | null | undefined): GraphViewModel {
+  if (!runtime) {
+    return base;
+  }
+  const runtimeNodesById = new Map(runtime.nodes.map((node) => [node.id, node]));
+  const runtimeEdgesById = new Map(runtime.edges.map((edge) => [edge.id, edge]));
+  const runtimeEdgesByKey = new Map(runtime.edges.map((edge) => [runtimeEdgeKey(edge), edge]));
+  return {
+    ...base,
+    nodes: base.nodes.map((node) => {
+      const runtimeNode = runtimeNodesById.get(node.id);
+      return runtimeNode?.runtime ? { ...node, runtime: runtimeNode.runtime } : node;
+    }),
+    edges: base.edges.map((edge) => {
+      const runtimeEdge = runtimeEdgesById.get(edge.id) ?? runtimeEdgesByKey.get(runtimeEdgeKey(edge));
+      return runtimeEdge?.runtime ? { ...edge, runtime: runtimeEdge.runtime } : edge;
+    })
+  };
+}
 
 type StudioGraphLayoutMode = StudioLayoutMode;
 
@@ -514,6 +541,9 @@ export class StudioGraphIsland {
     const updateGeneration = ++this.updateGeneration;
     this.resetHistoryWhenProjectChanges(options);
     this.options = options;
+    if (Object.prototype.hasOwnProperty.call(options, "runtimeProgress")) {
+      this.runtimeProgressEvents = [...(options.runtimeProgress ?? [])];
+    }
     this.hideContextMenu();
     this.attachCommandFormHost();
     this.handleHistoryEvent(options.historyEvent);
@@ -529,6 +559,7 @@ export class StudioGraphIsland {
         : null,
       mode: options.readOnly ? "run" : "edit"
     });
+    viewModel = overlayRuntimeViewModel(viewModel, options.runtimeViewModel);
     for (const node of viewModel.nodes) {
       if (node.kind === "specialRole" && node.specialRole === "start") {
         node.label = this.label("boundaryEntry");

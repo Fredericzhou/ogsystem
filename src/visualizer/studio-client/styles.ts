@@ -233,6 +233,13 @@ export function injectStudioGraphStyles(): void {
       opacity: 0;
       transition: opacity 120ms ease, fill 120ms ease, stroke 120ms ease;
     }
+    .studio-graph-canvas .x6-node.is-selection-active [data-studio-connect-port] {
+      fill: #f0fdfa;
+      opacity: 1;
+      r: 4.5px;
+      stroke: #0f766e;
+      stroke-width: 1.8px;
+    }
     .studio-graph-canvas .x6-node.is-relationship-source [data-studio-connect-port],
     .studio-graph-canvas .x6-node.is-connection-target [data-studio-connect-port],
     .is-relationship-connecting .x6-node:hover [data-studio-connect-port] {
@@ -864,6 +871,10 @@ export function injectStudioGraphStyles(): void {
     :root[data-visualizer-theme="dark"] .studio-command-dialog::-webkit-scrollbar-thumb { border-color: #111c2e; background: #475569; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover rect,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-node:hover path:first-of-type { stroke: #84b9a0; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .x6-node.is-selection-active [data-studio-connect-port] {
+      fill: #0f2f38;
+      stroke: #67e8f9;
+    }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-selection-active .connection,
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-pending-preview .connection { stroke: #1b7662 !important; }
     :root[data-visualizer-theme="light"] .studio-graph-canvas .x6-edge.is-runtime-waiting .connection { stroke: #a86c12 !important; }

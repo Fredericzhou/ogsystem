@@ -1027,6 +1027,40 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
     }
 
+    function studioRuntimeProgressFromSnapshot(snapshot) {
+      const entries = Array.isArray(snapshot?.runtimeEvents) ? snapshot.runtimeEvents : [];
+      const runtimeTypes = new Set([
+        "flow.activated",
+        "role.started",
+        "role_waiting",
+        "role_retry_scheduled",
+        "human_review_requested",
+        "human_review_approved",
+        "human_review_rework_requested",
+        "role.completed",
+        "role.skipped",
+        "role.failed",
+        "simulation.completed",
+        "simulation.failed",
+        "run_stopped",
+        "run_terminated"
+      ]);
+      return entries.map((entry) => {
+        const record = entry?.record && typeof entry.record === "object" ? entry.record : entry;
+        if (!record || typeof record !== "object") return null;
+        const nestedEvent = record.event && typeof record.event === "object" ? record.event : null;
+        const event = nestedEvent ? { ...record, ...nestedEvent } : { ...record };
+        const type = String(event.type || record.type || "").trim();
+        if (!type || !runtimeTypes.has(type)) return null;
+        if (type === "flow.activated" && (!event.fromRoleId || !event.toRoleId)) return null;
+        return {
+          ...event,
+          type,
+          eventType: String(event.eventType || record.eventType || (typeof record.event === "string" ? record.event : "") || "") || undefined
+        };
+      }).filter(Boolean);
+    }
+
     function studioAuthoringFlowDisplayKey(flow) {
       const target = String(flow?.toRoleId || "") === "output" ? "__system_end__" : String(flow?.toRoleId || "");
       return String(flow?.fromRoleId || "") + ":" + String(flow?.eventType || "") + ":" + target;
@@ -5036,6 +5070,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       mountStudioGraphIsland();
     }
 
+    function refreshMountedStudioRuntimeProgress() {
+      if (!shouldRefreshMountedStudioRuntime()) {
+        return;
+      }
+      const root = document.getElementById("studio-graph-root");
+      const setRuntimeProgress = window.OGSVisualizerClient?.setStudioX6RuntimeProgress;
+      if (root && typeof setRuntimeProgress === "function") {
+        setRuntimeProgress(root, studioRuntimeProgressFromSnapshot(state.studioDebugSnapshot));
+      }
+    }
+
     function updateStudioBridgeSelectionChrome() {
       const selectedRoleId = state.studioBridgeSelectedRoleId || "";
       const selectedFlowKey = state.studioBridgeSelectedFlowKey || "";
@@ -5286,9 +5331,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const displayBridge = resolveStudioBridgeForDisplay();
+      const runtimeViewModel = state.buildMode === "debug"
+        && state.selectedRunId
+        && state.selectedRunId === state.studioBridgeLastDryRunId
+        ? state.graph?.graph || null
+        : null;
+      const runtimeProgress = state.buildMode === "debug"
+        && state.selectedRunId
+        && state.selectedRunId === state.studioBridgeLastDryRunId
+        ? studioRuntimeProgressFromSnapshot(state.studioDebugSnapshot)
+        : [];
       mount(root, {
         authoring: displayBridge?.authoring || null,
         canvas: resolveStudioGraphCanvas(),
+        runtimeViewModel,
+        runtimeProgress,
         validation: displayBridge?.validation || state.workbench?.validation || null,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
@@ -8091,6 +8148,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           runId,
           detail,
           events: eventsPayload.events || [],
+          runtimeEvents: eventsPayload?.events || [],
           graph,
           reviews,
           logsLoaded: false,
@@ -8100,7 +8158,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         };
       } catch {
         if (requestId === state.studioDebugSnapshotRequestId) {
-          state.studioDebugSnapshot = { runId, loadingError: true, events: [], graph: null, reviews: null, detail: null };
+          state.studioDebugSnapshot = { runId, loadingError: true, events: [], runtimeEvents: [], graph: null, reviews: null, detail: null };
         }
       }
       if (requestId === state.studioDebugSnapshotRequestId) {
@@ -8675,6 +8733,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             return;
           }
           state.eventCursor = payload.cursor + 1;
+          const runtimeSnapshot = state.studioDebugSnapshot?.runId === runId ? state.studioDebugSnapshot : null;
+          if (runtimeSnapshot) {
+            runtimeSnapshot.runtimeEvents = appendIndexedStreamEntry(
+              runtimeSnapshot.runtimeEvents || [],
+              createStreamCursorIndex(runtimeSnapshot.runtimeEvents || []),
+              payload,
+              1000
+            );
+          }
           if (recordMatchesTimelineFilters(payload.record)) {
             state.events = appendIndexedStreamEntry(state.events, state.eventCursorIndex, payload, 250);
             if (state.studioDebugSnapshot?.runId === runId) {
@@ -8686,10 +8753,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               );
             }
             renderTimeline(state.events, { append: true });
-            refreshMountedStudioRuntime();
             if (state.studioDebugSnapshot?.runId === runId && isDesignConsoleTab()) {
               renderStudioSelectionDialog();
             }
+          }
+          if (runtimeSnapshot && isDesignConsoleTab()) {
+            refreshMountedStudioRuntimeProgress();
           }
           if (state.conversationMode) {
             void loadConversation(runId, { incremental: true }).catch(() => undefined);

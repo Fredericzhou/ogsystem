@@ -230,10 +230,9 @@ export function deriveStudioRuntimeNodeState(args: {
 
 export function deriveStudioRuntimeEdgeState(args: {
   edge: GraphViewModelEdge;
-  readOnly?: boolean;
 }): StudioRuntimeEdgeState {
   return {
-    active: Boolean(args.readOnly && args.edge.runtime?.recentlyActivated === true),
+    active: Boolean(args.edge.runtime?.recentlyActivated === true),
     waiting: false,
     completed: false,
     error: Boolean(args.edge.runtimeOnlyErrorFlow || args.edge.diagnostic?.severity === "error"),
@@ -270,7 +269,7 @@ export function deriveStudioRuntimeVisualState(args: {
   }
 
   for (const edge of args.viewModel.edges) {
-    const state = deriveStudioRuntimeEdgeState({ edge, readOnly: args.readOnly });
+    const state = deriveStudioRuntimeEdgeState({ edge });
     edgeStates.set(edge.id, state);
     if (state.active) {
       activeEdgeCount += 1;
