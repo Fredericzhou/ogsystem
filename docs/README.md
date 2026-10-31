@@ -27,6 +27,7 @@ This is the active documentation entry point. Runtime behavior, source code, and
 - [Studio and Projects isolation](development/ogs-studio-project-run-isolation-plan.md)
 - [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
 - [Shared resource architecture](development/shared-resource-architecture.md)
+- [Local desktop and remote control plane plan](development/local-desktop-remote-control-plane-plan.md)
 - [Visualizer refactor plan](development/ogs-visualizer-refactor-plan.md)
 - [Release UAT checklist](development/release-uat-checklist.md)
 - [Semantic gap plan](development/semantic-gap-implementation-plan.md)
