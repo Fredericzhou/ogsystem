@@ -31,6 +31,7 @@ import {
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
   normalizeStudioGraphTargetRoleId,
+  studioFlowKey,
   type StudioAuthoringFlow,
   type StudioAuthoringRole
 } from "./studio-contracts.js";
@@ -342,11 +343,12 @@ function roleCanBeAddedByCommand(role: StudioAuthoringRole): boolean {
     !(role.contextMap && Object.keys(role.contextMap).length);
 }
 
-function flowSemanticKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "eventType" | "toRoleId">): string {
-  return `${flow.fromRoleId}\u0000${flow.eventType}\u0000${flow.toRoleId}`;
+function flowSemanticKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "eventType" | "toRoleId" | "outputPort" | "inputPort">): string {
+  return studioFlowKey(flow);
 }
 
 function flowParticipatesInJoin(authoring: StudioAuthoringDocument, flow: StudioAuthoringFlow): boolean {
+  if (Object.hasOwn(flow, "participatesInJoin")) return Boolean(flow.participatesInJoin);
   return flow.toRoleId !== STUDIO_SYSTEM_END_ROLE_ID &&
     Boolean(authoring.roles[flow.toRoleId]?.joinSources?.includes(flow.fromRoleId));
 }
@@ -356,6 +358,8 @@ function flowCommandShape(authoring: StudioAuthoringDocument, flow: StudioAuthor
     fromRoleId: flow.fromRoleId,
     toRoleId: flow.toRoleId,
     eventType: flow.eventType,
+    outputPort: flow.outputPort,
+    inputPort: flow.inputPort,
     label: flow.label,
     runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
     participatesInJoin: flowParticipatesInJoin(authoring, flow)
@@ -472,7 +476,9 @@ function diffAuthoringToCommands(
           flowId: previousFlow.flowId,
           sourceRoleId: previousFlow.fromRoleId,
           targetRoleId: commandTargetRoleId(previousFlow.toRoleId),
-          eventType: previousFlow.eventType
+          eventType: previousFlow.eventType,
+          outputPort: previousFlow.outputPort,
+          inputPort: previousFlow.inputPort
         });
       }
       continue;
@@ -485,9 +491,13 @@ function diffAuthoringToCommands(
         originalSourceRoleId: previousFlow.fromRoleId,
         originalTargetRoleId: commandTargetRoleId(previousFlow.toRoleId),
         originalEventType: previousFlow.eventType,
+        originalOutputPort: previousFlow.outputPort,
+        originalInputPort: previousFlow.inputPort,
         sourceRoleId: nextFlow.fromRoleId,
         targetRoleId: commandTargetRoleId(nextFlow.toRoleId),
         eventType: nextFlow.eventType,
+        outputPort: nextFlow.outputPort,
+        inputPort: nextFlow.inputPort,
         label: nextFlow.label,
         runtimeOnlyErrorFlow: Boolean(nextFlow.runtimeOnlyErrorFlow),
         participatesInJoin: flowParticipatesInJoin(next, nextFlow)
@@ -502,6 +512,8 @@ function diffAuthoringToCommands(
         sourceRoleId: nextFlow.fromRoleId,
         targetRoleId: commandTargetRoleId(nextFlow.toRoleId),
         eventType: nextFlow.eventType,
+        outputPort: nextFlow.outputPort,
+        inputPort: nextFlow.inputPort,
         label: nextFlow.label,
         runtimeOnlyErrorFlow: Boolean(nextFlow.runtimeOnlyErrorFlow),
         participatesInJoin: flowParticipatesInJoin(next, nextFlow)

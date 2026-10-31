@@ -42,6 +42,8 @@ export type StudioCommandFormLabels = Partial<Record<
   | "newProfileMaxOutputBytes"
   | "sourceRole"
   | "targetRole"
+  | "outputPort"
+  | "inputPort"
   | "flowLabel"
   | "eventType"
   | "runtimeOnlyErrorFlow"
@@ -134,6 +136,10 @@ export function createDefaultStudioCommandFormState(args: {
   roleId?: string;
   flowId?: string;
   eventType?: string;
+  outputPort?: string;
+  inputPort?: string;
+  originalOutputPort?: string;
+  originalInputPort?: string;
   label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
@@ -181,14 +187,26 @@ export function createDefaultStudioCommandFormState(args: {
     };
   }
 
+  const sourceRoleId = args.sourceRoleId || firstRoleId(args.context);
+  const targetRoleId = args.targetRoleId || STUDIO_SYSTEM_END_ROLE_ID;
+  const sourceRole = args.context.authoring?.roles?.[sourceRoleId];
+  const normalizedTargetRoleId = targetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : targetRoleId;
+  const targetRole = args.context.authoring?.roles?.[normalizedTargetRoleId];
+  const outputPort = args.outputPort?.trim() || (sourceRole?.outputPorts !== undefined ? "" : undefined);
+  const inputPort = args.inputPort?.trim() || (targetRole?.inputPorts !== undefined ? "" : undefined);
+  const eventType = args.eventType || outputPort || defaultStudioFlowEventType(args.context, sourceRoleId);
   const fields: StudioAddEdgeDraft = {
     flowId: args.flowId,
     originalSourceRoleId: args.kind === "edit-edge" ? args.sourceRoleId : undefined,
     originalTargetRoleId: args.kind === "edit-edge" ? args.targetRoleId : undefined,
     originalEventType: args.kind === "edit-edge" ? args.eventType : undefined,
-    sourceRoleId: args.sourceRoleId || firstRoleId(args.context),
-    targetRoleId: args.targetRoleId || STUDIO_SYSTEM_END_ROLE_ID,
-    eventType: args.eventType || defaultStudioFlowEventType(args.context, args.sourceRoleId || firstRoleId(args.context)),
+    originalOutputPort: args.kind === "edit-edge" ? args.outputPort : undefined,
+    originalInputPort: args.kind === "edit-edge" ? args.inputPort : undefined,
+    sourceRoleId,
+    targetRoleId,
+    eventType,
+    outputPort,
+    inputPort,
     label: args.label || "",
     runtimeOnlyErrorFlow: Boolean(args.runtimeOnlyErrorFlow),
     participatesInJoin: Boolean(args.participatesInJoin),
@@ -256,9 +274,13 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       originalSourceRoleId: state.fields.originalSourceRoleId || state.fields.sourceRoleId.trim(),
       originalTargetRoleId: state.fields.originalTargetRoleId || state.fields.targetRoleId.trim(),
       originalEventType: state.fields.originalEventType || normalizeStudioEventType(state.fields.eventType || "DONE"),
+      originalOutputPort: state.fields.originalOutputPort?.trim() || undefined,
+      originalInputPort: state.fields.originalInputPort?.trim() || undefined,
       sourceRoleId: state.fields.sourceRoleId.trim(),
       targetRoleId: state.fields.targetRoleId.trim(),
       eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+      outputPort: state.fields.outputPort?.trim() || undefined,
+      inputPort: state.fields.inputPort?.trim() || undefined,
       label: state.fields.label?.trim(),
       runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(state.fields.participatesInJoin),
@@ -271,6 +293,8 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
     sourceRoleId: state.fields.sourceRoleId.trim(),
     targetRoleId: state.fields.targetRoleId.trim(),
     eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+    outputPort: state.fields.outputPort?.trim() || undefined,
+    inputPort: state.fields.inputPort?.trim() || undefined,
     label: state.fields.label?.trim(),
     runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
     participatesInJoin: Boolean(state.fields.participatesInJoin),
@@ -305,6 +329,30 @@ function renderRoleOptions(context: StudioCommandValidationContext, selected: st
     '<option value="' + escapeHtml(roleId) + '"' + (roleId === selected ? " selected" : "") + ">" +
     escapeHtml(roleId) + "</option>"
   ).join("");
+}
+
+function renderDeclaredPortField(args: {
+  role: StudioAuthoringRole | undefined;
+  direction: "input" | "output";
+  selected: string | undefined;
+  state: StudioCommandFormState;
+  labels?: StudioCommandFormLabels;
+}): string {
+  const ports = args.direction === "input" ? args.role?.inputPorts : args.role?.outputPorts;
+  // Legacy Mermaid authoring has no port contract. Keep its form and command
+  // behavior unchanged by omitting v2-only selectors in that case.
+  if (ports === undefined) return "";
+  const fieldPath = args.direction === "input" ? "inputPort" : "outputPort";
+  const fieldLabel = args.direction === "input"
+    ? label(args.labels, "inputPort", "Input port")
+    : label(args.labels, "outputPort", "Output port");
+  const options = Object.keys(ports).sort().map((portId) =>
+    '<option value="' + escapeHtml(portId) + '"' + (portId === args.selected ? " selected" : "") + ">" +
+    escapeHtml(portId) + "</option>"
+  ).join("");
+  const placeholder = '<option value=""' + (!args.selected ? " selected" : "") + ">Select a declared port</option>";
+  return '<label class="studio-command-form-row"><span>' + escapeHtml(fieldLabel) + '</span><select name="' + fieldPath + '">' +
+    placeholder + options + "</select>" + renderStudioCommandFormFieldError(args.state, fieldPath) + "</label>";
 }
 
 type StudioModelOption = {
@@ -523,6 +571,9 @@ export function renderStudioCommandForm(args: {
 
   const fields = args.state.fields;
   const isEditEdge = args.state.kind === "edit-edge";
+  const sourceRole = args.context.authoring?.roles?.[fields.sourceRoleId];
+  const targetRoleId = fields.targetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : fields.targetRoleId;
+  const targetRole = args.context.authoring?.roles?.[targetRoleId];
   const targetOptions = renderRoleOptions(args.context, fields.targetRoleId) +
     '<option value="' + STUDIO_SYSTEM_END_ROLE_ID + '"' +
     (fields.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID || fields.targetRoleId === "output" ? " selected" : "") + ">" +
@@ -531,9 +582,11 @@ export function renderStudioCommandForm(args: {
     '<form class="studio-command-form" data-studio-command-form="' + (isEditEdge ? "edit-edge" : "add-edge") + '" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
     '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(isEditEdge ? label(labels, "editEdgeDialogTitle", "Edit flow") : label(labels, "edgeDialogTitle", "Add edge")) + '</strong>',
     '<button type="button" data-studio-command-close aria-label="' + escapeHtml(label(labels, "cancel", "Cancel")) + '">' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
-    isEditEdge ? '<input type="hidden" name="flowId" value="' + escapeHtml(fields.flowId || "") + '"><input type="hidden" name="originalSourceRoleId" value="' + escapeHtml(fields.originalSourceRoleId || fields.sourceRoleId) + '"><input type="hidden" name="originalTargetRoleId" value="' + escapeHtml(fields.originalTargetRoleId || fields.targetRoleId) + '"><input type="hidden" name="originalEventType" value="' + escapeHtml(fields.originalEventType || fields.eventType || "") + '">' : "",
+    isEditEdge ? '<input type="hidden" name="flowId" value="' + escapeHtml(fields.flowId || "") + '"><input type="hidden" name="originalSourceRoleId" value="' + escapeHtml(fields.originalSourceRoleId || fields.sourceRoleId) + '"><input type="hidden" name="originalTargetRoleId" value="' + escapeHtml(fields.originalTargetRoleId || fields.targetRoleId) + '"><input type="hidden" name="originalEventType" value="' + escapeHtml(fields.originalEventType || fields.eventType || "") + '"><input type="hidden" name="originalOutputPort" value="' + escapeHtml(fields.originalOutputPort || "") + '"><input type="hidden" name="originalInputPort" value="' + escapeHtml(fields.originalInputPort || "") + '">' : "",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "sourceRole", "Source role")) + '</span><select name="sourceRoleId">' + renderRoleOptions(args.context, fields.sourceRoleId) + "</select>" + renderStudioCommandFormFieldError(args.state, "sourceRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "targetRoleId") + "</label>",
+    renderDeclaredPortField({ role: sourceRole, direction: "output", selected: fields.outputPort, state: args.state, labels }),
+    renderDeclaredPortField({ role: targetRole, direction: "input", selected: fields.inputPort, state: args.state, labels }),
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "flowLabel", "Display name")) + '</span><input name="label" value="' + escapeHtml(fields.label || "") + '"></label>',
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
     '<label class="studio-command-form-row"><span>Condition AST (JSON, optional)</span><textarea name="conditionJson" rows="8" spellcheck="false">' + escapeHtml(fields.conditionJson || "") + '</textarea><div class="studio-command-form-hint">Restricted AST. Paths may read state, loop, event, or role. Leave empty for an unconditional route.</div>' + renderStudioCommandFormFieldError(args.state, "conditionJson") + '</label>',
@@ -597,9 +650,13 @@ export function readStudioCommandFormState(args: {
     originalSourceRoleId: String(data.get("originalSourceRoleId") ?? args.previous.fields.originalSourceRoleId ?? "").trim() || undefined,
     originalTargetRoleId: String(data.get("originalTargetRoleId") ?? args.previous.fields.originalTargetRoleId ?? "").trim() || undefined,
     originalEventType: String(data.get("originalEventType") ?? args.previous.fields.originalEventType ?? "").trim() || undefined,
+    originalOutputPort: String(data.get("originalOutputPort") ?? args.previous.fields.originalOutputPort ?? "").trim() || undefined,
+    originalInputPort: String(data.get("originalInputPort") ?? args.previous.fields.originalInputPort ?? "").trim() || undefined,
     sourceRoleId: String(data.get("sourceRoleId") ?? "").trim(),
     targetRoleId: String(data.get("targetRoleId") ?? "").trim(),
     eventType: String(data.get("eventType") ?? "").trim(),
+    outputPort: String(data.get("outputPort") ?? args.previous.fields.outputPort ?? "").trim() || undefined,
+    inputPort: String(data.get("inputPort") ?? args.previous.fields.inputPort ?? "").trim() || undefined,
     label: String(data.get("label") ?? "").trim(),
     runtimeOnlyErrorFlow: data.get("runtimeOnlyErrorFlow") === "on",
     participatesInJoin: data.get("participatesInJoin") === "on",

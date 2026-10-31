@@ -48,7 +48,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               <button id="locale-toggle" type="button" class="button subtle locale-toggle-button" aria-label="${escapeHtml(t("app.locale"))}" title="${escapeHtml(t("app.locale"))}">
                 ${locale === "zh-CN" ? "中" : "EN"}
               </button>
-              <select id="locale-select" class="select" hidden aria-hidden="true">
+              <select id="locale-select" class="select" aria-hidden="true">
                 <option value="en"${locale === "en" ? " selected" : ""}>English</option>
                 <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
               </select>

@@ -18,6 +18,7 @@ import { buildBridgeFlows, buildBridgeRoles, fallbackGridColumnCount } from "./s
 import { addTopologyFlowOrder, topologyComponentIds } from "./topology-order.js";
 import {
   normalizeStudioGraphTargetRoleId,
+  studioFlowKey,
   STUDIO_SYSTEM_START_ROLE_ID,
   STUDIO_SYSTEM_END_ROLE_ID,
   type GraphViewModel,
@@ -64,9 +65,9 @@ function findDiagnostic(
 
 function findEdgeDiagnostic(
   diagnostics: DiagnosticRecord[],
-  flowKeyValue: string
+  flowKeyValues: string[]
 ): DiagnosticRecord | undefined {
-  return diagnostics.find((diagnostic) => diagnostic.flowKey === flowKeyValue);
+  return diagnostics.find((diagnostic) => Boolean(diagnostic.flowKey && flowKeyValues.includes(diagnostic.flowKey)));
 }
 
 const DEFAULT_NODE_WIDTH = 180;
@@ -326,6 +327,8 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       label: role.title?.trim() || role.roleId,
       description: args.presentation?.roleDescriptions?.[role.roleId],
       bindingKind: role.bindingKind,
+      inputPorts: role.inputPorts,
+      outputPorts: role.outputPorts,
       badges: role.badges.slice(),
       structure: nodeStructure(role, args.semanticIR ?? undefined),
       layout: { x, y, width, height },
@@ -390,9 +393,20 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
   const edges: GraphViewModelEdge[] = [];
   for (const flow of bridgeFlows) {
     const target = normalizeStudioGraphTargetRoleId(flow.toRoleId);
-    const edgeKey = `${flow.fromRoleId}:${flow.eventType}:${target}`;
+    const edgeKey = studioFlowKey({
+      fromRoleId: flow.fromRoleId,
+      eventType: flow.eventType,
+      toRoleId: target,
+      outputPort: flow.outputPort,
+      inputPort: flow.inputPort
+    });
+    const legacyEdgeKey = studioFlowKey({
+      fromRoleId: flow.fromRoleId,
+      eventType: flow.eventType,
+      toRoleId: target
+    });
     const runtimeOnlyErrorFlow = Boolean(flow.runtimeOnlyErrorFlow ?? isRuntimeOnlyErrorEvent(flow.eventType));
-    const diagnosticRecord = findEdgeDiagnostic(diagnostics, flow.flowKey);
+    const diagnosticRecord = findEdgeDiagnostic(diagnostics, [flow.flowKey, edgeKey, legacyEdgeKey]);
     const diagnostic = runtimeOnlyErrorFlow && !diagnosticRecord
       ? { severity: "warning" as const }
       : toDiagnosticLayer(diagnosticRecord);
@@ -415,13 +429,17 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
         || flow.label?.trim()
         || flow.eventType,
       eventType: flow.eventType,
+      ...(flow.outputPort ? { outputPort: flow.outputPort } : {}),
+      ...(flow.inputPort ? { inputPort: flow.inputPort } : {}),
       runtimeOnlyErrorFlow,
       participatesInJoin: flow.participatesInJoin,
       ...(flow.condition ? { condition: flow.condition } : {}),
       ...(flow.priority !== undefined ? { priority: flow.priority } : {}),
       ...(args.semanticIR
         ? (() => {
-            const transition = args.semanticIR.transitions.find((candidate) => candidate.flowId === edgeKey);
+            const transition = args.semanticIR.transitions.find((candidate) =>
+              candidate.flowId === edgeKey || candidate.flowId === legacyEdgeKey || candidate.flowId === flow.flowId
+            );
             return transition
               ? {
                   conditionSummary: summarizeCondition(transition.condition),
@@ -492,7 +510,9 @@ export function projectGraphReadingViewModel(
   }
   if (reading.mode === "route" && reading.flowKey) {
     edges = edges.filter((edge) =>
-      edge.id === reading.flowKey || `${edge.source}:${edge.eventType}:${edge.target}` === reading.flowKey
+      edge.id === reading.flowKey
+      || studioFlowKey({ fromRoleId: edge.source, eventType: edge.eventType, toRoleId: edge.target, outputPort: edge.outputPort, inputPort: edge.inputPort }) === reading.flowKey
+      || studioFlowKey({ fromRoleId: edge.source, eventType: edge.eventType, toRoleId: edge.target }) === reading.flowKey
     );
   } else if ((reading.mode === "upstream" || reading.mode === "downstream") && reading.roleId) {
     const roles = new Set([reading.roleId]);

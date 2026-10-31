@@ -60,6 +60,8 @@ export type StudioAuthoringRole = {
   loopMax?: number;
   review?: StudioHumanReviewSpec;
   contextMap?: Record<string, string>;
+  inputPorts?: Record<string, unknown>;
+  outputPorts?: Record<string, unknown>;
 };
 
 export type StudioAuthoringFlow = {
@@ -67,10 +69,14 @@ export type StudioAuthoringFlow = {
   fromRoleId: string;
   toRoleId: string;
   eventType: string;
+  outputPort?: string;
+  inputPort?: string;
   label?: string;
   condition?: SemanticIRConditionAst;
   priority?: number;
   runtimeOnlyErrorFlow?: boolean;
+  /** Whether this exact port-aware flow is a source for the target Join. */
+  participatesInJoin?: boolean;
 };
 
 /** Internal graph snapshot consumed by X6 and the authoring adapter. */
@@ -93,6 +99,8 @@ export type StudioGraphSnapshot = {
     target: string;
     label: string;
     eventType: string;
+    outputPort?: string;
+    inputPort?: string;
     runtimeOnlyErrorFlow: boolean;
     participatesInJoin: boolean;
     condition?: SemanticIRConditionAst;
@@ -206,6 +214,8 @@ type GraphViewModelNodeBase = {
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;
   topologyComponentId?: string;
+  inputPorts?: Record<string, unknown>;
+  outputPorts?: Record<string, unknown>;
 };
 
 /** A rendered node that represents one accountable role seat and its aggregate runtime data. */
@@ -238,6 +248,8 @@ export type GraphViewModelEdge = {
   source: string;
   target: string;
   eventType: string;
+  outputPort?: string;
+  inputPort?: string;
   label: string;
   runtimeOnlyErrorFlow: boolean;
   participatesInJoin: boolean;
@@ -287,8 +299,11 @@ export function normalizeStudioGraphStoredRoleId(roleId: unknown): string {
   return String(roleId ?? "");
 }
 
-export function studioFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "eventType" | "toRoleId">): string {
+export function studioFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "eventType" | "toRoleId" | "outputPort" | "inputPort">): string {
   const source = flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
   const target = flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "end" : normalizeStudioGraphTargetRoleId(flow.toRoleId);
-  return `${source}:${flow.eventType}:${target}`;
+  const base = `${source}:${flow.eventType}:${target}`;
+  const outputPort = String(flow.outputPort ?? "");
+  const inputPort = String(flow.inputPort ?? "");
+  return outputPort || inputPort ? `${base}:${outputPort}:${inputPort}` : base;
 }

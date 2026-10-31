@@ -4,6 +4,7 @@ import {
   STUDIO_SYSTEM_START_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
   normalizeStudioGraphTargetRoleId,
+  studioFlowKey,
   type StudioAuthoringDocument,
   type StudioAuthoringFlow,
   type StudioAuthoringRole,
@@ -25,6 +26,8 @@ type StudioAuthoringLeafCommand =
       profileId?: string;
       profileDraft?: StudioExecutionProfileDraft;
       toolDraft?: StudioExecutionToolDraft;
+      inputPorts?: Record<string, unknown>;
+      outputPorts?: Record<string, unknown>;
       x?: number;
       y?: number;
     }
@@ -55,6 +58,8 @@ type StudioAuthoringLeafCommand =
       sourceRoleId: string;
       targetRoleId: string;
       eventType?: string;
+      outputPort?: string;
+      inputPort?: string;
       label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
@@ -67,16 +72,28 @@ type StudioAuthoringLeafCommand =
       originalSourceRoleId: string;
       originalTargetRoleId: string;
       originalEventType: string;
+      originalOutputPort?: string;
+      originalInputPort?: string;
       sourceRoleId: string;
       targetRoleId: string;
       eventType?: string;
+      outputPort?: string;
+      inputPort?: string;
       label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
       condition?: StudioAuthoringFlow["condition"];
       priority?: number;
     }
-  | { type: "delete-edge"; flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string };
+  | {
+      type: "delete-edge";
+      flowId?: string;
+      sourceRoleId: string;
+      targetRoleId: string;
+      eventType: string;
+      outputPort?: string;
+      inputPort?: string;
+    };
 
 export type StudioAuthoringCommand =
   | StudioAuthoringLeafCommand
@@ -87,6 +104,8 @@ export type StudioAuthoringCommandResult = {
   canvas: StudioGraphSnapshot;
   selectedRoleId?: string;
   selectedFlowKey?: string;
+  /** Stable flow id for consumers that persist Team IR Handoff ids. */
+  selectedFlowId?: string;
   repositoryRoleId?: string;
   profileDrafts?: StudioExecutionProfileDraft[];
   toolDrafts?: StudioExecutionToolDraft[];
@@ -96,6 +115,7 @@ export type StudioAuthoringCommandResult = {
     | "invalid-role-id"
     | "duplicate-role-id"
     | "invalid-edge-endpoints"
+    | "invalid-edge-ports"
     | "duplicate-edge"
     | "invalid-event-type";
 };
@@ -114,6 +134,51 @@ export type StudioExecutionToolDraft = {
   argsTemplate: string[];
   stdinMode: "none" | "text";
 };
+
+/**
+ * Maps an X6 port to the Team IR port it represents. Layout projection ports
+ * are flow-scoped (`out-flow-*` / `in-flow-*`); generic `connect-*` ports are
+ * intentionally not authoring targets.
+ */
+export function resolveStudioAuthoringPort(args: {
+  portId?: string;
+  direction: "output" | "input";
+  roleId: string;
+  authoring?: StudioAuthoringDocument | null;
+}): string | undefined {
+  const portId = String(args.portId ?? "");
+  if (!portId || portId.startsWith("connect-")) return undefined;
+  const role = args.authoring?.roles?.[args.roleId];
+  const ports = args.direction === "output" ? role?.outputPorts : role?.inputPorts;
+  const encodedPrefix = args.direction === "output" ? "out-port-" : "in-port-";
+  if (portId.startsWith(encodedPrefix)) {
+    const candidate = decodeStudioPortToken(portId.slice(encodedPrefix.length));
+    return candidate && ports && Object.hasOwn(ports, candidate) ? candidate : undefined;
+  }
+  const flowPrefix = args.direction === "output" ? "out-flow-" : "in-flow-";
+  if (!portId.startsWith(flowPrefix)) return undefined;
+  const flowId = decodeStudioPortToken(portId.slice(flowPrefix.length));
+  const flow = Object.values(args.authoring?.flows ?? {}).find((entry) => entry.flowId === flowId);
+  if (!flow) return undefined;
+  if (args.direction === "output" && flow.fromRoleId === args.roleId) {
+    const candidate = flow.outputPort || flow.eventType;
+    return candidate && ports && Object.hasOwn(ports, candidate) ? candidate : undefined;
+  }
+  if (args.direction === "input" && flow.toRoleId === args.roleId) {
+    const candidate = flow.inputPort;
+    return candidate && ports && Object.hasOwn(ports, candidate) ? candidate : undefined;
+  }
+  return undefined;
+}
+
+function decodeStudioPortToken(value: string): string | undefined {
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -169,9 +234,8 @@ function nextFlowId(authoring: StudioAuthoringDocument, flow: Omit<StudioAuthori
   return candidate;
 }
 
-function canvasFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "toRoleId" | "eventType">): string {
-  const source = flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId;
-  return `${source}:${flow.eventType}:${flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId}`;
+function canvasFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "toRoleId" | "eventType" | "outputPort" | "inputPort">): string {
+  return studioFlowKey(flow);
 }
 
 function commandTargetRoleId(roleId: string): string {
@@ -255,7 +319,7 @@ function applyRoleBinding(
 
 function matchesFlow(
   flow: StudioAuthoringFlow,
-  args: { flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string },
+  args: { flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string; outputPort?: string; inputPort?: string },
   flowId: string
 ): boolean {
   if (args.flowId && args.flowId === flowId) {
@@ -263,12 +327,14 @@ function matchesFlow(
   }
   return flow.fromRoleId === args.sourceRoleId &&
     flow.toRoleId === args.targetRoleId &&
-    flow.eventType === args.eventType;
+    flow.eventType === args.eventType &&
+    (args.outputPort === undefined || String(flow.outputPort ?? "") === args.outputPort) &&
+    (args.inputPort === undefined || String(flow.inputPort ?? "") === args.inputPort);
 }
 
 function findMatchingFlowEntry(
   authoring: StudioAuthoringDocument,
-  args: { flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string }
+  args: { flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string; outputPort?: string; inputPort?: string }
 ): [string, StudioAuthoringFlow] | null {
   const targetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(args.targetRoleId));
   const eventType = normalizeEventType(args.eventType);
@@ -277,7 +343,9 @@ function findMatchingFlowEntry(
       flowId: args.flowId,
       sourceRoleId: normalizeRoleId(args.sourceRoleId),
       targetRoleId,
-      eventType
+      eventType,
+      outputPort: args.outputPort,
+      inputPort: args.inputPort
     }, flowId)
   ) ?? null;
 }
@@ -303,6 +371,7 @@ function syncJoinSource(
 }
 
 function flowParticipatesInJoin(authoring: StudioAuthoringDocument, flow: StudioAuthoringFlow): boolean {
+  if (Object.hasOwn(flow, "participatesInJoin")) return Boolean(flow.participatesInJoin);
   return flow.toRoleId !== STUDIO_SYSTEM_END_ROLE_ID &&
     Boolean(authoring.roles[flow.toRoleId]?.joinSources?.includes(flow.fromRoleId));
 }
@@ -331,6 +400,8 @@ function addRoleCommandFromRole(
     bindingKind: role.bindingKind,
     modelRef: role.modelRef,
     profileId: role.profileId,
+    inputPorts: role.inputPorts ? cloneJson(role.inputPorts) : undefined,
+    outputPorts: role.outputPorts ? cloneJson(role.outputPorts) : undefined,
     x: layout?.x,
     y: layout?.y
   };
@@ -345,6 +416,8 @@ function addEdgeCommandFromFlow(
     sourceRoleId: flow.fromRoleId,
     targetRoleId: commandTargetRoleId(flow.toRoleId),
     eventType: flow.eventType,
+    outputPort: flow.outputPort,
+    inputPort: flow.inputPort,
     label: flow.label,
     runtimeOnlyErrorFlow: flow.runtimeOnlyErrorFlow,
     participatesInJoin: flowParticipatesInJoin(authoring, flow)
@@ -380,6 +453,7 @@ export function applyStudioAuthoringCommand(args: {
     let nextCanvas = canvas;
     let selectedRoleId: string | undefined;
     let selectedFlowKey: string | undefined;
+    let selectedFlowId: string | undefined;
     let repositoryRoleId: string | undefined;
     const profileDrafts: StudioExecutionProfileDraft[] = [];
     const toolDrafts: StudioExecutionToolDraft[] = [];
@@ -395,6 +469,7 @@ export function applyStudioAuthoringCommand(args: {
       nextCanvas = result.canvas;
       selectedRoleId = result.selectedRoleId ?? selectedRoleId;
       selectedFlowKey = result.selectedFlowKey ?? selectedFlowKey;
+      selectedFlowId = result.selectedFlowId ?? selectedFlowId;
       repositoryRoleId = result.repositoryRoleId ?? repositoryRoleId;
       if (result.profileDrafts?.length) {
         profileDrafts.push(...result.profileDrafts);
@@ -408,6 +483,7 @@ export function applyStudioAuthoringCommand(args: {
       canvas: nextCanvas,
       selectedRoleId,
       selectedFlowKey,
+      selectedFlowId,
       repositoryRoleId,
       profileDrafts: profileDrafts.length ? profileDrafts : undefined,
       toolDrafts: toolDrafts.length ? toolDrafts : undefined
@@ -451,6 +527,8 @@ export function applyStudioAuthoringCommand(args: {
         const profileId = String(command.profileId ?? "").trim();
         if (profileId) role.profileId = profileId;
       }
+      if (command.inputPorts !== undefined) role.inputPorts = cloneJson(command.inputPorts);
+      if (command.outputPorts !== undefined) role.outputPorts = cloneJson(command.outputPorts);
       const x = Number.isFinite(command.x) ? Number(command.x) : 120 + canvas.nodes.length * 260;
       const y = Number.isFinite(command.y) ? Number(command.y) : 120;
       authoring.roles[roleId] = role;
@@ -594,6 +672,14 @@ export function applyStudioAuthoringCommand(args: {
     ) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
+    const sourcePorts = sourceIsStart ? undefined : authoring.roles[sourceRoleId]?.outputPorts;
+    const targetPorts = targetIsEnd ? undefined : authoring.roles[targetRoleId]?.inputPorts;
+    const outputPort = sourceIsStart ? undefined : String(command.outputPort ?? "").trim() || undefined;
+    const inputPort = targetIsEnd ? undefined : String(command.inputPort ?? "").trim() || undefined;
+    if ((sourcePorts && (!outputPort || !Object.hasOwn(sourcePorts, outputPort)))
+      || (targetPorts && (!inputPort || !Object.hasOwn(targetPorts, inputPort)))) {
+      return { authoring, canvas, blockedCode: "invalid-edge-ports" };
+    }
     let eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType) || "DONE";
     if (!EVENT_TYPE_PATTERN.test(eventType)) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
@@ -603,7 +689,9 @@ export function applyStudioAuthoringCommand(args: {
       while (Object.values(authoring.flows).some((flow) =>
         flow.fromRoleId === sourceRoleId &&
         flow.toRoleId === targetRoleId &&
-        flow.eventType === eventType
+        flow.eventType === eventType &&
+        String(flow.outputPort ?? "") === String(outputPort ?? "") &&
+        String(flow.inputPort ?? "") === String(inputPort ?? "")
       )) {
         eventType = `DONE_${suffix}`;
         suffix += 1;
@@ -611,7 +699,9 @@ export function applyStudioAuthoringCommand(args: {
     } else if (Object.values(authoring.flows).some((flow) =>
       flow.fromRoleId === sourceRoleId &&
       flow.toRoleId === targetRoleId &&
-      flow.eventType === eventType
+      flow.eventType === eventType &&
+      String(flow.outputPort ?? "") === String(outputPort ?? "") &&
+      String(flow.inputPort ?? "") === String(inputPort ?? "")
     )) {
       return { authoring, canvas, blockedCode: "duplicate-edge" };
     }
@@ -619,8 +709,11 @@ export function applyStudioAuthoringCommand(args: {
       fromRoleId: sourceRoleId,
       toRoleId: targetRoleId,
       eventType,
+      ...(outputPort ? { outputPort } : {}),
+      ...(inputPort ? { inputPort } : {}),
       label: sourceIsStart ? "任务分发" : targetIsEnd ? normalizeFlowLabel(command.label, eventType) ?? "结果到达" : normalizeFlowLabel(command.label, eventType),
       runtimeOnlyErrorFlow: sourceIsStart || targetIsEnd ? false : command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
+      participatesInJoin: Boolean(command.participatesInJoin),
       ...(sourceIsStart || targetIsEnd ? {} : { condition: command.condition, priority: command.priority ?? 0 })
     };
     if (!flowBody.label) {
@@ -635,6 +728,8 @@ export function applyStudioAuthoringCommand(args: {
       target: targetRoleId,
       label: flow.label ?? eventType,
       eventType,
+      ...(flow.outputPort ? { outputPort: flow.outputPort } : {}),
+      ...(flow.inputPort ? { inputPort: flow.inputPort } : {}),
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(command.participatesInJoin),
       condition: flow.condition,
@@ -643,7 +738,7 @@ export function applyStudioAuthoringCommand(args: {
     if (command.participatesInJoin && targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
       syncJoinSource(authoring, targetRoleId, sourceRoleId, true);
     }
-    return { authoring, canvas, selectedFlowKey: canvasFlowKey(flow) };
+    return { authoring, canvas, selectedFlowKey: canvasFlowKey(flow), selectedFlowId: flow.flowId };
   }
 
   if (command.type === "update-edge") {
@@ -670,6 +765,14 @@ export function applyStudioAuthoringCommand(args: {
     ) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
+    const sourcePorts = sourceIsStart ? undefined : authoring.roles[sourceRoleId]?.outputPorts;
+    const targetPorts = targetIsEnd ? undefined : authoring.roles[targetRoleId]?.inputPorts;
+    const outputPort = sourceIsStart ? undefined : String(command.outputPort ?? "").trim() || undefined;
+    const inputPort = targetIsEnd ? undefined : String(command.inputPort ?? "").trim() || undefined;
+    if ((sourcePorts && (!outputPort || !Object.hasOwn(sourcePorts, outputPort)))
+      || (targetPorts && (!inputPort || !Object.hasOwn(targetPorts, inputPort)))) {
+      return { authoring, canvas, blockedCode: "invalid-edge-ports" };
+    }
     const eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType || "DONE");
     if (!EVENT_TYPE_PATTERN.test(eventType)) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
@@ -678,7 +781,9 @@ export function applyStudioAuthoringCommand(args: {
       flowId: command.flowId,
       sourceRoleId: command.originalSourceRoleId,
       targetRoleId: originalTargetRoleId,
-      eventType: originalEventType
+      eventType: originalEventType,
+      outputPort: command.originalOutputPort,
+      inputPort: command.originalInputPort
     });
     if (!original) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
@@ -688,7 +793,9 @@ export function applyStudioAuthoringCommand(args: {
       flowId !== originalFlowId &&
       flow.fromRoleId === sourceRoleId &&
       flow.toRoleId === targetRoleId &&
-      flow.eventType === eventType
+      flow.eventType === eventType &&
+      String(flow.outputPort ?? "") === String(outputPort ?? "") &&
+      String(flow.inputPort ?? "") === String(inputPort ?? "")
     );
     if (duplicate) {
       return { authoring, canvas, blockedCode: "duplicate-edge" };
@@ -699,6 +806,8 @@ export function applyStudioAuthoringCommand(args: {
       fromRoleId: sourceRoleId,
       toRoleId: targetRoleId,
       eventType,
+      ...(outputPort ? { outputPort } : {}),
+      ...(inputPort ? { inputPort } : {}),
       label: sourceIsStart || targetIsEnd ? (Object.hasOwn(command, "label")
         ? normalizeFlowLabel(command.label, eventType) ?? "结果到达"
         : normalizeFlowLabel(originalFlow.label, eventType) ?? (sourceIsStart ? "任务分发" : "结果到达")) : Object.hasOwn(command, "label")
@@ -706,7 +815,8 @@ export function applyStudioAuthoringCommand(args: {
         : normalizeFlowLabel(originalFlow.label, eventType),
       runtimeOnlyErrorFlow: sourceIsStart || targetIsEnd ? false : command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
       condition: sourceIsStart ? undefined : command.condition,
-      priority: sourceIsStart ? undefined : command.priority ?? originalFlow.priority ?? 0
+      priority: sourceIsStart ? undefined : command.priority ?? originalFlow.priority ?? 0,
+      participatesInJoin: Boolean(command.participatesInJoin)
     };
     if (!flow.label) {
       delete flow.label;
@@ -723,7 +833,9 @@ export function applyStudioAuthoringCommand(args: {
       const isMatch = (command.flowId && edge.id === command.flowId) ||
         (edge.source === command.originalSourceRoleId &&
           edge.target === originalTargetRoleId &&
-          edge.eventType === originalEventType);
+          edge.eventType === originalEventType &&
+          (command.originalOutputPort === undefined || String(edge.outputPort ?? "") === command.originalOutputPort) &&
+          (command.originalInputPort === undefined || String(edge.inputPort ?? "") === command.originalInputPort));
       return isMatch
         ? {
             ...edge,
@@ -732,6 +844,8 @@ export function applyStudioAuthoringCommand(args: {
             target: targetRoleId,
             label: flow.label ?? eventType,
             eventType,
+            ...(flow.outputPort ? { outputPort: flow.outputPort } : {}),
+            ...(flow.inputPort ? { inputPort: flow.inputPort } : {}),
             runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
             participatesInJoin: Boolean(command.participatesInJoin),
             condition: flow.condition,
@@ -739,7 +853,7 @@ export function applyStudioAuthoringCommand(args: {
           }
         : edge;
     });
-    return { authoring, canvas, selectedFlowKey: canvasFlowKey(flow) };
+    return { authoring, canvas, selectedFlowKey: canvasFlowKey(flow), selectedFlowId: flow.flowId };
   }
 
   if (command.type === "delete-edge") {
@@ -752,7 +866,9 @@ export function applyStudioAuthoringCommand(args: {
       if (
         flow.fromRoleId === command.sourceRoleId &&
         flow.toRoleId === targetRoleId &&
-        flow.eventType === command.eventType
+        flow.eventType === command.eventType &&
+        (command.outputPort === undefined || String(flow.outputPort ?? "") === command.outputPort) &&
+        (command.inputPort === undefined || String(flow.inputPort ?? "") === command.inputPort)
       ) {
         list.push(flow);
       }
@@ -766,7 +882,9 @@ export function applyStudioAuthoringCommand(args: {
         return !(
           flow.fromRoleId === command.sourceRoleId &&
           flow.toRoleId === targetRoleId &&
-          flow.eventType === command.eventType
+          flow.eventType === command.eventType &&
+          (command.outputPort === undefined || String(flow.outputPort ?? "") === command.outputPort) &&
+          (command.inputPort === undefined || String(flow.inputPort ?? "") === command.inputPort)
         );
       })
     );
@@ -782,7 +900,9 @@ export function applyStudioAuthoringCommand(args: {
       return !(
         edge.source === command.sourceRoleId &&
         edge.target === targetRoleId &&
-        edge.eventType === command.eventType
+        edge.eventType === command.eventType &&
+        (command.outputPort === undefined || String(edge.outputPort ?? "") === command.outputPort) &&
+        (command.inputPort === undefined || String(edge.inputPort ?? "") === command.inputPort)
       );
     });
     return { authoring, canvas };
@@ -898,7 +1018,9 @@ export function deriveInverseCommand(
       flowId,
       sourceRoleId: flow.fromRoleId,
       targetRoleId: commandTargetRoleId(flow.toRoleId),
-      eventType: flow.eventType
+      eventType: flow.eventType,
+      outputPort: flow.outputPort,
+      inputPort: flow.inputPort
     };
   }
 
@@ -907,7 +1029,9 @@ export function deriveInverseCommand(
       flowId: command.flowId,
       sourceRoleId: command.originalSourceRoleId,
       targetRoleId: command.originalTargetRoleId,
-      eventType: command.originalEventType
+      eventType: command.originalEventType,
+      outputPort: command.originalOutputPort,
+      inputPort: command.originalInputPort
     });
     if (!original) {
       return null;
@@ -919,9 +1043,13 @@ export function deriveInverseCommand(
       originalSourceRoleId: normalizeRoleId(command.sourceRoleId),
       originalTargetRoleId: commandTargetRoleId(normalizeStudioGraphStoredRoleId(command.targetRoleId)),
       originalEventType: normalizeEventType(command.eventType || "DONE"),
+      originalOutputPort: command.outputPort,
+      originalInputPort: command.inputPort,
       sourceRoleId: flow.fromRoleId,
       targetRoleId: commandTargetRoleId(flow.toRoleId),
       eventType: flow.eventType,
+      outputPort: flow.outputPort,
+      inputPort: flow.inputPort,
       label: flow.label,
       runtimeOnlyErrorFlow: flow.runtimeOnlyErrorFlow,
       participatesInJoin: flowParticipatesInJoin(authoring, flow)
@@ -933,7 +1061,9 @@ export function deriveInverseCommand(
       flowId: command.flowId,
       sourceRoleId: command.sourceRoleId,
       targetRoleId: command.targetRoleId,
-      eventType: command.eventType
+      eventType: command.eventType,
+      outputPort: command.outputPort,
+      inputPort: command.inputPort
     });
     if (!flowEntry) {
       return null;

@@ -3,6 +3,7 @@ import { Export, Graph, History, Keyboard, Selection } from "@antv/x6";
 import {
   normalizeStudioGraphTargetRoleId,
   STUDIO_SYSTEM_END_ROLE_ID,
+  STUDIO_SYSTEM_START_ROLE_ID,
   studioFlowKey
 } from "../studio-contracts.js";
 import type {
@@ -27,6 +28,7 @@ import { graphToCanvasDocument, studioEdgeFlowKey } from "./studio-graph-adapter
 import {
   applyStudioAuthoringCommand,
   deriveInverseCommand,
+  resolveStudioAuthoringPort,
   type StudioAuthoringCommand
 } from "./studio-graph-commands.js";
 import {
@@ -151,6 +153,7 @@ export type StudioGraphBridgeOptions = {
     canvas: StudioCanvasSnapshot;
     selectedRoleId?: string;
     selectedFlowKey?: string;
+    selectedFlowId?: string;
     historyContext?: unknown;
     blockedCode?: string;
   }) => void | Promise<void>;
@@ -233,6 +236,8 @@ type PendingStudioEdgePreview = {
   sourceRoleId: string;
   targetRoleId: string;
   eventType: string;
+  outputPort?: string;
+  inputPort?: string;
   label: string;
 };
 
@@ -241,6 +246,8 @@ type StudioGraphEdgeRecord = {
   source: string;
   target: string;
   eventType: string;
+  outputPort?: string;
+  inputPort?: string;
   label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
@@ -371,11 +378,18 @@ export class StudioGraphIsland {
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonly rootKeydownListener = (event: KeyboardEvent) => this.handleRootKeydown(event);
+  private commandFormKeydownHost: HTMLElement | null = null;
   private readonly contextPointerDownListener = (event: PointerEvent) => {
     const target = event.target as HTMLElement | null;
     if (!target?.closest("[data-studio-graph-context-menu]")) this.hideContextMenu();
   };
-  private readonly contextPointerUpListener = () => this.schedulePendingEdgeCleanup();
+  private readonly contextPointerUpListener = () => {
+    const pendingConnection = this.graph?.getEdges().some((edge) => this.isPendingEdgePreviewCell(edge)) === true;
+    if (this.relationshipSourceRoleId && pendingConnection) {
+      this.finishRelationshipConnection();
+    }
+    this.schedulePendingEdgeCleanup();
+  };
   private readonly contextPointerLeaveListener = () => this.schedulePendingEdgeCleanup();
   private readonly rootContextMenuListener = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
@@ -663,9 +677,13 @@ export class StudioGraphIsland {
     document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
     document.removeEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     this.root.removeEventListener("keydown", this.rootKeydownListener);
+    this.commandFormKeydownHost?.removeEventListener("keydown", this.rootKeydownListener);
+    this.commandFormKeydownHost = null;
     this.root.removeEventListener("pointerdown", this.contextPointerDownListener);
-    this.root.removeEventListener("pointerup", this.contextPointerUpListener);
-    this.root.removeEventListener("pointercancel", this.contextPointerUpListener);
+    this.root.removeEventListener("pointerup", this.contextPointerUpListener, true);
+    this.root.removeEventListener("pointercancel", this.contextPointerUpListener, true);
+    document.removeEventListener("pointerup", this.contextPointerUpListener, true);
+    document.removeEventListener("pointercancel", this.contextPointerUpListener, true);
     this.root.removeEventListener("mouseleave", this.contextPointerLeaveListener);
     this.root.removeEventListener("contextmenu", this.rootContextMenuListener);
     this.graph.dispose();
@@ -867,8 +885,10 @@ export class StudioGraphIsland {
       this.hideContextMenu();
     });
     this.root.addEventListener("pointerdown", this.contextPointerDownListener);
-    this.root.addEventListener("pointerup", this.contextPointerUpListener);
-    this.root.addEventListener("pointercancel", this.contextPointerUpListener);
+    this.root.addEventListener("pointerup", this.contextPointerUpListener, true);
+    this.root.addEventListener("pointercancel", this.contextPointerUpListener, true);
+    document.addEventListener("pointerup", this.contextPointerUpListener, true);
+    document.addEventListener("pointercancel", this.contextPointerUpListener, true);
     this.root.addEventListener("mouseleave", this.contextPointerLeaveListener);
     this.root.addEventListener("contextmenu", this.rootContextMenuListener);
   }
@@ -981,6 +1001,11 @@ export class StudioGraphIsland {
       this.hideDiagnosticCard();
     });
     this.graph.on("cell:mouseup", () => {
+      if (this.relationshipSourceRoleId && this.graph.getEdges().some((edge) => this.isPendingEdgePreviewCell(edge))) {
+        this.relationshipSourceRoleId = "";
+        this.updateConnectionPortPresentation();
+        this.updateToolbarState();
+      }
       this.schedulePendingEdgeCleanup();
     });
     this.graph.on("blank:mouseup", () => {
@@ -1036,13 +1061,20 @@ export class StudioGraphIsland {
       this.renderMinimap();
     });
     this.graph.on("edge:connected", ({ edge, isNew }) => {
-      if (!isNew) return;
+      // A completed drag exits relationship mode even when X6 reports the
+      // connection as a reconnection rather than a new edge.
+      this.finishRelationshipConnection();
+      // X6 may omit `isNew` for a custom edge returned by `createEdge`, but a
+      // connection drag is still identifiable by the pending-edge marker.
+      if (!isNew && !this.isPendingEdgePreviewCell(edge)) return;
       if (this.isReadOnly()) {
         edge.remove();
         return;
       }
       const source = edge.getSourceCellId();
       const target = edge.getTargetCellId();
+      const sourcePortId = edge.getSourcePortId?.();
+      const targetPortId = edge.getTargetPortId?.();
       edge.remove();
       if (!source || !target) {
         this.toast("error", this.label("invalidConnection"));
@@ -1058,18 +1090,41 @@ export class StudioGraphIsland {
         this.toast("error", this.label("connectFromSelectedRole"));
         return;
       }
-      this.relationshipSourceRoleId = "";
-      this.updateConnectionPortPresentation();
+      const outputPort = resolveStudioAuthoringPort({
+        portId: sourcePortId,
+        direction: "output",
+        roleId: source,
+        authoring: this.options.authoring
+      });
+      const inputPort = resolveStudioAuthoringPort({
+        portId: targetPortId,
+        direction: "input",
+        roleId: target,
+        authoring: this.options.authoring
+      });
       const command = {
         type: "add-edge" as const,
         sourceRoleId: source,
         targetRoleId: target,
-        eventType: defaultStudioFlowEventType(this.validationContext(), source),
+        eventType: source === STUDIO_SYSTEM_START_ROLE_ID ? "START" : outputPort || defaultStudioFlowEventType(this.validationContext(), source),
+        ...(outputPort ? { outputPort } : {}),
+        ...(inputPort ? { inputPort } : {}),
         label: ""
       };
-      void this.applyCommand(command).then(() => {
+      void this.applyCommand(command).finally(() => {
+        // X6 may deliver a late mouse/connection event after the command has
+        // already updated the graph. Keep the toolbar in its settled state.
+        this.finishRelationshipConnection();
+        this.removePendingEdgePreviewCells();
         this.updateToolbarState();
       });
+    });
+    this.graph.on("edge:mouseup", ({ edge }) => {
+      if (!this.relationshipSourceRoleId || !this.isPendingEdgePreviewCell(edge) || !edge.getTargetCellId()) return;
+      this.finishRelationshipConnection();
+    });
+    this.graph.on("edge:change:target", ({ edge }) => {
+      if (this.isPendingEdgePreviewCell(edge) && edge.getTargetCellId()) this.updateToolbarState();
     });
   }
 
@@ -1081,6 +1136,10 @@ export class StudioGraphIsland {
       sourceRoleId?: string;
       targetRoleId?: string;
       eventType?: string;
+      outputPort?: string;
+      inputPort?: string;
+      originalOutputPort?: string;
+      originalInputPort?: string;
       label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
@@ -1103,6 +1162,10 @@ export class StudioGraphIsland {
       sourceRoleId: defaults.sourceRoleId,
       targetRoleId: defaults.targetRoleId,
       eventType: defaults.eventType,
+      outputPort: defaults.outputPort,
+      inputPort: defaults.inputPort,
+      originalOutputPort: defaults.originalOutputPort ?? defaults.outputPort,
+      originalInputPort: defaults.originalInputPort ?? defaults.inputPort,
       label: defaults.label,
       runtimeOnlyErrorFlow: defaults.runtimeOnlyErrorFlow,
       participatesInJoin: defaults.participatesInJoin,
@@ -1197,6 +1260,8 @@ export class StudioGraphIsland {
     source: string;
     target: string;
     eventType: string;
+    outputPort?: string;
+    inputPort?: string;
     label?: string;
     runtimeOnlyErrorFlow?: boolean;
     participatesInJoin?: boolean;
@@ -1217,6 +1282,10 @@ export class StudioGraphIsland {
       sourceRoleId: edge.source,
       targetRoleId: edge.target,
       eventType: edge.eventType,
+      outputPort: edge.outputPort,
+      inputPort: edge.inputPort,
+      originalOutputPort: edge.outputPort,
+      originalInputPort: edge.inputPort,
       label: edge.label,
       runtimeOnlyErrorFlow: edge.runtimeOnlyErrorFlow,
       participatesInJoin: edge.participatesInJoin,
@@ -1582,7 +1651,7 @@ export class StudioGraphIsland {
     if (diagnostics) {
       diagnostics.outerHTML = renderStudioCommandFormDiagnostics(this.commandForm);
     }
-    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "newProfileId", "newProfileToolRef", "newProfileTimeoutMs", "newProfileMaxOutputBytes", "sourceRoleId", "targetRoleId", "eventType", "conditionJson", "priority"]) {
+    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "newProfileId", "newProfileToolRef", "newProfileTimeoutMs", "newProfileMaxOutputBytes", "sourceRoleId", "targetRoleId", "outputPort", "inputPort", "eventType", "conditionJson", "priority"]) {
       const current = this.dialogEl.querySelector<HTMLElement>('[data-studio-command-error="' + this.cssEscape(fieldPath) + '"]');
       if (current) {
         current.outerHTML = renderStudioCommandFormFieldError(this.commandForm, fieldPath);
@@ -2245,6 +2314,7 @@ export class StudioGraphIsland {
       canvas: StudioCanvasSnapshot;
       selectedRoleId?: string;
       selectedFlowKey?: string;
+      selectedFlowId?: string;
       blockedCode?: string;
       repositoryRoleId?: string;
       profileDrafts?: unknown;
@@ -2351,7 +2421,10 @@ export class StudioGraphIsland {
     const addEdge = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="add-edge"]');
     const deleteButton = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="delete"]');
     if (addEdge) addEdge.disabled = this.busy || readOnly || !selectedRole;
-    if (addEdge) addEdge.setAttribute("aria-pressed", this.relationshipSourceRoleId && selectedRole ? "true" : "false");
+    const completedConnectionDrag = this.graph.getEdges().some((edge) =>
+      this.isPendingEdgePreviewCell(edge) && Boolean(edge.getTargetCellId())
+    );
+    if (addEdge) addEdge.setAttribute("aria-pressed", this.relationshipSourceRoleId && selectedRole && !completedConnectionDrag ? "true" : "false");
     if (deleteButton) deleteButton.disabled = this.busy || readOnly || !selectedEditable;
     const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
     const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
@@ -2370,6 +2443,12 @@ export class StudioGraphIsland {
       container.classList.toggle("is-relationship-source", node.id === this.relationshipSourceRoleId);
       if (!this.relationshipSourceRoleId) container.classList.remove("is-connection-target");
     }
+  }
+
+  private finishRelationshipConnection(): void {
+    this.relationshipSourceRoleId = "";
+    this.updateConnectionPortPresentation();
+    this.updateToolbarState();
   }
 
   private isReadOnly(): boolean {
@@ -2558,6 +2637,9 @@ export class StudioGraphIsland {
     if (this.dialogEl === host) {
       return;
     }
+    this.commandFormKeydownHost?.removeEventListener("keydown", this.rootKeydownListener);
+    this.commandFormKeydownHost = host === this.root ? null : host;
+    this.commandFormKeydownHost?.addEventListener("keydown", this.rootKeydownListener);
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
     this.dialogEl = host;
@@ -2601,7 +2683,9 @@ export class StudioGraphIsland {
       state.flowKey = studioEdgeFlowKey({
         source: this.commandForm.fields.sourceRoleId || "",
         target: this.commandForm.fields.targetRoleId || "",
-        eventType: this.commandForm.fields.eventType || ""
+        eventType: this.commandForm.fields.eventType || "",
+        outputPort: this.commandForm.fields.outputPort,
+        inputPort: this.commandForm.fields.inputPort
       });
     }
     this.options.onCommandFormStateChange(state);
@@ -2615,6 +2699,8 @@ export class StudioGraphIsland {
     const rawTargetRoleId = (this.commandForm.fields.targetRoleId || "").trim();
     const targetRoleId = rawTargetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : rawTargetRoleId;
     const eventType = (this.commandForm.fields.eventType || "").trim() || "DONE";
+    const outputPort = (this.commandForm.fields.outputPort || "").trim() || undefined;
+    const inputPort = (this.commandForm.fields.inputPort || "").trim() || undefined;
     const label = (this.commandForm.fields.label || "").trim() || eventType;
     const targetCellId = normalizeStudioGraphTargetRoleId(targetRoleId);
     const sourceCell = this.graph.getCellById(sourceRoleId);
@@ -2629,6 +2715,8 @@ export class StudioGraphIsland {
       sourceRoleId,
       targetRoleId,
       eventType,
+      outputPort,
+      inputPort,
       label
     };
   }
@@ -2733,6 +2821,7 @@ export class StudioGraphIsland {
     }
     if (removed) {
       this.applyRuntimeOverlay();
+      this.updateToolbarState();
     }
   }
 
@@ -2747,20 +2836,22 @@ export class StudioGraphIsland {
         return;
       }
       this.removePendingEdgePreviewCells();
-    }, 0);
+    }, 1000);
   }
 
   private committedEdgeExists(preview: PendingStudioEdgePreview): boolean {
     const previewFlowKey = studioFlowKey({
       fromRoleId: preview.sourceRoleId,
       eventType: preview.eventType,
-      toRoleId: preview.targetRoleId
+      toRoleId: preview.targetRoleId,
+      outputPort: preview.outputPort,
+      inputPort: preview.inputPort
     });
     return this.graph.getEdges().some((edge) => {
       if (this.isPendingEdgePreviewCell(edge)) {
         return false;
       }
-      const data = edge.getData() as { studioEdge?: { source: string; target: string; eventType: string } } | undefined;
+      const data = edge.getData() as { studioEdge?: { source: string; target: string; eventType: string; outputPort?: string; inputPort?: string } } | undefined;
       return data?.studioEdge
         ? studioEdgeFlowKey(data.studioEdge) === previewFlowKey
         : false;
@@ -2921,7 +3012,9 @@ export class StudioGraphIsland {
       flowId: edge.id,
       sourceRoleId: edge.source,
       targetRoleId: edge.target,
-      eventType: edge.eventType
+      eventType: edge.eventType,
+      outputPort: edge.outputPort,
+      inputPort: edge.inputPort
     });
   }
 
@@ -2963,14 +3056,18 @@ export class StudioGraphIsland {
             flowId: incomingEdge.id,
             sourceRoleId: incomingEdge.source,
             targetRoleId: incomingEdge.target,
-            eventType: incomingEdge.eventType
+            eventType: incomingEdge.eventType,
+            outputPort: incomingEdge.outputPort,
+            inputPort: incomingEdge.inputPort
           },
           {
             type: "delete-edge",
             flowId: outgoingEdge.id,
             sourceRoleId: outgoingEdge.source,
             targetRoleId: outgoingEdge.target,
-            eventType: outgoingEdge.eventType
+            eventType: outgoingEdge.eventType,
+            outputPort: outgoingEdge.outputPort,
+            inputPort: outgoingEdge.inputPort
           },
           { type: "delete-role", roleId },
           {
@@ -2978,6 +3075,8 @@ export class StudioGraphIsland {
             sourceRoleId: incomingEdge.source,
             targetRoleId: outgoingEdge.target,
             eventType: incomingEdge.eventType,
+            outputPort: incomingEdge.outputPort,
+            inputPort: outgoingEdge.inputPort,
             label: incomingLabel || outgoingLabel || incomingEdge.eventType,
             runtimeOnlyErrorFlow: Boolean(incomingEdge.runtimeOnlyErrorFlow),
             participatesInJoin: Boolean(outgoingEdge.participatesInJoin)
@@ -3032,13 +3131,17 @@ export class StudioGraphIsland {
           flowId: insertion.edge.id,
           sourceRoleId: insertion.edge.source,
           targetRoleId: insertion.edge.target,
-          eventType: insertion.edge.eventType
+          eventType: insertion.edge.eventType,
+          outputPort: insertion.edge.outputPort,
+          inputPort: insertion.edge.inputPort
         },
         {
           type: "add-edge",
           sourceRoleId: insertion.edge.source,
           targetRoleId: command.roleId?.trim() || "",
           eventType: insertion.edge.eventType,
+          outputPort: insertion.edge.outputPort,
+          inputPort: Object.keys(command.inputPorts || {})[0],
           label: insertion.edge.label,
           runtimeOnlyErrorFlow: Boolean(insertion.edge.runtimeOnlyErrorFlow),
           participatesInJoin: false
@@ -3047,7 +3150,9 @@ export class StudioGraphIsland {
           type: "add-edge",
           sourceRoleId: command.roleId?.trim() || "",
           targetRoleId: insertion.edge.target,
-          eventType: "DONE",
+          eventType: Object.keys(command.outputPorts || {})[0] || "DONE",
+          outputPort: Object.keys(command.outputPorts || {})[0],
+          inputPort: insertion.edge.inputPort,
           participatesInJoin: Boolean(insertion.edge.participatesInJoin)
         }
       ]

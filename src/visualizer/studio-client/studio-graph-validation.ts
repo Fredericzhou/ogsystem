@@ -2,7 +2,7 @@ import {
   STUDIO_SYSTEM_END_ROLE_ID,
   STUDIO_SYSTEM_START_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
-  normalizeStudioGraphTargetRoleId,
+  studioFlowKey,
   type StudioAuthoringDocument,
   type StudioAuthoringRole,
   type StudioDiagnosticDto
@@ -97,9 +97,13 @@ export type StudioAddEdgeDraft = {
   originalSourceRoleId?: string;
   originalTargetRoleId?: string;
   originalEventType?: string;
+  originalOutputPort?: string;
+  originalInputPort?: string;
   sourceRoleId: string;
   targetRoleId: string;
   eventType?: string;
+  outputPort?: string;
+  inputPort?: string;
   label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
@@ -392,12 +396,13 @@ export function validateStudioAddEdgeDraft(
   const sourceRoleId = asTrimmedStringOrEmpty(draft.sourceRoleId);
   const rawTargetRoleId = normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.targetRoleId));
   const targetRoleId = rawTargetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : rawTargetRoleId;
-  const targetDisplay = normalizeStudioGraphTargetRoleId(targetRoleId);
   const sourceIsStart = sourceRoleId === STUDIO_SYSTEM_START_ROLE_ID;
   const targetIsEnd = targetRoleId === STUDIO_SYSTEM_END_ROLE_ID;
   const eventType = normalizeStudioEventType(draft.eventType || "DONE");
+  const outputPort = asTrimmedStringOrEmpty(draft.outputPort);
+  const inputPort = asTrimmedStringOrEmpty(draft.inputPort);
   const flowKey = sourceRoleId && targetRoleId && eventType
-    ? `${sourceRoleId}:${eventType}:${targetDisplay}`
+    ? studioFlowKey({ fromRoleId: sourceRoleId, eventType, toRoleId: targetRoleId, outputPort, inputPort })
     : undefined;
 
   if (!sourceRoleId || (!sourceIsStart && !authoring?.roles?.[sourceRoleId]) || sourceRoleId === STUDIO_SYSTEM_END_ROLE_ID) {
@@ -446,6 +451,30 @@ export function validateStudioAddEdgeDraft(
       message: "Flows from Start must use the START event."
     }));
   }
+  const sourceRole = sourceIsStart ? undefined : authoring?.roles?.[sourceRoleId];
+  const targetRole = targetIsEnd ? undefined : authoring?.roles?.[targetRoleId];
+  if (sourceRole && sourceRole.outputPorts !== undefined && (!outputPort || !Object.hasOwn(sourceRole.outputPorts, outputPort))) {
+    diagnostics.push(issue({
+      severity: "error",
+      fieldPath: "outputPort",
+      roleId: sourceRoleId,
+      flowKey,
+      code: "EDGE_PORT_INVALID",
+      messageKey: "studio.validation.edgeOutputPortInvalid",
+      message: "Choose a declared output port for the source role."
+    }));
+  }
+  if (targetRole && targetRole.inputPorts !== undefined && (!inputPort || !Object.hasOwn(targetRole.inputPorts, inputPort))) {
+    diagnostics.push(issue({
+      severity: "error",
+      fieldPath: "inputPort",
+      roleId: targetRoleId,
+      flowKey,
+      code: "EDGE_PORT_INVALID",
+      messageKey: "studio.validation.edgeInputPortInvalid",
+      message: "Choose a declared input port for the target role."
+    }));
+  }
   const priorityText = (draft.priority ?? "0").trim();
   if (!/^(0|[1-9][0-9]*)$/.test(priorityText)) {
     diagnostics.push(issue({
@@ -478,14 +507,18 @@ export function validateStudioAddEdgeDraft(
           flow.toRoleId === (asTrimmedStringOrEmpty(draft.originalTargetRoleId) === "output"
             ? STUDIO_SYSTEM_END_ROLE_ID
             : normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.originalTargetRoleId))) &&
-          flow.eventType === normalizeStudioEventType(draft.originalEventType));
+          flow.eventType === normalizeStudioEventType(draft.originalEventType) &&
+          asTrimmedStringOrEmpty(flow.outputPort) === asTrimmedStringOrEmpty(draft.originalOutputPort) &&
+          asTrimmedStringOrEmpty(flow.inputPort) === asTrimmedStringOrEmpty(draft.originalInputPort));
       if (sameOriginal) {
         return false;
       }
       return (
       flow.fromRoleId === sourceRoleId &&
       flow.toRoleId === targetRoleId &&
-      flow.eventType === eventType
+      flow.eventType === eventType &&
+      asTrimmedStringOrEmpty(flow.outputPort) === outputPort &&
+      asTrimmedStringOrEmpty(flow.inputPort) === inputPort
       );
     });
     if (duplicated) {

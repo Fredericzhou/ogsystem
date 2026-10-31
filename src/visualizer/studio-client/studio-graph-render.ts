@@ -471,6 +471,27 @@ function fallbackPortSpecs(node: GraphViewModelNode): StudioPortSpec[] {
   ];
 }
 
+function declaredPortSpecs(node: GraphViewModelNode): StudioPortSpec[] {
+  if (!node.roleSeat) return [];
+  const inputs = Object.keys(node.inputPorts ?? {});
+  const outputs = Object.keys(node.outputPorts ?? {});
+  const offset = (index: number, count: number): number => count <= 1 ? 0 : Math.round((index - (count - 1) / 2) * 18);
+  return [
+    ...inputs.map((portId, index) => ({
+      id: `in-port-${encodeURIComponent(portId)}`,
+      direction: "in" as const,
+      side: "left" as const,
+      offset: offset(index, inputs.length)
+    })),
+    ...outputs.map((portId, index) => ({
+      id: `out-port-${encodeURIComponent(portId)}`,
+      direction: "out" as const,
+      side: "right" as const,
+      offset: offset(index, outputs.length)
+    }))
+  ];
+}
+
 function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPortSpec[]): Node.Metadata {
   return {
     id: node.id,
@@ -601,7 +622,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
 }
 
 function studioNodePorts(node: GraphViewModelNode, projectedPorts?: readonly StudioPortSpec[]): Node.Metadata["ports"] {
-  const specs = [...(projectedPorts ?? [])];
+  const specs = [...(projectedPorts ?? []), ...declaredPortSpecs(node)];
   if (node.roleSeat || node.kind === "specialRole") {
     for (const fallback of fallbackPortSpecs(node)) {
       if (!specs.some((spec) => spec.direction === fallback.direction)) specs.push(fallback);
@@ -713,7 +734,9 @@ function scheduleStudioEdgeLabelPosition(
   const run = (): void => {
     if (studioLabelPassByGraph.get(graph) !== pass) return;
     if (!studioEdgeLabelsReady(graph, edges)) {
-      if (attempts >= 5) return;
+      // Mobile panels can settle after the graph's first paint. Keep polling
+      // briefly so labels are positioned once the X6 route has real bounds.
+      if (attempts >= 15) return;
       attempts += 1;
       setTimeout(run, 40);
       return;

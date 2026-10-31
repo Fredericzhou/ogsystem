@@ -4,7 +4,7 @@ import type {
   StudioAuthoringRole,
   StudioGraphSnapshot
 } from "./studio-contracts.js";
-import { STUDIO_SYSTEM_END_ROLE_ID, STUDIO_SYSTEM_START_ROLE_ID } from "./studio-contracts.js";
+import { STUDIO_SYSTEM_END_ROLE_ID, STUDIO_SYSTEM_START_ROLE_ID, studioFlowKey } from "./studio-contracts.js";
 
 export type StudioBridgeRole = StudioAuthoringRole & {
   incomingFlowCount: number;
@@ -63,8 +63,16 @@ export function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBrid
     .sort((left, right) => left.flowId.localeCompare(right.flowId))
     .map((flow) => ({
       ...flow,
-      flowKey: `${flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID || flow.fromRoleId === SYSTEM_START_ROLE_ID ? "start" : flow.fromRoleId}:${flow.eventType}:${flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID || flow.toRoleId === SYSTEM_END_ROLE_ID ? "end" : flow.toRoleId}`,
-      participatesInJoin: Boolean(joinSourcesByTarget.get(flow.toRoleId)?.has(flow.fromRoleId))
+      flowKey: studioFlowKey({
+        fromRoleId: flow.fromRoleId === SYSTEM_START_ROLE_ID ? STUDIO_SYSTEM_START_ROLE_ID : flow.fromRoleId,
+        eventType: flow.eventType,
+        toRoleId: flow.toRoleId === SYSTEM_END_ROLE_ID ? STUDIO_SYSTEM_END_ROLE_ID : flow.toRoleId,
+        outputPort: flow.outputPort,
+        inputPort: flow.inputPort
+      }),
+      participatesInJoin: Object.hasOwn(flow, "participatesInJoin")
+        ? Boolean(flow.participatesInJoin)
+        : Boolean(joinSourcesByTarget.get(flow.toRoleId)?.has(flow.fromRoleId))
     }));
 }
 
@@ -121,6 +129,8 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
       target: flow.toRoleId,
       label: flow.label ?? flow.eventType,
       eventType: flow.eventType,
+      ...(flow.outputPort ? { outputPort: flow.outputPort } : {}),
+      ...(flow.inputPort ? { inputPort: flow.inputPort } : {}),
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
       participatesInJoin: flow.participatesInJoin,
       condition: flow.condition,

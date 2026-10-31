@@ -125,6 +125,37 @@ test("GraphViewModel projects Semantic IR modes, loop scopes, and edge routing m
   assert.equal(dispatch.entityKind, "responsibility_seat");
 });
 
+test("GraphViewModel keeps port-complete edge metadata compatible with legacy diagnostics and Semantic IR", () => {
+  const authoring = buildAuthoringFixture();
+  const flow = Object.values(authoring.flows).find((candidate) => candidate.fromRoleId === "dispatch" && candidate.toRoleId === "worker");
+  assert.ok(flow);
+  flow.outputPort = flow.eventType;
+  flow.inputPort = "intake";
+  const view = buildGraphViewModel({
+    authoring,
+    semanticIR: {
+      seats: [
+        { roleId: "dispatch", modes: { default: {} }, defaultMode: "default" },
+        { roleId: "worker", modes: { default: {} }, defaultMode: "default" },
+        { roleId: "review", modes: { default: {} }, defaultMode: "default" }
+      ],
+      loops: [],
+      transitions: [{ flowId: "dispatch:WORK:worker", priority: 7, channel: "normal", condition: { op: "exists", args: [{ kind: "path", root: "state", path: ["task"] }] } }]
+    },
+    validation: {
+      diagnostics: [{ flowKey: "dispatch:WORK:worker", severity: "warning", code: "FLOW_WARN", message: "flow warn" }]
+    },
+    mode: "edit"
+  });
+  const edge = view.edges.find((candidate) => candidate.source === "dispatch" && candidate.target === "worker");
+  assert.ok(edge);
+  assert.equal(edge.outputPort, "WORK");
+  assert.equal(edge.inputPort, "intake");
+  assert.equal(edge.priority, 7);
+  assert.equal(edge.conditionSummary, "exists");
+  assert.deepEqual(edge.diagnostic, { severity: "warning", code: "FLOW_WARN", message: "flow warn" });
+});
+
 test("X6 edge metadata renders semantic labels", () => {
   const edge = {
     id: "loop",

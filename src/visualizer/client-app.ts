@@ -146,6 +146,7 @@ import {
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
   STUDIO_SYSTEM_START_ROLE_ID,
+  studioFlowKey,
   normalizeStudioGraphStoredRoleId,
   normalizeStudioGraphTargetRoleId
 } from "./studio-contracts.js";
@@ -295,6 +296,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const issue = ${issue.toString()};
     const validateStudioAddEdgeDraft = ${validateStudioAddEdgeDraft.toString()};
     const validateStudioConditionAst = ${validateStudioConditionAst.toString()};
+    const studioFlowKey = ${studioFlowKey.toString()};
     const normalizeStudioEventType = ${normalizeStudioEventType.toString()};
     const normalizeStudioGraphStoredRoleId = ${normalizeStudioGraphStoredRoleId.toString()};
     const normalizeStudioGraphTargetRoleId = ${normalizeStudioGraphTargetRoleId.toString()};
@@ -1076,7 +1078,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           return {
             ...flow,
             flowKey: fromRoleId + ":" + String(flow?.eventType || "") + ":" + (targetRoleId === "__system_end__" ? "output" : targetRoleId),
-            participatesInJoin: Boolean(joinSourcesByTarget.get(targetRoleId)?.has(fromRoleId))
+            participatesInJoin: Object.hasOwn(flow, "participatesInJoin")
+              ? Boolean(flow.participatesInJoin)
+              : Boolean(joinSourcesByTarget.get(targetRoleId)?.has(fromRoleId))
           };
         });
     }
@@ -4756,7 +4760,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           flowId: flow.flowId,
           sourceRoleId: flow.fromRoleId,
           targetRoleId: flow.toRoleId,
-          eventType: flow.eventType
+          eventType: flow.eventType,
+          outputPort: flow.outputPort,
+          inputPort: flow.inputPort
         }
       });
       await applyStudioGraphAuthoringCommand(result, {

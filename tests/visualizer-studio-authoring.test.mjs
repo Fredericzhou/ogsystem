@@ -22,13 +22,15 @@ import {
 } from "../dist/visualizer/studio-templates.js";
 import {
   applyStudioAuthoringCommand,
-  deriveInverseCommand
+  deriveInverseCommand,
+  resolveStudioAuthoringPort
 } from "../dist/visualizer/studio-graph-commands.js";
 import {
   commandFromStudioCommandFormState,
   createDefaultStudioCommandFormState,
   renderStudioCommandForm
 } from "../dist/visualizer/studio-graph-command-forms.js";
+import { validateStudioAddEdgeDraft } from "../dist/visualizer/studio-client/studio-graph-validation.js";
 
 const source = [
   "flowchart TD",
@@ -78,6 +80,87 @@ test("Studio authoring commands reject reverse boundary flows and direct Start-t
     });
     assert.equal(result.blockedCode, "invalid-edge-endpoints", `${sourceRoleId} -> ${targetRoleId} must be rejected`);
   }
+});
+
+test("Studio edge commands return a port-complete selection key", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  authoring.roles.dispatch.outputPorts = { WORK: {} };
+  authoring.roles.worker.inputPorts = { intake: {} };
+  const result = applyStudioAuthoringCommand({
+    authoring,
+    canvas: authoringToCanvasDocument(authoring),
+    command: {
+      type: "add-edge",
+      sourceRoleId: "dispatch",
+      targetRoleId: "worker",
+      eventType: "WORK",
+      outputPort: "WORK",
+      inputPort: "intake"
+    }
+  });
+  assert.equal(result.blockedCode, undefined);
+  assert.equal(result.selectedFlowKey, "dispatch:WORK:worker:WORK:intake");
+  assert.ok(result.selectedFlowId);
+});
+
+test("Studio edge commands keep Join participation at the exact flow level", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/project", systemPath: "system.mmd" },
+    system: {
+      systemId: "join.ports",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {
+      source: {
+        roleId: "source",
+        bindingKind: "noop",
+        outputPorts: { accepted: {}, rejected: {} }
+      },
+      target: {
+        roleId: "target",
+        bindingKind: "noop",
+        inputPorts: { result: {} },
+        joinMode: "all_of",
+        joinSources: ["source"]
+      }
+    },
+    flows: {
+      accepted: {
+        flowId: "accepted",
+        fromRoleId: "source",
+        toRoleId: "target",
+        eventType: "ACCEPTED",
+        outputPort: "accepted",
+        inputPort: "result",
+        participatesInJoin: true
+      }
+    },
+    layout: { nodes: {} }
+  };
+  const result = applyStudioAuthoringCommand({
+    authoring,
+    canvas: authoringToCanvasDocument(authoring),
+    command: {
+      type: "add-edge",
+      sourceRoleId: "source",
+      targetRoleId: "target",
+      eventType: "REJECTED",
+      outputPort: "rejected",
+      inputPort: "result",
+      participatesInJoin: false
+    }
+  });
+  assert.equal(result.blockedCode, undefined);
+  assert.equal(result.authoring.flows.accepted.participatesInJoin, true);
+  const rejected = Object.values(result.authoring.flows).find((flow) => flow.outputPort === "rejected");
+  assert.equal(rejected.participatesInJoin, false);
 });
 
 test("Studio authoring import extracts normalized roles, flows, and metadata", () => {
@@ -631,6 +714,30 @@ test("Studio canvas apply ignores edges that reference missing roles", () => {
   assert.equal(Object.values(applied.flows).length, canvas.edges.length);
 });
 
+test("Studio canvas apply preserves port-aware Join metadata", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  authoring.roles.dispatch.outputPorts = { WORK: {} };
+  authoring.roles.worker.inputPorts = { intake: {} };
+  const canvas = authoringToCanvasDocument(authoring);
+  const applied = applyCanvasDocumentToAuthoring({
+    authoring,
+    canvas: {
+      ...canvas,
+      edges: canvas.edges.map((edge) => edge.eventType === "WORK"
+        ? { ...edge, outputPort: "WORK", inputPort: "intake", participatesInJoin: true }
+        : edge)
+    }
+  });
+  const flow = Object.values(applied.flows).find((entry) => entry.eventType === "WORK");
+  assert.equal(flow.outputPort, "WORK");
+  assert.equal(flow.inputPort, "intake");
+  assert.equal(flow.participatesInJoin, true);
+});
+
 test("Studio graph bundle consumes projected edge route points with the X6-compatible API", async () => {
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
   assert.match(bundle, /cell\.setVertices\(routing\?\.vertices \?\? \[\]\)/);
@@ -853,6 +960,210 @@ test("Studio authoring commands create validated roles and edges from command fo
   assert.equal(duplicateEdge.blockedCode, "duplicate-edge");
 });
 
+test("Studio port authoring requires declared endpoints and resolves X6 port ids", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/project", systemPath: "system.mmd" },
+    system: {
+      systemId: "ports.studio.authoring",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {
+      source: {
+        roleId: "source",
+        title: "Source",
+        bindingKind: "model",
+        inputPorts: { default: {} },
+        outputPorts: { DONE: {}, REVIEW: {} }
+      },
+      target: {
+        roleId: "target",
+        title: "Target",
+        bindingKind: "model",
+        inputPorts: { draft: {}, review: {} },
+        outputPorts: { DONE: {} }
+      }
+    },
+    flows: {},
+    layout: { nodes: {} }
+  };
+  const canvas = authoringToCanvasDocument(authoring);
+  const rejected = applyStudioAuthoringCommand({
+    authoring,
+    canvas,
+    command: {
+      type: "add-edge",
+      sourceRoleId: "source",
+      targetRoleId: "target",
+      eventType: "DONE"
+    }
+  });
+  assert.equal(rejected.blockedCode, "invalid-edge-ports");
+  assert.deepEqual(rejected.authoring, authoring);
+
+  const added = applyStudioAuthoringCommand({
+    authoring,
+    canvas,
+    command: {
+      type: "add-edge",
+      sourceRoleId: "source",
+      targetRoleId: "target",
+      eventType: "DONE",
+      outputPort: "DONE",
+      inputPort: "draft"
+    }
+  });
+  assert.equal(added.blockedCode, undefined);
+  const flow = Object.values(added.authoring.flows)[0];
+  assert.equal(flow.outputPort, "DONE");
+  assert.equal(flow.inputPort, "draft");
+  assert.equal(added.canvas.edges[0].outputPort, "DONE");
+  assert.equal(added.canvas.edges[0].inputPort, "draft");
+
+  assert.equal(resolveStudioAuthoringPort({
+    portId: "out-port-DONE",
+    direction: "output",
+    roleId: "source",
+    authoring: added.authoring
+  }), "DONE");
+  assert.equal(resolveStudioAuthoringPort({
+    portId: "in-port-draft",
+    direction: "input",
+    roleId: "target",
+    authoring: added.authoring
+  }), "draft");
+  assert.equal(resolveStudioAuthoringPort({
+    portId: `out-flow-${encodeURIComponent(flow.flowId)}`,
+    direction: "output",
+    roleId: "source",
+    authoring: added.authoring
+  }), "DONE");
+  assert.equal(resolveStudioAuthoringPort({
+    portId: `in-flow-${encodeURIComponent(flow.flowId)}`,
+    direction: "input",
+    roleId: "target",
+    authoring: added.authoring
+  }), "draft");
+  assert.equal(resolveStudioAuthoringPort({
+    portId: "out-port-%E0%A4%A",
+    direction: "output",
+    roleId: "source",
+    authoring: added.authoring
+  }), undefined);
+  assert.equal(resolveStudioAuthoringPort({
+    portId: "connect-left",
+    direction: "output",
+    roleId: "source",
+    authoring: added.authoring
+  }), undefined);
+});
+
+test("Studio port commands preserve legacy Mermaid authoring without declared ports", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/project", systemPath: "system.mmd" },
+    system: {
+      systemId: "legacy.studio.authoring",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {
+      source: { roleId: "source", title: "Source", bindingKind: "noop" },
+      target: { roleId: "target", title: "Target", bindingKind: "noop" }
+    },
+    flows: {},
+    layout: { nodes: {} }
+  };
+  const result = applyStudioAuthoringCommand({
+    authoring,
+    canvas: authoringToCanvasDocument(authoring),
+    command: { type: "add-edge", sourceRoleId: "source", targetRoleId: "target", eventType: "DONE" }
+  });
+  assert.equal(result.blockedCode, undefined);
+  const flow = Object.values(result.authoring.flows)[0];
+  assert.equal(flow.outputPort, undefined);
+  assert.equal(flow.inputPort, undefined);
+  assert.equal(resolveStudioAuthoringPort({
+    portId: "out-flow-missing",
+    direction: "output",
+    roleId: "source",
+    authoring: result.authoring
+  }), undefined);
+});
+
+test("Studio edge validation treats both declared ports as part of duplicate identity", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/project", systemPath: "system.mmd" },
+    system: {
+      systemId: "ports.validation",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {
+      source: { roleId: "source", title: "Source", bindingKind: "noop", outputPorts: { DONE: {}, REVIEW: {} } },
+      target: { roleId: "target", title: "Target", bindingKind: "noop", inputPorts: { draft: {}, review: {} } }
+    },
+    flows: {
+      existing: { flowId: "existing", fromRoleId: "source", toRoleId: "target", eventType: "DONE", outputPort: "DONE", inputPort: "draft" }
+    },
+    layout: { nodes: {} }
+  };
+  const context = { authoring };
+  const alternate = validateStudioAddEdgeDraft({
+    sourceRoleId: "source", targetRoleId: "target", eventType: "DONE", outputPort: "REVIEW", inputPort: "review", priority: "0", conditionJson: ""
+  }, context);
+  assert.equal(alternate.ok, true);
+  const duplicate = validateStudioAddEdgeDraft({
+    sourceRoleId: "source", targetRoleId: "target", eventType: "DONE", outputPort: "DONE", inputPort: "draft", priority: "0", conditionJson: ""
+  }, context);
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.diagnostics.some((diagnostic) => diagnostic.code === "EDGE_DUPLICATED"), true);
+});
+
+test("Studio edge update duplicate checks keep the original port identity", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/project", systemPath: "system.mmd" },
+    system: {
+      systemId: "ports.update.validation",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {
+      source: { roleId: "source", title: "Source", bindingKind: "noop", outputPorts: { DONE: {}, REVIEW: {} } },
+      target: { roleId: "target", title: "Target", bindingKind: "noop", inputPorts: { draft: {}, review: {} } }
+    },
+    flows: {
+      first: { flowId: "first", fromRoleId: "source", toRoleId: "target", eventType: "DONE", outputPort: "DONE", inputPort: "draft" },
+      second: { flowId: "second", fromRoleId: "source", toRoleId: "target", eventType: "DONE", outputPort: "REVIEW", inputPort: "review" }
+    },
+    layout: { nodes: {} }
+  };
+  const validation = validateStudioAddEdgeDraft({
+    flowId: "first",
+    originalSourceRoleId: "source",
+    originalTargetRoleId: "target",
+    originalEventType: "DONE",
+    originalOutputPort: "DONE",
+    originalInputPort: "draft",
+    sourceRoleId: "source",
+    targetRoleId: "target",
+    eventType: "DONE",
+    outputPort: "REVIEW",
+    inputPort: "review",
+    priority: "0",
+    conditionJson: ""
+  }, { authoring });
+  assert.equal(validation.ok, false);
+  assert.equal(validation.diagnostics.some((diagnostic) => diagnostic.code === "EDGE_DUPLICATED"), true);
+});
+
 test("adding the first role to an empty graph makes it the start entry", () => {
   const empty = {
     version: 1,
@@ -923,6 +1234,58 @@ test("Studio authoring commands derive batch inverses for semantic undo when the
     serializeAuthoringToMermaid(reverted.authoring),
     serializeAuthoringToMermaid(authoring)
   );
+});
+
+test("Studio inverse commands preserve edge and role port contracts", () => {
+  const authoring = {
+    version: 1,
+    project: { workdir: "/tmp/project", systemPath: "system.mmd" },
+    system: {
+      systemId: "inverse.ports",
+      systemVersion: "1.0.0",
+      startDispatch: { mode: "all" },
+      lawGlobalRef: "law.minimal.base"
+    },
+    roles: {
+      source: { roleId: "source", title: "Source", bindingKind: "noop", outputPorts: { DONE: {}, REVIEW: {} } },
+      target: { roleId: "target", title: "Target", bindingKind: "noop", inputPorts: { draft: {}, review: {} } }
+    },
+    flows: {
+      existing: { flowId: "existing", fromRoleId: "source", toRoleId: "target", eventType: "DONE", outputPort: "DONE", inputPort: "draft" }
+    },
+    layout: { nodes: { source: { x: 0, y: 0, width: 180, height: 84 }, target: { x: 240, y: 0, width: 180, height: 84 } } }
+  };
+  const update = {
+    type: "update-edge",
+    flowId: "existing",
+    originalSourceRoleId: "source",
+    originalTargetRoleId: "target",
+    originalEventType: "DONE",
+    sourceRoleId: "source",
+    targetRoleId: "target",
+    eventType: "DONE",
+    outputPort: "REVIEW",
+    inputPort: "review"
+  };
+  const inverseUpdate = deriveInverseCommand(authoring, update);
+  assert.equal(inverseUpdate?.type, "update-edge");
+  assert.equal(inverseUpdate.outputPort, "DONE");
+  assert.equal(inverseUpdate.inputPort, "draft");
+  const updated = applyStudioAuthoringCommand({ authoring, command: update });
+  assert.equal(updated.blockedCode, undefined);
+  const restored = applyStudioAuthoringCommand({ authoring: updated.authoring, command: inverseUpdate });
+  assert.equal(restored.blockedCode, undefined);
+  assert.equal(restored.authoring.flows.existing.outputPort, "DONE");
+  assert.equal(restored.authoring.flows.existing.inputPort, "draft");
+
+  const inverseDelete = deriveInverseCommand(authoring, { type: "delete-role", roleId: "target" });
+  assert.equal(inverseDelete?.type, "batch");
+  assert.equal(inverseDelete.commands.some((command) => command.type === "add-edge" && command.outputPort === "DONE" && command.inputPort === "draft"), true);
+  const deleted = applyStudioAuthoringCommand({ authoring, command: { type: "delete-role", roleId: "target" } });
+  assert.equal(deleted.blockedCode, undefined);
+  const roleRestored = applyStudioAuthoringCommand({ authoring: deleted.authoring, command: inverseDelete });
+  assert.equal(roleRestored.blockedCode, undefined);
+  assert.deepEqual(roleRestored.authoring.roles.target.inputPorts, { draft: {}, review: {} });
 });
 
 test("Studio authoring command inverse derivation falls back when deleting non-round-trippable roles", () => {

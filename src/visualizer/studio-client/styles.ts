@@ -100,7 +100,7 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-toolbar select {
       min-height: 32px;
       padding: 5px 34px 5px 9px;
-      border-radius: var(--control-radius);
+      border-radius: 8px;
       font-size: 11px;
       cursor: pointer;
     }
@@ -128,21 +128,27 @@ export function injectStudioGraphStyles(): void {
         padding: 4px;
       }
       .studio-graph-toolbar-main {
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         max-width: 100%;
-        overflow-x: auto;
+        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: hidden;
         overscroll-behavior-x: contain;
         -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
+        align-content: flex-start;
         width: 100%;
       }
       .studio-graph-toolbar-main::-webkit-scrollbar {
         display: none;
       }
       .studio-graph-toolbar-group {
-        flex: 0 0 auto;
-        flex-wrap: nowrap;
-        max-width: none;
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
       }
       .studio-graph-toolbar-text {
         display: none;
@@ -235,6 +241,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-canvas .x6-node.is-relationship-source [data-studio-connect-port],
     .studio-graph-canvas .x6-node.is-connection-target [data-studio-connect-port],
+    .is-relationship-connecting .x6-node [data-studio-connect-port],
     .is-relationship-connecting .x6-node:hover [data-studio-connect-port] {
       fill: #ecfeff;
       opacity: 1;

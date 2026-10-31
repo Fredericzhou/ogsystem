@@ -64,6 +64,8 @@ export function graphToCanvasDocument(graph: Graph, authoring: StudioAuthoringDo
       target,
       label: studioEdge.label || studioEdge.eventType,
       eventType: studioEdge.eventType || "DONE",
+      ...(studioEdge.outputPort ? { outputPort: studioEdge.outputPort } : {}),
+      ...(studioEdge.inputPort ? { inputPort: studioEdge.inputPort } : {}),
       runtimeOnlyErrorFlow: Boolean(studioEdge.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(studioEdge.participatesInJoin),
       condition: studioEdge.condition,
@@ -81,6 +83,8 @@ export function studioEdgeFlowKey(edge: GraphViewModelEdge): string {
   return studioFlowKey({
     fromRoleId: edge.source,
     eventType: edge.eventType,
-    toRoleId: normalizeStudioGraphStoredRoleId(edge.target)
+    toRoleId: normalizeStudioGraphStoredRoleId(edge.target),
+    outputPort: edge.outputPort,
+    inputPort: edge.inputPort
   });
 }

@@ -774,6 +774,11 @@ export function renderPageShellStyles(): string {
       background: var(--control-bg-hover);
       border-color: var(--control-border-strong);
     }
+    :root[data-visualizer-theme="dark"] .top-nav-utilities #refresh {
+      background: #172337;
+      border-color: #334155;
+      color: #dbeafe;
+    }
     .workbench-card-header {
       padding: 10px 14px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.08);
@@ -3118,6 +3123,19 @@ export function renderPageShellStyles(): string {
       color-scheme: dark;
       cursor: pointer;
     }
+    #locale-select,
+    .studio-bridge-index-controls > select {
+      border-radius: 8px;
+    }
+    #locale-select {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
     .field [aria-invalid="true"] {
       border-color: rgba(248, 113, 113, 0.78);
       box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.14);
@@ -4767,15 +4785,20 @@ export function renderPageShellStyles(): string {
       .studio-selection-overlay { padding: 6px; }
     }
     @media (max-width: 720px) {
+      .brand-lockup .project-name { font-weight: 750; }
       .studio-graph-toolbar-main {
         flex-wrap: wrap;
         overflow: hidden;
         align-content: flex-start;
+        width: 100%;
       }
       .studio-graph-toolbar-group {
         flex: 1 1 100%;
         flex-wrap: wrap;
+        min-width: 0;
+        width: 100%;
         max-width: 100%;
+        box-sizing: border-box;
         overflow: hidden;
       }
     }
@@ -4789,6 +4812,13 @@ export function renderPageShellStyles(): string {
         flex: 1 1 auto;
         flex-wrap: wrap;
         max-width: 100%;
+      }
+    }
+    @media (min-width: 721px) {
+      .stage-stack {
+        overflow-x: hidden;
+        overflow-y: scroll;
+        scrollbar-gutter: stable both-edges;
       }
     }
     /* The design header rule above intentionally resets the shell height for
@@ -4834,7 +4864,8 @@ export function renderPageShellStyles(): string {
     body.show-build-workspace .stage-stack {
       grid-template-rows: minmax(0, 1fr);
       padding: 0;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: scroll;
     }
     body.show-build-workspace .main-stage { overflow: hidden; }
     body.show-build-workspace #console-panel-build,

@@ -17,7 +17,7 @@ function usage(): string {
     "Defaults:",
     "  ogs-dir: current directory",
     "  host: 127.0.0.1",
-    "  port: 3337",
+    "  port: 3637",
     "",
     "Remote access:",
     "  Non-loopback hosts require TLS certificate/key and OGS_VIS_USERNAME / OGS_VIS_PASSWORD.",
@@ -32,7 +32,7 @@ function asString(value: string | boolean | undefined): string | undefined {
 
 function parsePort(value: string | undefined): number {
   if (!value) {
-    return 3337;
+    return 3637;
   }
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {

@@ -402,8 +402,15 @@ export function applyCanvasDocumentToAuthoring(args: {
       fromRoleId: edge.source,
       toRoleId: edge.target,
       eventType: fromIsStart ? "START" : edge.eventType,
+      ...(edge.outputPort !== undefined ? { outputPort: edge.outputPort } : existing?.outputPort !== undefined ? { outputPort: existing.outputPort } : {}),
+      ...(edge.inputPort !== undefined ? { inputPort: edge.inputPort } : existing?.inputPort !== undefined ? { inputPort: existing.inputPort } : {}),
       ...(displayLabel && displayLabel !== edge.eventType ? { label: displayLabel } : {}),
       runtimeOnlyErrorFlow: existing?.runtimeOnlyErrorFlow ?? isRuntimeOnlyErrorEvent(edge.eventType),
+      ...(edge.participatesInJoin !== undefined
+        ? { participatesInJoin: Boolean(edge.participatesInJoin) }
+        : existing?.participatesInJoin !== undefined
+          ? { participatesInJoin: Boolean(existing.participatesInJoin) }
+          : {}),
       condition: Object.hasOwn(edge, "condition") ? edge.condition : existing?.condition,
       priority: edge.priority ?? existing?.priority
     };
