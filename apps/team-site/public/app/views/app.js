@@ -1737,6 +1737,13 @@ async function renderStudioReleaseGate(teamVersionId, pageRequest = state.active
   }
 }
 
+function studioRoleDisplayName(authoring, roleId, locale) {
+  if (roleId === "__system_start__") return locale === "en" ? "Start" : "开始";
+  if (roleId === "__system_end__") return locale === "en" ? "End" : "结束";
+  const title = String(authoring.roles?.[roleId]?.title || "").trim();
+  return title || roleId;
+}
+
 function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredModels = []) {
   const english = locale === "en";
   const copyOverrides = {
@@ -1787,9 +1794,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const manifestContracts = Array.isArray(manifest.contracts) ? manifest.contracts : [];
   const contractSchemaRef = flowContract?.schema || `schemas/${String(selectedFlow?.flowId || "flow").replace(/[^a-zA-Z0-9_.-]/g, "-")}.json`;
   const role = selection.roleId ? roles[selection.roleId] : null;
-  const roleName = (roleId) => roleId === "__system_start__" ? t("Start", "开始")
-    : roleId === "__system_end__" ? t("End", "结束")
-      : roles[roleId]?.title || (english ? "Untitled role" : "未命名角色");
+  const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, locale);
   const roleModelRef = role?.modelRef || (role?.backend && role?.modelId ? `${role.backend}/${role.modelId}` : "");
   const runnableModels = discoveredModels.filter((model) => model.runnable);
   const selectedModelKnown = runnableModels.some((model) => (model.selectionRef || `${model.backend}/${model.id}`) === roleModelRef);
@@ -1816,7 +1821,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModelRef"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道瞬态故障时触发。")}</span></label>` : "";
   const review = role?.review || {};
   const reviewTarget = review.reworkTargetRoleId || "";
-  const reworkRoleOptions = roleIds.map((roleId) => `<option value="${esc(roleId)}" ${reviewTarget === roleId ? "selected" : ""}>${esc(roles[roleId]?.title || (english ? "Untitled role" : "未命名角色"))}</option>`).join("");
+  const reworkRoleOptions = roleIds.map((roleId) => `<option value="${esc(roleId)}" ${reviewTarget === roleId ? "selected" : ""}>${esc(studioRoleDisplayName(authoring, roleId, locale))}</option>`).join("");
   const startRoleId = "__system_start__";
   const endRoleId = "__system_end__";
   const terminalRoleCount = new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === endRoleId).map((flow) => flow.fromRoleId)).size;
@@ -1825,7 +1830,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const deleteFlowButton = selectedFlow ? `<button type="button" class="secondary-button danger-button" data-studio-flow-delete>${t("Delete flow", "删除关系")}</button>` : "";
   if (selectedFlow?.fromRoleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Structural event", "结构事件")}</span><input value="${t("Start", "开始")}" readonly></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || localizedEventLabel("START", copy))}"></label><p class="field-hint full">${t("Start dispatch is configured on the Start role. This flow defines one eligible role.", "开始分发策略在开始角色中配置；此关系定义一个候选角色。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
   if (selectedFlow) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><input data-studio-flow-field="eventType" value="${esc(selectedFlow.eventType)}"></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
-  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(role.title || role.roleId)}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}<label class="field"><span>${t("Distribution", "分发策略")}</span><select data-studio-role-field="routingMode"><option value="">standard</option><option value="parallel_split" ${role.routingMode === "parallel_split" ? "selected" : ""}>parallel_split</option></select></label><label class="field"><span>${t("Join mode", "汇聚策略")}</span><select data-studio-role-field="joinMode"><option value="">none</option><option value="all_of" ${role.joinMode === "all_of" ? "selected" : ""}>all_of</option><option value="quorum_of" ${role.joinMode === "quorum_of" ? "selected" : ""}>quorum_of</option></select></label>${role.joinMode === "quorum_of" ? `<label class="field"><span>${t("Minimum sources", "最少来源数")}</span><input data-studio-role-field="joinMin" type="number" min="1" step="1" value="${esc(role.joinMin ?? "")}"></label>` : ""}<label class="field"><span>${t("Loop budget", "循环上限")}</span><input data-studio-role-field="loopMax" type="number" min="1" step="1" value="${esc(role.loopMax ?? "")}"></label><label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
+  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(roleName(role.roleId))}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${t("Display name", "显示名称")}</span><input data-studio-role-field="title" value="${esc(role.title || "")}" maxlength="80"></label><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}<label class="field"><span>${t("Distribution", "分发策略")}</span><select data-studio-role-field="routingMode"><option value="">standard</option><option value="parallel_split" ${role.routingMode === "parallel_split" ? "selected" : ""}>parallel_split</option></select></label><label class="field"><span>${t("Join mode", "汇聚策略")}</span><select data-studio-role-field="joinMode"><option value="">none</option><option value="all_of" ${role.joinMode === "all_of" ? "selected" : ""}>all_of</option><option value="quorum_of" ${role.joinMode === "quorum_of" ? "selected" : ""}>quorum_of</option></select></label>${role.joinMode === "quorum_of" ? `<label class="field"><span>${t("Minimum sources", "最少来源数")}</span><input data-studio-role-field="joinMin" type="number" min="1" step="1" value="${esc(role.joinMin ?? "")}"></label>` : ""}<label class="field"><span>${t("Loop budget", "循环上限")}</span><input data-studio-role-field="loopMax" type="number" min="1" step="1" value="${esc(role.loopMax ?? "")}"></label><label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
   return `<div class="studio-inspector-heading"><span class="section-kicker">${t("No selection", "未选择对象")}</span><h2>${t("Select a role or flow", "请选择角色或流程")}</h2></div><p class="form-hint">${t("Open Global from Team configuration to edit team-wide settings.", "请从团队配置中选择“全局”编辑团队级配置。")}</p>`;
 }
 
@@ -1858,8 +1863,6 @@ function localizeStudioInspector(inspector, locale) {
   }
   const roleId = inspector.querySelector(".studio-inspector-heading > code");
   if (roleId) {
-    const roleTitle = inspector.querySelector(".studio-inspector-heading h2");
-    if (roleTitle?.textContent === roleId.textContent) roleTitle.textContent = english ? "Untitled role" : "未命名角色";
     const details = document.createElement("details");
     details.className = "studio-inspector-advanced-id";
     const summary = document.createElement("summary");
@@ -1945,7 +1948,7 @@ function studioRouteOrderMarkup(authoring, role, locale) {
   const targets = [...saved, ...outgoing.filter((target) => !saved.includes(target))];
   const label = locale === "en" ? "Sibling flow order" : "同级下游顺序";
   const hint = locale === "en" ? "Drag rows to set the order. Lower positions run first when sibling flows compete." : "拖动角色调整顺序；同级流程竞争时，序号靠前的优先。";
-  const roleName = (roleId) => authoring.roles?.[roleId]?.title || roleId;
+  const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, locale);
   return `<section class="studio-inspector-section studio-route-order-editor"><h3>${label}<span class="studio-order-count">${targets.length}</span></h3><p class="field-hint">${hint}</p><div class="studio-route-order-list" data-studio-route-order-list role="list">${targets.map((target, index) => `<div class="studio-route-order-row" data-studio-route-order-item data-studio-route-order="${esc(target)}" draggable="true" role="listitem" aria-posinset="${index + 1}" aria-setsize="${targets.length}"><span class="studio-route-order-position" data-studio-route-order-position>${index + 1}</span><span class="studio-route-order-name">${esc(roleName(target))}</span><button type="button" class="studio-order-handle" data-studio-route-order-handle aria-label="${locale === "en" ? `Drag to reorder ${esc(roleName(target))}` : `拖动调整${esc(roleName(target))}顺序`}" title="${locale === "en" ? "Drag to reorder" : "拖动调整顺序"}">⠿</button><span class="studio-route-order-moves"><button type="button" class="studio-order-move" data-studio-route-order-move="up" aria-label="${locale === "en" ? `Move ${esc(roleName(target))} up` : `将${esc(roleName(target))}上移`}" title="${locale === "en" ? "Move up" : "上移"}" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" class="studio-order-move" data-studio-route-order-move="down" aria-label="${locale === "en" ? `Move ${esc(roleName(target))} down` : `将${esc(roleName(target))}下移`}" title="${locale === "en" ? "Move down" : "下移"}" ${index === targets.length - 1 ? "disabled" : ""}>↓</button></span></div>`).join("")}</div></section>`;
 }
 
@@ -1968,7 +1971,7 @@ function studioContextMapMarkup(authoring, role, locale) {
       const labels = locale === "en"
         ? { content: "role output", event: "flow event", data: "structured data" }
         : { content: "角色输出", event: "流转事件", data: "结构化数据" };
-      return `${authoring.roles?.[roleSource[1]]?.title || roleSource[1]} · ${labels[roleSource[2]]}`;
+      return `${studioRoleDisplayName(authoring, roleSource[1], locale)} · ${labels[roleSource[2]]}`;
     }
     const labels = locale === "en" ? {
       "global.task": "Current task",
@@ -2032,12 +2035,12 @@ function deleteStudioAuthoringFlow(authoring, canvas, flow) {
 }
 
 function resolveStudioSelectedFlow(authoring, selection) {
+  if (selection.roleId) return null;
+  if (!selection.flowKey || !selection.flowId) return null;
   const flows = Object.values(authoring.flows || {});
-  if (selection.flowId) {
-    const byId = flows.find((flow) => flow.flowId === selection.flowId);
-    if (byId) return byId;
-  }
-  return selection.flowKey ? flows.find((flow) => studioAuthoringFlowKey(flow) === selection.flowKey) || null : null;
+  const byId = flows.find((flow) => flow.flowId === selection.flowId);
+  const byKey = flows.find((flow) => studioAuthoringFlowKey(flow) === selection.flowKey);
+  return byId && byKey && byKey.flowId === byId.flowId ? byId : null;
 }
 
 function studioContractTargetRoleId(roleId) {
@@ -2116,7 +2119,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     let projectDigest = payload.saveSnapshotDigest || payload.teamVersionDigest;
     let dirty = false;
     state.isTeamGraphDirty = () => dirty;
-    let selection = { roleId: "", flowKey: "", assets: { roles: {}, contracts: "" } };
+    let selection = { roleId: "", flowKey: "", flowId: "", assets: { roles: {}, contracts: "" } };
     const workbench = stage.closest(".studio-design-workbench");
     const inspector = $("#studio-property-inspector");
     const assetDrawer = workbench?.querySelector("#studio-asset-drawer");
@@ -2335,7 +2338,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (!roleList || !flowList) return;
       const roles = Object.values(authoring.roles || {});
       const flows = Object.values(authoring.flows || {});
-      roleList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search roles" : "搜索角色"}</span><input type="search" placeholder="${state.locale === "en" ? "Search roles" : "搜索角色"}"></label>${roles.map((role) => { const color = roleColorForId(role.roleId); return `<button type="button" class="studio-asset-row" data-studio-asset-role="${esc(role.roleId)}" aria-current="${selection.roleId === role.roleId ? "true" : "false"}"><span class="studio-role-avatar" style="--role-accent:${color.accent}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="7.5" r="3.3"></circle><path d="M4.5 21c.3-4.2 3-6.7 7.5-6.7s7.2 2.5 7.5 6.7z"></path></svg></span><span><strong>${esc(role.title || role.roleId)}</strong><small>${esc(role.roleId)} · ${esc(role.bindingKind || "noop")}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No roles yet." : "尚无角色。"}</p>`}`;
+      roleList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search roles" : "搜索角色"}</span><input type="search" placeholder="${state.locale === "en" ? "Search roles" : "搜索角色"}"></label>${roles.map((role) => { const color = roleColorForId(role.roleId); return `<button type="button" class="studio-asset-row" data-studio-asset-role="${esc(role.roleId)}" aria-current="${selection.roleId === role.roleId ? "true" : "false"}"><span class="studio-role-avatar" style="--role-accent:${color.accent}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="7.5" r="3.3"></circle><path d="M4.5 21c.3-4.2 3-6.7 7.5-6.7s7.2 2.5 7.5 6.7z"></path></svg></span><span><strong>${esc(studioRoleDisplayName(authoring, role.roleId, state.locale))}</strong><small>${esc(role.roleId)} · ${esc(role.bindingKind || "noop")}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No roles yet." : "尚无角色。"}</p>`}`;
       roleList.querySelectorAll("[data-studio-asset-role]").forEach((button) => {
         const role = roles.find((item) => item.roleId === button.dataset.studioAssetRole);
         const binding = role?.bindingKind || "noop";
@@ -2345,7 +2348,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const description = role?.description || role?.summary;
         button.querySelector("small").textContent = description ? `${label} · ${description}` : label;
       });
-      flowList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search flows" : "搜索流程"}</span><input type="search" placeholder="${state.locale === "en" ? "Search flows" : "搜索流程"}"></label>${flows.map((flow) => { const flowKey = studioAuthoringFlowKey(flow); const fromLabel = flow.fromRoleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始") : (authoring.roles?.[flow.fromRoleId]?.title || flow.fromRoleId); const targetLabel = flow.toRoleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束") : (authoring.roles?.[flow.toRoleId]?.title || flow.toRoleId); const flowLabel = flow.label || localizedEventLabel(flow.eventType, copy); return `<button type="button" class="studio-asset-row studio-flow-row" data-studio-asset-flow="${esc(flowKey)}" aria-current="${selection.flowKey === flowKey ? "true" : "false"}"><span class="studio-flow-contract-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"></path><path d="M14 3.5v5h5M9 12h6M9 15h6M9 18c1-1 1.5 1 2.5 0 1-.9 1.5 1.2 2.5 0"></path></svg></span><span><strong>${esc(flowLabel)}</strong><small>${esc(fromLabel)} → ${esc(targetLabel)}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No flows yet." : "尚无流程。"}</p>`}`;
+      flowList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search flows" : "搜索流程"}</span><input type="search" placeholder="${state.locale === "en" ? "Search flows" : "搜索流程"}"></label>${flows.map((flow) => { const flowKey = studioAuthoringFlowKey(flow); const fromLabel = studioRoleDisplayName(authoring, flow.fromRoleId, state.locale); const targetLabel = studioRoleDisplayName(authoring, flow.toRoleId, state.locale); const flowLabel = flow.label || localizedEventLabel(flow.eventType, copy); return `<button type="button" class="studio-asset-row studio-flow-row" data-studio-asset-flow="${esc(flowKey)}" aria-current="${selection.flowKey === flowKey ? "true" : "false"}"><span class="studio-flow-contract-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"></path><path d="M14 3.5v5h5M9 12h6M9 15h6M9 18c1-1 1.5 1 2.5 0 1-.9 1.5 1.2 2.5 0"></path></svg></span><span><strong>${esc(flowLabel)}</strong><small>${esc(fromLabel)} → ${esc(targetLabel)}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No flows yet." : "尚无流程。"}</p>`}`;
       const flowSearch = flowList.querySelector(".studio-asset-search");
       if (flowSearch) {
         const label = state.locale === "en" ? "Search transitions" : "搜索流转";
@@ -2354,25 +2357,22 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       }
       const emptyFlows = flowList.querySelector(":scope > .empty-note");
       if (emptyFlows) emptyFlows.textContent = state.locale === "en" ? "No transitions yet." : "暂无流转。";
-      roleList.querySelectorAll("[data-studio-asset-role]").forEach((button) => {
-        const role = roles.find((item) => item.roleId === button.dataset.studioAssetRole);
-        const title = button.querySelector("strong");
-        if (title && title.textContent === role?.roleId) title.textContent = state.locale === "en" ? "Untitled role" : "未命名角色";
-      });
       flowList.querySelectorAll("[data-studio-asset-flow]").forEach((button) => {
         const key = button.dataset.studioAssetFlow;
         const flow = flows.find((item) => studioAuthoringFlowKey(item) === key);
         if (!flow) return;
-        const endpointName = (roleId) => roleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始")
-          : roleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束")
-            : authoring.roles?.[roleId]?.title || (state.locale === "en" ? "Unnamed role" : "未命名角色");
+        const endpointName = (roleId) => studioRoleDisplayName(authoring, roleId, state.locale);
         button.querySelector("small").textContent = `${endpointName(flow.fromRoleId)} → ${endpointName(flow.toRoleId)}`;
       });
       for (const [list, selector, getFlow] of [[roleList, "[data-studio-asset-role]", false], [flowList, "[data-studio-asset-flow]", true]]) {
         list.querySelectorAll(selector).forEach((button) => button.addEventListener("click", () => {
           const value = button.dataset[getFlow ? "studioAssetFlow" : "studioAssetRole"];
           const flow = getFlow ? Object.values(authoring.flows || {}).find((item) => studioAuthoringFlowKey(item) === value) : null;
-          selection = { ...selection, roleId: getFlow ? "" : value, flowKey: getFlow ? value : "", flowId: flow?.flowId || "" };
+          if (getFlow && !flow) {
+            setStudioSelection();
+          } else {
+            setStudioSelection(getFlow ? { flowKey: value, flowId: flow.flowId } : { roleId: value });
+          }
           updateStudioGraph?.update({ selectedRoleId: selection.roleId, selectedFlowKey: selection.flowKey });
           renderInspector();
           renderAssetNavigator();
@@ -2383,6 +2383,82 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           list.querySelectorAll(selector).forEach((button) => { button.hidden = Boolean(query && !button.textContent.toLocaleLowerCase().includes(query)); });
         });
       }
+    };
+    const setStudioSelection = ({ roleId = "", flowKey = "", flowId = "" } = {}) => {
+      selection = {
+        roleId: roleId || "",
+        flowKey: flowKey || "",
+        flowId: flowId || "",
+        assets: selection.assets
+      };
+    };
+    const syncFlowPresentation = (flow) => {
+      if (!flow) {
+        setStudioSelection();
+        updateStudioGraph?.update({ selectedRoleId: "", selectedFlowKey: "" });
+        renderAssetNavigator();
+        syncAssetNavigatorSelection();
+        return;
+      }
+      setStudioSelection({ flowKey: studioAuthoringFlowKey(flow), flowId: flow.flowId });
+      updateStudioGraph?.update({
+        authoring,
+        viewModel: undefined,
+        selectedRoleId: "",
+        selectedFlowKey: selection.flowKey
+      });
+      renderAssetNavigator();
+      syncAssetNavigatorSelection();
+    };
+    const syncRoleDependentPresentation = (role) => {
+      if (!role) return;
+      const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, state.locale);
+      inspector?.querySelectorAll("[data-studio-route-order-item]").forEach((row) => {
+        const target = row.dataset.studioRouteOrder || "";
+        const name = roleName(target);
+        const nameElement = row.querySelector(".studio-route-order-name");
+        if (nameElement) nameElement.textContent = name;
+        const handle = row.querySelector("[data-studio-route-order-handle]");
+        if (handle) {
+          const label = state.locale === "en" ? `Drag to reorder ${name}` : `拖动调整${name}顺序`;
+          handle.setAttribute("aria-label", label);
+          handle.title = label;
+        }
+        const moveUp = state.locale === "en" ? `Move ${name} up` : `将${name}上移`;
+        const moveDown = state.locale === "en" ? `Move ${name} down` : `将${name}下移`;
+        const upButton = row.querySelector('[data-studio-route-order-move="up"]');
+        const downButton = row.querySelector('[data-studio-route-order-move="down"]');
+        upButton?.setAttribute("aria-label", moveUp);
+        upButton?.setAttribute("title", moveUp);
+        downButton?.setAttribute("aria-label", moveDown);
+        downButton?.setAttribute("title", moveDown);
+      });
+      inspector?.querySelectorAll('[data-studio-role-field="reviewTarget"] option').forEach((option) => {
+        if (option.value) option.textContent = roleName(option.value);
+      });
+      inspector?.querySelectorAll("[data-studio-context-source] option").forEach((option) => {
+        const match = String(option.value || "").match(/^source\((.+)\)\.(content|event|data)$/);
+        if (!match) return;
+        const labels = state.locale === "en"
+          ? { content: "role output", event: "flow event", data: "structured data" }
+          : { content: "角色输出", event: "流转事件", data: "结构化数据" };
+        option.textContent = `${roleName(match[1])} · ${labels[match[2]]}`;
+      });
+    };
+    const syncRoleTitlePresentation = () => {
+      const role = selection.roleId ? authoring.roles?.[selection.roleId] : null;
+      if (!role) return;
+      const heading = inspector?.querySelector(".studio-inspector-heading h2");
+      if (heading) heading.textContent = studioRoleDisplayName(authoring, role.roleId, state.locale);
+      syncRoleDependentPresentation(role);
+      updateStudioGraph?.update({
+        authoring,
+        viewModel: undefined,
+        selectedRoleId: selection.roleId,
+        selectedFlowKey: ""
+      });
+      renderAssetNavigator();
+      syncAssetNavigatorSelection();
     };
     const syncAssetNavigatorSelection = () => {
       workbench?.querySelectorAll(".studio-asset-row").forEach((button) => {
@@ -2543,6 +2619,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             delete role.modelSelectionSource;
           }
           if (role.bindingKind !== "exec") delete role.profileId;
+        } else if (roleField === "title") {
+          const title = element.value.trim().slice(0, 80);
+          if (element.value !== title) element.value = title;
+          role.title = title || undefined;
+          syncRoleTitlePresentation();
         } else {
           role[roleField] = element.value || undefined;
         }
@@ -2578,6 +2659,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             }
           } catch { /* The manifest editor remains available for correcting invalid JSON. */ }
           flow.eventType = element.value;
+          syncFlowPresentation(flow);
         } else {
           flow[flowField] = element.value;
         }
@@ -2705,7 +2787,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             pendingContractSchemas.add(contract.schema);
           }
         }
-        selection = { ...selection, roleId: "", flowKey: "", flowId: "" };
+        setStudioSelection();
         authoring = result.authoring;
         canvas = result.canvas;
         updateStudioGraph?.update({
@@ -3065,16 +3147,35 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const editorActions = assetDrawer?.querySelector(".studio-asset-editor-actions");
         if (editorActions) editorActions.hidden = open;
       },
-      onSelectRole: (roleId) => { selection = { ...selection, roleId, flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); showAssetPanel("properties", { focusInspector: false }); },
+      onSelectRole: (roleId) => {
+        setStudioSelection({ roleId });
+        updateStudioGraph?.update({ selectedRoleId: roleId, selectedFlowKey: "" });
+        renderInspector();
+        syncAssetNavigatorSelection();
+        showAssetPanel("properties", { focusInspector: false });
+      },
       onSelectFlow: (flowKey) => {
         const flow = Object.values(authoring.flows || {}).find((item) => studioAuthoringFlowKey(item) === flowKey);
-        selection = { ...selection, roleId: "", flowKey, flowId: flow?.flowId || "" };
+        if (!flow) {
+          setStudioSelection();
+          updateStudioGraph?.update({ selectedRoleId: "", selectedFlowKey: "" });
+          renderInspector();
+          syncAssetNavigatorSelection();
+          return;
+        }
+        setStudioSelection({ flowKey, flowId: flow.flowId });
+        updateStudioGraph?.update({ selectedRoleId: "", selectedFlowKey: flowKey });
         renderInspector();
         syncAssetNavigatorSelection();
         showAssetPanel("properties", { focusInspector: false });
       },
       onOpenTeamAssets: () => showAssetPanel("list"),
-      onClearSelection: () => { selection = { ...selection, roleId: "", flowKey: "" }; renderInspector(); syncAssetNavigatorSelection(); },
+      onClearSelection: () => {
+        setStudioSelection();
+        updateStudioGraph?.update({ selectedRoleId: "", selectedFlowKey: "" });
+        renderInspector();
+        syncAssetNavigatorSelection();
+      },
       onChatGenerate: () => state.teamStudioDialog?.("assistant"),
       onOpenDebug: () => state.teamStudioDialog?.("run"),
       onQuickDebugRun: (input) => simulateTeam(input),
@@ -3112,7 +3213,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const selectedFlow = result.selectedFlowKey
           ? Object.values(authoring.flows || {}).find((flow) => studioAuthoringFlowKey(flow) === result.selectedFlowKey)
           : null;
-        selection = { ...selection, roleId: result.selectedRoleId || "", flowKey: result.selectedFlowKey || "", flowId: selectedFlow?.flowId || "" };
+        const selectedRoleId = result.selectedFlowKey ? "" : result.selectedRoleId || "";
+        setStudioSelection({ roleId: selectedRoleId, flowKey: result.selectedFlowKey || "", flowId: selectedFlow?.flowId || "" });
         if (result.repositoryRoleId) {
           const template = studioRoleTemplatesByCommandId.get(result.repositoryRoleId);
           if (template && result.selectedRoleId) {
@@ -3133,7 +3235,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           authoring,
           canvas,
           viewModel: undefined,
-          selectedRoleId: result.selectedRoleId || "",
+          selectedRoleId,
           selectedFlowKey: result.selectedFlowKey || "",
           historyContext: result.historyContext || captureEditorHistoryContext()
         });

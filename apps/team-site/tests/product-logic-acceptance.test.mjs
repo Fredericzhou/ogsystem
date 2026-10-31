@@ -842,6 +842,30 @@ test("Studio saves all four package files for a newly created role in one author
     await page.waitForTimeout(300);
     const newRoleNode = page.locator('#project-graph-stage .x6-node[data-cell-id="new-auditor"]');
     assert.equal(await newRoleNode.count(), 1, JSON.stringify({ dialog: await dialog.innerText().catch(() => "closed"), status: await page.locator("#project-design-status").innerText().catch(() => ""), inspector: await inspector.innerText().catch(() => ""), nodes: await page.locator("#project-graph-stage .x6-node").evaluateAll((elements) => elements.map((element) => ({ id: element.getAttribute("data-cell-id"), text: element.textContent }))) }));
+    assert.deepEqual(
+      await newRoleNode.locator("[data-studio-connect-port]").evaluateAll((ports) => ports
+        .map((port) => ({ id: port.getAttribute("data-studio-connect-port"), opacity: getComputedStyle(port).opacity }))
+        .sort((left, right) => left.id.localeCompare(right.id))),
+      [
+        { id: "connect-bottom", opacity: "1" },
+        { id: "connect-left", opacity: "1" },
+        { id: "connect-right", opacity: "1" },
+        { id: "connect-top", opacity: "1" }
+      ],
+      "selecting a role should expose connection ports on all four sides"
+    );
+    const roleTitleField = inspector.locator('[data-studio-role-field="title"]');
+    await roleTitleField.waitFor({ state: "visible" });
+    assert.equal(await roleTitleField.getAttribute("maxlength"), "80");
+    await roleTitleField.focus();
+    await roleTitleField.fill("x".repeat(100));
+    assert.equal((await roleTitleField.inputValue()).length, 80, "role display names are limited to the command form's 80 character contract");
+    assert.equal(await roleTitleField.evaluate((element) => document.activeElement === element), true, "editing a role display name keeps the input focused");
+    await roleTitleField.fill("中文审计员");
+    assert.equal(await inspector.locator(".studio-inspector-heading h2").innerText(), "中文审计员");
+    await page.waitForFunction(() => document.querySelector('#project-graph-stage .x6-node[data-cell-id="new-auditor"]')?.textContent?.includes("中文审计员"));
+    const firstInspectorSection = inspector.locator(".studio-inspector-heading + .studio-inspector-section");
+    assert.equal(await firstInspectorSection.evaluate((element) => getComputedStyle(element).borderTopWidth), "0px", "the first inspector section should not duplicate the heading separator");
     await page.waitForTimeout(250);
     const renderedFlowLabels = await page.locator("#project-graph-stage .x6-edge-label text").allTextContents();
     assert.ok(renderedFlowLabels.some((label) => label.includes(expectedFlowLabel)), `rebuilding the graph after an authoring edit should preserve localized flow labels: ${JSON.stringify({ expectedFlowLabel, renderedFlowLabels })}`);
@@ -876,6 +900,8 @@ test("Studio saves all four package files for a newly created role in one author
     await flowLabel.fill("Audit complete");
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator('#studio-assets-roles [data-studio-asset-role="new-auditor"]').click();
+    assert.equal(await inspector.locator('[data-studio-role-field="title"]').inputValue(), "中文审计员");
+    assert.equal(await inspector.locator('[data-studio-flow-field="eventType"]').count(), 0, "selecting a role after editing a flow must not retain the flow inspector");
     const loopMax = inspector.locator('[data-studio-role-field="loopMax"]');
     const previousLoopMax = await loopMax.inputValue();
     const nextLoopMax = previousLoopMax === "3" ? "4" : "3";
@@ -920,6 +946,7 @@ test("Studio saves all four package files for a newly created role in one author
     assert.equal(designResponse.status(), 200);
     assert.equal(assetsResponse.status(), 200);
     assert.ok(design.authoring.roles["new-auditor"], `${await page.locator("#project-design-status").innerText()}; ${JSON.stringify(design.authoring.roles)}`);
+    assert.equal(design.authoring.roles["new-auditor"].title, "中文审计员");
     assert.equal(design.authoring.roles["new-auditor"].loopMax, Number(nextLoopMax));
     assert.ok(Object.values(design.authoring.flows).some((flow) => flow.fromRoleId === sourceRoleId && flow.toRoleId === "new-auditor" && flow.eventType === relationshipEventType), "the new relationship should persist with the selected endpoints and event");
     assert.deepEqual(assets.roles["new-auditor"], {

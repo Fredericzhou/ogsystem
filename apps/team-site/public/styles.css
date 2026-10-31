@@ -362,6 +362,7 @@ h1, h2, p { margin-top: 0; }
 .studio-design-workbench .graph-stage { height: min(70vh, 760px); min-height: 540px; }
 .studio-property-inspector { align-content: start; display: grid; gap: 14px; max-height: min(70vh, 760px); min-width: 0; overflow: auto; padding: 15px; }
 .studio-inspector-heading { border-bottom: 1px solid var(--line); display: grid; gap: 5px; min-width: 0; padding-bottom: 12px; }
+.studio-inspector-heading + .studio-inspector-section { border-top: 0; padding-top: 0; }
 .studio-inspector-heading h2 { font-size: 16px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 .studio-inspector-heading code { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .studio-inspector-fields { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
