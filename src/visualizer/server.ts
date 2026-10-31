@@ -57,6 +57,7 @@ import {
   loadPersistedRunsIndex,
   loadRunDetail,
   loadRunEventsSnapshot,
+  loadRunRuntimeEventsSnapshot,
   loadRunLogs,
   resolveRunDir,
   type LoadedRunDetail
@@ -1479,6 +1480,23 @@ async function handleApiRunEvents(
   jsonResponse(response, 200, snapshot);
 }
 
+async function handleApiRunRuntimeEvents(
+  workdir: string,
+  runId: string,
+  url: URL,
+  response: ServerResponse
+): Promise<void> {
+  const cursor = Number(url.searchParams.get("cursor") ?? "0");
+  const limit = Number(url.searchParams.get("limit") ?? "200");
+  const snapshot = await loadRunRuntimeEventsSnapshot({
+    workdir,
+    runId,
+    cursor: Number.isFinite(cursor) ? cursor : 0,
+    limit: Number.isFinite(limit) ? limit : 200
+  });
+  jsonResponse(response, 200, snapshot);
+}
+
 async function handleApiRunConversation(
   workdir: string,
   runId: string,
@@ -2842,6 +2860,10 @@ async function handleVisualizationRequest(
     await handleApiRunEvents(state.workdir, runId, url, response);
     return;
   }
+  if (segments.length === 6 && segments[4] === "events" && segments[5] === "runtime" && method === "GET") {
+    await handleApiRunRuntimeEvents(state.workdir, runId, url, response);
+    return;
+  }
   if (segments.length === 5 && segments[4] === "conversation" && method === "GET") {
     await handleApiRunConversation(state.workdir, runId, url, response);
     return;
@@ -2912,20 +2934,23 @@ async function handleVisualizationRequest(
       inFlight = true;
       try {
         recordSseSnapshotAttempt();
-        // mtime is only a polling optimization. The timeline reader owns cursor correctness.
-        const snapshot = await loadRunEventsSnapshot({
-          workdir: state.workdir,
-          runId,
-          cursor,
-          limit: 200
-        });
-        for (const entry of snapshot.events) {
+        // mtime is only a polling optimization. The event readers own cursor correctness.
+        const [runtimeSnapshot, timelineSnapshot] = await Promise.all([
+          loadRunRuntimeEventsSnapshot({ workdir: state.workdir, runId, cursor, limit: 200 }),
+          loadRunEventsSnapshot({ workdir: state.workdir, runId, cursor, limit: 200 })
+        ]);
+        const timelineByCursor = new Map(timelineSnapshot.events.map((entry) => [entry.cursor, entry.record]));
+        for (const entry of runtimeSnapshot.events) {
           if (!active) {
             break;
           }
-          response.write(`id: ${cursor}\n`);
+          const timelineRecord = timelineByCursor.get(entry.cursor);
+          const streamEntry = timelineRecord
+            ? { ...entry, record: { ...entry.record, ...timelineRecord } }
+            : entry;
+          response.write(`id: ${entry.cursor}\n`);
           response.write("event: event\n");
-          response.write(`data: ${JSON.stringify(entry)}\n\n`);
+          response.write(`data: ${JSON.stringify(streamEntry)}\n\n`);
           recordSseWrite();
           cursor = entry.cursor + 1;
         }

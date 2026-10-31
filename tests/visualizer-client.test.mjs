@@ -1495,6 +1495,9 @@ function createBackend(options = {}) {
     errorEventCode: "E_CONTRACT"
   });
   const runFixtures = new Map([[runId, primaryRun]]);
+  if (options.runtimeEvents) primaryRun.detail.header.isSimulation = true;
+  primaryRun.runtimeEvents = options.runtimeEvents ?? primaryRun.events;
+  secondaryRun.runtimeEvents = secondaryRun.events;
   if (options.includeSecondRun) {
     runFixtures.set(secondRunId, secondaryRun);
   }
@@ -1521,6 +1524,7 @@ function createBackend(options = {}) {
       const getRunFixture = (requestedRunId) => runFixtures.get(requestedRunId) ?? null;
       const runMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)$/);
       const runEventsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/events$/);
+      const runRuntimeEventsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/events\/runtime$/);
       const runConversationMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/conversation$/);
       const runGraphMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/graph$/);
       const runReviewsMatch = pathname.match(/^\/api\/v1\/ogs\/runs\/([^/]+)\/reviews$/);
@@ -2239,7 +2243,8 @@ function createBackend(options = {}) {
             lastExecutedRoleId: fixture.detail.header.lastExecutedRoleId,
             updatedAt: "2026-04-23T09:15:01.000Z",
             pendingReviewCount: 1,
-            hasWaitingHumanReview: true
+            hasWaitingHumanReview: true,
+            isSimulation: fixture.detail.header.isSimulation === true
           }))
         });
       }
@@ -2291,6 +2296,16 @@ function createBackend(options = {}) {
         });
         return createResponse({
           events: filtered,
+          nextCursor: events.length
+        });
+      }
+      if (runRuntimeEventsMatch) {
+        const fixture = getRunFixture(runRuntimeEventsMatch[1]);
+        const events = fixture?.runtimeEvents ?? [];
+        const cursor = Number(parsed.searchParams.get("cursor") ?? "0");
+        const limit = Number(parsed.searchParams.get("limit") ?? "1000");
+        return createResponse({
+          events: events.filter((entry) => entry.cursor >= cursor).slice(0, limit),
           nextCursor: events.length
         });
       }
@@ -3295,6 +3310,10 @@ test("visualizer client stream helpers dedupe timeline entries and cap history",
   const appended = appendIndexedStreamEntry([{ cursor: 1 }, { cursor: 2 }], cursorIndex, { cursor: 3 }, 2);
   assert.deepEqual(appended, [{ cursor: 2 }, { cursor: 3 }]);
   assert.deepEqual([...cursorIndex].sort((a, b) => a - b), [2, 3]);
+
+  const unboundedIndex = createStreamCursorIndex([{ cursor: 1 }, { cursor: 2 }]);
+  const unbounded = appendIndexedStreamEntry([{ cursor: 1 }, { cursor: 2 }], unboundedIndex, { cursor: 3 }, Infinity);
+  assert.deepEqual(unbounded, [{ cursor: 1 }, { cursor: 2 }, { cursor: 3 }]);
 });
 
 test("visualizer client stream refresh plan keeps review and runtime refreshes targeted", () => {
@@ -4259,6 +4278,27 @@ test("visualizer client requeues stream refresh plans that arrive during an in-f
   );
 });
 
+test("visualizer client consumes a new SSE flow activation after runtime history loads", async () => {
+  const harness = await createClientHarness();
+  const stream = harness.eventSources.at(-1);
+  assert.ok(stream);
+  stream.emit({
+    cursor: 99,
+    record: {
+      type: "flow.activated",
+      at: "2026-04-23T09:16:00.000Z",
+      fromRoleId: "__system_start__",
+      toRoleId: "demo-analyst",
+      eventType: "START",
+      handoffId: "handoff-live"
+    }
+  });
+  await harness.flushTimers();
+  const timeline = harness.document.getElementById("timeline").innerHTML;
+  assert.match(timeline, /flow\.activated/);
+  assert.match(timeline, /#99/);
+});
+
 test("visualizer client stream cursor index dedupes repeated SSE events", async () => {
   const harness = await createClientHarness({
     decisionPhase: "recorded"
@@ -4383,6 +4423,30 @@ test("visualizer client applies timeline filters through the events API", async 
   );
   assert.ok(harness.document.getElementById("timeline").innerHTML.includes("filtered by"));
   assert.ok(!harness.document.getElementById("timeline").innerHTML.includes("runtime_error"));
+});
+
+test("visualizer client loads complete unfiltered runtime history independently of timeline filters", async () => {
+  const runtimeEvents = Array.from({ length: 1001 }, (_, cursor) => ({
+    cursor,
+    record: cursor === 0
+      ? {
+          type: "flow.activated",
+          at: "2026-04-23T09:15:00.000Z",
+          fromRoleId: "__system_start__",
+          toRoleId: "demo-analyst",
+          eventType: "START",
+          handoffId: "handoff-start"
+        }
+      : { type: "role.started", at: "2026-04-23T09:15:00.000Z", roleId: "demo-analyst", branchId: `branch-${cursor}` }
+  }));
+  const harness = await createClientHarness({ runtimeEvents });
+  await settle();
+
+  const runtimeCalls = harness.backend.fetchCalls.filter((call) => call.path.includes("/api/v1/ogs/runs/run-123/events/runtime?"));
+  assert.ok(runtimeCalls.length >= 2);
+  assert.ok(runtimeCalls[0].path.includes("cursor=0"));
+  assert.ok(runtimeCalls[1].path.includes("cursor=1000"));
+  assert.equal(runtimeCalls.some((call) => /roleId=|branchId=|type=/.test(call.path)), false);
 });
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {

@@ -45,6 +45,37 @@ export async function loadRunEventsSnapshot(args: {
   return loadTimelineTailSnapshot({ timelinePath: resolve(runDir, "timeline.jsonl"), cursor: args.cursor, limit, roleId: args.roleId, branchId: args.branchId, type: args.type, reviewId: args.reviewId, status: args.status, errorCode: args.errorCode, channel: args.channel });
 }
 
+/** Read the unfiltered event stream used to reconstruct runtime graph state. */
+export async function loadRunRuntimeEventsSnapshot(args: {
+  workdir: string; runId: string; cursor?: number; limit?: number;
+}): Promise<{ events: NdjsonEntry[]; nextCursor: number }> {
+  const runDir = resolveRunDir(args.workdir, args.runId);
+  const content = await readFile(resolve(runDir, "events.ndjson"), "utf8").catch(() => "");
+  const startCursor = Math.max(0, Number.isFinite(args.cursor) ? Math.floor(args.cursor as number) : 0);
+  const limit = normalizeEventLimit(args.limit);
+  const events: NdjsonEntry[] = [];
+  let cursor = 0;
+  for (const line of content.split(/\r?\n/)) {
+    const source = line.trim();
+    if (!source) continue;
+    let record: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(source);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        cursor += 1;
+        continue;
+      }
+      record = parsed as Record<string, unknown>;
+    } catch {
+      cursor += 1;
+      continue;
+    }
+    if (cursor >= startCursor && events.length < limit) events.push({ cursor, record });
+    cursor += 1;
+  }
+  return { events, nextCursor: cursor };
+}
+
 async function readSystemSource(runDir: string): Promise<string | null> {
   return readFile(resolve(runDir, "system.mmd"), "utf8").catch(() => null);
 }
@@ -77,7 +108,8 @@ export const runQueryService = {
   inspectRoleIo: inspectRunRoleIo,
   loadLogs: loadRunLogs,
   loadDetail: loadRunDetail,
-  loadEvents: loadRunEventsSnapshot
+  loadEvents: loadRunEventsSnapshot,
+  loadRuntimeEvents: loadRunRuntimeEventsSnapshot
 };
 
 export {

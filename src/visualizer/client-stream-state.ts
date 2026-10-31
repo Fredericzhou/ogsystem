@@ -29,9 +29,9 @@ export function appendIndexedStreamEntry<T extends { cursor: number }>(
   limit = 250
 ): T[] {
   if (cursorIndex.has(entry.cursor)) {
-    return entries.slice(-limit);
+    return Number.isFinite(limit) ? entries.slice(-limit) : entries;
   }
-  const nextEntries = entries.concat(entry).slice(-limit);
+  const nextEntries = Number.isFinite(limit) ? entries.concat(entry).slice(-limit) : entries.concat(entry);
   cursorIndex.add(entry.cursor);
   if (nextEntries.length !== entries.length + 1) {
     const retainedCursors = new Set(nextEntries.map((item) => item.cursor));

@@ -631,6 +631,10 @@ async function createFixtureRun(workdir) {
         type: "audit",
         at: "2026-04-16T01:02:04.000Z",
         roleId: "alpha",
+        fromRoleId: "__system_start__",
+        toRoleId: "alpha",
+        eventType: "START",
+        handoffId: "handoff-start",
         status: "ok",
         durationMs: 12,
         channel: "main"
@@ -1312,6 +1316,17 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(events.nextCursor, 3);
     assert.equal(events.events[0].record.type, "run_start");
 
+    const runtimeEventsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/events/runtime?cursor=1&limit=1`);
+    assert.equal(runtimeEventsResponse.status, 200);
+    const runtimeEvents = await runtimeEventsResponse.json();
+    assert.equal(runtimeEvents.events.length, 1);
+    assert.equal(runtimeEvents.events[0].cursor, 1);
+    assert.equal(runtimeEvents.events[0].record.fromRoleId, "__system_start__");
+    assert.equal(runtimeEvents.events[0].record.toRoleId, "alpha");
+    assert.equal(runtimeEvents.events[0].record.eventType, "START");
+    assert.equal(runtimeEvents.events[0].record.handoffId, "handoff-start");
+    assert.equal(runtimeEvents.nextCursor, 3);
+
     const failedEventsResponse = await fetch(
       `${url}/api/v1/ogs/runs/${runId}/events?cursor=0&limit=10&status=failed&errorCode=E_VIS_TEST`
     );
@@ -1387,6 +1402,10 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(stream.contentType, "text/event-stream; charset=utf-8");
     assert.match(stream.chunk, /"type":"audit"/);
     assert.match(stream.chunk, /"status":"ok"/);
+    assert.match(stream.chunk, /"fromRoleId":"__system_start__"/);
+    assert.match(stream.chunk, /"toRoleId":"alpha"/);
+    assert.match(stream.chunk, /"eventType":"START"/);
+    assert.match(stream.chunk, /"handoffId":"handoff-start"/);
 
     const diagnosticsResponse = await fetch(`${url}/api/v1/diagnostics/visualizer`);
     assert.equal(diagnosticsResponse.status, 200);

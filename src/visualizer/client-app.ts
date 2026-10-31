@@ -1496,6 +1496,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/events?" + params.toString();
     }
 
+    function buildRuntimeEventsQuery(runId, cursor = 0, limit = 1000) {
+      const params = new URLSearchParams({ cursor: String(cursor), limit: String(limit) });
+      return API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/events/runtime?" + params.toString();
+    }
+
+    async function loadAllRuntimeEvents(runId) {
+      const events = [];
+      let cursor = 0;
+      const pageLimit = 1000;
+      while (true) {
+        const payload = await requestJson(buildRuntimeEventsQuery(runId, cursor, pageLimit));
+        const page = Array.isArray(payload?.events) ? payload.events : [];
+        events.push(...page);
+        const nextCursor = Number(payload?.nextCursor);
+        const lastCursor = Number(page[page.length - 1]?.cursor);
+        const nextPageCursor = Number.isFinite(lastCursor) ? lastCursor + 1 : nextCursor;
+        if (!Number.isFinite(nextCursor) || nextPageCursor <= cursor || nextPageCursor >= nextCursor || page.length === 0) break;
+        cursor = nextPageCursor;
+      }
+      return events;
+    }
+
     function timelineChannelForRecord(record) {
       return ["main", "error", "loop", "join", "feedback"].includes(record?.channel)
         ? record.channel
@@ -8137,9 +8159,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       try {
-        const [detail, eventsPayload, graph, reviews] = await Promise.all([
+        const [detail, eventsPayload, runtimeEvents, graph, reviews] = await Promise.all([
           requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId)),
           requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
+          loadAllRuntimeEvents(runId).catch(() => []),
           requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/graph"),
           requestJson(API_PREFIX + "/ogs/runs/" + encodeURIComponent(runId) + "/reviews").catch(() => null)
         ]);
@@ -8148,7 +8171,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           runId,
           detail,
           events: eventsPayload.events || [],
-          runtimeEvents: eventsPayload?.events || [],
+          runtimeEvents,
           graph,
           reviews,
           logsLoaded: false,
@@ -8739,7 +8762,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               runtimeSnapshot.runtimeEvents || [],
               createStreamCursorIndex(runtimeSnapshot.runtimeEvents || []),
               payload,
-              1000
+              Infinity
             );
           }
           if (recordMatchesTimelineFilters(payload.record)) {
