@@ -931,68 +931,6 @@ export function renderReleaseGatePanel(args: {
   ].join("");
 }
 
-export function renderStudioBridgeInspector(args: {
-  bridge: JsonRecord | null | undefined;
-  selectedRoleId: string;
-  selectedFlowKey: string;
-  rolePackageEditor?: JsonRecord | null | undefined;
-  t?: Translator;
-}): string {
-  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
-  const bridge = args.bridge ?? {};
-  const extracted = (bridge.extracted ?? {}) as JsonRecord;
-  const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
-  const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
-  const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
-  const explicitSelectedFlow = flows.find((flow) => flowKeyOf(flow) === args.selectedFlowKey) ?? null;
-  const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
-  const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
-  const roleInspector = selectedRole
-    ? [
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(displayBindingKind(String(selectedRole.bindingKind ?? "noop"), t)) + '</span></div><strong>' + escapeText(String(selectedRole.title ?? selectedRole.roleId ?? "")) + '</strong><div class="hint"><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></div>',
-        '<div class="hint">' + escapeText(t("studio.modelExecRoute", {
-          modelRef: String(selectedRole.modelRef ?? "n/a"),
-          profileId: String(selectedRole.profileId ?? "n/a"),
-          routingMode: String(selectedRole.routingMode ?? t("studio.standard", undefined, "standard"))
-        }, "model " + String(selectedRole.modelRef ?? "n/a") + " · exec " + String(selectedRole.profileId ?? "n/a") + " · route " + String(selectedRole.routingMode ?? "standard"))) + "</div></div>",
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.metadata", undefined, "metadata")) + '</span><span>' + escapeText(t("common.readOnly", undefined, "read only")) + '</span></div><strong>' +
-          escapeText([
-            selectedRole.joinMode ? t("common.join", undefined, "join") + " " + selectedRole.joinMode : "",
-            selectedRole.loopMax ? t("common.loop", undefined, "loop") + " " + selectedRole.loopMax : "",
-            selectedRole.review ? t("studio.reviewRequired", undefined, "review required") : "",
-            selectedRole.contextMap ? t("studio.contextMap", undefined, "context map") : ""
-          ].filter(Boolean).join(" · ") || t("project.noSpecialGraphMetadata", undefined, "no special metadata")) +
-          '</strong><div class="hint">' + escapeText(t("studio.incomingOutgoing", {
-            incoming: String(selectedRole.incomingFlowCount ?? 0),
-            outgoing: String(selectedRole.outgoingFlowCount ?? 0)
-          }, "incoming " + String(selectedRole.incomingFlowCount ?? 0) + " · outgoing " + String(selectedRole.outgoingFlowCount ?? 0))) + "</div></div>"
-      ].join("")
-    : '<div class="hint">' + escapeText(t("studio.selectRole", undefined, "Select a role to inspect metadata.")) + '</div>';
-  const flowInspector = selectedFlow
-    ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
-      '</span></div><strong>' + escapeText(selectedFlow.fromRoleId === "__system_start__" ? t("studio.boundaryStart", undefined, "Start") : String(selectedFlow.fromRoleId ?? "")) + ' → ' +
-      escapeText(selectedFlow.toRoleId === "__system_end__" || selectedFlow.toRoleId === "output" ? t("studio.boundaryEnd", undefined, "End") : String(selectedFlow.toRoleId ?? "")) + '</strong><div class="hint">' +
-      escapeText(t("studio.flowDisplayIdentity", {
-        label: flowDisplayLabel(selectedFlow),
-        eventType: String(selectedFlow.eventType ?? "")
-      }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType ?? ""))) +
-      " · " + escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
-      " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) +
-      (selectedFlow.condition ? '<div class="hint">when ' + escapeText(JSON.stringify(selectedFlow.condition)) + ' · priority ' + escapeText(String(selectedFlow.priority ?? 0)) + '</div>' : "") + "</div></div>"
-    : '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + '</div>';
-  const packageEditor = selectedRole
-    ? renderStudioRolePackageEditor({
-        roleId: String(selectedRole.roleId ?? ""),
-        editor: args.rolePackageEditor,
-        t
-      })
-    : "";
-  return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
-      '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry", undefined, "entry")) + " " +
-      escapeText(Array.isArray(extracted.entryRoleIds) ? extracted.entryRoleIds.join(", ") : "n/a") + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
-      roleInspector + packageEditor + flowInspector;
-}
-
 export function renderStudioRolePackageEditor(args: {
   roleId: string;
   editor?: JsonRecord | null | undefined;

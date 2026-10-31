@@ -826,6 +826,7 @@ test("Studio saves all four package files for a newly created role in one author
     await dialog.waitFor({ state: "visible" });
     await dialog.locator("[data-studio-command-close]").click();
     await pendingRoleNode.waitFor({ state: "detached" });
+    assert.doesNotMatch(await page.locator("#project-design-status").innerText(), /新增角色|Add role/);
     const closeAssets = page.locator("#studio-asset-drawer-close");
     if (await closeAssets.isVisible()) await closeAssets.click();
     await page.locator('[data-studio-graph-action="add-role"]').click();

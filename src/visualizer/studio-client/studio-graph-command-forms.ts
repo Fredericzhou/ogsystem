@@ -495,14 +495,14 @@ export function renderStudioCommandForm(args: {
           (rolePackage.alreadyImported ? " · imported" : "") +
           "</option>"
         ).join("")
-      : '<option value="">' + escapeHtml(label(labels, "noRepositoryRoles", "No repository roles")) + "</option>";
+      : '<option value="">' + escapeHtml(label(labels, "noRepositoryRoles", "No role library entries")) + "</option>";
     return [
       '<form class="studio-command-form" data-studio-command-form="' + (isEdit ? "edit-role" : "add-role") + '" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
       '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(isEdit ? label(labels, "editRoleDialogTitle", "Edit role") : label(labels, "roleDialogTitle", "Add role")) + '</strong>',
       '<button type="button" data-studio-command-close aria-label="' + escapeHtml(label(labels, "cancel", "Cancel")) + '">' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
       isEdit ? "" : '<div class="studio-command-form-row segmented">',
-      isEdit ? "" : '<label><input type="radio" name="mode" value="repository"' + (fields.mode === "repository" ? " checked" : "") + "> " + escapeHtml(label(labels, "repositoryRole", "Repository")) + "</label>",
-      isEdit ? "" : '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom")) + "</label>",
+      isEdit ? "" : '<label><input type="radio" name="mode" value="repository"' + (fields.mode === "repository" ? " checked" : "") + "> " + escapeHtml(label(labels, "repositoryRole", "Role library")) + "</label>",
+      isEdit ? "" : '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom role")) + "</label>",
       isEdit ? "" : "</div>",
       isEdit ? '<input type="hidden" name="mode" value="custom"><input type="hidden" name="originalRoleId" value="' + escapeHtml(fields.originalRoleId || fields.roleId) + '">' : "",
       !isEdit && fields.mode === "repository" ? '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId">' + packageOptions + "</select><div class=\"studio-command-form-hint\">" + escapeHtml(label(labels, "rolePackageSource", "Import from the installed role catalog.")) + "</div>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>" : "",

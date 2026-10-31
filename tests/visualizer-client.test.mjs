@@ -23,7 +23,6 @@ import {
   renderStudioBoundaryConfigEditor,
   renderStudioContractEditor,
   renderContractPanel,
-  renderStudioBridgeInspector,
   renderStudioBridgePanel,
   renderStudioDebugOutcomePanel,
   renderReleaseGatePanel
@@ -454,15 +453,6 @@ test("Studio Bridge renderers display and filter flow labels separately from eve
   });
   assert.equal(filtered.flows.length, 1);
   assert.equal(filtered.flows[0].eventType, "REQUIREMENTS_READY");
-
-  const inspectorHtml = renderStudioBridgeInspector({
-    bridge,
-    selectedRoleId: "",
-    selectedFlowKey: "requirements_analyst:REQUIREMENTS_READY:reviewer",
-    t: testTranslator
-  });
-  assert.match(inspectorHtml, /需求已完成/);
-  assert.match(inspectorHtml, /REQUIREMENTS_READY/);
 
   const panelHtml = renderStudioBridgePanel({
     bridge,

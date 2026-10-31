@@ -1257,8 +1257,17 @@ export class StudioGraphIsland {
   }
 
   private closeCommandForm(): void {
+    const hadActiveCommandState = Boolean(
+      this.commandForm ||
+      this.pendingEdgePreview ||
+      this.pendingRoleInsertion ||
+      this.pendingRolePlaceholderId
+    );
     if (!this.commandForm && this.dialogEl.hidden) {
       this.removePendingRolePlaceholder();
+      if (hadActiveCommandState) {
+        this.options.onStatusChange?.(this.label("graphReady"));
+      }
       return;
     }
     this.pendingEdgePreview = null;
@@ -1269,6 +1278,9 @@ export class StudioGraphIsland {
     this.dialogEl.innerHTML = "";
     this.syncPendingEdgePreview();
     this.notifyCommandFormState();
+    if (hadActiveCommandState) {
+      this.options.onStatusChange?.(this.label("graphReady"));
+    }
   }
 
   private bindQuickOpen(): void {
