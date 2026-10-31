@@ -57,6 +57,7 @@ import {
   loadPersistedRunsIndex,
   loadRunDetail,
   loadRunEventsSnapshot,
+  loadRunRuntimeEventsIncremental,
   loadRunRuntimeEventsSnapshot,
   loadRunLogs,
   resolveRunDir,
@@ -2924,6 +2925,8 @@ async function handleVisualizationRequest(
 
     let active = true;
     let cursor = startCursor;
+    let runtimeScanCursor = 0;
+    let runtimeByteOffset = 0;
     let inFlight = false;
     let closed = false;
 
@@ -2934,9 +2937,16 @@ async function handleVisualizationRequest(
       inFlight = true;
       try {
         recordSseSnapshotAttempt();
-        // mtime is only a polling optimization. The event readers own cursor correctness.
+        // The event readers own cursor correctness; the live reader also advances by byte offset.
         const [runtimeSnapshot, timelineSnapshot] = await Promise.all([
-          loadRunRuntimeEventsSnapshot({ workdir: state.workdir, runId, cursor, limit: 200 }),
+          loadRunRuntimeEventsIncremental({
+            workdir: state.workdir,
+            runId,
+            cursor: runtimeScanCursor,
+            emitFromCursor: cursor,
+            byteOffset: runtimeByteOffset,
+            limit: 200
+          }),
           loadRunEventsSnapshot({ workdir: state.workdir, runId, cursor, limit: 200 })
         ]);
         const timelineByCursor = new Map(timelineSnapshot.events.map((entry) => [entry.cursor, entry.record]));
@@ -2954,6 +2964,9 @@ async function handleVisualizationRequest(
           recordSseWrite();
           cursor = entry.cursor + 1;
         }
+        runtimeScanCursor = runtimeSnapshot.nextCursor;
+        runtimeByteOffset = runtimeSnapshot.nextByteOffset;
+        cursor = Math.max(cursor, runtimeScanCursor);
       } catch {
         recordSseSnapshotError();
       } finally {

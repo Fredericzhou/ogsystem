@@ -28,6 +28,7 @@ import {
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
+import { loadRunRuntimeEventsIncremental } from "../dist/visualizer/run-query-service.js";
 import { materializeCaseTeam } from "../apps/team-site/demo-runner.mjs";
 
 test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
@@ -51,6 +52,49 @@ test("studio chat request parsing keeps trimmed identifiers and ignores non-reco
 test("visualizer recognizes terminated runs as converged", () => {
   assert.equal(isConvergedRunStatus("terminated"), true);
   assert.equal(isConvergedRunStatus("running"), false);
+});
+
+test("runtime event stream resumes from its byte cursor after an append", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-runtime-incremental-"));
+  const runId = "incremental-run";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  const eventsPath = path.resolve(runDir, "events.ndjson");
+  try {
+    await mkdir(runDir, { recursive: true });
+    await writeFile(eventsPath, [
+      JSON.stringify({ type: "flow.activated", cursorLabel: "first" }),
+      JSON.stringify({ type: "role.started", cursorLabel: "second" }),
+      ""
+    ].join("\n"), "utf8");
+    const firstPage = await loadRunRuntimeEventsIncremental({
+      workdir,
+      runId,
+      cursor: 0,
+      emitFromCursor: 0,
+      limit: 1
+    });
+    assert.deepEqual(firstPage.events.map((entry) => entry.cursor), [0]);
+    assert.equal(firstPage.events[0].record.cursorLabel, "first");
+
+    await writeFile(eventsPath, [
+      JSON.stringify({ type: "flow.activated", cursorLabel: "first" }),
+      JSON.stringify({ type: "role.started", cursorLabel: "second" }),
+      JSON.stringify({ type: "flow.completed", cursorLabel: "third" }),
+      ""
+    ].join("\n"), "utf8");
+    const secondPage = await loadRunRuntimeEventsIncremental({
+      workdir,
+      runId,
+      cursor: firstPage.nextCursor,
+      emitFromCursor: firstPage.nextCursor,
+      byteOffset: firstPage.nextByteOffset,
+      limit: 10
+    });
+    assert.deepEqual(secondPage.events.map((entry) => entry.cursor), [1, 2]);
+    assert.deepEqual(secondPage.events.map((entry) => entry.record.cursorLabel), ["second", "third"]);
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
 });
 
 test("visualizer rejects direct business Runs so Projects Tasks own execution", async () => {

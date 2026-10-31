@@ -1,5 +1,5 @@
 /** Read-only run query boundary used by the visualizer HTTP layer. */
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -76,6 +76,80 @@ export async function loadRunRuntimeEventsSnapshot(args: {
   return { events, nextCursor: cursor };
 }
 
+/** Read only the unread runtime event bytes for a live stream. */
+export async function loadRunRuntimeEventsIncremental(args: {
+  workdir: string;
+  runId: string;
+  cursor: number;
+  emitFromCursor?: number;
+  byteOffset?: number;
+  limit?: number;
+}): Promise<{ events: NdjsonEntry[]; nextCursor: number; nextByteOffset: number }> {
+  const runDir = resolveRunDir(args.workdir, args.runId);
+  const path = resolve(runDir, "events.ndjson");
+  const limit = normalizeEventLimit(args.limit);
+  const emitFromCursor = Math.max(0, Number.isFinite(args.emitFromCursor) ? Math.floor(args.emitFromCursor as number) : args.cursor);
+  let byteOffset = Math.max(0, Number.isFinite(args.byteOffset) ? Math.floor(args.byteOffset as number) : 0);
+  let cursor = Math.max(0, Number.isFinite(args.cursor) ? Math.floor(args.cursor) : 0);
+  const events: NdjsonEntry[] = [];
+
+  let handle;
+  try {
+    handle = await open(path, "r");
+    const fileSize = (await handle.stat()).size;
+    if (byteOffset > fileSize) {
+      byteOffset = 0;
+      cursor = 0;
+    }
+
+    let readOffset = byteOffset;
+    let buffer = Buffer.alloc(0);
+    let bufferStartOffset = byteOffset;
+    const chunkSize = 64 * 1024;
+
+    while (readOffset < fileSize) {
+      const chunk = Buffer.alloc(Math.min(chunkSize, fileSize - readOffset));
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, readOffset);
+      if (bytesRead === 0) break;
+      readOffset += bytesRead;
+      buffer = buffer.length === 0 ? chunk.subarray(0, bytesRead) : Buffer.concat([buffer, chunk.subarray(0, bytesRead)]);
+
+      while (true) {
+        const newline = buffer.indexOf(0x0a);
+        if (newline < 0) break;
+        const line = buffer.subarray(0, newline).toString("utf8").trim();
+        const consumed = newline + 1;
+        buffer = buffer.subarray(consumed);
+        bufferStartOffset += consumed;
+        if (!line) continue;
+
+        let record: Record<string, unknown> | undefined;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            record = parsed as Record<string, unknown>;
+          }
+        } catch {
+          // Keep the line cursor stable even when an append is malformed.
+        }
+        if (record && cursor >= emitFromCursor && events.length < limit) {
+          events.push({ cursor, record });
+        }
+        cursor += 1;
+        if (events.length >= limit) {
+          return { events, nextCursor: cursor, nextByteOffset: bufferStartOffset };
+        }
+      }
+    }
+
+    return { events, nextCursor: cursor, nextByteOffset: bufferStartOffset };
+  } catch {
+    return { events: [], nextCursor: cursor, nextByteOffset: byteOffset };
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
 async function readSystemSource(runDir: string): Promise<string | null> {
   return readFile(resolve(runDir, "system.mmd"), "utf8").catch(() => null);
 }
@@ -109,7 +183,8 @@ export const runQueryService = {
   loadLogs: loadRunLogs,
   loadDetail: loadRunDetail,
   loadEvents: loadRunEventsSnapshot,
-  loadRuntimeEvents: loadRunRuntimeEventsSnapshot
+  loadRuntimeEvents: loadRunRuntimeEventsSnapshot,
+  loadRuntimeEventsIncremental: loadRunRuntimeEventsIncremental
 };
 
 export {
