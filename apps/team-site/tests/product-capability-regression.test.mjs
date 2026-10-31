@@ -369,17 +369,15 @@ test("team simulation uses a temporary workspace and leaves no project or run be
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-capability-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?capability-simulation=${Date.now()}`));
-  const { createTeamSimulationUseCases } = await import("../application/team-simulation-use-cases.mjs");
-  const { createFileTeamCatalog } = await import("../infrastructure/file-team-catalog.mjs");
   const { createRuntimeTeamSimulation } = await import("../infrastructure/runtime-team-simulation.mjs");
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team" });
     const before = (await store.listProjects()).map((project) => project.projectId).sort();
-    const useCases = createTeamSimulationUseCases({
-      teamCatalog: createFileTeamCatalog({ projectsRoot }),
-      simulationRunner: createRuntimeTeamSimulation()
+    const bundle = await createTeamPackageOperations(store).exportTeamPackage(team.projectId);
+    const result = await createRuntimeTeamSimulation().simulate(team, {
+      prompt: "Preview the software delivery workflow.",
+      teamPackageBundle: bundle
     });
-    const result = await useCases.simulateTeamVersion(team.projectId, { prompt: "Preview the software delivery workflow." });
     assert.equal(result.persisted, false);
     assert.equal(result.mode, "dry-run");
     assert.ok(Array.isArray(result.auditTrail));
@@ -478,22 +476,18 @@ test("team simulation removes its temporary workspace when the runtime rejects",
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-team-simulation-failure-"));
   process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
   const store = withTeamLifecycleUseCases(await import(`../infrastructure/file-project-store.mjs?capability-simulation-failure=${Date.now()}`));
-  const { createTeamSimulationUseCases } = await import("../application/team-simulation-use-cases.mjs");
-  const { createFileTeamCatalog } = await import("../infrastructure/file-team-catalog.mjs");
   const { createRuntimeTeamSimulation } = await import("../infrastructure/runtime-team-simulation.mjs");
   let temporaryWorkdir;
   try {
     const team = await store.createClassicTeamProject({ caseId: "software-team" });
-    const useCases = createTeamSimulationUseCases({
-      teamCatalog: createFileTeamCatalog({ projectsRoot }),
-      simulationRunner: createRuntimeTeamSimulation({
-        run: async ({ workdir }) => {
-          temporaryWorkdir = workdir;
-          throw new Error("runtime failed");
-        }
-      })
+    const bundle = await createTeamPackageOperations(store).exportTeamPackage(team.projectId);
+    const runner = createRuntimeTeamSimulation({
+      run: async ({ workdir }) => {
+        temporaryWorkdir = workdir;
+        throw new Error("runtime failed");
+      }
     });
-    await assert.rejects(useCases.simulateTeamVersion(team.projectId, { prompt: "Preview the workflow." }), /runtime failed/);
+    await assert.rejects(runner.simulate(team, { prompt: "Preview the workflow.", teamPackageBundle: bundle }), /runtime failed/);
     await assert.rejects(readFile(join(temporaryWorkdir, "system.mmd")), { code: "ENOENT" });
     assert.deepEqual((await store.listProjects()).map((project) => project.projectId), [team.projectId]);
   } finally {

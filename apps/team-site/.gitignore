@@ -1,0 +1,5 @@
+# Local visualizer workdir created by the default Team Site fallback.
+/OGSystem/
+
+# Local Playwright layout captures; release tests do not consume these files.
+/tests/layout-baseline/
