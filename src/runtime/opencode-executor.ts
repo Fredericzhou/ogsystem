@@ -8,6 +8,8 @@
  * - Does not mutate graph state or persist run artifacts.
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -750,8 +752,18 @@ async function startServer(args: {
   const sourceRuntime = import.meta.url.endsWith(".ts");
   const hostPath = fileURLToPath(new URL(sourceRuntime ? "./opencode-server-host.ts" : "./opencode-server-host.js", import.meta.url));
   const hostArgs = sourceRuntime ? ["--import", "tsx", hostPath] : [hostPath];
+  const env: NodeJS.ProcessEnv = { ...process.env, ...args.env, OGS_OPENCODE_SERVER_TIMEOUT_MS: String(args.timeoutMs) };
+  if (!env.CODEX_GATEWAY_API_KEY) {
+    try {
+      const config = readFileSync(`${homedir()}/.codex/config.toml`, "utf8");
+      const token = config.match(/^\s*experimental_bearer_token\s*=\s*"([^"]+)"\s*$/m)?.[1];
+      if (token) env.CODEX_GATEWAY_API_KEY = token;
+    } catch {
+      // OpenCode can still use credentials supplied through its normal environment.
+    }
+  }
   const child = spawn(process.execPath, hostArgs, {
-    env: { ...process.env, ...args.env, OGS_OPENCODE_SERVER_TIMEOUT_MS: String(args.timeoutMs) },
+    env,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
   });

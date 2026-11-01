@@ -10,9 +10,16 @@ import {
 } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { redactStudioSimulationText, redactStudioSimulationValue } from "../domain/studio-simulation-redaction.mjs";
+import { assertSafeEvidencePath, readSafeEvidenceFile, resolveSafeEvidencePath } from "./safe-evidence-path.mjs";
 
 const TEAM_ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
 const SIMULATION_ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
+const ARTIFACT_ROOTS = new Set([
+  "system.mmd", "request.md", "state.json", "summary.json", "events.ndjson", "timeline.jsonl",
+  "audit", "logs", "roles", "checkpoints"
+]);
+const ARTIFACT_DIRECTORY_ROOTS = new Set(["audit", "logs", "roles", "checkpoints"]);
+const TERMINAL_SIMULATION_STATUSES = new Set(["completed", "failed", "stopped"]);
 
 function assertId(value, pattern, field) {
   if (!pattern.test(String(value || ""))) throw new Error(`STUDIO_SIMULATION_${field}_INVALID`);
@@ -53,6 +60,70 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       throw new Error("STUDIO_SIMULATION_PATH_OUTSIDE_VERSION");
     }
     return { ...directories, simulationDirectory };
+  }
+
+  function resolveSimulationRunDirectory(teamVersionId, simulationId) {
+    const { simulationDirectory } = resolveSimulationDirectory(teamVersionId, simulationId);
+    return resolve(simulationDirectory, "run");
+  }
+
+  function artifactSegments(pathValue) {
+    const value = String(pathValue || "").replaceAll("\\", "/");
+    if (!value || value.startsWith("/") || value.includes("//")) throw new Error("STUDIO_SIMULATION_ARTIFACT_PATH_INVALID");
+    const segments = value.split("/");
+    if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment.includes("\\") || segment.startsWith("."))) {
+      throw new Error("STUDIO_SIMULATION_ARTIFACT_PATH_INVALID");
+    }
+    if (segments.some((segment) => /^(control|shared|credentials?|secrets?|server\.pid|endpoint\.json)$/i.test(segment))) {
+      throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+    }
+    if (segments[0] === "roles" && segments[2] === "private") {
+      throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+    }
+    if (!ARTIFACT_ROOTS.has(segments[0])) throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+    return segments;
+  }
+
+  function assertArtifactSegments(segments) {
+    if (segments.length > 1 && !ARTIFACT_DIRECTORY_ROOTS.has(segments[0])) {
+      throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+    }
+  }
+
+  async function assertRunDirectory(runDirectory) {
+    await assertSafeEvidencePath(runDirectory, [], { kind: "directory", label: "Simulation run evidence" });
+  }
+
+  async function listArtifacts(runDirectory) {
+    const entries = [];
+    async function visit(relativeSegments) {
+      const absolute = resolveSafeEvidencePath(runDirectory, relativeSegments);
+      const stats = await lstat(absolute);
+      if (stats.isSymbolicLink()) throw new Error("STUDIO_SIMULATION_LINK_NOT_ALLOWED: artifact links are not allowed.");
+      const relativePath = relativeSegments.join("/");
+      if (stats.isDirectory()) {
+        if (relativePath) entries.push({ path: relativePath, kind: "directory", size: 0, updatedAt: new Date(stats.mtimeMs).toISOString() });
+        for (const child of await readdir(absolute, { withFileTypes: true })) {
+          const childSegments = [...relativeSegments, child.name];
+          if (child.name.startsWith(".") || !ARTIFACT_ROOTS.has(childSegments[0])
+            || (childSegments[0] === "roles" && childSegments[2] === "private")) continue;
+          await visit(childSegments);
+        }
+        return;
+      }
+      if (!stats.isFile()) return;
+      entries.push({ path: relativePath, kind: "file", size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString() });
+    }
+    for (const rootName of ARTIFACT_ROOTS) {
+      const path = resolveSafeEvidencePath(runDirectory, [rootName]);
+      try {
+        await visit([rootName]);
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw error;
+      }
+    }
+    return entries.sort((left, right) => left.path.localeCompare(right.path));
   }
 
   async function assertDirectory(path, label, { create = false } = {}) {
@@ -237,6 +308,9 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
         baselineRevision: Number.isInteger(options.baselineRevision) ? options.baselineRevision : null,
         baselineScenarioDigest: options.baselineScenarioDigest || null,
         expectedRoleIds: Array.isArray(options.expectedRoleIds) ? [...new Set(options.expectedRoleIds.map(String))] : [],
+        roleDisplayNames: options.roleDisplayNames && typeof options.roleDisplayNames === "object"
+          ? Object.fromEntries(Object.entries(options.roleDisplayNames).map(([roleId, name]) => [String(roleId), redactStudioSimulationText(name)]))
+          : {},
         status: "running",
         input: redactStudioSimulationText(input),
         createdAt,
@@ -268,27 +342,52 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       return metadata;
     },
 
+    getSimulationRunDirectory(teamVersionId, simulationId) {
+      return resolveSimulationRunDirectory(teamVersionId, simulationId);
+    },
+
     async updateSimulation(teamVersionId, simulationId, update = {}) {
       const directories = resolveSimulationDirectory(teamVersionId, simulationId);
-      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
-      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
-      await assertSimulationEvidenceFiles(directories.simulationDirectory);
-      const metadata = await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
-      const nextMetadata = redactStudioSimulationValue({ ...metadata, ...(update.metadata || {}) });
-      if (nextMetadata.owner?.teamVersionId !== teamVersionId || nextMetadata.owner?.simulationId !== simulationId) {
-        throw new Error("STUDIO_SIMULATION_OWNER_MISMATCH");
-      }
-      if (update.state !== undefined) {
-        await atomicWrite(join(directories.simulationDirectory, "state.json"), `${JSON.stringify(redactStudioSimulationValue(update.state), null, 2)}\n`);
-      }
-      if (update.events !== undefined) {
-        const existing = await readEvents(directories.simulationDirectory);
-        const added = Array.isArray(update.events) ? update.events : [update.events];
-        const safeEvents = redactStudioSimulationValue([...existing, ...added]);
-        await atomicWrite(join(directories.simulationDirectory, "events.jsonl"), safeEvents.map((event) => JSON.stringify(event)).join("\n") + "\n");
-      }
-      await atomicWrite(join(directories.simulationDirectory, "simulation.json"), `${JSON.stringify(nextMetadata, null, 2)}\n`);
-      return nextMetadata;
+      return withEventWriteLock(`${teamVersionId}/${simulationId}`, async () => {
+        if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+        await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+        await assertSimulationEvidenceFiles(directories.simulationDirectory);
+        const metadata = await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+        const currentStatus = String(metadata.status || "");
+        const requestedMetadata = update.metadata && typeof update.metadata === "object" ? update.metadata : {};
+        const requestedStatus = Object.hasOwn(requestedMetadata, "status") ? String(requestedMetadata.status || "") : currentStatus;
+        const effectiveStatus = TERMINAL_SIMULATION_STATUSES.has(currentStatus)
+          ? currentStatus
+          : currentStatus === "stopping" && requestedStatus === "running"
+            ? currentStatus
+            : requestedStatus;
+        const nextMetadata = redactStudioSimulationValue({
+          ...metadata,
+          ...requestedMetadata,
+          status: effectiveStatus
+        });
+        if (nextMetadata.owner?.teamVersionId !== teamVersionId || nextMetadata.owner?.simulationId !== simulationId) {
+          throw new Error("STUDIO_SIMULATION_OWNER_MISMATCH");
+        }
+        const currentState = await readJsonFile(join(directories.simulationDirectory, "state.json"), {});
+        const proposedState = update.state !== undefined ? redactStudioSimulationValue(update.state) : currentState;
+        const nextState = TERMINAL_SIMULATION_STATUSES.has(currentStatus)
+          ? { ...(currentState && typeof currentState === "object" && !Array.isArray(currentState) ? currentState : {}), status: effectiveStatus }
+          : proposedState && typeof proposedState === "object" && !Array.isArray(proposedState)
+            ? { ...proposedState, status: effectiveStatus }
+            : { status: effectiveStatus };
+        if (update.state !== undefined || currentStatus !== effectiveStatus || currentState?.status !== effectiveStatus) {
+          await atomicWrite(join(directories.simulationDirectory, "state.json"), `${JSON.stringify(nextState, null, 2)}\n`);
+        }
+        if (update.events !== undefined) {
+          const existing = await readEvents(directories.simulationDirectory);
+          const added = Array.isArray(update.events) ? update.events : [update.events];
+          const safeEvents = redactStudioSimulationValue([...existing, ...added]);
+          await atomicWrite(join(directories.simulationDirectory, "events.jsonl"), safeEvents.map((event) => JSON.stringify(event)).join("\n") + "\n");
+        }
+        await atomicWrite(join(directories.simulationDirectory, "simulation.json"), `${JSON.stringify(nextMetadata, null, 2)}\n`);
+        return nextMetadata;
+      });
     },
 
     async appendSimulationEvents(teamVersionId, simulationId, events) {
@@ -317,7 +416,7 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
         const { simulationDirectory } = resolveSimulationDirectory(teamVersionId, entry.name);
         await assertDirectory(simulationDirectory, "simulation");
         const metadata = await readMetadata(simulationDirectory, teamVersionId, entry.name);
-        if (metadata.mode === "sandbox" || metadata.baselineScenarioId || !["completed", "failed"].includes(metadata.status)) continue;
+        if (metadata.mode === "sandbox" || metadata.baselineScenarioId || !["completed", "failed", "stopped"].includes(metadata.status)) continue;
         await rm(simulationDirectory, { recursive: true, force: false });
         removedSimulationIds.push(metadata.simulationId);
       }
@@ -335,6 +434,38 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
         state: await readJsonFile(join(directories.simulationDirectory, "state.json"), {}),
         events: await readEvents(directories.simulationDirectory)
       };
+    },
+
+    async listSimulationArtifacts(teamVersionId, simulationId) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      const runDirectory = resolveSimulationRunDirectory(teamVersionId, simulationId);
+      try {
+        await assertRunDirectory(runDirectory);
+      } catch (error) {
+        if (error?.code === "ENOENT") return { root: "run", entries: [] };
+        throw error;
+      }
+      return { root: "run", entries: await listArtifacts(runDirectory) };
+    },
+
+    async readSimulationArtifact(teamVersionId, simulationId, pathValue, { maxBytes = 1024 * 1024 } = {}) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      const segments = artifactSegments(pathValue);
+      assertArtifactSegments(segments);
+      const runDirectory = resolveSimulationRunDirectory(teamVersionId, simulationId);
+      const target = await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "Simulation artifact" });
+      const stats = await lstat(target);
+      if (stats.size > maxBytes) {
+        return { path: segments.join("/"), size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString(), tooLarge: true };
+      }
+      const content = await readSafeEvidenceFile(runDirectory, segments, "utf8", "Simulation artifact");
+      return { path: segments.join("/"), size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString(), content };
     },
 
     async listVersionSimulations(teamVersionId) {
@@ -355,20 +486,25 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
     },
 
     async recoverInterruptedSimulations(teamVersionId) {
-      const running = (await this.listVersionSimulations(teamVersionId)).filter((item) => item.status === "running");
+      const unfinished = (await this.listVersionSimulations(teamVersionId)).filter((item) => ["running", "stopping"].includes(item.status));
       const recovered = [];
-      for (const item of running) {
+      for (const item of unfinished) {
         const completedAt = now();
-        const message = "Simulation was interrupted when the service stopped.";
+        const stopping = item.status === "stopping";
+        const message = stopping
+          ? "Simulation stop was accepted before the service stopped."
+          : "Simulation was interrupted when the service stopped.";
         recovered.push(await this.updateSimulation(teamVersionId, item.simulationId, {
           metadata: {
-            status: "failed",
+            status: stopping ? "stopped" : "failed",
             completedAt,
             durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(item.startedAt || item.createdAt)),
-            failureSummary: message
+            ...(stopping ? {} : { failureSummary: message })
           },
-          state: { status: "failed", error: message, interrupted: true },
-          events: [{ type: "simulation.interrupted", at: completedAt, error: message }]
+          state: stopping
+            ? { status: "stopped", stopRecovered: true }
+            : { status: "failed", error: message, interrupted: true },
+          events: [{ type: stopping ? "simulation.stopped" : "simulation.interrupted", at: completedAt, ...(stopping ? { reason: message } : { error: message }) }]
         }));
       }
       return recovered;
@@ -397,7 +533,7 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
           await assertDirectory(simulationDirectory, "simulation");
           const metadata = await readMetadata(simulationDirectory, versionEntry.name, simulationEntry.name);
           const terminalAt = Date.parse(metadata.completedAt || "");
-          if (!Number.isFinite(terminalAt) || terminalAt > cutoff || !["completed", "failed"].includes(metadata.status)) continue;
+          if (!Number.isFinite(terminalAt) || terminalAt > cutoff || !["completed", "failed", "stopped"].includes(metadata.status)) continue;
           await rm(simulationDirectory, { recursive: true, force: false });
           removedSimulationIds.push(metadata.simulationId);
         }

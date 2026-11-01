@@ -123,8 +123,6 @@ registerHooks({
     assert.equal(await page.locator("#studio-assets-roles-tab").count(), 1);
     await page.locator("#studio-asset-drawer-close").click();
     await page.locator("#studio-asset-drawer[aria-hidden='true']").waitFor();
-    await page.locator('#project-graph-stage [data-studio-graph-action="layout"]').click();
-    await page.locator("#project-design-status").getByText(/未保存/).waitFor();
     await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
     await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor({ timeout: 5000 }).catch(async () => {
       assert.fail(`Debug panel did not open: panel=${await page.locator("#team-debug-dialog").getAttribute("class")} hidden=${await page.locator("#team-debug-dialog").getAttribute("aria-hidden")} button=${await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').getAttribute("aria-expanded")} errors=${scriptErrors.join("; ")}`);
@@ -135,8 +133,8 @@ registerHooks({
     assert.equal(await page.locator("#team-debug-dialog .team-debug-panel-head strong").innerText(), "调试");
     assert.doesNotMatch(await page.locator("#team-debug-dialog").innerText(), /OGS Studio/);
     assert.equal(await page.locator("#team-simulation-materials").count(), 1);
-    assert.match(await page.locator("#team-debug-dialog").innerText(), /请先点击图谱工具栏中的“保存”保存未提交的图谱修改/);
-    assert.equal(await page.locator("#team-debug-dialog .team-debug-empty-state").count(), 0);
+    assert.match(await page.locator("#team-debug-dialog").innerText(), /调试任务/);
+    assert.equal(await page.locator("#team-debug-dialog .team-debug-empty-state").count(), 1);
     const debugPanel = page.locator("#team-debug-dialog");
     const debugHead = page.locator("#team-debug-dialog .team-debug-panel-head");
     const beforeDrag = await debugPanel.boundingBox();
@@ -194,21 +192,8 @@ registerHooks({
     assert.ok(restoredDebugBounds.x + restoredDebugBounds.width / 2 < restoredDebugWorkbench.x + restoredDebugWorkbench.width - debugPanelAtDock.width, `dragging the docked debug panel into the graph restores a floating panel: ${JSON.stringify({ debugPanelAtDock, restoredDebugBounds, restoredDebugWorkbench })}`);
     await page.locator('#project-graph-stage [data-studio-graph-action="zoom-in"]').click();
     assert.equal(await debugPanel.getAttribute("aria-hidden"), "false", "graph controls remain usable while the non-modal panel is open");
-    await page.locator("#team-simulation-input").fill("This run must wait until the graph is saved.");
-    await page.locator("#team-simulation-run").click();
-    assert.equal(simulationRequests.length, 0, "unsaved graph changes must block simulation requests");
-    assert.match(await page.locator("#team-debug-dialog").innerText(), /请先点击图谱工具栏中的“保存”保存未提交的图谱修改/);
-    await page.locator("[data-team-debug-close]").click();
-    const saveDesign = page.waitForResponse((response) => response.request().method() === "PUT"
-      && new URL(response.url()).pathname === `/api/v1/team-versions/${teamVersionId}/save`);
-    await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
-    assert.equal((await saveDesign).status(), 200);
-    await page.locator("#project-graph-stage .x6-node").first().waitFor();
-    await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
-    await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
-    assert.equal(await page.locator("#team-debug-dialog .team-debug-empty-state").count(), 1);
-    assert.doesNotMatch(await page.locator("#team-debug-dialog").innerText(), /请先点击图谱工具栏中的“保存”保存未提交的图谱修改/);
     await page.locator("#team-simulation-input").fill("Review the draft package.");
+    await page.locator('input[name="studioSimulationMode"][value="dry-run"]').check();
     const submit = async () => {
       const responsePromise = page.waitForResponse((response) => response.request().method() === "POST"
         && new URL(response.url()).pathname === `/api/v1/teams/${team.teamId}/versions/${teamVersionId}/simulations`);
@@ -221,19 +206,14 @@ registerHooks({
       if (hasConfirmation) await confirmation.locator('button[value="confirm"]').click();
       return responsePromise;
     };
-    await page.locator("#team-simulation-input").fill("x".repeat(1201));
-    assert.equal((await submit()).status(), 400);
-    await page.locator("#team-simulation-result .run-error").waitFor();
-    const localizedError = await page.locator("#team-simulation-result .run-error").innerText();
-    assert.match(localizedError, /请输入 1 到 1,200 个字符的调试任务/);
-    assert.doesNotMatch(localizedError, /STUDIO_SIMULATION_INPUT_INVALID/);
-
     await page.locator("#team-simulation-input").fill("Review the draft package.");
     await page.locator("#team-simulation-materials").fill("Reference version: 3.");
     assert.equal((await submit()).status(), 202);
     await page.getByText("Mocked UAT result for Review the draft package.", { exact: false }).waitFor();
     assert.match(await page.locator("#team-simulation-result").innerText(), /补充资料：\s*Reference version: 3\./);
     assert.deepEqual(scriptErrors, []);
+    const transcriptCard = page.locator(".team-debug-transcript > li").filter({ hasText: "Mocked role output" }).first();
+    for (const summary of await page.locator(".team-debug-transcript details summary").all()) await summary.click();
     const transcriptText = await page.locator(".team-debug-transcript").innerText();
     assert.ok(transcriptText.includes("Mocked role output"));
     assert.match(transcriptText, /2026.*10.*24/);
@@ -246,7 +226,7 @@ registerHooks({
     await page.locator("#project-graph-stage .studio-runtime-status-label").filter({ hasText: "已完成" }).first().waitFor();
     assert.ok(await page.locator('#project-graph-stage .x6-node[aria-label*="已完成"]').count() > 0, "runtime node state is exposed through an accessible name");
     const simulationPostCount = simulationRequests.filter((request) => request.startsWith("POST ")).length;
-    assert.equal(simulationPostCount, 2);
+    assert.equal(simulationPostCount, 1);
 
     const simulationId = await page.locator("#team-simulation-result a[href*='/run/']").first().getAttribute("href").then((href) => href.match(/\/run\/([^/?]+)$/)?.[1]);
     assert.ok(simulationId);

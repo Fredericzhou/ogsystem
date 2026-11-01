@@ -12,8 +12,10 @@ const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 test("app.js remains the stable bootstrap entry", async () => {
   const entry = await readFile(join(appRoot, "public/app.js"), "utf8");
-  assert.match(entry, /import \{ bootstrap \} from "\.\/app\/views\/app\.js"/);
-  assert.match(entry, /bootstrap\(\);/);
+  assert.match(entry, /location\.pathname/);
+  assert.match(entry, /import\("\.\/app\/views\/landing\.js"\)/);
+  assert.match(entry, /import\("\.\/app\/views\/app\.js"\)/);
+  assert.match(entry, /module\.catch/);
 });
 
 test("router delegates navigation once and cancels stale page requests", async () => {
@@ -51,12 +53,20 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.equal(new URL(page.url()).pathname, "/");
     await page.locator("#landing-view").waitFor();
     await page.locator("#landing-case-grid .landing-case-card").first().waitFor();
-    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 3, "the homepage should feature the three built-in collaboration teams");
+    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 4, "the homepage should feature the four built-in collaboration teams");
     await page.locator('#landing-view a[href="/projects"]').first().click();
     assert.match(page.url(), /\/projects$/);
     await page.locator("#projects-view .page-heading").waitFor();
+    await page.locator("#projects-view .project-library-toolbar, #projects-view .empty-projects").first().waitFor();
     assert.equal(await page.locator('#projects-view a[href="/projects/new"]').count(), 1, "the empty state should not duplicate the page's create action");
     assert.equal(await page.locator('#projects-view .empty-projects a[href="/projects/new"]').count(), 0);
+
+    await page.locator('#app-shell a[data-route="/"]').first().click();
+    await page.locator("#landing-view").waitFor({ state: "visible" });
+    await page.locator("#landing-case-grid .landing-case-card").first().waitFor();
+    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 4, "returning home through the SPA router should restore the case grid");
+    await page.locator('#landing-view a[href="/projects"]').first().click();
+    await page.locator("#projects-view .page-heading").waitFor();
 
     assert.equal(await page.locator('.nav-item[data-view="projects"]').isVisible(), true, "Projects should remain available in normal mode");
     assert.equal(await page.locator('.nav-item[href="/teams"]').count(), 0, "the team repository should not duplicate Studio in primary navigation");

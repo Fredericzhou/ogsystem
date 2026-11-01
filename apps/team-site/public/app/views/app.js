@@ -106,60 +106,19 @@ const navStorageKey = "ogs.team-site.nav-state";
 let navPreferenceStored = false;
 let mobileNavReleaseTrap;
 let mobileNavReleaseScroll;
-const copy = {
-  "zh-CN": {
-    homeCases: "团队仓库", homeStudio: "团队工厂", homeCta: "开始体验", homeEyebrow: "为复杂工作，组织一支 AI 团队", homeTitle: "让专业分工，<br>协作交付结果。", homeIntro: "从清晰目标开始，定义职责角色与交接方式；每项责任由配置的执行者承担，共同产出可检查的结果。", homePrimary: "在线运行示例", homeProof: "真实运行流程 · 无需注册 · 中英文示例", visualTitle: "专业分工，协作交付", visualStatus: "协作中", visualTask: "一个清楚的目标", visualTaskSub: "让团队朝同一个目标推进", visualRoleOne: "工程规划", visualRoleOneSub: "实现与依赖", visualRoleTwo: "体验设计", visualRoleTwoSub: "流程与细节", visualRoleThree: "质量把关", visualRoleThreeSub: "验收与风险", visualResult: "汇成一份共同成果", visualResultSub: "职责 · 交接 · 下一步", visualFooter: "职责清晰，协作有序，过程可追踪", homeCasesEyebrow: "三支经典团队", homeCasesTitle: "从经典团队案例开始", homeAllCases: "查看全部团队", promiseKicker: "面向真实工作", promiseTitle: "过程清楚，交付有据。", promiseOne: "每位成员有明确职责", promiseOneBody: "从目标拆解到结果整合，每一步都有负责的人。", promiseTwo: "工作交接看得见", promiseTwoBody: "随时了解谁在处理、信息如何流转。", promiseThree: "结果可以逐步检查", promiseThreeBody: "回看各方意见、汇总过程和最终输出。", homeFooter: "为复杂工作构建协作团队", homeFooterCta: "进入协作项目",
-    workspaceName: "个人工作台", workspaceType: "访客空间", navTeams: "团队仓库", navExamples: "团队工厂", navRuns: "最近运行", runtimeReady: "运行服务就绪", crumbHome: "首页", guestMode: "访客体验", eyebrow: "团队仓库", pageTitle: "把复杂任务，交给一支有分工的团队", pageIntro: "从一个目标开始。选择团队案例，查看协作路径，再运行一次完整流程。", metaLabel: "本次体验", metaValue: "完整团队流程 · 结果可回看", taskLabel: "你想完成什么？", taskHint: "先选一个团队案例，也可以改写任务目标", taskPlaceholder: "例如：为一款记账工具制定首版研发方案", charCount: "/ 1,200", runDemo: "运行团队示例", chooseCase: "选择一种协作方式", caseHeading: "典型协作案例", allExamples: "查看团队详情", teamPlan: "团队如何协作", temporaryConfig: "访客预览", adjustWithChat: "编辑任务", membersTitle: "团队成员", membersSubtitle: "每位成员负责一项工作", roleReady: "待开始", memberCompleted: "已完成", flowTitle: "协作路径", flowSubtitle: "从任务输入到最终交付", legendRole: "团队成员", legendFlow: "工作交接", taskInputNode: "任务", deliveryNode: "成果", splitNote: "成员按职责交接，并在汇总时整合所需信息。", capabilityKicker: "清楚 · 有序 · 可回看", capabilityTitle: "每一次协作，都有迹可循", capabilityBody: "团队按职责交接工作，运行过程保留时间线，成果可以逐步检查。", capabilityOne: "明确成员职责", capabilityOneBody: "每位成员有清晰的工作范围", capabilityTwo: "逐步整合意见", capabilityTwoBody: "各方结果按团队安排汇总", capabilityThree: "回看交付过程", capabilityThreeBody: "进度、结果和交接记录可查", footerNote: "公开体验展示完整的团队协作过程，不调用模型或生成业务交付内容。", libraryEyebrow: "团队仓库案例", libraryTitle: "典型协作案例", libraryIntro: "浏览不同团队的背景、分工和预期成果。", caseBackground: "场景背景", caseProblem: "适合解决", caseCollaboration: "协作过程", caseDeliverable: "预期成果", caseRoles: "团队分工", openCase: "查看案例详情", useCase: "使用这个团队", backCases: "返回全部团队", detailEyebrow: "团队仓库案例", runHistoryEyebrow: "最近运行", historyTitle: "最近运行", historyIntro: "本机浏览器临时保存的体验记录。", clearHistory: "清空记录", noHistory: "还没有运行记录。选择一个案例并运行团队示例。", historyRestore: "查看运行", runPanelKicker: "团队运行", runPanelTitle: "运行结果", running: "正在运行团队流程…", runFailed: "运行未完成", simulation: "流程预览", rolesCompleted: "角色执行", transitions: "任务交接", elapsed: "耗时", finalDelivery: "最终成果", runResult: "预览说明", dryOutput: "本次预览展示团队如何分工与交接工作，不调用真实角色模型，也不会生成业务交付内容。", timeline: "运行时间线", noOutput: "团队没有返回最终交付内容。", historyDone: "已完成", selected: "当前团队", close: "关闭", inputRequired: "请先输入任务目标。", networkError: "暂时无法连接运行服务，请稍后重试。", promptCopied: "已载入案例任务，可继续修改。", inputEvent: "收到任务", outputEvent: "流程完成", roleStatus: "已完成", fallbackEvent: "工作已更新"
-  },
-  en: {
-    homeCases: "Team repository", homeStudio: "Team factory", homeCta: "Explore the preview", homeEyebrow: "A team for complex work", homeTitle: "Specialized roles<br>working toward one delivery.", homeIntro: "Start with a clear goal. Define responsibility roles and handoffs; configured executors perform each responsibility and produce a reviewable outcome.", homePrimary: "Run an example", homeProof: "Real workflow run · No sign-up · English and Chinese", visualTitle: "Specialized roles, one shared delivery", visualStatus: "Working together", visualTask: "A clear shared goal", visualTaskSub: "One direction for the whole team", visualRoleOne: "Engineering plan", visualRoleOneSub: "Build and dependencies", visualRoleTwo: "Experience design", visualRoleTwoSub: "Flow and details", visualRoleThree: "Quality review", visualRoleThreeSub: "Acceptance and risks", visualResult: "One shared outcome", visualResultSub: "Ownership · Handoffs · Next steps", visualFooter: "Clear roles. Coordinated work. Visible progress.", homeCasesEyebrow: "Three classic teams", homeCasesTitle: "Explore proven collaboration teams", homeAllCases: "Browse all teams", promiseKicker: "Built for real work", promiseTitle: "Clear process. Reviewable results.", promiseOne: "Every member has a clear role", promiseOneBody: "Each step has an owner, from framing the task to assembling the result.", promiseTwo: "Handoffs stay visible", promiseTwoBody: "See who is working and how information moves through the team.", promiseThree: "Results are easy to review", promiseThreeBody: "Revisit each view, the synthesis, and the final output.", homeFooter: "Teams for complex work", homeFooterCta: "Open the team workspace",
-    workspaceName: "My workspace", workspaceType: "Guest space", navTeams: "Team repository", navExamples: "Team factory", navRuns: "Recent runs", runtimeReady: "Service ready", crumbHome: "Home", guestMode: "Guest preview", eyebrow: "Online team workspace", pageTitle: "Give complex work to a team with clear roles", pageIntro: "Start with a goal. Choose a team, inspect how it works, then run the complete flow.", metaLabel: "This preview", metaValue: "Complete team workflow · Reviewable results", taskLabel: "What would you like to accomplish?", taskHint: "Choose a team example or rewrite the task", taskPlaceholder: "For example: plan the first release of a bookkeeping tool", charCount: "/ 1,200", runDemo: "Run team example", chooseCase: "Choose how to collaborate", caseHeading: "Practical collaboration examples", allExamples: "Explore team details", teamPlan: "How this team works", temporaryConfig: "Guest preview", adjustWithChat: "Edit task", membersTitle: "Team members", membersSubtitle: "Each member owns a part of the work", roleReady: "Ready", memberCompleted: "Completed", flowTitle: "Collaboration flow", flowSubtitle: "From task input to final delivery", legendRole: "Team member", legendFlow: "Work handoff", taskInputNode: "Task", deliveryNode: "Outcome", splitNote: "Members hand off work by responsibility and bring the needed information together.", capabilityKicker: "Clear · Ordered · Reviewable", capabilityTitle: "Every collaboration leaves a trail", capabilityBody: "Members hand off work by responsibility. A timeline captures progress, and you can review each result.", capabilityOne: "Clear member ownership", capabilityOneBody: "Each member has a defined scope", capabilityTwo: "Views brought together", capabilityTwoBody: "Results are assembled according to the team plan", capabilityThree: "Review the process", capabilityThreeBody: "Progress, results, and handoffs stay visible", footerNote: "The public preview demonstrates a complete team workflow. It does not call models or generate business deliverables.", libraryEyebrow: "Team repository examples", libraryTitle: "How teams work together", libraryIntro: "Explore each team's context, responsibilities, and expected outcome.", caseBackground: "Background", caseProblem: "When to use it", caseCollaboration: "How the team works", caseDeliverable: "Expected outcome", caseRoles: "Team responsibilities", openCase: "View case details", useCase: "Use this team", backCases: "All teams", detailEyebrow: "Team repository example", runHistoryEyebrow: "Recent runs", historyTitle: "Recent runs", historyIntro: "Preview history stored temporarily in this browser.", clearHistory: "Clear history", noHistory: "No run history yet. Choose a case and run the team example.", historyRestore: "View run", runPanelKicker: "Team run", runPanelTitle: "Run result", running: "Running the team workflow…", runFailed: "Run did not complete", simulation: "Workflow preview", rolesCompleted: "Role executions", transitions: "Handoffs", elapsed: "Duration", finalDelivery: "Final delivery", runResult: "Preview details", dryOutput: "This preview shows how the team divides and hands off work. It does not call role models or generate a business deliverable.", timeline: "Run timeline", noOutput: "The team returned no final delivery content.", historyDone: "Completed", selected: "Selected team", close: "Close", inputRequired: "Enter a task to run.", networkError: "The runtime is temporarily unavailable. Try again shortly.", promptCopied: "Example task loaded. You can edit it before running.", inputEvent: "Task received", outputEvent: "Workflow complete", roleStatus: "Completed", fallbackEvent: "Work updated"
+const copy = { "zh-CN": {}, en: {} };
+let copyLoad;
+async function loadCopy() {
+  if (!copyLoad) {
+    copyLoad = pageFetch("/app/i18n.json").then(async (response) => {
+      if (!response.ok) throw new Error("Unable to load the application language dictionary.");
+      const payload = await response.json();
+      Object.assign(copy["zh-CN"], payload["zh-CN"] || {});
+      Object.assign(copy.en, payload.en || {});
+    });
   }
-};
-Object.assign(copy["zh-CN"], {
-  navProjects: "协作项目", navStudio: "OGS Studio", navStudioRepository: "团队仓库", navStudioCreate: "团队创建", navRoleRepository: "角色仓库", navModels: "模型服务", navPlatform: "平台配置", navRoleSources: "角色源配置",
-  homeIntro: "从清晰目标开始，定义职责角色与交接方式；每项责任由配置的执行者承担，共同产出可检查的结果。",
-  promiseOne: "每个职责都有清晰边界",
-  promiseOneBody: "从目标拆解到结果整合，每项责任都在流程中明确。",
-  membersTitle: "团队职责",
-  membersSubtitle: "图中展示职责角色；实际执行者由配置决定",
-  legendRole: "职责角色",
-  splitNote: "职责角色按流程交接工作，并在汇总时整合所需信息。",
-  capabilityOne: "明确职责边界",
-  capabilityOneBody: "每个角色都有清晰的责任范围",
-  readinessTitle: "隔离运行配置检查",
-  readinessReady: "基础配置检查通过。外部服务连通性和凭据会在执行时验证。",
-  readinessBlocked: "存在 {count} 个待处理项。请先修复配置；流程预览仍可使用。",
-  readinessUnavailable: "暂时无法读取配置检查结果。开始隔离运行前会再次校验。",
-  sandboxBlocked: "隔离运行 · 配置未就绪",
-  readinessStateReady: "静态检查通过",
-  readinessStateBlocked: "未就绪 · {count}",
-  readinessStateUnknown: "检查暂不可用",
-  readinessConfirmed: "结构已确认",
-  readinessUnconfirmed: "结构未确认"
-});
-Object.assign(copy.en, {
-  navProjects: "Collaboration projects", navStudio: "OGS Studio", navStudioRepository: "Team repository", navStudioCreate: "Team creation", navRoleRepository: "Role repository", navModels: "Model services", navPlatform: "Platform settings", navRoleSources: "Role sources",
-  homeIntro: "Start with a clear goal. Define responsibility roles and handoffs; configured executors perform each responsibility and produce a reviewable outcome.",
-  promiseOne: "Every responsibility has a clear boundary",
-  promiseOneBody: "Each responsibility is explicit, from framing the task to assembling the result.",
-  membersTitle: "Team responsibilities",
-  membersSubtitle: "The graph shows responsibility roles; configured executors perform them",
-  legendRole: "Responsibility role",
-  splitNote: "Responsibility roles hand off work through the flow and bring needed information together.",
-  capabilityOne: "Clear responsibility boundaries",
-  capabilityOneBody: "Each role has a defined scope of responsibility",
-  readinessTitle: "Isolated run configuration check",
-  readinessReady: "Basic configuration checks passed. Provider connectivity and credentials are checked during execution.",
-  readinessBlocked: "{count} items need attention. Flow preview remains available while you resolve them.",
-  readinessUnavailable: "Configuration check is unavailable. The server will validate again before an isolated run.",
-  sandboxBlocked: "Isolated run · Configuration not ready",
-  readinessStateReady: "Static checks passed",
-  readinessStateBlocked: "Not ready · {count}",
-  readinessStateUnknown: "Check unavailable",
-  readinessConfirmed: "Structure confirmed",
-  readinessUnconfirmed: "Structure not confirmed"
-});
+  await copyLoad;
+}
 function syncThemeControls(theme = document.documentElement.dataset.visualizerTheme || "light") {
   const labels = state.locale === "zh-CN" ? { light: "浅色模式", dark: "深色模式" } : { light: "Light mode", dark: "Dark mode" };
   const toggle = $("#site-theme-toggle");
@@ -189,77 +148,6 @@ function applySiteTheme(theme, persist = true) {
   syncThemeControls(nextTheme);
   document.dispatchEvent(new CustomEvent("ogs-visualizer-theme-change", { detail: { theme: nextTheme } }));
 }
-
-Object.assign(copy["zh-CN"], {
-  homeCases: "团队协作",
-  homeProof: "可运行团队示例 · 无需注册 · 中英文支持",
-  homeCasesEyebrow: "三类常见协作场景",
-  homeCasesTitle: "从典型团队协作开始",
-  homeAllCases: "查看全部协作案例",
-  navExamples: "OGS Studio",
-  caseHeading: "典型团队协作",
-  pageIntro: "从一个目标开始。选择团队案例，了解成员之间如何协作，再运行一次完整流程。",
-  membersSubtitle: "成员各有专长，分工完成任务",
-  allExamples: "查看案例详情",
-  libraryEyebrow: "团队仓库案例",
-  libraryTitle: "典型协作案例",
-  libraryIntro: "浏览不同协作场景的背景、分工和预期成果。",
-  detailEyebrow: "典型团队协作案例",
-  flowTitle: "协作关系",
-  flowSubtitle: "成员之间如何分工与衔接",
-  caseScenario: "示例任务"
-});
-Object.assign(copy.en, {
-  homeCases: "Team collaboration",
-  homeProof: "Runnable team examples · No sign-up · Bilingual",
-  homeCasesEyebrow: "Three common collaboration scenarios",
-  homeCasesTitle: "Explore representative team workflows",
-  homeAllCases: "Browse all collaboration examples",
-  navExamples: "OGS Studio",
-  caseHeading: "Representative team collaboration",
-  pageIntro: "Start with a goal. Choose a team, see how members work together, then run the complete example.",
-  membersSubtitle: "Each member brings a specialty to the shared task",
-  allExamples: "Explore case details",
-  libraryEyebrow: "Team repository examples",
-  libraryTitle: "Released team versions",
-  libraryIntro: "Explore the context, responsibilities, and expected outcomes for each scenario.",
-  detailEyebrow: "Representative collaboration example",
-  flowTitle: "Team relationships",
-  flowSubtitle: "How members divide and connect their work",
-  caseScenario: "Example task"
-});
-Object.assign(copy["zh-CN"], {
-  navTeams: "团队仓库", navExamples: "OGS Studio", libraryEyebrow: "团队仓库", libraryTitle: "已发布团队版本",
-  navRuns: "运行历史",
-  libraryIntro: "选择已发布团队版本，开始管理项目任务。", factoryEyebrow: "OGS Studio",
-  factoryTitle: "专业团队开发", factoryIntro: "在 OGS Studio 中编辑、调试并发布团队版本。",
-  noReleasedTeams: "还没有已发布的团队版本", noFactoryTeams: "OGS Studio 中还没有团队", createTeam: "创建团队",
-  continueEditing: "继续设计", editAsVersion: "编辑团队", releaseVersion: "发布版本", archiveVersion: "停用团队",
-  exportAsset: "导出团队", versionLabel: "版本", releasedLabel: "已发布", draftLabel: "设计中",
-  archivedLabel: "已归档", useTeam: "创建项目", createProject: "创建项目", repositoryEmptyHint: "先创建并发布团队。",
-  deleteTeam: "删除团队", deleteProject: "删除项目", confirmDeleteTeam: "确定删除团队“{name}”及其全部版本吗？此操作不可撤销。", confirmDeleteProject: "确定删除项目“{name}”及其任务、运行记录和资料吗？此操作不可撤销。", teamDeleted: "团队及其版本已删除", projectDeleted: "项目及其资料已删除",
-  factoryEmptyHint: "用自然语言描述团队目标，再检查并发布版本。", runRound: "任务 {round}", clearHistory: "清理本机缓存",
-  historyIntro: "按任务查看团队运行结果。清理只影响本机缓存，不会删除项目记录。",
-  noHistory: "还没有项目运行记录。完成一次项目任务后，这里会显示团队、版本和任务序号。",
-  targetHint: "请包含目标、角色关系、大致流程、输入材料和期望输出，便于自动生成团队结构。",
-    releaseTeam: "发布团队版本", advancedWorkspace: "查看全流程"
-});
-Object.assign(copy.en, {
-  navTeams: "Team repository", navExamples: "OGS Studio", libraryEyebrow: "Team repository", libraryTitle: "Released team versions",
-  navRuns: "Run history",
-  libraryIntro: "Choose a released team version to start a project.", factoryEyebrow: "OGS Studio",
-  factoryTitle: "Professional team development", factoryIntro: "Edit, debug, and release team versions in OGS Studio.",
-  noReleasedTeams: "No released team versions yet", noFactoryTeams: "No teams in OGS Studio yet", createTeam: "Create team",
-  continueEditing: "Continue design", editAsVersion: "Edit team", releaseVersion: "Release version", archiveVersion: "Deactivate team",
-  exportAsset: "Export team", versionLabel: "Version", releasedLabel: "Released", draftLabel: "In design",
-  archivedLabel: "Archived", useTeam: "Create project", createProject: "Create project", repositoryEmptyHint: "Create and release a team first.",
-  deleteTeam: "Delete team", deleteProject: "Delete project", confirmDeleteTeam: "Delete team “{name}” and all its versions? This cannot be undone.", confirmDeleteProject: "Delete project “{name}” and its tasks, runs, and materials? This cannot be undone.", teamDeleted: "Team and versions deleted", projectDeleted: "Project and materials deleted",
-  factoryEmptyHint: "Describe a team goal, then review and release a version.", runRound: "Task {round}", clearHistory: "Clear local cache",
-  historyIntro: "Review team runs by task. Clearing only affects this browser cache, not project records.",
-  noHistory: "No project runs yet. Complete a project task to see its team, version, and task number here.",
-  targetHint: "Include the goal, role relationships, rough workflow, inputs, and expected outputs so the team structure can be generated accurately.",
-    releaseTeam: "Release team version", advancedWorkspace: "View full run"
-});
 
 function labelEvent(event) { return localizedEventLabel(event, copy); }
 
@@ -518,6 +406,32 @@ function isProjectRoute() {
     || /^\/projects\/[a-z0-9-]+\/runs\/[A-Za-z0-9._-]+$/.test(path)
     || /^\/projects\/[a-z0-9-]+(?:\/teams)?$/.test(path);
 }
+
+const viewShells = {
+  "workspace-view": "",
+  "case-detail-view": "",
+  "new-project-view": "",
+  "project-workspace-view": "",
+  "history-view": '<div class="page-heading"><div><div class="eyebrow" data-i18n="runHistoryEyebrow">最近运行</div><h1 data-i18n="historyTitle">最近运行</h1><p data-i18n="historyIntro">按项目轮次查看团队运行结果。</p></div><button class="secondary-button" id="clear-history" type="button" data-i18n="clearHistory">清理本机记录</button></div><div id="history-list" class="history-list"></div>',
+  "examples-view": '<div class="page-heading"><div><div class="eyebrow" data-i18n="libraryEyebrow">典型团队协作案例</div><h1 data-i18n="libraryTitle">团队协作案例</h1><p data-i18n="libraryIntro">浏览不同协作场景的背景、分工和预期成果。</p></div></div><div id="library-grid" class="library-grid"></div>',
+  "studio-view": "",
+  "projects-view": "",
+  "platform-view": ""
+};
+
+function ensureViewElements() {
+  const main = document.querySelector(".main-area");
+  if (!main) return;
+  for (const [id, html] of Object.entries(viewShells)) {
+    if (document.getElementById(id)) continue;
+    const view = document.createElement("div");
+    view.id = id;
+    view.className = "page-content alternate-view hidden";
+    if (html) view.innerHTML = html;
+    main.append(view);
+  }
+}
+
 function setView(view) {
   state.view = view;
   const viewMap = { projects: "projects-view", workspace: "workspace-view", studio: "studio-view", platform: "platform-view", examples: "examples-view", history: "history-view", "new-project": "new-project-view", "project-workspace": "project-workspace-view" };
@@ -1102,8 +1016,8 @@ async function renderStudioOverview() {
 
 function studioSimulationStatus(status) {
   const labels = state.locale === "en"
-    ? { running: "Running", waiting: "Waiting", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
-    : { running: "运行中", waiting: "等待中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
+    ? { running: "Running", stopping: "Stopping", stopped: "Stopped", waiting: "Waiting", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
+    : { running: "运行中", stopping: "正在停止", stopped: "已停止", waiting: "等待中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
   return labels[status] || status || (state.locale === "en" ? "Unknown" : "未知");
 }
 
@@ -1368,12 +1282,12 @@ async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequ
       const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId)}`;
       return `<a class="material-row studio-simulation-row" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div>${simulation.failureSummary ? `<p class="task-run-last-error">${esc(studioSimulationErrorText(simulation.failureSummary))}</p>` : ""}</div><span>→</span></a>`;
     }).join("") : `<p class="empty-note">${english ? "No simulations for this TeamVersion yet." : "此团队版本还没有仿真记录。"}</p>`;
-    const clearable = simulations.some((item) => item.mode !== "sandbox" && !item.baselineScenarioId && ["completed", "failed"].includes(item.status));
+    const clearable = simulations.some((item) => item.mode !== "sandbox" && !item.baselineScenarioId && ["completed", "failed", "stopped"].includes(item.status));
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${english ? "Team repository" : "团队仓库"}</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>${english ? "Debug history" : "调试历史"}</h1><p>${english ? "Review role input, output, progress, and failures from each isolated debug run." : "按次回看独立调试中的角色输入、输出、进度和异常诊断。"}</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Debug runs" : "调试记录"}</span><h2>${english ? "History" : "历史"}</h2></div><div class="form-actions"><span class="count-badge">${simulations.length}</span>${clearable ? `<button class="secondary-button danger-button" type="button" data-clear-studio-history>${english ? "Clear finished debug runs" : "清理已完成调试记录"}</button>` : ""}</div></div><div class="material-list studio-simulation-list">${history}</div></section>`;
     root.querySelector(".project-panel .panel-head h2").textContent = english ? "Debug history" : "调试历史";
     root.querySelector("[data-clear-studio-history]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
-      const message = english ? "Remove completed and failed interactive debug records? Sandbox release evidence and running records are protected." : "清理已结束的交互式调试记录？发布 Sandbox 证据和运行中的记录会保留。";
+      const message = english ? "Remove completed, failed, and stopped interactive debug records? Sandbox release evidence and running records are protected." : "清理已结束的交互式调试记录？发布 Sandbox 证据和运行中的记录会保留。";
       if (!window.confirm(message)) return;
       button.disabled = true;
       try {
@@ -1443,6 +1357,31 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     const runMetrics = `<section class="project-panel studio-run-metrics" aria-label="${state.locale === "en" ? "Run metrics" : "运行指标"}"><div class="studio-run-metric"><span>${state.locale === "en" ? "Transitions" : "流转步数"}</span><strong>${formatMetric(transitionCount)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Rendered prompt characters" : "完整提示词字符"}</span><strong>${formatMetric(promptChars)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated input tokens" : "估算输入 Token"}</span><strong>${formatMetric(inputTokens)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated output tokens" : "估算输出 Token"}</span><strong>${formatMetric(outputTokens)}</strong></div><p class="field-hint">${state.locale === "en" ? "Token values are estimates, not billing totals. A dash means this historical run did not collect the field." : "Token 数为估算值，不代表账单精确值；“—”表示此历史运行未采集该字段。"}</p></section>`;
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${auditTrail.length}</span></div><ol class="team-debug-transcript">${auditTrail.map((item) => { const color = roleColorForId(item.roleId || "system"); const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : ""; const outputText = item.stdoutPreview || item.failure || item.error || ""; const calls = item.promptCalls || []; const callChars = calls.reduce((sum, call) => sum + (Number(call.renderedPromptChars) || 0), 0); const callTokens = calls.reduce((sum, call) => sum + (Number(call.estimatedInputTokens) || 0) + (Number(call.estimatedOutputTokens) || 0), 0); const fallbackCall = calls.find((call) => call.phase === "fallback"); const meter = item.renderedPromptChars ?? (calls.length ? callChars : undefined); const projected = item.projectedInputChars ?? (calls.length ? calls.reduce((sum, call) => sum + (Number(call.projectedInputChars) || 0), 0) : undefined); const tokens = (item.estimatedInputTokens ?? item.estimatedOutputTokens) !== undefined ? `${item.estimatedInputTokens ?? 0} / ${item.estimatedOutputTokens ?? 0}` : calls.length ? String(callTokens) : undefined; const isolation = item.externalDataIsolated === true ? (state.locale === "en" ? "External data isolated" : "外部数据已分隔") : item.externalDataIsolated === false ? (state.locale === "en" ? "External data not isolated" : "外部数据未分隔") : (state.locale === "en" ? "Isolation not recorded" : "隔离状态未采集"); const fallbackLabel = item.fallbackUsed || fallbackCall ? `${state.locale === "en" ? "Fallback model" : "备选模型"}: ${fallbackCall?.modelId || "—"} (${state.locale === "en" ? "primary" : "主模型"}: ${item.primaryModelId || "—"})` : ""; return `<li style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><header><strong>${esc(roleLabel(item.roleId || ""))}</strong><span>${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header><div class="studio-audit-badges"><span>${esc(isolation)}</span>${fallbackLabel ? `<span>${esc(fallbackLabel)}</span>` : ""}${projected !== undefined ? `<span>${state.locale === "en" ? "Projected input" : "输入数据"}: ${formatMetric(projected)} ${state.locale === "en" ? "chars" : "字符"}</span>` : ""}${meter !== undefined ? `<span>${state.locale === "en" ? "Prompt" : "提示词"}: ${formatMetric(meter)} ${state.locale === "en" ? "chars" : "字符"}</span>` : `<span>${state.locale === "en" ? "Prompt: not recorded" : "提示词：未采集"}</span>`}${tokens !== undefined ? `<span>${state.locale === "en" ? "Estimated input / output tokens" : "估算输入 / 输出 Token"}: ${esc(tokens)}</span>` : ""}</div>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}</li>`; }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
+    root.querySelectorAll(".team-debug-transcript > li > section").forEach((section) => {
+      const label = section.querySelector("small")?.textContent || (state.locale === "en" ? "Details" : "详情");
+      const pre = section.querySelector("pre");
+      if (!pre) return;
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = label;
+      details.append(summary, pre);
+      section.replaceWith(details);
+    });
+    const heading = root.querySelector(".page-heading");
+    const statusNode = heading?.querySelector(".status-chip");
+    if (heading && statusNode) {
+      const actions = document.createElement("div");
+      actions.className = "page-heading-actions";
+      actions.append(statusNode);
+      const artifactsLink = document.createElement("a");
+      artifactsLink.className = "secondary-button";
+      artifactsLink.href = simulation.artifactsUrl || `${base}/artifacts`;
+      artifactsLink.target = "_blank";
+      artifactsLink.rel = "noreferrer";
+      artifactsLink.textContent = state.locale === "en" ? "Open run directory" : "打开运行目录";
+      actions.append(artifactsLink);
+      heading.append(actions);
+    }
     const list = (simulationsPayload.simulations || []).map((item) => {
       const href = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(item.simulationId)}`;
       return `<a class="material-row studio-simulation-row${item.simulationId === simulationId ? " selected" : ""}" href="${href}" data-route="${href}"${item.simulationId === simulationId ? ' aria-current="page"' : ""}><div><strong>${esc(item.input || "调试任务")}</strong><div class="task-record-meta"><span class="status-chip ${esc(item.status)}">${esc(studioSimulationStatus(item.status))}</span><span class="run-mode-chip">${esc(studioSimulationModeLabel(item.mode))}</span><span>${esc(item.createdAt || "")}</span></div></div></a>`;
@@ -1868,6 +1807,9 @@ function localizeStudioDesignPage(root, locale, { confirmed, version } = {}) {
   setLabel('#project-edit-form textarea[name="overview"]', "Team goal");
   setLabel("#team-simulation-input", "Debug task");
   setText("#team-debug-dialog .team-debug-panel-head strong", "Debug");
+  setText("#team-debug-dialog [data-debug-view=\"config\"]", "Configure");
+  setText("#team-debug-dialog [data-debug-view=\"run\"]", "Run process");
+  setText("#team-debug-dialog [data-debug-view-panel=\"config\"] .form-hint", "The task and additional materials are sent together as this run's input. The run uses the current TeamVersion snapshot and is stored as an isolated debug record.");
   setText("#team-simulation-run", "Start debug run");
   setText("#team-simulation-mode legend", "Run mode");
   setText("#team-simulation-mode [data-debug-mode-label=\"dry-run\"]", "Simulation");
@@ -1878,7 +1820,7 @@ function localizeStudioDesignPage(root, locale, { confirmed, version } = {}) {
   setText("#team-debug-dialog .team-debug-empty-state strong", "Ready to debug");
   setText("#team-debug-dialog .team-debug-empty-state p", "Enter the task and relevant materials to see role conversations, flow progress, and results here.");
   setText("#team-debug-dialog .team-debug-panel-content .form-actions a", "Debug history");
-  const debugHint = root.querySelector("#team-simulation-materials")?.closest("label")?.nextElementSibling;
+  const debugHint = root.querySelector("#team-debug-dialog .debug-config-view .form-hint");
   if (debugHint) debugHint.textContent = "The task and additional materials are sent together as this run's input. The run uses the current TeamVersion snapshot and is stored as an isolated debug record.";
   const debugInput = root.querySelector("#team-simulation-input");
   if (debugInput) debugInput.placeholder = "Describe the task to validate";
@@ -2089,7 +2031,36 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     const workbench = stage.closest(".studio-design-workbench");
     const inspector = $("#studio-property-inspector");
     const assetDrawer = workbench?.querySelector("#studio-asset-drawer");
-    let debugPanel = null;
+    const debugPanel = workbench?.querySelector("#team-debug-dialog");
+    const setDebugView = (view) => {
+      const next = view === "run" ? "run" : "config";
+      debugPanel?.querySelectorAll("[data-debug-view]").forEach((tab) => {
+        const active = tab.dataset.debugView === next;
+        tab.setAttribute("aria-selected", String(active));
+        tab.classList.toggle("active", active);
+      });
+      debugPanel?.querySelectorAll("[data-debug-view-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.debugViewPanel !== next;
+      });
+    };
+    const syncDebugRunButton = (status = "idle") => {
+      const button = debugPanel?.querySelector("#team-simulation-run");
+      const stateLabel = debugPanel?.querySelector("[data-debug-run-state]");
+      if (!button) return;
+      const running = status === "running" || status === "stopping";
+      button.dataset.running = String(running);
+      button.classList.toggle("danger-button", running);
+      button.classList.toggle("is-stopping", status === "stopping");
+      button.disabled = status === "stopping";
+      button.textContent = status === "stopping"
+        ? (state.locale === "en" ? "Stopping…" : "正在停止…")
+        : running
+          ? (state.locale === "en" ? "Stop" : "停止")
+          : (state.locale === "en" ? "Start debug run" : "开始调试");
+      if (stateLabel) stateLabel.textContent = running
+        ? (status === "stopping" ? (state.locale === "en" ? "stopping" : "正在停止") : (state.locale === "en" ? "running" : "运行中"))
+        : "";
+    };
     const assetToggle = () => workbench?.querySelector("[data-studio-graph-action='assets']");
     const assetListView = assetDrawer?.querySelector("#studio-assets-list-view");
     const propertyView = assetDrawer?.querySelector("#studio-assets-property-view");
@@ -2855,6 +2826,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         return false;
       }
       const result = $("#team-simulation-result");
+      setDebugView("run");
+      syncDebugRunButton("running");
       if (result) result.innerHTML = `<p class="form-status" role="status">${state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…"}</p>`;
       setEditorState(state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…");
       try {
@@ -2872,6 +2845,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (!isCurrentRequest(pageRequest)) return false;
         if (!response.ok) throw new Error(payload.error || (state.locale === "en" ? "Team debug run failed." : "团队调试失败。"));
         let simulation = payload.simulation || {};
+        state.studioActiveRun = { teamId, teamVersionId, simulationId: simulation.simulationId };
         let simulationState = payload.state || {};
         let cursor = 0;
         const transcript = [];
@@ -2920,7 +2894,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             if (!section) {
               section = document.createElement("section");
               section.dataset.debugSection = className || label;
-              section.innerHTML = `<small>${esc(label)}</small><pre></pre>`;
+              section.innerHTML = `<details><summary>${esc(label)}</summary><pre></pre></details>`;
               card.append(section);
             }
             section.querySelector("pre").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -2968,10 +2942,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               continue;
             }
             if (item.type === "simulation.started") continue;
-            if (item.type === "simulation.completed" || item.type === "simulation.failed") {
+            if (item.type === "simulation.completed" || item.type === "simulation.failed" || item.type === "simulation.stopped") {
               if (chip) {
-                chip.className = `status-chip ${item.type === "simulation.completed" ? "completed" : "failed"}`;
-                chip.textContent = studioSimulationStatus(item.type === "simulation.completed" ? "completed" : "failed");
+                const finalStatus = item.type === "simulation.completed" ? "completed" : item.type === "simulation.stopped" ? "stopped" : "failed";
+                chip.className = `status-chip ${finalStatus}`;
+                chip.textContent = studioSimulationStatus(finalStatus);
               }
               continue;
             }
@@ -2984,7 +2959,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               card.dataset.executionKey = key;
               card.style.setProperty("--role-accent", color.accent);
               card.style.setProperty("--role-fill", color.fill);
-              card.innerHTML = `<header><strong></strong><span></span></header>`;
+              card.innerHTML = `<header><div class="team-debug-role"><span class="team-debug-avatar" aria-hidden="true"></span><strong></strong></div><span></span></header>`;
+              card.querySelector(".team-debug-avatar").textContent = roleName(item.roleId || "system").trim().slice(0, 1).toUpperCase();
               card.querySelector("header strong").textContent = roleName(item.roleId || "system");
               list.append(card);
               roleCards.set(key, card);
@@ -3012,6 +2988,17 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             if (item.stdoutPreview || item.failure) {
               addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
             }
+            const diagnostics = {
+              ...(item.backend ? { backend: item.backend } : {}),
+              ...(item.modelId ? { modelId: item.modelId } : {}),
+              ...(item.profileId ? { profileId: item.profileId } : {}),
+              ...(item.toolRef ? { toolRef: item.toolRef } : {}),
+              ...(item.promptCalls ? { promptCalls: item.promptCalls } : {}),
+              ...(item.estimatedInputTokens !== undefined ? { estimatedInputTokens: item.estimatedInputTokens } : {}),
+              ...(item.estimatedOutputTokens !== undefined ? { estimatedOutputTokens: item.estimatedOutputTokens } : {}),
+              ...(item.externalDataIsolated !== undefined ? { externalDataIsolated: item.externalDataIsolated } : {})
+            };
+            if (Object.keys(diagnostics).length) addSection(card, state.locale === "en" ? "Model and execution diagnostics" : "模型与执行诊断", diagnostics, "diagnostics");
             if (item.errorEnvelope) {
               addSection(card, state.locale === "en" ? "Failure details" : "失败诊断详情", item.errorEnvelope, "diagnostic");
             }
@@ -3036,14 +3023,16 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (!detailResponse.ok) throw new Error(detailPayload.error || "读取运行状态失败");
         simulation = detailPayload.simulation || simulation;
         simulationState = detailPayload.state || simulationState;
+        syncDebugRunButton(simulation.status === "stopping" ? "stopping" : "idle");
         const auditTrail = simulationState.auditTrail || [];
         const noopRoles = auditTrail.filter((item) => String(item.status || "").toLowerCase() === "noop");
-        const failed = simulation.status === "failed" || ["failed", "error"].includes(String(simulationState.status || "").toLowerCase()) || auditTrail.some((item) => String(item.status || "").toLowerCase() === "failed");
+        const stopped = ["stopped", "stopping"].includes(String(simulation.status || "").toLowerCase()) || ["stopped", "stopping"].includes(String(simulationState.status || "").toLowerCase());
+        const failed = !stopped && (simulation.status === "failed" || ["failed", "error"].includes(String(simulationState.status || "").toLowerCase()) || auditTrail.some((item) => String(item.status || "").toLowerCase() === "failed"));
         const output = simulationState.finalOutputsByRoleId
           ? Object.entries(simulationState.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((item) => `${roleName(roleId)}: ${item.content || JSON.stringify(item.data || {})}`)).join("\n\n")
           : "";
         const hasOutput = typeof output === "string" && Boolean(output.trim());
-        const succeeded = !failed && hasOutput;
+        const succeeded = !stopped && !failed && hasOutput;
         const roleRows = auditTrail.map((item) => {
           const status = String(item.status || "").toLowerCase();
           const label = status === "noop"
@@ -3051,7 +3040,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             : (item.status || (state.locale === "en" ? "Executed" : "已执行"));
           return `<li><strong>${esc(item.roleId || (state.locale === "en" ? "Role" : "角色"))}</strong><span>${esc(label)}${item.failure ? ` · ${esc(item.failure)}` : ""}</span></li>`;
         }).join("");
-        const statusLabel = failed
+        const statusLabel = stopped
+          ? (state.locale === "en" ? (simulation.status === "stopping" ? "Stopping" : "Stopped") : (simulation.status === "stopping" ? "正在停止" : "已停止"))
+          : failed
           ? (state.locale === "en" ? "Debug run failed" : "调试失败")
           : !hasOutput
             ? (state.locale === "en" ? "No result produced" : "未产出结果")
@@ -3060,6 +3051,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               : (state.locale === "en" ? "Debug run complete" : "调试完成");
         const historyHref = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
         const detailHref = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId || "")}`;
+        const artifactsHref = simulation.artifactsUrl || `${endpoint}/${encodeURIComponent(simulation.simulationId || "")}/artifacts`;
         const persistenceLabel = state.locale === "en" ? "Saved as isolated Studio evidence · not a Project Run" : "已保存为独立 Studio 证据 · 不属于项目 Run";
         const emptyMessage = noopRoles.length
           ? (state.locale === "en" ? "No result was produced because one or more roles have no execution binding. Configure a model or execution profile for the listed roles, then retry." : "角色尚未配置执行绑定，因此没有生成结果。请为上方角色配置模型或执行配置后重试。")
@@ -3067,9 +3059,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const displayedFailure = studioSimulationErrorText(simulationState.error || simulation.failureSummary || emptyMessage);
         if (result) {
           drawTranscript();
-          result.insertAdjacentHTML("beforeend", `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Final result" : "最终结果"}</strong><span class="status-chip${succeeded && !noopRoles.length ? "" : " warning"}">${statusLabel}</span></div><p class="form-hint">${persistenceLabel}</p>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(hasOutput ? output : displayedFailure)}</pre><div class="form-actions"><a class="secondary-button" href="${detailHref}" data-route="${detailHref}">${state.locale === "en" ? "Open run details" : "查看运行详情"}</a><a class="text-button" href="${historyHref}" data-route="${historyHref}">${state.locale === "en" ? "Debug history" : "调试历史"}</a></div></div>`);
+          result.insertAdjacentHTML("beforeend", `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Final result" : "最终结果"}</strong><span class="status-chip${succeeded && !noopRoles.length ? "" : " warning"}">${statusLabel}</span></div><p class="form-hint">${persistenceLabel}</p>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(hasOutput ? output : displayedFailure)}</pre><div class="form-actions"><a class="secondary-button" href="${detailHref}" data-route="${detailHref}">${state.locale === "en" ? "Open run details" : "查看运行详情"}</a><a class="secondary-button" href="${artifactsHref}" target="_blank" rel="noreferrer">${state.locale === "en" ? "Open run directory" : "打开运行目录"}</a><a class="text-button" href="${historyHref}" data-route="${historyHref}">${state.locale === "en" ? "Debug history" : "调试历史"}</a></div></div>`);
         }
-        setEditorState(failed
+        setEditorState(stopped
+          ? (state.locale === "en" ? (simulation.status === "stopping" ? "Stop requested; the debug run is finishing its current operation." : "Debug run stopped before completion.") : (simulation.status === "stopping" ? "已请求停止；当前操作完成后将结束调试。" : "调试运行已停止，未完成全部流程。"))
+          : failed
           ? (state.locale === "en" ? "Debug run failed; review the role details and retry." : "调试失败；请检查角色执行信息后重试。")
           : !hasOutput
             ? emptyMessage
@@ -3083,6 +3077,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (result) result.innerHTML = `<p class="run-error" role="alert">${esc(message)}</p>`;
         setEditorState(message);
         return false;
+      } finally {
+        state.studioActiveRun = null;
+        syncDebugRunButton("idle");
       }
     };
     state.runTeamStudioSimulation = simulateTeam;
@@ -3476,7 +3473,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       if (state.studioRoute) root.querySelector("#studio-workbench-host")?.append(workbench);
       else graphPanel.before(workbench);
       workbench.append(graphPanel);
-      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><strong>调试</strong><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></header><div class="team-debug-panel-content"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><fieldset class="debug-mode-choice" id="team-simulation-mode"><legend>运行方式</legend><label><input type="radio" name="studioSimulationMode" value="dry-run" checked><span data-debug-mode-label="dry-run">仿真</span><small data-debug-mode-description="dry-run">仅预览流程，不调用模型</small></label><label><input type="radio" name="studioSimulationMode" value="sandbox"><span data-debug-mode-label="sandbox">沙箱</span><small data-debug-mode-description="sandbox">调用真实模型，但运行在隔离环境</small></label></fieldset><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p><div class="form-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><a class="text-button" href="/studio/teams/' + encodeURIComponent(projectId) + '/run" data-route="/studio/teams/' + encodeURIComponent(projectId) + '/run">调试历史</a></div><div id="team-simulation-result" aria-live="polite"><div class="team-debug-empty-state"><strong>等待开始调试</strong><p>填写任务和可选资料后开始，角色对话、流转进度和运行结果会显示在这里。</p></div></div></aside>');
+      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><div><strong>调试</strong><span class="team-debug-run-state" data-debug-run-state></span></div><div class="team-debug-panel-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></div></header><div class="debug-view-tabs" role="tablist" aria-label="调试视图"><button type="button" role="tab" data-debug-view="config" aria-selected="true">配置</button><button type="button" role="tab" data-debug-view="run" aria-selected="false">运行过程</button></div><div class="team-debug-panel-content"><div class="debug-config-view" data-debug-view-panel="config"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><fieldset class="debug-mode-choice" id="team-simulation-mode"><legend>运行方式</legend><label><input type="radio" name="studioSimulationMode" value="dry-run" checked><span data-debug-mode-label="dry-run">仿真</span><small data-debug-mode-description="dry-run">仅预览流程，不调用模型</small></label><label><input type="radio" name="studioSimulationMode" value="sandbox"><span data-debug-mode-label="sandbox">沙箱</span><small data-debug-mode-description="sandbox">调用真实模型，但运行在隔离环境</small></label><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p></fieldset></div><div class="debug-run-view" data-debug-view-panel="run" hidden><div id="team-simulation-result" aria-live="polite"><div class="team-debug-empty-state"><strong>等待开始调试</strong><p>填写任务和可选资料后开始，角色对话、流转进度和运行结果会显示在这里。</p></div></div></div></div></aside>');
       workbench.insertAdjacentHTML("beforeend", '<aside id="team-build-panel" class="studio-asset-drawer studio-build-panel" aria-label="AI 构建" aria-hidden="true"><header class="studio-asset-drawer-head team-build-panel-head" tabindex="0" aria-label="拖动 AI 构建面板"><strong>AI 构建</strong><button class="close-button" type="button" data-team-build-close aria-label="关闭 AI 构建">×</button></header><div class="studio-build-panel-content"><section id="team-assistant" class="team-assistant-panel"></section></div></aside>');
       const inspector = workbench.querySelector("#studio-property-inspector");
       assetDrawer = workbench.querySelector("#studio-asset-drawer");
@@ -3774,6 +3771,37 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     buildPanel = workbench?.querySelector("#team-build-panel") || null;
     const buildOpenButton = graphPanel.querySelector('[data-studio-graph-action="chat-generate"]');
     debugPanel = workbench?.querySelector("#team-debug-dialog") || null;
+    const setDebugView = (view) => {
+      const next = view === "run" ? "run" : "config";
+      debugPanel?.querySelectorAll("[data-debug-view]").forEach((tab) => {
+        const active = tab.dataset.debugView === next;
+        tab.setAttribute("aria-selected", String(active));
+        tab.classList.toggle("active", active);
+      });
+      debugPanel?.querySelectorAll("[data-debug-view-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.debugViewPanel !== next;
+      });
+    };
+    const syncDebugRunButton = (status = "idle") => {
+      const button = debugPanel?.querySelector("#team-simulation-run");
+      const stateLabel = debugPanel?.querySelector("[data-debug-run-state]");
+      if (!button) return;
+      const running = status === "running" || status === "stopping";
+      button.dataset.running = String(running);
+      button.classList.toggle("danger-button", running);
+      button.classList.toggle("is-stopping", status === "stopping");
+      button.disabled = status === "stopping";
+      button.textContent = status === "stopping"
+        ? (state.locale === "en" ? "Stopping…" : "正在停止…")
+        : running
+          ? (state.locale === "en" ? "Stop" : "停止")
+          : (state.locale === "en" ? "Start debug run" : "开始调试");
+      if (stateLabel) stateLabel.textContent = running
+        ? (status === "stopping" ? (state.locale === "en" ? "stopping" : "正在停止") : (state.locale === "en" ? "running" : "运行中"))
+        : "";
+    };
+    debugPanel?.querySelectorAll("[data-debug-view]").forEach((tab) => tab.addEventListener("click", () => setDebugView(tab.dataset.debugView)));
+    setDebugView("config");
     const debugOpenButton = graphPanel.querySelector('[data-studio-graph-action="debug-run"]');
     const debugCloseButton = debugPanel?.querySelector("[data-team-debug-close]");
     const moveDebugPanel = (left, top) => {
@@ -3867,6 +3895,20 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     });
     root.querySelector("#team-simulation-run")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
+      if (button.dataset.running === "true") {
+        if (!state.studioActiveRun) return;
+        syncDebugRunButton("stopping");
+        try {
+          const stopResponse = await pageFetch(`/api/v1/teams/${encodeURIComponent(state.studioActiveRun.teamId)}/versions/${encodeURIComponent(state.studioActiveRun.teamVersionId)}/simulations/${encodeURIComponent(state.studioActiveRun.simulationId)}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: state.locale === "en" ? "Stopped from Studio" : "从 Studio 请求停止" }) });
+          const stopPayload = await stopResponse.json();
+          if (!stopResponse.ok) throw new Error(stopPayload.error || (state.locale === "en" ? "Unable to stop the run." : "停止运行失败。"));
+        } catch (error) {
+          if (isAbort(error)) return;
+          syncDebugRunButton("running");
+          showToast(error.message || (state.locale === "en" ? "Unable to stop the run." : "停止运行失败。"));
+        }
+        return;
+      }
       const input = $("#team-simulation-input");
       if (!input?.value.trim()) { input?.focus(); return; }
       const mode = root.querySelector('input[name="studioSimulationMode"]:checked')?.value || "dry-run";
@@ -3876,7 +3918,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         : input.value.trim();
       button.disabled = true;
       try { await state.runTeamStudioSimulation?.(prompt, mode); }
-      finally { if (button.isConnected) button.disabled = false; }
+      finally { if (button.isConnected && button.dataset.running !== "true") button.disabled = false; }
     });
     const projectEditForm = $("#project-edit-form");
     $("#reconfirm-project")?.remove();
@@ -4551,6 +4593,7 @@ function syncRoute() {
   $("#landing-view")?.classList.toggle("hidden", !landing);
   if (landing) {
     $("#app-shell").classList.add("hidden");
+    if (!$("#landing-case-grid")?.children?.length) renderCases();
     return;
   }
   state.studioRoute = path === "/studio" || path.startsWith("/studio/");
@@ -4858,6 +4901,8 @@ function bindNavigationControls() {
 // run ID in the result avoids deriving control state from human-readable text.
 async function init() {
   beginPageRequest();
+  await loadCopy();
+  ensureViewElements();
   window.addEventListener("beforeunload", (event) => {
     if (!isDirty()) return;
     event.preventDefault();

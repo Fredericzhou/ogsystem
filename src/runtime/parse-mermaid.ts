@@ -257,7 +257,7 @@ function validateContextSelector(args: {
     if (args.joinModeByRoleId[args.targetRoleId] === "quorum_of") {
       const requiredSources = args.joinSourcesByRoleId[args.targetRoleId] ?? [];
       const joinMin = args.joinMinByRoleId[args.targetRoleId];
-      if (joinMin !== undefined && joinMin < requiredSources.length) {
+      if (!selectorInfo.optional && joinMin !== undefined && joinMin < requiredSources.length) {
         fail(
           "MERMAID_JOIN_SELECTOR_SOURCE_NOT_ALLOWED",
           `${args.metadataKey} uses source("${sourceRoleId}") but join.mode.${args.targetRoleId}=quorum_of with join.min.${args.targetRoleId}=${joinMin} below join.sources size ${requiredSources.length}.`

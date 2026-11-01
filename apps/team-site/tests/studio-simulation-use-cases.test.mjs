@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { createStudioSimulationUseCases } from "../application/studio-simulation-use-cases.mjs";
 import { computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "../infrastructure/package-integrity.mjs";
@@ -6,7 +9,7 @@ import { computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "../i
 const packageBundle = { team: { systemSource: "flow", design: { roles: { analyst: { name: "分析师" } } } } };
 const digest = computeTeamPackageCoreDigest(packageBundle);
 
-function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynamicDigest = false, team = {}, siblingTeams = [], siblingPackages = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle), processIsAlive = () => true, initialBatch = null, onLockQueued, projectTeamDesign } = {}) {
+function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynamicDigest = false, team = {}, siblingTeams = [], siblingPackages = {}, packageBundle: selectedPackageBundle = packageBundle, digest: selectedDigest = computeTeamPackageCoreDigest(selectedPackageBundle), processIsAlive = () => true, initialBatch = null, onLockQueued, projectTeamDesign, runDirectory } = {}) {
   const records = new Map();
   const batches = new Map(initialBatch ? [["team-v1", initialBatch]] : []);
   const calls = [];
@@ -46,6 +49,7 @@ function createHarness({ runResult, runError, runGate, mutateBundleOnRun, dynami
       if (!record || record.simulation.teamVersionId !== versionId) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
       return record;
     },
+    getSimulationRunDirectory() { return runDirectory; },
     async listVersionSimulations(versionId) {
       return [...records.values()].map((record) => record.simulation).filter((item) => item.teamVersionId === versionId);
     },
@@ -143,6 +147,32 @@ test("Studio Simulation creates its own owner record and stores completed state/
   assert.equal(calls[2][2].teamCoreDigest, digest);
   assert.deepEqual((await useCases.listTeamVersionSimulations("team-root", "team-v1")).simulations.map((item) => item.simulationId), ["sim-1"]);
   assert.equal((await useCases.getTeamVersionSimulationEvents("team-root", "team-v1", "sim-1")).events.length, 3);
+});
+
+test("Studio Simulation stop is graceful and repeated requests are idempotent", async () => {
+  const runDirectory = await mkdtemp(join(tmpdir(), "ogs-studio-stop-"));
+  let resolveRun;
+  const runGate = { promise: new Promise((resolve) => { resolveRun = resolve; }) };
+  const harness = createHarness({
+    runGate,
+    runDirectory,
+    runResult: { status: "stopped", finalOutputsByRoleId: {}, finalOutputRoleOrder: [], auditTrail: [] }
+  });
+  try {
+    const started = await harness.useCases.createSimulation("team-root", "team-v1", { prompt: "Stop this run", awaitCompletion: false });
+    assert.equal(started.simulation.status, "running");
+    const stopping = await harness.useCases.stopSimulation("team-root", "team-v1", started.simulation.simulationId, "operator stop");
+    assert.equal(stopping.simulation.status, "stopping");
+    const repeated = await harness.useCases.stopSimulation("team-root", "team-v1", started.simulation.simulationId, "operator stop again");
+    assert.equal(repeated.simulation.status, "stopping");
+    resolveRun();
+    for (let attempt = 0; attempt < 20 && harness.records.get(started.simulation.simulationId).simulation.status !== "stopped"; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(harness.records.get(started.simulation.simulationId).simulation.status, "stopped");
+  } finally {
+    await rm(runDirectory, { recursive: true, force: true });
+  }
 });
 
 test("Studio Simulation forwards canonical Graph Edge IDs and failed role diagnostics", async () => {

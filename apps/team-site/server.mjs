@@ -4,6 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliCompressSync, gzipSync } from "node:zlib";
 import { isDirectModelRef } from "../../dist/runtime/model-selection.js";
 import { serializeAuthoringToMermaid } from "../../dist/visualizer/studio-authoring.js";
 import { exportTeamPackage, loadTeamPackage } from "../../dist/visualizer/project-projection.js";
@@ -112,6 +113,7 @@ import { listHumanReviews, writeHumanReviewDecision } from "../../dist/runtime/p
 import { createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
 import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../../dist/runtime/role-repo.js";
 import { isRuntimeOnlyErrorEvent } from "../../dist/runtime/error-flow-utils.js";
+import { requestRunStop } from "../../dist/runtime/run-artifacts.js";
 import { parseMarkdownRole, convertMarkdownRole } from "../../tools/agent-source/markdown-role-adapter.mjs";
 import { handleRoleSourceCatalogRoutes } from "./api/role-source-catalog-routes.mjs";
 import { handleRoleSourceAdminRoutes } from "./api/role-source-admin-routes.mjs";
@@ -287,8 +289,13 @@ async function getPlatformDefaultModelSelection() {
   const selected = configured === "default"
     ? models.find((model) => model.backend === settings.defaultProvider)
     : models.find(matchesConfiguredModel);
-  return selected || models.length ? {
-    ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.id } } : {}),
+  const fallbackSelection = !selected && !models.length && configured !== "default"
+    ? { backend: settings.defaultProvider || "opencode", modelId: configured }
+    : !selected && !models.length
+      ? { backend: settings.defaultProvider || "opencode", modelId: "gpt-6-luna" }
+      : undefined;
+  return selected || models.length || fallbackSelection ? {
+    ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.id } } : fallbackSelection ? { modelSelectionDefaults: fallbackSelection } : {}),
     modelCatalogGeneratedAt: discovery.generatedAt,
     modelCatalogModels: models.map((model) => ({
       backend: model.backend,
@@ -322,6 +329,7 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
   simulationStore: studioSimulationStore,
   simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection }),
   identifiers: { simulationId: randomUUID },
+  requestRunStop,
   baselineStore: teamDesignAssetStore,
   projectTeamDesign: (team) => teamDesignProjector.project(team),
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
@@ -508,7 +516,58 @@ function publicTask(task) {
   return safe;
 }
 
-async function serveStatic(pathname, response) {
+const compressedStaticCache = new Map();
+const immutableStaticName = /(?:^|[._-])[a-f0-9]{8,}(?:[._-]|$)/i;
+
+function staticContentEncoding(request) {
+  const header = String(request?.headers?.["accept-encoding"] || "");
+  const values = new Map(header.split(",").map((part) => {
+    const [name, ...parameters] = part.trim().toLowerCase().split(";");
+    const quality = parameters.find((parameter) => parameter.trim().startsWith("q="));
+    const parsed = quality ? Number.parseFloat(quality.trim().slice(2)) : 1;
+    return [name, Number.isFinite(parsed) ? parsed : 0];
+  }).filter(([name]) => name));
+  const wildcard = values.get("*") || 0;
+  const brQuality = values.has("br") ? values.get("br") : wildcard;
+  const gzipQuality = values.has("gzip") ? values.get("gzip") : wildcard;
+  return [["br", brQuality], ["gzip", gzipQuality]]
+    .filter(([, quality]) => quality > 0)
+    .sort((left, right) => right[1] - left[1])
+    .at(0)?.[0];
+}
+
+function compressStaticContents(filePath, contents, info, encoding) {
+  if (!encoding || contents.length < 1024) return { contents, encoding: undefined };
+  const cacheKey = `${filePath}:${info.mtimeMs}:${info.size}:${encoding}`;
+  const cached = compressedStaticCache.get(cacheKey);
+  if (cached) return cached;
+  const compressed = encoding === "br" ? brotliCompressSync(contents) : gzipSync(contents);
+  const result = compressed.length < contents.length
+    ? { contents: compressed, encoding }
+    : { contents, encoding: undefined };
+  compressedStaticCache.set(cacheKey, result);
+  if (compressedStaticCache.size > 64) compressedStaticCache.delete(compressedStaticCache.keys().next().value);
+  return result;
+}
+
+function writeStaticResponse({ request, response, pathname, filePath, contents, info, immutable = false, headers = {} }) {
+  const compressed = compressStaticContents(filePath, contents, info, staticContentEncoding(request));
+  const fileName = filePath.split(sep).at(-1) || "";
+  const cacheable = immutable || (pathname.startsWith("/assets/") && immutableStaticName.test(fileName));
+  response.writeHead(200, {
+    "content-type": mimeTypes[extname(filePath)] || "application/octet-stream",
+    "cache-control": cacheable ? "public, max-age=31536000, immutable" : "no-cache",
+    "vary": "Accept-Encoding",
+    "content-length": compressed.contents.length,
+    ...(compressed.encoding ? { "content-encoding": compressed.encoding } : {}),
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    ...headers
+  });
+  response.end(compressed.contents);
+}
+
+async function serveStatic(pathname, request, response, { immutable = false, headers = {} } = {}) {
   const relative = normalize(decodeURIComponent(pathname === "/" ? "/index.html" : pathname)).replace(/^([/\\])+/, "");
   const filePath = resolve(publicRoot, relative);
   if (filePath !== publicRoot && !filePath.startsWith(`${publicRoot}${sep}`)) {
@@ -519,13 +578,7 @@ async function serveStatic(pathname, response) {
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error("Not a file");
     const contents = await readFile(filePath);
-    response.writeHead(200, {
-      "content-type": mimeTypes[extname(filePath)] || "application/octet-stream",
-      "cache-control": "no-cache",
-      "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-    });
-    response.end(contents);
+    writeStaticResponse({ request, response, pathname, filePath, contents, info, immutable, headers });
   } catch {
     sendJson(response, 404, { error: "Not found" });
   }
@@ -600,12 +653,9 @@ const server = createServer(async (request, response) => {
   if (request.method === "GET") {
     if (url.pathname === "/assets/ogs-studio-graph.js") {
       try {
-        response.writeHead(200, {
-          "content-type": "text/javascript; charset=utf-8",
-          "cache-control": "no-cache",
-          "x-content-type-options": "nosniff"
-        });
-        response.end(await readFile(resolve(root, "../../dist/visualizer/studio-client/studio-graph.js")));
+        const filePath = resolve(root, "../../dist/visualizer/studio-client/studio-graph.js");
+        const info = await stat(filePath);
+        writeStaticResponse({ request, response, pathname: url.pathname, filePath, contents: await readFile(filePath), info });
       } catch {
         sendJson(response, 503, { error: "Build OGSystem before starting the team site." });
       }
@@ -618,10 +668,14 @@ const server = createServer(async (request, response) => {
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
     const isPlatformRoute = ["/platform", "/platform/models", "/platform/role-sources"].includes(url.pathname);
     if (url.pathname === "/" || url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
-      await serveStatic("/index.html", response);
+      await serveStatic("/index.html", request, response, isStudioRoute
+        ? { headers: { link: "</assets/ogs-studio-graph.js>; rel=preload; as=script" } }
+        : undefined);
       return;
     }
-    await serveStatic(url.pathname, response);
+    await serveStatic(url.pathname, request, response, {
+      immutable: /^[a-f0-9]{8,}$/i.test(url.searchParams.get("v") || "")
+    });
     return;
   }
   sendJson(response, 405, { error: "Method not allowed" });

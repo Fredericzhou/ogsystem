@@ -116,6 +116,59 @@ test("Simulation detail refuses linked evidence files before reading them", asyn
   }
 });
 
+test("Simulation artifacts expose only the controlled run evidence allowlist", async (t) => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-simulation-artifacts-"));
+  const outside = join(projectsRoot, "outside.log");
+  const store = createFileStudioSimulationStore({ projectsRoot });
+  try {
+    await store.createSimulation("team-v1", "artifact run", { simulationId: "sim-1", teamId: "team-1", teamCoreDigest: "a".repeat(64) });
+    const runDir = store.getSimulationRunDirectory("team-v1", "sim-1");
+    await mkdir(join(runDir, "audit"), { recursive: true });
+    await mkdir(join(runDir, "logs"), { recursive: true });
+    await writeFile(join(runDir, "system.mmd"), "flowchart TD\n");
+    await writeFile(join(runDir, "audit", "summary.md"), "summary\n");
+    await writeFile(join(runDir, "logs", "runtime.log"), "runtime\n");
+    await writeFile(join(runDir, "control"), "should not be listed\n");
+    await writeFile(outside, "outside\n");
+    const linkedPath = join(runDir, "audit", "linked.log");
+    try {
+      await symlink(outside, linkedPath, "file");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error?.code)) return t.skip("file symlinks are unavailable on this host");
+      throw error;
+    }
+    await assert.rejects(store.listSimulationArtifacts("team-v1", "sim-1"), /LINK_NOT_ALLOWED/);
+    await rm(linkedPath, { force: true });
+    const listing = await store.listSimulationArtifacts("team-v1", "sim-1");
+    assert.deepEqual(listing.entries.map((entry) => entry.path), ["audit", "audit/summary.md", "logs", "logs/runtime.log", "system.mmd"]);
+    assert.equal((await store.readSimulationArtifact("team-v1", "sim-1", "audit/summary.md")).content, "summary\n");
+    await assert.rejects(store.readSimulationArtifact("team-v1", "sim-1", "../outside.log"), /ARTIFACT_PATH_INVALID/);
+    await assert.rejects(store.readSimulationArtifact("team-v1", "sim-1", "control"), /ARTIFACT_NOT_ALLOWED/);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("Simulation artifacts exclude role-private workspaces from listing and reads", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-simulation-private-artifacts-"));
+  const store = createFileStudioSimulationStore({ projectsRoot });
+  try {
+    await store.createSimulation("team-v1", "private workspace", { simulationId: "sim-1", teamId: "team-1", teamCoreDigest: "a".repeat(64) });
+    const runDir = store.getSimulationRunDirectory("team-v1", "sim-1");
+    await mkdir(join(runDir, "roles", "analyst", "private"), { recursive: true });
+    await mkdir(join(runDir, "roles", "analyst", "executions"), { recursive: true });
+    await writeFile(join(runDir, "roles", "analyst", "private", "secret.txt"), "private\n");
+    await writeFile(join(runDir, "roles", "analyst", "executions", "result.json"), "public history\n");
+
+    const listing = await store.listSimulationArtifacts("team-v1", "sim-1");
+    assert.deepEqual(listing.entries.map((entry) => entry.path), ["roles", "roles/analyst", "roles/analyst/executions", "roles/analyst/executions/result.json"]);
+    await assert.rejects(store.readSimulationArtifact("team-v1", "sim-1", "roles/analyst/private/secret.txt"), /ARTIFACT_NOT_ALLOWED/);
+    assert.equal((await store.readSimulationArtifact("team-v1", "sim-1", "roles/analyst/executions/result.json")).content, "public history\n");
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
 test("Simulation detail and updates reject a linked TeamVersion namespace", async (t) => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-simulation-version-link-"));
   const outside = join(projectsRoot, "outside-version");
@@ -145,15 +198,43 @@ test("service recovery marks only unfinished Studio Simulations interrupted", as
   const owner = { teamId: "team-1", teamCoreDigest: "f".repeat(64) };
   try {
     await store.createSimulation("team-v1", "unfinished", { ...owner, simulationId: "sim-running" });
+    await store.createSimulation("team-v1", "stop pending", { ...owner, simulationId: "sim-stopping" });
+    await store.updateSimulation("team-v1", "sim-stopping", { metadata: { status: "stopping" }, state: { status: "stopping" } });
     await store.createSimulation("team-v1", "finished", { ...owner, simulationId: "sim-finished" });
     await store.updateSimulation("team-v1", "sim-finished", { metadata: { status: "completed" } });
     const recovered = await store.recoverInterruptedSimulations("team-v1");
-    assert.deepEqual(recovered.map((item) => item.simulationId), ["sim-running"]);
+    assert.deepEqual(new Set(recovered.map((item) => item.simulationId)), new Set(["sim-running", "sim-stopping"]));
     const evidence = await store.getSimulationEvidence("team-v1", "sim-running");
     assert.equal(evidence.simulation.status, "failed");
     assert.equal(evidence.state.interrupted, true);
     assert.equal(evidence.events.at(-1).type, "simulation.interrupted");
+    const stoppedEvidence = await store.getSimulationEvidence("team-v1", "sim-stopping");
+    assert.equal(stoppedEvidence.simulation.status, "stopped");
+    assert.equal(stoppedEvidence.state.status, "stopped");
+    assert.equal(stoppedEvidence.events.at(-1).type, "simulation.stopped");
     assert.equal((await store.getSimulationEvidence("team-v1", "sim-finished")).simulation.status, "completed");
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("Simulation status updates are serialized and terminal states cannot regress", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-studio-simulation-status-"));
+  const store = createFileStudioSimulationStore({ projectsRoot });
+  try {
+    const owner = { teamId: "team-1", teamCoreDigest: "d".repeat(64) };
+    await store.createSimulation("team-v1", "status race", { ...owner, simulationId: "sim-1" });
+    await store.updateSimulation("team-v1", "sim-1", { metadata: { status: "stopping" }, state: { status: "stopping" } });
+    await store.updateSimulation("team-v1", "sim-1", { metadata: { status: "running" }, state: { status: "running" } });
+    let evidence = await store.getSimulationEvidence("team-v1", "sim-1");
+    assert.equal(evidence.simulation.status, "stopping");
+    assert.equal(evidence.state.status, "stopping");
+    await store.updateSimulation("team-v1", "sim-1", { metadata: { status: "completed", completedAt: "2026-02-01T00:00:00.000Z" }, state: { status: "completed", result: "done" } });
+    await store.updateSimulation("team-v1", "sim-1", { metadata: { status: "stopping" }, state: { status: "stopping" } });
+    evidence = await store.getSimulationEvidence("team-v1", "sim-1");
+    assert.equal(evidence.simulation.status, "completed");
+    assert.equal(evidence.state.status, "completed");
+    assert.equal(evidence.state.result, "done");
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });
   }
@@ -167,13 +248,15 @@ test("Studio retention deletes only expired terminal Simulations in its own name
   try {
     await store.createSimulation("team-v1", "old completed", { ...owner, simulationId: "sim-old" });
     await store.updateSimulation("team-v1", "sim-old", { metadata: { status: "completed", completedAt: "2026-01-01T00:00:00.000Z" } });
+    await store.createSimulation("team-v1", "old stopped", { ...owner, simulationId: "sim-stopped" });
+    await store.updateSimulation("team-v1", "sim-stopped", { metadata: { status: "stopped", completedAt: "2026-01-01T00:00:00.000Z" } });
     await store.createSimulation("team-v1", "recent completed", { ...owner, simulationId: "sim-recent" });
     await store.updateSimulation("team-v1", "sim-recent", { metadata: { status: "completed", completedAt: "2026-01-30T00:00:00.000Z" } });
     await store.createSimulation("team-v1", "unfinished", { ...owner, simulationId: "sim-running" });
 
     const result = await store.cleanupExpiredSimulations({ retentionDays: 7 });
 
-    assert.deepEqual(result, { removedCount: 1, removedSimulationIds: ["sim-old"] });
+    assert.deepEqual(result, { removedCount: 2, removedSimulationIds: ["sim-old", "sim-stopped"] });
     assert.deepEqual((await store.listVersionSimulations("team-v1")).map((item) => item.simulationId).sort(), ["sim-recent", "sim-running"]);
     assert.equal(await readdir(join(projectsRoot, ".studio", "simulations", "team-v1")).then((items) => items.includes("sim-old")), false);
   } finally {

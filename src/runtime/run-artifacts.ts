@@ -750,6 +750,8 @@ export async function initializeRunContext(args: {
   runId?: string;
   /** Optional owner workspace; evidence is stored in its configured runs directory. */
   runEvidenceRoot?: string;
+  /** Optional exact directory for a run whose owner already allocated its evidence path. */
+  runEvidenceDirectory?: string;
 }): Promise<RunContext> {
   // Fresh runs and resumed runs share the same directory contract. Initialization therefore
   // prefers idempotent setup and write-if-missing files so resume never overwrites evidence.
@@ -763,7 +765,9 @@ export async function initializeRunContext(args: {
     });
   }
   const createdAt = new Date();
-  const runRoot = args.runEvidenceRoot
+  const runRoot = args.runEvidenceDirectory
+    ? resolve(args.runEvidenceDirectory)
+    : args.runEvidenceRoot
     ? resolve(args.runEvidenceRoot, ".ogs/runs")
     : resolve(args.workdir, args.runtimeConfig.runsDir);
   const requestedResumeDir = args.resumeRunDir
@@ -784,7 +788,7 @@ export async function initializeRunContext(args: {
   const runCreatedAt = args.resumeRunDir
     ? parseCreatedAtFromRunId(runId) ?? createdAt.toISOString()
     : createdAt.toISOString();
-  const runDir = requestedResumeDir ?? resolve(runRoot, runId);
+  const runDir = requestedResumeDir ?? (args.runEvidenceDirectory ? runRoot : resolve(runRoot, runId));
   const auditDir = resolve(runDir, "audit");
   const logsDir = resolve(runDir, "logs");
   const roleLogsDir = resolve(logsDir, "roles");

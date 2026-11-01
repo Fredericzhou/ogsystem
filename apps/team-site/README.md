@@ -4,7 +4,7 @@ OGS Projects 与 OGS Studio 共用一个 Origin 和 SPA Shell。OGS Studio 面�
 
 当前 API 以最新业务数据格式为准，不承诺通用旧 schema/API 字段兼容。Team catalog 会识别一类旧版已发布团队元数据（`projectStatus=confirmed` 且同时存在 `projectDigest` 与 `confirmedAt`），并将其投影为 `released` TeamVersion；这不是通用数据迁移。应用启动不会自动删除用户数据。
 
-- **OGS Studio**：创建和编辑团队草稿，配置角色执行与编排参数、角色资产包、Context Map 和 Flow Contract/Schema，运行仿真或沙箱 Simulation、查看历史并发布 TeamVersion。“AI 构建”与“调试”弹窗独立；交互式调试后台运行并增量保存脱敏角色事件，历史可回放逐角色输入/输出与失败诊断。历史清理只删除已结束的交互式调试，不删除运行中记录或 Sandbox 发布证明。
+- **OGS Studio**：创建和编辑团队草稿，配置角色执行与编排参数、角色资产包、Context Map 和 Flow Contract/Schema，运行仿真或沙箱 Simulation、查看历史并发布 TeamVersion。“AI 构建”与“调试”弹窗独立；交互式调试后台运行并增量保存脱敏角色事件，历史可回放逐角色输入/输出与失败诊断。历史清理只删除已结束的交互式调试，不删除运行中记录或 Sandbox 发布证明。每次 Simulation 的持久运行证据位于 `.studio/simulations/<teamVersionId>/<simulationId>/run/`，页面的“打开运行目录”使用受控 API 浏览 `system.mmd`、请求、状态、事件、时间线、审计、日志、角色输出和检查点；端点只允许白名单相对路径，并过滤控制文件、凭据、服务端点和符号链接。
 - **OGS Projects**：创建协作项目，挂载已发布 TeamVersion，管理项目材料、Task 生命周期和业务结果。
 - **团队工程**：团队仓库、团队创建和角色仓库分别管理 Team 草稿/发布版本、工程设计入口和不可变角色模板。
 - **角色来源**：角色仓库默认展示 Aura-huang/agency-agents-cn，可在“角色源”筛选中切换到其他已配置来源或查看全部来源。CN 来源在新平台配置中预登记；首次使用时需到“平台配置 > 角色源配置”手动同步。同步后的上游快照只读，复制到 Team Draft 后才可编辑。
@@ -34,7 +34,7 @@ OGS Projects 与 OGS Studio 共用一个 Origin 和 SPA Shell。OGS Studio 面�
 | Task | 用户希望团队完成的一项工作请求 | 创建时固定一个 TeamVersion，并分配不复用的项目内 `taskNumber`；在 Run 启动前可排队或删除，状态投影当前 Run。 |
 | Run | 一次具体执行尝试及其审计记录 | 独立保存输入快照、执行状态、事件、审核和结果。重试从 Task 发起并创建新 Run；历史 Run 状态和结果不变。 |
 
-Run DTO 以 `runKind` 和 `owner` 明确运行领域及归属；Project Task Run 使用 `owner.projectId + owner.taskId + runId` 定位，TeamVersion 通过 `owner.teamVersionId` 标识。运行文件位于项目自己的 `.ogs/runs/<runId>/`，团队资产目录只作为只读来源。最近运行页只列出 Projects Task Attempts；Studio Simulation 通过独立历史 API 读取。普通调试创建返回 `202 Accepted`，之后按事件游标读取增量审计；发布基线 Sandbox 仍由发布门禁同步等待完整执行结果。
+Run DTO 以 `runKind` 和 `owner` 明确运行领域及归属；Project Task Run 使用 `owner.projectId + owner.taskId + runId` 定位，TeamVersion 通过 `owner.teamVersionId` 标识。运行文件位于项目自己的 `.ogs/runs/<runId>/`，团队资产目录只作为只读来源。最近运行页只列出 Projects Task Attempts；Studio Simulation 通过独立历史 API 读取。普通调试创建返回 `202 Accepted`，之后按事件游标读取增量审计；发布基线 Sandbox 仍由发布门禁同步等待完整执行结果。Studio 停止请求写入运行控制记录，状态按 `running → stopping → stopped` 收敛，重复停止请求保持幂等。
 
 版本用于冻结发布内容和保证项目执行可复现，不要求用户为每次保存管理一个版本。专业编辑和发布在 OGS Studio 完成。Projects 用户可以发起自然语言团队调整；Studio 创建新草稿，用户检查并发布后，回 Projects 显式挂载新版本。
 
@@ -51,7 +51,7 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 | 已发布团队目录 | `/teams` | 浏览已发布团队版本及案例 |
 | 创建团队 | `/studio/new` | 通过自然语言创建团队草案 |
 | 团队设计 | `/studio/teams/:id/design` | 图谱、角色执行与编排、Context Map、角色资产包和 Flow Contract/Schema 编辑；保存后可校验、Simulation 并进入发布门禁 |
-| Studio Simulation | `/studio/teams/:teamVersionId/run`、`/studio/teams/:teamVersionId/run/:simulationId` | 选择仿真或沙箱运行，并查看对应 TeamVersion 的历史与回放 |
+| Studio Simulation | `/studio/teams/:teamVersionId/run`、`/studio/teams/:teamVersionId/run/:simulationId` | 选择仿真或沙箱运行，并查看对应 TeamVersion 的历史、回放和运行证据目录 |
 | 项目运行历史 | `/history` | 只列出 Projects Task Runs，不混入 Studio Simulation |
 | 创建项目 | `/projects/new` | 创建工作目录并挂载已发布团队 |
 | 项目详情 | `/projects/:id` | 管理材料、Task、执行控制、审核、重试和 Deliverables |
@@ -100,6 +100,14 @@ pnpm start:team-site:tailnet
 平台配置会调用本机 CLI 的探测能力，展示已发现的 Codex、OpenCode 服务及可用模型。站点不接管这些
 CLI 的账号或凭据。模型请求超时只表示等待**单次模型请求返回**的最长时间，不限制一个任务的总执行时间；
 任务仍可能因为多角色、多轮处理或人工审核而持续更久。
+
+## 经典管理咨询团队
+
+内置 `management-consulting`（管理咨询交付）按成熟咨询 SOP 组织八个角色：咨询负责人、市场与客户分析师、运营流程分析师、商业与财务分析师、风险与合规顾问、方案主顾问、质量复核顾问和高管简报顾问。四个专业分析并行执行，方案主顾问在至少收到三份意见后汇聚；`context.map` 将结构化分析传给综合、复核和简报角色，最终顺序为“综合 → 质量复核 → 高管简报”。结果固定包含 `executiveSummary`、`recommendations`、`implementationPlan`、`risks`、`assumptions` 和 `openQuestions`，每个角色的提示词要求区分事实、假设、风险和待确认问题，不虚构外部数据，并限制最大流转步数。
+
+## 浏览器验收记录
+
+真实验收应在 Team Site 页面中打开管理咨询团队，进入设计页的调试面板，选择 `sandbox`，使用默认 OpenCode `gpt-6-luna` 执行任务。记录 TeamVersion ID、Simulation ID、最终状态、运行目录 URL、角色头像/消息展开、绿色动态 Flow、关键截图和控制台错误；刷新页面后再次打开运行目录，确认 `events.ndjson`、`timeline.jsonl`、`audit/`、`logs/` 和 `roles/` 仍可读取。另起一次运行，在活动期间点击红色“停止”，记录 `stopping` 到 `stopped`，并在桌面、平板和移动视口检查切换、返回、滚动和控件可操作性。真实模型或凭据不可用时，将该验收记录为阻塞，不用 Mock Runner 代替。
 
 ## 验证
 

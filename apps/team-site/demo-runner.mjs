@@ -13,7 +13,16 @@ import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(process.env.OGSYSTEM_ROOT || appRoot, process.env.OGSYSTEM_ROOT ? "." : "../..");
 const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
-export const DEFAULT_DEMO_MODEL = "gpt-5.6-luna";
+export const DEFAULT_DEMO_BACKEND = "opencode";
+export const DEFAULT_DEMO_MODEL = "gpt-6-luna";
+
+export function resolveDemoBackend(env = process.env) {
+  return env.OGS_DEMO_BACKEND || DEFAULT_DEMO_BACKEND;
+}
+
+export function resolveDemoModel(env = process.env, backend = resolveDemoBackend(env)) {
+  return env.OGS_DEMO_MODEL || (backend === "opencode" ? "codex-gateway/gpt-6-luna" : DEFAULT_DEMO_MODEL);
+}
 
 function quote(value) {
   return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
@@ -154,11 +163,13 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     tools: { environmentPolicy: "minimal", envAllowlist: [] },
     runtime: { error_flows: { v1: false } }
   }, null, 2)}\n`);
+  const demoBackend = resolveDemoBackend();
+  const demoModel = resolveDemoModel(process.env, demoBackend);
   await writeFile(join(configDir, "model-selection.json"), `${JSON.stringify({
     configVersion: "2",
     defaults: {
-      backend: process.env.OGS_DEMO_BACKEND || "codex",
-      modelId: process.env.OGS_DEMO_MODEL || DEFAULT_DEMO_MODEL,
+      backend: demoBackend,
+      modelId: demoModel,
       timeoutMs: 120000,
       maxOutputBytes: 65536
     }
@@ -187,7 +198,8 @@ function parseJsonTail(output) {
 function runCli(args, options) {
   return new Promise((resolveRun, rejectRun) => {
     const env = { ...process.env, NO_COLOR: "1" };
-    if (process.platform === "win32" && env.OGS_DEMO_BACKEND === "opencode") {
+    const demoBackend = resolveDemoBackend(env);
+    if (process.platform === "win32" && demoBackend === "opencode") {
       const nativeBin = join(dirname(process.execPath), "node_modules", "opencode-ai", "bin");
       if (existsSync(join(nativeBin, "opencode.exe"))) {
         env.PATH = `${nativeBin}${delimiter}${env.PATH || ""}`;

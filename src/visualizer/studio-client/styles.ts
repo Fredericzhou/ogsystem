@@ -381,9 +381,10 @@ export function injectStudioGraphStyles(): void {
       stroke-dasharray: 6 4;
     }
     .studio-graph-canvas .x6-edge.is-runtime-active .connection {
+      stroke: #34d399 !important;
       stroke-width: 2.5px !important;
       stroke-dasharray: 10 10;
-      filter: drop-shadow(0 0 0.32rem rgba(56, 189, 248, 0.24));
+      filter: drop-shadow(0 0 0.32rem rgba(52, 211, 153, 0.24));
       animation: studio-edge-flow 680ms linear infinite;
     }
     .studio-graph-canvas .x6-edge.is-runtime-completed .connection {

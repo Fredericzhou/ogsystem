@@ -14,7 +14,7 @@ const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 async function startServer(projectsRoot) {
   const server = spawn(process.execPath, ["server.mjs"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot },
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot, OGS_DEMO_BACKEND: "codex" },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });

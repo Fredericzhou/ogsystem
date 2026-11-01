@@ -632,7 +632,7 @@ function validateContextMap(args: {
           })
         );
       }
-      if (node?.joinMode === "quorum_of" && node.joinMin !== undefined && node.joinMin < joinSources.size) {
+      if (!selectorInfo.optional && node?.joinMode === "quorum_of" && node.joinMin !== undefined && node.joinMin < joinSources.size) {
         args.diagnostics.push(
           createDiagnostic({
             code: "COMPILER_CONTEXT_SOURCE_QUORUM_MISMATCH",

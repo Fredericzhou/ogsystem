@@ -22,7 +22,7 @@ function normalizeRuntimeStatus(status) {
 
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent, runEvidenceDirectory }) {
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
       const runId = `simulation-${randomUUID()}`;
       try {
@@ -36,6 +36,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           prompt,
           workdir,
           runId,
+          ...(runEvidenceDirectory ? { runEvidenceDirectory } : {}),
           dryRun: mode === "dry-run",
           executionMode: mode,
           runKind: "studio_simulation",
@@ -91,6 +92,14 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
             modelId: item.modelId,
             profileId: item.profileId,
             toolRef: item.toolRef,
+            promptCalls: item.promptCalls,
+            projectedInputChars: item.projectedInputChars,
+            renderedPromptChars: item.renderedPromptChars,
+            estimatedInputTokens: item.estimatedInputTokens,
+            estimatedOutputTokens: item.estimatedOutputTokens,
+            externalDataIsolated: item.externalDataIsolated,
+            fallbackUsed: item.fallbackUsed,
+            primaryModelId: item.primaryModelId,
             failure: item.error,
             inputContext: item.inputContext,
             stdoutPreview: item.stdoutPreview,

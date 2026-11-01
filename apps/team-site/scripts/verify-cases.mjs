@@ -1,20 +1,25 @@
 import { cases } from "../cases.mjs";
-import { DEFAULT_DEMO_MODEL, lintCase, runCase } from "../demo-runner.mjs";
+import { lintCase, resolveDemoBackend, resolveDemoModel, runCase } from "../demo-runner.mjs";
 
 const failures = [];
-const expectedBackend = process.env.OGS_DEMO_BACKEND || "codex";
-const expectedModel = (process.env.OGS_DEMO_MODEL || DEFAULT_DEMO_MODEL).split("/").at(-1);
+const expectedBackend = resolveDemoBackend();
+const expectedModel = resolveDemoModel(process.env, expectedBackend).split("/").at(-1);
+const verificationTimeoutMs = Number(process.env.OGS_CASE_TIMEOUT_MS || 600000);
+if (!Number.isFinite(verificationTimeoutMs) || verificationTimeoutMs <= 0) {
+  throw new Error("OGS_CASE_TIMEOUT_MS must be a positive number.");
+}
 for (const item of cases) {
   process.stdout.write(`\n[lint] ${item.id}\n`);
   try {
     const lint = await lintCase(item.id);
     if (lint.status && lint.status !== "ok" && lint.status !== "ready") throw new Error(JSON.stringify(lint));
     process.stdout.write("[lint] passed\n");
-    process.stdout.write(`[model-run] ${item.id} via ${expectedBackend}/${process.env.OGS_DEMO_MODEL || DEFAULT_DEMO_MODEL}\n`);
+    process.stdout.write(`[model-run] ${item.id} via ${expectedBackend}/${resolveDemoModel(process.env, expectedBackend)}\n`);
     const result = await runCase({
       caseId: item.id,
       prompt: process.env.OGS_CASE_PROMPT || "Prepare a concise, evidence-aware collaboration result for a sample task. State assumptions and uncertainty clearly.",
-      mode: "model"
+      mode: "model",
+      timeoutMs: verificationTimeoutMs
     });
     const expectedRoles = new Set(item.roles.map((role) => role.id));
     const successfulEntries = result.auditTrail.filter((entry) => entry.status === "ok");

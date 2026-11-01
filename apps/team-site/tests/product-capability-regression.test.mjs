@@ -41,7 +41,7 @@ test("team repository supports stable filtering, sorting, pagination, and statis
     assert.equal(first.pagination.pageSize, 2);
     assert.ok(first.teams.length <= 2);
     assert.ok(first.stats.total >= 3);
-    assert.equal(first.stats.builtIn, 3);
+    assert.equal(first.stats.builtIn, 4);
     const filtered = await catalog.queryTeamRepository({ query: "软件", pageSize: 10 });
     assert.equal(filtered.teams.length, 1);
     assert.equal(filtered.teams[0].teamName, "软件研发");

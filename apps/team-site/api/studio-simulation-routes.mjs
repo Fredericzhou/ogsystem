@@ -25,6 +25,58 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     return true;
   }
 
+  const artifactPathMatch = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/artifacts(?:\/(.*))?$/);
+  if (artifactPathMatch && request.method === "GET") {
+    try {
+      const teamId = artifactPathMatch[1];
+      const teamVersionId = artifactPathMatch[2];
+      const simulationId = artifactPathMatch[3];
+      const artifactPath = artifactPathMatch[4] ? decodeURIComponent(artifactPathMatch[4]) : "";
+      if (!artifactPath) {
+        sendJson(response, 200, await useCases.listTeamVersionSimulationArtifacts(teamId, teamVersionId, simulationId));
+        return true;
+      }
+      const isDownload = url.searchParams.get("download") === "1";
+      const artifact = await useCases.readTeamVersionSimulationArtifact(teamId, teamVersionId, simulationId, artifactPath, { maxBytes: isDownload ? 32 * 1024 * 1024 : 1024 * 1024 });
+      if (artifact.tooLarge) {
+        sendJson(response, 413, {
+          error: "STUDIO_SIMULATION_ARTIFACT_TOO_LARGE",
+          path: artifact.path,
+          size: artifact.size,
+          ...(isDownload ? {} : { downloadUrl: `${url.pathname}?download=1` })
+        });
+        return true;
+      }
+      const contentType = artifactPath.endsWith(".json") || artifactPath.endsWith(".ndjson") || artifactPath.endsWith(".jsonl")
+        ? "application/json; charset=utf-8"
+        : artifactPath.endsWith(".mmd") || artifactPath.endsWith(".md") || artifactPath.endsWith(".log")
+          ? "text/plain; charset=utf-8"
+          : "application/octet-stream";
+      const filename = artifactPath.split("/").at(-1) || "artifact";
+      response.writeHead(200, {
+        "content-type": contentType,
+        "cache-control": "no-store",
+        "content-disposition": `${isDownload ? "attachment" : "inline"}; filename="${filename.replaceAll('"', "")}"`,
+        "x-content-type-options": "nosniff"
+      });
+      response.end(artifact.content || "");
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read Simulation artifacts." });
+    }
+    return true;
+  }
+
+  const stop = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/stop$/);
+  if (stop && request.method === "POST") {
+    try {
+      const body = await readBody(request, 32 * 1024);
+      sendJson(response, 202, await useCases.stopSimulation(stop[1], stop[2], stop[3], body.reason));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to stop Studio Simulation." });
+    }
+    return true;
+  }
+
   const detail = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)(?:\/(events))?$/);
   if (detail && request.method === "GET") {
     try {

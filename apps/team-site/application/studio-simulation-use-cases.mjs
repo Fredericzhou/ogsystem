@@ -16,11 +16,24 @@ function teamVersionIdentity(team) {
   return { teamId, teamVersionId };
 }
 
-function publicSimulation(evidence) {
-  return redactStudioSimulationValue(evidence);
+function artifactsUrl(teamId, teamVersionId, simulationId) {
+  return `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/artifacts`;
 }
 
-export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, projectTeamDesign, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
+function publicSimulation(evidence) {
+  const value = redactStudioSimulationValue(evidence);
+  if (value?.simulation?.teamId && value.simulation.teamVersionId && value.simulation.simulationId) {
+    value.simulation.artifactsUrl = artifactsUrl(value.simulation.teamId, value.simulation.teamVersionId, value.simulation.simulationId);
+  }
+  if (Array.isArray(value?.simulations)) {
+    value.simulations = value.simulations.map((simulation) => simulation?.teamId && simulation?.teamVersionId && simulation?.simulationId
+      ? { ...simulation, artifactsUrl: artifactsUrl(simulation.teamId, simulation.teamVersionId, simulation.simulationId) }
+      : simulation);
+  }
+  return value;
+}
+
+export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, projectTeamDesign, requestRunStop = async () => undefined, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
   if (!teamCatalog || typeof teamCatalog.getTeamVersion !== "function") {
     throw new TypeError("Studio simulation use cases require a TeamVersion reader.");
   }
@@ -358,11 +371,15 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       const execution = (async () => {
       let runtimeEvidence;
       try {
+        const runEvidenceDirectory = typeof simulationStore.getSimulationRunDirectory === "function"
+          ? simulationStore.getSimulationRunDirectory(teamVersionId, simulationId)
+          : undefined;
         const result = await simulationRunner.simulate(team, {
           prompt: materialPrompt, locale, simulationId, teamPackageBundle: bundle, teamCoreDigest,
           runtimeEdgeIdsByTransition,
           mode: executionMode,
           materials: baseline?.materials || [],
+          runEvidenceDirectory,
           onRuntimeEvent: async (runtimeEvent) => {
             const event = runtimeEvent.type === "audit"
               ? redactStudioSimulationValue({
@@ -378,6 +395,18 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
                   selectedEvent: runtimeEvent.selectedEvent,
                   status: runtimeEvent.status === "failed" ? "failed" : runtimeEvent.status === "noop" ? "skipped" : "completed",
                   durationMs: runtimeEvent.durationMs,
+                  backend: runtimeEvent.backend,
+                  modelId: runtimeEvent.modelId,
+                  profileId: runtimeEvent.profileId,
+                  toolRef: runtimeEvent.toolRef,
+                  promptCalls: runtimeEvent.promptCalls,
+                  projectedInputChars: runtimeEvent.projectedInputChars,
+                  renderedPromptChars: runtimeEvent.renderedPromptChars,
+                  estimatedInputTokens: runtimeEvent.estimatedInputTokens,
+                  estimatedOutputTokens: runtimeEvent.estimatedOutputTokens,
+                  externalDataIsolated: runtimeEvent.externalDataIsolated,
+                  fallbackUsed: runtimeEvent.fallbackUsed,
+                  primaryModelId: runtimeEvent.primaryModelId,
                   inputContext: runtimeEvent.inputContext,
                   stdoutPreview: runtimeEvent.stdoutPreview,
                   failure: runtimeEvent.error,
@@ -404,7 +433,9 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         if (baseline) assertBaselineResult(result, baseline);
         const completedAt = now();
         const rawStatus = String(result?.status || "unknown").toLowerCase();
-        const status = ["done", "ok", "completed"].includes(rawStatus) ? "completed" : "failed";
+        const status = ["done", "ok", "completed"].includes(rawStatus)
+          ? "completed"
+          : rawStatus === "stopped" ? "stopped" : "failed";
         const auditTrail = Array.isArray(result?.auditTrail) ? result.auditTrail : [];
         const events = auditTrail.map((item) => {
           const rawRoleStatus = String(item.status || (item.failure || item.error ? "failed" : "unknown")).toLowerCase();
@@ -423,6 +454,20 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
             selectedEvent: item.selectedEvent,
             status: failed ? "failed" : skipped ? "skipped" : roleStatus,
             durationMs: item.durationMs,
+            backend: item.backend,
+            modelId: item.modelId,
+            profileId: item.profileId,
+            toolRef: item.toolRef,
+            promptCalls: item.promptCalls,
+            projectedInputChars: item.projectedInputChars,
+            renderedPromptChars: item.renderedPromptChars,
+            estimatedInputTokens: item.estimatedInputTokens,
+            estimatedOutputTokens: item.estimatedOutputTokens,
+            externalDataIsolated: item.externalDataIsolated,
+            fallbackUsed: item.fallbackUsed,
+            primaryModelId: item.primaryModelId,
+            inputContext: item.inputContext,
+            stdoutPreview: item.stdoutPreview,
             failure: item.failure || item.error,
             errorCode: item.errorCode || item.errorEnvelope?.errorCode,
             errorEnvelope: item.errorEnvelope
@@ -464,15 +509,15 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const outputs = result?.finalOutputsByRoleId || {};
         const output = (result?.finalOutputRoleOrder || []).flatMap((roleId) => (outputs[roleId] || []).map((item) => `${roleId}: ${item.content || JSON.stringify(item.data || {})}`)).join(" | ");
         const updated = await simulationStore.updateSimulation(teamVersionId, simulationId, {
-          metadata: {
-            status: failed ? "failed" : "completed",
+            metadata: {
+            status: failed ? (status === "stopped" ? "stopped" : "failed") : "completed",
             completedAt,
             durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
             outputSummary: output.slice(0, 320),
             failureSummary: failed ? redactStudioSimulationText(String(result?.error || output || `Simulation returned status ${rawStatus}.`)).slice(0, 500) : null
           },
           state,
-          events: [...missingEvents, { type: failed ? "simulation.failed" : "simulation.completed", at: completedAt }]
+          events: [...missingEvents, { type: failed ? (status === "stopped" ? "simulation.stopped" : "simulation.failed") : "simulation.completed", at: completedAt }]
         });
         return publicSimulation({ simulation: updated, state, events: (await simulationStore.getSimulationEvidence(teamVersionId, simulationId)).events });
       } catch (error) {
@@ -494,6 +539,26 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       if (baseline || awaitCompletion) return execution;
       void execution.catch(() => undefined);
       return publicSimulation({ simulation: created, state: { status: "running" }, events: [{ type: "simulation.started", at: startedAt }] });
+    },
+
+    async stopSimulation(teamId, teamVersionId, simulationId, reason = "Stopped from Studio") {
+      const evidence = await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      const current = String(evidence.simulation.status || "");
+      if (!["running", "stopping"].includes(current)) return publicSimulation(evidence);
+      if (current === "running") {
+        const runDirectory = typeof simulationStore.getSimulationRunDirectory === "function"
+          ? simulationStore.getSimulationRunDirectory(teamVersionId, simulationId)
+          : undefined;
+        if (!runDirectory) throw new Error("STUDIO_SIMULATION_STOP_UNAVAILABLE");
+        const stopReason = String(reason || "Stopped from Studio").slice(0, 300);
+        await simulationStore.updateSimulation(teamVersionId, simulationId, {
+          metadata: { status: "stopping" },
+          state: { ...evidence.state, status: "stopping" },
+          events: [{ type: "simulation.stopping", at: now(), reason: stopReason }]
+        });
+        await requestRunStop({ runDir: runDirectory, reason: stopReason });
+      }
+      return publicSimulation(await loadSimulationEvidence(teamId, teamVersionId, simulationId));
     },
 
     async listTeamVersionSimulations(teamId, teamVersionId) {
@@ -702,6 +767,28 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       return publicSimulation(await loadSimulationEvidence(teamId, teamVersionId, simulationId));
     },
 
+    async listTeamVersionSimulationArtifacts(teamId, teamVersionId, simulationId) {
+      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      if (typeof simulationStore.listSimulationArtifacts !== "function") throw new Error("STUDIO_SIMULATION_ARTIFACTS_UNAVAILABLE");
+      const payload = await simulationStore.listSimulationArtifacts(teamVersionId, simulationId);
+      return publicSimulation({
+        teamId,
+        teamVersionId,
+        simulationId,
+        ...payload,
+        entries: (payload.entries || []).map((entry) => ({
+          ...entry,
+          url: `${artifactsUrl(teamId, teamVersionId, simulationId)}/${entry.path.split("/").map(encodeURIComponent).join("/")}`
+        }))
+      });
+    },
+
+    async readTeamVersionSimulationArtifact(teamId, teamVersionId, simulationId, pathValue, options = {}) {
+      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      if (typeof simulationStore.readSimulationArtifact !== "function") throw new Error("STUDIO_SIMULATION_ARTIFACTS_UNAVAILABLE");
+      return simulationStore.readSimulationArtifact(teamVersionId, simulationId, pathValue, options);
+    },
+
     async getTeamVersionSimulationEvents(teamId, teamVersionId, simulationId, afterCursor = 0) {
       const evidence = await loadSimulationEvidence(teamId, teamVersionId, simulationId);
       const cursor = Number.isSafeInteger(Number(afterCursor)) && Number(afterCursor) >= 0 ? Number(afterCursor) : 0;
@@ -712,7 +799,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         simulationId,
         events: allEvents.slice(cursor),
         cursor: allEvents.length,
-        done: ["completed", "failed"].includes(evidence.simulation.status)
+        done: ["completed", "failed", "stopped"].includes(evidence.simulation.status)
       };
     },
 

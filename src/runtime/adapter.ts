@@ -90,6 +90,8 @@ export async function runSystemWithAdapter(args: {
   assetSource?: string;
   /** Optional owner-controlled directory containing this run's evidence. */
   runEvidenceRoot?: string;
+  /** Optional exact directory for Studio Simulation evidence. */
+  runEvidenceDirectory?: string;
   onRunInitialized?: (run: { runId: string; runDir: string }) => void | Promise<void>;
   onProjectRunPrepared?: (run: { runId: string; runDir: string }) => void | Promise<void>;
   prompt: string;

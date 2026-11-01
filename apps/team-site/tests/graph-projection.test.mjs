@@ -42,3 +42,23 @@ test("structured debate permits one bounded rebuttal before the judge must decid
   assert.match(debate.roles.find((role) => role.id === "debate-reporter").prompt, /propositionCase \(object with strongestPoint and reasoning strings\)/i);
   assert.match(buildCaseSystem(debate), /loop\.max\.debate-host=2/);
 });
+
+test("management consulting keeps its parallel quorum and structured brief contract", () => {
+  const consulting = cases.find((item) => item.id === "management-consulting");
+  assert.ok(consulting);
+  assert.equal(consulting.roles.length, 8);
+  assert.deepEqual(consulting.joins.find((join) => join.roleId === "synthesis-consultant"), {
+    roleId: "synthesis-consultant",
+    mode: "quorum_of",
+    sources: ["market-analyst", "operations-analyst", "commercial-analyst", "risk-advisor"],
+    min: 3
+  });
+  assert.ok(consulting.projections.some(([, , selector]) => selector === "source(market-analyst).content?"));
+  assert.ok(consulting.projections.some(([, , selector]) => selector === "source(quality-reviewer).content"));
+  assert.deepEqual(consulting.outputSchema.required, [
+    "executiveSummary", "recommendations", "implementationPlan", "risks", "assumptions", "openQuestions"
+  ]);
+  const graph = buildCaseGraph("management-consulting", "en");
+  assert.equal(graph.edges.filter((edge) => ["ANALYZE_MARKET", "ANALYZE_OPERATIONS", "ANALYZE_COMMERCIAL", "ANALYZE_RISK"].includes(edge.eventType)).length, 4);
+  assert.equal(graph.edges.find((edge) => edge.eventType === "QUALITY_REVIEW_READY")?.target, "executive-brief");
+});

@@ -14,6 +14,7 @@ are labeled as such; current behavior is described by source code, tests, and ac
 - [Local desktop and remote control plane plan](local-desktop-remote-control-plane-plan.md): independent portal/downloads, Electron security boundaries, local Runtime, remote configuration, synchronization, and staged delivery.
 - [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): dated verification evidence; consult the latest dated section and Release UAT checklist for status.
 - [Shared resource architecture](shared-resource-architecture.md): shared Platform resource ownership and adapter boundaries.
+- [Model backend adapter registry plan](model-backend-adapter-registry-plan.md): backend adapters, Codex/OpenCode/Claude/Antigravity/Ollama support, model source metadata, and Studio backend visuals.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
   boundaries, and generated source.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,

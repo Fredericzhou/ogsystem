@@ -50,3 +50,18 @@ test("Studio Simulation API maps owner misses without exposing other namespace d
   assert.equal(await route.invoke("GET", "/api/v1/teams/team-1/versions/team-v1/simulations/sim-1"), true);
   assert.deepEqual(route.sent[0], { status: 404, payload: { error: "STUDIO_SIMULATION_NOT_FOUND" } });
 });
+
+test("Studio Simulation API rejects oversized downloads instead of returning an empty file", async () => {
+  const route = harness({
+    readTeamVersionSimulationArtifact: async (_teamId, _teamVersionId, _simulationId, path, options) => {
+      assert.equal(path, "logs/huge.log");
+      assert.equal(options.maxBytes, 32 * 1024 * 1024);
+      return { path, size: options.maxBytes + 1, tooLarge: true };
+    }
+  });
+  assert.equal(await route.invoke("GET", "/api/v1/teams/team-1/versions/team-v1/simulations/sim-1/artifacts/logs/huge.log?download=1"), true);
+  assert.deepEqual(route.sent[0], {
+    status: 413,
+    payload: { error: "STUDIO_SIMULATION_ARTIFACT_TOO_LARGE", path: "logs/huge.log", size: 32 * 1024 * 1024 + 1 }
+  });
+});

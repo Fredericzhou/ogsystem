@@ -20,7 +20,7 @@ test("context selector optional marker supports human review and handoff data pa
   assert.equal(summarizeContextSelector("direct.data.issueId?").validPath, true);
   assert.equal(summarizeContextSelector("source(worker-a).data.findings?").validPath, true);
   assert.equal(summarizeContextSelector("direct.content?").validPath, false);
-  assert.equal(summarizeContextSelector("source(worker-a).content?").validPath, false);
+  assert.equal(summarizeContextSelector("source(worker-a).content?").validPath, true);
   assert.equal(summarizeContextSelector("source(worker-a).data.bad-key?").validPath, false);
   assert.equal(summarizeContextSelector("direct.data.bad-key").validPath, false);
 });

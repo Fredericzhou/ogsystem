@@ -1,5 +1,130 @@
 export const cases = [
   {
+    id: "management-consulting",
+    title: { "zh-CN": "管理咨询交付", en: "Management consulting delivery" },
+    short: {
+      "zh-CN": "按经典咨询 SOP 并行拆解市场、运营、商业和风险，再汇聚成可执行的高管决策简报。",
+      en: "Use a classic consulting SOP: parallel market, operations, commercial, and risk analysis, followed by synthesis, review, and an executive brief."
+    },
+    category: { "zh-CN": "管理咨询", en: "Management consulting" },
+    duration: { "zh-CN": "8 个角色", en: "8 roles" },
+    icon: "briefcase",
+    detail: {
+      scenario: { "zh-CN": "一家成长中的企业希望评估进入新市场的机会、实施路径和主要风险。请基于给定资料形成决策建议。", en: "A growing company is assessing entry into a new market and needs a decision recommendation, implementation path, and risk view based on the supplied brief." },
+      relationship: { "zh-CN": "负责人先界定问题；四位专业顾问独立分析；主顾问至少收到三份意见后综合；质量复核通过后交给高管简报顾问。", en: "The engagement lead frames the question. Four specialists work independently. The synthesis consultant can proceed after at least three views, then quality review hands a checked recommendation to the executive brief consultant." },
+      background: { "zh-CN": "管理咨询交付需要把客户目标、外部证据、运营约束、财务可行性和风险边界放在同一套决策逻辑中。", en: "A management consulting engagement must connect the client goal, external evidence, operating constraints, commercial feasibility, and risk boundaries in one decision logic." },
+      problem: { "zh-CN": "适合需要多专业独立判断、证据汇聚和高管决策摘要的战略、运营或增长问题。", en: "Use this team for strategy, operating model, or growth questions that need independent specialist views, evidence synthesis, and an executive decision summary." },
+      collaboration: { "zh-CN": "负责人明确目标、范围、成功标准与假设；市场、运营、商业财务和风险合规四路并行；主顾问汇总至少三路意见，质量顾问检查证据和建议一致性，最后由高管简报顾问输出行动计划。", en: "The lead defines the objective, scope, success criteria, and assumptions. Market, operations, commercial, and risk workstreams run in parallel. The synthesis consultant combines at least three views, a quality reviewer checks evidence and recommendation consistency, and the executive brief consultant produces the action plan." },
+      deliverable: { "zh-CN": "结构化高管简报，固定包含 executiveSummary、recommendations、implementationPlan、risks、assumptions 和 openQuestions。", en: "A structured executive brief with executiveSummary, recommendations, implementationPlan, risks, assumptions, and openQuestions." },
+      roles: {
+        "engagement-lead": { "zh-CN": "界定目标、范围、成功标准和关键假设。", en: "Defines the objective, scope, success criteria, and key assumptions." },
+        "market-analyst": { "zh-CN": "分析客户、市场、竞争和需求证据。", en: "Analyzes customer, market, competition, and demand evidence." },
+        "operations-analyst": { "zh-CN": "分析流程、瓶颈、实施约束和组织影响。", en: "Analyzes processes, bottlenecks, implementation constraints, and organizational impact." },
+        "commercial-analyst": { "zh-CN": "分析成本、收益、资源和商业可行性。", en: "Analyzes cost, benefit, resource needs, and commercial feasibility." },
+        "risk-advisor": { "zh-CN": "识别风险、合规边界、依赖和不可确认事项。", en: "Identifies risks, compliance boundaries, dependencies, and what cannot be confirmed." },
+        "synthesis-consultant": { "zh-CN": "汇总并行分析，形成候选方案和优先级。", en: "Synthesizes the parallel analyses into options and priorities." },
+        "quality-reviewer": { "zh-CN": "复核证据、假设、风险和建议是否一致。", en: "Checks the evidence, assumptions, risks, and recommendations for consistency." },
+        "executive-brief": { "zh-CN": "输出最终决策摘要、行动计划、风险和待确认问题。", en: "Produces the final decision summary, action plan, risks, and open questions." }
+      }
+    },
+    accent: "gold",
+    layout: {
+      "engagement-lead": [80, 165],
+      "market-analyst": [355, 30],
+      "operations-analyst": [355, 120],
+      "commercial-analyst": [355, 210],
+      "risk-advisor": [355, 300],
+      "synthesis-consultant": [690, 165],
+      "quality-reviewer": [980, 165],
+      "executive-brief": [1260, 165]
+    },
+    semantics: ["parallel_split", "quorum_of", "all_of", "context.map"],
+    joins: [
+      { roleId: "synthesis-consultant", mode: "quorum_of", sources: ["market-analyst", "operations-analyst", "commercial-analyst", "risk-advisor"], min: 3 },
+      { roleId: "quality-reviewer", mode: "all_of", sources: ["synthesis-consultant"] },
+      { roleId: "executive-brief", mode: "all_of", sources: ["quality-reviewer"] }
+    ],
+    projections: [
+      ["synthesis-consultant", "marketAnalysis", "source(market-analyst).content?"],
+      ["synthesis-consultant", "operationsAnalysis", "source(operations-analyst).content?"],
+      ["synthesis-consultant", "commercialAnalysis", "source(commercial-analyst).content?"],
+      ["synthesis-consultant", "riskAnalysis", "source(risk-advisor).content?"],
+      ["synthesis-consultant", "task", "global.task"],
+      ["quality-reviewer", "synthesis", "source(synthesis-consultant).content"],
+      ["executive-brief", "review", "source(quality-reviewer).content"],
+      ["executive-brief", "recommendation", "source(quality-reviewer).content"]
+    ],
+    outputSchema: {
+      type: "object",
+      required: ["executiveSummary", "recommendations", "implementationPlan", "risks", "assumptions", "openQuestions"],
+      properties: {
+        executiveSummary: { type: "string" },
+        recommendations: { type: "array", items: { type: "string" } },
+        implementationPlan: { type: "array", items: { type: "string" } },
+        risks: { type: "array", items: { type: "string" } },
+        assumptions: { type: "array", items: { type: "string" } },
+        openQuestions: { type: "array", items: { type: "string" } }
+      },
+      additionalProperties: false
+    },
+    roles: [
+      {
+        id: "engagement-lead", label: { "zh-CN": "咨询负责人", en: "Engagement lead" },
+        purpose: "Define the consulting question, scope, success criteria, and assumptions.", events: ["ANALYZE_MARKET", "ANALYZE_OPERATIONS", "ANALYZE_COMMERCIAL", "ANALYZE_RISK"], mode: "parallel_split",
+        prompt: "Act as the engagement lead. Frame the client's objective, scope, decision to make, success criteria, constraints, and key assumptions. Give the same neutral brief to four independent analysts. Return exactly one JSON object with content and one event from allowed_events. Do not invent external facts."
+      },
+      {
+        id: "market-analyst", label: { "zh-CN": "市场与客户分析师", en: "Market and customer analyst" },
+        purpose: "Analyze customer, market, competition, and demand evidence.", events: ["MARKET_ANALYSIS_READY"],
+        prompt: "Act as the market and customer analyst. Analyze only the supplied evidence. Separate facts, assumptions, and evidence gaps; cover customers, demand, market context, and competition. Return exactly one JSON object with event MARKET_ANALYSIS_READY and a concise structured content string. Never fabricate market data."
+      },
+      {
+        id: "operations-analyst", label: { "zh-CN": "运营流程分析师", en: "Operations analyst" },
+        purpose: "Analyze current operations, bottlenecks, implementation constraints, and organizational impact.", events: ["OPERATIONS_ANALYSIS_READY"],
+        prompt: "Act as the operations analyst. Review the supplied brief for process implications, bottlenecks, dependencies, implementation constraints, and organizational impact. Distinguish facts from assumptions and list missing evidence. Return exactly one JSON object with event OPERATIONS_ANALYSIS_READY and a concise structured content string."
+      },
+      {
+        id: "commercial-analyst", label: { "zh-CN": "商业与财务分析师", en: "Commercial and financial analyst" },
+        purpose: "Analyze cost, benefit, resources, and commercial feasibility.", events: ["COMMERCIAL_ANALYSIS_READY"],
+        prompt: "Act as the commercial and financial analyst. Assess cost drivers, potential benefits, resource needs, viability, and measurement assumptions using only supplied information. Do not create numbers that are not in the brief. Return exactly one JSON object with event COMMERCIAL_ANALYSIS_READY and a concise structured content string."
+      },
+      {
+        id: "risk-advisor", label: { "zh-CN": "风险与合规顾问", en: "Risk and compliance advisor" },
+        purpose: "Identify risks, compliance boundaries, dependencies, and unconfirmed matters.", events: ["RISK_ANALYSIS_READY"],
+        prompt: "Act as the risk and compliance advisor. Identify material risks, compliance boundaries, dependencies, downside scenarios, and matters that cannot be confirmed from the supplied brief. Separate facts, assumptions, and open questions. Return exactly one JSON object with event RISK_ANALYSIS_READY and a concise structured content string."
+      },
+      {
+        id: "synthesis-consultant", label: { "zh-CN": "方案主顾问", en: "Synthesis consultant" },
+        purpose: "Synthesize independent consulting analyses into options and priorities.", events: ["SYNTHESIS_READY"],
+        prompt: "Act as the synthesis consultant. Combine the independent analyses you receive, using at least three specialist views when available. Separate evidence, assumptions, risks, and unresolved questions. Form candidate options, trade-offs, and a recommendation priority without inventing facts. Return exactly one JSON object with event SYNTHESIS_READY and a structured content string."
+      },
+      {
+        id: "quality-reviewer", label: { "zh-CN": "质量复核顾问", en: "Quality reviewer" },
+        purpose: "Check evidence, assumptions, risks, and recommendations for consistency.", events: ["QUALITY_REVIEW_READY"],
+        prompt: "Act as the quality reviewer. Check the synthesis for unsupported claims, missing evidence, inconsistent assumptions, unbounded risks, and recommendations that do not follow from the analysis. State corrections and a clear pass or revise view. Return exactly one JSON object with event QUALITY_REVIEW_READY and a structured content string."
+      },
+      {
+        id: "executive-brief", label: { "zh-CN": "高管简报顾问", en: "Executive brief consultant" },
+        purpose: "Produce a decision-ready executive summary and action plan.", events: ["EXECUTIVE_BRIEF_READY"],
+        prompt: "Act as the executive brief consultant. Use the reviewed synthesis and quality findings to produce the final decision brief. Return exactly one JSON object with event EXECUTIVE_BRIEF_READY and content set to a JSON object serialized as a string, with exactly these keys: executiveSummary (string), recommendations (array of strings), implementationPlan (array of strings), risks (array of strings), assumptions (array of strings), openQuestions (array of strings). Distinguish facts, assumptions, risks, and questions. Do not add Markdown, external data, or extra keys."
+      }
+    ],
+    flows: [
+      ["__system_start__", "engagement-lead", "START"],
+      ["engagement-lead", "market-analyst", "ANALYZE_MARKET"],
+      ["engagement-lead", "operations-analyst", "ANALYZE_OPERATIONS"],
+      ["engagement-lead", "commercial-analyst", "ANALYZE_COMMERCIAL"],
+      ["engagement-lead", "risk-advisor", "ANALYZE_RISK"],
+      ["market-analyst", "synthesis-consultant", "MARKET_ANALYSIS_READY"],
+      ["operations-analyst", "synthesis-consultant", "OPERATIONS_ANALYSIS_READY"],
+      ["commercial-analyst", "synthesis-consultant", "COMMERCIAL_ANALYSIS_READY"],
+      ["risk-advisor", "synthesis-consultant", "RISK_ANALYSIS_READY"],
+      ["synthesis-consultant", "quality-reviewer", "SYNTHESIS_READY"],
+      ["quality-reviewer", "executive-brief", "QUALITY_REVIEW_READY"],
+      ["executive-brief", "__system_end__", "EXECUTIVE_BRIEF_READY"]
+    ]
+  },
+  {
     id: "software-team",
     title: { "zh-CN": "软件研发", en: "Software delivery" },
     short: {

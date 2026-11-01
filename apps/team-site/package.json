@@ -7,8 +7,14 @@
     "node": ">=20"
   },
   "scripts": {
+    "build:assets": "node scripts/build-assets.mjs",
+    "prestart": "pnpm run build:assets",
+    "pretest": "pnpm run build:assets",
     "start": "node server.mjs",
     "test": "node --test",
     "verify:cases": "node scripts/verify-cases.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

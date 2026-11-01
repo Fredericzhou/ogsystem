@@ -48,6 +48,18 @@ new project; historical development data and interfaces are not migration or com
     workflow with a screen reader. Verify focus order, visible focus, control names and states,
     status/error announcements, review actions, and recovery actions at the device's actual
     viewport and browser zoom.
+12. In the Team Site browser, open the `management-consulting` classic team, open Design and the
+    Debug panel, enter a task, select `Sandbox`, and start the run with the default OpenCode
+    `gpt-6-luna` model. Verify the panel switches to the run view, role avatars/names and live
+    messages appear, at least one message expands to show input/output/diagnostics, and active
+    graph Flow edges use the animated green runtime style. Record the TeamVersion ID, Simulation
+    ID, final status, artifact URL, screenshots, and console errors.
+13. Follow the `Open run directory` link and inspect the real controlled artifact listing. Confirm
+    events, timeline, audit, logs, and role output remain readable after a page refresh. Start a
+    second Sandbox run, click the red Stop button before completion, and record the complete
+    `stopping` to `stopped` transition. Repeat the panel switch, return, scroll, and link checks at
+    desktop, tablet, and mobile viewports. A missing OpenCode model, credential, or completed real
+    Sandbox run is a blocker; a mock runner does not satisfy these scenarios.
 
 ## Manual Evidence Record
 
@@ -70,6 +82,8 @@ responsible person. A blocked or evidence-free row is not a pass.
 | 9 | Workflow operator / Workflow operator | Blocked | Desktop, mobile, and viewport dimensions; screenshots or recording showing graph, failure location, pending review, and next lifecycle action; overflow/overlap findings and issue IDs. | Automated evidence, 2026-10-27: root and Team-Site suites passed; `visual-acceptance.test.mjs` passed on isolated browser fixtures. Live Team Site screenshots and geometry checks passed at 1440×1000 and 390×844 without horizontal page overflow. This run found and fixed a mobile Studio graph toolbar clipping issue; regression now verifies its horizontal scroll rail and confirms Save is fully visible at the rail end. Manual operator-flow screenshots, tablet comparison, and product-owner sign-off remain outstanding. |
 | 10 | Workflow operator / Product owner | Blocked | TeamVersion and Run IDs; screen recording showing the Team assets panel open while connecting two graph ports; saved Flow endpoints/event/business label; Global panel state; Start/End flow labels; any console errors. | Automated Studio design regression keeps Team assets open, verifies both connection ports are outside the panel bounds, creates the Flow, and saves its business label. The combined flow is covered automatically, but no human-reviewed screen recording and release sign-off are recorded yet. |
 | 11 | Accessibility evaluator / Accessibility evaluator | Blocked | Device model/OS, browser/version, assistive technology/version, viewport/zoom; keyboard path and focus order; screen-reader names, states, and announcements; recording or notes for any blocker and its reproduction steps. | No real supported device or screen reader is available in this execution context; accessibility evaluator owns completion. |
+| 12 | Workflow operator / Product owner | Blocked | TeamVersion ID, Simulation ID, OpenCode/model configuration, final status, role transcript captures, expanded diagnostic capture, green Flow capture, artifact URL, console log. | Requires a real browser workflow and available OpenCode `gpt-6-luna` credentials; mock or API-only execution does not count. |
+| 13 | Workflow operator / Product owner | Blocked | Artifact listing and file captures before/after refresh; second Simulation ID; stop request and `stopping`/`stopped` timestamps; desktop/tablet/mobile viewport evidence. | Requires a live run long enough to exercise graceful stop and a real browser. |
 
 ## Release Gate
 

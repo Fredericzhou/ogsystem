@@ -303,6 +303,7 @@ export async function prepareRuntimeSetup(args: {
   workdir: string;
   assetSource?: string;
   runEvidenceRoot?: string;
+  runEvidenceDirectory?: string;
   targetDir?: string;
   dryRun?: boolean;
   executionMode?: "dry-run" | "sandbox" | "real";
@@ -621,7 +622,8 @@ export async function prepareRuntimeSetup(args: {
     resolvedConfigSnapshot,
     resumeRunDir: args.resumeRunDir,
     runId: args.runId,
-    runEvidenceRoot
+    runEvidenceRoot,
+    runEvidenceDirectory: args.runEvidenceDirectory
   });
   runContext.promptBudgetLedger.maxTotalPromptCharsPerRun = effectiveLaw.maxTotalPromptCharsPerRun;
   runContext.promptBudgetLedger.legacyBaseCommittedChars = 0;
