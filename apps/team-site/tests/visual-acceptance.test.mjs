@@ -69,13 +69,16 @@ test("site completes the product project flow with task records and repository e
     assert.deepEqual(configRequests, [], "the product shell should not fetch a browser-visible Visualizer origin");
     await page.goto(`${url}/projects`, { waitUntil: "networkidle" });
     await page.locator("#projects-view .page-heading").waitFor();
+    assert.equal(await page.locator("#breadcrumb-current").textContent(), "业务协作");
     await page.locator("#site-theme-toggle").click();
     assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true");
     assert.equal(await page.evaluate(() => localStorage.getItem("ogs.visualizer.theme")), "dark");
 
     await page.goto(`${url}/teams`, { waitUntil: "networkidle" });
-    await page.locator(".project-library-toolbar").waitFor();
+    await page.locator("#workspace-view .project-library-toolbar").waitFor();
     assert.match(await page.locator("#workspace-view .page-heading").innerText(), /团队仓库/);
+    assert.equal(await page.locator("#breadcrumb-current").textContent(), "团队工程");
+    assert.equal(await page.locator("#workspace-view .page-heading .eyebrow").textContent(), "团队仓库");
     assert.equal(await page.locator(".classic-team-section").count(), 1);
     assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 4);
     assert.equal(await page.locator(".repository-classic-section [data-team-action='delete']").count(), 0, "classic built-in teams in the repository must not expose a delete action");
@@ -87,6 +90,7 @@ test("site completes the product project flow with task records and repository e
     assert.deepEqual(classicCardSizing, { padding: "12px", previewHeight: "88px", descriptionLines: "3" });
     assert.equal(await page.locator("#project-library-grid .project-asset-card").count(), 0);
     await page.goto(`${url}/studio`, { waitUntil: "networkidle" });
+    assert.equal(await page.locator("#breadcrumb-current").textContent(), "团队工程");
     assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true", "theme choice should persist across product routes");
     await page.reload({ waitUntil: "networkidle" });
     assert.equal(await page.locator("#site-theme-toggle").getAttribute("aria-pressed"), "true", "theme choice should persist after a page reload");
@@ -95,7 +99,7 @@ test("site completes the product project flow with task records and repository e
     await page.locator("#site-theme-toggle").click();
     assert.equal(await page.locator("#product-mode-toggle").getAttribute("aria-pressed"), "false");
     assert.equal(await page.locator('.primary-nav a[href="/studio"]').isVisible(), true, "Studio is a peer product and remains discoverable in normal mode");
-    assert.match(await page.locator("#studio-view .repository-heading").innerText(), /Studio/);
+    assert.match(await page.locator("#studio-view .repository-heading").innerText(), /团队仓库|Team repository|Studio/);
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true']").count(), 4, "Studio should list the four classic built-in teams as forkable versions");
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true'] [data-team-action='delete']").count(), 0, "built-in classic teams must not expose a delete action");
     const versionCardSizing = await page.locator("#studio-view #studio-grid .team-version-card").first().evaluate((card) => ({

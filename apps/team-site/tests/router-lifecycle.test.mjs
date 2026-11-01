@@ -122,7 +122,7 @@ test("router delegates navigation once and cancels stale page requests", async (
     releaseDelayedResponse();
     await page.waitForTimeout(100);
     assert.equal(await page.locator("#projects-view").isVisible(), true);
-    assert.equal(await page.locator("#projects-view .project-library-toolbar").count(), 0);
+    assert.equal(await page.locator("#projects-view .studio-repository-toolbar").count(), 0);
     assert.ok([...abortedUrls].some((requestUrl) => requestUrl.includes("/api/v1/team-repository")), "navigation should abort the stale repository request");
 
     await page.evaluate(() => {

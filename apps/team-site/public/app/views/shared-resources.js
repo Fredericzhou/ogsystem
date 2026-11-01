@@ -8,20 +8,22 @@ const labels = {
     data: ["共享数据", "发布并核验不可变的数据集版本。项目 Materials 与此目录分开保存；数据集不会自动注入任务或仿真。"],
     tools: ["工具目录", "登记团队可引用的工具能力。密钥只接受凭据引用，不在此处保存明文。"],
     storage: ["存储目标", "登记受控的外部存储目标。项目成果与运行证据仍由 Projects 自己持有。"],
-    roles: ["角色仓库", "按分类浏览角色，查看图标与职责说明；选定 Team 角色位后，自动转换并复制为可校验、可运行的角色包。"]
+    roles: ["角色仓库", "按分类浏览复用标准角色、Prompt 与接口契约。"]
   },
   en: {
     models: ["Model catalog", "Models discovered by the shared execution base, with current availability."],
     data: ["Shared data", "Publish and verify immutable dataset versions. Project Materials remain separate; datasets are not automatically injected into tasks or simulations."],
     tools: ["Tool catalog", "Register tool capabilities that teams may reference. Store credential references, never plaintext secrets."],
     storage: ["Storage targets", "Register controlled external storage targets. Project deliverables and run evidence remain Project-owned."],
-    roles: ["Role repository", "Browse roles by category, review their icons and descriptions, then convert a selected role into a validated, runnable Team package."]
+    roles: ["Role repository", "Browse and reuse standard roles, prompts, and interface contracts by category."]
   }
 };
 
 function pageHeading(section, locale) {
   const [title, description] = labels[locale === "en" ? "en" : "zh"][section];
-  return `<section class="page-heading library-heading"><div><div class="eyebrow">${section === "roles" ? "OGS Studio" : "OGSystem · 要素配置"}</div><h1>${title}</h1><p>${description}</p></div></section>`;
+  const eyebrow = section === "roles" ? "" : `<div class="eyebrow">OGSystem · 要素配置</div>`;
+  const headingClass = section === "roles" ? "page-heading library-heading project-library-toolbar" : "page-heading library-heading";
+  return `<section class="${headingClass}"><div class="repository-heading">${eyebrow}<h1>${title}</h1><p>${description}</p></div></section>`;
 }
 
 async function jsonRequest(path, method, body) {
@@ -92,7 +94,7 @@ function renderDatasetPage(root, locale) {
 
 async function renderRoleRepository(root, locale, navigate) {
   root.innerHTML = pageHeading("roles", locale);
-  renderRoleSourceCatalog(root, locale, navigate);
+  return renderRoleSourceCatalog(root, locale, navigate);
 }
 
 export function renderSharedResourcePage(root, section, locale = "zh-CN", navigate = (path) => { location.href = path; }) {

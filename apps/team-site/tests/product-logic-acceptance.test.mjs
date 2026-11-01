@@ -278,7 +278,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     assert.equal(await page.locator("[data-studio-graph-quick-debug]").isHidden(), true);
     await page.locator("#team-simulation-result .team-simulation-result").waitFor();
     await page.getByRole("link", { name: "查看运行详情" }).waitFor({ timeout: 30000 });
-    assert.equal(await page.locator('#team-simulation-result a[href*="/run/"]').count(), 1);
+    assert.equal(await page.getByRole("link", { name: "查看运行详情" }).count(), 1);
     assert.ok((await page.locator("#team-simulation-result pre").last().innerText()).trim().length > 0);
     const simulationRuns = await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
     assert.deepEqual(simulationRuns, [], "Studio quick simulation must not create Run history");
@@ -327,7 +327,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     await readinessDialog.waitFor();
     await readinessDialog.locator('button[value="confirm"]').click();
     await page.locator("#team-simulation-result .status-chip").getByText("部分完成", { exact: true }).waitFor();
-    assert.equal(await page.locator('#team-simulation-result a[href*="/run/"]').count(), 1);
+    assert.equal(await page.getByRole("link", { name: "查看运行详情" }).count(), 1);
     assert.match(await page.locator("#team-simulation-result pre").last().innerText(), /Partial team result/);
     assert.deepEqual(await readdir(runRoot, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error)), [], "noop previews must remain outside Run history");
     await page.locator("[data-team-debug-close]").click();
@@ -737,17 +737,8 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     const mobileWorkbench = await page.locator(".studio-design-workbench").boundingBox();
     assert.ok(mobilePanel.x >= mobileWorkbench.x && mobilePanel.x + mobilePanel.width <= mobileWorkbench.x + mobileWorkbench.width, `mobile asset panel stays inside the workbench: ${JSON.stringify({ mobilePanel, mobileWorkbench })}`);
     assert.ok(mobilePanel.y >= mobileWorkbench.y && mobilePanel.y + mobilePanel.height <= mobileWorkbench.y + mobileWorkbench.height, `mobile asset panel stays inside the workbench: ${JSON.stringify({ mobilePanel, mobileWorkbench })}`);
-    const mobileDragHandle = await page.locator("#studio-asset-drawer .studio-asset-drawer-head").boundingBox();
-    const mobileDockPanel = await page.locator("#studio-asset-drawer").boundingBox();
-    const mobileDockTargetLeft = mobileWorkbench.x + mobileWorkbench.width - mobileDockPanel.width - 4;
-    await page.mouse.move(mobileDragHandle.x + 100, mobileDragHandle.y + 20);
-    await page.mouse.down();
-    await page.mouse.move(mobileDragHandle.x + 100 + mobileDockTargetLeft - mobileDockPanel.x, mobileDragHandle.y + 20, { steps: 5 });
-    await page.mouse.up();
-    await page.locator(".studio-design-workbench.is-asset-docked").waitFor();
-    const mobileDockBounds = await page.locator("#studio-asset-drawer").boundingBox();
-    assert.ok(mobileDockBounds.x + mobileDockBounds.width <= mobileWorkbench.x + mobileWorkbench.width, `mobile right dock stays in workbench: ${JSON.stringify({ mobileDockBounds, mobileWorkbench })}`);
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "mobile right dock does not create horizontal page overflow");
+    assert.equal(await page.locator(".studio-design-workbench.is-asset-docked").count(), 0, "mobile panels remain layered instead of docking");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "mobile panel layer does not create horizontal page overflow");
     await page.setViewportSize({ width: 1440, height: 960 });
     assert.deepEqual(await page.evaluate(() => window.__productUnhandled || []), []);
 

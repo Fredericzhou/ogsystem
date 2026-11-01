@@ -73,6 +73,7 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
   const browser = element("div", "role-source-browser");
   const pageHeading = root.querySelector(":scope > .page-heading");
   pageHeading?.classList.add("role-source-page-heading");
+  const toolbarGroup = element("div", "role-source-toolbar-group");
   const filters = element("div", "role-source-toolbar");
   const searchField = field(en ? "Search roles" : "搜索角色", "search", { type: "search", placeholder: en ? "Role name or description" : "按角色名称或说明搜索" });
   const sourceSelectField = field(en ? "Role source" : "角色源", "source", { tag: "select" });
@@ -80,8 +81,10 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
   const languageSelectField = field(en ? "Language" : "语言", "language", { tag: "select" });
   filters.append(searchField.label, sourceSelectField.label, categorySelectField.label, languageSelectField.label);
   const sourceStatus = element("div", "page-frame-actions role-source-actions");
-  pageHeading?.append(sourceStatus, filters);
+  toolbarGroup.append(sourceStatus, filters);
+  pageHeading?.append(toolbarGroup);
   const list = element("div", "role-source-list");
+  list.append(element("p", "project-loading", en ? "Loading…" : "正在读取…"));
   const dialog = element("dialog", "role-source-dialog");
   dialog.setAttribute("aria-label", en ? "Role details" : "角色详情");
   const dialogBar = element("div", "role-source-dialog-bar");
@@ -404,9 +407,10 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
       return;
     }
   });
-  void refresh().catch((error) => list.replaceChildren(element("p", "run-error", error.message)));
+  const refreshPromise = refresh().catch((error) => list.replaceChildren(element("p", "run-error", error.message)));
   catalogPoller = setInterval(() => {
     if (!root.isConnected || !root.contains(section)) { clearInterval(catalogPoller); catalogPoller = undefined; return; }
     if (sources.some((source) => source.syncStatus?.state === "running")) void refresh().catch(() => {});
   }, 3000);
+  return refreshPromise;
 }

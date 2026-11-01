@@ -37,15 +37,19 @@ function sourceStatus(source, en) {
 export async function renderPlatformRoleSources(root, locale = "zh-CN") {
   const en = locale === "en";
   if (activePoller) clearInterval(activePoller);
+  root.dataset.template = "D";
   root.replaceChildren();
-  const page = node("section", "platform-role-sources");
-  const heading = node("header", "page-heading library-heading");
-  const headingCopy = node("div");
-  headingCopy.append(node("div", "eyebrow", en ? "Platform settings" : "平台配置"), node("h1", "", en ? "Role sources" : "角色源配置"));
+  const frame = node("section", "page-frame");
+  frame.dataset.template = "D";
+  frame.dataset.fit = "";
+  const heading = node("header", "page-frame-header project-library-toolbar page-heading library-heading");
+  const headingCopy = node("div", "repository-heading");
+  headingCopy.append(node("h1", "", en ? "Role sources" : "角色源配置"));
   headingCopy.append(node("p", "", en ? "Configure Git sources and review server-side sync results." : "配置 Git 来源，并查看 Team Site 后台同步结果。"));
   heading.append(headingCopy);
-  page.append(heading);
 
+  const body = node("div", "page-frame-body");
+  body.dataset.layoutScroll = "";
   const layout = node("div", "role-source-admin-layout");
   const form = node("form", "project-panel compact-form role-source-admin-form");
   const formHeading = node("div", "panel-head");
@@ -116,8 +120,9 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
   sourceList.append(node("p", "project-loading", en ? "Loading sources…" : "正在读取来源…"));
   listSection.append(sourceList);
   layout.append(form, listSection);
-  page.append(layout);
-  root.append(page);
+  body.append(layout);
+  frame.append(heading, body);
+  root.append(frame);
 
   let selectedId = "";
   let sources = [];
