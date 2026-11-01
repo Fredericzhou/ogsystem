@@ -102,7 +102,7 @@ test("ogs help command surfaces layered guidance", async () => {
 
   const runArtifactHelp = await runNodeCli(runtimeCliPath, ["run", "artifact", "--help"]);
   assert.strictEqual(runArtifactHelp.code, 0);
-  assert.match(runArtifactHelp.stdout, /ogs run artifact promote <run-id> --source <shared-relative-path> --destination <project-relative-path> \[--ogs-dir <path>\]/);
+  assert.match(runArtifactHelp.stdout, /ogs run artifact promote <run-id> --source <shared-relative-path> --destination <workspace-relative-path> \[--ogs-dir <path>\] \[--workspace-dir <path>\]/);
 
   const runResumeHelp = await runNodeCli(runtimeCliPath, ["run", "resume", "--help"]);
   assert.strictEqual(runResumeHelp.code, 0);

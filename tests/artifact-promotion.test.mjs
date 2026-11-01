@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -92,6 +92,26 @@ test("CLI promotes from the selected project and emits a machine-readable receip
     assert.equal(payload.fileCount, 2);
   } finally {
     await rm(fixture.workdir, { recursive: true, force: true });
+  }
+});
+
+test("promotion writes business output to workspace-dir while keeping evidence under ogs-dir", async () => {
+  const fixture = await createRun();
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "ogs-artifact-workspace-"));
+  try {
+    const result = await promoteSealedArtifact({
+      workdir: fixture.workdir,
+      workspaceDir,
+      runId: fixture.runId,
+      source: "shared/miniprogram",
+      destination: "reports/run-test-1"
+    });
+    assert.equal(result.destination, path.join(await realpath(workspaceDir), "reports", "run-test-1"));
+    assert.deepEqual(await readFile(path.join(workspaceDir, "reports", "run-test-1", "app.json")), await readFile(path.join(fixture.artifactDir, "app.json")));
+    await assert.rejects(() => readFile(path.join(fixture.workdir, "reports", "run-test-1", "app.json")), { code: "ENOENT" });
+  } finally {
+    await rm(fixture.workdir, { recursive: true, force: true });
+    await rm(workspaceDir, { recursive: true, force: true });
   }
 });
 

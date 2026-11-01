@@ -50,7 +50,7 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
       });
     },
 
-    async createCollaborationProject({ name, overview = "", teamVersionIds = [] } = {}) {
+    async createCollaborationProject({ name, overview = "", teamVersionIds = [], workspaceDir } = {}) {
       const normalizedName = String(name || "协作项目").trim() || "协作项目";
       return projectStore.withCollaborationProjectNameLock(normalizedName, async () => {
         const existingProject = (await projectStore.listProjects()).find((item) => item.projectType === "collaboration"
@@ -63,7 +63,8 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
             name: normalizedName,
             overview: String(overview),
             templateId: "empty",
-            source: "collaboration-project"
+            source: "collaboration-project",
+            ...(typeof workspaceDir === "string" && workspaceDir.trim() ? { workspaceDir: workspaceDir.trim() } : {})
           });
           const collaborationProject = {
             ...project,

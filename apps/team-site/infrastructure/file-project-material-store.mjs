@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { normalizeMaterialPath } from "../domain/material-path.mjs";
+import { projectOgsDir, projectWorkspaceDir } from "./project-paths.mjs";
 
 function slug(value) {
   const normalized = String(value || "material").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -51,10 +52,12 @@ export function createFileProjectMaterialStore({ computeProjectDefinitionDigest 
         filename: normalizeMaterialPath(material.filename)
       }));
       const batchId = randomUUID();
-      const tempRoot = resolve(project.workdir, ".site", "material-upload", batchId);
-      const finalRoot = resolve(project.workdir, "workspace", "files", batchId);
-      const indexPath = join(project.workdir, "workspace", "index.json");
-      const metadataPath = join(project.workdir, ".site", "project.json");
+      const controlRoot = projectOgsDir(project);
+      const workspaceRoot = projectWorkspaceDir(project);
+      const tempRoot = resolve(controlRoot, ".site", "material-upload", batchId);
+      const finalRoot = resolve(workspaceRoot, "workspace", "files", batchId);
+      const indexPath = join(workspaceRoot, "workspace", "index.json");
+      const metadataPath = join(controlRoot, ".site", "project.json");
       const entries = [];
       let moved = false;
       let indexWritten = false;

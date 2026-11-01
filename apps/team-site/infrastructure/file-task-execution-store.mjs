@@ -4,6 +4,7 @@ import { saveProjectRunState, loadProjectRunState } from "../../../dist/runtime/
 import { assertTaskExecutionSlot } from "../domain/task.mjs";
 import { assertRunTransition } from "../domain/run.mjs";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
+import { projectOgsDir } from "./project-paths.mjs";
 
 async function ensureRunDirectory(projectWorkdir, runId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(String(runId || ""))) {
@@ -70,7 +71,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
         if (!teamVersionId || teamVersionId !== task.teamVersionId) throw new Error("TASK_TEAM_VERSION_INVALID: Run owner must use the Task's fixed TeamVersion.");
         let runDir;
         try {
-          runDir = await ensureRunDirectory(project.workdir, runId);
+          runDir = await ensureRunDirectory(projectOgsDir(project), runId);
           const owner = {
             version: 1,
             runKind: "project_task",
@@ -141,7 +142,7 @@ export function createFileTaskExecutionStore({ projectStore }) {
     async failAttempt({ projectId, taskId, runId, error, now }) {
       const failureMessage = error instanceof Error ? error.message : String(error);
       const project = await projectStore.getProject(projectId);
-      const runDir = resolve(project.workdir, ".ogs", "runs", runId);
+      const runDir = resolve(projectOgsDir(project), ".ogs", "runs", runId);
       const currentState = await loadProjectRunState(runDir).catch(() => undefined);
       if (currentState) {
         if (currentState.status !== "failed") assertRunTransition(currentState.status, "failed");

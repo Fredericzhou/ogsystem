@@ -4,6 +4,7 @@ import { extname, join, resolve } from "node:path";
 import { computeProjectAssetDigest } from "../../../dist/runtime/project-asset-digest.js";
 import { assertCanonicalTeamVersionId } from "../domain/team.mjs";
 import { computePackageDigest, computeProjectDefinitionDigest, teamCorePayload } from "./package-integrity.mjs";
+import { projectWorkspaceDir } from "./project-paths.mjs";
 
 export function createFilePackageTransactionStore({
   projectsRoot,
@@ -112,7 +113,7 @@ export function createFilePackageTransactionStore({
     const project = await readProject(projectId);
     const materials = [];
     for (const item of project.materials?.materials || []) {
-      const content = await readFile(resolve(project.workdir, item.path), "utf8").catch(() => "");
+      const content = await readFile(resolve(projectWorkspaceDir(project), item.path), "utf8").catch(() => "");
       materials.push({ ...item, content });
     }
     const mountedTeams = [];

@@ -48,6 +48,8 @@ import {
 } from "./semantic-layout-projection.js";
 import {
   deriveStudioRuntimeVisualState,
+  type StudioRuntimeEdgeState,
+  type StudioRuntimeHandoffState,
   type StudioRuntimeNodeState,
   type StudioRuntimeProgressEvent,
   type StudioRuntimeVisualState
@@ -292,8 +294,8 @@ type PendingStudioRoleInsertion = {
 
 function runtimeStatusLabel(status: StudioRuntimeNodeState["status"], locale: string): string {
   const labels = locale.startsWith("en")
-    ? { running: "Running", waiting: "Waiting", waiting_review: "Review", failed: "Failed", done: "Done", paused: "Paused", pending: "Pending", idle: "Idle", active: "Active" }
-    : { running: "运行中", waiting: "等待中", waiting_review: "审核中", failed: "失败", done: "已完成", paused: "已暂停", pending: "待处理", idle: "空闲", active: "运行中" };
+    ? { running: "Running", waiting: "Waiting", waiting_review: "Review", failed: "Failed", done: "Done", paused: "Paused", pending: "Pending", idle: "Idle", active: "Active", stopped: "Stopped" }
+    : { running: "运行中", waiting: "等待中", waiting_review: "审核中", failed: "失败", done: "已完成", paused: "已暂停", pending: "待处理", idle: "空闲", active: "运行中", stopped: "已停止" };
   return status ? labels[status] || "" : "";
 }
 
@@ -339,6 +341,164 @@ function syncRuntimeActivityMarker(args: {
   dot.setAttribute("cx", String(Math.max(8, args.width - 9)));
   dot.setAttribute("cy", "9");
   dot.setAttribute("r", "3.5");
+}
+
+type StudioRuntimeIconStatus = NonNullable<StudioRuntimeNodeState["status"]> | "technical_waiting";
+
+function runtimeIconStatus(state?: StudioRuntimeNodeState): StudioRuntimeIconStatus | "" {
+  if (!state) return "";
+  if (state.technicalWaiting) return "technical_waiting";
+  if (state.status) return state.status;
+  return state.active ? "running" : "";
+}
+
+function createRuntimeStatusIconShape(status: StudioRuntimeIconStatus): SVGElement {
+  const shape = document.createElementNS("http://www.w3.org/2000/svg", status === "running" ? "g" : "path");
+  shape.classList.add("studio-runtime-status-icon-shape");
+  if (status === "running") {
+    const spokes = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    spokes.setAttribute("d", "M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.7 3.7l1.4 1.4M12.9 12.9l1.4 1.4M14.3 3.7l-1.4 1.4M5.1 12.9l-1.4 1.4");
+    const core = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    core.setAttribute("cx", "9");
+    core.setAttribute("cy", "9");
+    core.setAttribute("r", "3");
+    core.classList.add("studio-runtime-status-icon-core");
+    shape.append(spokes, core);
+    return shape;
+  }
+  const pathByStatus: Record<Exclude<StudioRuntimeIconStatus, "running">, string> = {
+    technical_waiting: "M5 2.5h8M5 15.5h8M6 3.5c0 2.7 3 3.1 3 5.5s-3 2.8-3 5.5M12 3.5c0 2.7-3 3.1-3 5.5s3 2.8 3 5.5",
+    waiting: "M5 2.5h8M5 15.5h8M6 3.5c0 2.7 3 3.1 3 5.5s-3 2.8-3 5.5M12 3.5c0 2.7-3 3.1-3 5.5s3 2.8 3 5.5",
+    waiting_review: "M3 9c1.7-3 3.7-4.5 6-4.5s4.3 1.5 6 4.5c-1.7 3-3.7 4.5-6 4.5S4.7 12 3 9zm6 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
+    done: "M4 9.2 7.2 12.3 14 5.5",
+    failed: "M5 5 13 13M13 5 5 13",
+    stopped: "M5.5 4.5v9M12.5 4.5v9",
+    paused: "M5.5 4.5v9M12.5 4.5v9",
+    pending: "M9 4.5v4.8l3.1 1.8",
+    idle: "M9 9m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0",
+    active: "M9 2.5v3M9 12.5v3M2.5 9h3M12.5 9h3"
+  };
+  shape.setAttribute("d", pathByStatus[status]);
+  return shape;
+}
+
+function syncRuntimeStatusIcon(args: {
+  container: Element;
+  width: number;
+  state?: StudioRuntimeNodeState;
+}): void {
+  const status = runtimeIconStatus(args.state);
+  let group = args.container.querySelector<SVGGElement>(".studio-runtime-status-icon");
+  if (!status) {
+    group?.remove();
+    return;
+  }
+  if (!group) {
+    group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.classList.add("studio-runtime-status-icon");
+    args.container.append(group);
+  }
+  if (group.dataset.status !== status) {
+    group.replaceChildren();
+    const background = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    background.classList.add("studio-runtime-status-icon-bg");
+    background.setAttribute("cx", "9");
+    background.setAttribute("cy", "9");
+    background.setAttribute("r", "8.5");
+    group.append(background, createRuntimeStatusIconShape(status));
+    group.dataset.status = status;
+    group.setAttribute("aria-hidden", "true");
+  }
+  group.setAttribute("transform", `translate(${Math.max(9, args.width - 25)} 4)`);
+}
+
+function syncRuntimeHandoffMarkers(args: {
+  container: Element;
+  edgeState?: StudioRuntimeEdgeState;
+  handoffs: readonly StudioRuntimeHandoffState[];
+}): void {
+  const handoffs = args.handoffs;
+  const activeCount = args.edgeState?.activeHandoffCount || handoffs.filter((handoff) => handoff.status === "active").length;
+  const waitingCount = args.edgeState?.waitingHandoffCount || handoffs.filter((handoff) => handoff.status === "waiting").length;
+  if (handoffs.length === 0) {
+    args.container.removeAttribute("data-runtime-handoff-count");
+    args.container.removeAttribute("data-runtime-active-handoffs");
+    args.container.removeAttribute("data-runtime-waiting-handoffs");
+    args.container.querySelector(".studio-runtime-handoffs")?.remove();
+    return;
+  }
+  args.container.setAttribute("data-runtime-handoff-count", String(handoffs.length));
+  args.container.setAttribute("data-runtime-active-handoffs", String(activeCount));
+  args.container.setAttribute("data-runtime-waiting-handoffs", String(waitingCount));
+  let group = args.container.querySelector<SVGGElement>(".studio-runtime-handoffs");
+  if (!group) {
+    group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.classList.add("studio-runtime-handoffs");
+    group.setAttribute("aria-hidden", "true");
+    args.container.append(group);
+  }
+  const path = args.container.querySelector<SVGPathElement>("path[marker-end], path.connection");
+  const length = path && typeof path.getTotalLength === "function" ? path.getTotalLength() : 0;
+  const visible = handoffs.slice(-4);
+  group.replaceChildren();
+  for (const [index, handoff] of visible.entries()) {
+    const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    marker.classList.add("studio-runtime-handoff-marker", `is-${handoff.status}`);
+    marker.dataset.handoffId = handoff.handoffId;
+    marker.dataset.index = String(index);
+    marker.setAttribute("r", handoff.status === "active" ? "3.2" : "2.6");
+    if (length > 1 && path && typeof path.getPointAtLength === "function") {
+      const point = path.getPointAtLength(length * ((index + 1) / (visible.length + 1)));
+      marker.setAttribute("cx", String(point.x));
+      marker.setAttribute("cy", String(point.y));
+    } else {
+      marker.setAttribute("cx", String((index + 1) * 10));
+      marker.setAttribute("cy", "0");
+    }
+    marker.style.animationDelay = `${index * 120}ms`;
+    group.append(marker);
+  }
+}
+
+function syncRuntimeDataPackets(args: {
+  container: Element;
+  edgeId: string;
+  active: boolean;
+  waiting: boolean;
+  handoffs: readonly StudioRuntimeHandoffState[];
+}): void {
+  const existing = args.container.querySelector<SVGGElement>(".studio-runtime-data-packets");
+  if (!args.active || args.handoffs.length === 0) {
+    existing?.remove();
+    return;
+  }
+  const path = args.container.querySelector<SVGPathElement>("path.connection, path[marker-end]");
+  if (!path) return;
+  const pathId = `ogs-runtime-edge-${args.edgeId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  path.id = pathId;
+  const group = existing || document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.classList.add("studio-runtime-data-packets");
+  group.setAttribute("aria-hidden", "true");
+  if (!existing) args.container.append(group);
+  group.replaceChildren();
+  const packetCount = Math.min(3, Math.max(1, args.handoffs.length));
+  for (let index = 0; index < packetCount; index += 1) {
+    const packet = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    packet.classList.add("studio-runtime-data-packet");
+    packet.setAttribute("r", index === 0 ? "3" : "2.1");
+    const motion = document.createElementNS("http://www.w3.org/2000/svg", "animateMotion");
+    motion.setAttribute("dur", `${1.15 + index * 0.16}s`);
+    motion.setAttribute("begin", `${index * 0.32}s`);
+    motion.setAttribute("repeatCount", "indefinite");
+    motion.setAttribute("rotate", "auto");
+    const mpath = document.createElementNS("http://www.w3.org/2000/svg", "mpath");
+    mpath.setAttribute("href", `#${pathId}`);
+    mpath.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", `#${pathId}`);
+    motion.append(mpath);
+    packet.append(motion);
+    group.append(packet);
+  }
+  group.dataset.waiting = String(args.waiting);
 }
 
 function syncRuntimeStatusBadge(args: {
@@ -482,6 +642,7 @@ export class StudioGraphIsland {
       this.layoutMode = initialOptions.initialLayoutMode;
     }
     this.root.classList.add("studio-graph-island");
+    this.root.dataset.runtimeHistory = initialOptions.mode === "run-diagnosis" ? "on" : "off";
     this.root.innerHTML = [
       '<div class="studio-graph-toolbar">',
       '<div class="studio-graph-toolbar-main">',
@@ -3147,6 +3308,11 @@ export class StudioGraphIsland {
     const runtime = this.runtimeVisualState;
     const focusedHandoff = runtime?.handoffStatesById.get(this.runtimeFocusedHandoffId);
     this.root.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
+    this.root.dataset.runtimeFocus = runtime?.nodeStates && Array.from(runtime.nodeStates.values()).some((state) => state.waitingReview)
+      ? "review"
+      : runtime?.nodeStates && Array.from(runtime.nodeStates.values()).some((state) => state.active)
+        ? "active"
+        : "idle";
     this.root.dataset.reducedMotion = this.reducedMotion ? "on" : "off";
     const canvas = this.canvasEl.querySelector<HTMLElement>(".x6-graph-svg");
     if (canvas) {
@@ -3193,6 +3359,7 @@ export class StudioGraphIsland {
       if (viewNode) {
         const size = node.getSize();
         syncRuntimeActivityMarker({ container, width: size.width, height: size.height, state: nodeState });
+        syncRuntimeStatusIcon({ container, width: size.width, state: nodeState });
         syncRuntimeStatusBadge({ container, width: size.width, height: size.height, node: viewNode, state: nodeState, locale });
       }
     }
@@ -3204,6 +3371,9 @@ export class StudioGraphIsland {
       }
       container.classList.toggle("is-pending-preview", this.isPendingEdgePreviewCell(edge));
       const edgeState = runtime?.edgeStates.get(edge.id);
+      const edgeHandoffs = runtime
+        ? Array.from(runtime.handoffStatesById.values()).filter((handoff) => handoff.edgeId === edge.id)
+        : [];
       container.classList.toggle("is-runtime-active", Boolean(edgeState?.active));
       container.classList.toggle("is-runtime-waiting", Boolean(edgeState?.waiting));
       container.classList.toggle("is-runtime-completed", Boolean(edgeState?.completed));
@@ -3217,6 +3387,14 @@ export class StudioGraphIsland {
       }
       container.classList.toggle("is-runtime-focus-edge", Boolean(focusedHandoff && edge.id === focusedHandoff.edgeId));
       container.classList.toggle("is-loop-back", Boolean(edgeState?.loopBack));
+      syncRuntimeHandoffMarkers({ container, edgeState, handoffs: edgeHandoffs });
+      syncRuntimeDataPackets({
+        container,
+        edgeId: edge.id,
+        active: Boolean(edgeState?.active),
+        waiting: Boolean(edgeState?.waiting),
+        handoffs: edgeHandoffs
+      });
     }
   }
 

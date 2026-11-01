@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve } from "node:path";
 import { createRuntimeProjectRunExecutor } from "../infrastructure/runtime-project-run-executor.mjs";
 
 test("flow previews do not wait for platform model discovery", async () => {
@@ -17,7 +18,7 @@ test("flow previews do not wait for platform model discovery", async () => {
       return { modelSelectionDefaults: { backend: "test", modelId: "model-1" } };
     }
   });
-  const project = { workdir: "project-workdir", assetWorkdir: "team-workdir" };
+  const project = { workdir: "project-workdir", ogsDir: "project-control", workspaceDir: "shared-workspace", assetWorkdir: "team-workdir" };
 
   await executor.execute(project, { prompt: "preview", mode: "dry-run", runId: "run-1", runKind: "project_task" });
 
@@ -27,8 +28,10 @@ test("flow previews do not wait for platform model discovery", async () => {
   assert.equal(calls[0].assetSource, "team-workdir");
   assert.equal(projectedTeam.workdir, "team-workdir");
   assert.equal(calls[0].runtimeEdgeIdsByTransition[JSON.stringify(["dispatch", "WORK", "worker"])], "custom-flow-id");
-  assert.equal(calls[0].workdir, "project-workdir");
-  assert.equal(calls[0].runEvidenceRoot, "project-workdir");
+  assert.equal(calls[0].workdir, resolve("project-control"));
+  assert.equal(calls[0].targetDir, resolve("shared-workspace"));
+  assert.equal(calls[0].runEvidenceRoot, resolve("project-control"));
+  assert.equal(calls[0].materialSourceRoot, resolve("shared-workspace"));
 });
 
 test("isolated runs still resolve the configured model selection", async () => {

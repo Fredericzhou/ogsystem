@@ -63,6 +63,9 @@ test("Studio runtime progress marks boundary and role flow states across concurr
   assert.equal(state.nodeStates.get("worker").active, true);
   assert.equal(state.edgeStates.get(entryFlow.id).waiting, true, "review wait uses a static waiting edge state");
   assert.equal(state.edgeStates.get(workFlow.id).active, true, "one still-running branch keeps its shared flow highlighted");
+  assert.equal(state.edgeStates.get(workFlow.id).handoffCount, 2, "shared flow reports both concurrent handoffs");
+  assert.equal(state.edgeStates.get(workFlow.id).activeHandoffCount, 1, "shared flow reports the active handoff count");
+  assert.equal(state.edgeStates.get(workFlow.id).waitingHandoffCount, 0, "shared flow reports no waiting handoffs after the active branch starts");
   assert.equal(state.nodeStates.get("__system_end__").status, "running", "End remains active while aggregation is pending");
   assert.equal(state.nodeStates.get("__system_end__").active, true);
   assert.equal(state.activeNodeCount, 2);
@@ -95,6 +98,8 @@ test("Studio runtime progress marks boundary and role flow states across concurr
   });
   assert.equal(stopped.handoffStatesById.get("stop-flow").status, "stopped", "stop freezes flow state and clears active animation");
   assert.equal(stopped.edgeStates.get(workFlow.id).active, false);
+  assert.equal(stopped.nodeStates.get("worker").status, "stopped", "the active role keeps a stopped marker after a run is stopped");
+  assert.equal(stopped.nodeStates.get("worker").status, "stopped", "stopping marks the active role as stopped");
 
   const mixedBranches = deriveStudioRuntimeVisualState({
     authoring,
@@ -109,6 +114,8 @@ test("Studio runtime progress marks boundary and role flow states across concurr
   });
   assert.equal(mixedBranches.edgeStates.get(workFlow.id).active, true, "an active branch keeps shared-edge animation despite a failed sibling");
   assert.equal(mixedBranches.edgeStates.get(workFlow.id).errorCode, "MODEL_TIMEOUT");
+  assert.equal(mixedBranches.edgeStates.get(workFlow.id).handoffCount, 2, "shared flows expose the number of handoffs");
+  assert.equal(mixedBranches.edgeStates.get(workFlow.id).activeHandoffCount, 1, "shared flows expose active handoffs separately");
   assert.equal(mixedBranches.nodeStates.get("worker").active, true);
   assert.equal(mixedBranches.nodeStates.get("worker").errorCode, "MODEL_TIMEOUT");
 

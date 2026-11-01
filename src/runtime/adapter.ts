@@ -23,6 +23,7 @@ import { applyRunControl, projectRunStateFromResult, updateProjectRunState } fro
 import { acquireActiveRunLock } from "./project-run-lock.js";
 import { createRunId } from "./run-artifacts.js";
 import { readLatestProjectRunControl } from "./project-run-control.js";
+import { resolve } from "node:path";
 
 export { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 export { resolveEffectiveLaw } from "./runtime-setup.js";
@@ -109,6 +110,7 @@ export async function runSystemWithAdapter(args: {
     runId: string;
     teamVersionId: string;
     teamCoreDigest?: string;
+    teamDigestVersion?: number;
   };
   /** Trusted platform-provided team graphs may use supported parallel/join semantics. */
   trustedProjectTopology?: boolean;
@@ -180,6 +182,19 @@ export async function runSystemWithAdapter(args: {
         ...(preparedRunId ? { runId: preparedRunId } : {})
       });
       runContextForCleanup = setup.runContext;
+      if (args.owner?.teamVersionId && !args.resumeRunDir) {
+        await writeAtomicFile(
+          resolve(setup.runContext.runDir, "team-version.json"),
+          stringifyJson({
+            version: 1,
+            teamVersionId: args.owner.teamVersionId,
+            ...(args.owner.teamCoreDigest ? { teamCoreDigest: args.owner.teamCoreDigest } : {}),
+            ...(args.owner.teamDigestVersion !== undefined ? { teamDigestVersion: args.owner.teamDigestVersion } : {}),
+            runId: setup.runContext.runId,
+            capturedAt: new Date().toISOString()
+          })
+        );
+      }
       // Serialize every caller that can mutate this Run's prompt ledger, including local and Studio runs.
       const runtimeLock = await acquireActiveRunLock(setup.runContext.runDir, setup.runContext.runId);
       releaseRuntimeRunLock = runtimeLock.release;

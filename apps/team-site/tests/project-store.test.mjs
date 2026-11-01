@@ -13,6 +13,28 @@ import { withTeamLifecycleUseCases } from "./team-lifecycle-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
 import { waitForActiveTaskWorker } from "../infrastructure/in-memory-task-workers.mjs";
 
+test("Project persists one shared workspace binding separately from its control root", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-workspace-binding-"));
+  const sharedWorkspace = await mkdtemp(join(tmpdir(), "ogs-shared-workspace-"));
+  process.env.OGS_SITE_PROJECTS_DIR = projectsRoot;
+  const store = await import("../infrastructure/file-project-store.mjs?workspace-binding=" + Date.now());
+  try {
+    const project = await store.createProject({
+      name: "Shared Workspace Project",
+      overview: "One business workspace for multiple teams.",
+      source: "collaboration-project",
+      workspaceDir: sharedWorkspace
+    });
+    assert.equal(project.workspaceDir, sharedWorkspace);
+    assert.equal(project.ogsDir, project.workdir);
+    const persisted = JSON.parse(await readFile(join(project.workdir, ".site", "project.json"), "utf8"));
+    assert.equal(persisted.workspaceDir, sharedWorkspace);
+  } finally {
+    await rm(projectsRoot, { recursive: true, force: true });
+    await rm(sharedWorkspace, { recursive: true, force: true });
+  }
+});
+
 async function waitForTask(store, projectId, taskId) {
   let lastTask;
   for (let attempt = 0; attempt < 200; attempt += 1) {

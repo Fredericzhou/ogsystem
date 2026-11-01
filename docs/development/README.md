@@ -11,9 +11,11 @@ are labeled as such; current behavior is described by source code, tests, and ac
 - [Decisions](DECISIONS.md): accepted architecture decisions and current boundaries.
 - [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.
 - [Team Site layout refactor plan](team-site-layout-refactor-plan.md): unified shell, page templates, scroll rules, verifiable acceptance criteria, and progress tracking for the Team Site layout refactor.
+- [Team Site 页面框架统一与 Studio 工作台交互优化方案](team-site-page-frame-and-studio-optimization-plan.md)：统一右侧页面框架、面包屑与标题紧凑化规范，以及 Studio 运行态只读锁、面板层级避让和键盘焦点管理。
 - [Local desktop and remote control plane plan](local-desktop-remote-control-plane-plan.md): independent portal/downloads, Electron security boundaries, local Runtime, remote configuration, synchronization, and staged delivery.
 - [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): dated verification evidence; consult the latest dated section and Release UAT checklist for status.
 - [Shared resource architecture](shared-resource-architecture.md): shared Platform resource ownership and adapter boundaries.
+- [OGS control root and shared workspace plan](ogs-control-root-shared-workspace-plan.md): unified `--ogs-dir`/`--workspace-dir` ownership, Studio/Projects boundaries, TeamVersion freezing, and UAT gates.
 - [Model backend adapter registry plan](model-backend-adapter-registry-plan.md): backend adapters, Codex/OpenCode/Claude/Antigravity/Ollama support, model source metadata, and Studio backend visuals.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
   boundaries, and generated source.

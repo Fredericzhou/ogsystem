@@ -23,23 +23,23 @@ test("Studio browser submits a draft Simulation and reads persisted history, det
   await writeFile(mockRunnerPath, `export function createRuntimeTeamSimulation() {
   return Object.freeze({
     async simulate(_team, { prompt, onRuntimeEvent }) {
-      await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "__system_start__", toRoleId: "reviewer", eventType: "START", branchId: "reviewer:1" });
-      await onRuntimeEvent?.({ type: "role.started", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1" });
-      await onRuntimeEvent?.({ type: "role_waiting", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", stage: "model_provider", elapsedMs: 40 });
-      await onRuntimeEvent?.({ type: "role_retry_scheduled", roleId: "reviewer", branchId: "reviewer:1", attempt: 2, maxAttempts: 3, errorCode: "MODEL_CHANNEL_UNAVAILABLE", backoffMs: 50 });
-      await onRuntimeEvent?.({ type: "role.input_ready", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", inputContext: JSON.stringify({ task: prompt }) });
-      await onRuntimeEvent?.({ type: "join_quorum_reached", roleId: "reviewer", branchId: "reviewer:1", arrivedCount: 2, requiredCount: 2 });
-      await onRuntimeEvent?.({ type: "human_review_requested", roleId: "reviewer", branchId: "reviewer:1", reviewId: "review-1" });
+      await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "__system_start__", toRoleId: "demo-analyst", eventType: "START", edgeId: "1:start:START:demo-analyst", handoffId: "entry-flow", branchId: "demo-analyst:1" });
+      await onRuntimeEvent?.({ type: "role.started", roleId: "demo-analyst", branchId: "demo-analyst:1", executionId: "demo-analyst-execution-1" });
+      await onRuntimeEvent?.({ type: "role_waiting", roleId: "demo-analyst", branchId: "demo-analyst:1", executionId: "demo-analyst-execution-1", stage: "model_provider", elapsedMs: 40 });
+      await onRuntimeEvent?.({ type: "role_retry_scheduled", roleId: "demo-analyst", branchId: "demo-analyst:1", attempt: 2, maxAttempts: 3, errorCode: "MODEL_CHANNEL_UNAVAILABLE", backoffMs: 50 });
+      await onRuntimeEvent?.({ type: "role.input_ready", roleId: "demo-analyst", branchId: "demo-analyst:1", executionId: "demo-analyst-execution-1", inputContext: JSON.stringify({ task: prompt }) });
+      await onRuntimeEvent?.({ type: "join_quorum_reached", roleId: "demo-analyst", branchId: "demo-analyst:1", arrivedCount: 2, requiredCount: 2 });
+      await onRuntimeEvent?.({ type: "human_review_requested", roleId: "demo-analyst", branchId: "demo-analyst:1", reviewId: "review-1" });
       await new Promise((resolveWait) => setTimeout(resolveWait, 180));
-      await onRuntimeEvent?.({ type: "audit", roleId: "reviewer", branchId: "reviewer:1", status: "ok", at: "2026-10-24T09:08:07.000Z", durationMs: 1, inputContext: JSON.stringify({ task: prompt }), stdoutPreview: "Mocked role output for " + prompt });
-      await onRuntimeEvent?.({ type: "role.completed", roleId: "reviewer", branchId: "reviewer:1", executionId: "reviewer-execution-1", attempt: 2 });
-      await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "reviewer", toRoleId: "__system_end__", eventType: "DONE", branchId: "reviewer:1" });
+      await onRuntimeEvent?.({ type: "audit", roleId: "demo-analyst", branchId: "demo-analyst:1", status: "ok", at: "2026-10-24T09:08:07.000Z", durationMs: 1, inputContext: JSON.stringify({ task: prompt }), stdoutPreview: "Mocked role output for " + prompt });
+      await onRuntimeEvent?.({ type: "role.completed", roleId: "demo-analyst", branchId: "demo-analyst:1", executionId: "demo-analyst-execution-1", attempt: 2 });
+      await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "ANALYSIS_DONE", edgeId: "2:demo-analyst:ANALYSIS_DONE:end", handoffId: "end-flow", branchId: "demo-analyst:1" });
       return {
         status: "completed",
         finalOutputsByRoleId: { analyst: [{ content: "Mocked UAT result for " + prompt }] },
         finalOutputRoleOrder: ["analyst"],
         auditSummary: { transitionCount: 2, totalRenderedPromptChars: 321, totalEstimatedInputTokens: 80, totalEstimatedOutputTokens: 24 },
-        auditTrail: [{ roleId: "reviewer", status: "completed", durationMs: 1, projectedInputChars: 42, renderedPromptChars: 321, estimatedInputTokens: 80, estimatedOutputTokens: 24, externalDataIsolated: false, fallbackUsed: true, primaryModelId: "codex/primary", promptCalls: [{ callId: "reviewer-execution-1:primary", phase: "primary", modelId: "codex/primary", projectedInputChars: 42, renderedPromptChars: 200, estimatedInputTokens: 50, estimatedOutputTokens: 10 }, { callId: "reviewer-execution-1:fallback", phase: "fallback", modelId: "codex/fallback", projectedInputChars: 42, renderedPromptChars: 121, estimatedInputTokens: 30, estimatedOutputTokens: 14 }] }]
+        auditTrail: [{ roleId: "demo-analyst", status: "completed", durationMs: 1, projectedInputChars: 42, renderedPromptChars: 321, estimatedInputTokens: 80, estimatedOutputTokens: 24, externalDataIsolated: false, fallbackUsed: true, primaryModelId: "codex/primary", promptCalls: [{ callId: "demo-analyst-execution-1:primary", phase: "primary", modelId: "codex/primary", projectedInputChars: 42, renderedPromptChars: 200, estimatedInputTokens: 50, estimatedOutputTokens: 10 }, { callId: "demo-analyst-execution-1:fallback", phase: "fallback", modelId: "codex/fallback", projectedInputChars: 42, renderedPromptChars: 121, estimatedInputTokens: 30, estimatedOutputTokens: 14 }] }]
       };
     }
   });
@@ -116,19 +116,17 @@ registerHooks({
 
     await page.locator('#project-graph-stage [data-studio-graph-action="chat-generate"]').click();
     await page.locator("#team-build-panel.is-open[aria-hidden='false']").waitFor();
-    assert.equal(await page.locator("#team-debug-dialog.is-open").count(), 0);
-    await page.locator("[data-team-build-close]").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-asset-drawer.is-open[aria-hidden='false']").waitFor();
     assert.equal(await page.locator("#studio-assets-roles-tab").count(), 1);
-    await page.locator("#studio-asset-drawer-close").click();
-    await page.locator("#studio-asset-drawer[aria-hidden='true']").waitFor();
+    assert.equal(await page.locator("#team-build-panel.is-open[aria-hidden='false']").count(), 1, "AI build and team configuration panels coexist on desktop");
     await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
     await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor({ timeout: 5000 }).catch(async () => {
       assert.fail(`Debug panel did not open: panel=${await page.locator("#team-debug-dialog").getAttribute("class")} hidden=${await page.locator("#team-debug-dialog").getAttribute("aria-hidden")} button=${await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').getAttribute("aria-expanded")} errors=${scriptErrors.join("; ")}`);
     });
     await page.locator("#team-debug-dialog").evaluate((panel) => panel.getBoundingClientRect().width > 0);
-    assert.equal(await page.locator("#team-build-panel.is-open").count(), 0);
+    assert.equal(await page.locator("#team-build-panel.is-open[aria-hidden='false']").count(), 1, "debug does not close AI build on desktop");
+    assert.equal(await page.locator("#studio-asset-drawer.is-open[aria-hidden='false']").count(), 1, "debug does not close team configuration on desktop");
     assert.equal(await page.locator("#team-debug-dialog").evaluate((panel) => panel.tagName), "ASIDE");
     assert.equal(await page.locator("#team-debug-dialog .team-debug-panel-head strong").innerText(), "调试");
     assert.doesNotMatch(await page.locator("#team-debug-dialog").innerText(), /OGS Studio/);
@@ -137,6 +135,16 @@ registerHooks({
     assert.equal(await page.locator("#team-debug-dialog .team-debug-empty-state").count(), 1);
     const debugPanel = page.locator("#team-debug-dialog");
     const debugHead = page.locator("#team-debug-dialog .team-debug-panel-head");
+    const maximizeDebugButton = debugPanel.locator("[data-panel-maximize]");
+    await maximizeDebugButton.click();
+    await page.locator("#team-debug-dialog.is-maximized").waitFor();
+    assert.equal(await maximizeDebugButton.getAttribute("aria-pressed"), "true");
+    const maximizedDebugBounds = await debugPanel.boundingBox();
+    const workbenchForMaximize = await page.locator(".studio-design-workbench").boundingBox();
+    assert.ok(maximizedDebugBounds.width >= workbenchForMaximize.width - 24, `maximized debug panel should fill the workbench: ${JSON.stringify({ maximizedDebugBounds, workbenchForMaximize })}`);
+    await maximizeDebugButton.click();
+    await page.locator("#team-debug-dialog:not(.is-maximized)").waitFor();
+    assert.equal(await maximizeDebugButton.getAttribute("aria-pressed"), "false");
     const beforeDrag = await debugPanel.boundingBox();
     assert.ok(beforeDrag.width <= 362, `debug panel default width should stay compact: ${JSON.stringify(beforeDrag)}`);
     const dragPoint = await debugHead.boundingBox();
@@ -192,6 +200,28 @@ registerHooks({
     assert.ok(restoredDebugBounds.x + restoredDebugBounds.width / 2 < restoredDebugWorkbench.x + restoredDebugWorkbench.width - debugPanelAtDock.width, `dragging the docked debug panel into the graph restores a floating panel: ${JSON.stringify({ debugPanelAtDock, restoredDebugBounds, restoredDebugWorkbench })}`);
     await page.locator('#project-graph-stage [data-studio-graph-action="zoom-in"]').click();
     assert.equal(await debugPanel.getAttribute("aria-hidden"), "false", "graph controls remain usable while the non-modal panel is open");
+
+    // Mobile uses a full-width panel layer and switches between panels instead of allowing
+    // overlapping drag targets to fight the graph's touch gestures.
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator("#project-graph-stage .x6-node").first().waitFor({ timeout: 10000 });
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-asset-drawer").waitFor({ state: "attached" });
+    assert.equal(await page.locator("#studio-asset-drawer.is-open").count(), 1, `mobile team configuration did not open: ${await page.locator("#studio-asset-drawer").evaluate((panel) => JSON.stringify({ className: panel.className, ariaHidden: panel.getAttribute("aria-hidden"), rect: panel.getBoundingClientRect().toJSON() }))}`);
+    assert.equal(await page.locator("#studio-asset-drawer").getAttribute("aria-hidden"), "false");
+    const mobileAssetBounds = await page.locator("#studio-asset-drawer").boundingBox();
+    const mobileWorkbenchBounds = await page.locator(".studio-design-workbench").boundingBox();
+    assert.ok(mobileAssetBounds.width >= mobileWorkbenchBounds.width - 24, `mobile team configuration should use a full-width layer: ${JSON.stringify({ mobileAssetBounds, mobileWorkbenchBounds })}`);
+    assert.equal(await page.locator("#team-debug-dialog.is-open").count(), 0, "mobile panel switching hides debug");
+    await page.locator("#studio-asset-drawer-close").click();
+    await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
+    await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
+    assert.equal(await page.locator("#studio-asset-drawer.is-open").count(), 0, "mobile panel switching hides team configuration");
+    const mobileDebugBounds = await debugPanel.boundingBox();
+    assert.ok(mobileDebugBounds.width >= mobileWorkbenchBounds.width - 24, `mobile debug should use a full-width layer: ${JSON.stringify({ mobileDebugBounds, mobileWorkbenchBounds })}`);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(100);
     await page.locator("#team-simulation-input").fill("Review the draft package.");
     await page.locator('input[name="studioSimulationMode"][value="dry-run"]').check();
     const submit = async () => {
@@ -225,6 +255,15 @@ registerHooks({
     assert.match(transcriptText, /已提交人工审核/);
     await page.locator("#project-graph-stage .studio-runtime-status-label").filter({ hasText: "已完成" }).first().waitFor();
     assert.ok(await page.locator('#project-graph-stage .x6-node[aria-label*="已完成"]').count() > 0, "runtime node state is exposed through an accessible name");
+    assert.ok(await page.locator("#project-graph-stage .x6-node .studio-runtime-status-icon").count() > 0, "runtime state uses an inline SVG status icon");
+    assert.equal(await page.locator("#project-graph-stage[data-runtime-signals='on']").count(), 1, "runtime flow enables the graph runtime overlay");
+    assert.ok(await page.locator("#project-graph-stage .x6-edge path").count() > 0, "runtime graph contains rendered flow paths");
+
+    const roleNode = page.locator("#project-graph-stage .x6-node").nth(1);
+    await roleNode.click();
+    await page.locator("#studio-asset-drawer.is-open[aria-hidden='false']").waitFor();
+    await page.locator("#studio-assets-property-view:not([hidden])").waitFor();
+    assert.equal(await debugPanel.getAttribute("aria-hidden"), "false", "clicking a runtime node keeps the debug panel open");
     const simulationPostCount = simulationRequests.filter((request) => request.startsWith("POST ")).length;
     assert.equal(simulationPostCount, 1);
 
@@ -271,6 +310,8 @@ registerHooks({
     assert.equal(await page.locator(".studio-run-split").count(), 1, "debug evidence should use the master-detail layout");
     assert.equal(await page.locator(".studio-run-history .studio-simulation-row[aria-current='page']").count(), 1, "the current run should remain selected in the history list");
     assert.equal(await page.locator("#studio-view > .page-frame .page-heading .status-chip.completed").count(), 1);
+    await page.locator("#studio-run-graph-stage .x6-node").first().waitFor();
+    assert.equal(await page.locator("#studio-run-graph-stage").count(), 1, "historical detail should mount a read-only runtime graph");
     assert.deepEqual(scriptErrors, []);
   } finally {
     await browser?.close();

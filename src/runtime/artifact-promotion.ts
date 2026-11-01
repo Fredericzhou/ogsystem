@@ -18,6 +18,8 @@ type ManifestFile = {
 
 export type PromoteSealedArtifactArgs = {
   workdir: string;
+  /** Business workspace receiving the promoted artifact. Defaults to workdir for single-root projects. */
+  workspaceDir?: string;
   runId: string;
   source: string;
   destination: string;
@@ -82,8 +84,9 @@ export async function promoteSealedArtifact(args: PromoteSealedArtifactArgs): Pr
   fileCount: number;
   manifestSha256: string;
 }> {
-  const workdir = await realpath(resolve(args.workdir));
-  const runDir = await realpath(resolveRunDir(workdir, args.runId));
+  const controlRoot = await realpath(resolve(args.workdir));
+  const workspaceRoot = await realpath(resolve(args.workspaceDir ?? controlRoot));
+  const runDir = await realpath(resolveRunDir(controlRoot, args.runId));
   const summary = JSON.parse(await readFile(resolve(runDir, "summary.json"), "utf8")) as { status?: unknown };
   if (summary.status !== "done") fail(`run ${args.runId} is not done.`);
 
@@ -131,13 +134,13 @@ export async function promoteSealedArtifact(args: PromoteSealedArtifactArgs): Pr
   }
 
   const destinationRelative = safeRelativePath(args.destination, "--destination");
-  const destinationPath = resolve(workdir, destinationRelative);
-  if (!isWithin(workdir, destinationPath) || destinationPath === workdir) fail("--destination must remain inside the project directory.");
+  const destinationPath = resolve(workspaceRoot, destinationRelative);
+  if (!isWithin(workspaceRoot, destinationPath) || destinationPath === workspaceRoot) fail("--destination must remain inside the workspace directory.");
   const destinationParent = dirname(destinationPath);
-  await assertNoSymlinkComponents(workdir, relative(workdir, destinationParent), "destination parent path");
+  await assertNoSymlinkComponents(workspaceRoot, relative(workspaceRoot, destinationParent), "destination parent path");
   await mkdir(destinationParent, { recursive: true });
-  await assertNoSymlinkComponents(workdir, relative(workdir, destinationParent), "destination parent path");
-  const realDestinationParent = await assertContainedRealPath(workdir, destinationParent, "destination parent");
+  await assertNoSymlinkComponents(workspaceRoot, relative(workspaceRoot, destinationParent), "destination parent path");
+  const realDestinationParent = await assertContainedRealPath(workspaceRoot, destinationParent, "destination parent");
   const realDestinationPath = resolve(realDestinationParent, basename(destinationPath));
   if (await lstat(realDestinationPath).then(() => true, () => false)) fail("destination already exists; promotion never overwrites.");
 

@@ -6,6 +6,7 @@ import { rebuildRunsIndex } from "../../../dist/runtime/project-lifecycle.js";
 import { writeProjectRunControl } from "../../../dist/runtime/project-run-control.js";
 import { assertSafeEvidencePath, readSafeEvidenceFile } from "./safe-evidence-path.mjs";
 import { readProjectRunOwner } from "./project-run-evidence-paths.mjs";
+import { projectOgsDir, projectWorkspaceDir } from "./project-paths.mjs";
 
 function assertSafeId(value, field) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(String(value || ""))) throw new Error(`${field} is invalid.`);
@@ -29,7 +30,7 @@ async function writeJson(path, value) {
 
 function runDirectory(project, runId) {
   assertSafeId(runId, "runId");
-  const allowedRunsDir = resolve(project.workdir, ".ogs", "runs");
+  const allowedRunsDir = resolve(projectOgsDir(project), ".ogs", "runs");
   const runDir = resolve(allowedRunsDir, runId);
   if (!runDir.startsWith(`${allowedRunsDir}${sep}`)) throw new Error("RUN_RESUME_INVALID: resume run must belong to the requested project.");
   return runDir;
@@ -39,7 +40,7 @@ async function validateOwnedRun(project, runId, { allowMissing = false } = {}) {
   const task = (project.taskRecords || []).find((item) => !item.deletedAt
     && Array.isArray(item.runIds) && item.runIds.includes(runId));
   if (!task) throw new Error("RUN_NOT_FOUND: run does not belong to a Project Task.");
-  const root = resolve(project.workdir);
+  const root = projectOgsDir(project);
   const runDir = await assertSafeEvidencePath(root, [".ogs", "runs", runId], {
     kind: "directory", allowMissingFinal: allowMissing, label: "Run evidence"
   });
@@ -53,7 +54,7 @@ async function validateOwnedRun(project, runId, { allowMissing = false } = {}) {
 }
 
 async function assertProjectSiteFile(project, filename, { allowMissing = false } = {}) {
-  const root = resolve(project.workdir);
+  const root = projectOgsDir(project);
   await assertSafeEvidencePath(root, [".site"], { kind: "directory", label: "Project metadata" });
   return assertSafeEvidencePath(root, [".site", filename], {
     kind: "file", allowMissingFinal: allowMissing, label: "Project metadata"
@@ -71,7 +72,7 @@ export function createFileProjectRunStore() {
         throw new Error("RUN_RESUME_INVALID: resume run directory does not match resumeRunId.");
       }
       const owned = await validateOwnedRun(project, resumeRunId);
-      const root = resolve(project.workdir);
+      const root = projectOgsDir(project);
       await assertSafeEvidencePath(root, [".ogs", "runs", resumeRunId, "task.json"], { kind: "file", label: "Run task snapshot" });
       await assertSafeEvidencePath(root, [".ogs", "runs", resumeRunId, "run-plan.json"], { kind: "file", label: "Run plan" });
       const task = JSON.parse(await readSafeEvidenceFile(root, [".ogs", "runs", resumeRunId, "task.json"], "utf8", "Run task snapshot"));
@@ -84,20 +85,20 @@ export function createFileProjectRunStore() {
 
     async readLedger(project) {
       await assertProjectSiteFile(project, "run-requests.json", { allowMissing: true });
-      return readJson(join(project.workdir, ".site", "run-requests.json"), {});
+      return readJson(join(projectOgsDir(project), ".site", "run-requests.json"), {});
     },
 
     async writeLedger(project, ledger) {
       await assertProjectSiteFile(project, "run-requests.json", { allowMissing: true });
-      return writeJson(join(project.workdir, ".site", "run-requests.json"), ledger);
+      return writeJson(join(projectOgsDir(project), ".site", "run-requests.json"), ledger);
     },
 
     acquireProjectWriteLock(project, operation) {
-      return acquireProjectWriteLock(project.workdir, operation);
+      return acquireProjectWriteLock(projectOgsDir(project), operation);
     },
 
     acquireRunLock(project, runId) {
-      return acquireActiveRunLock(project.workdir, runId);
+      return acquireActiveRunLock(projectOgsDir(project), runId);
     },
 
     async writeResumeControl(runDir) {
@@ -107,13 +108,13 @@ export function createFileProjectRunStore() {
     materialInputs(project, override) {
       return override || (project.materials?.materials || []).map((item) => ({
         materialId: item.materialId,
-        sourcePath: resolve(project.workdir, item.path),
+        sourcePath: resolve(projectWorkspaceDir(project), item.path),
         contentType: item.contentType
       }));
     },
 
     async rebuildIndex(project) {
-      return rebuildRunsIndex(project.workdir);
+      return rebuildRunsIndex(projectOgsDir(project));
     },
 
     async readSnapshot(project, runId, { allowMissing = false } = {}) {
@@ -121,7 +122,7 @@ export function createFileProjectRunStore() {
       const owned = await validateOwnedRun(project, runId, { allowMissing });
       if (owned.missing) return { plan: undefined, state: undefined };
       const runDir = owned.runDir;
-      const root = resolve(project.workdir);
+      const root = projectOgsDir(project);
       await assertSafeEvidencePath(root, [".ogs", "runs", runId, "run-plan.json"], { kind: "file", label: "Run plan" });
       await assertSafeEvidencePath(root, [".ogs", "runs", runId, "control"], { kind: "directory", label: "Run control" });
       await assertSafeEvidencePath(root, [".ogs", "runs", runId, "control", "state.json"], { kind: "file", label: "Run state" });
@@ -142,7 +143,7 @@ export function createFileProjectRunStore() {
 
     async recordTask(project, taskRecord) {
       await assertProjectSiteFile(project, "project.json");
-      const metadataPath = join(project.workdir, ".site", "project.json");
+      const metadataPath = join(projectOgsDir(project), ".site", "project.json");
       const metadata = await readJson(metadataPath, {});
       await writeJson(metadataPath, {
         ...metadata,

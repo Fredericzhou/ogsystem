@@ -3,6 +3,7 @@ import { join, resolve, sep } from "node:path";
 import { redactText } from "../../../dist/runtime/redaction.js";
 import { readProjectRunOwner } from "./project-run-evidence-paths.mjs";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
+import { projectOgsDir } from "./project-paths.mjs";
 
 function assertSafeId(value, field, pattern) {
   if (!pattern.test(String(value || ""))) throw new Error(`${field} is invalid.`);
@@ -35,12 +36,13 @@ export function createFileRunResultStore({ projectsRoot }) {
       const metadata = JSON.parse(await readFile(join(projectRoot, ".site", "project.json"), "utf8"));
       const task = (metadata.taskRecords || []).find((item) => item.taskId === run.taskId && !item.deletedAt);
       if (metadata.projectType !== "collaboration" || !task) throw new Error("RUN_NOT_FOUND: run does not belong to this Project Task.");
-      const project = { projectId, workdir: projectRoot };
+      const project = { projectId, workdir: projectRoot, ogsDir: projectRoot };
       await readProjectRunOwner(project, task, run.runId);
-      const statePath = join(projectRoot, ".ogs", "runs", run.runId, "state.json");
+      const controlRoot = projectOgsDir(project);
+      const statePath = join(controlRoot, ".ogs", "runs", run.runId, "state.json");
       let snapshot;
       try {
-        await assertSafeEvidencePath(projectRoot, [".ogs", "runs", run.runId, "state.json"], { kind: "file", label: "Run state" });
+        await assertSafeEvidencePath(controlRoot, [".ogs", "runs", run.runId, "state.json"], { kind: "file", label: "Run state" });
         snapshot = JSON.parse(await readFile(statePath, "utf8"));
       } catch (error) {
         if (error?.code === "ENOENT") return undefined;

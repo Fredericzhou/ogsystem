@@ -15,7 +15,10 @@ export async function handleProjectRoutes({ request, response, url, readBody, se
       const project = await useCases.createCollaborationProject({
         name: payload.name,
         overview: payload.overview,
-        teamVersionIds: payload.teamVersionIds
+        teamVersionIds: payload.teamVersionIds,
+        ...(typeof payload.workspaceDir === "string" && payload.workspaceDir.trim()
+          ? { workspaceDir: payload.workspaceDir }
+          : {})
       });
       sendJson(response, 201, publicProject(project));
     } catch (error) {

@@ -6,7 +6,7 @@ import type {
 } from "../studio-contracts.js";
 
 export type StudioRuntimeNodeState = {
-  status?: "active" | "running" | "waiting" | "waiting_review" | "done" | "failed" | "paused" | "pending" | "idle";
+  status?: "active" | "running" | "waiting" | "waiting_review" | "done" | "failed" | "paused" | "pending" | "idle" | "stopped";
   statusLabel?: string;
   technicalWaiting?: boolean;
   technicalWaitingStage?: string;
@@ -27,6 +27,9 @@ export type StudioRuntimeEdgeState = {
   errorMessage?: string;
   stopped: boolean;
   loopBack: boolean;
+  handoffCount?: number;
+  activeHandoffCount?: number;
+  waitingHandoffCount?: number;
 };
 
 export type StudioRuntimeHandoffState = {
@@ -110,6 +113,10 @@ const STATUS_MATCHERS: Array<{
   {
     status: "idle",
     patterns: [/^idle$/i, /^空闲$/]
+  },
+  {
+    status: "stopped",
+    patterns: [/^stopped$/i, /^terminated$/i, /^已停止$/, /^已终止$/]
   }
 ];
 
@@ -242,7 +249,10 @@ export function deriveStudioRuntimeEdgeState(args: {
     loopBack: args.edge.source === args.edge.target
       || args.edge.channel === "loop"
       || args.edge.channel === "feedback"
-      || args.edge.topologyOrder?.endsWith("L") === true
+      || args.edge.topologyOrder?.endsWith("L") === true,
+    handoffCount: 0,
+    activeHandoffCount: 0,
+    waitingHandoffCount: 0
   };
 }
 
@@ -287,6 +297,7 @@ export function deriveStudioRuntimeVisualState(args: {
     const technicalWaitingStageByBranch = new Map<string, string>();
     const failureByBranch = new Map<string, { roleId: string; errorCode?: string; errorMessage?: string }>();
     const waitingReviewBranches = new Set<string>();
+    const stoppedRoles = new Set<string>();
     const selectedEntryRoles = new Set<string>();
     let hasEndArrival = args.progressEvents.some((event) => event.type === "flow.activated" && event.toRoleId === "__system_end__");
     const flowStateByHandoff = handoffStatesById;
@@ -466,6 +477,11 @@ export function deriveStudioRuntimeVisualState(args: {
       }
     }
 
+    if (runStatus === "stopped") {
+      for (const execution of activeExecutions.values()) {
+        if (execution.roleId) stoppedRoles.add(execution.roleId);
+      }
+    }
     if (runStatus !== "running") {
       for (const flow of flowStateByHandoff.values()) {
         if (flow.status !== "active" && flow.status !== "waiting") continue;
@@ -501,7 +517,7 @@ export function deriveStudioRuntimeVisualState(args: {
         state.errorCode = failure?.errorCode;
         state.errorMessage = failure?.errorMessage;
         const hasFailedBranch = [...failureByBranch.values()].some((candidate) => candidate.roleId === node.roleId);
-        state.status = isActive ? "running" : state.waitingReview ? "waiting_review" : isWaiting ? "waiting" : hasFailedBranch || failedRoles.has(node.roleId) ? "failed" : successfulRoles.has(node.roleId) ? "done" : undefined;
+        state.status = isActive ? "running" : state.waitingReview ? "waiting_review" : isWaiting ? "waiting" : hasFailedBranch || failedRoles.has(node.roleId) ? "failed" : successfulRoles.has(node.roleId) ? "done" : stoppedRoles.has(node.roleId) ? "stopped" : undefined;
       }
     }
     const flowsByEdge = new Map<string, StudioRuntimeHandoffState[]>();
@@ -515,6 +531,11 @@ export function deriveStudioRuntimeVisualState(args: {
       if (!edgeState) continue;
       const statuses = new Set(flows.map((flow) => flow.status));
       const failedFlow = flows.find((flow) => flow.status === "failed");
+      const activeHandoffs = flows.filter((flow) => flow.status === "active").length;
+      const waitingHandoffs = flows.filter((flow) => flow.status === "waiting").length;
+      edgeState.handoffCount = flows.length;
+      edgeState.activeHandoffCount = activeHandoffs;
+      edgeState.waitingHandoffCount = waitingHandoffs;
       edgeState.error = Boolean(failedFlow);
       edgeState.errorCode = failedFlow?.errorCode;
       edgeState.errorMessage = failedFlow?.errorMessage;

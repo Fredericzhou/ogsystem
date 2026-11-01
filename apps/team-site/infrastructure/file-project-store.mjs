@@ -102,6 +102,9 @@ function normalizeMeta(meta, projectId) {
     ...(meta?.caseId ? { caseId: meta.caseId } : {}),
     ...(meta?.trustedClassicTopologyDigest ? { trustedClassicTopologyDigest: meta.trustedClassicTopologyDigest } : {}),
     ...(meta?.ogsProjectId ? { ogsProjectId: meta.ogsProjectId } : {})
+    ,workspaceDir: typeof meta?.workspaceDir === "string" && meta.workspaceDir.trim()
+      ? meta.workspaceDir.trim()
+      : undefined
     ,projectType: meta?.projectType || (meta?.teamProjectId ? "workspace" : "team")
     ,mountedTeams: Array.isArray(meta?.mountedTeams) ? meta.mountedTeams : []
     ,taskRecords: Array.isArray(meta?.taskRecords) ? meta.taskRecords : []
@@ -177,10 +180,18 @@ async function readProject(projectId) {
   const workdir = projectPath(projectId);
   const meta = await readJson(join(workdir, ".site", "project.json"));
   if (!meta) throw new Error("Project not found.");
-  const materials = await readJson(join(workdir, "workspace", "index.json"), { version: 1, materials: [] });
   const runs = await readJson(join(workdir, ".ogs", "runs-index.json"), { runs: [] });
   const normalized = normalizeMeta(meta, projectId);
-  return { ...normalized, workdir, materials, runs: runs.runs || [] };
+  const workspaceRoot = normalized.workspaceDir ? resolve(workdir, normalized.workspaceDir) : workdir;
+  const materials = await readJson(join(workspaceRoot, "workspace", "index.json"), { version: 1, materials: [] });
+  return {
+    ...normalized,
+    workdir,
+    ogsDir: workdir,
+    workspaceDir: workspaceRoot,
+    materials,
+    runs: runs.runs || []
+  };
 }
 
 export async function listProjects() {
@@ -199,7 +210,7 @@ export async function listProjects() {
   return projects.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
-async function createProjectAt(workdir, { projectId, name, overview, templateId = "empty", caseId, source = "created", teamId, teamRootId, teamVersionId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
+async function createProjectAt(workdir, { projectId, name, overview, templateId = "empty", caseId, source = "created", teamId, teamRootId, teamVersionId, teamName, teamVersionNumber = 1, parentTeamVersionId, workspaceDir }) {
   const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
   const resolvedTeamName = String(teamName || normalizedName).trim().slice(0, 120) || normalizedName;
   const isTeamAsset = source !== "collaboration-project" && source !== "workspace";
@@ -224,14 +235,16 @@ async function createProjectAt(workdir, { projectId, name, overview, templateId 
       source,
       ...(isTeamAsset ? { teamRootId: teamRootId || teamId || projectId } : {}),
       ...(caseId ? { caseId } : {})
+      ,...(typeof workspaceDir === "string" && workspaceDir.trim() ? { workspaceDir: workspaceDir.trim() } : {})
     };
   await writeJson(join(workdir, ".site", "project.json"), metadata);
-  await writeJson(join(workdir, "workspace", "index.json"), { version: 1, materials: [] });
+  const workspaceRoot = resolve(workdir, workspaceDir || ".");
+  await writeJson(join(workspaceRoot, "workspace", "index.json"), { version: 1, materials: [] });
   await writeTeamReferenceFiles(workdir, metadata);
   return { projectId, workdir };
 }
 
-export async function createProject({ name, overview, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId }) {
+export async function createProject({ name, overview, templateId = "empty", caseId, source = "created", locale = "zh-CN", teamId, teamName, teamVersionNumber = 1, parentTeamVersionId, workspaceDir }) {
   await mkdir(projectsRoot, { recursive: true });
   const projectId = slug(name) + "-" + randomUUID().slice(0, 8);
   const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
@@ -242,7 +255,7 @@ export async function createProject({ name, overview, templateId = "empty", case
   const create = async () => {
     activeProjectCreations.add(stagingWorkdir);
     try {
-      await createProjectAt(stagingWorkdir, { projectId, name: normalizedName, overview, templateId, caseId, source, teamId, teamName, teamVersionNumber, parentTeamVersionId });
+      await createProjectAt(stagingWorkdir, { projectId, name: normalizedName, overview, templateId, caseId, source, teamId, teamName, teamVersionNumber, parentTeamVersionId, workspaceDir });
       await rename(stagingWorkdir, workdir);
       return readProject(projectId);
     } catch (error) {

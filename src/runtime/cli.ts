@@ -423,7 +423,7 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "artifact") {
     return [
       "Usage:",
-      "  ogs run artifact promote <run-id> --source <shared-relative-path> --destination <project-relative-path> [--ogs-dir <path>]",
+      "  ogs run artifact promote <run-id> --source <shared-relative-path> --destination <workspace-relative-path> [--ogs-dir <path>] [--workspace-dir <path>]",
       "",
       "Promotes a sealed artifact only when its run is done, its referenced test report passed, and all source hashes match.",
       "The destination must not exist. The source run and its audit artifacts are never modified."
@@ -1454,6 +1454,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
     }
     const { values, positionals } = parseLifecycleArgs(argv.slice(2), {
       "ogs-dir": { type: "string" },
+      "workspace-dir": { type: "string" },
       source: { type: "string" },
       destination: { type: "string" },
       help: { type: "boolean", short: "h" }
@@ -1473,6 +1474,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
     }
     const promoted = await promoteSealedArtifact({
       workdir: asString(values["ogs-dir"]) ?? process.cwd(),
+      workspaceDir: asString(values["workspace-dir"]),
       runId,
       source,
       destination

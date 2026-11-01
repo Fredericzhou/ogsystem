@@ -24,6 +24,18 @@ for the implementation release covered by this plan. Old config, catalog, and
 session formats do not need to remain readable; fixtures, examples, and local
 runtime files are updated together.
 
+### 1.1 Product positioning
+
+OGSystem is a general task-solving collaboration system. Its Roles may handle
+research, analysis, planning, content, operations, or software work, and the
+graph remains the product's primary collaboration model.
+
+Orca is used as a reference for the collaboration control plane: coordinator,
+tasks, dispatches, worker sessions, messages, completion, and decision gates.
+Orca's source-code worktrees, terminal layout, IDE features, and CLI integration
+are outside OGSystem's product boundary. A backend is an execution participant in
+an OGS task, not an IDE or a second orchestration system.
+
 ## 2. Design Principles
 
 ### 2.1 Keep graph semantics backend-neutral
@@ -76,19 +88,70 @@ Capabilities are reported at descriptor and model-catalog level. Runtime readine
 rejects a Role whose required output contract is unsupported. It never silently
 converts required structured JSON output into free text.
 
-### 2.6 Preserve behavior before adding backends
+### 2.6 Make agent collaboration the product boundary
+
+The primary product concern is the relationship between Agents, not the inventory
+of tools inside an Agent backend. Follow the useful Orca ADE model:
+
+- a durable Run owns the collaboration namespace and coordinator inbox;
+- a Task is an owned work item with dependencies and a lifecycle;
+- a Dispatch records one Task attempt on one Agent session;
+- messages carry status, questions, completion, and escalation between the
+  coordinator and workers;
+- decision gates pause a Task until a coordinator or human resolves the choice;
+- separate worktrees or equivalent execution scopes isolate parallel Agents.
+
+OGSystem maps these concepts to its existing graph semantics: Role is the
+responsibility seat, Flow and event contracts are the handoff path, parallel split
+and join express dependencies, and review nodes are decision gates. An Agent
+backend executes a bound Role; it does not coordinate other Roles by sharing an
+implicit session or private context.
+
+Handoffs remain explicit and typed. Shared state is passed through declared output
+events and context maps, while session lineage is used only for the owning Role's
+continuation. The coordinator owns routing, retries, completion acceptance, and
+escalation. This keeps collaboration deterministic even when different Roles use
+different backends.
+
+### 2.7 Keep tools, skills, and MCP backend-native
+
+The backend adapter registry does not enumerate, authorize, or synchronize every
+tool, skill, or MCP server. Those capabilities remain in the selected Agent CLI or
+backend configuration. OGS only needs the transport-level capabilities required to
+execute a Role, such as structured output, streaming, cancellation, or resume.
+
+Backend-native tools, skills, and MCP are available by default according to the
+selected Agent CLI's normal configuration. This plan adds no backend-wide exposure
+schema, per-Role native-tool matrix, or MCP permission matrix. The registry records
+only sanitized session metadata and execution outcomes. A capability is available
+when the selected backend has it configured; OGS does not promise that every
+backend installation has every capability.
+
+The existing Role tool contract and law checks remain available for OGS-managed
+tools that already have an OGS execution path. They do not become a second catalog
+for backend-native tools.
+
+Orca's current ADE behavior is a useful reference for launch policy: supported CLI
+Agents are started with their full-autonomy permission flag by default, while the
+user can switch an Agent to manual approval. This is an Agent launch setting, not
+an OGS capability grant and not a promise that every possible tool is installed.
+OGSystem can use the backend's normal full-autonomy mode by default and leave
+manual approval as an optional backend launch setting, without modeling native
+tools individually.
+
+### 2.8 Preserve behavior before adding backends
 
 Codex and OpenCode are wrapped without changing current session reuse, retry, JSON
 repair, cancellation, or evidence behavior. Ollama is added after the registry path
 is proven.
 
-### 2.7 Keep backend configuration server-side
+### 2.9 Keep backend configuration server-side
 
 Backend settings such as an Ollama base URL or OpenCode mode belong to runtime or
 platform configuration. Credentials and authorization headers never enter
 TeamVersion content, browser DTOs, audit records, or model catalog entries.
 
-### 2.8 Detect the local backend with backend-owned probes
+### 2.10 Detect the local backend with backend-owned probes
 
 Local backend status is obtained on the server by the adapter or a small shared
 local-tool probe utility. The probe first resolves the real executable or service,
@@ -124,6 +187,56 @@ Useful reference locations in CC Switch are:
 - `src-tauri/src/commands/model_fetch.rs`: backend-specific OpenCode and
   Antigravity model-list commands and output parsing.
 
+### 2.11 Keep Agent workers in a replaceable Runtime boundary
+
+An Agent worker is a collaboration execution unit, not a backend process. In the
+minimum implementation, the worker loop runs in the existing Runtime process:
+
+~~~text
+API or Studio -> Runtime executor -> Worker/Dispatch loop -> Backend adapter
+~~~
+
+There is no operating-system service, network worker pool, or one-process-per-Agent
+requirement. A Run owns its Tasks, Dispatches, session lineage, evidence, and
+backend clients. The backend adapter remains an implementation detail of that
+Run-scoped worker.
+
+When operational isolation or online Runtime replacement is needed, the same
+worker loop can be hosted by a supervised Runtime service without changing graph
+or adapter contracts:
+
+~~~text
+API or Studio -> Runtime supervisor -> Worker Runtime (generation N)
+                                      -> Backend adapters -> Agent backends
+~~~
+
+The service boundary is around the Worker Runtime, which may host many Runs; it
+is not around every Role or model. The control plane sends commands and reads
+persisted Run state. It may reconnect to a Runtime and reattach to a Run without
+creating a second Dispatch.
+
+Runtime replacement follows a readiness handoff:
+
+1. Persist an atomic replacement request with the current and target Runtime
+   versions.
+2. Stop accepting new Runs on the old generation and keep active Dispatches
+   owned by that generation.
+3. Start the new generation and require a versioned readiness handshake.
+4. Route new Runs to the new generation; let the old generation drain active
+   Dispatches or recover them from persisted state according to the selected
+   shutdown policy.
+5. Mark the handoff complete only after the new generation is ready, and retain
+   Runtime generation in Run evidence.
+
+This is process replacement with session continuity, not in-place hot mutation.
+It does not promise that a host reboot, Runtime crash, or backend process failure
+will leave an active request running. Such failures use the existing persisted
+Run state, retry, cancellation, and recovery rules.
+
+Service mode is an operational extension. It is not required to introduce the
+backend registry or Ollama adapter, and it must not add backend-native tool,
+skill, or MCP management.
+
 ## 3. Scope
 
 ### 3.1 Initial backends
@@ -157,8 +270,15 @@ support from a binary name alone.
 - old schema migration or compatibility loaders;
 - cross-backend model fallback;
 - shared multi-user service pooling or backpressure;
+- one operating-system service or daemon per Agent/Role;
 - a separate probe service;
-- backend-specific Mermaid or Role package metadata.
+- backend-specific Mermaid or Role package metadata;
+- IDE, terminal, repository, or worktree management;
+- backend-native tool, skill, or MCP catalogs and permission matrices.
+
+The Worker Runtime service boundary, supervisor, reconnect protocol, and online
+replacement handoff are optional operational work after the in-process registry
+path is stable. They are not prerequisites for backend selection or execution.
 
 ## 4. Current Selection Contract
 
@@ -481,6 +601,28 @@ model-list command with a timeout; a shell lookup result alone is insufficient.
 
 The core executor must not contain backend-specific execution branches.
 
+### 7.1 Worker ownership and service mode
+
+The in-process implementation treats the Runtime executor as the Worker host. It
+owns the Run dispatch loop, backend clients, cancellation signals, session reuse,
+and evidence writes. A Worker is identified by its Run and Dispatch state rather
+than by a permanently running Agent process.
+
+If service mode is enabled later, move this ownership behind a Runtime service
+interface. Keep the following invariants:
+
+- one Dispatch has one owning Runtime generation at a time;
+- reconnecting a client observes the existing Run instead of starting a new
+  Dispatch;
+- new work is fenced from an old generation before replacement;
+- active backend clients are closed only by their owning generation, or recovered
+  through the persisted Run state after failure;
+- Runtime version and generation are recorded in evidence.
+
+The service interface should expose Run/Task/Dispatch commands and event
+subscriptions. It should not expose backend-specific process handles, credentials,
+native tool inventories, or MCP permission state.
+
 ## 8. Session and Evidence Model
 
 Rename OpencodeSessionRecord to BackendSessionRecord in types.ts and run-artifacts.ts.
@@ -556,7 +698,8 @@ tool contract:
 
 - every model Role requires text input and text output;
 - structured Role output requires structured output and JSON Schema support;
-- tool-call capability is required only when the Role contract uses model tool calls;
+- model tool-call protocol capability is required only when the existing Role path
+  uses model tool calls; this does not enumerate or authorize native tools;
 - streaming and resume are checked only when the runtime path requests them.
 
 Stale catalog state remains visible, but readiness must not select a model marked
@@ -700,6 +843,23 @@ contracts do not require backend-specific changes.
 - select and verify one supported transport per backend;
 - implement the adapter only after the transport contract is known;
 - expose capability-aware availability and real UAT results.
+
+### Phase 6: Optional Worker Runtime serviceization
+
+Only implement this phase when the deployment requires Runtime isolation,
+client reconnect, or online replacement without stopping active Dispatches:
+
+- extract the in-process Worker host behind a versioned Runtime service boundary;
+- persist Run/Task/Dispatch ownership and an atomic replacement handoff record;
+- add a supervisor that starts a replacement, waits for readiness, and fences new
+  work on the old generation;
+- keep active Dispatches on the old generation until drain or explicit recovery;
+- reconnect control-plane clients to the new generation without duplicating work;
+- record Runtime version and generation in Run evidence;
+- test restart, failed readiness, reconnect, drain, cancellation, and recovery.
+
+Do not introduce per-Agent daemons, shared backend pools, or native tool/MCP
+authorization as part of this phase.
 
 ## 14. Test Plan
 

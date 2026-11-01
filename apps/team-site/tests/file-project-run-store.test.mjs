@@ -7,12 +7,14 @@ import { createFileProjectRunStore } from "../infrastructure/file-project-run-st
 
 async function fixture() {
   const workdir = await mkdtemp(join(tmpdir(), "ogs-project-run-snapshot-"));
+  const controlRoot = await mkdtemp(join(tmpdir(), "ogs-project-control-"));
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "ogs-project-workspace-"));
   const task = {
     taskId: "task-1", taskNumber: 1, currentRunId: "run-1", runIds: ["run-1"],
     teamVersionId: "team-1", teamCoreDigest: "a".repeat(64), teamDigestVersion: 3
   };
-  const project = { projectId: "project-1", workdir, taskRecords: [task] };
-  const runDir = join(workdir, ".ogs", "runs", "run-1");
+  const project = { projectId: "project-1", workdir, ogsDir: controlRoot, workspaceDir: workspaceRoot, taskRecords: [task] };
+  const runDir = join(controlRoot, ".ogs", "runs", "run-1");
   await mkdir(join(runDir, "control"), { recursive: true });
   await writeFile(join(runDir, "run-owner.json"), JSON.stringify({
     version: 1, runKind: "project_task", projectId: project.projectId, taskId: task.taskId,
@@ -22,7 +24,7 @@ async function fixture() {
   await writeFile(join(runDir, "run-plan.json"), JSON.stringify({ runId: "run-1" }));
   await writeFile(join(runDir, "control", "state.json"), JSON.stringify({ runId: "run-1", status: "completed" }));
   await writeFile(join(runDir, "task.json"), JSON.stringify({ prompt: "task" }));
-  return { workdir, project, runDir };
+  return { workdir, controlRoot, workspaceRoot, project, runDir };
 }
 
 test("Project Run snapshots require a safe Run directory and matching owner before reads", async (t) => {
@@ -32,7 +34,7 @@ test("Project Run snapshots require a safe Run directory and matching owner befo
       const snapshot = await createFileProjectRunStore().readSnapshot(value.project, "run-1");
       assert.equal(snapshot.plan.runId, "run-1");
       assert.equal(snapshot.state.status, "completed");
-    } finally { await rm(value.workdir, { recursive: true, force: true }); }
+    } finally { await rm(value.workdir, { recursive: true, force: true }); await rm(value.controlRoot, { recursive: true, force: true }); await rm(value.workspaceRoot, { recursive: true, force: true }); }
   });
 
   await t.test("rejects a Run directory junction before reading snapshot files", async (t) => {
@@ -47,6 +49,8 @@ test("Project Run snapshots require a safe Run directory and matching owner befo
       throw error;
     } finally {
       await rm(value.workdir, { recursive: true, force: true });
+      await rm(value.controlRoot, { recursive: true, force: true });
+      await rm(value.workspaceRoot, { recursive: true, force: true });
       await rm(outside, { recursive: true, force: true });
     }
   });
@@ -56,7 +60,7 @@ test("Project Run snapshots require a safe Run directory and matching owner befo
     try {
       value.project.taskRecords[0] = { ...value.project.taskRecords[0], taskId: "task-other" };
       await assert.rejects(createFileProjectRunStore().readSnapshot(value.project, "run-1"), /does not belong/);
-    } finally { await rm(value.workdir, { recursive: true, force: true }); }
+    } finally { await rm(value.workdir, { recursive: true, force: true }); await rm(value.controlRoot, { recursive: true, force: true }); await rm(value.workspaceRoot, { recursive: true, force: true }); }
   });
 
   for (const filename of ["task.json", "run-plan.json"]) {
@@ -73,7 +77,25 @@ test("Project Run snapshots require a safe Run directory and matching owner befo
           throw error;
         }
         await assert.rejects(createFileProjectRunStore().validateResume(value.project, "run-1"), /symlinks or junctions/);
-      } finally { await rm(value.workdir, { recursive: true, force: true }); }
+      } finally { await rm(value.workdir, { recursive: true, force: true }); await rm(value.controlRoot, { recursive: true, force: true }); await rm(value.workspaceRoot, { recursive: true, force: true }); }
     });
+  }
+});
+
+test("Project Run evidence and material paths use separate control and business roots", async () => {
+  const value = await fixture();
+  try {
+    const store = createFileProjectRunStore();
+    const snapshot = await store.readSnapshot(value.project, "run-1");
+    assert.equal(snapshot.plan.runId, "run-1");
+    const material = store.materialInputs({
+      ...value.project,
+      materials: { version: 1, materials: [{ materialId: "brief", path: "brief.md", contentType: "text/markdown" }] }
+    });
+    assert.equal(material[0].sourcePath, join(value.workspaceRoot, "brief.md"));
+  } finally {
+    await rm(value.workdir, { recursive: true, force: true });
+    await rm(value.controlRoot, { recursive: true, force: true });
+    await rm(value.workspaceRoot, { recursive: true, force: true });
   }
 });

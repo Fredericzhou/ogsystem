@@ -1,3 +1,5 @@
+import { projectWorkspaceDirectory } from "../domain/project.mjs";
+
 export function createTaskExecutionUseCases({
   projectStore,
   teamStore,
@@ -66,7 +68,7 @@ export function createTaskExecutionUseCases({
 
       const materials = retryInputs || (project.materials?.materials || []).map((item) => ({
         materialId: item.materialId,
-        sourcePath: identifiers.resolveProjectMaterial(project.workdir, item.path),
+        sourcePath: identifiers.resolveProjectMaterial(projectWorkspaceDirectory(project), item.path),
         contentType: item.contentType
       }));
       const reservedRunId = identifiers.createRunId(now());
@@ -96,7 +98,7 @@ export function createTaskExecutionUseCases({
             readinessChecked: mode === "sandbox",
             idempotencyKey: `task:${projectId}:${taskId}:${attemptKey}`,
             materialInputsOverride: materials,
-            materialSourceRoot: retrySourceRoot || project.workdir,
+            materialSourceRoot: retrySourceRoot || projectWorkspaceDirectory(project),
             materialSnapshotPolicy: materialSnapshotPolicy || { kind: "project_current" },
             recordTask: false
           });

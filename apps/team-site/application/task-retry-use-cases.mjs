@@ -1,3 +1,5 @@
+import { projectWorkspaceDirectory } from "../domain/project.mjs";
+
 export function createTaskRetryUseCases({ taskStore, projectStore, runStore }) {
   if (typeof taskStore?.startTask !== "function") {
     throw new TypeError("Task retry requires a Task start operation.");
@@ -62,7 +64,7 @@ async function retryFromTask(project, task, { projectId, taskId, mode, idempoten
       sourcePath: runStore.resolveMaterialPath(projectId, item.path),
       contentType: item.contentType
     }));
-    retrySourceRoot = project.workdir;
+    retrySourceRoot = projectWorkspaceDirectory(project);
     materialSnapshotPolicy = {
       kind: "current_project_fallback",
       sourceRunId: originalRunId,

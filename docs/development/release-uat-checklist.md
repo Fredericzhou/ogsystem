@@ -60,6 +60,16 @@ new project; historical development data and interfaces are not migration or com
     `stopping` to `stopped` transition. Repeat the panel switch, return, scroll, and link checks at
     desktop, tablet, and mobile viewports. A missing OpenCode model, credential, or completed real
     Sandbox run is a blocker; a mock runner does not satisfy these scenarios.
+14. Verify directory ownership with one shared business workspace and two independent Team control
+    roots. Run two different TeamVersions against the same workspace and confirm each Run is stored
+    only under its own `<ogs-dir>/.ogs/runs/<run-id>`, while business files remain directly in the
+    shared workspace without generated `source/`, `destination/`, or workspace `.ogs` directories.
+    Record both TeamVersion IDs, both Run IDs, the two control roots, the shared workspace path, and
+    before/after directory listings.
+15. Change the TeamVersion after a completed Run. Confirm the old Run's `team-version.json`, asset
+    snapshot, digest, events, and result remain unchanged; the next Run records the new TeamVersion
+    and digest. Confirm Studio Simulation history remains in `.studio/simulations` and is absent from
+    Project Task history and Deliverables.
 
 ## Manual Evidence Record
 
@@ -84,6 +94,8 @@ responsible person. A blocked or evidence-free row is not a pass.
 | 11 | Accessibility evaluator / Accessibility evaluator | Blocked | Device model/OS, browser/version, assistive technology/version, viewport/zoom; keyboard path and focus order; screen-reader names, states, and announcements; recording or notes for any blocker and its reproduction steps. | No real supported device or screen reader is available in this execution context; accessibility evaluator owns completion. |
 | 12 | Workflow operator / Product owner | Blocked | TeamVersion ID, Simulation ID, OpenCode/model configuration, final status, role transcript captures, expanded diagnostic capture, green Flow capture, artifact URL, console log. | Requires a real browser workflow and available OpenCode `gpt-6-luna` credentials; mock or API-only execution does not count. |
 | 13 | Workflow operator / Product owner | Blocked | Artifact listing and file captures before/after refresh; second Simulation ID; stop request and `stopping`/`stopped` timestamps; desktop/tablet/mobile viewport evidence. | Requires a live run long enough to exercise graceful stop and a real browser. |
+| 14 | Framework developer / Product owner | Not run | Two control roots, one shared workspace path, two TeamVersion IDs, two Run IDs, before/after directory listings, and proof that no workspace `.ogs`, `source`, or `destination` directory was generated. | Must be executed against the new control-root/workspace contract. |
+| 15 | Framework developer / Product owner | Not run | v1 and v2 TeamVersion IDs and digests; unchanged v1 Run manifest, asset snapshot and result; v2 Run evidence; Studio Simulation and Project history listings. | Must prove version freezing and Studio/Projects namespace isolation. |
 
 ## Release Gate
 

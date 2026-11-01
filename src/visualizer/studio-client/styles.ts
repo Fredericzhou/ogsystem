@@ -18,6 +18,11 @@ export function injectStudioGraphStyles(): void {
       overflow: hidden;
       container-type: inline-size;
     }
+    .studio-graph-island .studio-graph-canvas {
+      background-color: #f7faf8;
+      background-image: radial-gradient(circle at 1px 1px, rgba(57, 108, 87, .11) 1px, transparent 1.2px);
+      background-size: 16px 16px;
+    }
     .studio-canvas-shell.is-fullscreen .studio-graph-island {
       height: calc(100vh - 108px);
     }
@@ -273,13 +278,19 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-canvas .x6-node.is-runtime-active rect:not(.studio-runtime-activity-ring),
     .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type {
-      filter: drop-shadow(0 0 0.55rem rgba(56, 189, 248, 0.22));
-      animation: studio-node-active-pulse 2400ms ease-in-out infinite;
+      filter: drop-shadow(0 0 0.42rem rgba(16, 185, 129, 0.22));
+      animation: studio-agent-aura 2500ms cubic-bezier(.4, 0, .2, 1) infinite;
+    }
+    .studio-graph-island[data-runtime-focus="review"] .x6-edge:not(.is-runtime-active) .connection,
+    .studio-graph-island[data-runtime-focus="review"] .x6-node:not(.is-runtime-waiting-review) rect,
+    .studio-graph-island[data-runtime-focus="review"] .x6-node:not(.is-runtime-waiting-review) path:first-of-type {
+      opacity: .38;
     }
     .studio-graph-canvas .studio-runtime-activity {
       pointer-events: none;
     }
     .studio-graph-canvas .studio-runtime-activity-ring {
+      display: none;
       fill: none;
       stroke: #22a6c8;
       stroke-linejoin: round;
@@ -313,6 +324,17 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node.is-runtime-completed rect,
     .studio-graph-canvas .x6-node.is-runtime-completed path:first-of-type {
       filter: drop-shadow(0 0 0.22rem rgba(52, 211, 153, 0.2));
+      animation: studio-runtime-settle 700ms cubic-bezier(.16, 1, .3, 1) 1;
+    }
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .x6-node.is-runtime-completed rect,
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .x6-node.is-runtime-completed path:first-of-type,
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-data-packet,
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-handoff-marker {
+      animation: none !important;
+    }
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-data-packets,
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-handoffs {
+      display: none;
     }
     .studio-graph-canvas .x6-node[data-runtime-status="waiting"] rect,
     .studio-graph-canvas .x6-node[data-runtime-status="waiting"] path:first-of-type {
@@ -332,8 +354,8 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node.has-human-gate:not(.is-runtime-waiting-review) path:first-of-type {
       stroke-dasharray: 8 4;
     }
-    .studio-graph-canvas .studio-runtime-status-bg { fill: #e6f3ee; stroke: #7db39e; stroke-width: 0.8px; }
-    .studio-graph-canvas .studio-runtime-status-label { fill: #245b46; font-size: 10px; font-weight: 650; pointer-events: none; }
+    .studio-graph-canvas .studio-runtime-status-bg { fill: #e6f3ee; stroke: #7db39e; stroke-width: 0.8px; opacity: .7; }
+    .studio-graph-canvas .studio-runtime-status-label { fill: #245b46; font-size: 9px; font-weight: 650; opacity: .72; pointer-events: none; }
     .studio-graph-canvas .studio-runtime-status[data-status="running"] .studio-runtime-status-bg { fill: #e2f2fa; stroke: #79b7d2; }
     .studio-graph-canvas .studio-runtime-status[data-status="running"] .studio-runtime-status-label { fill: #225b72; }
     .studio-graph-canvas .studio-runtime-status[data-status="technical_waiting"] .studio-runtime-status-bg { fill: #e8effb; stroke: #7d9fda; }
@@ -344,6 +366,76 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .studio-runtime-status[data-status="waiting_review"] .studio-runtime-status-label { fill: #80590f; }
     .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-runtime-status-bg { fill: #fde6e2; stroke: #d68579; }
     .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-runtime-status-label { fill: #8f392f; }
+    .studio-graph-canvas .studio-runtime-status-icon {
+      pointer-events: none;
+      overflow: visible;
+    }
+    .studio-graph-canvas .studio-runtime-status-icon-bg {
+      fill: #f4faf7;
+      stroke: #7db39e;
+      stroke-width: 1px;
+      vector-effect: non-scaling-stroke;
+    }
+    .studio-graph-canvas .studio-runtime-status-icon-shape {
+      fill: none;
+      stroke: #245b46;
+      stroke-width: 1.45px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+    .studio-graph-canvas .studio-runtime-status-icon-core { fill: #245b46; stroke: none; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-bg { fill: #e4f7ef; stroke: #34a878; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-shape { stroke: #15835c; animation: studio-runtime-gear-spin 1600ms linear infinite; transform-origin: 9px 9px; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-bg { fill: #e9f0fb; stroke: #7d9fda; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-shape { stroke: #315b9b; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-bg,
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-bg { fill: #fff7e8; stroke: #d7a449; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-shape,
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-shape { stroke: #9b6a13; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-bg { fill: #e6f5ed; stroke: #68ad8b; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-shape { stroke: #20734d; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-bg { fill: #fff0ed; stroke: #d68579; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-shape { stroke: #b74436; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="stopped"] .studio-runtime-status-icon-bg,
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="paused"] .studio-runtime-status-icon-bg { fill: #eef2f0; stroke: #89958f; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="stopped"] .studio-runtime-status-icon-shape,
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="paused"] .studio-runtime-status-icon-shape { stroke: #64716b; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="pending"] .studio-runtime-status-icon-bg,
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="idle"] .studio-runtime-status-icon-bg { fill: #f1f5f3; stroke: #9aaba3; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="pending"] .studio-runtime-status-icon-shape,
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="idle"] .studio-runtime-status-icon-shape { stroke: #687970; }
+    .studio-graph-canvas .studio-runtime-handoffs { pointer-events: none; overflow: visible; }
+    .studio-graph-canvas .studio-runtime-handoff-marker {
+      fill: #f4faf7;
+      stroke: #2ca875;
+      stroke-width: 1.4px;
+      vector-effect: non-scaling-stroke;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    .studio-graph-canvas .studio-runtime-handoff-marker.is-active {
+      fill: #34d399;
+      stroke: #147a59;
+      animation: studio-runtime-handoff-pulse 1200ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .studio-runtime-handoff-marker.is-waiting { fill: #f8cf72; stroke: #a86c12; }
+    .studio-graph-canvas .studio-runtime-handoff-marker.is-failed { fill: #e88676; stroke: #9f3a2f; }
+    .studio-graph-canvas .studio-runtime-handoff-marker.is-stopped { fill: #a8b3ad; stroke: #64716b; }
+    .studio-graph-canvas .studio-runtime-data-packets { pointer-events: none; overflow: visible; }
+    .studio-graph-canvas .studio-runtime-data-packet {
+      fill: #d9fff0;
+      stroke: #0f9f6e;
+      stroke-width: 1px;
+      vector-effect: non-scaling-stroke;
+      filter: drop-shadow(0 0 4px rgba(16, 185, 129, .72));
+    }
+    .studio-graph-canvas .studio-runtime-data-packets[data-waiting="true"] .studio-runtime-data-packet {
+      fill: #fff1bf;
+      stroke: #c98b1a;
+      filter: drop-shadow(0 0 4px rgba(217, 164, 65, .58));
+    }
+    .studio-graph-canvas .x6-edge[data-runtime-handoff-count] .connection { stroke-linecap: round; }
     .studio-graph-canvas .x6-edge .connection {
       transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease, stroke-dasharray 160ms ease;
       stroke-linecap: round;
@@ -426,6 +518,8 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-activity-ring,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-activity-dot,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-status-icon-shape,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-handoff-marker,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
@@ -433,6 +527,9 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-edge.is-pending-preview .connection,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-edge.is-runtime-active .connection {
       animation: none !important;
+    }
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .studio-runtime-data-packet {
+      display: none;
     }
     @keyframes studio-node-focus-pulse {
       0% {
@@ -481,6 +578,27 @@ export function injectStudioGraphStyles(): void {
     @keyframes studio-runtime-review-pulse {
       0%, 100% { opacity: .7; stroke-width: 2px; }
       50% { opacity: 1; stroke-width: 3.5px; }
+    }
+    @keyframes studio-runtime-gear-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes studio-runtime-hourglass-pulse {
+      0%, 100% { opacity: .62; transform: scale(.92); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+    @keyframes studio-runtime-handoff-pulse {
+      0%, 100% { opacity: .62; transform: scale(.84); }
+      50% { opacity: 1; transform: scale(1.12); }
+    }
+    @keyframes studio-agent-aura {
+      0%, 100% { filter: drop-shadow(0 0 0.28rem rgba(16, 185, 129, .18)); }
+      50% { filter: drop-shadow(0 0 1rem rgba(16, 185, 129, .42)); }
+    }
+    @keyframes studio-runtime-settle {
+      0% { transform: scale(.985); filter: drop-shadow(0 0 0 rgba(52, 211, 153, 0)); }
+      42% { transform: scale(1.035); filter: drop-shadow(0 0 .9rem rgba(52, 211, 153, .48)); }
+      100% { transform: scale(1); filter: drop-shadow(0 0 .22rem rgba(52, 211, 153, .2)); }
     }
     @keyframes studio-node-error-shake {
       0%, 100% { transform: translateX(0); }
