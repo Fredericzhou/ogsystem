@@ -564,3 +564,86 @@ P2: Aider, Goose, Mistral Vibe
 ```
 
 OpenCode remains the primary server-based backend. Pi, Qwen Code, Kimi Code, and Gemini CLI are complementary native adapters, not replacements for the existing OpenCode implementation.
+
+## DeepSeek Harness and DSH Superagent
+
+The public [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype) is a research prototype for a long-running agent system. It is not itself a stable coding-agent CLI backend. The public DeepSeek Harness product is a plugin-based agent host with web/desktop surfaces; the prototype package does not expose a standalone `bin` entrypoint or a documented stable ACP/RPC contract for external orchestration.
+
+Therefore, DeepSeek Harness is not added to the first native backend set:
+
+```text
+P0/P1 native backends: opencode, codex, pi, qwen, kimi, gemini
+Optional future host integration: DeepSeek Harness
+```
+
+### Capability boundary
+
+```text
+OGS       = verifiable multi-role graph runtime
+DSH       = long-running event-driven agent work system
+Harness   = plugin-based agent host and execution surface
+```
+
+DSH is stronger at external event intake, durable tickets, human attention management, outbox delivery, and long-lived autonomous work. OGS is stronger at explicit responsibility seats, Mermaid graph semantics, branching, joins, loops, context maps, flow contracts, model binding, replay, and run evidence.
+
+The useful composition boundary is:
+
+```text
+GitHub / Feishu / Webhook / Schedule
+  -> Trigger / Admission / Mandate
+  -> Project Task
+  -> OGS Graph Run
+  -> Native CLI Agent
+  -> Artifact / Review / Channel
+```
+
+### Designs worth borrowing
+
+The following DSH concepts are candidates for a future Project Orchestration layer above the Graph Runtime:
+
+- `Trigger` and `Thread` for external event streams and cursor-based recovery
+- `Mandate` for immutable authorization facts: policy version, actor, scope, strength, and matched rules
+- `Ticket` and `Assignment` for separating long-lived work from one executor/session attempt
+- structured attention states such as `waiting`, `blocked`, `failed`, and `ready`
+- an `Outbox` for commit-after-send, retry, ordering, idempotency, and external Channel delivery
+- low-noise notifications that speak only when a person can act or use a result
+
+These concepts should map to existing OGS boundaries instead of replacing them:
+
+```text
+DSH Trigger      -> Project Event
+DSH Thread       -> Source Conversation / Thread
+DSH Mandate      -> Task Authorization
+DSH Ticket       -> Project Task
+DSH Assignment   -> Task Run Binding
+DSH Attention    -> Human Review / Blocked State
+DSH Channel      -> Project Output Channel
+```
+
+### Designs not to copy directly
+
+DSH is a research prototype and relies more heavily on a specific Harness Session and model judgement. OGS should not:
+
+- make DeepSeek Harness a required runtime dependency
+- treat a Harness Session as a portable CLI protocol
+- move authorization entirely into prompts
+- replace OGS `System`, `Role`, `Run`, `Artifact`, and Semantic IR with DSH Tickets
+- assume one repository and one agent team per deployment
+
+OGS must keep deterministic Law, Schema, Flow Contract, checkpoint, and artifact validation around any model or Harness decision.
+
+### Future Harness integration gate
+
+DeepSeek Harness can become a supported adapter only after an external integration contract is available and verified for:
+
+- documented headless startup
+- stable session create/resume protocol
+- streaming tool and text events
+- structured output
+- cancellation and timeout
+- workspace/sandbox selection
+- model discovery
+- process ownership and shutdown
+- raw-event capture and audit compatibility
+
+Until then, use DSH as a source of Project Orchestration design ideas, or run it as an external system that submits authorized tasks to an OGS HTTP/API entrypoint.

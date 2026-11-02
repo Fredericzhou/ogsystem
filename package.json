@@ -37,6 +37,7 @@
     "typecheck:studio-client": "tsc -p tsconfig.visualizer-client.json --noEmit",
     "build:studio-client": "esbuild src/visualizer/studio-client/main.ts --bundle --format=iife --global-name=OGSStudioGraphBundle --outfile=dist/visualizer/studio-client/studio-graph.js",
     "build:visualizer-client": "node scripts/build-visualizer-client.mjs",
+    "desktop": "electron electron/main.cjs",
     "build": "pnpm run typecheck:studio-client && tsc -p tsconfig.json && pnpm run build:studio-client && pnpm run build:visualizer-client",
     "prepack": "pnpm run build",
     "test": "pnpm build && node scripts/run-node-tests.mjs",

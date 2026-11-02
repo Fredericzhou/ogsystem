@@ -1657,6 +1657,21 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         entry.click();
       });
     });
+    root.querySelectorAll(".chat-mention-callout[data-handoff-role]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const targetRoleId = btn.dataset.handoffRole;
+        if (targetRoleId) {
+          historyGraph?.update({ selectedRoleId: targetRoleId, selectedFlowKey: "" });
+          focusHistoryEntry({ roleId: targetRoleId });
+        }
+      });
+      btn.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        btn.click();
+      });
+    });
     const workspaceAvailable = Boolean(simulationsPayload.workspaceAvailable || simulation.workspaceAvailable);
     const workspaceLabel = state.locale === "en" ? "Open workspace" : "工作目录";
     const auditLabel = state.locale === "en" ? "Run audit" : "运行审计";
@@ -1668,6 +1683,11 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       const actions = document.createElement("div");
       actions.className = "page-heading-actions";
       actions.append(statusNode);
+      const openDrawerButton = document.createElement("button");
+      openDrawerButton.type = "button";
+      openDrawerButton.className = "secondary-button";
+      openDrawerButton.textContent = state.locale === "en" ? "View Artifacts" : "产物速览";
+      actions.append(openDrawerButton);
       const artifactsLink = document.createElement("a");
       artifactsLink.className = "secondary-button";
       artifactsLink.href = studioArtifactsBrowserUrl(teamVersionId, simulationId, simulation.teamId);
@@ -1684,6 +1704,58 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       workspaceButton.textContent = workspaceLabel;
       actions.append(workspaceButton);
       heading.append(actions);
+
+      root.insertAdjacentHTML("beforeend", `<aside id="studio-simulation-artifact-drawer" class="studio-asset-drawer studio-artifact-drawer" aria-label="运行产物" hidden><div class="studio-asset-drawer-head"><strong>${state.locale === "en" ? "Run Artifacts" : "本次运行产物"}</strong><button type="button" class="close-button" data-artifact-drawer-close aria-label="关闭">×</button></div><div class="studio-artifact-drawer-body"><div class="studio-artifact-drawer-list"><p class="project-loading">${state.locale === "en" ? "Loading artifacts…" : "正在读取产物…"}</p></div><div class="studio-artifact-drawer-preview"><div class="panel-head"><strong data-drawer-artifact-title>${state.locale === "en" ? "Select an artifact" : "选择产物查看内容"}</strong><a class="secondary-button" data-drawer-artifact-download href="#" hidden target="_blank">${state.locale === "en" ? "Download" : "下载"}</a></div><pre data-drawer-artifact-content>${state.locale === "en" ? "Select an artifact from the list to preview." : "从列表中选择产物以查看内容。"}</pre></div></div></aside>`);
+
+      openDrawerButton.addEventListener("click", async () => {
+        const drawer = root.querySelector("#studio-simulation-artifact-drawer");
+        if (!drawer) return;
+        drawer.hidden = !drawer.hidden;
+        if (!drawer.hidden) {
+          const listContainer = drawer.querySelector(".studio-artifact-drawer-list");
+          const titleEl = drawer.querySelector("[data-drawer-artifact-title]");
+          const contentEl = drawer.querySelector("[data-drawer-artifact-content]");
+          const downloadLink = drawer.querySelector("[data-drawer-artifact-download]");
+          listContainer.innerHTML = `<p class="project-loading">${state.locale === "en" ? "Loading artifacts…" : "正在读取产物…"}</p>`;
+          try {
+            const apiBase = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/artifacts`;
+            const resp = await pageFetch(apiBase);
+            const payload = await resp.json();
+            const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter((entry) => {
+              const p = String(entry.path || "");
+              return /^roles\/[^/]+\/(?:outbox\.md|result\.json)$/.test(p) || /^roles\/[^/]+\/executions\/[^/]+\/execution-outcome\.json$/.test(p);
+            });
+            if (!entries.length) {
+              listContainer.innerHTML = `<p class="empty-note">${state.locale === "en" ? "No artifacts found." : "本次运行暂无可展示产物。"}</p>`;
+              return;
+            }
+            listContainer.innerHTML = entries.map((entry, idx) => `<button type="button" class="studio-artifact-drawer-entry${idx === 0 ? " selected" : ""}" data-artifact-path="${esc(entry.path)}"><strong>${esc(entry.path)}</strong><span>${Number(entry.size || 0).toLocaleString()} bytes</span></button>`).join("");
+            const selectEntry = async (entry, btn) => {
+              listContainer.querySelectorAll(".studio-artifact-drawer-entry").forEach((b) => b.classList.toggle("selected", b === btn));
+              titleEl.textContent = entry.path;
+              const rawUrl = `${apiBase}/${entry.path.split("/").map(encodeURIComponent).join("/")}`;
+              downloadLink.hidden = false;
+              downloadLink.href = `${rawUrl}?download=1`;
+              contentEl.textContent = state.locale === "en" ? "Reading file…" : "正在读取文件…";
+              try {
+                const fileResp = await pageFetch(rawUrl);
+                contentEl.textContent = fileResp.ok ? await fileResp.text() : "无法读取该文件。";
+              } catch (err) {
+                contentEl.textContent = err.message || "无法读取该文件。";
+              }
+            };
+            const btns = [...listContainer.querySelectorAll("[data-artifact-path]")];
+            btns.forEach((btn, idx) => btn.addEventListener("click", () => selectEntry(entries[idx], btn)));
+            if (entries[0]) await selectEntry(entries[0], btns[0]);
+          } catch (err) {
+            listContainer.innerHTML = `<p class="run-error">${esc(err.message || "无法读取产物")}</p>`;
+          }
+        }
+      });
+      root.querySelector("[data-artifact-drawer-close]")?.addEventListener("click", () => {
+        const drawer = root.querySelector("#studio-simulation-artifact-drawer");
+        if (drawer) drawer.hidden = true;
+      });
     }
     const list = (simulationsPayload.simulations || []).map((item) => {
       const href = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(item.simulationId)}`;
@@ -3793,11 +3865,38 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         });
         const validation = await result.json();
         if (!isCurrentRequest(pageRequest)) return;
+        const problemsDrawer = document.querySelector("#studio-problems-drawer");
+        const problemsList = problemsDrawer?.querySelector(".studio-problems-list");
+        const statusElement = $("#project-design-status");
         if (!result.ok || validation.ok === false) {
-          setEditorState(validation.error || validation.diagnostics?.map((item) => item.message).join("; ") || (state.locale === "en" ? "Structure validation failed." : "结构校验失败"));
+          const diagnostics = validation.diagnostics || [];
+          const errorMsg = validation.error || diagnostics.map((item) => item.message).join("; ") || (state.locale === "en" ? "Structure validation failed." : "结构校验失败");
+          setEditorState(errorMsg);
+          if (problemsDrawer && problemsList && diagnostics.length) {
+            problemsList.innerHTML = diagnostics.map((d) => {
+              const roleTag = d.roleId ? `<span class="problem-role-tag">${esc(d.roleId)}</span>` : "";
+              const flowTag = d.flowKey ? `<span class="problem-role-tag">${esc(d.flowKey)}</span>` : "";
+              return `<li class="studio-problem-item" data-problem-role="${esc(d.roleId || "")}" data-problem-flow="${esc(d.flowKey || "")}" tabindex="0"><span class="problem-icon">●</span><div class="problem-item-text"><span>${esc(d.message || d.code || "校验错误")}</span>${roleTag}${flowTag}</div></li>`;
+            }).join("");
+            problemsDrawer.hidden = false;
+            let trigger = statusElement?.querySelector(".studio-problems-trigger");
+            if (!trigger && statusElement) {
+              trigger = document.createElement("button");
+              trigger.type = "button";
+              trigger.className = "studio-problems-trigger";
+              trigger.setAttribute("data-touch-target-exempt", "");
+              trigger.innerHTML = `<span class="problems-dot">●</span> <span>${diagnostics.length} ${state.locale === "en" ? "Problems" : "个问题"}</span>`;
+              trigger.addEventListener("click", () => {
+                problemsDrawer.hidden = !problemsDrawer.hidden;
+              });
+              statusElement.append(trigger);
+            }
+          }
           return;
         }
         setEditorState(state.locale === "en" ? "Structure validation passed." : "结构校验通过");
+        if (problemsDrawer) problemsDrawer.hidden = true;
+        statusElement?.querySelector(".studio-problems-trigger")?.remove();
       },
       onSaveWorkbench: async () => {
         if (!dirty) { setEditorState(state.locale === "en" ? "There are no unsaved changes." : "没有待保存的修改"); return; }
@@ -3835,6 +3934,29 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     stage.removeAttribute("aria-busy");
     markStudioGraphReady(stage);
     setEditorState(state.locale === "en" ? "Team graph loaded and ready to edit." : "团队结构已加载，可以编辑。");
+    const problemsDrawer = document.querySelector("#studio-problems-drawer");
+    problemsDrawer?.querySelector("[data-problems-close]")?.addEventListener("click", () => {
+      problemsDrawer.hidden = true;
+    });
+    problemsDrawer?.addEventListener("click", (event) => {
+      const item = event.target.closest?.(".studio-problem-item");
+      if (!item) return;
+      const targetRole = item.dataset.problemRole;
+      const targetFlow = item.dataset.problemFlow;
+      if (targetRole) {
+        selectedRoleId = targetRole;
+        selectedFlowKey = "";
+        updateStudioGraph?.update?.({ selectedRoleId: targetRole, selectedFlowKey: "" });
+        renderInspector();
+        showAssetPanel("properties");
+      } else if (targetFlow) {
+        selectedRoleId = "";
+        selectedFlowKey = targetFlow;
+        updateStudioGraph?.update?.({ selectedRoleId: "", selectedFlowKey: targetFlow });
+        renderInspector();
+        showAssetPanel("properties");
+      }
+    });
     void resumeStudioProgress(projectId, stage, updateStudioGraph, debugPanel, setDebugView, syncDebugRunButton, setEditorState, pageRequest);
   } catch (error) { if (isAbort(error)) return;
     stage.removeAttribute("aria-busy");
@@ -4067,6 +4189,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       workbench.append(graphPanel);
       workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><div><strong>调试</strong><span class="team-debug-run-state" data-debug-run-state></span></div><div class="team-debug-panel-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></div></header><div class="debug-view-tabs" role="tablist" aria-label="调试视图"><button type="button" role="tab" data-debug-view="config" aria-selected="true">配置</button><button type="button" role="tab" data-debug-view="run" aria-selected="false">运行过程</button></div><div class="team-debug-panel-content"><div class="debug-config-view" data-debug-view-panel="config"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><fieldset class="debug-mode-choice" id="team-simulation-mode"><legend>运行方式</legend><label><input type="radio" name="studioSimulationMode" value="dry-run" checked><span data-debug-mode-label="dry-run">仿真</span><small data-debug-mode-description="dry-run">仅预览流程，不调用模型</small></label><label><input type="radio" name="studioSimulationMode" value="sandbox"><span data-debug-mode-label="sandbox">沙箱</span><small data-debug-mode-description="sandbox">调用真实模型，但运行在隔离环境</small></label><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p></fieldset></div><div class="debug-run-view" data-debug-view-panel="run" hidden><div id="team-simulation-result" aria-live="polite"></div></div></div></aside>');
       workbench.insertAdjacentHTML("beforeend", '<aside id="team-build-panel" class="studio-asset-drawer studio-build-panel" aria-label="AI 构建" aria-hidden="true"><header class="studio-asset-drawer-head team-build-panel-head" tabindex="0" aria-label="拖动 AI 构建面板"><strong>AI 构建</strong><button class="close-button" type="button" data-team-build-close aria-label="关闭 AI 构建">×</button></header><div class="studio-build-panel-content"><section id="team-assistant" class="team-assistant-panel"></section></div></aside>');
+      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-problems-drawer" class="studio-problems-drawer" aria-label="诊断问题" hidden><div class="studio-problems-head"><div class="studio-problems-title"><span class="problem-icon">⚠️</span><strong>' + (state.locale === "en" ? "Problems & Diagnostics" : "结构校验问题与诊断") + '</strong></div><button type="button" class="close-button" data-problems-close aria-label="' + (state.locale === "en" ? "Close problems" : "关闭诊断面板") + '">×</button></div><ul class="studio-problems-list"></ul></aside>');
       const simulationMode = workbench.querySelector("#team-simulation-mode");
       if (simulationMode && !simulationMode.querySelector("[data-simulation-scenario]")) {
         simulationMode.insertAdjacentHTML("beforeend", '<label class="debug-simulation-scenario"><span>仿真场景</span><select data-simulation-scenario><option value="">默认流程</option><option value="review-reject-once">审核先打回一次</option></select></label>');
@@ -5644,13 +5767,43 @@ function bindNavigationControls() {
     if (!(event.target instanceof Element) || !event.target.closest(".topbar-preferences")) closeTopbarMore();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeTopbarMore();
+    if (event.key === "Escape") {
+      closeTopbarMore();
+      const problemsDrawer = document.querySelector("#studio-problems-drawer:not([hidden])");
+      if (problemsDrawer) problemsDrawer.hidden = true;
+      const artifactDrawer = document.querySelector("#studio-simulation-artifact-drawer:not([hidden])");
+      if (artifactDrawer) artifactDrawer.hidden = true;
+      const closeAssetBtn = document.querySelector("#studio-asset-drawer:not([aria-hidden='true']) #studio-asset-drawer-close");
+      if (closeAssetBtn) closeAssetBtn.click();
+      const closeDebugBtn = document.querySelector("#team-debug-dialog:not([aria-hidden='true']) [data-team-debug-close]");
+      if (closeDebugBtn) closeDebugBtn.click();
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      const studioSave = document.querySelector("[data-studio-save-workspace]:not([disabled])");
+      if (studioSave && studioSave.offsetParent !== null) {
+        event.preventDefault();
+        studioSave.click();
+        return;
+      }
       const activeForm = document.querySelector(".page-content:not(.hidden) form:not([inert])");
       const submitBtn = activeForm?.querySelector('button[type="submit"]:not([disabled])');
       if (submitBtn) {
         event.preventDefault();
         submitBtn.click();
+      }
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      const debugRunBtn = document.querySelector("#team-simulation-run:not([disabled])");
+      if (debugRunBtn && debugRunBtn.offsetParent !== null) {
+        event.preventDefault();
+        debugRunBtn.click();
+      }
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "0") {
+      const resetViewBtn = document.querySelector('[data-studio-graph-action="reset-view"]');
+      if (resetViewBtn) {
+        event.preventDefault();
+        resetViewBtn.click();
       }
     }
   });
