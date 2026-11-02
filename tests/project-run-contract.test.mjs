@@ -24,7 +24,7 @@ import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 
 function fingerprint(digest = "fp-1") {
   return {
-    version: 7,
+    version: 8,
     algorithm: "sha256",
     digest,
     payload: {

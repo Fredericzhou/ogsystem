@@ -1503,7 +1503,7 @@ export async function inspectProjectBindingVisualization(workdir: string): Promi
         resolvedBinding:
           bindingKind === "profile"
             ? context.system.executionBinding[roleId]
-            : resolvedModel?.modelRef ?? binding?.modelRef,
+            : resolvedModel ? `${resolvedModel.backend}/${resolvedModel.modelId}` : binding?.modelId,
         variant: resolvedModel?.variant,
         timeoutMs: resolvedModel?.timeoutMs,
         maxOutputBytes: resolvedModel?.maxOutputBytes,

@@ -8,7 +8,7 @@ export type RemoteExecutionInput = {
 };
 
 export type RemoteExecutionRequest = {
-  protocolVersion: 1;
+  protocolVersion: 2;
   invocationId: string;
   idempotencyKey: string;
   runId: string;
@@ -21,7 +21,7 @@ export type RemoteExecutionRequest = {
 };
 
 export type RemoteExecutionResponse = {
-  protocolVersion: 1;
+  protocolVersion: 2;
   invocationId: string;
   completedAt: string;
   result: ExecutorResult;
@@ -39,7 +39,7 @@ function isExecutorBinding(value: unknown): value is ExecutorBinding {
   if (!isRecord(value)) return false;
   if (value.kind === "model") {
     return isRegisteredModelBackend(value.backend) &&
-      typeof value.modelId === "string" && typeof value.modelRef === "string" &&
+      typeof value.modelId === "string" &&
       (value.variant === undefined || typeof value.variant === "string");
   }
   if (value.kind !== "profile" || !isRecord(value.profile) || !isRecord(value.tool)) return false;
@@ -58,7 +58,7 @@ export function validateRemoteExecutionRequest(value: unknown): value is RemoteE
   const request = value;
   if (!isRecord(request.input)) return false;
   const input = request.input;
-  return request.protocolVersion === 1 &&
+  return request.protocolVersion === 2 &&
     typeof request.invocationId === "string" && request.invocationId.length > 0 &&
     typeof request.idempotencyKey === "string" && request.idempotencyKey.length > 0 &&
     typeof request.runId === "string" && request.runId.length > 0 &&
@@ -74,7 +74,7 @@ export function validateRemoteExecutionResponse(value: unknown, invocationId: st
   if (!isRecord(value) || !isRecord(value.result)) return false;
   const response = value as Record<string, unknown>;
   const result = response.result as Record<string, unknown>;
-  return response.protocolVersion === 1 && response.invocationId === invocationId &&
+  return response.protocolVersion === 2 && response.invocationId === invocationId &&
     typeof response.completedAt === "string" && Number.isFinite(Date.parse(response.completedAt)) &&
     Number.isInteger(result.exitCode) && typeof result.stdout === "string" &&
     typeof result.stderr === "string" && Array.isArray(result.args) &&

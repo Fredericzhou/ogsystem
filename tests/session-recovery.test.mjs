@@ -150,7 +150,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system, new Map([[
     "debate-summary",
-    { backend: "opencode", modelId: "balanced-gpt52", modelRef: "opencode/balanced-gpt52", bindingSource: "selection" }
+    { backend: "opencode", modelId: "opencode/balanced-gpt52", bindingSource: "selection" }
   ]]));
   const runDir = path.resolve(workdir, ".ogs/runs", "resume-branch-run");
   await mkdir(runDir, { recursive: true });
@@ -354,7 +354,7 @@ test("branch workspace isolation stores session directory under branch private w
   const system = await loadSystemFromMermaid(systemPath);
   const plan = createExecutionPlan(system, new Map([[
     system.entryRoleIds?.[0],
-    { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "codex/gpt-5.6-sol", bindingSource: "selection" }
+    { backend: "codex", modelId: "gpt-5.6-sol", bindingSource: "selection" }
   ]]));
   const runtimeConfig = validateRuntimeConfig(
     {

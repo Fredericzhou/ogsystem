@@ -373,8 +373,21 @@ async function runOnlineModelConnectivityCheck(args: {
     return;
   }
 
+  const opencodeModels = resolvedModels.filter(([, model]) => model.backend === "opencode");
+  for (const [roleId, model] of resolvedModels) {
+    if (model.backend === "opencode") continue;
+    args.report.providerHealth.push({
+      roleId,
+      modelRef: `${model.backend}/${model.modelId}`,
+      status: "skipped",
+      code: "DOCTOR_PROVIDER_ONLINE_SKIPPED",
+      message: `online connectivity probe is not implemented for backend ${model.backend}`
+    });
+  }
+  if (opencodeModels.length === 0) return;
+
   let serverTimeoutMs = ONLINE_CHECK_MIN_TIMEOUT_MS;
-  for (const [, selectionConfig] of resolvedModels) {
+  for (const [, selectionConfig] of opencodeModels) {
     serverTimeoutMs = Math.max(serverTimeoutMs, selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS);
   }
   serverTimeoutMs = Math.min(Math.max(serverTimeoutMs, ONLINE_CHECK_MIN_TIMEOUT_MS), ONLINE_CHECK_MAX_TIMEOUT_MS);
@@ -387,7 +400,7 @@ async function runOnlineModelConnectivityCheck(args: {
   });
 
   try {
-    for (const [roleId, selectionConfig] of resolvedModels) {
+  for (const [roleId, selectionConfig] of opencodeModels) {
       try {
         const checkTimeoutMs = Math.min(
           Math.max(selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS, ONLINE_CHECK_MIN_TIMEOUT_MS),
@@ -406,7 +419,7 @@ async function runOnlineModelConnectivityCheck(args: {
             required: ["ok"],
             additionalProperties: false
           },
-          modelRef: selectionConfig.modelRef,
+          modelRef: selectionConfig.modelId,
           variant: selectionConfig.variant,
           workdir: args.workdir,
           directory: args.targetDir,
@@ -416,24 +429,24 @@ async function runOnlineModelConnectivityCheck(args: {
         });
         args.report.providerHealth.push({
           roleId,
-          modelRef: selectionConfig.modelRef,
+          modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,
           status: "ok",
           code: "DOCTOR_PROVIDER_CONNECTIVITY_OK",
           message: "online connectivity ok"
         });
-        addNote(args.report, `online connectivity ok: ${roleId} -> ${selectionConfig.modelRef}`);
+        addNote(args.report, `online connectivity ok: ${roleId} -> ${selectionConfig.backend}/${selectionConfig.modelId}`);
       } catch (error) {
         const message = redactText(error instanceof Error ? error.message : String(error));
         args.report.providerHealth.push({
           roleId,
-          modelRef: selectionConfig.modelRef,
+          modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,
           status: "failed",
           code: "DOCTOR_PROVIDER_CONNECTIVITY_FAILED",
           message
         });
         addError(
           args.report,
-          `online connectivity failed: ${roleId} -> ${selectionConfig.modelRef} (${message})`
+          `online connectivity failed: ${roleId} -> ${selectionConfig.backend}/${selectionConfig.modelId} (${message})`
         );
       }
     }
@@ -606,7 +619,7 @@ export async function runDoctor(args: {
         for (const [roleId, selectionConfig] of resolvedSelection.resolvedByRoleId.entries()) {
           report.providerHealth.push({
             roleId,
-            modelRef: selectionConfig.modelRef,
+            modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,
             status: "skipped",
             code: "DOCTOR_PROVIDER_ONLINE_SKIPPED",
             message: "online provider credential check skipped; pass --online-check to probe connectivity"

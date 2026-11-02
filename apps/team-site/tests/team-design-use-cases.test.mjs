@@ -126,7 +126,7 @@ test("Studio persists model bindings from the same submitted authoring snapshot"
   const authoring = {
     version: 1,
     roles: {
-      analyst: { roleId: "analyst", bindingKind: "model", modelRef: "opencode/big-pickle" },
+      analyst: { roleId: "analyst", bindingKind: "model", backend: "opencode", modelId: "big-pickle" },
       router: { roleId: "router", bindingKind: "noop" }
     }
   };
@@ -144,15 +144,15 @@ test("Studio persists role fallback model references with an inherited or explic
   const authoring = {
     version: 1,
     roles: {
-      inherited: { roleId: "inherited", bindingKind: "model", modelSelectionSource: "default", fallbackModelRef: "opencode/backup" },
-      explicit: { roleId: "explicit", bindingKind: "model", modelRef: "claude/sonnet", fallbackModelRef: "codex/gpt-6-luna" }
+      inherited: { roleId: "inherited", bindingKind: "model", modelSelectionSource: "default", fallbackModelId: "codex-backup" },
+      explicit: { roleId: "explicit", bindingKind: "model", backend: "claude", modelId: "sonnet", fallbackModelId: "claude-backup" }
     }
   };
   await useCases.saveTeamDesignAssets(team.teamVersionId, { authoring, assets: {} });
   const assets = calls.find((call) => call[0] === "assets")[1].assets;
   assert.deepEqual(assets.modelSelection.roles, {
-    inherited: { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "opencode/backup" },
-    explicit: { backend: "claude", modelId: "sonnet", fallbackModelRef: "codex/gpt-6-luna" }
+    inherited: { backend: "codex", modelId: "gpt-6-luna", fallbackModelId: "codex-backup" },
+    explicit: { backend: "claude", modelId: "sonnet", fallbackModelId: "claude-backup" }
   });
 });
 
@@ -161,8 +161,8 @@ test("Studio keeps default model inheritance out of role overrides", async () =>
   const authoring = {
     version: 1,
     roles: {
-      inherited: { roleId: "inherited", bindingKind: "model", modelRef: "codex/gpt-6-luna", modelSelectionSource: "default" },
-      explicit: { roleId: "explicit", bindingKind: "model", modelRef: "opencode/big-pickle", modelSelectionSource: "role" }
+      inherited: { roleId: "inherited", bindingKind: "model", backend: "codex", modelId: "gpt-6-luna", modelSelectionSource: "default" },
+      explicit: { roleId: "explicit", bindingKind: "model", backend: "opencode", modelId: "big-pickle", modelSelectionSource: "role" }
     }
   };
   await useCases.saveTeamDesignAssets(team.teamVersionId, { authoring, assets: {} });

@@ -164,7 +164,7 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
         let metadataWritten = false;
         try {
           if (designChanged || assetsChanged) {
-            if (assetsChanged) {
+            if (assetsChanged || designChanged) {
               assetsWritten = true;
               await designUseCases.saveTeamDesignAssets(targetId, { authoring: candidate.authoring, assets: assetsForPersistence(candidate.assets) });
             }

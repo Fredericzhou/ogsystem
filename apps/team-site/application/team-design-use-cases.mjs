@@ -117,18 +117,13 @@ export function createTeamDesignUseCases({
     for (const [roleId, role] of Object.entries(roles)) {
       if (role?.bindingKind !== "model") continue;
       const override = {};
-      const modelRef = String(role.modelRef || "").trim();
       const fallbackModelId = String(role.fallbackModelId || "").trim();
       if (role.modelSelectionSource !== "default") {
         const explicitBackend = String(role.backend || "").trim();
         const explicitModelId = String(role.modelId || "").trim();
-        const separator = modelRef.indexOf("/");
         if (explicitBackend && explicitModelId) {
           override.backend = explicitBackend;
           override.modelId = explicitModelId;
-        } else if (separator > 0 && separator < modelRef.length - 1) {
-          override.backend = modelRef.slice(0, separator);
-          override.modelId = modelRef.slice(separator + 1);
         } else {
           throw new Error(`TEAM_MODEL_BINDING_REQUIRED: select a runnable model for ${roleId} before saving.`);
         }

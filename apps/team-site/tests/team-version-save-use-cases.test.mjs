@@ -66,7 +66,7 @@ test("invalid changed candidate rolls back a newly forked draft", async () => {
     expectedTeamVersionDigest: "digest-1",
     authoring: { roles: {} }
   }), /TEAM_DESIGN_INVALID: Invalid topology/);
-  assert.deepEqual(calls.map(([operation]) => operation), ["fork", "remove"]);
+  assert.deepEqual(calls.map(([operation]) => operation), ["fork", "assets", "remove"]);
 });
 
 test("first changed save forks once and applies metadata after the design digest write", async () => {
@@ -78,7 +78,7 @@ test("first changed save forks once and applies metadata after the design digest
   });
   assert.equal(saved.teamVersionId, "v2");
   assert.equal(saved.createdDraft, true);
-  assert.deepEqual(calls.map(([operation]) => operation), ["fork", "design", "metadata"]);
+  assert.deepEqual(calls.map(([operation]) => operation), ["fork", "assets", "design", "metadata"]);
 });
 
 test("saving changes to a draft updates it without forking", async () => {

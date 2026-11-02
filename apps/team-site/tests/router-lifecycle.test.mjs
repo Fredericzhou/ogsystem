@@ -53,7 +53,7 @@ test("router delegates navigation once and cancels stale page requests", async (
     assert.equal(new URL(page.url()).pathname, "/");
     await page.locator("#landing-view").waitFor();
     await page.locator("#landing-case-grid .landing-case-card").first().waitFor();
-    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 4, "the homepage should feature the four built-in collaboration teams");
+    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 5, "the homepage should feature every built-in collaboration team");
     await page.locator('#landing-view a[href="/projects"]').first().click();
     assert.match(page.url(), /\/projects$/);
     await page.locator("#projects-view .page-heading").waitFor();
@@ -64,7 +64,7 @@ test("router delegates navigation once and cancels stale page requests", async (
     await page.locator('#app-shell a[data-route="/"]').first().click();
     await page.locator("#landing-view").waitFor({ state: "visible" });
     await page.locator("#landing-case-grid .landing-case-card").first().waitFor();
-    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 4, "returning home through the SPA router should restore the case grid");
+    assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 5, "returning home through the SPA router should restore the case grid");
     await page.locator('#landing-view a[href="/projects"]').first().click();
     await page.locator("#projects-view .page-heading").waitFor();
 

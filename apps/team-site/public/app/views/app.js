@@ -891,10 +891,12 @@ async function renderPlatformConfig() {
   const isModels = location.pathname === "/platform/models" || location.pathname === "/platform";
   const title = isModels ? (state.locale === "en" ? "Model services" : "模型服务") : (state.locale === "en" ? "Platform settings" : "平台配置");
   const subtitle = state.locale === "en" ? "Manage execution runtime connectivity, credentials, and default model routes." : "配置运行底座连接状态、API 凭据与默认模型路由。";
-  root.innerHTML = `<section class="project-library-toolbar page-heading"><div class="repository-heading"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="project-library-filters repository-actions"><button id="platform-discovery-refresh" class="secondary-button platform-action-button" type="button"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 10a7.5 7.5 0 0 1 12.7-3L20 9M4 17v-5h5m10.2 2a7.5 7.5 0 0 1-12.7 3L4 15"/></svg><span>${state.locale === "en" ? "Refresh" : "刷新"}</span></button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="ollama">Ollama</option></select></label><label>默认模型<select name="defaultModel"><option value="default">自动选择</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button platform-action-button" type="submit"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg><span>保存</span></button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
+  root.innerHTML = `<section class="project-library-toolbar page-heading"><div class="repository-heading"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="project-library-filters repository-actions"><button id="platform-discovery-refresh" class="secondary-button platform-action-button" type="button"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 10a7.5 7.5 0 0 1 12.7-3L20 9M4 17v-5h5m10.2 2a7.5 7.5 0 0 1-12.7 3L4 15"/></svg><span>${state.locale === "en" ? "Refresh" : "刷新"}</span></button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>${state.locale === "en" ? "Discovered services" : "发现到的服务"}</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker" id="platform-models-kicker">模型目录</span><h2>${state.locale === "en" ? "Discovered models" : "发现到的模型"}</h2></div><div class="platform-filter-toggle" role="group" aria-label="${state.locale === "en" ? "Model filter mode" : "模型列表过滤模式"}"><button type="button" class="filter-toggle-btn active" data-model-filter="service" data-touch-target-exempt>${state.locale === "en" ? "By service" : "按服务"}</button><button type="button" class="filter-toggle-btn" data-model-filter="available" data-touch-target-exempt>${state.locale === "en" ? "Available only" : "仅可用"}</button></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="ollama">Ollama</option></select></label><label>默认模型<select name="defaultModel"><option value="default">自动选择</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button platform-action-button" type="submit"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg><span>保存</span></button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
   const modelProbes = new Map();
   let discoverySnapshot;
   let selectedSettings;
+  let modelFilterMode = "service";
+  let selectedBackend = "";
   const timeoutHelp = root.querySelector("#platform-timeout-help");
   if (timeoutHelp) timeoutHelp.textContent = "单次请求最长等待时间，不限制任务时长；超时后可从运行记录重试。";
   const capabilityLabels = (capabilities = {}) => [capabilities.textInput && "文本输入", capabilities.textOutput && "文本输出", capabilities.toolcall && "工具调用"].filter(Boolean);
@@ -916,12 +918,55 @@ async function renderPlatformConfig() {
     const providers = discovery.sources || [];
     const models = discovery.models || [];
     const sourceByBackend = new Map(providers.map((item) => [item.backend, item]));
+
+    if (!selectedBackend || !providers.some((item) => item.backend === selectedBackend)) {
+      const firstRunnable = providers.find((item) => item.status === "runnable")?.backend;
+      selectedBackend = firstRunnable || providers[0]?.backend || "";
+    }
+
     $("#platform-providers").innerHTML = providers.length ? providers.map((item) => {
       const badge = formatBackendStatusBadge(item.status, state.locale);
       const displayName = item.displayName || resolveBackendIconEntry(item.backend).displayName;
-      return `<div class="platform-source-row" data-backend="${esc(item.backend)}">${renderBackendIcon(item.backend, { iconKey: item.iconKey, displayName, status: item.status, size: 24 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(displayName)}</strong><span class="backend-id-pill">${esc(item.backend)}</span><span class="status-chip ${esc(badge.chipClass)}">${esc(badge.label)}</span></div><span class="platform-row-detail">${esc(sourceDetail(item))}</span></div></div>`;
-    }).join("") : `<div class="platform-empty">暂未发现运行底座</div>`;
-    $("#platform-models").innerHTML = models.length ? models.map((item) => {
+      const isSelected = modelFilterMode === "service" && item.backend === selectedBackend;
+      return `<div class="platform-source-row is-clickable${isSelected ? " is-selected" : ""}" data-backend="${esc(item.backend)}" tabindex="0" role="button" aria-selected="${isSelected ? "true" : "false"}">${renderBackendIcon(item.backend, { iconKey: item.iconKey, displayName, status: item.status, size: 24 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(displayName)}</strong><span class="backend-id-pill">${esc(item.backend)}</span><span class="status-chip ${esc(badge.chipClass)}">${esc(badge.label)}</span></div><span class="platform-row-detail">${esc(sourceDetail(item))}</span></div></div>`;
+    }).join("") : `<div class="platform-empty">${state.locale === "en" ? "No services discovered." : "暂未发现运行底座"}</div>`;
+
+    const toggleContainer = root.querySelector(".platform-filter-toggle");
+    if (toggleContainer) {
+      toggleContainer.querySelectorAll(".filter-toggle-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.modelFilter === modelFilterMode);
+      });
+    }
+
+    let filteredModels = models;
+    const kicker = $("#platform-models-kicker");
+    if (modelFilterMode === "service") {
+      filteredModels = models.filter((item) => item.backend === selectedBackend);
+      const source = sourceByBackend.get(selectedBackend);
+      const backendDisplayName = source?.displayName || resolveBackendIconEntry(selectedBackend).displayName || selectedBackend;
+      if (kicker) {
+        kicker.textContent = selectedBackend
+          ? (state.locale === "en" ? `Catalog · ${backendDisplayName}` : `模型目录 · ${backendDisplayName}`)
+          : (state.locale === "en" ? "Catalog" : "模型目录");
+      }
+    } else {
+      filteredModels = models.filter((item) => {
+        const probeKey = probeKeyForModel(item);
+        const probe = modelProbes.get(probeKey);
+        if (probe) return probe.status === "runnable";
+        const source = sourceByBackend.get(item.backend);
+        return source?.status === "runnable" || item.runnable === true;
+      });
+      if (kicker) {
+        kicker.textContent = state.locale === "en" ? `Catalog · Available (${filteredModels.length})` : `模型目录 · 仅可用 (${filteredModels.length})`;
+      }
+    }
+
+    const emptyMessage = modelFilterMode === "service"
+      ? (state.locale === "en" ? "No models discovered for this service." : "该运行底座暂未发现模型")
+      : (state.locale === "en" ? "No runnable models currently available." : "暂无可用的模型");
+
+    $("#platform-models").innerHTML = filteredModels.length ? filteredModels.map((item) => {
       const capabilities = capabilityLabels(item.capabilities);
       const probeKey = probeKeyForModel(item);
       const probe = modelProbes.get(probeKey);
@@ -931,7 +976,7 @@ async function renderPlatformConfig() {
       const source = sourceByBackend.get(item.backend);
       const backendDisplayName = source?.displayName || resolveBackendIconEntry(item.backend).displayName;
       return `<div class="platform-model-row" data-backend="${esc(item.backend)}" data-model-id="${esc(item.modelId)}">${renderBackendIcon(item.backend, { iconKey: source?.iconKey, displayName: backendDisplayName, status: source?.status, size: 22 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.modelId)}</strong><span class="status-chip ${chip}">${availability}</span></div><span class="platform-row-detail">${esc(backendDisplayName)} · ${esc(item.name || item.modelId)}</span>${message}<div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`;
-    }).join("") : `<div class="platform-empty">暂未发现模型</div>`;
+    }).join("") : `<div class="platform-empty">${emptyMessage}</div>`;
     const hasCodexModel = models.some((item) => item.backend === "codex" && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
     const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
     const missingBackends = [!hasCodexModel && "Codex", !hasOpenCodeModel && "OpenCode"].filter(Boolean);
@@ -1002,6 +1047,34 @@ async function renderPlatformConfig() {
     }
     catch (error) { if (isAbort(error)) return; showToast(error.message || "刷新失败"); label.textContent = "重试"; }
     finally { button.disabled = false; }
+  });
+  $("#platform-providers")?.addEventListener("click", (event) => {
+    const row = event.target.closest(".platform-source-row");
+    if (!row) return;
+    const backend = row.dataset.backend;
+    if (backend) {
+      selectedBackend = backend;
+      modelFilterMode = "service";
+      if (discoverySnapshot) renderDiscovery(discoverySnapshot, selectedSettings);
+    }
+  });
+  $("#platform-providers")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      const row = event.target.closest(".platform-source-row");
+      if (row) {
+        event.preventDefault();
+        row.click();
+      }
+    }
+  });
+  root.querySelector(".platform-filter-toggle")?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-model-filter]");
+    if (!btn) return;
+    const mode = btn.dataset.modelFilter;
+    if (mode && mode !== modelFilterMode) {
+      modelFilterMode = mode;
+      if (discoverySnapshot) renderDiscovery(discoverySnapshot, selectedSettings);
+    }
   });
   try {
     const [discoveryResponse, settingsResponse] = await Promise.all([pageFetch("/api/v1/platform/discovery"), pageFetch("/api/v1/platform/settings")]);
@@ -1492,8 +1565,34 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     const formatMetric = (value) => value === undefined || value === null ? "—" : Number(value).toLocaleString(state.locale);
     const runMetrics = `<section class="project-panel studio-run-metrics" aria-label="${state.locale === "en" ? "Run metrics" : "运行指标"}"><div class="studio-run-metric"><span>${state.locale === "en" ? "Transitions" : "流转步数"}</span><strong>${formatMetric(transitionCount)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Rendered prompt characters" : "完整提示词字符"}</span><strong>${formatMetric(promptChars)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated input tokens" : "估算输入 Token"}</span><strong>${formatMetric(inputTokens)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated output tokens" : "估算输出 Token"}</span><strong>${formatMetric(outputTokens)}</strong></div><p class="field-hint">${state.locale === "en" ? "Token values are estimates, not billing totals. A dash means this historical run did not collect the field." : "Token 数为估算值，不代表账单精确值；“—”表示此历史运行未采集该字段。"}</p></section>`;
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<section class="detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Runtime graph" : "运行图谱"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${auditTrail.length}</span></div><ol class="team-debug-transcript">${auditTrail.map((item) => { const color = roleColorForId(item.roleId || "system"); const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : ""; const outputText = item.stdoutPreview || item.failure || item.error || ""; const calls = item.promptCalls || []; const callChars = calls.reduce((sum, call) => sum + (Number(call.renderedPromptChars) || 0), 0); const callTokens = calls.reduce((sum, call) => sum + (Number(call.estimatedInputTokens) || 0) + (Number(call.estimatedOutputTokens) || 0), 0); const fallbackCall = calls.find((call) => call.phase === "fallback"); const meter = item.renderedPromptChars ?? (calls.length ? callChars : undefined); const projected = item.projectedInputChars ?? (calls.length ? calls.reduce((sum, call) => sum + (Number(call.projectedInputChars) || 0), 0) : undefined); const tokens = (item.estimatedInputTokens ?? item.estimatedOutputTokens) !== undefined ? `${item.estimatedInputTokens ?? 0} / ${item.estimatedOutputTokens ?? 0}` : calls.length ? String(callTokens) : undefined; const isolation = item.externalDataIsolated === true ? (state.locale === "en" ? "External data isolated" : "外部数据已分隔") : item.externalDataIsolated === false ? (state.locale === "en" ? "External data not isolated" : "外部数据未分隔") : (state.locale === "en" ? "Isolation not recorded" : "隔离状态未采集"); const fallbackLabel = item.fallbackUsed || fallbackCall ? `${state.locale === "en" ? "Fallback model" : "备选模型"}: ${fallbackCall?.modelId || "—"} (${state.locale === "en" ? "primary" : "主模型"}: ${item.primaryModelId || "—"})` : ""; return `<li data-role-id="${esc(item.roleId || "")}" tabindex="0" style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><header><strong>${esc(roleLabel(item.roleId || ""))}</strong><span>${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header><div class="studio-audit-badges"><span>${esc(isolation)}</span>${fallbackLabel ? `<span>${esc(fallbackLabel)}</span>` : ""}${projected !== undefined ? `<span>${state.locale === "en" ? "Projected input" : "输入数据"}: ${formatMetric(projected)} ${state.locale === "en" ? "chars" : "字符"}</span>` : ""}${meter !== undefined ? `<span>${state.locale === "en" ? "Prompt" : "提示词"}: ${formatMetric(meter)} ${state.locale === "en" ? "chars" : "字符"}</span>` : `<span>${state.locale === "en" ? "Prompt: not recorded" : "提示词：未采集"}</span>`}${tokens !== undefined ? `<span>${state.locale === "en" ? "Estimated input / output tokens" : "估算输入 / 输出 Token"}: ${esc(tokens)}</span>` : ""}</div>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}</li>`; }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
-    root.querySelectorAll(".team-debug-transcript > li > section").forEach((section) => {
+    const simulationAuthoring = designPayload.authoring || {};
+    const transcriptHtml = auditTrail.map((item) => {
+      const color = roleColorForId(item.roleId || "system");
+      const roleNameStr = roleLabel(item.roleId || "");
+      const roleDef = simulationAuthoring.roles?.[item.roleId] || {};
+      const backend = item.backend || roleDef.backend || "";
+      const avatarHtml = renderRoleAvatarWithBadge(item.roleId, simulationAuthoring, backend);
+      const backendTag = backend ? `<span class="team-debug-backend-tag" title="Backend: ${esc(backend)}">${esc(backend)}</span>` : "";
+      const downstream = getDownstreamHandoffs(item.roleId, simulationAuthoring);
+      const handoffMarkup = downstream.length ? `<div class="team-debug-handoff-mentions">${downstream.map((h) => {
+        if (h.isEnd) return `<div class="chat-mention-callout is-end"><span class="chat-mention">@${esc(h.toName)}</span> <span class="chat-mention-hint">${state.locale === "en" ? "Task reached deliverable completion" : "已达成交付完成"}</span></div>`;
+        return `<div class="chat-mention-callout" data-handoff-role="${esc(h.toRoleId)}" role="button" tabindex="0" title="${state.locale === "en" ? `Click to focus ${h.toName}` : `点击聚焦到 ${h.toName}`}"><span class="chat-mention">@${esc(h.toName)}</span> <span class="chat-mention-hint">${state.locale === "en" ? "Please proceed with handover" : "请接力协作处理"}</span>${h.eventLabel ? `<span class="chat-mention-event">${esc(h.eventLabel)}</span>` : ""}</div>`;
+      }).join("")}</div>` : "";
+      const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : "";
+      const outputText = item.stdoutPreview || item.failure || item.error || "";
+      const calls = item.promptCalls || [];
+      const callChars = calls.reduce((sum, call) => sum + (Number(call.renderedPromptChars) || 0), 0);
+      const callTokens = calls.reduce((sum, call) => sum + (Number(call.estimatedInputTokens) || 0) + (Number(call.estimatedOutputTokens) || 0), 0);
+      const fallbackCall = calls.find((call) => call.phase === "fallback");
+      const meter = item.renderedPromptChars ?? (calls.length ? callChars : undefined);
+      const projected = item.projectedInputChars ?? (calls.length ? calls.reduce((sum, call) => sum + (Number(call.projectedInputChars) || 0), 0) : undefined);
+      const tokens = (item.estimatedInputTokens ?? item.estimatedOutputTokens) !== undefined ? `${item.estimatedInputTokens ?? 0} / ${item.estimatedOutputTokens ?? 0}` : calls.length ? String(callTokens) : undefined;
+      const isolation = item.externalDataIsolated === true ? (state.locale === "en" ? "External data isolated" : "外部数据已分隔") : item.externalDataIsolated === false ? (state.locale === "en" ? "External data not isolated" : "外部数据未分隔") : (state.locale === "en" ? "Isolation not recorded" : "隔离状态未采集");
+      const fallbackLabel = item.fallbackUsed || fallbackCall ? `${state.locale === "en" ? "Fallback model" : "备选模型"}: ${fallbackCall?.modelId || "—"} (${state.locale === "en" ? "primary" : "主模型"}: ${item.primaryModelId || "—"})` : "";
+      return `<li class="team-debug-chat-item" data-role-id="${esc(item.roleId || "")}" tabindex="0" style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}">${avatarHtml}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name">${esc(roleNameStr)}</strong>${backendTag}</div><span class="team-debug-time-status">${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header><div class="team-debug-bubble"><div class="studio-audit-badges"><span>${esc(isolation)}</span>${fallbackLabel ? `<span>${esc(fallbackLabel)}</span>` : ""}${projected !== undefined ? `<span>${state.locale === "en" ? "Projected input" : "输入数据"}: ${formatMetric(projected)} ${state.locale === "en" ? "chars" : "字符"}</span>` : ""}${meter !== undefined ? `<span>${state.locale === "en" ? "Prompt" : "提示词"}: ${formatMetric(meter)} ${state.locale === "en" ? "chars" : "字符"}</span>` : `<span>${state.locale === "en" ? "Prompt: not recorded" : "提示词：未采集"}</span>`}${tokens !== undefined ? `<span>${state.locale === "en" ? "Estimated input / output tokens" : "估算输入 / 输出 Token"}: ${esc(tokens)}</span>` : ""}</div>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}${handoffMarkup}</div></div></li>`;
+    }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<section class="detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Runtime graph" : "运行图谱"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${auditTrail.length}</span></div><ol class="team-debug-transcript">${transcriptHtml}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
+    root.querySelectorAll(".team-debug-transcript section").forEach((section) => {
       const label = section.querySelector("small")?.textContent || (state.locale === "en" ? "Details" : "详情");
       const pre = section.querySelector("pre");
       if (!pre) return;
@@ -1606,7 +1705,39 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     if (historyNode) historyNode.scrollTop = historyScrollTop;
     if (evidenceNode) evidenceNode.scrollTop = evidenceScrollTop;
     if (simulation.status === "running" && (!pageRequest || isCurrentRequest(pageRequest))) {
-      window.setTimeout(() => void renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest), 800);
+      let cursor = Number(eventPayload.cursor || 0);
+      const collectedEvents = runtimeEventsFromPayload(eventPayload);
+      const poll = async () => {
+        if (!root.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
+        try {
+          const [nextEventsResponse, latestResponse] = await Promise.all([
+            pageFetch(`${base}/events?afterCursor=${cursor}`),
+            pageFetch(base)
+          ]);
+          const nextEventsPayload = await nextEventsResponse.json();
+          const latestPayload = await latestResponse.json();
+          if (!nextEventsResponse.ok || !latestResponse.ok) throw new Error(nextEventsPayload.error || latestPayload.error || "Unable to refresh simulation progress.");
+          const incoming = runtimeEventsFromPayload(nextEventsPayload);
+          collectedEvents.push(...incoming);
+          cursor = Number(nextEventsPayload.cursor || cursor);
+          historyGraph?.setRuntimeProgress(collectedEvents);
+          const latestSimulation = latestPayload.simulation || simulation;
+          const status = latestSimulation.status || "running";
+          const currentStatus = root.querySelector(".page-heading .status-chip");
+          if (currentStatus) {
+            currentStatus.className = `status-chip ${esc(status)}`;
+            currentStatus.textContent = studioSimulationStatus(status);
+          }
+          if (nextEventsPayload.done || status !== "running") {
+            await renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest);
+            return;
+          }
+          window.setTimeout(poll, 800);
+        } catch (error) {
+          if (!isAbort(error) && root.isConnected && (!pageRequest || isCurrentRequest(pageRequest))) window.setTimeout(poll, 1600);
+        }
+      };
+      window.setTimeout(poll, 800);
     }
   } catch (error) {
     if (isAbort(error)) return;
@@ -1842,6 +1973,39 @@ function studioRoleDisplayName(authoring, roleId, locale) {
   return title || roleId;
 }
 
+function renderRoleAvatarWithBadge(roleId, authoring = {}, explicitBackend = "", options = {}) {
+  const role = authoring?.roles?.[roleId] || {};
+  const color = roleColorForId(roleId || "system");
+  const name = studioRoleDisplayName(authoring, roleId, state.locale) || role?.name || roleId || "Role";
+  const monogram = name.trim().slice(0, 1).toUpperCase();
+  const backend = explicitBackend || role.backend || "";
+  const size = options.size || 32;
+  const badgeSize = Math.max(11, Math.round(size * 0.45));
+  const badgeMarkup = backend
+    ? `<span class="role-avatar-badge" title="${esc(backend)}">${renderBackendIcon(backend, { size: badgeSize })}</span>`
+    : "";
+  return `<div class="team-debug-avatar-wrap" style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}"><span class="team-debug-avatar" aria-label="${esc(name)}">${esc(monogram)}</span>${badgeMarkup}</div>`;
+}
+
+function getDownstreamHandoffs(roleId, authoring = {}) {
+  const flows = Object.values(authoring?.flows || {});
+  const matching = flows.filter((f) => f.fromRoleId === roleId);
+  return matching.map((f) => {
+    const isEnd = f.toRoleId === "__system_end__";
+    const toName = isEnd
+      ? (state.locale === "en" ? "End" : "结束")
+      : studioRoleDisplayName(authoring, f.toRoleId, state.locale) || f.toRoleId;
+    const eventLabel = f.label || (f.eventType ? localizedEventLabel(f.eventType, copy) : "");
+    return {
+      toRoleId: f.toRoleId,
+      toName,
+      isEnd,
+      eventLabel,
+      flowId: f.flowId
+    };
+  });
+}
+
 function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredModels = []) {
   const english = locale === "en";
   const copyOverrides = {
@@ -1849,6 +2013,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
       "Random number": "Randomly select a specified number of roles",
       "Candidates are defined by flows connected from Start. Random selection is fixed for each run.": "Candidates are the roles connected from Start. The selected roles stay the same when this run resumes.",
       "Only distinct roles connected directly to End are counted.": "The threshold counts distinct roles connected directly to End. Repeated outputs from one role are retained but count as one role.",
+      "Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.": "Only discovered runnable models are selectable.",
       "Start dispatch is configured on the Start role. This flow defines one eligible role.": "Configure dispatch on Start. This flow adds its target role to the candidate set.",
       "Minimum number": "Wait for at least a specified number of terminal roles",
       "Minimum arrivals": "Minimum number of terminal roles",
@@ -1867,6 +2032,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
       "最少来源数": "最少上游角色数",
       "候选角色由开始节点的连线决定；随机选择在每次运行中固定。": "候选角色由开始节点的连线决定；本次运行及恢复执行时，随机抽选结果保持不变。",
       "只统计直接连接到结束节点的不同角色。": "门槛按直接连接到结束节点的不同角色计算。同一角色的多份终端输出都会保留，但只计作一个角色。",
+      "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。": "仅可选择已发现且可运行的模型。",
       "开始分发策略在开始角色中配置；此关系定义一个候选角色。": "请在开始节点配置分发方式；此连线将目标角色加入候选范围。",
       "结构角色": "边界节点",
       "流程属性": "流转属性",
@@ -1893,21 +2059,22 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const contractSchemaRef = flowContract?.schema || `schemas/${String(selectedFlow?.flowId || "flow").replace(/[^a-zA-Z0-9_.-]/g, "-")}.json`;
   const role = selection.roleId ? roles[selection.roleId] : null;
   const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, locale);
-  const roleModelKey = role?.backend && role?.modelId ? `${role.backend}\u0000${role.modelId}` : "";
+  const roleModelKey = role?.backend && role?.modelId ? JSON.stringify([role.backend, role.modelId]) : "";
   const runnableModels = discoveredModels.filter((model) => model.runnable);
-  const selectedModelKnown = runnableModels.some((model) => `${model.backend}\u0000${model.modelId || model.id}` === roleModelKey);
-  const modelOptions = `${roleModelKey && !selectedModelKnown ? `<option value="${esc(roleModelKey)}" selected>${esc(role?.modelId || "")} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
+  const selectedModelKnown = runnableModels.some((model) => JSON.stringify([model.backend, model.modelId || model.id]) === roleModelKey);
+  const modelOptions = `${!selectedModelKnown ? `<option value="" selected${runnableModels.length ? "" : " disabled"}>${runnableModels.length ? t("Choose a discovered model", "选择已发现且可运行的模型") : t("No runnable models discovered", "未发现可运行模型")}</option>` : ""}${runnableModels.map((model) => {
     const modelId = model.modelId || model.id;
-    const modelKey = `${model.backend}\u0000${modelId}`;
+    const modelKey = JSON.stringify([model.backend, modelId]);
     return `<option value="${esc(modelKey)}" ${modelKey === roleModelKey ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
   const fallbackModel = role?.backend && role?.fallbackModelId
-    ? `${role.backend}\u0000${role.fallbackModelId}`
+    ? JSON.stringify([role.backend, role.fallbackModelId])
     : "";
-  const fallbackModelKnown = runnableModels.some((model) => `${model.backend}\u0000${model.modelId || model.id}` === fallbackModel);
-  const fallbackModelOptions = `${fallbackModel && !fallbackModelKnown ? `<option value="${esc(fallbackModel)}" selected>${esc(role?.fallbackModelId || "")} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.filter((model) => !role?.backend || model.backend === role.backend).map((model) => {
+  const fallbackCandidates = runnableModels.filter((model) => !role?.backend || model.backend === role.backend);
+  const fallbackModelKnown = fallbackCandidates.some((model) => JSON.stringify([model.backend, model.modelId || model.id]) === fallbackModel);
+  const fallbackModelOptions = `${fallbackModel && !fallbackModelKnown ? `<option value="" selected${fallbackCandidates.length ? "" : " disabled"}>${fallbackCandidates.length ? t("Choose a discovered model", "选择已发现且可运行的模型") : t("No runnable models discovered", "未发现可运行模型")}</option>` : ""}${fallbackCandidates.map((model) => {
     const modelId = model.modelId || model.id;
-    const modelKey = `${model.backend}\u0000${modelId}`;
+    const modelKey = JSON.stringify([model.backend, modelId]);
     return `<option value="${esc(modelKey)}" ${modelKey === fallbackModel ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
   let roleContract = {};
@@ -1988,7 +2155,20 @@ function localizeStudioDesignPage(root, locale, { confirmed, version } = {}) {
   if (!english) return;
   const setText = (selector, text) => {
     const element = root.querySelector(selector);
-    if (element) element.textContent = text;
+    if (!element) return;
+    if (selector === "#project-design-status") {
+      let messageSpan = element.querySelector(".studio-graph-status-text");
+      if (!messageSpan) {
+        messageSpan = document.createElement("span");
+        messageSpan.className = "studio-graph-status-text";
+        const projectStatus = element.querySelector(".project-status") || element.parentElement?.querySelector(":scope > .project-status");
+        element.replaceChildren(messageSpan);
+        if (projectStatus) element.append(document.createTextNode(" · "), projectStatus);
+      }
+      messageSpan.textContent = text;
+      return;
+    }
+    element.textContent = text;
   };
   const setLabel = (selector, text) => {
     const label = root.querySelector(selector)?.closest("label");
@@ -2157,6 +2337,109 @@ function markStudioGraphReady(stage) {
   stage?.closest(".page-frame")?.querySelector(":scope > .page-frame-body")?.removeAttribute("data-layout-scroll");
 }
 
+const studioActiveRunStorageKey = "ogs.studio.activeSimulation";
+function readStudioActiveRun() {
+  try { return JSON.parse(window.sessionStorage.getItem(studioActiveRunStorageKey) || "null"); }
+  catch { return null; }
+}
+function writeStudioActiveRun(run) {
+  try { window.sessionStorage.setItem(studioActiveRunStorageKey, JSON.stringify(run)); }
+  catch { /* Storage may be unavailable in restricted browser contexts. */ }
+}
+function clearStudioActiveRun(simulationId) {
+  const active = readStudioActiveRun();
+  if (active?.simulationId !== simulationId) return;
+  try { window.sessionStorage.removeItem(studioActiveRunStorageKey); } catch { /* Ignore unavailable storage. */ }
+}
+const studioProgressSubscriptions = new Map();
+async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, setDebugView, syncDebugRunButton, setEditorState, pageRequest) {
+  const active = readStudioActiveRun();
+  const currentSubscription = active?.simulationId && studioProgressSubscriptions.get(active.simulationId);
+  if (!active?.simulationId || active.teamVersionId !== teamVersionId || currentSubscription?.isConnected) return;
+  const subscription = active.simulationId;
+  studioProgressSubscriptions.set(subscription, stage);
+  state.studioActiveRun = active;
+  setDebugView("run");
+  syncDebugRunButton("running");
+  state.teamStudioDialog?.("run");
+  const result = debugPanel?.querySelector("#team-simulation-result");
+  if (result && !result.querySelector(".team-simulation-result")) {
+    result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Debug trace" : "调试过程"}</strong><span class="status-chip running">${esc(studioSimulationStatus("running"))}</span></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript" aria-live="polite"></ol></div><p class="form-hint">${state.locale === "en" ? "This run continues in the current tab. Use Stop to end it." : "调试会在当前标签页继续运行；点击“停止”可结束任务。"}</p></div>`;
+  }
+  const transcriptList = result?.querySelector(".team-debug-transcript");
+  studioProgressSubscriptions.add(subscription);
+  const endpoint = `/api/v1/teams/${encodeURIComponent(active.teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(subscription)}`;
+  const connected = () => stage.isConnected;
+  try {
+    const detailResponse = await pageFetch(endpoint);
+    const initialDetail = await detailResponse.json();
+    if (!detailResponse.ok) throw new Error(initialDetail.error || "Unable to load the active Studio debug run.");
+    const simulationInput = debugPanel?.querySelector("#team-simulation-input");
+    if (simulationInput) simulationInput.value = initialDetail.simulation?.input || "";
+    if (initialDetail.simulation?.mode) {
+      const mode = debugPanel?.querySelector(`input[name="studioSimulationMode"][value="${CSS.escape(initialDetail.simulation.mode)}"]`);
+      if (mode) mode.checked = true;
+    }
+    let cursor = 0;
+    const transcript = [];
+    while (connected() && (!pageRequest || isCurrentRequest(pageRequest))) {
+      const response = await pageFetch(`${endpoint}/events?afterCursor=${cursor}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Unable to resume Studio debug progress.");
+      const incoming = runtimeEventsFromPayload(payload);
+      transcript.push(...incoming);
+      cursor = Number(payload.cursor || cursor);
+      graph.setRuntimeProgress(transcript);
+      const followProgress = transcriptList && transcriptList.scrollHeight - transcriptList.scrollTop - transcriptList.clientHeight <= 56;
+      for (const event of incoming) {
+        const item = document.createElement("li");
+        const roleId = event.roleId || event.toRoleId || event.fromRoleId || "system";
+        const roleName = roleId === "__system_start__" ? (state.locale === "en" ? "Start" : "开始")
+          : roleId === "__system_end__" ? (state.locale === "en" ? "End" : "结束") : roleId;
+        const color = roleColorForId(roleId);
+        item.dataset.roleId = event.roleId || "";
+        item.style.setProperty("--role-accent", color.accent);
+        item.style.setProperty("--role-fill", color.fill);
+        const detail = event.failure || event.stdoutPreview || event.reason || event.eventType || "";
+        item.innerHTML = `<header><strong>${esc(roleName)}</strong><span>${esc(studioSimulationEventTime(event))} · ${esc(String(event.type || "event").replaceAll("_", " "))}</span></header>${detail ? `<section><pre>${esc(detail)}</pre></section>` : ""}`;
+        transcriptList?.append(item);
+      }
+      if (followProgress && incoming.length) transcriptList.scrollTop = transcriptList.scrollHeight;
+      setEditorState(state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…");
+      if (payload.done) {
+        const detailResponse = await pageFetch(endpoint);
+        const detailPayload = await detailResponse.json();
+        const simulation = detailPayload.simulation || {};
+        const finalState = detailPayload.state || {};
+        const output = finalState.finalOutputsByRoleId
+          ? Object.entries(finalState.finalOutputsByRoleId).flatMap(([roleId, outputs]) => (outputs || []).map((entry) => `${roleId}: ${entry.content || JSON.stringify(entry.data || {})}`)).join("\n\n")
+          : studioSimulationErrorText(finalState.error || simulation.failureSummary || "");
+        const status = simulation.status || "completed";
+        const statusChip = result?.querySelector(".team-simulation-result .status-chip");
+        if (statusChip) {
+          statusChip.className = `status-chip ${esc(status)}`;
+          statusChip.textContent = studioSimulationStatus(status);
+        }
+        if (result) {
+          const final = document.createElement("pre");
+          final.textContent = output || (state.locale === "en" ? "No final output was produced." : "没有生成最终结果。");
+          result.querySelector(".team-simulation-result")?.append(final);
+        }
+        clearStudioActiveRun(subscription);
+        state.studioActiveRun = null;
+        syncDebugRunButton("idle");
+        setEditorState(state.locale === "en" ? "Studio debug run completed." : "Studio 调试运行已结束。");
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+    }
+  } catch (error) {
+    if (!isAbort(error)) console.warn("Unable to resume Studio debug progress", error);
+  } finally {
+    if (studioProgressSubscriptions.get(subscription) === stage) studioProgressSubscriptions.delete(subscription);
+  }
+}
+
 async function renderProjectGraph(projectId, stageId = "project-graph-stage", readOnly = false, pageRequest = state.activeRequest) {
   if (pageRequest && !isCurrentRequest(pageRequest)) return;
   const stage = $("#" + stageId);
@@ -2178,11 +2461,15 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     const status = $("#project-design-status");
     if (!status) return;
     const text = state.locale === "en" ? editorStatusCopy[message] || message : message;
-    const projectStatus = status.querySelector(".project-status");
-    status.replaceChildren(document.createTextNode(text));
-    if (projectStatus) {
-      status.append(document.createTextNode(" · "), projectStatus);
+    let messageSpan = status.querySelector(".studio-graph-status-text");
+    if (!messageSpan) {
+      messageSpan = document.createElement("span");
+      messageSpan.className = "studio-graph-status-text";
+      const projectStatus = status.querySelector(".project-status") || status.parentElement?.querySelector(":scope > .project-status");
+      status.replaceChildren(messageSpan);
+      if (projectStatus) status.append(document.createTextNode(" · "), projectStatus);
     }
+    messageSpan.textContent = text;
   };
   const showLoading = (message) => {
     stage.setAttribute("aria-busy", "true");
@@ -2257,6 +2544,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       const stateLabel = debugPanel?.querySelector("[data-debug-run-state]");
       if (!button) return;
       const running = status === "running" || status === "stopping";
+      const closeButton = debugPanel?.querySelector("[data-team-debug-close]");
+      if (closeButton) closeButton.disabled = running;
       button.dataset.running = String(running);
       button.classList.toggle("danger-button", running);
       button.classList.toggle("is-stopping", status === "stopping");
@@ -2492,7 +2781,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (!roleList || !flowList) return;
       const roles = Object.values(authoring.roles || {});
       const flows = Object.values(authoring.flows || {});
-      roleList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search roles" : "搜索角色"}</span><input type="search" placeholder="${state.locale === "en" ? "Search roles" : "搜索角色"}"></label>${roles.map((role) => { const color = roleColorForId(role.roleId); return `<button type="button" class="studio-asset-row" data-studio-asset-role="${esc(role.roleId)}" aria-current="${selection.roleId === role.roleId ? "true" : "false"}"><span class="studio-role-avatar" style="--role-accent:${color.accent}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="7.5" r="3.3"></circle><path d="M4.5 21c.3-4.2 3-6.7 7.5-6.7s7.2 2.5 7.5 6.7z"></path></svg></span><span><strong>${esc(studioRoleDisplayName(authoring, role.roleId, state.locale))}</strong><small>${esc(role.roleId)} · ${esc(role.bindingKind || "noop")}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No roles yet." : "尚无角色。"}</p>`}`;
+      roleList.innerHTML = `<label class="studio-asset-search"><span class="sr-only">${state.locale === "en" ? "Search roles" : "搜索角色"}</span><input type="search" placeholder="${state.locale === "en" ? "Search roles" : "搜索角色"}"></label>${roles.map((role) => { const color = roleColorForId(role.roleId); const backend = role.backend || (role.modelRef ? role.modelRef.split("/", 1)[0] : ""); const badge = backend ? `<span class="role-avatar-badge" title="${esc(backend)}">${renderBackendIcon(backend, { size: 10 })}</span>` : ""; return `<button type="button" class="studio-asset-row" data-studio-asset-role="${esc(role.roleId)}" aria-current="${selection.roleId === role.roleId ? "true" : "false"}"><span class="studio-role-avatar" style="--role-accent:${color.accent}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="7.5" r="3.3"></circle><path d="M4.5 21c.3-4.2 3-6.7 7.5-6.7s7.2 2.5 7.5 6.7z"></path></svg>${badge}</span><span><strong>${esc(studioRoleDisplayName(authoring, role.roleId, state.locale))}</strong><small>${esc(role.roleId)} · ${esc(role.bindingKind || "noop")}</small></span></button>`; }).join("") || `<p class="empty-note">${state.locale === "en" ? "No roles yet." : "尚无角色。"}</p>`}`;
       roleList.querySelectorAll("[data-studio-asset-role]").forEach((button) => {
         const role = roles.find((item) => item.roleId === button.dataset.studioAssetRole);
         const binding = role?.bindingKind || "noop";
@@ -2750,15 +3039,15 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           role.profileId = profileId;
           executionConfigDirty = true;
         } else if (roleField === "modelRef") {
-          const [backend, ...modelIdParts] = element.value.split("\u0000");
-          role.backend = backend || undefined;
-          role.modelId = modelIdParts.join("\u0000") || undefined;
+          const [backend, modelId] = element.value ? JSON.parse(element.value) : [];
+          role.backend = typeof backend === "string" ? backend : undefined;
+          role.modelId = typeof modelId === "string" ? modelId : undefined;
           delete role.modelRef;
           role.modelSelectionSource = "role";
           modelSelectionDirty = true;
         } else if (roleField === "fallbackModelId") {
-          const [, ...modelIdParts] = element.value.split("\u0000");
-          role.fallbackModelId = modelIdParts.join("\u0000") || undefined;
+          const [, modelId] = element.value ? JSON.parse(element.value) : [];
+          role.fallbackModelId = typeof modelId === "string" ? modelId : undefined;
           delete role.fallbackModelRef;
           modelSelectionDirty = true;
         } else if (roleField === "bindingKind") {
@@ -3052,6 +3341,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       }
       const abortController = new AbortController();
       state._activeSimulationAbort = abortController;
+      let simulationFinished = false;
+      let activeSimulationId = "";
       const result = $("#team-simulation-result");
       setDebugView("run");
       syncDebugRunButton("running");
@@ -3074,7 +3365,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (!isCurrentRequest(pageRequest)) return false;
         if (!response.ok) throw new Error(payload.error || (state.locale === "en" ? "Team debug run failed." : "团队调试失败。"));
         let simulation = payload.simulation || {};
+        activeSimulationId = simulation.simulationId || "";
         state.studioActiveRun = { teamId, teamVersionId, simulationId: simulation.simulationId };
+        writeStudioActiveRun(state.studioActiveRun);
         let simulationState = payload.state || {};
         let cursor = 0;
         const transcript = [];
@@ -3111,7 +3404,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           if (!result) return;
           let panel = result.querySelector(".team-simulation-result");
           if (!panel) {
-            result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Debug trace" : "调试过程"}</strong><span class="status-chip running">${esc(studioSimulationStatus("running"))}</span></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript" aria-live="polite"></ol><button type="button" class="team-debug-new-messages" hidden>${state.locale === "en" ? "↓ New messages" : "↓ 有新消息"}</button></div><p class="form-hint">${state.locale === "en" ? "Run continues if this panel is closed." : "关闭此面板不会中断调试运行。"}</p></div>`;
+            result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Debug trace" : "调试过程"}</strong><span class="status-chip running">${esc(studioSimulationStatus("running"))}</span></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript" aria-live="polite"></ol><button type="button" class="team-debug-new-messages" hidden>${state.locale === "en" ? "↓ New messages" : "↓ 有新消息"}</button></div><p class="form-hint">${state.locale === "en" ? "The debug panel stays visible while this run is active. Use Stop to end it." : "调试运行期间面板保持显示；点击“停止”可结束任务。"}</p></div>`;
             panel = result.querySelector(".team-simulation-result");
           }
           const list = panel.querySelector(".team-debug-transcript");
@@ -3135,12 +3428,13 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           const wasAtBottom = list.dataset.userReading !== "true" && list.scrollHeight - list.scrollTop - list.clientHeight <= 56;
           const addSection = (card, label, value, className = "") => {
             if (!value) return;
-            let section = card.querySelector(`[data-debug-section="${className || label}"]`);
+            const bubbleBody = card.querySelector(".team-debug-bubble-body") || card.querySelector(".team-debug-bubble") || card;
+            let section = bubbleBody.querySelector(`[data-debug-section="${className || label}"]`);
             if (!section) {
               section = document.createElement("section");
               section.dataset.debugSection = className || label;
               section.innerHTML = `<details><summary>${esc(label)}</summary><pre></pre></details>`;
-              card.append(section);
+              bubbleBody.append(section);
             }
             section.querySelector("pre").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
           };
@@ -3200,15 +3494,17 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             let card = roleCards.get(key);
             if (!card) {
               const color = roleColorForId(item.roleId || "system");
+              const roleDef = roleDefinitions.find((r) => r.roleId === item.roleId || r.id === item.roleId) || {};
+              const backend = item.backend || roleDef.backend || "";
               card = document.createElement("li");
+              card.className = "team-debug-chat-item";
               card.dataset.executionKey = key;
+              card.dataset.roleId = item.roleId || "";
               card.style.setProperty("--role-accent", color.accent);
               card.style.setProperty("--role-fill", color.fill);
-              card.innerHTML = `<header><div class="team-debug-role"><span class="team-debug-avatar" aria-hidden="true"></span><strong></strong></div><span></span></header>`;
-              card.querySelector(".team-debug-avatar").textContent = roleName(item.roleId || "system").trim().slice(0, 1).toUpperCase();
-              card.querySelector(".team-debug-avatar").setAttribute("aria-label", state.locale === "en" ? `${roleName(item.roleId || "system")} avatar` : `${roleName(item.roleId || "system")} 角色标识`);
-              card.querySelector(".team-debug-avatar").setAttribute("title", roleName(item.roleId || "system"));
-              card.querySelector("header strong").textContent = roleName(item.roleId || "system");
+              const avatarHtml = renderRoleAvatarWithBadge(item.roleId, authoring, backend);
+              const backendTag = backend ? `<span class="team-debug-backend-tag" title="Backend: ${esc(backend)}">${esc(backend)}</span>` : "";
+              card.innerHTML = `${avatarHtml}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name">${esc(roleName(item.roleId || "system"))}</strong>${backendTag}</div><span class="team-debug-time-status"></span></header><div class="team-debug-bubble"><div class="team-debug-bubble-body"></div><div class="team-debug-handoff-mentions"></div></div></div>`;
               list.append(card);
               roleCards.set(key, card);
             }
@@ -3219,7 +3515,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             card.dataset.status = status;
             const attempt = item.attempt ? ` · ${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}/${item.maxAttempts || "?"}` : "";
             const duration = item.durationMs !== undefined ? ` · ${Number(item.durationMs).toLocaleString(state.locale)} ms` : "";
-            card.querySelector("header span").textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
+            const statusSpan = card.querySelector(".team-debug-time-status") || card.querySelector("header span");
+            if (statusSpan) statusSpan.textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
             if (item.type === "role.input_ready" || item.inputContext) {
               addSection(card, state.locale === "en" ? "Input" : "收到的任务", item.inputContext, "input");
             }
@@ -3234,6 +3531,23 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             }
             if (item.stdoutPreview || item.failure) {
               addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
+            }
+            const handoffContainer = card.querySelector(".team-debug-handoff-mentions");
+            if (handoffContainer && (item.stdoutPreview || status === "completed")) {
+              const downstream = getDownstreamHandoffs(item.roleId, authoring);
+              if (downstream.length > 0) {
+                handoffContainer.innerHTML = downstream.map((h) => {
+                  if (h.isEnd) {
+                    return `<div class="chat-mention-callout is-end"><span class="chat-mention">@${esc(h.toName)}</span> <span class="chat-mention-hint">${state.locale === "en" ? "Task reached deliverable completion" : "已达成交付完成"}</span></div>`;
+                  }
+                  return `<div class="chat-mention-callout" data-handoff-role="${esc(h.toRoleId)}" role="button" tabindex="0" title="${state.locale === "en" ? `Click to focus ${h.toName}` : `点击聚焦到 ${h.toName}`}"><span class="chat-mention">@${esc(h.toName)}</span> <span class="chat-mention-hint">${state.locale === "en" ? "Please proceed with handover" : "请接力协作处理"}</span>${h.eventLabel ? `<span class="chat-mention-event">${esc(h.eventLabel)}</span>` : ""}</div>`;
+                }).join("");
+                handoffContainer.querySelectorAll(".chat-mention-callout[data-handoff-role]").forEach((btn) => {
+                  btn.addEventListener("click", () => {
+                    updateStudioGraph?.update?.({ selectedRoleId: btn.dataset.handoffRole, selectedFlowKey: "" });
+                  });
+                });
+              }
             }
             const diagnostics = {
               ...(item.backend ? { backend: item.backend } : {}),
@@ -3272,6 +3586,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (!detailResponse.ok) throw new Error(detailPayload.error || "读取运行状态失败");
         simulation = detailPayload.simulation || simulation;
         simulationState = detailPayload.state || simulationState;
+        simulationFinished = simulation.status !== "running";
         syncDebugRunButton(simulation.status === "stopping" ? "stopping" : "idle");
         const auditTrail = simulationState.auditTrail || [];
         const noopRoles = auditTrail.filter((item) => String(item.status || "").toLowerCase() === "noop");
@@ -3327,10 +3642,12 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         setEditorState(message);
         return false;
       } finally {
-        updateStudioGraph?.update({ readOnly: false });
-        state.studioActiveRun = null;
+        if (stage.isConnected) updateStudioGraph?.update({ readOnly: false });
+        if (simulationFinished) clearStudioActiveRun(activeSimulationId);
+        const preserveRun = !simulationFinished && pageRequest && !isCurrentRequest(pageRequest);
+        if (!preserveRun && state.studioActiveRun?.simulationId === activeSimulationId) state.studioActiveRun = null;
         if (state._activeSimulationAbort === abortController) state._activeSimulationAbort = null;
-        syncDebugRunButton("idle");
+        if (!preserveRun && stage.isConnected) syncDebugRunButton("idle");
       }
     };
     state.runTeamStudioSimulation = simulateTeam;
@@ -3514,6 +3831,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     stage.removeAttribute("aria-busy");
     markStudioGraphReady(stage);
     setEditorState(state.locale === "en" ? "Team graph loaded and ready to edit." : "团队结构已加载，可以编辑。");
+    void resumeStudioProgress(projectId, stage, updateStudioGraph, debugPanel, setDebugView, syncDebugRunButton, setEditorState, pageRequest);
   } catch (error) { if (isAbort(error)) return;
     stage.removeAttribute("aria-busy");
     stage.textContent = error.message || "Unable to load the project graph.";
@@ -3700,7 +4018,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     const graphStatusMarkup = state.studioRoute
       ? `<span class="project-status ${confirmed ? "confirmed" : "draft"}">${confirmed ? "团队版本已发布" : "团队设计中，可继续调整"}</span>`
       : "";
-    const graphMarkup = `<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS Studio · 架构编排</span><h2>团队协作图谱</h2><p id="project-design-status" class="form-status" role="status" aria-live="polite">正在加载可编辑团队结构</p></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable team collaboration graph"></div><p class="preview-note">此处编辑团队拓扑；选择角色或流程可打开对应属性。静态校验不代表模型服务或凭据已连通。</p>${graphStatusMarkup}</section>`;
+    const graphMarkup = `<section class="project-panel project-graph-preview"><div class="panel-head"><div><span class="section-kicker">OGS Studio · 架构编排</span><h2>团队协作图谱</h2><p id="project-design-status" class="form-status" role="status" aria-live="polite"><span class="studio-graph-status-text">正在加载可编辑团队结构</span></p></div></div><div id="project-graph-stage" class="graph-stage studio-graph-island" role="application" aria-label="Editable team collaboration graph"></div><p class="preview-note">此处编辑团队拓扑；选择角色或流程可打开对应属性。静态校验不代表模型服务或凭据已连通。</p>${graphStatusMarkup}</section>`;
     if (state.studioRoute) root.querySelector("#studio-workbench-host")?.insertAdjacentHTML("beforeend", graphMarkup);
     else root.querySelector(".project-grid")?.insertAdjacentHTML("beforebegin", graphMarkup);
     const graphPanel = root.querySelector(".project-graph-preview");
@@ -3728,7 +4046,13 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       const studioStatus = state.studioRoute ? graphPanel.querySelector(":scope > .project-status") : null;
       if (studioStatus) {
         root.querySelector(".page-heading .project-status")?.remove();
-        graphStatus?.after(studioStatus);
+        if (!graphStatus.querySelector(".studio-graph-status-text")) {
+          const textSpan = document.createElement("span");
+          textSpan.className = "studio-graph-status-text";
+          textSpan.textContent = graphStatus.textContent || "";
+          graphStatus.replaceChildren(textSpan);
+        }
+        graphStatus?.append(document.createTextNode(" · "), studioStatus);
       }
       workbench = document.createElement("section");
       workbench.className = "studio-design-workbench";
@@ -4168,8 +4492,16 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     localizeStudioDesignPage(root, state.locale, { confirmed, version: project.teamVersionNumber || 1 });
     if (state.studioRoute) {
       const graphStatus = root.querySelector("#project-design-status");
-      const studioStatus = root.querySelector(".project-graph-preview > .project-status");
-      if (graphStatus && studioStatus) graphStatus.after(studioStatus);
+      const studioStatus = root.querySelector(".project-graph-preview > .project-status, #project-design-status .project-status");
+      if (graphStatus && studioStatus && !graphStatus.contains(studioStatus)) {
+        if (!graphStatus.querySelector(".studio-graph-status-text")) {
+          const textSpan = document.createElement("span");
+          textSpan.className = "studio-graph-status-text";
+          textSpan.textContent = graphStatus.textContent || "";
+          graphStatus.replaceChildren(textSpan);
+        }
+        graphStatus.append(document.createTextNode(" · "), studioStatus);
+      }
     }
     buildPanel = workbench?.querySelector("#team-build-panel") || null;
     const buildOpenButton = graphPanel.querySelector('[data-studio-graph-action="chat-generate"]');
@@ -5307,6 +5639,14 @@ function bindNavigationControls() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeTopbarMore();
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      const activeForm = document.querySelector(".page-content:not(.hidden) form:not([inert])");
+      const submitBtn = activeForm?.querySelector('button[type="submit"]:not([disabled])');
+      if (submitBtn) {
+        event.preventDefault();
+        submitBtn.click();
+      }
+    }
   });
   window.addEventListener("resize", () => {
     if (!navPreferenceStored) setNavCollapsed(window.innerWidth < 1200, false);

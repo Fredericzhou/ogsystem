@@ -15,13 +15,25 @@ const repositoryRoot = resolve(process.env.OGSYSTEM_ROOT || appRoot, process.env
 const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
 export const DEFAULT_DEMO_BACKEND = "opencode";
 export const DEFAULT_DEMO_MODEL = "gpt-6-luna";
+const DEFAULT_DEMO_MODEL_TIMEOUT_MS = 120000;
 
 export function resolveDemoBackend(env = process.env) {
   return env.OGS_DEMO_BACKEND || DEFAULT_DEMO_BACKEND;
 }
 
 export function resolveDemoModel(env = process.env, backend = resolveDemoBackend(env)) {
-  return env.OGS_DEMO_MODEL || (backend === "opencode" ? "codex-gateway/gpt-6-luna" : DEFAULT_DEMO_MODEL);
+  const backendEnvName = `OGS_DEMO_${backend.replace(/[^a-z0-9]+/gi, "_").toUpperCase()}_MODEL`;
+  const specificModel = env[backendEnvName];
+  if (specificModel) return specificModel;
+  if (backend === resolveDemoBackend(env) && env.OGS_DEMO_MODEL) return env.OGS_DEMO_MODEL;
+  if (backend === "opencode") return "codex-gateway/gpt-6-luna";
+  if (backend === "codex") return DEFAULT_DEMO_MODEL;
+  throw new Error(`Set ${backendEnvName} to select a model for the ${backend} backend.`);
+}
+
+export function resolveCaseRoleModel(caseSpec, role, env = process.env) {
+  const backend = role.backend || resolveDemoBackend(env);
+  return { backend, modelId: resolveDemoModel(env, backend) };
 }
 
 function quote(value) {
@@ -165,21 +177,22 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
   }, null, 2)}\n`);
   const demoBackend = resolveDemoBackend();
   const demoModel = resolveDemoModel(process.env, demoBackend);
-  const roleSelections = caseSpec.id === "cross-backend-review-loop"
-    ? {
-        "codex-analyst": { backend: "codex", modelId: process.env.OGS_DEMO_CODEX_MODEL || resolveDemoModel(process.env, "codex") },
-        "opencode-reviewer": { backend: "opencode", modelId: process.env.OGS_DEMO_OPENCODE_MODEL || resolveDemoModel(process.env, "opencode") }
-      }
-    : undefined;
+  const modelTimeoutMs = Number(process.env.OGS_CASE_MODEL_TIMEOUT_MS || DEFAULT_DEMO_MODEL_TIMEOUT_MS);
+  if (!Number.isFinite(modelTimeoutMs) || modelTimeoutMs <= 0) {
+    throw new Error("OGS_CASE_MODEL_TIMEOUT_MS must be a positive number.");
+  }
+  const roleSelections = Object.fromEntries(caseSpec.roles
+    .filter((role) => role.backend)
+    .map((role) => [role.id, resolveCaseRoleModel(caseSpec, role)]));
   await writeFile(join(configDir, "model-selection.json"), `${JSON.stringify({
     configVersion: "3",
     defaults: {
       backend: demoBackend,
       modelId: demoModel,
-      timeoutMs: 120000,
+      timeoutMs: modelTimeoutMs,
       maxOutputBytes: 65536
     },
-    ...(roleSelections ? { roles: roleSelections } : {})
+    ...(Object.keys(roleSelections).length ? { roles: roleSelections } : {})
   }, null, 2)}\n`);
   await writeFile(join(configDir, "user-profile.json"), `${JSON.stringify({
     userProfileId: "site.demo",
@@ -268,6 +281,8 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
       caseId,
       mode,
       status: result.status,
+      error: result.error,
+      errorEnvelope: result.errorEnvelope,
       finalRoleId: result.finalRoleId,
       finalOutput: result.finalOutput,
       stages: Array.isArray(result.stages) ? result.stages : [],

@@ -16,7 +16,7 @@ export type ResolvedExecutionBinding = {
   workdir: string;
   commandBaseDir?: string;
   env?: Record<string, string>;
-  modelRef?: string;
+  modelId?: string;
   backend?: string;
   profileId?: string;
   toolRef?: string;
@@ -44,17 +44,16 @@ export function resolveExecutionBinding(args: {
 
   if (args.node.binding.kind === "model") {
     const workdir = sessionDirectory ?? args.roleDirs?.roleDir ?? args.baseWorkdir;
-    const modelRef = args.node.binding.modelRef;
+    const modelId = args.node.binding.modelId;
     const variant = args.node.binding.variant;
-    if (!modelRef) {
-      throw new Error(`Concrete model ref not resolved for role "${args.roleId}"`);
+    if (!modelId) {
+      throw new Error(`Concrete model id not resolved for role "${args.roleId}"`);
     }
     return {
       binding: {
         kind: "model",
         backend: args.node.binding.backend,
-        modelId: args.node.binding.modelId,
-        modelRef,
+        modelId,
         fallbackModelId: args.node.binding.fallbackModelId,
         variant
       },
@@ -75,7 +74,7 @@ export function resolveExecutionBinding(args: {
         OGSYSTEM_MODEL_BACKEND: args.node.binding.backend,
         OGSYSTEM_ALLOWED_EVENTS: args.allowedEvents.join(",")
       },
-      modelRef,
+      modelId,
       backend: args.node.binding.backend,
       sessionDirectory
     };

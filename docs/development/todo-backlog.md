@@ -17,7 +17,7 @@
 
 - **编排内核与语义（Semantic IR v1）**：受限 Mermaid DSL 解析、责任席位（Responsibility Seat）模型、State Schema 与确定性 Reducer、受限 Condition AST 条件路由、`parallel_split` 语义分支激活、`all_of` / `quorum_of` Join（含基础 `timeoutSeconds` / `onTimeout`）、Loop Scope 三层预算、`ERROR` / `ERROR.<code>` 异常路由。
 - **持久化、恢复与人工审核**：版本化状态快照（CAS / `eventId` 幂等提交）、Checkpoint WAL 重放与 `runtime-replay-benchmark` 基线、Runtime 原生人工审核（`approve / rework / pause / terminate` 及惰性超时自动收敛）。
-- **生产治理与评测门禁**：外部不可信输入默认包裹 `<ogs_external_data>` 并记录审计、基于 `callId`（`${executionId}:${phase}:${ordinal}`）的并发安全提示词预算账本（`RunPromptBudgetLedger`）、受限备选模型降级（`fallbackModelRef`，仅限模型通道瞬态故障）、Studio `.ogs/laws.json` 版本隔离配置，以及发布基线批次状态机（跨进程文件锁、摘要变更自动失效、跨版本对比）。
+- **生产治理与评测门禁**：外部不可信输入默认包裹 `<ogs_external_data>` 并记录审计、基于 `callId`（`${executionId}:${phase}:${ordinal}`）的并发安全提示词预算账本（`RunPromptBudgetLedger`）、受限备选模型降级（`fallbackModelId`，限定在所选后端且仅处理模型通道瞬态故障）、Studio `.ogs/laws.json` 版本隔离配置，以及发布基线批次状态机（跨进程文件锁、摘要变更自动失效、跨版本对比）。
 - **控制目录分离与双工作台隔离**：`--ogs-dir`（控制与运行证据根）与 `--workspace-dir`（纯业务工作区）显式分离；`TeamVersion` 发布摘要与运行 `team-version.json` 冻结；`project_task`（`<projectId>/.ogs/runs/`）与 `studio_simulation`（`.studio/simulations/`）存储、API、容量槽位与交付物严格隔离。
 - **角色源与共享资源目录**：独立 Git 角色源（`agency-agents` 与 `agency-agents-cn`）安全拉取、Front Matter 解析、`source.json` 溯源证明、复制到 Draft 向导及平台共享资源目录（模型、数据集、工具、存储目标）。
 - **可视化布局与 Team Site 工作台**：`Semantic IR -> Semantic Layout Projection -> ELK.js -> LayoutProjection -> GraphViewModel -> X6` 唯一显式分层布局链路；`RunQueryService` 基于游标与字节偏移的增量事件读取；Team Site 统一 `pageFrame` 响应式外壳、一级菜单紧凑头部、Studio 仿真运行态图谱只读锁，以及浮动面板级联避让与 `Escape` 焦点管理。

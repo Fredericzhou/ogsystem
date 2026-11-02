@@ -27,7 +27,7 @@ const PACKAGE_JSON = require(resolve(PACKAGE_ROOT, "package.json")) as {
 };
 
 export type DeploymentManifest = {
-  manifestVersion: 1;
+  manifestVersion: 2;
   generatedAt: string;
   ogsystem: {
     package: string;
@@ -43,7 +43,7 @@ export type DeploymentManifest = {
   project: {
     systemId: string;
     systemVersion: string;
-    modelSelection: Record<string, { backend: string; modelRef: string }>;
+    modelSelection: Record<string, { backend: string; modelId: string }>;
   };
   fingerprints: {
     runPlan: string;
@@ -185,12 +185,12 @@ export async function generateDeploymentManifest(args: {
   const modelSelectionSummary = Object.fromEntries(
     Array.from(resolvedModels.resolvedByRoleId.entries()).map(([roleId, selection]) => [roleId, {
       backend: selection.backend,
-      modelRef: selection.modelRef
+      modelId: selection.modelId
     }])
   );
 
   return {
-    manifestVersion: 1,
+    manifestVersion: 2,
     generatedAt: new Date().toISOString(),
     ogsystem: {
       package: PACKAGE_JSON.name,

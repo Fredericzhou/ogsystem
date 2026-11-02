@@ -156,7 +156,6 @@ export type RoleExecutionBinding =
       kind: "model";
       backend: string;
       modelId: string;
-      modelRef: string;
       fallbackModelId?: string;
       variant?: string;
       timeoutMs?: number;

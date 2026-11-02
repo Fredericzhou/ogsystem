@@ -106,14 +106,14 @@ test("Studio Mermaid import reflects the project's pinned role model bindings", 
     systemSource: source,
     modelSelection: {
       configVersion: "3",
-      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallbackModelRef: "opencode/big-pickle" } }
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallbackModelId: "gpt-5.6-sol" } }
     }
   });
 
   assert.equal(authoring.roles.dispatch.bindingKind, "model");
   assert.equal(authoring.roles.dispatch.backend, "codex");
   assert.equal(authoring.roles.dispatch.modelId, "gpt-5.6-luna");
-  assert.equal(authoring.roles.dispatch.fallbackModelRef, "opencode/big-pickle");
+  assert.equal(authoring.roles.dispatch.fallbackModelId, "gpt-5.6-sol");
   assert.equal(authoring.roles.review.bindingKind, "exec");
 });
 
@@ -129,7 +129,7 @@ test("Studio save writes role backend/model separately and preserves project def
     authoring.roles.dispatch.bindingKind = "model";
     authoring.roles.dispatch.backend = "codex";
     authoring.roles.dispatch.modelId = "gpt-5.6-sol";
-    authoring.roles.dispatch.fallbackModelRef = "opencode/big-pickle";
+    authoring.roles.dispatch.fallbackModelId = "gpt-5.6-sol";
     authoring.roles.dispatch.modelSelectionSource = "role";
 
     await saveStudioAuthoringDraft({ workdir, authoring });
@@ -138,7 +138,7 @@ test("Studio save writes role backend/model separately and preserves project def
     assert.deepEqual(savedSelection, {
       configVersion: "3",
       defaults: { backend: "opencode", modelId: "provider/default" },
-      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/big-pickle" } }
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallbackModelId: "gpt-5.6-sol" } }
     });
     assert.ok((await readFile(path.join(workdir, ".ogs", "studio", "system.authoring.json"), "utf8")).length > 0);
   } finally {
@@ -948,7 +948,10 @@ test("Studio command forms expose visual role package, model, and profile choice
     },
     projectConfig: {
       modelCatalog: {
-        models: [{ ref: "opencode/gpt-5.4", name: "GPT 5.4", provider: "opencode", model: "gpt-5.4" }]
+        models: [
+          { backend: "opencode", modelId: "gpt-5.4", runnable: true, name: "GPT 5.4" },
+          { backend: "opencode", modelId: "old-model", runnable: false, name: "Old model" }
+        ]
       },
       profiles: [{ profileId: "profile.review", toolRef: "tool.review" }],
       tools: [{ toolRef: "tool.review", runner: "local_shell" }]
@@ -968,7 +971,8 @@ test("Studio command forms expose visual role package, model, and profile choice
   const customHtml = renderStudioCommandForm({ state: customState, context });
   assert.doesNotMatch(customHtml, /Role package/);
   assert.match(customHtml, /<select name="modelRef">/);
-  assert.match(customHtml, /opencode\/gpt-5\.4/);
+  assert.match(customHtml, /GPT 5\.4 - opencode · gpt-5\.4/);
+  assert.doesNotMatch(customHtml, /old-model|Old model/);
   assert.doesNotMatch(customHtml, /name="profileId"/);
   const modelCommand = commandFromStudioCommandFormState(customState);
   assert.equal(modelCommand.modelRef, "opencode/gpt-5.4");
@@ -1019,6 +1023,25 @@ test("Studio command forms expose visual role package, model, and profile choice
     argsTemplate: ["scripts/console-print.mjs"],
     stdinMode: "text"
   });
+});
+
+test("Studio role model picker has no free-text or unavailable model options", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const context = {
+    authoring,
+    projectConfig: { modelCatalog: { models: [{ backend: "opencode", modelId: "old-model", runnable: false }] } }
+  };
+  const state = createDefaultStudioCommandFormState({ kind: "add-role", context });
+  const html = renderStudioCommandForm({ state, context });
+
+  assert.equal(state.fields.modelRef, undefined);
+  assert.match(html, /<select name="modelRef" disabled><option value="" selected>No runnable models available\.<\/option><\/select>/);
+  assert.doesNotMatch(html, /<input name="modelRef"/);
+  assert.doesNotMatch(html, /old-model/);
 });
 
 test("add-edge command form reuses an event already emitted by its selected source", () => {
@@ -1073,7 +1096,7 @@ test("Studio add-role canonicalizes legacy OpenCode provider refs", () => {
           models: [{
             backend: "opencode",
             modelId: "openai/gpt-6-luna",
-            ref: "openai/gpt-6-luna",
+            runnable: true,
             name: "GPT-6 Luna"
           }]
         }
@@ -1092,7 +1115,7 @@ test("Studio add-role defaults to a valid custom draft when repository roles all
   });
   const context = {
     authoring,
-    projectConfig: { modelCatalog: { models: [{ ref: "opencode/gpt-5.4", name: "GPT-5.4", provider: "opencode", model: "gpt-5.4" }] } },
+    projectConfig: { modelCatalog: { models: [{ backend: "opencode", modelId: "gpt-5.4", runnable: true, name: "GPT-5.4" }] } },
     rolePackages: {
       rolePackages: [
         { roleId: "dispatch", name: "Dispatch", status: "ok", files: { "role.json": true } },
@@ -1157,7 +1180,7 @@ test("Studio command form helpers keep trim and HTML escape semantics after cons
     },
     projectConfig: {
       modelCatalog: {
-        models: [{ ref: " model.fast ", name: " GPT <5> ", provider: " openai ", model: " gpt-5 " }]
+        models: [{ backend: " openai ", modelId: " model.fast ", runnable: true, name: " GPT <5> " }]
       }
     }
   };
@@ -1183,7 +1206,7 @@ test("Studio command form helpers keep trim and HTML escape semantics after cons
     context
   });
   assert.match(html, /Writer &lt;unsafe&gt;/);
-  assert.match(html, /GPT &lt;5&gt; - openai\/gpt-5/);
+  assert.match(html, /GPT &lt;5&gt; - openai · model\.fast/);
   assert.match(html, /bad&quot;&gt;&lt;tag/);
   assert.doesNotMatch(html, /bad"><tag/);
 });

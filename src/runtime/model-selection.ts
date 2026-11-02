@@ -96,7 +96,6 @@ export function withDefaultModelSelection(
 export type ResolvedModelRuntimeConfig = {
   backend: ModelBackendId;
   modelId: string;
-  modelRef: string;
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -186,7 +185,6 @@ export function resolveModelSelectionForSystem(args: {
     const resolved: ResolvedModelRuntimeConfig = {
       backend: selected.backend,
       modelId: selected.modelId,
-      modelRef: selected.modelId,
       variant: selected.variant,
       timeoutMs: selected.timeoutMs,
       maxOutputBytes: selected.maxOutputBytes,

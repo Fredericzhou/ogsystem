@@ -106,7 +106,7 @@ type ModelSelectionReadinessIssue = {
 };
 
 type ModelSelectionReadinessResult = {
-  resolvedByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>;
+  resolvedByRoleId: Map<string, { backend: string; modelId: string }>;
   warnings: string[];
   issues: ModelSelectionReadinessIssue[];
 };
@@ -158,7 +158,7 @@ function resolveModelSelectionForReadiness(args: {
   selection: Awaited<ReturnType<typeof loadModelSelection>>;
   catalog: ModelCatalog | undefined;
 }): ModelSelectionReadinessResult {
-  const resolvedByRoleId = new Map<string, { backend: string; modelId: string; modelRef: string }>();
+  const resolvedByRoleId = new Map<string, { backend: string; modelId: string }>();
   const warnings = new Set<string>();
   const issues: ModelSelectionReadinessIssue[] = [];
 
@@ -199,7 +199,7 @@ function resolveModelSelectionForReadiness(args: {
 }
 
 function buildProviderHealth(
-  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>
+  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string }>
 ): DoctorProviderHealthCheck[] {
   const health = [...resolvedModelsByRoleId.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
@@ -425,7 +425,7 @@ async function buildContractCoverage(args: {
 function buildModelCapabilityChecks(args: {
   system: SystemDefinition;
   modelCatalog: ModelCatalog | undefined;
-  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>;
+  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string }>;
   blockers: ReadinessIssue[];
   warnings: ReadinessIssue[];
 }): ModelCapabilityCheck[] {
@@ -435,7 +435,7 @@ function buildModelCapabilityChecks(args: {
       continue;
     }
     const resolved = args.resolvedModelsByRoleId.get(roleId);
-    if (!resolved?.modelRef) {
+    if (!resolved?.modelId) {
       continue;
     }
     const catalogEntry = args.modelCatalog?.models.find((entry) => entry.backend === resolved.backend && entry.modelId === resolved.modelId);
@@ -489,9 +489,9 @@ function buildModelCapabilityChecks(args: {
           code: catalogStale ? "READINESS_MODEL_CATALOG_STALE_REF" : "READINESS_MODEL_CATALOG_MISSING",
           message: args.modelCatalog
             ? catalogStale
-              ? `Role "${roleId}" selects "${resolved.modelRef}" but the stale catalog cannot confirm current availability; the pinned reference remains visible.`
-              : `Role "${roleId}" selects "${resolved.modelRef}" which is not present in the current OpenCode discovery catalog.`
-            : `Role "${roleId}" selects pinned model "${resolved.modelRef}"; availability was not discovered because .ogs/model-catalog.json is missing.`,
+            ? `Role "${roleId}" selects "${resolved.backend}/${resolved.modelId}" but the stale catalog cannot confirm current availability; the pinned selection remains visible.`
+              : `Role "${roleId}" selects "${resolved.backend}/${resolved.modelId}" which is not present in the current backend discovery catalog.`
+            : `Role "${roleId}" selects pinned model "${resolved.backend}/${resolved.modelId}"; availability was not discovered because .ogs/model-catalog.json is missing.`,
           severity: "warning",
           roleId,
           detail: check
@@ -560,7 +560,7 @@ function buildModelCapabilityChecks(args: {
       args.blockers.push(
         createIssue({
           code: "READINESS_MODEL_CAPABILITY_MISMATCH",
-          message: `Role "${roleId}" model "${resolved.modelRef}" is missing required capabilities: ${missingCapabilities.join(", ")}`,
+          message: `Role "${roleId}" model "${resolved.backend}/${resolved.modelId}" is missing required capabilities: ${missingCapabilities.join(", ")}`,
           severity: "blocker",
           roleId,
           detail: check
@@ -570,7 +570,7 @@ function buildModelCapabilityChecks(args: {
       args.warnings.push(
         createIssue({
           code: "READINESS_MODEL_CAPABILITY_WARNING",
-          message: `Role "${roleId}" model "${resolved.modelRef}" does not advertise capabilities: ${warningCapabilities.join(", ")}`,
+          message: `Role "${roleId}" model "${resolved.backend}/${resolved.modelId}" does not advertise capabilities: ${warningCapabilities.join(", ")}`,
           severity: "warning",
           roleId,
           detail: check
@@ -706,7 +706,7 @@ function validateRoleEventContracts(args: {
 
 function validateCodexOutputSchemas(args: {
   roles: RoleReadinessInspection[];
-  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>;
+  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string }>;
   blockers: ReadinessIssue[];
 }): void {
   for (const role of args.roles) {
@@ -719,7 +719,7 @@ function validateCodexOutputSchemas(args: {
         message: `Role "${role.roleId}" output schema is incompatible with Codex structured output: ${issues.join("; ")}`,
         severity: "blocker",
         roleId: role.roleId,
-        detail: { modelRef: model.modelRef, issues }
+        detail: { backend: model.backend, modelId: model.modelId, issues }
       }));
     }
   }

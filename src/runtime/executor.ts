@@ -66,7 +66,6 @@ export type ExecutorBinding =
       kind: "model";
       backend: ModelBackendId;
       modelId: string;
-      modelRef: string;
       fallbackModelId?: string;
       variant?: string;
     }

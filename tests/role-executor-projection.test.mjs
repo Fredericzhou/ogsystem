@@ -471,8 +471,7 @@ async function prepareRoleExecutorFixture(args) {
     .map((role) => [role.roleId, {
       backend: role.backend ?? "opencode",
       modelId: role.modelId ?? "balanced-gpt52",
-      modelRef: `${role.backend ?? "opencode"}/${role.modelId ?? "balanced-gpt52"}`,
-      ...(role.fallbackModelRef ? { fallbackModelRef: role.fallbackModelRef } : {}),
+      ...(role.fallbackModelId ? { fallbackModelId: role.fallbackModelId } : {}),
       bindingSource: "selection"
     }]));
   const plan = createExecutionPlan(system, resolvedModels);
@@ -1445,9 +1444,9 @@ test("executeRoleNode falls back once for retryable model channel errors and met
 start[开始] -->|START| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], fallbackModelRef: "provider/fallback" }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], fallbackModelId: "provider/fallback" }]
   });
-  assert.equal(getExecutionPlanNode(fixture.plan, "reviewer").binding.fallbackModelRef, "provider/fallback");
+  assert.equal(getExecutionPlanNode(fixture.plan, "reviewer").binding.fallbackModelId, "provider/fallback");
   const state = createInitialState(fixture.plan, "fallback prompt");
   const requests = [];
   const result = await executeRoleNode({
@@ -1476,14 +1475,14 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
   assert.equal(result.status, "ok", JSON.stringify({ error: result.error, requests: requests.length, calls: result.audit.promptCalls }));
   assert.equal(requests.length, 2);
   assert.equal(requests[0].binding.modelId, "balanced-gpt52");
-  assert.equal(requests[1].binding.modelId, "fallback");
+  assert.equal(requests[1].binding.modelId, "provider/fallback");
   assert.deepEqual(result.audit.promptCalls.map((call) => call.phase), ["primary", "fallback"]);
   assert.equal(result.audit.fallbackUsed, true);
   assert.equal(result.audit.primaryModelId, "balanced-gpt52");
   assert.equal(result.audit.renderedPromptChars, result.audit.promptCalls.reduce((sum, call) => sum + call.renderedPromptChars, 0));
 });
 
-test("executeRoleNode switches to the configured fallback backend", async () => {
+test("executeRoleNode retries the configured backend-local fallback model", async () => {
   const fixture = await prepareRoleExecutorFixture({
     tempPrefix: "ogsystem-role-cross-backend-fallback-",
     prompt: "cross backend fallback prompt",
@@ -1494,7 +1493,7 @@ test("executeRoleNode switches to the configured fallback backend", async () => 
 start[开始] -->|START| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/openai/gpt-5.4" }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "opencode", modelId: "openai/gpt-5.6-sol", fallbackModelId: "openai/gpt-5.4" }]
   });
   const state = createInitialState(fixture.plan, "cross backend fallback prompt");
   const requests = [];
@@ -1523,10 +1522,10 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
 
   assert.equal(result.status, "ok", JSON.stringify({ error: result.error, requests: requests.length }));
   assert.equal(requests.length, 2);
-  assert.equal(requests[0].binding.backend, "codex");
+  assert.equal(requests[0].binding.backend, "opencode");
   assert.equal(requests[1].binding.backend, "opencode");
-  assert.equal(requests[1].binding.modelId, "gpt-5.4");
-  assert.equal(requests[1].binding.modelRef, "openai/gpt-5.4");
+  assert.equal(requests[1].binding.modelId, "openai/gpt-5.4");
+  assert.equal("modelRef" in requests[1].binding, false);
 });
 
 test("executeRoleNode separately meters correction prompts and blocks them at the run budget", async () => {

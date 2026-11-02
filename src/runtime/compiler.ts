@@ -110,7 +110,8 @@ export type ReviewSummary = {
 export type BindingSummary = {
   roleId: string;
   kind: RoleExecutionBinding["kind"];
-  modelRef?: string;
+  backend?: string;
+  modelId?: string;
   fallbackModelId?: string;
   bindingSource?: "system" | "selection";
   profileId?: string;
@@ -385,7 +386,8 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
       kind: node.binding.kind
     };
     if (node.binding.kind === "model") {
-      summary.modelRef = node.binding.modelRef;
+      summary.backend = node.binding.backend;
+      summary.modelId = node.binding.modelId;
       summary.fallbackModelId = node.binding.fallbackModelId;
       summary.bindingSource = node.binding.bindingSource;
     }

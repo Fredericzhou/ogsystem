@@ -27,6 +27,7 @@ This is the active documentation entry point. Runtime behavior, source code, and
 - [Runtime and NL2MMD file sets](development/file-sets.md)
 - [Source commenting style](development/commenting-style.md)
 - [Release compatibility policy](development/release-compatibility-policy.md)
+- [Studio team lifecycle UI optimization](development/studio-team-lifecycle-ui-optimization.md)
 - [Release UAT checklist](development/release-uat-checklist.md)
 - [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
 - [Design release validation template](development/design-release-validation-template.md)

@@ -80,7 +80,7 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator("#breadcrumb-current").textContent(), "团队工程");
     assert.equal(await page.locator("#workspace-view .page-heading .eyebrow").textContent(), "团队仓库");
     assert.equal(await page.locator(".classic-team-section").count(), 1);
-    assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 4);
+    assert.equal(await page.locator(".repository-classic-section .classic-team-card").count(), 5);
     assert.equal(await page.locator(".repository-classic-section [data-team-action='delete']").count(), 0, "classic built-in teams in the repository must not expose a delete action");
     const classicCardSizing = await page.locator(".repository-classic-section .classic-team-card").first().evaluate((card) => ({
       padding: getComputedStyle(card).padding,
@@ -100,7 +100,7 @@ test("site completes the product project flow with task records and repository e
     assert.equal(await page.locator("#product-mode-toggle").getAttribute("aria-pressed"), "false");
     assert.equal(await page.locator('.primary-nav a[href="/studio"]').isVisible(), true, "Studio is a peer product and remains discoverable in normal mode");
     assert.match(await page.locator("#studio-view .repository-heading").innerText(), /团队仓库|Team repository|Studio/);
-    assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true']").count(), 4, "Studio should list the four classic built-in teams as forkable versions");
+    assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true']").count(), 5, "Studio should list every classic built-in team as a forkable version");
     assert.equal(await page.locator("#studio-view .team-version-card[data-team-builtin='true'] [data-team-action='delete']").count(), 0, "built-in classic teams must not expose a delete action");
     const versionCardSizing = await page.locator("#studio-view #studio-grid .team-version-card").first().evaluate((card) => ({
       padding: getComputedStyle(card).padding,

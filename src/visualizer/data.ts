@@ -584,7 +584,9 @@ function compareStoredFingerprint(args: { expected: JsonRecord; stored: JsonReco
 } {
   const changedComponents = compareFingerprintComponents(args);
   return {
-    mismatch: asString(args.expected.digest) !== asString(args.stored.digest),
+    mismatch: asNumber(args.expected.version) !== asNumber(args.stored.version) ||
+      asString(args.expected.algorithm) !== asString(args.stored.algorithm) ||
+      asString(args.expected.digest) !== asString(args.stored.digest),
     changedComponents
   };
 }
@@ -1181,7 +1183,7 @@ async function resolveBindingVisualizationForRole(args: {
     roleId: args.roleId,
     bindingKind: "model",
     declaredBinding: args.system.modelBinding[args.roleId],
-    resolvedBinding: resolvedModel.modelRef,
+    resolvedBinding: `${resolvedModel.backend}/${resolvedModel.modelId}`,
     variant: resolvedModel.variant,
     timeoutMs: resolvedModel.timeoutMs,
     maxOutputBytes: resolvedModel.maxOutputBytes,

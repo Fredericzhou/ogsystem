@@ -9,7 +9,7 @@ test("deployment manifest records runtime versions and redacted semantic fingerp
     workdir: path.resolve("examples/mulit-debate-ogs")
   });
 
-  assert.equal(manifest.manifestVersion, 1);
+  assert.equal(manifest.manifestVersion, 2);
   assert.equal(manifest.ogsystem.package, "ogsystem");
   assert.match(manifest.ogsystem.version, /^\d+\.\d+\.\d+/);
   assert.match(manifest.ogsystem.installedTreeSha256, /^[a-f0-9]{64}$/);

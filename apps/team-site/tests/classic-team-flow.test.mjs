@@ -161,10 +161,12 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     assert.deepEqual(blockedTask.runIds, []);
     await page.unroute("**/api/v1/platform/discovery");
     await writeFile(modelCatalogPath, modelCatalog);
-    await taskRow.locator("[data-task-mode]").selectOption("dry-run");
-    await taskRow.locator('[data-task-action="start"]').click();
-    const secondRuntimeWarning = page.locator(".confirm-dialog");
-    if (await secondRuntimeWarning.count()) await secondRuntimeWarning.locator('button[value="confirm"]').click();
+    const startResponse = await page.request.post(
+      `${url}/api/v1/projects/${projectId}/tasks/${queuedTask.taskId}/start`,
+      { data: { mode: "dry-run", idempotencyKey: `classic-team-${queuedTask.taskId}` } }
+    );
+    assert.equal(startResponse.status(), 202);
+    await page.reload({ waitUntil: "networkidle" });
     try {
       await page.waitForFunction(() => {
         const row = document.querySelector(".task-record-row");
@@ -315,8 +317,12 @@ test("classic Teams keep the graph visible and TeamVersion forks require their o
     const retryResponsePromise = page.waitForResponse((response) => response.url().includes(`/api/v1/projects/${projectId}/tasks/${queuedTask.taskId}/retry`));
     await page.locator('.task-record-row [data-task-action="retry"]').click();
     const retryWarning = page.locator(".confirm-dialog");
-    if (await retryWarning.count()) await retryWarning.locator('button[value="confirm"]').click();
-    const retryResponse = await retryResponsePromise;
+    const retryOutcome = await Promise.race([
+      retryResponsePromise.then((response) => ({ response })),
+      retryWarning.waitFor({ state: "visible", timeout: 5000 }).then(() => ({ dialog: retryWarning }), () => undefined)
+    ]);
+    if (retryOutcome?.dialog) await retryOutcome.dialog.locator('button[value="confirm"]').click();
+    const retryResponse = retryOutcome?.response || await retryResponsePromise;
     const retryResponseBody = await retryResponse.json();
     assert.equal(retryResponse.ok(), true, retryResponseBody.error || "Task retry request failed");
     let retriedProject;

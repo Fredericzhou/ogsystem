@@ -195,7 +195,7 @@ test("Natural assistant failures are visible and successful previews can be appl
         unresolvedItems: []
       }) });
     });
-    await page.route("**/api/v1/platform/models", (route) => route.fulfill({ json: { models: [{ backend: "codex", id: "gpt-6-luna", ref: "codex/gpt-6-luna", name: "GPT 6 Luna", runnable: true }] } }));
+    await page.route("**/api/v1/platform/models", (route) => route.fulfill({ json: { models: [{ backend: "codex", modelId: "gpt-6-luna", name: "GPT 6 Luna", runnable: true }] } }));
     await page.goto(`${url}/studio/teams/${team.projectId}/design`, { waitUntil: "networkidle" });
     await page.locator("#team-assistant").waitFor({ state: "attached" });
     assert.equal(await page.locator("#team-assistant-input").count(), 0, "the assistant should load only after opening its dialog");
@@ -365,6 +365,11 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.route("**/api/v1/platform/models", (route) => route.fulfill({ json: { models: [
+      { backend: "codex", modelId: "gpt-6-luna", name: "GPT 6 Luna", runnable: true },
+      { backend: "opencode", modelId: "openai/gpt-5.4", name: "GPT 5.4", runnable: true },
+      { backend: "opencode", modelId: "old-model", name: "Unavailable model", runnable: false }
+    ] } }));
     let team;
     let submittedAuthoring;
     let submittedAssets;
@@ -468,10 +473,11 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
     await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
-    await inspector.locator('[data-studio-role-field="modelRef"]').selectOption("codex/gpt-6-luna");
-    assert.equal(await inspector.locator('[data-studio-role-field="fallbackModelRef"]').count(), 1, "model-bound roles can select a fallback model");
+    assert.equal((await inspector.locator('[data-studio-role-field="modelRef"] option').allTextContents()).some((option) => option.includes("Unavailable model")), false);
+    await inspector.locator('[data-studio-role-field="modelRef"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
+    assert.equal(await inspector.locator('[data-studio-role-field="fallbackModelId"]').count(), 1, "model-bound roles can select a fallback model");
     assert.equal(await inspector.locator(".studio-contract-permissions").count(), 1, "the role inspector summarizes its contract permissions");
-    await inspector.locator('[data-studio-role-field="fallbackModelRef"]').selectOption("codex/gpt-6-luna");
+    await inspector.locator('[data-studio-role-field="fallbackModelId"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
     await inspector.locator('[data-studio-role-field="routingMode"]').selectOption("parallel_split");
     await inspector.locator('[data-studio-role-field="loopMax"]').fill("3");
     await inspector.locator('[data-studio-role-field="contextMap"]').fill('{"brief":"global.task"}');
@@ -532,12 +538,10 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-tool-field="stdinMode"]').selectOption("none");
     await inspector.locator('[data-studio-profile-field="timeoutMs"]').fill("45000");
     await inspector.locator('[data-studio-profile-field="maxOutputBytes"]').fill("8192");
-    const openCodeModel = await page.request.get(`${url}/api/v1/platform/models`)
-      .then((response) => response.json())
-      .then((payload) => payload.models.find((model) => model.backend === "opencode" && model.runnable));
+    const openCodeModel = { backend: "opencode", modelId: "openai/gpt-5.4" };
     const openCodeRoleId = Object.keys(design.authoring.roles).find((id) => id !== roleId && id !== execRoleId);
     if (openCodeModel && openCodeRoleId) {
-      const selectionRef = openCodeModel.selectionRef || `${openCodeModel.backend}/${openCodeModel.id}`;
+      const selectionRef = JSON.stringify([openCodeModel.backend, openCodeModel.modelId]);
       await page.locator("#studio-asset-drawer-close").click();
       await page.locator(`#project-graph-stage .x6-node[data-cell-id="${openCodeRoleId}"]`).click();
       await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
@@ -574,10 +578,11 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
-    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelId: "gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(persistedDesign.authoring.roles[roleId].contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify({ authoring: persistedDesign.authoring, assets: persistedAssets }, null, 2));
-    assert.equal(persistedDesign.authoring.roles[roleId].modelRef, "codex/gpt-6-luna");
-    assert.equal(persistedDesign.authoring.roles[roleId].fallbackModelRef, "codex/gpt-6-luna");
+    assert.equal("modelRef" in persistedDesign.authoring.roles[roleId], false);
+    assert.equal(persistedDesign.authoring.roles[roleId].modelId, "gpt-6-luna");
+    assert.equal(persistedDesign.authoring.roles[roleId].fallbackModelId, "gpt-6-luna");
     assert.equal(persistedDesign.authoring.roles[roleId].bindingKind, "model");
     assert.equal(persistedDesign.authoring.roles[roleId].backend, "codex");
     assert.equal(persistedDesign.authoring.roles[execRoleId].bindingKind, "exec");
@@ -603,13 +608,13 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
     assert.equal(persistedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
     assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "rework", "terminate"]);
-    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelId: "gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
     if (openCodeModel && openCodeRoleId) {
-      const selectionRef = openCodeModel.selectionRef || `${openCodeModel.backend}/${openCodeModel.id}`;
-      assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelRef, selectionRef);
+      const selectionRef = JSON.stringify([openCodeModel.backend, openCodeModel.modelId]);
+      assert.equal("modelRef" in persistedDesign.authoring.roles[openCodeRoleId], false);
       assert.equal(persistedDesign.authoring.roles[openCodeRoleId].backend, "opencode");
-      assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelId, openCodeModel.id);
-      assert.deepEqual(persistedAssets.modelSelection.roles?.[openCodeRoleId], { backend: "opencode", modelId: openCodeModel.id });
+      assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelId, openCodeModel.modelId);
+      assert.deepEqual(persistedAssets.modelSelection.roles?.[openCodeRoleId], { backend: "opencode", modelId: openCodeModel.modelId });
     }
     const manifest = JSON.parse(persistedAssets.contracts);
     assert.ok(manifest.contracts.some((item) => item.id === "review-handoff" && item.schema === schemaPath && item.onViolation === "WARN"));
@@ -756,7 +761,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await assert.doesNotReject(() => page.getByText("TEAM_ASSET_WRITE_FAILED", { exact: true }).waitFor());
     const unchangedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const unchangedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
-    assert.equal(unchangedDesign.authoring.roles[roleId].modelRef, "codex/gpt-6-luna");
+    assert.equal("modelRef" in unchangedDesign.authoring.roles[roleId], false);
     assert.equal(unchangedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
     await page.unroute(saveRoute);
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();

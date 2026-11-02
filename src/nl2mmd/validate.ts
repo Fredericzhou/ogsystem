@@ -93,7 +93,7 @@ export async function validateNl2MmdCandidate(args: {
     };
   }
 
-  let resolvedModelsByRoleId = new Map<string, { modelRef: string }>();
+  let resolvedModelsByRoleId = new Map<string, { backend: string; modelId: string }>();
   try {
     const resolvedModelSelection = resolveModelSelectionForSystem({
       system,

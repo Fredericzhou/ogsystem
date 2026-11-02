@@ -723,7 +723,7 @@ export async function executeRoleNode(args: {
       toolsByRef: args.toolsByRef,
     });
     assertToolCapability(resolvedBinding.toolRef);
-    modelId = resolvedBinding.modelRef;
+    modelId = resolvedBinding.modelId;
     profileId = resolvedBinding.profileId;
     toolRef = resolvedBinding.toolRef;
     command = resolvedBinding.command;
@@ -929,8 +929,7 @@ export async function executeRoleNode(args: {
       primaryModelId = binding.modelId;
       executionResult = await invokeMetered({
         ...binding,
-        modelId: binding.fallbackModelId,
-        modelRef: binding.fallbackModelId
+        modelId: binding.fallbackModelId
       }, "fallback");
     } finally {
       await stopRoleWaitHeartbeat();

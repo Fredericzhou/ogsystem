@@ -25,8 +25,8 @@ export const cases = [
     loopBudgets: [{ roleId: "codex-analyst", max: 3 }],
     projections: [],
     roles: [
-      { id: "codex-analyst", label: { "zh-CN": "Codex 分析师", en: "Codex analyst" }, purpose: "Analyze the task and revise it after review feedback.", events: ["ANALYSIS_READY"], prompt: "Act as the Codex analyst. Produce a concise evidence-based analysis and incorporate any review feedback in the input. Return valid JSON with event ANALYSIS_READY." },
-      { id: "opencode-reviewer", label: { "zh-CN": "OpenCode 审核员", en: "OpenCode reviewer" }, purpose: "Review the analysis and approve or reject it.", events: ["APPROVED", "REJECTED"], prompt: "Act as the OpenCode reviewer. On the first review, identify one concrete issue and return REJECTED with actionable feedback. On later reviews, return APPROVED when the analysis addresses the feedback. Return valid JSON with one allowed event." }
+      { id: "codex-analyst", backend: "codex", label: { "zh-CN": "Codex 分析师", en: "Codex analyst" }, purpose: "Analyze the task and revise it after review feedback.", events: ["ANALYSIS_READY"], prompt: "Act as the Codex analyst. Produce a concise evidence-based analysis and incorporate any review feedback in the input. Return valid JSON with event ANALYSIS_READY." },
+      { id: "opencode-reviewer", backend: "opencode", label: { "zh-CN": "OpenCode 审核员", en: "OpenCode reviewer" }, purpose: "Review the analysis and approve or reject it.", events: ["APPROVED", "REJECTED"], prompt: "Act as the OpenCode reviewer. On the first review, identify one concrete issue and return REJECTED with actionable feedback. On every later review, return APPROVED and briefly confirm that the analyst responded. Return valid JSON with one allowed event." }
     ],
     flows: [
       ["__system_start__", "codex-analyst", "START"],

@@ -36,9 +36,9 @@ review[Role:review] -->|DONE| end[结束]
 test("execution plan normalizes graph semantics and bindings", () => {
   const system = parseSystemFromMermaidSource(source);
   const plan = createExecutionPlan(system, new Map([
-    ["dispatch", { backend: "opencode", modelId: "model.fast", modelRef: "opencode/model.fast", bindingSource: "selection" }],
-    ["worker_b", { backend: "codex", modelId: "model.deep", modelRef: "codex/model.deep", bindingSource: "selection" }],
-    ["review", { backend: "codex", modelId: "model.deep", modelRef: "codex/model.deep", bindingSource: "selection" }]
+    ["dispatch", { backend: "opencode", modelId: "provider/model.fast", bindingSource: "selection" }],
+    ["worker_b", { backend: "codex", modelId: "model.deep", bindingSource: "selection" }],
+    ["review", { backend: "codex", modelId: "model.deep", bindingSource: "selection" }]
   ]));
 
   assert.strictEqual(plan.systemId, "plan.demo");
@@ -65,8 +65,7 @@ test("execution plan normalizes graph semantics and bindings", () => {
   assert.deepStrictEqual(dispatch.binding, {
     kind: "model",
     backend: "opencode",
-    modelId: "model.fast",
-    modelRef: "opencode/model.fast",
+    modelId: "provider/model.fast",
     bindingSource: "selection"
   });
 
@@ -78,7 +77,6 @@ test("execution plan normalizes graph semantics and bindings", () => {
     kind: "model",
     backend: "codex",
     modelId: "model.deep",
-    modelRef: "codex/model.deep",
     bindingSource: "selection"
   });
 

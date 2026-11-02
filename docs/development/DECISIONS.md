@@ -216,4 +216,4 @@ External inputs and model token/character budgets are enforced at runtime bounda
 
 - `isolateExternalData` defaults to `true`, wrapping non-task `input` payloads in `<ogs_external_data>` blocks with closing-tag escaping and recording `externalDataIsolated` in audit records
 - prompt character budgets (`maxPromptCharsPerRole`, `maxTotalPromptCharsPerRun`) are tracked in `RunPromptBudgetLedger` keyed by per-request `callId` (`${executionId}:${phase}:${ordinal}`) across parallel branches, retries, JSON repairs, fallbacks, and checkpoint resumes
-- `fallbackModelRef` is restricted to `binding.kind === "model"` and triggers only on retryable model-channel failures (timeouts, HTTP 429/502/503/504, transient network resets), never on schema/contract/auth/budget errors
+- `fallbackModelId` is a model ID within the role's selected backend; it is restricted to `binding.kind === "model"` and triggers only on retryable model-channel failures (timeouts, HTTP 429/502/503/504, transient network resets), never on schema/contract/auth/budget errors

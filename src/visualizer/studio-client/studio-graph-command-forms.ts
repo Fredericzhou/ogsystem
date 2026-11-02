@@ -329,7 +329,7 @@ function extractStudioModelOptions(context: StudioCommandValidationContext): Stu
   const catalog = asRecord(config?.modelCatalog ?? context.projectConfig);
   return asArray(catalog?.models)
     .map((entry) => asRecord(entry))
-    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .filter((entry): entry is Record<string, unknown> => entry !== undefined && entry.runnable === true)
     .map((entry) => {
       const backend = asTrimmedStringOrEmpty(entry.backend);
       const modelId = asTrimmedStringOrEmpty(entry.modelId) || asTrimmedStringOrEmpty(entry.id);
@@ -425,18 +425,16 @@ function renderModelBindingField(args: {
   labels?: StudioCommandFormLabels;
 }): string {
   const options = extractStudioModelOptions(args.context);
-  const selected = args.fields.modelRef || options[0]?.ref || "";
+  const selected = args.fields.modelRef || "";
   if (!options.length) {
-    return '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "modelRef", "Model")) + '</span><input name="modelRef" value="' + escapeHtml(args.fields.modelRef || "") + '">' +
-      '<div class="studio-command-form-hint">' + escapeHtml(label(args.labels, "noModels", "No model catalog entries available.")) + '</div>' +
+    return '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "modelRef", "Model")) + '</span><select name="modelRef" disabled><option value="" selected>' + escapeHtml(label(args.labels, "noModels", "No runnable models available.")) + '</option></select>' +
       renderStudioCommandFormFieldError(args.state, "modelRef") + "</label>";
   }
   const hasSelected = options.some((option) => option.ref === selected);
-  const optionHtml = (hasSelected ? [] : [{ ref: selected, label: `${selected} - current` }])
+  const optionHtml = (hasSelected ? [] : [{ ref: "", label: label(args.labels, "modelRef", "Choose a discovered model") }])
     .concat(options)
-    .filter((option) => Boolean(option.ref))
     .map((option) =>
-      '<option value="' + escapeHtml(option.ref) + '"' + (option.ref === selected ? " selected" : "") + ">" +
+      '<option value="' + escapeHtml(option.ref) + '"' + (option.ref === selected || (!hasSelected && !option.ref) ? " selected" : "") + ">" +
       escapeHtml(option.label) + "</option>"
     )
     .join("");
@@ -561,7 +559,6 @@ export function readStudioCommandFormState(args: {
     const rolePackage = rolePackages.find((entry) => entry.roleId === repositoryRoleId);
     const bindingKindValue = String(data.get("bindingKind") ?? "noop");
     const bindingKind = bindingKindValue === "model" || bindingKindValue === "exec" ? bindingKindValue : "noop";
-    const modelOptions = extractStudioModelOptions(args.context);
     const profileOptions = extractStudioProfileOptions(args.context);
     const roleId = mode === "repository"
       ? rolePackage?.roleId ?? ""
@@ -575,7 +572,7 @@ export function readStudioCommandFormState(args: {
       roleId,
       title: String(data.get("title") ?? "").trim() || (mode === "repository" ? rolePackage?.name ?? "" : ""),
       bindingKind,
-      modelRef: bindingKind === "model" ? String(data.get("modelRef") ?? "").trim() || modelOptions[0]?.ref : "",
+      modelRef: bindingKind === "model" ? String(data.get("modelRef") ?? "").trim() : "",
       profileId: bindingKind === "exec"
         ? profileMode === "create"
           ? newProfileId

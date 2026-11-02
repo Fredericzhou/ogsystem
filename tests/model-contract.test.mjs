@@ -18,6 +18,7 @@ import {
   withDefaultModelSelection
 } from "../dist/runtime/model-selection.js";
 import { syncProjectModels } from "../dist/runtime/project-lifecycle.js";
+import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
 
 const fixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
 
@@ -151,10 +152,55 @@ test("per-role model selection overrides the project default", () => {
     catalog: catalog([model("provider/project"), { ...model("codex/gpt-5.6-sol"), backend: "codex", modelId: "gpt-5.6-sol" }])
   });
 
-  assert.equal(result.resolvedByRoleId.get("defaulted").modelRef, "provider/project");
+  assert.deepEqual(
+    { backend: result.resolvedByRoleId.get("defaulted").backend, modelId: result.resolvedByRoleId.get("defaulted").modelId },
+    { backend: "opencode", modelId: "provider/project" }
+  );
+  assert.equal("modelRef" in result.resolvedByRoleId.get("defaulted"), false);
   assert.equal(result.resolvedByRoleId.get("mapped").backend, "codex");
   assert.equal(result.resolvedByRoleId.get("mapped").modelId, "gpt-5.6-sol");
   assert.equal(result.resolvedByRoleId.has("label"), false);
+});
+
+test("run fingerprint treats backend as part of model identity and preserves opaque model IDs", () => {
+  const systemDefinition = {
+    systemId: "fingerprint.model.identity",
+    systemVersion: "1.0.0",
+    entryRoleIds: ["writer"],
+    startDispatch: "all",
+    startEventType: "START",
+    startFlows: [],
+    roleIds: ["writer"],
+    flows: [],
+    lawBinding: { globalLawRef: "law.test" },
+    executionBinding: {},
+    modelBinding: {}
+  };
+  const common = {
+    system: systemDefinition,
+    rolePackagesByRoleId: new Map(),
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false, isolateExternalData: true }
+  };
+  const codex = buildRunPlanFingerprint({
+    ...common,
+    resolvedModelsByRoleId: new Map([["writer", { backend: "codex", modelId: "vendor/model-x", bindingSource: "selection" }]])
+  });
+  const opencode = buildRunPlanFingerprint({
+    ...common,
+    resolvedModelsByRoleId: new Map([["writer", { backend: "opencode", modelId: "vendor/model-x", bindingSource: "selection" }]])
+  });
+  assert.equal(codex.version, 8);
+  assert.notEqual(codex.digest, opencode.digest);
+  assert.deepEqual(codex.payload.components.modelSelection.value[0], {
+    roleId: "writer",
+    backend: "codex",
+    modelId: "vendor/model-x",
+    fallbackModelId: null,
+    variant: null,
+    timeoutMs: null,
+    maxOutputBytes: null,
+    bindingSource: "selection"
+  });
 });
 
 test("per-role model selection preserves an optional fallback model reference", () => {

@@ -87,6 +87,7 @@ body { min-width: 0; }
   overflow: hidden;
 }
 .topbar {
+  -webkit-app-region: drag;
   background: var(--surface);
   gap: 16px;
   height: var(--topbar-h);
@@ -94,6 +95,15 @@ body { min-width: 0; }
   padding: 0 var(--gutter);
   position: relative;
   z-index: 30;
+}
+.topbar-start,
+.topbar-actions,
+.topbar-controls,
+.topbar a,
+.topbar button,
+.topbar input,
+.topbar select {
+  -webkit-app-region: no-drag;
 }
 .topbar-start { align-items: center; display: flex; flex: 1 1 auto; gap: 10px; min-width: 0; }
 .breadcrumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

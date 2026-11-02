@@ -55,7 +55,7 @@ test("state store is CAS and idempotent", () => {
 
 test("remote execution contract pins protocol, deadline, and response correlation", () => {
   const request = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     invocationId: "invoke-1",
     idempotencyKey: "run-1:exec-1:1",
     runId: "run-1",
@@ -64,21 +64,18 @@ test("remote execution contract pins protocol, deadline, and response correlatio
     attempt: 1,
     deadline: "2026-09-25T12:00:00.000Z",
     traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-    input: { prompt: "review", schema: { type: "object" }, binding: { kind: "model", backend: "opencode", modelId: "m", modelRef: "p/m" } }
+    input: { prompt: "review", schema: { type: "object" }, binding: { kind: "model", backend: "opencode", modelId: "m" } }
   };
   assert.equal(validateRemoteExecutionRequest(request), true);
   assert.equal(validateRemoteExecutionRequest({ ...request, attempt: 0 }), false);
   assert.equal(validateRemoteExecutionRequest({ ...request, input: { ...request.input, binding: {} } }), false);
-  assert.equal(validateRemoteExecutionRequest({
-    ...request,
-    input: { ...request.input, binding: { kind: "model", backend: "opencode", modelId: "m" } }
-  }), false);
+  assert.equal(validateRemoteExecutionRequest({ ...request, protocolVersion: 1 }), false);
   assert.equal(validateRemoteExecutionRequest({
     ...request,
     input: { ...request.input, binding: { kind: "profile", profile: {}, tool: {} } }
   }), false);
   const response = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     invocationId: "invoke-1",
     completedAt: "2026-09-25T11:59:00.000Z",
     result: { exitCode: 0, stdout: "{}", stderr: "", args: [] }

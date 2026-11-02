@@ -146,7 +146,8 @@ function buildModelSelectionFingerprintComponent(
     .map(([roleId, resolvedModel]) => ({
       identity: {
         roleId,
-        modelRef: resolvedModel.modelRef,
+        backend: resolvedModel.backend,
+        modelId: resolvedModel.modelId,
         fallbackModelId: resolvedModel.fallbackModelId ?? null,
         variant: resolvedModel.variant ?? null,
         timeoutMs: resolvedModel.timeoutMs ?? null,
@@ -155,7 +156,8 @@ function buildModelSelectionFingerprintComponent(
       },
       sourceHints: {
         roleId,
-        modelRef: resolvedModel.modelRef,
+        backend: resolvedModel.backend,
+        modelId: resolvedModel.modelId,
         fallbackModelId: resolvedModel.fallbackModelId ?? null
       }
     }));
@@ -330,7 +332,7 @@ export function buildRunPlanFingerprint(args: {
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 7,
+    version: 8,
     algorithm: "sha256",
     digest,
     payload

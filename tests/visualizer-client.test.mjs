@@ -201,12 +201,12 @@ test("Studio model selector shows runnable backend/model pairs and discovery sta
     editor: { roleId: "writer", data: { bindingKind: "model", backend: "codex", modelId: "gpt-5.6-sol" } },
     modelCatalog: {
       sources: [
-        { backend: "codex", status: "available" },
-        { backend: "claude", status: "available", detail: "CLI detected; persistent adapter unavailable." }
+        { backend: "codex", displayName: "Codex", status: "runnable" },
+        { backend: "claude-code", displayName: "Claude Code", status: "unavailable", detail: "Claude Code is detected locally; structured OGS transport verification is pending." }
       ],
       models: [
         { backend: "codex", runnable: true, modelId: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
-        { backend: "claude", runnable: false, modelId: "claude-sonnet", name: "Claude Sonnet" }
+        { backend: "claude-code", runnable: false, modelId: "claude-sonnet", name: "Claude Sonnet" }
       ]
     }
   });
@@ -214,7 +214,7 @@ test("Studio model selector shows runnable backend/model pairs and discovery sta
   assert.match(html, /data-role-config-field="modelId"/);
   assert.match(html, /GPT-5\.6 Sol/);
   assert.doesNotMatch(html, /Claude Sonnet/);
-  assert.match(html, /persistent adapter unavailable/);
+  assert.match(html, /Claude Code: unavailable/);
 });
 
 test("Studio defaults new role binding to Agent and prefers OpenCode when available", () => {
@@ -222,6 +222,10 @@ test("Studio defaults new role binding to Agent and prefers OpenCode when availa
     roleId: "new-role",
     editor: { roleId: "new-role", data: {} },
     modelCatalog: {
+      sources: [
+        { backend: "codex", displayName: "Codex", status: "runnable" },
+        { backend: "opencode", displayName: "OpenCode", status: "runnable" }
+      ],
       models: [
         { backend: "codex", runnable: true, modelId: "gpt-5.6", name: "GPT-5.6" },
         { backend: "opencode", runnable: true, modelId: "gpt-5.4", name: "GPT-5.4" }
@@ -229,7 +233,7 @@ test("Studio defaults new role binding to Agent and prefers OpenCode when availa
     }
   });
   assert.match(html, /data-role-config-field="bindingKind"[\s\S]*?<option value="model" selected/);
-  assert.match(html, /<option value="opencode" selected>opencode<\/option>/);
+  assert.match(html, /<option value="opencode" selected>OpenCode \(opencode\)<\/option>/);
 });
 
 test("Studio retrieval separates role participants from flow handoffs", () => {
