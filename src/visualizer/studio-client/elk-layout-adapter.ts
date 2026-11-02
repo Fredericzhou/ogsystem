@@ -329,8 +329,22 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
   }
   enforceExclusiveBoundaryLayers(positioned, geometryByEdgeId, routePointsByEdgeId, viewModel.edges, mode);
   const shifted = shiftToPadding(positioned, configFor(mode).padding);
+  // Keep the ELK positions so routes can be reconciled after authored pinned
+  // coordinates are applied below. ELK routes are expressed in the same
+  // coordinate space as these nodes (before the final node overrides).
+  const elkPositionByNodeId = new Map(shifted.map((node) => [node.id, { x: node.x, y: node.y }]));
   const shiftX = shifted.length ? shifted[0].x - positioned[0].x : 0;
   const shiftY = shifted.length ? shifted[0].y - positioned[0].y : 0;
+  // Pinned nodes retain their authored coordinates across automatic layouts.
+  // Edge routing may still be recomputed around them; the node position is the
+  // user-owned part of the layout contract.
+  for (const node of shifted) {
+    const source = viewModel.nodes.find((candidate) => candidate.id === node.id);
+    if (source?.layout.pinned === true) {
+      node.x = source.layout.x;
+      node.y = source.layout.y;
+    }
+  }
   for (const geometry of geometryByEdgeId.values()) {
     geometry.points = geometry.points.map((point) => ({ x: point.x + shiftX, y: point.y + shiftY }));
     geometry.sourcePoint = geometry.points[0];
@@ -338,6 +352,33 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
   }
   for (const [edgeId, points] of routePointsByEdgeId) {
     routePointsByEdgeId.set(edgeId, points.map((point) => ({ x: point.x + shiftX, y: point.y + shiftY })));
+  }
+  // Pinning changes node positions after ELK has already calculated edge
+  // sections. Move each section consistently between its source and target
+  // displacement so both terminals remain attached to their nodes.
+  const nodeById = new Map(shifted.map((node) => [node.id, node]));
+  for (const edge of viewModel.edges) {
+    const geometry = geometryByEdgeId.get(edge.id);
+    if (!geometry || geometry.points.length < 2) continue;
+    const sourceBefore = elkPositionByNodeId.get(edge.source);
+    const targetBefore = elkPositionByNodeId.get(edge.target);
+    const sourceAfter = nodeById.get(edge.source);
+    const targetAfter = nodeById.get(edge.target);
+    if (!sourceBefore || !targetBefore || !sourceAfter || !targetAfter) continue;
+    const sourceDelta = { x: sourceAfter.x - sourceBefore.x, y: sourceAfter.y - sourceBefore.y };
+    const targetDelta = { x: targetAfter.x - targetBefore.x, y: targetAfter.y - targetBefore.y };
+    if (Math.abs(sourceDelta.x) < 0.01 && Math.abs(sourceDelta.y) < 0.01 &&
+        Math.abs(targetDelta.x) < 0.01 && Math.abs(targetDelta.y) < 0.01) continue;
+    geometry.points = geometry.points.map((point, index, points) => {
+      const progress = index / Math.max(1, points.length - 1);
+      return {
+        x: point.x + sourceDelta.x + (targetDelta.x - sourceDelta.x) * progress,
+        y: point.y + sourceDelta.y + (targetDelta.y - sourceDelta.y) * progress
+      };
+    });
+    geometry.sourcePoint = geometry.points[0];
+    geometry.targetPoint = geometry.points[geometry.points.length - 1];
+    if (geometry.points.length > 2) routePointsByEdgeId.set(edge.id, geometry.points.slice(1, -1));
   }
   return buildProjection("elk", mode, shifted, viewModel, diagnostics, routePointsByEdgeId, geometryByEdgeId);
 }

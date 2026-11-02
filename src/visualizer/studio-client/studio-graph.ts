@@ -84,6 +84,8 @@ type StudioGraphLabelKey =
   | "quickOpenRole"
   | "quickOpenFlow"
   | "contextEditRole"
+  | "contextPinRole"
+  | "contextUnpinRole"
   | "contextEditFlow"
   | "contextInsertRole"
   | "contextDelete"
@@ -546,6 +548,57 @@ function syncRuntimeStatusBadge(args: {
   background.setAttribute("height", "16");
 }
 
+function syncRuntimeMetricsPill(args: {
+  container: Element;
+  width: number;
+  height: number;
+  state?: StudioRuntimeNodeState;
+}): void {
+  const parts: string[] = [];
+  if (args.state?.durationMs) {
+    const sec = (args.state.durationMs / 1000).toFixed(1);
+    parts.push(`⏱ ${sec}s`);
+  }
+  if (args.state?.loopCount && args.state.loopCount > 1) {
+    parts.push(`🔄 ${args.state.loopCount}`);
+  }
+  if (args.state?.totalTokens) {
+    const kTok = (args.state.totalTokens / 1000).toFixed(1);
+    parts.push(`⚡ ${kTok}k`);
+  }
+  let pillGroup = args.container.querySelector<SVGGElement>(".studio-runtime-metrics");
+  if (!parts.length) {
+    pillGroup?.remove();
+    return;
+  }
+  const metricText = parts.join(" ");
+  if (!pillGroup) {
+    pillGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    pillGroup.classList.add("studio-runtime-metrics");
+    const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bg.classList.add("studio-runtime-metrics-bg");
+    bg.setAttribute("rx", "4");
+    bg.setAttribute("fill", "rgba(15, 23, 42, 0.85)");
+    const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    txt.classList.add("studio-runtime-metrics-text");
+    txt.setAttribute("font-size", "9.5");
+    txt.setAttribute("fill", "#38bdf8");
+    txt.setAttribute("font-family", "monospace");
+    txt.setAttribute("y", "11");
+    pillGroup.append(bg, txt);
+    args.container.append(pillGroup);
+  }
+  const txt = pillGroup.querySelector<SVGTextElement>(".studio-runtime-metrics-text");
+  const bg = pillGroup.querySelector<SVGRectElement>(".studio-runtime-metrics-bg");
+  if (!txt || !bg) return;
+  txt.textContent = metricText;
+  const pillWidth = Math.max(30, metricText.length * 6.2 + 10);
+  pillGroup.setAttribute("transform", `translate(${Math.max(4, args.width - pillWidth - 6)}, 4)`);
+  bg.setAttribute("width", String(pillWidth));
+  bg.setAttribute("height", "15");
+  txt.setAttribute("x", "5");
+}
+
 export class StudioGraphIsland {
   private graph: Graph;
   private toolbar: HTMLDivElement;
@@ -870,6 +923,33 @@ export class StudioGraphIsland {
   focusRuntimeHandoff(handoffId: string): void {
     this.runtimeFocusedHandoffId = handoffId;
     this.applyRuntimeOverlay();
+  }
+
+  focusRoleNode(roleId: string): boolean {
+    const targetNode = this.graph.getNodes().find((node) => {
+      const data = node.getData() as { studioNode?: { roleId?: string } } | undefined;
+      return node.id === roleId || data?.studioNode?.roleId === roleId;
+    });
+    if (!targetNode) return false;
+    this.graph.cleanSelection();
+    this.graph.select(targetNode);
+    this.focusCell(targetNode, { preserveViewport: false });
+    return true;
+  }
+
+  highlightFlowEdge(flowKey: string): boolean {
+    const targetEdge = this.graph.getEdges().find((edge) => {
+      const data = edge.getData() as { studioEdge?: { flowKey?: string; id?: string } } | undefined;
+      return edge.id === flowKey || data?.studioEdge?.flowKey === flowKey;
+    });
+    if (!targetEdge) return false;
+    const view = this.graph.findViewByCell(targetEdge);
+    const container = view?.container as Element | undefined;
+    if (container) {
+      container.classList.add("is-selection-active");
+      setTimeout(() => container.classList.remove("is-selection-active"), 1500);
+    }
+    return true;
   }
 
   dispose(): void {
@@ -3085,6 +3165,7 @@ export class StudioGraphIsland {
     const items = args.state.kind === "role"
       ? [
           { action: "edit", label: this.label("contextEditRole"), disabled: false },
+          { action: "toggle-pin", label: this.label(this.isRolePinned(args.state.roleId) ? "contextUnpinRole" : "contextPinRole"), disabled: false },
           { action: "delete", label: this.label("contextDelete"), disabled: !canDeleteRole, destructive: true }
         ]
       : [
@@ -3135,6 +3216,9 @@ export class StudioGraphIsland {
       if (action === "delete") {
         await this.deleteRole(state.roleId);
       }
+      if (action === "toggle-pin") {
+        await this.toggleRolePin(state.roleId);
+      }
       return;
     }
     if (action === "edit") {
@@ -3148,6 +3232,27 @@ export class StudioGraphIsland {
     if (action === "insert-role") {
       this.beginFlowRoleInsertion(state.edge);
     }
+  }
+
+  private isRolePinned(roleId: string): boolean {
+    const node = this.currentViewModel?.nodes.find((candidate) => candidate.roleId === roleId);
+    return node?.layout.pinned === true;
+  }
+
+  private async toggleRolePin(roleId: string): Promise<void> {
+    const pinned = !this.isRolePinned(roleId);
+    if (this.currentViewModel) {
+      this.currentViewModel = {
+        ...this.currentViewModel,
+        nodes: this.currentViewModel.nodes.map((node) => node.roleId === roleId
+          ? { ...node, layout: { ...node.layout, pinned } }
+          : node)
+      };
+      this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel);
+      this.renderCurrentProjection();
+      this.applyRuntimeOverlay();
+    }
+    await this.syncCanvas();
   }
 
   private async deleteRole(roleId: string): Promise<void> {
@@ -3361,6 +3466,7 @@ export class StudioGraphIsland {
         syncRuntimeActivityMarker({ container, width: size.width, height: size.height, state: nodeState });
         syncRuntimeStatusIcon({ container, width: size.width, state: nodeState });
         syncRuntimeStatusBadge({ container, width: size.width, height: size.height, node: viewNode, state: nodeState, locale });
+        syncRuntimeMetricsPill({ container, width: size.width, height: size.height, state: nodeState });
       }
     }
     for (const edge of this.graph.getEdges()) {

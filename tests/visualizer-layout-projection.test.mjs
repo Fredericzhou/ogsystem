@@ -233,6 +233,30 @@ test("ELK honors node size variation without projected overlap", async () => {
   assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
 });
 
+test("ELK routes stay attached when pinned nodes override automatic positions", async () => {
+  const view = fixture("fan-out");
+  const pinned = view.nodes.find((item) => item.id === "left");
+  pinned.layout = { ...pinned.layout, x: 740, y: 360, pinned: true };
+  const projection = await createElkLayoutProjection(view, "flow");
+  const projectedPinned = projection.nodes.find((item) => item.id === "left");
+  assert.equal(projectedPinned.x, 740);
+  assert.equal(projectedPinned.y, 360);
+
+  for (const projected of projection.edges) {
+    const points = projectedRoutePoints(projection, projected);
+    const source = points[0];
+    const target = points.at(-1);
+    const sourceNode = projection.nodes.find((item) => item.id === projected.source);
+    const targetNode = projection.nodes.find((item) => item.id === projected.target);
+    assert.ok(source.x >= sourceNode.x - 0.5 && source.x <= sourceNode.x + sourceNode.width + 0.5 &&
+      source.y >= sourceNode.y - 0.5 && source.y <= sourceNode.y + sourceNode.height + 0.5,
+    `${projected.id} source terminal must touch its projected node`);
+    assert.ok(target.x >= targetNode.x - 0.5 && target.x <= targetNode.x + targetNode.width + 0.5 &&
+      target.y >= targetNode.y - 0.5 && target.y <= targetNode.y + targetNode.height + 0.5,
+    `${projected.id} target terminal must touch its projected node`);
+  }
+});
+
 test("ELK follows declared branch order and expands nodes for readable labels", async () => {
   const projection = await createElkLayoutProjection(fixture("fan-out"), "flow");
   const left = projection.nodes.find((item) => item.id === "left");

@@ -37,7 +37,7 @@ export type StudioAuthoringDocument = {
   roles: Record<string, StudioAuthoringRole>;
   flows: Record<string, StudioAuthoringFlow>;
   layout: {
-    nodes: Record<string, { x: number; y: number; width?: number; height?: number }>;
+    nodes: Record<string, { x: number; y: number; width?: number; height?: number; pinned?: boolean }>;
     viewport?: { x: number; y: number; zoom: number };
   };
 };
@@ -83,6 +83,7 @@ export type StudioGraphSnapshot = {
     y: number;
     width: number;
     height: number;
+    pinned?: boolean;
     label: string;
     badges: string[];
     bindingKind: StudioAuthoringRole["bindingKind"] | "boundary";
@@ -121,6 +122,7 @@ export type GraphViewModelLayout = {
   y: number;
   width: number;
   height: number;
+  pinned?: boolean;
 };
 
 export type GraphViewModelNodeStructure = {

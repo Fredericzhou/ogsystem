@@ -395,7 +395,7 @@ export function renderConversationHtml(args: {
   if (!items.length) {
     return '<div class="hint">' + escapeText(t("timeline.conversationEmpty", undefined, "No conversation items captured yet.")) + '</div>';
   }
-  return items.slice().reverse().map((item: Record<string, any>) => {
+  const rowsHtml = items.slice().reverse().map((item: Record<string, any>) => {
     const source = item.source || {};
     const sourceLocator = source.file === "state.json"
       ? "state.json@" + String(source.snapshotVersion ?? "?")
@@ -410,14 +410,77 @@ export function renderConversationHtml(args: {
     const review = item.review ? "review " + String(item.review.reviewId) + " / " + String(item.review.reviewStatus) + (item.review.decision ? " / " + String(item.review.decision) : "") : "";
     const join = item.join ? "scope " + String(item.join.scopeId || item.join.joinRoleId) + " · " + String(item.join.mode) + (item.join.requiredCount === undefined ? "" : " threshold " + String(item.join.requiredCount)) + " · expected " + (item.join.expected || []).join(", ") + " · ready " + (item.join.ready || []).join(", ") + " · missing " + (item.join.missing || []).join(", ") + (item.join.timedOut ? " · timed out" : "") + (item.join.arrivedFromRoleId ? " · arrived from " + String(item.join.arrivedFromRoleId) : "") + (item.join.finalAction ? " · action " + String(item.join.finalAction) : "") + (item.join.reason ? " · reason " + String(item.join.reason) : "") + (item.join.failurePolicy ? " · failure policy " + String(item.join.failurePolicy) : "") : "";
     const meta = [identity, routeLabel, routeDecision, review, join, sourceLocator].filter(Boolean).join(" · ");
-    const content = item.content?.text ? '<div class="hint conversation-content">' + escapeText(item.content.text) + (item.content.truncated ? "..." : "") + '</div>' : "";
-    return '<div class="event conversation-item" data-conversation-item-id="' + escapeText(item.itemId) + '">' +
-      '<div class="event-top"><span>' + escapeText(item.kind || "conversation") + '</span><span>' + escapeText(formatTime(item.at)) + '</span></div>' +
-      '<strong>' + (item.roleId ? '<code>' + escapeText(item.roleId) + '</code> ' : "") +
-      (item.event ? '<code>' + escapeText(item.event) + '</code> ' : "") +
-      '<span class="status ' + escapeText(statusClass(String(item.status || "unknown"))) + '">' + escapeText(displayUiToken(item.status || "unknown", t)) + '</span></strong>' +
-      (meta ? '<div class="hint">' + escapeText(meta) + '</div>' : "") + content + '</div>';
+
+    const isUser = item.roleId === "user" || item.kind === "user_message";
+    const isSystem = item.kind === "route_decision" || item.kind === "join_status" || item.kind === "join" || (!item.roleId && !item.content?.text);
+    const bubbleType = isUser ? "is-user" : isSystem ? "is-system" : "is-agent";
+
+    const roleId = String(item.roleId || "");
+    const roleColors = roleId ? roleColorForId(roleId, "dark") : null;
+    const monogram = roleId ? roleId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase() : "";
+
+    let rawText = String(item.content?.text || "");
+    let thoughtText = "";
+    const thoughtMatch = rawText.match(/<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/i);
+    if (thoughtMatch) {
+      thoughtText = thoughtMatch[1].trim();
+      rawText = rawText.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/i, "").trim();
+    } else if (item.thought) {
+      thoughtText = String(item.thought).trim();
+    }
+
+    const thoughtHtml = thoughtText
+      ? '<details class="agent-thought-block">' +
+          '<summary><span class="thought-sparkle">✦</span> ' + escapeText(t("studio.chat.thought", undefined, "Thinking Process")) +
+          (item.durationMs ? ' <span class="thought-time">' + escapeText(String(item.durationMs)) + 'ms</span>' : "") + '</summary>' +
+          '<div class="thought-body">' + escapeText(thoughtText) + '</div>' +
+        '</details>'
+      : "";
+
+    const toolCallHtml = item.toolCall || item.audit?.toolRef
+      ? '<div class="agent-tool-call">' +
+          '<div class="tool-call-header"><span>⚙</span> <span>' + escapeText(String(item.toolCall?.name || item.audit?.toolRef || "tool")) + '</span>' +
+          (item.status ? '<span class="tool-call-status">' + escapeText(displayUiToken(item.status, t)) + '</span>' : '') + '</div>' +
+          (item.toolCall?.args ? '<pre><code>' + escapeText(typeof item.toolCall.args === "string" ? item.toolCall.args : JSON.stringify(item.toolCall.args, null, 2)) + '</code></pre>' : '') +
+        '</div>'
+      : "";
+
+    const contentHtml = rawText
+      ? '<div class="chat-bubble-content conversation-content">' + escapeText(rawText) + (item.content?.truncated ? "..." : "") + '</div>'
+      : "";
+
+    const avatarHtml = isUser
+      ? '<div class="chat-avatar is-user" aria-hidden="true">U</div>'
+      : isSystem
+        ? ''
+        : '<div class="chat-avatar" style="background: ' + (roleColors ? roleColors.accent : "var(--accent)") + ';" aria-hidden="true">' + escapeText(monogram || "A") + '</div>';
+
+    const focusBtnHtml = roleId && !isUser
+      ? '<button type="button" class="bubble-focus-btn" data-focus-role-id="' + escapeText(roleId) + '" title="' + escapeText(t("action.focusRole", undefined, "Focus role in graph")) + '">📍</button>'
+      : "";
+
+    return '<div class="event conversation-item chat-bubble-row ' + bubbleType + '" data-conversation-item-id="' + escapeText(item.itemId) + '">' +
+      avatarHtml +
+      '<div class="chat-bubble-card"' + (roleColors ? ' style="--role-accent: ' + roleColors.accent + ';"' : "") + '>' +
+        '<div class="chat-bubble-header event-top">' +
+          '<div class="chat-bubble-sender">' +
+            (roleId ? '<code>' + escapeText(roleId) + '</code>' : '<span>' + escapeText(item.kind || "system") + '</span>') +
+            (item.event ? ' <code>' + escapeText(item.event) + '</code>' : '') +
+            focusBtnHtml +
+          '</div>' +
+          '<div class="chat-bubble-time">' +
+            '<span class="status ' + escapeText(statusClass(String(item.status || "unknown"))) + '">' + escapeText(displayUiToken(item.status || "unknown", t)) + '</span> ' +
+            '<span>' + escapeText(formatTime(item.at)) + '</span>' +
+          '</div>' +
+        '</div>' +
+        thoughtHtml +
+        toolCallHtml +
+        contentHtml +
+        (meta ? '<div class="hint chat-bubble-meta">' + escapeText(meta) + '</div>' : "") +
+      '</div></div>';
   }).join("");
+
+  return '<div class="conversation-chat-stream">' + rowsHtml + '</div>';
 }
 
 export function renderTimelineHtml(args: {

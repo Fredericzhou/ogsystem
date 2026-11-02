@@ -328,7 +328,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       bindingKind: role.bindingKind,
       badges: role.badges.slice(),
       structure: nodeStructure(role, args.semanticIR ?? undefined),
-      layout: { x, y, width, height },
+      layout: { x, y, width, height, pinned: layoutSource?.pinned === true },
       runtime,
       diagnostic: toDiagnosticLayer(diagnostic),
       editable: mode === "edit"

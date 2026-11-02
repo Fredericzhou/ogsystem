@@ -13,6 +13,8 @@ export type StudioRuntimeNodeState = {
   errorCode?: string;
   errorMessage?: string;
   loopCount?: number;
+  durationMs?: number;
+  totalTokens?: number;
   active: boolean;
   waitingReview: boolean;
   humanGateConfigured: boolean;
@@ -70,6 +72,10 @@ export type StudioRuntimeProgressEvent = {
   stage?: string;
   waitKind?: string;
   elapsedMs?: number;
+  durationMs?: number;
+  estimatedInputTokens?: number;
+  estimatedOutputTokens?: number;
+  audit?: { estimatedInputTokens?: number; estimatedOutputTokens?: number; durationMs?: number };
 };
 
 export type StudioRuntimeVisualState = {
@@ -449,6 +455,20 @@ export function deriveStudioRuntimeVisualState(args: {
         waitingBranches.delete(key);
         technicalWaitingBranches.delete(key);
         technicalWaitingStageByBranch.delete(key);
+        if (event.roleId) {
+          const roleState = nodeStates.get(event.roleId);
+          if (roleState) {
+            const durationMs = event.durationMs ?? event.elapsedMs ?? event.audit?.durationMs;
+            if (Number.isFinite(durationMs) && Number(durationMs) > 0) {
+              roleState.durationMs = Number(durationMs);
+            }
+            if (Number.isFinite(event.loopIteration) && Number(event.loopIteration) > 0) {
+              roleState.loopCount = Number(event.loopIteration);
+            }
+            const tokenUsage = Number(event.estimatedInputTokens ?? event.audit?.estimatedInputTokens ?? 0) + Number(event.estimatedOutputTokens ?? event.audit?.estimatedOutputTokens ?? 0);
+            if (Number.isFinite(tokenUsage) && tokenUsage > 0) roleState.totalTokens = tokenUsage;
+          }
+        }
         if (event.type === "role.failed") {
           const roleId = String(event.roleId || "");
           const errorCode = event.errorCode || event.errorEnvelope?.errorCode;

@@ -40,11 +40,21 @@ export function focusStudioX6RuntimeHandoff(root: HTMLElement, handoffId: string
   mounted.get(root)?.focusRuntimeHandoff(handoffId);
 }
 
+export function focusStudioX6Node(root: HTMLElement, roleId: string): boolean {
+  return mounted.get(root)?.focusRoleNode(roleId) ?? false;
+}
+
+export function highlightStudioX6FlowEdge(root: HTMLElement, flowKey: string): boolean {
+  return mounted.get(root)?.highlightFlowEdge(flowKey) ?? false;
+}
+
 window.OGSVisualizerClient = window.OGSVisualizerClient || {};
 Object.assign(window.OGSVisualizerClient, {
   mountStudioX6Bridge,
   disposeStudioX6Bridge,
   setStudioX6RuntimeProgress,
   focusStudioX6RuntimeHandoff,
+  focusStudioX6Node,
+  highlightStudioX6FlowEdge,
   applyStudioAuthoringCommand
 });
