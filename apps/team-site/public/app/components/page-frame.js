@@ -15,6 +15,10 @@ export function frameExistingPage(root, template, aside = "", tabs = "") {
   }
   const heading = root.querySelector(":scope > .page-heading");
   if (!heading) return;
+  const firstChild = heading.querySelector(":scope > div");
+  if (firstChild && !firstChild.classList.contains("page-frame-title")) {
+    firstChild.classList.add("page-frame-title");
+  }
   const frame = document.createElement("section");
   frame.className = "page-frame";
   frame.dataset.template = template;
@@ -27,11 +31,14 @@ export function frameExistingPage(root, template, aside = "", tabs = "") {
   const existingTabs = root.querySelector(":scope > .studio-workspace-nav");
   const tabMarkup = tabs || existingTabs?.outerHTML || "";
   if (tabMarkup) {
-    const tabBar = document.createElement("nav");
-    tabBar.className = "page-frame-tabs";
-    tabBar.setAttribute("aria-label", heading.querySelector("h1")?.textContent?.trim() || "页面导航");
+    let tabBar = heading.querySelector(".page-frame-tabs");
+    if (!tabBar) {
+      tabBar = document.createElement("nav");
+      tabBar.className = "page-frame-tabs";
+      tabBar.setAttribute("aria-label", heading.querySelector("h1")?.textContent?.trim() || "页面导航");
+      heading.append(tabBar);
+    }
     tabBar.innerHTML = tabMarkup;
-    heading.append(tabBar);
   }
   frame.append(heading);
   frame.append(body);

@@ -57,7 +57,7 @@ test("GraphViewModel edit mode inherits authoring.layout and exposes full capabi
 
   const dispatch = view.nodes.find((node) => node.roleId === "dispatch");
   assert.ok(dispatch);
-  assert.deepEqual(dispatch.layout, { x: 42, y: 17, width: 200, height: 96 });
+  assert.deepEqual(dispatch.layout, { x: 42, y: 17, width: 200, height: 96, pinned: false });
   assert.equal(dispatch.bindingKind, "model");
   assert.equal(dispatch.entityKind, "responsibility_seat");
   assert.equal(dispatch.roleSeat, true);
