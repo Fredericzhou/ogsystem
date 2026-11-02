@@ -598,7 +598,11 @@ function edgeCenter(node: LayoutProjectionNode | undefined): LayoutPoint {
     : { x: 0, y: 0 };
 }
 
-function resolveRoute(edge: GraphViewModelEdge, nodeById: ReadonlyMap<string, LayoutProjectionNode>): {
+function resolveRoute(
+  edge: GraphViewModelEdge,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  respectTopologyOrder = true
+): {
   kind: LayoutRouteKind;
   sourceSide: LayoutSide;
   targetSide: LayoutSide;
@@ -607,7 +611,7 @@ function resolveRoute(edge: GraphViewModelEdge, nodeById: ReadonlyMap<string, La
   if (edge.source === edge.target) {
     return { kind: "self", sourceSide: "right", targetSide: "top", verticalGap: 0 };
   }
-  if (edge.topologyOrder?.endsWith("L")) {
+  if (respectTopologyOrder && edge.topologyOrder?.endsWith("L")) {
     return { kind: "backward", sourceSide: "left", targetSide: "right", verticalGap: 0 };
   }
   const sourceCenter = edgeCenter(nodeById.get(edge.source));
@@ -628,6 +632,76 @@ function resolveRoute(edge: GraphViewModelEdge, nodeById: ReadonlyMap<string, La
     return { kind: "backward", sourceSide: "left", targetSide: "right", verticalGap };
   }
   return { kind: "forward", sourceSide: "right", targetSide: "left", verticalGap };
+}
+
+/**
+ * Assigns explicit outer lanes to reciprocal edges. ELK and the stored layout
+ * can place both directions on the same axis, so those routes need stable
+ * feedback lanes instead of relying on the current node geometry alone.
+ */
+function reciprocalBackwardEdgeIds(
+  edges: readonly GraphViewModelEdge[],
+  routes: ReadonlyMap<string, ReturnType<typeof resolveRoute>>,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): { backward: ReadonlySet<string>; pairs: ReadonlySet<string>; lanes: ReadonlyMap<string, LayoutSide> } {
+  const groups = new Map<string, { left: GraphViewModelEdge[]; right: GraphViewModelEdge[] }>();
+  for (const edge of edges) {
+    if (edge.source === edge.target || !nodeById.has(edge.source) || !nodeById.has(edge.target)) continue;
+    const [left, right] = [edge.source, edge.target].sort(compareStable);
+    const group = groups.get(`${left}\u0000${right}`) ?? { left: [], right: [] };
+    (edge.source === left ? group.left : group.right).push(edge);
+    groups.set(`${left}\u0000${right}`, group);
+  }
+
+  const naturalDirectionScore = (edge: GraphViewModelEdge): number => {
+    const source = edgeCenter(nodeById.get(edge.source));
+    const target = edgeCenter(nodeById.get(edge.target));
+    if (target.x !== source.x) return target.x > source.x ? 1 : -1;
+    if (target.y !== source.y) return target.y > source.y ? 1 : -1;
+    return 0;
+  };
+  const backward = new Set<string>();
+  const pairs = new Set<string>();
+  const lanes = new Map<string, LayoutSide>();
+  for (const group of groups.values()) {
+    group.left.sort((left, right) => compareStable(edgeSortKey(left), edgeSortKey(right)));
+    group.right.sort((left, right) => compareStable(edgeSortKey(left), edgeSortKey(right)));
+    const pairCount = Math.min(group.left.length, group.right.length);
+    for (let index = 0; index < pairCount; index += 1) {
+      const left = group.left[index];
+      const right = group.right[index];
+      pairs.add(left.id);
+      pairs.add(right.id);
+      const leftRoute = routes.get(left.id);
+      const rightRoute = routes.get(right.id);
+      if (leftRoute?.kind === "backward" && rightRoute?.kind !== "backward") {
+        backward.add(left.id);
+        continue;
+      }
+      if (rightRoute?.kind === "backward" && leftRoute?.kind !== "backward") {
+        backward.add(right.id);
+        continue;
+      }
+      if (leftRoute?.kind === "backward" && rightRoute?.kind === "backward") {
+        backward.add(left.id);
+        backward.add(right.id);
+        // Two feedback routes need opposite outer lanes. The stable edge
+        // order makes the result deterministic across ELK and stored layouts.
+        lanes.set(left.id, "top");
+        lanes.set(right.id, "bottom");
+        continue;
+      }
+      const leftScore = naturalDirectionScore(left);
+      const rightScore = naturalDirectionScore(right);
+      if (leftScore !== rightScore) {
+        backward.add(leftScore > rightScore ? right.id : left.id);
+        continue;
+      }
+      // Stable fallback for overlapping or incomplete geometry.
+      backward.add(compareStable(edgeSortKey(left), edgeSortKey(right)) < 0 ? right.id : left.id);
+    }
+  }
+  return { backward, pairs, lanes };
 }
 
 function anchorOffset(index: number, count: number, nodeSpan: number): number {
@@ -1110,7 +1184,9 @@ function backwardFeedbackRoute(
   edge: GraphViewModelEdge,
   sourceTerminal: LayoutTerminal,
   targetTerminal: LayoutTerminal,
-  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  preferLateralLane = false,
+  preferredSide?: LayoutSide
 ): { source: LayoutTerminal; target: LayoutTerminal; points: LayoutPoint[] } | undefined {
   const sourceNode = nodeById.get(edge.source);
   const targetNode = nodeById.get(edge.target);
@@ -1118,7 +1194,11 @@ function backwardFeedbackRoute(
 
   const obstacles = expandedRouteObstacles(nodeById, new Set([edge.source, edge.target]));
   const candidates: Array<{ source: LayoutTerminal; target: LayoutTerminal; points: LayoutPoint[]; length: number; order: number }> = [];
-  for (const [order, side] of (["top", "bottom"] as const).entries()) {
+  const defaultSides = preferLateralLane ? (["left", "right"] as const) : (["top", "bottom"] as const);
+  const candidateSides = preferredSide && defaultSides.includes(preferredSide as (typeof defaultSides)[number])
+    ? [preferredSide, ...defaultSides.filter((side) => side !== preferredSide)]
+    : defaultSides;
+  for (const [order, side] of candidateSides.entries()) {
     const source = { ...sourceTerminal, side };
     const target = { ...targetTerminal, side };
     const sourcePoint = terminalPoint(source, sourceNode);
@@ -1128,27 +1208,44 @@ function backwardFeedbackRoute(
     const targetStub = terminalMarkerStubPoint(target, targetNode);
     if (!sourceStub || !targetStub) continue;
 
-    const above = side === "top";
-    const baseLane = above
-      ? Math.min(sourceNode.y, targetNode.y) - STUDIO_EDGE_TERMINAL_STUB_LENGTH - 8
-      : Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8;
+    const before = side === "top" || side === "left";
+    const baseLane = preferLateralLane
+      ? before
+        ? Math.min(sourceNode.x, targetNode.x) - STUDIO_EDGE_TERMINAL_STUB_LENGTH - 8
+        : Math.max(sourceNode.x + sourceNode.width, targetNode.x + targetNode.width) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8
+      : before
+        ? Math.min(sourceNode.y, targetNode.y) - STUDIO_EDGE_TERMINAL_STUB_LENGTH - 8
+        : Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8;
     const lanes = new Set([baseLane]);
     for (const obstacle of obstacles) {
-      lanes.add(above ? obstacle.y - 2 : obstacle.y + obstacle.height + 2);
+      lanes.add(preferLateralLane
+        ? before ? obstacle.x - 2 : obstacle.x + obstacle.width + 2
+        : before ? obstacle.y - 2 : obstacle.y + obstacle.height + 2);
     }
     const usableLanes = [...lanes]
-      .filter((lane) => above
-        ? lane < Math.min(sourceNode.y, targetNode.y)
-        : lane > Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height))
+      .filter((lane) => preferLateralLane
+        ? before
+          ? lane < Math.min(sourceNode.x, targetNode.x)
+          : lane > Math.max(sourceNode.x + sourceNode.width, targetNode.x + targetNode.width)
+        : before
+          ? lane < Math.min(sourceNode.y, targetNode.y)
+          : lane > Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height))
       .sort((left, right) => Math.abs(left - baseLane) - Math.abs(right - baseLane));
 
     for (const lane of usableLanes) {
-      const points = [
-        sourceStub,
-        { x: sourceStub.x, y: lane },
-        { x: targetStub.x, y: lane },
-        targetStub
-      ];
+      const points = preferLateralLane
+        ? [
+            sourceStub,
+            { x: lane, y: sourceStub.y },
+            { x: lane, y: targetStub.y },
+            targetStub
+          ]
+        : [
+            sourceStub,
+            { x: sourceStub.x, y: lane },
+            { x: targetStub.x, y: lane },
+            targetStub
+          ];
       const path = [sourcePoint, ...points, targetPoint];
       if (path.some((point, index) => index > 0 && routeSegmentBlocked(path[index - 1], point, obstacles))) continue;
       const label = labelRectForEdgeId(edge.id, path);
@@ -1399,7 +1496,18 @@ function buildEdgeRouting(
   profile: StudioLayoutMode = "flow",
   nodes: readonly GraphViewModelNode[] = []
 ): { routing: Map<string, LayoutEdgeRouting>; bundles: LayoutEdgeBundle[] } {
-  const routes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
+  const resolvedRoutes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
+  const naturalRoutes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById, false)]));
+  const reciprocalRouting = reciprocalBackwardEdgeIds(edges, resolvedRoutes, nodeById);
+  const reciprocalBackwards = reciprocalRouting.backward;
+  const routes = new Map(edges.map((edge) => {
+    const route = reciprocalBackwards.has(edge.id)
+      ? { ...(resolvedRoutes.get(edge.id)!), kind: "backward" as const }
+      : reciprocalRouting.pairs.has(edge.id)
+        ? naturalRoutes.get(edge.id)!
+        : resolvedRoutes.get(edge.id)!;
+    return [edge.id, route] as const;
+  }));
   const topologyComponents = topologyComponentIds({ nodes, edges });
   const feedbackEdgeIds = new Set(edges.filter((edge) => {
     const component = topologyComponents.get(edge.source);
@@ -1501,7 +1609,14 @@ function buildEdgeRouting(
     const targetOffset = targetTerminal.offset;
     const routePoints = projectedRoutePoints(edge, route, nodeById, finalRoutePoints);
     if (route.kind === "backward" && feedbackEdgeIds.has(edge.id)) {
-      const feedbackRoute = backwardFeedbackRoute(edge, sourceTerminal, targetTerminal, nodeById);
+      const feedbackRoute = backwardFeedbackRoute(
+        edge,
+        sourceTerminal,
+        targetTerminal,
+        nodeById,
+        reciprocalBackwards.has(edge.id) && naturalRoutes.get(edge.id)?.kind === "vertical",
+        reciprocalRouting.lanes.get(edge.id)
+      );
       if (feedbackRoute) {
         Object.assign(sourceTerminal, feedbackRoute.source);
         Object.assign(targetTerminal, feedbackRoute.target);
@@ -1564,7 +1679,7 @@ function buildEdgeRouting(
       router: hasFixedRoute ? { name: "normal", args: {} } : routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
       connector: STUDIO_EDGE_CONNECTOR,
       routePoints,
-      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}`,
+      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}${reciprocalBackwards.has(edge.id) ? ":reciprocal" : ""}`,
       ...(edgeBundles ? { bundleIds: edgeBundles } : {})
     });
   }

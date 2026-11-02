@@ -141,6 +141,26 @@ function routesCross(left, right) {
   return false;
 }
 
+function routesShareCollinearSegment(left, right) {
+  for (let leftIndex = 1; leftIndex < left.length; leftIndex += 1) {
+    const leftStart = left[leftIndex - 1];
+    const leftEnd = left[leftIndex];
+    for (let rightIndex = 1; rightIndex < right.length; rightIndex += 1) {
+      const rightStart = right[rightIndex - 1];
+      const rightEnd = right[rightIndex];
+      if (leftStart.y === leftEnd.y && rightStart.y === rightEnd.y && leftStart.y === rightStart.y) {
+        if (Math.min(Math.max(leftStart.x, leftEnd.x), Math.max(rightStart.x, rightEnd.x)) >
+          Math.max(Math.min(leftStart.x, leftEnd.x), Math.min(rightStart.x, rightEnd.x))) return true;
+      }
+      if (leftStart.x === leftEnd.x && rightStart.x === rightEnd.x && leftStart.x === rightStart.x) {
+        if (Math.min(Math.max(leftStart.y, leftEnd.y), Math.max(rightStart.y, rightEnd.y)) >
+          Math.max(Math.min(leftStart.y, leftEnd.y), Math.min(rightStart.y, rightEnd.y))) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function segmentIntersectsNode(start, end, node) {
   const left = node.x;
   const right = node.x + node.width;
@@ -645,6 +665,27 @@ test("flow endpoint identities stay stable while nearby sides follow layout dire
   assert.equal(vertical.target.port, forward.target.port);
   assert.notEqual(forward.source.side, vertical.source.side);
   assert.notEqual(forward.target.side, vertical.target.side);
+});
+
+test("reciprocal vertical edges use separate lateral feedback lanes", async () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("b", { layout: { x: 100, y: 300, width: 180, height: 84 } })
+  ], [edge("a-b", "a", "b"), edge("b-a", "b", "a")]);
+
+  const assertSeparated = (projection) => {
+    const first = projection.edges.find((item) => item.id === "a-b");
+    const second = projection.edges.find((item) => item.id === "b-a");
+    assert.ok(first && second);
+    assert.notEqual(first.routing.lane, second.routing.lane);
+    assert.equal(routesShareCollinearSegment(
+      projectedRoutePoints(projection, first),
+      projectedRoutePoints(projection, second)
+    ), false);
+  };
+
+  assertSeparated(createStoredLayoutProjection(view));
+  assertSeparated(await createElkLayoutProjection(view, "stacked"));
 });
 
 test("moving a node recalculates independent flow routes without changing business edge ids", () => {
