@@ -59,11 +59,20 @@ export function renderStudioChatPanelHtml(args: {
       ? t("studio.chat.proposalStructure", undefined, "Structure proposal")
       : "";
   const messageHtml = messages.length
-    ? messages.slice(-8).map((message) =>
-        '<div class="event"><div class="event-top"><span>' + escapeText(message.role === "assistant" ? t("studio.chat.assistant", undefined, "assistant") : t("studio.chat.you", undefined, "you")) +
-        '</span><span>' + escapeText(message.mode ? studioChatModeLabel(message.mode, t) : "") + '</span></div><strong>' +
-        escapeText(message.text || "") + '</strong></div>'
-      ).join("")
+    ? messages.slice(-8).map((message) => {
+        const isAssistant = message.role === "assistant";
+        const avatar = isAssistant
+          ? '<div class="chat-avatar" style="background: var(--accent);" aria-hidden="true">✦</div>'
+          : '<div class="chat-avatar is-user" aria-hidden="true">U</div>';
+        return '<div class="chat-bubble-row event ' + (isAssistant ? "is-agent" : "is-user") + '">' +
+          avatar +
+          '<div class="chat-bubble-card">' +
+            '<div class="chat-bubble-header event-top"><span>' + escapeText(isAssistant ? t("studio.chat.assistant", undefined, "assistant") : t("studio.chat.you", undefined, "you")) + '</span>' +
+            '<span>' + escapeText(message.mode ? studioChatModeLabel(message.mode, t) : "") + '</span></div>' +
+            '<strong>' + escapeText(message.text || "") + '</strong>' +
+          '</div>' +
+        '</div>';
+      }).join("")
     : '<div class="hint">' + escapeText(t("studio.chat.emptyHistory", undefined, "Describe the system you want to generate or the selected graph item you want to adjust.")) + '</div>';
   const busyHtml = chatBusy
     ? '<div class="hint" role="status" aria-live="polite">' + escapeText(t("studio.chat.generating", undefined, "Generating Studio draft. You can close this panel while the request finishes.")) + '</div>'

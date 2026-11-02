@@ -98,6 +98,7 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
         y: layout.y,
         width: layout.width ?? 180,
         height: layout.height ?? 84,
+        pinned: layout.pinned === true,
         label: role.title ?? role.roleId,
         badges: role.badges,
         bindingKind: role.bindingKind
@@ -110,6 +111,7 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
         y: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.y ?? 120,
         width: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.width ?? 112,
         height: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.height ?? 68,
+        pinned: authoring.layout.nodes[STUDIO_SYSTEM_END_ROLE_ID]?.pinned === true,
         label: "结束",
         badges: [],
         bindingKind: "boundary" as const

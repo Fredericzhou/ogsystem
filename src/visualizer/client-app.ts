@@ -1027,7 +1027,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
     }
 
-    function studioRuntimeProgressFromSnapshot(snapshot) {
+    function studioRuntimeProgressFromSnapshot(snapshot, eventLimit) {
       const entries = Array.isArray(snapshot?.runtimeEvents) ? snapshot.runtimeEvents : [];
       const runtimeTypes = new Set([
         "flow.activated",
@@ -1045,7 +1045,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         "run_stopped",
         "run_terminated"
       ]);
-      return entries.map((entry) => {
+      const progress = entries.map((entry) => {
         const record = entry?.record && typeof entry.record === "object" ? entry.record : entry;
         if (!record || typeof record !== "object") return null;
         const nestedEvent = record.event && typeof record.event === "object" ? record.event : null;
@@ -1059,6 +1059,66 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           eventType: String(event.eventType || record.eventType || (typeof record.event === "string" ? record.event : "") || "") || undefined
         };
       }).filter(Boolean);
+      return Number.isInteger(eventLimit) && eventLimit >= 0 ? progress.slice(0, eventLimit) : progress;
+    }
+
+    function ensureStudioReplayControls() {
+      const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
+      if (!shell || state.buildMode !== "debug" || !state.selectedRunId || state.selectedRunId !== state.studioBridgeLastDryRunId) return;
+      let controls = shell.querySelector("[data-studio-replay-controls]");
+      if (!controls) {
+        controls = document.createElement("div");
+        controls.className = "studio-replay-controls";
+        controls.setAttribute("data-studio-replay-controls", "1");
+        controls.innerHTML = '<button type="button" class="button subtle" data-replay-step="first" aria-label="' + escapeText(t("timeline.firstEvent", undefined, "First event")) + '">|◀</button><button type="button" class="button subtle" data-replay-step="back" aria-label="' + escapeText(t("timeline.previousEvent", undefined, "Previous event")) + '">◀</button><button type="button" class="button subtle" data-replay-step="play" aria-label="' + escapeText(t("timeline.playPause", undefined, "Play or pause")) + '">▶</button><button type="button" class="button subtle" data-replay-step="forward" aria-label="' + escapeText(t("timeline.nextEvent", undefined, "Next event")) + '">▶|</button><button type="button" class="button subtle" data-replay-step="latest" aria-label="' + escapeText(t("timeline.latestEvent", undefined, "Latest event")) + '">' + escapeText(t("timeline.latestEvent", undefined, "Latest")) + '</button><input data-replay-range type="range" min="0" max="0" value="0" aria-label="' + escapeText(t("timeline.eventPosition", undefined, "Runtime event position")) + '"><output data-replay-position></output>';
+        shell.appendChild(controls);
+        controls.addEventListener("click", (event) => {
+          const button = event.target?.closest?.("[data-replay-step]");
+          if (!button) return;
+          const progress = studioRuntimeProgressFromSnapshot(state.studioDebugSnapshot);
+          const current = Number.isInteger(state.studioReplayCursor) ? state.studioReplayCursor : progress.length;
+          const action = button.getAttribute("data-replay-step");
+          state.studioReplayCursor = action === "first" ? 0 : action === "back" ? Math.max(0, current - 1) : action === "forward" ? Math.min(progress.length, current + 1) : progress.length;
+          if (action === "play") {
+            state.studioReplayPlaying = !state.studioReplayPlaying;
+            if (state.studioReplayPlaying) {
+              if (state.studioReplayCursor >= progress.length) state.studioReplayCursor = 0;
+              const tick = () => {
+                if (!state.studioReplayPlaying) return;
+                state.studioReplayCursor = Math.min(progress.length, (state.studioReplayCursor ?? progress.length) + 1);
+                mountStudioGraphIsland();
+                if (state.studioReplayCursor >= progress.length) state.studioReplayPlaying = false;
+                else state.studioReplayTimer = setTimeout(tick, 500);
+              };
+              tick();
+            }
+          } else {
+            state.studioReplayPlaying = false;
+            clearTimeout(state.studioReplayTimer);
+          }
+          mountStudioGraphIsland();
+          syncStudioReplayControls();
+        });
+        controls.querySelector("[data-replay-range]").addEventListener("input", (event) => {
+          state.studioReplayPlaying = false;
+          clearTimeout(state.studioReplayTimer);
+          state.studioReplayCursor = Number(event.target.value);
+          mountStudioGraphIsland();
+          syncStudioReplayControls();
+        });
+      }
+      syncStudioReplayControls();
+    }
+
+    function syncStudioReplayControls() {
+      const controls = findStudioBridgeElement("[data-studio-replay-controls]");
+      if (!controls) return;
+      const count = studioRuntimeProgressFromSnapshot(state.studioDebugSnapshot).length;
+      const cursor = Number.isInteger(state.studioReplayCursor) ? Math.min(state.studioReplayCursor, count) : count;
+      const range = controls.querySelector("[data-replay-range]");
+      const output = controls.querySelector("[data-replay-position]");
+      if (range) { range.max = String(count); range.value = String(cursor); }
+      if (output) output.textContent = cursor + " / " + count;
     }
 
     function studioAuthoringFlowDisplayKey(flow) {
@@ -1387,6 +1447,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         quickOpenRole: t("studio.graph.quickOpenRole", undefined, "Role"),
         quickOpenFlow: t("studio.graph.quickOpenFlow", undefined, "Flow"),
         contextEditRole: t("studio.graph.contextEditRole", undefined, "Edit role"),
+        contextPinRole: t("studio.graph.contextPinRole", undefined, "Pin role"),
+        contextUnpinRole: t("studio.graph.contextUnpinRole", undefined, "Unpin role"),
         contextEditFlow: t("studio.graph.contextEditFlow", undefined, "Edit flow"),
         contextInsertRole: t("studio.graph.contextInsertRole", undefined, "Insert role"),
         contextDelete: t("studio.graph.contextDelete", undefined, "Delete"),
@@ -2482,6 +2544,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workbenchBodyEl.insertAdjacentHTML("beforeend", renderStudioChatPanel());
       }
       bindStudioChatControls();
+      ensureStudioReplayControls();
     }
 
     function bindStudioInspectorResizeHandle() {
@@ -2610,6 +2673,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeSelectedRoleId = nextRoleId;
       state.studioBridgeSelectedFlowKey = "";
+      state.studioInspectorOpen = true;
+      if (!state.studioInspectorTab || state.studioInspectorTab === "io") state.studioInspectorTab = "config";
       state.studioInspectorCollapsed = false;
       state.studioWorkbenchSideTab = "structure";
       state.studioBridgeEditSelectionRequest += 1;
@@ -3181,6 +3246,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         requestKey,
         data: null
       };
+      state.studioInspectorOpen = true;
+      state.studioInspectorTab = "io";
       renderStudioSelectionDialog();
       try {
         const params = new URLSearchParams();
@@ -3217,6 +3284,75 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderStudioSelectionDialog();
     }
 
+    function closeStudioInspectorDrawer() {
+      state.studioInspectorOpen = false;
+      state.studioInspectorTab = "config";
+      if (state.studioRoleIoModal?.open) resetStudioRoleIoModal();
+      renderStudioSelectionDialog();
+    }
+
+    function renderStudioInspectorDrawer() {
+      const drawer = document.getElementById("studio-inspector-drawer");
+      if (!drawer) return;
+      const roleId = String(state.studioBridgeSelectedRoleId || state.studioRoleIoModal?.data?.roleId || "");
+      const open = state.studioInspectorOpen === true && Boolean(roleId);
+      drawer.hidden = !open;
+      if (!open) return;
+      const title = drawer.querySelector("#inspector-title");
+      if (title) title.textContent = roleId;
+      const tab = state.studioInspectorTab === "io" || state.studioInspectorTab === "dependencies"
+        ? state.studioInspectorTab
+        : "config";
+      for (const button of Array.from(drawer.querySelectorAll("[data-inspector-tab]"))) {
+        button.classList.toggle("active", button.getAttribute("data-inspector-tab") === tab);
+        button.setAttribute("aria-selected", button.getAttribute("data-inspector-tab") === tab ? "true" : "false");
+      }
+      const body = drawer.querySelector("#inspector-body");
+      if (!body) return;
+      const role = state.studioBridge?.authoring?.roles?.[roleId] || {};
+      const edges = Array.isArray(state.graph?.edges) ? state.graph.edges : Object.values(state.studioBridge?.authoring?.flows || {}).map((flow) => ({
+        source: flow?.fromRoleId, target: flow?.toRoleId, eventType: flow?.eventType
+      }));
+      const upstream = edges.filter((edge) => edge?.target === roleId);
+      const downstream = edges.filter((edge) => edge?.source === roleId);
+      const dependencyHtml = (upstream.length || downstream.length)
+        ? '<section><div class="inspector-section-title">' + escapeText(t("studio.dependencies", undefined, "Topology Linkage")) + '</div>' +
+          (upstream.length ? '<div class="hint">' + escapeText(t("studio.upstreamRoles", undefined, "Upstream Roles")) + '</div>' + upstream.map((edge) => '<button type="button" class="inspector-dependency-card" data-focus-role-id="' + escapeText(String(edge.source || "")) + '"><span><code>' + escapeText(String(edge.source || "")) + '</code></span><span aria-hidden="true">📍</span></button>').join("") : "") +
+          (downstream.length ? '<div class="hint">' + escapeText(t("studio.downstreamRoles", undefined, "Downstream Roles")) + '</div>' + downstream.map((edge) => '<button type="button" class="inspector-dependency-card" data-focus-role-id="' + escapeText(String(edge.target || "")) + '"><span><code>' + escapeText(String(edge.target || "")) + '</code></span><span aria-hidden="true">📍</span></button>').join("") : "") +
+        '</section>' : '<div class="hint">' + escapeText(t("studio.noDependencies", undefined, "No connected roles.")) + '</div>';
+      if (tab === "dependencies") {
+        body.innerHTML = dependencyHtml;
+      } else if (tab === "io") {
+        const modal = state.studioRoleIoModal || {};
+        const data = asRecord(modal.data);
+        body.innerHTML = modal.loading
+          ? '<div class="hint">' + escapeText(t("common.loading", undefined, "loading")) + '</div>'
+          : modal.error
+            ? '<div class="hint severity-warning">' + escapeText(String(modal.error)) + '</div>'
+            : '<div class="event"><strong>' + escapeText(t("studio.logsRoleIoInput", undefined, "Role input projection")) + '</strong><pre>' + escapeText(String(data?.inboxMarkdown || t("common.notAvailable", undefined, "n/a"))) + '</pre></div><div class="event"><strong>' + escapeText(t("studio.logsRoleIoOutput", undefined, "Role output payload")) + '</strong><pre>' + escapeText(String(data?.outboxMarkdown || t("common.notAvailable", undefined, "n/a"))) + '</pre></div>';
+      } else {
+        body.innerHTML = '<div class="event"><strong>' + escapeText(String(role.title || roleId)) + '</strong><div class="hint">' + escapeText(String(role.bindingKind || t("studio.roleConfigHint", undefined, "Edit role settings in the structure panel."))) + '</div></div>' + dependencyHtml;
+      }
+      const close = drawer.querySelector("#inspector-close");
+      if (close && !close.dataset.bound) {
+        close.dataset.bound = "1";
+        close.addEventListener("click", closeStudioInspectorDrawer);
+      }
+      for (const button of Array.from(drawer.querySelectorAll("[data-inspector-tab]"))) {
+        if (button.dataset.bound) continue;
+        button.dataset.bound = "1";
+        button.addEventListener("click", () => {
+          state.studioInspectorTab = button.getAttribute("data-inspector-tab") || "config";
+          renderStudioInspectorDrawer();
+        });
+      }
+      for (const button of Array.from(drawer.querySelectorAll("[data-focus-role-id]"))) {
+        if (button.dataset.bound) continue;
+        button.dataset.bound = "1";
+        button.addEventListener("click", () => focusStudioGraphNode(button.getAttribute("data-focus-role-id") || ""));
+      }
+    }
+
     function renderStudioRoleIoModal() {
       const modal = state.studioRoleIoModal || {};
       if (modal.open !== true) {
@@ -3238,6 +3374,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const inputMarkdown = String(data?.inboxMarkdown || "");
       const outputMarkdown = String(data?.outboxMarkdown || "");
       const outputJson = result && Object.keys(result).length ? formatJson(result) : "";
+
+      const roleIdStr = String(data?.roleId || "");
+      const flows = Array.isArray(state.graph?.edges) ? state.graph.edges : [];
+      const upstream = flows.filter((e) => e && e.target === roleIdStr);
+      const downstream = flows.filter((e) => e && e.source === roleIdStr);
+      const upstreamHtml = upstream.length
+        ? '<div class="inspector-section-title">' + escapeText(t("studio.upstreamRoles", undefined, "Upstream Roles")) + '</div><div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">' +
+          upstream.map((e) => '<div class="inspector-dependency-card" data-focus-role-id="' + escapeText(e.source) + '"><span><code>' + escapeText(e.source) + '</code> <small>(' + escapeText(e.channel || "flow") + ')</small></span><span>📍 ' + escapeText(t("action.focusRole", undefined, "Focus")) + '</span></div>').join("") + '</div>'
+        : "";
+      const downstreamHtml = downstream.length
+        ? '<div class="inspector-section-title">' + escapeText(t("studio.downstreamRoles", undefined, "Downstream Roles")) + '</div><div style="display: flex; flex-direction: column; gap: 4px;">' +
+          downstream.map((e) => '<div class="inspector-dependency-card" data-focus-role-id="' + escapeText(e.target) + '"><span><code>' + escapeText(e.target) + '</code> <small>(' + escapeText(e.channel || "flow") + ')</small></span><span>📍 ' + escapeText(t("action.focusRole", undefined, "Focus")) + '</span></div>').join("") + '</div>'
+        : "";
+      const dependenciesHtml = (upstreamHtml || downstreamHtml)
+        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.dependencies", undefined, "Topology Linkage")) + '</span></div><strong>' + escapeText(t("studio.relatedRoles", undefined, "Related Roles in Graph")) + '</strong><div class="hint">' + escapeText(t("studio.clickToFocusGraph", undefined, "Click to focus and highlight the connected role on canvas.")) + '</div>' + upstreamHtml + downstreamHtml + '</div>'
+        : "";
+
       return [
         '<div class="studio-role-io-modal-frame">',
         '<button type="button" class="studio-role-io-backdrop" data-studio-role-io-close="backdrop" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button>',
@@ -3248,6 +3401,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : modal.error
             ? '<div class="studio-role-io-body"><div class="hint severity-warning">' + escapeText(String(modal.error || "")) + '</div></div>'
             : '<div class="studio-role-io-body">' +
+                dependenciesHtml +
                 '<div class="event"><div class="event-top"><span>' + escapeText(t("form.runInput", undefined, "Run input")) + '</span><span>' + escapeText(formatTime(data?.committedAt)) + '</span></div><strong>' + escapeText(t("studio.logsRoleIoInput", undefined, "Role input projection")) + '</strong><div class="hint">' + escapeText(t("studio.logsRoleIoInputHint", undefined, "Captured from the execution inbox for this role attempt.")) + '</div><pre>' + escapeText(inputMarkdown || t("common.notAvailable", undefined, "n/a")) + '</pre></div>' +
                 '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(String(data?.status || t("common.unknown", undefined, "unknown"))) + '</span></div><strong>' + escapeText(t("studio.logsRoleIoOutput", undefined, "Role output payload")) + '</strong><div class="hint">' + escapeText(t("studio.logsRoleIoOutputHint", undefined, "Markdown outbox is shown first, followed by the structured JSON payload when available.")) + '</div><pre>' + escapeText(outputMarkdown || t("common.notAvailable", undefined, "n/a")) + '</pre>' + (outputJson ? '<pre>' + escapeText(outputJson) + '</pre>' : '') + '</div>' +
                 '<div class="event"><div class="event-top"><span>' + escapeText(t("common.metadata", undefined, "metadata")) + '</span><span>' + escapeText(String(data?.executionId || "")) + '</span></div><strong>' + escapeText(t("studio.logsRoleIoMeta", undefined, "Execution metadata")) + '</strong><div class="hint">' + escapeText(runtimeMeta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div><pre>' + escapeText(formatJson({
@@ -3605,8 +3759,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ].join(""));
         setDebugPanelHtml("");
       }
+      renderStudioInspectorDrawer();
       let roleIoModalRoot = workbenchBodyEl.querySelector("[data-studio-role-io-modal-root]");
-      if (!roleIoModalRoot && state.studioRoleIoModal?.open) {
+      if (!roleIoModalRoot && state.studioRoleIoModal?.open && state.studioInspectorOpen !== true) {
         roleIoModalRoot = document.createElement("div");
         roleIoModalRoot.className = "studio-role-io-modal-root";
         roleIoModalRoot.setAttribute("data-studio-role-io-modal-root", "1");
@@ -3617,7 +3772,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           roleIoModalRoot.className = [roleIoModalRoot.className, "studio-role-io-modal-root"].filter(Boolean).join(" ");
         }
         roleIoModalRoot.innerHTML = renderStudioRoleIoModal();
-        if (!state.studioRoleIoModal?.open && typeof roleIoModalRoot.remove === "function") {
+        if ((!state.studioRoleIoModal?.open || state.studioInspectorOpen === true) && typeof roleIoModalRoot.remove === "function") {
           roleIoModalRoot.remove();
         }
       }
@@ -3729,6 +3884,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           focusStudioRuntimeSelection({
             flowKey: logFlowButton.getAttribute("data-studio-log-flow-key") || ""
           });
+          event.preventDefault();
+          return;
+        }
+        const focusRoleButton = closestSelectionAction(event.target, "data-focus-role-id");
+        if (focusRoleButton) {
+          const roleId = focusRoleButton.getAttribute("data-focus-role-id") || "";
+          if (roleId) {
+            focusStudioGraphNode(roleId);
+          }
           event.preventDefault();
           return;
         }
@@ -5123,6 +5287,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
+    function focusStudioGraphNode(roleId) {
+      if (!roleId) return;
+      state.studioBridgeSelectedRoleId = roleId;
+      state.studioBridgeSelectedFlowKey = "";
+      state.studioInspectorOpen = true;
+      state.studioInspectorTab = state.studioInspectorTab || "config";
+      updateStudioBridgeSelectionChrome();
+      renderStudioInspectorDrawer();
+      const root = document.getElementById("studio-graph-root");
+      const focusFn = window.OGSVisualizerClient?.focusStudioX6Node;
+      if (root && typeof focusFn === "function") {
+        focusFn(root, roleId);
+      }
+    }
+
     function syncStudioBridgeFullscreenChrome() {
       const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
       if (shell) {
@@ -5361,7 +5540,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const runtimeProgress = state.buildMode === "debug"
         && state.selectedRunId
         && state.selectedRunId === state.studioBridgeLastDryRunId
-        ? studioRuntimeProgressFromSnapshot(state.studioDebugSnapshot)
+        ? studioRuntimeProgressFromSnapshot(state.studioDebugSnapshot, state.studioReplayCursor)
         : [];
       mount(root, {
         authoring: displayBridge?.authoring || null,
@@ -8943,6 +9122,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderTimeline(state.events);
         }
         writeRouteToLocation();
+      });
+    }
+
+    if (timelineEl) {
+      timelineEl.addEventListener("click", (event) => {
+        const target = event && event.target;
+        const btn = target && typeof target.closest === "function" ? target.closest("[data-focus-role-id]") : null;
+        if (btn) {
+          const roleId = btn.getAttribute("data-focus-role-id");
+          if (roleId) {
+            focusStudioGraphNode(roleId);
+          }
+        }
       });
     }
 

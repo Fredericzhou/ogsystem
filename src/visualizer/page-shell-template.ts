@@ -67,6 +67,23 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
+          <aside id="studio-inspector-drawer" class="studio-inspector-drawer" hidden role="region" aria-label="${escapeHtml(t("studio.logsRoleIoTitle"))}">
+            <header class="inspector-header">
+              <div class="inspector-header-info">
+                <span class="inspector-badge">Role</span>
+                <h3 id="inspector-title" class="inspector-title"></h3>
+              </div>
+              <div class="inspector-header-actions">
+                <button id="inspector-close" class="button subtle" type="button" aria-label="${escapeHtml(t("action.close"))}">✕</button>
+              </div>
+            </header>
+            <nav id="inspector-tabs" class="inspector-tabs segmented" role="tablist">
+              <button class="button subtle active" data-inspector-tab="config" type="button">${escapeHtml(t("studio.inspectorConfigTab"))}</button>
+              <button class="button subtle" data-inspector-tab="io" type="button">${escapeHtml(t("studio.inspectorIoTab"))}</button>
+              <button class="button subtle" data-inspector-tab="dependencies" type="button">${escapeHtml(t("studio.inspectorDependenciesTab"))}</button>
+            </nav>
+            <div id="inspector-body" class="inspector-body"></div>
+          </aside>
           <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-project" hidden>
             <article class="card span-12">
               <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>

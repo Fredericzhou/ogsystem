@@ -27,7 +27,8 @@ export function graphToAuthoringLayoutPatch(
       x: position.x,
       y: position.y,
       width: size.width,
-      height: size.height
+      height: size.height,
+      pinned: studioNode.layout.pinned === true
     };
   });
   return {
