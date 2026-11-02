@@ -1,6 +1,6 @@
 # OGSystem Decisions
 
-Date: 2026-04-12  
+Date: 2026-11-02
 Status: active
 
 ## 1. One Runtime
@@ -183,3 +183,37 @@ Reason:
 - keeps human control in the runtime control plane instead of faking it as another autonomous role
 - preserves durable audit/reconcile semantics for stop-review-resume workflows
 - avoids building a second “human gate node” abstraction that duplicates branch/state machinery
+
+## 12. Control Root And Shared Workspace Separation
+
+Control metadata and business workspace files have separate ownership roots.
+
+- `--ogs-dir` owns the System definition, role packages, runtime configuration, `.ogs/team-versions/`, and `.ogs/runs/<run-id>/`
+- `--workspace-dir` owns user code, input materials, and promoted business deliverables
+- one Collaboration Project binds one `workspaceDir`; multiple mounted `TeamVersion` snapshots can operate on that shared workspace without polluting each other's control root
+- the framework never creates implicit `.ogs/`, `source/`, or `destination/` directories inside `workspaceDir`
+- each used `TeamVersion` freezes an immutable manifest (`teamCoreDigest`, `systemDigest`, `packageDigest`), and each Project Run records `team-version.json`
+
+## 13. Studio And Projects Dual-Workbench Isolation
+
+OGS Studio and OGS Projects share the execution base and SPA shell, but own distinct lifecycles and storage namespaces.
+
+- `runKind: "project_task"` is owned by `projectId + taskId + runId`, stored under `<projectId>/.ogs/runs/<runId>`, consumes the project execution slot, and can be archived into a Deliverable
+- `runKind: "studio_simulation"` is owned by `teamVersionId + simulationId`, stored under `.studio/simulations/<teamVersionId>/<simulationId>`, and never enters project Tasks, capacity slots, Recent Project Runs, or Deliverables
+- release baselines require `sandbox` Simulation evidence bound to the current `teamCoreDigest` and `baselineScenarioDigest`; `dry-run` Simulations are for interactive debugging only
+
+## 14. Visualizer Semantic Layout And Query Boundary
+
+Visualizer projections and graph layouts are strictly derived from runtime contracts.
+
+- `Semantic IR -> ResponsibilityGraph -> Semantic Layout Projection -> ELK.js layered adapter -> LayoutProjection -> GraphViewModel -> X6 Renderer`
+- ELK.js is the single explicit layout adapter; runtime state updates only refresh `ExecutionOverlay` without recalculating static node layout or dropping loop/error edges
+- `RunQueryService` provides the read boundary between persisted run artifacts (`events.ndjson`, `timeline.jsonl`, `state.json`) and HTTP/SSE consumers, using cursor and byte-offset incremental reads
+
+## 15. Untrusted Input Boundary And Call-ID Prompt Budget Ledger
+
+External inputs and model token/character budgets are enforced at runtime boundaries.
+
+- `isolateExternalData` defaults to `true`, wrapping non-task `input` payloads in `<ogs_external_data>` blocks with closing-tag escaping and recording `externalDataIsolated` in audit records
+- prompt character budgets (`maxPromptCharsPerRole`, `maxTotalPromptCharsPerRun`) are tracked in `RunPromptBudgetLedger` keyed by per-request `callId` (`${executionId}:${phase}:${ordinal}`) across parallel branches, retries, JSON repairs, fallbacks, and checkpoint resumes
+- `fallbackModelRef` is restricted to `binding.kind === "model"` and triggers only on retryable model-channel failures (timeouts, HTTP 429/502/503/504, transient network resets), never on schema/contract/auth/budget errors

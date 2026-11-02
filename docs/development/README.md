@@ -1,37 +1,27 @@
 # OGS Development Documentation
 
-This directory contains current engineering rules, architecture decisions, contracts, active
-plans, and dated implementation records. Product usage belongs in `../usage/`. Historical plans
-are labeled as such; current behavior is described by source code, tests, and active manuals.
+This directory contains current engineering rules, architecture decisions, contracts, the single
+unified plan and backlog, and dated verification records. Product usage belongs in `../usage/`.
+Current behavior is defined by source code, tests, active manuals, and [Decisions](DECISIONS.md).
 
-- Current engineering guidance and plans live in this directory.
-- [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): current productization work and acceptance criteria for the accepted orchestration semantics.
-- [Team IR v2 Handoff 设计方案](team-ir-handoff-v2-design.md)：下一代 Team IR、端口与映射规则、编译器/Runtime 边界、Studio 体验、实施阶段和验收矩阵。
+## Unified Plan & Backlog
+
+- [Unified plan and backlog](todo-backlog.md): single source of truth for workspace planning, P1/P2 low-cost high-reward improvements, completed baseline summary, and explicit non-goals.
+
+## Architecture Decisions & Engineering Contracts
+
+- [Decisions](DECISIONS.md): accepted architecture decisions and current system invariants.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
-- [Decisions](DECISIONS.md): accepted architecture decisions and current boundaries.
-- [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.
-- [Team Site layout refactor plan](team-site-layout-refactor-plan.md): unified shell, page templates, scroll rules, verifiable acceptance criteria, and progress tracking for the Team Site layout refactor.
-- [Team Site 页面框架统一与 Studio 工作台交互优化方案](team-site-page-frame-and-studio-optimization-plan.md)：统一右侧页面框架、面包屑与标题紧凑化规范，以及 Studio 运行态只读锁、面板层级避让和键盘焦点管理。
-- [Local desktop and remote control plane plan](local-desktop-remote-control-plane-plan.md): independent portal/downloads, Electron security boundaries, local Runtime, remote configuration, synchronization, and staged delivery.
-- [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): dated verification evidence; consult the latest dated section and Release UAT checklist for status.
 - [Shared resource architecture](shared-resource-architecture.md): shared Platform resource ownership and adapter boundaries.
-- [OGS control root and shared workspace plan](ogs-control-root-shared-workspace-plan.md): unified `--ogs-dir`/`--workspace-dir` ownership, Studio/Projects boundaries, TeamVersion freezing, and UAT gates.
-- [Model backend adapter registry plan](model-backend-adapter-registry-plan.md): backend adapters, Codex/OpenCode/Claude/Antigravity/Ollama support, model source metadata, and Studio backend visuals.
-- [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context,
-  boundaries, and generated source.
-- [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions,
-  shared contracts, build output, and test ownership.
-- Product-facing usage and runtime constitution documents live in `../usage/`.
+- [Compiler semantics v1](compiler-semantics-v1.md): Mermaid/Semantic IR compilation rules, diagnostics, and lowering invariants.
+- [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions, shared contracts, build output, and test ownership.
+- [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context, boundaries, and generated source.
+- [Release compatibility policy](release-compatibility-policy.md): artifact schema compatibility, CLI exit codes, and upgrade guarantees.
 
-## Historical Archive
+## Verification, UAT & Release Records
 
-These records describe completed implementation work. They remain available for traceability, but
-they are not current contracts, implementation plans, or acceptance status sources:
-
-- [Production governance and evaluation implementation record](ogs-production-governance-and-eval-plan.md)
-- [Team Collaboration module refactor record](team-collaboration-module-refactor-plan.md)
-- [Studio and Projects isolation design record](ogs-studio-project-run-isolation-plan.md)
-- [Team role source catalog implementation record](team-role-source-catalog-plan.md)
-
-Use the product manuals, [Decisions](DECISIONS.md), source code, and current UAT documents for
-present behavior.
+- [Release UAT checklist](release-uat-checklist.md): manual and browser release verification gates.
+- [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): dated verification evidence for Studio/Projects isolation and lifecycle checks.
+- [Design release validation template](design-release-validation-template.md): repeatable evidence template for design and release validation runs.
+- [Release 1.0.0 notes](release-notes-1.0.0.md) & [Release 1.0.0 acceptance](release-acceptance-1.0.0.md): baseline release records.
+- [Runtime replay benchmark](benchmarks/runtime-replay.md): baseline replay throughput and latency measurements.

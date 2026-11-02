@@ -19,23 +19,20 @@ This is the active documentation entry point. Runtime behavior, source code, and
 
 ## Development
 
+- [Unified plan and backlog](development/todo-backlog.md)
 - [Decisions](development/DECISIONS.md)
-- [Compiler semantics](development/compiler-semantics-v1.md)
-- [Workflow DSL and semantics roadmap](development/ogs-langgraph-dsl-upgrade-plan.md)
 - [Product boundary and evolution](development/ogs-product-boundary-and-evolution.md)
-- [Team Collaboration refactor contract](development/team-collaboration-module-refactor-plan.md)
-- [Studio and Projects isolation](development/ogs-studio-project-run-isolation-plan.md)
-- [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
 - [Shared resource architecture](development/shared-resource-architecture.md)
-- [Local desktop and remote control plane plan](development/local-desktop-remote-control-plane-plan.md)
-- [Visualizer refactor plan](development/ogs-visualizer-refactor-plan.md)
+- [Compiler semantics](development/compiler-semantics-v1.md)
+- [Runtime and NL2MMD file sets](development/file-sets.md)
+- [Source commenting style](development/commenting-style.md)
+- [Release compatibility policy](development/release-compatibility-policy.md)
 - [Release UAT checklist](development/release-uat-checklist.md)
-- [Semantic gap plan](development/semantic-gap-implementation-plan.md)
-- [Semantic capability backlog](development/ogs-semantic-capability-backlog.md)
-- [Unified backlog](development/todo-backlog.md)
-- [Long-term stability roadmap](development/long-term-stability-roadmap.md)
-- [Runtime storage roadmap](development/runtime-storage-engine-decoupling-roadmap.md)
+- [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
 - [Design release validation template](development/design-release-validation-template.md)
+- [Release 1.0.0 notes](development/release-notes-1.0.0.md)
+- [Release 1.0.0 acceptance](development/release-acceptance-1.0.0.md)
+- [Runtime replay benchmark](development/benchmarks/runtime-replay.md)
 
 ## Maintenance
 
