@@ -72,10 +72,10 @@ test("discovery routes preserve forced refresh and response projections", async 
 
 test("model probe route returns a model availability result", async () => {
   const h = harness({ useCases: {
-    probeModelAvailability: async (modelRef) => ({ modelRef, status: "available", durationMs: 42 })
+    probeModelAvailability: async (model) => ({ ...model, status: "runnable", durationMs: 42 })
   } });
-  assert.equal(await invoke(h, "POST", "/api/v1/platform/models/probe", { modelRef: "codex/gpt-6-luna" }), true);
-  assert.deepEqual(h.sent[0], { status: 200, payload: { result: { modelRef: "codex/gpt-6-luna", status: "available", durationMs: 42 } } });
+  assert.equal(await invoke(h, "POST", "/api/v1/platform/models/probe", { backend: "codex", modelId: "gpt-6-luna" }), true);
+  assert.deepEqual(h.sent[0], { status: 200, payload: { result: { backend: "codex", modelId: "gpt-6-luna", status: "runnable", durationMs: 42 } } });
 });
 
 test("discovery failures keep route-specific 503 responses", async () => {

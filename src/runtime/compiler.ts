@@ -111,7 +111,7 @@ export type BindingSummary = {
   roleId: string;
   kind: RoleExecutionBinding["kind"];
   modelRef?: string;
-  fallbackModelRef?: string;
+  fallbackModelId?: string;
   bindingSource?: "system" | "selection";
   profileId?: string;
 };
@@ -386,7 +386,7 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
     };
     if (node.binding.kind === "model") {
       summary.modelRef = node.binding.modelRef;
-      summary.fallbackModelRef = node.binding.fallbackModelRef;
+      summary.fallbackModelId = node.binding.fallbackModelId;
       summary.bindingSource = node.binding.bindingSource;
     }
     if (node.binding.kind === "profile") {

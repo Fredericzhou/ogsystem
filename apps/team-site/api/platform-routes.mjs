@@ -18,7 +18,10 @@ export async function handlePlatformRoutes({
   if (request.method === "POST" && url.pathname === "/api/v1/platform/models/probe") {
     try {
       const payload = await readBody(request);
-      const result = await useCases.probeModelAvailability(String(payload.modelRef || ""));
+      const result = await useCases.probeModelAvailability({
+        backend: String(payload?.backend || ""),
+        modelId: String(payload?.modelId || "")
+      });
       sendJson(response, 200, { result });
     } catch (error) {
       sendJson(response, 200, { result: { status: "failed", message: error instanceof Error ? error.message : "Model availability probe failed." } });

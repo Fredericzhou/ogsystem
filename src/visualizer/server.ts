@@ -922,7 +922,7 @@ async function syncDesignModelSelection(workdir: string, design: SystemDesignDoc
     };
   }
   await writeJsonFileAtomic(selectionPath, validateModelSelection({
-    configVersion: "2",
+    configVersion: "3",
     defaults: currentSelection?.defaults,
     roles
   }, selectionPath));

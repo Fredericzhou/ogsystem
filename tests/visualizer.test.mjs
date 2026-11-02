@@ -3500,7 +3500,7 @@ test("design apply merges stored role overrides with design model bindings", asy
     const selectionPath = path.join(workdir, ".ogs", "model-selection.json");
     await rm(selectionPath, { force: true });
     await writeFile(selectionPath, JSON.stringify({
-      configVersion: "2",
+      configVersion: "3",
       defaults: { backend: "opencode", modelId: "default-model" },
       roles: {
         "legacy-role": { backend: "codex", modelId: "legacy-model", variant: "keep" },

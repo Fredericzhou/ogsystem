@@ -56,7 +56,7 @@ async function seedProjectFixture(workdir) {
   }
   await writeFile(
     path.resolve(workdir, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "2", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }, null, 2),
+    JSON.stringify({ configVersion: "3", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }, null, 2),
     "utf8"
   );
   await writeFile(

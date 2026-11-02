@@ -3,12 +3,37 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { readJsonFile } from "./json-file.js";
+import { defaultBackendRegistry } from "./model-backend-registry.js";
 import { pathExists } from "./run-store.js";
-import type { ModelCatalog, ModelCatalogEntry } from "./types.js";
-import { CodexAppServerClient } from "./codex-app-server.js";
+import type {
+  ModelCatalog,
+  ModelCatalogEntry,
+  ModelCatalogSource,
+  ModelCatalogSourceStatus
+} from "./types.js";
 
 export const OPENCODE_MODEL_DISCOVERY_COMMAND = "opencode models --verbose";
 export const MODEL_CATALOG_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+const VALID_SOURCE_STATUSES = new Set<ModelCatalogSourceStatus>([
+  "runnable",
+  "unavailable",
+  "not_installed",
+  "installed_but_broken",
+  "service_unavailable"
+]);
+
+const VALID_TRANSPORTS = new Set<ModelCatalogSource["transport"]>([
+  "http",
+  "stdio-jsonrpc",
+  "cli-stdio"
+]);
+
+const VALID_SESSION_KINDS = new Set<ModelCatalogSource["sessionKind"]>([
+  "server-session",
+  "app-server-thread",
+  "logical-session"
+]);
 
 export type ModelDiscoveryErrorCode =
   | "MODEL_DISCOVERY_COMMAND_MISSING"
@@ -81,44 +106,71 @@ function asStringArray(value: unknown, filePath: string, fieldPath: string): str
 export function validateModelCatalog(value: unknown, filePath: string): ModelCatalog {
   const record = asRecord(value, filePath, "$");
   const catalogVersion = asString(record.catalogVersion, filePath, "$.catalogVersion");
-  if (catalogVersion !== "2") {
+  if (catalogVersion !== "3") {
     fail(filePath, "$.catalogVersion", `unsupported version "${catalogVersion}"`);
   }
-  if (!Array.isArray(record.sources)) fail(filePath, "$.sources", "expected array");
-  const sources = record.sources.map((value, index) => {
-    const source = asRecord(value, filePath, `$.sources[${index}]`);
+  if (!Array.isArray(record.sources)) {
+    fail(filePath, "$.sources", "expected array");
+  }
+  const sources = record.sources.map((entry, index): ModelCatalogSource => {
+    const source = asRecord(entry, filePath, `$.sources[${index}]`);
+    const backend = asString(source.backend, filePath, `$.sources[${index}].backend`);
+    const descriptor = defaultBackendRegistry.getDescriptor(backend);
+    const displayName = asOptionalString(source.displayName, filePath, `$.sources[${index}].displayName`)
+      ?? descriptor?.displayName
+      ?? backend;
+    const iconKey = asOptionalString(source.iconKey, filePath, `$.sources[${index}].iconKey`)
+      ?? descriptor?.iconKey
+      ?? backend;
+    const rawTransport = asOptionalString(source.transport, filePath, `$.sources[${index}].transport`)
+      ?? descriptor?.transport
+      ?? "cli-stdio";
+    if (!VALID_TRANSPORTS.has(rawTransport as ModelCatalogSource["transport"])) {
+      fail(filePath, `$.sources[${index}].transport`, `unsupported transport "${rawTransport}"`);
+    }
+    const rawSessionKind = asOptionalString(source.sessionKind, filePath, `$.sources[${index}].sessionKind`)
+      ?? descriptor?.sessionKind
+      ?? "logical-session";
+    if (!VALID_SESSION_KINDS.has(rawSessionKind as ModelCatalogSource["sessionKind"])) {
+      fail(filePath, `$.sources[${index}].sessionKind`, `unsupported sessionKind "${rawSessionKind}"`);
+    }
     const status = asString(source.status, filePath, `$.sources[${index}].status`);
-    if (status !== "available" && status !== "unavailable") fail(filePath, `$.sources[${index}].status`, "expected available or unavailable");
+    if (!VALID_SOURCE_STATUSES.has(status as ModelCatalogSourceStatus)) {
+      fail(
+        filePath,
+        `$.sources[${index}].status`,
+        `expected one of ${[...VALID_SOURCE_STATUSES].join(", ")}`
+      );
+    }
+    const detail = asOptionalString(source.detail, filePath, `$.sources[${index}].detail`);
     return {
-      backend: asString(source.backend, filePath, `$.sources[${index}].backend`),
-      command: asString(source.command, filePath, `$.sources[${index}].command`),
-      status,
-      detail: asOptionalString(source.detail, filePath, `$.sources[${index}].detail`)
-    } as const;
+      backend,
+      displayName,
+      iconKey,
+      transport: rawTransport as ModelCatalogSource["transport"],
+      sessionKind: rawSessionKind as ModelCatalogSource["sessionKind"],
+      status: status as ModelCatalogSourceStatus,
+      ...(detail ? { detail } : {})
+    };
   });
+
   const modelsValue = record.models;
   if (!Array.isArray(modelsValue)) {
     fail(filePath, "$.models", "expected array");
   }
-  const models = modelsValue.map((entry, index) => {
+  const models = modelsValue.map((entry, index): ModelCatalogEntry => {
     const modelRecord = asRecord(entry, filePath, `$.models[${index}]`);
     const capabilities = asRecord(modelRecord.capabilities, filePath, `$.models[${index}].capabilities`);
-    const rawValue = modelRecord.raw;
-    const rawRecord =
-      rawValue === undefined ? undefined : asRecord(rawValue, filePath, `$.models[${index}].raw`);
     const backend = asString(modelRecord.backend, filePath, `$.models[${index}].backend`);
     const modelId = asString(modelRecord.modelId, filePath, `$.models[${index}].modelId`);
+    const name = asOptionalString(modelRecord.name, filePath, `$.models[${index}].name`);
+    const status = asOptionalString(modelRecord.status, filePath, `$.models[${index}].status`);
     return {
       backend,
-      runnable: modelRecord.runnable === true,
       modelId,
-      ref: modelRecord.ref === undefined
-        ? `${backend}/${modelId}`
-        : asString(modelRecord.ref, filePath, `$.models[${index}].ref`),
-      provider: asString(modelRecord.provider, filePath, `$.models[${index}].provider`),
-      model: asString(modelRecord.model, filePath, `$.models[${index}].model`),
-      name: asOptionalString(modelRecord.name, filePath, `$.models[${index}].name`),
-      status: asOptionalString(modelRecord.status, filePath, `$.models[${index}].status`),
+      runnable: modelRecord.runnable === true,
+      ...(name ? { name } : {}),
+      ...(status ? { status } : {}),
       capabilities: {
         textInput: asBoolean(capabilities.textInput, filePath, `$.models[${index}].capabilities.textInput`),
         textOutput: asBoolean(
@@ -128,22 +180,12 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
         ),
         toolcall: asBoolean(capabilities.toolcall, filePath, `$.models[${index}].capabilities.toolcall`)
       },
-      variants: asStringArray(modelRecord.variants ?? [], filePath, `$.models[${index}].variants`),
-      raw: rawRecord
-        ? {
-            id: asOptionalString(rawRecord.id, filePath, `$.models[${index}].raw.id`),
-            providerID: asOptionalString(
-              rawRecord.providerID,
-              filePath,
-              `$.models[${index}].raw.providerID`
-            )
-          }
-        : undefined
-    } satisfies ModelCatalogEntry;
+      variants: asStringArray(modelRecord.variants ?? [], filePath, `$.models[${index}].variants`)
+    };
   });
 
   return {
-    catalogVersion: "2",
+    catalogVersion: "3",
     generatedAt: asString(record.generatedAt, filePath, "$.generatedAt"),
     sources,
     models
@@ -168,32 +210,25 @@ type RawOpencodeModelRecord = {
 };
 
 function normalizeRawOpencodeModel(args: {
-  ref: string;
+  modelId: string;
   raw: RawOpencodeModelRecord;
 }): ModelCatalogEntry {
-  const separator = args.ref.indexOf("/");
-  if (separator <= 0 || separator === args.ref.length - 1) {
-    throw new Error(`Invalid OpenCode model reference from verbose output: ${args.ref}`);
+  const separator = args.modelId.indexOf("/");
+  if (separator <= 0 || separator === args.modelId.length - 1) {
+    throw new Error(`Invalid OpenCode model reference from verbose output: ${args.modelId}`);
   }
   return {
     backend: "opencode",
+    modelId: args.modelId,
     runnable: true,
-    modelId: args.ref,
-    ref: args.ref,
-    provider: args.ref.slice(0, separator),
-    model: args.ref.slice(separator + 1),
-    name: args.raw.name,
-    status: args.raw.status,
+    ...(args.raw.name ? { name: args.raw.name } : {}),
+    ...(args.raw.status ? { status: args.raw.status } : {}),
     capabilities: {
       textInput: args.raw.capabilities?.input?.text === true,
       textOutput: args.raw.capabilities?.output?.text === true,
       toolcall: args.raw.capabilities?.toolcall === true
     },
-    variants: Object.keys(args.raw.variants ?? {}).sort((left, right) => left.localeCompare(right)),
-    raw: {
-      id: args.raw.id,
-      providerID: args.raw.providerID
-    }
+    variants: Object.keys(args.raw.variants ?? {}).sort((left, right) => left.localeCompare(right))
   };
 }
 
@@ -214,13 +249,13 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
   let index = 0;
 
   while (index < lines.length) {
-    const ref = lines[index]?.trim();
-    if (!ref || !/^[^/\s]+\/.+/.test(ref)) {
-      throw discoveryMalformed(`expected a provider/model reference, got "${ref ?? ""}"`);
+    const modelId = lines[index]?.trim();
+    if (!modelId || !/^[^/\s]+\/.+/.test(modelId)) {
+      throw discoveryMalformed(`expected a modelId reference, got "${modelId ?? ""}"`);
     }
     index += 1;
     if (index >= lines.length || !lines[index].trim().startsWith("{")) {
-      throw discoveryMalformed(`model "${ref}" is missing its JSON record`);
+      throw discoveryMalformed(`model "${modelId}" is missing its JSON record`);
     }
     const jsonLines: string[] = [];
     let parsed: RawOpencodeModelRecord | undefined;
@@ -230,7 +265,7 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
       try {
         const candidate = JSON.parse(joined) as unknown;
         if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
-          throw discoveryMalformed(`model "${ref}" JSON record must be an object`);
+          throw discoveryMalformed(`model "${modelId}" JSON record must be an object`);
         }
         parsed = candidate as RawOpencodeModelRecord;
         index += 1;
@@ -240,19 +275,19 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
           throw error;
         }
         if (index === lines.length - 1) {
-          throw discoveryMalformed(`model "${ref}" JSON record could not be parsed`);
+          throw discoveryMalformed(`model "${modelId}" JSON record could not be parsed`);
         }
         index += 1;
       }
     }
     if (!parsed) {
-      throw discoveryMalformed(`model "${ref}" JSON record is incomplete`);
+      throw discoveryMalformed(`model "${modelId}" JSON record is incomplete`);
     }
-    if (models.some((model) => model.ref === ref)) {
-      throw discoveryMalformed(`duplicate model reference "${ref}"`);
+    if (models.some((model) => model.modelId === modelId)) {
+      throw discoveryMalformed(`duplicate model reference "${modelId}"`);
     }
     try {
-      models.push(normalizeRawOpencodeModel({ ref, raw: parsed }));
+      models.push(normalizeRawOpencodeModel({ modelId, raw: parsed }));
     } catch (error) {
       if (error instanceof ModelDiscoveryError) {
         throw error;
@@ -270,9 +305,18 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
   }
 
   return {
-    catalogVersion: "2",
+    catalogVersion: "3",
     generatedAt: new Date().toISOString(),
-    sources: [{ backend: "opencode", command: OPENCODE_MODEL_DISCOVERY_COMMAND, status: "available" }],
+    sources: [
+      {
+        backend: "opencode",
+        displayName: "OpenCode",
+        iconKey: "opencode",
+        transport: "http",
+        sessionKind: "server-session",
+        status: "runnable"
+      }
+    ],
     models
   };
 }
@@ -289,7 +333,7 @@ export type DiscoveryCommandRunner = (args: {
   cwd: string;
 }) => Promise<DiscoveryCommandResult | string>;
 
-async function runOpencodeModelsVerbose(
+export async function runOpencodeModelsVerbose(
   workdir: string,
   commandRunner?: DiscoveryCommandRunner
 ): Promise<string> {
@@ -318,7 +362,7 @@ async function runOpencodeModelsVerbose(
       throw new ModelDiscoveryError(
         "MODEL_DISCOVERY_NONZERO_EXIT",
         `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} exited with code ${result.exitCode}: ${result.stderr?.trim() || "unknown error"}`,
-        "Fix the OpenCode command or provider configuration, then rerun `ogs project sync-models`."
+        "Fix the OpenCode command or configuration, then rerun `ogs project sync-models`."
       );
     }
     return result.stdout;
@@ -366,7 +410,7 @@ async function runOpencodeModelsVerbose(
           new ModelDiscoveryError(
             "MODEL_DISCOVERY_NONZERO_EXIT",
             `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} exited with code ${code}: ${stderr.trim() || "unknown error"}`,
-            "Fix the OpenCode command or provider configuration, then rerun `ogs project sync-models`."
+            "Fix the OpenCode command or configuration, then rerun `ogs project sync-models`."
           )
         );
         return;
@@ -392,68 +436,24 @@ export async function refreshModelCatalog(args: {
   }
 }
 
-async function commandAvailable(command: string, workdir: string): Promise<boolean> {
-  return new Promise((resolvePromise) => {
-    const child = spawn(command, ["--version"], {
-      cwd: workdir,
-      stdio: "ignore",
-      shell: process.platform === "win32"
-    });
-    const timer = setTimeout(() => child.kill(), 2500);
-    child.once("error", () => { clearTimeout(timer); resolvePromise(false); });
-    child.once("close", (code) => { clearTimeout(timer); resolvePromise(code === 0); });
-  });
-}
-
 export async function discoverLocalModelCatalog(args: {
   workdir: string;
   commandRunner?: DiscoveryCommandRunner;
 }): Promise<ModelCatalog> {
-  const sources: ModelCatalog["sources"] = [];
+  const sources: ModelCatalogSource[] = [];
   const models: ModelCatalogEntry[] = [];
-  try {
-    const parsed = await refreshModelCatalog(args);
-    sources.push(...parsed.sources);
-    models.push(...parsed.models);
-  } catch (error) {
-    sources.push({
-      backend: "opencode", command: OPENCODE_MODEL_DISCOVERY_COMMAND, status: "unavailable",
-      detail: error instanceof Error ? error.message : String(error)
-    });
+  for (const backendId of defaultBackendRegistry.listBackendIds()) {
+    const outcome = await defaultBackendRegistry.discoverBackend(backendId, args);
+    sources.push(outcome.source);
+    models.push(...outcome.models);
   }
 
-  if (!args.commandRunner) {
-    try {
-      const codex = await CodexAppServerClient.start({ cwd: args.workdir, timeoutMs: 10000 });
-      try {
-        const found = await codex.listModels();
-        for (const model of found) {
-          models.push({
-            backend: "codex", runnable: true, modelId: model.id, ref: `codex/${model.id}`,
-            provider: "codex", model: model.id, name: model.displayName,
-            status: "active", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: []
-          });
-        }
-        sources.push({ backend: "codex", command: "codex app-server --stdio", status: "available" });
-      } finally {
-        await codex.close();
-      }
-    } catch (error) {
-      sources.push({ backend: "codex", command: "codex app-server --stdio", status: "unavailable", detail: error instanceof Error ? error.message : String(error) });
-    }
-
-    for (const [backend, command] of [["claude", "claude"], ["antigravity", "agy"]] as const) {
-      const available = await commandAvailable(command, args.workdir);
-      sources.push({
-        backend,
-        command: `${command} --version`,
-        status: available ? "available" : "unavailable",
-        detail: available ? "CLI detected; persistent OGS session adapter is not available." : `${command} CLI was not found on PATH.`
-      });
-    }
-  }
-
-  return { catalogVersion: "2", generatedAt: new Date().toISOString(), sources, models };
+  return {
+    catalogVersion: "3",
+    generatedAt: new Date().toISOString(),
+    sources,
+    models
+  };
 }
 
 export async function loadModelCatalog(path: string): Promise<ModelCatalog | undefined> {
@@ -469,10 +469,20 @@ export function mergeModelCatalogWithLiveSnapshot(
   generatedAt?: string
 ): ModelCatalog | undefined {
   if (!Array.isArray(liveModels) || liveModels.length === 0) return stored;
-  const models = new Map((stored?.models ?? []).map((model) => [`${model.backend}/${model.modelId}`, model]));
-  for (const model of liveModels) models.set(`${model.backend}/${model.modelId}`, model);
+  const models = new Map((stored?.models ?? []).map((model) => [`${model.backend}:${model.modelId}`, model]));
+  for (const model of liveModels) {
+    models.set(`${model.backend}:${model.modelId}`, {
+      backend: model.backend,
+      modelId: model.modelId,
+      runnable: Boolean(model.runnable),
+      ...(model.name ? { name: model.name } : {}),
+      ...(model.status ? { status: model.status } : {}),
+      capabilities: model.capabilities,
+      variants: model.variants ?? []
+    });
+  }
   return {
-    catalogVersion: "2",
+    catalogVersion: "3",
     generatedAt: generatedAt || stored?.generatedAt || new Date().toISOString(),
     sources: stored?.sources ?? [],
     models: [...models.values()]

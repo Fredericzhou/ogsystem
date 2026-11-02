@@ -252,9 +252,9 @@ export async function loadNl2MmdContext(args: {
   const modelCatalog = dedupeByKey(
     [
       ...(rawModelCatalog?.models.map((entry) => ({
-        modelRef: entry.ref,
-        provider: entry.provider,
-        model: entry.model,
+        modelRef: entry.modelId.includes("/") ? entry.modelId : `${entry.backend}/${entry.modelId}`,
+        provider: entry.backend,
+        model: entry.modelId,
         name: entry.name,
         status: entry.status,
         reasoningEffort: undefined,
@@ -286,7 +286,9 @@ export async function loadNl2MmdContext(args: {
   const defaultCatalogModel = rawModelCatalog ? chooseDefaultModelFromCatalog(rawModelCatalog) : undefined;
   const defaultModelRef = modelSelection?.defaults?.backend && modelSelection.defaults.modelId
     ? `${modelSelection.defaults.backend}/${modelSelection.defaults.modelId}`
-    : defaultCatalogModel?.ref ?? modelCatalog[0]?.modelRef;
+    : defaultCatalogModel
+      ? `${defaultCatalogModel.backend}/${defaultCatalogModel.modelId}`
+      : modelCatalog[0]?.modelRef;
   const defaultModelVariant = modelSelection?.defaults?.variant;
   const defaultTimeoutMs = modelSelection?.defaults?.timeoutMs ?? 120000;
   const defaultMaxOutputBytes = modelSelection?.defaults?.maxOutputBytes ?? 65536;

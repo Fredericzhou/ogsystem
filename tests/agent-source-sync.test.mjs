@@ -13,7 +13,7 @@ async function writeDefaultModelSelection(workdir) {
     path.resolve(workdir, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "2",
+        configVersion: "3",
         defaults: {
           backend: "opencode",
           modelId: "opencode/gpt-5-nano",

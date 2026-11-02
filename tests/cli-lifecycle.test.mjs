@@ -53,7 +53,7 @@ async function seedRuntimeProject(tempRoot) {
     path.resolve(tempRoot, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "2",
+        configVersion: "3",
         defaults: {
           backend: "opencode",
           modelId: "openai/gpt-5-nano",
@@ -394,7 +394,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     path.resolve(tempRoot, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "2",
+        configVersion: "3",
         defaults: {
           backend: "opencode",
           modelId: "openai/gpt-5-nano",

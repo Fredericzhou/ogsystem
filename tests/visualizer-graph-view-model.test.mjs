@@ -34,7 +34,7 @@ function buildAuthoringFixture() {
     systemPath: "/tmp/project/system.mmd",
     system: parseSystemFromMermaidSource(source),
     systemSource: source,
-    modelSelection: { configVersion: "2", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }
+    modelSelection: { configVersion: "3", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }
   });
 }
 

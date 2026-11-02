@@ -1,11 +1,17 @@
-import { isDirectModelRef } from "../../../dist/runtime/model-selection.js";
-
-export function resolveTeamStudioModelRef(discovery, settings = {}) {
-  const models = (discovery?.models || []).filter((model) => model.runnable && isDirectModelRef(model.ref));
-  const requestedModel = settings.defaultModel && settings.defaultModel !== "default" ? settings.defaultModel : undefined;
-  const requested = requestedModel
-    ? models.find((model) => model.id === requestedModel || model.ref === requestedModel || model.id?.endsWith(`/${requestedModel}`) || model.ref?.endsWith(`/${requestedModel}`))
+export function resolveTeamStudioModel(discovery, settings = {}) {
+  const models = (discovery?.models || []).filter(
+    (model) => model.runnable && model.backend && model.modelId
+  );
+  const requestedBackend = settings.defaultBackend || settings.defaultProvider || "opencode";
+  const requestedModelId = settings.defaultModel && settings.defaultModel !== "default"
+    ? settings.defaultModel
     : undefined;
-  const preferredBackend = settings.defaultProvider || "opencode";
-  return (requested || models.find((model) => model.backend === preferredBackend) || models[0])?.ref;
+  const requested = requestedModelId
+    ? models.find((model) => model.backend === requestedBackend && model.modelId === requestedModelId)
+    : undefined;
+  const chosen =
+    requested ||
+    models.find((model) => model.backend === requestedBackend) ||
+    models[0];
+  return chosen ? { backend: chosen.backend, modelId: chosen.modelId } : undefined;
 }

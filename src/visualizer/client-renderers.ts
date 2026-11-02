@@ -1241,7 +1241,7 @@ export function renderStudioRoleConfigEditor(args: {
             const runnable = models.filter((entry) => entry.runnable === true);
             const discoveredBackends = [...new Set([
               ...runnable.map((entry) => String(entry.backend || "")),
-              ...sources.filter((source) => source.status === "available").map((source) => String(source.backend || ""))
+              ...sources.filter((source) => source.status === "runnable").map((source) => String(source.backend || ""))
             ])].filter(Boolean).sort();
             const backends = [...new Set([...discoveredBackends, backend, "opencode"])].filter(Boolean).sort();
             const selectedBackend = backend || "opencode";
@@ -1251,10 +1251,14 @@ export function renderStudioRoleConfigEditor(args: {
               ? '<option value="' + escapeText(modelId) + '" selected>' + escapeText(`${modelId} (not currently discovered)`) + '</option>'
               : "";
             const unavailable = !choices.length && !staleModel ? '<option value="">' + escapeText(t("studio.form.noModels", undefined, "No runnable models. Run ogs models sync.")) + '</option>' : "";
-            return '<div class="actions compact"><button class="button subtle" type="button" data-model-catalog-sync' + disabled + '>' + escapeText(t("action.refresh", undefined, "Refresh installed CLIs and models")) + '</button><span class="hint">' + escapeText(sources.map((source) => `${source.backend}: ${source.status === "available" ? (source.detail || "available") : (source.detail || "not found")}`).join(" · ")) + '</span></div><label class="field"><span>' + escapeText(t("studio.form.backend", undefined, "CLI backend")) + '</span><select data-role-config-field="backend"' + disabled + '>' +
-              backends.map((item) => '<option value="' + escapeText(item) + '"' + (item === selectedBackend ? ' selected' : '') + '>' + escapeText(discoveredBackends.includes(item) ? item : `${item} (not currently discovered)`) + '</option>').join("") +
+            const sourceLabels = new Map(sources.map((source) => [String(source.backend || ""), String(source.displayName || source.backend || "")]));
+            return '<div class="actions compact"><button class="button subtle" type="button" data-model-catalog-sync' + disabled + '>' + escapeText(t("action.refresh", undefined, "Refresh installed CLIs and models")) + '</button><span class="hint">' + escapeText(sources.map((source) => `${source.displayName || source.backend}: ${source.status || "unavailable"}`).join(" · ")) + '</span></div><label class="field"><span>' + escapeText(t("studio.form.backend", undefined, "CLI backend")) + '</span><select data-role-config-field="backend"' + disabled + '>' +
+              backends.map((item) => {
+                const display = sourceLabels.get(item) || item;
+                return '<option value="' + escapeText(item) + '"' + (item === selectedBackend ? ' selected' : '') + '>' + escapeText(discoveredBackends.includes(item) ? `${display} (${item})` : `${display} (${item} · not currently runnable)`) + '</option>';
+              }).join("") +
               '</select></label><label class="field"><span>' + escapeText(t("studio.form.modelRef", undefined, "Model")) + '</span><select data-role-config-field="modelId"' + disabled + '>' + staleModel + unavailable +
-              choices.map((item) => '<option value="' + escapeText(String(item.modelId || "")) + '"' + (String(item.modelId) === selectedModelId ? ' selected' : '') + '>' + escapeText(String(item.name || item.model || item.modelId || "")) + '</option>').join("") +
+              choices.map((item) => '<option value="' + escapeText(String(item.modelId || "")) + '"' + (String(item.modelId) === selectedModelId ? ' selected' : '') + '>' + escapeText(String(item.name ? `${item.name} · ${item.modelId}` : item.modelId || "")) + '</option>').join("") +
               '</select><div class="hint">' + escapeText(models.length ? t("studio.roleConfigModelHint", undefined, "Select a model advertised by an installed persistent CLI service.") : t("studio.form.noModels", undefined, "No runnable models. Run ogs models sync.")) + '</div></label>';
           })()
         : "") +

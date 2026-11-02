@@ -417,13 +417,13 @@ export async function prepareRuntimeSetup(args: {
         return [[roleId, {
           backend: seat.binding.modelRef.slice(0, separator),
           modelId: seat.binding.modelRef.slice(separator + 1),
-          fallbackModelRef: effectiveModelSelection?.roles?.[roleId]?.fallbackModelRef
+          fallbackModelId: effectiveModelSelection?.roles?.[roleId]?.fallbackModelId
         }]];
       }))
     : {};
   const modelSelection = activeDesign && Object.keys(designModelOverrides).length
     ? {
-        configVersion: "2" as const,
+        configVersion: "3" as const,
         defaults: effectiveModelSelection?.defaults,
         roles: { ...(effectiveModelSelection?.roles ?? {}), ...designModelOverrides }
       }

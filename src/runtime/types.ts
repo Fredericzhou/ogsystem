@@ -154,10 +154,10 @@ export type SystemDefinition = {
 export type RoleExecutionBinding =
   | {
       kind: "model";
-      backend: "opencode" | "codex" | "claude" | "antigravity";
+      backend: string;
       modelId: string;
       modelRef: string;
-      fallbackModelRef?: string;
+      fallbackModelId?: string;
       variant?: string;
       timeoutMs?: number;
       maxOutputBytes?: number;
@@ -403,27 +403,37 @@ export type ModelCatalogCapabilitySummary = {
   toolcall: boolean;
 };
 
+export type ModelCatalogSourceStatus =
+  | "runnable"
+  | "unavailable"
+  | "not_installed"
+  | "installed_but_broken"
+  | "service_unavailable";
+
+export type ModelCatalogSource = {
+  backend: string;
+  displayName: string;
+  iconKey: string;
+  transport: "http" | "stdio-jsonrpc" | "cli-stdio";
+  sessionKind: "server-session" | "app-server-thread" | "logical-session";
+  status: ModelCatalogSourceStatus;
+  detail?: string;
+};
+
 export type ModelCatalogEntry = {
   backend: string;
-  runnable: boolean;
   modelId: string;
-  ref: string;
-  provider: string;
-  model: string;
+  runnable: boolean;
   name?: string;
   status?: string;
   capabilities: ModelCatalogCapabilitySummary;
   variants: string[];
-  raw?: {
-    id?: string;
-    providerID?: string;
-  };
 };
 
 export type ModelCatalog = {
-  catalogVersion: "2";
+  catalogVersion: "3";
   generatedAt: string;
-  sources: Array<{ backend: string; command: string; status: "available" | "unavailable"; detail?: string }>;
+  sources: ModelCatalogSource[];
   models: ModelCatalogEntry[];
 };
 
@@ -433,7 +443,7 @@ export type ModelSelectionDefaults = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
-  fallbackModelRef?: string;
+  fallbackModelId?: string;
 };
 
 export type ModelSelectionRoleOverride = {
@@ -442,7 +452,7 @@ export type ModelSelectionRoleOverride = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
-  fallbackModelRef?: string;
+  fallbackModelId?: string;
 };
 
 export type ModelSelectionSystemOverride = {
@@ -451,7 +461,7 @@ export type ModelSelectionSystemOverride = {
 };
 
 export type ModelSelectionConfig = {
-  configVersion: "2";
+  configVersion: "3";
   defaults?: ModelSelectionDefaults;
   roles?: Record<string, ModelSelectionRoleOverride>;
 };

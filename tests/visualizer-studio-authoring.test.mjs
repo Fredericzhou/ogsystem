@@ -105,7 +105,7 @@ test("Studio Mermaid import reflects the project's pinned role model bindings", 
     systemPath: "/tmp/project/system.mmd",
     systemSource: source,
     modelSelection: {
-      configVersion: "2",
+      configVersion: "3",
       roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallbackModelRef: "opencode/big-pickle" } }
     }
   });
@@ -122,7 +122,7 @@ test("Studio save writes role backend/model separately and preserves project def
   try {
     await mkdir(path.join(workdir, ".ogs"), { recursive: true });
     await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify({
-      configVersion: "2",
+      configVersion: "3",
       defaults: { backend: "opencode", modelId: "provider/default" }
     }), "utf8");
     const authoring = importMermaidToAuthoring({ workdir, systemPath: path.join(workdir, "system.mmd"), systemSource: source });
@@ -136,7 +136,7 @@ test("Studio save writes role backend/model separately and preserves project def
 
     const savedSelection = JSON.parse(await readFile(path.join(workdir, ".ogs", "model-selection.json"), "utf8"));
     assert.deepEqual(savedSelection, {
-      configVersion: "2",
+      configVersion: "3",
       defaults: { backend: "opencode", modelId: "provider/default" },
       roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/big-pickle" } }
     });

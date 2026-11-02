@@ -271,7 +271,7 @@ export function importSystemToAuthoring(args: {
       modelId: selected?.modelId,
       modelSelectionSource: args.modelSelection?.roles?.[roleId] ? "role" : selected?.backend ? "default" : undefined,
       modelRef: selected?.backend && selected.modelId ? `${selected.backend}/${selected.modelId}` : undefined,
-      fallbackModelRef: args.modelSelection?.roles?.[roleId]?.fallbackModelRef,
+      fallbackModelId: args.modelSelection?.roles?.[roleId]?.fallbackModelId,
       profileId: args.system.executionBinding[roleId],
       routingMode: args.system.graph?.routingModeByRoleId[roleId],
       routeOrder: args.system.graph?.routeOrderByRoleId?.[roleId],
@@ -772,10 +772,10 @@ export async function saveStudioAuthoringDraft(args: {
         throw new Error(`Role "${roleId}" needs both backend and modelId before it can run as an Agent.`);
       }
       if (role.modelSelectionSource === "default") continue;
-      roles[roleId] = { backend: role.backend, modelId: role.modelId, ...(role.fallbackModelRef ? { fallbackModelRef: role.fallbackModelRef } : {}) };
+      roles[roleId] = { backend: role.backend, modelId: role.modelId, ...(role.fallbackModelId ? { fallbackModelId: role.fallbackModelId } : {}) };
     }
     nextSelection = validateModelSelection({
-      configVersion: "2",
+      configVersion: "3",
       defaults: currentSelection?.defaults,
       roles
     }, selectionPath);

@@ -52,12 +52,12 @@ test("TeamVersion model bindings persist in the executable model-selection asset
   t.after(() => rm(workdir, { recursive: true, force: true }));
   const store = createFileTeamDesignAssetStore();
   const selection = {
-    configVersion: "2",
+    configVersion: "3",
     defaults: { backend: "codex", modelId: "gpt-6-luna" },
     roles: { analyst: { backend: "opencode", modelId: "big-pickle" } }
   };
   const saved = await store.saveAssets({ workdir, roleIds: ["analyst"], assets: { modelSelection: selection } });
-  assert.equal(saved.modelSelection.configVersion, "2");
+  assert.equal(saved.modelSelection.configVersion, "3");
   assert.equal(saved.modelSelection.defaults.modelId, "gpt-6-luna");
   assert.equal(saved.modelSelection.roles.analyst.backend, "opencode");
   assert.equal(saved.modelSelection.roles.analyst.modelId, "big-pickle");
@@ -114,7 +114,7 @@ test("TeamVersion design assets reject unsafe ids and malformed JSON before writ
   const store = createFileTeamDesignAssetStore();
   await assert.rejects(store.saveAssets({ workdir, roleIds: ["../outside"], assets: { roles: { "../outside": { "prompt.md": "x" } } } }), /TEAM_ASSET_PATH_INVALID/);
   await assert.rejects(store.saveAssets({ workdir, roleIds: ["analyst"], assets: { roles: { analyst: { "role.json": "not json" } } } }), /TEAM_ASSET_INVALID_JSON/);
-  assert.deepEqual(await store.readAssets({ workdir, roleIds: ["analyst"] }), { roles: { analyst: { "agent.md": "", "prompt.md": "", "role.json": "", "output.schema.json": "" } }, contracts: "", contractSchemas: {}, executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "2" }, laws: { laws: [] }, lawsText: "" });
+  assert.deepEqual(await store.readAssets({ workdir, roleIds: ["analyst"] }), { roles: { analyst: { "agent.md": "", "prompt.md": "", "role.json": "", "output.schema.json": "" } }, contracts: "", contractSchemas: {}, executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "3" }, laws: { laws: [] }, lawsText: "" });
 });
 
 test("TeamVersion execution profiles and tools persist validated runtime configuration", async (t) => {

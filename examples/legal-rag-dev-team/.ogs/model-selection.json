@@ -1,7 +1,8 @@
 {
-  "configVersion": "1",
+  "configVersion": "3",
   "defaults": {
-    "model": "gkgk/gpt-5.4",
+    "backend": "opencode",
+    "modelId": "gkgk/gpt-5.4",
     "timeoutMs": 600000,
     "maxOutputBytes": 65536
   }

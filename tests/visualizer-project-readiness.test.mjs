@@ -82,7 +82,7 @@ async function writeSystem(workdir, lines) {
   });
   await writeFile(path.join(workdir, "system.mmd"), `${systemLines.join("\n")}\n`, "utf8");
   if (Object.keys(roles).length) {
-    await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify({ configVersion: "2", roles }, null, 2), "utf8");
+    await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify({ configVersion: "3", roles }, null, 2), "utf8");
   }
 }
 
@@ -91,9 +91,9 @@ async function writeModelCatalog(workdir, models) {
     path.join(workdir, ".ogs", "model-catalog.json"),
     JSON.stringify(
       {
-        catalogVersion: "2",
+        catalogVersion: "3",
         generatedAt: "2026-04-30T00:00:00.000Z",
-        sources: [{ backend: "opencode", command: "test", status: "available" }],
+        sources: [{ backend: "opencode", displayName: "OpenCode", iconKey: "opencode", transport: "http", sessionKind: "server-session", status: "runnable" }],
         models
       },
       null,
@@ -259,7 +259,7 @@ test("project readiness blocks Codex output schemas outside the strict structure
     ]);
     await writeFile(
       path.join(workdir, ".ogs", "model-selection.json"),
-      JSON.stringify({ configVersion: "2", roles: { planner: { backend: "codex", modelId: "gpt-5.6-luna" } } }),
+      JSON.stringify({ configVersion: "3", roles: { planner: { backend: "codex", modelId: "gpt-5.6-luna" } } }),
       "utf8"
     );
 

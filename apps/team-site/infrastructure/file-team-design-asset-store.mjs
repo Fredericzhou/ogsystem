@@ -171,7 +171,7 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
       }
       const modelSelectionPath = resolve(root, MODEL_SELECTION_PATH);
       await assertSafePath(root, modelSelectionPath);
-      let modelSelection = { configVersion: "2" };
+      let modelSelection = { configVersion: "3" };
       try { modelSelection = validateModelSelection(JSON.parse(await read(modelSelectionPath, "utf8")), modelSelectionPath); }
       catch (error) { if (error?.code !== "ENOENT") throw error; }
       const lawsPath = resolve(root, LAWS_PATH);

@@ -1,10 +1,14 @@
 import { mkdir } from "node:fs/promises";
+import { defaultBackendRegistry } from "../../../dist/runtime/model-backend-registry.js";
 import { discoverLocalModelCatalog, isModelCatalogStale } from "../../../dist/runtime/model-catalog.js";
 
-const providerNames = Object.freeze({ codex: "Codex", opencode: "OpenCode", claude: "Claude", antigravity: "Antigravity", openai: "OpenAI", code2: "Code2", multidebate: "Multi Debate" });
-const providerLabel = (backend) => providerNames[backend] || backend;
-
-export function createModelCatalog({ workdir, cacheMs = 30_000, discover = discoverLocalModelCatalog, isStale = isModelCatalogStale, now = Date.now }) {
+export function createModelCatalog({
+  workdir,
+  cacheMs = 30_000,
+  discover = discoverLocalModelCatalog,
+  isStale = isModelCatalogStale,
+  now = Date.now
+}) {
   if (!workdir) throw new TypeError("Model discovery workdir is required.");
   let cache;
 
@@ -15,19 +19,34 @@ export function createModelCatalog({ workdir, cacheMs = 30_000, discover = disco
       generatedAt: catalog.generatedAt,
       stale: isStale(catalog),
       workdir,
-      sources: catalog.sources.map((source) => ({ ...source, backend: source.backend, name: providerLabel(source.backend) })),
-      models: catalog.models.map((model) => ({
-        id: model.modelId,
-        backend: model.backend,
-        selectionRef: `${model.backend}/${model.modelId}`,
-        name: model.name || model.modelId,
-        provider: model.provider || model.backend,
-        providerName: providerLabel(model.provider || model.backend),
-        status: model.status || (model.runnable ? "active" : "unavailable"),
-        runnable: Boolean(model.runnable),
-        capabilities: model.capabilities,
-        ref: model.ref
-      }))
+      sources: (catalog.sources || []).map((source) => {
+        const descriptor = defaultBackendRegistry.getDescriptor(source.backend);
+        return {
+          backend: source.backend,
+          displayName: source.displayName || descriptor?.displayName || source.backend,
+          iconKey: source.iconKey || descriptor?.iconKey || source.backend,
+          transport: source.transport || descriptor?.transport || "cli-stdio",
+          sessionKind: source.sessionKind || descriptor?.sessionKind || "logical-session",
+          status: source.status || "unavailable",
+          ...(source.detail ? { detail: source.detail } : {})
+        };
+      }),
+      models: (catalog.models || []).map((model) => {
+        const modelId = model.modelId;
+        return {
+          backend: model.backend,
+          modelId,
+          name: model.name || modelId,
+          status: model.status || (model.runnable ? "active" : "unavailable"),
+          runnable: Boolean(model.runnable),
+          capabilities: model.capabilities || {
+            textInput: true,
+            textOutput: true,
+            toolcall: true
+          },
+          variants: Array.isArray(model.variants) ? model.variants : []
+        };
+      })
     };
   }
 
