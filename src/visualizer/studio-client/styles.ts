@@ -290,28 +290,29 @@ export function injectStudioGraphStyles(): void {
       pointer-events: none;
     }
     .studio-graph-canvas .studio-runtime-activity-ring {
-      display: none;
+      display: block;
       fill: none;
-      stroke: #22a6c8;
+      stroke: #0ea5e9;
       stroke-linejoin: round;
-      stroke-width: 2px;
+      stroke-width: 1.5px;
+      stroke-dasharray: 6 3;
       vector-effect: non-scaling-stroke;
-      animation: studio-runtime-ring-pulse 1400ms ease-in-out infinite;
+      animation: studio-runtime-ring-pulse 1600ms ease-in-out infinite, studio-edge-flow 1500ms linear infinite;
     }
     .studio-graph-canvas .studio-runtime-activity-dot {
-      fill: #22a6c8;
+      fill: #0ea5e9;
       stroke: #f7faf8;
       stroke-width: 1.5px;
       vector-effect: non-scaling-stroke;
       animation: studio-runtime-dot-pulse 1000ms ease-in-out infinite;
     }
     .studio-graph-canvas .studio-runtime-activity[data-mode="technical"] .studio-runtime-activity-ring {
-      stroke: #5b8fd8;
-      animation-duration: 2200ms;
+      stroke: #38bdf8;
+      animation-duration: 2000ms, 1200ms;
     }
     .studio-graph-canvas .studio-runtime-activity[data-mode="technical"] .studio-runtime-activity-dot {
-      fill: #5b8fd8;
-      animation-duration: 1600ms;
+      fill: #38bdf8;
+      animation-duration: 1400ms;
     }
     .studio-graph-canvas .studio-runtime-activity[data-mode="review"] .studio-runtime-activity-ring {
       stroke: #d39a2e;
@@ -592,8 +593,12 @@ export function injectStudioGraphStyles(): void {
       50% { opacity: 1; transform: scale(1.12); }
     }
     @keyframes studio-agent-aura {
-      0%, 100% { filter: drop-shadow(0 0 0.28rem rgba(16, 185, 129, .18)); }
-      50% { filter: drop-shadow(0 0 1rem rgba(16, 185, 129, .42)); }
+      0%, 100% {
+        filter: drop-shadow(0 0 0.35rem rgba(14, 165, 233, 0.25)) drop-shadow(0 0 0.75rem rgba(16, 185, 129, 0.2));
+      }
+      50% {
+        filter: drop-shadow(0 0 0.75rem rgba(14, 165, 233, 0.45)) drop-shadow(0 0 1.25rem rgba(16, 185, 129, 0.35));
+      }
     }
     @keyframes studio-runtime-settle {
       0% { transform: scale(.985); filter: drop-shadow(0 0 0 rgba(52, 211, 153, 0)); }

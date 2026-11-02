@@ -244,10 +244,16 @@ function pickDryRunEvent(args: {
   branch: BranchRecord;
   state: GraphState;
   plan: ExecutionPlan;
+  dryRunScenario?: "review-reject-once";
 }): string | undefined {
   const selectableOutgoing = getSelectableOutgoingFlows(args.node);
   if (selectableOutgoing.length === 0) {
     return undefined;
+  }
+  if (args.dryRunScenario === "review-reject-once" && args.node.roleId === "opencode-reviewer") {
+    const preferred = args.branch.loopIteration <= 1 ? "REJECTED" : "APPROVED";
+    const selected = selectableOutgoing.find((flow) => flow.eventType === preferred);
+    if (selected) return selected.eventType;
   }
   if (selectableOutgoing.length === 1) {
     return selectableOutgoing[0].eventType;
@@ -427,6 +433,7 @@ export async function executeRoleNode(args: {
   commandBaseDir?: string;
   logger?: RunConsoleLogger;
   signal?: AbortSignal;
+  dryRunScenario?: "review-reject-once";
   /** OGS audit port supplied by the active engine adapter. */
   auditAppend?: (event: RuntimeAuditEvent) => Promise<void>;
 }): Promise<RoleExecutorResult> {
@@ -898,7 +905,7 @@ export async function executeRoleNode(args: {
           timeoutMs: resolvedBinding!.timeoutMs,
           maxOutputBytes: resolvedBinding!.maxOutputBytes,
           signal: args.signal,
-          dryRunOutputEvent: pickDryRunEvent({ node: args.node, branch: currentBranch, state: args.state, plan: args.plan }),
+          dryRunOutputEvent: pickDryRunEvent({ node: args.node, branch: currentBranch, state: args.state, plan: args.plan, dryRunScenario: args.dryRunScenario }),
           sessionId: existingSession?.sessionId,
           ...(reportsPromptCalls ? { promptCallPhase: phase, onPromptCall } : {})
         });

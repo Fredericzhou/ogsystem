@@ -186,6 +186,8 @@ export type RunnerInput = {
   runControl?: RunControl;
   runtimeServices?: RuntimeExecutionServices;
   runtimeEdgeIdsByTransition?: Record<string, string>;
+  /** Named deterministic dry-run scenario used for repeatable Studio UAT. */
+  dryRunScenario?: "review-reject-once";
 };
 
 /**
@@ -1123,7 +1125,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
-          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
+          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append,
+          dryRunScenario: args.dryRunScenario
         });
       const promptCallsByCallId = new Map((result.audit.promptCalls ?? []).map((call) => [call.callId, call]));
       const priorAttemptExecutionIds: string[] = [];
@@ -1153,7 +1156,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
-          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
+          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append,
+          dryRunScenario: args.dryRunScenario
         });
         for (const call of result.audit.promptCalls ?? []) promptCallsByCallId.set(call.callId, call);
       }

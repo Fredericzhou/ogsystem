@@ -115,6 +115,8 @@ export async function runSystemWithAdapter(args: {
   /** Trusted platform-provided team graphs may use supported parallel/join semantics. */
   trustedProjectTopology?: boolean;
   runtimeEdgeIdsByTransition?: Record<string, string>;
+  /** Deterministic dry-run scenario for repeatable Studio acceptance checks. */
+  dryRunScenario?: "review-reject-once";
   projectDigest?: string;
   projectRunLock?: boolean;
   materialInputs?: ProjectMaterialInput[];
@@ -137,6 +139,9 @@ export async function runSystemWithAdapter(args: {
   if (projectTaskRun && !args.executionMode) throw new Error("PROJECT_RUN_MODE_REQUIRED: Project Task Runtime requires an explicit execution mode.");
   if (args.runKind === "studio_simulation" && args.executionMode && !["dry-run", "sandbox"].includes(args.executionMode)) {
     throw new Error("STUDIO_SIMULATION_MODE_INVALID: Studio Simulation supports dry-run or isolated sandbox execution.");
+  }
+  if (args.dryRunScenario && (!args.dryRun || args.dryRunScenario !== "review-reject-once")) {
+    throw new Error("DRY_RUN_SCENARIO_INVALID: named simulation scenarios are available only for dry-run execution.");
   }
   if (projectTaskRun && (!args.owner || args.owner.kind !== "project_task"
     || !args.projectId || args.owner.projectId !== args.projectId
@@ -374,6 +379,7 @@ export async function runSystemWithAdapter(args: {
                 : undefined,
             errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
             runtimeEdgeIdsByTransition: args.runtimeEdgeIdsByTransition,
+            dryRunScenario: args.dryRunScenario,
             logRun: args.logRun ?? false,
             runControl
           };

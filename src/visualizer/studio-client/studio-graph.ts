@@ -294,16 +294,16 @@ type PendingStudioRoleInsertion = {
 
 function runtimeStatusLabel(status: StudioRuntimeNodeState["status"], locale: string): string {
   const labels = locale.startsWith("en")
-    ? { running: "Running", waiting: "Waiting", waiting_review: "Review", failed: "Failed", done: "Done", paused: "Paused", pending: "Pending", idle: "Idle", active: "Active", stopped: "Stopped" }
-    : { running: "运行中", waiting: "等待中", waiting_review: "审核中", failed: "失败", done: "已完成", paused: "已暂停", pending: "待处理", idle: "空闲", active: "运行中", stopped: "已停止" };
+    ? { running: "Working", waiting: "Waiting", waiting_review: "Review", failed: "Failed", done: "Completed", paused: "Paused", pending: "Task accepted", idle: "Idle", active: "Working", stopped: "Stopped" }
+    : { running: "工作中", waiting: "等待中", waiting_review: "审核中", failed: "失败", done: "已完成", paused: "已暂停", pending: "接受任务", idle: "空闲", active: "工作中", stopped: "已停止" };
   return status ? labels[status] || "" : "";
 }
 
 function runtimeTechnicalWaitingLabel(stage: string | undefined, locale: string): string {
   if (locale.startsWith("en")) {
-    return stage === "cli_tool" ? "Waiting for tool" : "Waiting for model";
+    return stage === "cli_tool" ? "Working (Tool)" : "Working";
   }
-  return stage === "cli_tool" ? "等待工具" : "等待模型";
+  return stage === "cli_tool" ? "调用工具中" : "工作中";
 }
 
 function syncRuntimeActivityMarker(args: {
