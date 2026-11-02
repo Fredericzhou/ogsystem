@@ -307,6 +307,7 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
         baselineScenarioId: options.baselineScenarioId || null,
         baselineRevision: Number.isInteger(options.baselineRevision) ? options.baselineRevision : null,
         baselineScenarioDigest: options.baselineScenarioDigest || null,
+        simulationScenario: options.simulationScenario || null,
         expectedRoleIds: Array.isArray(options.expectedRoleIds) ? [...new Set(options.expectedRoleIds.map(String))] : [],
         roleDisplayNames: options.roleDisplayNames && typeof options.roleDisplayNames === "object"
           ? Object.fromEntries(Object.entries(options.roleDisplayNames).map(([roleId, name]) => [String(roleId), redactStudioSimulationText(name)]))

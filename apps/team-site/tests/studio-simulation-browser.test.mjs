@@ -132,7 +132,8 @@ registerHooks({
     assert.doesNotMatch(await page.locator("#team-debug-dialog").innerText(), /OGS Studio/);
     assert.equal(await page.locator("#team-simulation-materials").count(), 1);
     assert.match(await page.locator("#team-debug-dialog").innerText(), /调试任务/);
-    assert.equal(await page.locator("#team-debug-dialog .team-debug-empty-state").count(), 1);
+    assert.equal(await page.locator("#team-debug-dialog .team-debug-empty-state").count(), 0);
+    assert.equal(await page.locator("#team-debug-dialog #team-simulation-result").count(), 1);
     const debugPanel = page.locator("#team-debug-dialog");
     const debugHead = page.locator("#team-debug-dialog .team-debug-panel-head");
     const maximizeDebugButton = debugPanel.locator("[data-panel-maximize]");
@@ -293,6 +294,7 @@ registerHooks({
     assert.equal(await page.locator(".studio-simulation-list").count(), 1, `Studio run page failed: ${await page.locator("#studio-view").innerText()}`);
     assert.equal(await historyRow.count(), 1, `Studio Simulation history should survive restart: ${await page.locator("#studio-view").innerText()}`);
     assert.match(await historyRow.innerText(), /Review the draft package\./);
+    assert.equal(await historyRow.locator(".studio-history-action").count(), 2, "debug history rows should expose audit and workspace actions");
     await historyRow.click();
     await page.waitForURL(new RegExp(`/studio/teams/${teamVersionId}/run/${simulationId}$`));
     await page.getByRole("heading", { name: "调试运行" }).waitFor();

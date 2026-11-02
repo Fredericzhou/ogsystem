@@ -1033,8 +1033,8 @@ async function renderStudioOverview() {
 
 function studioSimulationStatus(status) {
   const labels = state.locale === "en"
-    ? { running: "Running", stopping: "Stopping", stopped: "Stopped", waiting: "Waiting", completed: "Completed", failed: "Failed", skipped: "Skipped", unknown: "Unknown" }
-    : { running: "运行中", stopping: "正在停止", stopped: "已停止", waiting: "等待中", completed: "已完成", failed: "失败", skipped: "已跳过", unknown: "未知" };
+    ? { running: "Working", stopping: "Stopping", stopped: "Stopped", waiting: "Waiting", completed: "Completed", failed: "Failed", skipped: "Skipped", accepted: "Task accepted", working: "Working", unknown: "Unknown" }
+    : { running: "工作中", stopping: "正在停止", stopped: "已停止", waiting: "等待中", completed: "已完成", failed: "失败", skipped: "已跳过", accepted: "接受任务", working: "工作中", unknown: "未知" };
   return labels[status] || status || (state.locale === "en" ? "Unknown" : "未知");
 }
 
@@ -1075,6 +1075,33 @@ function studioWorkspaceNav(teamVersionId, active) {
 
 function studioArtifactsBrowserUrl(teamVersionId, simulationId, teamId = teamVersionId) {
   return `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulationId)}/artifacts?teamId=${encodeURIComponent(teamId)}`;
+}
+
+function bindStudioWorkspaceButtons(root) {
+  root.querySelectorAll("[data-open-workspace]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.dataset.opening = "true";
+      button.textContent = state.locale === "en" ? "Opening…" : "正在打开…";
+      try {
+        const response = await pageFetch(button.dataset.openWorkspace, { method: "POST" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || (state.locale === "en" ? "Unable to open workspace." : "无法打开工作目录。"));
+        button.textContent = state.locale === "en" ? "Opened" : "已打开";
+        window.setTimeout(() => {
+          if (button.isConnected) button.textContent = originalLabel;
+        }, 1400);
+      } catch (error) {
+        button.textContent = originalLabel;
+        button.title = studioSimulationErrorText(error.message) || (state.locale === "en" ? "Unable to open workspace." : "无法打开工作目录。");
+      } finally {
+        button.disabled = false;
+        delete button.dataset.opening;
+      }
+    });
+  });
 }
 
 async function renderStudioArtifactsPage(teamVersionId, simulationId, pageRequest = state.activeRequest) {
@@ -1139,7 +1166,7 @@ async function renderStudioTeamInfo(teamVersionId, pageRequest = state.activeReq
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
     const meta = teamVersionMeta(team);
     const editable = meta.status !== "archived";
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">OGS Studio · ${esc(team.teamId || team.teamRootId || team.projectId)}</div><h1>${esc(team.name || team.teamName)} <span class="version-badge">${esc(meta.version)}</span></h1><p>${state.locale === "en" ? "Team identity and release state. Project materials and tasks are managed separately in OGS Projects." : "管理团队身份与版本状态。项目资料和业务任务由 OGS Projects 独立管理。"}</p></div><span class="status-chip ${esc(meta.status)}">${esc(meta.label)}</span></section>${studioWorkspaceNav(teamVersionId, "info")}<section class="studio-info-layout"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Team identity" : "团队身份"}</span><h2>${state.locale === "en" ? "Team information" : "团队基本信息"}</h2></div></div><form id="studio-team-info-form" class="compact-form"><label>${state.locale === "en" ? "Team name" : "团队名称"}<input name="name" value="${esc(team.name || team.teamName || "")}" maxlength="120" required${editable ? "" : " disabled"}></label><label>${state.locale === "en" ? "Team goal" : "团队目标"}<textarea name="overview" rows="6" maxlength="4000" required${editable ? "" : " disabled"}>${esc(team.overview || "")}</textarea></label><p class="form-status" id="studio-team-info-status" role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">${state.locale === "en" ? "Save team info" : "保存团队信息"}</button>` : `<span class="form-hint">${state.locale === "en" ? "Inactive teams are read-only." : "已停用团队为只读。"}</span>`}</div></form></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Version" : "版本信息"}</span><h2>${state.locale === "en" ? "TeamVersion" : "团队版本"}</h2></div></div><dl class="studio-version-facts"><div><dt>${state.locale === "en" ? "Status" : "状态"}</dt><dd>${esc(meta.label)}</dd></div><div><dt>${state.locale === "en" ? "Version" : "版本"}</dt><dd>${esc(meta.version)}</dd></div><div><dt>${state.locale === "en" ? "Team ID" : "团队 ID"}</dt><dd><code>${esc(team.teamId || team.teamRootId || team.projectId)}</code></dd></div><div><dt>${state.locale === "en" ? "Updated" : "更新时间"}</dt><dd>${esc(team.updatedAt ? new Date(team.updatedAt).toLocaleString(state.locale) : "—")}</dd></div></dl><p class="panel-intro">${state.locale === "en" ? "Saving a change to a released version creates a draft; the released version remains unchanged." : "保存已发布版本的修改时才创建草案，原已发布版本保持不变。"}</p></article></section>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← 团队仓库</a><div class="eyebrow">OGS Studio · ${esc(team.teamId || team.teamRootId || team.projectId)}</div><h1>${esc(team.name || team.teamName)} <span class="version-badge">${esc(meta.version)}</span></h1><p>${state.locale === "en" ? "Team identity and release state. Project materials and tasks are managed separately in OGS Projects." : "管理团队身份与版本状态。项目资料和业务任务由 OGS Projects 独立管理。"}</p></div><span class="status-chip ${esc(meta.status)}">${esc(meta.label)}</span></section>${studioWorkspaceNav(teamVersionId, "info")}<section class="studio-info-layout"><div class="studio-stats-bar"><div class="studio-stat-item"><span class="studio-stat-label">${state.locale === "en" ? "Version" : "版本"}</span><strong class="studio-stat-val">${esc(meta.version)}</strong></div><div class="studio-stat-item"><span class="studio-stat-label">${state.locale === "en" ? "Status" : "状态"}</span><strong class="studio-stat-val"><span class="status-chip ${esc(meta.status)}">${esc(meta.label)}</span></strong></div><div class="studio-stat-item"><span class="studio-stat-label">${state.locale === "en" ? "Updated" : "更新时间"}</span><strong class="studio-stat-val">${esc(team.updatedAt ? new Date(team.updatedAt).toLocaleDateString(state.locale) : "—")}</strong></div><div class="studio-stat-item"><span class="studio-stat-label">${state.locale === "en" ? "Team ID" : "团队标识"}</span><strong class="studio-stat-val"><code>${esc(team.teamId || team.teamRootId || team.projectId)}</code></strong></div></div><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Team identity" : "团队身份"}</span><h2>${state.locale === "en" ? "Team information" : "团队基本信息"}</h2></div></div><form id="studio-team-info-form" class="compact-form"><label>${state.locale === "en" ? "Team name" : "团队名称"}<input name="name" value="${esc(team.name || team.teamName || "")}" maxlength="120" required${editable ? "" : " disabled"}></label><label>${state.locale === "en" ? "Team goal" : "团队目标"}<textarea name="overview" rows="6" maxlength="4000" required${editable ? "" : " disabled"}>${esc(team.overview || "")}</textarea></label><p class="form-status" id="studio-team-info-status" role="status" aria-live="polite"></p><div class="form-actions">${editable ? `<button class="primary-button" type="submit">${state.locale === "en" ? "Save team info" : "保存团队信息"}</button>` : `<span class="form-hint">${state.locale === "en" ? "Inactive teams are read-only." : "已停用团队为只读。"}</span>`}</div></form></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Version" : "版本信息"}</span><h2>${state.locale === "en" ? "TeamVersion" : "团队版本"}</h2></div></div><dl class="studio-version-facts"><div><dt>${state.locale === "en" ? "Status" : "状态"}</dt><dd>${esc(meta.label)}</dd></div><div><dt>${state.locale === "en" ? "Version" : "版本"}</dt><dd>${esc(meta.version)}</dd></div><div><dt>${state.locale === "en" ? "Team ID" : "团队 ID"}</dt><dd><code>${esc(team.teamId || team.teamRootId || team.projectId)}</code></dd></div><div><dt>${state.locale === "en" ? "Updated" : "更新时间"}</dt><dd>${esc(team.updatedAt ? new Date(team.updatedAt).toLocaleString(state.locale) : "—")}</dd></div></dl><p class="panel-intro">${state.locale === "en" ? "Saving a change to a released version creates a draft; the released version remains unchanged." : "保存已发布版本的修改时才创建草案，原已发布版本保持不变。"}</p></article></section>`;
     const infoVersionHint = root.querySelector(".studio-info-layout .project-panel:nth-child(2) .panel-intro");
     if (infoVersionHint) infoVersionHint.textContent = state.locale === "en"
       ? "The first changed save creates an in-design version; the released version remains unchanged."
@@ -1325,6 +1352,8 @@ function studioSimulationErrorText(message) {
     STUDIO_SIMULATION_MODE_INVALID: ["Choose Simulation or Sandbox.", "请选择仿真或沙箱。"],
     STUDIO_SIMULATION_TEAM_DIGEST_INVALID: ["The TeamVersion package failed its integrity check.", "团队版本包未通过完整性校验。"],
     STUDIO_SIMULATION_TEAM_DIGEST_UNAVAILABLE: ["The TeamVersion package could not be read for debugging.", "无法读取团队版本包，暂不能运行调试。"],
+    TEAM_WORKSPACE_UNBOUND: ["No business workspace is bound to this TeamVersion.", "此团队版本尚未绑定业务工作目录。"],
+    TEAM_WORKSPACE_INVALID: ["The bound business workspace is unavailable.", "绑定的业务工作目录不可用。"],
     MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"],
     TEAM_ASSISTANT_MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"]
   };
@@ -1346,12 +1375,19 @@ async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequ
     if (!simulationResponse.ok) throw new Error(payload.error || "无法读取 Studio 仿真记录");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
     const simulations = payload.simulations || [];
+    const workspaceAvailable = Boolean(payload.workspaceAvailable || team.workspaceAvailable);
+    const workspaceOpenPath = `/api/v1/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/workspace/open-directory`;
+    const auditLabel = english ? "Run audit" : "运行审计";
+    const workspaceLabel = english ? "Open workspace" : "工作目录";
+    const workspaceUnavailableTitle = english ? "No workspace is bound to this TeamVersion" : "此团队版本尚未绑定工作目录";
     const history = simulations.length ? simulations.map((simulation) => {
       const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId)}`;
-      return `<a class="material-row studio-simulation-row" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div>${simulation.failureSummary ? `<p class="task-run-last-error">${esc(studioSimulationErrorText(simulation.failureSummary))}</p>` : ""}</div><span>→</span></a>`;
+      const auditHref = studioArtifactsBrowserUrl(teamVersionId, simulation.simulationId, simulation.teamId || team.teamId);
+      return `<div class="material-row studio-simulation-row"><a class="studio-simulation-link" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span class="mode-chip ${esc(simulation.mode || "dry-run")}">${esc(studioSimulationModeLabel(simulation.mode))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div>${simulation.failureSummary ? `<p class="task-run-last-error">${esc(studioSimulationErrorText(simulation.failureSummary))}</p>` : ""}</div></a><div class="studio-history-actions" aria-label="${english ? "Simulation actions" : "运行操作"}"><a class="secondary-button studio-history-action" href="${auditHref}" target="_blank" rel="noreferrer">${auditLabel}</a><button type="button" class="secondary-button studio-history-action" data-open-workspace="${workspaceOpenPath}"${workspaceAvailable ? "" : ` disabled title="${workspaceUnavailableTitle}"`}>${workspaceLabel}</button></div></div>`;
     }).join("") : `<p class="empty-note">${english ? "No simulations for this TeamVersion yet." : "此团队版本还没有仿真记录。"}</p>`;
     const clearable = simulations.some((item) => item.mode !== "sandbox" && !item.baselineScenarioId && ["completed", "failed", "stopped"].includes(item.status));
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${english ? "Team repository" : "团队仓库"}</a><div class="eyebrow">${esc(team.name || team.teamName)} · v${team.teamVersionNumber || 1}</div><h1>${english ? "Debug history" : "调试历史"}</h1><p>${english ? "Review role input, output, progress, and failures from each isolated debug run." : "按次回看独立调试中的角色输入、输出、进度和异常诊断。"}</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Debug runs" : "调试记录"}</span><h2>${english ? "History" : "历史"}</h2></div><div class="form-actions"><span class="count-badge">${simulations.length}</span>${clearable ? `<button class="secondary-button danger-button" type="button" data-clear-studio-history>${english ? "Clear finished debug runs" : "清理已完成调试记录"}</button>` : ""}</div></div><div class="material-list studio-simulation-list">${history}</div></section>`;
+    bindStudioWorkspaceButtons(root);
     root.querySelector(".project-panel .panel-head h2").textContent = english ? "Debug history" : "调试历史";
     root.querySelector("[data-clear-studio-history]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
@@ -1497,6 +1533,11 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         entry.click();
       });
     });
+    const workspaceAvailable = Boolean(simulationsPayload.workspaceAvailable || simulation.workspaceAvailable);
+    const workspaceLabel = state.locale === "en" ? "Open workspace" : "工作目录";
+    const auditLabel = state.locale === "en" ? "Run audit" : "运行审计";
+    const workspaceUnavailableTitle = state.locale === "en" ? "No workspace is bound to this TeamVersion" : "此团队版本尚未绑定工作目录";
+    const workspaceOpenPath = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/workspace/open-directory`;
     const heading = root.querySelector(".page-heading");
     const statusNode = heading?.querySelector(".status-chip");
     if (heading && statusNode) {
@@ -1508,13 +1549,23 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       artifactsLink.href = studioArtifactsBrowserUrl(teamVersionId, simulationId, simulation.teamId);
       artifactsLink.target = "_blank";
       artifactsLink.rel = "noreferrer";
-      artifactsLink.textContent = state.locale === "en" ? "View run evidence" : "查看运行证据";
+      artifactsLink.textContent = auditLabel;
       actions.append(artifactsLink);
+      const workspaceButton = document.createElement("button");
+      workspaceButton.type = "button";
+      workspaceButton.className = "secondary-button studio-history-action";
+      workspaceButton.dataset.openWorkspace = workspaceOpenPath;
+      workspaceButton.disabled = !workspaceAvailable;
+      workspaceButton.title = workspaceAvailable ? workspaceLabel : workspaceUnavailableTitle;
+      workspaceButton.textContent = workspaceLabel;
+      actions.append(workspaceButton);
       heading.append(actions);
     }
     const list = (simulationsPayload.simulations || []).map((item) => {
       const href = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(item.simulationId)}`;
-      return `<a class="material-row studio-simulation-row${item.simulationId === simulationId ? " selected" : ""}" href="${href}" data-route="${href}"${item.simulationId === simulationId ? ' aria-current="page"' : ""}><div><strong>${esc(item.input || "调试任务")}</strong><div class="task-record-meta"><span class="status-chip ${esc(item.status)}">${esc(studioSimulationStatus(item.status))}</span><span class="run-mode-chip">${esc(studioSimulationModeLabel(item.mode))}</span><span>${esc(item.createdAt || "")}</span></div></div></a>`;
+      const selected = item.simulationId === simulationId;
+      const itemAuditHref = studioArtifactsBrowserUrl(teamVersionId, item.simulationId, item.teamId || teamId);
+      return `<div class="material-row studio-simulation-row${selected ? " selected" : ""}"${selected ? ' aria-current="page"' : ""}><a class="studio-simulation-link" href="${href}" data-route="${href}"${selected ? ' aria-current="page"' : ""}><div><strong>${esc(item.input || "调试任务")}</strong><div class="task-record-meta"><span class="status-chip ${esc(item.status)}">${esc(studioSimulationStatus(item.status))}</span><span class="run-mode-chip">${esc(studioSimulationModeLabel(item.mode))}</span><span>${esc(item.createdAt || "")}</span></div></div></a><div class="studio-history-actions" aria-label="${state.locale === "en" ? "Simulation actions" : "运行操作"}"><a class="secondary-button studio-history-action" href="${itemAuditHref}" target="_blank" rel="noreferrer">${auditLabel}</a><button type="button" class="secondary-button studio-history-action" data-open-workspace="${workspaceOpenPath}"${workspaceAvailable ? "" : ` disabled title="${workspaceUnavailableTitle}"`}>${workspaceLabel}</button></div></div>`;
     }).join("");
     const detailBody = document.createElement("div");
     detailBody.className = "studio-run-evidence";
@@ -1524,6 +1575,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
     split.append(detailBody);
     root.append(split);
+    bindStudioWorkspaceButtons(root);
     addStudioWorkspaceNav(root, teamVersionId, "run");
     if (isRefresh && root.dataset.template) {
       frameExistingPage(root, root.dataset.template);
@@ -1947,8 +1999,6 @@ function localizeStudioDesignPage(root, locale, { confirmed, version } = {}) {
   setText("#team-simulation-mode [data-debug-mode-description=\"dry-run\"]", "Preview the workflow without model calls");
   setText("#team-simulation-mode [data-debug-mode-description=\"sandbox\"]", "Call the configured model in an isolated sandbox");
   setLabel("#team-simulation-materials", "Additional materials");
-  setText("#team-debug-dialog .team-debug-empty-state strong", "Ready to debug");
-  setText("#team-debug-dialog .team-debug-empty-state p", "Enter the task and relevant materials to see role conversations, flow progress, and results here.");
   setText("#team-debug-dialog .team-debug-panel-content .form-actions a", "Debug history");
   const debugHint = root.querySelector("#team-debug-dialog .debug-config-view .form-hint");
   if (debugHint) debugHint.textContent = "The task and additional materials are sent together as this run's input. The run uses the current TeamVersion snapshot and is stored as an isolated debug record.";
@@ -2952,7 +3002,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       setEditorState(message);
     };
     state.showTeamGraphUnsavedDebugNotice = showUnsavedDebugNotice;
-    const simulateTeam = async (input, mode = "dry-run") => {
+    const simulateTeam = async (input, mode = "dry-run", simulationScenario) => {
       const prompt = String(input || "").trim();
       if (!prompt) {
         setEditorState(state.locale === "en" ? "Enter a task to debug." : "请输入本次调试任务。");
@@ -2969,9 +3019,17 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (isCurrentRequest(pageRequest)) setEditorState(state.locale === "en" ? "Debug run cancelled; configure the listed roles and try again." : "调试已取消；请配置提示中的角色后重试。");
         return false;
       }
+      if (state._activeSimulationAbort) {
+        state._activeSimulationAbort.abort();
+        state._activeSimulationAbort = null;
+      }
+      const abortController = new AbortController();
+      state._activeSimulationAbort = abortController;
       const result = $("#team-simulation-result");
       setDebugView("run");
       syncDebugRunButton("running");
+      updateStudioGraph?.setRuntimeProgress([]);
+      updateStudioGraph?.update({ readOnly: true });
       if (result) result.innerHTML = `<p class="form-status" role="status">${state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…"}</p>`;
       setEditorState(state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…");
       try {
@@ -2983,7 +3041,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const response = await pageFetch(`/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ prompt, locale: state.locale, mode })
+          body: JSON.stringify({ prompt, locale: state.locale, mode, ...(simulationScenario ? { simulationScenario } : {}) })
         });
         const payload = await response.json();
         if (!isCurrentRequest(pageRequest)) return false;
@@ -3004,7 +3062,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           const english = state.locale === "en";
           const role = roleName(item.roleId || "");
           const labels = {
-            "role_waiting": english ? `${role} is waiting for the runtime` : `${role} 正在等待运行服务`,
+            "role_waiting": english ? `${role} is working` : `${role} 正在工作中`,
             "role_retry_scheduled": english ? `${role} will retry (attempt ${item.attempt || "?"}/${item.maxAttempts || "?"})` : `${role} 将重试（第 ${item.attempt || "?"}/${item.maxAttempts || "?"} 次）`,
             "join_activated": english ? `Join activated for ${role}` : `${role} 汇聚已启动`,
             "join_quorum_reached": english ? `Join condition met for ${role}` : `${role} 已满足汇聚条件`,
@@ -3127,9 +3185,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               list.append(card);
               roleCards.set(key, card);
             }
-            const status = item.type === "role_waiting" ? "waiting"
-              : item.type === "role.started" || item.type === "role.input_ready"
-              ? "running"
+            const status = item.type === "role_waiting" ? "working"
+              : item.type === "role.started" ? "working"
+              : item.type === "role.input_ready" ? "accepted"
               : item.type === "role.failed" ? "failed" : item.type === "role.skipped" ? "skipped" : "completed";
             card.dataset.status = status;
             const attempt = item.attempt ? ` · ${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}/${item.maxAttempts || "?"}` : "";
@@ -3145,7 +3203,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
                   ? (state.locale === "en" ? "Execution tool" : "执行工具")
                   : item.stage;
               const waitText = [item.waitKind, waitStage, Number.isFinite(item.elapsedMs) ? `${item.elapsedMs} ms` : ""].filter(Boolean).join(" · ");
-              addSection(card, state.locale === "en" ? "Waiting" : "等待原因", waitText, "waiting");
+              addSection(card, state.locale === "en" ? "Waiting reason" : "等待原因", waitText, "waiting");
             }
             if (item.stdoutPreview || item.failure) {
               addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
@@ -3171,7 +3229,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         };
         const endpoint = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`;
         while (true) {
-          const eventsResponse = await pageFetch(`${endpoint}/${encodeURIComponent(simulation.simulationId)}/events?afterCursor=${cursor}`);
+          if (abortController.signal.aborted) break;
+          const eventsResponse = await pageFetch(`${endpoint}/${encodeURIComponent(simulation.simulationId)}/events?afterCursor=${cursor}`, { signal: abortController.signal });
           const eventPayload = await eventsResponse.json();
           if (!eventsResponse.ok) throw new Error(eventPayload.error || "读取运行事件失败");
           const incomingEvents = runtimeEventsFromPayload(eventPayload);
@@ -3241,7 +3300,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         setEditorState(message);
         return false;
       } finally {
+        updateStudioGraph?.update({ readOnly: false });
         state.studioActiveRun = null;
+        if (state._activeSimulationAbort === abortController) state._activeSimulationAbort = null;
         syncDebugRunButton("idle");
       }
     };
@@ -3647,8 +3708,21 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       if (state.studioRoute) root.querySelector("#studio-workbench-host")?.append(workbench);
       else graphPanel.before(workbench);
       workbench.append(graphPanel);
-      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><div><strong>调试</strong><span class="team-debug-run-state" data-debug-run-state></span></div><div class="team-debug-panel-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></div></header><div class="debug-view-tabs" role="tablist" aria-label="调试视图"><button type="button" role="tab" data-debug-view="config" aria-selected="true">配置</button><button type="button" role="tab" data-debug-view="run" aria-selected="false">运行过程</button></div><div class="team-debug-panel-content"><div class="debug-config-view" data-debug-view-panel="config"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><fieldset class="debug-mode-choice" id="team-simulation-mode"><legend>运行方式</legend><label><input type="radio" name="studioSimulationMode" value="dry-run" checked><span data-debug-mode-label="dry-run">仿真</span><small data-debug-mode-description="dry-run">仅预览流程，不调用模型</small></label><label><input type="radio" name="studioSimulationMode" value="sandbox"><span data-debug-mode-label="sandbox">沙箱</span><small data-debug-mode-description="sandbox">调用真实模型，但运行在隔离环境</small></label><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p></fieldset></div><div class="debug-run-view" data-debug-view-panel="run" hidden><div id="team-simulation-result" aria-live="polite"><div class="team-debug-empty-state"><strong>等待开始调试</strong><p>填写任务和可选资料后开始，角色对话、流转进度和运行结果会显示在这里。</p></div></div></div></div></aside>');
+      workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><div><strong>调试</strong><span class="team-debug-run-state" data-debug-run-state></span></div><div class="team-debug-panel-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></div></header><div class="debug-view-tabs" role="tablist" aria-label="调试视图"><button type="button" role="tab" data-debug-view="config" aria-selected="true">配置</button><button type="button" role="tab" data-debug-view="run" aria-selected="false">运行过程</button></div><div class="team-debug-panel-content"><div class="debug-config-view" data-debug-view-panel="config"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><fieldset class="debug-mode-choice" id="team-simulation-mode"><legend>运行方式</legend><label><input type="radio" name="studioSimulationMode" value="dry-run" checked><span data-debug-mode-label="dry-run">仿真</span><small data-debug-mode-description="dry-run">仅预览流程，不调用模型</small></label><label><input type="radio" name="studioSimulationMode" value="sandbox"><span data-debug-mode-label="sandbox">沙箱</span><small data-debug-mode-description="sandbox">调用真实模型，但运行在隔离环境</small></label><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p></fieldset></div><div class="debug-run-view" data-debug-view-panel="run" hidden><div id="team-simulation-result" aria-live="polite"></div></div></div></aside>');
       workbench.insertAdjacentHTML("beforeend", '<aside id="team-build-panel" class="studio-asset-drawer studio-build-panel" aria-label="AI 构建" aria-hidden="true"><header class="studio-asset-drawer-head team-build-panel-head" tabindex="0" aria-label="拖动 AI 构建面板"><strong>AI 构建</strong><button class="close-button" type="button" data-team-build-close aria-label="关闭 AI 构建">×</button></header><div class="studio-build-panel-content"><section id="team-assistant" class="team-assistant-panel"></section></div></aside>');
+      const simulationMode = workbench.querySelector("#team-simulation-mode");
+      if (simulationMode && !simulationMode.querySelector("[data-simulation-scenario]")) {
+        simulationMode.insertAdjacentHTML("beforeend", '<label class="debug-simulation-scenario"><span>仿真场景</span><select data-simulation-scenario><option value="">默认流程</option><option value="review-reject-once">审核先打回一次</option></select></label>');
+      }
+      const simulationScenario = workbench.querySelector("[data-simulation-scenario]");
+      const syncSimulationScenario = () => {
+        if (!simulationScenario) return;
+        const isDryRun = workbench.querySelector('input[name="studioSimulationMode"]:checked')?.value === "dry-run";
+        simulationScenario.disabled = !isDryRun;
+        if (!isDryRun) simulationScenario.value = "";
+      };
+      workbench.querySelectorAll('input[name="studioSimulationMode"]').forEach((input) => input.addEventListener("change", syncSimulationScenario));
+      syncSimulationScenario();
       workbench.addEventListener("click", (event) => {
         const action = event.target.closest?.("[data-studio-graph-action]");
         if (!action) return;
@@ -4221,12 +4295,13 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       const input = $("#team-simulation-input");
       if (!input?.value.trim()) { input?.focus(); return; }
       const mode = root.querySelector('input[name="studioSimulationMode"]:checked')?.value || "dry-run";
+      const simulationScenario = mode === "dry-run" ? (root.querySelector("[data-simulation-scenario]")?.value || undefined) : undefined;
       const materials = $("#team-simulation-materials")?.value.trim() || "";
       const prompt = materials
         ? `${input.value.trim()}\n\n${state.locale === "en" ? "Additional materials:" : "补充资料："}\n${materials}`
         : input.value.trim();
       button.disabled = true;
-      try { await state.runTeamStudioSimulation?.(prompt, mode); }
+      try { await state.runTeamStudioSimulation?.(prompt, mode, simulationScenario); }
       finally { if (button.isConnected && button.dataset.running !== "true") button.disabled = false; }
     });
     const projectEditForm = $("#project-edit-form");

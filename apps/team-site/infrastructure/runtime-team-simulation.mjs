@@ -22,7 +22,10 @@ function normalizeRuntimeStatus(status) {
 
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent, runEvidenceDirectory }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent, runEvidenceDirectory, simulationScenario }) {
+      if (simulationScenario && (mode !== "dry-run" || simulationScenario !== "review-reject-once")) {
+        throw new Error("DRY_RUN_SCENARIO_INVALID: named simulation scenarios are available only for dry-run execution.");
+      }
       const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
       const runId = `simulation-${randomUUID()}`;
       try {
@@ -45,6 +48,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           modelCatalogModels: modelConfig?.modelCatalogModels,
           modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
           runtimeEdgeIdsByTransition,
+          dryRunScenario: simulationScenario,
           logRun: false,
           runtimeServicesFactory: (runtimeArgs) => {
             const services = createFilesystemRuntimeServices({

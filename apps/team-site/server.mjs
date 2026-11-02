@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
@@ -322,6 +323,23 @@ const projectUpdateUseCases = createProjectUpdateUseCases({
 });
 const studioSimulationStore = createFileStudioSimulationStore({ projectsRoot: siteProjectsRoot });
 const teamDesignAssetStore = createFileTeamDesignAssetStore();
+async function openWorkspaceDirectory(workspaceDir) {
+  try {
+    if (!(await stat(workspaceDir)).isDirectory()) throw new Error("TEAM_WORKSPACE_INVALID");
+  } catch (error) {
+    if (error?.message === "TEAM_WORKSPACE_INVALID") throw error;
+    throw new Error("TEAM_WORKSPACE_INVALID");
+  }
+  const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  await new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(command, [workspaceDir], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", rejectPromise);
+    child.once("spawn", () => {
+      child.unref();
+      resolvePromise();
+    });
+  });
+}
 const studioSimulationUseCases = createStudioSimulationUseCases({
   teamCatalog,
   teamPackageReader: projectVisualizerStore,
@@ -330,6 +348,7 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
   simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection }),
   identifiers: { simulationId: randomUUID },
   requestRunStop,
+  openWorkspaceDirectory,
   baselineStore: teamDesignAssetStore,
   projectTeamDesign: (team) => teamDesignProjector.project(team),
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
@@ -483,7 +502,8 @@ const teamVersionSaveUseCases = createTeamVersionSaveUseCases({
 });
 
 function publicProject(project) {
-  const { workdir, ...safe } = project;
+  const { workdir, workspaceDir, ...safe } = project;
+  if (workspaceDir !== undefined) safe.workspaceAvailable = Boolean(workspaceDir);
   if (safe.workspace && typeof safe.workspace === "object") {
     const { workdir: workspaceWorkdir, ...workspace } = safe.workspace;
     safe.workspace = workspace;

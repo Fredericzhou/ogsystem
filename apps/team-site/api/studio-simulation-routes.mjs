@@ -1,4 +1,20 @@
 export async function handleStudioSimulationRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases }) {
+  const workspaceOpen = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/workspace\/open-directory$/);
+  if (workspaceOpen && request.method === "POST") {
+    const remoteAddress = String(request.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+    const localRequest = remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress === "localhost";
+    if (!localRequest) {
+      sendJson(response, 403, { error: "LOCAL_WORKSPACE_OPEN_ONLY" });
+      return true;
+    }
+    try {
+      sendJson(response, 200, await useCases.openTeamVersionWorkspaceDirectory(workspaceOpen[1], workspaceOpen[2]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to open Team workspace." });
+    }
+    return true;
+  }
+
   const collection = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations$/);
   if (collection && request.method === "POST") {
     try {

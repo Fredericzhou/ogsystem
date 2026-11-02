@@ -64,7 +64,7 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 
 Team Site 使用固定应用外壳：桌面侧栏可收起并记住选择，平板默认显示图标导航，手机从顶栏打开导航抽屉；抽屉支持 Escape、遮罩关闭和焦点恢复。页面内容在各自的页面区/面板内滚动，路由切换重置当前页面滚动位置。浏览器无法访问 `localStorage` 时，导航和语言仍使用视口默认值及中文回退。
 
-列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。详细路由映射、滚动规则、逐阶段进度和 L1–L10 验收证据见 [Team Site 版面重构计划](../../docs/development/team-site-layout-refactor-plan.md)。真实设备、屏幕阅读器、Windows 与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
+列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。工作台与前端后续轻量演进项见 [统一计划与演进清单](../../docs/development/todo-backlog.md)。真实设备、屏幕阅读器、Windows 与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
 
 ## 本地启动
 

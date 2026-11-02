@@ -1,5 +1,41 @@
 export const cases = [
   {
+    id: "cross-backend-review-loop",
+    title: { "zh-CN": "跨底座审核循环", en: "Cross-backend review loop" },
+    short: { "zh-CN": "Codex 分析、OpenCode 审核，打回后回到分析角色，直到审核通过。", en: "Codex analyzes and OpenCode reviews, looping back for rework until approval." },
+    category: { "zh-CN": "工程协作", en: "Engineering collaboration" },
+    duration: { "zh-CN": "2 个角色 · 最多 3 轮", en: "2 roles · up to 3 rounds" },
+    icon: "refresh",
+    detail: {
+      scenario: { "zh-CN": "验证一个由 Codex 编写、OpenCode 复核的有界交付流程。", en: "Validate a bounded delivery flow written by Codex and reviewed by OpenCode." },
+      relationship: { "zh-CN": "分析角色提交结果，审核角色可以通过或打回；打回意见回传给分析角色。", en: "The analyst submits a result. The reviewer approves or rejects it, sending feedback back to the analyst." },
+      background: { "zh-CN": "跨模型协作需要明确的审核决策和循环上限。", en: "Cross-model collaboration needs an explicit review decision and a bounded loop." },
+      problem: { "zh-CN": "适合验证共享工作目录中的分析、复核和返工。", en: "Use this to validate analysis, review, and rework in one shared workspace." },
+      collaboration: { "zh-CN": "Codex 负责分析，OpenCode 负责审核；REJECTED 回到 Codex，APPROVED 进入结束。", en: "Codex analyzes and OpenCode reviews; REJECTED returns to Codex and APPROVED ends the run." },
+      deliverable: { "zh-CN": "包含分析内容、审核决策、反馈和最终通过结果的审计记录。", en: "An audit trail containing analysis, review decision, feedback, and the approved result." },
+      roles: {
+        "codex-analyst": { "zh-CN": "分析并根据审核意见返工。", en: "Analyzes and reworks from review feedback." },
+        "opencode-reviewer": { "zh-CN": "复核分析结果并决定通过或打回。", en: "Reviews the analysis and approves or rejects it." }
+      }
+    },
+    accent: "mint",
+    layout: { "codex-analyst": [180, 150], "opencode-reviewer": [600, 150] },
+    semantics: ["bounded_loop", "context.map"],
+    joins: [],
+    loopBudgets: [{ roleId: "codex-analyst", max: 3 }],
+    projections: [],
+    roles: [
+      { id: "codex-analyst", label: { "zh-CN": "Codex 分析师", en: "Codex analyst" }, purpose: "Analyze the task and revise it after review feedback.", events: ["ANALYSIS_READY"], prompt: "Act as the Codex analyst. Produce a concise evidence-based analysis and incorporate any review feedback in the input. Return valid JSON with event ANALYSIS_READY." },
+      { id: "opencode-reviewer", label: { "zh-CN": "OpenCode 审核员", en: "OpenCode reviewer" }, purpose: "Review the analysis and approve or reject it.", events: ["APPROVED", "REJECTED"], prompt: "Act as the OpenCode reviewer. On the first review, identify one concrete issue and return REJECTED with actionable feedback. On later reviews, return APPROVED when the analysis addresses the feedback. Return valid JSON with one allowed event." }
+    ],
+    flows: [
+      ["__system_start__", "codex-analyst", "START"],
+      ["codex-analyst", "opencode-reviewer", "ANALYSIS_READY"],
+      ["opencode-reviewer", "codex-analyst", "REJECTED"],
+      ["opencode-reviewer", "__system_end__", "APPROVED"]
+    ]
+  },
+  {
     id: "management-consulting",
     title: { "zh-CN": "管理咨询交付", en: "Management consulting delivery" },
     short: {

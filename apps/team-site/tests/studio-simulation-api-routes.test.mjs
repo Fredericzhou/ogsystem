@@ -65,3 +65,22 @@ test("Studio Simulation API rejects oversized downloads instead of returning an 
     payload: { error: "STUDIO_SIMULATION_ARTIFACT_TOO_LARGE", path: "logs/huge.log", size: 32 * 1024 * 1024 + 1 }
   });
 });
+
+test("Studio workspace open API is local-only and delegates the bound workspace", async () => {
+  const sent = [];
+  const calls = [];
+  const invoke = (remoteAddress) => handleStudioSimulationRoutes({
+    request: { method: "POST", socket: { remoteAddress } },
+    response: {},
+    url: new URL("http://site.test/api/v1/teams/team-1/versions/team-v1/workspace/open-directory"),
+    readBody: async () => ({}),
+    sendJson: (_response, status, payload) => sent.push({ status, payload }),
+    errorStatus: () => 400,
+    useCases: { openTeamVersionWorkspaceDirectory: async (...args) => (calls.push(args), { opened: true }) }
+  });
+  assert.equal(await invoke("10.0.0.2"), true);
+  assert.deepEqual(sent[0], { status: 403, payload: { error: "LOCAL_WORKSPACE_OPEN_ONLY" } });
+  assert.equal(await invoke("127.0.0.1"), true);
+  assert.deepEqual(sent[1], { status: 200, payload: { opened: true } });
+  assert.deepEqual(calls, [["team-1", "team-v1"]]);
+});

@@ -1,10 +1,11 @@
 import { isDirectModelRef } from "../../../dist/runtime/model-selection.js";
 
 export function resolveTeamStudioModelRef(discovery, settings = {}) {
-  const models = (discovery?.models || []).filter((model) => model.backend === "opencode" && model.runnable && isDirectModelRef(model.ref));
+  const models = (discovery?.models || []).filter((model) => model.runnable && isDirectModelRef(model.ref));
   const requestedModel = settings.defaultModel && settings.defaultModel !== "default" ? settings.defaultModel : undefined;
   const requested = requestedModel
     ? models.find((model) => model.id === requestedModel || model.ref === requestedModel || model.id?.endsWith(`/${requestedModel}`) || model.ref?.endsWith(`/${requestedModel}`))
     : undefined;
-  return (requested || models[0])?.ref;
+  const preferredBackend = settings.defaultProvider || "opencode";
+  return (requested || models.find((model) => model.backend === preferredBackend) || models[0])?.ref;
 }

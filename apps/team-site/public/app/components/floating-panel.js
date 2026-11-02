@@ -16,6 +16,21 @@ function panelBounds(panel, host) {
   };
 }
 
+export function cascadeFloatingPosition(panel, host, bounds) {
+  if (!panel || !host || !bounds) return bounds;
+  const otherPanels = [...host.querySelectorAll(".studio-asset-drawer.is-open:not(.is-right-docked), .team-debug-panel.is-open:not(.is-right-docked), .studio-floating-panel.is-open:not(.is-right-docked)")].filter((p) => p !== panel);
+  let nextLeft = bounds.left;
+  let nextTop = bounds.top;
+  for (const other of otherPanels) {
+    const ob = panelBounds(other, host);
+    if (Math.abs(ob.left - nextLeft) < 32 && Math.abs(ob.top - nextTop) < 32) {
+      nextLeft = Math.min(host.clientWidth - bounds.width, nextLeft + 28);
+      nextTop = Math.min(host.clientHeight - bounds.height, nextTop + 28);
+    }
+  }
+  return { ...bounds, left: nextLeft, top: nextTop };
+}
+
 function applyPanelBounds(panel, host, bounds, { minWidth, minHeight } = {}) {
   if (!panel || !host || panel.classList.contains("is-right-docked")) return;
   const next = { ...bounds };
@@ -200,6 +215,18 @@ export function createFloatingPanelController({
     move(bounds.left + moves[event.key][0], bounds.top + moves[event.key][1]);
   };
 
+  panel.classList.add("studio-floating-panel");
+  const onPanelEscape = (event) => {
+    if (event.key === "Escape") {
+      const closeBtn = panel.querySelector(".close-button, [data-team-debug-close], [data-team-build-close], #studio-asset-drawer-close");
+      if (closeBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeBtn.click();
+      }
+    }
+  };
+  panel.addEventListener("keydown", onPanelEscape);
   panel.addEventListener("pointerdown", bringToFront);
   if (enableDrag) {
     header?.addEventListener("pointerdown", onHeaderPointerDown);
@@ -224,6 +251,7 @@ export function createFloatingPanelController({
     toggleMaximize,
     isMaximized: () => maximized,
     destroy() {
+      panel.removeEventListener("keydown", onPanelEscape);
       panel.removeEventListener("pointerdown", bringToFront);
       if (enableDrag) {
         header?.removeEventListener("pointerdown", onHeaderPointerDown);

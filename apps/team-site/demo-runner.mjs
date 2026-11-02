@@ -165,6 +165,12 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
   }, null, 2)}\n`);
   const demoBackend = resolveDemoBackend();
   const demoModel = resolveDemoModel(process.env, demoBackend);
+  const roleSelections = caseSpec.id === "cross-backend-review-loop"
+    ? {
+        "codex-analyst": { backend: "codex", modelId: process.env.OGS_DEMO_CODEX_MODEL || resolveDemoModel(process.env, "codex") },
+        "opencode-reviewer": { backend: "opencode", modelId: process.env.OGS_DEMO_OPENCODE_MODEL || resolveDemoModel(process.env, "opencode") }
+      }
+    : undefined;
   await writeFile(join(configDir, "model-selection.json"), `${JSON.stringify({
     configVersion: "2",
     defaults: {
@@ -172,7 +178,8 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       modelId: demoModel,
       timeoutMs: 120000,
       maxOutputBytes: 65536
-    }
+    },
+    ...(roleSelections ? { roles: roleSelections } : {})
   }, null, 2)}\n`);
   await writeFile(join(configDir, "user-profile.json"), `${JSON.stringify({
     userProfileId: "site.demo",

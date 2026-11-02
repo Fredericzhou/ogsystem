@@ -44,6 +44,7 @@ function normalizeTeamMeta(meta, projectId) {
     releasedAt: meta?.releasedAt || (legacyReleased ? meta.confirmedAt : null),
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
+    ...(typeof meta?.workspaceDir === "string" && meta.workspaceDir.trim() ? { workspaceDir: meta.workspaceDir.trim() } : {}),
     ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),
     ...(meta?.caseId ? { caseId: meta.caseId } : {}),
     ...((meta?.source === "classic" || meta?.source === "classic-template") && meta?.caseId ? { builtIn: true, category: getCase(meta.caseId)?.category } : {}),
@@ -113,7 +114,12 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
     if (!meta) throw new Error("Project not found.");
     const team = normalizeTeamMeta(meta, projectId);
     if ((team.teamVersionId || team.projectId) !== projectId) throw new Error("TEAM_VERSION_ID_INVALID: stored TeamVersion identity does not match its workspace.");
-    return { ...team, workdir: join(root, projectId) };
+    const workdir = join(root, projectId);
+    return {
+      ...team,
+      workdir,
+      ...(team.workspaceDir ? { workspaceDir: resolve(workdir, team.workspaceDir) } : {})
+    };
   }
 
   async function assertTeamNameAvailable(name, { excludeProjectId, teamRootId } = {}) {

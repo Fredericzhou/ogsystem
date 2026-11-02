@@ -33,7 +33,7 @@ function publicSimulation(evidence) {
   return value;
 }
 
-export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, projectTeamDesign, requestRunStop = async () => undefined, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
+export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader, packageIntegrity, simulationStore, simulationRunner, identifiers, baselineStore, projectTeamDesign, requestRunStop = async () => undefined, openWorkspaceDirectory = async () => undefined, withTeamVersionLock = async (_id, action) => action(), processIsAlive = () => true, processId = 0, hostName = "unknown", now = () => new Date().toISOString() }) {
   if (!teamCatalog || typeof teamCatalog.getTeamVersion !== "function") {
     throw new TypeError("Studio simulation use cases require a TeamVersion reader.");
   }
@@ -321,10 +321,11 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       }
       return simulation;
     },
-    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", mode = "dry-run", baselineScenarioId, expectedTeamCoreDigest, awaitCompletion = true } = {}) {
+    async createSimulation(teamId, teamVersionId, { prompt, locale = "zh-CN", mode = "dry-run", baselineScenarioId, simulationScenario, expectedTeamCoreDigest, awaitCompletion = true } = {}) {
       const input = String(prompt || "").trim();
       if (!input || input.length > 4000) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: enter a task between 1 and 4,000 characters.");
       if (!["dry-run", "sandbox"].includes(mode)) throw new Error("STUDIO_SIMULATION_MODE_INVALID: choose dry-run or sandbox.");
+      if (simulationScenario && (mode !== "dry-run" || simulationScenario !== "review-reject-once")) throw new Error("DRY_RUN_SCENARIO_INVALID: named simulation scenarios are available only for dry-run execution.");
       const startedAt = now();
       const prepared = await withLockedTeamVersion(teamVersionId, async () => {
         const snapshot = await loadTeamVersion(teamId, teamVersionId);
@@ -355,12 +356,13 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           baselineScenarioId: baseline?.scenarioId || null,
           baselineRevision: baseline?.revision || null,
           baselineScenarioDigest: baseline?.scenarioDigest || null,
+          simulationScenario: simulationScenario || null,
           expectedRoleIds: baseline?.expectedRoleIds || [],
           roleDisplayNames,
           createdAt: startedAt,
           startedAt
         });
-        return { ...snapshot, baseline, executionMode, simulationId, created, runtimeEdgeIdsByTransition };
+        return { ...snapshot, baseline, executionMode, simulationId, created, runtimeEdgeIdsByTransition, simulationScenario };
       });
       const { team, bundle, teamCoreDigest, teamDigestVersion, baseline, executionMode, simulationId, created, runtimeEdgeIdsByTransition } = prepared;
       const runInput = baseline ? baseline.prompt : input;
@@ -378,6 +380,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           prompt: materialPrompt, locale, simulationId, teamPackageBundle: bundle, teamCoreDigest,
           runtimeEdgeIdsByTransition,
           mode: executionMode,
+          simulationScenario,
           materials: baseline?.materials || [],
           runEvidenceDirectory,
           onRuntimeEvent: async (runtimeEvent) => {
@@ -562,8 +565,21 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     },
 
     async listTeamVersionSimulations(teamId, teamVersionId) {
-      await loadTeamVersion(teamId, teamVersionId);
-      return publicSimulation({ teamId, teamVersionId, simulations: await simulationStore.listVersionSimulations(teamVersionId) });
+      const team = await loadTeamVersion(teamId, teamVersionId);
+      return publicSimulation({
+        teamId,
+        teamVersionId,
+        workspaceAvailable: Boolean(team?.workspaceDir),
+        simulations: await simulationStore.listVersionSimulations(teamVersionId)
+      });
+    },
+
+    async openTeamVersionWorkspaceDirectory(teamId, teamVersionId) {
+      const { team } = await loadTeamVersion(teamId, teamVersionId);
+      const workspaceDir = team?.workspaceDir;
+      if (!workspaceDir) throw new Error("TEAM_WORKSPACE_UNBOUND");
+      await openWorkspaceDirectory(workspaceDir);
+      return { opened: true };
     },
 
     async validateReleaseEvidence(teamVersionId, expectedDigest) {
@@ -764,7 +780,14 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     },
 
     async getTeamVersionSimulation(teamId, teamVersionId, simulationId) {
-      return publicSimulation(await loadSimulationEvidence(teamId, teamVersionId, simulationId));
+      const [evidence, team] = await Promise.all([
+        loadSimulationEvidence(teamId, teamVersionId, simulationId),
+        teamCatalog.getTeamVersion(teamVersionId)
+      ]);
+      return publicSimulation({
+        ...evidence,
+        simulation: { ...evidence.simulation, workspaceAvailable: Boolean(team?.workspaceDir) }
+      });
     },
 
     async listTeamVersionSimulationArtifacts(teamId, teamVersionId, simulationId) {

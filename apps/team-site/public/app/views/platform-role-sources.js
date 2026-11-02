@@ -74,11 +74,15 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
   };
   const sourceId = addField(en ? "Source ID" : "来源 ID", "sourceId", { value: "agency-agents", required: true, maxLength: 80, pattern: "[a-z0-9][a-z0-9-]{0,79}" });
   const name = addField(en ? "Display name" : "显示名称", "name", { value: "Agency Agents", required: true, maxLength: 120 });
-  const gitDetails = node("details", "role-source-admin-git-details");
-  gitDetails.append(node("summary", "", en ? "Git connection" : "Git 连接信息"));
-  const gitUrl = addField(en ? "Git URL" : "Git 地址", "gitUrl", { value: "https://github.com/msitarzewski/agency-agents.git", type: "url", required: true, maxLength: 1000 }, gitDetails);
-  const branch = addField(en ? "Branch" : "分支", "branch", { value: "main", required: true, maxLength: 200 }, gitDetails);
-  form.append(gitDetails);
+  const gitUrl = document.createElement("input");
+  gitUrl.type = "hidden";
+  gitUrl.name = "gitUrl";
+  gitUrl.value = "https://github.com/msitarzewski/agency-agents.git";
+  const branch = document.createElement("input");
+  branch.type = "hidden";
+  branch.name = "branch";
+  branch.value = "main";
+  form.append(gitUrl, branch);
   const adapterLabel = node("label", "", en ? "Adapter" : "适配器");
   const adapter = document.createElement("select");
   adapter.name = "adapterId";
@@ -91,7 +95,12 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
   enabled.type = "checkbox";
   enabled.name = "enabled";
   enabled.checked = true;
-  enabledLabel.append(enabled, document.createTextNode(en ? "Available for manual updates" : "允许手动更新"));
+  const enabledContent = node("div", "role-source-admin-enabled-content");
+  enabledContent.append(
+    node("strong", "role-source-admin-enabled-title", en ? "Available for manual updates" : "允许手动更新"),
+    node("span", "role-source-admin-enabled-hint", en ? "Enable manual sync and re-indexing of roles for this source" : "开启后允许在后台同步和重新索引该来源的角色数据")
+  );
+  enabledLabel.append(enabled, enabledContent);
   form.append(enabledLabel);
   const formActions = node("div", "role-source-admin-form-actions");
   const save = node("button", "primary-button", en ? "Save source" : "保存来源");
@@ -135,11 +144,7 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
     branch.value = "main";
     adapter.value = "agency-agents-markdown";
     sourceId.disabled = false;
-    gitUrl.disabled = false;
-    branch.disabled = false;
     adapter.disabled = false;
-    gitDetails.hidden = false;
-    gitDetails.open = false;
     enabled.checked = true;
     formStatus.textContent = "";
     save.textContent = en ? "Save source" : "保存来源";
@@ -153,10 +158,7 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
     adapter.value = source.adapterId;
     enabled.checked = source.enabled !== false;
     sourceId.disabled = true;
-    gitUrl.disabled = true;
-    branch.disabled = true;
     adapter.disabled = true;
-    gitDetails.hidden = true;
     save.textContent = en ? "Save changes" : "保存修改";
     formStatus.textContent = "";
   };
