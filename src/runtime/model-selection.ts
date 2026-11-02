@@ -1,4 +1,5 @@
 import { readJsonFile } from "./json-file.js";
+import { defaultBackendRegistry, type ModelBackendId } from "./model-backend-registry.js";
 import { isModelCatalogStale } from "./model-catalog.js";
 import { pathExists } from "./run-store.js";
 import { createRuntimeError } from "./runtime-errors.js";
@@ -10,9 +11,15 @@ import type {
   SystemDefinition
 } from "./types.js";
 
-export const MODEL_BACKENDS = ["opencode", "codex", "claude", "antigravity"] as const;
-export type ModelBackend = typeof MODEL_BACKENDS[number];
+export const MODEL_BACKENDS: readonly ModelBackendId[] = Object.freeze(
+  defaultBackendRegistry.listBackendIds()
+);
+export type ModelBackend = ModelBackendId;
 export const REQUIRED_MODEL_CAPABILITIES = ["textInput", "textOutput"] as const;
+
+export function isRegisteredModelBackend(backend: unknown): backend is ModelBackendId {
+  return typeof backend === "string" && defaultBackendRegistry.has(backend.trim());
+}
 
 export function isDirectModelRef(value: string | undefined): value is string {
   return typeof value === "string" && value.indexOf("/") > 0 && value.indexOf("/") < value.length - 1;
@@ -43,8 +50,9 @@ function validateEntry(value: unknown, filePath: string, fieldPath: string): Mod
   const record = asRecord(value, filePath, fieldPath);
   const backend = optionalString(record.backend, filePath, `${fieldPath}.backend`);
   const modelId = optionalString(record.modelId, filePath, `${fieldPath}.modelId`);
-  if (!backend || !modelId || !MODEL_BACKENDS.includes(backend as ModelBackend)) {
-    fail(filePath, fieldPath, `backend and modelId must be a supported pair (${MODEL_BACKENDS.join(", ")})`);
+  const registeredIds = defaultBackendRegistry.listBackendIds();
+  if (!backend || !modelId || !defaultBackendRegistry.has(backend)) {
+    fail(filePath, fieldPath, `backend and modelId must be a registered backend pair (${registeredIds.join(", ")})`);
   }
   return {
     backend,
@@ -52,20 +60,20 @@ function validateEntry(value: unknown, filePath: string, fieldPath: string): Mod
     variant: optionalString(record.variant, filePath, `${fieldPath}.variant`),
     timeoutMs: optionalPositiveInteger(record.timeoutMs, filePath, `${fieldPath}.timeoutMs`),
     maxOutputBytes: optionalPositiveInteger(record.maxOutputBytes, filePath, `${fieldPath}.maxOutputBytes`),
-    fallbackModelRef: optionalString(record.fallbackModelRef, filePath, `${fieldPath}.fallbackModelRef`)
+    fallbackModelId: optionalString(record.fallbackModelId, filePath, `${fieldPath}.fallbackModelId`)
   };
 }
 
 export function validateModelSelection(value: unknown, filePath: string): ModelSelectionConfig {
   const record = asRecord(value, filePath, "$");
-  if (record.configVersion !== "2") fail(filePath, "$.configVersion", `unsupported version "${String(record.configVersion ?? "(missing)")}"`);
+  if (record.configVersion !== "3") fail(filePath, "$.configVersion", `unsupported version "${String(record.configVersion ?? "(missing)")}"`);
   const defaults = record.defaults === undefined ? undefined : validateEntry(record.defaults, filePath, "$.defaults");
   const rolesValue = record.roles === undefined ? undefined : asRecord(record.roles, filePath, "$.roles");
   const roles = rolesValue
     ? Object.fromEntries(Object.entries(rolesValue).map(([roleId, entry]) => [roleId, validateEntry(entry, filePath, `$.roles.${roleId}`)]))
     : undefined;
   if (record.systems !== undefined) fail(filePath, "$.systems", "system-specific model overrides are not supported; configure role bindings directly");
-  return { configVersion: "2", defaults, roles };
+  return { configVersion: "3", defaults, roles };
 }
 
 export async function loadModelSelection(path: string): Promise<ModelSelectionConfig | undefined> {
@@ -79,20 +87,20 @@ export function withDefaultModelSelection(
 ): ModelSelectionConfig | undefined {
   if (!defaults) return selection;
   return {
-    configVersion: "2",
+    configVersion: "3",
     defaults: { ...defaults, ...selection?.defaults },
     roles: selection?.roles
   };
 }
 
 export type ResolvedModelRuntimeConfig = {
-  backend: ModelBackend;
+  backend: ModelBackendId;
   modelId: string;
   modelRef: string;
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
-  fallbackModelRef?: string;
+  fallbackModelId?: string;
   bindingSource: "selection";
 };
 
@@ -113,7 +121,7 @@ function mergeEntry(...layers: Array<ModelSelectionDefaults | ModelSelectionRole
     variant: layer?.variant ?? merged.variant,
     timeoutMs: layer?.timeoutMs ?? merged.timeoutMs,
     maxOutputBytes: layer?.maxOutputBytes ?? merged.maxOutputBytes,
-    fallbackModelRef: layer?.fallbackModelRef ?? merged.fallbackModelRef
+    fallbackModelId: layer?.fallbackModelId ?? merged.fallbackModelId
   }), {});
 }
 
@@ -129,7 +137,7 @@ export function inspectResolvedModelCatalogEntry(args: {
   const modelId = args.modelId ?? args.modelRef ?? "";
   const modelRef = args.modelRef ?? modelId;
   const entry = args.catalog.models.find((item) => item.backend === backend && item.modelId === modelId);
-  if (!entry) {
+  if (!entry || !entry.runnable) {
     if (isModelCatalogStale(args.catalog)) return undefined;
     return {
       code: "MODEL_UNAVAILABLE",
@@ -176,13 +184,13 @@ export function resolveModelSelectionForSystem(args: {
       continue;
     }
     const resolved: ResolvedModelRuntimeConfig = {
-      backend: selected.backend as ModelBackend,
+      backend: selected.backend,
       modelId: selected.modelId,
       modelRef: selected.modelId,
       variant: selected.variant,
       timeoutMs: selected.timeoutMs,
       maxOutputBytes: selected.maxOutputBytes,
-      fallbackModelRef: selected.fallbackModelRef,
+      fallbackModelId: selected.fallbackModelId,
       bindingSource: "selection"
     };
     resolvedByRoleId.set(roleId, resolved);
@@ -190,7 +198,7 @@ export function resolveModelSelectionForSystem(args: {
       const issue = inspectResolvedModelCatalogEntry({ ...resolved, roleId, catalog: args.catalog });
       if (issue) throw createRuntimeError({ errorCode: issue.code, errorCategory: "config", stage: "config", retryable: false, roleId, message: issue.message });
     }
-    if (args.catalog && !args.catalog.models.some((item) => item.backend === resolved.backend && item.modelId === resolved.modelId)) {
+    if (args.catalog && !args.catalog.models.some((item) => item.backend === resolved.backend && item.modelId === resolved.modelId && item.runnable)) {
       warnings.push(`Role "${roleId}" selects ${resolved.backend}/${resolved.modelId}, which is not present in .ogs/model-catalog.json.`);
     }
   }

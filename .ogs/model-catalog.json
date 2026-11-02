@@ -1,39 +1,85 @@
 {
-  "catalogVersion": "2",
+  "catalogVersion": "3",
   "generatedAt": "2026-09-23T18:45:03.800Z",
   "sources": [
     {
       "backend": "opencode",
-      "command": "opencode models --verbose",
-      "status": "unavailable",
+      "displayName": "OpenCode",
+      "iconKey": "opencode",
+      "transport": "http",
+      "sessionKind": "server-session",
+      "status": "not_installed",
       "detail": "[MODEL_DISCOVERY_COMMAND_MISSING] OpenCode opencode models --verbose could not start because the \"opencode\" command was not found. Action: Install OpenCode and ensure `opencode` is available on PATH, then rerun `ogs project sync-models`."
     },
     {
       "backend": "codex",
-      "command": "codex app-server --stdio",
-      "status": "available"
+      "displayName": "Codex",
+      "iconKey": "codex",
+      "transport": "stdio-jsonrpc",
+      "sessionKind": "app-server-thread",
+      "status": "runnable",
+      "detail": "Codex app-server ready (7 models)."
     },
     {
-      "backend": "claude",
-      "command": "claude --version",
-      "status": "available",
-      "detail": "CLI detected; persistent OGS session adapter is not available."
+      "backend": "ollama",
+      "displayName": "Ollama",
+      "iconKey": "ollama",
+      "transport": "http",
+      "sessionKind": "logical-session",
+      "status": "not_installed",
+      "detail": "Ollama is not installed on this machine."
     },
     {
-      "backend": "antigravity",
-      "command": "agy --version",
-      "status": "available",
-      "detail": "CLI detected; persistent OGS session adapter is not available."
+      "backend": "claude-code",
+      "displayName": "Claude Code",
+      "iconKey": "claude-code",
+      "transport": "cli-stdio",
+      "sessionKind": "logical-session",
+      "status": "unavailable",
+      "detail": "Claude Code is detected locally; structured OGS transport verification is pending."
+    },
+    {
+      "backend": "gemini-cli",
+      "displayName": "Gemini CLI",
+      "iconKey": "gemini-cli",
+      "transport": "cli-stdio",
+      "sessionKind": "logical-session",
+      "status": "not_installed",
+      "detail": "Gemini CLI is not installed on this machine."
+    },
+    {
+      "backend": "copilot-cli",
+      "displayName": "GitHub Copilot CLI",
+      "iconKey": "copilot-cli",
+      "transport": "cli-stdio",
+      "sessionKind": "logical-session",
+      "status": "not_installed",
+      "detail": "GitHub Copilot CLI is not installed on this machine."
+    },
+    {
+      "backend": "qwen-code",
+      "displayName": "Qwen Code",
+      "iconKey": "qwen-code",
+      "transport": "cli-stdio",
+      "sessionKind": "logical-session",
+      "status": "not_installed",
+      "detail": "Qwen Code is not installed on this machine."
+    },
+    {
+      "backend": "kimi-cli",
+      "displayName": "Kimi CLI",
+      "iconKey": "kimi-cli",
+      "transport": "cli-stdio",
+      "sessionKind": "logical-session",
+      "status": "not_installed",
+      "detail": "Kimi CLI is not installed on this machine."
     }
   ],
   "models": [
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-6-astra",
-      "ref": "codex/gpt-6-astra",
-      "provider": "codex",
-      "model": "gpt-6-astra",
+      "runnable": true,
       "name": "GPT-6-Astra",
       "status": "active",
       "capabilities": {
@@ -45,11 +91,8 @@
     },
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-6-sol",
-      "ref": "codex/gpt-6-sol",
-      "provider": "codex",
-      "model": "gpt-6-sol",
+      "runnable": true,
       "name": "GPT-6-Sol",
       "status": "active",
       "capabilities": {
@@ -61,11 +104,8 @@
     },
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-6-luna",
-      "ref": "codex/gpt-6-luna",
-      "provider": "codex",
-      "model": "gpt-6-luna",
+      "runnable": true,
       "name": "GPT-6-Luna",
       "status": "active",
       "capabilities": {
@@ -77,11 +117,8 @@
     },
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-5.6-sol",
-      "ref": "codex/gpt-5.6-sol",
-      "provider": "codex",
-      "model": "gpt-5.6-sol",
+      "runnable": true,
       "name": "GPT-5.6-Sol",
       "status": "active",
       "capabilities": {
@@ -93,11 +130,8 @@
     },
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-5.6-terra",
-      "ref": "codex/gpt-5.6-terra",
-      "provider": "codex",
-      "model": "gpt-5.6-terra",
+      "runnable": true,
       "name": "GPT-5.6-Terra",
       "status": "active",
       "capabilities": {
@@ -109,11 +143,8 @@
     },
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-5.6-luna",
-      "ref": "codex/gpt-5.6-luna",
-      "provider": "codex",
-      "model": "gpt-5.6-luna",
+      "runnable": true,
       "name": "GPT-5.6-Luna",
       "status": "active",
       "capabilities": {
@@ -125,11 +156,8 @@
     },
     {
       "backend": "codex",
-      "runnable": true,
       "modelId": "gpt-5.5",
-      "ref": "codex/gpt-5.5",
-      "provider": "codex",
-      "model": "gpt-5.5",
+      "runnable": true,
       "name": "GPT-5.5",
       "status": "active",
       "capabilities": {

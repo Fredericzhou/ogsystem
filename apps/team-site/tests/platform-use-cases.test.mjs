@@ -35,10 +35,10 @@ test("platform application validates updates and model catalog caches and refres
       calls += 1;
       return {
         generatedAt: `generation-${calls}`,
-        sources: [{ backend: "codex", status: "ready", command: "codex", detail: "local" }],
+        sources: [{ backend: "codex", displayName: "Codex", iconKey: "codex", status: "runnable", detail: "local" }],
         models: [
-          { modelId: "model-a", backend: "codex", provider: "openai", runnable: true, ref: "codex/model-a" },
-          { modelId: "opencode/model-b", backend: "opencode", provider: "opencode", runnable: true, ref: "opencode/model-b" }
+          { modelId: "model-a", backend: "codex", runnable: true },
+          { modelId: "vendor/model-b", backend: "opencode", runnable: true }
         ]
       };
     },
@@ -51,14 +51,12 @@ test("platform application validates updates and model catalog caches and refres
   });
   assert.deepEqual(await useCases.getPlatformDiscovery(), await useCases.getPlatformDiscovery());
   assert.equal(calls, 1);
-  assert.equal((await useCases.listPlatformProviders()).providers[0].name, "Codex");
+  assert.equal((await useCases.listPlatformProviders()).backends[0].displayName, "Codex");
   assert.equal(calls, 1);
   const discoveredModel = (await useCases.listPlatformModels()).models[0];
-  assert.equal(discoveredModel.id, "model-a");
   assert.equal(discoveredModel.backend, "codex", "the execution backend must survive the public catalog projection");
-  assert.equal(discoveredModel.provider, "openai", "provider namespace is distinct from the execution backend");
   const openCodeModel = (await useCases.listPlatformModels()).models.find((item) => item.backend === "opencode");
-  assert.equal(openCodeModel.selectionRef, "opencode/opencode/model-b", "Studio bindings keep adapter and provider/model identity separate");
+  assert.equal(openCodeModel.modelId, "vendor/model-b", "backend-local model IDs are preserved unchanged");
   assert.equal(calls, 1);
   await useCases.getPlatformDiscovery(true);
   assert.equal(calls, 2);
@@ -80,13 +78,13 @@ test("platform model probe only invokes the live probe for a discovered runnable
   const useCases = createPlatformUseCases({
     platformSettingsStore: { read: async () => ({}), write: async () => undefined },
     modelCatalog: { discover: async () => ({ models: [
-      { ref: "codex/gpt-6-luna", backend: "codex", id: "gpt-6-luna", runnable: true },
-      { ref: "codex/disabled", backend: "codex", id: "disabled", runnable: false }
+      { backend: "codex", modelId: "gpt-6-luna", runnable: true },
+      { backend: "codex", modelId: "disabled", runnable: false }
     ] }) },
-    probeModelAvailability: async (model) => (probed.push(model.ref), { status: "available", modelRef: model.ref })
+    probeModelAvailability: async (model) => (probed.push(model), { status: "runnable", ...model })
   });
 
-  assert.deepEqual(await useCases.probeModelAvailability("codex/gpt-6-luna"), { status: "available", modelRef: "codex/gpt-6-luna" });
-  await assert.rejects(useCases.probeModelAvailability("codex/disabled"), /not currently discovered as runnable/);
-  assert.deepEqual(probed, ["codex/gpt-6-luna"]);
+  assert.deepEqual(await useCases.probeModelAvailability({ backend: "codex", modelId: "gpt-6-luna" }), { status: "runnable", backend: "codex", modelId: "gpt-6-luna", runnable: true });
+  await assert.rejects(useCases.probeModelAvailability({ backend: "codex", modelId: "disabled" }), /not currently discovered as runnable/);
+  assert.deepEqual(probed, [{ backend: "codex", modelId: "gpt-6-luna", runnable: true }]);
 });

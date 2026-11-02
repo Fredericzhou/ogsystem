@@ -6,7 +6,6 @@ import { homedir, hostname } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, gzipSync } from "node:zlib";
-import { isDirectModelRef } from "../../dist/runtime/model-selection.js";
 import { serializeAuthoringToMermaid } from "../../dist/visualizer/studio-authoring.js";
 import { exportTeamPackage, loadTeamPackage } from "../../dist/visualizer/project-projection.js";
 import { cases } from "./cases.mjs";
@@ -27,7 +26,7 @@ import {
 } from "./infrastructure/file-project-store.mjs";
 import { createFilePackageStore } from "./infrastructure/file-package-store.mjs";
 import { createVisualizerAdapter } from "./infrastructure/visualizer-adapter.mjs";
-import { resolveTeamStudioModelRef } from "./capabilities/team-studio-model.mjs";
+import { resolveTeamStudioModel } from "./capabilities/team-studio-model.mjs";
 import { handleProjectRoutes } from "./api/project-routes.mjs";
 import { handleTaskRoutes } from "./api/task-routes.mjs";
 import { handleRunRoutes } from "./api/run-routes.mjs";
@@ -283,9 +282,10 @@ async function getPlatformDefaultModelSelection() {
   const models = (discovery.models || []).filter((model) => model.runnable);
   const configured = String(settings.defaultModel || "default");
   const matchesConfiguredModel = (model) => {
-    if (model.ref === configured || model.id === configured) return true;
+    const modelId = model.modelId || model.id;
+    if (modelId === configured) return true;
     if (model.backend !== settings.defaultProvider || configured === "default") return false;
-    return model.ref?.endsWith(`/${configured}`) || model.id?.endsWith(`/${configured}`);
+    return modelId?.endsWith(`/${configured}`);
   };
   const selected = configured === "default"
     ? models.find((model) => model.backend === settings.defaultProvider)
@@ -296,21 +296,16 @@ async function getPlatformDefaultModelSelection() {
       ? { backend: settings.defaultProvider || "opencode", modelId: "gpt-6-luna" }
       : undefined;
   return selected || models.length || fallbackSelection ? {
-    ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.id } } : fallbackSelection ? { modelSelectionDefaults: fallbackSelection } : {}),
+    ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.modelId || selected.id } } : fallbackSelection ? { modelSelectionDefaults: fallbackSelection } : {}),
     modelCatalogGeneratedAt: discovery.generatedAt,
     modelCatalogModels: models.map((model) => ({
       backend: model.backend,
-      modelId: model.id,
-      // UI bindings include the execution backend; runtime execution unwraps it
-      // back to OpenCode's canonical provider/model reference.
-      ref: `${model.backend}/${model.id}`,
-      provider: model.provider || model.backend,
-      model: model.id,
+      modelId: model.modelId || model.id,
       name: model.name,
       status: model.status || "active",
       runnable: true,
       capabilities: model.capabilities || { textInput: true, textOutput: true, toolcall: false },
-      variants: []
+      variants: model.variants || []
     }))
   } : undefined;
 }
@@ -463,8 +458,7 @@ const teamStudioUseCases = createTeamStudioUseCases({
   visualizer,
   readPlatformSettings: platformUseCases.readPlatformSettings,
   getPlatformDiscovery: platformUseCases.getPlatformDiscovery,
-  isDirectModelRef,
-  resolveTeamStudioModelRef
+  resolveTeamStudioModel
 });
 const teamVersionLifecycle = createFileTeamVersionLifecycle({ getTeamVersion: getProject, listProjects, removeProjectData });
 const teamVersionLifecycleUseCases = createTeamVersionLifecycleUseCases({

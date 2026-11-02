@@ -24,7 +24,7 @@ function setup(overrides = {}) {
     designSerializer: { serialize: () => "flowchart TD" },
     designValidator: { validate: async (current, body) => ({ ok: true, teamVersionId: current.teamVersionId, body }) },
     designAssetStore: {
-      readAssets: async ({ workdir, roleIds }) => ({ workdir, roleIds, roles: {}, contracts: "", executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "2", defaults: { backend: "codex", modelId: "gpt-6-luna" } } }),
+      readAssets: async ({ workdir, roleIds }) => ({ workdir, roleIds, roles: {}, contracts: "", executionConfig: { profiles: [], tools: { tools: [] } }, modelSelection: { configVersion: "3", defaults: { backend: "codex", modelId: "gpt-6-luna" } } }),
       saveAssets: async (value) => (calls.push(["assets", value]), value.assets),
       saveImportedRoleAssets: async (value) => (calls.push(["importedAssets", value]), value)
     },
@@ -133,7 +133,7 @@ test("Studio persists model bindings from the same submitted authoring snapshot"
   await useCases.saveTeamDesignAssets(team.teamVersionId, { authoring, assets: {} });
   const assets = calls.find((call) => call[0] === "assets")[1].assets;
   assert.deepEqual(assets.modelSelection, {
-    configVersion: "2",
+    configVersion: "3",
     defaults: { backend: "codex", modelId: "gpt-6-luna" },
     roles: { analyst: { backend: "opencode", modelId: "big-pickle" } }
   });
@@ -168,7 +168,7 @@ test("Studio keeps default model inheritance out of role overrides", async () =>
   await useCases.saveTeamDesignAssets(team.teamVersionId, { authoring, assets: {} });
   const assets = calls.find((call) => call[0] === "assets")[1].assets;
   assert.deepEqual(assets.modelSelection, {
-    configVersion: "2",
+    configVersion: "3",
     defaults: { backend: "codex", modelId: "gpt-6-luna" },
     roles: { explicit: { backend: "opencode", modelId: "big-pickle" } }
   });

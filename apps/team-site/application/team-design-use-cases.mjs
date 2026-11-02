@@ -118,23 +118,29 @@ export function createTeamDesignUseCases({
       if (role?.bindingKind !== "model") continue;
       const override = {};
       const modelRef = String(role.modelRef || "").trim();
-      const fallbackModelRef = String(role.fallbackModelRef || "").trim();
+      const fallbackModelId = String(role.fallbackModelId || "").trim();
       if (role.modelSelectionSource !== "default") {
+        const explicitBackend = String(role.backend || "").trim();
+        const explicitModelId = String(role.modelId || "").trim();
         const separator = modelRef.indexOf("/");
-        if (separator < 1 || separator === modelRef.length - 1) {
+        if (explicitBackend && explicitModelId) {
+          override.backend = explicitBackend;
+          override.modelId = explicitModelId;
+        } else if (separator > 0 && separator < modelRef.length - 1) {
+          override.backend = modelRef.slice(0, separator);
+          override.modelId = modelRef.slice(separator + 1);
+        } else {
           throw new Error(`TEAM_MODEL_BINDING_REQUIRED: select a runnable model for ${roleId} before saving.`);
         }
-        override.backend = modelRef.slice(0, separator);
-        override.modelId = modelRef.slice(separator + 1);
-      } else if (fallbackModelRef && current.modelSelection?.defaults?.backend && current.modelSelection?.defaults?.modelId) {
+      } else if (fallbackModelId && current.modelSelection?.defaults?.backend && current.modelSelection?.defaults?.modelId) {
         override.backend = current.modelSelection.defaults.backend;
         override.modelId = current.modelSelection.defaults.modelId;
       }
-      if (fallbackModelRef) override.fallbackModelRef = fallbackModelRef;
+      if (fallbackModelId) override.fallbackModelId = fallbackModelId;
       if (override.backend && override.modelId) roleOverrides[roleId] = override;
     }
     return {
-      configVersion: "2",
+      configVersion: "3",
       ...(current.modelSelection?.defaults ? { defaults: current.modelSelection.defaults } : {}),
       roles: roleOverrides
     };

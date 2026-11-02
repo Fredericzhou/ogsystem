@@ -1,4 +1,5 @@
 import type { ExecutorBinding, ExecutorResult } from "./executor.js";
+import { isRegisteredModelBackend } from "./model-selection.js";
 
 export type RemoteExecutionInput = {
   prompt: string;
@@ -37,8 +38,7 @@ function hasOptionalStringFields(value: Record<string, unknown>, fields: string[
 function isExecutorBinding(value: unknown): value is ExecutorBinding {
   if (!isRecord(value)) return false;
   if (value.kind === "model") {
-    return typeof value.backend === "string" &&
-      ["opencode", "codex", "claude", "antigravity"].includes(value.backend) &&
+    return isRegisteredModelBackend(value.backend) &&
       typeof value.modelId === "string" && typeof value.modelRef === "string" &&
       (value.variant === undefined || typeof value.variant === "string");
   }

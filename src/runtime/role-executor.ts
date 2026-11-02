@@ -924,27 +924,13 @@ export async function executeRoleNode(args: {
       executionResult = await invokeMetered(resolvedBinding.binding, "primary");
     } catch (error) {
       const binding = resolvedBinding.binding;
-      if (binding.kind !== "model" || !binding.fallbackModelRef || !isRetryableModelChannelError(error)) throw error;
+      if (binding.kind !== "model" || !binding.fallbackModelId || !isRetryableModelChannelError(error)) throw error;
       fallbackUsed = true;
       primaryModelId = binding.modelId;
-      const fallbackSeparator = binding.fallbackModelRef.indexOf("/");
-      const fallbackBackend = fallbackSeparator > 0
-        ? binding.fallbackModelRef.slice(0, fallbackSeparator)
-        : undefined;
-      const fallbackHasBackend = fallbackBackend === "opencode" || fallbackBackend === "codex";
-      const fallbackModelRef = fallbackHasBackend
-        ? binding.fallbackModelRef.slice(fallbackSeparator + 1)
-        : binding.fallbackModelRef;
-      const fallbackModelId = fallbackHasBackend && fallbackBackend === "codex"
-        ? fallbackModelRef
-        : fallbackModelRef.includes("/")
-          ? fallbackModelRef.slice(fallbackModelRef.lastIndexOf("/") + 1)
-          : fallbackModelRef;
       executionResult = await invokeMetered({
         ...binding,
-        ...(fallbackHasBackend ? { backend: fallbackBackend } : {}),
-        modelId: fallbackModelId,
-        modelRef: fallbackHasBackend && fallbackBackend === "opencode" ? fallbackModelRef : binding.fallbackModelRef
+        modelId: binding.fallbackModelId,
+        modelRef: binding.fallbackModelId
       }, "fallback");
     } finally {
       await stopRoleWaitHeartbeat();

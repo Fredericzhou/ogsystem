@@ -9,6 +9,7 @@ import { createRouter } from "../router.js";
 import { renderSharedResourcePage } from "./shared-resources.js";
 import { renderPlatformRoleSources } from "./platform-role-sources.js";
 import { createFloatingPanelController } from "../components/floating-panel.js";
+import { renderBackendIcon, formatBackendStatusBadge, resolveBackendIconEntry } from "../components/backend-icon.js";
 let studioGraphLoad;
 const mountedStudioGraphs = new Set();
 let fallbackUuidCounter = 0;
@@ -890,26 +891,49 @@ async function renderPlatformConfig() {
   const isModels = location.pathname === "/platform/models" || location.pathname === "/platform";
   const title = isModels ? (state.locale === "en" ? "Model services" : "模型服务") : (state.locale === "en" ? "Platform settings" : "平台配置");
   const subtitle = state.locale === "en" ? "Manage execution runtime connectivity, credentials, and default model routes." : "配置运行底座连接状态、API 凭据与默认模型路由。";
-  root.innerHTML = `<section class="project-library-toolbar page-heading"><div class="repository-heading"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="project-library-filters repository-actions"><button id="platform-discovery-refresh" class="secondary-button platform-action-button" type="button"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 10a7.5 7.5 0 0 1 12.7-3L20 9M4 17v-5h5m10.2 2a7.5 7.5 0 0 1-12.7 3L4 15"/></svg><span>${state.locale === "en" ? "Refresh" : "刷新"}</span></button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option></select></label><label>默认模型<select name="defaultModel"><option value="default">自动选择</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button platform-action-button" type="submit"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg><span>保存</span></button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
+  root.innerHTML = `<section class="project-library-toolbar page-heading"><div class="repository-heading"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="project-library-filters repository-actions"><button id="platform-discovery-refresh" class="secondary-button platform-action-button" type="button"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 10a7.5 7.5 0 0 1 12.7-3L20 9M4 17v-5h5m10.2 2a7.5 7.5 0 0 1-12.7 3L4 15"/></svg><span>${state.locale === "en" ? "Refresh" : "刷新"}</span></button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>发现到的服务</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">模型目录</span><h2>发现到的模型</h2></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="ollama">Ollama</option></select></label><label>默认模型<select name="defaultModel"><option value="default">自动选择</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="3600" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button platform-action-button" type="submit"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg><span>保存</span></button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
   const modelProbes = new Map();
   let discoverySnapshot;
   let selectedSettings;
   const timeoutHelp = root.querySelector("#platform-timeout-help");
   if (timeoutHelp) timeoutHelp.textContent = "单次请求最长等待时间，不限制任务时长；超时后可从运行记录重试。";
-  const statusText = (status) => status === "available" || status === "active" ? "可用" : "未发现";
-  const statusClass = (status) => status === "available" || status === "active" ? "confirmed" : "warning";
   const capabilityLabels = (capabilities = {}) => [capabilities.textInput && "文本输入", capabilities.textOutput && "文本输出", capabilities.toolcall && "工具调用"].filter(Boolean);
-  const sourceDetail = (item) => { const detail = String(item.detail || ""); if (/not found|missing|command/i.test(detail)) return "未检测到该运行底座，请安装后再刷新"; if (/persistent|adapter/i.test(detail)) return "已检测到命令，当前仅展示发现结果"; return detail || "已完成自动检查"; };
+  const sourceDetail = (item) => {
+    const status = String(item.status || "");
+    const detail = String(item.detail || "");
+    if (status === "not_installed" || /not found|missing|not installed/i.test(detail)) return "未安装该运行底座，安装后刷新即可识别";
+    if (status === "service_unavailable") return "已检测到本地 CLI，但后台服务未启动或无法连接";
+    if (status === "installed_but_broken") return "已检测到本地安装，但健康检查或目录探测异常";
+    if (status === "unavailable") return "已检测到本地 CLI，协议适配尚未开放运行";
+    if (status === "runnable") return detail || "运行底座已就绪，可通过实际请求探测模型可用性";
+    return detail || "已完成自动检查";
+  };
   const formatDiscoveryTime = (value) => { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "时间未知" : date.toLocaleString(state.locale === "en" ? "en-US" : "zh-CN", { dateStyle: "medium", timeStyle: "short" }); };
+  const probeKeyForModel = (item) => `${item.backend}:${item.modelId}`;
   const renderDiscovery = (discovery, settings) => {
     discoverySnapshot = discovery;
     selectedSettings = settings;
     const providers = discovery.sources || [];
     const models = discovery.models || [];
-    $("#platform-providers").innerHTML = providers.length ? providers.map((item) => `<div class="platform-source-row"><div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.name || item.backend)}</strong><span class="status-chip ${statusClass(item.status)}">${statusText(item.status)}</span></div><span class="platform-row-detail">${esc(sourceDetail(item))}</span><code>${esc(item.command || "自动检查")}</code></div></div>`).join("") : `<div class="platform-empty">暂未发现运行底座</div>`;
-    $("#platform-models").innerHTML = models.length ? models.map((item) => { const capabilities = capabilityLabels(item.capabilities); const ref = item.ref || `${item.backend}/${item.id}`; const probe = modelProbes.get(ref); const availability = probe?.status === "available" ? "可用" : probe?.status === "unavailable" ? "不可用" : probe?.status === "checking" ? "探测中" : "未验证"; const chip = probe?.status === "available" ? "confirmed" : probe?.status === "unavailable" ? "error" : ""; const message = probe?.status === "available" ? `<span class="platform-row-detail">验证成功${Number.isFinite(probe.durationMs) ? `，${Math.round(probe.durationMs)} ms` : ""}</span>` : probe?.message ? `<span class="platform-row-detail">${esc(probe.message)}</span>` : ""; return `<div class="platform-model-row"><div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.name || item.id)}</strong><span class="status-chip ${chip}">${availability}</span></div><span class="platform-row-detail">${esc(item.providerName || item.provider || "未知底座")} ${esc(item.id)}</span>${message}<div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`; }).join("") : `<div class="platform-empty">暂未发现模型</div>`;
-    const hasCodexModel = models.some((item) => item.backend === "codex" && modelProbes.get(item.ref || `${item.backend}/${item.id}`)?.status === "available");
-    const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && modelProbes.get(item.ref || `${item.backend}/${item.id}`)?.status === "available");
+    const sourceByBackend = new Map(providers.map((item) => [item.backend, item]));
+    $("#platform-providers").innerHTML = providers.length ? providers.map((item) => {
+      const badge = formatBackendStatusBadge(item.status, state.locale);
+      const displayName = item.displayName || resolveBackendIconEntry(item.backend).displayName;
+      return `<div class="platform-source-row" data-backend="${esc(item.backend)}">${renderBackendIcon(item.backend, { iconKey: item.iconKey, displayName, status: item.status, size: 24 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(displayName)}</strong><span class="backend-id-pill">${esc(item.backend)}</span><span class="status-chip ${esc(badge.chipClass)}">${esc(badge.label)}</span></div><span class="platform-row-detail">${esc(sourceDetail(item))}</span></div></div>`;
+    }).join("") : `<div class="platform-empty">暂未发现运行底座</div>`;
+    $("#platform-models").innerHTML = models.length ? models.map((item) => {
+      const capabilities = capabilityLabels(item.capabilities);
+      const probeKey = probeKeyForModel(item);
+      const probe = modelProbes.get(probeKey);
+      const availability = probe?.status === "runnable" ? "可运行" : probe?.status === "unavailable" ? "不可用" : probe?.status === "checking" ? "探测中" : "未验证";
+      const chip = probe?.status === "runnable" ? "confirmed" : probe?.status === "unavailable" ? "error" : "";
+      const message = probe?.status === "runnable" ? `<span class="platform-row-detail">验证成功${Number.isFinite(probe.durationMs) ? `，${Math.round(probe.durationMs)} ms` : ""}</span>` : probe?.message ? `<span class="platform-row-detail">${esc(probe.message)}</span>` : "";
+      const source = sourceByBackend.get(item.backend);
+      const backendDisplayName = source?.displayName || resolveBackendIconEntry(item.backend).displayName;
+      return `<div class="platform-model-row" data-backend="${esc(item.backend)}" data-model-id="${esc(item.modelId)}">${renderBackendIcon(item.backend, { iconKey: source?.iconKey, displayName: backendDisplayName, status: source?.status, size: 22 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.modelId)}</strong><span class="status-chip ${chip}">${availability}</span></div><span class="platform-row-detail">${esc(backendDisplayName)} · ${esc(item.name || item.modelId)}</span>${message}<div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`;
+    }).join("") : `<div class="platform-empty">暂未发现模型</div>`;
+    const hasCodexModel = models.some((item) => item.backend === "codex" && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
+    const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
     const missingBackends = [!hasCodexModel && "Codex", !hasOpenCodeModel && "OpenCode"].filter(Boolean);
     const requirementMessage = missingBackends.length
       ? (state.locale === "en"
@@ -926,14 +950,11 @@ async function renderPlatformConfig() {
     const modelSelect = document.querySelector("#platform-settings-form select[name=defaultModel]");
     if (modelSelect) {
       const backend = providerSelect?.value || settings?.defaultProvider || "codex";
-      const runnableModels = models.filter((item) => item.backend === backend && modelProbes.get(item.ref || `${item.backend}/${item.id}`)?.status === "available");
-      modelSelect.innerHTML = `<option value="default">自动选择</option>${runnableModels.map((item) => {
-        const ref = item.ref || `${item.backend}/${item.id}`;
-        return `<option value="${esc(ref)}">${esc(item.name || item.id)} · ${esc(ref)}</option>`;
-      }).join("")}`;
+      const runnableModels = models.filter((item) => item.backend === backend && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
+      modelSelect.innerHTML = `<option value="default">自动选择</option>${runnableModels.map((item) => `<option value="${esc(item.modelId)}">${esc(item.name || item.modelId)} · ${esc(item.backend)} · ${esc(item.modelId)}</option>`).join("")}`;
       const savedModel = settings?.defaultModel;
-      const selectedModel = runnableModels.find((item) => item.ref === savedModel || item.id === savedModel);
-      modelSelect.value = selectedModel ? (selectedModel.ref || `${selectedModel.backend}/${selectedModel.id}`) : "default";
+      const selectedModel = runnableModels.find((item) => item.modelId === savedModel || `${item.backend}/${item.modelId}` === savedModel);
+      modelSelect.value = selectedModel ? selectedModel.modelId : "default";
     }
     if (settings) {
       const timeout = document.querySelector("#platform-settings-form input[name=timeoutSeconds]");
@@ -956,22 +977,22 @@ async function renderPlatformConfig() {
       if (!response.ok) throw new Error(payload.error || "刷新失败");
       modelProbes.clear();
       const models = payload.models || [];
-      for (const model of models) modelProbes.set(model.ref || `${model.backend}/${model.id}`, { status: "checking" });
+      for (const model of models) modelProbes.set(probeKeyForModel(model), { status: "checking" });
       renderDiscovery(payload, currentSettings);
       for (let index = 0; index < models.length; index += 1) {
         const model = models[index];
-        const modelRef = model.ref || `${model.backend}/${model.id}`;
+        const probeKey = probeKeyForModel(model);
         label.textContent = "探测中";
         try {
           const probeResponse = await pageFetch("/api/v1/platform/models/probe", {
-            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ modelRef })
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ backend: model.backend, modelId: model.modelId })
           });
           const probePayload = await probeResponse.json();
           if (!probeResponse.ok) throw new Error(probePayload.error || "模型探测失败");
-          modelProbes.set(modelRef, probePayload.result || { status: "unavailable", message: "未收到探测结果" });
+          modelProbes.set(probeKey, probePayload.result || { status: "unavailable", message: "未收到探测结果" });
         } catch (error) {
           if (isAbort(error)) return;
-          modelProbes.set(modelRef, { status: "unavailable", message: error.message || "模型探测失败" });
+          modelProbes.set(probeKey, { status: "unavailable", message: error.message || "模型探测失败" });
         }
       }
       const latestSettings = Object.fromEntries(new FormData(document.querySelector("#platform-settings-form")).entries());
@@ -1872,20 +1893,22 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const contractSchemaRef = flowContract?.schema || `schemas/${String(selectedFlow?.flowId || "flow").replace(/[^a-zA-Z0-9_.-]/g, "-")}.json`;
   const role = selection.roleId ? roles[selection.roleId] : null;
   const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, locale);
-  const roleModelRef = role?.modelRef || (role?.backend && role?.modelId ? `${role.backend}/${role.modelId}` : "");
+  const roleModelKey = role?.backend && role?.modelId ? `${role.backend}\u0000${role.modelId}` : "";
   const runnableModels = discoveredModels.filter((model) => model.runnable);
-  const selectedModelKnown = runnableModels.some((model) => (model.selectionRef || `${model.backend}/${model.id}`) === roleModelRef);
-  const modelOptions = `${roleModelRef && !selectedModelKnown ? `<option value="${esc(roleModelRef)}" selected>${esc(roleModelRef)} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
-    const selectionRef = model.selectionRef || `${model.backend}/${model.id}`;
-    const providerRef = model.ref || model.id;
-    return `<option value="${esc(selectionRef)}" ${selectionRef === roleModelRef ? "selected" : ""}>${esc(model.name || providerRef)} · ${esc(providerRef)} (${esc(model.backend)})</option>`;
+  const selectedModelKnown = runnableModels.some((model) => `${model.backend}\u0000${model.modelId || model.id}` === roleModelKey);
+  const modelOptions = `${roleModelKey && !selectedModelKnown ? `<option value="${esc(roleModelKey)}" selected>${esc(role?.modelId || "")} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
+    const modelId = model.modelId || model.id;
+    const modelKey = `${model.backend}\u0000${modelId}`;
+    return `<option value="${esc(modelKey)}" ${modelKey === roleModelKey ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
-  const fallbackModelRef = role?.fallbackModelRef || "";
-  const fallbackModelKnown = runnableModels.some((model) => (model.selectionRef || `${model.backend}/${model.id}`) === fallbackModelRef);
-  const fallbackModelOptions = `${fallbackModelRef && !fallbackModelKnown ? `<option value="${esc(fallbackModelRef)}" selected>${esc(fallbackModelRef)} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.map((model) => {
-    const selectionRef = model.selectionRef || `${model.backend}/${model.id}`;
-    const providerRef = model.ref || model.id;
-    return `<option value="${esc(selectionRef)}" ${selectionRef === fallbackModelRef ? "selected" : ""}>${esc(model.name || providerRef)} · ${esc(providerRef)} (${esc(model.backend)})</option>`;
+  const fallbackModel = role?.backend && role?.fallbackModelId
+    ? `${role.backend}\u0000${role.fallbackModelId}`
+    : "";
+  const fallbackModelKnown = runnableModels.some((model) => `${model.backend}\u0000${model.modelId || model.id}` === fallbackModel);
+  const fallbackModelOptions = `${fallbackModel && !fallbackModelKnown ? `<option value="${esc(fallbackModel)}" selected>${esc(role?.fallbackModelId || "")} · ${t("not currently discovered", "当前未发现")}</option>` : ""}${runnableModels.filter((model) => !role?.backend || model.backend === role.backend).map((model) => {
+    const modelId = model.modelId || model.id;
+    const modelKey = `${model.backend}\u0000${modelId}`;
+    return `<option value="${esc(modelKey)}" ${modelKey === fallbackModel ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
   let roleContract = {};
   try { roleContract = JSON.parse(selection.assets?.roles?.[role?.roleId]?.["role.json"] || "{}"); } catch { /* Keep the inspector readable while a role contract is being repaired. */ }
@@ -1895,7 +1918,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
   const blockedRoleTools = allowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
   const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions"><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</details>` : "";
-  const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModelRef"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道瞬态故障时触发。")}</span></label>` : "";
+  const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModelId"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在同一执行底座发生瞬态故障时触发。")}</span></label>` : "";
   const review = role?.review || {};
   const reviewTarget = review.reworkTargetRoleId || "";
   const reworkRoleOptions = roleIds.map((roleId) => `<option value="${esc(roleId)}" ${reviewTarget === roleId ? "selected" : ""}>${esc(studioRoleDisplayName(authoring, roleId, locale))}</option>`).join("");
@@ -2727,14 +2750,17 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           role.profileId = profileId;
           executionConfigDirty = true;
         } else if (roleField === "modelRef") {
-          role.modelRef = element.value.trim() || undefined;
+          const [backend, ...modelIdParts] = element.value.split("\u0000");
+          role.backend = backend || undefined;
+          role.modelId = modelIdParts.join("\u0000") || undefined;
+          delete role.modelRef;
           role.modelSelectionSource = "role";
           modelSelectionDirty = true;
-          const separator = role.modelRef?.indexOf("/") ?? -1;
-          if (separator > 0) {
-            role.backend = role.modelRef.slice(0, separator);
-            role.modelId = role.modelRef.slice(separator + 1);
-          } else { delete role.backend; delete role.modelId; }
+        } else if (roleField === "fallbackModelId") {
+          const [, ...modelIdParts] = element.value.split("\u0000");
+          role.fallbackModelId = modelIdParts.join("\u0000") || undefined;
+          delete role.fallbackModelRef;
+          modelSelectionDirty = true;
         } else if (roleField === "bindingKind") {
           role.bindingKind = element.value;
           modelSelectionDirty = true;
@@ -2747,6 +2773,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             delete role.modelRef;
             delete role.backend;
             delete role.modelId;
+            delete role.fallbackModelId;
             delete role.modelSelectionSource;
           }
           if (role.bindingKind !== "exec") delete role.profileId;

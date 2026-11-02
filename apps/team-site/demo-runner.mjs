@@ -172,7 +172,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       }
     : undefined;
   await writeFile(join(configDir, "model-selection.json"), `${JSON.stringify({
-    configVersion: "2",
+    configVersion: "3",
     defaults: {
       backend: demoBackend,
       modelId: demoModel,

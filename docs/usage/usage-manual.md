@@ -799,7 +799,7 @@ Example:
 
 ```json
 {
-  "configVersion": "2",
+  "configVersion": "3",
   "defaults": {
     "backend": "opencode",
     "modelId": "provider/model-id",

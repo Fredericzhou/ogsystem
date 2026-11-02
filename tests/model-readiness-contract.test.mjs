@@ -46,7 +46,7 @@ async function createFixture(options = {}) {
   }
   await writeFile(
     path.join(workdir, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "2", roles: { writer: { backend: "opencode", modelId: "pinned" } } }),
+    JSON.stringify({ configVersion: "3", roles: { writer: { backend: "opencode", modelId: "pinned" } } }),
     "utf8"
   );
   return workdir;
@@ -55,9 +55,9 @@ async function createFixture(options = {}) {
 test("readiness fails closed when fresh OpenCode discovery excludes a pinned model", async () => {
   const workdir = await createFixture({
     catalog: {
-      catalogVersion: "2",
+      catalogVersion: "3",
       generatedAt: new Date().toISOString(),
-      sources: [{ backend: "opencode", command: "opencode models --verbose", status: "available" }],
+      sources: [{ backend: "opencode", displayName: "OpenCode", iconKey: "opencode", transport: "http", sessionKind: "server-session", status: "runnable" }],
       models: []
     }
   });

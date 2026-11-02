@@ -1,14 +1,29 @@
 {
-  "catalogVersion": "1",
+  "catalogVersion": "3",
   "generatedAt": "2026-04-28T18:18:39.117Z",
-  "source": {
-    "command": "opencode models --verbose"
-  },
+  "sources": [
+    {
+      "backend": "opencode",
+      "displayName": "OpenCode",
+      "iconKey": "opencode",
+      "transport": "http",
+      "sessionKind": "server-session",
+      "status": "runnable"
+    },
+    {
+      "backend": "codex",
+      "displayName": "Codex",
+      "iconKey": "codex",
+      "transport": "stdio-jsonrpc",
+      "sessionKind": "app-server-thread",
+      "status": "unavailable"
+    }
+  ],
   "models": [
     {
-      "ref": "opencode/big-pickle",
-      "provider": "opencode",
-      "model": "big-pickle",
+      "backend": "opencode",
+      "modelId": "opencode/big-pickle",
+      "runnable": true,
       "name": "Big Pickle",
       "status": "active",
       "capabilities": {
@@ -16,16 +31,12 @@
         "textOutput": true,
         "toolcall": true
       },
-      "variants": [],
-      "raw": {
-        "id": "big-pickle",
-        "providerID": "opencode"
-      }
+      "variants": []
     },
     {
-      "ref": "opencode/gpt-5-nano",
-      "provider": "opencode",
-      "model": "gpt-5-nano",
+      "backend": "opencode",
+      "modelId": "opencode/gpt-5-nano",
+      "runnable": true,
       "name": "GPT-5 Nano",
       "status": "active",
       "capabilities": {
@@ -38,16 +49,12 @@
         "low",
         "medium",
         "minimal"
-      ],
-      "raw": {
-        "id": "gpt-5-nano",
-        "providerID": "opencode"
-      }
+      ]
     },
     {
-      "ref": "opencode/hy3-preview-free",
-      "provider": "opencode",
-      "model": "hy3-preview-free",
+      "backend": "opencode",
+      "modelId": "opencode/hy3-preview-free",
+      "runnable": true,
       "name": "Hy3 preview Free",
       "status": "active",
       "capabilities": {
@@ -59,16 +66,12 @@
         "high",
         "low",
         "medium"
-      ],
-      "raw": {
-        "id": "hy3-preview-free",
-        "providerID": "opencode"
-      }
+      ]
     },
     {
-      "ref": "opencode/ling-2.6-flash-free",
-      "provider": "opencode",
-      "model": "ling-2.6-flash-free",
+      "backend": "opencode",
+      "modelId": "opencode/ling-2.6-flash-free",
+      "runnable": true,
       "name": "Ling 2.6 Flash Free",
       "status": "active",
       "capabilities": {
@@ -76,16 +79,12 @@
         "textOutput": true,
         "toolcall": true
       },
-      "variants": [],
-      "raw": {
-        "id": "ling-2.6-flash-free",
-        "providerID": "opencode"
-      }
+      "variants": []
     },
     {
-      "ref": "opencode/minimax-m2.5-free",
-      "provider": "opencode",
-      "model": "minimax-m2.5-free",
+      "backend": "opencode",
+      "modelId": "opencode/minimax-m2.5-free",
+      "runnable": true,
       "name": "MiniMax M2.5 Free",
       "status": "active",
       "capabilities": {
@@ -93,16 +92,12 @@
         "textOutput": true,
         "toolcall": true
       },
-      "variants": [],
-      "raw": {
-        "id": "minimax-m2.5-free",
-        "providerID": "opencode"
-      }
+      "variants": []
     },
     {
-      "ref": "opencode/nemotron-3-super-free",
-      "provider": "opencode",
-      "model": "nemotron-3-super-free",
+      "backend": "opencode",
+      "modelId": "opencode/nemotron-3-super-free",
+      "runnable": true,
       "name": "Nemotron 3 Super Free",
       "status": "active",
       "capabilities": {
@@ -114,16 +109,12 @@
         "high",
         "low",
         "medium"
-      ],
-      "raw": {
-        "id": "nemotron-3-super-free",
-        "providerID": "opencode"
-      }
+      ]
     },
     {
-      "ref": "gkgk/gpt-5.4",
-      "provider": "gkgk",
-      "model": "gpt-5.4",
+      "backend": "opencode",
+      "modelId": "gkgk/gpt-5.4",
+      "runnable": true,
       "name": "GPT-5.4",
       "status": "active",
       "capabilities": {
@@ -131,11 +122,7 @@
         "textOutput": true,
         "toolcall": true
       },
-      "variants": [],
-      "raw": {
-        "id": "gpt-5.4",
-        "providerID": "gkgk"
-      }
+      "variants": []
     }
   ]
 }

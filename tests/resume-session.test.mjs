@@ -559,7 +559,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
   });
   await writeFile(
     path.resolve(tempRoot, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "2", roles: { "debate-minimalist": { backend: "codex", modelId: "gpt-5.6-terra" } } }),
+    JSON.stringify({ configVersion: "3", roles: { "debate-minimalist": { backend: "codex", modelId: "gpt-5.6-terra" } } }),
     "utf8"
   );
   const graphState = createInitialGraphState({

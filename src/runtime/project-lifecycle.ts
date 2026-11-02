@@ -488,7 +488,7 @@ function createDefaultOgsReadme(): string {
     "",
     "```json",
     '{',
-    '  "configVersion": "2",',
+    '  "configVersion": "3",',
     '  "defaults": {',
     '    "backend": "<opencode|codex>",',
     '    "modelId": "<cli-model-id>",',
@@ -1283,7 +1283,7 @@ function createDefaultModelSelection(args: {
 }): ModelSelectionConfig {
   const selected = chooseDefaultModelFromCatalog(args.catalog);
   return {
-    configVersion: "2",
+    configVersion: "3",
     ...(selected ? { defaults: {
       backend: selected.backend,
       modelId: selected.modelId,
@@ -1419,7 +1419,7 @@ export async function syncProjectModels(args: {
 
     if (!hasCatalog || args.rewriteDefault) {
       await writeJsonFileAtomic(paths.modelCatalogPath, {
-        catalogVersion: "2",
+        catalogVersion: "3",
         generatedAt: new Date().toISOString(),
         sources: [],
         models: []
@@ -1427,7 +1427,7 @@ export async function syncProjectModels(args: {
     }
     if (!hasSelection || args.rewriteDefault) {
       await writeJsonFileAtomic(paths.modelSelectionPath, {
-        configVersion: "2"
+        configVersion: "3"
       });
       return {
         catalogPath: paths.modelCatalogPath,

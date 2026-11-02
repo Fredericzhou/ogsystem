@@ -331,14 +331,11 @@ function extractStudioModelOptions(context: StudioCommandValidationContext): Stu
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => {
-      const rawRef = asTrimmedStringOrEmpty(entry.ref);
       const backend = asTrimmedStringOrEmpty(entry.backend);
       const modelId = asTrimmedStringOrEmpty(entry.modelId) || asTrimmedStringOrEmpty(entry.id);
-      const ref = backend && modelId ? `${backend}/${modelId}` : rawRef;
+      const ref = backend && modelId ? `${backend}/${modelId}` : "";
       const name = asTrimmedStringOrEmpty(entry.name);
-      const provider = asTrimmedStringOrEmpty(entry.provider);
-      const model = asTrimmedStringOrEmpty(entry.model);
-      const labelParts = [name || ref, provider && model ? `${provider}/${model}` : ""].filter(Boolean);
+      const labelParts = [name || modelId || ref, backend && modelId ? `${backend} · ${modelId}` : ""].filter(Boolean);
       return {
         ref,
         label: labelParts.length ? labelParts.join(" - ") : ref

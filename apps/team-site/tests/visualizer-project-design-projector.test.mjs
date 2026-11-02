@@ -115,7 +115,7 @@ test("Visualizer design projector hydrates executable role bindings from TeamVer
     read: async (file) => {
       if (file.endsWith("system.mmd")) return "flowchart TD";
       if (file.endsWith("model-selection.json")) return JSON.stringify({
-        configVersion: "2",
+        configVersion: "3",
         roles: { analyst: { backend: "opencode", modelId: "big-pickle" } }
       });
       return "{}";
