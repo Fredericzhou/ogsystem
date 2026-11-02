@@ -183,7 +183,7 @@ include that path in the artifact policy and redaction rules.
 | `opencode` | HTTP + SDK | server session | existing implementation |
 | `codex` | stdio JSON-RPC | app-server thread | existing implementation |
 | `pi` | stdio RPC/JSON | process session | new Pi RPC client |
-| `qwen` | daemon HTTP/SSE or ACP | logical session on external daemon | new ACP client |
+| `qwen` | daemon HTTP/SSE (protocol probe required) or ACP when provided by the installed version | logical session on external daemon | Qwen protocol adapter; share ACP client only after ACP is confirmed |
 | `kimi` | stdio ACP | process session | new ACP client |
 | `gemini` | stdio JSON | logical session | new headless JSON client |
 
@@ -232,15 +232,26 @@ Priority: P0.
 Prefer the daemon mode when its documented protocol is available:
 
 ```text
-qwen serve -> HTTP/SSE or ACP
+qwen serve -> daemon transport (HTTP/SSE; protocol probed)
 ```
 
-Use headless mode as a fallback for environments where the daemon is unavailable. The daemon is
-preferred because it supports long-lived sessions, multiple workspaces, reconnects, and shared
-automation clients. Treat it as an externally owned service by default; do not stop a user's
-daemon when an OGS Run ends.
+Use headless mode as a fallback for environments where the daemon is unavailable. HTTP/SSE describes
+the transport only; it must not be labeled ACP unless the installed Qwen version explicitly exposes
+the ACP semantic protocol. The adapter must probe the version and daemon handshake, then select one
+of these modes:
 
-The adapter must probe the installed version and confirm the daemon's protocol before marking the backend runnable.
+```text
+daemon HTTP/SSE + Qwen protocol adapter
+daemon ACP      + shared ACP client
+headless CLI    + client-specific JSON adapter
+```
+
+The daemon is preferred because it supports long-lived sessions, multiple workspaces, reconnects,
+and shared automation clients. Treat it as an externally owned service by default; do not stop a
+user's daemon when an OGS Run ends.
+
+The adapter must probe the installed version and confirm the daemon's concrete protocol before
+marking the backend runnable. A successful HTTP/SSE connection alone is not evidence of ACP support.
 
 ### Kimi Code
 
