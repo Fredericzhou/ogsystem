@@ -142,6 +142,8 @@ export type StudioGraphBridgeOptions = {
   showTechnicalDetails?: boolean;
   busy?: boolean;
   readOnly?: boolean;
+  /** Lock authoring interactions while keeping live runtime signals visible. */
+  runtimeLock?: boolean;
   rolePackages?: unknown;
   bindings?: unknown;
   readiness?: unknown;
@@ -302,10 +304,7 @@ function runtimeStatusLabel(status: StudioRuntimeNodeState["status"], locale: st
 }
 
 function runtimeTechnicalWaitingLabel(stage: string | undefined, locale: string): string {
-  if (locale.startsWith("en")) {
-    return stage === "cli_tool" ? "Working (Tool)" : "Working";
-  }
-  return stage === "cli_tool" ? "调用工具中" : "工作中";
+  return locale.startsWith("en") ? "Working" : "工作中";
 }
 
 function syncRuntimeActivityMarker(args: {
@@ -355,9 +354,9 @@ function runtimeIconStatus(state?: StudioRuntimeNodeState): StudioRuntimeIconSta
 }
 
 function createRuntimeStatusIconShape(status: StudioRuntimeIconStatus): SVGElement {
-  const shape = document.createElementNS("http://www.w3.org/2000/svg", status === "running" ? "g" : "path");
+  const shape = document.createElementNS("http://www.w3.org/2000/svg", status === "running" || status === "technical_waiting" ? "g" : "path");
   shape.classList.add("studio-runtime-status-icon-shape");
-  if (status === "running") {
+  if (status === "running" || status === "technical_waiting") {
     const radar = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     radar.setAttribute("cx", "9");
     radar.setAttribute("cy", "9");
@@ -471,9 +470,10 @@ function syncRuntimeDataPackets(args: {
   active: boolean;
   waiting: boolean;
   handoffs: readonly StudioRuntimeHandoffState[];
+  readOnly?: boolean;
 }): void {
   const existing = args.container.querySelector<SVGGElement>(".studio-runtime-data-packets");
-  if (!args.active || args.handoffs.length === 0) {
+  if (args.readOnly || !args.active || args.handoffs.length === 0) {
     existing?.remove();
     return;
   }
@@ -608,9 +608,15 @@ function syncRuntimeMetricsPill(args: {
   const txt = pillGroup.querySelector<SVGTextElement>(".studio-runtime-metrics-text");
   const bg = pillGroup.querySelector<SVGRectElement>(".studio-runtime-metrics-bg");
   if (!txt || !bg) return;
-  txt.textContent = metricText;
-  const pillWidth = Math.max(30, metricText.length * 6.2 + 10);
-  pillGroup.setAttribute("transform", `translate(${Math.max(68, args.width - pillWidth - 6)}, ${args.height - 21})`);
+  const maxWidth = Math.max(30, args.width - 12);
+  const estimatedWidth = metricText.length * 6.2 + 10;
+  const pillWidth = Math.min(maxWidth, Math.max(30, estimatedWidth));
+  const visibleText = estimatedWidth > maxWidth
+    ? `${metricText.slice(0, Math.max(2, Math.floor((maxWidth - 16) / 6.2)))}…`
+    : metricText;
+  txt.textContent = visibleText;
+  pillGroup.setAttribute("title", metricText);
+  pillGroup.setAttribute("transform", `translate(${Math.max(6, args.width - pillWidth - 6)}, ${args.height - 21})`);
   bg.setAttribute("width", String(pillWidth));
   bg.setAttribute("height", "16");
   txt.setAttribute("x", "5");
@@ -725,7 +731,7 @@ export class StudioGraphIsland {
       this.layoutMode = initialOptions.initialLayoutMode;
     }
     this.root.classList.add("studio-graph-island");
-    this.root.dataset.runtimeHistory = initialOptions.mode === "run-diagnosis" ? "on" : "off";
+    this.root.dataset.runtimeHistory = (initialOptions.mode === "run-diagnosis" || initialOptions.readOnly === true) ? "on" : "off";
     this.root.innerHTML = [
       '<div class="studio-graph-toolbar">',
       '<div class="studio-graph-toolbar-main">',
@@ -831,6 +837,7 @@ export class StudioGraphIsland {
     const updateGeneration = ++this.updateGeneration;
     this.resetHistoryWhenProjectChanges(options);
     this.options = options;
+    this.root.dataset.runtimeHistory = (options.mode === "run-diagnosis" || options.readOnly === true) ? "on" : "off";
     if (Object.prototype.hasOwnProperty.call(options, "runtimeProgress")) {
       this.runtimeProgressEvents = [...(options.runtimeProgress ?? [])];
     }
@@ -965,6 +972,12 @@ export class StudioGraphIsland {
     this.graph.select(targetNode);
     this.focusCell(targetNode, { preserveViewport: false });
     return true;
+  }
+
+  fitViewport(): void {
+    this.syncGraphViewportSize();
+    this.fitGraphToViewport();
+    this.renderMinimap();
   }
 
   highlightFlowEdge(flowKey: string): boolean {
@@ -2752,7 +2765,7 @@ export class StudioGraphIsland {
   }
 
   private isReadOnly(): boolean {
-    return this.options.readOnly === true;
+    return this.options.readOnly === true || this.options.runtimeLock === true;
   }
 
   private handleHistoryEvent(event: StudioGraphBridgeOptions["historyEvent"]): void {
@@ -3461,6 +3474,8 @@ export class StudioGraphIsland {
   private applyRuntimeOverlay(): void {
     const runtime = this.runtimeVisualState;
     const focusedHandoff = runtime?.handoffStatesById.get(this.runtimeFocusedHandoffId);
+    const isHistoryOrReadOnly = this.options.readOnly === true || this.options.mode === "run-diagnosis";
+    this.root.dataset.runtimeHistory = isHistoryOrReadOnly ? "on" : "off";
     this.root.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
     this.root.dataset.runtimeFocus = runtime?.nodeStates && Array.from(runtime.nodeStates.values()).some((state) => state.waitingReview)
       ? "review"
@@ -3557,7 +3572,8 @@ export class StudioGraphIsland {
         edgeId: edge.id,
         active: Boolean(edgeState?.active),
         waiting: Boolean(edgeState?.waiting),
-        handoffs: edgeHandoffs
+        handoffs: edgeHandoffs,
+        readOnly: isHistoryOrReadOnly
       });
     }
   }

@@ -48,6 +48,10 @@ export function highlightStudioX6FlowEdge(root: HTMLElement, flowKey: string): b
   return mounted.get(root)?.highlightFlowEdge(flowKey) ?? false;
 }
 
+export function fitStudioX6Viewport(root: HTMLElement): void {
+  mounted.get(root)?.fitViewport();
+}
+
 window.OGSVisualizerClient = window.OGSVisualizerClient || {};
 Object.assign(window.OGSVisualizerClient, {
   mountStudioX6Bridge,
@@ -56,5 +60,6 @@ Object.assign(window.OGSVisualizerClient, {
   focusStudioX6RuntimeHandoff,
   focusStudioX6Node,
   highlightStudioX6FlowEdge,
+  fitStudioX6Viewport,
   applyStudioAuthoringCommand
 });

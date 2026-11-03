@@ -44,8 +44,8 @@ function compileLoops(raw: unknown): SemanticIRLoopScope[] {
       boundaryRoleId: String(loop.boundary ?? loop.boundaryRoleId ?? ""),
       counterField: String(loop.counter ?? loop.counterField ?? ""),
       maxRounds: numberValue(loop.max_rounds ?? loop.maxRounds, "loops." + loopId + ".maxRounds"),
-      ...(loop.max_role_activations ?? loop.maxRoleActivationsByRoleId
-        ? { maxRoleActivationsByRoleId: record(loop.max_role_activations ?? loop.maxRoleActivationsByRoleId, "loops." + loopId + ".maxRoleActivations") as Record<string, number> }
+      ...(loop.max_role_activations ?? loop.maxRoleActivations ?? loop.maxRoleActivationsByRoleId
+        ? { maxRoleActivationsByRoleId: record(loop.max_role_activations ?? loop.maxRoleActivations ?? loop.maxRoleActivationsByRoleId, "loops." + loopId + ".maxRoleActivations") as Record<string, number> }
         : {}),
       onExhausted: String(loop.on_exhausted ?? loop.onExhausted ?? "")
     };

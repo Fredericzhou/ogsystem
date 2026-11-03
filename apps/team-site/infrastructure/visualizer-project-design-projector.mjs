@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseSystemFromMermaidSource } from "../../../dist/runtime/parse-mermaid.js";
-import { authoringToCanvasDocument, importMermaidToAuthoring, loadStudioAuthoringDraft, serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
+import { authoringToCanvasDocument, importMermaidToAuthoring, loadStudioAuthoringDraft, loadStudioSemanticConfig, serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
 import { buildGraphViewModel } from "../../../dist/visualizer/graph-view-model.js";
 import { localizedEventLabel } from "../event-labels.mjs";
 
@@ -41,12 +41,14 @@ export function createVisualizerProjectDesignProjector({
           })
       );
       const savedDraft = await loadAuthoringDraft(project.workdir);
+      const semanticConfig = await loadStudioSemanticConfig(project.workdir);
       const canonicalAuthoring = importAuthoring({
         workdir: project.workdir,
         systemPath: "system.mmd",
         systemSource,
         roleDisplayNames,
-        modelSelection
+        modelSelection,
+        semanticLoops: semanticConfig.loops
       });
       let authoring = canonicalAuthoring;
       if (savedDraft?.authoring && savedDraft.authoring.version === 1) {
@@ -54,6 +56,15 @@ export function createVisualizerProjectDesignProjector({
           // Keep professional settings and layout only when the saved draft belongs to this topology.
           if (serializeAuthoring(savedDraft.authoring) === serializeAuthoring(canonicalAuthoring)) {
             authoring = savedDraft.authoring;
+            if (savedDraft.authoring.system?.loops === undefined && canonicalAuthoring.system?.loops !== undefined) {
+              authoring = {
+                ...savedDraft.authoring,
+                system: {
+                  ...savedDraft.authoring.system,
+                  loops: canonicalAuthoring.system.loops
+                }
+              };
+            }
           }
         } catch {
           // Invalid or stale drafts fall back to the canonical Mermaid source.

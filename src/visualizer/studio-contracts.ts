@@ -33,6 +33,14 @@ export type StudioAuthoringDocument = {
     lawGlobalRef: string;
     handoffMode?: string;
     handoffContracts?: string;
+    loops?: Record<string, {
+      members: string[];
+      maxRounds: number;
+      boundary?: string;
+      counter?: string;
+      maxRoleActivations?: Record<string, number>;
+      onExhausted?: string;
+    }>;
   };
   roles: Record<string, StudioAuthoringRole>;
   flows: Record<string, StudioAuthoringFlow>;

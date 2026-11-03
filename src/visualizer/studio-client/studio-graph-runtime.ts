@@ -528,10 +528,10 @@ export function deriveStudioRuntimeVisualState(args: {
         if (execution.roleId) stoppedRoles.add(execution.roleId);
       }
     }
-    if (runStatus !== "running") {
+    if (runStatus !== "running" || args.readOnly) {
       for (const flow of flowStateByHandoff.values()) {
         if (flow.status !== "active" && flow.status !== "waiting") continue;
-        flow.status = runStatus === "failed" ? "failed" : "stopped";
+        flow.status = runStatus === "failed" ? "failed" : runStatus === "stopped" ? "stopped" : "completed";
       }
       activeExecutions.clear();
       waitingBranches.clear();
@@ -589,6 +589,20 @@ export function deriveStudioRuntimeVisualState(args: {
       edgeState.waiting = !edgeState.active && statuses.has("waiting");
       edgeState.stopped = !edgeState.active && !edgeState.waiting && statuses.has("stopped");
       edgeState.completed = !edgeState.active && !edgeState.waiting && !edgeState.stopped && !edgeState.error && statuses.has("completed");
+    }
+    if (args.readOnly) {
+      for (const edgeState of edgeStates.values()) {
+        edgeState.active = false;
+        edgeState.waiting = false;
+      }
+      for (const nodeState of nodeStates.values()) {
+        nodeState.active = false;
+        nodeState.waitingReview = false;
+        nodeState.technicalWaiting = false;
+        if (nodeState.status === "running") {
+          nodeState.status = runStatus === "failed" ? "failed" : "done";
+        }
+      }
     }
     activeNodeCount = Array.from(nodeStates.values()).filter((state) => state.active).length;
     activeEdgeCount = Array.from(edgeStates.values()).filter((state) => state.active).length;

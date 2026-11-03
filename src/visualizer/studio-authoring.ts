@@ -194,7 +194,45 @@ function flowKey(flow: Flow): string {
 
 type RoleDisplayNames = ReadonlyMap<string, string>;
 
-async function loadSemanticRoutes(workdir: string): Promise<Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>> {
+type SemanticAuthoringLoops = NonNullable<StudioAuthoringDocument["system"]["loops"]>;
+
+type SemanticAuthoringConfig = {
+  routes: Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>;
+  loops?: SemanticAuthoringLoops;
+};
+
+function normalizeSemanticLoops(raw: unknown): SemanticAuthoringLoops | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const loops: SemanticAuthoringLoops = {};
+  for (const [loopId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const loop = value as Record<string, unknown>;
+    const members = Array.isArray(loop.members)
+      ? loop.members.filter((member): member is string => typeof member === "string" && member.length > 0)
+      : [];
+    const maxRounds = loop.maxRounds ?? loop.max_rounds;
+    loops[loopId] = {
+      members,
+      ...(Number.isInteger(maxRounds) ? { maxRounds } : {}),
+      ...(loop.boundary !== undefined || loop.boundaryRoleId !== undefined
+        ? { boundary: String(loop.boundary ?? loop.boundaryRoleId) }
+        : {}),
+      ...(loop.counter !== undefined || loop.counterField !== undefined
+        ? { counter: String(loop.counter ?? loop.counterField) }
+        : {}),
+      ...(loop.maxRoleActivations !== undefined || loop.max_role_activations !== undefined || loop.maxRoleActivationsByRoleId !== undefined
+        ? { maxRoleActivations: (loop.maxRoleActivations ?? loop.max_role_activations ?? loop.maxRoleActivationsByRoleId) as Record<string, number> }
+        : {}),
+      ...(loop.onExhausted !== undefined || loop.on_exhausted !== undefined
+        ? { onExhausted: String(loop.onExhausted ?? loop.on_exhausted) }
+        : {})
+    } as SemanticAuthoringLoops[string];
+  }
+  return loops;
+}
+
+async function loadSemanticConfig(workdir: string): Promise<SemanticAuthoringConfig> {
   const routes = new Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>();
   for (const name of ["semantics.yaml", "semantics.yml", "semantics.json"]) {
     const path = resolve(workdir, ".ogs", name);
@@ -216,9 +254,16 @@ async function loadSemanticRoutes(workdir: string): Promise<Map<string, Pick<Stu
         priority: Number(route.priority ?? 0)
       });
     }
-    break;
+    return { routes, loops: normalizeSemanticLoops(root.loops) };
   }
-  return routes;
+  return { routes };
+}
+
+export async function loadStudioSemanticConfig(workdir: string): Promise<{
+  routes: Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>;
+  loops?: SemanticAuthoringLoops;
+}> {
+  return loadSemanticConfig(workdir);
 }
 
 function normalizedRoleDisplayName(value: unknown): string | undefined {
@@ -255,6 +300,7 @@ export function importSystemToAuthoring(args: {
   roleDisplayNames?: RoleDisplayNames;
   modelSelection?: ModelSelectionConfig;
   semanticRoutes?: Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>;
+  semanticLoops?: SemanticAuthoringLoops;
 }): StudioAuthoringDocument {
   const roles: Record<string, StudioAuthoringRole> = {};
   const layoutNodes: StudioAuthoringDocument["layout"]["nodes"] = {};
@@ -314,7 +360,8 @@ export function importSystemToAuthoring(args: {
       endJoin: args.system.endJoin,
       lawGlobalRef: args.system.lawBinding.globalLawRef,
       handoffMode: args.system.graph?.handoffMode,
-      handoffContracts: args.system.graph?.handoffContracts
+      handoffContracts: args.system.graph?.handoffContracts,
+      ...(args.semanticLoops !== undefined ? { loops: args.semanticLoops } : {})
     },
     roles,
     flows,
@@ -442,6 +489,7 @@ export async function inspectStudioBridgeDraft(args: {
   try {
     const system = parseSystemFromMermaidSource(systemSource);
     const roleDisplayNames = await loadRoleDisplayNames({ workdir: args.workdir, system });
+    const semanticConfig = await loadSemanticConfig(args.workdir);
     authoring = importSystemToAuthoring({
       workdir: args.workdir,
       systemPath,
@@ -449,7 +497,8 @@ export async function inspectStudioBridgeDraft(args: {
       systemSource,
       roleDisplayNames,
       modelSelection,
-      semanticRoutes: await loadSemanticRoutes(args.workdir)
+      semanticRoutes: semanticConfig.routes,
+      semanticLoops: semanticConfig.loops
     });
     const roleIds = new Set(system.roleIds);
     const invalidFlows = system.flows.filter((flow) =>
@@ -496,7 +545,15 @@ export async function inspectStudioBridgeDraft(args: {
             authoringDraftStatus = "stale";
           } else {
             authoringDraftStatus = "saved";
-            authoring = savedAuthoring;
+            authoring = {
+              ...savedAuthoring,
+              system: {
+                ...savedAuthoring.system,
+                ...(savedAuthoring.system.loops === undefined && authoring.system.loops !== undefined
+                  ? { loops: authoring.system.loops }
+                  : {})
+              }
+            };
           }
         }
       }
@@ -615,6 +672,7 @@ export function importMermaidToAuthoring(args: {
   systemSource: string;
   modelSelection?: ModelSelectionConfig;
   roleDisplayNames?: RoleDisplayNames;
+  semanticLoops?: SemanticAuthoringLoops;
 }): StudioAuthoringDocument {
   return importSystemToAuthoring({
     workdir: args.workdir,
@@ -622,7 +680,8 @@ export function importMermaidToAuthoring(args: {
     system: parseSystemFromMermaidSource(args.systemSource),
     systemSource: args.systemSource,
     modelSelection: args.modelSelection,
-    roleDisplayNames: args.roleDisplayNames
+    roleDisplayNames: args.roleDisplayNames,
+    semanticLoops: args.semanticLoops
   });
 }
 
@@ -708,8 +767,9 @@ export async function saveStudioAuthoringDraft(args: {
           if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
         }
       }
+      const hasLoopConfiguration = authoring.system.loops !== undefined;
       if (!semanticsPath || !semanticsValue) {
-        if (conditionedFlows.length) {
+        if (conditionedFlows.length || hasLoopConfiguration) {
           creatingSemanticSpec = true;
           semanticsPath = resolve(args.workdir, ".ogs", "semantics.yaml");
           semanticsValue = {
@@ -720,6 +780,9 @@ export async function saveStudioAuthoringDraft(args: {
         }
       }
       if (semanticsPath && semanticsValue) {
+        if (hasLoopConfiguration) {
+          semanticsValue.loops = authoring.system.loops;
+        }
       const topology = new Set(system.flows.map((flow) => `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`));
       const rawRoutes = semanticsValue.routes ?? semanticsValue.transitions;
       const existingRoutes = Array.isArray(rawRoutes) ? rawRoutes : rawRoutes && typeof rawRoutes === "object" ? Object.values(rawRoutes as Record<string, unknown>) : [];
@@ -755,8 +818,19 @@ export async function saveStudioAuthoringDraft(args: {
       }
       const stateSchemaPath = resolve(args.workdir, ".ogs", "contracts", "state.json");
       let stateSchemaSource: string | undefined;
+      if (creatingSemanticSpec) {
+        try {
+          const existingStateSource = await readFile(stateSchemaPath, "utf8");
+          snapshot.sources[stateSchemaPath.replaceAll("\\", "/")] = {
+            digest: "studio-candidate",
+            value: JSON.parse(existingStateSource)
+          };
+        } catch (error) {
+          if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+        }
+      }
       if (!Object.keys(snapshot.sources).some((path) => path.endsWith("/.ogs/contracts/state.json") || path.endsWith("/contracts/state.json"))) {
-        stateSchemaSource = `${JSON.stringify({ type: "object", properties: {} }, null, 2)}\n`;
+        stateSchemaSource = `${JSON.stringify({ version: "1", type: "object", properties: {} }, null, 2)}\n`;
         snapshot.sources[stateSchemaPath.replaceAll("\\", "/")] = { digest: "studio-candidate", value: JSON.parse(stateSchemaSource) };
       }
       compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 100 });

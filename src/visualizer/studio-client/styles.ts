@@ -340,8 +340,12 @@ export function injectStudioGraphStyles(): void {
       animation: none !important;
     }
     .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-data-packets,
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-data-packet,
     .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .studio-runtime-handoffs {
-      display: none;
+      display: none !important;
+    }
+    .studio-graph-island[data-runtime-history="on"] .studio-graph-canvas .x6-edge .connection {
+      animation: none !important;
     }
     .studio-graph-canvas .x6-node[data-runtime-status="waiting"] rect,
     .studio-graph-canvas .x6-node[data-runtime-status="waiting"] path:first-of-type {
@@ -378,13 +382,13 @@ export function injectStudioGraphStyles(): void {
       100% { transform: rotate(360deg); }
     }
     @keyframes studio-live-dot-pulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.35); opacity: 0.6; }
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
     }
     @keyframes studio-node-done-ping {
-      0% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); transform: scale(1); }
-      35% { filter: drop-shadow(0 0 14px rgba(16, 185, 129, 0.65)); transform: scale(1.02); }
-      100% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); transform: scale(1); }
+      0% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); }
+      35% { filter: drop-shadow(0 0 14px rgba(16, 185, 129, 0.65)); }
+      100% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); }
     }
     @keyframes studio-node-fail-shake {
       0%, 100% { transform: translateX(0); }
@@ -394,6 +398,12 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .studio-status-live-dot {
       transform-origin: center;
       animation: studio-live-dot-pulse 1600ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .studio-runtime-status:not([data-status="running"]):not([data-status="technical_waiting"]) .studio-status-live-dot,
+    .studio-graph-canvas .studio-runtime-status[data-status="done"] .studio-status-live-dot,
+    .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-status-live-dot,
+    .studio-graph-canvas .studio-runtime-status[data-status="stopped"] .studio-status-live-dot {
+      animation: none !important;
     }
     .studio-graph-canvas .studio-runtime-status-icon {
       pointer-events: none;
@@ -430,7 +440,8 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-bg { fill: #e4f7ef; stroke: #10b981; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-shape { stroke: #059669; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-bg { fill: #fef3c7; stroke: #f59e0b; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-shape { stroke: #d97706; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-bg { fill: #e4f7ef; stroke: #10b981; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-shape { stroke: #059669; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-bg,
     .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-bg { fill: #fef3c7; stroke: #f59e0b; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-shape,
@@ -597,15 +608,9 @@ export function injectStudioGraphStyles(): void {
       display: none;
     }
     @keyframes studio-node-focus-pulse {
-      0% {
-        transform: scale(1);
-      }
-      28% {
-        transform: scale(1.025);
-      }
-      100% {
-        transform: scale(1);
-      }
+      0% { filter: drop-shadow(0 0 0 rgba(56, 189, 248, 0)); }
+      28% { filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.6)); }
+      100% { filter: drop-shadow(0 0 0 rgba(56, 189, 248, 0)); }
     }
     @keyframes studio-edge-flow {
       from {
@@ -649,12 +654,12 @@ export function injectStudioGraphStyles(): void {
       to { transform: rotate(360deg); }
     }
     @keyframes studio-runtime-hourglass-pulse {
-      0%, 100% { opacity: .62; transform: scale(.92); }
-      50% { opacity: 1; transform: scale(1); }
+      0%, 100% { opacity: .55; }
+      50% { opacity: 1; }
     }
     @keyframes studio-runtime-handoff-pulse {
-      0%, 100% { opacity: .62; transform: scale(.84); }
-      50% { opacity: 1; transform: scale(1.12); }
+      0%, 100% { opacity: .55; }
+      50% { opacity: 1; }
     }
     @keyframes studio-agent-aura {
       0%, 100% {
@@ -665,9 +670,9 @@ export function injectStudioGraphStyles(): void {
       }
     }
     @keyframes studio-runtime-settle {
-      0% { transform: scale(.985); filter: drop-shadow(0 0 0 rgba(52, 211, 153, 0)); }
-      42% { transform: scale(1.035); filter: drop-shadow(0 0 .9rem rgba(52, 211, 153, .48)); }
-      100% { transform: scale(1); filter: drop-shadow(0 0 .22rem rgba(52, 211, 153, .2)); }
+      0% { filter: drop-shadow(0 0 0 rgba(52, 211, 153, 0)); }
+      42% { filter: drop-shadow(0 0 .9rem rgba(52, 211, 153, .48)); }
+      100% { filter: drop-shadow(0 0 .22rem rgba(52, 211, 153, .2)); }
     }
     @keyframes studio-node-error-shake {
       0%, 100% { transform: translateX(0); }

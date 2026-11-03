@@ -15,6 +15,8 @@ import {
   serializeAuthoringToMermaid
 } from "../dist/visualizer/studio-authoring.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
+import { compileSemanticIR } from "../dist/runtime/semantic-ir-compiler.js";
+import { loadOgsSpecification } from "../dist/runtime/ogs-spec-loader.js";
 import {
   createStudioAuthoringFromMermaidDraft,
   createStudioAuthoringFromTemplate,
@@ -269,7 +271,53 @@ test("Studio creates the missing Semantic IR files when adding the first conditi
     const semantics = await readFile(path.resolve(workdir, ".ogs/semantics.yaml"), "utf8");
     const stateSchema = JSON.parse(await readFile(path.resolve(workdir, ".ogs/contracts/state.json"), "utf8"));
     assert.match(semantics, /when:/);
-    assert.deepEqual(stateSchema, { type: "object", properties: {} });
+    assert.deepEqual(stateSchema, { version: "1", type: "object", properties: {} });
+  } finally {
+    await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
+  }
+});
+
+test("Studio loop configuration is persisted into Semantic IR and survives reload", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-loops-"));
+  try {
+    await mkdir(path.resolve(workdir, ".ogs/contracts"), { recursive: true });
+    await writeFile(path.resolve(workdir, ".ogs/contracts/state.json"), JSON.stringify({ version: "1", type: "object" }), "utf8");
+    const authoring = importMermaidToAuthoring({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source });
+    authoring.system.loops = {
+      "loop-1": {
+        members: ["worker", "review"],
+        boundary: "review",
+        counter: "round",
+        maxRounds: 3,
+        maxRoleActivations: { worker: 2 },
+        onExhausted: "end"
+      }
+    };
+    await saveStudioAuthoringDraft({ workdir, authoring });
+
+    const semantics = await readFile(path.resolve(workdir, ".ogs/semantics.yaml"), "utf8");
+    assert.match(semantics, /loops:/);
+    assert.match(semantics, /maxRounds: 3/);
+    assert.match(semantics, /maxRoleActivations:/);
+
+    const savedDraft = await loadStudioAuthoringDraft(workdir);
+    assert.deepEqual(savedDraft.authoring.system.loops, authoring.system.loops);
+
+    const specification = await loadOgsSpecification(workdir);
+    const compiled = compileSemanticIR({
+      system: parseSystemFromMermaidSource(serializeAuthoringToMermaid(authoring)),
+      specification,
+      maxTransitionsPerRun: 100
+    });
+    assert.deepEqual(compiled.ir.loops, [{
+      loopId: "loop-1",
+      members: ["worker", "review"],
+      boundaryRoleId: "review",
+      counterField: "round",
+      maxRounds: 3,
+      maxRoleActivationsByRoleId: { worker: 2 },
+      onExhausted: "end"
+    }]);
   } finally {
     await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
   }

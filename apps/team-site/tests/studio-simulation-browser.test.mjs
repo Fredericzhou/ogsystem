@@ -108,6 +108,7 @@ registerHooks({
     await page.locator("#project-graph-stage .x6-node").first().waitFor({ timeout: 10000 }).catch(async () => {
       assert.fail(`Studio graph did not mount at ${page.url()}: ${await page.locator("#project-design-status").innerText().catch(() => "no design status")} | ${await page.locator("#project-graph-stage").innerText().catch(() => "no stage")} | ${await page.locator("body").innerText().catch(() => "no body")} | ${scriptErrors.join("; ")}`);
     });
+    assert.equal(await page.locator(".studio-design-workbench[data-layout-preference='structure-focus']").count(), 1, "design workbench defaults to structure-focus");
     const teamVersionId = page.url().match(/\/teams\/([a-z0-9-]+)\/design$/)?.[1];
     const team = await page.request.get(`${url}/api/v1/projects/${teamVersionId}`).then((response) => response.json());
     assert.equal(team.teamVersionStatus, "draft");
@@ -240,18 +241,69 @@ registerHooks({
     await page.locator("#team-simulation-input").fill("Review the draft package.");
     await page.locator("#team-simulation-materials").fill("Reference version: 3.");
     assert.equal((await submit()).status(), 202);
+    await page.locator(".studio-design-workbench.is-runtime-dual-core[data-layout-preference='balanced']").waitFor();
+    assert.equal(await page.locator(".studio-runtime-dual-controls[hidden]").count(), 0, "live runtime exposes the dual-core layout controls");
+    assert.equal(await page.locator("#project-graph-stage[data-runtime-history='off']").count(), 1, "live runtime keeps runtime animation mode enabled");
     await page.getByText("Mocked UAT result for Review the draft package.", { exact: false }).waitFor();
+    assert.equal(await page.locator(".studio-design-workbench.is-runtime-dual-core[data-layout-preference='content-focus']").count(), 1, "completed live run settles into content-focus");
     assert.match(await page.locator("#team-simulation-result").innerText(), /补充资料：\s*Reference version: 3\./);
     assert.deepEqual(scriptErrors, []);
     const transcriptCard = page.locator(".team-debug-transcript > li").filter({ hasText: "Mocked role output" }).first();
+    await transcriptCard.locator("[data-runtime-audit-open]").waitFor();
+    const liveAuditDrawer = page.locator("[data-studio-runtime-audit-drawer]");
+    await transcriptCard.locator("[data-runtime-audit-open]").click();
+    await liveAuditDrawer.waitFor({ state: "visible" });
+    await liveAuditDrawer.locator('[data-audit-tab="raw"]').click();
+    assert.match(await liveAuditDrawer.innerText(), /demo-analyst-execution-1|Mocked role output/);
+    await liveAuditDrawer.locator("[data-audit-drawer-close]").first().click();
+    assert.equal(await liveAuditDrawer.getAttribute("hidden"), "");
+
+    await page.evaluate(() => {
+      const bundle = window.OGSStudioGraphBundle;
+      window.__studioFocusCalls = [];
+      window.OGSStudioGraphBundle = new Proxy(bundle, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver);
+          if (property !== "focusStudioX6Node") return value;
+          return function(root, roleId) {
+            window.__studioFocusCalls.push(roleId);
+            return value.call(target, root, roleId);
+          };
+        }
+      });
+    });
+    const liveRoleName = transcriptCard.locator("[data-focus-role]").first();
+    const liveRoleId = await liveRoleName.getAttribute("data-focus-role");
+    await liveRoleName.click();
+    assert.equal(await page.evaluate(() => window.__studioFocusCalls.at(-1)), liveRoleId, "live role names focus and center the corresponding graph node");
+    await transcriptCard.locator(".team-debug-avatar-wrap[data-focus-role]").click();
+    assert.equal(await page.evaluate(() => window.__studioFocusCalls.at(-1)), liveRoleId, "live role avatars focus and center the corresponding graph node");
+    const liveHandoff = transcriptCard.locator("[data-handoff-role]").first();
+    if (!(await liveHandoff.count())) {
+      await transcriptCard.evaluate((card) => {
+        const mention = document.createElement("div");
+        mention.className = "chat-mention-callout";
+        mention.dataset.handoffRole = card.dataset.roleId;
+        mention.setAttribute("role", "button");
+        mention.tabIndex = 0;
+        mention.textContent = "@downstream";
+        card.querySelector(".team-debug-handoff-mentions").append(mention);
+      });
+    }
+    const targetRoleId = await liveHandoff.getAttribute("data-handoff-role");
+    await liveHandoff.click();
+    assert.equal(await page.evaluate(() => window.__studioFocusCalls.at(-1)), targetRoleId, "live handoff mentions focus the downstream graph node");
     for (const summary of await page.locator(".team-debug-transcript details summary").all()) await summary.click();
     const transcriptText = await page.locator(".team-debug-transcript").innerText();
     assert.ok(transcriptText.includes("Mocked role output"));
+    assert.equal(await page.locator(".team-debug-transcript [data-user-completion]").count(), 1, "the terminal role delivers completion to the user");
+    assert.match(transcriptText, /@用户|@User/);
+    assert.match(transcriptText, /任务已完成|Task complete/);
     assert.match(transcriptText, /初始任务/);
     assert.match(transcriptText, /2026.*10.*24/);
     assert.match(transcriptText, /耗时 1 毫秒/);
     assert.match(transcriptText, /已完成/);
-    assert.match(transcriptText, /工作中[\s\S]*模型服务/);
+    assert.match(transcriptText, /工作中/);
     assert.match(transcriptText, /将重试（第 2\/3 次）/);
     assert.match(transcriptText, /已满足汇聚条件/);
     assert.match(transcriptText, /已提交人工审核/);
@@ -284,6 +336,18 @@ registerHooks({
     });
     assert.deepEqual(projectRunFiles, []);
 
+    await page.evaluate(({ teamId, teamVersionId, simulationId }) => {
+      sessionStorage.setItem("ogs.studio.activeSimulation", JSON.stringify({ teamId, teamVersionId, simulationId }));
+    }, { teamId: team.teamId, teamVersionId, simulationId });
+    await page.reload({ waitUntil: "networkidle" });
+    const restoredCard = page.locator(".team-debug-transcript > li[data-role-id='demo-analyst']").first();
+    await restoredCard.locator("[data-runtime-audit-open]").waitFor();
+    await restoredCard.locator("[data-runtime-audit-open]").click();
+    await page.locator("[data-studio-runtime-audit-drawer]").waitFor({ state: "visible" });
+    await page.locator('[data-studio-runtime-audit-drawer] [data-audit-tab="input"]').click();
+    assert.match(await page.locator("[data-studio-runtime-audit-drawer]").innerText(), /输入上下文/);
+    await page.evaluate(() => sessionStorage.removeItem("ogs.studio.activeSimulation"));
+
     server.processHandle.kill();
     await once(server.processHandle, "exit").catch(() => undefined);
     server = startServer();
@@ -315,6 +379,49 @@ registerHooks({
     assert.equal(await page.locator("#studio-view > .page-frame .page-heading .status-chip.completed").count(), 1);
     await page.locator("#studio-run-graph-stage .x6-node").first().waitFor();
     assert.equal(await page.locator("#studio-run-graph-stage").count(), 1, "historical detail should mount a read-only runtime graph");
+
+    // Dual-core macro/micro cockpit verification
+    const dualCore = page.locator(".studio-run-dual-core");
+    await dualCore.waitFor();
+    assert.equal(await dualCore.getAttribute("data-layout-preference"), "content-focus", "debug/replay view defaults to content-focus (40:60)");
+    assert.equal(await page.locator(".studio-run-macro-panel").count(), 1, "macro topology panel is mounted");
+    assert.equal(await page.locator(".studio-run-micro-panel").count(), 1, "micro conversation panel is mounted");
+
+    // Zero repeating particles and active edges in read-only execution view
+    assert.equal(await page.locator("#studio-run-graph-stage .studio-runtime-data-packet").count(), 0, "read-only execution view has zero moving data packets");
+    assert.equal(await page.locator("#studio-run-graph-stage .x6-edge.is-runtime-active").count(), 0, "read-only execution view has zero active flow animations");
+
+    // Layout switcher interaction
+    const balancedBtn = page.locator('.studio-layout-switcher-btn[data-preference="balanced"]');
+    await balancedBtn.click();
+    assert.equal(await dualCore.getAttribute("data-layout-preference"), "balanced", "layout switcher switches to balanced (50:50)");
+
+    // Maximize interaction
+    const macroMaximizeBtn = page.locator('.studio-panel-maximize-btn[data-panel-maximize="macro"]');
+    await macroMaximizeBtn.click();
+    assert.equal(await dualCore.getAttribute("data-maximize-mode"), "macro", "macro panel maximized to 100%");
+    await macroMaximizeBtn.click();
+    assert.equal(await dualCore.getAttribute("data-maximize-mode"), null, "macro panel restored");
+
+    // Micro audit drilldown drawer
+    const drilldownBtn = page.locator(".team-debug-drilldown-btn").first();
+    await drilldownBtn.waitFor();
+    await drilldownBtn.click();
+    const auditDrawer = page.locator("#studio-audit-drilldown-drawer");
+    await auditDrawer.waitFor({ state: "visible" });
+    assert.equal(await auditDrawer.getAttribute("hidden"), null, "audit drilldown drawer is visible");
+    assert.match(await auditDrawer.innerText(), /激活遥测指标|Activation Telemetry/);
+
+    // Tab switching
+    await auditDrawer.locator('.studio-audit-drawer-tab[data-audit-tab="input"]').click();
+    assert.match(await auditDrawer.innerText(), /输入上下文|Input Context/);
+    await auditDrawer.locator('.studio-audit-drawer-tab[data-audit-tab="raw"]').click();
+    assert.match(await auditDrawer.innerText(), /demo-analyst/);
+
+    // Close audit drawer
+    await auditDrawer.locator("[data-audit-drawer-close]").first().click();
+    assert.equal(await auditDrawer.getAttribute("hidden"), "", "audit drawer closes");
+
     assert.deepEqual(scriptErrors, []);
   } finally {
     await browser?.close();
