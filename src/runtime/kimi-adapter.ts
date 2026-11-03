@@ -38,7 +38,7 @@ export const kimiBackendAdapter: BackendAdapter = {
     const client = await AcpClient.start({ ...definition, command, cwd: workdir, timeoutMs });
     try {
       const session = await client.createSessionInfo(workdir, timeoutMs);
-      await client.setModel(session.sessionId, modelId, timeoutMs);
+      if (session.modelId !== modelId) await client.setModel(session.sessionId, modelId, timeoutMs);
       await client.request("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: 'Return exactly {"ok":true}' }] }, timeoutMs);
     } finally { await client.close(); }
   }

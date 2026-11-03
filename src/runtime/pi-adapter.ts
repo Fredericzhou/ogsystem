@@ -139,7 +139,7 @@ export const piBackendAdapter: BackendAdapter = {
   backendId: "pi",
   verifiedRunnable: true,
   async discover({ workdir }) {
-    const command = await resolveExecutable("pi", ["/Users/fred/.local/bin/pi"]);
+    const command = await resolveExecutable("pi");
     if (!command) return { status: "not_installed", detail: "Pi CLI is not installed on this machine.", models: [] };
     try {
       const client = await PiRpcSession.start(command, workdir);
@@ -154,7 +154,7 @@ export const piBackendAdapter: BackendAdapter = {
     }
   },
   async startRun({ targetDir, runContext }): Promise<BackendRunSession> {
-    const command = await resolveExecutable("pi", ["/Users/fred/.local/bin/pi"]);
+    const command = await resolveExecutable("pi");
     if (!command) throw new Error("Pi CLI is not installed.");
     const clients = new Map<string, PiRpcSession>();
     const getClient = async (modelId: string, sessionKey: string, sessionId?: string) => {
@@ -252,7 +252,7 @@ export const piBackendAdapter: BackendAdapter = {
     };
   },
   async probe({ modelId, workdir, timeoutMs }) {
-    const command = await resolveExecutable("pi", ["/Users/fred/.local/bin/pi"]);
+    const command = await resolveExecutable("pi");
     if (!command) throw new Error("Pi CLI is not installed.");
     const client = await PiRpcSession.start(command, workdir, modelId);
     try { await client.request("prompt", { message: 'Return exactly {"ok":true}' }, timeoutMs); } finally { await client.close(); }

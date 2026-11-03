@@ -190,14 +190,6 @@ function findExecutable(command: string): string | undefined {
     }
   }
 
-  const knownLocalPaths: Record<string, string[]> = {
-    pi: ["/Users/fred/.local/bin/pi"],
-    kimi: ["/Users/fred/.kimi-code/bin/kimi"]
-  };
-  for (const candidate of knownLocalPaths[command] ?? []) {
-    if (fileAccessible(candidate)) return candidate;
-  }
-
   return undefined;
 }
 
