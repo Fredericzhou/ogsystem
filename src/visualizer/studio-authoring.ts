@@ -79,7 +79,11 @@ export function authoringToDesign(
     const binding = role.bindingKind === "exec" && role.profileId
       ? { kind: "exec" as const, profileId: role.profileId }
       : role.bindingKind === "model" && (role.modelRef || (role.backend && role.modelId))
-        ? { kind: "model" as const, modelRef: role.modelRef ?? `${role.backend}/${role.modelId}` }
+        ? {
+            kind: "model" as const,
+            modelRef: role.modelRef ?? `${role.backend}/${role.modelId}`,
+            ...(role.fallback ? { fallback: role.fallback } : {})
+          }
         : { kind: "noop" as const };
     const seat = {
       seatId: roleId,

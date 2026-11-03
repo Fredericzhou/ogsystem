@@ -255,7 +255,7 @@ test("Natural assistant failures are visible and successful previews can be appl
     await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").waitFor();
     const simulationPrompt = "Preview the software delivery handoffs.";
     await page.locator("#team-simulation-input").fill(simulationPrompt);
-    await page.route("**/api/v1/platform/discovery", async (route) => {
+    await page.route("**/api/v1/platform/models", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ models: [], sources: [] }) });
     });
     await page.locator("#team-simulation-run").click();
@@ -367,7 +367,6 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.route("**/api/v1/platform/models", (route) => route.fulfill({ json: { models: [
       { backend: "codex", modelId: "gpt-6-luna", name: "GPT 6 Luna", runnable: true },
-      { backend: "opencode", modelId: "openai/gpt-5.4", name: "GPT 5.4", runnable: true },
       { backend: "opencode", modelId: "old-model", name: "Unavailable model", runnable: false }
     ] } }));
     let team;
@@ -475,11 +474,11 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
     assert.equal((await inspector.locator('[data-studio-role-field="modelRef"] option').allTextContents()).some((option) => option.includes("Unavailable model")), false);
     await inspector.locator('[data-studio-role-field="modelRef"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
-    assert.equal(await inspector.locator('[data-studio-role-field="fallbackModelId"]').count(), 1, "model-bound roles can select a fallback model");
+    assert.equal(await inspector.locator('[data-studio-role-field="fallbackModel"]').count(), 1, "model-bound roles can select a fallback model");
     assert.equal(await inspector.locator(".studio-contract-permissions").count(), 1, "the role inspector summarizes its contract permissions");
-    await inspector.locator('[data-studio-role-field="fallbackModelId"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
-    await inspector.locator('[data-studio-role-field="routingMode"]').selectOption("parallel_split");
-    await inspector.locator('[data-studio-role-field="loopMax"]').fill("3");
+    await inspector.locator('[data-studio-role-field="fallbackModel"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
+    assert.equal(await inspector.locator('[data-studio-role-field="routingMode"]').count(), 0, "single-successor roles do not expose a routing mode");
+    assert.equal(await inspector.locator('[data-studio-role-field="loopMax"]').count(), 0, "acyclic roles do not expose a loop limit");
     await inspector.locator('[data-studio-role-field="contextMap"]').fill('{"brief":"global.task"}');
     assert.match(await inspector.locator('[data-studio-role-field="contextMap"]').inputValue(), /global\.task/);
     await inspector.locator('[data-studio-context-add]').click();
@@ -488,6 +487,11 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(await contextSource.evaluate((element) => getComputedStyle(element).minHeight), "34px");
     assert.equal(await contextSource.evaluate((element) => getComputedStyle(element).borderRadius), "4px");
     assert.match(await contextSource.locator('option[value="global.task"]').first().innerText(), /本次任务/);
+    const routingRoleId = "delivery-coordinator";
+    await page.locator("#studio-asset-drawer-close").click();
+    await page.locator(`#project-graph-stage .x6-node[data-cell-id="${routingRoleId}"]`).click();
+    await inspector.locator('[data-studio-role-field="routingMode"]').selectOption("parallel_split");
+    await page.locator(`#project-graph-stage .x6-node[data-cell-id="${roleId}"]`).click();
     await inspector.getByText("角色资产包", { exact: true }).click();
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Review source material and return cited findings.");
     const joinRoleId = "delivery-lead";
@@ -538,16 +542,6 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-tool-field="stdinMode"]').selectOption("none");
     await inspector.locator('[data-studio-profile-field="timeoutMs"]').fill("45000");
     await inspector.locator('[data-studio-profile-field="maxOutputBytes"]').fill("8192");
-    const openCodeModel = { backend: "opencode", modelId: "openai/gpt-5.4" };
-    const openCodeRoleId = Object.keys(design.authoring.roles).find((id) => id !== roleId && id !== execRoleId);
-    if (openCodeModel && openCodeRoleId) {
-      const selectionRef = JSON.stringify([openCodeModel.backend, openCodeModel.modelId]);
-      await page.locator("#studio-asset-drawer-close").click();
-      await page.locator(`#project-graph-stage .x6-node[data-cell-id="${openCodeRoleId}"]`).click();
-      await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
-      await inspector.locator('[data-studio-role-field="modelRef"]').selectOption(selectionRef);
-      assert.equal(await inspector.locator('[data-studio-role-field="modelRef"]').inputValue(), selectionRef);
-    }
     await page.locator("#studio-asset-drawer-close").click();
     await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
     await page.locator("#studio-assets-flows-tab").click();
@@ -578,17 +572,16 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
-    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelId: "gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "codex/gpt-6-luna" } }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(persistedDesign.authoring.roles[roleId].contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify({ authoring: persistedDesign.authoring, assets: persistedAssets }, null, 2));
     assert.equal("modelRef" in persistedDesign.authoring.roles[roleId], false);
     assert.equal(persistedDesign.authoring.roles[roleId].modelId, "gpt-6-luna");
-    assert.equal(persistedDesign.authoring.roles[roleId].fallbackModelId, "gpt-6-luna");
+    assert.deepEqual(persistedDesign.authoring.roles[roleId].fallback, { backend: "codex", modelId: "gpt-6-luna", modelRef: "codex/gpt-6-luna" });
     assert.equal(persistedDesign.authoring.roles[roleId].bindingKind, "model");
     assert.equal(persistedDesign.authoring.roles[roleId].backend, "codex");
     assert.equal(persistedDesign.authoring.roles[execRoleId].bindingKind, "exec");
     assert.equal(persistedDesign.authoring.roles[execRoleId].profileId, "review-cli-profile");
-    assert.equal(persistedDesign.authoring.roles[roleId].routingMode, "parallel_split");
-    assert.equal(persistedDesign.authoring.roles[roleId].loopMax, 3);
+    assert.equal(persistedDesign.authoring.roles[routingRoleId].routingMode, "parallel_split");
     assert.equal(persistedDesign.authoring.roles[joinRoleId].joinMode, "quorum_of");
     assert.equal(persistedDesign.authoring.roles[joinRoleId].joinMin, 3);
     assert.deepEqual(persistedDesign.authoring.roles[reviewRoleId].review, {
@@ -608,14 +601,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
     assert.equal(persistedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
     assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "rework", "terminate"]);
-    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelId: "gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
-    if (openCodeModel && openCodeRoleId) {
-      const selectionRef = JSON.stringify([openCodeModel.backend, openCodeModel.modelId]);
-      assert.equal("modelRef" in persistedDesign.authoring.roles[openCodeRoleId], false);
-      assert.equal(persistedDesign.authoring.roles[openCodeRoleId].backend, "opencode");
-      assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelId, openCodeModel.modelId);
-      assert.deepEqual(persistedAssets.modelSelection.roles?.[openCodeRoleId], { backend: "opencode", modelId: openCodeModel.modelId });
-    }
+    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "codex/gpt-6-luna" } }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
     const manifest = JSON.parse(persistedAssets.contracts);
     assert.ok(manifest.contracts.some((item) => item.id === "review-handoff" && item.schema === schemaPath && item.onViolation === "WARN"));
     assert.deepEqual(JSON.parse(persistedAssets.contractSchemas[schemaPath]), { type: "object", required: ["decision"] });
@@ -898,14 +884,13 @@ test("Studio saves all four package files for a newly created role in one author
     await page.locator('#studio-assets-roles [data-studio-asset-role="new-auditor"]').click();
     assert.equal(await inspector.locator('[data-studio-role-field="title"]').inputValue(), "中文审计员");
     assert.equal(await inspector.locator('[data-studio-flow-field="eventType"]').count(), 0, "selecting a role after editing a flow must not retain the flow inspector");
-    const loopMax = inspector.locator('[data-studio-role-field="loopMax"]');
-    const previousLoopMax = await loopMax.inputValue();
-    const nextLoopMax = previousLoopMax === "3" ? "4" : "3";
-    await loopMax.fill(nextLoopMax);
+    const previousRoleTitle = await roleTitleField.inputValue();
+    const nextRoleTitle = "审计复核员";
+    await roleTitleField.fill(nextRoleTitle);
     await page.locator('#project-graph-stage [data-studio-graph-action="undo"]').click();
-    await assert.doesNotReject(() => page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.value === expected, { selector: '#studio-property-inspector [data-studio-role-field="loopMax"]', expected: previousLoopMax }));
+    await assert.doesNotReject(() => page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.value === expected, { selector: '#studio-property-inspector [data-studio-role-field="title"]', expected: previousRoleTitle }));
     await page.locator('#project-graph-stage [data-studio-graph-action="redo"]').click();
-    await assert.doesNotReject(() => page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.value === expected, { selector: '#studio-property-inspector [data-studio-role-field="loopMax"]', expected: nextLoopMax }));
+    await assert.doesNotReject(() => page.waitForFunction(({ selector, expected }) => document.querySelector(selector)?.value === expected, { selector: '#studio-property-inspector [data-studio-role-field="title"]', expected: nextRoleTitle }));
     await inspector.getByText("角色资产包", { exact: true }).click();
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Audit the generated result and cite evidence.");
     await inspector.locator('[data-studio-role-asset="agent.md"]').fill("You are the new auditor. Verify the output and cite evidence.");
@@ -942,8 +927,8 @@ test("Studio saves all four package files for a newly created role in one author
     assert.equal(designResponse.status(), 200);
     assert.equal(assetsResponse.status(), 200);
     assert.ok(design.authoring.roles["new-auditor"], `${await page.locator("#project-design-status").innerText()}; ${JSON.stringify(design.authoring.roles)}`);
-    assert.equal(design.authoring.roles["new-auditor"].title, "中文审计员");
-    assert.equal(design.authoring.roles["new-auditor"].loopMax, Number(nextLoopMax));
+    assert.equal(design.authoring.roles["new-auditor"].title, nextRoleTitle);
+    assert.equal("loopMax" in design.authoring.roles["new-auditor"], false, "acyclic roles do not persist a loop budget");
     assert.ok(Object.values(design.authoring.flows).some((flow) => flow.fromRoleId === sourceRoleId && flow.toRoleId === "new-auditor" && flow.eventType === relationshipEventType), "the new relationship should persist with the selected endpoints and event");
     assert.deepEqual(assets.roles["new-auditor"], {
       "agent.md": "You are the new auditor. Verify the output and cite evidence.",

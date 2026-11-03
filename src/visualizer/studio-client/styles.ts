@@ -134,18 +134,19 @@ export function injectStudioGraphStyles(): void {
         align-items: center;
         box-sizing: border-box;
         flex-direction: row;
-        max-width: calc(100% - 20px);
+        max-width: 100%;
         overflow: hidden;
         padding: 4px;
       }
       .studio-graph-toolbar-main {
+        flex: 1 1 auto;
         flex-wrap: nowrap;
-        max-width: 100%;
+        max-width: calc(100% - 20px);
         overflow-x: auto;
         overscroll-behavior-x: contain;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
-        width: 100%;
+        width: auto;
       }
       .studio-graph-toolbar-main::-webkit-scrollbar {
         display: none;
@@ -253,7 +254,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-canvas .x6-node.is-relationship-source [data-studio-connect-port],
     .studio-graph-canvas .x6-node.is-connection-target [data-studio-connect-port],
-    .is-relationship-connecting .x6-node:hover [data-studio-connect-port] {
+    .is-relationship-connecting .x6-node [data-studio-connect-port] {
       fill: #ecfeff;
       opacity: 1;
       r: 5px;

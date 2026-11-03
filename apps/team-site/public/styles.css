@@ -3249,7 +3249,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   background: transparent;
   border: 0;
   cursor: col-resize;
-  display: flex;
+  display: none;
   height: 100%;
   justify-content: center;
   left: calc(var(--studio-runtime-split, 50%) - 12px);
@@ -3259,6 +3259,9 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   touch-action: none;
   width: 24px;
   z-index: 4;
+}
+.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-runtime-split-handle {
+  display: flex;
 }
 .studio-runtime-split-handle span {
   background: var(--line-strong, #b8c7bf);

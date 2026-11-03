@@ -4471,6 +4471,11 @@ export function renderPageShellStyles(): string {
       background: #172337;
       color: #dbeafe;
     }
+    :root[data-visualizer-theme="dark"] .top-nav-utilities #refresh {
+      border-color: #334155;
+      background: #172337;
+      color: #dbeafe;
+    }
     :root[data-visualizer-theme="dark"] .button:not(.primary):not(.warn):not(.danger):hover {
       border-color: #38bdf8;
       background: rgba(56, 189, 248, 0.14);
@@ -4768,15 +4773,19 @@ export function renderPageShellStyles(): string {
     }
     @media (max-width: 720px) {
       .studio-graph-toolbar-main {
-        flex-wrap: wrap;
-        overflow: hidden;
-        align-content: flex-start;
+        flex: 1 1 auto;
+        flex-wrap: nowrap;
+        max-width: calc(100% - 20px);
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        width: auto;
       }
       .studio-graph-toolbar-group {
-        flex: 1 1 100%;
-        flex-wrap: wrap;
-        max-width: 100%;
-        overflow: hidden;
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
+        max-width: none;
       }
     }
     @media (max-width: 900px) and (orientation: landscape) {

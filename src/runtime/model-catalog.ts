@@ -387,7 +387,8 @@ export type DiscoveryCommandRunner = (args: {
 
 export async function runOpencodeModelsVerbose(
   workdir: string,
-  commandRunner?: DiscoveryCommandRunner
+  commandRunner?: DiscoveryCommandRunner,
+  timeoutMs = 5000
 ): Promise<string> {
   if (commandRunner) {
     let result: DiscoveryCommandResult | string;
@@ -456,7 +457,21 @@ export async function runOpencodeModelsVerbose(
       }
       reject(error);
     });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
     child.on("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new ModelDiscoveryError(
+          "MODEL_DISCOVERY_NONZERO_EXIT",
+          `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} timed out after ${timeoutMs}ms.`,
+          "Check the OpenCode installation and configuration, then rerun `ogs project sync-models`."
+        ));
+        return;
+      }
       if (code !== 0) {
         reject(
           new ModelDiscoveryError(
@@ -493,16 +508,14 @@ export async function discoverLocalModelCatalog(args: {
   commandRunner?: DiscoveryCommandRunner;
   preferredModelIdsByBackend?: Record<string, string[]>;
 }): Promise<ModelCatalog> {
-  const sources: ModelCatalogSource[] = [];
-  const models: ModelCatalogEntry[] = [];
-  for (const backendId of defaultBackendRegistry.listBackendIds()) {
-    const outcome = await defaultBackendRegistry.discoverBackend(backendId, {
+  const outcomes = await Promise.all(defaultBackendRegistry.listBackendIds().map((backendId) =>
+    defaultBackendRegistry.discoverBackend(backendId, {
       ...args,
       preferredModelIds: args.preferredModelIdsByBackend?.[backendId]
-    });
-    sources.push(outcome.source);
-    models.push(...outcome.models);
-  }
+    })
+  ));
+  const sources = outcomes.map((outcome) => outcome.source);
+  const models = outcomes.flatMap((outcome) => outcome.models);
 
   return {
     catalogVersion: "3",

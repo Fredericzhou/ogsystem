@@ -66,7 +66,6 @@ export type StudioAuthoringRole = {
   modelSelectionSource?: "default" | "role";
   modelRef?: string;
   fallback?: StudioFallbackModel;
-  fallbackModelId?: string;
   profileId?: string;
   routingMode?: "parallel_split";
   routeOrder?: string[];

@@ -2673,7 +2673,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeSelectedRoleId = nextRoleId;
       state.studioBridgeSelectedFlowKey = "";
-      state.studioInspectorOpen = true;
+      state.studioInspectorOpen = false;
       if (!state.studioInspectorTab || state.studioInspectorTab === "io") state.studioInspectorTab = "config";
       state.studioInspectorCollapsed = false;
       state.studioWorkbenchSideTab = "structure";
@@ -5291,7 +5291,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!roleId) return;
       state.studioBridgeSelectedRoleId = roleId;
       state.studioBridgeSelectedFlowKey = "";
-      state.studioInspectorOpen = true;
+      state.studioInspectorOpen = false;
       state.studioInspectorTab = state.studioInspectorTab || "config";
       updateStudioBridgeSelectionChrome();
       renderStudioInspectorDrawer();

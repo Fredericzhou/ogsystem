@@ -139,20 +139,20 @@ test("Studio persists model bindings from the same submitted authoring snapshot"
   });
 });
 
-test("Studio persists role fallback model references with an inherited or explicit primary model", async () => {
+test("Studio persists structured role fallback model references with an inherited or explicit primary model", async () => {
   const { useCases, calls, team } = setup();
   const authoring = {
     version: 1,
     roles: {
-      inherited: { roleId: "inherited", bindingKind: "model", modelSelectionSource: "default", fallbackModelId: "codex-backup" },
-      explicit: { roleId: "explicit", bindingKind: "model", backend: "claude", modelId: "sonnet", fallbackModelId: "claude-backup" }
+      inherited: { roleId: "inherited", bindingKind: "model", modelSelectionSource: "default", fallback: { backend: "codex", modelId: "codex-backup", modelRef: "codex-backup" } },
+      explicit: { roleId: "explicit", bindingKind: "model", backend: "claude", modelId: "sonnet", fallback: { backend: "opencode", modelId: "claude-backup", modelRef: "openai/claude-backup" } }
     }
   };
   await useCases.saveTeamDesignAssets(team.teamVersionId, { authoring, assets: {} });
   const assets = calls.find((call) => call[0] === "assets")[1].assets;
   assert.deepEqual(assets.modelSelection.roles, {
-    inherited: { backend: "codex", modelId: "gpt-6-luna", fallbackModelId: "codex-backup" },
-    explicit: { backend: "claude", modelId: "sonnet", fallbackModelId: "claude-backup" }
+    inherited: { fallback: { backend: "codex", modelId: "codex-backup", modelRef: "codex-backup" } },
+    explicit: { backend: "claude", modelId: "sonnet", fallback: { backend: "opencode", modelId: "claude-backup", modelRef: "openai/claude-backup" } }
   });
 });
 

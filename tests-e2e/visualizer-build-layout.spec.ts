@@ -195,8 +195,6 @@ test("lifecycle tabs keep the work area aligned across half-screen widths", asyn
       return {
         stageLeft: Math.round(stageBounds.left),
         stageWidth: Math.round(stageBounds.width),
-        stageGutter: stage.offsetWidth - stage.clientWidth,
-        stageClientWidth: stage.clientWidth,
         tabsLeft: Math.round(tabBounds.left),
         tabsWidth: Math.round(tabBounds.width)
       };

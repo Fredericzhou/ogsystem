@@ -693,6 +693,10 @@ export class StudioGraphIsland {
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonly rootKeydownListener = (event: KeyboardEvent) => this.handleRootKeydown(event);
+  private readonly relationshipPointerUpListener = () => {
+    if (!this.relationshipSourceRoleId) return;
+    this.clearRelationshipSource();
+  };
   private readonly contextPointerDownListener = (event: PointerEvent) => {
     const target = event.target as HTMLElement | null;
     if (!target?.closest("[data-studio-graph-context-menu]")) this.hideContextMenu();
@@ -825,6 +829,7 @@ export class StudioGraphIsland {
     this.bindQuickOpen();
     this.bindResizeObserver();
     this.root.addEventListener("keydown", this.rootKeydownListener);
+    document.addEventListener("pointerup", this.relationshipPointerUpListener);
     document.addEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     // Command forms can be mounted in a sibling host outside `root`, so use a document-level
     // submit fallback to prevent accidental native navigation during rapid host swaps.
@@ -1024,6 +1029,7 @@ export class StudioGraphIsland {
     document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
     document.removeEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     this.root.removeEventListener("keydown", this.rootKeydownListener);
+    document.removeEventListener("pointerup", this.relationshipPointerUpListener);
     this.root.removeEventListener("pointerdown", this.contextPointerDownListener);
     this.root.removeEventListener("pointerup", this.contextPointerUpListener);
     this.root.removeEventListener("pointercancel", this.contextPointerUpListener);
@@ -1397,8 +1403,12 @@ export class StudioGraphIsland {
       this.renderMinimap();
     });
     this.graph.on("edge:connected", ({ edge, isNew }) => {
-      if (!isNew) return;
+      if (!isNew) {
+        this.clearRelationshipSource();
+        return;
+      }
       if (this.isReadOnly()) {
+        this.clearRelationshipSource();
         edge.remove();
         return;
       }
@@ -1406,21 +1416,23 @@ export class StudioGraphIsland {
       const target = edge.getTargetCellId();
       edge.remove();
       if (!source || !target) {
+        this.clearRelationshipSource();
         this.toast("error", this.label("invalidConnection"));
         return;
       }
       const sourceCell = this.graph.getCellById(source);
       const targetCell = this.graph.getCellById(target);
       if (!validateStudioConnectionCells(sourceCell, targetCell).ok) {
+        this.clearRelationshipSource();
         this.toast("error", this.label("invalidConnection"));
         return;
       }
       if (this.relationshipSourceRoleId && source !== this.relationshipSourceRoleId) {
+        this.clearRelationshipSource();
         this.toast("error", this.label("connectFromSelectedRole"));
         return;
       }
-      this.relationshipSourceRoleId = "";
-      this.updateConnectionPortPresentation();
+      this.clearRelationshipSource();
       const command = {
         type: "add-edge" as const,
         sourceRoleId: source,
@@ -2762,6 +2774,12 @@ export class StudioGraphIsland {
       container.classList.toggle("is-relationship-source", node.id === this.relationshipSourceRoleId);
       if (!this.relationshipSourceRoleId) container.classList.remove("is-connection-target");
     }
+  }
+
+  private clearRelationshipSource(): void {
+    this.relationshipSourceRoleId = "";
+    this.updateConnectionPortPresentation();
+    this.updateToolbarState();
   }
 
   private isReadOnly(): boolean {

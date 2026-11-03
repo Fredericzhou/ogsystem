@@ -275,9 +275,13 @@ const sharedResourceUseCases = createSharedResourceUseCases({
   store: createFileSharedResourceStore({ root: join(platformConfigRoot, "shared-resources") })
 });
 async function getPlatformDefaultModelSelection() {
-  const [settings, discovery] = await Promise.all([
-    platformUseCases.readPlatformSettings(),
-    platformUseCases.getPlatformDiscovery()
+  const settings = await platformUseCases.readPlatformSettings();
+  const discoveryPromise = platformUseCases.getPlatformDiscovery();
+  // Model discovery can invoke local CLIs and must not block Studio design saves.
+  // The catalog cache will be reused by later requests once discovery completes.
+  const discovery = await Promise.race([
+    discoveryPromise,
+    new Promise((resolve) => setTimeout(() => resolve({ models: [], generatedAt: undefined }), 2500))
   ]);
   const models = (discovery.models || []).filter((model) => model.runnable);
   const configured = String(settings.defaultModel || "default");

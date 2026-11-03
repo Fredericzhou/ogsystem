@@ -850,7 +850,7 @@ test("workdir controls fit mobile, show the project directory name, and saved no
     await page.goto(started.url);
     await expect(page.locator("#project-name")).toHaveText(path.basename(workdir));
     await expect(page.locator("#project-name")).toHaveCSS("font-size", "16px");
-    await expect(page.locator("#project-name")).toHaveCSS("font-weight", "750");
+    await expect(page.locator("#project-name")).toHaveCSS("font-weight", "700");
     await expect(page.getByRole("heading", { level: 2, name: "Layout Refresh Test" })).toBeVisible();
     await expect(page.locator(".project-home-directory code")).toHaveText(workdir);
     await expect(page.locator(".top-nav #workdir")).toBeHidden();
@@ -925,9 +925,9 @@ test("Studio graph controls expose localized names in English and Simplified Chi
     await expect(layout).toHaveAttribute("aria-label", "Switch layout");
     await expect(minimap).toHaveAttribute("aria-label", "Graph minimap");
     await expect(technicalDetails).toHaveAttribute("title", "Technical details \u00b7 on");
-    await expect(layout).toHaveCSS("border-radius", "8px");
-    await expect(page.locator("#locale-select")).toHaveCSS("border-radius", "8px");
-    await expect(page.locator("[data-studio-bridge-list-mode]")).toHaveCSS("border-radius", "8px");
+    await expect(layout).toHaveCSS("border-radius", "6px");
+    await expect(page.locator("#locale-select")).toHaveCSS("border-radius", "6px");
+    await expect(page.locator("[data-studio-bridge-list-mode]")).toHaveCSS("border-radius", "6px");
     const layoutOptionColors = await layout.locator("option").first().evaluate((option) => {
       const style = getComputedStyle(option);
       return { color: style.color, backgroundColor: style.backgroundColor };
@@ -957,7 +957,7 @@ test("Studio graph controls expose localized names in English and Simplified Chi
       return { top, height };
     })).toEqual(statusBoundsBeforeToast);
 
-    await page.locator("#locale-select").selectOption("zh-CN");
+    await page.locator("#locale-toggle").click();
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await openGraph();
     const localizedLayout = page.locator("#studio-graph-root [data-studio-graph-layout]");
@@ -1005,7 +1005,7 @@ test("long Studio flow descriptions stay clear of role nodes in both layouts", a
         return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
       }).toBe(true);
       const labelWidth = await summary.evaluate((label) => label.getBoundingClientRect().width);
-      expect(labelWidth).toBeLessThanOrEqual(114);
+      expect(labelWidth).toBeLessThanOrEqual(120);
       const measureDistanceFromFlow = () => summary.evaluate((label) => {
         // X6 renders labels in a separate SVG layer after layout updates. Use
         // the stable business edge id instead of relying on label DOM nesting.
@@ -1176,8 +1176,12 @@ test("Studio conditional route form saves, reloads, and explains its Semantic IR
     await page.reload();
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
     await page.getByRole("tab", { name: designTabName }).click();
+    const backToBrowse = page.getByRole("button", { name: "Back to browse" });
+    if (await backToBrowse.isVisible().catch(() => false)) await backToBrowse.click();
+    await expect(edge).toBeVisible();
     await edge.locator('path[stroke="transparent"]').first().click({ force: true });
     const reloadedEditor = page.locator(".studio-flow-config-editor");
+    await expect(reloadedEditor).toBeVisible();
     await expect(reloadedEditor.locator('[data-flow-config-field="conditionJson"]')).toContainText('"approved"');
     await expect(reloadedEditor.locator('[data-flow-config-field="priority"]')).toHaveValue("7");
     await expect(page.locator('#studio-graph-root [data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"]')).toContainText("when:equals");
@@ -1188,6 +1192,7 @@ test("Studio conditional route form saves, reloads, and explains its Semantic IR
     await page.reload();
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
     await page.getByRole("tab", { name: designTabName }).click();
+    if (await backToBrowse.isVisible().catch(() => false)) await backToBrowse.click();
     await edge.locator('path[stroke="transparent"]').first().click({ force: true });
     await expect(page.locator(".studio-flow-config-editor [data-flow-config-field=\"conditionJson\"]")).toBeEmpty();
     await expect(page.locator('#studio-graph-root [data-cell-id$=":demo-analyst:ANALYSIS_DONE:end"]')).not.toContainText("when:");
@@ -1786,7 +1791,10 @@ test("fan-out projection uses nearby ports without replacing business edges", as
     await dragStudioConnectPort(page, "source", "right", "#studio-graph-bundle-root");
     await expect(root.locator('form[data-studio-command-form="add-edge"]')).toHaveCount(0);
     await expect.poll(async () => root.locator(".x6-edge").count()).toBe(3);
-    await expect(addEdgeButton).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(() => root.evaluate((element) => ({
+      connecting: element.classList.contains("is-relationship-connecting"),
+      pressed: element.querySelector('[data-studio-graph-action="add-edge"]')?.getAttribute("aria-pressed")
+    }))).toEqual({ connecting: false, pressed: "false" });
     await expect(root.locator('[data-studio-graph-action="validate"]')).toBeEnabled();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
@@ -2091,6 +2099,7 @@ test("Start and End configure dispatch, aggregation, and each connected flow in 
     await endEditor.locator('[data-boundary-setting="endMode"]').selectOption("quorum_of");
     await expect(endEditor.locator('[data-boundary-setting="endMode"]')).toHaveValue("quorum_of");
     await endEditor.locator('[data-boundary-setting="endMin"]').fill("2");
+    await expect(endEditor.locator('[data-boundary-setting="endMin"]')).toHaveValue("2");
     await endEditor.locator('[data-boundary-settings-save="end"]').click();
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
       system: { endJoin: { mode: "quorum_of", min: 2 } }

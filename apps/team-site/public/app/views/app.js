@@ -2282,12 +2282,11 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
     const modelKey = JSON.stringify([model.backend, modelId]);
     return `<option value="${esc(modelKey)}" ${modelKey === roleModelKey ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
-  const fallbackModel = role?.backend && role?.fallbackModelId
-    ? JSON.stringify([role.backend, role.fallbackModelId])
+  const fallbackModel = role?.fallback?.backend && role?.fallback?.modelId
+    ? JSON.stringify([role.fallback.backend, role.fallback.modelId])
     : "";
-  const fallbackCandidates = runnableModels.filter((model) => !role?.backend || model.backend === role.backend);
-  const fallbackModelKnown = fallbackCandidates.some((model) => JSON.stringify([model.backend, model.modelId || model.id]) === fallbackModel);
-  const fallbackModelOptions = `${fallbackModel && !fallbackModelKnown ? `<option value="" selected${fallbackCandidates.length ? "" : " disabled"}>${fallbackCandidates.length ? t("Choose a discovered model", "选择已发现且可运行的模型") : t("No runnable models discovered", "未发现可运行模型")}</option>` : ""}${fallbackCandidates.map((model) => {
+  const fallbackModelKnown = runnableModels.some((model) => JSON.stringify([model.backend, model.modelId || model.id]) === fallbackModel);
+  const fallbackModelOptions = `${fallbackModel && !fallbackModelKnown ? `<option value="" selected${runnableModels.length ? "" : " disabled"}>${runnableModels.length ? t("Choose a discovered model", "选择已发现且可运行的模型") : t("No runnable models discovered", "未发现可运行模型")}</option>` : ""}${runnableModels.map((model) => {
     const modelId = model.modelId || model.id;
     const modelKey = JSON.stringify([model.backend, modelId]);
     return `<option value="${esc(modelKey)}" ${modelKey === fallbackModel ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
@@ -2300,7 +2299,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
   const blockedRoleTools = allowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
   const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions"><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</details>` : "";
-  const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModelId"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在同一执行底座发生瞬态故障时触发。")}</span></label>` : "";
+  const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModel"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道发生可重试故障时触发。")}</span></label>` : "";
   const review = role?.review || {};
   const reviewTarget = review.reworkTargetRoleId || "";
   const reworkRoleOptions = roleIds.map((roleId) => `<option value="${esc(roleId)}" ${reviewTarget === roleId ? "selected" : ""}>${esc(studioRoleDisplayName(authoring, roleId, locale))}</option>`).join("");
@@ -2316,7 +2315,7 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const deleteFlowButton = selectedFlow ? `<button type="button" class="secondary-button danger-button" data-studio-flow-delete>${t("Delete flow", "删除关系")}</button>` : "";
   if (selectedFlow?.fromRoleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Structural event", "结构事件")}</span><input value="${t("Start", "开始")}" readonly></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || localizedEventLabel("START", copy))}"></label><p class="field-hint full">${t("Start dispatch is configured on the Start role. This flow defines one eligible role.", "开始分发策略在开始角色中配置；此关系定义一个候选角色。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
   if (selectedFlow) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><input data-studio-flow-field="eventType" value="${esc(selectedFlow.eventType)}"></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
-  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(roleName(role.roleId))}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${t("Display name", "显示名称")}</span><input data-studio-role-field="title" value="${esc(role.title || "")}" maxlength="80"></label><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}<label class="field"><span>${t("Distribution", "分发策略")}</span><select data-studio-role-field="routingMode"><option value="">standard</option><option value="parallel_split" ${role.routingMode === "parallel_split" ? "selected" : ""}>parallel_split</option></select></label><label class="field"><span>${t("Join mode", "汇聚策略")}</span><select data-studio-role-field="joinMode"><option value="">none</option><option value="all_of" ${role.joinMode === "all_of" ? "selected" : ""}>all_of</option><option value="quorum_of" ${role.joinMode === "quorum_of" ? "selected" : ""}>quorum_of</option></select></label>${role.joinMode === "quorum_of" ? `<label class="field"><span>${t("Minimum sources", "最少来源数")}</span><input data-studio-role-field="joinMin" type="number" min="1" step="1" value="${esc(role.joinMin ?? "")}"></label>` : ""}<label class="field"><span>${t("Loop budget", "循环上限")}</span><input data-studio-role-field="loopMax" type="number" min="1" step="1" value="${esc(role.loopMax ?? "")}"></label><label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
+  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(roleName(role.roleId))}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${t("Display name", "显示名称")}</span><input data-studio-role-field="title" value="${esc(role.title || "")}" maxlength="80"></label><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}${routingField}${joinField}${loopField}<label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "terminate" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
   return `<div class="studio-inspector-heading"><span class="section-kicker">${t("No selection", "未选择对象")}</span><h2>${t("Select a role or flow", "请选择角色或流程")}</h2></div><p class="form-hint">${t("Open Global from Team configuration to edit team-wide settings.", "请从团队配置中选择“全局”编辑团队级配置。")}</p>`;
 }
 
@@ -2956,15 +2955,6 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (!inspector) return;
       inspector.innerHTML = studioPropertyInspectorMarkup(authoring, selection, state.locale, discoveredModels);
       const selectedRole = selection.roleId ? authoring.roles?.[selection.roleId] : undefined;
-      if (selectedRole) {
-        const topology = studioRoleTopology(authoring, selectedRole.roleId);
-        if (!topology.hasRoute) inspector.querySelector('[data-studio-role-field="routingMode"]')?.closest(".field")?.setAttribute("hidden", "");
-        if (!topology.hasJoin) {
-          inspector.querySelector('[data-studio-role-field="joinMode"]')?.closest(".field")?.setAttribute("hidden", "");
-          inspector.querySelector('[data-studio-role-field="joinMin"]')?.closest(".field")?.setAttribute("hidden", "");
-        }
-        if (!topology.hasCycle) inspector.querySelector('[data-studio-role-field="loopMax"]')?.closest(".field")?.setAttribute("hidden", "");
-      }
       if (selectedRole?.bindingKind === "exec") inspector.insertAdjacentHTML("beforeend", studioExecutionConfigMarkup(selectedRole, selection, state.locale));
       if (selectedRole) {
         inspector.insertAdjacentHTML("beforeend", studioRouteOrderMarkup(authoring, selectedRole, state.locale));
@@ -3300,10 +3290,13 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           delete role.modelRef;
           role.modelSelectionSource = "role";
           modelSelectionDirty = true;
-        } else if (roleField === "fallbackModelId") {
-          const [, modelId] = element.value ? JSON.parse(element.value) : [];
-          role.fallbackModelId = typeof modelId === "string" ? modelId : undefined;
-          delete role.fallbackModelRef;
+        } else if (roleField === "fallbackModel") {
+          const [backend, modelId] = element.value ? JSON.parse(element.value) : [];
+          role.fallback = backend && modelId ? {
+            backend,
+            modelId,
+            modelRef: `${backend}/${modelId}`
+          } : undefined;
           modelSelectionDirty = true;
         } else if (roleField === "bindingKind") {
           role.bindingKind = element.value;
@@ -3317,7 +3310,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             delete role.modelRef;
             delete role.backend;
             delete role.modelId;
-            delete role.fallbackModelId;
+            delete role.fallback;
             delete role.modelSelectionSource;
           }
           if (role.bindingKind !== "exec") delete role.profileId;
@@ -4287,7 +4280,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
 async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest = state.activeRequest) {
   try {
     const [discoveryResponse, designResponse, settingsResponse] = await Promise.all([
-      pageFetch("/api/v1/platform/discovery", { method: "POST" }),
+      pageFetch("/api/v1/platform/models"),
       authoring ? Promise.resolve(undefined) : pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design`),
       pageFetch("/api/v1/platform/settings")
     ]);
@@ -4989,7 +4982,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       debugPanel?.classList.remove("is-open");
       debugPanel?.setAttribute("aria-hidden", "true");
       syncPanelDockLayout(null);
-      if (workbench?.classList.contains("is-runtime-dual-core")) {
+      if (typeof syncRuntimeDualCore === "function" && workbench?.classList.contains("is-runtime-dual-core")) {
         syncRuntimeDualCore({ active: true, preference: workbench.dataset.layoutPreference || "balanced", maximize: workbench.dataset.maximizeMode || "", microOpen: false });
       }
       debugOpenButton?.setAttribute("aria-expanded", "false");
@@ -5006,7 +4999,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       debugPanel?.classList.add("is-open");
       syncPanelDockLayout("debug");
       debugPanel?.setAttribute("aria-hidden", "false");
-      if (workbench?.classList.contains("is-runtime-dual-core")) {
+      if (typeof syncRuntimeDualCore === "function" && workbench?.classList.contains("is-runtime-dual-core")) {
         syncRuntimeDualCore({ active: true, preference: workbench.dataset.layoutPreference || "balanced", maximize: workbench.dataset.maximizeMode || "", microOpen: true });
         setDebugView("run");
       }
@@ -5088,11 +5081,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         setDebugView("config");
         const result = root.querySelector("#team-simulation-result");
         if (result) result.replaceChildren();
-        updateStudioGraph?.setRuntimeProgress([]);
-        updateStudioGraph?.update({ runtimeLock: false, readOnly: false });
-        syncRuntimeDualCore({ active: false });
         syncDebugRunButton("idle");
-        return;
       }
       if (button.dataset.running === "true") {
         if (!state.studioActiveRun) return;

@@ -12,6 +12,11 @@ export function createPlatformUseCases({
     throw new TypeError("Platform use cases require a model catalog.");
   }
 
+  const discoverForUi = async () => Promise.race([
+    modelCatalog.discover(),
+    new Promise((resolve) => setTimeout(() => resolve({ models: [], sources: [], generatedAt: undefined }), 2500))
+  ]);
+
   return Object.freeze({
     getPlatformDiscovery: (forceRefresh = false) => modelCatalog.discover({ forceRefresh }),
     async probeModelAvailability(target) {
@@ -36,7 +41,7 @@ export function createPlatformUseCases({
       return probeModelAvailability(model);
     },
     async listPlatformProviders() {
-      const discovery = await modelCatalog.discover();
+      const discovery = await discoverForUi();
       return {
         backends: (discovery.sources || []).map(
           ({ backend, displayName, iconKey, transport, sessionKind, status, detail }) => ({
@@ -52,7 +57,7 @@ export function createPlatformUseCases({
       };
     },
     async listPlatformModels() {
-      const discovery = await modelCatalog.discover();
+      const discovery = await discoverForUi();
       return { models: discovery.models || [] };
     },
     readPlatformSettings: () => platformSettingsStore.read(),
