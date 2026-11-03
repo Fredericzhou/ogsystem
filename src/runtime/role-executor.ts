@@ -907,11 +907,11 @@ export async function executeRoleNode(args: {
         await recordCall(callId, event.phase, event.prompt, event.output ?? "");
       } : undefined;
       const callId = `${execution.executionId}:${phase}:1`;
-      const reusableSessionId = binding.kind === "model"
-        && resolvedBinding?.binding?.kind === "model"
-        && binding.backend === resolvedBinding.binding.backend
+      const reusableSessionId = binding.kind !== "model"
         ? existingSession?.sessionId
-        : undefined;
+        : resolvedBinding?.binding?.kind === "model" && binding.backend === resolvedBinding.binding.backend
+          ? existingSession?.sessionId
+          : undefined;
       if (!reportsPromptCalls) {
         await reservePromptBudget({
           context: args.runContext,

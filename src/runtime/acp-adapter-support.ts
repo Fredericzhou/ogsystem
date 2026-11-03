@@ -26,6 +26,7 @@ export function createAcpRunSession(definition: AcpAdapterDefinition, args: { ta
   let clientPromise: Promise<AcpClient> | undefined;
   const sessionByKey = new Map<string, string>();
   const capabilityByKey = new Map<string, ReasoningCapability>();
+  const activeSessionIds = new Set<string>();
   const getClient = () => clientPromise ??= AcpClient.start({ command: definition.command, args: definition.args, cwd: args.targetDir, protocolVersion: definition.protocolVersion });
   return {
     async execute(request: BackendExecuteRequest) {
@@ -71,6 +72,7 @@ export function createAcpRunSession(definition: AcpAdapterDefinition, args: { ta
         if (!reasoningCapability) throw new Error("REASONING_CAPABILITY_UNKNOWN: ACP session did not expose reasoning capability");
         effectiveReasoning = await client.setReasoning(sessionId, configuredReasoning, reasoningCapability, request.timeoutMs);
       }
+      activeSessionIds.add(sessionId);
       const emitter = createAgentEventEmitter({ runId: request.runId ?? args.runContext.runId, roleId: request.roleId, executionId: request.executionId ?? "unknown", attempt: request.attempt ?? 1, backend: definition.backendId, sessionId, onEvent: request.onEvent });
       if (recreatedFrom) await emitter.emit({ type: "session_recreated", previousSessionId: recreatedFrom, sessionId, reason: "resume_failed" });
       let output = "";
@@ -129,19 +131,24 @@ export function createAcpRunSession(definition: AcpAdapterDefinition, args: { ta
         await emitter.emit({ type: "turn_failed", error: error instanceof Error ? error.message : String(error) });
         throw new OpencodeExecutionError(error instanceof Error ? error.message : String(error), { stderr: "", timedOut: /timed out/i.test(String(error)) });
       } finally {
+        activeSessionIds.delete(sessionId);
         request.signal?.removeEventListener("abort", abort);
         unsubscribe();
         await request.onPromptCall?.({ phase, ordinal: 1, stage: "after", prompt: request.prompt, output, outputChars: output.length });
       }
     },
-    async abort() {
-      if (clientPromise) await clientPromise.then((client) => client.request("session/cancel", {}).catch(() => undefined));
+    async abort(args) {
+      if (clientPromise) await clientPromise.then(async (client) => {
+        const sessionIds = args?.sessionId ? [args.sessionId] : [...activeSessionIds];
+        await Promise.all(sessionIds.map((sessionId) => client.request("session/cancel", { sessionId }).catch(() => undefined)));
+      });
     },
     async close() {
       if (clientPromise) await clientPromise.then((client) => client.close());
       clientPromise = undefined;
       sessionByKey.clear();
       capabilityByKey.clear();
+      activeSessionIds.clear();
     }
   };
 }
