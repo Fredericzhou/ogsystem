@@ -108,14 +108,14 @@ test("Studio Mermaid import reflects the project's pinned role model bindings", 
     systemSource: source,
     modelSelection: {
       configVersion: "3",
-      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallbackModelId: "gpt-5.6-sol" } }
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallback: { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "gpt-5.6-sol" } } }
     }
   });
 
   assert.equal(authoring.roles.dispatch.bindingKind, "model");
   assert.equal(authoring.roles.dispatch.backend, "codex");
   assert.equal(authoring.roles.dispatch.modelId, "gpt-5.6-luna");
-  assert.equal(authoring.roles.dispatch.fallbackModelId, "gpt-5.6-sol");
+  assert.deepEqual(authoring.roles.dispatch.fallback, { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "gpt-5.6-sol" });
   assert.equal(authoring.roles.review.bindingKind, "exec");
 });
 
@@ -131,7 +131,7 @@ test("Studio save writes role backend/model separately and preserves project def
     authoring.roles.dispatch.bindingKind = "model";
     authoring.roles.dispatch.backend = "codex";
     authoring.roles.dispatch.modelId = "gpt-5.6-sol";
-    authoring.roles.dispatch.fallbackModelId = "gpt-5.6-sol";
+    authoring.roles.dispatch.fallback = { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "gpt-5.6-sol" };
     authoring.roles.dispatch.modelSelectionSource = "role";
 
     await saveStudioAuthoringDraft({ workdir, authoring });
@@ -140,7 +140,7 @@ test("Studio save writes role backend/model separately and preserves project def
     assert.deepEqual(savedSelection, {
       configVersion: "3",
       defaults: { backend: "opencode", modelId: "provider/default" },
-      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallbackModelId: "gpt-5.6-sol" } }
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallback: { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "gpt-5.6-sol" } } }
     });
     assert.ok((await readFile(path.join(workdir, ".ogs", "studio", "system.authoring.json"), "utf8")).length > 0);
   } finally {

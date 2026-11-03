@@ -66,6 +66,7 @@ test("execution plan normalizes graph semantics and bindings", () => {
     kind: "model",
     backend: "opencode",
     modelId: "provider/model.fast",
+    modelRef: "opencode/provider/model.fast",
     bindingSource: "selection"
   });
 
@@ -77,6 +78,7 @@ test("execution plan normalizes graph semantics and bindings", () => {
     kind: "model",
     backend: "codex",
     modelId: "model.deep",
+    modelRef: "codex/model.deep",
     bindingSource: "selection"
   });
 

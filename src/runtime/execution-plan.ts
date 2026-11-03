@@ -62,7 +62,7 @@ function resolveBinding(args: {
       kind: "model",
       backend: resolvedModel.backend,
       modelId: resolvedModel.modelId,
-      modelRef: resolvedModel.modelRef,
+      modelRef: resolvedModel.modelRef ?? `${resolvedModel.backend}/${resolvedModel.modelId}`,
       ...(resolvedModel.variant ? { variant: resolvedModel.variant } : {}),
       ...(resolvedModel.reasoningEffort ? { reasoningEffort: resolvedModel.reasoningEffort } : {}),
       ...(resolvedModel.effectiveReasoningEffort ? { effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort } : {}),
