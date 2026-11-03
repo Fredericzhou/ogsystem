@@ -479,7 +479,7 @@ function createDefaultOgsReadme(): string {
     "",
     "Common edits:",
     "- Change `runsDir` if run artifacts should live outside `.ogs/runs`.",
-    "- `tools.environmentPolicy` defaults to `inherit` for compatibility. Set it to `minimal` for production; add only reviewed variable names to `tools.envAllowlist`.",
+    "- `tools.environmentPolicy` defaults to `inherit`. Set it to `minimal` for production; add only reviewed variable names to `tools.envAllowlist`.",
     "- Minimal environment mode limits inherited credentials, but it is not a filesystem sandbox. Review tool commands and workspace permissions separately.",
     "- Change `workspace.workspaceIsolation` when the execution sandbox policy changes.",
     "- Keep `roleRepo` pointed at the project role repository root.",
@@ -490,7 +490,7 @@ function createDefaultOgsReadme(): string {
     '{',
     '  "configVersion": "3",',
     '  "defaults": {',
-    '    "backend": "<opencode|codex>",',
+    '    "backend": "<opencode|codex|ollama|pi|qwen|kimi>",',
     '    "modelId": "<cli-model-id>",',
     '    "variant": "<optional-variant>",',
     '    "timeoutMs": 120000,',
@@ -1453,9 +1453,25 @@ export async function syncProjectModels(args: {
   const existingSelectionBeforeRefresh = hasSelectionBeforeRefresh && !args.rewriteDefault
     ? await loadModelSelection(paths.modelSelectionPath)
     : undefined;
+  const preferredModelIdsByBackend: Record<string, string[]> = {};
+  const addPreferredModel = (backend?: string, modelId?: string) => {
+    if (!backend || !modelId) return;
+    const ids = preferredModelIdsByBackend[backend] ?? (preferredModelIdsByBackend[backend] = []);
+    if (!ids.includes(modelId)) ids.push(modelId);
+  };
+  const selectedDefaults = existingSelectionBeforeRefresh?.defaults;
+  addPreferredModel(selectedDefaults?.backend, selectedDefaults?.modelId);
+  addPreferredModel(selectedDefaults?.fallback?.backend, selectedDefaults?.fallback?.modelId);
+  for (const override of Object.values(existingSelectionBeforeRefresh?.roles ?? {})) {
+    const backend = override.backend ?? selectedDefaults?.backend;
+    const modelId = override.modelId ?? selectedDefaults?.modelId;
+    addPreferredModel(backend, modelId);
+    addPreferredModel(override.fallback?.backend, override.fallback?.modelId);
+  }
   const catalog = await discoverLocalModelCatalog({
     workdir: args.workdir,
-    commandRunner: args.commandRunner
+    commandRunner: args.commandRunner,
+    preferredModelIdsByBackend
   });
   await writeJsonFileAtomic(paths.modelCatalogPath, catalog);
 

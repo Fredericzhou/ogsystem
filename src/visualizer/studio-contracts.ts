@@ -19,6 +19,13 @@ export type StudioHumanReviewSpec = {
   terminateScope?: string;
 };
 
+export type StudioFallbackModel = {
+  backend: string;
+  modelId: string;
+  modelRef: string;
+  reasoningEffort?: "auto" | "off" | "on" | "low" | "medium" | "high" | "xhigh" | "max";
+};
+
 export type StudioAuthoringDocument = {
   version: 1;
   project: {
@@ -50,7 +57,7 @@ export type StudioAuthoringRole = {
   modelId?: string;
   modelSelectionSource?: "default" | "role";
   modelRef?: string;
-  fallbackModelId?: string;
+  fallback?: StudioFallbackModel;
   profileId?: string;
   routingMode?: "parallel_split";
   routeOrder?: string[];

@@ -15,9 +15,11 @@ import {
 import {
   loadModelSelection,
   resolveModelSelectionForSystem,
+  validateModelSelection,
   withDefaultModelSelection
 } from "../dist/runtime/model-selection.js";
 import { syncProjectModels } from "../dist/runtime/project-lifecycle.js";
+import { BackendRegistry } from "../dist/runtime/model-backend-registry.js";
 
 const fixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
 
@@ -86,6 +88,35 @@ test("OpenCode discovery uses the injected command and normalizes the fixture", 
   });
   assert.ok(discovered.models.some((entry) => entry.backend === "opencode" && entry.modelId === "opencode/gpt-5-nano"));
   assert.equal(discovered.models[0].capabilities.textOutput, true);
+});
+
+test("backend discovery probes the configured model before the catalog's first model", async () => {
+  const registry = new BackendRegistry();
+  let probedModel;
+  const discoveredModels = [model("provider/unavailable"), model("provider/configured")];
+  registry.register({
+    backendId: "test-backend",
+    displayName: "Test Backend",
+    iconKey: "test-backend",
+    transport: "cli-stdio",
+    sessionKind: "logical-session",
+    processOwnership: "spawned_by_ogs",
+    capabilities: { textInput: true, textOutput: true, toolcall: false, structuredOutput: false, sessionReuse: false, abort: false }
+  }, {
+    backendId: "test-backend",
+    verifiedRunnable: true,
+    async discover() { return { status: "runnable", models: discoveredModels }; },
+    async probe({ modelId }) { probedModel = modelId; }
+  });
+
+  const result = await registry.discoverBackend("test-backend", {
+    workdir: process.cwd(),
+    preferredModelIds: ["provider/configured"]
+  });
+
+  assert.equal(probedModel, "provider/configured");
+  assert.equal(result.source.status, "runnable");
+  assert.deepEqual(result.models.map((entry) => entry.modelId), ["provider/unavailable", "provider/configured"]);
 });
 
 test("OpenCode discovery reports stable actionable errors", async () => {
@@ -157,15 +188,45 @@ test("per-role model selection overrides the project default", () => {
   assert.equal(result.resolvedByRoleId.has("label"), false);
 });
 
-test("per-role model selection preserves an optional fallback model reference", () => {
+test("resume keeps auto as the requested value while carrying a frozen effective value", () => {
+  const result = resolveModelSelectionForSystem({
+    system: system(["writer"]),
+    selection: {
+      configVersion: "3",
+      roles: { writer: { backend: "qwen", modelId: "gpt-6-luna", reasoningEffort: "auto" } }
+    },
+    catalog: catalog([{
+      ...model("gpt-6-luna"),
+      backend: "qwen",
+      reasoning: { supported: true, kind: "effort", levels: ["low", "medium", "high"], default: "medium" }
+    }]),
+    frozenReasoningByRoleId: new Map([["writer", "high"]])
+  });
+
+  const resolved = result.resolvedByRoleId.get("writer");
+  assert.equal(resolved.reasoningEffort, "auto");
+  assert.equal(resolved.effectiveReasoningEffort, "medium");
+  assert.equal(resolved.frozenReasoningEffort, "high");
+});
+
+test("per-role model selection preserves the resolved fallback model", () => {
   const result = resolveModelSelectionForSystem({
     system: system(["worker"]),
     selection: {
       configVersion: "3",
-      roles: { worker: { backend: "opencode", modelId: "provider/primary", fallbackModelId: "provider/fallback" } }
+      roles: { worker: { backend: "opencode", modelId: "provider/primary", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "gpt-6-luna" } } }
     }
   });
-  assert.equal(result.resolvedByRoleId.get("worker").fallbackModelId, "provider/fallback");
+  assert.equal(result.resolvedByRoleId.get("worker").fallback.backend, "codex");
+  assert.equal(result.resolvedByRoleId.get("worker").fallback.modelId, "gpt-6-luna");
+  assert.equal(result.resolvedByRoleId.get("worker").fallback.modelRef, "gpt-6-luna");
+});
+
+test("model selection rejects fields outside the current schema", () => {
+  assert.throws(() => validateModelSelection({
+    configVersion: "3",
+    roles: { worker: { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" } }
+  }, "model-selection.json"), /unsupported field/);
 });
 
 test("platform model defaults fill unbound roles without overriding project or role selections", () => {

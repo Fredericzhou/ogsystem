@@ -106,14 +106,14 @@ test("Studio Mermaid import reflects the project's pinned role model bindings", 
     systemSource: source,
     modelSelection: {
       configVersion: "3",
-      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallbackModelRef: "opencode/big-pickle" } }
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna", fallback: { backend: "opencode", modelId: "big-pickle", modelRef: "big-pickle" } } }
     }
   });
 
   assert.equal(authoring.roles.dispatch.bindingKind, "model");
   assert.equal(authoring.roles.dispatch.backend, "codex");
   assert.equal(authoring.roles.dispatch.modelId, "gpt-5.6-luna");
-  assert.equal(authoring.roles.dispatch.fallbackModelRef, "opencode/big-pickle");
+  assert.deepEqual(authoring.roles.dispatch.fallback, { backend: "opencode", modelId: "big-pickle", modelRef: "big-pickle" });
   assert.equal(authoring.roles.review.bindingKind, "exec");
 });
 
@@ -129,7 +129,7 @@ test("Studio save writes role backend/model separately and preserves project def
     authoring.roles.dispatch.bindingKind = "model";
     authoring.roles.dispatch.backend = "codex";
     authoring.roles.dispatch.modelId = "gpt-5.6-sol";
-    authoring.roles.dispatch.fallbackModelRef = "opencode/big-pickle";
+    authoring.roles.dispatch.fallback = { backend: "opencode", modelId: "big-pickle", modelRef: "big-pickle" };
     authoring.roles.dispatch.modelSelectionSource = "role";
 
     await saveStudioAuthoringDraft({ workdir, authoring });
@@ -138,7 +138,7 @@ test("Studio save writes role backend/model separately and preserves project def
     assert.deepEqual(savedSelection, {
       configVersion: "3",
       defaults: { backend: "opencode", modelId: "provider/default" },
-      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/big-pickle" } }
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol", fallback: { backend: "opencode", modelId: "big-pickle", modelRef: "big-pickle" } } }
     });
     assert.ok((await readFile(path.join(workdir, ".ogs", "studio", "system.authoring.json"), "utf8")).length > 0);
   } finally {

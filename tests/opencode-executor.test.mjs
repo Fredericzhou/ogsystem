@@ -112,7 +112,7 @@ test("startOpencodeRunClient starts one reusable shared server", async () => {
   assert.strictEqual(createClientArgs.directory, "/tmp/project");
 });
 
-test("executeOpencodeModelRole uses shared server sessions and maps variant", async () => {
+test("executeOpencodeModelRole keeps variant separate from reasoning effort", async () => {
   let createArgs;
   let promptArgs;
   let closed = false;
@@ -179,6 +179,7 @@ test("executeOpencodeModelRole uses shared server sessions and maps variant", as
     directory: "/tmp/project",
     timeoutMs: 5000,
     maxOutputBytes: 4096,
+    reasoningEffort: "low",
     runClient
   });
 
@@ -188,7 +189,8 @@ test("executeOpencodeModelRole uses shared server sessions and maps variant", as
   });
   assert.strictEqual(promptArgs.sessionID, "ses_123");
   assert.strictEqual(promptArgs.directory, "/tmp/project");
-  assert.strictEqual(promptArgs.variant, "low");
+  assert.strictEqual(promptArgs.variant, undefined);
+  assert.strictEqual(promptArgs.reasoningEffort, "low");
   assert.deepStrictEqual(promptArgs.model, {
     providerID: "openai",
     modelID: "gpt-5.4-mini"
@@ -204,6 +206,50 @@ test("executeOpencodeModelRole uses shared server sessions and maps variant", as
   assert.strictEqual(result.messageId, "msg_456");
   assert.strictEqual(result.serverPid, 12345);
   assert.strictEqual(closed, false);
+});
+
+test("executeOpencodeModelRole replays a frozen effective reasoning value for auto", async () => {
+  let promptArgs;
+  const runClient = makeRunClient({
+    client: {
+      session: {
+        async create() {
+          return { data: { id: "ses_frozen" } };
+        },
+        async prompt(args) {
+          promptArgs = args;
+          return {
+            data: {
+              id: "msg_frozen",
+              info: { structured: { event: "SEND_MINIMALIST", content: "dispatch" } },
+              parts: []
+            }
+          };
+        },
+        async abort() {
+          return true;
+        }
+      }
+    }
+  });
+
+  const result = await executeOpencodeModelRole({
+    roleId: "debate-moderator",
+    prompt: "return structured output",
+    schema: { type: "object", properties: { event: { type: "string" }, content: { type: "string" } } },
+    modelRef: "openai/gpt-5.4-mini",
+    workdir: "/tmp/run/roles/debate-moderator",
+    directory: "/tmp/project",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    reasoningEffort: "auto",
+    effectiveReasoningEffort: "low",
+    runClient
+  });
+
+  assert.strictEqual(promptArgs.reasoningEffort, "low");
+  assert.strictEqual(result.requestedReasoningEffort, "auto");
+  assert.strictEqual(result.effectiveReasoningEffort, "low");
 });
 
 test("executeOpencodeModelRole rejects unsupported model args before using run client", async () => {

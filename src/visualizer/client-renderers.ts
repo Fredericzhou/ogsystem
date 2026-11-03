@@ -1238,7 +1238,14 @@ export function renderStudioRoleConfigEditor(args: {
         ? (() => {
             const models = Array.isArray(args.modelCatalog?.models) ? args.modelCatalog.models as JsonRecord[] : [];
             const sources = Array.isArray(args.modelCatalog?.sources) ? args.modelCatalog.sources as JsonRecord[] : [];
-            const runnable = models.filter((entry) => entry.runnable === true);
+            const runnable = models.map((entry) => {
+              if (entry.runnable === true) return entry;
+              const ref = String(entry.ref || "");
+              const separator = ref.indexOf("/");
+              const backend = String(entry.backend || entry.provider || (separator > 0 ? ref.slice(0, separator) : ""));
+              const modelId = String(entry.modelId || entry.model || entry.id || (separator > 0 ? ref.slice(separator + 1) : ""));
+              return backend && modelId ? { ...entry, backend, modelId, runnable: true } : entry;
+            }).filter((entry) => entry.runnable === true);
             const discoveredBackends = [...new Set([
               ...runnable.map((entry) => String(entry.backend || "")),
               ...sources.filter((source) => source.status === "runnable").map((source) => String(source.backend || ""))
@@ -1252,10 +1259,20 @@ export function renderStudioRoleConfigEditor(args: {
               : "";
             const unavailable = !choices.length && !staleModel ? '<option value="">' + escapeText(t("studio.form.noModels", undefined, "No runnable models. Run ogs models sync.")) + '</option>' : "";
             const sourceLabels = new Map(sources.map((source) => [String(source.backend || ""), String(source.displayName || source.backend || "")]));
-            return '<div class="actions compact"><button class="button subtle" type="button" data-model-catalog-sync' + disabled + '>' + escapeText(t("action.refresh", undefined, "Refresh installed CLIs and models")) + '</button><span class="hint">' + escapeText(sources.map((source) => `${source.displayName || source.backend}: ${source.status || "unavailable"}`).join(" · ")) + '</span></div><label class="field"><span>' + escapeText(t("studio.form.backend", undefined, "CLI backend")) + '</span><select data-role-config-field="backend"' + disabled + '>' +
+            const sourceSummary = sources.map((source) => {
+              const label = String(source.displayName || source.backend || "unknown");
+              const status = String(source.status || "unavailable");
+              const detail = String(source.detail || "").trim();
+              return `${label}: ${status}${detail ? ` (${detail})` : ""}`;
+            }).join(" · ");
+            return '<div class="actions compact"><button class="button subtle" type="button" data-model-catalog-sync' + disabled + '>' + escapeText(t("action.refresh", undefined, "Refresh installed CLIs and models")) + '</button><span class="hint">' + escapeText(sourceSummary) + '</span></div><label class="field"><span>' + escapeText(t("studio.form.backend", undefined, "CLI backend")) + '</span><select data-role-config-field="backend"' + disabled + '>' +
               backends.map((item) => {
                 const display = sourceLabels.get(item) || item;
-                return '<option value="' + escapeText(item) + '"' + (item === selectedBackend ? ' selected' : '') + '>' + escapeText(discoveredBackends.includes(item) ? `${display} (${item})` : `${display} (${item} · not currently runnable)`) + '</option>';
+                const sameAsId = display === item;
+                const label = discoveredBackends.includes(item)
+                  ? (sameAsId ? item : `${display} (${item})`)
+                  : (sameAsId ? `${item} · not currently runnable` : `${display} (${item} · not currently runnable)`);
+                return '<option value="' + escapeText(item) + '"' + (item === selectedBackend ? ' selected' : '') + '>' + escapeText(label) + '</option>';
               }).join("") +
               '</select></label><label class="field"><span>' + escapeText(t("studio.form.modelRef", undefined, "Model")) + '</span><select data-role-config-field="modelId"' + disabled + '>' + staleModel + unavailable +
               choices.map((item) => '<option value="' + escapeText(String(item.modelId || "")) + '"' + (String(item.modelId) === selectedModelId ? ' selected' : '') + '>' + escapeText(String(item.name ? `${item.name} · ${item.modelId}` : item.modelId || "")) + '</option>').join("") +

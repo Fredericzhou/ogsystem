@@ -47,8 +47,9 @@ import {
   type ControlPlanePrincipal,
   type ControlPlaneIdentityProvider
 } from "../runtime/identity.js";
-import { writeJsonFileAtomic, writeTextFileAtomic } from "../runtime/json-file.js";
-import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
+import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from "../runtime/json-file.js";
+import { isModelCatalogStale, loadModelCatalog } from "../runtime/model-catalog.js";
+import { loadModelSelection, resolveModelSelectionForSystem, validateModelSelection } from "../runtime/model-selection.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
   inspectRun,
@@ -852,6 +853,119 @@ async function handleApiModelsSync(workdir: string, response: ServerResponse): P
   const result = await syncProjectModels({ workdir });
   invalidateAllProjectCaches(workdir);
   jsonResponse(response, 200, { status: "ok", ...result });
+}
+
+function modelSelectionDigest(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+async function resolveProjectModelSelection(workdir: string, selectionValue: unknown): Promise<{
+  selection: ReturnType<typeof validateModelSelection>;
+  resolvedByRoleId: Record<string, unknown>;
+  warnings: string[];
+}> {
+  const selectionPath = resolve(workdir, ".ogs", "model-selection.json");
+  const selection = validateModelSelection(selectionValue, selectionPath);
+  const system = await loadSystemFromMermaid(resolve(workdir, "system.mmd"));
+  const catalog = await loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json")).catch(() => undefined);
+  const resolved = resolveModelSelectionForSystem({ system, selection, catalog });
+  const catalogIsStale = !catalog || isModelCatalogStale(catalog);
+  if (catalogIsStale) {
+    for (const roleId of system.roleIds) {
+      const requested = selection.roles?.[roleId]?.reasoningEffort ?? selection.defaults?.reasoningEffort;
+      if (requested && requested !== "auto") {
+        throw new Error(`REASONING_CAPABILITY_UNKNOWN: Reasoning capability is not confirmed for role "${roleId}"; refresh the model catalog before saving an explicit level.`);
+      }
+    }
+  }
+  return {
+    selection,
+    resolvedByRoleId: Object.fromEntries(resolved.resolvedByRoleId.entries()),
+    warnings: resolved.warnings
+  };
+}
+
+async function handleApiModelSelectionValidate(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const selectionValue = body.selection;
+  if (!selectionValue || typeof selectionValue !== "object" || Array.isArray(selectionValue)) {
+    throw new HttpError(400, "MODEL_SELECTION_REQUIRED", "selection is required.");
+  }
+  try {
+    const resolved = await resolveProjectModelSelection(workdir, selectionValue);
+    jsonResponse(response, 200, {
+      valid: true,
+      selection: resolved.selection,
+      resolvedByRoleId: resolved.resolvedByRoleId,
+      issues: [],
+      warnings: resolved.warnings
+    });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    const envelope = error && typeof error === "object" && "envelope" in error
+      ? (error as { envelope?: unknown }).envelope
+      : undefined;
+    const envelopeRecord = envelope && typeof envelope === "object" && !Array.isArray(envelope)
+      ? envelope as Record<string, unknown>
+      : undefined;
+    const stableReasoningCode = /^(REASONING_(?:UNSUPPORTED|CONFIG_FAILED|CAPABILITY_UNKNOWN))\b/.exec(error instanceof Error ? error.message : String(error))?.[1];
+    jsonResponse(response, 200, {
+      valid: false,
+      issues: [{
+        code: stableReasoningCode ?? (typeof envelopeRecord?.errorCode === "string" ? envelopeRecord.errorCode : "MODEL_SELECTION_INVALID"),
+        roleId: typeof envelopeRecord?.roleId === "string" ? envelopeRecord.roleId : undefined,
+        requested: typeof envelopeRecord?.requestedReasoningEffort === "string" ? envelopeRecord.requestedReasoningEffort : undefined,
+        message: typeof envelopeRecord?.message === "string" ? envelopeRecord.message : error instanceof Error ? error.message : String(error)
+      }],
+      warnings: []
+    });
+  }
+}
+
+async function handleApiModelSelectionSave(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const selectionValue = body.selection;
+  if (!selectionValue || typeof selectionValue !== "object" || Array.isArray(selectionValue)) {
+    throw new HttpError(400, "MODEL_SELECTION_REQUIRED", "selection is required.");
+  }
+  const expectedDigest = asString(body.expectedSelectionDigest);
+  if (!expectedDigest) throw new HttpError(400, "MODEL_SELECTION_DIGEST_REQUIRED", "expectedSelectionDigest is required.");
+  const selectionPath = resolve(workdir, ".ogs", "model-selection.json");
+  await withProjectWriteLock(workdir, "model-selection-save", async () => {
+    const current = await readJsonFile(selectionPath).catch(() => undefined);
+    const currentDigest = modelSelectionDigest(current ?? { configVersion: "3" });
+    if (expectedDigest && expectedDigest !== currentDigest) {
+      throw new HttpError(409, "MODEL_SELECTION_CONFLICT", "The model selection changed since it was loaded.", {
+        expectedSelectionDigest: expectedDigest,
+        currentSelectionDigest: currentDigest
+      });
+    }
+    let resolved: Awaited<ReturnType<typeof resolveProjectModelSelection>>;
+    try {
+      resolved = await resolveProjectModelSelection(workdir, selectionValue);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stableCode = /^(REASONING_(?:UNSUPPORTED|CONFIG_FAILED|CAPABILITY_UNKNOWN))\b/.exec(message)?.[1];
+      throw new HttpError(422, stableCode ?? "MODEL_SELECTION_INVALID", message);
+    }
+    await writeJsonFileAtomic(selectionPath, resolved.selection);
+    invalidateAllProjectCaches(workdir);
+    jsonResponse(response, 200, {
+      status: "saved",
+      selectionDigest: modelSelectionDigest(resolved.selection),
+      selection: resolved.selection,
+      resolvedByRoleId: resolved.resolvedByRoleId,
+      warnings: resolved.warnings
+    });
+  });
 }
 
 async function handleApiDesignGet(workdir: string, response: ServerResponse): Promise<void> {
@@ -2208,6 +2322,8 @@ const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["POST project/studio/bridge", async ({ state, request, response }) => handleApiStudioBridgeInspect(state.workdir, request, response)],
   ["GET project/studio/authoring", async ({ state, response }) => handleApiStudioAuthoringGet(state.workdir, response)],
   ["POST project/models/sync", async ({ state, response }) => handleApiModelsSync(state.workdir, response)],
+  ["POST project/model-selection/validate", async ({ state, request, response }) => handleApiModelSelectionValidate(state.workdir, request, response)],
+  ["PUT project/model-selection", async ({ state, request, response }) => handleApiModelSelectionSave(state.workdir, request, response)],
   ["POST project/studio/authoring", async ({ state, request, response }) => handleApiStudioAuthoringSave(state.workdir, request, response)],
   ["POST project/studio/authoring/import-mmd", async ({ state, request, response }) => handleApiStudioAuthoringImportMmd(state.workdir, request, response)],
   ["POST project/studio/authoring/generate-mmd", async ({ state, request, response }) => handleApiStudioAuthoringGenerateMmd(state.workdir, request, response)],

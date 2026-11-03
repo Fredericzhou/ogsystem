@@ -13,6 +13,8 @@ Current behavior is defined by source code, tests, active manuals, and [Decision
 - [Decisions](DECISIONS.md): accepted architecture decisions and current system invariants.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
 - [Shared resource architecture](shared-resource-architecture.md): shared Platform resource ownership and adapter boundaries.
+- [Model availability probe API](model-availability-probe-api.md): Team Site discovery and single-model probe contract for frontend integration.
+- [Role reasoning effort adaptation](reasoning-effort-adaptation-plan.md): long-term reasoning/thinking capability contract, adapter mapping, and acceptance method.
 - [Compiler semantics v1](compiler-semantics-v1.md): Mermaid/Semantic IR compilation rules, diagnostics, and lowering invariants.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions, shared contracts, build output, and test ownership.
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context, boundaries, and generated source.

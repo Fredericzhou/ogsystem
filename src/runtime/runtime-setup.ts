@@ -14,6 +14,7 @@ import { loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "./model-cat
 import { loadModelSelection, resolveModelSelectionForSystem, withDefaultModelSelection } from "./model-selection.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
+import { createRuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
 import { loadOgsSpecification, type OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
 import { compileSemanticIR } from "./semantic-ir-compiler.js";
@@ -41,6 +42,7 @@ import type {
   LoadedRolePackage,
   ModelCatalogEntry,
   ModelSelectionDefaults,
+  ReasoningEffortLevel,
   RuntimeConfig,
   RunContext,
   SystemDefinition,
@@ -100,6 +102,36 @@ function resolveOptionalProjectPath(args: {
   defaultBasename: string;
 }): string | undefined {
   return args.explicitPath ?? resolve(args.workdir, args.defaultBasename);
+}
+
+/**
+ * Reads the canonical audit stream to recover reasoning values that were observed
+ * during an earlier attempt. The stream is already part of the run evidence, so
+ * resume does not create a second state file for provider defaults.
+ */
+async function loadFrozenReasoningFromAudit(runDir: string): Promise<Map<string, ReasoningEffortLevel>> {
+  const frozen = new Map<string, ReasoningEffortLevel>();
+  const eventsPath = resolve(runDir, "events.ndjson");
+  const content = await readFile(eventsPath, "utf8").catch(() => "");
+  for (const line of content.split("\n")) {
+    if (!line.trim()) continue;
+    let event: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      event = parsed as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (event.type !== "audit" || event.requestedReasoningEffort !== "auto") continue;
+    const roleId = typeof event.roleId === "string" ? event.roleId : undefined;
+    const effective = typeof event.effectiveReasoningEffort === "string"
+      && ["off", "on", "low", "medium", "high", "xhigh", "max"].includes(event.effectiveReasoningEffort)
+      ? event.effectiveReasoningEffort as ReasoningEffortLevel
+      : undefined;
+    if (roleId && effective) frozen.set(roleId, effective);
+  }
+  return frozen;
 }
 
 function schemaProperties(value: unknown): Set<string> {
@@ -417,7 +449,7 @@ export async function prepareRuntimeSetup(args: {
         return [[roleId, {
           backend: seat.binding.modelRef.slice(0, separator),
           modelId: seat.binding.modelRef.slice(separator + 1),
-          fallbackModelId: effectiveModelSelection?.roles?.[roleId]?.fallbackModelId
+          fallback: effectiveModelSelection?.roles?.[roleId]?.fallback
         }]];
       }))
     : {};
@@ -434,11 +466,36 @@ export async function prepareRuntimeSetup(args: {
     args.modelCatalogModels,
     args.modelCatalogGeneratedAt
   );
+  const resumeEvidenceDir = args.resumeRunDir
+    ? (projectResume
+      ? resolve(resumeRoot, args.resumeRunDir)
+      : (args.resumeRunDir.startsWith("/")
+        ? resolve(args.resumeRunDir)
+        : resolve(args.workdir, runtimeConfig.runsDir, args.resumeRunDir)))
+    : undefined;
+  const frozenReasoningByRoleId = resumeEvidenceDir
+    ? await loadFrozenReasoningFromAudit(resumeEvidenceDir)
+    : undefined;
   const resolvedModelSelection = resolveModelSelectionForSystem({
     system: activeDesign ? { ...system, modelBinding: {} } : system,
     selection: modelSelection,
-    catalog: modelCatalog
+    catalog: modelCatalog,
+    frozenReasoningByRoleId
   });
+  if (args.resumeRunDir) {
+    for (const [roleId, resolved] of resolvedModelSelection.resolvedByRoleId) {
+      if (resolved.reasoningEffort !== "auto" || resolved.frozenReasoningEffort || resolved.effectiveReasoningEffort) continue;
+      if (resolved.reasoningCapability?.kind === "none") continue;
+      throw createRuntimeError({
+        errorCode: "REASONING_CAPABILITY_UNKNOWN",
+        errorCategory: "config",
+        stage: "resume",
+        retryable: false,
+        roleId,
+        message: `Role "${roleId}" uses reasoning auto, but no replayable effective reasoning value was recorded for resume.`
+      });
+    }
+  }
   const plan = createExecutionPlan(system, resolvedModelSelection.resolvedByRoleId);
   const resolvedProfilesPath = resolveOptionalProjectPath({
     workdir: assetWorkdir,

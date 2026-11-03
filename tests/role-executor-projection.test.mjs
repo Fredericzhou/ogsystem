@@ -472,7 +472,7 @@ async function prepareRoleExecutorFixture(args) {
       backend: role.backend ?? "opencode",
       modelId: role.modelId ?? "balanced-gpt52",
       modelRef: `${role.backend ?? "opencode"}/${role.modelId ?? "balanced-gpt52"}`,
-      ...(role.fallbackModelRef ? { fallbackModelRef: role.fallbackModelRef } : {}),
+      ...(role.fallback ? { fallback: role.fallback } : {}),
       bindingSource: "selection"
     }]));
   const plan = createExecutionPlan(system, resolvedModels);
@@ -1445,9 +1445,9 @@ test("executeRoleNode falls back once for retryable model channel errors and met
 start[开始] -->|START| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], fallbackModelRef: "provider/fallback" }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], fallback: { backend: "opencode", modelId: "fallback", modelRef: "fallback" } }]
   });
-  assert.equal(getExecutionPlanNode(fixture.plan, "reviewer").binding.fallbackModelRef, "provider/fallback");
+  assert.deepEqual(getExecutionPlanNode(fixture.plan, "reviewer").binding.fallback, { backend: "opencode", modelId: "fallback", modelRef: "fallback" });
   const state = createInitialState(fixture.plan, "fallback prompt");
   const requests = [];
   const result = await executeRoleNode({
@@ -1494,7 +1494,7 @@ test("executeRoleNode switches to the configured fallback backend", async () => 
 start[开始] -->|START| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|DONE| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "gpt-5.6-sol", fallbackModelRef: "opencode/openai/gpt-5.4" }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "gpt-5.6-sol", fallback: { backend: "opencode", modelId: "openai/gpt-5.4", modelRef: "openai/gpt-5.4" } }]
   });
   const state = createInitialState(fixture.plan, "cross backend fallback prompt");
   const requests = [];
@@ -1525,7 +1525,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
   assert.equal(requests.length, 2);
   assert.equal(requests[0].binding.backend, "codex");
   assert.equal(requests[1].binding.backend, "opencode");
-  assert.equal(requests[1].binding.modelId, "gpt-5.4");
+  assert.equal(requests[1].binding.modelId, "openai/gpt-5.4");
   assert.equal(requests[1].binding.modelRef, "openai/gpt-5.4");
 });
 

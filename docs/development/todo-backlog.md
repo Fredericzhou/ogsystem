@@ -17,7 +17,7 @@
 
 - **编排内核与语义（Semantic IR v1）**：受限 Mermaid DSL 解析、责任席位（Responsibility Seat）模型、State Schema 与确定性 Reducer、受限 Condition AST 条件路由、`parallel_split` 语义分支激活、`all_of` / `quorum_of` Join（含基础 `timeoutSeconds` / `onTimeout`）、Loop Scope 三层预算、`ERROR` / `ERROR.<code>` 异常路由。
 - **持久化、恢复与人工审核**：版本化状态快照（CAS / `eventId` 幂等提交）、Checkpoint WAL 重放与 `runtime-replay-benchmark` 基线、Runtime 原生人工审核（`approve / rework / pause / terminate` 及惰性超时自动收敛）。
-- **生产治理与评测门禁**：外部不可信输入默认包裹 `<ogs_external_data>` 并记录审计、基于 `callId`（`${executionId}:${phase}:${ordinal}`）的并发安全提示词预算账本（`RunPromptBudgetLedger`）、受限备选模型降级（`fallbackModelRef`，仅限模型通道瞬态故障）、Studio `.ogs/laws.json` 版本隔离配置，以及发布基线批次状态机（跨进程文件锁、摘要变更自动失效、跨版本对比）。
+- **生产治理与评测门禁**：外部不可信输入默认包裹 `<ogs_external_data>` 并记录审计、基于 `callId`（`${executionId}:${phase}:${ordinal}`）的并发安全提示词预算账本（`RunPromptBudgetLedger`）、受限备选模型降级（resolved `fallback`，仅限模型通道瞬态故障）、Studio `.ogs/laws.json` 版本隔离配置，以及发布基线批次状态机（跨进程文件锁、摘要变更自动失效、跨版本对比）。
 - **控制目录分离与双工作台隔离**：`--ogs-dir`（控制与运行证据根）与 `--workspace-dir`（纯业务工作区）显式分离；`TeamVersion` 发布摘要与运行 `team-version.json` 冻结；`project_task`（`<projectId>/.ogs/runs/`）与 `studio_simulation`（`.studio/simulations/`）存储、API、容量槽位与交付物严格隔离。
 - **角色源与共享资源目录**：独立 Git 角色源（`agency-agents` 与 `agency-agents-cn`）安全拉取、Front Matter 解析、`source.json` 溯源证明、复制到 Draft 向导及平台共享资源目录（模型、数据集、工具、存储目标）。
 - **可视化布局与 Team Site 工作台**：`Semantic IR -> Semantic Layout Projection -> ELK.js -> LayoutProjection -> GraphViewModel -> X6` 唯一显式分层布局链路；`RunQueryService` 基于游标与字节偏移的增量事件读取；Team Site 统一 `pageFrame` 响应式外壳、一级菜单紧凑头部、Studio 仿真运行态图谱只读锁，以及浮动面板级联避让与 `Escape` 焦点管理。
@@ -49,7 +49,7 @@
 
 - [ ] **超大前端视图文件按业务域渐进拆分**：在修改对应面板时，将 `apps/team-site/public/app/views/app.js`（5000+ 行）和 `src/visualizer/client-app.ts`（9000+ 行）按面板职责（如 `workbench`、`asset-drawer`、`build-panel`、`debug-panel`）拆分为独立 ESM 模块。**约束**：保持原生 ESM 调用，不引入 EventBus、PanelRegistry 或第三方前端框架。
 - [ ] **可扩展 Model Backend Registry**：在不改 Mermaid/Role 图语义的前提下，将 Codex、OpenCode 及后续主流 CLI 的执行路由收口到窄 `BackendAdapter`/Registry；Backend 是执行通道身份，`modelId` 是 backend-local opaque ID，不引入独立的 provider/vendor/source 字段。当前版本直接切换 selection/catalog/session schema，不做旧格式迁移或兼容层；保留现有会话复用、重试、取消、JSON 修复和证据记录。按独立阶段加入 Ollama HTTP 及已验证的主流 CLI adapter。Backend-native tools、skills、MCP 默认沿用所选 CLI 配置，不新增 OGS 管理矩阵。
-- [ ] **主流 CLI Backend 接入矩阵**：Registry 使用稳定的字符串 Backend ID，首批纳入 `codex`、`opencode`、`ollama`，并为 `claude-code`、`gemini-cli`、`copilot-cli`、`qwen-code`、`kimi-cli` 等保留可注册入口；只有完成 transport、取消、结构化输出、会话语义和本机探测验证的 CLI 才标记 runnable。仅能发现 CLI 或尚未验证 transport 的条目保留为 `unavailable`，不得伪造可运行模型；每个 adapter 独立维护模型发现和能力映射。
+- [ ] **主流 CLI Backend 接入矩阵**：Registry 使用稳定的字符串 Backend ID，首批纳入 `codex`、`opencode`、`ollama`、`pi`、`qwen`、`kimi`；Gemini 和其他 CLI 等待后续协议验证。只有完成 transport、取消、结构化输出、会话语义和本机探测验证的 CLI 才标记 runnable。仅能发现 CLI 或尚未验证 transport 的条目保留为 `unavailable`，不得伪造可运行模型；每个 adapter 独立维护模型发现和能力映射。
 - [ ] **Backend 图标本地注册表**：参考 CC Switch 的 `ProviderIcon`/本地图标映射方式，为每个 Backend 提供受控的 bundled SVG/PNG 或内联资源、可访问文本标签和通用 fallback；图标按 Backend ID 查找，不读取远程图片，不把图标 URL、厂商元数据或模型来源写入 selection/catalog。一个 CLI 可访问多个模型来源时仍只显示该 CLI Backend 图标，模型 ID 原样显示。
 - [ ] **单机文件型外部信号等待与项目生命周期补充**：当出现外部异步回调场景时，提供最小单机文件型 `signal` 恢复入口；按需补充已验证 Run 产物的显式导出（Artifact Promotion）校验与项目归档（Archived 只读）状态。
 

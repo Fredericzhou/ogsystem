@@ -30,6 +30,7 @@ import type {
   FlowContractPlan,
   GraphJoinMode,
   LoadedRolePackage,
+  ResolvedFallbackModel,
   RoleExecutionBinding,
   RuntimeErrorEnvelope,
   SystemDefinition
@@ -111,7 +112,7 @@ export type BindingSummary = {
   roleId: string;
   kind: RoleExecutionBinding["kind"];
   modelRef?: string;
-  fallbackModelId?: string;
+  fallback?: ResolvedFallbackModel;
   bindingSource?: "system" | "selection";
   profileId?: string;
 };
@@ -386,7 +387,7 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
     };
     if (node.binding.kind === "model") {
       summary.modelRef = node.binding.modelRef;
-      summary.fallbackModelId = node.binding.fallbackModelId;
+      summary.fallback = node.binding.fallback;
       summary.bindingSource = node.binding.bindingSource;
     }
     if (node.binding.kind === "profile") {

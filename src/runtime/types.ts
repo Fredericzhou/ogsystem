@@ -157,8 +157,12 @@ export type RoleExecutionBinding =
       backend: string;
       modelId: string;
       modelRef: string;
-      fallbackModelId?: string;
+      fallback?: ResolvedFallbackModel;
       variant?: string;
+      reasoningEffort?: ReasoningEffort;
+      effectiveReasoningEffort?: ReasoningEffortLevel;
+      /** Effective value frozen by a previous attempt and replayed on resume. */
+      frozenReasoningEffort?: ReasoningEffortLevel;
       timeoutMs?: number;
       maxOutputBytes?: number;
       bindingSource: "selection";
@@ -403,6 +407,63 @@ export type ModelCatalogCapabilitySummary = {
   toolcall: boolean;
 };
 
+/** Canonical OGS reasoning/thinking selection values. Provider-specific values stay in adapters. */
+export type ReasoningEffort =
+  | "auto"
+  | "off"
+  | "on"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
+
+export type ReasoningEffortLevel = Exclude<ReasoningEffort, "auto">;
+export type ReasoningEffortCapability = {
+  supported: true;
+  kind: "effort";
+  levels: Array<Exclude<ReasoningEffortLevel, "on">>;
+  default?: Exclude<ReasoningEffortLevel, "on">;
+};
+export type ReasoningToggleCapability = {
+  supported: true;
+  kind: "toggle";
+  levels: Array<"off" | "on">;
+  default?: "off" | "on";
+};
+export type ReasoningNoneCapability = {
+  supported: false;
+  kind: "none";
+  levels: [];
+  default?: never;
+};
+export type ReasoningCapability =
+  | ReasoningEffortCapability
+  | ReasoningToggleCapability
+  | ReasoningNoneCapability;
+
+export type ResolvedFallbackModel = {
+  backend: string;
+  modelId: string;
+  modelRef: string;
+  reasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: ReasoningEffortLevel;
+};
+
+export type ReasoningResolution = {
+  requested: ReasoningEffort;
+  effective?: ReasoningEffortLevel;
+  kind: ReasoningCapability["kind"];
+  supported: boolean;
+  capabilityDigest?: string;
+  providerValue?: string;
+};
+
+export type ReasoningErrorCode =
+  | "REASONING_UNSUPPORTED"
+  | "REASONING_CONFIG_FAILED"
+  | "REASONING_CAPABILITY_UNKNOWN";
+
 export type ModelCatalogSourceStatus =
   | "runnable"
   | "unavailable"
@@ -414,8 +475,9 @@ export type ModelCatalogSource = {
   backend: string;
   displayName: string;
   iconKey: string;
-  transport: "http" | "stdio-jsonrpc" | "cli-stdio";
-  sessionKind: "server-session" | "app-server-thread" | "logical-session";
+  transport: "http" | "stdio-jsonrpc" | "cli-stdio" | "acp-stdio" | "acp-http" | "rpc-stdio";
+  sessionKind: "server-session" | "app-server-thread" | "logical-session" | "process-session";
+  processOwnership: "spawned_by_ogs" | "attached_external";
   status: ModelCatalogSourceStatus;
   detail?: string;
 };
@@ -428,6 +490,7 @@ export type ModelCatalogEntry = {
   status?: string;
   capabilities: ModelCatalogCapabilitySummary;
   variants: string[];
+  reasoning?: ReasoningCapability;
 };
 
 export type ModelCatalog = {
@@ -443,7 +506,8 @@ export type ModelSelectionDefaults = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
-  fallbackModelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  fallback?: ResolvedFallbackModel;
 };
 
 export type ModelSelectionRoleOverride = {
@@ -452,7 +516,8 @@ export type ModelSelectionRoleOverride = {
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
-  fallbackModelId?: string;
+  reasoningEffort?: ReasoningEffort;
+  fallback?: ResolvedFallbackModel;
 };
 
 export type ModelSelectionSystemOverride = {
@@ -515,6 +580,11 @@ export type AuditRecord = {
   externalDataIsolated?: boolean;
   fallbackUsed?: boolean;
   primaryModelId?: string;
+  requestedReasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: ReasoningEffortLevel;
+  reasoningKind?: ReasoningCapability["kind"];
+  reasoningSupported?: boolean;
+  reasoningErrorCode?: ReasoningErrorCode;
 };
 
 export type PromptCallMeterRecord = {

@@ -15,7 +15,16 @@ import {
 } from "./model-backend-registry.js";
 import { getSideEffectByKey, recordSideEffect } from "./side-effect-store.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
-import type { CliTool, ExecutionProfile, RunContext } from "./types.js";
+import type {
+  CliTool,
+  ExecutionProfile,
+  ReasoningCapability,
+  ReasoningEffort,
+  ReasoningErrorCode,
+  ReasoningEffortLevel,
+  ResolvedFallbackModel,
+  RunContext
+} from "./types.js";
 
 type JsonSchemaShape = {
   type?: string;
@@ -67,7 +76,10 @@ export type ExecutorBinding =
       backend: ModelBackendId;
       modelId: string;
       modelRef: string;
-      fallbackModelId?: string;
+      fallback?: ResolvedFallbackModel;
+      reasoningEffort?: ReasoningEffort;
+      effectiveReasoningEffort?: ReasoningEffortLevel;
+      frozenReasoningEffort?: ReasoningEffortLevel;
       variant?: string;
     }
   | {
@@ -88,6 +100,8 @@ export type ExecutorRequest = {
   env?: Record<string, string>;
   timeoutMs: number;
   maxOutputBytes: number;
+  reasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: ReasoningEffortLevel;
   signal?: AbortSignal;
   dryRunOutputEvent?: string;
   sessionId?: string;
@@ -100,6 +114,10 @@ export type ExecutorRequest = {
     output?: string;
     outputChars?: number;
   }) => Promise<void>;
+  runId?: string;
+  executionId?: string;
+  attempt?: number;
+  onEvent?: import("./agent-client-types.js").AgentEventSink;
 };
 
 export type ExecutorResult = {
@@ -115,6 +133,11 @@ export type ExecutorResult = {
   profileId?: string;
   toolRef?: string;
   command?: string;
+  requestedReasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: ReasoningEffortLevel;
+  reasoningKind?: ReasoningCapability["kind"];
+  reasoningSupported?: boolean;
+  reasoningErrorCode?: ReasoningErrorCode;
 };
 
 export type ExecutorServerMetadata = {
@@ -210,6 +233,10 @@ export function createDefaultExecutor(args: {
             messageId,
             modelId: request.binding.modelId,
             backend: backendId,
+            requestedReasoningEffort: request.reasoningEffort ?? request.binding.reasoningEffort,
+            ...(request.effectiveReasoningEffort ?? request.binding.frozenReasoningEffort ?? request.binding.effectiveReasoningEffort
+              ? { effectiveReasoningEffort: request.effectiveReasoningEffort ?? request.binding.frozenReasoningEffort ?? request.binding.effectiveReasoningEffort }
+              : {}),
             toolRef: backendId === "opencode"
               ? `model.${request.binding.modelId}`
               : `model.${backendId}/${request.binding.modelId}`,
@@ -230,7 +257,7 @@ export function createDefaultExecutor(args: {
           sessionsByBackend.set(backendId, session);
         }
 
-        return session.execute({
+        const result = await session.execute({
           roleId: request.roleId,
           sessionKey: request.sessionKey,
           sessionId: request.sessionId,
@@ -238,14 +265,26 @@ export function createDefaultExecutor(args: {
           schema: request.schema,
           modelId: request.binding.modelId,
           variant: request.binding.variant,
+          reasoningEffort: request.reasoningEffort ?? request.binding.reasoningEffort,
+          effectiveReasoningEffort: request.effectiveReasoningEffort
+            ?? request.binding.frozenReasoningEffort
+            ?? request.binding.effectiveReasoningEffort,
           workdir: request.workdir,
           directory: request.directory,
           timeoutMs: request.timeoutMs,
           maxOutputBytes: request.maxOutputBytes,
           signal: request.signal,
           promptCallPhase: request.promptCallPhase,
-          onPromptCall: request.onPromptCall
+          onPromptCall: request.onPromptCall,
+          runId: request.runId,
+          executionId: request.executionId,
+          attempt: request.attempt,
+          onEvent: request.onEvent
         });
+        return {
+          ...result,
+          requestedReasoningEffort: result.requestedReasoningEffort ?? (request.reasoningEffort ?? request.binding.reasoningEffort)
+        };
       }
 
       // CLI tool executions are isolated per request and do not rely on model backend state.

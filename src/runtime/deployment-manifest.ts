@@ -11,6 +11,7 @@ import { compileExecutionSnapshot } from "./compiler.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
+import { resolveExecutable } from "./cli-adapter-support.js";
 import { loadOgsSpecification } from "./ogs-spec-loader.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
@@ -178,9 +179,13 @@ export async function generateDeploymentManifest(args: {
     tools,
     userProfile
   });
-  const [opencode, codex] = await Promise.all([
+  const kimiCommand = await resolveExecutable("kimi");
+  const [opencode, codex, pi, qwen, kimi] = await Promise.all([
     getCliVersion("opencode", workdir),
-    getCliVersion("codex", workdir)
+    getCliVersion("codex", workdir),
+    getCliVersion("pi", workdir),
+    getCliVersion("qwen", workdir),
+    kimiCommand ? getCliVersion(kimiCommand, workdir) : Promise.resolve({ status: "unavailable" as const })
   ]);
   const modelSelectionSummary = Object.fromEntries(
     Array.from(resolvedModels.resolvedByRoleId.entries()).map(([roleId, selection]) => [roleId, {
@@ -202,7 +207,7 @@ export async function generateDeploymentManifest(args: {
       platform: platform(),
       arch: arch()
     },
-    modelClis: { opencode, codex },
+    modelClis: { opencode, codex, pi, qwen, kimi },
     project: {
       systemId: system.systemId,
       systemVersion: system.systemVersion,

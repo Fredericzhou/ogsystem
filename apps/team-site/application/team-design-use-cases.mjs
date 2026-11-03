@@ -118,7 +118,6 @@ export function createTeamDesignUseCases({
       if (role?.bindingKind !== "model") continue;
       const override = {};
       const modelRef = String(role.modelRef || "").trim();
-      const fallbackModelId = String(role.fallbackModelId || "").trim();
       if (role.modelSelectionSource !== "default") {
         const explicitBackend = String(role.backend || "").trim();
         const explicitModelId = String(role.modelId || "").trim();
@@ -132,12 +131,10 @@ export function createTeamDesignUseCases({
         } else {
           throw new Error(`TEAM_MODEL_BINDING_REQUIRED: select a runnable model for ${roleId} before saving.`);
         }
-      } else if (fallbackModelId && current.modelSelection?.defaults?.backend && current.modelSelection?.defaults?.modelId) {
-        override.backend = current.modelSelection.defaults.backend;
-        override.modelId = current.modelSelection.defaults.modelId;
       }
-      if (fallbackModelId) override.fallbackModelId = fallbackModelId;
+      if (role.fallback) override.fallback = role.fallback;
       if (override.backend && override.modelId) roleOverrides[roleId] = override;
+      else if (override.fallback) roleOverrides[roleId] = override;
     }
     return {
       configVersion: "3",

@@ -7,10 +7,17 @@ import { ConfigValidationError } from "./config.js";
 import { OpencodeExecutionError } from "./opencode-executor.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import type {
+  ReasoningErrorCode,
   RuntimeErrorCategory,
   RuntimeErrorEnvelope,
   RuntimeErrorStage
 } from "./types.js";
+
+const REASONING_ERROR_CODES = new Set<ReasoningErrorCode>([
+  "REASONING_UNSUPPORTED",
+  "REASONING_CONFIG_FAILED",
+  "REASONING_CAPABILITY_UNKNOWN"
+]);
 
 /**
  * Holds the canonical envelope emitted by runtime stages so the error surface can remain immutable.
@@ -80,11 +87,41 @@ export function normalizeRuntimeError(
   }
 
   if (error instanceof OpencodeExecutionError) {
+    const reasoningCode = error.message.match(/^(REASONING_(?:UNSUPPORTED|CONFIG_FAILED|CAPABILITY_UNKNOWN))\b/)?.[1] as ReasoningErrorCode | undefined;
+    if (reasoningCode && REASONING_ERROR_CODES.has(reasoningCode)) {
+      return {
+        errorCode: reasoningCode,
+        errorCategory: reasoningCode === "REASONING_CONFIG_FAILED" ? "execution" : "config",
+        message: error.message,
+        retryable: false,
+        stage: defaults.stage,
+        roleId: defaults.roleId,
+        runId: defaults.runId,
+        branchId: defaults.branchId,
+        line: defaults.line
+      };
+    }
     return {
       errorCode: "OPENCODE_EXECUTION_ERROR",
       errorCategory: "execution",
       message: error.message,
       retryable: true,
+      stage: defaults.stage,
+      roleId: defaults.roleId,
+      runId: defaults.runId,
+      branchId: defaults.branchId,
+      line: defaults.line
+    };
+  }
+
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const reasoningCode = rawMessage.match(/^(REASONING_(?:UNSUPPORTED|CONFIG_FAILED|CAPABILITY_UNKNOWN))\b/)?.[1] as ReasoningErrorCode | undefined;
+  if (reasoningCode && REASONING_ERROR_CODES.has(reasoningCode)) {
+    return {
+      errorCode: reasoningCode,
+      errorCategory: reasoningCode === "REASONING_CONFIG_FAILED" ? "execution" : "config",
+      message: rawMessage,
+      retryable: false,
       stage: defaults.stage,
       roleId: defaults.roleId,
       runId: defaults.runId,

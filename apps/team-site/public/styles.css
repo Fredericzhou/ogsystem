@@ -1524,8 +1524,8 @@ body { min-width: 0; font-size: 15px; }
 .landing-case-card[data-accent="coral"] .case-mini-graph i:nth-child(2) { background: #f5b8a5; }
 .landing-case-card[data-accent="blue"] .case-mini-graph i:nth-child(3) { background: #9fc3f1; }
 .landing-case-card[data-accent="mint"] .case-mini-graph b { background: #8bd0b2; }
-.platform-config-grid { grid-template-columns: repeat(2, minmax(300px, 1fr)); }
-.platform-settings-panel { grid-column: 1 / -1; }
+.platform-config-grid { grid-template-columns: minmax(190px, 220px) minmax(420px, 1fr) minmax(260px, 290px); align-items: stretch; }
+.platform-settings-panel { grid-column: auto; }
 .platform-discovery-panel { min-width: 0; }
 .platform-source-row,
 .platform-model-row { border-bottom: 1px solid var(--line); padding: 12px 0; }
@@ -1550,6 +1550,17 @@ body { min-width: 0; font-size: 15px; }
 .platform-row-main code { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; padding: 4px 6px; width: fit-content; max-width: 100%; }
 .platform-capabilities { display: flex; flex-wrap: wrap; gap: 6px; }
 .platform-capabilities span { background: var(--canvas); border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; padding: 3px 7px; }
+.platform-summary { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 14px; padding: 10px 14px; }
+.platform-summary strong { color: var(--ink); font-size: 16px; margin-right: 3px; }
+.platform-model-toolbar { align-items: center; display: flex; gap: 6px; }
+.platform-model-toolbar input, .platform-model-toolbar select { background: var(--canvas); border: 1px solid var(--line); border-radius: 5px; box-sizing: border-box; color: var(--ink); min-height: 32px; padding: 5px 8px; }
+.platform-model-toolbar input { width: 130px; }
+.platform-model-toolbar select { width: 92px; }
+.platform-probe-button { font-size: 11px; min-height: 28px; padding: 0 8px; }
+.platform-model-row { min-height: 54px; padding: 7px 0; }
+.platform-model-row .platform-row-title { gap: 6px; }
+.platform-model-row .platform-row-title strong { flex: 1 1 auto; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.platform-models-panel .platform-list { max-height: 540px; }
 .platform-empty { color: var(--muted); font-size: 13px; line-height: 1.55; padding: 14px 0; }
 .platform-field-hint { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .platform-settings-panel .panel-head { align-items: flex-start; }
@@ -1557,11 +1568,13 @@ body { min-width: 0; font-size: 15px; }
 .status-chip.warning { background: #fff4df; border-color: #e8c985; color: #855b08; }
 .status-chip.error { background: #fff0ed; border-color: #e7aaa0; color: #9d3427; }
 .platform-settings-panel .compact-form { align-items: start; column-gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; row-gap: 12px; }
+.platform-settings-panel .compact-form { grid-template-columns: minmax(0, 1fr); }
 .platform-settings-panel .compact-form > label { grid-template-rows: minmax(16px, auto) 42px minmax(30px, auto); }
 .platform-settings-panel .compact-form > label > :is(select, input) { box-sizing: border-box; height: 42px; min-height: 42px; }
 .platform-settings-panel .compact-form .primary-button { align-self: end; min-height: 42px; }
 .platform-settings-panel .compact-form .form-status { grid-column: 1 / -1; }
 .platform-runtime-status { color: var(--gold); }
+@media (max-width: 1100px) { .platform-config-grid { grid-template-columns: minmax(170px, 1fr) minmax(360px, 2fr); } .platform-settings-panel { grid-column: 1 / -1; } .platform-settings-panel .compact-form { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; } }
 @media (max-width: 900px) { .platform-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .platform-settings-panel .compact-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) {
   .platform-config-grid { grid-template-columns: minmax(0, 1fr); }

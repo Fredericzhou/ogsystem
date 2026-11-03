@@ -18,7 +18,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { listJsonSchemaIssues } from "./json-schema.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import { hasExited, terminateChildProcessTree, waitForChildExit } from "./child-process-lifecycle.js";
-import type { LoadedModelPackage } from "./types.js";
+import type { LoadedModelPackage, ReasoningEffort } from "./types.js";
 
 /**
  * Handles the OpenCode server lifecycle, sessions, and structured-output plumbing for model roles.
@@ -78,6 +78,7 @@ type SessionApi = {
       modelID: string;
     };
     variant?: string;
+    reasoningEffort?: ReasoningEffort;
     format?: {
       type: "json_schema";
       schema: Record<string, unknown>;
@@ -183,6 +184,8 @@ function resolveVariant(args?: Record<string, string | boolean>): string | undef
     return undefined;
   }
 
+  // `reasoningEffort` is a separate execution field. Ignore a legacy manifest
+  // key here rather than allowing it to alter the backend-native variant.
   const supportedKeys = new Set(["variant", "reasoningEffort"]);
   const unsupportedKeys = Object.keys(args).filter((key) => !supportedKeys.has(key));
   if (unsupportedKeys.length > 0) {
@@ -191,7 +194,7 @@ function resolveVariant(args?: Record<string, string | boolean>): string | undef
     );
   }
 
-  const variant = args.variant ?? args.reasoningEffort;
+  const variant = args.variant;
   if (variant === undefined) {
     return undefined;
   }
@@ -903,6 +906,8 @@ export async function executeOpencodeModelRole(
     modelPackage?: LoadedModelPackage;
     modelRef?: string;
     variant?: string;
+    reasoningEffort?: ReasoningEffort;
+    effectiveReasoningEffort?: Exclude<ReasoningEffort, "auto">;
     workdir: string;
     /** Coding project used for OpenCode SDK session scope. */
     directory?: string;
@@ -930,6 +935,10 @@ export async function executeOpencodeModelRole(
   sessionId: string;
   messageId?: string;
   serverPid?: number;
+  requestedReasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: Exclude<ReasoningEffort, "auto">;
+  reasoningKind?: "effort";
+  reasoningSupported?: boolean;
 }> {
   if (typeof args.schema !== "object" || args.schema === null || Array.isArray(args.schema)) {
     throw new Error(`Role "${args.roleId}" output schema must be a JSON object`);
@@ -942,6 +951,8 @@ export async function executeOpencodeModelRole(
   const { providerID, modelID } = splitModelRef(resolvedModelRef);
   const schema = args.schema as Record<string, unknown>;
   const variant = args.variant ?? resolveVariant(args.modelPackage?.manifest.args);
+  const reasoningEffort = args.reasoningEffort;
+  const configuredReasoningEffort = args.effectiveReasoningEffort ?? (reasoningEffort !== "auto" ? reasoningEffort : undefined);
   // Start a local OpenCode server only when the caller has not already supplied one.
   const ownRunClient = args.runClient
     ? undefined
@@ -1077,6 +1088,7 @@ export async function executeOpencodeModelRole(
                       modelID
                     },
                     variant,
+                    ...(configuredReasoningEffort ? { reasoningEffort: configuredReasoningEffort } : {}),
                     ...(mode === "structured"
                       ? {
                           format: {
@@ -1238,7 +1250,11 @@ export async function executeOpencodeModelRole(
                 }),
                 sessionId,
                 messageId,
-                serverPid: runClient.pid
+                serverPid: runClient.pid,
+                  ...(reasoningEffort ? {
+                  requestedReasoningEffort: reasoningEffort,
+                  ...(configuredReasoningEffort ? { effectiveReasoningEffort: configuredReasoningEffort, reasoningKind: "effort" as const, reasoningSupported: true } : {})
+                } : {})
               };
             } catch (error) {
               if (!isStructuredOutputToolChoiceUnsupported(getErrorMessage(error))) {
@@ -1264,7 +1280,11 @@ export async function executeOpencodeModelRole(
                 }),
                 sessionId,
                 messageId,
-                serverPid: runClient.pid
+                serverPid: runClient.pid,
+                ...(reasoningEffort ? {
+                  requestedReasoningEffort: reasoningEffort,
+                  ...(configuredReasoningEffort ? { effectiveReasoningEffort: configuredReasoningEffort, reasoningKind: "effort" as const, reasoningSupported: true } : {})
+                } : {})
               };
             }
           } catch (error) {

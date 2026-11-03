@@ -190,6 +190,14 @@ function findExecutable(command: string): string | undefined {
     }
   }
 
+  const knownLocalPaths: Record<string, string[]> = {
+    pi: ["/Users/fred/.local/bin/pi"],
+    kimi: ["/Users/fred/.kimi-code/bin/kimi"]
+  };
+  for (const candidate of knownLocalPaths[command] ?? []) {
+    if (fileAccessible(candidate)) return candidate;
+  }
+
   return undefined;
 }
 
@@ -478,7 +486,7 @@ export async function runDoctor(args: {
     status: "ok",
     required,
     missingRequired: [],
-    checks: Array.from(new Set(["opencode", "codex", ...required])).map((command) => checkCommand(command)),
+    checks: Array.from(new Set(["opencode", "codex", "pi", "qwen", "kimi", ...required])).map((command) => checkCommand(command)),
     errors: [],
     warnings: [],
     notes: [],

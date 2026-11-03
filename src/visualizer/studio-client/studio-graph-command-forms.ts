@@ -331,11 +331,18 @@ function extractStudioModelOptions(context: StudioCommandValidationContext): Stu
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => {
-      const backend = asTrimmedStringOrEmpty(entry.backend);
-      const modelId = asTrimmedStringOrEmpty(entry.modelId) || asTrimmedStringOrEmpty(entry.id);
-      const ref = backend && modelId ? `${backend}/${modelId}` : "";
+      const backend = asTrimmedStringOrEmpty(entry.backend) || asTrimmedStringOrEmpty(entry.provider);
+      const modelId = asTrimmedStringOrEmpty(entry.modelId) || asTrimmedStringOrEmpty(entry.model) || asTrimmedStringOrEmpty(entry.id) || (() => {
+        const ref = asTrimmedStringOrEmpty(entry.ref);
+        const separator = ref.indexOf("/");
+        return separator > 0 ? ref.slice(separator + 1) : ref;
+      })();
+      const explicitRef = asTrimmedStringOrEmpty(entry.ref);
+      const ref = explicitRef
+        ? (backend === "opencode" && !explicitRef.startsWith("opencode/") ? `opencode/${explicitRef}` : explicitRef)
+        : (backend && modelId ? `${backend}/${modelId}` : "");
       const name = asTrimmedStringOrEmpty(entry.name);
-      const labelParts = [name || modelId || ref, backend && modelId ? `${backend} · ${modelId}` : ""].filter(Boolean);
+      const labelParts = [name || modelId || ref, backend && modelId ? `${backend}/${modelId}` : ""].filter(Boolean);
       return {
         ref,
         label: labelParts.length ? labelParts.join(" - ") : ref

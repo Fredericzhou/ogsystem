@@ -469,9 +469,9 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await page.locator(`#studio-assets-roles [data-studio-asset-role="${roleId}"]`).click();
     await inspector.locator('[data-studio-role-field="bindingKind"]').selectOption("model");
     await inspector.locator('[data-studio-role-field="modelRef"]').selectOption("codex/gpt-6-luna");
-    assert.equal(await inspector.locator('[data-studio-role-field="fallbackModelRef"]').count(), 1, "model-bound roles can select a fallback model");
+    assert.equal(await inspector.locator('[data-studio-role-field="fallback"]').count(), 1, "model-bound roles can select a fallback model");
     assert.equal(await inspector.locator(".studio-contract-permissions").count(), 1, "the role inspector summarizes its contract permissions");
-    await inspector.locator('[data-studio-role-field="fallbackModelRef"]').selectOption("codex/gpt-6-luna");
+    await inspector.locator('[data-studio-role-field="fallback"]').selectOption(`codex\u0000gpt-6-luna`);
     await inspector.locator('[data-studio-role-field="routingMode"]').selectOption("parallel_split");
     await inspector.locator('[data-studio-role-field="loopMax"]').fill("3");
     await inspector.locator('[data-studio-role-field="contextMap"]').fill('{"brief":"global.task"}');
@@ -574,10 +574,10 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
-    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "gpt-6-luna" } }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(persistedDesign.authoring.roles[roleId].contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify({ authoring: persistedDesign.authoring, assets: persistedAssets }, null, 2));
     assert.equal(persistedDesign.authoring.roles[roleId].modelRef, "codex/gpt-6-luna");
-    assert.equal(persistedDesign.authoring.roles[roleId].fallbackModelRef, "codex/gpt-6-luna");
+    assert.deepEqual(persistedDesign.authoring.roles[roleId].fallback, { backend: "codex", modelId: "gpt-6-luna", modelRef: "gpt-6-luna" });
     assert.equal(persistedDesign.authoring.roles[roleId].bindingKind, "model");
     assert.equal(persistedDesign.authoring.roles[roleId].backend, "codex");
     assert.equal(persistedDesign.authoring.roles[execRoleId].bindingKind, "exec");
@@ -603,7 +603,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
     assert.equal(persistedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
     assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "rework", "terminate"]);
-    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallbackModelRef: "codex/gpt-6-luna" }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
+    assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "gpt-6-luna" } }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
     if (openCodeModel && openCodeRoleId) {
       const selectionRef = openCodeModel.selectionRef || `${openCodeModel.backend}/${openCodeModel.id}`;
       assert.equal(persistedDesign.authoring.roles[openCodeRoleId].modelRef, selectionRef);

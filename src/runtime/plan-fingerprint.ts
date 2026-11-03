@@ -146,8 +146,21 @@ function buildModelSelectionFingerprintComponent(
     .map(([roleId, resolvedModel]) => ({
       identity: {
         roleId,
+        backend: resolvedModel.backend,
+        modelId: resolvedModel.modelId,
         modelRef: resolvedModel.modelRef,
-        fallbackModelId: resolvedModel.fallbackModelId ?? null,
+        reasoningEffort: resolvedModel.reasoningEffort ?? null,
+        effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort ?? null,
+        reasoningCapability: resolvedModel.reasoningCapability ?? null,
+        fallback: resolvedModel.fallback
+          ? {
+              backend: resolvedModel.fallback.backend,
+              modelId: resolvedModel.fallback.modelId,
+              modelRef: resolvedModel.fallback.modelRef,
+              reasoningEffort: resolvedModel.fallback.reasoningEffort ?? null,
+              effectiveReasoningEffort: resolvedModel.fallback.effectiveReasoningEffort ?? null
+          }
+          : null,
         variant: resolvedModel.variant ?? null,
         timeoutMs: resolvedModel.timeoutMs ?? null,
         maxOutputBytes: resolvedModel.maxOutputBytes ?? null,
@@ -155,8 +168,21 @@ function buildModelSelectionFingerprintComponent(
       },
       sourceHints: {
         roleId,
+        backend: resolvedModel.backend,
+        modelId: resolvedModel.modelId,
         modelRef: resolvedModel.modelRef,
-        fallbackModelId: resolvedModel.fallbackModelId ?? null
+        reasoningEffort: resolvedModel.reasoningEffort ?? null,
+        effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort ?? null,
+        reasoningCapability: resolvedModel.reasoningCapability ?? null,
+        fallback: resolvedModel.fallback
+          ? {
+              backend: resolvedModel.fallback.backend,
+              modelId: resolvedModel.fallback.modelId,
+              modelRef: resolvedModel.fallback.modelRef,
+              reasoningEffort: resolvedModel.fallback.reasoningEffort ?? null,
+              effectiveReasoningEffort: resolvedModel.fallback.effectiveReasoningEffort ?? null
+            }
+          : null
       }
     }));
 }

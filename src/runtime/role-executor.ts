@@ -319,6 +319,20 @@ function buildFailureEnvelope(args: {
     });
   }
 
+  const reasoningCode = /^(REASONING_UNSUPPORTED|REASONING_CONFIG_FAILED|REASONING_CAPABILITY_UNKNOWN):/.exec(errorMessage)?.[1];
+  if (reasoningCode) {
+    return {
+      errorCode: reasoningCode,
+      errorCategory: "config",
+      message: args.message ?? errorMessage,
+      retryable: false,
+      stage: "execute",
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    };
+  }
+
   if (args.error instanceof ToolExecutionError) {
     const errorCode =
       args.error.category === "timeout"
@@ -339,6 +353,19 @@ function buildFailureEnvelope(args: {
   }
 
   if (args.error instanceof OpencodeExecutionError) {
+    const reasoningCode = /^(REASONING_UNSUPPORTED|REASONING_CONFIG_FAILED|REASONING_CAPABILITY_UNKNOWN):/.exec(args.error.message)?.[1];
+    if (reasoningCode) {
+      return {
+        errorCode: reasoningCode,
+        errorCategory: "config",
+        message: args.message ?? args.error.message,
+        retryable: false,
+        stage: "execute",
+        roleId: args.roleId,
+        runId: args.runId,
+        branchId: args.branchId
+      };
+    }
     return {
       errorCode: "OPENCODE_EXECUTION_ERROR",
       errorCategory: "execution",
@@ -617,6 +644,7 @@ export async function executeRoleNode(args: {
   let outputChars = 0;
   let fallbackUsed = false;
   let primaryModelId: string | undefined;
+  let lastExecutionResult: Awaited<ReturnType<Executor["execute"]>> | undefined;
   const logger = args.logger ?? createRunConsoleLogger(false);
 
   try {
@@ -879,6 +907,11 @@ export async function executeRoleNode(args: {
         await recordCall(callId, event.phase, event.prompt, event.output ?? "");
       } : undefined;
       const callId = `${execution.executionId}:${phase}:1`;
+      const reusableSessionId = binding.kind === "model"
+        && resolvedBinding?.binding?.kind === "model"
+        && binding.backend === resolvedBinding.binding.backend
+        ? existingSession?.sessionId
+        : undefined;
       if (!reportsPromptCalls) {
         await reservePromptBudget({
           context: args.runContext,
@@ -904,9 +937,23 @@ export async function executeRoleNode(args: {
             : resolvedBinding!.env,
           timeoutMs: resolvedBinding!.timeoutMs,
           maxOutputBytes: resolvedBinding!.maxOutputBytes,
+          reasoningEffort: binding.kind === "model" ? binding.reasoningEffort : undefined,
+          effectiveReasoningEffort: binding.kind === "model"
+            ? (binding.frozenReasoningEffort ?? binding.effectiveReasoningEffort)
+            : undefined,
           signal: args.signal,
           dryRunOutputEvent: pickDryRunEvent({ node: args.node, branch: currentBranch, state: args.state, plan: args.plan, dryRunScenario: args.dryRunScenario }),
-          sessionId: existingSession?.sessionId,
+          // A session id belongs to its backend. Cross-backend fallback must start a fresh session.
+          sessionId: reusableSessionId,
+          runId: args.runContext.runId,
+          executionId: execution.executionId,
+          attempt: args.attempt,
+          onEvent: async (event) => {
+            await filesystemArtifactStore.appendEvent(args.runContext, {
+              type: "agent_event",
+              ...event
+            });
+          },
           ...(reportsPromptCalls ? { promptCallPhase: phase, onPromptCall } : {})
         });
       } catch (error) {
@@ -922,16 +969,24 @@ export async function executeRoleNode(args: {
     };
     try {
       executionResult = await invokeMetered(resolvedBinding.binding, "primary");
+      lastExecutionResult = executionResult;
     } catch (error) {
       const binding = resolvedBinding.binding;
-      if (binding.kind !== "model" || !binding.fallbackModelId || !isRetryableModelChannelError(error)) throw error;
+      const fallback = binding.kind === "model" ? binding.fallback : undefined;
+      if (binding.kind !== "model" || !fallback || !isRetryableModelChannelError(error)) throw error;
       fallbackUsed = true;
       primaryModelId = binding.modelId;
       executionResult = await invokeMetered({
         ...binding,
-        modelId: binding.fallbackModelId,
-        modelRef: binding.fallbackModelId
+        backend: fallback.backend,
+        modelId: fallback.modelId,
+        modelRef: fallback.modelRef,
+        reasoningEffort: fallback.reasoningEffort ?? binding.reasoningEffort,
+        effectiveReasoningEffort: fallback.effectiveReasoningEffort
+          ?? binding.frozenReasoningEffort
+          ?? binding.effectiveReasoningEffort
       }, "fallback");
+      lastExecutionResult = executionResult;
     } finally {
       await stopRoleWaitHeartbeat();
     }
@@ -1025,7 +1080,12 @@ export async function executeRoleNode(args: {
       estimatedOutputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedOutputTokens, 0),
       externalDataIsolated: args.effectiveLaw.isolateExternalData,
       fallbackUsed,
-      primaryModelId
+      primaryModelId,
+      requestedReasoningEffort: executionResult.requestedReasoningEffort,
+      effectiveReasoningEffort: executionResult.effectiveReasoningEffort,
+      reasoningKind: executionResult.reasoningKind,
+      reasoningSupported: executionResult.reasoningSupported,
+      reasoningErrorCode: executionResult.reasoningErrorCode
     });
 
     if (executionResult.sessionId) {
@@ -1141,7 +1201,17 @@ export async function executeRoleNode(args: {
       estimatedOutputTokens: promptCalls.reduce((sum, call) => sum + call.estimatedOutputTokens, 0),
       externalDataIsolated: args.effectiveLaw.isolateExternalData,
       fallbackUsed,
-      primaryModelId
+      primaryModelId,
+      requestedReasoningEffort: lastExecutionResult?.requestedReasoningEffort
+        ?? (resolvedBinding?.binding?.kind === "model" ? resolvedBinding.binding.reasoningEffort : undefined),
+      effectiveReasoningEffort: lastExecutionResult?.effectiveReasoningEffort,
+      reasoningKind: lastExecutionResult?.reasoningKind,
+      reasoningSupported: lastExecutionResult?.reasoningSupported,
+      reasoningErrorCode: lastExecutionResult?.reasoningErrorCode ?? (
+        ["REASONING_UNSUPPORTED", "REASONING_CONFIG_FAILED", "REASONING_CAPABILITY_UNKNOWN"].includes(failure.errorCode)
+          ? failure.errorCode as "REASONING_UNSUPPORTED" | "REASONING_CONFIG_FAILED" | "REASONING_CAPABILITY_UNKNOWN"
+          : undefined
+      )
     });
     if (executionError?.sessionId) {
       await recordRoleSession({

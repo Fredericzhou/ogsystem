@@ -55,7 +55,10 @@ export function resolveExecutionBinding(args: {
         backend: args.node.binding.backend,
         modelId: args.node.binding.modelId,
         modelRef,
-        fallbackModelId: args.node.binding.fallbackModelId,
+        fallback: args.node.binding.fallback,
+        reasoningEffort: args.node.binding.reasoningEffort,
+        effectiveReasoningEffort: args.node.binding.effectiveReasoningEffort,
+        frozenReasoningEffort: args.node.binding.frozenReasoningEffort,
         variant
       },
       bindingLabel: `model:${args.node.binding.backend}/${args.node.binding.modelId}`,
