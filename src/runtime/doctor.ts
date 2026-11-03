@@ -491,7 +491,7 @@ export async function runDoctor(args: {
     status: "ok",
     required,
     missingRequired: [],
-    checks: Array.from(new Set(["opencode", "codex", ...required])).map((command) => checkCommand(command)),
+    checks: Array.from(new Set(["opencode", "codex", "pi", "qwen", "kimi", ...required])).map((command) => checkCommand(command)),
     errors: [],
     warnings: [],
     notes: [],

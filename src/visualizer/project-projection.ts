@@ -1312,6 +1312,12 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
 
   return {
     workdir,
+    modelSelection: context.modelSelection ?? null,
+    modelSelectionDigest: context.modelSelection
+      ? `sha256:${createHash("sha256").update(JSON.stringify(context.modelSelection)).digest("hex")}`
+      : `sha256:${createHash("sha256").update(JSON.stringify({ configVersion: "3" })).digest("hex")}`,
+    modelCatalog: context.modelCatalog ?? null,
+    resolvedModelSelection: Object.fromEntries(context.resolvedModelsByRoleId.entries()),
     project: {
       projectName,
       projectId: asString(asRecord(context.projectMeta)?.projectId),

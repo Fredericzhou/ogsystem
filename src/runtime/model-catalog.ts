@@ -9,7 +9,9 @@ import type {
   ModelCatalog,
   ModelCatalogEntry,
   ModelCatalogSource,
-  ModelCatalogSourceStatus
+  ModelCatalogSourceStatus,
+  ReasoningCapability,
+  ReasoningEffortLevel
 } from "./types.js";
 
 export const OPENCODE_MODEL_DISCOVERY_COMMAND = "opencode models --verbose";
@@ -26,13 +28,17 @@ const VALID_SOURCE_STATUSES = new Set<ModelCatalogSourceStatus>([
 const VALID_TRANSPORTS = new Set<ModelCatalogSource["transport"]>([
   "http",
   "stdio-jsonrpc",
-  "cli-stdio"
+  "cli-stdio",
+  "acp-stdio",
+  "acp-http",
+  "rpc-stdio"
 ]);
 
 const VALID_SESSION_KINDS = new Set<ModelCatalogSource["sessionKind"]>([
   "server-session",
   "app-server-thread",
-  "logical-session"
+  "logical-session",
+  "process-session"
 ]);
 
 export type ModelDiscoveryErrorCode =
@@ -103,6 +109,43 @@ function asStringArray(value: unknown, filePath: string, fieldPath: string): str
   return value.map((entry, index) => asString(entry, filePath, `${fieldPath}[${index}]`));
 }
 
+function parseReasoningCapability(value: unknown, filePath: string, fieldPath: string): ReasoningCapability | undefined {
+  if (value === undefined) return undefined;
+  const record = asRecord(value, filePath, fieldPath);
+  const supported = asBoolean(record.supported, filePath, `${fieldPath}.supported`);
+  const kind = asString(record.kind, filePath, `${fieldPath}.kind`);
+  const levels = asStringArray(record.levels, filePath, `${fieldPath}.levels`);
+  const defaultLevel = asOptionalString(record.default, filePath, `${fieldPath}.default`);
+  if (kind === "none") {
+    if (supported || levels.length > 0 || defaultLevel !== undefined) {
+      fail(filePath, fieldPath, "kind none must be unsupported and have no levels or default");
+    }
+    return { supported: false, kind: "none", levels: [] };
+  }
+  if (!supported) fail(filePath, fieldPath, "effort and toggle capabilities must be supported");
+  if (levels.length === 0) fail(filePath, fieldPath, "supported reasoning capability must declare at least one level");
+  if (kind === "toggle") {
+    if (levels.some((level) => level !== "off" && level !== "on")) {
+      fail(filePath, fieldPath, "toggle levels must be off or on");
+    }
+    if (defaultLevel !== undefined && defaultLevel !== "off" && defaultLevel !== "on") {
+      fail(filePath, fieldPath, "toggle default must be off or on");
+    }
+    return { supported: true, kind: "toggle", levels: levels as Array<"off" | "on">, ...(defaultLevel ? { default: defaultLevel as "off" | "on" } : {}) };
+  }
+  if (kind === "effort") {
+    const effortLevels = new Set<ReasoningEffortLevel>(["off", "low", "medium", "high", "xhigh", "max"]);
+    if (levels.some((level) => !effortLevels.has(level as ReasoningEffortLevel))) {
+      fail(filePath, fieldPath, "effort levels must be off, low, medium, high, xhigh, or max");
+    }
+    if (defaultLevel !== undefined && !effortLevels.has(defaultLevel as ReasoningEffortLevel)) {
+      fail(filePath, fieldPath, "effort default must be a supported effort level");
+    }
+    return { supported: true, kind: "effort", levels: levels as Array<Exclude<ReasoningEffortLevel, "on">>, ...(defaultLevel ? { default: defaultLevel as Exclude<ReasoningEffortLevel, "on"> } : {}) };
+  }
+  fail(filePath, fieldPath, `unsupported reasoning kind "${kind}"`);
+}
+
 export function validateModelCatalog(value: unknown, filePath: string): ModelCatalog {
   const record = asRecord(value, filePath, "$");
   const catalogVersion = asString(record.catalogVersion, filePath, "$.catalogVersion");
@@ -134,6 +177,10 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
     if (!VALID_SESSION_KINDS.has(rawSessionKind as ModelCatalogSource["sessionKind"])) {
       fail(filePath, `$.sources[${index}].sessionKind`, `unsupported sessionKind "${rawSessionKind}"`);
     }
+    const processOwnership = asOptionalString(source.processOwnership, filePath, `$.sources[${index}].processOwnership`) ?? "spawned_by_ogs";
+    if (processOwnership !== "spawned_by_ogs" && processOwnership !== "attached_external") {
+      fail(filePath, `$.sources[${index}].processOwnership`, `unsupported processOwnership "${processOwnership}"`);
+    }
     const status = asString(source.status, filePath, `$.sources[${index}].status`);
     if (!VALID_SOURCE_STATUSES.has(status as ModelCatalogSourceStatus)) {
       fail(
@@ -149,6 +196,7 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
       iconKey,
       transport: rawTransport as ModelCatalogSource["transport"],
       sessionKind: rawSessionKind as ModelCatalogSource["sessionKind"],
+      processOwnership,
       status: status as ModelCatalogSourceStatus,
       ...(detail ? { detail } : {})
     };
@@ -180,7 +228,10 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
         ),
         toolcall: asBoolean(capabilities.toolcall, filePath, `$.models[${index}].capabilities.toolcall`)
       },
-      variants: asStringArray(modelRecord.variants ?? [], filePath, `$.models[${index}].variants`)
+      variants: asStringArray(modelRecord.variants ?? [], filePath, `$.models[${index}].variants`),
+      ...(modelRecord.reasoning !== undefined
+        ? { reasoning: parseReasoningCapability(modelRecord.reasoning, filePath, `$.models[${index}].reasoning`) }
+        : {})
     };
   });
 
@@ -314,6 +365,7 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
         iconKey: "opencode",
         transport: "http",
         sessionKind: "server-session",
+        processOwnership: "spawned_by_ogs",
         status: "runnable"
       }
     ],
@@ -439,11 +491,15 @@ export async function refreshModelCatalog(args: {
 export async function discoverLocalModelCatalog(args: {
   workdir: string;
   commandRunner?: DiscoveryCommandRunner;
+  preferredModelIdsByBackend?: Record<string, string[]>;
 }): Promise<ModelCatalog> {
   const sources: ModelCatalogSource[] = [];
   const models: ModelCatalogEntry[] = [];
   for (const backendId of defaultBackendRegistry.listBackendIds()) {
-    const outcome = await defaultBackendRegistry.discoverBackend(backendId, args);
+    const outcome = await defaultBackendRegistry.discoverBackend(backendId, {
+      ...args,
+      preferredModelIds: args.preferredModelIdsByBackend?.[backendId]
+    });
     sources.push(outcome.source);
     models.push(...outcome.models);
   }
@@ -478,7 +534,8 @@ export function mergeModelCatalogWithLiveSnapshot(
       ...(model.name ? { name: model.name } : {}),
       ...(model.status ? { status: model.status } : {}),
       capabilities: model.capabilities,
-      variants: model.variants ?? []
+      variants: model.variants ?? [],
+      ...(model.reasoning ? { reasoning: model.reasoning } : {})
     });
   }
   return {

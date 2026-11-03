@@ -1423,6 +1423,17 @@ export async function loadResumeGraphState(args: {
     const sessionKey = (item as OpencodeSessionRecord).sessionKey;
     const roleId = (item as OpencodeSessionRecord).roleId;
     const sessionLineageId = (item as OpencodeSessionRecord).sessionLineageId;
+    const expectedSessionKeyPrefix = `${roleId}:`;
+    if (!sessionKey.startsWith(expectedSessionKeyPrefix) || (typeof sessionLineageId === "string" && sessionKey !== buildRoleSessionKey(roleId, sessionLineageId))) {
+      throw createRuntimeError({
+        errorCode: "RESUME_SESSIONS_INVALID",
+        errorCategory: "state",
+        message: `Resume session snapshot contains a sessionKey that does not match role "${roleId}": ${sessionsPath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
     if (seenSessionKeys.has(sessionKey)) {
       throw createRuntimeError({
         errorCode: "RESUME_SESSIONS_INVALID",

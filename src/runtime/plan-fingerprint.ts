@@ -148,7 +148,19 @@ function buildModelSelectionFingerprintComponent(
         roleId,
         backend: resolvedModel.backend,
         modelId: resolvedModel.modelId,
-        fallbackModelId: resolvedModel.fallbackModelId ?? null,
+        modelRef: resolvedModel.modelRef,
+        reasoningEffort: resolvedModel.reasoningEffort ?? null,
+        effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort ?? null,
+        reasoningCapability: resolvedModel.reasoningCapability ?? null,
+        fallback: resolvedModel.fallback
+          ? {
+              backend: resolvedModel.fallback.backend,
+              modelId: resolvedModel.fallback.modelId,
+              modelRef: resolvedModel.fallback.modelRef,
+              reasoningEffort: resolvedModel.fallback.reasoningEffort ?? null,
+              effectiveReasoningEffort: resolvedModel.fallback.effectiveReasoningEffort ?? null
+          }
+          : null,
         variant: resolvedModel.variant ?? null,
         timeoutMs: resolvedModel.timeoutMs ?? null,
         maxOutputBytes: resolvedModel.maxOutputBytes ?? null,
@@ -158,7 +170,19 @@ function buildModelSelectionFingerprintComponent(
         roleId,
         backend: resolvedModel.backend,
         modelId: resolvedModel.modelId,
-        fallbackModelId: resolvedModel.fallbackModelId ?? null
+        modelRef: resolvedModel.modelRef,
+        reasoningEffort: resolvedModel.reasoningEffort ?? null,
+        effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort ?? null,
+        reasoningCapability: resolvedModel.reasoningCapability ?? null,
+        fallback: resolvedModel.fallback
+          ? {
+              backend: resolvedModel.fallback.backend,
+              modelId: resolvedModel.fallback.modelId,
+              modelRef: resolvedModel.fallback.modelRef,
+              reasoningEffort: resolvedModel.fallback.reasoningEffort ?? null,
+              effectiveReasoningEffort: resolvedModel.fallback.effectiveReasoningEffort ?? null
+            }
+          : null
       }
     }));
 }
@@ -332,7 +356,7 @@ export function buildRunPlanFingerprint(args: {
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 8,
+    version: 7,
     algorithm: "sha256",
     digest,
     payload

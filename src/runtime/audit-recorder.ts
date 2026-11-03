@@ -18,6 +18,10 @@ import type {
   RoleOutputCorrectionRequest,
   RoleOutputRepairRecord,
   RuntimeErrorEnvelope,
+  ReasoningCapability,
+  ReasoningEffort,
+  ReasoningEffortLevel,
+  ReasoningErrorCode,
   RunContext
 } from "./types.js";
 
@@ -63,6 +67,11 @@ type AuditRecordInput = {
   externalDataIsolated?: boolean;
   fallbackUsed?: boolean;
   primaryModelId?: string;
+  requestedReasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: ReasoningEffortLevel;
+  reasoningKind?: ReasoningCapability["kind"];
+  reasoningSupported?: boolean;
+  reasoningErrorCode?: ReasoningErrorCode;
 };
 
 /**
@@ -113,7 +122,12 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     estimatedOutputTokens: args.estimatedOutputTokens,
     externalDataIsolated: args.externalDataIsolated,
     fallbackUsed: args.fallbackUsed,
-    primaryModelId: args.primaryModelId
+    primaryModelId: args.primaryModelId,
+    requestedReasoningEffort: args.requestedReasoningEffort,
+    effectiveReasoningEffort: args.effectiveReasoningEffort,
+    reasoningKind: args.reasoningKind,
+    reasoningSupported: args.reasoningSupported,
+    reasoningErrorCode: args.reasoningErrorCode
   };
 }
 

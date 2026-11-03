@@ -62,8 +62,12 @@ function resolveBinding(args: {
       kind: "model",
       backend: resolvedModel.backend,
       modelId: resolvedModel.modelId,
-      ...(resolvedModel.fallbackModelId ? { fallbackModelId: resolvedModel.fallbackModelId } : {}),
+      modelRef: resolvedModel.modelRef,
       ...(resolvedModel.variant ? { variant: resolvedModel.variant } : {}),
+      ...(resolvedModel.reasoningEffort ? { reasoningEffort: resolvedModel.reasoningEffort } : {}),
+      ...(resolvedModel.effectiveReasoningEffort ? { effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort } : {}),
+      ...(resolvedModel.frozenReasoningEffort ? { frozenReasoningEffort: resolvedModel.frozenReasoningEffort } : {}),
+      ...(resolvedModel.fallback ? { fallback: resolvedModel.fallback } : {}),
       ...(resolvedModel.timeoutMs !== undefined ? { timeoutMs: resolvedModel.timeoutMs } : {}),
       ...(resolvedModel.maxOutputBytes !== undefined ? { maxOutputBytes: resolvedModel.maxOutputBytes } : {}),
       bindingSource: resolvedModel.bindingSource

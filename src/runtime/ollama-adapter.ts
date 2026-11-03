@@ -14,13 +14,23 @@ import type { ModelCatalogEntry } from "./types.js";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 
+function localOllamaUrl(value: string): string | undefined {
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `http://${value}`);
+    if (!["127.0.0.1", "localhost", "::1"].includes(url.hostname)) return undefined;
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveOllamaBaseUrl(): string {
   const raw = process.env.OLLAMA_HOST?.trim();
   if (!raw) {
     return DEFAULT_OLLAMA_BASE_URL;
   }
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
-  return withProtocol.replace(/\/+$/, "");
+  return localOllamaUrl(withProtocol) ?? DEFAULT_OLLAMA_BASE_URL;
 }
 
 async function isCommandInstalled(command: string, args: string[], cwd: string): Promise<{
@@ -85,7 +95,8 @@ function parseOllamaTagsPayload(payload: unknown): ModelCatalogEntry[] {
         textOutput: true,
         toolcall: true
       },
-      variants: []
+      variants: [],
+      reasoning: { supported: false, kind: "none", levels: [] }
     });
   }
   return models;
@@ -97,6 +108,7 @@ export const ollamaBackendDescriptor: BackendDescriptor = {
   iconKey: "ollama",
   transport: "http",
   sessionKind: "logical-session",
+  processOwnership: "attached_external",
   capabilities: {
     textInput: true,
     textOutput: true,
@@ -115,7 +127,10 @@ export async function executeOllamaChatRequest(args: {
   timeoutMs: number;
   signal?: AbortSignal;
 }): Promise<{ content: string; messageId: string }> {
-  const baseUrl = args.baseUrl ?? resolveOllamaBaseUrl();
+  const baseUrl = args.baseUrl
+    ? localOllamaUrl(args.baseUrl)
+    : resolveOllamaBaseUrl();
+  if (!baseUrl) throw new Error("OLLAMA_LOCAL_ONLY: Ollama execution only permits a loopback service.");
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -275,6 +290,10 @@ export const ollamaBackendAdapter: BackendAdapter = {
 
     return {
       async execute(request: BackendExecuteRequest): Promise<BackendExecuteResult> {
+        const requestedReasoning = (request as BackendExecuteRequest & { reasoningEffort?: string }).reasoningEffort;
+        if (requestedReasoning && requestedReasoning !== "auto") {
+          throw new Error(`REASONING_UNSUPPORTED: Ollama does not expose reasoning level "${requestedReasoning}"`);
+        }
         const sessionId = request.sessionId ?? `ollama-session-${request.sessionKey ?? request.roleId}`;
         const history = historyBySessionId.get(sessionId) ?? [];
         const messages = [...history, { role: "user" as const, content: request.prompt }];

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 
 import { filesystemArtifactStore } from "./artifact-store.js";
@@ -11,9 +10,13 @@ import {
   runOpencodeModelsVerbose
 } from "./model-catalog.js";
 import { ollamaBackendAdapter, ollamaBackendDescriptor } from "./ollama-adapter.js";
+import { piBackendAdapter, piBackendDescriptor } from "./pi-adapter.js";
+import { qwenBackendAdapter, qwenBackendDescriptor } from "./qwen-adapter.js";
+import { kimiBackendAdapter, kimiBackendDescriptor } from "./kimi-adapter.js";
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { stringifyJson } from "./runtime-support.js";
-import type { ModelCatalogEntry, ModelCatalogSource, RunContext } from "./types.js";
+import { resolveExecutable } from "./cli-adapter-support.js";
+import type { ModelCatalogEntry, ModelCatalogSource, ReasoningEffort, ReasoningEffortLevel, RunContext } from "./types.js";
 
 export type ModelBackendId = string;
 
@@ -24,8 +27,9 @@ export type BackendAvailabilityStatus =
   | "installed_but_broken"
   | "service_unavailable";
 
-export type BackendTransportKind = "http" | "stdio-jsonrpc" | "cli-stdio";
-export type BackendSessionKind = "server-session" | "app-server-thread" | "logical-session";
+export type BackendTransportKind = "http" | "stdio-jsonrpc" | "cli-stdio" | "acp-stdio" | "acp-http" | "rpc-stdio";
+export type BackendSessionKind = "server-session" | "app-server-thread" | "logical-session" | "process-session";
+export type BackendProcessOwnership = "spawned_by_ogs" | "attached_external";
 
 export type BackendCapabilities = {
   textInput: boolean;
@@ -42,6 +46,7 @@ export type BackendDescriptor = {
   iconKey: string;
   transport: BackendTransportKind;
   sessionKind: BackendSessionKind;
+  processOwnership: BackendProcessOwnership;
   capabilities: BackendCapabilities;
 };
 
@@ -57,6 +62,8 @@ export type BackendExecuteRequest = {
   prompt: string;
   schema: unknown;
   modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: ReasoningEffortLevel;
   variant?: string;
   workdir: string;
   directory: string;
@@ -72,6 +79,10 @@ export type BackendExecuteRequest = {
     output?: string;
     outputChars?: number;
   }) => Promise<void>;
+  runId?: string;
+  executionId?: string;
+  attempt?: number;
+  onEvent?: import("./agent-client-types.js").AgentEventSink;
 };
 
 export type BackendExecuteResult = ExecutorResult;
@@ -139,14 +150,29 @@ export class BackendRegistry {
 
   async discoverBackend(
     backendId: ModelBackendId,
-    args: { workdir: string; commandRunner?: DiscoveryCommandRunner }
+    args: { workdir: string; commandRunner?: DiscoveryCommandRunner; preferredModelIds?: string[] }
   ): Promise<{ source: ModelCatalogSource; models: ModelCatalogEntry[] }> {
     const descriptor = this.descriptors.get(backendId);
     const adapter = this.adapters.get(backendId);
     if (!descriptor || !adapter) {
       throw new Error(`Backend "${backendId}" is not registered.`);
     }
-    const discovered = await adapter.discover(args);
+    let discovered = await adapter.discover(args);
+    if (adapter.verifiedRunnable && discovered.status === "runnable" && discovered.models.length > 0 && adapter.probe) {
+      const preferredIds = new Set(args.preferredModelIds ?? []);
+      const probeModel = discovered.models.find((model) => preferredIds.has(model.modelId) && model.runnable)
+        ?? discovered.models.find((model) => model.runnable)
+        ?? discovered.models[0];
+      try {
+        await adapter.probe({ modelId: probeModel.modelId, workdir: args.workdir, timeoutMs: 60_000 });
+      } catch (error) {
+        discovered = {
+          status: "installed_but_broken",
+          detail: `Minimum execution probe failed for ${descriptor.displayName}: ${error instanceof Error ? error.message : String(error)}`,
+          models: []
+        };
+      }
+    }
     // Strict tier gate: unverified adapters can be registered and detected, but never runnable.
     const effectiveStatus: BackendAvailabilityStatus = !adapter.verifiedRunnable
       ? discovered.status === "not_installed" || discovered.status === "installed_but_broken"
@@ -166,7 +192,8 @@ export class BackendRegistry {
               textOutput: Boolean(entry.capabilities.textOutput),
               toolcall: Boolean(entry.capabilities.toolcall)
             },
-            variants: [...entry.variants]
+            variants: [...entry.variants],
+            ...(entry.reasoning ? { reasoning: entry.reasoning } : {})
           }))
         : [];
     return {
@@ -176,91 +203,13 @@ export class BackendRegistry {
         iconKey: descriptor.iconKey,
         transport: descriptor.transport,
         sessionKind: descriptor.sessionKind,
+        processOwnership: descriptor.processOwnership,
         status: effectiveStatus,
         ...(discovered.detail ? { detail: discovered.detail } : {})
       },
       models: effectiveModels
     };
   }
-}
-
-async function probeCliBinary(command: string, args: string[], cwd: string): Promise<{
-  installed: boolean;
-  healthy: boolean;
-}> {
-  return new Promise((resolvePromise) => {
-    const child = spawn(command, args, {
-      cwd,
-      stdio: "ignore",
-      shell: process.platform === "win32"
-    });
-    const timer = setTimeout(() => child.kill(), 2500);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        resolvePromise({ installed: false, healthy: false });
-        return;
-      }
-      resolvePromise({ installed: true, healthy: false });
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      resolvePromise({ installed: true, healthy: code === 0 });
-    });
-  });
-}
-
-function createUnverifiedCliBackend(args: {
-  backendId: ModelBackendId;
-  displayName: string;
-  iconKey: string;
-  binary: string;
-  versionArgs?: string[];
-  transport?: BackendTransportKind;
-  sessionKind?: BackendSessionKind;
-}): { descriptor: BackendDescriptor; adapter: BackendAdapter } {
-  const descriptor: BackendDescriptor = {
-    backendId: args.backendId,
-    displayName: args.displayName,
-    iconKey: args.iconKey,
-    transport: args.transport ?? "cli-stdio",
-    sessionKind: args.sessionKind ?? "logical-session",
-    capabilities: {
-      textInput: true,
-      textOutput: true,
-      toolcall: true,
-      structuredOutput: false,
-      sessionReuse: false,
-      abort: true
-    }
-  };
-  const adapter: BackendAdapter = {
-    backendId: args.backendId,
-    verifiedRunnable: false,
-    async discover({ workdir }) {
-      const probe = await probeCliBinary(args.binary, args.versionArgs ?? ["--version"], workdir);
-      if (!probe.installed) {
-        return {
-          status: "not_installed",
-          detail: `${args.displayName} is not installed on this machine.`,
-          models: []
-        };
-      }
-      if (!probe.healthy) {
-        return {
-          status: "installed_but_broken",
-          detail: `${args.displayName} binary was found but failed verification.`,
-          models: []
-        };
-      }
-      return {
-        status: "unavailable",
-        detail: `${args.displayName} is detected locally; structured OGS transport verification is pending.`,
-        models: []
-      };
-    }
-  };
-  return { descriptor, adapter };
 }
 
 const probeSchema = {
@@ -276,6 +225,7 @@ export const opencodeBackendDescriptor: BackendDescriptor = {
   iconKey: "opencode",
   transport: "http",
   sessionKind: "server-session",
+  processOwnership: "spawned_by_ogs",
   capabilities: {
     textInput: true,
     textOutput: true,
@@ -357,6 +307,8 @@ export const opencodeBackendAdapter: BackendAdapter = {
           schema: request.schema,
           modelRef: request.modelId,
           variant: request.variant,
+          reasoningEffort: request.reasoningEffort,
+          effectiveReasoningEffort: request.effectiveReasoningEffort,
           workdir: request.workdir,
           directory: request.directory,
           timeoutMs: request.timeoutMs,
@@ -443,6 +395,7 @@ export const codexBackendDescriptor: BackendDescriptor = {
   iconKey: "codex",
   transport: "stdio-jsonrpc",
   sessionKind: "app-server-thread",
+  processOwnership: "spawned_by_ogs",
   capabilities: {
     textInput: true,
     textOutput: true,
@@ -457,8 +410,8 @@ export const codexBackendAdapter: BackendAdapter = {
   backendId: "codex",
   verifiedRunnable: true,
   async discover(args) {
-    const binaryProbe = await probeCliBinary("codex", ["--version"], args.workdir);
-    if (!binaryProbe.installed) {
+    const codexCommand = await resolveExecutable("codex");
+    if (!codexCommand) {
       return {
         status: "not_installed",
         detail: "Codex CLI is not installed on this machine.",
@@ -588,43 +541,9 @@ export function createDefaultBackendRegistry(): BackendRegistry {
   registry.register(opencodeBackendDescriptor, opencodeBackendAdapter);
   registry.register(codexBackendDescriptor, codexBackendAdapter);
   registry.register(ollamaBackendDescriptor, ollamaBackendAdapter);
-
-  const mainstreamClis = [
-    createUnverifiedCliBackend({
-      backendId: "claude-code",
-      displayName: "Claude Code",
-      iconKey: "claude-code",
-      binary: "claude"
-    }),
-    createUnverifiedCliBackend({
-      backendId: "gemini-cli",
-      displayName: "Gemini CLI",
-      iconKey: "gemini-cli",
-      binary: "gemini"
-    }),
-    createUnverifiedCliBackend({
-      backendId: "copilot-cli",
-      displayName: "GitHub Copilot CLI",
-      iconKey: "copilot-cli",
-      binary: "copilot"
-    }),
-    createUnverifiedCliBackend({
-      backendId: "qwen-code",
-      displayName: "Qwen Code",
-      iconKey: "qwen-code",
-      binary: "qwen"
-    }),
-    createUnverifiedCliBackend({
-      backendId: "kimi-cli",
-      displayName: "Kimi CLI",
-      iconKey: "kimi-cli",
-      binary: "kimi"
-    })
-  ];
-
-  for (const entry of mainstreamClis) {
-    registry.register(entry.descriptor, entry.adapter);
-  }
+  registry.register(piBackendDescriptor, piBackendAdapter);
+  registry.register(qwenBackendDescriptor, qwenBackendAdapter);
+  registry.register(kimiBackendDescriptor, kimiBackendAdapter);
 
   return registry;
 }
