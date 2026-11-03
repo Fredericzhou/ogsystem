@@ -85,6 +85,9 @@ function mountStudioGraph(root, options) {
     },
     focusRuntimeHandoff(handoffId) {
       window.OGSStudioGraphBundle?.focusStudioX6RuntimeHandoff?.(root, handoffId);
+    },
+    focusRoleNode(roleId) {
+      return window.OGSStudioGraphBundle?.focusStudioX6Node?.(root, roleId);
     }
   });
 }
@@ -665,7 +668,11 @@ function roleColorForId(roleId) {
   let hash = 2166136261;
   for (const character of String(roleId)) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
   const hue = (hash >>> 0) % 360;
-  return { accent: `hsl(${hue} 58% 30%)`, fill: `hsl(${hue} 42% 95%)` };
+  const isDark = (typeof document !== "undefined" && document.documentElement.dataset.visualizerTheme === "dark")
+    || (typeof state !== "undefined" && state.theme === "dark");
+  return isDark
+    ? { accent: `hsl(${hue} 78% 69%)`, fill: `hsl(${hue} 40% 17%)`, ink: `hsl(${hue} 60% 10%)` }
+    : { accent: `hsl(${hue} 58% 30%)`, fill: `hsl(${hue} 42% 95%)`, ink: "#ffffff" };
 }
 function caseGraphThumbnail(item) {
   const roles = item.roles || [];
@@ -1570,7 +1577,8 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     const runMetrics = `<section class="project-panel studio-run-metrics" aria-label="${state.locale === "en" ? "Run metrics" : "运行指标"}"><div class="studio-run-metric"><span>${state.locale === "en" ? "Transitions" : "流转步数"}</span><strong>${formatMetric(transitionCount)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Rendered prompt characters" : "完整提示词字符"}</span><strong>${formatMetric(promptChars)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated input tokens" : "估算输入 Token"}</span><strong>${formatMetric(inputTokens)}</strong></div><div class="studio-run-metric"><span>${state.locale === "en" ? "Estimated output tokens" : "估算输出 Token"}</span><strong>${formatMetric(outputTokens)}</strong></div><p class="field-hint">${state.locale === "en" ? "Token values are estimates, not billing totals. A dash means this historical run did not collect the field." : "Token 数为估算值，不代表账单精确值；“—”表示此历史运行未采集该字段。"}</p></section>`;
     const back = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
     const simulationAuthoring = designPayload.authoring || {};
-    const transcriptHtml = auditTrail.map((item) => {
+    const userPromptCard = simulation.input ? `<li class="team-debug-chat-item is-user-initiator" tabindex="0"><div class="team-debug-avatar is-user" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name">${state.locale === "en" ? "User Task" : "用户任务"}</strong><span class="team-debug-user-badge">${state.locale === "en" ? "Task Prompt" : "初始任务"}</span></div><span class="team-debug-time-status">${esc(studioSimulationEventTime(simulation))}</span></header><div class="team-debug-bubble"><div class="team-debug-bubble-body"><p class="team-debug-user-prompt">${esc(simulation.input)}</p></div></div></div></li>` : "";
+    const transcriptItemsHtml = auditTrail.map((item) => {
       const color = roleColorForId(item.roleId || "system");
       const roleNameStr = roleLabel(item.roleId || "");
       const roleDef = simulationAuthoring.roles?.[item.roleId] || {};
@@ -1595,6 +1603,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       const fallbackLabel = item.fallbackUsed || fallbackCall ? `${state.locale === "en" ? "Fallback model" : "备选模型"}: ${fallbackCall?.modelId || "—"} (${state.locale === "en" ? "primary" : "主模型"}: ${item.primaryModelId || "—"})` : "";
       return `<li class="team-debug-chat-item" data-role-id="${esc(item.roleId || "")}" tabindex="0" style="--role-accent:${esc(color.accent)};--role-fill:${esc(color.fill)}">${avatarHtml}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name">${esc(roleNameStr)}</strong>${backendTag}</div><span class="team-debug-time-status">${esc(studioSimulationEventTime(item))} · ${esc(studioSimulationStatus(item.status || "unknown"))}</span></header><div class="team-debug-bubble"><div class="studio-audit-badges"><span>${esc(isolation)}</span>${fallbackLabel ? `<span>${esc(fallbackLabel)}</span>` : ""}${projected !== undefined ? `<span>${state.locale === "en" ? "Projected input" : "输入数据"}: ${formatMetric(projected)} ${state.locale === "en" ? "chars" : "字符"}</span>` : ""}${meter !== undefined ? `<span>${state.locale === "en" ? "Prompt" : "提示词"}: ${formatMetric(meter)} ${state.locale === "en" ? "chars" : "字符"}</span>` : `<span>${state.locale === "en" ? "Prompt: not recorded" : "提示词：未采集"}</span>`}${tokens !== undefined ? `<span>${state.locale === "en" ? "Estimated input / output tokens" : "估算输入 / 输出 Token"}: ${esc(tokens)}</span>` : ""}</div>${inputText ? `<section><small>${state.locale === "en" ? "Input" : "收到的任务"}</small><pre>${esc(inputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Input details were not collected for this activation." : "此角色激活未采集详细输入。"}</p>`}${outputText ? `<section><small>${item.failure || item.error ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出")}</small><pre>${esc(item.failure || item.error ? studioSimulationErrorText(outputText) : outputText)}</pre></section>` : `<p class="form-hint">${state.locale === "en" ? "Output details were not collected for this activation." : "此角色激活未采集详细输出。"}</p>`}${item.errorEnvelope ? `<details><summary>${state.locale === "en" ? "Failure diagnostics" : "失败诊断详情"}</summary><pre>${esc(JSON.stringify(item.errorEnvelope, null, 2))}</pre></details>` : ""}${handoffMarkup}</div></div></li>`;
     }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`;
+    const transcriptHtml = userPromptCard ? `${userPromptCard}${transcriptItemsHtml}` : transcriptItemsHtml;
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<section class="detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Runtime graph" : "运行图谱"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Conversation" : "角色流水"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><span class="count-badge">${auditTrail.length}</span></div><ol class="team-debug-transcript">${transcriptHtml}</ol></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p>`;
     root.querySelectorAll(".team-debug-transcript section").forEach((section) => {
       const label = section.querySelector("small")?.textContent || (state.locale === "en" ? "Details" : "详情");
@@ -3426,6 +3435,29 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       updateStudioGraph?.update({ readOnly: true });
       if (result) result.innerHTML = `<p class="form-status" role="status">${state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…"}</p>`;
       setEditorState(state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…");
+      let hud = stage?.querySelector(".studio-runtime-hud");
+      if (!hud && stage) {
+        hud = document.createElement("div");
+        hud.className = "studio-runtime-hud";
+        hud.innerHTML = `<span class="studio-runtime-hud-pulse" aria-hidden="true"></span><span class="studio-runtime-hud-metrics"><span class="studio-hud-timer">00:00</span><span class="studio-hud-status">${state.locale === "en" ? "Running" : "运行中"}</span></span><button type="button" class="studio-runtime-hud-btn" data-studio-hud-focus><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus active" : "聚焦活跃节点"}</span></button>`;
+        stage.append(hud);
+      }
+      if (hud) hud.hidden = false;
+      const startTime = Date.now();
+      let lastActiveRoleId = "";
+      const hudTimer = setInterval(() => {
+        if (!hud || hud.hidden) return;
+        const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+        const mins = String(Math.floor(elapsedSec / 60)).padStart(2, "0");
+        const secs = String(elapsedSec % 60).padStart(2, "0");
+        const timerEl = hud.querySelector(".studio-hud-timer");
+        if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+      }, 1000);
+      const focusBtn = hud?.querySelector("[data-studio-hud-focus]");
+      const onFocusClick = () => {
+        if (lastActiveRoleId) updateStudioGraph?.focusRoleNode?.(lastActiveRoleId);
+      };
+      focusBtn?.addEventListener("click", onFocusClick);
       try {
         const teamResponse = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}`);
         const team = await teamResponse.json();
@@ -3502,6 +3534,12 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             });
           }
           const wasAtBottom = list.dataset.userReading !== "true" && list.scrollHeight - list.scrollTop - list.clientHeight <= 56;
+          if (list && !list.querySelector(".is-user-initiator") && prompt) {
+            const userCard = document.createElement("li");
+            userCard.className = "team-debug-chat-item is-user-initiator";
+            userCard.innerHTML = `<div class="team-debug-avatar is-user" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name">${state.locale === "en" ? "User Task" : "用户任务"}</strong><span class="team-debug-user-badge">${state.locale === "en" ? "Task Prompt" : "初始任务"}</span></div><span class="team-debug-time-status">${studioSimulationEventTime({ timestamp: Date.now() })}</span></header><div class="team-debug-bubble"><div class="team-debug-bubble-body"><p class="team-debug-user-prompt">${esc(prompt)}</p></div></div></div>`;
+            list.append(userCard);
+          }
           const addSection = (card, label, value, className = "") => {
             if (!value) return;
             const bubbleBody = card.querySelector(".team-debug-bubble-body") || card.querySelector(".team-debug-bubble") || card;
@@ -3515,6 +3553,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             section.querySelector("pre").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
           };
           for (const item of events) {
+            if (item.roleId && (item.type === "role_waiting" || item.type === "role.started")) {
+              lastActiveRoleId = item.roleId;
+              const hudStatus = hud?.querySelector(".studio-hud-status");
+              if (hudStatus) hudStatus.textContent = `${state.locale === "en" ? "Active" : "执行中"}: ${roleName(item.roleId)}`;
+            }
             const flowEvent = item.type === "flow.activated";
             if (flowEvent) {
               const flow = document.createElement("li");
@@ -3603,7 +3646,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
                   ? (state.locale === "en" ? "Execution tool" : "执行工具")
                   : item.stage;
               const waitText = [item.waitKind, waitStage, Number.isFinite(item.elapsedMs) ? `${item.elapsedMs} ms` : ""].filter(Boolean).join(" · ");
-              addSection(card, state.locale === "en" ? "Waiting reason" : "等待原因", waitText, "waiting");
+              addSection(card, state.locale === "en" ? "Working..." : "工作中...", waitText, "waiting");
             }
             if (item.stdoutPreview || item.failure) {
               addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
@@ -3718,6 +3761,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         setEditorState(message);
         return false;
       } finally {
+        clearInterval(hudTimer);
+        focusBtn?.removeEventListener("click", onFocusClick);
+        if (hud) hud.hidden = true;
         if (stage.isConnected) updateStudioGraph?.update({ readOnly: false });
         if (simulationFinished) clearStudioActiveRun(activeSimulationId);
         const preserveRun = !simulationFinished && pageRequest && !isCurrentRequest(pageRequest);

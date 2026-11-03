@@ -247,10 +247,11 @@ registerHooks({
     for (const summary of await page.locator(".team-debug-transcript details summary").all()) await summary.click();
     const transcriptText = await page.locator(".team-debug-transcript").innerText();
     assert.ok(transcriptText.includes("Mocked role output"));
+    assert.match(transcriptText, /初始任务/);
     assert.match(transcriptText, /2026.*10.*24/);
     assert.match(transcriptText, /耗时 1 毫秒/);
     assert.match(transcriptText, /已完成/);
-    assert.match(transcriptText, /等待原因[\s\S]*模型服务/);
+    assert.match(transcriptText, /工作中[\s\S]*模型服务/);
     assert.match(transcriptText, /将重试（第 2\/3 次）/);
     assert.match(transcriptText, /已满足汇聚条件/);
     assert.match(transcriptText, /已提交人工审核/);

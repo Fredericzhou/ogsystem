@@ -358,24 +358,27 @@ function createRuntimeStatusIconShape(status: StudioRuntimeIconStatus): SVGEleme
   const shape = document.createElementNS("http://www.w3.org/2000/svg", status === "running" ? "g" : "path");
   shape.classList.add("studio-runtime-status-icon-shape");
   if (status === "running") {
-    const spokes = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    spokes.setAttribute("d", "M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.7 3.7l1.4 1.4M12.9 12.9l1.4 1.4M14.3 3.7l-1.4 1.4M5.1 12.9l-1.4 1.4");
+    const radar = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    radar.setAttribute("cx", "9");
+    radar.setAttribute("cy", "9");
+    radar.setAttribute("r", "5.2");
+    radar.classList.add("studio-runtime-status-icon-radar");
     const core = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     core.setAttribute("cx", "9");
     core.setAttribute("cy", "9");
-    core.setAttribute("r", "3");
+    core.setAttribute("r", "2");
     core.classList.add("studio-runtime-status-icon-core");
-    shape.append(spokes, core);
+    shape.append(radar, core);
     return shape;
   }
   const pathByStatus: Record<Exclude<StudioRuntimeIconStatus, "running">, string> = {
-    technical_waiting: "M5 2.5h8M5 15.5h8M6 3.5c0 2.7 3 3.1 3 5.5s-3 2.8-3 5.5M12 3.5c0 2.7-3 3.1-3 5.5s3 2.8 3 5.5",
-    waiting: "M5 2.5h8M5 15.5h8M6 3.5c0 2.7 3 3.1 3 5.5s-3 2.8-3 5.5M12 3.5c0 2.7-3 3.1-3 5.5s3 2.8 3 5.5",
+    technical_waiting: "M5 3.5h8M5 14.5h8M6 4.5c0 2.2 2.5 2.5 2.5 4.5S6 11.3 6 13.5M12 4.5c0 2.2-2.5 2.5-2.5 4.5s2.5 2.3 2.5 4.5",
+    waiting: "M5 3.5h8M5 14.5h8M6 4.5c0 2.2 2.5 2.5 2.5 4.5S6 11.3 6 13.5M12 4.5c0 2.2-2.5 2.5-2.5 4.5s2.5 2.3 2.5 4.5",
     waiting_review: "M3 9c1.7-3 3.7-4.5 6-4.5s4.3 1.5 6 4.5c-1.7 3-3.7 4.5-6 4.5S4.7 12 3 9zm6 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
-    done: "M4 9.2 7.2 12.3 14 5.5",
-    failed: "M5 5 13 13M13 5 5 13",
-    stopped: "M5.5 4.5v9M12.5 4.5v9",
-    paused: "M5.5 4.5v9M12.5 4.5v9",
+    done: "M5.5 9.2 7.8 11.5 12.8 6.5",
+    failed: "M6 6l6 6M12 6l-6 6",
+    stopped: "M6 5v8M12 5v8",
+    paused: "M6 5v8M12 5v8",
     pending: "M9 4.5v4.8l3.1 1.8",
     idle: "M9 9m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0",
     active: "M9 2.5v3M9 12.5v3M2.5 9h3M12.5 9h3"
@@ -411,7 +414,7 @@ function syncRuntimeStatusIcon(args: {
     group.dataset.status = status;
     group.setAttribute("aria-hidden", "true");
   }
-  group.setAttribute("transform", `translate(${Math.max(9, args.width - 25)} 4)`);
+  group.setAttribute("transform", `translate(${Math.max(9, args.width - 24)} 6)`);
 }
 
 function syncRuntimeHandoffMarkers(args: {
@@ -528,24 +531,34 @@ function syncRuntimeStatusBadge(args: {
     const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     background.classList.add("studio-runtime-status-bg");
     background.setAttribute("rx", "4");
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.classList.add("studio-status-live-dot");
+    dot.setAttribute("r", "2.6");
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.classList.add("studio-runtime-status-label");
-    text.setAttribute("text-anchor", "end");
-    group.append(background, text);
+    text.setAttribute("text-anchor", "start");
+    group.append(background, dot, text);
     args.container.append(group);
   }
   const text = group.querySelector<SVGTextElement>(".studio-runtime-status-label");
   const background = group.querySelector<SVGRectElement>(".studio-runtime-status-bg");
+  const dot = group.querySelector<SVGCircleElement>(".studio-status-live-dot");
   if (!text || !background) return;
   group.dataset.status = args.state?.technicalWaiting ? "technical_waiting" : args.state?.status || "";
   text.textContent = label;
-  text.setAttribute("x", String(args.width - 8));
-  text.setAttribute("y", String(args.height - 7));
-  const badgeWidth = Math.max(34, label.length * (args.locale.startsWith("en") ? 6 : 11) + 12);
-  background.setAttribute("x", String(args.width - badgeWidth - 3));
-  background.setAttribute("y", String(args.height - 20));
+  const isEn = args.locale.startsWith("en");
+  const textLen = label.length;
+  const badgeWidth = Math.max(38, textLen * (isEn ? 6.2 : 11) + 20);
+  background.setAttribute("x", "6");
+  background.setAttribute("y", String(args.height - 21));
   background.setAttribute("width", String(badgeWidth));
   background.setAttribute("height", "16");
+  if (dot) {
+    dot.setAttribute("cx", "14");
+    dot.setAttribute("cy", String(args.height - 13));
+  }
+  text.setAttribute("x", "21");
+  text.setAttribute("y", String(args.height - 9));
 }
 
 function syncRuntimeMetricsPill(args: {
@@ -553,6 +566,8 @@ function syncRuntimeMetricsPill(args: {
   width: number;
   height: number;
   state?: StudioRuntimeNodeState;
+  nodeId?: string;
+  onShowHistory?: (nodeId: string, state: StudioRuntimeNodeState, event: MouseEvent) => void;
 }): void {
   const parts: string[] = [];
   if (args.state?.durationMs) {
@@ -560,7 +575,7 @@ function syncRuntimeMetricsPill(args: {
     parts.push(`⏱ ${sec}s`);
   }
   if (args.state?.loopCount && args.state.loopCount > 1) {
-    parts.push(`🔄 ${args.state.loopCount}`);
+    parts.push(`🔄 x${args.state.loopCount}`);
   }
   if (args.state?.totalTokens) {
     const kTok = (args.state.totalTokens / 1000).toFixed(1);
@@ -571,6 +586,8 @@ function syncRuntimeMetricsPill(args: {
     pillGroup?.remove();
     return;
   }
+  const hasHistory = Boolean(args.state?.history && args.state.history.length > 1);
+  if (hasHistory) parts.push("▾");
   const metricText = parts.join(" ");
   if (!pillGroup) {
     pillGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -593,10 +610,23 @@ function syncRuntimeMetricsPill(args: {
   if (!txt || !bg) return;
   txt.textContent = metricText;
   const pillWidth = Math.max(30, metricText.length * 6.2 + 10);
-  pillGroup.setAttribute("transform", `translate(${Math.max(4, args.width - pillWidth - 6)}, 4)`);
+  pillGroup.setAttribute("transform", `translate(${Math.max(68, args.width - pillWidth - 6)}, ${args.height - 21})`);
   bg.setAttribute("width", String(pillWidth));
-  bg.setAttribute("height", "15");
+  bg.setAttribute("height", "16");
   txt.setAttribute("x", "5");
+  if (hasHistory) {
+    pillGroup.style.cursor = "pointer";
+    (pillGroup as any)._onHistoryClick = (event: MouseEvent) => {
+      event.stopPropagation();
+      if (args.nodeId && args.state && args.onShowHistory) {
+        args.onShowHistory(args.nodeId, args.state, event);
+      }
+    };
+    pillGroup.onclick = (pillGroup as any)._onHistoryClick;
+  } else {
+    pillGroup.style.cursor = "default";
+    pillGroup.onclick = null;
+  }
 }
 
 export class StudioGraphIsland {
@@ -1837,6 +1867,25 @@ export class StudioGraphIsland {
   private hideDiagnosticCard(): void {
     this.diagnosticCardEl.hidden = true;
     this.diagnosticCardEl.innerHTML = "";
+  }
+
+  private showIterationHistoryCard(nodeId: string, state: StudioRuntimeNodeState, event: MouseEvent): void {
+    if (!state.history || state.history.length === 0) return;
+    const isEn = this.options.locale?.startsWith("en");
+    const items = state.history.map((record) => {
+      const dur = record.durationMs ? `${(record.durationMs / 1000).toFixed(1)}s` : "—";
+      const tok = record.totalTokens ? `${record.totalTokens.toLocaleString()} tok` : "—";
+      const statusText = record.status === "failed" ? (isEn ? "failed" : "失败") : (isEn ? "ok" : "成功");
+      const statusIcon = record.status === "failed" ? "❌" : "✅";
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:5px 0;border-bottom:1px solid rgba(148,163,184,0.15);font-size:11px;"><span>${isEn ? `Round #${record.iteration}` : `第 ${record.iteration} 轮`}</span><span style="font-family:monospace;color:#38bdf8;">${dur} · ${tok}</span><span>${statusIcon} ${statusText}</span></div>`;
+    });
+    this.diagnosticCardEl.innerHTML = `<div style="min-width:200px;padding:6px 2px;"><strong style="display:block;margin-bottom:6px;font-size:12px;color:var(--mint,#10b981);">${isEn ? `🔄 Loop Iteration History (${state.history.length})` : `🔄 循环历史记录 (共 ${state.history.length} 轮)`}</strong>${items.join("")}</div>`;
+    this.diagnosticCardEl.hidden = false;
+    const stageRect = this.stageEl.getBoundingClientRect();
+    const left = event.clientX - stageRect.left + 8;
+    const top = event.clientY - stageRect.top + 8;
+    this.diagnosticCardEl.style.left = `${Math.max(12, Math.min(stageRect.width - 240, left))}px`;
+    this.diagnosticCardEl.style.top = `${Math.max(12, Math.min(stageRect.height - 180, top))}px`;
   }
 
   private renderCommandForm(): void {
@@ -3466,7 +3515,16 @@ export class StudioGraphIsland {
         syncRuntimeActivityMarker({ container, width: size.width, height: size.height, state: nodeState });
         syncRuntimeStatusIcon({ container, width: size.width, state: nodeState });
         syncRuntimeStatusBadge({ container, width: size.width, height: size.height, node: viewNode, state: nodeState, locale });
-        syncRuntimeMetricsPill({ container, width: size.width, height: size.height, state: nodeState });
+        syncRuntimeMetricsPill({
+          container,
+          width: size.width,
+          height: size.height,
+          state: nodeState,
+          nodeId: node.id,
+          onShowHistory: (nodeId, state, event) => {
+            this.showIterationHistoryCard(nodeId, state, event);
+          }
+        });
       }
     }
     for (const edge of this.graph.getEdges()) {

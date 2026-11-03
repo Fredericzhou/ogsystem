@@ -5,6 +5,15 @@ import type {
   StudioAuthoringDocument,
 } from "../studio-contracts.js";
 
+export type StudioRuntimeExecutionRecord = {
+  iteration: number;
+  durationMs?: number;
+  totalTokens?: number;
+  status?: string;
+  stage?: string;
+  attempt?: number;
+};
+
 export type StudioRuntimeNodeState = {
   status?: "active" | "running" | "waiting" | "waiting_review" | "done" | "failed" | "paused" | "pending" | "idle" | "stopped";
   statusLabel?: string;
@@ -15,6 +24,7 @@ export type StudioRuntimeNodeState = {
   loopCount?: number;
   durationMs?: number;
   totalTokens?: number;
+  history?: StudioRuntimeExecutionRecord[];
   active: boolean;
   waitingReview: boolean;
   humanGateConfigured: boolean;
@@ -462,11 +472,27 @@ export function deriveStudioRuntimeVisualState(args: {
             if (Number.isFinite(durationMs) && Number(durationMs) > 0) {
               roleState.durationMs = Number(durationMs);
             }
-            if (Number.isFinite(event.loopIteration) && Number(event.loopIteration) > 0) {
-              roleState.loopCount = Number(event.loopIteration);
-            }
+            const iteration = Number.isFinite(event.loopIteration) && Number(event.loopIteration) > 0
+              ? Number(event.loopIteration)
+              : 1;
+            roleState.loopCount = Math.max(roleState.loopCount || 1, iteration);
             const tokenUsage = Number(event.estimatedInputTokens ?? event.audit?.estimatedInputTokens ?? 0) + Number(event.estimatedOutputTokens ?? event.audit?.estimatedOutputTokens ?? 0);
             if (Number.isFinite(tokenUsage) && tokenUsage > 0) roleState.totalTokens = tokenUsage;
+            if (!roleState.history) roleState.history = [];
+            const existingRecord = roleState.history.find((r) => r.iteration === iteration);
+            if (existingRecord) {
+              if (Number.isFinite(durationMs) && Number(durationMs) > 0) existingRecord.durationMs = Number(durationMs);
+              if (Number.isFinite(tokenUsage) && tokenUsage > 0) existingRecord.totalTokens = tokenUsage;
+              existingRecord.status = event.type === "role.failed" ? "failed" : "completed";
+            } else {
+              roleState.history.push({
+                iteration,
+                durationMs: Number.isFinite(durationMs) ? Number(durationMs) : undefined,
+                totalTokens: Number.isFinite(tokenUsage) ? tokenUsage : undefined,
+                status: event.type === "role.failed" ? "failed" : "completed",
+                attempt: event.attempt
+              });
+            }
           }
         }
         if (event.type === "role.failed") {

@@ -23,6 +23,12 @@ export function injectStudioGraphStyles(): void {
       background-image: radial-gradient(circle at 1px 1px, rgba(57, 108, 87, .11) 1px, transparent 1.2px);
       background-size: 16px 16px;
     }
+    :root[data-visualizer-theme="dark"] .studio-graph-island .studio-graph-canvas,
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas {
+      background-color: #0b1220;
+      background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, .14) 1px, transparent 1.2px);
+      background-size: 16px 16px;
+    }
     .studio-canvas-shell.is-fullscreen .studio-graph-island {
       height: calc(100vh - 108px);
     }
@@ -367,6 +373,28 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .studio-runtime-status[data-status="waiting_review"] .studio-runtime-status-label { fill: #80590f; }
     .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-runtime-status-bg { fill: #fde6e2; stroke: #d68579; }
     .studio-graph-canvas .studio-runtime-status[data-status="failed"] .studio-runtime-status-label { fill: #8f392f; }
+    @keyframes studio-runtime-radar-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes studio-live-dot-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.6; }
+    }
+    @keyframes studio-node-done-ping {
+      0% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); transform: scale(1); }
+      35% { filter: drop-shadow(0 0 14px rgba(16, 185, 129, 0.65)); transform: scale(1.02); }
+      100% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); transform: scale(1); }
+    }
+    @keyframes studio-node-fail-shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-3px); }
+      40%, 80% { transform: translateX(3px); }
+    }
+    .studio-graph-canvas .studio-status-live-dot {
+      transform-origin: center;
+      animation: studio-live-dot-pulse 1600ms ease-in-out infinite;
+    }
     .studio-graph-canvas .studio-runtime-status-icon {
       pointer-events: none;
       overflow: visible;
@@ -374,38 +402,74 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .studio-runtime-status-icon-bg {
       fill: #f4faf7;
       stroke: #7db39e;
-      stroke-width: 1px;
+      stroke-width: 1.2px;
       vector-effect: non-scaling-stroke;
     }
     .studio-graph-canvas .studio-runtime-status-icon-shape {
       fill: none;
       stroke: #245b46;
-      stroke-width: 1.45px;
+      stroke-width: 1.5px;
       stroke-linecap: round;
       stroke-linejoin: round;
       vector-effect: non-scaling-stroke;
     }
-    .studio-graph-canvas .studio-runtime-status-icon-core { fill: #245b46; stroke: none; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-bg { fill: #e4f7ef; stroke: #34a878; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-shape { stroke: #15835c; animation: studio-runtime-gear-spin 1600ms linear infinite; transform-origin: 9px 9px; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-bg { fill: #e9f0fb; stroke: #7d9fda; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-shape { stroke: #315b9b; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
+    .studio-graph-canvas .studio-runtime-status-icon-radar {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.5px;
+      stroke-linecap: round;
+      stroke-dasharray: 20 8;
+      animation: studio-runtime-radar-spin 1200ms linear infinite;
+      transform-origin: 9px 9px;
+    }
+    .studio-graph-canvas .studio-runtime-status-icon-core {
+      fill: currentColor;
+      animation: studio-live-dot-pulse 1400ms ease-in-out infinite;
+      transform-origin: 9px 9px;
+    }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-bg { fill: #e4f7ef; stroke: #10b981; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-shape { stroke: #059669; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-bg { fill: #fef3c7; stroke: #f59e0b; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="technical_waiting"] .studio-runtime-status-icon-shape { stroke: #d97706; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-bg,
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-bg { fill: #fff7e8; stroke: #d7a449; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-bg { fill: #fef3c7; stroke: #f59e0b; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-shape,
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-shape { stroke: #9b6a13; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-bg { fill: #e6f5ed; stroke: #68ad8b; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-shape { stroke: #20734d; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-bg { fill: #fff0ed; stroke: #d68579; }
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-shape { stroke: #b74436; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting_review"] .studio-runtime-status-icon-shape { stroke: #b45309; animation: studio-runtime-hourglass-pulse 1800ms ease-in-out infinite; transform-origin: 9px 9px; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-bg { fill: #ecfdf5; stroke: #10b981; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-shape { stroke: #059669; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-bg { fill: #fef2f2; stroke: #ef4444; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-shape { stroke: #dc2626; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="stopped"] .studio-runtime-status-icon-bg,
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="paused"] .studio-runtime-status-icon-bg { fill: #eef2f0; stroke: #89958f; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="paused"] .studio-runtime-status-icon-bg { fill: #f1f5f9; stroke: #94a3b8; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="stopped"] .studio-runtime-status-icon-shape,
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="paused"] .studio-runtime-status-icon-shape { stroke: #64716b; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="paused"] .studio-runtime-status-icon-shape { stroke: #64748b; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="pending"] .studio-runtime-status-icon-bg,
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="idle"] .studio-runtime-status-icon-bg { fill: #f1f5f3; stroke: #9aaba3; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="idle"] .studio-runtime-status-icon-bg { fill: #f1f5f9; stroke: #94a3b8; }
     .studio-graph-canvas .studio-runtime-status-icon[data-status="pending"] .studio-runtime-status-icon-shape,
-    .studio-graph-canvas .studio-runtime-status-icon[data-status="idle"] .studio-runtime-status-icon-shape { stroke: #687970; }
+    .studio-graph-canvas .studio-runtime-status-icon[data-status="idle"] .studio-runtime-status-icon-shape { stroke: #64748b; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon-bg { fill: #0f172a; border-color: #334155; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-bg { fill: #064e3b; stroke: #34d399; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="running"] .studio-runtime-status-icon-shape { stroke: #6ee7b7; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-bg { fill: #78350f; stroke: #fbbf24; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="waiting"] .studio-runtime-status-icon-shape { stroke: #fde68a; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-bg { fill: #064e3b; stroke: #34d399; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="done"] .studio-runtime-status-icon-shape { stroke: #6ee7b7; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-bg { fill: #7f1d1d; stroke: #f87171; }
+    :root[data-visualizer-theme="dark"] .studio-graph-canvas .studio-runtime-status-icon[data-status="failed"] .studio-runtime-status-icon-shape { stroke: #fca5a5; }
+    .studio-graph-canvas .x6-node.is-runtime-completed .studio-node-body {
+      animation: studio-node-done-ping 600ms cubic-bezier(0, 0, 0.2, 1) 1;
+    }
+    .studio-graph-canvas .x6-node[data-runtime-status="failed"] .studio-node-body {
+      animation: studio-node-fail-shake 400ms ease-in-out 1;
+      stroke: #ef4444 !important;
+    }
+    .studio-graph-canvas .studio-runtime-metrics {
+      cursor: pointer;
+      transition: transform .12s ease;
+    }
+    .studio-graph-canvas .studio-runtime-metrics:hover {
+      filter: brightness(1.2);
+    }
     .studio-graph-canvas .studio-runtime-handoffs { pointer-events: none; overflow: visible; }
     .studio-graph-canvas .studio-runtime-handoff-marker {
       fill: #f4faf7;
