@@ -88,3 +88,45 @@ test("platform model probe only invokes the live probe for a discovered runnable
   await assert.rejects(useCases.probeModelAvailability({ backend: "codex", modelId: "disabled" }), /not currently discovered as runnable/);
   assert.deepEqual(probed, [{ backend: "codex", modelId: "gpt-6-luna", runnable: true }]);
 });
+
+test("slow UI discovery never masquerades as an empty model catalog", async () => {
+  let pendingResolve;
+  let pending = false;
+  const snapshot = {
+    generatedAt: "cached-generation",
+    sources: [{ backend: "codex", status: "runnable" }],
+    models: [{ backend: "codex", modelId: "gpt-6-luna", runnable: true }]
+  };
+  const catalog = {
+    discover: async () => {
+      if (!pending) return snapshot;
+      return new Promise((resolve) => { pendingResolve = resolve; });
+    }
+  };
+  const useCases = createPlatformUseCases({
+    platformSettingsStore: { read: async () => ({}), write: async () => undefined },
+    modelCatalog: catalog,
+    uiDiscoveryTimeoutMs: 5
+  });
+
+  assert.deepEqual((await useCases.listPlatformModels()).models, snapshot.models);
+  pending = true;
+  const cached = await useCases.listPlatformModels();
+  assert.deepEqual(cached.models, snapshot.models);
+  assert.equal(cached.stale, true);
+  assert.equal(cached.discoveryPending, true);
+
+  pendingResolve(snapshot);
+  pending = false;
+  const refreshed = await useCases.listPlatformModels();
+  assert.deepEqual(refreshed.models, snapshot.models);
+});
+
+test("first slow UI discovery returns an explicit error instead of an empty catalog", async () => {
+  const useCases = createPlatformUseCases({
+    platformSettingsStore: { read: async () => ({}), write: async () => undefined },
+    modelCatalog: { discover: () => new Promise(() => undefined) },
+    uiDiscoveryTimeoutMs: 5
+  });
+  await assert.rejects(useCases.listPlatformModels(), /Model discovery is still running/);
+});

@@ -1,6 +1,7 @@
 export function createPlatformUseCases({
   platformSettingsStore,
   modelCatalog,
+  uiDiscoveryTimeoutMs = 2500,
   probeModelAvailability = async () => {
     throw new Error("Model availability probe is unavailable.");
   }
@@ -12,10 +13,36 @@ export function createPlatformUseCases({
     throw new TypeError("Platform use cases require a model catalog.");
   }
 
-  const discoverForUi = async () => Promise.race([
-    modelCatalog.discover(),
-    new Promise((resolve) => setTimeout(() => resolve({ models: [], sources: [], generatedAt: undefined }), 2500))
-  ]);
+  let lastUiDiscovery;
+  const discoverForUi = async () => {
+    const discoveryPromise = modelCatalog.discover();
+    // Keep the snapshot current even when the bounded UI request has already
+    // returned. The next request can then use it while a slow CLI refreshes.
+    void discoveryPromise.then((value) => { lastUiDiscovery = value; }, () => undefined);
+    let timeoutId;
+    try {
+      const discovery = await Promise.race([
+        discoveryPromise,
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Model discovery is still running. Use Refresh to check again.")), uiDiscoveryTimeoutMs);
+        })
+      ]);
+      lastUiDiscovery = discovery;
+      return discovery;
+    } catch (error) {
+      if (lastUiDiscovery) {
+        return {
+          ...lastUiDiscovery,
+          stale: true,
+          discoveryPending: true,
+          discoveryError: error instanceof Error ? error.message : String(error)
+        };
+      }
+      throw error;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
 
   return Object.freeze({
     getPlatformDiscovery: (forceRefresh = false) => modelCatalog.discover({ forceRefresh }),
@@ -53,12 +80,18 @@ export function createPlatformUseCases({
             status,
             ...(detail ? { detail } : {})
           })
-        )
+        ),
+        ...(discovery.discoveryPending ? { discoveryPending: true, discoveryError: discovery.discoveryError } : {})
       };
     },
     async listPlatformModels() {
       const discovery = await discoverForUi();
-      return { models: discovery.models || [] };
+      return {
+        models: discovery.models || [],
+        ...(discovery.generatedAt ? { generatedAt: discovery.generatedAt } : {}),
+        ...(discovery.stale ? { stale: true } : {}),
+        ...(discovery.discoveryPending ? { discoveryPending: true, discoveryError: discovery.discoveryError } : {})
+      };
     },
     readPlatformSettings: () => platformSettingsStore.read(),
     async updatePlatformSettings(payload) {
