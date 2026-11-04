@@ -77,6 +77,8 @@ async function maybeHoldResumeLockForTest(): Promise<void> {
 
 export async function runSystemWithAdapter(args: {
   systemPath: string;
+  /** Optional in-memory definition for isolated Role trials and host-owned runners. */
+  systemDefinition?: import("./types.js").SystemDefinition;
   systemBaseDir?: string;
   profilesPath?: string;
   toolsPath?: string;

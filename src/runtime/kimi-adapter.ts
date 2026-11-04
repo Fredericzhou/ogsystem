@@ -3,11 +3,35 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveExecutable } from "./cli-adapter-support.js";
 import { AcpClient } from "./acp-client.js";
-import { createAcpRunSession, defaultAcpModel } from "./acp-adapter-support.js";
+import { createAcpRunSession } from "./acp-adapter-support.js";
 import type { BackendAdapter, BackendDescriptor } from "./model-backend-registry.js";
 import type { ModelCatalogEntry } from "./types.js";
 
 const definition = { backendId: "kimi" as const, command: "kimi", args: ["acp"], protocolVersion: 0, modelEnv: "OGS_KIMI_MODEL" };
+
+export async function discoverConfiguredKimiModels(): Promise<ModelCatalogEntry[]> {
+  const configPath = process.env.KIMI_CONFIG_PATH
+    || join(process.env.KIMI_HOME || join(homedir(), ".kimi-code"), "config.toml");
+  try {
+    const config = await readFile(configPath, "utf8");
+    const ids = new Set<string>();
+    const defaultModel = config.match(/^\s*default_model\s*=\s*["']([^"']+)["']\s*$/m)?.[1]?.trim();
+    if (defaultModel) ids.add(defaultModel);
+    const tablePattern = /^\s*\[models\.(["'])([^"']+)\1\]\s*$/gm;
+    for (const match of config.matchAll(tablePattern)) if (match[2]?.trim()) ids.add(match[2].trim());
+    return [...ids].map((modelId) => ({
+      backend: "kimi",
+      modelId,
+      runnable: false,
+      name: modelId,
+      status: "unverified",
+      capabilities: { textInput: true, textOutput: true, toolcall: true },
+      variants: []
+    }));
+  } catch {
+    return [];
+  }
+}
 
 async function configuredApiKeyEnv(): Promise<string | undefined> {
   const configPath = process.env.KIMI_CONFIG_PATH
@@ -37,34 +61,34 @@ export const kimiBackendDescriptor: BackendDescriptor = {
 export const kimiBackendAdapter: BackendAdapter = {
   backendId: "kimi", verifiedRunnable: true,
   async discover({ workdir }) {
-    const command = await resolveExecutable("kimi");
-    if (!command) return { status: "not_installed", detail: "Kimi Code CLI is not installed on this machine.", models: [] };
+    const configuredModels = await discoverConfiguredKimiModels();
+    const command = await resolveExecutable("kimi", [join(process.env.KIMI_HOME || join(homedir(), ".kimi-code"), "bin", "kimi")]);
+    if (!command) return { status: "not_installed", detail: "Kimi Code CLI is not installed on this machine.", models: configuredModels.map((model) => ({ ...model, status: "unavailable" })) };
     const apiKeyEnv = await configuredApiKeyEnv();
     if (apiKeyEnv && !process.env[apiKeyEnv]?.trim()) {
       return {
         status: "installed_but_broken",
         detail: `Kimi Code CLI is installed and configured for an API provider, but ${apiKeyEnv} is not set in the OGS process environment.`,
-        models: []
+        models: configuredModels
       };
     }
     try {
       const client = await AcpClient.start({ ...definition, command, cwd: workdir });
       try {
-        const configuredModel = defaultAcpModel(definition);
         const session = await client.createSessionInfo(workdir, 30_000);
-        const modelId = configuredModel !== "default" ? configuredModel : (session.modelId ?? configuredModel);
-        const models: ModelCatalogEntry[] = [{ backend: "kimi", modelId, runnable: true, name: modelId, status: "active", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [], ...(session.reasoning ? { reasoning: session.reasoning } : {}) }];
-        return { status: "runnable", detail: `Kimi ACP ready (session ${session.sessionId}).`, models };
+        const sessionModel = session.modelId ? [{ backend: "kimi", modelId: session.modelId, runnable: false, name: session.modelId, status: "unverified" as const, capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [], ...(session.reasoning ? { reasoning: session.reasoning } : {}) }] : [];
+        const models = [...configuredModels.map((model) => ({ ...model, reasoning: session.reasoning })), ...sessionModel.filter((model) => !configuredModels.some((configured) => configured.modelId === model.modelId))];
+        return { status: "runnable", detail: `Kimi ACP ready; ${models.length} configured model${models.length === 1 ? "" : "s"} found.`, models };
       } finally { await client.close(); }
     } catch (error) { return { status: "installed_but_broken", detail: apiProviderError(error, apiKeyEnv), models: [] }; }
   },
   async startRun(args) {
-    const command = await resolveExecutable("kimi");
+    const command = await resolveExecutable("kimi", [join(process.env.KIMI_HOME || join(homedir(), ".kimi-code"), "bin", "kimi")]);
     if (!command) throw new Error("Kimi Code CLI is not installed.");
     return createAcpRunSession({ ...definition, command }, args);
   },
   async probe({ modelId, workdir, timeoutMs }) {
-    const command = await resolveExecutable("kimi");
+    const command = await resolveExecutable("kimi", [join(process.env.KIMI_HOME || join(homedir(), ".kimi-code"), "bin", "kimi")]);
     if (!command) throw new Error("Kimi Code CLI is not installed.");
     const client = await AcpClient.start({ ...definition, command, cwd: workdir, timeoutMs });
     try {

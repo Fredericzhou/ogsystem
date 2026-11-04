@@ -9,9 +9,20 @@ because it is useful in BPMN or enterprise organization management.
 
 ## Product Position
 
-OGS is a recoverable workflow runtime for collaboration among abstract Responsibility Roles. A
-Role is a stable responsibility in a System and may recursively own a bounded nested System. It is
-not a person, organization member, model, service instance, or run instance.
+OGS is an event-driven, persistent extended state-machine workflow runtime for collaboration among
+abstract Responsibility Roles. A Run persists the current business state and execution frontier;
+each Role produces a typed business result, the Runtime applies the result, and the matching Flow
+determines the next activation. Branches, Joins, Loops, human review, checkpoints, recovery, and
+audit are extensions of this state machine. LangGraph is the current engine implementation behind
+the Runtime boundary, while OGS owns the public semantics and durable contracts. A Role is a stable
+responsibility in a System and may recursively own a bounded nested System. It is not a person,
+organization member, model, service instance, or run instance.
+
+The product execution model is:
+
+```text
+Run state -> Role -> event/data -> state reduction -> Flow routing -> next activation
+```
 
 ```text
 Role        = who is responsible

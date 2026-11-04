@@ -8,10 +8,14 @@ same thing.
 
 ## Product Boundary
 
-OGS is a recoverable workflow runtime for collaboration among abstract responsibility roles. It
-models which stable responsibilities cooperate, the events and contracts that connect them, and
-the durable facts of a run. It is not an HR directory, an organization chart, or a system for
-identifying specific people.
+OGS is an event-driven, persistent extended state-machine workflow runtime for collaboration among
+abstract responsibility roles. It models which stable responsibilities cooperate, the events and
+contracts that connect them, and the durable facts of a run. A Role execution emits an event and
+structured data; the Runtime applies the state transition and selects the matching Flow. Branches,
+Joins, Loops, human review, checkpoints, recovery, and audit extend the state machine beyond a
+simple finite-state model. LangGraph is the current execution engine behind this boundary; it is
+not the public OGS semantic model or DSL. OGS is not an HR directory, an organization chart, or a
+system for identifying specific people.
 
 An actual person, model, service, or tool may realize a responsibility through an execution
 binding or an external governance integration. That realization is not the identity of the OGS

@@ -60,6 +60,32 @@ test("platform models view supports linked selection by service and toggling bet
         ]
       })
     }));
+    const backendDescriptors = [
+      { backend: "codex", displayName: "Codex CLI", iconKey: "codex", status: "checking" },
+      { backend: "ollama", displayName: "Ollama Local", iconKey: "ollama", status: "checking" },
+      { backend: "kimi-cli", displayName: "Kimi CLI", iconKey: "kimi", status: "checking" }
+    ];
+    await page.route("**/api/v1/platform/backends", (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ backends: backendDescriptors, discoveryPending: true })
+    }));
+    const backendPayloads = {
+      codex: { source: { ...backendDescriptors[0], status: "runnable", detail: "Ready" }, models: [
+        { backend: "codex", modelId: "gpt-5", name: "GPT-5", capabilities: { textInput: true, textOutput: true }, runnable: true },
+        { backend: "codex", modelId: "gpt-5-mini", name: "GPT-5 Mini", capabilities: { textInput: true, textOutput: true }, runnable: true }
+      ] },
+      ollama: { source: { ...backendDescriptors[1], status: "runnable", detail: "Ready" }, models: [
+        { backend: "ollama", modelId: "llama3:8b", name: "Llama 3 8B", capabilities: { textInput: true, textOutput: true }, runnable: true }
+      ] },
+      "kimi-cli": { source: { ...backendDescriptors[2], status: "not_installed", detail: "Missing" }, models: [
+        { backend: "kimi-cli", modelId: "moonshot-v1", name: "Moonshot v1", capabilities: { textInput: true }, runnable: false }
+      ] }
+    };
+    await page.route("**/api/v1/platform/backends/*/discovery", async (route) => {
+      const backend = new URL(route.request().url()).pathname.split("/").at(-2);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(backendPayloads[backend]) });
+    });
 
     await page.goto(`${url}/platform/models`, { waitUntil: "networkidle" });
     assert.deepEqual(pageErrors, []);

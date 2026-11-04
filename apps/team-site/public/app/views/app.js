@@ -926,7 +926,7 @@ async function renderPlatformConfig() {
   const probeKeyForModel = (item) => `${item.backend}:${item.modelId}`;
   const checkingSource = (item) => ({ ...item, status: item.status || "checking" });
   const mergeBackendDiscovery = (snapshot, backendPayload) => {
-    const source = backendPayload?.source;
+    const source = backendPayload?.source || backendPayload?.sources?.[0];
     const sources = (snapshot.sources || []).filter((item) => item.backend !== source?.backend);
     if (source) sources.push(source);
     const models = (snapshot.models || []).filter((item) => item.backend !== source?.backend);
@@ -934,19 +934,15 @@ async function renderPlatformConfig() {
     return { ...snapshot, sources, models, generatedAt: backendPayload?.generatedAt || snapshot.generatedAt, discoveryPending: false };
   };
   const discoverBackendsIncrementally = async ({ forceRefresh = false, settings, initial } = {}) => {
-    const aggregatePromise = pageFetch(`/api/v1/platform/discovery${forceRefresh ? "?refresh=1" : ""}`).then(async (response) => ({ response, payload: await response.json() })).catch(() => null);
     const backendResponse = await pageFetch("/api/v1/platform/backends");
     const backendPayload = await backendResponse.json();
     if (!backendResponse.ok) throw new Error(backendPayload.error || "无法读取运行底座");
-    const aggregate = await Promise.race([aggregatePromise, new Promise((resolve) => setTimeout(() => resolve(null), 120))]);
-    if (aggregate?.response?.ok && aggregate.payload?.sources?.length && !aggregate.payload.discoveryPending) {
-      renderDiscovery(aggregate.payload, settings);
-      return aggregate.payload;
-    }
     let snapshot = { generatedAt: new Date().toISOString(), sources: (backendPayload.backends || []).map(checkingSource), models: [], discoveryPending: true };
     renderDiscovery(snapshot, settings);
     const discoverOne = async (backend) => {
-      for (let attempt = 0; attempt < 12; attempt += 1) {
+      // A slow CLI must remain visibly checking without holding the other
+      // backends behind repeated server-side timeout windows.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         const response = await pageFetch(`/api/v1/platform/backends/${encodeURIComponent(backend.backend)}/discovery${forceRefresh ? "?refresh=1" : ""}`);
         const payload = await response.json();
         if (response.status !== 202) return { response, payload };
@@ -957,8 +953,8 @@ async function renderPlatformConfig() {
         payload: {
           source: {
             ...backend,
-            status: "service_unavailable",
-            detail: "底座检测超时，请检查 CLI、服务状态或配置后重试"
+            status: "checking",
+            detail: "底座检测仍在进行，请稍后刷新"
           },
           models: [],
           discoveryPending: false
@@ -1041,21 +1037,27 @@ async function renderPlatformConfig() {
       const modelStatus = probe?.status || item.status || "unverified";
       const availability = modelStatus === "verified" || probe?.status === "runnable" ? "可运行" : modelStatus === "unavailable" || probe?.status === "failed" ? "不可用" : modelStatus === "checking" ? "探测中" : "已发现，待验证";
       const chip = modelStatus === "verified" || probe?.status === "runnable" ? "confirmed" : modelStatus === "unavailable" || probe?.status === "failed" ? "error" : "";
-      const message = modelStatus === "verified" || probe?.status === "runnable" ? `<span class="platform-row-detail">验证成功${Number.isFinite(probe.durationMs) ? `，${Math.round(probe.durationMs)} ms` : ""}</span>` : probe?.message || item.detail ? `<span class="platform-row-detail">${esc(probe?.message || item.detail)}</span>` : "";
+      const message = modelStatus === "verified" || probe?.status === "runnable" ? `<span class="platform-row-detail">验证成功${Number.isFinite(probe?.durationMs) ? `，${Math.round(probe.durationMs)} ms` : ""}</span>` : probe?.message || item.detail ? `<span class="platform-row-detail">${esc(probe?.message || item.detail)}</span>` : "";
       const source = sourceByBackend.get(item.backend);
       const backendDisplayName = source?.displayName || resolveBackendIconEntry(item.backend).displayName;
       return `<div class="platform-model-row is-clickable" data-backend="${esc(item.backend)}" data-model-id="${esc(item.modelId)}" tabindex="0" role="button" title="点击验证模型">${renderBackendIcon(item.backend, { iconKey: source?.iconKey, displayName: backendDisplayName, status: source?.status, size: 22 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.modelId)}</strong><span class="status-chip ${chip}">${availability}</span></div><span class="platform-row-detail">${esc(backendDisplayName)} · ${esc(item.name || item.modelId)}</span>${message}<div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`;
     }).join("") : `<div class="platform-empty">${emptyMessage}</div>`;
     const hasCodexModel = models.some((item) => item.backend === "codex" && ["verified", "runnable"].includes(modelProbes.get(probeKeyForModel(item))?.status));
     const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && ["verified", "runnable"].includes(modelProbes.get(probeKeyForModel(item))?.status));
+    const selectedSource = sourceByBackend.get(selectedBackend);
+    const selectedDisplayName = selectedSource?.displayName || resolveBackendIconEntry(selectedBackend).displayName || selectedBackend;
     const missingBackends = [!hasCodexModel && "Codex", !hasOpenCodeModel && "OpenCode"].filter(Boolean);
-    const requirementMessage = missingBackends.length
+    const requirementMessage = modelFilterMode === "service" && selectedBackend && !["codex", "opencode"].includes(selectedBackend)
       ? (state.locale === "en"
-        ? `No ${missingBackends.join(" or ")} model has passed a live availability probe. Probe discovered models before using them. Team Assistant requires OpenCode.`
-        : `尚无通过实际请求验证的 ${missingBackends.join(" 或 ")} 模型。请对发现的模型执行可用性探测；团队助手对话需要 OpenCode。`)
-      : (state.locale === "en"
-        ? "Codex and OpenCode models have passed live availability probes. Team Assistant uses OpenCode."
-        : "Codex 和 OpenCode 均有模型通过实际请求验证；团队助手对话使用 OpenCode。");
+        ? `${selectedDisplayName} models are read from the local ${selectedDisplayName} configuration. Click a model to verify it through ${selectedSource?.transport || "its native protocol"}.`
+        : `已读取 ${selectedDisplayName} 的本地配置模型。点击模型后，将通过 ${selectedSource?.transport || "该底座原生协议"} 执行实际请求验证。`)
+      : missingBackends.length
+        ? (state.locale === "en"
+          ? `No ${missingBackends.join(" or ")} model has passed a live availability probe. Probe discovered models before using them. Team Assistant requires OpenCode.`
+          : `尚无通过实际请求验证的 ${missingBackends.join(" 或 ")} 模型。请对发现的模型执行可用性探测；团队助手对话需要 OpenCode。`)
+        : (state.locale === "en"
+          ? "Codex and OpenCode models have passed live availability probes. Team Assistant uses OpenCode."
+          : "Codex 和 OpenCode 均有模型通过实际请求验证；团队助手对话使用 OpenCode。");
     $("#platform-models .platform-model-requirement")?.remove();
     $("#platform-models").insertAdjacentHTML("afterbegin", `<p class="form-hint platform-model-requirement" role="status">${esc(requirementMessage)}</p>`);
     $("#platform-discovery-meta").textContent = `上次检查：${formatDiscoveryTime(discovery.generatedAt)}${discovery.stale ? " · 建议刷新" : ""}`;
@@ -1620,6 +1622,7 @@ async function renderStudioRunDetail(teamVersionId, simulationId, pageRequest = 
 async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
   const isRefresh = Boolean(root.querySelector(".studio-run-split"));
+  const wasHistoryCollapsed = root.querySelector(".studio-run-split")?.classList.contains("is-history-collapsed") || false;
   const previousGraphStage = root.querySelector("#studio-run-graph-stage");
   if (previousGraphStage) {
     window.OGSStudioGraphBundle?.disposeStudioX6Bridge?.(previousGraphStage);
@@ -1714,7 +1717,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       return studioRuntimeRoleCardMarkup({ event: { ...item, roleId }, roleName: roleNameStr, backend, authoring: simulationAuthoring, auditIndex: index, bodyMarkup, handoffMarkup, statusLabel: `${studioSimulationEventTime(item)} · ${studioSimulationStatus(item.status || "unknown")}`, focusableAvatar: false });
     }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`;
     const transcriptHtml = `${userPromptCard}${transcriptItemsHtml}`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<div class="studio-dual-core-bar"><div class="studio-dual-core-meta"><strong>${state.locale === "en" ? "Macro / Micro Twin Core Cockpit" : "宏微双核联动视窗"}</strong><span class="field-hint">${state.locale === "en" ? "Macro topological view & micro role chat content" : "宏观拓扑结构与微观角色对话同屏联动"}</span></div><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Layout preference" : "宏微双核布局"}"><button type="button" class="studio-layout-switcher-btn" data-preference="structure-focus" title="${state.locale === "en" ? "Focus on Structure (60:40)" : "突出结构 (60:40)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="18" rx="2"/><rect x="15" y="3" width="6" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Structure" : "突出结构"}</span></button><button type="button" class="studio-layout-switcher-btn" data-preference="balanced" title="${state.locale === "en" ? "Balanced Dual-Core (50:50)" : "双核并重 (50:50)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Balanced" : "双核并重"}</span></button><button type="button" class="studio-layout-switcher-btn is-active" data-preference="content-focus" title="${state.locale === "en" ? "Focus on Content (40:60)" : "突出内容 (40:60)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="2"/><rect x="11" y="3" width="10" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Content" : "突出内容"}</span></button></div></div><div class="studio-run-dual-core" data-layout-preference="content-focus"><section class="studio-run-macro-panel detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Macro view" : "宏观拓扑"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><div class="panel-head-actions"><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="macro" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="studio-run-micro-panel project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Micro view" : "微观内容"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><div class="panel-head-actions"><span class="count-badge">${auditTrail.length}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="micro" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript">${transcriptHtml}</ol></div></section></div><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p><aside id="studio-audit-drilldown-drawer" class="studio-audit-drilldown-drawer" aria-label="${state.locale === "en" ? "Audit Drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${state.locale === "en" ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${state.locale === "en" ? "Role Activation Audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist"><button type="button" class="studio-audit-drawer-tab is-active" data-audit-tab="telemetry" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${state.locale === "en" ? "Telemetry" : "调用明细"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="input" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>${state.locale === "en" ? "Input Context" : "输入上下文"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="output" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${state.locale === "en" ? "Output" : "执行交付"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="diagnostics" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${state.locale === "en" ? "Diagnostics" : "失败诊断"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="raw" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>${state.locale === "en" ? "Raw JSON" : "原始数据"}</span></button></div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus Node" : "定位图谱节点"}</span></button><button type="button" class="secondary-button" data-audit-action="copy-json"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>${state.locale === "en" ? "Copy JSON" : "复制 JSON"}</span></button><button type="button" class="primary-button" data-audit-drawer-close>${state.locale === "en" ? "Close" : "关闭"}</button></div></aside>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<div class="studio-dual-core-bar"><div class="studio-dual-core-meta"><button type="button" class="secondary-button studio-history-expand-btn" data-history-toggle="expand" title="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}" aria-label="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}">▶ ${state.locale === "en" ? "History" : "历史"}</button><strong>${state.locale === "en" ? "Macro / Micro Twin Core Cockpit" : "宏微双核联动视窗"}</strong><span class="field-hint">${state.locale === "en" ? "Macro topological view & micro role chat content" : "宏观拓扑结构与微观角色对话同屏联动"}</span></div><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Layout preference" : "宏微双核布局"}"><button type="button" class="studio-layout-switcher-btn" data-preference="structure-focus" title="${state.locale === "en" ? "Focus on Structure (60:40)" : "突出结构 (60:40)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="18" rx="2"/><rect x="15" y="3" width="6" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Structure" : "突出结构"}</span></button><button type="button" class="studio-layout-switcher-btn" data-preference="balanced" title="${state.locale === "en" ? "Balanced Dual-Core (50:50)" : "双核并重 (50:50)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Balanced" : "双核并重"}</span></button><button type="button" class="studio-layout-switcher-btn is-active" data-preference="content-focus" title="${state.locale === "en" ? "Focus on Content (40:60)" : "突出内容 (40:60)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="2"/><rect x="11" y="3" width="10" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Content" : "突出内容"}</span></button></div></div><div class="studio-run-dual-core" data-layout-preference="content-focus"><section class="studio-run-macro-panel detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Macro view" : "宏观拓扑"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><div class="panel-head-actions"><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="macro" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="studio-run-micro-panel project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Micro view" : "微观内容"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><div class="panel-head-actions"><span class="count-badge">${auditTrail.length}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="micro" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript">${transcriptHtml}</ol></div></section></div><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p><aside id="studio-audit-drilldown-drawer" class="studio-audit-drilldown-drawer" aria-label="${state.locale === "en" ? "Audit Drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${state.locale === "en" ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${state.locale === "en" ? "Role Activation Audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist"><button type="button" class="studio-audit-drawer-tab is-active" data-audit-tab="telemetry" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${state.locale === "en" ? "Telemetry" : "调用明细"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="input" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>${state.locale === "en" ? "Input Context" : "输入上下文"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="output" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${state.locale === "en" ? "Output" : "执行交付"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="diagnostics" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${state.locale === "en" ? "Diagnostics" : "失败诊断"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="raw" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>${state.locale === "en" ? "Raw JSON" : "原始数据"}</span></button></div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus Node" : "定位图谱节点"}</span></button><button type="button" class="secondary-button" data-audit-action="copy-json"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>${state.locale === "en" ? "Copy JSON" : "复制 JSON"}</span></button><button type="button" class="primary-button" data-audit-drawer-close>${state.locale === "en" ? "Close" : "关闭"}</button></div></aside>`;
     root.querySelector(".studio-layout-switcher")?.remove();
     root.querySelector(".studio-run-dual-core")?.setAttribute("data-layout-preference", "balanced");
     root.querySelector("#studio-audit-drilldown-drawer")?.setAttribute("data-studio-runtime-audit-drawer", "");
@@ -1797,6 +1800,36 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       });
     });
     const dualCoreContainer = root.querySelector(".studio-run-dual-core");
+    if (dualCoreContainer && !dualCoreContainer.querySelector("[data-runtime-split-handle]")) {
+      dualCoreContainer.insertAdjacentHTML("beforeend", `<button type="button" class="studio-runtime-split-handle" data-runtime-split-handle aria-label="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}" title="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}"><span aria-hidden="true"></span></button>`);
+      const splitHandle = dualCoreContainer.querySelector("[data-runtime-split-handle]");
+      let splitDrag = null;
+      splitHandle?.addEventListener("pointerdown", (event) => {
+        if (window.matchMedia?.("(max-width: 1100px)").matches) return;
+        const bounds = dualCoreContainer.getBoundingClientRect();
+        splitDrag = { pointerId: event.pointerId, left: bounds.left, width: bounds.width };
+        splitHandle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      splitHandle?.addEventListener("pointermove", (event) => {
+        if (!splitDrag || event.pointerId !== splitDrag.pointerId) return;
+        const ratio = Math.min(0.7, Math.max(0.3, (event.clientX - splitDrag.left) / splitDrag.width));
+        dualCoreContainer.style.setProperty("--studio-runtime-split", `${Math.round(ratio * 100)}%`);
+        historyGraph?.update({});
+      });
+      const finishSplitDrag = (event) => { if (splitDrag?.pointerId === event.pointerId) splitDrag = null; };
+      splitHandle?.addEventListener("pointerup", finishSplitDrag);
+      splitHandle?.addEventListener("pointercancel", finishSplitDrag);
+      splitHandle?.addEventListener("keydown", (event) => {
+        const delta = event.shiftKey ? 0.08 : 0.04;
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const current = Number.parseFloat(getComputedStyle(dualCoreContainer).getPropertyValue("--studio-runtime-split")) || 50;
+        const next = Math.min(70, Math.max(30, current + (event.key === "ArrowRight" ? delta * 100 : -delta * 100)));
+        dualCoreContainer.style.setProperty("--studio-runtime-split", `${next}%`);
+        historyGraph?.update({});
+      });
+    }
     const maximizeBtns = root.querySelectorAll(".studio-panel-maximize-btn");
 
     maximizeBtns.forEach((btn) => {
@@ -1923,9 +1956,20 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     while (root.children.length > 1) detailBody.append(root.children[1]);
     const split = document.createElement("div");
     split.className = "studio-run-split";
-    split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
+    if (wasHistoryCollapsed) split.classList.add("is-history-collapsed");
+    split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><div class="studio-run-history-head"><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2><button type="button" class="studio-history-collapse-btn" data-history-toggle="collapse" title="${state.locale === "en" ? "Collapse history drawer" : "收起调试历史"}" aria-label="${state.locale === "en" ? "Collapse history drawer" : "收起调试历史"}">◀</button></div>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
     split.append(detailBody);
     root.append(split);
+    split.querySelectorAll("[data-history-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const collapsed = split.classList.toggle("is-history-collapsed");
+        btn.setAttribute("aria-expanded", String(!collapsed));
+        window.setTimeout(() => {
+          historyGraph?.update({});
+          window.dispatchEvent(new Event("resize"));
+        }, 240);
+      });
+    });
     bindStudioWorkspaceButtons(root);
     addStudioWorkspaceNav(root, teamVersionId, "run");
     if (isRefresh && root.dataset.template) {
@@ -2851,9 +2895,13 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       globalView ||= assetDrawer.querySelector("#studio-assets-global");
       assetBack ||= assetDrawer.querySelector("[data-studio-assets-back]");
       const buildPanel = workbench?.querySelector("#team-build-panel");
+      const currentDebugPanel = workbench?.querySelector("#team-debug-dialog");
       if (isCompactPanelViewport()) {
         buildPanel?.classList.remove("is-open");
         buildPanel?.setAttribute("aria-hidden", "true");
+        currentDebugPanel?.classList.remove("is-open");
+        currentDebugPanel?.setAttribute("aria-hidden", "true");
+        workbench?.querySelector('[data-studio-graph-action="debug-run"]')?.setAttribute("aria-expanded", "false");
       }
       assetDrawer.classList.add("is-open");
       workbench?.studioSyncPanelDockLayout?.("asset");
@@ -3629,6 +3677,12 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       }
       runtimeMicroOpen = microOpen !== false;
       runtimeWorkbench.classList.add("studio-run-dual-core", "is-runtime-dual-core");
+      const assetDrawer = runtimeWorkbench.querySelector("#studio-asset-drawer");
+      if (assetDrawer?.classList.contains("is-open")) {
+        assetDrawer.classList.remove("is-open");
+        assetDrawer.setAttribute("aria-hidden", "true");
+        runtimeWorkbench.querySelectorAll('[data-studio-graph-action="assets"]').forEach((b) => b.setAttribute("aria-expanded", "false"));
+      }
       runtimeWorkbench.dataset.layoutPreference = preference;
       if (!runtimeWorkbench.style.getPropertyValue("--studio-runtime-split")) {
         runtimeWorkbench.style.setProperty("--studio-runtime-split", "50%");

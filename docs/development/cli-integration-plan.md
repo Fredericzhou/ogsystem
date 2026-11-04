@@ -15,7 +15,7 @@ not a permanent protocol contract; implementation must keep a version compatibil
 probe the installed client:
 
 ```text
-OpenCode   1.19.5
+OpenCode   1.18.20
 Pi         1.5.0
 Qwen Code  0.26.6
 Kimi Code  2.4.1
@@ -44,6 +44,28 @@ MCP = agent-to-tool protocol
 ```
 
 The runtime talks to coding agents through ACP, RPC, or a client-specific JSON stream. The agent can use MCP to call external tools.
+
+### API provider policy
+
+All native CLI integrations use the provider configuration documented by the CLI. OGS does not
+run an interactive `login` flow, import login sessions, or store provider credentials in project
+files. The configured API key remains in the environment or user-level configuration expected by
+the provider, and is inherited by the CLI child process at runtime.
+
+The current configuration sources are:
+
+| Backend | Official configuration source | OGS entrypoint |
+| --- | --- | --- |
+| Codex | Codex's documented API/environment configuration | `codex app-server --stdio` |
+| OpenCode | OpenCode provider configuration and environment | `opencode serve` / `opencode models --verbose` |
+| Ollama | Local Ollama service configuration | `GET /api/tags`, `POST /api/chat` |
+| Pi | `~/.pi/agent/models.json` provider/model entries | `pi --mode rpc` |
+| Qwen Code | `~/.qwen/settings.json` `modelProviders` entries | `qwen --acp` |
+| Kimi Code | `~/.kimi-code/config.toml` model/provider entries and `api_key_env` | `kimi acp` |
+
+The provider and model IDs discovered from these files are backend-local. Discovery only reports
+configured models as `unverified`; a real request probe is required before a model is marked
+`verified` and selectable for execution.
 
 The direction is sound, but the implementation should extend the existing runtime boundary rather
 than introduce a second adapter abstraction. The repository already has `BackendAdapter`,
@@ -477,7 +499,9 @@ Role bindings continue to use the existing model-selection shape:
 }
 ```
 
-OGS does not import or manage provider credentials. Each CLI continues to use its own user-level authentication.
+OGS does not import or manage provider credentials. Each adapter uses the CLI's official API
+provider configuration and environment variables. Interactive CLI login is outside the OGS runtime
+contract and must not be required for discovery or execution.
 
 Every adapter receives:
 

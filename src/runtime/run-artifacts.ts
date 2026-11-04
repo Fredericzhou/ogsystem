@@ -742,6 +742,8 @@ async function writeRoleExecutionFiles(args: {
 export async function initializeRunContext(args: {
   system: SystemDefinition;
   systemPath: string;
+  /** Optional source text. In-memory runners persist the definition as JSON instead of fabricating Mermaid. */
+  systemSource?: string;
   prompt: string;
   workdir: string;
   runtimeConfig: RuntimeConfig;
@@ -819,14 +821,17 @@ export async function initializeRunContext(args: {
     await mkdir(sharedDir, { recursive: true });
     await mkdir(resolve(runDir, ".opencode"), { recursive: true });
 
-    const sourceSystem = await readFile(args.systemPath, "utf8");
     // Idempotency: resumed directories reuse existing snapshots so we don't lose checkpoints when
     // rerunning setup after a crash.
     await writeIfMissing(
       resolve(runDir, "request.md"),
       `${redactPromptText(args.prompt, args.runtimeConfig.redaction)}\n`
     );
-    await writeIfMissing(resolve(runDir, "system.mmd"), sourceSystem);
+    if (args.systemSource !== undefined) {
+      await writeIfMissing(resolve(runDir, "system.mmd"), args.systemSource);
+    } else {
+      await writeIfMissing(resolve(runDir, "system.json"), stringifyJson(args.system));
+    }
     await writeIfMissing(
       resolve(runDir, "run.md"),
       [

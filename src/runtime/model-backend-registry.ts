@@ -167,23 +167,22 @@ export class BackendRegistry {
         ? discovered.status
         : "unavailable"
       : discovered.status;
-    const effectiveModels: ModelCatalogEntry[] =
-      adapter.verifiedRunnable && effectiveStatus === "runnable"
-        ? discovered.models.map((entry) => ({
-            backend: descriptor.backendId,
-            modelId: entry.modelId,
-            runnable: Boolean(entry.runnable),
-            ...(entry.name ? { name: entry.name } : {}),
-            status: entry.status === "unavailable" ? "unavailable" : "discovered",
-            capabilities: {
-              textInput: Boolean(entry.capabilities.textInput),
-              textOutput: Boolean(entry.capabilities.textOutput),
-              toolcall: Boolean(entry.capabilities.toolcall)
-            },
-            variants: [...entry.variants],
-            ...(entry.reasoning ? { reasoning: entry.reasoning } : {})
-          }))
-        : [];
+    const effectiveModels: ModelCatalogEntry[] = discovered.models.map((entry) => ({
+      backend: descriptor.backendId,
+      modelId: entry.modelId,
+      runnable: Boolean(entry.runnable) && effectiveStatus === "runnable",
+      ...(entry.name ? { name: entry.name } : {}),
+      status: effectiveStatus === "not_installed"
+        ? "unavailable"
+        : entry.status === "unavailable" ? "unavailable" : entry.status === "active" ? "discovered" : entry.status || "unverified",
+      capabilities: {
+        textInput: Boolean(entry.capabilities.textInput),
+        textOutput: Boolean(entry.capabilities.textOutput),
+        toolcall: Boolean(entry.capabilities.toolcall)
+      },
+      variants: [...entry.variants],
+      ...(entry.reasoning ? { reasoning: entry.reasoning } : {})
+    }));
     return {
       source: {
         backend: descriptor.backendId,

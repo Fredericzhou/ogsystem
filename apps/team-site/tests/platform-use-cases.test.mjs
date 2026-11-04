@@ -78,15 +78,15 @@ test("platform model probe only invokes the live probe for a discovered runnable
   const useCases = createPlatformUseCases({
     platformSettingsStore: { read: async () => ({}), write: async () => undefined },
     modelCatalog: { discover: async () => ({ models: [
-      { backend: "codex", modelId: "gpt-6-luna", runnable: true },
-      { backend: "codex", modelId: "disabled", runnable: false }
+      { backend: "codex", modelId: "gpt-6-luna", runnable: true, status: "verified" },
+      { backend: "codex", modelId: "disabled", runnable: false, status: "unavailable" }
     ] }) },
     probeModelAvailability: async (model) => (probed.push(model), { status: "runnable", ...model })
   });
 
-  assert.deepEqual(await useCases.probeModelAvailability({ backend: "codex", modelId: "gpt-6-luna" }), { status: "runnable", backend: "codex", modelId: "gpt-6-luna", runnable: true });
-  await assert.rejects(useCases.probeModelAvailability({ backend: "codex", modelId: "disabled" }), /not currently discovered as runnable/);
-  assert.deepEqual(probed, [{ backend: "codex", modelId: "gpt-6-luna", runnable: true }]);
+  assert.deepEqual(await useCases.probeModelAvailability({ backend: "codex", modelId: "gpt-6-luna" }), { status: "verified", backend: "codex", modelId: "gpt-6-luna", runnable: true });
+  await assert.rejects(useCases.probeModelAvailability({ backend: "codex", modelId: "disabled" }), /not currently discovered in its backend configuration/);
+  assert.deepEqual(probed, [{ backend: "codex", modelId: "gpt-6-luna", runnable: true, status: "verified" }]);
 });
 
 test("slow UI discovery never masquerades as an empty model catalog", async () => {

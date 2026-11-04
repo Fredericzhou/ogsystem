@@ -1,6 +1,19 @@
 # OGSystem 产品简介
 
-OGSystem 把一组有明确职责的角色组织成可执行、可恢复、可审计的协作流程。产品由两个对等工作台和共享平台能力组成：OGS Studio 负责团队工程资产的设计、Simulation 调试、诊断和发布；OGS Projects 负责业务项目、Materials、Task、Review 和 Deliverables。两个工作台共用 Team Site Origin、Runtime 能力和平台配置，但各自拥有不同的运行数据与查询 API。工程人员也可以继续使用 CLI。
+OGSystem 是一个**事件驱动的持久化扩展状态机工作流运行时**：它把一组有明确职责的 Role 组织成可执行、可恢复、可审计的协作流程。Role 执行后产生 `event`、`content` 和 `data`，Runtime 根据事件匹配 Flow，更新持久化状态，再激活下一个 Role、分支、Join、Loop 或结束节点。LangGraph 是当前使用的底层执行引擎，OGSystem 自己定义 Role、Flow、事件协议、状态、恢复和审计语义。产品由两个对等工作台和共享平台能力组成：OGS Studio 负责团队工程资产的设计、Simulation 调试、诊断和发布；OGS Projects 负责业务项目、Materials、Task、Review 和 Deliverables。两个工作台共用 Team Site Origin、Runtime 能力和平台配置，但各自拥有不同的运行数据与查询 API。工程人员也可以继续使用 CLI。
+
+核心执行模型可以概括为：
+
+```text
+持久化 Run 状态
+  -> 激活 Role
+  -> Role 输出 event + data
+  -> 更新业务状态
+  -> 匹配 Flow
+  -> 激活下一个 Role / 分支 / Join / Loop / End
+```
+
+本产品不是简单的有限状态机：状态包含业务数据、分支血缘、Join 进度、循环轮次、人工审核和检查点；它也不是把 LangGraph API 直接暴露给用户的图编排产品。产品语义由 OGSystem Semantic IR 和 Runtime 合同控制，底层执行引擎可以在保持这些合同不变的前提下替换。
 
 OGS Studio 提供团队草稿、图谱设计、角色执行与编排属性、Context Map、角色资产包、Flow Contract/Schema 编辑、Simulation 调试与回放，以及发布门禁。模型选项来自共享平台的发现目录；CLI Profile 与可执行工具定义保存在 TeamVersion 草稿中。共享平台工具目录只登记能力元数据，不会自动成为运行时命令。调试面板可选择 `dry-run` 仿真或隔离 `sandbox` 沙箱运行；沙箱运行用于深入验证模型调用和角色输出，但不会创建业务 Task 或 Project Run。发布门禁仍要求当前 TeamVersion 的每个必跑基线场景以隔离 `sandbox` 实际执行，并通过场景断言、预期角色和输出 Schema 校验。自动化已覆盖部分专业字段保存和回读；完整字段矩阵及设计到发布的人工 UAT 尚未签收。
 
@@ -17,6 +30,7 @@ OGS Studio 提供团队草稿、图谱设计、角色执行与编排属性、Con
 - **Run**描述 Task 的一次执行尝试，以及本次尝试的状态、事件、审核、结果和审计证据。每次 Run 使用自己的运行工作目录；
   重试由 Task 发起并创建新的 Run，`currentRunId` 指向最新尝试，历史 Run 保持只读。
 - **Studio Simulation**用于验证某个 TeamVersion 的设计，不创建业务 Task 或 Project Run。`dry-run` Simulation 用于流程预览；`sandbox` Simulation 用于隔离沙箱运行，验证模型调用、角色输出和 Flow 事件。普通 Simulation 不能满足发布门禁；发布证明来自该 TeamVersion 指定基线场景的隔离 `sandbox` 实跑及服务端断言校验。两类 Simulation 的输入、状态和事件均持久保存并可在 Studio 回放，与 Projects 的运行历史分开。
+- **角色仓库运行试用**只验证单个 Role 包的输入、Prompt、模型调用和输出 Schema。它使用内存中的单角色 Runtime 定义，不生成或解析 `system.mmd`，不执行上游/下游拓扑、分支、Join 或 Loop；`input` 用于模拟 Role 收到的交接上下文。
 - **Deliverable**是用户从成功 Project Run 显式归档的独立结果快照，保留来源 Task、Run 和 attempt 标识；它与项目 Materials 分开管理。
 - **平台配置**负责发现本机的 Codex、OpenCode 和模型，并设置默认执行方式；不接管这些底座的账号和凭据。
 

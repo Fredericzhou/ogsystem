@@ -1,8 +1,16 @@
-# OGS 固定业务事件协议与 Studio 配置方案
+# OGS 固定业务事件协议与 Studio 配置方案（目标协议）
+
+> **文档状态：目标设计，尚未纳入当前发布运行时合同。** 当前版本仍允许普通 Flow 使用
+> 非空业务事件字符串；`START` 和 `ERROR*` 的保留边界已经生效。本文描述下一次协议切换
+> 的目标、迁移范围和验收门禁，不能作为当前版本已经完成的能力清单。
 
 ## 1. 决策
 
-OGS 新版本将业务事件收敛为固定集合。Role 不再定义领域化事件名，例如 `ANALYSIS_READY`、`CODE_READY` 或 `READY_TO_DEPLOY`；正常业务差异通过 Role、目标 Flow、条件路由和 `data` 表达。
+目标版本将业务事件收敛为固定集合。Role 不再定义领域化事件名，例如 `ANALYSIS_READY`、`CODE_READY` 或 `READY_TO_DEPLOY`；正常业务差异通过 Role、目标 Flow、条件路由和 `data` 表达。
+
+当前发布版本的实际合同仍由 `src/runtime/*`、`docs/usage/ogsystem-semantics-manual.md` 和
+`docs/usage/ogsystem-orchestration-semantics-v1.md` 定义；固定事件注册表、编辑器下拉框和
+全仓库事件改写完成后，才能将本文升级为 active architecture guidance。
 
 本方案采用直接切换：
 

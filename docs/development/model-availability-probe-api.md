@@ -85,6 +85,12 @@ The route currently uses HTTP 200 for probe outcomes, including failures. Fronte
 `result.status` as the outcome and must not interpret HTTP 200 alone as model availability. The
 runtime uses `backend + modelId` as the model identity; legacy `id` and `ref` fields are not read.
 
+All probes run through the selected CLI's configured API provider. OGS never performs an
+interactive CLI login and never copies provider credentials into the request body, project files,
+or run artifacts. Pi, Qwen Code, and Kimi Code read their official user-level configuration files
+(`~/.pi/agent/models.json`, `~/.qwen/settings.json`, and `~/.kimi-code/config.toml` respectively)
+and receive only the configured environment variables required by the provider.
+
 ```js
 async function probeModel(model) {
   const response = await fetch("/api/v1/platform/models/probe", {

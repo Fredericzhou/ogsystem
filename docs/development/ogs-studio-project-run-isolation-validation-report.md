@@ -3,6 +3,8 @@
 Date: 2026-10-22
 Scope: Studio and Projects dual-workbench boundaries, Project Run and Studio Simulation isolation, Task lifecycle, Deliverables, browser flows, and persistence.
 
+> Latest validation is recorded in [release-validation-2026-11-05.md](release-validation-2026-11-05.md). It supersedes older counts for the current runtime, model discovery, role trial, and Team Site checks while preserving the historical UAT evidence below.
+
 ## Latest Final Verification 2026-10-22
 
 This update supersedes all older test counts, service addresses, and UAT conclusions below where the same checks were rerun. Historical failures are retained as evidence and are not counted as successful attempts.

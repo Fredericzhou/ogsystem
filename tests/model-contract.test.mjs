@@ -18,6 +18,9 @@ import {
   validateModelSelection,
   withDefaultModelSelection
 } from "../dist/runtime/model-selection.js";
+import { discoverConfiguredPiModels } from "../dist/runtime/pi-adapter.js";
+import { discoverConfiguredKimiModels } from "../dist/runtime/kimi-adapter.js";
+import { discoverConfiguredQwenModels } from "../dist/runtime/qwen-adapter.js";
 import { syncProjectModels } from "../dist/runtime/project-lifecycle.js";
 import { BackendRegistry } from "../dist/runtime/model-backend-registry.js";
 
@@ -118,6 +121,34 @@ test("backend discovery keeps the model catalog independent from live model prob
   assert.equal(result.source.status, "runnable");
   assert.equal(result.models[0].status, "discovered");
   assert.deepEqual(result.models.map((entry) => entry.modelId), ["provider/unavailable", "provider/configured"]);
+});
+
+test("native CLI configuration discovery keeps Pi, Kimi, and Qwen model IDs backend-local", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ogsystem-native-cli-config-"));
+  const previous = {
+    pi: process.env.PI_MODELS_PATH,
+    kimi: process.env.KIMI_CONFIG_PATH,
+    qwen: process.env.QWEN_SETTINGS_PATH
+  };
+  try {
+    const piPath = path.join(root, "pi-models.json");
+    const kimiPath = path.join(root, "kimi-config.toml");
+    const qwenPath = path.join(root, "qwen-settings.json");
+    await writeFile(piPath, JSON.stringify({ providers: { "ogs-codex": { models: [{ id: "gpt-6-luna", name: "GPT-6 Luna" }] } } }), "utf8");
+    await writeFile(kimiPath, 'default_model = "ogs-codex/gpt-6-luna"\n[models."ogs-codex/gpt-6-luna"]\nprovider = "ogs-codex"\n', "utf8");
+    await writeFile(qwenPath, JSON.stringify({ modelProviders: { openai: [{ id: "gpt-6-luna", name: "GPT-6 Luna" }] }, model: { name: "gpt-6-luna" } }), "utf8");
+    process.env.PI_MODELS_PATH = piPath;
+    process.env.KIMI_CONFIG_PATH = kimiPath;
+    process.env.QWEN_SETTINGS_PATH = qwenPath;
+    assert.deepEqual((await discoverConfiguredPiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna"]);
+    assert.deepEqual((await discoverConfiguredKimiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna"]);
+    assert.deepEqual((await discoverConfiguredQwenModels()).map((model) => model.modelId), ["gpt-6-luna"]);
+  } finally {
+    for (const [key, value] of Object.entries({ PI_MODELS_PATH: previous.pi, KIMI_CONFIG_PATH: previous.kimi, QWEN_SETTINGS_PATH: previous.qwen })) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true }));
+  }
 });
 
 test("OpenCode discovery reports stable actionable errors", async () => {

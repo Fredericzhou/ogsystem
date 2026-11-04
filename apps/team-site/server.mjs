@@ -276,15 +276,15 @@ const sharedResourceUseCases = createSharedResourceUseCases({
 });
 async function getPlatformDefaultModelSelection() {
   const settings = await platformUseCases.readPlatformSettings();
-  let discovery;
-  try {
-    // The bounded UI path returns a cached snapshot when a slow CLI refresh is
-    // still running, and fails explicitly when no snapshot exists yet.
-    discovery = await platformUseCases.listPlatformModels();
-  } catch {
-    return undefined;
-  }
-  const models = (discovery.models || []).filter((model) => model.runnable);
+  const backendIds = [settings.defaultProvider, ...platformUseCases.listPlatformBackends()
+    .map((backend) => backend.backend)
+    .filter((backend) => backend && backend !== settings.defaultProvider)];
+  const discoveries = await Promise.all(backendIds.map(async (backend) => {
+    try { return await platformUseCases.discoverPlatformBackend(backend); }
+    catch { return undefined; }
+  }));
+  const models = discoveries.flatMap((discovery) => discovery?.models || []).filter((model) => model.runnable);
+  const generatedAt = discoveries.map((discovery) => discovery?.generatedAt).filter(Boolean).sort().at(-1);
   const configured = String(settings.defaultModel || "default");
   const matchesConfiguredModel = (model) => {
     const modelId = model.modelId || model.id;
@@ -302,7 +302,7 @@ async function getPlatformDefaultModelSelection() {
       : undefined;
   return selected || models.length || fallbackSelection ? {
     ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.modelId || selected.id } } : fallbackSelection ? { modelSelectionDefaults: fallbackSelection } : {}),
-    modelCatalogGeneratedAt: discovery.generatedAt,
+    modelCatalogGeneratedAt: generatedAt,
     modelCatalogModels: models.map((model) => ({
       backend: model.backend,
       modelId: model.modelId || model.id,

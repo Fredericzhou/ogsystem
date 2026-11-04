@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { convertMarkdownRole } from "../../../tools/agent-source/markdown-role-adapter.mjs";
 import { createRuntimeRoleSourceTrial } from "../infrastructure/runtime-role-source-trial.mjs";
@@ -27,13 +27,17 @@ test("role trial runs a validated single-role package in an isolated sandbox", a
     }),
     run: async (args) => {
       captured = args;
-      const role = JSON.parse(await readFile(`${args.workdir}/team-roles/trial-role/role.json`, "utf8"));
-      const source = JSON.parse(await readFile(`${args.workdir}/team-roles/trial-role/source.json`, "utf8"));
-      const graph = await readFile(args.systemPath, "utf8");
+      const role = JSON.parse(await readFile(`${args.workdir}/team-roles/roles/trial-role/role.json`, "utf8"));
+      const source = JSON.parse(await readFile(`${args.workdir}/team-roles/roles/trial-role/source.json`, "utf8"));
       assert.deepEqual(role.outputs.events, ["ROLE_TRIAL_COMPLETE"]);
       assert.deepEqual(role.constraints.allowedTools, []);
       assert.equal(source.commit, "a".repeat(40));
-      assert.match(graph, /role -->\|ROLE_TRIAL_COMPLETE\|/);
+      assert.equal(source.verification.status, "verified");
+      assert.deepEqual(source.verification.confirmedEvents, ["ROLE_TRIAL_COMPLETE"]);
+      assert.deepEqual(args.systemDefinition.flows, [{ fromRoleId: "trial-role", toRoleId: "__system_end__", eventType: "ROLE_TRIAL_COMPLETE" }]);
+      assert.equal(args.systemDefinition.startFlows[0].toRoleId, "trial-role");
+      assert.equal(args.systemDefinition.systemId, "role.trial");
+      assert.equal(await access(args.systemPath).then(() => true, () => false), false, "role trials must not generate Mermaid source");
       return { status: "completed", finalOutputsByRoleId: { "trial-role": { event: "ROLE_TRIAL_COMPLETE", content: "Done", data: { ok: true } } } };
     }
   });

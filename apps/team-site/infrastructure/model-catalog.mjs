@@ -34,7 +34,7 @@ export function createModelCatalog({
       backend: model.backend,
       modelId: model.modelId,
       name: model.name || model.modelId,
-      status: model.status || (model.runnable ? "discovered" : "unavailable"),
+      status: model.status || (model.runnable ? "discovered" : "unverified"),
       // Kept for the runtime selection contract; status is the UI truth.
       runnable: Boolean(model.runnable),
       capabilities: model.capabilities || { textInput: true, textOutput: true, toolcall: true },

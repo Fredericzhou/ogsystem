@@ -7,7 +7,7 @@ This document compares OGSystem with ByteDance DeerFlow, DeepSeek Harness/DSH Su
 ## Positioning
 
 ```text
-OGSystem  = verifiable multi-role collaboration runtime
+OGSystem  = event-driven persistent extended-state-machine workflow runtime
 DeerFlow  = long-horizon SuperAgent harness and workbench
 DSH       = event-driven autonomous agent work system
 LangGraph = graph execution framework and runtime substrate
@@ -42,7 +42,7 @@ The distinction is:
 
 ```text
 DeerFlow = LangGraph-first Agent Harness
-OGSystem = OGSystem-semantics-first Runtime + LangGraph execution adapter
+OGSystem = OGSystem-semantics-first extended state-machine Runtime + LangGraph execution adapter
 ```
 
 LangGraph is therefore an implementation engine in OGSystem, not the public OGSystem DSL or product data model. Replacing the engine remains possible in principle because the runtime exposes an engine adapter boundary, although the current production implementation uses LangGraph.

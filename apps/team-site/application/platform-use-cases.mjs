@@ -82,11 +82,11 @@ export function createPlatformUseCases({
       }
       const discovery = await modelCatalog.discover();
       const model = (discovery.models || []).find(
-        (item) => item.backend === backend && item.modelId === modelId && item.runnable
+        (item) => item.backend === backend && item.modelId === modelId && !["unavailable", "disabled", "deprecated"].includes(String(item.status || "").toLowerCase())
       );
       if (!model) {
         throw new Error(
-          `Model "${backend} · ${modelId}" is not currently discovered as runnable. Refresh model discovery and try again.`
+          `Model "${backend} · ${modelId}" is not currently discovered in its backend configuration. Refresh model discovery and try again.`
         );
       }
       return probeModelAvailability(model);

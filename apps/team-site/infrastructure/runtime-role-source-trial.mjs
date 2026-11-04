@@ -18,21 +18,29 @@ export function createRuntimeRoleSourceTrial({ run = runSystemWithAdapter, getDe
     const roleId = converted.roleId;
     const started = Date.now();
     try {
-      const roleDir = join(workdir, "team-roles", roleId);
+      const roleDir = join(workdir, "team-roles", "roles", roleId);
       await mkdir(roleDir, { recursive: true });
-      for (const [name, content] of Object.entries(converted.files)) await writeFile(join(roleDir, name), content, { encoding: "utf8", mode: 0o600 });
+      const sourceVerification = converted.verification?.status === "unverified"
+        ? null
+        : {
+            status: "verified",
+            identityConfirmed: true,
+            eventsConfirmed: true,
+            toolsConfirmed: true,
+            confirmedEvents: converted.role?.outputs?.events || [],
+            confirmedTools: converted.role?.constraints?.allowedTools || []
+          };
+      if (!sourceVerification) throw new Error("ROLE_TRIAL_SOURCE_UNVERIFIED");
+      for (const [name, content] of Object.entries(converted.files)) {
+        const trialContent = name === "source.json"
+          ? `${JSON.stringify({ ...converted.source, verification: sourceVerification }, null, 2)}\n`
+          : content;
+        await writeFile(join(roleDir, name), trialContent, { encoding: "utf8", mode: 0o600 });
+      }
       await mkdir(join(workdir, ".ogs"), { recursive: true });
       await writeFile(join(workdir, ".ogs", "runtime.json"), JSON.stringify({ configVersion: "2", roleRepo: "team-roles", runsDir: ".ogs/runs", tools: { environmentPolicy: "minimal", envAllowlist: [] } }));
       await writeFile(join(workdir, ".ogs", "laws.json"), JSON.stringify({ laws: [{ lawId: "law.role-trial", constraints: { forbiddenToolRefs: [], maxTransitions: 4, allowNoopWithoutExecutionBinding: false } }] }));
       await writeFile(join(workdir, ".ogs", "user-profile.json"), JSON.stringify({ userProfileId: "role-trial", ...(typeof userPreferences === "string" && userPreferences.trim() ? { style: userPreferences.trim().slice(0, 2000) } : {}) }));
-      await writeFile(join(workdir, "system.mmd"), [
-        "flowchart TD",
-        "%% system.id=role.trial",
-        "%% system.version=1.0.0",
-        "%% law.global=law.role-trial",
-        `start[开始] -->|START| role[Role:${roleId}]`,
-        `role -->|${TRIAL_EVENT}| end[结束]`
-      ].join("\n") + "\n");
       const prompt = [
         "Task (instruction):",
         cleanTask,
@@ -42,7 +50,23 @@ export function createRuntimeRoleSourceTrial({ run = runSystemWithAdapter, getDe
         "Return one JSON object with event ROLE_TRIAL_COMPLETE, content, and optional data."
       ].join("\n\n");
       const result = await run({
-        systemPath: resolve(workdir, "system.mmd"),
+        // The trial has no user topology. The in-memory definition supplies only the single
+        // role boundary required by the existing Runtime executor.
+        systemPath: resolve(workdir, ".ogs", "role-trial.system.mmd"),
+        systemDefinition: {
+          systemId: "role.trial",
+          systemVersion: "1.0.0",
+          entryRoleIds: [roleId],
+          startDispatch: { mode: "all" },
+          startEventType: "START",
+          startFlows: [{ fromRoleId: "__system_start__", toRoleId: roleId, eventType: "START" }],
+          terminalRoleOrder: [roleId],
+          roleIds: [roleId],
+          flows: [{ fromRoleId: roleId, toRoleId: "__system_end__", eventType: TRIAL_EVENT }],
+          lawBinding: { globalLawRef: "law.role-trial" },
+          executionBinding: {},
+          modelBinding: {}
+        },
         prompt,
         workdir,
         runId: `role-trial-${randomUUID()}`,

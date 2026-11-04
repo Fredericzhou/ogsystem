@@ -412,6 +412,40 @@ registerHooks({
     await macroMaximizeBtn.click();
     assert.equal(await dualCore.getAttribute("data-maximize-mode"), null, "macro panel restored");
 
+    // Micro maximize interaction (group chat panel does not collapse)
+    const microMaximizeBtn = page.locator('.studio-panel-maximize-btn[data-panel-maximize="micro"]');
+    await microMaximizeBtn.click();
+    assert.equal(await dualCore.getAttribute("data-maximize-mode"), "micro", "micro chat panel maximized");
+    const microPanelBounds = await page.locator(".studio-run-micro-panel").boundingBox();
+    const dualCoreBounds = await dualCore.boundingBox();
+    assert.ok(microPanelBounds.width >= dualCoreBounds.width - 24, "maximized micro panel occupies full container width and does not collapse");
+    await microMaximizeBtn.click();
+    assert.equal(await dualCore.getAttribute("data-maximize-mode"), null, "micro chat panel restored");
+
+    // Draggable split handle in read-only simulation cockpit
+    const historySplitHandle = dualCore.locator("[data-runtime-split-handle]");
+    assert.equal(await historySplitHandle.count(), 1, "history dual-core cockpit has draggable split handle");
+    const splitBeforeHistory = await dualCore.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-runtime-split"));
+    const historyHandleBounds = await historySplitHandle.boundingBox();
+    await page.mouse.move(historyHandleBounds.x + historyHandleBounds.width / 2, dualCoreBounds.y + dualCoreBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dualCoreBounds.x + dualCoreBounds.width * 0.60, dualCoreBounds.y + dualCoreBounds.height / 2, { steps: 4 });
+    await page.mouse.up();
+    const splitAfterHistory = await dualCore.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-runtime-split"));
+    assert.notEqual(splitAfterHistory, splitBeforeHistory, "history split ratio can be dragged interactively");
+
+    // Left history drawer collapsible interaction
+    const historyCollapseBtn = page.locator('.studio-run-split [data-history-toggle="collapse"]');
+    assert.equal(await historyCollapseBtn.count(), 1, "history collapse button is rendered in history drawer header");
+    await historyCollapseBtn.click();
+    await page.locator(".studio-run-split.is-history-collapsed").waitFor();
+    assert.equal(await page.locator(".studio-run-split.is-history-collapsed .studio-run-history").isVisible(), false, "history drawer is hidden when collapsed");
+    const historyExpandBtn = page.locator('.studio-run-split [data-history-toggle="expand"]');
+    assert.equal(await historyExpandBtn.isVisible(), true, "expand button appears when history drawer is collapsed");
+    await historyExpandBtn.click();
+    await page.locator(".studio-run-split:not(.is-history-collapsed)").waitFor();
+    assert.equal(await page.locator(".studio-run-split .studio-run-history").isVisible(), true, "history drawer is restored when expanded");
+
     // Micro audit drilldown drawer
     const drilldownBtn = page.locator(".team-debug-drilldown-btn").first();
     await drilldownBtn.waitFor();

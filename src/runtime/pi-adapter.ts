@@ -1,6 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { boundedText, modelFromEnv, resolveExecutable, schemaInstruction } from "./cli-adapter-support.js";
 import { createAgentEventEmitter } from "./agent-client-types.js";
 import { terminateChildProcessTree, waitForChildExit } from "./child-process-lifecycle.js";
@@ -113,7 +116,7 @@ function piReasoningCapability(value: unknown): ReasoningCapability | undefined 
   return { supported: true, kind: "effort", levels: [...new Set(supported)], ...(defaultValue && supported.includes(defaultValue as never) ? { default: defaultValue as Exclude<ReasoningEffort, "auto" | "on"> } : {}) };
 }
 
-function modelsFromPi(value: unknown, reasoning?: ReasoningCapability): ModelCatalogEntry[] {
+function modelsFromPi(value: unknown, reasoning?: ReasoningCapability, status = "discovered", runnable = true): ModelCatalogEntry[] {
   const data = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const raw = Array.isArray(data.models) ? data.models : [];
   return raw.flatMap((item) => {
@@ -121,8 +124,40 @@ function modelsFromPi(value: unknown, reasoning?: ReasoningCapability): ModelCat
     const record = item as Record<string, unknown>;
     const id = typeof record.id === "string" ? record.id : "";
     if (!id) return [];
-    return [{ backend: "pi", modelId: id, runnable: true, name: typeof record.name === "string" ? record.name : id, status: "active", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [], ...(reasoning ? { reasoning } : {}) }];
+    const provider = typeof record.provider === "string" ? record.provider.trim() : "";
+    const modelId = provider && !id.includes("/") ? `${provider}/${id}` : id;
+    return [{ backend: "pi", modelId, runnable, name: typeof record.name === "string" ? record.name : modelId, status, capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [], ...(reasoning ? { reasoning } : {}) }];
   });
+}
+
+export async function discoverConfiguredPiModels(reasoning?: ReasoningCapability): Promise<ModelCatalogEntry[]> {
+  const configPath = process.env.PI_MODELS_PATH
+    || join(process.env.PI_HOME || join(homedir(), ".pi", "agent"), "models.json");
+  try {
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    const providers = parsed.providers && typeof parsed.providers === "object" && !Array.isArray(parsed.providers)
+      ? parsed.providers as Record<string, unknown>
+      : {};
+    const models: ModelCatalogEntry[] = [];
+    for (const [providerId, value] of Object.entries(providers)) {
+      const records = value && typeof value === "object" && !Array.isArray(value)
+        && Array.isArray((value as Record<string, unknown>).models)
+        ? (value as Record<string, unknown>).models as unknown[]
+        : [];
+      for (const item of records) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+        const record = item as Record<string, unknown>;
+        const id = typeof record.id === "string" ? record.id.trim() : "";
+        if (!id) continue;
+        const modelId = id.includes("/") ? id : `${providerId}/${id}`;
+        if (models.some((model) => model.modelId === modelId)) continue;
+        models.push({ backend: "pi", modelId, runnable: false, name: typeof record.name === "string" ? record.name : modelId, status: "unverified", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [], ...(reasoning ? { reasoning } : {}) });
+      }
+    }
+    return models;
+  } catch {
+    return [];
+  }
 }
 
 export const piBackendDescriptor: BackendDescriptor = {
@@ -139,22 +174,25 @@ export const piBackendAdapter: BackendAdapter = {
   backendId: "pi",
   verifiedRunnable: true,
   async discover({ workdir }) {
-    const command = await resolveExecutable("pi");
-    if (!command) return { status: "not_installed", detail: "Pi CLI is not installed on this machine.", models: [] };
+    const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
+    const configuredModels = await discoverConfiguredPiModels();
+    if (!command) return { status: "not_installed", detail: "Pi CLI is not installed on this machine.", models: configuredModels.map((model) => ({ ...model, status: "unavailable" })) };
     try {
       const client = await PiRpcSession.start(command, workdir);
       try {
-        const result = await client.request("get_available_models", {}, 10_000);
         const levels = await client.request("get_available_thinking_levels", {}, 10_000).catch(() => undefined);
-        const models = modelsFromPi(result.data, piReasoningCapability(levels?.data));
-        return { status: models.length ? "runnable" : "unavailable", detail: models.length ? `Pi ready (${models.length} model${models.length === 1 ? "" : "s"}).` : "Pi is installed but no authenticated model is available.", models };
+        const reasoning = piReasoningCapability(levels?.data);
+        const result = await client.request("get_available_models", {}, 10_000).catch(() => undefined);
+        const liveModels = result ? modelsFromPi(result.data, reasoning) : [];
+        const models = [...configuredModels.map((model) => ({ ...model, reasoning })), ...liveModels.filter((model) => !configuredModels.some((configured) => configured.modelId === model.modelId))];
+        return { status: "runnable", detail: models.length ? `Pi RPC ready; ${models.length} configured model${models.length === 1 ? "" : "s"} found.` : "Pi RPC ready; no local model configuration was found.", models };
       } finally { await client.close(); }
     } catch (error) {
       return { status: "installed_but_broken", detail: error instanceof Error ? error.message : String(error), models: [] };
     }
   },
   async startRun({ targetDir, runContext }): Promise<BackendRunSession> {
-    const command = await resolveExecutable("pi");
+    const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
     if (!command) throw new Error("Pi CLI is not installed.");
     const clients = new Map<string, PiRpcSession>();
     const getClient = async (modelId: string, sessionKey: string, sessionId?: string) => {
@@ -252,7 +290,7 @@ export const piBackendAdapter: BackendAdapter = {
     };
   },
   async probe({ modelId, workdir, timeoutMs }) {
-    const command = await resolveExecutable("pi");
+    const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
     if (!command) throw new Error("Pi CLI is not installed.");
     const client = await PiRpcSession.start(command, workdir, modelId);
     try { await client.request("prompt", { message: 'Return exactly {"ok":true}' }, timeoutMs); } finally { await client.close(); }

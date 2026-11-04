@@ -17,6 +17,20 @@ Reason:
 - keeping parallel runtime implementations created drift in code, tests, and docs
 - one persisted state model is required for trustworthy resume and audit behavior
 
+## 1.1 Product Execution Model
+
+OGSystem is positioned as an event-driven, persistent extended state-machine workflow runtime.
+The persisted Run state includes business state, active branches, lineage, loop iterations, Join
+progress, human-review control state, and checkpoint identity. A Role execution returns a business
+event and structured data; the Runtime reduces that result into state and routes it through the
+matching Flow.
+
+This is an extended state machine rather than a simple finite-state machine because execution
+state includes structured data, branch and Join scopes, bounded loops, durable recovery, and
+control-plane pauses. The product keeps `task`, `input`, `event`, `data`, and lifecycle status as
+separate concepts. LangGraph remains an engine adapter behind this model and does not define the
+OGSystem public DSL or persisted product data model.
+
 ## 2. Backend Boundary
 
 LangGraph is the current backend implementation of the graph runtime, not the public DSL surface.

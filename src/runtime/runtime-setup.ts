@@ -315,10 +315,13 @@ export type RuntimeAdapterSetup = {
   specificationSnapshot?: OgsSpecificationSnapshot;
   semanticIR?: SemanticIR;
   semanticIRDigest?: string;
+  /** Mermaid source for regular runs; in-memory Role trials persist their SystemDefinition instead. */
+  systemSource?: string;
 };
 
 export async function prepareRuntimeSetup(args: {
   systemPath: string;
+  systemDefinition?: SystemDefinition;
   systemBaseDir?: string;
   profilesPath?: string;
   toolsPath?: string;
@@ -416,11 +419,14 @@ export async function prepareRuntimeSetup(args: {
   const activeDesign = projectDesign && (requestedProjectMermaid || effectiveSystemPath.endsWith("system.design.json"))
     ? projectDesign
     : undefined;
-  let system = activeDesign
-    ? designToSystemDefinition(activeDesign)
-    : await loadSystemFromMermaid(effectiveSystemPath);
+  let system = args.systemDefinition
+    ? args.systemDefinition
+    : activeDesign
+      ? designToSystemDefinition(activeDesign)
+      : await loadSystemFromMermaid(effectiveSystemPath);
+  const systemSource = args.systemDefinition ? undefined : await readFile(effectiveSystemPath, "utf8");
   if (!activeDesign && args.systemBaseDir && system.graph?.handoffContracts) {
-    const sourceSystem = parseSystemFromMermaidSource(await readFile(effectiveSystemPath, "utf8"));
+    const sourceSystem = parseSystemFromMermaidSource(systemSource ?? await readFile(effectiveSystemPath, "utf8"));
     if (sourceSystem.graph?.handoffContracts) {
       system = {
         ...system,
@@ -673,6 +679,7 @@ export async function prepareRuntimeSetup(args: {
   const runContext = await filesystemRunStore.initialize({
     system,
     systemPath: effectiveSystemPath,
+    systemSource,
     prompt: args.prompt,
     workdir: args.workdir,
     runtimeConfig: runRuntimeConfig,
@@ -716,6 +723,7 @@ export async function prepareRuntimeSetup(args: {
     targetDir,
     specificationSnapshot,
     semanticIR: compiledSemanticIR?.ir,
-    semanticIRDigest: compiledSemanticIR?.digest
+    semanticIRDigest: compiledSemanticIR?.digest,
+    systemSource
   };
 }
