@@ -28,6 +28,38 @@ The Team Site was restarted from the final code state with `HOST=0.0.0.0`.
 
 Playwright was used for the detailed final user-flow checks. Orca/Chrome accessibility inspection was also used for the LAN platform and role pages before a later macOS accessibility-window interruption; no native screen-reader sign-off is claimed.
 
+## Runtime Semantic Execution Validation
+
+The semantic checks below run the real Runtime Adapter and filesystem evidence path. Each case creates a run directory, executes Role transitions, persists state and audit artifacts, and inspects the resulting evidence. Role model calls use the repository's deterministic `dryRun` executor so the semantic result is repeatable; this is not a live provider acceptance test.
+
+Command:
+
+```bash
+node --test \
+  tests/graph-runtime.integration.test.mjs \
+  tests/semantic-ir.test.mjs \
+  tests/graph-runtime-state.test.mjs \
+  tests/transition.test.mjs \
+  tests/role-executor-projection.test.mjs \
+  apps/team-site/tests/studio-simulation-use-cases.test.mjs
+```
+
+Result: `98/98` passed.
+
+| Semantic capability | Real execution evidence covered |
+| --- | --- |
+| Task and input propagation | The immutable user task is present in each Role inbox; per-hop `input` is projected from upstream output and Join context. |
+| Role event contract | Role outputs are schema-checked against declared events; the selected event is persisted in audit records and drives the next transition. |
+| Conditional routing | Route conditions select the matching edge, persist a value-free route decision trace, and fail closed for no-match or ambiguous routes. |
+| Parallel branch | `parallel_split` activates distinct branches, preserves branch/lineage identity, excludes runtime `ERROR*` edges from normal routing, and aggregates terminal outputs in graph order. |
+| All-of Join | A Join waits for every declared source, creates a Join scope keyed by lineage and loop iteration, and receives source event/data through the configured context projection. |
+| Quorum Join | `quorum_of` activates at the configured minimum, isolates readiness by lineage, and rejects unavailable required context instead of fabricating input. |
+| Bounded Loop | The debate scenario executes the moderator twice, records `loopIteration = 2`, follows the bounded rework event, and reaches the summary Role without exceeding the loop budget. |
+| State and recovery | CAS checkpoints, `state.json`, `summary.json`, `metrics.json`, timeline, and append-only events are written; resuming the completed run does not duplicate Role executions. |
+| Studio Simulation boundary | Simulation owner, incremental Role events, terminal state, redacted failures, and event retrieval are persisted in the Studio namespace without creating a Project Task or business Run. |
+
+This validates the current semantic contract as an event-driven persistent extended state machine: Roles produce events and data, the Runtime carries task/input context, and Flow metadata selects the next Role. It does not claim live API-provider/model quality; that requires valid provider credentials and is tracked separately.
+
 ## Documentation Alignment
 
 Current product documentation describes OGS as an event-driven, persistent extended state-machine workflow runtime. It distinguishes task, input, event, data, lifecycle state, and Flow routing, and identifies LangGraph as an implementation engine rather than the public semantic contract.
