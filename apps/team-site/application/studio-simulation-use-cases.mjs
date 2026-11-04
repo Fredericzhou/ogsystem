@@ -495,6 +495,23 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           }
           return true;
         });
+        const failed = status !== "completed";
+        const outputs = result?.finalOutputsByRoleId || {};
+        const output = (result?.finalOutputRoleOrder || []).flatMap((roleId) => (outputs[roleId] || []).map((item) => `${roleId}: ${item.content || JSON.stringify(item.data || {})}`)).join(" | ");
+        const failureCodes = Object.keys(result?.summary?.failureCountsByErrorCode || {});
+        const failedRoles = auditTrail
+          .filter((item) => item?.status !== "completed" || item?.failure || item?.error)
+          .map((item) => `${item.roleId || "unknown"}: ${item.failure || item.error || item.status || "incomplete"}`)
+          .slice(0, 5);
+        const failureSummary = failed
+          ? redactStudioSimulationText([
+            result?.error,
+            failureCodes.length ? `failure codes: ${failureCodes.join(", ")}` : "",
+            failedRoles.join("; "),
+            output,
+            `Simulation returned status ${rawStatus}.`
+          ].filter(Boolean).join("; ")).slice(0, 500)
+          : null;
         const state = redactStudioSimulationValue({
           status,
           runtimeStatus: rawStatus,
@@ -506,21 +523,24 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           stages: result?.stages || [],
           auditTrail,
           summary: result?.summary || {},
+          ...(failureSummary ? { error: failureSummary } : {}),
           durationMs: result?.durationMs
         });
-        const failed = status !== "completed";
-        const outputs = result?.finalOutputsByRoleId || {};
-        const output = (result?.finalOutputRoleOrder || []).flatMap((roleId) => (outputs[roleId] || []).map((item) => `${roleId}: ${item.content || JSON.stringify(item.data || {})}`)).join(" | ");
         const updated = await simulationStore.updateSimulation(teamVersionId, simulationId, {
             metadata: {
             status: failed ? (status === "stopped" ? "stopped" : "failed") : "completed",
             completedAt,
             durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
             outputSummary: output.slice(0, 320),
-            failureSummary: failed ? redactStudioSimulationText(String(result?.error || output || `Simulation returned status ${rawStatus}.`)).slice(0, 500) : null
+            failureSummary
           },
           state,
-          events: [...missingEvents, { type: failed ? (status === "stopped" ? "simulation.stopped" : "simulation.failed") : "simulation.completed", at: completedAt }]
+          events: [...missingEvents, {
+            type: failed ? (status === "stopped" ? "simulation.stopped" : "simulation.failed") : "simulation.completed",
+            at: completedAt,
+            ...(failureSummary ? { error: failureSummary } : {}),
+            ...(failureCodes[0] ? { errorCode: failureCodes[0] } : {})
+          }]
         });
         return publicSimulation({ simulation: updated, state, events: (await simulationStore.getSimulationEvidence(teamVersionId, simulationId)).events });
       } catch (error) {

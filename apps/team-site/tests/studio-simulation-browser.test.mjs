@@ -245,7 +245,18 @@ registerHooks({
     assert.equal(await page.locator(".studio-runtime-dual-controls[hidden]").count(), 0, "live runtime exposes the dual-core layout controls");
     assert.equal(await page.locator("#project-graph-stage[data-runtime-history='off']").count(), 1, "live runtime keeps runtime animation mode enabled");
     await page.getByText("Mocked UAT result for Review the draft package.", { exact: false }).waitFor();
-    assert.equal(await page.locator(".studio-design-workbench.is-runtime-dual-core[data-layout-preference='content-focus']").count(), 1, "completed live run settles into content-focus");
+    assert.equal(await page.locator(".studio-design-workbench.is-runtime-dual-core[data-layout-preference='balanced']").count(), 1, "completed live run keeps the draggable dual-core layout");
+    const runtimeWorkbench = page.locator(".studio-design-workbench.is-runtime-dual-core");
+    const runtimeSplitHandle = page.locator("[data-runtime-split-handle]");
+    const runtimeWorkbenchBounds = await runtimeWorkbench.boundingBox();
+    const splitBefore = await runtimeWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-runtime-split"));
+    const splitBounds = await runtimeSplitHandle.boundingBox();
+    await page.mouse.move(splitBounds.x + splitBounds.width / 2, runtimeWorkbenchBounds.y + runtimeWorkbenchBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(runtimeWorkbenchBounds.x + runtimeWorkbenchBounds.width * 0.62, runtimeWorkbenchBounds.y + runtimeWorkbenchBounds.height / 2, { steps: 4 });
+    await page.mouse.up();
+    const splitAfter = await runtimeWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-runtime-split"));
+    assert.notEqual(splitAfter, splitBefore, "runtime split remains draggable after completion");
     assert.match(await page.locator("#team-simulation-result").innerText(), /补充资料：\s*Reference version: 3\./);
     assert.deepEqual(scriptErrors, []);
     const transcriptCard = page.locator(".team-debug-transcript > li").filter({ hasText: "Mocked role output" }).first();
@@ -383,7 +394,7 @@ registerHooks({
     // Dual-core macro/micro cockpit verification
     const dualCore = page.locator(".studio-run-dual-core");
     await dualCore.waitFor();
-    assert.equal(await dualCore.getAttribute("data-layout-preference"), "content-focus", "debug/replay view defaults to content-focus (40:60)");
+    assert.equal(await dualCore.getAttribute("data-layout-preference"), "balanced", "debug/replay view starts with a neutral split");
     assert.equal(await page.locator(".studio-run-macro-panel").count(), 1, "macro topology panel is mounted");
     assert.equal(await page.locator(".studio-run-micro-panel").count(), 1, "micro conversation panel is mounted");
 
@@ -391,10 +402,8 @@ registerHooks({
     assert.equal(await page.locator("#studio-run-graph-stage .studio-runtime-data-packet").count(), 0, "read-only execution view has zero moving data packets");
     assert.equal(await page.locator("#studio-run-graph-stage .x6-edge.is-runtime-active").count(), 0, "read-only execution view has zero active flow animations");
 
-    // Layout switcher interaction
-    const balancedBtn = page.locator('.studio-layout-switcher-btn[data-preference="balanced"]');
-    await balancedBtn.click();
-    assert.equal(await dualCore.getAttribute("data-layout-preference"), "balanced", "layout switcher switches to balanced (50:50)");
+    // Layout preference is controlled by the draggable split handle, without a mode switcher.
+    assert.equal(await page.locator(".studio-layout-switcher").count(), 0, "layout switcher is not rendered");
 
     // Maximize interaction
     const macroMaximizeBtn = page.locator('.studio-panel-maximize-btn[data-panel-maximize="macro"]');

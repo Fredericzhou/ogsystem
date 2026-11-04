@@ -49,8 +49,11 @@ export function createModelCatalog({
       throw error;
     }
     const cached = backendCaches.get(backend);
+    // A refresh bypasses the completed cache, but it must still join an
+    // in-flight discovery. Starting another CLI/ACP process for every poll
+    // can keep a slow backend permanently in the checking state.
+    if (backendInflight.has(backend)) return backendInflight.get(backend);
     if (!forceRefresh && cached && now() - cached.at < cacheMs) return cached.value;
-    if (!forceRefresh && backendInflight.has(backend)) return backendInflight.get(backend);
     const promise = (async () => {
       await mkdir(workdir, { recursive: true });
       const raw = await defaultBackendRegistry.discoverBackend(backend, { workdir });

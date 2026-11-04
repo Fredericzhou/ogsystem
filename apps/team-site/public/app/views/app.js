@@ -952,7 +952,18 @@ async function renderPlatformConfig() {
         if (response.status !== 202) return { response, payload };
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      return { response: { ok: true }, payload: { source: { ...backend, status: "checking" }, models: [], discoveryPending: true } };
+      return {
+        response: { ok: true },
+        payload: {
+          source: {
+            ...backend,
+            status: "service_unavailable",
+            detail: "底座检测超时，请检查 CLI、服务状态或配置后重试"
+          },
+          models: [],
+          discoveryPending: false
+        }
+      };
     };
     await Promise.all((backendPayload.backends || []).map(async (backend) => {
       try {
@@ -1704,6 +1715,8 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`;
     const transcriptHtml = `${userPromptCard}${transcriptItemsHtml}`;
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<div class="studio-dual-core-bar"><div class="studio-dual-core-meta"><strong>${state.locale === "en" ? "Macro / Micro Twin Core Cockpit" : "宏微双核联动视窗"}</strong><span class="field-hint">${state.locale === "en" ? "Macro topological view & micro role chat content" : "宏观拓扑结构与微观角色对话同屏联动"}</span></div><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Layout preference" : "宏微双核布局"}"><button type="button" class="studio-layout-switcher-btn" data-preference="structure-focus" title="${state.locale === "en" ? "Focus on Structure (60:40)" : "突出结构 (60:40)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="18" rx="2"/><rect x="15" y="3" width="6" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Structure" : "突出结构"}</span></button><button type="button" class="studio-layout-switcher-btn" data-preference="balanced" title="${state.locale === "en" ? "Balanced Dual-Core (50:50)" : "双核并重 (50:50)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Balanced" : "双核并重"}</span></button><button type="button" class="studio-layout-switcher-btn is-active" data-preference="content-focus" title="${state.locale === "en" ? "Focus on Content (40:60)" : "突出内容 (40:60)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="2"/><rect x="11" y="3" width="10" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Content" : "突出内容"}</span></button></div></div><div class="studio-run-dual-core" data-layout-preference="content-focus"><section class="studio-run-macro-panel detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Macro view" : "宏观拓扑"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><div class="panel-head-actions"><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="macro" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="studio-run-micro-panel project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Micro view" : "微观内容"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><div class="panel-head-actions"><span class="count-badge">${auditTrail.length}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="micro" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript">${transcriptHtml}</ol></div></section></div><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p><aside id="studio-audit-drilldown-drawer" class="studio-audit-drilldown-drawer" aria-label="${state.locale === "en" ? "Audit Drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${state.locale === "en" ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${state.locale === "en" ? "Role Activation Audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist"><button type="button" class="studio-audit-drawer-tab is-active" data-audit-tab="telemetry" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${state.locale === "en" ? "Telemetry" : "调用明细"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="input" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>${state.locale === "en" ? "Input Context" : "输入上下文"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="output" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${state.locale === "en" ? "Output" : "执行交付"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="diagnostics" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${state.locale === "en" ? "Diagnostics" : "失败诊断"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="raw" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>${state.locale === "en" ? "Raw JSON" : "原始数据"}</span></button></div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus Node" : "定位图谱节点"}</span></button><button type="button" class="secondary-button" data-audit-action="copy-json"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>${state.locale === "en" ? "Copy JSON" : "复制 JSON"}</span></button><button type="button" class="primary-button" data-audit-drawer-close>${state.locale === "en" ? "Close" : "关闭"}</button></div></aside>`;
+    root.querySelector(".studio-layout-switcher")?.remove();
+    root.querySelector(".studio-run-dual-core")?.setAttribute("data-layout-preference", "balanced");
     root.querySelector("#studio-audit-drilldown-drawer")?.setAttribute("data-studio-runtime-audit-drawer", "");
     root.querySelectorAll(".team-debug-transcript > li[data-audit-index]").forEach((card) => {
       card._studioAuditItem = auditTrail[Number(card.dataset.auditIndex)];
@@ -1784,35 +1797,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       });
     });
     const dualCoreContainer = root.querySelector(".studio-run-dual-core");
-    const layoutSwitcherBtns = root.querySelectorAll(".studio-layout-switcher-btn");
     const maximizeBtns = root.querySelectorAll(".studio-panel-maximize-btn");
-
-    const syncLayoutState = (pref) => {
-      if (!dualCoreContainer) return;
-      delete dualCoreContainer.dataset.maximizeMode;
-      dualCoreContainer.dataset.layoutPreference = pref;
-      layoutSwitcherBtns.forEach((btn) => {
-        btn.classList.toggle("is-active", btn.dataset.preference === pref);
-      });
-      maximizeBtns.forEach((btn) => {
-        btn.classList.remove("is-maximized");
-        const panel = btn.dataset.panelMaximize;
-        btn.title = panel === "macro"
-          ? (state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱")
-          : (state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊");
-      });
-      window.setTimeout(() => {
-        historyGraph?.update({});
-        window.dispatchEvent(new Event("resize"));
-      }, 60);
-    };
-
-    layoutSwitcherBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const pref = btn.dataset.preference;
-        if (pref) syncLayoutState(pref);
-      });
-    });
 
     maximizeBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -2317,18 +2302,18 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, locale);
   const roleModelKey = role?.backend && role?.modelId ? JSON.stringify([role.backend, role.modelId]) : "";
   const runnableModels = discoveredModels.filter((model) => model.runnable);
-  const selectedModelKnown = runnableModels.some((model) => JSON.stringify([model.backend, model.modelId || model.id]) === roleModelKey);
+  const selectedModelKnown = runnableModels.some((model) => JSON.stringify([model.backend, model.modelId]) === roleModelKey);
   const modelOptions = `${!selectedModelKnown ? `<option value="" selected${runnableModels.length ? "" : " disabled"}>${runnableModels.length ? t("Choose a discovered model", "选择已发现且可运行的模型") : t("No runnable models discovered", "未发现可运行模型")}</option>` : ""}${runnableModels.map((model) => {
-    const modelId = model.modelId || model.id;
+    const modelId = model.modelId;
     const modelKey = JSON.stringify([model.backend, modelId]);
     return `<option value="${esc(modelKey)}" ${modelKey === roleModelKey ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
   const fallbackModel = role?.fallback?.backend && role?.fallback?.modelId
     ? JSON.stringify([role.fallback.backend, role.fallback.modelId])
     : "";
-  const fallbackModelKnown = runnableModels.some((model) => JSON.stringify([model.backend, model.modelId || model.id]) === fallbackModel);
+  const fallbackModelKnown = runnableModels.some((model) => JSON.stringify([model.backend, model.modelId]) === fallbackModel);
   const fallbackModelOptions = `${fallbackModel && !fallbackModelKnown ? `<option value="" selected${runnableModels.length ? "" : " disabled"}>${runnableModels.length ? t("Choose a discovered model", "选择已发现且可运行的模型") : t("No runnable models discovered", "未发现可运行模型")}</option>` : ""}${runnableModels.map((model) => {
-    const modelId = model.modelId || model.id;
+    const modelId = model.modelId;
     const modelKey = JSON.stringify([model.backend, modelId]);
     return `<option value="${esc(modelKey)}" ${modelKey === fallbackModel ? "selected" : ""}>${esc(model.name || modelId)} · ${esc(modelId)} (${esc(model.backend)})</option>`;
   }).join("")}`;
@@ -3645,7 +3630,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       runtimeMicroOpen = microOpen !== false;
       runtimeWorkbench.classList.add("studio-run-dual-core", "is-runtime-dual-core");
       runtimeWorkbench.dataset.layoutPreference = preference;
-      runtimeWorkbench.style.setProperty("--studio-runtime-split", preference === "content-focus" ? "42%" : preference === "structure-focus" ? "62%" : "50%");
+      if (!runtimeWorkbench.style.getPropertyValue("--studio-runtime-split")) {
+        runtimeWorkbench.style.setProperty("--studio-runtime-split", "50%");
+      }
       if (maximize) runtimeWorkbench.dataset.maximizeMode = maximize;
       else delete runtimeWorkbench.dataset.maximizeMode;
       runtimeGraphPanel.classList.add("studio-run-macro-panel");
@@ -3656,9 +3643,6 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       runtimeDebugPanel.setAttribute("aria-hidden", String(!runtimeMicroOpen));
       runtimeDebugPanel.classList.toggle("is-open", runtimeMicroOpen);
       if (runtimeControls) runtimeControls.hidden = false;
-      runtimeGraphPanel.querySelectorAll("[data-runtime-layout]").forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.runtimeLayout === preference);
-      });
       runtimeWorkbench.querySelectorAll("[data-runtime-panel-maximize]").forEach((button) => {
         const isActive = button.dataset.runtimePanelMaximize === maximize;
         button.classList.toggle("is-maximized", isActive);
@@ -3676,8 +3660,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (!runtimeGraphPanel || !runtimeDebugPanel) return;
       const graphHead = runtimeGraphPanel.querySelector(":scope > .panel-head");
       if (graphHead && !graphHead.querySelector("[data-runtime-dual-controls]")) {
-        graphHead.insertAdjacentHTML("beforeend", `<div class="studio-runtime-dual-controls" data-runtime-dual-controls hidden><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Runtime layout" : "运行时布局"}"><button type="button" class="studio-layout-switcher-btn" data-runtime-layout="structure-focus" title="${state.locale === "en" ? "Focus on Structure" : "突出结构"}">结构</button><button type="button" class="studio-layout-switcher-btn" data-runtime-layout="balanced" title="${state.locale === "en" ? "Balanced" : "双核并重"}">并重</button><button type="button" class="studio-layout-switcher-btn" data-runtime-layout="content-focus" title="${state.locale === "en" ? "Focus on Content" : "突出内容"}">内容</button></div><button type="button" class="studio-panel-maximize-btn" data-runtime-panel-maximize="macro" aria-pressed="false" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}">⛶</button></div>`);
-        graphHead.querySelectorAll("[data-runtime-layout]").forEach((button) => button.addEventListener("click", () => syncRuntimeDualCore({ preference: button.dataset.runtimeLayout || "balanced", maximize: runtimeWorkbench?.dataset.maximizeMode || "" })));
+        graphHead.insertAdjacentHTML("beforeend", `<div class="studio-runtime-dual-controls" data-runtime-dual-controls hidden><button type="button" class="studio-panel-maximize-btn" data-runtime-panel-maximize="macro" aria-pressed="false" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}">⛶</button></div>`);
         graphHead.querySelector("[data-runtime-panel-maximize]")?.addEventListener("click", () => {
           const current = runtimeWorkbench?.dataset.maximizeMode;
           syncRuntimeDualCore({ preference: runtimeWorkbench?.dataset.layoutPreference || "balanced", maximize: current === "macro" ? "" : "macro" });
@@ -3896,6 +3879,33 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             }
             section.querySelector("pre").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
           };
+          const appendRuntimeFailure = (failure, details = {}) => {
+            const message = studioSimulationErrorText(failure || details.message || (state.locale === "en" ? "The debug run failed." : "调试运行失败。"));
+            const failureItem = document.createElement("li");
+            failureItem.className = "team-debug-event team-debug-event-failure run-error";
+            failureItem.dataset.eventType = "simulation.failed";
+            const time = document.createElement("time");
+            time.textContent = studioSimulationEventTime({ at: new Date().toISOString() });
+            const label = document.createElement("strong");
+            label.textContent = state.locale === "en" ? "Debug run failed" : "调试运行失败";
+            const body = document.createElement("span");
+            body.textContent = message;
+            failureItem.append(time, label, body);
+            if (details.errorCode || details.backend || details.modelId) {
+              const diagnostic = document.createElement("small");
+              diagnostic.textContent = [details.errorCode, details.backend, details.modelId].filter(Boolean).join(" · ");
+              failureItem.append(diagnostic);
+            }
+            list.append(failureItem);
+            const raw = { message: failure || details.message || message, ...details };
+            const detailsBlock = document.createElement("details");
+            detailsBlock.className = "team-debug-runtime-failure-details";
+            detailsBlock.open = true;
+            detailsBlock.innerHTML = `<summary>${state.locale === "en" ? "Failure details" : "失败诊断详情"}</summary><pre></pre>`;
+            detailsBlock.querySelector("pre").textContent = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+            failureItem.append(detailsBlock);
+            list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+          };
           for (const item of events) {
             const flowEvent = item.type === "flow.activated";
             if (flowEvent) {
@@ -3932,6 +3942,9 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
                 const finalStatus = item.type === "simulation.completed" ? "completed" : item.type === "simulation.stopped" ? "stopped" : "failed";
                 chip.className = `status-chip ${finalStatus}`;
                 chip.textContent = studioSimulationStatus(finalStatus);
+              }
+              if (item.type === "simulation.failed") {
+                appendRuntimeFailure(item.error || item.failure || item.errorEnvelope?.message, item.errorEnvelope || item);
               }
               continue;
             }
@@ -4050,7 +4063,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const emptyMessage = noopRoles.length
           ? (state.locale === "en" ? "No result was produced because one or more roles have no execution binding. Configure a model or execution profile for the listed roles, then retry." : "角色尚未配置执行绑定，因此没有生成结果。请为上方角色配置模型或执行配置后重试。")
           : (state.locale === "en" ? "The debug run returned no final result." : "调试未返回最终结果。");
-        const displayedFailure = studioSimulationErrorText(simulationState.error || simulation.failureSummary || emptyMessage);
+        const terminalFailure = [...transcript].reverse().find((item) => item.type === "simulation.failed");
+        const displayedFailure = studioSimulationErrorText(simulationState.error || simulation.failureSummary || terminalFailure?.error || emptyMessage);
         if (result && ownsRuntimePanel()) {
           drawTranscript();
         result.insertAdjacentHTML("beforeend", `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Final result" : "最终结果"}</strong><span class="status-chip${succeeded && !noopRoles.length ? "" : " warning"}">${statusLabel}</span></div><p class="form-hint">${persistenceLabel}</p>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(hasOutput ? output : displayedFailure)}</pre><div class="form-actions"><a class="secondary-button" href="${detailHref}" data-route="${detailHref}">${state.locale === "en" ? "Open run details" : "查看运行详情"}</a><a class="secondary-button" href="${artifactsHref}" target="_blank" rel="noreferrer">${state.locale === "en" ? "View run evidence" : "查看运行证据"}</a><a class="text-button" href="${historyHref}" data-route="${historyHref}">${state.locale === "en" ? "Debug history" : "调试历史"}</a></div></div>`);
@@ -4069,14 +4083,35 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (isAbort(error)) return false;
         const message = studioSimulationErrorText(error.message);
         if (ownsRuntimePanel()) {
-          if (result) result.innerHTML = `<p class="run-error" role="alert">${esc(message)}</p>`;
+          if (result) {
+            const panel = result.querySelector(".team-simulation-result");
+            if (panel) {
+              const statusChip = panel.querySelector(".panel-head .status-chip");
+              if (statusChip) {
+                statusChip.className = "status-chip failed";
+                statusChip.textContent = studioSimulationStatus("failed");
+              }
+              const failure = document.createElement("p");
+              failure.className = "run-error runtime-failure-summary";
+              failure.setAttribute("role", "alert");
+              failure.textContent = message;
+              panel.append(failure);
+              const raw = document.createElement("details");
+              raw.open = true;
+              raw.innerHTML = `<summary>${state.locale === "en" ? "Failure details" : "失败诊断详情"}</summary><pre></pre>`;
+              raw.querySelector("pre").textContent = error?.stack || error?.message || String(error);
+              panel.append(raw);
+            } else {
+              result.innerHTML = `<div class="team-simulation-result"><p class="run-error" role="alert">${esc(message)}</p><details open><summary>${state.locale === "en" ? "Failure details" : "失败诊断详情"}</summary><pre>${esc(error?.stack || error?.message || String(error))}</pre></details></div>`;
+            }
+          }
           setEditorState(message);
         }
         return false;
       } finally {
         clearInterval(hudTimer);
         focusBtn?.removeEventListener("click", onFocusClick);
-        if (simulationFinished && ownsRuntimePanel()) syncRuntimeDualCore({ active: true, preference: "content-focus" });
+        // Keep the user's split ratio and panel state available after the run ends.
         releaseRuntimeUi();
         const preserveRun = !simulationFinished && pageRequest && !isCurrentRequest(pageRequest);
         if (!preserveRun && stage.isConnected && ownsRuntimePanel()) syncDebugRunButton(simulationFinished ? "terminal" : "idle");
