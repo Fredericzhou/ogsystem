@@ -6,6 +6,27 @@ export async function handlePlatformRoutes({
   sendJson,
   useCases
 }) {
+  if (request.method === "GET" && url.pathname === "/api/v1/platform/backends") {
+    try {
+      sendJson(response, 200, { backends: useCases.listPlatformBackends(), discoveryPending: true });
+    } catch (error) {
+      sendJson(response, 503, { error: error instanceof Error ? error.message : "Unable to list platform backends." });
+    }
+    return true;
+  }
+
+  const backendDiscoveryMatch = url.pathname.match(/^\/api\/v1\/platform\/backends\/([^/]+)\/discovery$/);
+  if (request.method === "GET" && backendDiscoveryMatch) {
+    try {
+      const payload = await useCases.discoverPlatformBackend(decodeURIComponent(backendDiscoveryMatch[1]), url.searchParams.get("refresh") === "1");
+      sendJson(response, payload.discoveryPending ? 202 : 200, payload);
+    } catch (error) {
+      const status = error?.code === "BACKEND_NOT_FOUND" ? 404 : 503;
+      sendJson(response, status, { error: error instanceof Error ? error.message : "Unable to discover platform backend." });
+    }
+    return true;
+  }
+
   if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/v1/platform/discovery") {
     try {
       sendJson(response, 200, await useCases.getPlatformDiscovery(request.method === "POST"));

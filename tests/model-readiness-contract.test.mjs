@@ -55,7 +55,7 @@ async function createFixture(options = {}) {
 test("readiness fails closed when fresh OpenCode discovery excludes a pinned model", async () => {
   const workdir = await createFixture({
     catalog: {
-      catalogVersion: "3",
+      catalogVersion: "4",
       generatedAt: new Date().toISOString(),
       sources: [{ backend: "opencode", displayName: "OpenCode", iconKey: "opencode", transport: "http", sessionKind: "server-session", status: "runnable" }],
       models: []

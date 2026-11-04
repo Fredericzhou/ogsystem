@@ -914,6 +914,7 @@ async function renderPlatformConfig() {
   const sourceDetail = (item) => {
     const status = String(item.status || "");
     const detail = String(item.detail || "");
+    if (status === "checking") return "正在检查 CLI、协议和模型目录";
     if (status === "not_installed" || /not found|missing|not installed/i.test(detail)) return "未安装该运行底座，安装后刷新即可识别";
     if (status === "service_unavailable") return "已检测到本地 CLI，但后台服务未启动或无法连接";
     if (status === "installed_but_broken") return "已检测到本地安装，但健康检查或目录探测异常";
@@ -923,6 +924,51 @@ async function renderPlatformConfig() {
   };
   const formatDiscoveryTime = (value) => { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "时间未知" : date.toLocaleString(state.locale === "en" ? "en-US" : "zh-CN", { dateStyle: "medium", timeStyle: "short" }); };
   const probeKeyForModel = (item) => `${item.backend}:${item.modelId}`;
+  const checkingSource = (item) => ({ ...item, status: item.status || "checking" });
+  const mergeBackendDiscovery = (snapshot, backendPayload) => {
+    const source = backendPayload?.source;
+    const sources = (snapshot.sources || []).filter((item) => item.backend !== source?.backend);
+    if (source) sources.push(source);
+    const models = (snapshot.models || []).filter((item) => item.backend !== source?.backend);
+    models.push(...(backendPayload?.models || []));
+    return { ...snapshot, sources, models, generatedAt: backendPayload?.generatedAt || snapshot.generatedAt, discoveryPending: false };
+  };
+  const discoverBackendsIncrementally = async ({ forceRefresh = false, settings, initial } = {}) => {
+    const aggregatePromise = pageFetch(`/api/v1/platform/discovery${forceRefresh ? "?refresh=1" : ""}`).then(async (response) => ({ response, payload: await response.json() })).catch(() => null);
+    const backendResponse = await pageFetch("/api/v1/platform/backends");
+    const backendPayload = await backendResponse.json();
+    if (!backendResponse.ok) throw new Error(backendPayload.error || "无法读取运行底座");
+    const aggregate = await Promise.race([aggregatePromise, new Promise((resolve) => setTimeout(() => resolve(null), 120))]);
+    if (aggregate?.response?.ok && aggregate.payload?.sources?.length && !aggregate.payload.discoveryPending) {
+      renderDiscovery(aggregate.payload, settings);
+      return aggregate.payload;
+    }
+    let snapshot = { generatedAt: new Date().toISOString(), sources: (backendPayload.backends || []).map(checkingSource), models: [], discoveryPending: true };
+    renderDiscovery(snapshot, settings);
+    const discoverOne = async (backend) => {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const response = await pageFetch(`/api/v1/platform/backends/${encodeURIComponent(backend.backend)}/discovery${forceRefresh ? "?refresh=1" : ""}`);
+        const payload = await response.json();
+        if (response.status !== 202) return { response, payload };
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return { response: { ok: true }, payload: { source: { ...backend, status: "checking" }, models: [], discoveryPending: true } };
+    };
+    await Promise.all((backendPayload.backends || []).map(async (backend) => {
+      try {
+        const { response, payload } = await discoverOne(backend);
+        if (!response.ok) throw new Error(payload.error || "底座探测失败");
+        snapshot = mergeBackendDiscovery(snapshot, payload);
+      } catch (error) {
+        if (isAbort(error)) return;
+        snapshot = mergeBackendDiscovery(snapshot, { source: { ...backend, status: "installed_but_broken", detail: error.message || "底座探测失败" }, models: [] });
+      }
+      renderDiscovery(snapshot, settings);
+    }));
+    snapshot.discoveryPending = false;
+    renderDiscovery(snapshot, settings);
+    return snapshot;
+  };
   const renderDiscovery = (discovery, settings) => {
     discoverySnapshot = discovery;
     selectedSettings = settings;
@@ -966,7 +1012,7 @@ async function renderPlatformConfig() {
         const probe = modelProbes.get(probeKey);
         if (probe) return probe.status === "runnable";
         const source = sourceByBackend.get(item.backend);
-        return source?.status === "runnable" || item.runnable === true;
+        return ["verified", "runnable"].includes(probe?.status || item.status) || (probe === undefined && item.runnable === true);
       });
       if (kicker) {
         kicker.textContent = state.locale === "en" ? `Catalog · Available (${filteredModels.length})` : `模型目录 · 仅可用 (${filteredModels.length})`;
@@ -981,15 +1027,16 @@ async function renderPlatformConfig() {
       const capabilities = capabilityLabels(item.capabilities);
       const probeKey = probeKeyForModel(item);
       const probe = modelProbes.get(probeKey);
-      const availability = probe?.status === "runnable" ? "可运行" : probe?.status === "unavailable" ? "不可用" : probe?.status === "checking" ? "探测中" : "未验证";
-      const chip = probe?.status === "runnable" ? "confirmed" : probe?.status === "unavailable" ? "error" : "";
-      const message = probe?.status === "runnable" ? `<span class="platform-row-detail">验证成功${Number.isFinite(probe.durationMs) ? `，${Math.round(probe.durationMs)} ms` : ""}</span>` : probe?.message ? `<span class="platform-row-detail">${esc(probe.message)}</span>` : "";
+      const modelStatus = probe?.status || item.status || "unverified";
+      const availability = modelStatus === "verified" || probe?.status === "runnable" ? "可运行" : modelStatus === "unavailable" || probe?.status === "failed" ? "不可用" : modelStatus === "checking" ? "探测中" : "已发现，待验证";
+      const chip = modelStatus === "verified" || probe?.status === "runnable" ? "confirmed" : modelStatus === "unavailable" || probe?.status === "failed" ? "error" : "";
+      const message = modelStatus === "verified" || probe?.status === "runnable" ? `<span class="platform-row-detail">验证成功${Number.isFinite(probe.durationMs) ? `，${Math.round(probe.durationMs)} ms` : ""}</span>` : probe?.message || item.detail ? `<span class="platform-row-detail">${esc(probe?.message || item.detail)}</span>` : "";
       const source = sourceByBackend.get(item.backend);
       const backendDisplayName = source?.displayName || resolveBackendIconEntry(item.backend).displayName;
-      return `<div class="platform-model-row" data-backend="${esc(item.backend)}" data-model-id="${esc(item.modelId)}">${renderBackendIcon(item.backend, { iconKey: source?.iconKey, displayName: backendDisplayName, status: source?.status, size: 22 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.modelId)}</strong><span class="status-chip ${chip}">${availability}</span></div><span class="platform-row-detail">${esc(backendDisplayName)} · ${esc(item.name || item.modelId)}</span>${message}<div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`;
+      return `<div class="platform-model-row is-clickable" data-backend="${esc(item.backend)}" data-model-id="${esc(item.modelId)}" tabindex="0" role="button" title="点击验证模型">${renderBackendIcon(item.backend, { iconKey: source?.iconKey, displayName: backendDisplayName, status: source?.status, size: 22 })}<div class="platform-row-main"><div class="platform-row-title"><strong>${esc(item.modelId)}</strong><span class="status-chip ${chip}">${availability}</span></div><span class="platform-row-detail">${esc(backendDisplayName)} · ${esc(item.name || item.modelId)}</span>${message}<div class="platform-capabilities">${capabilities.length ? capabilities.map((label) => `<span>${esc(label)}</span>`).join("") : "<span>能力信息未提供</span>"}</div></div></div>`;
     }).join("") : `<div class="platform-empty">${emptyMessage}</div>`;
-    const hasCodexModel = models.some((item) => item.backend === "codex" && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
-    const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
+    const hasCodexModel = models.some((item) => item.backend === "codex" && ["verified", "runnable"].includes(modelProbes.get(probeKeyForModel(item))?.status));
+    const hasOpenCodeModel = models.some((item) => item.backend === "opencode" && ["verified", "runnable"].includes(modelProbes.get(probeKeyForModel(item))?.status));
     const missingBackends = [!hasCodexModel && "Codex", !hasOpenCodeModel && "OpenCode"].filter(Boolean);
     const requirementMessage = missingBackends.length
       ? (state.locale === "en"
@@ -1006,7 +1053,7 @@ async function renderPlatformConfig() {
     const modelSelect = document.querySelector("#platform-settings-form select[name=defaultModel]");
     if (modelSelect) {
       const backend = providerSelect?.value || settings?.defaultProvider || "codex";
-      const runnableModels = models.filter((item) => item.backend === backend && modelProbes.get(probeKeyForModel(item))?.status === "runnable");
+      const runnableModels = models.filter((item) => item.backend === backend && ["verified", "runnable"].includes(modelProbes.get(probeKeyForModel(item))?.status));
       modelSelect.innerHTML = `<option value="default">自动选择</option>${runnableModels.map((item) => `<option value="${esc(item.modelId)}">${esc(item.name || item.modelId)} · ${esc(item.backend)} · ${esc(item.modelId)}</option>`).join("")}`;
       const savedModel = settings?.defaultModel;
       const selectedModel = runnableModels.find((item) => item.modelId === savedModel || `${item.backend}/${item.modelId}` === savedModel);
@@ -1028,31 +1075,8 @@ async function renderPlatformConfig() {
   $("#platform-discovery-refresh")?.addEventListener("click", async (event) => {
     const button = event.currentTarget; const label = button.querySelector("span"); const currentSettings = Object.fromEntries(new FormData(document.querySelector("#platform-settings-form") || document.createElement("form")).entries()); button.disabled = true; label.textContent = "刷新中";
     try {
-      const response = await pageFetch("/api/v1/platform/discovery", { method: "POST" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "刷新失败");
       modelProbes.clear();
-      const models = payload.models || [];
-      for (const model of models) modelProbes.set(probeKeyForModel(model), { status: "checking" });
-      renderDiscovery(payload, currentSettings);
-      for (let index = 0; index < models.length; index += 1) {
-        const model = models[index];
-        const probeKey = probeKeyForModel(model);
-        label.textContent = "探测中";
-        try {
-          const probeResponse = await pageFetch("/api/v1/platform/models/probe", {
-            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ backend: model.backend, modelId: model.modelId })
-          });
-          const probePayload = await probeResponse.json();
-          if (!probeResponse.ok) throw new Error(probePayload.error || "模型探测失败");
-          modelProbes.set(probeKey, probePayload.result || { status: "unavailable", message: "未收到探测结果" });
-        } catch (error) {
-          if (isAbort(error)) return;
-          modelProbes.set(probeKey, { status: "unavailable", message: error.message || "模型探测失败" });
-        }
-      }
-      const latestSettings = Object.fromEntries(new FormData(document.querySelector("#platform-settings-form")).entries());
-      renderDiscovery(payload, latestSettings);
+      await discoverBackendsIncrementally({ forceRefresh: true, settings: currentSettings });
       label.textContent = "已刷新";
       setTimeout(() => { label.textContent = "刷新"; }, 1500);
     }
@@ -1068,6 +1092,23 @@ async function renderPlatformConfig() {
       modelFilterMode = "service";
       if (discoverySnapshot) renderDiscovery(discoverySnapshot, selectedSettings);
     }
+  });
+  $("#platform-models")?.addEventListener("click", async (event) => {
+    const row = event.target.closest(".platform-model-row");
+    if (!row) return;
+    const model = { backend: row.dataset.backend, modelId: row.dataset.modelId };
+    const key = `${model.backend}:${model.modelId}`;
+    modelProbes.set(key, { status: "checking" });
+    if (discoverySnapshot) renderDiscovery(discoverySnapshot, selectedSettings);
+    try {
+      const response = await pageFetch("/api/v1/platform/models/probe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(model) });
+      const payload = await response.json();
+      modelProbes.set(key, payload.result || { status: "failed", message: "未收到探测结果" });
+    } catch (error) {
+      if (isAbort(error)) return;
+      modelProbes.set(key, { status: "failed", message: error.message || "模型探测失败" });
+    }
+    if (discoverySnapshot) renderDiscovery(discoverySnapshot, selectedSettings);
   });
   $("#platform-providers")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -1088,10 +1129,10 @@ async function renderPlatformConfig() {
     }
   });
   try {
-    const [discoveryResponse, settingsResponse] = await Promise.all([pageFetch("/api/v1/platform/discovery"), pageFetch("/api/v1/platform/settings")]);
-    const discovery = await discoveryResponse.json(); const settingsPayload = await settingsResponse.json();
-    if (!discoveryResponse.ok) throw new Error(discovery.error || "无法读取运行底座");
-    renderDiscovery(discovery, settingsPayload.settings);
+    const [settingsResponse, backendsSnapshot] = await Promise.all([pageFetch("/api/v1/platform/settings"), discoverBackendsIncrementally({ settings: undefined })]);
+    const settingsPayload = await settingsResponse.json();
+    if (!settingsResponse.ok) throw new Error(settingsPayload.error || "无法读取平台配置");
+    renderDiscovery(backendsSnapshot, settingsPayload.settings);
     $("#platform-settings-form select[name=defaultProvider]")?.addEventListener("change", () => {
       const form = document.querySelector("#platform-settings-form");
       const current = Object.fromEntries(new FormData(form).entries());
@@ -3707,8 +3748,20 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       state._activeSimulationAbort = abortController;
       let simulationFinished = false;
       let activeSimulationId = "";
+      const runtimeLockToken = `${runGeneration}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+      state._studioRuntimeLockToken = runtimeLockToken;
       const ownsRuntimePanel = () => state._studioRunGeneration === runGeneration
         && (!activeSimulationId || state.studioActiveRun?.simulationId === activeSimulationId);
+      const releaseRuntimeUi = () => {
+        if (state._studioRuntimeLockToken !== runtimeLockToken) return false;
+        if (stage.isConnected) updateStudioGraph?.update({ runtimeLock: false, readOnly: false });
+        if (hud) hud.hidden = true;
+        syncDebugRunButton(simulationFinished ? "terminal" : "idle");
+        if (simulationFinished) clearStudioActiveRun(activeSimulationId);
+        if (state.studioActiveRun?.simulationId === activeSimulationId) state.studioActiveRun = null;
+        delete state._studioRuntimeLockToken;
+        return true;
+      };
       const result = $("#team-simulation-result");
       setDebugView("run");
       syncDebugRunButton("running");
@@ -4023,10 +4076,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       } finally {
         clearInterval(hudTimer);
         focusBtn?.removeEventListener("click", onFocusClick);
-        if (hud && ownsRuntimePanel()) hud.hidden = true;
-        if (stage.isConnected && ownsRuntimePanel()) updateStudioGraph?.update({ runtimeLock: false, readOnly: false });
         if (simulationFinished && ownsRuntimePanel()) syncRuntimeDualCore({ active: true, preference: "content-focus" });
-        if (simulationFinished) clearStudioActiveRun(activeSimulationId);
+        releaseRuntimeUi();
         const preserveRun = !simulationFinished && pageRequest && !isCurrentRequest(pageRequest);
         if (!preserveRun && stage.isConnected && ownsRuntimePanel()) syncDebugRunButton(simulationFinished ? "terminal" : "idle");
         if (!preserveRun && state.studioActiveRun?.simulationId === activeSimulationId) state.studioActiveRun = null;
@@ -4279,8 +4330,34 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
 
 async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest = state.activeRequest) {
   try {
-    const [discoveryResponse, designResponse, settingsResponse] = await Promise.all([
-      pageFetch("/api/v1/platform/models"),
+    const fetchBounded = async (url, timeoutMs, options = {}) => {
+      const controller = new AbortController();
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+      try {
+        return await pageFetch(url, { ...options, signal: controller.signal });
+      } catch (error) {
+        if (timedOut) {
+          const timeoutError = new Error(`Request timed out after ${timeoutMs}ms.`);
+          timeoutError.code = "PLATFORM_REQUEST_TIMEOUT";
+          throw timeoutError;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    // Prefer the complete discovery snapshot so readiness sees backend and model
+    // identity together. Fall back to the bounded UI projection when a slow CLI
+    // keeps the aggregate endpoint pending.
+    let discoveryResponse;
+    try {
+      discoveryResponse = await fetchBounded("/api/v1/platform/discovery", 3000);
+    } catch (error) {
+      if (isAbort(error)) throw error;
+      discoveryResponse = await fetchBounded("/api/v1/platform/models", 5000);
+    }
+    const [designResponse, settingsResponse] = await Promise.all([
       authoring ? Promise.resolve(undefined) : pageFetch(`/api/v1/team-versions/${encodeURIComponent(teamVersionId)}/design`),
       pageFetch("/api/v1/platform/settings")
     ]);
@@ -4297,31 +4374,31 @@ async function confirmTeamRuntimeReadiness(teamVersionId, authoring, pageRequest
     const configuredDefault = String(settings.defaultModel || "default");
     const defaultModel = configuredDefault === "default"
       ? models.find((item) => item.backend === settings.defaultProvider && item.runnable)
-      : models.find((item) => item.runnable && (item.ref === configuredDefault || (item.backend === settings.defaultProvider && item.id === configuredDefault)));
+      : models.find((item) => item.runnable && item.backend === settings.defaultProvider && item.modelId === configuredDefault);
     const issues = [];
     const inheritedRoles = [];
-    for (const [roleId, role] of Object.entries(roles)) {
-      if (role.bindingKind === "exec" || (role.profileId && role.bindingKind !== "model")) continue;
+    await Promise.all(Object.entries(roles).map(async ([roleId, role]) => {
+      if (role.bindingKind === "exec" || (role.profileId && role.bindingKind !== "model")) return;
       if (role.bindingKind !== "model") {
         if (defaultModel) {
           inheritedRoles.push(roleId);
-          continue;
+          return;
         }
         issues.push(`${roleId}: ${state.locale === "en" ? "no model or execution profile is configured" : "未配置模型或执行配置"}`);
-        continue;
+        return;
       }
       const modelRef = role.modelRef || (role.backend && role.modelId ? `${role.backend}/${role.modelId}` : "");
       if (!modelRef && defaultModel) {
         inheritedRoles.push(roleId);
-        continue;
+        return;
       }
       const backend = role.backend || modelRef.split("/", 1)[0];
       const modelId = role.modelId || modelRef.slice(backend ? backend.length + 1 : 0);
-      const model = models.find((item) => item.backend === backend && item.runnable && (item.ref === modelRef || item.id === modelId || item.ref === `${backend}/${modelId}`));
+      const model = models.find((item) => item.backend === backend && item.modelId === modelId && (item.status === "verified" || item.runnable === true));
       if (!model) {
         issues.push(`${roleId}: ${state.locale === "en" ? `runnable model ${modelRef || "is not selected"} was not discovered` : `未发现可运行模型 ${modelRef || "（尚未选择）"}`}`);
       }
-    }
+    }));
     if (!issues.length && !inheritedRoles.length) return true;
     return confirmAction({
       title: issues.length

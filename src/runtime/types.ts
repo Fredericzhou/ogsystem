@@ -487,14 +487,14 @@ export type ModelCatalogEntry = {
   modelId: string;
   runnable: boolean;
   name?: string;
-  status?: string;
+  status?: "discovered" | "unverified" | "verified" | "unavailable" | string;
   capabilities: ModelCatalogCapabilitySummary;
   variants: string[];
   reasoning?: ReasoningCapability;
 };
 
 export type ModelCatalog = {
-  catalogVersion: "3";
+  catalogVersion: "4";
   generatedAt: string;
   sources: ModelCatalogSource[];
   models: ModelCatalogEntry[];

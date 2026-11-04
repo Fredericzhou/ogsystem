@@ -405,7 +405,7 @@ GET /api/project
 ```json
 {
   "modelCatalog": {
-    "catalogVersion": "3",
+    "catalogVersion": "4",
     "generatedAt": "2026-11-03T04:00:00.000Z",
     "sources": [
       {

@@ -91,7 +91,7 @@ async function writeModelCatalog(workdir, models) {
     path.join(workdir, ".ogs", "model-catalog.json"),
     JSON.stringify(
       {
-        catalogVersion: "3",
+        catalogVersion: "4",
         generatedAt: "2026-04-30T00:00:00.000Z",
         sources: [{ backend: "opencode", displayName: "OpenCode", iconKey: "opencode", transport: "http", sessionKind: "server-session", status: "runnable" }],
         models

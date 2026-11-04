@@ -157,22 +157,10 @@ export class BackendRegistry {
     if (!descriptor || !adapter) {
       throw new Error(`Backend "${backendId}" is not registered.`);
     }
-    let discovered = await adapter.discover(args);
-    if (adapter.verifiedRunnable && discovered.status === "runnable" && discovered.models.length > 0 && adapter.probe) {
-      const preferredIds = new Set(args.preferredModelIds ?? []);
-      const probeModel = discovered.models.find((model) => preferredIds.has(model.modelId) && model.runnable)
-        ?? discovered.models.find((model) => model.runnable)
-        ?? discovered.models[0];
-      try {
-        await adapter.probe({ modelId: probeModel.modelId, workdir: args.workdir, timeoutMs: 60_000 });
-      } catch (error) {
-        discovered = {
-          status: "installed_but_broken",
-          detail: `Minimum execution probe failed for ${descriptor.displayName}: ${error instanceof Error ? error.message : String(error)}`,
-          models: []
-        };
-      }
-    }
+    // Discovery checks installation, protocol health, and the model directory.
+    // A real prompt probe is an explicit model-level action and must not turn a
+    // healthy backend into an empty catalog.
+    const discovered = await adapter.discover(args);
     // Strict tier gate: unverified adapters can be registered and detected, but never runnable.
     const effectiveStatus: BackendAvailabilityStatus = !adapter.verifiedRunnable
       ? discovered.status === "not_installed" || discovered.status === "installed_but_broken"
@@ -186,7 +174,7 @@ export class BackendRegistry {
             modelId: entry.modelId,
             runnable: Boolean(entry.runnable),
             ...(entry.name ? { name: entry.name } : {}),
-            ...(entry.status ? { status: entry.status } : {}),
+            status: entry.status === "unavailable" ? "unavailable" : "discovered",
             capabilities: {
               textInput: Boolean(entry.capabilities.textInput),
               textOutput: Boolean(entry.capabilities.textOutput),

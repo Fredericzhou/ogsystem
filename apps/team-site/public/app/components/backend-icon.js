@@ -105,6 +105,11 @@ export function renderBackendIcon(backendId, { displayName, iconKey, status, siz
 export function formatBackendStatusBadge(status, locale = "zh") {
   const english = locale === "en";
   switch (status) {
+    case "checking":
+      return {
+        label: english ? "Checking" : "检测中",
+        chipClass: "neutral"
+      };
     case "runnable":
       return {
         label: english ? "Runnable" : "可运行",

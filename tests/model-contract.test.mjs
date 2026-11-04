@@ -36,7 +36,7 @@ function model(ref, capabilities = { textInput: true, textOutput: true, toolcall
 
 function catalog(models, generatedAt = new Date().toISOString()) {
   return {
-    catalogVersion: "3",
+    catalogVersion: "4",
     generatedAt,
     sources: [{ backend: "opencode", displayName: "OpenCode", iconKey: "opencode", transport: "http", sessionKind: "server-session", status: "runnable" }],
     models
@@ -90,7 +90,7 @@ test("OpenCode discovery uses the injected command and normalizes the fixture", 
   assert.equal(discovered.models[0].capabilities.textOutput, true);
 });
 
-test("backend discovery probes the configured model before the catalog's first model", async () => {
+test("backend discovery keeps the model catalog independent from live model probes", async () => {
   const registry = new BackendRegistry();
   let probedModel;
   const discoveredModels = [model("provider/unavailable"), model("provider/configured")];
@@ -114,8 +114,9 @@ test("backend discovery probes the configured model before the catalog's first m
     preferredModelIds: ["provider/configured"]
   });
 
-  assert.equal(probedModel, "provider/configured");
+  assert.equal(probedModel, undefined);
   assert.equal(result.source.status, "runnable");
+  assert.equal(result.models[0].status, "discovered");
   assert.deepEqual(result.models.map((entry) => entry.modelId), ["provider/unavailable", "provider/configured"]);
 });
 

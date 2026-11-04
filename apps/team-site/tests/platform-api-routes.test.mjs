@@ -70,6 +70,17 @@ test("discovery routes preserve forced refresh and response projections", async 
   assert.deepEqual(h.sent[3], { status: 200, payload: { models: [{ id: "model-1" }] } });
 });
 
+test("per-backend discovery exposes checking and independent results", async () => {
+  const h = harness({ useCases: {
+    listPlatformBackends: () => [{ backend: "qwen", status: "checking" }],
+    discoverPlatformBackend: async (backend, refresh) => ({ source: { backend, status: "runnable" }, models: [], generatedAt: "now", refresh })
+  } });
+  assert.equal(await invoke(h, "GET", "/api/v1/platform/backends"), true);
+  assert.deepEqual(h.sent[0], { status: 200, payload: { backends: [{ backend: "qwen", status: "checking" }], discoveryPending: true } });
+  assert.equal(await invoke(h, "GET", "/api/v1/platform/backends/qwen/discovery?refresh=1"), true);
+  assert.deepEqual(h.sent[1], { status: 200, payload: { source: { backend: "qwen", status: "runnable" }, models: [], generatedAt: "now", refresh: true } });
+});
+
 test("model probe route returns a model availability result", async () => {
   const h = harness({ useCases: {
     probeModelAvailability: async (model) => ({ ...model, status: "runnable", durationMs: 42 })

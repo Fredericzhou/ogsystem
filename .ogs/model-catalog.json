@@ -1,5 +1,5 @@
 {
-  "catalogVersion": "3",
+  "catalogVersion": "4",
   "generatedAt": "2026-09-23T18:45:03.800Z",
   "sources": [
     {
@@ -81,7 +81,7 @@
       "modelId": "gpt-6-astra",
       "runnable": true,
       "name": "GPT-6-Astra",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -94,7 +94,7 @@
       "modelId": "gpt-6-sol",
       "runnable": true,
       "name": "GPT-6-Sol",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -107,7 +107,7 @@
       "modelId": "gpt-6-luna",
       "runnable": true,
       "name": "GPT-6-Luna",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -120,7 +120,7 @@
       "modelId": "gpt-5.6-sol",
       "runnable": true,
       "name": "GPT-5.6-Sol",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -133,7 +133,7 @@
       "modelId": "gpt-5.6-terra",
       "runnable": true,
       "name": "GPT-5.6-Terra",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -146,7 +146,7 @@
       "modelId": "gpt-5.6-luna",
       "runnable": true,
       "name": "GPT-5.6-Luna",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -159,7 +159,7 @@
       "modelId": "gpt-5.5",
       "runnable": true,
       "name": "GPT-5.5",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,

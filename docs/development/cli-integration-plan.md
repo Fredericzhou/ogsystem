@@ -314,16 +314,16 @@ Each descriptor must report:
 - session reuse
 - abort support
 
-A binary being present is not enough to mark a backend `runnable`; the handshake, model discovery, and minimum execution probe must pass.
+A binary being present is not enough to mark a backend `runnable`; the handshake and model discovery must pass. A minimum execution probe is a separate model-level verification action and must not erase a healthy backend catalog when it fails.
 
 ## Model Discovery
 
-All clients write the latest `.ogs/model-catalog.json` format (`catalogVersion: "3"`). The source
+All clients write the latest `.ogs/model-catalog.json` format (`catalogVersion: "4"`). The source
 record describes the CLI channel and the model record describes one backend-local model:
 
 ```json
 {
-  "catalogVersion": "3",
+  "catalogVersion": "4",
   "generatedAt": "2026-11-03T00:00:00.000Z",
   "sources": [
     {
@@ -341,7 +341,7 @@ record describes the CLI channel and the model record describes one backend-loca
       "modelId": "qwen3-coder",
       "runnable": true,
       "name": "Qwen3 Coder",
-      "status": "active",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -353,10 +353,11 @@ record describes the CLI channel and the model record describes one backend-loca
 }
 ```
 
-There is no compatibility reader or migration layer in this stage. Discovery writes v3 directly;
-selection and readiness consume v3 directly. `runnable` is a model-level boolean, while source
+There is no compatibility reader or migration layer in this stage. Discovery writes v4 directly;
+selection and readiness consume v4 directly. `runnable` is a model-level boolean, while source
 `status` reports CLI availability (`runnable`, `unavailable`, `not_installed`,
-`installed_but_broken`, or `service_unavailable`).
+`installed_but_broken`, or `service_unavailable`). Model `status` is independent and uses
+`discovered`, `unverified`, `verified`, or `unavailable`.
 
 Discovery flow:
 

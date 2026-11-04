@@ -1419,7 +1419,7 @@ export async function syncProjectModels(args: {
 
     if (!hasCatalog || args.rewriteDefault) {
       await writeJsonFileAtomic(paths.modelCatalogPath, {
-        catalogVersion: "3",
+        catalogVersion: "4",
         generatedAt: new Date().toISOString(),
         sources: [],
         models: []

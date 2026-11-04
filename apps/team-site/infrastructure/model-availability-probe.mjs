@@ -22,7 +22,7 @@ export function createModelAvailabilityProbe({ now = Date.now, timeoutMs = 30000
       return {
         backend,
         modelId,
-        status: "runnable",
+        status: "verified",
         durationMs: Math.max(0, now() - startedAt)
       };
     } catch (error) {

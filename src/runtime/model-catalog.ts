@@ -149,8 +149,8 @@ function parseReasoningCapability(value: unknown, filePath: string, fieldPath: s
 export function validateModelCatalog(value: unknown, filePath: string): ModelCatalog {
   const record = asRecord(value, filePath, "$");
   const catalogVersion = asString(record.catalogVersion, filePath, "$.catalogVersion");
-  if (catalogVersion !== "3") {
-    fail(filePath, "$.catalogVersion", `unsupported version "${catalogVersion}"`);
+  if (catalogVersion !== "4") {
+    fail(filePath, "$.catalogVersion", `MODEL_CATALOG_REBUILD_REQUIRED: catalog version "${catalogVersion}" is no longer supported. Run \`ogs models sync\` to rebuild the catalog.`);
   }
   if (!Array.isArray(record.sources)) {
     fail(filePath, "$.sources", "expected array");
@@ -236,7 +236,7 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
   });
 
   return {
-    catalogVersion: "3",
+    catalogVersion: "4",
     generatedAt: asString(record.generatedAt, filePath, "$.generatedAt"),
     sources,
     models
@@ -356,7 +356,7 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
   }
 
   return {
-    catalogVersion: "3",
+    catalogVersion: "4",
     generatedAt: new Date().toISOString(),
     sources: [
       {
@@ -518,7 +518,7 @@ export async function discoverLocalModelCatalog(args: {
   const models = outcomes.flatMap((outcome) => outcome.models);
 
   return {
-    catalogVersion: "3",
+    catalogVersion: "4",
     generatedAt: new Date().toISOString(),
     sources,
     models
@@ -552,7 +552,7 @@ export function mergeModelCatalogWithLiveSnapshot(
     });
   }
   return {
-    catalogVersion: "3",
+    catalogVersion: "4",
     generatedAt: generatedAt || stored?.generatedAt || new Date().toISOString(),
     sources: stored?.sources ?? [],
     models: [...models.values()]

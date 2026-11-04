@@ -2,6 +2,7 @@ export function createPlatformUseCases({
   platformSettingsStore,
   modelCatalog,
   uiDiscoveryTimeoutMs = 2500,
+  backendDiscoveryTimeoutMs = 2500,
   probeModelAvailability = async () => {
     throw new Error("Model availability probe is unavailable.");
   }
@@ -45,6 +46,29 @@ export function createPlatformUseCases({
   };
 
   return Object.freeze({
+    listPlatformBackends: () => modelCatalog.listBackends(),
+    async discoverPlatformBackend(backend, forceRefresh = false) {
+      if (typeof modelCatalog.discoverBackend !== "function") {
+        throw new Error("Per-backend model discovery is unavailable.");
+      }
+      const backendId = String(backend || "").trim();
+      const promise = modelCatalog.discoverBackend(backendId, forceRefresh);
+      let timeoutId;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise((resolve) => {
+            timeoutId = setTimeout(() => resolve({
+              source: { backend: backendId, status: "checking" },
+              models: [],
+              discoveryPending: true
+            }), backendDiscoveryTimeoutMs);
+          })
+        ]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    },
     getPlatformDiscovery: (forceRefresh = false) => modelCatalog.discover({ forceRefresh }),
     async probeModelAvailability(target) {
       const backend = typeof target === "object" && target !== null
