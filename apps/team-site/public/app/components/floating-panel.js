@@ -141,6 +141,17 @@ export function createFloatingPanelController({
     toggleFallbackMaximize();
   };
 
+  const restoreMaximized = async () => {
+    if (!maximized && !panel.classList.contains("is-maximized")) return;
+    if (document.fullscreenElement === panel) await document.exitFullscreen?.();
+    nativeFullscreen = false;
+    const bounds = restoreBounds || panelBounds(panel, host);
+    panel.style.bottom = "auto";
+    applyPanelBounds(panel, host, bounds, { minWidth, minHeight });
+    setMaximizedState(false);
+    restoreBounds = null;
+  };
+
   const onFullscreenChange = () => {
     if (!nativeFullscreen || document.fullscreenElement === panel) return;
     nativeFullscreen = false;
@@ -249,6 +260,7 @@ export function createFloatingPanelController({
     move,
     bringToFront,
     toggleMaximize,
+    restoreMaximized,
     isMaximized: () => maximized,
     destroy() {
       panel.removeEventListener("keydown", onPanelEscape);

@@ -203,6 +203,86 @@ registerHooks({
     await page.locator('#project-graph-stage [data-studio-graph-action="zoom-in"]').click();
     assert.equal(await debugPanel.getAttribute("aria-hidden"), "false", "graph controls remain usable while the non-modal panel is open");
 
+    // Symmetrical 1-click dock/float controls on debug panel
+    const debugDockBtn = page.locator("#team-debug-dialog [data-panel-dock='debug']");
+    assert.equal(await debugDockBtn.getAttribute("aria-pressed"), "false", "floating debug panel has unpressed dock toggle");
+    await maximizeDebugButton.click();
+    await page.locator("#team-debug-dialog.is-maximized").waitFor();
+    await debugDockBtn.click();
+    await page.locator(".studio-design-workbench.is-debug-docked").waitFor();
+    assert.equal(await debugPanel.getAttribute("class").then((value) => value.includes("is-maximized")), false, "docking restores a maximized panel before applying the docked layout");
+    assert.equal(await debugPanel.evaluate((panel) => getComputedStyle(panel).position), "relative", "a panel docked from maximized state uses the grid position");
+    await debugDockBtn.click();
+    await page.locator(".studio-design-workbench:not(.is-debug-docked)").waitFor();
+    await debugDockBtn.click();
+    await page.locator(".studio-design-workbench.is-debug-docked").waitFor();
+    assert.equal(await debugDockBtn.getAttribute("aria-pressed"), "true", "docked debug panel has pressed dock toggle");
+    assert.equal(await debugPanel.evaluate((panel) => getComputedStyle(panel).position), "relative", "docked debug panel is positioned relatively in grid");
+
+    // Intermediate split handle dragging when debug panel is docked
+    const dockSplitHandle = page.locator("[data-studio-dock-split-handle]");
+    assert.equal(await dockSplitHandle.isVisible(), true, "intermediate split handle is visible when debug panel is docked");
+    const debugSplitBefore = await debugWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-panel-dock-width"));
+    const debugSplitBounds = await dockSplitHandle.boundingBox();
+    await page.mouse.move(debugSplitBounds.x + debugSplitBounds.width / 2, debugSplitBounds.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(debugSplitBounds.x + debugSplitBounds.width / 2 - 40, debugSplitBounds.y + 40, { steps: 4 });
+    await page.mouse.up();
+    const debugSplitAfter = await debugWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-panel-dock-width"));
+    assert.notEqual(debugSplitAfter, debugSplitBefore, "dragging intermediate split handle resizes docked debug panel");
+
+    // Symmetrical 1-click dock/float controls on team configuration drawer & non-destructive handover
+    const assetDrawer = page.locator("#studio-asset-drawer");
+    const assetDockBtn = page.locator("#studio-asset-drawer [data-panel-dock='asset']");
+    assert.equal(await assetDockBtn.getAttribute("aria-pressed"), "false", "floating asset drawer has unpressed dock toggle");
+    await assetDockBtn.click();
+    await page.locator(".studio-design-workbench.is-asset-docked").waitFor();
+    assert.equal(await assetDockBtn.getAttribute("aria-pressed"), "true", "docked asset drawer has pressed dock toggle");
+    assert.equal(await assetDrawer.evaluate((panel) => getComputedStyle(panel).position), "relative", "docked asset drawer is positioned relatively in grid");
+    assert.equal(await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").count(), 1, "debug panel remains open and transitions to floating when asset drawer docks");
+    assert.equal(await debugPanel.evaluate((panel) => getComputedStyle(panel).position), "absolute", "debug panel transitions to floating positioning");
+    assert.equal(await debugDockBtn.getAttribute("aria-pressed"), "false", "debug dock toggle reflects floating state after handover");
+
+    // Intermediate split handle on docked team configuration drawer
+    assert.equal(await dockSplitHandle.isVisible(), true, "intermediate split handle is visible when asset drawer is docked");
+    const assetSplitBefore = await debugWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-panel-dock-width"));
+    const assetSplitBounds = await dockSplitHandle.boundingBox();
+    await page.mouse.move(assetSplitBounds.x + assetSplitBounds.width / 2, assetSplitBounds.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(assetSplitBounds.x + assetSplitBounds.width / 2 - 50, assetSplitBounds.y + 40, { steps: 4 });
+    await page.mouse.up();
+    const assetSplitAfter = await debugWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-panel-dock-width"));
+    assert.notEqual(assetSplitAfter, assetSplitBefore, "dragging intermediate split handle resizes docked team configuration");
+
+    // Keyboard accessibility on intermediate split handle
+    await dockSplitHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    const keyboardSplit = await debugWorkbench.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-panel-dock-width"));
+    assert.notEqual(keyboardSplit, assetSplitAfter, "intermediate dock split handle responds to keyboard ArrowLeft");
+
+    // 1-click undock team configuration drawer back to floating
+    await assetDockBtn.click();
+    await page.locator(".studio-design-workbench:not(.is-asset-docked)").waitFor();
+    assert.equal(await assetDockBtn.getAttribute("aria-pressed"), "false", "asset drawer dock toggle is unpressed after undocking");
+    assert.equal(await assetDrawer.evaluate((panel) => getComputedStyle(panel).position), "absolute", "undocked asset drawer returns to floating");
+
+    // Independent panel coexistence & close/reopen
+    await page.locator("#studio-asset-drawer-close").click();
+    assert.equal(await page.locator("#studio-asset-drawer.is-open").count(), 0, "asset drawer closes");
+    assert.equal(await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").count(), 1, "closing asset drawer does not close debug panel");
+    await debugPanel.evaluate((el) => {
+      el.style.top = "220px";
+      el.style.left = "40px";
+    });
+    await page.locator('#project-graph-stage [data-studio-graph-action="assets"]').click();
+    await page.locator("#studio-asset-drawer.is-open[aria-hidden='false']").waitFor();
+    assert.equal(await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").count(), 1, "reopening asset drawer keeps debug panel open");
+
+    // Business lifecycle state verification
+    assert.equal(await page.locator("#team-simulation-input").isEditable(), true, "debug simulation input is editable when idle");
+    assert.equal(await page.locator("#studio-assets-roles-tab").getAttribute("aria-selected"), "true", "team configuration drawer roles tab is accessible");
+    assert.equal(await page.locator("#team-simulation-run").isEnabled(), true, "debug run button is enabled for idle configuration");
+
     // Mobile uses a full-width panel layer and switches between panels instead of allowing
     // overlapping drag targets to fight the graph's touch gestures.
     await page.setViewportSize({ width: 390, height: 800 });
@@ -437,14 +517,46 @@ registerHooks({
     // Left history drawer collapsible interaction
     const historyCollapseBtn = page.locator('.studio-run-split [data-history-toggle="collapse"]');
     assert.equal(await historyCollapseBtn.count(), 1, "history collapse button is rendered in history drawer header");
+    const evidenceBoundsBefore = await page.locator(".studio-run-evidence").boundingBox();
+    const graphStageBoundsBefore = await page.locator("#studio-run-graph-stage").boundingBox();
+    const microPanelBoundsBefore = await page.locator(".studio-run-micro-panel").boundingBox();
+    assert.ok(graphStageBoundsBefore.width > 0, "macro graph has positive width before collapse");
+    assert.ok(microPanelBoundsBefore.width > 0, "micro panel has positive width before collapse");
+
     await historyCollapseBtn.click();
     await page.locator(".studio-run-split.is-history-collapsed").waitFor();
+    await page.waitForTimeout(260);
     assert.equal(await page.locator(".studio-run-split.is-history-collapsed .studio-run-history").isVisible(), false, "history drawer is hidden when collapsed");
+
+    // Defect 1 verification: canvas and micro panel are NOT emptied or collapsed to 0
+    const evidenceBoundsCollapsed = await page.locator(".studio-run-evidence").boundingBox();
+    assert.ok(evidenceBoundsCollapsed.width > evidenceBoundsBefore.width, `evidence workspace expands when history drawer collapses: before=${evidenceBoundsBefore.width}, collapsed=${evidenceBoundsCollapsed.width}`);
+    const graphStageBoundsCollapsed = await page.locator("#studio-run-graph-stage").boundingBox();
+    assert.ok(graphStageBoundsCollapsed.width > 0, "macro execution graph is not emptied or collapsed when drawer closes");
+    const microPanelBoundsCollapsed = await page.locator(".studio-run-micro-panel").boundingBox();
+    assert.ok(microPanelBoundsCollapsed.width > 0, "micro role chat panel is not emptied or collapsed when drawer closes");
+
+    // Defect 2 verification: re-expanding restores side-by-side twin layout with draggable split handle
     const historyExpandBtn = page.locator('.studio-run-split [data-history-toggle="expand"]');
     assert.equal(await historyExpandBtn.isVisible(), true, "expand button appears when history drawer is collapsed");
     await historyExpandBtn.click();
     await page.locator(".studio-run-split:not(.is-history-collapsed)").waitFor();
+    await page.waitForTimeout(260);
     assert.equal(await page.locator(".studio-run-split .studio-run-history").isVisible(), true, "history drawer is restored when expanded");
+
+    assert.equal(await historySplitHandle.isVisible(), true, "draggable split handle remains visible after history drawer re-expands");
+    const macroBoundsExpanded = await page.locator(".studio-run-macro-panel").boundingBox();
+    const microBoundsExpanded = await page.locator(".studio-run-micro-panel").boundingBox();
+    assert.ok(macroBoundsExpanded.x + macroBoundsExpanded.width <= microBoundsExpanded.x + 30, "macro and micro panels remain side-by-side in dual-core layout rather than vertical dialogs");
+
+    const splitBeforeReDrag = await dualCore.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-runtime-split"));
+    const historyHandleBoundsRe = await historySplitHandle.boundingBox();
+    await page.mouse.move(historyHandleBoundsRe.x + historyHandleBoundsRe.width / 2, dualCoreBounds.y + dualCoreBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dualCoreBounds.x + dualCoreBounds.width * 0.45, dualCoreBounds.y + dualCoreBounds.height / 2, { steps: 4 });
+    await page.mouse.up();
+    const splitAfterReDrag = await dualCore.evaluate((node) => getComputedStyle(node).getPropertyValue("--studio-runtime-split"));
+    assert.notEqual(splitAfterReDrag, splitBeforeReDrag, "split handle remains draggable after history drawer re-expansion");
 
     // Micro audit drilldown drawer
     const drilldownBtn = page.locator(".team-debug-drilldown-btn").first();

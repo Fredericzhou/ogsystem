@@ -31,6 +31,7 @@
 ### P1-1 发布前验收（Release UAT）与语义一致性收口
 - [ ] **完成 [`release-uat-checklist.md`](release-uat-checklist.md) 待签收场景**：重点完成场景 14/15（双控制目录共享同一业务 Workspace、版本冻结与运行证据隔离）及真实 Sandbox 下的人工审核（批准/打回/分支终止）端到端记录。
 - [ ] **条件路由与 Join 运行态浏览器验证**：在真实 Runtime/Operate 流程中验证条件路由决策（命中、无匹配、同优先级歧义）与 Join 等待/超时原因的可检索性，收敛跨语义 Engine Adapter 黄金测试夹具（conformance fixtures）。
+- [ ] **全局循环预算人工审核策略**：将 `loop_exhausted` 作为独立 Runtime 控制事件；任何超预算统一进入 `waiting_review`，禁止按原业务事件、`onExhausted` 或 End 自动继续；实现 `continue / rework / terminate / reject` 的合法目标校验、新增预算授权、幂等恢复、审计记录和调试上下文展示。固定业务事件中的 `APPROVAL_PROPOSED` 仅表示拟批准建议，不替代人工审核授权。详见 [`business-event-protocol-v1.md`](business-event-protocol-v1.md)。
 
 ### P1-2 Team Site 细节修复与冗余代码清理
 - [ ] **清理旧版浮动面板冗余代码**：在现有浏览器回归测试守护下，移除 `apps/team-site/public/app/views/app.js` 中被 `dataset.floatingPanelController !== "true"` 保护的旧拖拽监听分支及未引用的 `resizePanel` 函数。

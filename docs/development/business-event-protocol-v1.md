@@ -54,6 +54,7 @@ Role 只能通过以下信封输出业务结果：
 
 ```text
 READY
+APPROVAL_PROPOSED
 APPROVED
 REJECTED
 NEEDS_REWORK
@@ -63,6 +64,7 @@ BLOCKED
 | 事件 | 固定语义 | 典型目标 |
 | --- | --- | --- |
 | `READY` | 当前 Role 已产出可交接结果 | 下游处理 Role 或 End |
+| `APPROVAL_PROPOSED` | 当前 Role 建议批准，但不代表最终授权 | 授权 Role 或人工审核 |
 | `APPROVED` | 结果通过业务审核或决策 | 发布、交付或 End |
 | `REJECTED` | 结果被业务审核否决 | End、阻断或人工处置 |
 | `NEEDS_REWORK` | 结果需要修改后重新处理 | 原 Role 或返工 Role |
@@ -122,6 +124,9 @@ reviewer -->|REJECTED| end[结束]
 | `pause` | Runtime 控制动作 |
 | `terminate` | Runtime 控制动作 |
 
+`APPROVAL_PROPOSED` 表示业务角色提出拟批准建议，不等同于人工审核动作 `approve`，也不
+直接产生 `human_review_approved`。最终批准仍需由有权限的业务角色或人工审核控制面产生。
+
 ### 4.3 业务阻塞
 
 ```mermaid
@@ -131,7 +136,35 @@ material-support -->|READY| analyst
 
 `BLOCKED` 不等于 Runtime `failed`。它是一个合法业务结果，说明流程应进入补救或等待路径。
 
-### 4.4 多个同名事件出边
+### 4.4 循环预算耗尽与人工审核
+
+循环预算是全局 Runtime 安全边界。任何循环作用域或角色激活超过预算时，Runtime 不得
+按原业务事件、`onExhausted` 或 End 自动继续，也不得猜测下游目标。它必须先写入独立的
+Runtime 控制事件 `loop_exhausted`，然后将运行置为 `waiting_review`，等待人工决定。
+
+```text
+running -> loop_exhausted -> waiting_review
+                              -> running
+                              -> done
+                              -> stopped / failed
+```
+
+人工审核可以选择：
+
+- `continue`：选择已有合法目标，并明确增加的轮数或新预算；
+- `rework`：选择已有合法返工目标，并明确增加的轮数或新预算；
+- `terminate`：按审核作用域终止分支或整个运行；
+- `reject`：进入已声明的业务拒绝路径；没有合法拒绝路径时拒绝该操作。
+
+`approve` 不能无条件绕过预算。新增预算只对当前运行、循环作用域和 lineage 生效，并受
+系统级上限约束。没有人工决定时，运行保持 `waiting_review`，不得继续激活角色。
+
+`loop_exhausted` 属于 Runtime 图控制事件，不属于固定业务事件集合。它必须与
+`APPROVAL_PROPOSED`、`APPROVED`、`REJECTED`、`NEEDS_REWORK` 等业务事件分开记录和展示。
+人工审核决定通过现有 Human Review 控制面持久化，并记录 loop ID、触发角色、目标角色、
+当前轮次、预算、决策人、决策时间和新增预算。
+
+### 4.5 多个同名事件出边
 
 同一个 Role 可以有多个 `READY` 出边，但必须使用条件路由消除歧义：
 
@@ -468,13 +501,17 @@ flowchart TD
 
 ### 11.1 Runtime 单元测试
 
-- 固定集合中的五个事件全部通过；
+- 固定集合中的六个事件全部通过；
 - 自定义事件被拒绝；
 - `START` 不能由 Role 输出；
 - `ERROR.*` 不能由 Role 输出；
 - 生命周期词不能作为业务事件；
 - Role `outputs.events` 与普通出边集合不一致时失败；
 - `READY` 的 Role-specific `data` Schema 可以不同；
+- `APPROVAL_PROPOSED` 不能绕过人工审核授权；
+- 循环预算耗尽必须生成 `loop_exhausted` 并进入 `waiting_review`；
+- 没有人工决定时不得继续运行；
+- 人工继续或返工必须使用已声明的合法目标并记录新增预算；
 - 同事件多出边无条件时报告 `IR_ROUTE_AMBIGUOUS`；
 - 同事件多出边有互斥条件时只激活一个目标。
 

@@ -1804,8 +1804,10 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       dualCoreContainer.insertAdjacentHTML("beforeend", `<button type="button" class="studio-runtime-split-handle" data-runtime-split-handle aria-label="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}" title="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}"><span aria-hidden="true"></span></button>`);
       const splitHandle = dualCoreContainer.querySelector("[data-runtime-split-handle]");
       let splitDrag = null;
+      let splitRaf = null;
       splitHandle?.addEventListener("pointerdown", (event) => {
-        if (window.matchMedia?.("(max-width: 1100px)").matches) return;
+        if (window.matchMedia?.("(max-width: 768px)").matches) return;
+        dualCoreContainer.classList.add("is-split-dragging");
         const bounds = dualCoreContainer.getBoundingClientRect();
         splitDrag = { pointerId: event.pointerId, left: bounds.left, width: bounds.width };
         splitHandle.setPointerCapture(event.pointerId);
@@ -1815,9 +1817,24 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         if (!splitDrag || event.pointerId !== splitDrag.pointerId) return;
         const ratio = Math.min(0.7, Math.max(0.3, (event.clientX - splitDrag.left) / splitDrag.width));
         dualCoreContainer.style.setProperty("--studio-runtime-split", `${Math.round(ratio * 100)}%`);
-        historyGraph?.update({});
+        if (!splitRaf) {
+          splitRaf = window.requestAnimationFrame(() => {
+            splitRaf = null;
+            historyGraph?.fitViewport?.();
+          });
+        }
       });
-      const finishSplitDrag = (event) => { if (splitDrag?.pointerId === event.pointerId) splitDrag = null; };
+      const finishSplitDrag = (event) => {
+        if (splitDrag?.pointerId === event.pointerId) {
+          splitDrag = null;
+          dualCoreContainer.classList.remove("is-split-dragging");
+          if (splitRaf) {
+            window.cancelAnimationFrame(splitRaf);
+            splitRaf = null;
+          }
+          historyGraph?.fitViewport?.();
+        }
+      };
       splitHandle?.addEventListener("pointerup", finishSplitDrag);
       splitHandle?.addEventListener("pointercancel", finishSplitDrag);
       splitHandle?.addEventListener("keydown", (event) => {
@@ -1827,7 +1844,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         const current = Number.parseFloat(getComputedStyle(dualCoreContainer).getPropertyValue("--studio-runtime-split")) || 50;
         const next = Math.min(70, Math.max(30, current + (event.key === "ArrowRight" ? delta * 100 : -delta * 100)));
         dualCoreContainer.style.setProperty("--studio-runtime-split", `${next}%`);
-        historyGraph?.update({});
+        historyGraph?.fitViewport?.();
       });
     }
     const maximizeBtns = root.querySelectorAll(".studio-panel-maximize-btn");
@@ -1963,9 +1980,9 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     split.querySelectorAll("[data-history-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const collapsed = split.classList.toggle("is-history-collapsed");
-        btn.setAttribute("aria-expanded", String(!collapsed));
+        split.querySelectorAll("[data-history-toggle]").forEach((b) => b.setAttribute("aria-expanded", String(!collapsed)));
         window.setTimeout(() => {
-          historyGraph?.update({});
+          historyGraph?.fitViewport?.();
           window.dispatchEvent(new Event("resize"));
         }, 240);
       });
@@ -3644,7 +3661,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       const runtimeGraphPanel = stage.closest(".project-graph-preview");
       const runtimeDebugPanel = runtimeWorkbench?.querySelector("#team-debug-dialog");
       if (!runtimeWorkbench || !runtimeGraphPanel || !runtimeDebugPanel) return;
-      const runtimeControls = runtimeGraphPanel.querySelector("[data-runtime-dual-controls]");
+      const runtimeControls = runtimeWorkbench?.querySelectorAll("[data-runtime-dual-controls]") || [];
       if (!active) {
         if (runtimeWorkbenchClassSnapshot) runtimeWorkbench.className = runtimeWorkbenchClassSnapshot;
         else runtimeWorkbench.classList.remove("studio-run-dual-core", "is-runtime-dual-core");
@@ -3664,7 +3681,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         runtimeGraphPanelClassSnapshot = null;
         runtimeDebugPanelClassSnapshot = null;
         runtimeMicroOpen = true;
-        if (runtimeControls) runtimeControls.hidden = true;
+        runtimeControls.forEach((controls) => { controls.hidden = true; });
         runtimeDebugPanel.querySelectorAll("[data-runtime-panel-maximize]").forEach((button) => button.classList.remove("is-maximized"));
         updateStudioGraph?.fitViewport?.();
         return;
@@ -3678,10 +3695,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       runtimeMicroOpen = microOpen !== false;
       runtimeWorkbench.classList.add("studio-run-dual-core", "is-runtime-dual-core");
       const assetDrawer = runtimeWorkbench.querySelector("#studio-asset-drawer");
-      if (assetDrawer?.classList.contains("is-open")) {
-        assetDrawer.classList.remove("is-open");
-        assetDrawer.setAttribute("aria-hidden", "true");
-        runtimeWorkbench.querySelectorAll('[data-studio-graph-action="assets"]').forEach((b) => b.setAttribute("aria-expanded", "false"));
+      if (assetDrawer?.classList.contains("is-right-docked")) {
+        runtimeWorkbench.studioUndockPanel?.(assetDrawer, "asset");
       }
       runtimeWorkbench.dataset.layoutPreference = preference;
       if (!runtimeWorkbench.style.getPropertyValue("--studio-runtime-split")) {
@@ -3696,7 +3711,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       for (const prop of ["left", "top", "right", "bottom", "width", "height", "inset", "transform"]) runtimeDebugPanel.style.removeProperty(prop);
       runtimeDebugPanel.setAttribute("aria-hidden", String(!runtimeMicroOpen));
       runtimeDebugPanel.classList.toggle("is-open", runtimeMicroOpen);
-      if (runtimeControls) runtimeControls.hidden = false;
+      runtimeControls.forEach((controls) => { controls.hidden = false; });
       runtimeWorkbench.querySelectorAll("[data-runtime-panel-maximize]").forEach((button) => {
         const isActive = button.dataset.runtimePanelMaximize === maximize;
         button.classList.toggle("is-maximized", isActive);
@@ -3724,8 +3739,10 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         runtimeWorkbench?.insertAdjacentHTML("beforeend", `<button type="button" class="studio-runtime-split-handle" data-runtime-split-handle aria-label="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}" title="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}"><span aria-hidden="true"></span></button>`);
         const splitHandle = runtimeWorkbench?.querySelector("[data-runtime-split-handle]");
         let splitDrag = null;
+        let runtimeSplitRaf = null;
         splitHandle?.addEventListener("pointerdown", (event) => {
-          if (window.matchMedia?.("(max-width: 1100px)").matches) return;
+          if (window.matchMedia?.("(max-width: 768px)").matches) return;
+          runtimeWorkbench.classList.add("is-split-dragging");
           const bounds = runtimeWorkbench.getBoundingClientRect();
           splitDrag = { pointerId: event.pointerId, left: bounds.left, width: bounds.width };
           splitHandle.setPointerCapture(event.pointerId);
@@ -3735,9 +3752,24 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           if (!splitDrag || event.pointerId !== splitDrag.pointerId) return;
           const ratio = Math.min(0.7, Math.max(0.3, (event.clientX - splitDrag.left) / splitDrag.width));
           runtimeWorkbench.style.setProperty("--studio-runtime-split", `${Math.round(ratio * 100)}%`);
-          updateStudioGraph?.fitViewport?.();
+          if (!runtimeSplitRaf) {
+            runtimeSplitRaf = window.requestAnimationFrame(() => {
+              runtimeSplitRaf = null;
+              updateStudioGraph?.fitViewport?.();
+            });
+          }
         });
-        const finishSplitDrag = (event) => { if (splitDrag?.pointerId === event.pointerId) splitDrag = null; };
+        const finishSplitDrag = (event) => {
+          if (splitDrag?.pointerId === event.pointerId) {
+            splitDrag = null;
+            runtimeWorkbench.classList.remove("is-split-dragging");
+            if (runtimeSplitRaf) {
+              window.cancelAnimationFrame(runtimeSplitRaf);
+              runtimeSplitRaf = null;
+            }
+            updateStudioGraph?.fitViewport?.();
+          }
+        };
         splitHandle?.addEventListener("pointerup", finishSplitDrag);
         splitHandle?.addEventListener("pointercancel", finishSplitDrag);
         splitHandle?.addEventListener("keydown", (event) => {
@@ -3751,8 +3783,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         });
       }
       const debugActions = runtimeDebugPanel.querySelector(":scope > .team-debug-panel-head .team-debug-panel-actions");
-      if (debugActions && !debugActions.querySelector("[data-runtime-panel-maximize]")) {
-        debugActions.insertAdjacentHTML("afterbegin", `<button type="button" class="studio-panel-maximize-btn" data-runtime-panel-maximize="micro" aria-pressed="false" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}">⛶</button>`);
+      if (debugActions && !debugActions.querySelector("[data-runtime-dual-controls]")) {
+        debugActions.insertAdjacentHTML("afterbegin", `<div class="studio-runtime-dual-controls" data-runtime-dual-controls hidden><button type="button" class="studio-panel-maximize-btn" data-runtime-panel-maximize="micro" aria-pressed="false" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}">⛶</button></div>`);
         debugActions.querySelector("[data-runtime-panel-maximize]")?.addEventListener("click", () => {
           const current = runtimeWorkbench?.dataset.maximizeMode;
           syncRuntimeDualCore({ preference: runtimeWorkbench?.dataset.layoutPreference || "balanced", maximize: current === "micro" ? "" : "micro" });
@@ -4390,6 +4422,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     problemsDrawer?.querySelector("[data-problems-close]")?.addEventListener("click", () => {
       problemsDrawer.hidden = true;
     });
+    stage._studioGraph = updateStudioGraph;
     problemsDrawer?.addEventListener("click", (event) => {
       const item = event.target.closest?.(".studio-problem-item");
       if (!item) return;
@@ -4562,6 +4595,8 @@ function projectRunStatusLabel(status) {
 async function renderProjectDraft(projectId, pageRequest = state.activeRequest) {
   if (pageRequest && !isCurrentRequest(pageRequest)) return;
   const root = state.studioRoute ? $("#studio-view") : $("#project-workspace-view");
+  root?._studioDraftCleanup?.();
+  if (root) root._studioDraftCleanup = null;
   if (state.studioRoute) {
     root.classList.add("studio-design-page");
     root.dataset.template = "B";
@@ -4635,6 +4670,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       asset: { docked: false, floatingBounds: null },
       debug: { docked: false, floatingBounds: null }
     };
+    let activeDockPanel = null;
     let undockPanelForDrag = () => {};
     let dockPanelAfterDrag = () => false;
     let syncPanelDockLayout = () => {};
@@ -4669,6 +4705,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       workbench.insertAdjacentHTML("beforeend", '<aside id="studio-asset-drawer" class="studio-asset-drawer" aria-label="团队配置" aria-hidden="true"><div class="studio-asset-drawer-head" tabindex="0" aria-label="拖动团队配置面板"><button type="button" class="studio-asset-back" data-studio-assets-back hidden aria-label="返回团队配置">←</button><strong>团队配置</strong><button type="button" id="studio-asset-drawer-close" class="close-button" aria-label="关闭团队配置">×</button></div><div id="studio-assets-list-view"><div class="studio-asset-tabs" role="tablist" aria-label="团队配置"><button type="button" role="tab" id="studio-assets-roles-tab" aria-controls="studio-assets-roles" aria-selected="true">角色</button><button type="button" role="tab" id="studio-assets-flows-tab" aria-controls="studio-assets-flows" aria-selected="false">流转</button><button type="button" role="tab" id="studio-assets-global-tab" aria-controls="studio-assets-global" aria-selected="false">全局</button></div><section id="studio-assets-roles" role="tabpanel" aria-labelledby="studio-assets-roles-tab" class="studio-asset-list"></section><section id="studio-assets-flows" role="tabpanel" aria-labelledby="studio-assets-flows-tab" class="studio-asset-list" hidden></section><section id="studio-assets-global" role="tabpanel" aria-labelledby="studio-assets-global-tab" class="studio-asset-list" hidden></section></div><div id="studio-assets-property-view" hidden><div id="studio-command-form-host" hidden></div><section class="studio-property-inspector" id="studio-property-inspector" aria-label="团队配置属性"></section><div class="studio-asset-editor-actions"><span class="form-hint">保存会写入当前团队版本</span><button type="button" class="primary-button" data-studio-save-workspace>保存团队</button></div></div></aside><aside id="team-debug-dialog" class="team-debug-panel" aria-label="调试" aria-hidden="true"><header class="team-debug-panel-head" tabindex="0" aria-label="拖动调试面板"><div><strong>调试</strong><span class="team-debug-run-state" data-debug-run-state></span></div><div class="team-debug-panel-actions"><button class="primary-button" id="team-simulation-run" type="button">开始调试</button><button class="close-button" type="button" data-team-debug-close aria-label="关闭调试面板">×</button></div></header><div class="debug-view-tabs" role="tablist" aria-label="调试视图"><button type="button" role="tab" data-debug-view="config" aria-selected="true">配置</button><button type="button" role="tab" data-debug-view="run" aria-selected="false">运行过程</button></div><div class="team-debug-panel-content"><div class="debug-config-view" data-debug-view-panel="config"><label class="assistant-input-label"><span>调试任务</span><textarea id="team-simulation-input" rows="3" maxlength="4000" placeholder="描述本次要验证的任务"></textarea></label><label class="assistant-input-label"><span>补充资料（可选）</span><textarea id="team-simulation-materials" rows="3" maxlength="8000" placeholder="粘贴背景、原始文本、要求或其他测试数据"></textarea></label><fieldset class="debug-mode-choice" id="team-simulation-mode"><legend>运行方式</legend><label><input type="radio" name="studioSimulationMode" value="dry-run" checked><span data-debug-mode-label="dry-run">仿真</span><small data-debug-mode-description="dry-run">仅预览流程，不调用模型</small></label><label><input type="radio" name="studioSimulationMode" value="sandbox"><span data-debug-mode-label="sandbox">沙箱</span><small data-debug-mode-description="sandbox">调用真实模型，但运行在隔离环境</small></label><p class="form-hint">任务与补充资料将合并作为本次输入；调试使用当前团队版本快照，运行记录独立保存。</p></fieldset></div><div class="debug-run-view" data-debug-view-panel="run" hidden><div id="team-simulation-result" aria-live="polite"></div></div></div></aside>');
       workbench.insertAdjacentHTML("beforeend", '<aside id="team-build-panel" class="studio-asset-drawer studio-build-panel" aria-label="AI 构建" aria-hidden="true"><header class="studio-asset-drawer-head team-build-panel-head" tabindex="0" aria-label="拖动 AI 构建面板"><strong>AI 构建</strong><button class="close-button" type="button" data-team-build-close aria-label="关闭 AI 构建">×</button></header><div class="studio-build-panel-content"><section id="team-assistant" class="team-assistant-panel"></section></div></aside>');
       workbench.insertAdjacentHTML("beforeend", '<aside id="studio-problems-drawer" class="studio-problems-drawer" aria-label="诊断问题" hidden><div class="studio-problems-head"><div class="studio-problems-title"><span class="problem-icon">⚠️</span><strong>' + (state.locale === "en" ? "Problems & Diagnostics" : "结构校验问题与诊断") + '</strong></div><button type="button" class="close-button" data-problems-close aria-label="' + (state.locale === "en" ? "Close problems" : "关闭诊断面板") + '">×</button></div><ul class="studio-problems-list"></ul></aside>');
+      workbench.insertAdjacentHTML("beforeend", `<button type="button" class="studio-dock-split-handle" data-studio-dock-split-handle aria-label="${state.locale === "en" ? "Resize canvas and docked sidebar" : "调整画布与侧边栏宽度"}" title="${state.locale === "en" ? "Resize canvas and docked sidebar" : "调整画布与侧边栏宽度"}"><span aria-hidden="true"></span></button>`);
       workbench.addEventListener("click", (event) => {
         const action = event.target.closest?.("[data-studio-graph-action]");
         if (!action) return;
@@ -4714,9 +4751,53 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         actions.insertBefore(button, actions.querySelector(".close-button") || null);
         return button;
       };
+      const ensurePanelDockButton = (panel, key, { dockLabel, floatLabel } = {}) => {
+        if (!panel) return null;
+        const header = panel.querySelector("header, .studio-asset-drawer-head");
+        if (!header || header.querySelector("[data-panel-dock]")) return header?.querySelector("[data-panel-dock]") || null;
+        const existingClose = header.querySelector(":scope > .close-button");
+        const actions = header.querySelector(".team-debug-panel-actions") || header.querySelector(".studio-panel-head-actions") || (() => {
+          const node = document.createElement("div");
+          node.className = "studio-panel-head-actions";
+          if (existingClose) node.append(existingClose);
+          header.append(node);
+          return node;
+        })();
+        if (existingClose && existingClose.parentElement !== actions) actions.append(existingClose);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "studio-panel-dock-btn";
+        button.dataset.panelDock = key;
+        const dLabel = dockLabel || (state.locale === "en" ? "Dock to right" : "停靠至右侧");
+        const fLabel = floatLabel || (state.locale === "en" ? "Float panel" : "浮动面板");
+        const isCurrentlyDocked = panelDockStates[key]?.docked || panel.classList.contains("is-right-docked");
+        button.setAttribute("aria-pressed", String(isCurrentlyDocked));
+        button.setAttribute("aria-label", isCurrentlyDocked ? fLabel : dLabel);
+        button.title = isCurrentlyDocked ? fLabel : dLabel;
+        button.textContent = isCurrentlyDocked ? "❐" : "⇥";
+        const maxBtn = actions.querySelector("[data-panel-maximize]");
+        actions.insertBefore(button, maxBtn || actions.querySelector(".close-button") || null);
+        button.addEventListener("click", (e) => {
+          e.stopPropagation();
+          workbench.studioTogglePanelDock?.(panel, key);
+        });
+        return button;
+      };
       const assetMaximizeButton = ensurePanelMaximizeButton(assetDrawer, state.locale === "en" ? "Maximize team configuration" : "最大化团队配置");
       const buildMaximizeButton = ensurePanelMaximizeButton(buildPanel, state.locale === "en" ? "Maximize AI build" : "最大化 AI 构建");
       const debugMaximizeButton = ensurePanelMaximizeButton(debugPanel, state.locale === "en" ? "Maximize debug panel" : "最大化调试面板");
+      const assetDockButton = ensurePanelDockButton(assetDrawer, "asset", {
+        dockLabel: state.locale === "en" ? "Dock team configuration" : "停靠团队配置",
+        floatLabel: state.locale === "en" ? "Float team configuration" : "浮动团队配置"
+      });
+      const buildDockButton = ensurePanelDockButton(buildPanel, "build", {
+        dockLabel: state.locale === "en" ? "Dock AI build" : "停靠 AI 构建",
+        floatLabel: state.locale === "en" ? "Float AI build" : "浮动 AI 构建"
+      });
+      const debugDockButton = ensurePanelDockButton(debugPanel, "debug", {
+        dockLabel: state.locale === "en" ? "Dock debug panel" : "停靠调试面板",
+        floatLabel: state.locale === "en" ? "Float debug panel" : "浮动调试面板"
+      });
       [assetDrawer, buildPanel, debugPanel].forEach((panel) => panel?.setAttribute("data-floating-panel-controller", "true"));
       const resizePanel = (panel, handle, minWidth, minHeight, key) => {
         if (!panel || !handle || panel.dataset.floatingPanelController === "true") return;
@@ -4793,37 +4874,183 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       debugResizeHandle.title = state.locale === "en" ? "Resize panel" : "调整面板大小";
       debugResizeHandle.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 13 5M9 13l4-4M13 9v4H9"></path></svg>';
       debugPanel?.append(debugResizeHandle);
-      panelDockStates = {
-        build: { docked: false, floatingBounds: null },
-        asset: { docked: false, floatingBounds: null },
-        debug: { docked: false, floatingBounds: null }
+      const triggerCanvasRefit = () => {
+        const stage = workbench?.querySelector("#project-graph-stage");
+        if (stage) {
+          stage._studioGraph?.fitViewport?.();
+          window.OGSStudioGraphBundle?.fitStudioX6Viewport?.(stage);
+        }
+        window.requestAnimationFrame(() => {
+          if (stage) {
+            stage._studioGraph?.fitViewport?.();
+            window.OGSStudioGraphBundle?.fitStudioX6Viewport?.(stage);
+          }
+        });
       };
-      let activeDockPanel = null;
+      const updateDockButtons = () => {
+        for (const key of ["asset", "debug", "build"]) {
+          const panel = key === "build" ? buildPanel : key === "asset" ? assetDrawer : debugPanel;
+          const btn = panel?.querySelector("[data-panel-dock]");
+          if (!btn) continue;
+          const isDocked = panelDockStates[key]?.docked && panel.classList.contains("is-right-docked");
+          const dLabel = key === "asset"
+            ? (state.locale === "en" ? "Dock team configuration" : "停靠团队配置")
+            : key === "build"
+              ? (state.locale === "en" ? "Dock AI build" : "停靠 AI 构建")
+              : (state.locale === "en" ? "Dock debug panel" : "停靠调试面板");
+          const fLabel = key === "asset"
+            ? (state.locale === "en" ? "Float team configuration" : "浮动团队配置")
+            : key === "build"
+              ? (state.locale === "en" ? "Float AI build" : "浮动 AI 构建")
+              : (state.locale === "en" ? "Float debug panel" : "浮动调试面板");
+          btn.setAttribute("aria-pressed", String(isDocked));
+          btn.setAttribute("aria-label", isDocked ? fLabel : dLabel);
+          btn.title = isDocked ? fLabel : dLabel;
+          btn.textContent = isDocked ? "❐" : "⇥";
+        }
+      };
       const syncDockLayout = () => {
         workbench.classList.remove("is-build-docked", "is-asset-docked", "is-debug-docked");
         workbench.style.removeProperty("--studio-panel-dock-width");
         for (const panel of [buildPanel, assetDrawer, debugPanel]) panel?.classList.remove("is-right-docked");
-        if (!activeDockPanel || !panelDockStates[activeDockPanel]?.docked) return;
+        if (!activeDockPanel || !panelDockStates[activeDockPanel]?.docked) {
+          updateDockButtons();
+          return;
+        }
         const panel = activeDockPanel === "build" ? buildPanel : activeDockPanel === "asset" ? assetDrawer : debugPanel;
-        if (!panel) return;
+        if (!panel) {
+          updateDockButtons();
+          return;
+        }
         const dockState = panelDockStates[activeDockPanel];
         const host = workbench.getBoundingClientRect();
         const minWidth = 320;
         const preferredWidth = dockState.floatingBounds?.width || (activeDockPanel === "build" ? 420 : activeDockPanel === "asset" ? 340 : 360);
-        const maxWidth = Math.max(minWidth, host.width - 520);
-        const dockWidth = Math.min(Math.max(minWidth, preferredWidth), Math.min(520, maxWidth));
+        const maxWidth = Math.max(minWidth, host.width - 420);
+        const dockWidth = Math.min(Math.max(minWidth, preferredWidth), Math.min(560, maxWidth));
         workbench.classList.add(`is-${activeDockPanel}-docked`);
         workbench.style.setProperty("--studio-panel-dock-width", `${dockWidth}px`);
         panel.classList.add("is-right-docked");
+        updateDockButtons();
+
+        const dockBoundary = host.width - dockWidth;
+        let cascadeOffset = 0;
+        for (const otherKey of ["asset", "build", "debug"]) {
+          if (otherKey === activeDockPanel) continue;
+          const otherPanel = otherKey === "build" ? buildPanel : otherKey === "asset" ? assetDrawer : debugPanel;
+          if (otherPanel && otherPanel.classList.contains("is-open") && !otherPanel.classList.contains("is-right-docked")) {
+            const otherRect = otherPanel.getBoundingClientRect();
+            const otherLeft = otherPanel.style.left ? parseFloat(otherPanel.style.left) : (otherRect.left - host.left);
+            const otherWidth = otherRect.width || (otherKey === "build" ? 420 : otherKey === "asset" ? 340 : 360);
+            if (isNaN(otherLeft) || otherLeft + otherWidth > dockBoundary) {
+              const safeLeft = Math.max(20, Math.round(dockBoundary - otherWidth - 16 - cascadeOffset));
+              const safeTop = Math.max(20, Math.round(48 + cascadeOffset));
+              otherPanel.style.left = `${safeLeft}px`;
+              otherPanel.style.top = `${safeTop}px`;
+              otherPanel.style.right = "auto";
+              cascadeOffset += 44;
+              if (panelDockStates[otherKey]) {
+                panelDockStates[otherKey].floatingBounds = {
+                  ...panelDockStates[otherKey].floatingBounds,
+                  left: safeLeft,
+                  top: safeTop,
+                  width: otherWidth,
+                  height: otherRect.height || 480
+                };
+              }
+            }
+          }
+        }
       };
       syncPanelDockLayout = (key) => {
+        if (key !== null && !panelDockStates[key]?.docked) {
+          if (activeDockPanel && panelDockStates[activeDockPanel]?.docked) {
+            syncDockLayout();
+          }
+          triggerCanvasRefit();
+          return;
+        }
+        const previousKey = activeDockPanel;
+        if (previousKey && previousKey !== key && key !== null && panelDockStates[previousKey]?.docked) {
+          const prevPanel = previousKey === "build" ? buildPanel : previousKey === "asset" ? assetDrawer : debugPanel;
+          if (prevPanel) {
+            panelDockStates[previousKey].docked = false;
+            prevPanel.classList.remove("is-right-docked");
+            const host = workbench.getBoundingClientRect();
+            const prevBounds = panelDockStates[previousKey].floatingBounds || {
+              left: Math.max(20, host.width - (previousKey === "build" ? 440 : previousKey === "asset" ? 360 : 380) - 24),
+              top: 48,
+              width: previousKey === "build" ? 420 : previousKey === "asset" ? 340 : 360,
+              height: 480
+            };
+            prevPanel.style.left = `${Math.max(0, prevBounds.left)}px`;
+            prevPanel.style.top = `${Math.max(0, prevBounds.top)}px`;
+            prevPanel.style.right = "auto";
+            prevPanel.style.width = `${prevBounds.width}px`;
+            prevPanel.style.height = `${prevBounds.height}px`;
+          }
+        }
         activeDockPanel = key;
         syncDockLayout();
+        triggerCanvasRefit();
       };
       workbench.studioSyncPanelDockLayout = syncPanelDockLayout;
+      const undockPanel = (panel, key) => {
+        const dockState = panelDockStates[key];
+        if (!dockState) return;
+        dockState.docked = false;
+        panel.classList.remove("is-right-docked");
+        const host = workbench.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        const width = dockState.floatingBounds?.width || bounds.width || (key === "build" ? 420 : key === "asset" ? 340 : 360);
+        const height = dockState.floatingBounds?.height || bounds.height || 480;
+        const left = dockState.floatingBounds?.left ?? Math.max(20, host.width - width - 24);
+        const top = dockState.floatingBounds?.top ?? 48;
+        panel.style.left = `${Math.max(0, left)}px`;
+        panel.style.top = `${Math.max(0, top)}px`;
+        panel.style.right = "auto";
+        panel.style.width = `${width}px`;
+        panel.style.height = `${height}px`;
+        if (activeDockPanel === key) {
+          activeDockPanel = null;
+          syncDockLayout();
+        }
+        updateDockButtons();
+        triggerCanvasRefit();
+      };
+      const dockPanel = async (panel, key) => {
+        const dockState = panelDockStates[key];
+        if (!dockState) return;
+        await panel?._studioPanelController?.restoreMaximized?.();
+        panel?.classList.remove("is-maximized");
+        const host = workbench.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        dockState.floatingBounds = {
+          left: bounds.left - host.left,
+          top: bounds.top - host.top,
+          width: bounds.width,
+          height: bounds.height
+        };
+        dockState.docked = true;
+        panel.style.left = "";
+        panel.style.top = "";
+        panel.style.right = "";
+        panel.style.width = "";
+        panel.style.height = "";
+        syncPanelDockLayout(key);
+      };
+      const togglePanelDock = async (panel, key) => {
+        if (!panel) return;
+        const isDocked = panelDockStates[key]?.docked && panel.classList.contains("is-right-docked");
+        if (isDocked) undockPanel(panel, key);
+        else await dockPanel(panel, key);
+      };
+      workbench.studioUndockPanel = undockPanel;
+      workbench.studioDockPanel = dockPanel;
+      workbench.studioTogglePanelDock = togglePanelDock;
       undockPanelForDrag = (panel, key) => {
         const dockState = panelDockStates[key];
-        if (!dockState.docked) return;
+        if (!dockState?.docked) return;
         const bounds = panel.getBoundingClientRect();
         const host = workbench.getBoundingClientRect();
         dockState.docked = false;
@@ -4840,6 +5067,8 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         const bounds = panel.getBoundingClientRect();
         if (host.right - bounds.right > 44) return false;
         const dockState = panelDockStates[key];
+        panel?._studioPanelController?.restoreMaximized?.();
+        panel?.classList.remove("is-maximized");
         dockState.floatingBounds = {
           left: bounds.left - host.left,
           top: bounds.top - host.top,
@@ -4855,6 +5084,72 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         syncPanelDockLayout(key);
         return true;
       };
+      const dockSplitHandle = workbench.querySelector("[data-studio-dock-split-handle]");
+      let dockSplitDrag = null;
+      let dockSplitRaf = null;
+      dockSplitHandle?.addEventListener("pointerdown", (event) => {
+        if (window.matchMedia?.("(max-width: 768px)").matches) return;
+        if (!activeDockPanel || !panelDockStates[activeDockPanel]?.docked) return;
+        workbench.classList.add("is-split-dragging");
+        const host = workbench.getBoundingClientRect();
+        dockSplitDrag = { pointerId: event.pointerId, hostRight: host.right, hostWidth: host.width };
+        dockSplitHandle.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+      const onDockSplitPointerMove = (event) => {
+        if (!dockSplitDrag || event.pointerId !== dockSplitDrag.pointerId) return;
+        const minWidth = 320;
+        const maxWidth = Math.max(minWidth, dockSplitDrag.hostWidth - 420);
+        const nextWidth = Math.min(maxWidth, Math.max(minWidth, dockSplitDrag.hostRight - event.clientX));
+        workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
+        if (activeDockPanel && panelDockStates[activeDockPanel]) {
+          panelDockStates[activeDockPanel].floatingBounds = {
+            ...panelDockStates[activeDockPanel].floatingBounds,
+            width: nextWidth
+          };
+        }
+        if (!dockSplitRaf) {
+          dockSplitRaf = window.requestAnimationFrame(() => {
+            dockSplitRaf = null;
+            triggerCanvasRefit();
+          });
+        }
+      };
+      dockSplitHandle?.addEventListener("pointermove", onDockSplitPointerMove);
+      window.addEventListener("pointermove", onDockSplitPointerMove);
+      const finishDockSplitDrag = (event) => {
+        if (dockSplitDrag?.pointerId === event.pointerId) {
+          dockSplitDrag = null;
+          workbench.classList.remove("is-split-dragging");
+          if (dockSplitRaf) {
+            window.cancelAnimationFrame(dockSplitRaf);
+            dockSplitRaf = null;
+          }
+          triggerCanvasRefit();
+        }
+      };
+      dockSplitHandle?.addEventListener("pointerup", finishDockSplitDrag);
+      dockSplitHandle?.addEventListener("pointercancel", finishDockSplitDrag);
+      window.addEventListener("pointerup", finishDockSplitDrag);
+      dockSplitHandle?.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        if (!activeDockPanel || !panelDockStates[activeDockPanel]?.docked) return;
+        event.preventDefault();
+        const delta = event.shiftKey ? 48 : 16;
+        const host = workbench.getBoundingClientRect();
+        const current = Number.parseFloat(getComputedStyle(workbench).getPropertyValue("--studio-panel-dock-width")) || 360;
+        const minWidth = 320;
+        const maxWidth = Math.max(minWidth, host.width - 420);
+        const nextWidth = Math.min(maxWidth, Math.max(minWidth, current + (event.key === "ArrowLeft" ? delta : -delta)));
+        workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
+        if (activeDockPanel && panelDockStates[activeDockPanel]) {
+          panelDockStates[activeDockPanel].floatingBounds = {
+            ...panelDockStates[activeDockPanel].floatingBounds,
+            width: nextWidth
+          };
+        }
+        triggerCanvasRefit();
+      });
       assetToggle = graphPanel.querySelector('[data-studio-graph-action="assets"]');
       assetToggle?.addEventListener("click", () => {
         if (!assetDrawer) return;
@@ -4884,7 +5179,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         workbench.dispatchEvent(new CustomEvent("studio-command-dismiss"));
         assetDrawer?.classList.remove("is-open");
         assetDrawer?.setAttribute("aria-hidden", "true");
-        syncPanelDockLayout(null);
+        if (activeDockPanel === "asset") syncPanelDockLayout(null);
         workbench.querySelector('[data-studio-graph-action="assets"]')?.setAttribute("aria-expanded", "false");
         workbench.querySelector('[data-studio-graph-action="assets"]')?.focus();
       });
@@ -5024,6 +5319,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
             const nextWidth = Math.min(560, Math.max(320, startWidth - deltaX));
             workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
             panelDockStates.asset.floatingBounds = { ...panelDockStates.asset.floatingBounds, width: nextWidth };
+            triggerCanvasRefit();
           },
           labels: { maximize: state.locale === "en" ? "Maximize team configuration" : "最大化团队配置", restore: state.locale === "en" ? "Restore team configuration" : "还原团队配置" },
           enableDrag: !isCompactPanelViewport(),
@@ -5044,6 +5340,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
             const nextWidth = Math.min(560, Math.max(320, startWidth - deltaX));
             workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
             panelDockStates.build.floatingBounds = { ...panelDockStates.build.floatingBounds, width: nextWidth };
+            triggerCanvasRefit();
           },
           labels: { maximize: state.locale === "en" ? "Maximize AI build" : "最大化 AI 构建", restore: state.locale === "en" ? "Restore AI build" : "还原 AI 构建" },
           enableDrag: !isCompactPanelViewport(),
@@ -5064,6 +5361,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
             const nextWidth = Math.min(560, Math.max(320, startWidth - deltaX));
             workbench.style.setProperty("--studio-panel-dock-width", `${nextWidth}px`);
             panelDockStates.debug.floatingBounds = { ...panelDockStates.debug.floatingBounds, width: nextWidth };
+            triggerCanvasRefit();
           },
           labels: { maximize: state.locale === "en" ? "Maximize debug panel" : "最大化调试面板", restore: state.locale === "en" ? "Restore debug panel" : "还原调试面板" },
           enableDrag: !isCompactPanelViewport(),
@@ -5072,6 +5370,25 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         })
       ];
       workbench._studioPanelControllers = panelControllers;
+      [
+        [assetDrawer, panelControllers[0]],
+        [buildPanel, panelControllers[1]],
+        [debugPanel, panelControllers[2]]
+      ].forEach(([panel, controller]) => {
+        if (panel && controller) panel._studioPanelController = controller;
+      });
+      root._studioDraftCleanup = () => {
+        if (dockSplitRaf) {
+          window.cancelAnimationFrame(dockSplitRaf);
+          dockSplitRaf = null;
+        }
+        dockSplitDrag = null;
+        workbench.classList.remove("is-split-dragging");
+        window.removeEventListener("pointermove", onDockSplitPointerMove);
+        window.removeEventListener("pointerup", finishDockSplitDrag);
+        panelControllers.forEach((controller) => controller?.destroy?.());
+        workbench._studioPanelControllers = [];
+      };
     }
     const confirmedStatus = root.querySelector(".page-heading .project-status");
     if (confirmedStatus) {
@@ -5147,7 +5464,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     const closeDebugPanel = ({ focus = true } = {}) => {
       debugPanel?.classList.remove("is-open");
       debugPanel?.setAttribute("aria-hidden", "true");
-      syncPanelDockLayout(null);
+      if (activeDockPanel === "debug") syncPanelDockLayout(null);
       if (typeof syncRuntimeDualCore === "function" && workbench?.classList.contains("is-runtime-dual-core")) {
         syncRuntimeDualCore({ active: true, preference: workbench.dataset.layoutPreference || "balanced", maximize: workbench.dataset.maximizeMode || "", microOpen: false });
       }
@@ -5235,7 +5552,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
     root.querySelector("[data-team-build-close]")?.addEventListener("click", () => {
       buildPanel?.classList.remove("is-open");
       buildPanel?.setAttribute("aria-hidden", "true");
-      syncPanelDockLayout(null);
+      if (activeDockPanel === "build") syncPanelDockLayout(null);
       buildOpenButton?.setAttribute("aria-expanded", "false");
       buildOpenButton?.focus({ preventScroll: true });
     });

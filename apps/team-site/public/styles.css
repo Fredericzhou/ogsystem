@@ -1655,23 +1655,135 @@ body { min-width: 0; font-size: 15px; }
   .studio-design-workbench-host .studio-design-workbench { border-radius: 4px; box-shadow: none; }
   .studio-asset-drawer.is-maximized, .team-debug-panel.is-maximized { inset: 50px 8px 8px !important; }
 }
+.studio-design-workbench { position: relative; }
+.studio-design-workbench.is-asset-docked,
+.studio-design-workbench.is-build-docked,
+.studio-design-workbench.is-debug-docked,
 .studio-design-workbench-host .studio-design-workbench.is-asset-docked,
 .studio-design-workbench-host .studio-design-workbench.is-build-docked,
-.studio-design-workbench-host .studio-design-workbench.is-debug-docked { grid-template-columns: minmax(0, 1fr) minmax(320px, var(--studio-panel-dock-width)); }
+.studio-design-workbench-host .studio-design-workbench.is-debug-docked { grid-template-columns: minmax(0, 1fr) minmax(320px, var(--studio-panel-dock-width, 360px)); }
+.studio-design-workbench { transition: grid-template-columns .22s ease; }
 .studio-design-workbench-host .studio-design-workbench { transition: grid-template-columns .22s ease; }
+.studio-design-workbench > .studio-asset-drawer.is-right-docked,
+.studio-design-workbench > .studio-build-panel.is-right-docked,
+.studio-design-workbench > .team-debug-panel.is-right-docked,
 .studio-design-workbench-host .studio-asset-drawer.is-right-docked,
 .studio-design-workbench-host .studio-build-panel.is-right-docked,
-.studio-design-workbench-host .team-debug-panel.is-right-docked { grid-column: 2; grid-row: 1; height: 100%; left: auto; max-height: none; max-width: none; min-height: 0; min-width: 0; position: relative; right: auto; top: auto; transform: none; width: 100%; }
+.studio-design-workbench-host .team-debug-panel.is-right-docked { grid-column: 2; grid-row: 1; height: 100%; left: auto; max-height: none; max-width: none; min-height: 0; min-width: 0; position: relative; right: auto; top: auto; transform: none; width: 100%; z-index: 2; }
+.studio-design-workbench > .studio-asset-drawer.is-right-docked,
+.studio-design-workbench > .studio-build-panel.is-right-docked,
+.studio-design-workbench > .team-debug-panel.is-right-docked,
 .studio-design-workbench-host .studio-asset-drawer.is-right-docked,
 .studio-design-workbench-host .studio-build-panel.is-right-docked,
 .studio-design-workbench-host .team-debug-panel.is-right-docked { transition: opacity .16s ease, width .22s ease, box-shadow .22s ease; }
-@media (max-width: 1100px) {
+@media (max-width: 768px) {
+  .studio-design-workbench.is-asset-docked,
+  .studio-design-workbench.is-build-docked,
+  .studio-design-workbench.is-debug-docked,
   .studio-design-workbench-host .studio-design-workbench.is-asset-docked,
   .studio-design-workbench-host .studio-design-workbench.is-build-docked,
   .studio-design-workbench-host .studio-design-workbench.is-debug-docked { grid-template-columns: minmax(0, 1fr); }
+  .studio-design-workbench > .studio-asset-drawer.is-right-docked,
+  .studio-design-workbench > .studio-build-panel.is-right-docked,
+  .studio-design-workbench > .team-debug-panel.is-right-docked,
   .studio-design-workbench-host .studio-asset-drawer.is-right-docked,
   .studio-design-workbench-host .studio-build-panel.is-right-docked,
   .studio-design-workbench-host .team-debug-panel.is-right-docked { bottom: 8px; height: auto; left: auto; max-height: none; max-width: calc(100% - 16px); min-height: 0; min-width: min(280px, calc(100% - 16px)); position: absolute; right: 8px; top: 8px; transform: none; width: min(var(--studio-panel-dock-width), calc(100% - 16px)); z-index: 8; }
+}
+
+/* Symmetrical Dock Split Handle & Dock Toggle Controls */
+.studio-dock-split-handle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  cursor: col-resize;
+  display: none;
+  height: 100%;
+  justify-content: center;
+  right: calc(var(--studio-panel-dock-width, 360px) - 12px);
+  padding: 0;
+  position: absolute;
+  top: 0;
+  touch-action: none;
+  width: 24px;
+  z-index: 25;
+  pointer-events: auto;
+}
+.studio-design-workbench.is-asset-docked:not(.studio-run-dual-core):not(.is-runtime-dual-core) > .studio-dock-split-handle,
+.studio-design-workbench.is-debug-docked:not(.studio-run-dual-core):not(.is-runtime-dual-core) > .studio-dock-split-handle,
+.studio-design-workbench.is-build-docked:not(.studio-run-dual-core):not(.is-runtime-dual-core) > .studio-dock-split-handle,
+.studio-design-workbench-host .studio-design-workbench.is-asset-docked:not(.studio-run-dual-core):not(.is-runtime-dual-core) > .studio-dock-split-handle,
+.studio-design-workbench-host .studio-design-workbench.is-debug-docked:not(.studio-run-dual-core):not(.is-runtime-dual-core) > .studio-dock-split-handle,
+.studio-design-workbench-host .studio-design-workbench.is-build-docked:not(.studio-run-dual-core):not(.is-runtime-dual-core) > .studio-dock-split-handle {
+  display: flex;
+}
+.studio-design-workbench[data-maximize-mode] > .studio-dock-split-handle,
+.studio-design-workbench:has(> .is-maximized) > .studio-dock-split-handle,
+.studio-design-workbench-host .studio-design-workbench[data-maximize-mode] > .studio-dock-split-handle,
+.studio-design-workbench-host .studio-design-workbench:has(> .is-maximized) > .studio-dock-split-handle {
+  display: none !important;
+}
+.studio-dock-split-handle span {
+  background: var(--line-strong, #b8c7bf);
+  border-radius: 999px;
+  height: 42px;
+  opacity: .75;
+  transition: background .12s ease, height .12s ease, opacity .12s ease;
+  width: 3px;
+}
+.studio-dock-split-handle:hover span,
+.studio-dock-split-handle:focus-visible span {
+  background: var(--mint, #10b981);
+  height: 64px;
+  opacity: 1;
+}
+.studio-dock-split-handle:focus-visible {
+  outline: 2px solid var(--mint, #10b981);
+  outline-offset: -2px;
+}
+@media (max-width: 768px) {
+  .studio-dock-split-handle {
+    display: none !important;
+  }
+}
+
+/* Eliminate intermediate split resize border lag */
+.studio-design-workbench.is-split-dragging,
+.studio-design-workbench.is-split-dragging *,
+.studio-design-workbench-host .studio-design-workbench.is-split-dragging,
+.studio-design-workbench-host .studio-design-workbench.is-split-dragging *,
+.studio-run-dual-core.is-split-dragging,
+.studio-run-dual-core.is-split-dragging * {
+  transition: none !important;
+  user-select: none !important;
+}
+
+.studio-panel-dock-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  height: 24px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
+  width: 24px;
+}
+.studio-panel-dock-btn:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, .05));
+  color: var(--ink, #0f172a);
+}
+.studio-panel-dock-btn[aria-pressed="true"] {
+  color: var(--mint, #10b981);
+}
+.studio-panel-dock-btn:focus-visible {
+  outline: 2px solid var(--mint, #10b981);
+  outline-offset: 1px;
 }
 
 /* Keep the two movable work panels on the same compact control and type scale. */
@@ -3066,7 +3178,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   align-items: stretch;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 50%) - 8px)) minmax(320px, calc(100% - var(--studio-runtime-split, 50%) - 8px));
+  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 50%) - 8px)) minmax(0, calc(100% - var(--studio-runtime-split, 50%) - 8px));
   height: calc(100dvh - 215px);
   margin: 14px 0;
   min-height: 580px;
@@ -3079,13 +3191,13 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 /* Lifecycle layout preferences */
 .studio-run-dual-core[data-layout-preference="balanced"],
 .studio-run-dual-core:not([data-layout-preference]) {
-  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 50%) - 8px)) minmax(320px, calc(100% - var(--studio-runtime-split, 50%) - 8px));
+  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 50%) - 8px)) minmax(0, calc(100% - var(--studio-runtime-split, 50%) - 8px));
 }
 .studio-run-dual-core[data-layout-preference="content-focus"] {
-  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 40%) - 8px)) minmax(320px, calc(100% - var(--studio-runtime-split, 40%) - 8px));
+  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 40%) - 8px)) minmax(0, calc(100% - var(--studio-runtime-split, 40%) - 8px));
 }
 .studio-run-dual-core[data-layout-preference="structure-focus"] {
-  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 60%) - 8px)) minmax(320px, calc(100% - var(--studio-runtime-split, 60%) - 8px));
+  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 60%) - 8px)) minmax(0, calc(100% - var(--studio-runtime-split, 60%) - 8px));
 }
 
 /* Maximization states */
@@ -3202,7 +3314,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .team-debug-panel-actions .studio-panel-maximize-btn.is-maximized {
   color: var(--mint-dark, #087c51);
 }
-@media (max-width: 1100px) {
+@media (max-width: 768px) {
   .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core {
     grid-template-columns: minmax(0, 1fr);
     height: auto;
@@ -3263,7 +3375,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 
 /* Runtime split sizing is controlled by the draggable handle. */
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core {
-  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 50%) - 8px)) minmax(320px, calc(100% - var(--studio-runtime-split, 50%) - 8px));
+  grid-template-columns: minmax(0, calc(var(--studio-runtime-split, 50%) - 8px)) minmax(0, calc(100% - var(--studio-runtime-split, 50%) - 8px));
 }
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel[aria-hidden="true"],
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel.is-runtime-micro-closed {
@@ -3308,7 +3420,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-runtime-split-handle:hover span,
 .studio-runtime-split-handle:focus-visible span { background: var(--mint, #10b981); height: 64px; opacity: 1; }
 .studio-runtime-split-handle:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
-@media (max-width: 1100px) {
+@media (max-width: 768px) {
   .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core {
     grid-template-columns: minmax(0, 1fr);
     height: auto;
@@ -3599,7 +3711,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 }
 
 /* Responsive adjustment */
-@media (max-width: 1100px) {
+@media (max-width: 768px) {
   .studio-run-dual-core {
     display: flex;
     flex-direction: column;
