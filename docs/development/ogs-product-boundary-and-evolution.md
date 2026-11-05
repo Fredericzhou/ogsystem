@@ -35,6 +35,107 @@ Actor       = external control/execution identity, outside core semantics
 Authority   = explicit control permission, not implied by responsibility
 ```
 
+### Ordinary FSM Versus OGS Extended State
+
+An ordinary finite state machine has a finite control-state set and an event transition relation:
+
+```text
+(controlState, event) -> (nextControlState, action)
+```
+
+OGS keeps this transition core, but uses an explicitly persisted extended state:
+
+```text
+(controlState, event, extendedState)
+  -> (nextControlState, updatedExtendedState, durableFacts)
+```
+
+The extended state carries business data, the original task, per-hop input, active branch and
+lineage identity, Join readiness and source results, bounded Loop iteration, review/control state,
+checkpoint versions, and audit evidence. A Role emits an event and structured data; reducers and
+Flow guards use the extended state to determine the next activation.
+
+This distinction matters for three runtime behaviors:
+
+- Join readiness is a predicate over completed source Roles in one execution scope. Enumerating
+  every partial branch combination as an ordinary FSM control state causes state explosion and
+  does not preserve the source payload needed by the Join Role.
+- A Loop needs a persisted iteration and a maximum budget, plus an exhausted path. A graph back
+  edge alone expresses repetition but not bounded, recoverable termination.
+- Parallel branches need a runtime frontier with multiple active paths. OGS records this frontier
+  as branch and lineage state instead of expanding every combination into a separate graph state.
+
+These are controlled semantic extensions. Semantic IR fixes the state fields, event contracts,
+guard shape, Join modes, Loop budgets, persistence, and failure rules; invalid or ambiguous input
+fails closed. OGS is aligned with the event/guard/action vocabulary used by UML state machines and
+with workflow control-flow concepts such as BPMN gateways and tokens, but it is not a claim of UML
+execution-semantic or BPMN XML conformance. LangGraph implements the current adapter boundary;
+OGS remains the owner of the Role/Flow, recovery, and audit contracts.
+
+### Value And Necessity Compared With A Workflow DAG
+
+A conventional workflow DAG can be modeled as `G = (V, E)` where `E` is acyclic. Its execution
+frontier is a partial order: a node becomes eligible after its predecessor condition is met, and
+each node is normally activated at most once in one workflow instance. A fixed DAG provides strong
+properties:
+
+- a topological execution order exists;
+- termination is structurally guaranteed when every node finishes;
+- static critical-path, dependency, and parallel-capacity analysis is straightforward;
+- the state space is small and easy to visualize for batch pipelines.
+
+Those properties make a DAG the better default for fixed ETL, build, approval, and batch pipelines.
+OGS does not replace that model. An acyclic OGS Team with no Loop and no repeated activation is a
+DAG-shaped subset of the OGS semantic space and should be kept simple.
+
+The difference appears when the business contract contains feedback, partial completion, or a
+long-lived control decision. An OGS execution is a transition system over extended state:
+
+```text
+X_t = (S_t, F_t, L_t, J_t, C_t, H_t, R_t)
+X_{t+1} = delta(X_t, event_t)
+```
+
+Here `S` is business state, `F` the active branch frontier, `L` lineage, `J` Join scopes, `C` loop
+counters/budgets, `H` human-control state, and `R` recovery/audit identity. A DAG can simulate a
+bounded loop by unrolling it, but a loop with `M` rounds multiplies the graph by roughly `M`; nested
+loops and branch combinations can grow multiplicatively or exponentially. An unbounded loop
+cannot be represented by a finite DAG without hiding the loop inside an opaque node. Hiding it loses
+Role-level events, per-round input, Join scope, checkpoint, and audit visibility.
+
+The same distinction applies to parallel collaboration. A DAG Join can wait for all static
+predecessors, but a quorum Join needs a readiness predicate over unique sources in one
+`runId + lineageId + loopIteration` scope and must retain their payloads. A DAG can enumerate each
+partial-completion case as a separate node, but the number of cases grows with the source count and
+the resulting graph no longer expresses the actual business rule. OGS stores the predicate and
+source evidence as data.
+
+| Dimension | Conventional workflow DAG | OGS extended state machine |
+| --- | --- | --- |
+| Control structure | Acyclic partial order | DAG subset plus bounded cycles, feedback, and repeated Role activations |
+| State | Node status and workflow variables | Typed business state, task/input, branch/lineage, Join scopes, Loop budget, review and recovery state |
+| Loop | Unroll to a fixed graph or hide inside one node | Explicit bounded Loop Scope with iteration and exhausted route |
+| Join | Usually static predecessor completion | `all_of` or `quorum_of` predicate scoped by lineage and loop iteration, with source payload projection |
+| Termination | Structural from acyclicity | Guaranteed by explicit budgets, finite work, and fail-closed guards; cycles without a budget are invalid |
+| Static analysis | Simpler critical path and capacity planning | Richer runtime semantics, but more state-space and scheduling analysis |
+| Recovery/audit | Usually task-level checkpoints | Role execution, event, branch, Join, Loop, checkpoint, and control-plane evidence |
+| Best fit | Fixed, predictable batch pipelines | Adaptive AI collaboration, feedback, partial consensus, review, and long-running recovery |
+
+The extension is necessary only when the product promises these semantics at the Role/Flow level.
+It is not necessary merely because a workflow uses AI. For a fixed sequence of model calls, a DAG
+remains clearer and cheaper. It becomes valuable for AI work when model output is an explicit,
+contracted event that can select a route; when reviewers or specialist Roles must iterate; when
+parallel opinions require a quorum or synthesis; or when a long-running run must pause, resume, and
+explain every attempt. AI outputs are probabilistic, so keeping feedback and uncertainty inside an
+opaque DAG node makes routing and failure evidence difficult to inspect. OGS makes those decisions
+durable and bounded without turning arbitrary model planning into unbounded graph mutation.
+
+The trade-off is real: OGS carries more state, writes more evidence, and requires stricter semantic
+validation than a DAG engine. It should therefore use the smallest model that satisfies the business
+contract: keep fixed acyclic work as a DAG-shaped Team, use explicit Join/Loop only for observable
+cross-Role semantics, and keep uncertain item-level iteration inside a Role or pre-expansion as
+documented by the Heavy Node boundary.
+
 ## Three Scope Tiers
 
 ### Tier 1: OGS Core

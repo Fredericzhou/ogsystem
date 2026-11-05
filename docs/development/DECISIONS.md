@@ -31,6 +31,58 @@ control-plane pauses. The product keeps `task`, `input`, `event`, `data`, and li
 separate concepts. LangGraph remains an engine adapter behind this model and does not define the
 OGSystem public DSL or persisted product data model.
 
+### 1.1.1 Ordinary FSM And OGS Extended State
+
+The ordinary finite-state-machine model is a finite set of control states plus an event-driven
+transition relation:
+
+```text
+(controlState, event) -> (nextControlState, action)
+```
+
+The current control state is sufficient to decide which transition is eligible. A guard may be
+attached to a transition, but the model does not require a separately persisted business data
+store, branch frontier, or partial-join result. This is the useful core of a state machine and
+OGS keeps it: a declared Flow is selected from the current Role outcome and its event.
+
+OGS uses the standard extended-state-machine pattern, in which a finite control state is paired
+with explicitly modeled extended state:
+
+```text
+(controlState, event, extendedState)
+  -> (nextControlState, updatedExtendedState, emittedFacts)
+```
+
+For OGS, the extended state is bounded and typed. It includes business state and reducer output,
+the immutable `task`, the changing per-hop `input`, active branch and lineage facts, Join scopes,
+loop counters and budgets, review/control state, checkpoint version, and execution evidence.
+The Runtime persists these facts and uses them for routing, recovery, and audit; they are not
+implicit variables hidden inside a model prompt.
+
+Join and Loop explain why the extension is necessary in operational terms:
+
+- **Join** readiness is a predicate over a set of completed source Roles for one
+  `runId + lineageId + loopIteration`. Encoding every partial combination as a separate ordinary
+  FSM state would make the control-state set grow with the number of branches and would lose the
+  source payload needed by the joining Role. OGS stores a Join Scope and activates the target once
+  the declared `all_of` or `quorum_of` rule is satisfied.
+- **Loop** execution needs an iteration counter, a declared budget, and an exhausted transition.
+  A plain back edge expresses repetition but does not express which iteration is active or when
+  the loop must stop. OGS requires bounded loop metadata and records the iteration in the Run
+  state, so the loop remains recoverable and termination is reviewable.
+- **Parallel branches** require a frontier containing more than one active path. A theoretical
+  product FSM could enumerate every frontier combination, but that creates state explosion and
+  makes lineage and Join evidence opaque. OGS represents the frontier explicitly as runtime
+  branch/lineage state.
+
+This is a semantic extension, not an unrestricted scripting mechanism. The portable Semantic IR
+defines the allowed fields, event contracts, guard AST, Join modes, loop budgets, persistence
+rules, and failure behavior. Unknown fields, ambiguous routes, unbounded loops, undeclared Join
+sources, and invalid context selectors fail closed. OGS is conceptually aligned with the
+event/guard/action vocabulary used by UML state machines and with workflow control-flow ideas
+such as BPMN gateways and tokens, but it does not claim UML execution-semantic or BPMN XML
+conformance. OGS owns the public Role/Flow contract, durable state, recovery, and audit rules.
+
 ## 2. Backend Boundary
 
 LangGraph is the current backend implementation of the graph runtime, not the public DSL surface.
