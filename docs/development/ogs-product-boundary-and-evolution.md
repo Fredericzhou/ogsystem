@@ -145,14 +145,15 @@ at the level of an employee social graph. A static Team can be represented as a 
 role graph:
 
 ```text
-R = (V, E, rho, tau, kappa)
+R = (V, E, rho, tau, kappa, alpha)
 ```
 
 `V` is the set of stable Responsibility Roles, and each edge in `E` is a possible handoff. `rho`
 describes the responsibility boundary, `tau(e)` is the declared business event carried by the
-handoff, and `kappa(e)` is the input/output contract and authority boundary. A person, model,
-service, or tool may realize a Role through a binding, but it is not the Role vertex. Identity,
-authorization, and accountability evidence are separate control-plane projections.
+handoff, `kappa(e)` is the typed input/output contract, and `alpha` is the authority policy for
+control actions. A person, model, service, or tool may realize a Role through a binding, but it is
+not the Role vertex. Identity, authorization, and accountability evidence are separate control-plane
+projections.
 
 This separation matters socially as well as technically:
 

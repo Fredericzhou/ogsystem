@@ -31,6 +31,39 @@ organization chart, or an unrestricted autonomous-society simulator.
 
 OGS 建模的是有边界的社会技术协作关系，不是员工社交网络、组织架构图，也不是无限制的自治社会模拟器。
 
+## 1.1 Theoretical Basis / 理论基础
+
+**English**
+
+The model is a deliberate synthesis, not a formula quoted from one external standard:
+
+| Foundation | Contribution to OGS |
+| --- | --- |
+| Directed labeled graphs | `V` and `E` represent stable Role vertices and directed handoff relations. |
+| Role theory and organizational design | `rho` defines the responsibility boundary of each Role without identifying a person. |
+| Labeled transition systems and event-driven automata | `tau` gives a handoff its event label and makes event selection part of execution. |
+| Design by Contract and type systems | `kappa` defines the typed input/output contract for a handoff. |
+| Access-control and governance models | `alpha` defines who or what may execute control actions; authority is separate from responsibility. |
+| Sociotechnical systems and coordination theory | The model separates human responsibility, technical execution, information transfer, and governance. |
+
+The resulting tuple is an OGS domain model. It is informed by these theories but is not itself a
+UML, BPMN, or Petri-net conformance claim.
+
+**中文**
+
+这个模型是有意组合的领域形式化，不是直接摘自某一个外部标准：
+
+| 理论基础 | 在 OGS 中的作用 |
+| --- | --- |
+| 有向标记图 | `V` 和 `E` 表示稳定的 Role 顶点和有向责任交接关系。 |
+| 角色理论与组织设计 | `rho` 定义每个 Role 的责任边界，但不把它等同于具体人员。 |
+| 标记转移系统与事件驱动自动机 | `tau` 为交接标记事件，使事件选择成为执行语义的一部分。 |
+| 契约式设计与类型系统 | `kappa` 定义交接的有类型输入/输出合同。 |
+| 访问控制与治理模型 | `alpha` 定义谁或什么可以执行控制动作；权限与责任分离。 |
+| 社会技术系统与协调理论 | 模型分离人的责任、技术执行、信息传递和治理。 |
+
+最终元组是 OGS 的领域模型。它受到这些理论启发，但不等同于 UML、BPMN 或 Petri 网符合性声明。
+
 ## 2. Ordinary FSM / 普通有限状态机
 
 **English**
@@ -94,25 +127,25 @@ reducers, restricted guards, Join modes, Loop budgets, persistence rules, and fa
 The static collaboration relation is a labeled directed Role graph:
 
 ```text
-R = (V, E, rho, tau, kappa)
+R = (V, E, rho, tau, kappa, alpha)
 ```
 
 `V` is the set of stable Responsibility Roles. `E` is the set of possible handoffs. `rho` describes
-the responsibility boundary, `tau(e)` is the business event on a handoff, and `kappa(e)` is the
-input/output contract and authority boundary. A person, model, service, or tool may realize a Role
-through a binding, but it is not the Role identity.
+the responsibility boundary, `tau(e)` is the business event on a handoff, `kappa(e)` is the typed
+input/output contract, and `alpha` is the authority policy for control actions. A person, model,
+service, or tool may realize a Role through a binding, but it is not the Role identity.
 
 **中文**
 
 静态协作关系是带标签的有向 Role 图：
 
 ```text
-R = (V, E, rho, tau, kappa)
+R = (V, E, rho, tau, kappa, alpha)
 ```
 
 `V` 是稳定的 Responsibility Role 集合，`E` 是可能的责任交接，`rho` 描述责任边界，`tau(e)` 是交接携带的
-业务事件，`kappa(e)` 是输入/输出合同与权限边界。人、模型、服务或工具可以通过绑定来实现 Role，但不等同于
-Role 身份。
+业务事件，`kappa(e)` 是有类型的输入/输出合同，`alpha` 是控制动作的权限策略。人、模型、服务或工具可以通过
+绑定来实现 Role，但不等同于 Role 身份。
 
 Responsibility, handoff, coordination, and governance remain separate:
 

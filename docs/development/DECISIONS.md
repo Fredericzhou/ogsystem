@@ -25,6 +25,13 @@ progress, human-review control state, and checkpoint identity. A Role execution 
 event and structured data; the Runtime reduces that result into state and routes it through the
 matching Flow.
 
+The static socio-technical collaboration model is documented in the bilingual reference
+[`extended-state-machine-and-dag-bilingual.md`](extended-state-machine-and-dag-bilingual.md). Its
+abstract relation is `R = (V, E, rho, tau, kappa, alpha)`: Roles and handoffs, responsibility
+boundaries, event labels, typed contracts, and authority policy are separate dimensions. This
+distinction keeps responsibility, execution binding, information transfer, and control-plane
+governance from collapsing into one graph node or one identity field.
+
 This is an extended state machine rather than a simple finite-state machine because execution
 state includes structured data, branch and Join scopes, bounded loops, durable recovery, and
 control-plane pauses. The product keeps `task`, `input`, `event`, `data`, and lifecycle status as
