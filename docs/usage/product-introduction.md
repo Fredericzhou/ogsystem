@@ -51,7 +51,6 @@ OGS Studio 提供团队草稿、图谱设计、角色执行与编排属性、Con
 
 详细入口：
 
-1. [产品概念](ogs-concepts.md)
+1. [核心概念与产品边界](ogsystem-core-concepts.md)
 2. [使用手册](usage-manual.md)
-3. [核心概念](ogsystem-core-concepts.md)
-4. [OGS Studio](visualizer-console.md)
+3. [OGS Studio](visualizer-console.md)

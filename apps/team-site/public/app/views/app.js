@@ -6289,6 +6289,23 @@ function bindNavigationControls() {
       }
     }
   });
+  window.electronAPI?.onMenuCommand?.((command) => {
+    const actions = {
+      "menu-save-draft": [
+        '[data-studio-graph-action="save"]:not([disabled])',
+        "[data-studio-save-workspace]:not([disabled])"
+      ],
+      "menu-run-debug": ["#team-simulation-run:not([disabled])"],
+      "menu-reset-view": ['[data-studio-graph-action="reset-view"]']
+    };
+    for (const selector of actions[command] || []) {
+      const action = document.querySelector(selector);
+      if (action) {
+        action.click();
+        break;
+      }
+    }
+  });
   window.addEventListener("resize", () => {
     if (!navPreferenceStored) setNavCollapsed(window.innerWidth < 1200, false);
     if (window.innerWidth >= 768) closeMobileNav();

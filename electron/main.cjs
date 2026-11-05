@@ -76,7 +76,14 @@ function buildMenuTemplate(appRef, mainWindowRef) {
         { role: "forceReload" },
         { role: "toggleDevTools" },
         { type: "separator" },
-        { role: "resetZoom", accelerator: "CmdOrCtrl+0" },
+        {
+          label: "重置图谱视图 (Reset Graph View)",
+          accelerator: "CmdOrCtrl+0",
+          click: () => {
+            mainWindowRef?.webContents?.send?.("menu-reset-view");
+          }
+        },
+        { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
         { type: "separator" },

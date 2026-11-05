@@ -215,7 +215,7 @@ flowchart TD
 
 ## 5. 当前实施状态
 
-- [x] 文档已归档至 `docs/development/dual-core-runtime-visualizer-and-chat-architecture.md`。
+- [x] 原方案已归档至 `docs/development/archive/dual-core-runtime-visualizer-and-chat-architecture.md`；当前实现与验证以现行文档和源码测试为准。
 - [x] 历史复盘页默认 `content-focus`，支持双核布局切换、宏观/微观分别最大化、审计抽屉、复制原始 JSON 与图谱定位。
 - [x] 历史只读图谱已关闭数据粒子、活跃边动画和未收敛状态展示。
 - [x] 实时调试工作台运行期间默认 `balanced`，图谱保留运行态动画，对话面板作为微观核同屏显示；运行结束后切换为 `content-focus`。

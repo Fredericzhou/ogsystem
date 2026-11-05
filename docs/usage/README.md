@@ -21,7 +21,7 @@ direct handoff from one completed role to another. Events, actions, process step
 belong on flows or in run details, not as Role nodes.
 
 For the user-facing workflow start with [Team Site guide](../../apps/team-site/README.md), then use
-[Product concepts](ogs-concepts.md) and [Usage manual](usage-manual.md). The Team Site guide is the
+[Core Concepts](ogsystem-core-concepts.md) and [Usage manual](usage-manual.md). The Team Site guide is the
 current source for team repository, team factory, collaboration project, task controls, and Tailnet
 entry points.
 

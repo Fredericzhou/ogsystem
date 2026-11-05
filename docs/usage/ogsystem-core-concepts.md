@@ -32,6 +32,17 @@ role and does not change the process graph.
 | **Collaboration Project** | One project work directory, shared materials, released Team versions, business Tasks, and their Run attempts. | A Team editor or a second Team structure embedded in the project. |
 | **Product Site** | Platform plus team repository/factory, collaboration projects, users, materials, Tasks, and Runs. | A second runtime. |
 
+The operating boundary can also be read by ownership:
+
+| Area | Owns | Does not own |
+| --- | --- | --- |
+| **Framework** | Parsing, compilation, execution, recovery, CLI, and natural-language structure generation. | Teams, projects, users, or run records. |
+| **Platform** | Framework, backend/model discovery, shared role resources, and OGS Studio. | User project data, team business records, or project run history. |
+| **Team** | Reusable responsibilities, role relationships, handoff graph, loop/branch semantics, and run rules. | Work directories, project materials, credentials, or Run instances. |
+| **Collaboration Project** | One project workspace, shared materials, mounted Team versions, and Task list. | Editing a released Team definition or owning its Run workspace. |
+
+In the product, **Projects** is the business-facing area for projects, materials, and Tasks. **Studio** is the professional area in the same Team Site shell for team editing, debugging, and run diagnosis. This is a product navigation distinction, not a second Runtime or a change to the ownership model above.
+
 The product site stores editable teams in the team factory and released versions in the team
 repository. A project mounts one or more released versions and keeps its own resources and Task
 list. A **Task** is a user's business work request bound to one mounted Team version; each execution

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import fs from "node:fs";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -41,8 +42,19 @@ test("desktop readiness: menu template binds expected lifecycle accelerators", (
   const viewMenu = template.find((m) => m.label?.includes("视图") || m.label?.includes("View"));
   assert.ok(viewMenu, "View menu must exist");
 
-  const zoomReset = viewMenu.submenu.find((item) => item.role === "resetZoom" || item.accelerator === "CmdOrCtrl+0");
-  assert.ok(zoomReset, "Reset Zoom must be registered");
+  const graphReset = viewMenu.submenu.find((item) => item.accelerator === "CmdOrCtrl+0");
+  assert.ok(graphReset, "Reset Graph View must be registered");
+  assert.equal(graphReset.role, undefined, "Graph reset must invoke the renderer action");
+  assert.ok(viewMenu.submenu.some((item) => item.role === "resetZoom"), "Browser zoom reset must remain available");
+});
+
+test("desktop readiness: preload exposes only fixed renderer menu commands", () => {
+  const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf8");
+  for (const command of ["menu-save-draft", "menu-run-debug", "menu-reset-view"]) {
+    assert.match(preload, new RegExp(`\\"${command}\\"`));
+  }
+  assert.match(preload, /onMenuCommand/);
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke/);
 });
 
 test("desktop readiness: backend server lifecycle starts and reaps cleanly", async () => {

@@ -42,8 +42,8 @@ Product usage:
 
 - Product Site: `apps/team-site/README.md` — OGS Studio and OGS Projects, shared resource menus,
   task controls, model discovery, and product boundaries.
-- Product concepts: `docs/usage/ogs-concepts.md` — the Framework, Platform, team, project, task,
-  and run boundaries.
+- Product boundary: `docs/usage/ogsystem-core-concepts.md` — Framework, Platform, Team, Project,
+  Task, Run, and Studio/Projects ownership boundaries.
 - Professional workbench: `docs/usage/visualizer-console.md` — precise graph authoring, debugging,
   diagnostics, and runtime evidence.
 

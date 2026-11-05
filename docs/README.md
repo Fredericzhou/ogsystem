@@ -6,7 +6,6 @@ This is the active documentation entry point. Runtime behavior, source code, and
 
 - [Product introduction](usage/product-introduction.md)
 - [Core concepts](usage/ogsystem-core-concepts.md)
-- [Product concepts](usage/ogs-concepts.md)
 - [Team Site guide](../apps/team-site/README.md)
 - [Usage manual](usage/usage-manual.md)
 - [Professional workbench](usage/visualizer-console.md)
@@ -22,18 +21,26 @@ This is the active documentation entry point. Runtime behavior, source code, and
 - [Unified plan and backlog](development/todo-backlog.md)
 - [Decisions](development/DECISIONS.md)
 - [Product boundary and evolution](development/ogs-product-boundary-and-evolution.md)
+- [Extended state machine and social collaboration (bilingual)](development/extended-state-machine-and-dag-bilingual.md)
 - [Shared resource architecture](development/shared-resource-architecture.md)
+- [Native CLI integration contract](development/cli-integration-plan.md)
+- [Model availability probe API](development/model-availability-probe-api.md)
+- [Framework comparison](development/framework-comparison.md)
 - [Compiler semantics](development/compiler-semantics-v1.md)
 - [Runtime and NL2MMD file sets](development/file-sets.md)
 - [Source commenting style](development/commenting-style.md)
 - [Release compatibility policy](development/release-compatibility-policy.md)
-- [Studio team lifecycle UI optimization](development/studio-team-lifecycle-ui-optimization.md)
+- [Documentation audit and classification](development/documentation-audit-2026-11-05.md)
 - [Release UAT checklist](development/release-uat-checklist.md)
 - [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
 - [Design release validation template](development/design-release-validation-template.md)
 - [Release 1.0.0 notes](development/release-notes-1.0.0.md)
 - [Release 1.0.0 acceptance](development/release-acceptance-1.0.0.md)
 - [Runtime replay benchmark](development/benchmarks/runtime-replay.md)
+
+## Archive
+
+- [Archived development plans](development/archive/README.md)
 
 ## Maintenance
 
