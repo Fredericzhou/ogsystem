@@ -136,6 +136,64 @@ contract: keep fixed acyclic work as a DAG-shaped Team, use explicit Join/Loop o
 cross-Role semantics, and keep uncertain item-level iteration inside a Role or pre-expansion as
 documented by the Heavy Node boundary.
 
+### Social Collaboration And Mathematical Model
+
+OGS models a socialized collaboration relation at the level of responsibilities and handoffs, not
+at the level of an employee social graph. A static Team can be represented as a labeled directed
+role graph:
+
+```text
+R = (V, E, rho, tau, kappa)
+```
+
+`V` is the set of stable Responsibility Roles, and each edge in `E` is a possible handoff. `rho`
+describes the responsibility boundary, `tau(e)` is the declared business event carried by the
+handoff, and `kappa(e)` is the input/output contract and authority boundary. A person, model,
+service, or tool may realize a Role through a binding, but it is not the Role vertex. Identity,
+authorization, and accountability evidence are separate control-plane projections.
+
+This separation matters socially as well as technically:
+
+- **Responsibility** answers who is accountable for a kind of work.
+- **Handoff** answers what outcome is transferred and who may consume it.
+- **Coordination** answers whether several responsibilities must all, or only sufficiently,
+  contribute before another responsibility acts.
+- **Governance** answers who may pause, approve, rework, or terminate a run.
+
+The runtime then adds an execution state to the static relation:
+
+```text
+X = (s, b, l, j, c, h, q)
+```
+
+`s` is business state, `b` the active branch frontier, `l` lineage, `j` Join scopes, `c` loop
+counters/budgets, `h` human-control state, and `q` checkpoint/audit identity. A Role execution is
+a labeled transition that consumes an input context and produces an event/data result:
+
+```text
+(X, role, input) --event/data--> (X', nextRoles)
+```
+
+This is close to a colored Petri-net interpretation: a Role activation is a transition, event/data
+is a typed token, parallel branches are multiple tokens, and a Join is a synchronization
+transition. `all_of` consumes all declared source tokens; `quorum_of` consumes a threshold of
+unique source tokens. OGS does not claim Petri-net conformance; the analogy explains why Join
+readiness is state over a set of tokens rather than a single node status.
+
+Social collaboration naturally creates structures that a plain DAG treats poorly:
+
+- peer review and rework are feedback edges;
+- several specialists forming a consensus are parallel token production plus Join synchronization;
+- an escalation path is a conditional handoff based on business state and authority;
+- a human approval pause is a control-plane state that can outlive the process that requested it.
+
+The mathematical gain is that these relations remain explicit and auditable. The mathematical cost
+is that the reachable state space grows with active branches, Join combinations, loop budgets, and
+review decisions. OGS controls that growth with fixed Role contracts, restricted conditions,
+bounded loops, explicit quorum rules, immutable run identity, and fail-closed routing. It therefore
+models a bounded socio-technical coordination system, not an unbounded autonomous society or a
+general-purpose organization simulator.
+
 ## Three Scope Tiers
 
 ### Tier 1: OGS Core
