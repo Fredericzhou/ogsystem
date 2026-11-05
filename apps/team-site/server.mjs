@@ -275,44 +275,7 @@ const sharedResourceUseCases = createSharedResourceUseCases({
   store: createFileSharedResourceStore({ root: join(platformConfigRoot, "shared-resources") })
 });
 async function getPlatformDefaultModelSelection() {
-  const settings = await platformUseCases.readPlatformSettings();
-  const backendIds = [settings.defaultProvider, ...platformUseCases.listPlatformBackends()
-    .map((backend) => backend.backend)
-    .filter((backend) => backend && backend !== settings.defaultProvider)];
-  const discoveries = await Promise.all(backendIds.map(async (backend) => {
-    try { return await platformUseCases.discoverPlatformBackend(backend); }
-    catch { return undefined; }
-  }));
-  const models = discoveries.flatMap((discovery) => discovery?.models || []).filter((model) => model.runnable);
-  const generatedAt = discoveries.map((discovery) => discovery?.generatedAt).filter(Boolean).sort().at(-1);
-  const configured = String(settings.defaultModel || "default");
-  const matchesConfiguredModel = (model) => {
-    const modelId = model.modelId || model.id;
-    if (modelId === configured) return true;
-    if (model.backend !== settings.defaultProvider || configured === "default") return false;
-    return modelId?.endsWith(`/${configured}`);
-  };
-  const selected = configured === "default"
-    ? models.find((model) => model.backend === settings.defaultProvider)
-    : models.find(matchesConfiguredModel);
-  const fallbackSelection = !selected && !models.length && configured !== "default"
-    ? { backend: settings.defaultProvider || "opencode", modelId: configured }
-    : !selected && !models.length
-      ? { backend: settings.defaultProvider || "opencode", modelId: "gpt-6-luna" }
-      : undefined;
-  return selected || models.length || fallbackSelection ? {
-    ...(selected ? { modelSelectionDefaults: { backend: selected.backend, modelId: selected.modelId || selected.id } } : fallbackSelection ? { modelSelectionDefaults: fallbackSelection } : {}),
-    modelCatalogGeneratedAt: generatedAt,
-    modelCatalogModels: models.map((model) => ({
-      backend: model.backend,
-      modelId: model.modelId || model.id,
-      name: model.name,
-      status: model.status || "active",
-      runnable: true,
-      capabilities: model.capabilities || { textInput: true, textOutput: true, toolcall: false },
-      variants: model.variants || []
-    }))
-  } : undefined;
+  return platformUseCases.getDefaultModelSelection();
 }
 const teamCatalog = createFileTeamCatalog({ projectsRoot: siteProjectsRoot });
 const teamCatalogUseCases = createTeamCatalogUseCases({ teamCatalog });

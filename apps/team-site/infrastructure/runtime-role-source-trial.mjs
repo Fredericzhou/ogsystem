@@ -13,24 +13,29 @@ export function createRuntimeRoleSourceTrial({ run = runSystemWithAdapter, getDe
     if (input === undefined || input === null || typeof input !== "object" || Array.isArray(input)) throw new Error("ROLE_TRIAL_INPUT_INVALID");
     if (JSON.stringify(input).length > 32000) throw new Error("ROLE_TRIAL_INPUT_TOO_LARGE");
     const selection = await getDefaultModelSelection();
-    if (!selection?.modelCatalogModels?.length || !selection.modelSelectionDefaults) throw new Error("ROLE_TRIAL_MODEL_UNAVAILABLE");
+    if (selection?.unverifiedConfiguredModel) {
+      throw new Error("ROLE_TRIAL_MODEL_UNVERIFIED");
+    }
+    if (!selection?.modelCatalogModels?.length || !selection.modelSelectionDefaults) {
+      throw new Error("ROLE_TRIAL_MODEL_UNAVAILABLE");
+    }
     const workdir = await mkdtemp(join(tmpdir(), "ogs-role-trial-"));
     const roleId = converted.roleId;
     const started = Date.now();
     try {
       const roleDir = join(workdir, "team-roles", "roles", roleId);
       await mkdir(roleDir, { recursive: true });
-      const sourceVerification = converted.verification?.status === "unverified"
-        ? null
-        : {
-            status: "verified",
-            identityConfirmed: true,
-            eventsConfirmed: true,
-            toolsConfirmed: true,
-            confirmedEvents: converted.role?.outputs?.events || [],
-            confirmedTools: converted.role?.constraints?.allowedTools || []
-          };
-      if (!sourceVerification) throw new Error("ROLE_TRIAL_SOURCE_UNVERIFIED");
+      const status = converted.verification?.status;
+      const eligible = status === "ready-for-validation" || status === "verified";
+      if (!eligible) throw new Error("ROLE_TRIAL_SOURCE_UNVERIFIED");
+      const sourceVerification = {
+        status: "verified",
+        identityConfirmed: true,
+        eventsConfirmed: true,
+        toolsConfirmed: true,
+        confirmedEvents: converted.role?.outputs?.events || [],
+        confirmedTools: converted.role?.constraints?.allowedTools || []
+      };
       for (const [name, content] of Object.entries(converted.files)) {
         const trialContent = name === "source.json"
           ? `${JSON.stringify({ ...converted.source, verification: sourceVerification }, null, 2)}\n`

@@ -45,30 +45,32 @@ export function createPlatformUseCases({
     }
   };
 
+  const discoverBackendForUi = async (backend, forceRefresh = false) => {
+    if (typeof modelCatalog.discoverBackend !== "function") {
+      throw new Error("Per-backend model discovery is unavailable.");
+    }
+    const backendId = String(backend || "").trim();
+    const promise = modelCatalog.discoverBackend(backendId, forceRefresh);
+    let timeoutId;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((resolve) => {
+          timeoutId = setTimeout(() => resolve({
+            source: { backend: backendId, status: "checking" },
+            models: [],
+            discoveryPending: true
+          }), backendDiscoveryTimeoutMs);
+        })
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
+
   return Object.freeze({
     listPlatformBackends: () => modelCatalog.listBackends(),
-    async discoverPlatformBackend(backend, forceRefresh = false) {
-      if (typeof modelCatalog.discoverBackend !== "function") {
-        throw new Error("Per-backend model discovery is unavailable.");
-      }
-      const backendId = String(backend || "").trim();
-      const promise = modelCatalog.discoverBackend(backendId, forceRefresh);
-      let timeoutId;
-      try {
-        return await Promise.race([
-          promise,
-          new Promise((resolve) => {
-            timeoutId = setTimeout(() => resolve({
-              source: { backend: backendId, status: "checking" },
-              models: [],
-              discoveryPending: true
-            }), backendDiscoveryTimeoutMs);
-          })
-        ]);
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-      }
-    },
+    discoverPlatformBackend: discoverBackendForUi,
     getPlatformDiscovery: (forceRefresh = false) => modelCatalog.discover({ forceRefresh }),
     async probeModelAvailability(target) {
       const backend = typeof target === "object" && target !== null
@@ -89,7 +91,9 @@ export function createPlatformUseCases({
           `Model "${backend} · ${modelId}" is not currently discovered in its backend configuration. Refresh model discovery and try again.`
         );
       }
-      return probeModelAvailability(model);
+      const result = await probeModelAvailability(model);
+      modelCatalog.recordModelVerification?.({ backend, modelId, ...result });
+      return result;
     },
     async listPlatformProviders() {
       const discovery = await discoverForUi();
@@ -118,6 +122,17 @@ export function createPlatformUseCases({
       };
     },
     readPlatformSettings: () => platformSettingsStore.read(),
+    async getDefaultModelSelection() {
+      const settings = await platformSettingsStore.read();
+      const backendIds = [settings.defaultProvider, ...modelCatalog.listBackends()
+        .map((backend) => backend.backend)
+        .filter((backend) => backend && backend !== settings.defaultProvider)];
+      const discoveries = await Promise.all(backendIds.map(async (backend) => {
+        try { return await discoverBackendForUi(backend); }
+        catch { return undefined; }
+      }));
+      return resolvePlatformDefaultModelSelection({ settings, discoveries });
+    },
     async updatePlatformSettings(payload) {
       const timeoutSeconds = Number(payload.timeoutSeconds);
       const retryCount = Number(payload.retryCount);
@@ -139,4 +154,76 @@ export function createPlatformUseCases({
       return settings;
     }
   });
+}
+
+export function resolvePlatformDefaultModelSelection({ settings = {}, discoveries = [] } = {}) {
+  const runnableModels = [];
+  const unverifiedCandidates = [];
+
+  for (const discovery of discoveries) {
+    const isBackendRunnable = discovery?.sources?.some((source) => source.status === "runnable")
+      || discovery?.source?.status === "runnable"
+      || discovery?.status === "runnable";
+    for (const model of discovery?.models || []) {
+      const statusLower = String(model.status || "").toLowerCase();
+      if (["unavailable", "disabled", "deprecated"].includes(statusLower)) {
+        continue;
+      }
+      if (model.runnable) {
+        runnableModels.push(model);
+      } else if (isBackendRunnable && (statusLower === "unverified" || statusLower === "discovered" || !statusLower)) {
+        unverifiedCandidates.push(model);
+      }
+    }
+  }
+
+  const generatedAt = discoveries.map((discovery) => discovery?.generatedAt).filter(Boolean).sort().at(-1);
+  const configured = String(settings.defaultModel || "default");
+  const matchesConfiguredModel = (model) => {
+    const modelId = model.modelId || model.id;
+    if (modelId === configured) return true;
+    if (model.backend !== settings.defaultProvider || configured === "default") return false;
+    return modelId?.endsWith(`/${configured}`);
+  };
+
+  const selectedRunnable = configured === "default"
+    ? runnableModels.find((model) => model.backend === settings.defaultProvider)
+    : runnableModels.find(matchesConfiguredModel);
+
+  const matchedUnverified = configured === "default"
+    ? unverifiedCandidates.find((model) => model.backend === settings.defaultProvider)
+    : unverifiedCandidates.find(matchesConfiguredModel);
+
+  const unverifiedConfiguredModel = !selectedRunnable && matchedUnverified
+    ? { backend: matchedUnverified.backend, modelId: matchedUnverified.modelId || matchedUnverified.id }
+    : undefined;
+
+  const fallbackSelection = !selectedRunnable && !runnableModels.length && !unverifiedConfiguredModel && !discoveries.length && configured !== "default"
+    ? { backend: settings.defaultProvider || "opencode", modelId: configured }
+    : !selectedRunnable && !runnableModels.length && !unverifiedConfiguredModel && !discoveries.length
+      ? { backend: settings.defaultProvider || "opencode", modelId: "gpt-6-luna" }
+      : undefined;
+
+  const effectiveSelection = selectedRunnable
+    ? { backend: selectedRunnable.backend, modelId: selectedRunnable.modelId || selectedRunnable.id }
+    : fallbackSelection;
+
+  if (!effectiveSelection && !runnableModels.length && !unverifiedConfiguredModel) {
+    return undefined;
+  }
+
+  return {
+    ...(effectiveSelection ? { modelSelectionDefaults: effectiveSelection } : {}),
+    ...(unverifiedConfiguredModel ? { unverifiedConfiguredModel } : {}),
+    modelCatalogGeneratedAt: generatedAt,
+    modelCatalogModels: runnableModels.map((model) => ({
+      backend: model.backend,
+      modelId: model.modelId || model.id,
+      name: model.name,
+      status: model.status || "active",
+      runnable: true,
+      capabilities: model.capabilities || { textInput: true, textOutput: true, toolcall: false },
+      variants: Array.isArray(model.variants) ? model.variants : []
+    }))
+  };
 }

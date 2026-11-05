@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveExecutable } from "./cli-adapter-support.js";
 import { AcpClient } from "./acp-client.js";
-import { createAcpRunSession } from "./acp-adapter-support.js";
+import { createAcpRunSession, defaultAcpModel } from "./acp-adapter-support.js";
 import type { BackendAdapter, BackendDescriptor } from "./model-backend-registry.js";
 import type { ModelCatalogEntry } from "./types.js";
 
@@ -19,6 +19,8 @@ export async function discoverConfiguredKimiModels(): Promise<ModelCatalogEntry[
     if (defaultModel) ids.add(defaultModel);
     const tablePattern = /^\s*\[models\.(["'])([^"']+)\1\]\s*$/gm;
     for (const match of config.matchAll(tablePattern)) if (match[2]?.trim()) ids.add(match[2].trim());
+    const envModel = defaultAcpModel(definition);
+    if (envModel !== "default") ids.add(envModel);
     return [...ids].map((modelId) => ({
       backend: "kimi",
       modelId,
@@ -29,7 +31,16 @@ export async function discoverConfiguredKimiModels(): Promise<ModelCatalogEntry[
       variants: []
     }));
   } catch {
-    return [];
+    const envModel = defaultAcpModel(definition);
+    return envModel === "default" ? [] : [{
+      backend: "kimi",
+      modelId: envModel,
+      runnable: false,
+      name: envModel,
+      status: "unverified",
+      capabilities: { textInput: true, textOutput: true, toolcall: true },
+      variants: []
+    }];
   }
 }
 

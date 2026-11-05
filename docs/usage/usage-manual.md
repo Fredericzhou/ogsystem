@@ -63,7 +63,7 @@ OGS Studio 创建/专业编辑 -> 发布 TeamVersion -> OGS Projects 挂载版�
 
 平台配置中的“模型请求超时”只限制等待**一次模型请求返回**的时间，不限制整个任务的执行时长。一个任务可能包含多个角色、多轮处理、暂停或人工审核，因此正常运行时间可以超过该值；请求超时后根据任务状态继续、停止或重新处理。
 
-平台模型可用性探测通过 Team Site API `POST /api/v1/platform/models/probe` 对单个已发现模型发送一次最小请求。前端应先从 `/api/v1/platform/discovery` 或 `/api/v1/platform/models` 读取 backend/modelId，再按需探测用户选中的模型；不要在页面加载时自动探测整个目录。接口用 `result.status` 表示 `runnable`、`unavailable` 或 `failed`，不能只根据 HTTP 200 判断模型可用。探测会启动对应 CLI 或连接本机 Ollama 服务，可能消耗少量模型配额；接口字段和失败语义见[模型可用性探测 API 契约](../development/model-availability-probe-api.md)。
+平台模型可用性探测通过 Team Site API `POST /api/v1/platform/models/probe` 对单个已发现模型发送一次最小请求。前端应先从 `/api/v1/platform/discovery` 或 `/api/v1/platform/models` 读取 backend/modelId，再按需探测用户选中的模型；不要在页面加载时自动探测整个目录。目录中的 `unverified` 模型也可以按需探测；接口用 `result.status` 表示 `verified`、`unavailable` 或 `failed`，不能只根据 HTTP 200 判断模型可用。验证结果由 Team Site 按 backend/modelId 在短期内缓存，过期或强制刷新后需要重新验证。探测会启动对应 CLI 或连接本机 Ollama 服务，可能消耗少量模型配额；接口字段和失败语义见[模型可用性探测 API 契约](../development/model-availability-probe-api.md)。
 
 Team Site 的当前入口：
 

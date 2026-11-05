@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPlatformUseCases } from "../application/platform-use-cases.mjs";
+import { createPlatformUseCases, resolvePlatformDefaultModelSelection } from "../application/platform-use-cases.mjs";
 import { createFilePlatformSettings } from "../infrastructure/file-platform-settings.mjs";
 import { createModelCatalog } from "../infrastructure/model-catalog.mjs";
 
@@ -73,7 +73,7 @@ test("platform application validates updates and model catalog caches and refres
   assert.deepEqual(writes, [settings]);
 });
 
-test("platform model probe only invokes the live probe for a discovered runnable model", async () => {
+test("platform model probe only invokes the live probe for a discovered model", async () => {
   const probed = [];
   const useCases = createPlatformUseCases({
     platformSettingsStore: { read: async () => ({}), write: async () => undefined },
@@ -87,6 +87,104 @@ test("platform model probe only invokes the live probe for a discovered runnable
   assert.deepEqual(await useCases.probeModelAvailability({ backend: "codex", modelId: "gpt-6-luna" }), { status: "verified", backend: "codex", modelId: "gpt-6-luna", runnable: true });
   await assert.rejects(useCases.probeModelAvailability({ backend: "codex", modelId: "disabled" }), /not currently discovered in its backend configuration/);
   assert.deepEqual(probed, [{ backend: "codex", modelId: "gpt-6-luna", runnable: true, status: "verified" }]);
+});
+
+test("verified native models enter the shared runtime selection catalog", async () => {
+  let verified = false;
+  const model = { backend: "qwen", modelId: "configured-model", name: "Configured model", status: "unverified", runnable: false };
+  const discovery = () => ({ models: [{ ...model, status: verified ? "verified" : "unverified", runnable: verified }] });
+  const modelCatalog = {
+    discover: async () => discovery(),
+    listBackends: () => [{ backend: "qwen" }],
+    discoverBackend: async () => ({ source: { backend: "qwen", status: "runnable" }, models: discovery().models }),
+    recordModelVerification: () => { verified = true; }
+  };
+  const useCases = createPlatformUseCases({
+    platformSettingsStore: {
+      read: async () => ({ defaultProvider: "qwen", defaultModel: "configured-model" }),
+      write: async () => undefined
+    },
+    modelCatalog,
+    probeModelAvailability: async () => ({ status: "verified" })
+  });
+
+  assert.equal((await useCases.getDefaultModelSelection()).modelCatalogModels.length, 0);
+  await useCases.probeModelAvailability({ backend: "qwen", modelId: "configured-model" });
+  const selection = await useCases.getDefaultModelSelection();
+  assert.deepEqual(selection.modelSelectionDefaults, { backend: "qwen", modelId: "configured-model" });
+  assert.equal(selection.modelCatalogModels[0].runnable, true);
+});
+
+test("default model selection bounds slow backend discovery", async () => {
+  const useCases = createPlatformUseCases({
+    platformSettingsStore: {
+      read: async () => ({ defaultProvider: "qwen", defaultModel: "default" }),
+      write: async () => undefined
+    },
+    modelCatalog: {
+      listBackends: () => [{ backend: "qwen" }],
+      discoverBackend: () => new Promise(() => undefined),
+      discover: async () => ({ models: [] })
+    },
+    backendDiscoveryTimeoutMs: 5
+  });
+
+  assert.equal(await useCases.getDefaultModelSelection(), undefined);
+});
+
+test("platform model verification survives discovery and expires without changing native config", async () => {
+  let time = 1_000;
+  const catalog = createModelCatalog({
+    workdir: join(tmpdir(), "ogs-model-verification-overlay"),
+    verificationTtlMs: 10,
+    now: () => time,
+    discover: async () => ({
+      generatedAt: "native-config",
+      sources: [{ backend: "qwen", status: "runnable" }],
+      models: [{ backend: "qwen", modelId: "configured-model", runnable: false, status: "unverified" }]
+    }),
+    isStale: () => false
+  });
+  const useCases = createPlatformUseCases({
+    platformSettingsStore: { read: async () => ({}), write: async () => undefined },
+    modelCatalog: catalog,
+    probeModelAvailability: async (model) => ({ backend: model.backend, modelId: model.modelId, status: "verified" })
+  });
+
+  assert.equal((await useCases.listPlatformModels()).models[0].runnable, false);
+  await useCases.probeModelAvailability({ backend: "qwen", modelId: "configured-model" });
+  assert.deepEqual((await useCases.listPlatformModels()).models[0], {
+    backend: "qwen", modelId: "configured-model", name: "configured-model", status: "verified", runnable: true,
+    capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: []
+  });
+  time += 11;
+  assert.equal((await useCases.listPlatformModels()).models[0].runnable, false);
+  await useCases.probeModelAvailability({ backend: "qwen", modelId: "configured-model" });
+  await useCases.getPlatformDiscovery(true);
+  assert.equal((await useCases.listPlatformModels()).models[0].runnable, false);
+});
+
+test("backend outages never expose a cached model verification as runnable", async () => {
+  let sourceStatus = "runnable";
+  const catalog = createModelCatalog({
+    workdir: join(tmpdir(), "ogs-model-verification-backend-status"),
+    cacheMs: 0,
+    discover: async () => ({
+      generatedAt: "native-config",
+      sources: [{ backend: "qwen", status: sourceStatus }],
+      models: [{ backend: "qwen", modelId: "configured-model", runnable: false, status: "unverified" }]
+    }),
+    isStale: () => false
+  });
+
+  await catalog.discover();
+  catalog.recordModelVerification({ backend: "qwen", modelId: "configured-model", status: "verified" });
+  assert.equal((await catalog.discover()).models[0].runnable, true);
+
+  sourceStatus = "service_unavailable";
+  const discovery = await catalog.discover();
+  assert.equal(discovery.models[0].runnable, false);
+  assert.equal(discovery.models[0].status, "unverified");
 });
 
 test("slow UI discovery never masquerades as an empty model catalog", async () => {
@@ -129,4 +227,55 @@ test("first slow UI discovery returns an explicit error instead of an empty cata
     uiDiscoveryTimeoutMs: 5
   });
   await assert.rejects(useCases.listPlatformModels(), /Model discovery is still running/);
+});
+
+test("resolvePlatformDefaultModelSelection flags unverified configured models and excludes them from execution defaults", () => {
+  const settings = { defaultProvider: "kimi", defaultModel: "kimi-k1.5" };
+  const discoveries = [{
+    sources: [{ backend: "kimi", status: "runnable" }],
+    generatedAt: "2026-11-05T00:00:00.000Z",
+    models: [
+      { backend: "kimi", modelId: "kimi-k1.5", name: "Kimi K1.5", status: "unverified", runnable: false, capabilities: { textInput: true, textOutput: true, toolcall: true } }
+    ]
+  }];
+
+  const selection = resolvePlatformDefaultModelSelection({ settings, discoveries });
+  assert.ok(selection, "selection object should be returned");
+  assert.deepEqual(selection.unverifiedConfiguredModel, { backend: "kimi", modelId: "kimi-k1.5" });
+  assert.equal(selection.modelSelectionDefaults, undefined, "unverified model must not be selected as execution default");
+  assert.equal(selection.modelCatalogModels.length, 0, "unverified model must not enter runnable execution catalog");
+});
+
+test("resolvePlatformDefaultModelSelection does not flag unverified models when backend is not runnable", () => {
+  const settings = { defaultProvider: "kimi", defaultModel: "kimi-k1.5" };
+  const discoveries = [{
+    sources: [{ backend: "kimi", status: "not_installed" }],
+    generatedAt: "2026-11-05T00:00:00.000Z",
+    models: [
+      { backend: "kimi", modelId: "kimi-k1.5", status: "unverified", runnable: false }
+    ]
+  }];
+
+  const selection = resolvePlatformDefaultModelSelection({ settings, discoveries });
+  assert.equal(selection, undefined, "no selection should be produced when backend is not runnable");
+});
+
+test("resolvePlatformDefaultModelSelection filters out unavailable, disabled, or deprecated models", () => {
+  const settings = { defaultProvider: "pi", defaultModel: "default" };
+  const discoveries = [{
+    sources: [{ backend: "pi", status: "runnable" }],
+    generatedAt: "2026-11-05T00:00:00.000Z",
+    models: [
+      { backend: "pi", modelId: "pi/deprecated-model", status: "deprecated", runnable: false },
+      { backend: "pi", modelId: "pi/disabled-model", status: "disabled", runnable: false },
+      { backend: "pi", modelId: "pi/unavailable-model", status: "unavailable", runnable: false },
+      { backend: "pi", modelId: "pi/active-model", status: "unverified", runnable: false }
+    ]
+  }];
+
+  const selection = resolvePlatformDefaultModelSelection({ settings, discoveries });
+  assert.ok(selection);
+  assert.deepEqual(selection.unverifiedConfiguredModel, { backend: "pi", modelId: "pi/active-model" });
+  assert.equal(selection.modelSelectionDefaults, undefined);
+  assert.equal(selection.modelCatalogModels.length, 0);
 });

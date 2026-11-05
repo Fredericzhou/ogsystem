@@ -36,7 +36,8 @@ model catalog. For OpenCode, this includes its provider prefix.
 ```
 
 The route first checks the current discovery catalog. The requested pair must exist in the catalog
-with `runnable: true`; otherwise the probe is not started.
+and must not be marked unavailable; discovered native-configured models may be `unverified` and
+can be promoted by a successful probe.
 
 ## Response
 
@@ -67,7 +68,7 @@ Model request failed:
 }
 ```
 
-Missing fields, an unknown backend, or a model that is not currently discovered as runnable return
+Missing fields, an unknown backend, or a model that is not currently discovered in its backend configuration return
 HTTP 200 with `result.status: "failed"` and a `message`. A discovery service failure is reported by
 the discovery endpoint as HTTP 503.
 
@@ -84,6 +85,12 @@ Result fields:
 The route currently uses HTTP 200 for probe outcomes, including failures. Frontends must use
 `result.status` as the outcome and must not interpret HTTP 200 alone as model availability. The
 runtime uses `backend + modelId` as the model identity; legacy `id` and `ref` fields are not read.
+Successful and failed probe outcomes are kept by Team Site in an in-memory verification overlay
+indexed by `backend:modelId`. A successful result exposes that model as `verified` and `runnable`
+to subsequent discovery, default-model selection, Studio readiness, and page reloads until the
+verification TTL expires. Forced discovery refreshes and changes to a backend's discovered model
+IDs clear that backend's verification entries. OGS never writes this overlay to native CLI config
+files or project model catalogs.
 
 All probes run through the selected CLI's configured API provider. OGS never performs an
 interactive CLI login and never copies provider credentials into the request body, project files,

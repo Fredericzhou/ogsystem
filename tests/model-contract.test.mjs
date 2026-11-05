@@ -128,7 +128,9 @@ test("native CLI configuration discovery keeps Pi, Kimi, and Qwen model IDs back
   const previous = {
     pi: process.env.PI_MODELS_PATH,
     kimi: process.env.KIMI_CONFIG_PATH,
-    qwen: process.env.QWEN_SETTINGS_PATH
+    qwen: process.env.QWEN_SETTINGS_PATH,
+    kimiModel: process.env.OGS_KIMI_MODEL,
+    qwenModel: process.env.OGS_QWEN_MODEL
   };
   try {
     const piPath = path.join(root, "pi-models.json");
@@ -140,11 +142,13 @@ test("native CLI configuration discovery keeps Pi, Kimi, and Qwen model IDs back
     process.env.PI_MODELS_PATH = piPath;
     process.env.KIMI_CONFIG_PATH = kimiPath;
     process.env.QWEN_SETTINGS_PATH = qwenPath;
+    process.env.OGS_KIMI_MODEL = "env-only/kimi-model";
+    process.env.OGS_QWEN_MODEL = "env-only/qwen-model";
     assert.deepEqual((await discoverConfiguredPiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna"]);
-    assert.deepEqual((await discoverConfiguredKimiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna"]);
-    assert.deepEqual((await discoverConfiguredQwenModels()).map((model) => model.modelId), ["gpt-6-luna"]);
+    assert.deepEqual((await discoverConfiguredKimiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna", "env-only/kimi-model"]);
+    assert.deepEqual((await discoverConfiguredQwenModels()).map((model) => model.modelId), ["gpt-6-luna", "env-only/qwen-model"]);
   } finally {
-    for (const [key, value] of Object.entries({ PI_MODELS_PATH: previous.pi, KIMI_CONFIG_PATH: previous.kimi, QWEN_SETTINGS_PATH: previous.qwen })) {
+    for (const [key, value] of Object.entries({ PI_MODELS_PATH: previous.pi, KIMI_CONFIG_PATH: previous.kimi, QWEN_SETTINGS_PATH: previous.qwen, OGS_KIMI_MODEL: previous.kimiModel, OGS_QWEN_MODEL: previous.qwenModel })) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
     await import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true }));

@@ -34,9 +34,14 @@ export async function discoverConfiguredQwenModels(): Promise<ModelCatalogEntry[
     if (typeof configuredDefault === "string" && configuredDefault.trim() && !models.some((model) => model.modelId === configuredDefault.trim())) {
       models.push({ backend: "qwen", modelId: configuredDefault.trim(), runnable: false, name: configuredDefault.trim(), status: "unverified", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [] });
     }
+    const envModel = defaultAcpModel(definition);
+    if (envModel !== "default" && !models.some((model) => model.modelId === envModel)) {
+      models.push({ backend: "qwen", modelId: envModel, runnable: false, name: envModel, status: "unverified", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [] });
+    }
     return models;
   } catch {
-    return [];
+    const envModel = defaultAcpModel(definition);
+    return envModel === "default" ? [] : [{ backend: "qwen", modelId: envModel, runnable: false, name: envModel, status: "unverified", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: [] }];
   }
 }
 
