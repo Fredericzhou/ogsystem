@@ -7,6 +7,8 @@ This document freezes the scope rule for OGS evolution. OGS keeps a small, stric
 and adds domain integrations as independent extensions. A concept is not part of the core merely
 because it is useful in BPMN or enterprise organization management.
 
+Bilingual reference: [Extended State Machine And Social Collaboration](extended-state-machine-and-dag-bilingual.md).
+
 ## Product Position
 
 OGS is an event-driven, persistent extended state-machine workflow runtime for collaboration among
