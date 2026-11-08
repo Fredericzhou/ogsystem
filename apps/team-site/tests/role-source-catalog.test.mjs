@@ -162,13 +162,19 @@ function adminRouteHarness({ remoteAddress = "127.0.0.1", localAddress = "127.0.
   };
 }
 
-test("role source administration accepts Tailnet and loopback clients and queues updates asynchronously", async () => {
+test("role source administration accepts same-LAN, Tailnet, and loopback clients and queues updates asynchronously", async () => {
   const internet = adminRouteHarness({ remoteAddress: "203.0.113.8" });
   assert.equal(await internet.invoke("POST", "/api/v1/platform/role-sources", {}), true);
   assert.equal(internet.sent[0].status, 403);
   const carrierNat = adminRouteHarness({ remoteAddress: "100.66.1.2", localAddress: "198.51.100.10" });
   await carrierNat.invoke("GET", "/api/v1/platform/role-sources");
   assert.equal(carrierNat.sent[0].status, 403, "the shared CGNAT range alone must not grant administration");
+  const crossLan = adminRouteHarness({ remoteAddress: "192.168.1.8", localAddress: "192.168.0.109" });
+  await crossLan.invoke("GET", "/api/v1/platform/role-sources");
+  assert.equal(crossLan.sent[0].status, 403, "a different private LAN must not grant administration");
+  const sameLan = adminRouteHarness({ remoteAddress: "192.168.0.8", localAddress: "192.168.0.109" });
+  await sameLan.invoke("GET", "/api/v1/platform/role-sources");
+  assert.equal(sameLan.sent[0].status, 200);
   const enqueued = [];
   const tailnet = adminRouteHarness({
     remoteAddress: "100.66.1.2",

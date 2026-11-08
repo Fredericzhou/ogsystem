@@ -33,7 +33,7 @@ test("Studio browser submits a draft Simulation and reads persisted history, det
       await new Promise((resolveWait) => setTimeout(resolveWait, 180));
       await onRuntimeEvent?.({ type: "audit", roleId: "demo-analyst", branchId: "demo-analyst:1", status: "ok", at: "2026-10-24T09:08:07.000Z", durationMs: 1, inputContext: JSON.stringify({ task: prompt }), stdoutPreview: "Mocked role output for " + prompt });
       await onRuntimeEvent?.({ type: "role.completed", roleId: "demo-analyst", branchId: "demo-analyst:1", executionId: "demo-analyst-execution-1", attempt: 2 });
-      await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "ANALYSIS_DONE", edgeId: "2:demo-analyst:ANALYSIS_DONE:end", handoffId: "end-flow", branchId: "demo-analyst:1" });
+      await onRuntimeEvent?.({ type: "flow.activated", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "READY", edgeId: "2:demo-analyst:READY:end", handoffId: "end-flow", branchId: "demo-analyst:1" });
       return {
         status: "completed",
         finalOutputsByRoleId: { analyst: [{ content: "Mocked UAT result for " + prompt }] },

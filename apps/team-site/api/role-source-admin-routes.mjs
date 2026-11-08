@@ -16,11 +16,29 @@ function isTailnetAddress(address) {
   return address.startsWith("fd7a:115c:a1e0:");
 }
 
+function privateIpv4Parts(address) {
+  const parts = address.split(".").map(Number);
+  if (parts.length !== 4 || !parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
+    return undefined;
+  }
+  const [first, second] = parts;
+  if (first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168)) {
+    return parts;
+  }
+  return undefined;
+}
+
+function isSamePrivateLan(address, localAddress) {
+  const remote = privateIpv4Parts(address);
+  const local = privateIpv4Parts(localAddress);
+  return Boolean(remote && local && remote[0] === local[0] && remote[1] === local[1] && remote[2] === local[2]);
+}
+
 function isLoopbackOrTailnet(request) {
   const remote = normalizeAddress(request.socket?.remoteAddress || request.connection?.remoteAddress);
   if (isLoopback(remote)) return true;
   const local = normalizeAddress(request.socket?.localAddress);
-  return isTailnetAddress(remote) && isTailnetAddress(local);
+  return (isTailnetAddress(remote) && isTailnetAddress(local)) || isSamePrivateLan(remote, local);
 }
 
 function sendError(response, sendJson, errorStatus, error) {

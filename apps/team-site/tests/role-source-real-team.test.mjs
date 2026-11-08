@@ -98,7 +98,7 @@ test("selected source role becomes a persisted Team role in a real Team Site", a
         joins: [],
         loopBudgets: [],
         projections: [],
-        flows: [["__system_start__", "demo-analyst", "START"], ["demo-analyst", "__system_end__", "ANALYSIS_DONE"]]
+        flows: [["__system_start__", "demo-analyst", "START"], ["demo-analyst", "__system_end__", "READY"]]
       }).replace("%% law.global=law.site.software-team", "%% law.global=law.minimal.base");
       const { response, payload } = await jsonRequest(baseUrl, "/api/v1/team-versions/" + teamVersionId + "/design", "PUT", { systemSource });
       assert.equal(response.status, 200, JSON.stringify(payload));
@@ -113,7 +113,7 @@ test("selected source role becomes a persisted Team role in a real Team Site", a
     // Case 1: the Team Draft copy endpoint converts the selected pinned source role into a standard package.
     const converted = await jsonRequest(baseUrl,
       "/api/v1/studio/role-sources/agency-agents/roles/" + encodeURIComponent(sourceRole.roleId) + "/copy",
-      "POST", { teamVersionId: verifiedTeamId, roleId: "demo-analyst", commit: sourceCommit, events: ["ANALYSIS_DONE"], allowedTools: [] });
+      "POST", { teamVersionId: verifiedTeamId, roleId: "demo-analyst", commit: sourceCommit, events: ["READY"], allowedTools: [] });
     assert.equal(converted.response.status, 201, JSON.stringify(converted.payload));
     const verifiedAssetsResult = await jsonRequest(baseUrl, "/api/v1/team-versions/" + verifiedTeamId + "/design/assets");
     assert.equal(verifiedAssetsResult.response.status, 200);
@@ -124,7 +124,7 @@ test("selected source role becomes a persisted Team role in a real Team Site", a
     const teamSource = JSON.parse(verifiedRoleFiles["source.json"]);
     assert.equal(teamRole.roleId, "demo-analyst");
     assert.equal(teamRole.name, "Frontend Developer");
-    assert.deepEqual(teamRole.outputs.events, ["ANALYSIS_DONE"]);
+    assert.deepEqual(teamRole.outputs.events, ["READY"]);
     assert.deepEqual(teamRole.constraints.allowedTools, []);
     assert.equal(teamSource.path, sourceRole.path);
     assert.equal(teamSource.commit, sourceCommit);

@@ -3904,6 +3904,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             "human_review_requested": english ? `Review requested for ${role}` : `${role} 已提交人工审核`,
             "human_review_approved": english ? `Review approved for ${role}` : `${role} 审核已通过`,
             "human_review_rework_requested": english ? `Rework requested for ${role}` : `${role} 收到返工要求`,
+            "human_review_rejected": english ? `Review rejected and routed for ${role}` : `${role} 审核拒绝并已路由`,
+            "human_review_decision_rejected": english ? `Review decision rejected for ${role}` : `${role} 审核决定被拒绝`,
             "human_review_paused": english ? `Run paused for review` : "运行已暂停，等待审核",
             "human_review_terminated": english ? `Run terminated during review` : "审核终止了运行",
             "human_review_expired": english ? `Review timed out` : "审核已超时",
@@ -5812,6 +5814,11 @@ async function openTaskReview(projectId, taskId, task = {}) {
     const decisionSelect = form.querySelector("[name=decision]");
     const commentInput = form.querySelector("[name=comment]");
     const submitReview = form.querySelector('button[value="submit"]');
+    const targetRoleLabel = document.createElement("label");
+    targetRoleLabel.innerHTML = '<span>目标角色</span><select name="targetRoleId"></select>';
+    const additionalBudgetLabel = document.createElement("label");
+    additionalBudgetLabel.innerHTML = '<span>新增循环预算</span><input name="additionalBudget" type="number" min="1" step="1" />';
+    form.querySelector("[name=comment]")?.closest("label")?.before(targetRoleLabel, additionalBudgetLabel);
     const updateReviewActions = () => {
       const selectedReview = reviews.find((review) => review.reviewId === reviewIdSelect.value);
       const recovering = Boolean(selectedReview?.recoveryDecision);
@@ -5819,7 +5826,7 @@ async function openTaskReview(projectId, taskId, task = {}) {
       const previousDecision = decisionSelect.value;
       const focusWillBeDisabled = !allowed.length && document.activeElement === decisionSelect;
       decisionSelect.innerHTML = allowed.length
-        ? allowed.map((decision) => `<option value="${esc(decision)}">${esc(({ approve: "Approve and continue", rework: "Return for revision", pause: "Pause", terminate: "Terminate" })[decision] || decision)}</option>`).join("")
+        ? allowed.map((decision) => `<option value="${esc(decision)}">${esc(({ approve: "Approve and continue", rework: "Return for revision", pause: "Pause", terminate: "Terminate", continue: "Continue with budget", reject: "Reject and route" })[decision] || decision)}</option>`).join("")
         : '<option value="" selected>No actions are available for this review request</option>';
       if (allowed.includes(previousDecision)) decisionSelect.value = previousDecision;
       if (recovering) {
@@ -5831,6 +5838,18 @@ async function openTaskReview(projectId, taskId, task = {}) {
       }
       decisionSelect.disabled = allowed.length === 0 || recovering;
       reviewIdSelect.disabled = recovering;
+      const budget = selectedReview?.loopBudget || {};
+      const targetRoles = decisionSelect.value === "rework"
+        ? budget.reworkTargetRoleIds || []
+        : decisionSelect.value === "reject"
+          ? budget.rejectTargetRoleIds || []
+          : budget.targetRoleIds || [];
+      targetRoleLabel.hidden = selectedReview?.kind !== "loop_budget";
+      additionalBudgetLabel.hidden = selectedReview?.kind !== "loop_budget" || decisionSelect.value === "reject" || decisionSelect.value === "terminate";
+      const targetSelect = targetRoleLabel.querySelector("select");
+      targetSelect.innerHTML = targetRoles.map((roleId) => `<option value="${esc(roleId)}">${esc(roleId)}</option>`).join("");
+      targetSelect.disabled = targetRoles.length === 0 || recovering;
+      additionalBudgetLabel.querySelector("input").disabled = additionalBudgetLabel.hidden || recovering;
       if (submitReview) submitReview.disabled = allowed.length === 0;
       if (focusWillBeDisabled) form.querySelector('button[value="cancel"]')?.focus({ preventScroll: true });
     };
@@ -5868,6 +5887,12 @@ async function openTaskReview(projectId, taskId, task = {}) {
       payload.comment = selectedReview.recoveryComment || "";
     }
     if (!payload.reviewId) delete payload.reviewId;
+    if (selectedReview?.kind !== "loop_budget") {
+      delete payload.targetRoleId;
+      delete payload.additionalBudget;
+    } else if (!payload.targetRoleId) {
+      delete payload.targetRoleId;
+    }
     try {
       const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json();

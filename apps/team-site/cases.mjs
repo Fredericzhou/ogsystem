@@ -25,12 +25,12 @@ export const cases = [
     loopBudgets: [{ roleId: "codex-analyst", max: 3 }],
     projections: [],
     roles: [
-      { id: "codex-analyst", backend: "codex", label: { "zh-CN": "Codex 分析师", en: "Codex analyst" }, purpose: "Analyze the task and revise it after review feedback.", events: ["ANALYSIS_READY"], prompt: "Act as the Codex analyst. Produce a concise evidence-based analysis and incorporate any review feedback in the input. Return valid JSON with event ANALYSIS_READY." },
-      { id: "opencode-reviewer", backend: "opencode", label: { "zh-CN": "OpenCode 审核员", en: "OpenCode reviewer" }, purpose: "Review the analysis and approve or reject it.", events: ["APPROVED", "REJECTED"], prompt: "Act as the OpenCode reviewer. On the first review, identify one concrete issue and return REJECTED with actionable feedback. On every later review, return APPROVED and briefly confirm that the analyst responded. Return valid JSON with one allowed event." }
+      { id: "codex-analyst", backend: "codex", label: { "zh-CN": "Codex 分析师", en: "Codex analyst" }, purpose: "Analyze the task and revise it after review feedback.", events: ["READY"], prompt: "Act as the Codex analyst. Produce a concise evidence-based analysis and incorporate any review feedback in the input. Return valid JSON with event READY." },
+      { id: "opencode-reviewer", backend: "opencode", label: { "zh-CN": "OpenCode 审核员", en: "OpenCode reviewer" }, purpose: "Review the analysis and approve or reject it.", events: ["APPROVED", "REJECTED"], prompt: "Act as the OpenCode reviewer. On the first review, identify one concrete issue and return REJECTED with actionable feedback. On every later review, return APPROVED and briefly confirm that the analyst responded. Judge only the analysis and prior feedback; do not require future runtime state, resultCommit, or result_committed evidence because those are produced after approval. Return valid JSON with one allowed event." }
     ],
     flows: [
       ["__system_start__", "codex-analyst", "START"],
-      ["codex-analyst", "opencode-reviewer", "ANALYSIS_READY"],
+      ["codex-analyst", "opencode-reviewer", "READY"],
       ["opencode-reviewer", "codex-analyst", "REJECTED"],
       ["opencode-reviewer", "__system_end__", "APPROVED"]
     ]
@@ -106,58 +106,58 @@ export const cases = [
     roles: [
       {
         id: "engagement-lead", label: { "zh-CN": "咨询负责人", en: "Engagement lead" },
-        purpose: "Define the consulting question, scope, success criteria, and assumptions.", events: ["ANALYZE_MARKET", "ANALYZE_OPERATIONS", "ANALYZE_COMMERCIAL", "ANALYZE_RISK"], mode: "parallel_split",
+        purpose: "Define the consulting question, scope, success criteria, and assumptions.", events: ["READY"], mode: "parallel_split",
         prompt: "Act as the engagement lead. Frame the client's objective, scope, decision to make, success criteria, constraints, and key assumptions. Give the same neutral brief to four independent analysts. Return exactly one JSON object with content and one event from allowed_events. Do not invent external facts."
       },
       {
         id: "market-analyst", label: { "zh-CN": "市场与客户分析师", en: "Market and customer analyst" },
-        purpose: "Analyze customer, market, competition, and demand evidence.", events: ["MARKET_ANALYSIS_READY"],
-        prompt: "Act as the market and customer analyst. Analyze only the supplied evidence. Separate facts, assumptions, and evidence gaps; cover customers, demand, market context, and competition. Return exactly one JSON object with event MARKET_ANALYSIS_READY and a concise structured content string. Never fabricate market data."
+        purpose: "Analyze customer, market, competition, and demand evidence.", events: ["READY"],
+        prompt: "Act as the market and customer analyst. Analyze only the supplied evidence. Separate facts, assumptions, and evidence gaps; cover customers, demand, market context, and competition. Return exactly one JSON object with event READY and a concise structured content string. Never fabricate market data."
       },
       {
         id: "operations-analyst", label: { "zh-CN": "运营流程分析师", en: "Operations analyst" },
-        purpose: "Analyze current operations, bottlenecks, implementation constraints, and organizational impact.", events: ["OPERATIONS_ANALYSIS_READY"],
-        prompt: "Act as the operations analyst. Review the supplied brief for process implications, bottlenecks, dependencies, implementation constraints, and organizational impact. Distinguish facts from assumptions and list missing evidence. Return exactly one JSON object with event OPERATIONS_ANALYSIS_READY and a concise structured content string."
+        purpose: "Analyze current operations, bottlenecks, implementation constraints, and organizational impact.", events: ["READY"],
+        prompt: "Act as the operations analyst. Review the supplied brief for process implications, bottlenecks, dependencies, implementation constraints, and organizational impact. Distinguish facts from assumptions and list missing evidence. Return exactly one JSON object with event READY and a concise structured content string."
       },
       {
         id: "commercial-analyst", label: { "zh-CN": "商业与财务分析师", en: "Commercial and financial analyst" },
-        purpose: "Analyze cost, benefit, resources, and commercial feasibility.", events: ["COMMERCIAL_ANALYSIS_READY"],
-        prompt: "Act as the commercial and financial analyst. Assess cost drivers, potential benefits, resource needs, viability, and measurement assumptions using only supplied information. Do not create numbers that are not in the brief. Return exactly one JSON object with event COMMERCIAL_ANALYSIS_READY and a concise structured content string."
+        purpose: "Analyze cost, benefit, resources, and commercial feasibility.", events: ["READY"],
+        prompt: "Act as the commercial and financial analyst. Assess cost drivers, potential benefits, resource needs, viability, and measurement assumptions using only supplied information. Do not create numbers that are not in the brief. Return exactly one JSON object with event READY and a concise structured content string."
       },
       {
         id: "risk-advisor", label: { "zh-CN": "风险与合规顾问", en: "Risk and compliance advisor" },
-        purpose: "Identify risks, compliance boundaries, dependencies, and unconfirmed matters.", events: ["RISK_ANALYSIS_READY"],
-        prompt: "Act as the risk and compliance advisor. Identify material risks, compliance boundaries, dependencies, downside scenarios, and matters that cannot be confirmed from the supplied brief. Separate facts, assumptions, and open questions. Return exactly one JSON object with event RISK_ANALYSIS_READY and a concise structured content string."
+        purpose: "Identify risks, compliance boundaries, dependencies, and unconfirmed matters.", events: ["READY"],
+        prompt: "Act as the risk and compliance advisor. Identify material risks, compliance boundaries, dependencies, downside scenarios, and matters that cannot be confirmed from the supplied brief. Separate facts, assumptions, and open questions. Return exactly one JSON object with event READY and a concise structured content string."
       },
       {
         id: "synthesis-consultant", label: { "zh-CN": "方案主顾问", en: "Synthesis consultant" },
-        purpose: "Synthesize independent consulting analyses into options and priorities.", events: ["SYNTHESIS_READY"],
-        prompt: "Act as the synthesis consultant. Combine the independent analyses you receive, using at least three specialist views when available. Separate evidence, assumptions, risks, and unresolved questions. Form candidate options, trade-offs, and a recommendation priority without inventing facts. Return exactly one JSON object with event SYNTHESIS_READY and a structured content string."
+        purpose: "Synthesize independent consulting analyses into options and priorities.", events: ["READY"],
+        prompt: "Act as the synthesis consultant. Combine the independent analyses you receive, using at least three specialist views when available. Separate evidence, assumptions, risks, and unresolved questions. Form candidate options, trade-offs, and a recommendation priority without inventing facts. Return exactly one JSON object with event READY and a structured content string."
       },
       {
         id: "quality-reviewer", label: { "zh-CN": "质量复核顾问", en: "Quality reviewer" },
-        purpose: "Check evidence, assumptions, risks, and recommendations for consistency.", events: ["QUALITY_REVIEW_READY"],
-        prompt: "Act as the quality reviewer. Check the synthesis for unsupported claims, missing evidence, inconsistent assumptions, unbounded risks, and recommendations that do not follow from the analysis. State corrections and a clear pass or revise view. Return exactly one JSON object with event QUALITY_REVIEW_READY and a structured content string."
+        purpose: "Check evidence, assumptions, risks, and recommendations for consistency.", events: ["READY"],
+        prompt: "Act as the quality reviewer. Check the synthesis for unsupported claims, missing evidence, inconsistent assumptions, unbounded risks, and recommendations that do not follow from the analysis. State corrections and a clear pass or revise view. Return exactly one JSON object with event READY and a structured content string."
       },
       {
         id: "executive-brief", label: { "zh-CN": "高管简报顾问", en: "Executive brief consultant" },
-        purpose: "Produce a decision-ready executive summary and action plan.", events: ["EXECUTIVE_BRIEF_READY"],
-        prompt: "Act as the executive brief consultant. Use the reviewed synthesis and quality findings to produce the final decision brief. Return exactly one JSON object with event EXECUTIVE_BRIEF_READY and content set to a JSON object serialized as a string, with exactly these keys: executiveSummary (string), recommendations (array of strings), implementationPlan (array of strings), risks (array of strings), assumptions (array of strings), openQuestions (array of strings). Distinguish facts, assumptions, risks, and questions. Do not add Markdown, external data, or extra keys."
+        purpose: "Produce a decision-ready executive summary and action plan.", events: ["READY"],
+        prompt: "Act as the executive brief consultant. Use the reviewed synthesis and quality findings to produce the final decision brief. Return exactly one JSON object with event READY and content set to a JSON object serialized as a string, with exactly these keys: executiveSummary (string), recommendations (array of strings), implementationPlan (array of strings), risks (array of strings), assumptions (array of strings), openQuestions (array of strings). Distinguish facts, assumptions, risks, and questions. Do not add Markdown, external data, or extra keys."
       }
     ],
     flows: [
       ["__system_start__", "engagement-lead", "START"],
-      ["engagement-lead", "market-analyst", "ANALYZE_MARKET"],
-      ["engagement-lead", "operations-analyst", "ANALYZE_OPERATIONS"],
-      ["engagement-lead", "commercial-analyst", "ANALYZE_COMMERCIAL"],
-      ["engagement-lead", "risk-advisor", "ANALYZE_RISK"],
-      ["market-analyst", "synthesis-consultant", "MARKET_ANALYSIS_READY"],
-      ["operations-analyst", "synthesis-consultant", "OPERATIONS_ANALYSIS_READY"],
-      ["commercial-analyst", "synthesis-consultant", "COMMERCIAL_ANALYSIS_READY"],
-      ["risk-advisor", "synthesis-consultant", "RISK_ANALYSIS_READY"],
-      ["synthesis-consultant", "quality-reviewer", "SYNTHESIS_READY"],
-      ["quality-reviewer", "executive-brief", "QUALITY_REVIEW_READY"],
-      ["executive-brief", "__system_end__", "EXECUTIVE_BRIEF_READY"]
+      ["engagement-lead", "market-analyst", "READY"],
+      ["engagement-lead", "operations-analyst", "READY"],
+      ["engagement-lead", "commercial-analyst", "READY"],
+      ["engagement-lead", "risk-advisor", "READY"],
+      ["market-analyst", "synthesis-consultant", "READY"],
+      ["operations-analyst", "synthesis-consultant", "READY"],
+      ["commercial-analyst", "synthesis-consultant", "READY"],
+      ["risk-advisor", "synthesis-consultant", "READY"],
+      ["synthesis-consultant", "quality-reviewer", "READY"],
+      ["quality-reviewer", "executive-brief", "READY"],
+      ["executive-brief", "__system_end__", "READY"]
     ]
   },
   {
@@ -204,39 +204,39 @@ export const cases = [
     roles: [
       {
         id: "delivery-coordinator", label: { "zh-CN": "产品负责人", en: "Product lead" },
-        purpose: "Turn the user's software request into a shared engineering brief.", events: ["PLAN_BACKEND", "PLAN_EXPERIENCE", "PLAN_QUALITY"], mode: "parallel_split",
+        purpose: "Turn the user's software request into a shared engineering brief.", events: ["READY"], mode: "parallel_split",
         prompt: "Read the product request. Prepare one concise shared brief for a backend planner, an experience planner, and a quality planner. Name the core user outcome, constraints, and acceptance criteria. Return valid JSON with content and one allowed event."
       },
       {
         id: "backend-planner", label: { "zh-CN": "后端工程师", en: "Backend engineer" },
-        purpose: "Plan the backend responsibilities and interfaces for a software feature.", events: ["BACKEND_PLAN_READY"],
-        prompt: "Act as the backend engineer. Propose a practical implementation plan, key interfaces, data handling, and risks for the requested software feature. Return valid JSON with event BACKEND_PLAN_READY and a useful content summary."
+        purpose: "Plan the backend responsibilities and interfaces for a software feature.", events: ["READY"],
+        prompt: "Act as the backend engineer. Propose a practical implementation plan, key interfaces, data handling, and risks for the requested software feature. Return valid JSON with event READY and a useful content summary."
       },
       {
         id: "experience-planner", label: { "zh-CN": "体验设计师", en: "Experience designer" },
-        purpose: "Plan a clear and accessible user experience for a software feature.", events: ["EXPERIENCE_PLAN_READY"],
-        prompt: "Act as the experience designer. Describe the primary user flow, important states, accessibility considerations, and the smallest useful interface for this request. Return valid JSON with event EXPERIENCE_PLAN_READY and a useful content summary."
+        purpose: "Plan a clear and accessible user experience for a software feature.", events: ["READY"],
+        prompt: "Act as the experience designer. Describe the primary user flow, important states, accessibility considerations, and the smallest useful interface for this request. Return valid JSON with event READY and a useful content summary."
       },
       {
         id: "quality-planner", label: { "zh-CN": "质量工程师", en: "Quality engineer" },
-        purpose: "Define verifiable acceptance and testing coverage for a software feature.", events: ["QUALITY_PLAN_READY"],
-        prompt: "Act as the quality engineer. Define the highest-value acceptance checks, edge cases, and release risks for this request. Return valid JSON with event QUALITY_PLAN_READY and a useful content summary."
+        purpose: "Define verifiable acceptance and testing coverage for a software feature.", events: ["READY"],
+        prompt: "Act as the quality engineer. Define the highest-value acceptance checks, edge cases, and release risks for this request. Return valid JSON with event READY and a useful content summary."
       },
       {
         id: "delivery-lead", label: { "zh-CN": "交付负责人", en: "Delivery lead" },
-        purpose: "Integrate engineering, experience, and quality plans into one delivery proposal.", events: ["DELIVERY_READY"],
-        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Set content to a JSON object with keys summary, implementationSlices, dependencies, acceptanceChecks, risks, and openQuestions. Return valid JSON with event DELIVERY_READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
+        purpose: "Integrate engineering, experience, and quality plans into one delivery proposal.", events: ["READY"],
+        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Set content to a JSON object with keys summary, implementationSlices, dependencies, acceptanceChecks, risks, and openQuestions. Return valid JSON with event READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
       }
     ],
     flows: [
       ["__system_start__", "delivery-coordinator", "START"],
-      ["delivery-coordinator", "backend-planner", "PLAN_BACKEND"],
-      ["delivery-coordinator", "experience-planner", "PLAN_EXPERIENCE"],
-      ["delivery-coordinator", "quality-planner", "PLAN_QUALITY"],
-      ["backend-planner", "delivery-lead", "BACKEND_PLAN_READY"],
-      ["experience-planner", "delivery-lead", "EXPERIENCE_PLAN_READY"],
-      ["quality-planner", "delivery-lead", "QUALITY_PLAN_READY"],
-      ["delivery-lead", "__system_end__", "DELIVERY_READY"]
+      ["delivery-coordinator", "backend-planner", "READY"],
+      ["delivery-coordinator", "experience-planner", "READY"],
+      ["delivery-coordinator", "quality-planner", "READY"],
+      ["backend-planner", "delivery-lead", "READY"],
+      ["experience-planner", "delivery-lead", "READY"],
+      ["quality-planner", "delivery-lead", "READY"],
+      ["delivery-lead", "__system_end__", "READY"]
     ]
   },
   {
@@ -278,39 +278,39 @@ export const cases = [
     roles: [
       {
         id: "consultation-dispatcher", label: { "zh-CN": "会诊协调员", en: "Consultation coordinator" },
-        purpose: "Package the consultation question and start the specialist review.", events: ["START_CARDIOLOGY", "START_NEUROLOGY", "START_IMAGING"], mode: "parallel_split",
+        purpose: "Package the consultation question and start the specialist review.", events: ["READY"], mode: "parallel_split",
         prompt: "Prepare a neutral, concise case brief for the specialists. State uncertainty clearly and ask each specialist to return observations, supporting signals, risks, and follow-up questions. Return valid JSON with content and one allowed event."
       },
       {
         id: "cardiology-expert", label: { "zh-CN": "心血管专家", en: "Cardiology specialist" },
-        purpose: "Review the case from a cardiovascular perspective.", events: ["CARDIOLOGY_REVIEW_READY"],
-        prompt: "Review the provided case from a cardiovascular perspective. Separate observations from hypotheses, identify urgent red flags, and list what additional evidence would change your assessment. Do not make a definitive diagnosis. Return valid JSON with event CARDIOLOGY_REVIEW_READY and your analysis as content."
+        purpose: "Review the case from a cardiovascular perspective.", events: ["READY"],
+        prompt: "Review the provided case from a cardiovascular perspective. Separate observations from hypotheses, identify urgent red flags, and list what additional evidence would change your assessment. Do not make a definitive diagnosis. Return valid JSON with event READY and your analysis as content."
       },
       {
         id: "neurology-expert", label: { "zh-CN": "神经科专家", en: "Neurology specialist" },
-        purpose: "Review the case from a neurological perspective.", events: ["NEUROLOGY_REVIEW_READY"],
-        prompt: "Review the provided case from a neurological perspective. Separate observations from hypotheses, identify urgent red flags, and list what additional evidence would change your assessment. Do not make a definitive diagnosis. Return valid JSON with event NEUROLOGY_REVIEW_READY and your analysis as content."
+        purpose: "Review the case from a neurological perspective.", events: ["READY"],
+        prompt: "Review the provided case from a neurological perspective. Separate observations from hypotheses, identify urgent red flags, and list what additional evidence would change your assessment. Do not make a definitive diagnosis. Return valid JSON with event READY and your analysis as content."
       },
       {
         id: "imaging-expert", label: { "zh-CN": "影像专家", en: "Imaging specialist" },
-        purpose: "Review imaging and evidence needs for the consultation.", events: ["IMAGING_REVIEW_READY"],
-        prompt: "Review the provided case from an imaging and evidence perspective. State which findings are supported, what cannot be concluded, and which follow-up study or evidence would be useful. Do not fabricate imaging results. Return valid JSON with event IMAGING_REVIEW_READY and your analysis as content."
+        purpose: "Review imaging and evidence needs for the consultation.", events: ["READY"],
+        prompt: "Review the provided case from an imaging and evidence perspective. State which findings are supported, what cannot be concluded, and which follow-up study or evidence would be useful. Do not fabricate imaging results. Return valid JSON with event READY and your analysis as content."
       },
       {
         id: "chief-reviewer", label: { "zh-CN": "主审专家", en: "Lead reviewer" },
-        purpose: "Synthesize available specialist reviews into a cautious consultation summary.", events: ["CONSULTATION_READY"],
-        prompt: "Synthesize the specialist reviews that are available. Note agreement, disagreement, uncertainty, urgent escalation signals, and reasonable next steps. Do not claim that absent specialists agreed. This is decision support, not a diagnosis. Set content to a JSON object with keys summary, riskSignals, missingInformation, nextSteps, and uncertainty. Return valid JSON with event CONSULTATION_READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
+        purpose: "Synthesize available specialist reviews into a cautious consultation summary.", events: ["READY"],
+        prompt: "Synthesize the specialist reviews that are available. Note agreement, disagreement, uncertainty, urgent escalation signals, and reasonable next steps. Do not claim that absent specialists agreed. This is decision support, not a diagnosis. Set content to a JSON object with keys summary, riskSignals, missingInformation, nextSteps, and uncertainty. Return valid JSON with event READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
       }
     ],
     flows: [
       ["__system_start__", "consultation-dispatcher", "START"],
-      ["consultation-dispatcher", "cardiology-expert", "START_CARDIOLOGY"],
-      ["consultation-dispatcher", "neurology-expert", "START_NEUROLOGY"],
-      ["consultation-dispatcher", "imaging-expert", "START_IMAGING"],
-      ["cardiology-expert", "chief-reviewer", "CARDIOLOGY_REVIEW_READY"],
-      ["neurology-expert", "chief-reviewer", "NEUROLOGY_REVIEW_READY"],
-      ["imaging-expert", "chief-reviewer", "IMAGING_REVIEW_READY"],
-      ["chief-reviewer", "__system_end__", "CONSULTATION_READY"]
+      ["consultation-dispatcher", "cardiology-expert", "READY"],
+      ["consultation-dispatcher", "neurology-expert", "READY"],
+      ["consultation-dispatcher", "imaging-expert", "READY"],
+      ["cardiology-expert", "chief-reviewer", "READY"],
+      ["neurology-expert", "chief-reviewer", "READY"],
+      ["imaging-expert", "chief-reviewer", "READY"],
+      ["chief-reviewer", "__system_end__", "READY"]
     ]
   },
   {
@@ -357,39 +357,39 @@ export const cases = [
     roles: [
       {
         id: "debate-host", label: { "zh-CN": "辩论主持人", en: "Debate host" },
-        purpose: "Frame the topic and distribute the same debate brief to both sides.", events: ["ISSUE_TO_PRO", "ISSUE_TO_CON"], mode: "parallel_split",
+        purpose: "Frame the topic and distribute the same debate brief to both sides.", events: ["READY"], mode: "parallel_split",
         prompt: "Frame a balanced debate brief with the exact question, decision criteria, and current round. Give both sides the same brief. Return valid JSON with content and one allowed event."
       },
       {
         id: "proponent", label: { "zh-CN": "正方", en: "Proposition" },
-        purpose: "Build the strongest evidence-based case in favor of the proposal.", events: ["PRO_ARGUMENT_READY"],
-        prompt: "Argue in favor of the proposal. Make a clear claim, use the strongest available reasons, address the opponent's prior points if present, and name a condition that could change your position. Do not fabricate evidence. Return valid JSON with event PRO_ARGUMENT_READY and your argument as content."
+        purpose: "Build the strongest evidence-based case in favor of the proposal.", events: ["READY"],
+        prompt: "Argue in favor of the proposal. Make a clear claim, use the strongest available reasons, address the opponent's prior points if present, and name a condition that could change your position. Do not fabricate evidence. Return valid JSON with event READY and your argument as content."
       },
       {
         id: "opponent", label: { "zh-CN": "反方", en: "Opposition" },
-        purpose: "Build the strongest evidence-based case against the proposal.", events: ["CON_ARGUMENT_READY"],
-        prompt: "Argue against the proposal. Challenge assumptions, identify trade-offs and risks, address the proposition's prior points if present, and name a condition that could change your position. Do not fabricate evidence. Return valid JSON with event CON_ARGUMENT_READY and your argument as content."
+        purpose: "Build the strongest evidence-based case against the proposal.", events: ["READY"],
+        prompt: "Argue against the proposal. Challenge assumptions, identify trade-offs and risks, address the proposition's prior points if present, and name a condition that could change your position. Do not fabricate evidence. Return valid JSON with event READY and your argument as content."
       },
       {
         id: "neutral-judge", label: { "zh-CN": "中立裁判", en: "Neutral judge" },
-        purpose: "Evaluate both arguments against shared criteria and decide whether one bounded rebuttal is needed.", events: ["REBUTTAL_REQUESTED", "DECISION_READY"],
-        prompt: "Evaluate both sides fairly against the stated criteria. You may request at most one rebuttal, and only when a material issue could change the decision. Use the Runtime execution context: on loop_iteration 1 this is the initial review; when loop_iteration is greater than 1, always issue DECISION_READY and never request another round. If an issue remains unresolved, state it as uncertainty. Explain each side's strongest point and your reasoning. Return valid JSON with event REBUTTAL_REQUESTED or DECISION_READY and your reasoning as content."
+        purpose: "Evaluate both arguments against shared criteria and decide whether one bounded rebuttal is needed.", events: ["NEEDS_REWORK", "READY"],
+        prompt: "Evaluate both sides fairly against the stated criteria. You may request at most one rebuttal, and only when a material issue could change the decision. Use the Runtime execution context: on loop_iteration 1 this is the initial review; when loop_iteration is greater than 1, always issue READY and never request another round. If an issue remains unresolved, state it as uncertainty. Explain each side's strongest point and your reasoning. Return valid JSON with event NEEDS_REWORK or READY and your reasoning as content."
       },
       {
         id: "debate-reporter", label: { "zh-CN": "辩论记录员", en: "Debate reporter" },
-        purpose: "Present the judge's final decision and the strongest reasoning from both sides.", events: ["DEBATE_SUMMARY_READY"],
-        prompt: "Prepare a balanced final report from the judge's decision. Include the decision, strongest argument for each side, key uncertainty, and follow-up question. Do not introduce new evidence. Set content to a JSON object with keys decision (string), propositionCase (object with strongestPoint and reasoning strings), oppositionCase (object with strongestPoint and reasoning strings), judgeReasoning (string), uncertainty (array of strings), and followUpQuestions (array of strings). Return valid JSON with event DEBATE_SUMMARY_READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
+        purpose: "Present the judge's final decision and the strongest reasoning from both sides.", events: ["READY"],
+        prompt: "Prepare a balanced final report from the judge's decision. Include the decision, strongest argument for each side, key uncertainty, and follow-up question. Do not introduce new evidence. Set content to a JSON object with keys decision (string), propositionCase (object with strongestPoint and reasoning strings), oppositionCase (object with strongestPoint and reasoning strings), judgeReasoning (string), uncertainty (array of strings), and followUpQuestions (array of strings). Return valid JSON with event READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
       }
     ],
     flows: [
       ["__system_start__", "debate-host", "START"],
-      ["debate-host", "proponent", "ISSUE_TO_PRO"],
-      ["debate-host", "opponent", "ISSUE_TO_CON"],
-      ["proponent", "neutral-judge", "PRO_ARGUMENT_READY"],
-      ["opponent", "neutral-judge", "CON_ARGUMENT_READY"],
-      ["neutral-judge", "debate-host", "REBUTTAL_REQUESTED"],
-      ["neutral-judge", "debate-reporter", "DECISION_READY"],
-      ["debate-reporter", "__system_end__", "DEBATE_SUMMARY_READY"]
+      ["debate-host", "proponent", "READY"],
+      ["debate-host", "opponent", "READY"],
+      ["proponent", "neutral-judge", "READY"],
+      ["opponent", "neutral-judge", "READY"],
+      ["neutral-judge", "debate-host", "NEEDS_REWORK"],
+      ["neutral-judge", "debate-reporter", "READY"],
+      ["debate-reporter", "__system_end__", "READY"]
     ]
   }
 ];

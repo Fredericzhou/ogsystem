@@ -1,6 +1,6 @@
 import { assertTaskExecutionSlot, assertTaskTransition, isTerminalTaskStatus } from "../domain/task.mjs";
 
-const reviewDecisions = new Set(["approve", "rework", "pause", "terminate"]);
+const reviewDecisions = new Set(["approve", "rework", "pause", "terminate", "continue", "reject"]);
 const activeTaskStatuses = new Set(["running", "planning", "ready", "waiting_review", "paused", "pause_requested", "cancel_requested"]);
 
 function findTask(project, taskId) {
@@ -33,6 +33,7 @@ function normalizeReviewComment(comment) {
 }
 
 function reviewAllows(review, decision) {
+  if (review?.kind === "loop_budget" && ["continue", "rework", "reject", "terminate"].includes(decision)) return true;
   return Array.isArray(review?.allowedDecisions) && review.allowedDecisions.some((item) => reviewDecisions.has(item) && item === decision);
 }
 
@@ -151,9 +152,15 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
       }));
     },
 
-    async reviewProjectTask(projectId, taskId, { decision, comment, reviewId } = {}) {
+    async reviewProjectTask(projectId, taskId, { decision, comment, reviewId, targetRoleId, additionalBudget } = {}) {
       if (!reviewDecisions.has(decision)) throw new Error("TASK_REVIEW_INVALID: unsupported review decision.");
       const normalizedComment = normalizeReviewComment(comment);
+      const normalizedAdditionalBudget = additionalBudget === undefined || additionalBudget === ""
+        ? undefined
+        : Number(additionalBudget);
+      if (normalizedAdditionalBudget !== undefined && (!Number.isInteger(normalizedAdditionalBudget) || normalizedAdditionalBudget <= 0)) {
+        throw new Error("TASK_REVIEW_INVALID: additionalBudget must be a positive integer.");
+      }
       const result = await projectStore.withProjectWriteLock(projectId, "project-task-review", async () => {
         let project = await projectStore.getProject(projectId);
         let task = findTask(project, taskId);
@@ -164,7 +171,9 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
         const snapshot = await reviewStore.listReviews(project, task);
         const pending = task.reviewTransition;
         if (pending && (pending.decision !== decision || pending.comment !== normalizedComment
-          || (reviewId && pending.reviewId !== reviewId))) {
+          || (reviewId && pending.reviewId !== reviewId)
+          || (pending.targetRoleId || undefined) !== (targetRoleId || undefined)
+          || (pending.additionalBudget || undefined) !== normalizedAdditionalBudget)) {
           throw new Error("TASK_REVIEW_RECOVERY_REQUIRED: retry the pending decision with the same request before choosing another action.");
         }
         const selectedId = pending?.reviewId || reviewId;
@@ -186,13 +195,15 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
                 runId: task.currentRunId,
                 decision,
                 comment: normalizedComment,
+                ...(targetRoleId ? { targetRoleId } : {}),
+                ...(normalizedAdditionalBudget !== undefined ? { additionalBudget: normalizedAdditionalBudget } : {}),
                 startedAt: new Date().toISOString()
               }
             });
             project = await projectStore.getProject(projectId);
           }
           try {
-            await reviewStore.decideReview(project, task, selected.reviewId, decision, normalizedComment, selected.spec?.terminateScope);
+            await reviewStore.decideReview(project, task, selected.reviewId, decision, normalizedComment, selected.loopBudget?.terminateScope || selected.spec?.terminateScope, targetRoleId, normalizedAdditionalBudget);
           } catch (error) {
             const latestReviews = await reviewStore.listReviews(project, task).catch(() => undefined);
             const persisted = (latestReviews?.reviews || []).find((item) => item?.reviewId === selected.reviewId);
@@ -210,7 +221,7 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
       });
       const { selected, task: committedTask } = result;
       let nextStatus;
-      if (["approve", "rework"].includes(decision) || (decision === "terminate" && selected.spec?.terminateScope === "branch")) {
+      if (["approve", "rework", "continue", "reject"].includes(decision) || (decision === "terminate" && (selected.loopBudget?.terminateScope || selected.spec?.terminateScope) === "branch")) {
         const resumed = await runControlStore.controlRun(projectRunEvidenceOwnerId(result.project, committedTask), committedTask.currentRunId, "resume");
         nextStatus = resumed.state?.status || "running";
       } else if (decision === "terminate") {
@@ -233,7 +244,7 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
           reviewTransition: null
         });
       });
-      const reviewResult = { reviewId: selected.reviewId, decision };
+      const reviewResult = { reviewId: selected.reviewId, decision, ...(targetRoleId ? { targetRoleId } : {}), ...(normalizedAdditionalBudget !== undefined ? { additionalBudget: normalizedAdditionalBudget } : {}) };
       return { task: updated, review: reviewResult };
     },
 
@@ -256,6 +267,8 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
           draftResult: item.draftResult,
           humanReviewContext: item.humanReviewContext,
           spec: item.spec,
+          ...(item.kind ? { kind: item.kind } : {}),
+          ...(item.loopBudget ? { loopBudget: item.loopBudget } : {}),
           allowedDecisions: Array.isArray(item.allowedDecisions)
             ? item.allowedDecisions.filter((decision) => reviewDecisions.has(decision))
             : [],

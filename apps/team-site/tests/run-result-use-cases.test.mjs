@@ -41,7 +41,7 @@ test("file Run result store reads grouped graph outputs and redacts credentials"
       await writeFile(join(root, "project-1", ".ogs", "runs", runId, "run-owner.json"), JSON.stringify({ version: 1, runKind: "project_task", projectId: "project-1", taskId: "task-1", taskNumber: 1, attemptNumber: runId === "run-1" ? 1 : 2, teamVersionId: "team-1", runId }), "utf8");
     }
     await writeFile(statePath, JSON.stringify({
-      graphState: { finalOutputsByRoleId: { reviewer: [{ content: "Authorization: Bearer abcdefghijklmnop" }] }, finalOutputRoleOrder: ["reviewer"] },
+      graphState: { status: "done", resultCommit: { status: "committed", resultId: "result:run-1" }, finalOutputsByRoleId: { reviewer: [{ content: "Authorization: Bearer abcdefghijklmnop" }] }, finalOutputRoleOrder: ["reviewer"] },
       privateRuntimeField: "must not escape"
     }), "utf8");
     const store = createFileRunResultStore({ projectsRoot: root });
@@ -50,6 +50,40 @@ test("file Run result store reads grouped graph outputs and redacts credentials"
     assert.match(result.finalOutputsByRoleId.reviewer[0].content, /\[REDACTED\]/);
     assert.equal(await store.readFinalOutputs({ owner, taskId: "task-1", runId: "missing" }), undefined);
     await assert.rejects(store.readFinalOutputs({ owner: { ...owner, projectId: "../outside" }, taskId: "task-1", runId: "run-1" }), /projectId is invalid/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("file Run result store keeps outputs private before durable completion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-run-result-pending-"));
+  try {
+    const projectRoot = join(root, "project-1");
+    const runDir = join(projectRoot, ".ogs", "runs", "run-1");
+    await mkdir(join(projectRoot, ".site"), { recursive: true });
+    await mkdir(runDir, { recursive: true });
+    await writeFile(join(projectRoot, ".site", "project.json"), JSON.stringify({ projectType: "collaboration", taskRecords: [{ taskId: "task-1", taskNumber: 1, runIds: ["run-1"], teamVersionId: "team-1" }] }));
+    await writeFile(join(runDir, "run-owner.json"), JSON.stringify({ version: 1, runKind: "project_task", projectId: "project-1", taskId: "task-1", taskNumber: 1, attemptNumber: 1, teamVersionId: "team-1", runId: "run-1" }));
+    await writeFile(join(runDir, "state.json"), JSON.stringify({ graphState: { status: "running", finalOutputsByRoleId: { reviewer: [{ content: "draft" }] } } }), "utf8");
+    const result = await createFileRunResultStore({ projectsRoot: root }).readFinalOutputs({ owner: { kind: "project_task", projectId: "project-1", taskId: "task-1" }, taskId: "task-1", runId: "run-1" });
+    assert.equal(result, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("file Run result store rejects snapshots without durable result commit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-run-result-legacy-"));
+  try {
+    const projectRoot = join(root, "project-1");
+    const runDir = join(projectRoot, ".ogs", "runs", "run-1");
+    await mkdir(join(projectRoot, ".site"), { recursive: true });
+    await mkdir(runDir, { recursive: true });
+    await writeFile(join(projectRoot, ".site", "project.json"), JSON.stringify({ projectType: "collaboration", taskRecords: [{ taskId: "task-1", taskNumber: 1, runIds: ["run-1"], teamVersionId: "team-1" }] }));
+    await writeFile(join(runDir, "run-owner.json"), JSON.stringify({ version: 1, runKind: "project_task", projectId: "project-1", taskId: "task-1", taskNumber: 1, attemptNumber: 1, teamVersionId: "team-1", runId: "run-1" }));
+    await writeFile(join(runDir, "state.json"), JSON.stringify({ graphState: { finalOutputsByRoleId: { reviewer: [{ content: "legacy" }] }, finalOutputRoleOrder: ["reviewer"] } }), "utf8");
+    const result = await createFileRunResultStore({ projectsRoot: root }).readFinalOutputs({ owner: { kind: "project_task", projectId: "project-1", taskId: "task-1" }, taskId: "task-1", runId: "run-1" });
+    assert.equal(result, undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

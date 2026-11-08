@@ -49,6 +49,8 @@ export function createFileRunResultStore({ projectsRoot }) {
         throw error;
       }
       const graphState = snapshot?.graphState;
+      const committedResult = graphState?.resultCommit?.status === "committed";
+      if (graphState?.status !== "done" || !committedResult) return undefined;
       const outputMap = graphState?.finalOutputsByRoleId;
       if (!outputMap || typeof outputMap !== "object" || Array.isArray(outputMap)) return undefined;
       const finalOutputsByRoleId = Object.fromEntries(Object.entries(outputMap).map(([roleId, outputs]) => [

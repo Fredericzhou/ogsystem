@@ -56,7 +56,9 @@ export function createFileRecentRunStore({ projectsRoot }) {
       ]);
       const output = await readJson(join(runDir, "state.json"));
       const graphState = output?.graphState;
-      const outputMap = graphState?.finalOutputsByRoleId;
+      const outputMap = graphState?.status === "done" && graphState?.resultCommit?.status === "committed"
+        ? graphState.finalOutputsByRoleId
+        : undefined;
       const roleOrder = Array.isArray(graphState?.finalOutputRoleOrder) ? graphState.finalOutputRoleOrder : [];
       const outputSummary = outputMap && typeof outputMap === "object"
         ? roleOrder.flatMap((roleId) => (Array.isArray(outputMap[roleId]) ? outputMap[roleId] : [])

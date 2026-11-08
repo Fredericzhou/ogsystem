@@ -68,8 +68,8 @@ test("Visualizer design projector defaults to Chinese labels and tolerates missi
 test("Visualizer design projector uses business flow names or localized event labels", async () => {
   let graphOptions;
   const authoring = { version: 1, flows: {
-    named: { flowId: "flow.named", eventType: "DONE", label: "方案已确认" },
-    localized: { flowId: "flow.localized", eventType: "SOFTWARE_REQUEST", label: " " }
+    named: { flowId: "flow.named", eventType: "APPROVED", label: "方案已确认" },
+    localized: { flowId: "flow.localized", eventType: "READY", label: " " }
   } };
   const projector = createVisualizerProjectDesignProjector({
     read: async (file) => file.endsWith("system.mmd") ? "flowchart TD" : "{}",
@@ -82,7 +82,7 @@ test("Visualizer design projector uses business flow names or localized event la
   await projector.project({ workdir: "/workspace/project" }, "zh-CN");
   assert.deepEqual(graphOptions.presentation.edgeLabels, {
     "flow.named": "方案已确认",
-    "flow.localized": "研发需求"
+    "flow.localized": "结果已就绪"
   });
 });
 

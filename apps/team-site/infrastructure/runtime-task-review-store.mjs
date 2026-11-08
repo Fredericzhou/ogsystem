@@ -63,6 +63,16 @@ export function createRuntimeTaskReviewStore({ listHumanReviews, writeHumanRevie
       if (typeof roleRepoDir !== "string" || !roleRepoDir) return { ...result, reviews: result.reviews.map((review) => ({ ...review, allowedDecisions: [] })) };
       const decisionsByRole = new Map();
       const reviews = await Promise.all((result.reviews || []).map(async (review) => {
+        if (review.kind === "loop_budget") {
+          const budget = review.loopBudget || {};
+          const allowedDecisions = [
+            ...(Array.isArray(budget.targetRoleIds) && budget.targetRoleIds.length ? ["continue"] : []),
+            ...(Array.isArray(budget.reworkTargetRoleIds) && budget.reworkTargetRoleIds.length ? ["rework"] : []),
+            ...(Array.isArray(budget.rejectTargetRoleIds) && budget.rejectTargetRoleIds.length ? ["reject"] : []),
+            "terminate"
+          ];
+          return { ...review, allowedDecisions };
+        }
         if (!review.roleId) return { ...review, allowedDecisions: [] };
         if (!decisionsByRole.has(review.roleId)) {
           decisionsByRole.set(review.roleId, loadRolePackage({ roleId: review.roleId, roleRootDir: roleRepoDir })
@@ -73,7 +83,7 @@ export function createRuntimeTaskReviewStore({ listHumanReviews, writeHumanRevie
       }));
       return { ...result, reviews };
     },
-    async decideReview(project, task, selectedReviewId, decision, comment, terminateScope) {
+    async decideReview(project, task, selectedReviewId, decision, comment, terminateScope, targetRoleId, additionalBudget) {
       await readProjectRunOwner(project, task, task.currentRunId);
       await assertReviewEvidenceSafe(project, task.currentRunId, selectedReviewId);
       return writeHumanReviewDecision({
@@ -83,6 +93,8 @@ export function createRuntimeTaskReviewStore({ listHumanReviews, writeHumanRevie
         decision,
         comment,
         principal: createPrincipal(),
+        ...(targetRoleId ? { targetRoleId } : {}),
+        ...(Number.isInteger(additionalBudget) ? { additionalBudget } : {}),
         ...(decision === "terminate" && (terminateScope === "branch" || terminateScope === "run") ? { scope: terminateScope } : {})
       });
     }

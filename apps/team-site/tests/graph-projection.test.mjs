@@ -63,8 +63,8 @@ test("management consulting keeps its parallel quorum and structured brief contr
     "executiveSummary", "recommendations", "implementationPlan", "risks", "assumptions", "openQuestions"
   ]);
   const graph = buildCaseGraph("management-consulting", "en");
-  assert.equal(graph.edges.filter((edge) => ["ANALYZE_MARKET", "ANALYZE_OPERATIONS", "ANALYZE_COMMERCIAL", "ANALYZE_RISK"].includes(edge.eventType)).length, 4);
-  assert.equal(graph.edges.find((edge) => edge.eventType === "QUALITY_REVIEW_READY")?.target, "executive-brief");
+  assert.equal(graph.edges.filter((edge) => edge.eventType === "READY" && edge.source !== "__system_start__").length, 11);
+  assert.equal(graph.edges.find((edge) => edge.eventType === "READY" && edge.target === "executive-brief")?.target, "executive-brief");
 });
 
 test("cross-backend review loop exposes a bounded rejection path", () => {
@@ -73,7 +73,7 @@ test("cross-backend review loop exposes a bounded rejection path", () => {
   assert.deepEqual(loop.loopBudgets, [{ roleId: "codex-analyst", max: 3 }]);
   assert.deepEqual(loop.flows, [
     ["__system_start__", "codex-analyst", "START"],
-    ["codex-analyst", "opencode-reviewer", "ANALYSIS_READY"],
+    ["codex-analyst", "opencode-reviewer", "READY"],
     ["opencode-reviewer", "codex-analyst", "REJECTED"],
     ["opencode-reviewer", "__system_end__", "APPROVED"]
   ]);
@@ -90,9 +90,9 @@ test("review-reject-once dry-run completes after one rework loop", async () => {
     );
     assert.equal(result.status, "completed");
     assert.deepEqual(result.auditTrail.map((item) => [item.roleId, item.loopIteration, item.selectedEvent]), [
-      ["codex-analyst", 1, "ANALYSIS_READY"],
+      ["codex-analyst", 1, "READY"],
       ["opencode-reviewer", 1, "REJECTED"],
-      ["codex-analyst", 2, "ANALYSIS_READY"],
+      ["codex-analyst", 2, "READY"],
       ["opencode-reviewer", 2, "APPROVED"]
     ]);
     assert.deepEqual(result.finalOutputRoleOrder, ["opencode-reviewer"]);
