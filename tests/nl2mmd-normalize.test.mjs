@@ -28,13 +28,13 @@ debate-minimalist[Role:debate-minimalist]
 debate-alignmentist[Role:debate-alignmentist]
 debate-judge[Role:debate-judge]
 debate-summary[Role:debate-summary]
-debate-moderator -->|SEND_MINIMALIST| debate-minimalist
-debate-moderator -->|SEND_ALIGNMENTIST| debate-alignmentist
-debate-minimalist -->|MINIMALIST_DONE| debate-judge
-debate-alignmentist -->|ALIGNMENTIST_DONE| debate-judge
-debate-judge -->|REBUTTAL_NEEDED| debate-moderator
-debate-judge -->|DECISION_READY| debate-summary
-debate-summary -->|SUMMARY_READY| end[结束]
+debate-moderator -->|READY| debate-minimalist
+debate-moderator -->|READY| debate-alignmentist
+debate-minimalist -->|READY| debate-judge
+debate-alignmentist -->|READY| debate-judge
+debate-judge -->|NEEDS_REWORK| debate-moderator
+debate-judge -->|READY| debate-summary
+debate-summary -->|READY| end[结束]
 `;
 
   const normalized = normalizeNl2MmdMermaid(source);
@@ -45,7 +45,7 @@ debate-summary -->|SUMMARY_READY| end[结束]
   assert.ok(!normalizedLines.includes("debate-moderator[Role:debate-moderator]"));
   assert.ok(
     normalized.includes(
-      "debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]"
+      "debate-judge[Role:debate-judge] -->|READY| debate-summary[Role:debate-summary]"
     )
   );
 
@@ -68,14 +68,14 @@ flowchart TD
 %% law.global=law.console.base
 start -->|ENTER| analyst
 analyst[Role:analyst]
-analyst -->|DONE| end
+analyst -->|READY| end
 \`\`\`
 `;
 
   const normalized = normalizeNl2MmdMermaid(source);
   assert.ok(!normalized.includes("```"));
   assert.ok(normalized.includes("start[开始] -->|START| analyst[Role:analyst]"));
-  assert.ok(normalized.includes("analyst[Role:analyst] -->|DONE| end[结束]"));
+  assert.ok(normalized.includes("analyst[Role:analyst] -->|READY| end[结束]"));
 
   const parsed = parseSystemFromMermaidSource(normalized);
   assert.deepEqual(parsed.entryRoleIds, ["analyst"]);
@@ -85,21 +85,21 @@ analyst -->|DONE| end
 test("normalizeNl2MmdMermaid does not translate removed input/output boundary aliases", () => {
   const normalized = normalizeNl2MmdMermaid(`flowchart TD
 input -->|START| analyst[Role:analyst]
-analyst[Role:analyst] -->|DONE| output`);
+analyst[Role:analyst] -->|READY| output`);
   assert.match(normalized, /input -->\|START\|/);
-  assert.match(normalized, /-->\|DONE\| output/);
+  assert.match(normalized, /-->\|READY\| output/);
   assert.throws(() => parseSystemFromMermaidSource(normalized), /Invalid node token|Unsupported system node/);
 });
 
 test("stabilizeNl2MmdMermaidForRuntime fixes missing metadata and passes validation", async () => {
   const source = `flowchart TD
 start[开始] -->|START| debate-moderator[Role:debate-moderator]
-debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
-debate-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
-debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
-debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
-debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debate-moderator]
-debate-judge[Role:debate-judge] -->|DECISION_READY| end[结束]
+debate-moderator[Role:debate-moderator] -->|READY| debate-minimalist[Role:debate-minimalist]
+debate-moderator[Role:debate-moderator] -->|READY| debate-alignmentist[Role:debate-alignmentist]
+debate-minimalist[Role:debate-minimalist] -->|READY| debate-judge[Role:debate-judge]
+debate-alignmentist[Role:debate-alignmentist] -->|READY| debate-judge[Role:debate-judge]
+debate-judge[Role:debate-judge] -->|NEEDS_REWORK| debate-moderator[Role:debate-moderator]
+debate-judge[Role:debate-judge] -->|READY| end[结束]
 flowchart TD
 `;
   const context = await loadNl2MmdContext({ workdir: process.cwd() });
@@ -133,13 +133,13 @@ test("stabilizeNl2MmdMermaidForRuntime relocates misplaced join metadata to the 
 %% join.sources.debate-moderator=debate-minimalist,debate-alignmentist
 %% loop.max.debate-moderator=3
 start[开始] -->|START| debate-moderator[Role:debate-moderator]
-debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
-debate-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
-debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
-debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
-debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debate-moderator]
-debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
-debate-summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
+debate-moderator[Role:debate-moderator] -->|READY| debate-minimalist[Role:debate-minimalist]
+debate-moderator[Role:debate-moderator] -->|READY| debate-alignmentist[Role:debate-alignmentist]
+debate-minimalist[Role:debate-minimalist] -->|READY| debate-judge[Role:debate-judge]
+debate-alignmentist[Role:debate-alignmentist] -->|READY| debate-judge[Role:debate-judge]
+debate-judge[Role:debate-judge] -->|NEEDS_REWORK| debate-moderator[Role:debate-moderator]
+debate-judge[Role:debate-judge] -->|READY| debate-summary[Role:debate-summary]
+debate-summary[Role:debate-summary] -->|READY| end[结束]
 `;
   const context = await loadNl2MmdContext({ workdir: process.cwd() });
   const stabilized = stabilizeNl2MmdMermaidForRuntime({

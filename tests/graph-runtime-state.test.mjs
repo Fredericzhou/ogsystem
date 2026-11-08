@@ -38,11 +38,11 @@ const source = `flowchart TD
 %% exec.bind.review=profile.review
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
-dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
-workerA[Role:worker_a] -->|A_DONE| review[Role:review]
-workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+dispatch[Role:dispatch] -->|READY| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| workerB[Role:worker_b]
+workerA[Role:worker_a] -->|READY| review[Role:review]
+workerB[Role:worker_b] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `;
 
 const quorumSource = `flowchart TD
@@ -60,13 +60,13 @@ const quorumSource = `flowchart TD
 %% exec.bind.review=profile.review
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
-dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
-dispatch[Role:dispatch] -->|TO_C| workerC[Role:worker_c]
-workerA[Role:worker_a] -->|A_DONE| review[Role:review]
-workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-workerC[Role:worker_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+dispatch[Role:dispatch] -->|READY| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| workerB[Role:worker_b]
+dispatch[Role:dispatch] -->|READY| workerC[Role:worker_c]
+workerA[Role:worker_a] -->|READY| review[Role:review]
+workerB[Role:worker_b] -->|READY| review[Role:review]
+workerC[Role:worker_c] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `;
 
 const parallelErrorFilterSource = `flowchart TD
@@ -79,12 +79,12 @@ const parallelErrorFilterSource = `flowchart TD
 %% exec.bind.compensate=profile.comp
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_A_DUP| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|ERROR| compensate[Role:compensate]
 dispatch[Role:dispatch] -->|ERROR.TOOL_EXECUTION_SPAWN| compensate[Role:compensate]
-workerA[Role:worker_a] -->|DONE| end[结束]
-compensate[Role:compensate] -->|COMP_DONE| end[结束]
+workerA[Role:worker_a] -->|READY| end[结束]
+compensate[Role:compensate] -->|READY| end[结束]
 `;
 
 test("graph runtime helpers cover loop budget, join readiness, and state projection", () => {
@@ -118,7 +118,7 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
     sessionLineageId: "worker_a@1#2",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_A",
+    activatedByEvent: "READY",
     status: "active"
   };
   const workerBBranch = {
@@ -130,7 +130,7 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
     sessionLineageId: "worker_b@1#3",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_B",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[workerABranch.branchId] = workerABranch;
@@ -138,7 +138,7 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
 
   state.roleResults[workerABranch.branchId] = {
     roleId: "worker_a",
-    event: "A_DONE",
+    event: "READY",
     content: "a",
     branchId: workerABranch.branchId,
     lineageId: workerABranch.lineageId,
@@ -156,7 +156,7 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
 
   state.roleResults[workerBBranch.branchId] = {
     roleId: "worker_b",
-    event: "B_DONE",
+    event: "READY",
     content: "b",
     branchId: workerBBranch.branchId,
     lineageId: workerBBranch.lineageId,
@@ -207,9 +207,9 @@ test("random start dispatch is fixed by Run ID and persisted in initial graph st
 start[开始] -->|START| alpha[Role:alpha]
 start[开始] -->|START| beta[Role:beta]
 start[开始] -->|START| gamma[Role:gamma]
-alpha[Role:alpha] -->|DONE| end[结束]
-beta[Role:beta] -->|DONE| end[结束]
-gamma[Role:gamma] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
+beta[Role:beta] -->|READY| end[结束]
+gamma[Role:gamma] -->|READY| end[结束]
 `);
   const plan = createExecutionPlan(randomSystem);
   const first = createInitialGraphState({ plan, prompt: "same task", runId: "run-fixed" });
@@ -239,7 +239,7 @@ test("graph runtime helpers evaluate quorum_of readiness by unique completed sou
     sessionLineageId: "worker_a@1#2",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_A",
+    activatedByEvent: "READY",
     status: "active"
   };
   const workerBBranch = {
@@ -251,7 +251,7 @@ test("graph runtime helpers evaluate quorum_of readiness by unique completed sou
     sessionLineageId: "worker_b@1#3",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_B",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[workerABranch.branchId] = workerABranch;
@@ -259,7 +259,7 @@ test("graph runtime helpers evaluate quorum_of readiness by unique completed sou
 
   state.roleResults[workerABranch.branchId] = {
     roleId: "worker_a",
-    event: "A_DONE",
+    event: "READY",
     content: "a",
     branchId: workerABranch.branchId,
     lineageId: workerABranch.lineageId,
@@ -277,7 +277,7 @@ test("graph runtime helpers evaluate quorum_of readiness by unique completed sou
 
   state.roleResults[workerBBranch.branchId] = {
     roleId: "worker_b",
-    event: "B_DONE",
+    event: "READY",
     content: "b",
     branchId: workerBBranch.branchId,
     lineageId: workerBBranch.lineageId,
@@ -325,7 +325,7 @@ test("graph runtime helpers keep quorum_of readiness isolated by lineageId", () 
     sessionLineageId: "worker_b@1#3",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_B",
+    activatedByEvent: "READY",
     status: "active"
   };
   const otherLineageWorkerA = {
@@ -337,7 +337,7 @@ test("graph runtime helpers keep quorum_of readiness isolated by lineageId", () 
     sessionLineageId: "worker_a@1#8",
     parentBranchId: "dispatch@1#7",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_A",
+    activatedByEvent: "READY",
     status: "completed"
   };
   state.branchRecords[currentLineageWorkerB.branchId] = currentLineageWorkerB;
@@ -345,7 +345,7 @@ test("graph runtime helpers keep quorum_of readiness isolated by lineageId", () 
 
   state.roleResults[currentLineageWorkerB.branchId] = {
     roleId: "worker_b",
-    event: "B_DONE",
+    event: "READY",
     content: "b",
     branchId: currentLineageWorkerB.branchId,
     lineageId: currentLineageWorkerB.lineageId,
@@ -353,7 +353,7 @@ test("graph runtime helpers keep quorum_of readiness isolated by lineageId", () 
   };
   state.roleResults[otherLineageWorkerA.branchId] = {
     roleId: "worker_a",
-    event: "A_DONE",
+    event: "READY",
     content: "a",
     branchId: otherLineageWorkerA.branchId,
     lineageId: otherLineageWorkerA.lineageId,
@@ -387,7 +387,7 @@ test("runtime indexes preserve active branch, result lookup, and join readiness 
     sessionLineageId: "worker_a@1#2",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_A",
+    activatedByEvent: "READY",
     status: "active"
   };
   const workerBBranch = {
@@ -399,14 +399,14 @@ test("runtime indexes preserve active branch, result lookup, and join readiness 
     sessionLineageId: "worker_b@1#3",
     parentBranchId: "dispatch@1#1",
     activatedByRoleId: "dispatch",
-    activatedByEvent: "TO_B",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[workerABranch.branchId] = workerABranch;
   state.branchRecords[workerBBranch.branchId] = workerBBranch;
   state.roleResults[workerABranch.branchId] = {
     roleId: "worker_a",
-    event: "A_DONE",
+    event: "READY",
     content: "a",
     branchId: workerABranch.branchId,
     lineageId: workerABranch.lineageId,
@@ -414,7 +414,7 @@ test("runtime indexes preserve active branch, result lookup, and join readiness 
   };
   state.roleResults[workerBBranch.branchId] = {
     roleId: "worker_b",
-    event: "B_DONE",
+    event: "READY",
     content: "b",
     branchId: workerBBranch.branchId,
     lineageId: workerBBranch.lineageId,

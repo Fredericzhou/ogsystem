@@ -228,8 +228,20 @@ export const opencodeBackendAdapter: BackendAdapter = {
   verifiedRunnable: true,
   async discover(args) {
     try {
-      const stdout = await runOpencodeModelsVerbose(args.workdir, args.commandRunner);
-      const parsed = parseOpencodeModelsVerboseOutput(stdout);
+      let parsed;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const stdout = await runOpencodeModelsVerbose(args.workdir, args.commandRunner);
+        try {
+          parsed = parseOpencodeModelsVerboseOutput(stdout);
+          break;
+        } catch (error) {
+          const retryable = error instanceof ModelDiscoveryError
+            && error.code === "MODEL_DISCOVERY_MALFORMED"
+            && attempt === 0;
+          if (!retryable) throw error;
+        }
+      }
+      if (!parsed) throw new Error("OpenCode model discovery returned no parsed catalog.");
       return {
         status: "runnable",
         detail: `OpenCode ready (${parsed.models.length} model${parsed.models.length === 1 ? "" : "s"}).`,

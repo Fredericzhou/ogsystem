@@ -38,7 +38,7 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
     properties: {
       event: {
         type: "string",
-        const: "PASS"
+        const: "READY"
       },
       data: {
         $ref: "./payload.schema.json"
@@ -68,7 +68,7 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
         kind: "flow",
         match: {
           fromRoleId: "dispatcher",
-          eventType: "PASS",
+          eventType: "READY",
           toRoleId: "review"
         },
         schema: "flow.schema.json",
@@ -95,7 +95,7 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
       {
         fromRoleId: "dispatcher",
         toRoleId: "review",
-        eventType: "PASS"
+        eventType: "READY"
       }
     ],
     lawBinding: {
@@ -123,13 +123,13 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
     system,
     contractPath
   });
-  const contract = plan.flowContractsByKey.get("flow:dispatcher:PASS:review");
+  const contract = plan.flowContractsByKey.get("flow:dispatcher:READY:review");
   assert.ok(contract);
   assert.deepStrictEqual(
     validateContractAgainstSchema({
       contract,
       data: {
-        event: "PASS",
+        event: "READY",
         data: {
           kind: "ok",
           amount: 3
@@ -143,7 +143,7 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
     validateContractAgainstSchema({
       contract,
       data: {
-        event: "PASS",
+        event: "READY",
         data: {
           kind: "ok"
         }
@@ -172,7 +172,7 @@ test("flow-contract loader rejects remote schema $ref", async () => {
         kind: "flow",
         match: {
           fromRoleId: "dispatcher",
-          eventType: "PASS",
+          eventType: "READY",
           toRoleId: "review"
         },
         schema: "flow.schema.json"
@@ -189,7 +189,7 @@ test("flow-contract loader rejects remote schema $ref", async () => {
       {
         fromRoleId: "dispatcher",
         toRoleId: "review",
-        eventType: "PASS"
+        eventType: "READY"
       }
     ],
     lawBinding: {

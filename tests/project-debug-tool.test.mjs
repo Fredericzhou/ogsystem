@@ -45,7 +45,7 @@ test("scaffolded console print tool executes as a standard exec.bind debugger", 
   assert.equal(result.status, "done");
   assert.equal(result.finalRoleIds?.at(-1), "hello-ogsystem");
   assert.equal(result.auditTrail[0]?.toolRef, "tool.console.print");
-  assert.equal(result.auditTrail[0]?.selectedEvent, "HELLO_DONE");
+  assert.equal(result.auditTrail[0]?.selectedEvent, "READY");
   assert.match(result.finalOutputsByRoleId["hello-ogsystem"]?.[0]?.content ?? "", /standard console print tool/);
 
   const toolsConfig = JSON.parse(await readFile(path.resolve(workdir, "tools.json"), "utf8"));

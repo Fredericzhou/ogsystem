@@ -45,9 +45,9 @@ const graphSource = `flowchart TD
 start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
-worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
-worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
-review[Role:review] -->|RETRY| dispatch[Role:dispatch]
+worker_a[Role:worker_a] -->|READY| review[Role:review]
+worker_b[Role:worker_b] -->|READY| review[Role:review]
+review[Role:review] -->|NEEDS_REWORK| dispatch[Role:dispatch]
 review[Role:review] -->|FINISH| end[结束]
 `;
 
@@ -63,8 +63,8 @@ start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 dispatch[Role:dispatch] -->|ERROR.INVALID| end[结束]
-worker_a[Role:worker_a] -->|DONE_A| end[结束]
-worker_b[Role:worker_b] -->|DONE_B| end[结束]
+worker_a[Role:worker_a] -->|READY| end[结束]
+worker_b[Role:worker_b] -->|READY| end[结束]
 `;
 
 const cycleWithoutLoopBudgetSource = `flowchart TD
@@ -74,9 +74,9 @@ const cycleWithoutLoopBudgetSource = `flowchart TD
 %% exec.bind.a=profile.a
 %% exec.bind.b=profile.b
 start[开始] -->|START| a[Role:a]
-a[Role:a] -->|NEXT| b[Role:b]
-b[Role:b] -->|RETRY| a[Role:a]
-b[Role:b] -->|DONE| end[结束]
+a[Role:a] -->|READY| b[Role:b]
+b[Role:b] -->|NEEDS_REWORK| a[Role:a]
+b[Role:b] -->|READY| end[结束]
 `;
 
 const cycleWithLoopBudgetSource = `flowchart TD
@@ -87,9 +87,9 @@ const cycleWithLoopBudgetSource = `flowchart TD
 %% exec.bind.a=profile.a
 %% exec.bind.b=profile.b
 start[开始] -->|START| a[Role:a]
-a[Role:a] -->|NEXT| b[Role:b]
-b[Role:b] -->|RETRY| a[Role:a]
-b[Role:b] -->|DONE| end[结束]
+a[Role:a] -->|READY| b[Role:b]
+b[Role:b] -->|NEEDS_REWORK| a[Role:a]
+b[Role:b] -->|READY| end[结束]
 `;
 
 const joinSourcesWithoutJoinModeSource = `flowchart TD
@@ -104,9 +104,9 @@ const joinSourcesWithoutJoinModeSource = `flowchart TD
 start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
-worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
-worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+worker_a[Role:worker_a] -->|READY| review[Role:review]
+worker_b[Role:worker_b] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `;
 
 const joinSourcesMismatchSource = `flowchart TD
@@ -125,10 +125,10 @@ start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 dispatch[Role:dispatch] -->|C| worker_c[Role:worker_c]
-worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
-worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
+worker_a[Role:worker_a] -->|READY| review[Role:review]
+worker_b[Role:worker_b] -->|READY| review[Role:review]
 worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+review[Role:review] -->|READY| end[结束]
 `;
 
 const quorumJoinWithProjectionSource = `flowchart TD
@@ -153,10 +153,10 @@ start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
 dispatch[Role:dispatch] -->|C| worker_c[Role:worker_c]
-worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
-worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
+worker_a[Role:worker_a] -->|READY| review[Role:review]
+worker_b[Role:worker_b] -->|READY| review[Role:review]
 worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+review[Role:review] -->|READY| end[结束]
 `;
 
 test("parser accepts a minimal system", () => {
@@ -180,7 +180,7 @@ test("parser rejects removed talent.bind metadata", () => {
 %% law.global=law.test
 %% talent.bind.intake=reasoning
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| end[结束]
 `;
   assert.throws(
     () => parseSystemFromMermaidSource(source),
@@ -213,7 +213,7 @@ test("parser accepts review metadata with defaults and explicit overrides", () =
 %% review.rework.target.reviewer=writer
 %% review.rework.max.reviewer=2
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| reviewer[Role:reviewer]
+writer[Role:writer] -->|READY| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|APPROVED| end[结束]
 `;
 
@@ -237,7 +237,7 @@ test("parser accepts optional human review selectors in context.map", () => {
 %% context.map.writer.review_comment=global.human_review.current.comment?
 %% context.map.writer.previous_content=global.human_review.current.previous_output.content?
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `;
 
   const system = parseSystemFromMermaidSource(source);
@@ -256,7 +256,7 @@ test("parser rejects review metadata without review.mode", () => {
 %% exec.bind.reviewer=profile.reviewer
 %% review.timeout.reviewer=120
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| reviewer[Role:reviewer]
+writer[Role:writer] -->|READY| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|APPROVED| end[结束]
 `;
 
@@ -308,7 +308,7 @@ test("loadSystemFromMermaid resolves handoff contract paths relative to the syst
 %% handoff.contracts=contracts/handoff.json
 %% exec.bind.intake=profile.parser
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -491,7 +491,7 @@ test("parser rejects duplicate metadata keys instead of silently overriding", ()
 %% law.global=law.second
 %% model.bind.intake=model.fast
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| end[结束]
 `;
 
   assert.throws(
@@ -508,7 +508,7 @@ test("parser rejects role binding conflicts when model.bind and exec.bind coexis
 %% exec.bind.intake=profile.parser
 %% model.bind.intake=model.fast
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| end[结束]
 `;
 
   assert.throws(
@@ -530,8 +530,8 @@ start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|A2| worker_a[Role:worker_a]
 dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
-worker_a[Role:worker_a] -->|DONE_A| end[结束]
-worker_b[Role:worker_b] -->|DONE_B| end[结束]
+worker_a[Role:worker_a] -->|READY| end[结束]
+worker_b[Role:worker_b] -->|READY| end[结束]
 `;
 
   const system = parseSystemFromMermaidSource(source);
@@ -545,7 +545,7 @@ test("parser rejects non-structural events declared from Start", () => {
 %% law.global=law.test
 %% exec.bind.intake=profile.intake
 start[开始] -->|ERROR| intake[Role:intake]
-intake[Role:intake] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| end[结束]
 `;
 
   assert.throws(
@@ -565,7 +565,7 @@ test("parser rejects duplicate ERROR fallback edges from the same role", () => {
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| comp_a[Role:comp_a]
 worker[Role:worker] -->|ERROR| comp_b[Role:comp_b]
-worker[Role:worker] -->|DONE| end[结束]
+worker[Role:worker] -->|READY| end[结束]
 `;
 
   assert.throws(
@@ -585,7 +585,7 @@ test("parser rejects duplicate ERROR.<code> edges from the same role", () => {
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_a[Role:retry_a]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_b[Role:retry_b]
-worker[Role:worker] -->|DONE| end[结束]
+worker[Role:worker] -->|READY| end[结束]
 `;
 
   assert.throws(
@@ -682,7 +682,7 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
     );
   };
 
-  await writeRolePackage("worker", ["DONE"]);
+  await writeRolePackage("worker", ["READY"]);
   await writeRolePackage("compensate", ["RECOVERED"]);
 
   const mermaid = `flowchart TD
@@ -692,7 +692,7 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
 %% exec.bind.worker=profile.worker
 %% exec.bind.compensate=profile.compensate
 start[开始] -->|START| worker[Role:worker]
-worker[Role:worker] -->|DONE| end[结束]
+worker[Role:worker] -->|READY| end[结束]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| compensate[Role:compensate]
 compensate[Role:compensate] -->|RECOVERED| end[结束]
 `;
@@ -733,9 +733,9 @@ test("Start flows define entry roles and only roles directly connected to End co
 %% end.join.min=2
 start[开始] -->|START| alpha[Role:alpha]
 start[开始] -->|START| beta[Role:beta]
-alpha[Role:alpha] -->|DONE| end[结束]
-beta[Role:beta] -->|DONE| end[结束]
-gamma[Role:gamma] -->|DONE| orphan[Role:orphan]
+alpha[Role:alpha] -->|READY| end[结束]
+beta[Role:beta] -->|READY| end[结束]
+gamma[Role:gamma] -->|READY| orphan[Role:orphan]
 `);
 
   assert.deepEqual(system.entryRoleIds, ["alpha", "beta"]);
@@ -749,7 +749,7 @@ gamma[Role:gamma] -->|DONE| orphan[Role:orphan]
 %% end.join.mode=quorum_of
 %% end.join.min=2
 start[开始] -->|START| alpha[Role:alpha]
-alpha[Role:alpha] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
 `), /end\.join\.min must be within \[1, 1\]/);
   assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
 %% system.id=test.legacy-entry
@@ -757,7 +757,7 @@ alpha[Role:alpha] -->|DONE| end[结束]
 %% law.global=law.test
 %% entry.role=alpha
 start[开始] -->|START| alpha[Role:alpha]
-alpha[Role:alpha] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
 `), /Unsupported metadata key "entry\.role"/);
   assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
 %% system.id=test.removed-engine
@@ -765,13 +765,13 @@ alpha[Role:alpha] -->|DONE| end[结束]
 %% law.global=law.test
 %% engine=langgraph
 start[开始] -->|START| alpha[Role:alpha]
-alpha[Role:alpha] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
 `), /Unsupported metadata key "engine"/);
   assert.throws(() => parseSystemFromMermaidSource(`flowchart TD
 %% system.id=test.start-event-mismatch
 %% system.version=1.0.0
 %% law.global=law.test
 start[开始] -->|ENTER| alpha[Role:alpha]
-alpha[Role:alpha] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
 `), /All Start flows must use the shared structural event START/);
 });

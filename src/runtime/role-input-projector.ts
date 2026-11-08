@@ -4,6 +4,7 @@ import {
   getBranchResult
 } from "./graph-runtime-state.js";
 import { createRuntimeError } from "./runtime-errors.js";
+import { buildAllowedArtifactSet, createArtifactResolver, type ArtifactAccessAudit } from "./artifact-access.js";
 import { renderUserProfile, stringifyJson } from "./runtime-support.js";
 import type {
   BranchRecord,
@@ -23,38 +24,74 @@ export type RolePromptInput = {
   input: string;
 };
 
-function getDirectContext(state: GraphState, branch: BranchRecord): string {
-  if (!branch.parentBranchId) {
-    return state.userPrompt;
+function getDirectContext(args: {
+  state: GraphState;
+  branch: BranchRecord;
+  roleId: string;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
+}): string {
+  if (!args.branch.parentBranchId) {
+    return args.state.userPrompt;
   }
-  const upstream = getBranchResult(state, branch.parentBranchId);
-  return upstream?.content ?? state.userPrompt;
+  const upstream = getBranchResult(args.state, args.branch.parentBranchId);
+  const authorized = upstream
+    ? authorizeArtifact({
+        artifact: upstream,
+        roleId: args.roleId,
+        branchId: args.branch.branchId,
+        state: args.state,
+        allowedArtifacts: [upstream],
+        onArtifactAccessAudit: args.onArtifactAccessAudit
+      })
+    : undefined;
+  return authorized?.content ?? args.state.userPrompt;
 }
 
 function renderJoinContext(args: {
   state: GraphState;
   joinSources: string[];
   branch: BranchRecord;
+  roleId: string;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): string {
-  const namespace = Object.fromEntries(args.joinSources.map((sourceRoleId) => {
+  // Join authorization is fixed when the target branch is activated. Do not
+  // derive it from whichever source results happen to be visible at prompt
+  // rendering time, otherwise a role could self-authorize a late artifact.
+  const allowedArtifactIds = new Set(args.state.artifactAllowedByBranchId?.[args.branch.branchId] ?? []);
+  const resolver = createArtifactResolver(Object.values(args.state.roleResults));
+  const namespaceEntries = args.joinSources.flatMap((sourceRoleId) => {
     const result = findRoleResult({
       state: args.state,
       roleId: sourceRoleId,
       lineageId: args.branch.lineageId,
       loopIteration: args.branch.loopIteration
     });
+    if (!result) return [];
+    // A quorum branch may observe a source that arrived after activation. It
+    // remains outside the persisted invocation allow-set and is omitted from
+    // the aggregate context; explicit source(...) selectors still fail closed
+    // through authorizeArtifact below.
+    if (result.artifactRef && !allowedArtifactIds.has(result.artifactRef.artifactId)) return [];
+    const authorized = result.artifactRef
+      ? resolver.resolve(result.artifactRef, {
+          consumerRoleId: args.roleId,
+          allowedArtifactIds,
+          audit: args.onArtifactAccessAudit
+        })
+      : result;
     const artifact: Record<string, unknown> = {};
-    if (result?.event) {
-      artifact.event = result.event;
+    if (authorized?.event) {
+      artifact.event = authorized.event;
     }
-    if (result?.content !== undefined) {
-      artifact.content = result.content;
+    if (authorized?.content !== undefined) {
+      artifact.content = authorized.content;
     }
-    if (result?.data !== undefined) {
-      artifact.data = result.data;
+    if (authorized?.data !== undefined) {
+      artifact.data = authorized.data;
     }
-    return [sourceRoleId, artifact];
-  }));
+    return [[sourceRoleId, artifact] as const];
+  });
+  const namespace = Object.fromEntries(namespaceEntries);
   return stringifyJson(namespace);
 }
 
@@ -125,10 +162,31 @@ function resolveArtifactField(args: {
   return value;
 }
 
+function authorizeArtifact(args: {
+  artifact: StoredRoleResult;
+  roleId: string;
+  branchId: string;
+  state: GraphState;
+  allowedArtifacts: Iterable<StoredRoleResult | undefined>;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
+}): StoredRoleResult {
+  if (!args.artifact.artifactRef) return args.artifact;
+  const resolver = createArtifactResolver(Object.values(args.state.roleResults));
+  const allowedArtifactIds = args.state.artifactAllowedByBranchId
+    ? new Set(args.state.artifactAllowedByBranchId[args.branchId] ?? [])
+    : buildAllowedArtifactSet(args.allowedArtifacts);
+  return resolver.resolve(args.artifact.artifactRef, {
+    consumerRoleId: args.roleId,
+    allowedArtifactIds,
+    audit: args.onArtifactAccessAudit
+  });
+}
+
 function getRequiredDirectArtifact(args: {
   state: GraphState;
   branch: BranchRecord;
   roleId: string;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): StoredRoleResult {
   if (!args.branch.parentBranchId) {
     failContextProjection({
@@ -147,7 +205,14 @@ function getRequiredDirectArtifact(args: {
       branchId: args.branch.branchId
     });
   }
-  return upstream;
+  return authorizeArtifact({
+    artifact: upstream,
+    roleId: args.roleId,
+    branchId: args.branch.branchId,
+    state: args.state,
+    allowedArtifacts: [upstream],
+    onArtifactAccessAudit: args.onArtifactAccessAudit
+  });
 }
 
 function getRequiredJoinSourceArtifact(args: {
@@ -156,6 +221,7 @@ function getRequiredJoinSourceArtifact(args: {
   roleId: string;
   node: ExecutionPlanNode;
   sourceRoleId: string;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): StoredRoleResult {
   if (!args.node.joinMode) {
     failContextProjection({
@@ -189,7 +255,20 @@ function getRequiredJoinSourceArtifact(args: {
       branchId: args.branch.branchId
     });
   }
-  return result;
+  const allowedArtifacts = args.node.joinSources.map((sourceRoleId) => findRoleResult({
+    state: args.state,
+    roleId: sourceRoleId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration
+  }));
+  return authorizeArtifact({
+    artifact: result,
+    roleId: args.roleId,
+    branchId: args.branch.branchId,
+    state: args.state,
+    allowedArtifacts,
+    onArtifactAccessAudit: args.onArtifactAccessAudit
+  });
 }
 
 function getOptionalJoinSourceArtifact(args: {
@@ -198,6 +277,7 @@ function getOptionalJoinSourceArtifact(args: {
   roleId: string;
   node: ExecutionPlanNode;
   sourceRoleId: string;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): StoredRoleResult | undefined {
   if (!args.node.joinMode) {
     failContextProjection({
@@ -215,11 +295,26 @@ function getOptionalJoinSourceArtifact(args: {
       branchId: args.branch.branchId
     });
   }
-  return findRoleResult({
+  const result = findRoleResult({
     state: args.state,
     roleId: args.sourceRoleId,
     lineageId: args.branch.lineageId,
     loopIteration: args.branch.loopIteration
+  });
+  if (!result) return result;
+  const allowedArtifacts = args.node.joinSources.map((sourceRoleId) => findRoleResult({
+    state: args.state,
+    roleId: sourceRoleId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration
+  }));
+  return authorizeArtifact({
+    artifact: result,
+    roleId: args.roleId,
+    branchId: args.branch.branchId,
+    state: args.state,
+    allowedArtifacts,
+    onArtifactAccessAudit: args.onArtifactAccessAudit
   });
 }
 
@@ -255,6 +350,7 @@ function evaluateContextSelector(args: {
   branch: BranchRecord;
   state: GraphState;
   userProfile?: UserProfile;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): unknown {
   const selector = args.selector;
   const optional = selector.endsWith("?");
@@ -333,7 +429,8 @@ function evaluateContextSelector(args: {
     const artifact = getRequiredDirectArtifact({
       state: args.state,
       branch: args.branch,
-      roleId: args.roleId
+      roleId: args.roleId,
+      onArtifactAccessAudit: args.onArtifactAccessAudit
     });
     return resolveArtifactField({
       artifact,
@@ -345,11 +442,21 @@ function evaluateContextSelector(args: {
   }
 
   if (normalizedSelector.startsWith("direct.data.")) {
-    const artifact = optional
+    const rawArtifact = optional
       ? args.branch.parentBranchId
         ? getBranchResult(args.state, args.branch.parentBranchId)
         : undefined
-      : getRequiredDirectArtifact({ state: args.state, branch: args.branch, roleId: args.roleId });
+        : getRequiredDirectArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, onArtifactAccessAudit: args.onArtifactAccessAudit });
+    const artifact = rawArtifact
+      ? authorizeArtifact({
+          artifact: rawArtifact,
+          roleId: args.roleId,
+          branchId: args.branch.branchId,
+          state: args.state,
+          allowedArtifacts: [rawArtifact],
+          onArtifactAccessAudit: args.onArtifactAccessAudit
+        })
+      : undefined;
     if (!artifact) return undefined;
     const data = resolveArtifactField({
       artifact,
@@ -374,8 +481,8 @@ function evaluateContextSelector(args: {
   if (sourceMatch) {
     const [, sourceRoleId, field, nestedPath] = sourceMatch;
     const artifact = optional
-      ? getOptionalJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId })
-      : getRequiredJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId });
+      ? getOptionalJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId, onArtifactAccessAudit: args.onArtifactAccessAudit })
+      : getRequiredJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId, onArtifactAccessAudit: args.onArtifactAccessAudit });
     if (!artifact) return undefined;
     const fieldValue = resolveArtifactField({
       artifact,
@@ -412,6 +519,7 @@ export function buildProjectedContext(args: {
   branch: BranchRecord;
   state: GraphState;
   userProfile?: UserProfile;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): Record<string, unknown> {
   const sortedEntries = Object.entries(args.node.contextMap ?? {}).sort(([left], [right]) =>
     left.localeCompare(right)
@@ -426,7 +534,8 @@ export function buildProjectedContext(args: {
           node: args.node,
           branch: args.branch,
           state: args.state,
-          userProfile: args.userProfile
+          userProfile: args.userProfile,
+          onArtifactAccessAudit: args.onArtifactAccessAudit
         })
       ])
       .filter(([, value]) => value !== undefined)
@@ -439,6 +548,7 @@ function renderProjectedContext(args: {
   branch: BranchRecord;
   state: GraphState;
   userProfile?: UserProfile;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): string {
   return stringifyJson(
     buildProjectedContext({
@@ -446,7 +556,8 @@ function renderProjectedContext(args: {
       node: args.node,
       branch: args.branch,
       state: args.state,
-      userProfile: args.userProfile
+      userProfile: args.userProfile,
+      onArtifactAccessAudit: args.onArtifactAccessAudit
     })
   );
 }
@@ -474,6 +585,7 @@ export function buildRolePromptInput(args: {
   branch: BranchRecord;
   state: GraphState;
   userProfile?: UserProfile;
+  onArtifactAccessAudit?: (audit: ArtifactAccessAudit) => void;
 }): RolePromptInput {
   const outgoingEvents = getSelectableOutgoingFlows(args.node).map((item) => item.eventType);
   const allowedEvents = args.node.modeAllowedEvents
@@ -487,9 +599,16 @@ export function buildRolePromptInput(args: {
         ? renderJoinContext({
             state: args.state,
             joinSources: args.node.joinSources,
-            branch: args.branch
+            branch: args.branch,
+            roleId: args.roleId,
+            onArtifactAccessAudit: args.onArtifactAccessAudit
           })
-        : getDirectContext(args.state, args.branch);
+        : getDirectContext({
+            state: args.state,
+            branch: args.branch,
+            roleId: args.roleId,
+            onArtifactAccessAudit: args.onArtifactAccessAudit
+          });
 
   return {
     role_id: args.roleId,

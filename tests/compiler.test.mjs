@@ -95,7 +95,7 @@ test("plain Mermaid systems enforce the exact Role Contract event set", async ()
   const source = await readFile(path.resolve("examples/target-model-binding-system.mmd"), "utf8");
   const system = parseSystemFromMermaidSource(source);
   const rolePackagesByRoleId = await loadRolePackages(system.roleIds, path.resolve("og-roles", "roles"));
-  rolePackagesByRoleId.get("debate-judge").manifest.outputs.events = ["DECISION_READY", "UNDECLARED_EVENT"];
+  rolePackagesByRoleId.get("debate-judge").manifest.outputs.events = ["READY", "UNDECLARED_EVENT"];
 
   const result = compileExecutionSnapshot({
     system,
@@ -220,9 +220,9 @@ test("compiler rejects noop roles that are unauthorized or ambiguously routed", 
 %% law.global=law.test
 %% exec.bind.test-decision=profile.test-decision
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|NEXT| decider[Role:test-decision]
-operator[Role:test-operator] -->|DONE| end[结束]
-decider[Role:test-decision] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| decider[Role:test-decision]
+operator[Role:test-operator] -->|READY| end[结束]
+decider[Role:test-decision] -->|READY| end[结束]
 `;
   const system = parseSystemFromMermaidSource(source);
   const roleRootDir = path.resolve("og-roles", "roles");
@@ -274,8 +274,8 @@ test("compiler fingerprints review metadata and rejects review on noop bindings"
 %% review.rework.target.test-decision=test-operator
 %% review.terminate.scope.test-decision=branch
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|NEXT| decider[Role:test-decision]
-decider[Role:test-decision] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| decider[Role:test-decision]
+decider[Role:test-decision] -->|READY| end[结束]
 `;
   const sourceWithTerminate = sourceWithPause.replace(
     "%% review.terminate.scope.test-decision=branch",

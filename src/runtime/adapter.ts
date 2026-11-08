@@ -41,6 +41,7 @@ export { compileSemanticIR } from "./semantic-ir-compiler.js";
 export { buildLoopScopeKey, getTargetLoopIteration, wouldExceedLoopBudget } from "./graph-runtime-state.js";
 export { validateEventCandidate } from "./event-contract.js";
 export { resolveJoinPolicy } from "./join-policy.js";
+export { buildArtifactReference, buildAllowedArtifactSet, createArtifactResolver } from "./artifact-access.js";
 export { buildRolePromptInput } from "./role-input-projector.js";
 export { projectOgsSpan, toOgsCloudEvent } from "./observability.js";
 export { validateCapabilityPolicy } from "./capability-policy.js";

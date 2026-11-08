@@ -92,6 +92,20 @@ async function buildRuntimeFingerprintWithPaths(system, args) {
   });
 }
 
+test("run fingerprints carry an explicit runtime semantics version", async () => {
+  const system = parseSystemFromMermaidSource(`flowchart TD
+%% system.id=fingerprint.semantics
+%% system.version=1.0.0
+%% law.global=law.minimal.base
+start[开始] -->|START| analyst[Role:demo-analyst]
+analyst[Role:demo-analyst] -->|READY| end[结束]
+`);
+  const fingerprint = await buildRuntimeFingerprint(system);
+  assert.equal(fingerprint.version, 8);
+  assert.equal(fingerprint.payload.components.runtimeSemanticsVersion.value, "semantic-ir-v1/2");
+  assert.equal(typeof fingerprint.payload.components.runtimeSemanticsVersion.digest, "string");
+});
+
 async function prepareRuntimeFingerprintResumeFixture(args) {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
@@ -173,7 +187,7 @@ test("adapter resume reloads sessions.json and reuses the same model session", a
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   await mkdir(runDir, { recursive: true });
@@ -278,7 +292,7 @@ test("adapter resume rejects partial or corrupted state snapshots", async () => 
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   await mkdir(runDir, { recursive: true });
@@ -332,7 +346,7 @@ const handledFailureResumeSource = `flowchart TD
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
 async function createHandledFailureResumeFixture(args) {
@@ -529,7 +543,7 @@ test("adapter resume rejects plan fingerprint mismatch", async () => {
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
   const mutatedSystemSource = initialSystemSource;
 
@@ -598,7 +612,7 @@ test("adapter resume accepts identical runtime content loaded from different pat
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -649,7 +663,7 @@ test("adapter resume rejects role package content drift", async () => {
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -695,7 +709,7 @@ test("adapter resume ignores refreshable model catalog metadata drift", async ()
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -730,7 +744,7 @@ test("adapter resume rejects effective law drift", async () => {
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -784,7 +798,7 @@ test("adapter resume replays pending checkpoints without re-executing the role",
 %% law.global=law.console.base
 
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| end[结束]
 `;
 
   await mkdir(runDir, { recursive: true });
@@ -887,7 +901,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
           args: [],
           exitCode: 0,
           durationMs: 1,
-          selectedEvent: "DONE",
+          selectedEvent: "READY",
           status: "ok"
         }
       ],
@@ -911,7 +925,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
       roleResults: {
         "test-operator@1#1": {
           roleId: "test-operator",
-          event: "DONE",
+          event: "READY",
           content: "replayed",
           branchId: "test-operator@1#1",
           lineageId: "test-operator@1#1",
@@ -933,7 +947,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
         "test-operator": 1
       },
       selectedEventByBranchId: {
-        "test-operator@1#1": "DONE"
+        "test-operator@1#1": "READY"
       },
       finalOutputsByRoleId: { "test-operator": [{ content: "replayed" }] },
       finalOutputRoleOrder: ["test-operator"],
@@ -988,7 +1002,7 @@ test("adapter resume reconciles committed execution outcome without re-executing
 %% law.global=law.console.base
 
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| end[结束]
 `;
 
   await mkdir(roleExecutionDir, { recursive: true });
@@ -1071,10 +1085,10 @@ operator[Role:test-operator] -->|DONE| end[结束]
         },
         committedAt: "2026-04-10T00:00:01.000Z",
         status: "ok",
-        selectedEvent: "DONE",
+        selectedEvent: "READY",
         storedResult: {
           roleId: "test-operator",
-          event: "DONE",
+          event: "READY",
           content: "reconciled",
           branchId: "test-operator@1#1",
           lineageId: "test-operator@1#1",
@@ -1092,7 +1106,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
           args: [],
           exitCode: 0,
           durationMs: 1,
-          selectedEvent: "DONE",
+          selectedEvent: "READY",
           status: "ok"
         }
       },
@@ -1173,7 +1187,7 @@ test("adapter resume backfills outcome reconciliation metadata when checkpoint a
 %% law.global=law.console.base
 
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| end[结束]
 `;
 
   await mkdir(roleExecutionDir, { recursive: true });
@@ -1256,10 +1270,10 @@ operator[Role:test-operator] -->|DONE| end[结束]
         },
         committedAt: "2026-04-10T00:00:01.000Z",
         status: "ok",
-        selectedEvent: "DONE",
+        selectedEvent: "READY",
         storedResult: {
           roleId: "test-operator",
-          event: "DONE",
+          event: "READY",
           content: "checkpoint already persisted",
           branchId: "test-operator@1#1",
           lineageId: "test-operator@1#1",
@@ -1277,7 +1291,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
           args: [],
           exitCode: 0,
           durationMs: 1,
-          selectedEvent: "DONE",
+          selectedEvent: "READY",
           status: "ok"
         }
       },
@@ -1326,7 +1340,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
           args: [],
           exitCode: 0,
           durationMs: 1,
-          selectedEvent: "DONE",
+          selectedEvent: "READY",
           status: "ok"
         }
       ],
@@ -1350,7 +1364,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
       roleResults: {
         "test-operator@1#1": {
           roleId: "test-operator",
-          event: "DONE",
+          event: "READY",
           content: "checkpoint already persisted",
           branchId: "test-operator@1#1",
           lineageId: "test-operator@1#1",
@@ -1372,7 +1386,7 @@ operator[Role:test-operator] -->|DONE| end[结束]
         "test-operator": 1
       },
       selectedEventByBranchId: {
-        "test-operator@1#1": "DONE"
+        "test-operator@1#1": "READY"
       },
       finalOutputsByRoleId: { "test-operator": [{ content: "checkpoint already persisted" }] },
       finalOutputRoleOrder: ["test-operator"],
@@ -1420,7 +1434,7 @@ test("adapter resume rejects an active resume lock", async () => {
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -1471,7 +1485,7 @@ test("adapter resume replaces a stale lock and releases it on exit", async () =>
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({
@@ -1529,7 +1543,7 @@ test("adapter resume setup failure releases lock acquired during initialization"
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| end[结束]
 `;
 
   const fixture = await prepareRuntimeFingerprintResumeFixture({

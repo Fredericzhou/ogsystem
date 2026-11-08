@@ -26,7 +26,7 @@ test("visualizer run plan endpoint exposes immutable execution inputs and qualit
       {
         nodeId: "writer",
         incoming: [],
-        outgoing: [{ to: "output", event: "DONE" }],
+        outgoing: [{ to: "output", event: "READY" }],
         reviewRequired: false
       }
     ],

@@ -129,7 +129,7 @@ test("adapter persists run artifacts for project-selected model roles", async ()
   const minimalistResult = JSON.parse(
     await readFile(path.resolve(runDir, "roles", "debate-minimalist", "result.json"), "utf8")
   );
-  assert.equal(minimalistResult.event, "MINIMALIST_DONE");
+  assert.equal(minimalistResult.event, "READY");
   const minimalistOutbox = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "outbox.md"),
     "utf8"
@@ -150,5 +150,5 @@ test("adapter persists run artifacts for project-selected model roles", async ()
   const judgeResult = JSON.parse(
     await readFile(path.resolve(runDir, "roles", "debate-judge", "result.json"), "utf8")
   );
-  assert.strictEqual(judgeResult.event, "DECISION_READY");
+  assert.strictEqual(judgeResult.event, "READY");
 });

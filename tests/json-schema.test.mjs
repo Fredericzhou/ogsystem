@@ -16,7 +16,7 @@ const nestedOutputSchema = {
   properties: {
     event: {
       type: "string",
-      enum: ["DECISION_READY"]
+      enum: ["READY"]
     },
     content: {
       type: "string"
@@ -47,7 +47,7 @@ test("role output schema validation accepts nested objects, arrays, and integer 
       schema: nestedOutputSchema,
       schemaPath: "/tmp/roles/debate-judge/output.schema.json",
       output: {
-        event: "DECISION_READY",
+        event: "READY",
         content: "done",
         data: {
           score: 2,
@@ -66,7 +66,7 @@ test("role output schema validation reports enum and path details", () => {
         schema: nestedOutputSchema,
         schemaPath: "/tmp/roles/debate-judge/output.schema.json",
         output: {
-          event: "REBUTTAL_NEEDED",
+          event: "NEEDS_REWORK",
           content: "done",
           data: {
             score: 2,
@@ -86,7 +86,7 @@ test("role output schema validation rejects nested additional properties", () =>
         schema: nestedOutputSchema,
         schemaPath: "/tmp/roles/debate-judge/output.schema.json",
         output: {
-          event: "DECISION_READY",
+          event: "READY",
           content: "done",
           data: {
             score: 2,
@@ -102,7 +102,7 @@ test("role output schema validation rejects nested additional properties", () =>
 test("investment proposer keeps its optional event contract aligned with its schema", () => {
   assert.match(proposerPrompt, /event is optional for this parallel_split role/i);
   assert.deepEqual(proposerSchema.required, ["content", "data"]);
-  assert.deepEqual(proposerSchema.properties.event.enum, ["SEND_CRITIC", "SEND_OPTIMIZER"]);
+  assert.deepEqual(proposerSchema.properties.event.enum, ["READY"]);
   assert.doesNotThrow(() =>
     validateRoleOutputSchema({
       roleId: "investment-proposer",
@@ -135,7 +135,7 @@ test("investment debate schemas keep branch contracts strict and distinct", () =
     schema: debateJudgeSchema,
     schemaPath: "examples/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
     output: {
-      event: "REBUTTAL_NEEDED",
+      event: "NEEDS_REWORK",
       content: "A bounded objection remains.",
       data: { consensus_reached: false, objections: { summary: "Missing evidence." } }
     }
@@ -145,7 +145,7 @@ test("investment debate schemas keep branch contracts strict and distinct", () =
     schema: debateJudgeSchema,
     schemaPath: "examples/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
     output: {
-      event: "DECISION_READY",
+      event: "READY",
       content: "The decision is ready with stated uncertainty.",
       data: { consensus_reached: true, decision: "Proceed to diligence." }
     }
@@ -155,7 +155,7 @@ test("investment debate schemas keep branch contracts strict and distinct", () =
     schema: debateJudgeSchema,
     schemaPath: "examples/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
     output: {
-      event: "DECISION_READY",
+      event: "READY",
       content: "Invalid branch payload.",
       data: { consensus_reached: false, objections: { summary: "Not ready." } }
     }

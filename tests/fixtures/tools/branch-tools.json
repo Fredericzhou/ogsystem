@@ -4,14 +4,14 @@
       "toolRef": "tool.branch",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["tests/fixtures/scripts/branch-tool.js", "PATH_A"],
+      "argsTemplate": ["tests/fixtures/scripts/branch-tool.js", "APPROVED"],
       "stdinMode": "none"
     },
     {
       "toolRef": "tool.forbidden",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["tests/fixtures/scripts/branch-tool.js", "PATH_B"],
+      "argsTemplate": ["tests/fixtures/scripts/branch-tool.js", "REJECTED"],
       "stdinMode": "none"
     }
   ]

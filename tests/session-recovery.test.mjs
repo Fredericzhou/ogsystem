@@ -79,7 +79,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
       seenSessionIds.push(request.sessionId);
       return {
         exitCode: 0,
-        stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+        stdout: JSON.stringify({ event: "READY", content: "ok" }),
         stderr: "",
         args: [],
         sessionId: request.sessionId,
@@ -113,7 +113,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
           toolRef: "tool.forbidden",
           runner: "local_shell",
           command: "node",
-          argsTemplate: ["tests/fixtures/scripts/branch-tool.js", "DONE"],
+          argsTemplate: ["tests/fixtures/scripts/branch-tool.js", "READY"],
           stdinMode: "none"
         }
       ]
@@ -145,7 +145,7 @@ moderator[Role:debate-moderator] -->|TO_MIN| minimalist[Role:debate-minimalist]
 moderator[Role:debate-moderator] -->|TO_ALIGN| alignmentist[Role:debate-alignmentist]
 minimalist[Role:debate-minimalist] -->|MIN_DONE| summary[Role:debate-summary]
 alignmentist[Role:debate-alignmentist] -->|ALIGN_DONE| summary[Role:debate-summary]
-summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
+summary[Role:debate-summary] -->|READY| end[结束]
 `;
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system, new Map([[
@@ -281,7 +281,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
       return {
         exitCode: 0,
         stdout: JSON.stringify({
-          event: "SUMMARY_READY",
+          event: "READY",
           content: history.join("|")
         }),
         stderr: "",
@@ -397,7 +397,7 @@ test("branch workspace isolation stores session directory under branch private w
       seenWorkdirs.push(request.workdir);
       return {
         exitCode: 0,
-        stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+        stdout: JSON.stringify({ event: "READY", content: "ok" }),
         stderr: "",
         args: [],
         sessionId: "ses_branch_private",

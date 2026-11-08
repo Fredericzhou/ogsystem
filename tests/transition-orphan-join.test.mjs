@@ -79,7 +79,7 @@ async function writeModelBoundRole(args) {
         properties: {
           event: {
             type: "string",
-            enum: args.allowedEvents
+            enum: [...new Set(args.allowedEvents)]
           },
           content: {
             type: "string"
@@ -129,23 +129,23 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
   await writeModelBoundRole({
     rolesRoot,
     roleId: "dispatcher",
-    allowedEvents: ["TO_A", "TO_B"],
+    allowedEvents: ["READY", "READY"],
     requireEvent: false
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "a",
-    allowedEvents: ["DONE_A"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "b",
-    allowedEvents: ["DONE_B"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "review",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["READY"]
   });
 
   await writeFile(
@@ -235,11 +235,11 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
 %% join.min.review=2
 
 start[开始] -->|START| dispatcher[Role:dispatcher]
-dispatcher[Role:dispatcher] -->|TO_A| a[Role:a]
-dispatcher[Role:dispatcher] -->|TO_B| b[Role:b]
-a[Role:a] -->|DONE_A| review[Role:review]
-b[Role:b] -->|DONE_B| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+dispatcher[Role:dispatcher] -->|READY| a[Role:a]
+dispatcher[Role:dispatcher] -->|READY| b[Role:b]
+a[Role:a] -->|READY| review[Role:review]
+b[Role:b] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `,
     "utf8"
   );

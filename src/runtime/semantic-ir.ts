@@ -71,6 +71,14 @@ export type SemanticIRRetryPolicy = {
   errorCodes?: string[];
 };
 
+export type SemanticEventKind = "handoff" | "decision" | "correction" | "exception";
+
+export type SemanticEventDefinition = {
+  kind?: SemanticEventKind;
+  payloadSchema?: unknown;
+  writableStateFields?: string[];
+};
+
 export type SemanticIR = {
   version: 1;
   system: { systemId: string; systemVersion: string };
@@ -93,7 +101,7 @@ export type SemanticIR = {
   };
   loops: SemanticIRLoopScope[];
   joins: SemanticIRJoinSpec[];
-  events?: Record<string, { payloadSchema?: unknown; writableStateFields?: string[] }>;
+  events?: Record<string, SemanticEventDefinition>;
   retryByRoleId?: Record<string, SemanticIRRetryPolicy>;
   contracts: Array<{ id: string; ref: string }>;
   subgraphs?: SubgraphSpec[];

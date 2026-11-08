@@ -81,7 +81,7 @@ export type FlowContractPlan = {
 
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
-export type HumanReviewDecision = "approve" | "rework" | "pause" | "terminate";
+export type HumanReviewDecision = "approve" | "rework" | "pause" | "terminate" | "continue" | "reject";
 
 export type HumanReviewSpec = {
   mode: "required";
@@ -90,6 +90,19 @@ export type HumanReviewSpec = {
   reworkTargetRoleId: string;
   reworkMax?: number;
   terminateScope: "branch" | "run";
+};
+
+export type LoopBudgetReview = {
+  loopId: string;
+  maxRounds: number;
+  currentIteration: number;
+  triggerRoleId: string;
+  /** Control-plane default for terminate decisions; independent from role review policy. */
+  terminateScope?: "branch" | "run";
+  targetRoleIds: string[];
+  reworkTargetRoleIds: string[];
+  rejectTargetRoleIds: string[];
+  maxAdditionalRounds: number;
 };
 
 /**
@@ -699,6 +712,10 @@ export type BranchRecord = {
   parentBranchId?: string;
   activatedByRoleId?: string;
   activatedByEvent?: string;
+  /** Budget bindings consumed when this branch was activated, for failure compensation. */
+  consumedLoopBudgetKeys?: string[];
+  /** Set when a human review explicitly removes this branch from the graph. */
+  terminatedByHumanReview?: boolean;
   status: "active" | "waiting_review" | "completed" | "cancelled";
 };
 
@@ -710,6 +727,20 @@ export type StoredRoleResult = {
   branchId: string;
   lineageId: string;
   loopIteration: number;
+  artifactRef?: {
+    artifactId: string;
+    runId: string;
+    mediaType?: string;
+  };
+  provenance?: {
+    runId?: string;
+    executionId?: string;
+    producerRoleId: string;
+    branchId: string;
+    lineageId: string;
+    loopIteration: number;
+    mediaType?: string;
+  };
 };
 
 export type PendingHumanReview = {
@@ -726,7 +757,9 @@ export type PendingHumanReview = {
   status: "pending" | "paused" | "resolved" | "expired";
   round: number;
   spec: HumanReviewSpec;
-  stateVersion?: number;
+  kind?: "human" | "loop_budget";
+  loopBudget?: LoopBudgetReview;
+  stateVersion: number;
   irDigest?: string;
 };
 
@@ -740,9 +773,17 @@ export type HumanReviewContext = {
 
 export type HumanReviewDecisionRecord = {
   reviewId: string;
+  /** Binding copied from the pending review when the decision is committed. */
+  round: number;
+  lineageId: string;
+  branchId: string;
+  loopIteration: number;
+  stateVersion: number;
   committedAt: string;
   decidedAt: string;
   decision: HumanReviewDecision;
+  targetRoleId?: string;
+  additionalBudget?: number;
   timedOut?: boolean;
   expiredAt?: string;
   comment?: string;
@@ -752,9 +793,10 @@ export type HumanReviewDecisionRecord = {
   checkpointSequence?: number;
   appliedAt?: string;
   reconciledAt?: string;
+  rejectionCode?: string;
 };
 
-export type GraphRunStatus = "running" | "stopping" | "stopped" | "terminated" | "done" | "failed";
+export type GraphRunStatus = "running" | "stopping" | "waiting_review" | "stopped" | "terminated" | "done" | "failed";
 
 export type GraphAuditSummary = {
   okCount: number;
@@ -815,9 +857,15 @@ export type GraphState = {
   loopIterations: Record<string, number>;
   /** Business loop counters keyed by lineageId + loopId; role loopIterations is a projection. */
   loopCountersByScope?: Record<string, number>;
+  /** Additional loop rounds explicitly granted by a loop-budget review, keyed by lineage and loop. */
+  loopBudgetAuthorizationsByScope?: Record<string, number>;
   /** Per-role activation guards keyed by lineageId + roleId. */
   roleActivationsByScope?: Record<string, number>;
+  /** Artifact ids authorized when each branch invocation was activated. */
+  artifactAllowedByBranchId?: Record<string, string[]>;
   joinScopes?: Record<string, JoinScopeState>;
+  joinSourceOutcomesByScope?: Record<string, Record<string, "pending" | "arrived" | "skipped" | "failed">>;
+  resultCommit?: ResultCommitState;
   selectedEventByBranchId: Record<string, string>;
   finalOutputsByRoleId: Record<string, Array<{ content?: string; data?: Record<string, unknown> }>>;
   finalOutputRoleOrder: string[];
@@ -838,6 +886,7 @@ export type JoinScopeState = {
   expectedSourceRoleIds: string[];
   readySourceRoleIds: string[];
   missingSourceRoleIds: string[];
+  sourceStatusByRoleId?: Record<string, "pending" | "arrived" | "skipped" | "failed">;
   startedAt: string;
   timeoutSeconds: number;
   status: "waiting" | "activated" | "timed_out" | "failed";
@@ -848,7 +897,22 @@ export type JoinScopeState = {
   completedAt?: string;
 };
 
-export type GraphStateUpdate = Partial<GraphState>;
+export type ResultCommitState = {
+  resultId: string;
+  status: "pending" | "committed" | "reconciled" | "rejected";
+  createdAt: string;
+  committedAt?: string;
+  reason?: string;
+};
+
+/**
+ * A checkpoint may carry a signed budget delta in addition to the projected
+ * absolute authorization map. Deltas are merged additively so concurrent
+ * branches cannot overwrite one another with the same stale remaining value.
+ */
+export type GraphStateUpdate = Partial<GraphState> & {
+  loopBudgetAuthorizationDeltasByScope?: Record<string, number>;
+};
 
 /**
  * Append-only WAL record written after a durable role outcome. `update` is intentionally partial so

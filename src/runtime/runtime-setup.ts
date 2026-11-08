@@ -566,7 +566,9 @@ export async function prepareRuntimeSetup(args: {
     : undefined;
   const rolePackagesByRoleId = await loadRolePackages({
     system,
-    roleRootDir
+    roleRootDir,
+    strictEvents: [resolve(process.cwd(), "og-roles"), resolve(process.cwd(), "examples")]
+      .some((root) => roleRootDir === root || roleRootDir.startsWith(root + "/"))
   });
   // Role Contracts are mandatory for every System, including plain Mermaid Systems without a semantic snapshot.
   const roleContractDiagnostics = system.roleIds.flatMap((roleId) => {

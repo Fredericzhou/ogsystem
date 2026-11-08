@@ -10,9 +10,21 @@ export type RoutableTransition = {
 
 export type SemanticRouteDecisionCandidate = { flowId: string; priority: number; matched?: boolean };
 
+export type ConditionDiagnostic = "input_missing" | "type_invalid";
+
+export class ConditionEvaluationError extends Error {
+  constructor(
+    readonly diagnostic: ConditionDiagnostic,
+    message: string
+  ) {
+    super(message);
+    this.name = "ConditionEvaluationError";
+  }
+}
+
 export class SemanticRouteSelectionError extends Error {
   constructor(
-    readonly code: "IR_ROUTE_NO_CANDIDATE" | "IR_ROUTE_NO_MATCH" | "IR_ROUTE_AMBIGUOUS" | "IR_ROUTE_CONDITION_EVALUATION_FAILED",
+    readonly code: "IR_ROUTE_NO_CANDIDATE" | "IR_ROUTE_NO_MATCH" | "IR_ROUTE_AMBIGUOUS" | "IR_ROUTE_CONDITION_INPUT_MISSING" | "IR_ROUTE_CONDITION_TYPE_INVALID",
     message: string,
     readonly candidates: SemanticRouteDecisionCandidate[] = []
   ) {
@@ -28,44 +40,64 @@ export type ConditionContext = {
   role: unknown;
 };
 
-export function resolveConditionValue(ref: SemanticIRValueRef, context: ConditionContext): unknown {
-  if (ref.kind === "literal") return ref.value;
+function resolveConditionValueDetailed(ref: SemanticIRValueRef, context: ConditionContext): { value: unknown; missing: boolean } {
+  if (ref.kind === "literal") return { value: ref.value, missing: false };
   let value = context[ref.root];
   for (const segment of ref.path) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(segment)) {
-      throw new Error(`Invalid condition path segment: ${segment}`);
+      throw new ConditionEvaluationError("type_invalid", `Invalid condition path segment: ${segment}`);
     }
-    if (value === null || typeof value !== "object" || !(segment in value)) return undefined;
+    if (value === null || typeof value !== "object" || !(segment in value)) return { value: undefined, missing: true };
     value = (value as Record<string, unknown>)[segment];
   }
-  return value;
+  return { value, missing: value === undefined };
 }
 
 function compare(op: "equals" | "in" | "greater_than" | "less_than", left: unknown, right: unknown): boolean {
   if (op === "equals") return Object.is(left, right);
-  if (op === "in") return Array.isArray(right) && right.some((entry) => Object.is(entry, left));
+  if (op === "in") {
+    if (!Array.isArray(right)) throw new ConditionEvaluationError("type_invalid", "in requires an array right operand");
+    return right.some((entry) => Object.is(entry, left));
+  }
   if (typeof left !== "number" || typeof right !== "number" || Number.isNaN(left) || Number.isNaN(right)) {
-    throw new Error(`${op} requires finite numeric values`);
+    throw new ConditionEvaluationError("type_invalid", `${op} requires finite numeric values`);
   }
   return op === "greater_than" ? left > right : left < right;
 }
 
-export function evaluateCondition(ast: SemanticIRConditionAst, context: ConditionContext): boolean {
+function evaluateConditionInternal(ast: SemanticIRConditionAst, context: ConditionContext): boolean {
   switch (ast.op) {
     case "equals":
-    case "in":
+    case "in": {
+      const left = resolveConditionValueDetailed(ast.args[0], context);
+      const right = resolveConditionValueDetailed(ast.args[1], context);
+      if (left.missing || right.missing) throw new ConditionEvaluationError("input_missing", "Condition input is missing");
+      return compare(ast.op, left.value, right.value);
+    }
     case "greater_than":
-    case "less_than":
-      return compare(ast.op, resolveConditionValue(ast.args[0], context), resolveConditionValue(ast.args[1], context));
+    case "less_than": {
+      const left = resolveConditionValueDetailed(ast.args[0], context);
+      const right = resolveConditionValueDetailed(ast.args[1], context);
+      if (left.missing || right.missing) throw new ConditionEvaluationError("input_missing", "Condition input is missing");
+      return compare(ast.op, left.value, right.value);
+    }
     case "exists":
-      return resolveConditionValue(ast.args[0], context) !== undefined;
+      return !resolveConditionValueDetailed(ast.args[0], context).missing;
     case "not":
-      return !evaluateCondition(ast.args[0], context);
+      return !evaluateConditionInternal(ast.args[0], context);
     case "all":
-      return ast.args.every((child) => evaluateCondition(child, context));
+      return ast.args.every((child) => evaluateConditionInternal(child, context));
     case "any":
-      return ast.args.some((child) => evaluateCondition(child, context));
+      return ast.args.some((child) => evaluateConditionInternal(child, context));
   }
+}
+
+export function evaluateCondition(ast: SemanticIRConditionAst, context: ConditionContext): boolean {
+  return evaluateConditionInternal(ast, context);
+}
+
+export function resolveConditionValue(ref: SemanticIRValueRef, context: ConditionContext): unknown {
+  return resolveConditionValueDetailed(ref, context).value;
 }
 
 export function validateConditionAst(ast: unknown, path = "condition"): string[] {
@@ -129,8 +161,11 @@ export function selectSemanticRoute(args: {
       return matched;
     } catch (error) {
       evaluations.push({ flowId: transition.flowId, priority: transition.priority });
+      const code = error instanceof ConditionEvaluationError && error.diagnostic === "input_missing"
+        ? "IR_ROUTE_CONDITION_INPUT_MISSING"
+        : "IR_ROUTE_CONDITION_TYPE_INVALID";
       throw new SemanticRouteSelectionError(
-        "IR_ROUTE_CONDITION_EVALUATION_FAILED",
+        code,
         error instanceof Error ? error.message : String(error),
         evaluations
       );

@@ -71,6 +71,62 @@ export function getTargetLoopIteration(args: {
   return args.currentLoopIteration;
 }
 
+export type LoopBudgetBinding = {
+  key?: string;
+  loopId: string;
+  maxRounds: number;
+  nextIteration: number;
+  kind: "scope" | "role";
+  grant: number;
+};
+
+/**
+ * Returns every budget that applies to a target activation.
+ *
+ * Semantic IR scopes and role-local `loop.max` declarations are independent
+ * guards. A role can therefore be subject to both, and passing one guard must
+ * never bypass the other.
+ */
+export function getLoopBudgetBindings(args: {
+  targetRoleId: string;
+  currentLoopIteration: number;
+  state: GraphState;
+  plan: ExecutionPlan;
+  lineageId?: string;
+}): LoopBudgetBinding[] {
+  const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
+  const scope = getLoopScopeForRole(args.plan, args.targetRoleId);
+  const bindings: LoopBudgetBinding[] = [];
+
+  if (scope && args.lineageId) {
+    const key = buildLoopScopeKey(args.lineageId, scope.loopId);
+    bindings.push({
+      key,
+      loopId: scope.loopId,
+      maxRounds: scope.maxRounds,
+      nextIteration: getTargetLoopIteration(args),
+      kind: "scope",
+      grant: args.state.loopBudgetAuthorizationsByScope?.[key] ?? 0
+    });
+  }
+
+  if (targetNode.loopMax !== undefined) {
+    const key = args.lineageId
+      ? buildLoopScopeKey(args.lineageId, `role:${args.targetRoleId}`)
+      : undefined;
+    bindings.push({
+      key,
+      loopId: `role:${args.targetRoleId}`,
+      maxRounds: targetNode.loopMax,
+      nextIteration: (args.state.loopIterations[args.targetRoleId] ?? 0) + 1,
+      kind: "role",
+      grant: key ? args.state.loopBudgetAuthorizationsByScope?.[key] ?? 0 : 0
+    });
+  }
+
+  return bindings;
+}
+
 export function wouldExceedLoopBudget(args: {
   targetRoleId: string;
   currentLoopIteration: number;
@@ -78,16 +134,9 @@ export function wouldExceedLoopBudget(args: {
   plan: ExecutionPlan;
   lineageId?: string;
 }): boolean {
-  const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
-  const scope = getLoopScopeForRole(args.plan, args.targetRoleId);
-  if (scope && args.lineageId) {
-    return getTargetLoopIteration(args) > scope.maxRounds;
-  }
-  if (targetNode.loopMax === undefined) {
-    return false;
-  }
-  // Failure window: the graph rejects any activation that would take the target node past its budget.
-  return getTargetLoopIteration(args) > targetNode.loopMax;
+  return getLoopBudgetBindings(args).some(
+    (binding) => binding.nextIteration > binding.maxRounds + binding.grant
+  );
 }
 
 export function projectStateSnapshot(args: {
@@ -123,14 +172,20 @@ export function projectStateSnapshot(args: {
     failureCountsByErrorCode: summary.failureCountsByErrorCode,
     finalOutputsByRoleId: Object.keys(args.state.finalOutputsByRoleId).length ? args.state.finalOutputsByRoleId : undefined,
     finalOutputRoleOrder: args.state.finalOutputRoleOrder.length ? args.state.finalOutputRoleOrder : undefined,
+    resultCommit: args.state.resultCommit,
     error: args.state.error || undefined,
     errorEnvelope: args.state.errorEnvelope || undefined,
     pendingReviewCount: countPendingHumanReviews(args.state),
+    joinScopes: args.state.joinScopes,
+    joinSourceOutcomesByScope: args.state.joinSourceOutcomesByScope,
     hasWaitingHumanReview: hasWaitingHumanReview(args.state),
     activeBranches,
     completedBranches,
     pendingJoinRoleIds,
     loopIterations: args.state.loopIterations,
+    loopCountersByScope: args.state.loopCountersByScope,
+    loopBudgetAuthorizationsByScope: args.state.loopBudgetAuthorizationsByScope,
+    loopBudgetReviews: Object.values(args.state.pendingReviewsById).filter((review) => review.kind === "loop_budget"),
     roleResults: args.state.roleResults,
     pendingReviewsById: args.state.pendingReviewsById,
     reviewHistoryByBranchId: args.state.reviewHistoryByBranchId,
@@ -316,6 +371,7 @@ export function createInitialGraphState(args: {
     loopIterations,
     loopCountersByScope: {},
     roleActivationsByScope,
+    artifactAllowedByBranchId: Object.fromEntries(Object.keys(branchRecords).map((branchId) => [branchId, []])),
     joinScopes: {},
     selectedEventByBranchId: {},
     finalOutputsByRoleId: {},

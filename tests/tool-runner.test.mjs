@@ -92,7 +92,7 @@ test("runCliTool captures large stdout payloads", async () => {
 
 test("runCliTool resolves path-like args from commandBaseDir", async () => {
   const result = await runCliTool({
-    tool: buildTool(["tests/fixtures/scripts/branch-tool.js", "PATH_A"]),
+    tool: buildTool(["tests/fixtures/scripts/branch-tool.js", "APPROVED"]),
     vars: {},
     workdir: process.cwd(),
     commandBaseDir: process.cwd(),

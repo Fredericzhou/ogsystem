@@ -7,6 +7,7 @@ import { validateConditionAst } from "./condition-ast.js";
 import { validateCapabilityPolicy } from "./capability-policy.js";
 import type { CompositeResponsibilitySpec, SemanticIR, SemanticIRJoinSpec, SemanticIRLoopScope } from "./semantic-ir.js";
 import { compileSubgraphSpec, type SubgraphSpec } from "./subgraph.js";
+import { BUSINESS_EVENT_KIND, isBusinessEvent } from "../business-events.js";
 
 function record(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(path + " must be an object");
@@ -100,6 +101,13 @@ function compileEvents(raw: unknown, snapshot: OgsSpecificationSnapshot): Semant
   const compiled: NonNullable<SemanticIR["events"]> = {};
   for (const [eventType, value] of Object.entries(events)) {
     const event = record(value, `events.${eventType}`);
+    const kind = event.kind;
+    if (kind !== undefined && kind !== "handoff" && kind !== "decision" && kind !== "correction" && kind !== "exception") {
+      throw new Error(`[IR_CONTRACT_INVALID] events.${eventType}.kind must be one of handoff, decision, correction, exception`);
+    }
+    if (kind !== undefined && isBusinessEvent(eventType) && BUSINESS_EVENT_KIND[eventType] !== kind) {
+      throw new Error(`[IR_CONTRACT_INVALID] events.${eventType}.kind must match the registered business event kind ${BUSINESS_EVENT_KIND[eventType]}`);
+    }
     const payload = event.payload === undefined ? undefined : record(event.payload, `events.${eventType}.payload`);
     const schemaRef = payload?.schema;
     let payloadSchema: unknown;
@@ -112,6 +120,7 @@ function compileEvents(raw: unknown, snapshot: OgsSpecificationSnapshot): Semant
     }
     const writable = event.writable_state_fields ?? event.writableStateFields;
     compiled[eventType] = {
+      ...(kind !== undefined ? { kind } : {}),
       ...(payloadSchema !== undefined ? { payloadSchema } : {}),
       ...(Array.isArray(writable) ? { writableStateFields: stringArray(writable, `events.${eventType}.writable_state_fields`) } : {})
     };

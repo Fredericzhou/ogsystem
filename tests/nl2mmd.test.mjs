@@ -75,7 +75,7 @@ test("nl2mmd txt graph renderer prints plain structure preview", async () => {
   assert.match(txt, /^\[开始\]$/m);
   assert.match(txt, /--START--> debate-moderator/);
   assert.match(txt, /^\[debate-summary\]$/m);
-  assert.match(txt, /--SUMMARY_READY--> \[结束\]/);
+  assert.match(txt, /--READY--> \[结束\]/);
   assert.match(
     txt,
     /debate-judge \[join=all_of, sources=debate-minimalist,debate-alignmentist\]/

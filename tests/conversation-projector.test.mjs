@@ -19,9 +19,9 @@ test("conversation projection maps generic flow channels without creating a feed
     runId: "run-contract",
     systemId: "generic-system",
     events: [
-      { type: "audit", roleId: "a", branchId: "a@0#1", lineageId: "line-a", loopIteration: 0, selectedEvent: "DONE", status: "ok", content: "token=secret-value", at },
+      { type: "audit", roleId: "a", branchId: "a@0#1", lineageId: "line-a", loopIteration: 0, selectedEvent: "READY", status: "ok", content: "token=secret-value", at },
       { type: "audit", roleId: "b", branchId: "b@0#2", lineageId: "line-a", selectedEvent: "FEEDBACK", channel: "feedback", targetRoleId: "a", status: "ok", at },
-      { type: "route_decision", roleId: "a", event: "DONE", targetRoleId: "b", selectedFlowId: "a:DONE:b", candidates: [{ flowId: "a:DONE:b", priority: 2, matched: true }, { flowId: "a:DONE:c", priority: 1, matched: false }], channel: "main", condition: "all_of", outcome: "selected", status: "selected", at },
+      { type: "route_decision", roleId: "a", event: "READY", targetRoleId: "b", selectedFlowId: "a:READY:b", candidates: [{ flowId: "a:READY:b", priority: 2, matched: true }, { flowId: "a:READY:c", priority: 1, matched: false }], channel: "main", condition: "all_of", outcome: "selected", status: "selected", at },
       { type: "error_flow", roleId: "a", targetRoleId: "error-handler", channel: "error", errorCode: "TOOL_FAILED", status: "failed", at },
       { type: "loop_round", roleId: "a", targetRoleId: "a", channel: "loop", backEdge: true, loopIteration: 2, status: "active", at }
     ]
@@ -33,10 +33,10 @@ test("conversation projection maps generic flow channels without creating a feed
   assert.equal(projection.items[1].route.presentationChannel, "normal");
   assert.equal(projection.items[2].kind, "route_decision");
   assert.equal(projection.items[2].route.presentationChannel, "primary");
-  assert.equal(projection.items[2].route.selectedFlowId, "a:DONE:b");
+  assert.equal(projection.items[2].route.selectedFlowId, "a:READY:b");
   assert.deepEqual(projection.items[2].route.candidates, [
-    { flowId: "a:DONE:b", priority: 2, matched: true },
-    { flowId: "a:DONE:c", priority: 1, matched: false }
+    { flowId: "a:READY:b", priority: 2, matched: true },
+    { flowId: "a:READY:c", priority: 1, matched: false }
   ]);
   assert.equal(projection.items[3].kind, "error_flow");
   assert.equal(projection.items[3].route.presentationChannel, "error");
@@ -64,7 +64,7 @@ test("conversation projection covers joins, snapshot results, review lifecycle, 
       stateVersion: 7,
       status: "stopped",
       roleResults: {
-        "a@0#1": { roleId: "a", branchId: "a@0#1", lineageId: "line-a", loopIteration: 0, event: "DONE", content: "completed output" }
+        "a@0#1": { roleId: "a", branchId: "a@0#1", lineageId: "line-a", loopIteration: 0, event: "READY", content: "completed output" }
       },
       joinScopes: {
         "join-1": { joinRoleId: "join", joinId: "join-1", lineageId: "line-a", loopIteration: 0, joinMode: "quorum_of", joinMin: 1, status: "waiting", expectedSourceRoleIds: ["a", "b"], readySourceRoleIds: ["a"], missingSourceRoleIds: ["b"], startedAt: at, timeoutSeconds: 60, timeoutAction: "pause" }
@@ -155,7 +155,7 @@ test("conversation pagination keeps snapshot observations visible after stream p
       stateVersion: 4,
       status: "running",
       roleResults: {
-        "snapshot-role@0#1": { roleId: "snapshot-role", branchId: "snapshot-role@0#1", event: "DONE" }
+        "snapshot-role@0#1": { roleId: "snapshot-role", branchId: "snapshot-role@0#1", event: "READY" }
       }
     }
   };

@@ -43,7 +43,7 @@ function plan() {
 %% system.version=1.0.0
 %% law.global=law.test
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `));
 }
 
@@ -87,7 +87,7 @@ test("Project Task evidence stays under its managed run directory when TeamVersi
 %% system.version=1.0.0
 %% law.global=law.test
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `),
       systemPath: resolve(assetWorkdir, "system.mmd"),
       prompt: "keep evidence in project",
@@ -497,7 +497,7 @@ test("project quality checks are deterministic and do not rely on model self-eva
     version: 1, runId: "run-quality", createdAt: "2026-01-01T00:00:00.000Z",
     designDigest: "d", workspaceDigest: "w", taskDigest: "t", fingerprintDigest: "f",
     entryNodeIds: ["writer"], backend: [],
-    nodeGraph: [{ nodeId: "writer", incoming: [], outgoing: [{ to: "output", event: "DONE" }], reviewRequired: false }],
+    nodeGraph: [{ nodeId: "writer", incoming: [], outgoing: [{ to: "output", event: "READY" }], reviewRequired: false }],
     executionPolicy: { mode: "dry-run", dryRun: true, singleWorker: true, allowExternalSideEffects: false },
     reviewPolicy: { requiredNodeIds: [] }
   };

@@ -88,7 +88,7 @@ test("transition planner parks reviewed outcomes as pending human review without
 %% review.rework.max.writer=2
 %% review.terminate.scope.writer=run
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({
@@ -113,10 +113,10 @@ writer[Role:writer] -->|DONE| end[结束]
       branch,
       committedAt: "2026-04-22T08:00:00.000Z",
       status: "ok",
-      selectedEvent: "DONE",
+      selectedEvent: "READY",
       storedResult: {
         roleId: "writer",
-        event: "DONE",
+        event: "READY",
         content: "draft only",
         data: { version: 1 },
         branchId: branch.branchId,
@@ -130,7 +130,7 @@ writer[Role:writer] -->|DONE| end[结束]
         loopIteration: 1,
         exitCode: 0,
         durationMs: 12,
-        selectedEvent: "DONE",
+        selectedEvent: "READY",
         status: "ok"
       }
     }
@@ -153,10 +153,10 @@ writer[Role:writer] -->|DONE| end[结束]
     lineageId: branch.lineageId,
     loopIteration: 1,
     executionId: "exec-writer-1",
-    selectedEvent: "DONE",
+    selectedEvent: "READY",
     draftResult: {
       roleId: "writer",
-      event: "DONE",
+      event: "READY",
       content: "draft only",
       data: { version: 1 },
       branchId: branch.branchId,
@@ -210,7 +210,7 @@ test("human review pause decision keeps the branch waiting and unreleased", () =
 %% exec.bind.writer=profile.writer
 %% review.mode.writer=required
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({ plan, prompt: "pause review" });
@@ -223,10 +223,10 @@ writer[Role:writer] -->|DONE| end[结束]
     lineageId: branch.lineageId,
     loopIteration: 1,
     executionId: "exec-writer-1",
-    selectedEvent: "DONE",
+    selectedEvent: "READY",
     draftResult: {
       roleId: "writer",
-      event: "DONE",
+      event: "READY",
       content: "draft only",
       branchId: branch.branchId,
       lineageId: branch.lineageId,
@@ -254,6 +254,11 @@ writer[Role:writer] -->|DONE| end[结束]
     review: state.pendingReviewsById["review.writer@1#1.r1"],
     decision: {
       reviewId: "review.writer@1#1.r1",
+      round: 1,
+      lineageId: branch.lineageId,
+      branchId: branch.branchId,
+      loopIteration: 1,
+      stateVersion: state.stateVersion,
       committedAt: "2026-04-22T08:01:00.000Z",
       decidedAt: "2026-04-22T08:01:00.000Z",
       decision: "pause",
@@ -275,6 +280,11 @@ writer[Role:writer] -->|DONE| end[结束]
       review: state.pendingReviewsById["review.writer@1#1.r1"],
       decision: {
         reviewId: "review.writer@1#1.r1",
+        round: 1,
+        lineageId: branch.lineageId,
+        branchId: branch.branchId,
+        loopIteration: 1,
+        stateVersion: state.stateVersion,
         committedAt: "2026-04-22T08:01:00.000Z",
         decidedAt: "2026-04-22T08:01:00.000Z",
         decision: "terminate",
@@ -287,6 +297,94 @@ writer[Role:writer] -->|DONE| end[结束]
   );
 });
 
+test("approved review parks at loop budget review when its next target is exhausted", () => {
+  const system = {
+    systemId: "review-approval-loop-budget",
+    systemVersion: "1",
+    entryRoleIds: ["writer"],
+    startDispatch: { mode: "all" },
+    roleIds: ["writer", "boundary", "summary"],
+    flows: [
+      { fromRoleId: "writer", toRoleId: "boundary", eventType: "READY" },
+      { fromRoleId: "boundary", toRoleId: "boundary", eventType: "REBUTTAL" },
+      { fromRoleId: "boundary", toRoleId: "summary", eventType: "SUMMARY" },
+      { fromRoleId: "summary", toRoleId: "__system_end__", eventType: "READY" }
+    ],
+    lawBinding: { globalLawRef: "law.test" },
+    executionBinding: {},
+    modelBinding: {}
+  };
+  const plan = createExecutionPlan(system);
+  plan.semanticIR = {
+    stateSchema: { defaults: {} },
+    transitions: [],
+    capabilities: { maxRoleActivationsByRoleId: {} },
+    loops: [{
+      loopId: "debate",
+      members: ["boundary"],
+      boundaryRoleId: "boundary",
+      counterField: "round",
+      maxRounds: 1,
+      onExhausted: "summary"
+    }]
+  };
+  const state = createInitialGraphState({ plan, prompt: "approve into exhausted loop" });
+  const branch = state.branchRecords["writer@1#1"];
+  state.branchRecords[branch.branchId] = { ...branch, status: "waiting_review" };
+  state.loopCountersByScope[`${branch.lineageId}::debate`] = 1;
+  const review = {
+    reviewId: "review.writer@1#1.r1",
+    roleId: "writer",
+    branchId: branch.branchId,
+    lineageId: branch.lineageId,
+    loopIteration: 1,
+    executionId: "exec-writer-1",
+    selectedEvent: "READY",
+    draftResult: {
+      roleId: "writer",
+      event: "READY",
+      content: "approved draft",
+      branchId: branch.branchId,
+      lineageId: branch.lineageId,
+      loopIteration: 1
+    },
+    requestedAt: "2026-04-22T08:00:00.000Z",
+    requestedByExecutionId: "exec-writer-1",
+    status: "pending",
+    round: 1,
+    stateVersion: state.stateVersion,
+    spec: { mode: "required", timeoutAction: "terminate", reworkTargetRoleId: "writer", terminateScope: "run" }
+  };
+  state.pendingReviewsById[review.reviewId] = review;
+  const transition = planHumanReviewDecisionTransition({
+    runId: "run-review-approval-loop-budget",
+    state,
+    plan,
+    review,
+    decision: {
+      reviewId: review.reviewId,
+      round: review.round,
+      lineageId: review.lineageId,
+      branchId: review.branchId,
+      loopIteration: review.loopIteration,
+      stateVersion: state.stateVersion,
+      committedAt: "2026-04-22T08:01:00.000Z",
+      decidedAt: "2026-04-22T08:01:00.000Z",
+      decision: "approve"
+    },
+    logger: createRunConsoleLogger(false),
+    rolePackagesByRoleId: reviewRolePackagesByRoleId
+  });
+
+  assert.equal(transition.update.status, "waiting_review");
+  assert.equal(transition.update.pendingReviewsById[review.reviewId].status, "resolved");
+  const budgetReview = Object.values(transition.update.pendingReviewsById).find((item) => item.kind === "loop_budget");
+  assert.ok(budgetReview);
+  assert.equal(transition.update.branchRecords?.[branch.branchId]?.status, "waiting_review");
+  assert.equal(transition.events[0].type, "human_review_approved");
+  assert.equal(transition.events[1].type, "loop_exhausted");
+});
+
 test("human review rework decision activates a rework branch with feedback context", () => {
   const system = parseSystemFromMermaidSource(`flowchart TD
 %% system.id=test.runtime.human-review.rework
@@ -296,7 +394,7 @@ test("human review rework decision activates a rework branch with feedback conte
 %% review.mode.writer=required
 %% review.rework.max.writer=2
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({ plan, prompt: "rework review" });
@@ -309,10 +407,10 @@ writer[Role:writer] -->|DONE| end[结束]
     lineageId: branch.lineageId,
     loopIteration: 1,
     executionId: "exec-writer-1",
-    selectedEvent: "DONE",
+    selectedEvent: "READY",
     draftResult: {
       roleId: "writer",
-      event: "DONE",
+      event: "READY",
       content: "draft only",
       data: { version: 1 },
       branchId: branch.branchId,
@@ -342,6 +440,11 @@ writer[Role:writer] -->|DONE| end[结束]
     review: state.pendingReviewsById["review.writer@1#1.r1"],
     decision: {
       reviewId: "review.writer@1#1.r1",
+      round: 1,
+      lineageId: branch.lineageId,
+      branchId: branch.branchId,
+      loopIteration: 1,
+      stateVersion: state.stateVersion,
       committedAt: "2026-04-22T08:01:00.000Z",
       decidedAt: "2026-04-22T08:01:00.000Z",
       decision: "rework",
@@ -367,7 +470,7 @@ writer[Role:writer] -->|DONE| end[结束]
     comment: "please tighten the argument",
     previousOutput: {
       roleId: "writer",
-      event: "DONE",
+      event: "READY",
       content: "draft only",
       data: { version: 1 },
       branchId: "writer@1#1",
@@ -386,7 +489,7 @@ test("human review terminate(run) maps to stopped", () => {
 %% review.mode.writer=required
 %% review.terminate.scope.writer=run
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `);
   const plan = createExecutionPlan(system);
   const state = createInitialGraphState({ plan, prompt: "terminate review" });
@@ -399,10 +502,10 @@ writer[Role:writer] -->|DONE| end[结束]
     lineageId: branch.lineageId,
     loopIteration: 1,
     executionId: "exec-writer-1",
-    selectedEvent: "DONE",
+    selectedEvent: "READY",
     draftResult: {
       roleId: "writer",
-      event: "DONE",
+      event: "READY",
       content: "draft only",
       branchId: branch.branchId,
       lineageId: branch.lineageId,
@@ -430,6 +533,11 @@ writer[Role:writer] -->|DONE| end[结束]
     review: state.pendingReviewsById["review.writer@1#1.r1"],
     decision: {
       reviewId: "review.writer@1#1.r1",
+      round: 1,
+      lineageId: branch.lineageId,
+      branchId: branch.branchId,
+      loopIteration: 1,
+      stateVersion: state.stateVersion,
       committedAt: "2026-04-22T08:01:00.000Z",
       decidedAt: "2026-04-22T08:01:00.000Z",
       decision: "terminate",

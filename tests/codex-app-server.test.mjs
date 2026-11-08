@@ -46,7 +46,7 @@ class FakeAppServerProcess extends EventEmitter {
         method: "turn/completed",
         params: {
           threadId: message.params.threadId,
-          turn: { status: "completed", items: [{ type: "agentMessage", id: "message-final", text: JSON.stringify({ event: "DONE", content: "ok" }) }] }
+          turn: { status: "completed", items: [{ type: "agentMessage", id: "message-final", text: JSON.stringify({ event: "READY", content: "ok" }) }] }
         }
       })}\n`));
     }
@@ -73,7 +73,7 @@ test("Codex app-server paginates models and resumes a persistent thread between 
 
     assert.equal(first.sessionId, "thread-new");
     assert.equal(second.sessionId, first.sessionId);
-    assert.match(first.stdout, /"event":"DONE"/);
+    assert.match(first.stdout, /"event":"READY"/);
     assert.deepEqual(child.requests.filter((entry) => entry.method.startsWith("thread/")).map((entry) => entry.method), ["thread/start", "thread/resume"]);
     assert.equal(child.requests.filter((entry) => entry.method === "turn/start").length, 2);
   } finally {

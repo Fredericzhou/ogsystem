@@ -27,7 +27,95 @@ export type JoinReadiness = {
   completedSourceRoleIds: string[];
   missingSourceRoleIds: string[];
   requiredSourceCount: number;
+  sourceStatusByRoleId: Record<string, "pending" | "arrived" | "skipped" | "failed">;
 };
+
+export function buildJoinSourceStatus(args: {
+  declaredSources: string[];
+  completedSourceRoleIds: string[];
+  skippedSourceRoleIds?: string[];
+  failedSourceRoleIds?: string[];
+}): Record<string, "pending" | "arrived" | "skipped" | "failed"> {
+  const completed = new Set(args.completedSourceRoleIds);
+  const skipped = new Set(args.skippedSourceRoleIds ?? []);
+  const failed = new Set(args.failedSourceRoleIds ?? []);
+  return Object.fromEntries(args.declaredSources.map((sourceRoleId) => [
+    sourceRoleId,
+    failed.has(sourceRoleId)
+      ? "failed"
+      : skipped.has(sourceRoleId)
+        ? "skipped"
+        : completed.has(sourceRoleId) ? "arrived" : "pending"
+  ]));
+}
+
+export function mergeJoinSourceStatus(
+  previous: "pending" | "arrived" | "skipped" | "failed" | undefined,
+  next: "pending" | "arrived" | "skipped" | "failed"
+): "pending" | "arrived" | "skipped" | "failed" {
+  if (previous === "failed" || next === "failed") return "failed";
+  if (previous === "arrived" || previous === "skipped") return previous;
+  return next;
+}
+
+function mergeJoinSourceStatusMaps(
+  ...maps: Array<Record<string, "pending" | "arrived" | "skipped" | "failed"> | undefined>
+): Record<string, "pending" | "arrived" | "skipped" | "failed"> {
+  const merged: Record<string, "pending" | "arrived" | "skipped" | "failed"> = {};
+  for (const map of maps) {
+    for (const [roleId, status] of Object.entries(map ?? {})) {
+      merged[roleId] = mergeJoinSourceStatus(merged[roleId], status);
+    }
+  }
+  return merged;
+}
+
+function getJoinSourceStatus(args: {
+  state: GraphState;
+  declaredSources: string[];
+  completedSourceRoleIds: string[];
+  lineageId: string;
+  loopIteration: number;
+  joinRoleId: string;
+}): Record<string, "pending" | "arrived" | "skipped" | "failed"> {
+  const scopeKey = JSON.stringify([args.joinRoleId, args.lineageId, args.loopIteration]);
+  const existing = args.state.joinScopes?.[scopeKey]?.sourceStatusByRoleId;
+  const recorded = args.state.joinSourceOutcomesByScope?.[scopeKey];
+  const failed = args.declaredSources.filter((sourceRoleId) => args.state.recentAudits.some((audit) =>
+    audit.roleId === sourceRoleId && audit.status === "failed" &&
+    audit.lineageId === args.lineageId && audit.loopIteration === args.loopIteration
+  ));
+  const mergedRecorded = mergeJoinSourceStatusMaps(recorded, existing);
+  return buildJoinSourceStatus({
+    declaredSources: args.declaredSources,
+    completedSourceRoleIds: [
+      ...args.completedSourceRoleIds,
+      ...Object.entries(mergedRecorded)
+        .filter(([, status]) => status === "arrived")
+        .map(([roleId]) => roleId)
+    ],
+    skippedSourceRoleIds: Object.entries(mergedRecorded)
+      .filter(([, status]) => status === "skipped").map(([roleId]) => roleId),
+    failedSourceRoleIds: [
+      ...failed,
+      ...Object.entries(mergedRecorded)
+        .filter(([, status]) => status === "failed").map(([roleId]) => roleId)
+    ]
+  });
+}
+
+function isJoinSourceBlocked(args: {
+  state: GraphState;
+  joinRoleId: string;
+  sourceRoleId: string;
+  lineageId: string;
+  loopIteration: number;
+}): boolean {
+  const key = JSON.stringify([args.joinRoleId, args.lineageId, args.loopIteration]);
+  const status = args.state.joinSourceOutcomesByScope?.[key]?.[args.sourceRoleId]
+    ?? args.state.joinScopes?.[key]?.sourceStatusByRoleId?.[args.sourceRoleId];
+  return status === "skipped" || status === "failed";
+}
 
 type RoutingModeHandler = {
   selectTargets(args: {
@@ -143,7 +231,8 @@ export function evaluateJoinNodeReadiness(args: {
       ready: true,
       completedSourceRoleIds: [],
       missingSourceRoleIds: [],
-      requiredSourceCount: 0
+      requiredSourceCount: 0,
+      sourceStatusByRoleId: {}
     };
   }
   const handler = joinModeHandlers.get(args.node.joinMode);
@@ -182,6 +271,13 @@ registerJoinModeHandler("all_of", {
   evaluate(args) {
     const declaredSources = Array.from(new Set(args.node.joinSources));
     const completedSourceRoleIds = declaredSources.filter((sourceRoleId) => {
+      if (isJoinSourceBlocked({
+        state: args.state,
+        joinRoleId: args.node.roleId,
+        sourceRoleId,
+        lineageId: args.currentBranch.lineageId,
+        loopIteration: args.currentBranch.loopIteration
+      })) return false;
       if (sourceRoleId === args.currentBranch.roleId) {
         return Boolean(args.currentResult);
       }
@@ -203,7 +299,15 @@ registerJoinModeHandler("all_of", {
       ready: completedSourceRoleIds.length >= requiredSourceCount,
       completedSourceRoleIds,
       missingSourceRoleIds,
-      requiredSourceCount
+      requiredSourceCount,
+      sourceStatusByRoleId: getJoinSourceStatus({
+        state: args.state,
+        declaredSources,
+        completedSourceRoleIds,
+        lineageId: args.currentBranch.lineageId,
+        loopIteration: args.currentBranch.loopIteration,
+        joinRoleId: args.node.roleId
+      })
     };
   }
 });
@@ -213,6 +317,13 @@ registerJoinModeHandler("quorum_of", {
   evaluate(args) {
     const declaredSources = Array.from(new Set(args.node.joinSources));
     const completedSourceRoleIds = declaredSources.filter((sourceRoleId) => {
+      if (isJoinSourceBlocked({
+        state: args.state,
+        joinRoleId: args.node.roleId,
+        sourceRoleId,
+        lineageId: args.currentBranch.lineageId,
+        loopIteration: args.currentBranch.loopIteration
+      })) return false;
       if (sourceRoleId === args.currentBranch.roleId) {
         return Boolean(args.currentResult);
       }
@@ -234,7 +345,15 @@ registerJoinModeHandler("quorum_of", {
       ready: completedSourceRoleIds.length >= requiredSourceCount,
       completedSourceRoleIds,
       missingSourceRoleIds,
-      requiredSourceCount
+      requiredSourceCount,
+      sourceStatusByRoleId: getJoinSourceStatus({
+        state: args.state,
+        declaredSources,
+        completedSourceRoleIds,
+        lineageId: args.currentBranch.lineageId,
+        loopIteration: args.currentBranch.loopIteration,
+        joinRoleId: args.node.roleId
+      })
     };
   }
 });

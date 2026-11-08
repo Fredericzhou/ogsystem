@@ -33,7 +33,7 @@ test("branch node follows explicit event output", async () => {
             toolRef: "tool.branch",
             runner: "local_shell",
             command: "node",
-            argsTemplate: [path.resolve("tests/fixtures/scripts/branch-tool.js"), "PATH_A"],
+            argsTemplate: [path.resolve("tests/fixtures/scripts/branch-tool.js"), "APPROVED"],
             stdinMode: "none"
           }
         ]
@@ -54,5 +54,5 @@ test("branch node follows explicit event output", async () => {
   });
   assert.strictEqual(result.status, "done", JSON.stringify({ error: result.error, errorEnvelope: result.errorEnvelope, finalRoleIds: result.finalRoleIds, auditTrail: result.auditTrail }, null, 2));
   assert.deepStrictEqual(result.finalRoleIds, ["test-branch-a"]);
-  assert.strictEqual(result.auditTrail[0]?.selectedEvent, "PATH_A");
+  assert.strictEqual(result.auditTrail[0]?.selectedEvent, "APPROVED");
 });

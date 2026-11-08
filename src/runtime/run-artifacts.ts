@@ -123,6 +123,37 @@ export type RunStopOutcomeRecord = {
 };
 
 const bufferedAppendStateByRunDir = new Map<string, BufferedAppendState>();
+const eventIdsByContext = new WeakMap<object, Set<string>>();
+const eventIdsLoadingByContext = new WeakMap<object, Promise<Set<string>>>();
+
+/**
+ * Loads durable event ids once for a run context. Appenders add ids as soon as they queue an
+ * event, so repeated idempotency checks do not reread the growing events file.
+ */
+export async function eventIdsForContext(context: RunContext): Promise<Set<string>> {
+  const cached = eventIdsByContext.get(context);
+  if (cached) return cached;
+  const loading = eventIdsLoadingByContext.get(context);
+  if (loading) return loading;
+  const load = (async (): Promise<Set<string>> => {
+    const eventIds = new Set<string>();
+    const existing = await readFile(context.eventsPath, "utf8").catch(() => "");
+    for (const line of existing.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const record = JSON.parse(line) as { eventId?: unknown };
+        if (typeof record.eventId === "string" && record.eventId) eventIds.add(record.eventId);
+      } catch {
+        // A partially flushed line is repaired by the existing buffered append recovery.
+      }
+    }
+    eventIdsByContext.set(context, eventIds);
+    eventIdsLoadingByContext.delete(context);
+    return eventIds;
+  })();
+  eventIdsLoadingByContext.set(context, load);
+  return load;
+}
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -1271,6 +1302,9 @@ export async function loadResumeGraphState(args: {
     typeof graphState.loopIterations !== "object" ||
     graphState.loopIterations === null ||
     Array.isArray(graphState.loopIterations) ||
+    typeof graphState.artifactAllowedByBranchId !== "object" ||
+    graphState.artifactAllowedByBranchId === null ||
+    Array.isArray(graphState.artifactAllowedByBranchId) ||
     typeof graphState.selectedEventByBranchId !== "object" ||
     graphState.selectedEventByBranchId === null ||
     Array.isArray(graphState.selectedEventByBranchId) ||
@@ -2176,11 +2210,19 @@ export async function appendEvent(
 ): Promise<void> {
   const encoded = `${stringifyRedactedUnknown(payload, context.redaction)}\n`;
   const state = getBufferedAppendState(context.runDir);
+  const eventId = typeof payload.eventId === "string" ? payload.eventId : undefined;
+  const eventIds = eventId ? await eventIdsForContext(context) : undefined;
+  if (eventId) {
+    if (eventIds?.has(eventId)) {
+      return;
+    }
+  }
   state.pendingByKey.set("events", {
     key: "events",
     path: context.eventsPath,
     content: `${state.pendingByKey.get("events")?.content ?? ""}${encoded}`
   });
+  if (eventIds && eventId) eventIds.add(eventId);
 
   const payloadType = typeof payload.type === "string" ? payload.type : "";
   const roleId = typeof payload.roleId === "string" ? payload.roleId : "";

@@ -255,18 +255,18 @@ for (const routingCase of [
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "specific",
-        mode: { kind: "event", event: "SPEC_DONE", content: "specific" },
-        allowedEvents: ["SPEC_DONE"]
+        mode: { kind: "event", event: "READY", content: "specific" },
+        allowedEvents: ["READY"]
       },
       {
         roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
+        mode: { kind: "event", event: "READY", content: "fallback" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -282,8 +282,8 @@ for (const routingCase of [
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_SPAWN| specific[Role:specific]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-specific[Role:specific] -->|SPEC_DONE| end[结束]
-fallback[Role:fallback] -->|FB_DONE| end[结束]
+specific[Role:specific] -->|READY| end[结束]
+fallback[Role:fallback] -->|READY| end[结束]
 `,
     expectedStatus: "done",
     expectedFinalRoleId: "specific",
@@ -299,13 +299,13 @@ fallback[Role:fallback] -->|FB_DONE| end[结束]
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
+        mode: { kind: "event", event: "READY", content: "fallback" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -317,7 +317,7 @@ fallback[Role:fallback] -->|FB_DONE| end[结束]
 
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| end[结束]
+fallback[Role:fallback] -->|READY| end[结束]
 `,
     expectedStatus: "done",
     expectedFinalRoleId: "fallback",
@@ -333,13 +333,13 @@ fallback[Role:fallback] -->|FB_DONE| end[结束]
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "other",
-        mode: { kind: "event", event: "OTHER_DONE", content: "other" },
-        allowedEvents: ["OTHER_DONE"]
+        mode: { kind: "event", event: "READY", content: "other" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -351,7 +351,7 @@ fallback[Role:fallback] -->|FB_DONE| end[结束]
 
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| other[Role:other]
-other[Role:other] -->|OTHER_DONE| end[结束]
+other[Role:other] -->|READY| end[结束]
 `,
     expectedStatus: "failed",
     expectedHandledByEvent: undefined,
@@ -406,22 +406,22 @@ test("handled failure last_context uses failed role input context projection", a
         roleId: "prep",
         mode: {
           kind: "event-data",
-          event: "PREP_DONE",
+          event: "READY",
           content: "raw-upstream-content",
           data: { detail: "mapped-context-value" }
         },
-        allowedEvents: ["PREP_DONE"]
+        allowedEvents: ["READY"]
       },
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
+        mode: { kind: "event", event: "READY", content: "fallback" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -434,9 +434,9 @@ test("handled failure last_context uses failed role input context projection", a
 %% context.map.worker.input=direct.data.detail
 
 start[开始] -->|START| prep[Role:prep]
-prep[Role:prep] -->|PREP_DONE| worker[Role:worker]
+prep[Role:prep] -->|READY| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| end[结束]
+fallback[Role:fallback] -->|READY| end[结束]
 `
   });
 
@@ -461,21 +461,21 @@ test("handled failure last_context falls back to upstream content and redacts se
         roleId: "prep",
         mode: {
           kind: "event",
-          event: "PREP_DONE",
+          event: "READY",
           content: "token=secret-token-value upstream fallback"
         },
-        allowedEvents: ["PREP_DONE"]
+        allowedEvents: ["READY"]
       },
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
+        mode: { kind: "event", event: "READY", content: "fallback" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -487,9 +487,9 @@ test("handled failure last_context falls back to upstream content and redacts se
 %% exec.bind.fallback=profile.fallback
 
 start[开始] -->|START| prep[Role:prep]
-prep[Role:prep] -->|PREP_DONE| worker[Role:worker]
+prep[Role:prep] -->|READY| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| end[结束]
+fallback[Role:fallback] -->|READY| end[结束]
 `
   });
 
@@ -514,13 +514,13 @@ test("handled failure last_context falls back to user prompt and truncates long 
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
+        mode: { kind: "event", event: "READY", content: "fallback" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -532,7 +532,7 @@ test("handled failure last_context falls back to user prompt and truncates long 
 
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| end[结束]
+fallback[Role:fallback] -->|READY| end[结束]
 `
   });
 
@@ -559,13 +559,13 @@ test("runtime keeps fail-stop behavior when error flow routing flag is disabled"
       {
         roleId: "worker",
         mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
+        allowedEvents: ["READY"],
         requireEvent: false
       },
       {
         roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
+        mode: { kind: "event", event: "READY", content: "fallback" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -577,7 +577,7 @@ test("runtime keeps fail-stop behavior when error flow routing flag is disabled"
 
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| end[结束]
+fallback[Role:fallback] -->|READY| end[结束]
 `
   });
 
@@ -610,18 +610,18 @@ test("runtime handles failure per-branch in parallel split and continues healthy
       },
       {
         roleId: "worker_ok",
-        mode: { kind: "event", event: "OK_DONE", content: "ok branch" },
-        allowedEvents: ["OK_DONE"]
+        mode: { kind: "event", event: "READY", content: "ok branch" },
+        allowedEvents: ["READY"]
       },
       {
         roleId: "compensate",
-        mode: { kind: "event", event: "COMP_DONE", content: "compensated" },
-        allowedEvents: ["COMP_DONE"]
+        mode: { kind: "event", event: "READY", content: "compensated" },
+        allowedEvents: ["READY"]
       },
       {
         roleId: "final",
-        mode: { kind: "event", event: "FINAL_DONE", content: "finalized" },
-        allowedEvents: ["FINAL_DONE"]
+        mode: { kind: "event", event: "READY", content: "finalized" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -638,12 +638,12 @@ test("runtime handles failure per-branch in parallel split and continues healthy
 %% exec.bind.final=profile.final
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_FAIL| worker_fail[Role:worker_fail]
-dispatch[Role:dispatch] -->|TO_OK| worker_ok[Role:worker_ok]
+dispatch[Role:dispatch] -->|READY| worker_fail[Role:worker_fail]
+dispatch[Role:dispatch] -->|READY| worker_ok[Role:worker_ok]
 worker_fail[Role:worker_fail] -->|ERROR| compensate[Role:compensate]
-worker_ok[Role:worker_ok] -->|OK_DONE| final[Role:final]
-compensate[Role:compensate] -->|COMP_DONE| final[Role:final]
-final[Role:final] -->|FINAL_DONE| end[结束]
+worker_ok[Role:worker_ok] -->|READY| final[Role:final]
+compensate[Role:compensate] -->|READY| final[Role:final]
+final[Role:final] -->|READY| end[结束]
 `
   });
 
@@ -720,13 +720,13 @@ test("parallel_split success path ignores ERROR* edges and duplicate targets", a
       },
       {
         roleId: "worker_ok",
-        mode: { kind: "event", event: "OK_DONE", content: "ok branch" },
-        allowedEvents: ["OK_DONE"]
+        mode: { kind: "event", event: "READY", content: "ok branch" },
+        allowedEvents: ["READY"]
       },
       {
         roleId: "compensate",
-        mode: { kind: "event", event: "COMP_DONE", content: "compensated" },
-        allowedEvents: ["COMP_DONE"]
+        mode: { kind: "event", event: "READY", content: "compensated" },
+        allowedEvents: ["READY"]
       }
     ],
     systemSource: `flowchart TD
@@ -741,12 +741,12 @@ test("parallel_split success path ignores ERROR* edges and duplicate targets", a
 %% exec.bind.compensate=profile.compensate
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_OK| worker_ok[Role:worker_ok]
-dispatch[Role:dispatch] -->|TO_OK_DUP| worker_ok[Role:worker_ok]
+dispatch[Role:dispatch] -->|READY| worker_ok[Role:worker_ok]
+dispatch[Role:dispatch] -->|READY| worker_ok[Role:worker_ok]
 dispatch[Role:dispatch] -->|ERROR| compensate[Role:compensate]
 dispatch[Role:dispatch] -->|ERROR.TOOL_EXECUTION_SPAWN| compensate[Role:compensate]
-worker_ok[Role:worker_ok] -->|OK_DONE| end[结束]
-compensate[Role:compensate] -->|COMP_DONE| end[结束]
+worker_ok[Role:worker_ok] -->|READY| end[结束]
+compensate[Role:compensate] -->|READY| end[结束]
 `
   });
 

@@ -28,6 +28,8 @@ import {
   type CompiledExecutionSnapshot
 } from "./compiler.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
+import { buildArtifactReference } from "./artifact-access.js";
+import type { ArtifactAccessAudit } from "./artifact-access.js";
 import {
   renderRolePrompt,
   estimateTokenCount,
@@ -638,6 +640,7 @@ export async function executeRoleNode(args: {
   let promptInput!: RolePromptInput;
   let inputContextForAudit: string | undefined;
   let prompt = "";
+  const artifactAccessAudits: ArtifactAccessAudit[] = [];
   const promptCalls: PromptCallMeterRecord[] = [];
   let projectedInputChars = 0;
   let renderedPromptChars = 0;
@@ -661,13 +664,27 @@ export async function executeRoleNode(args: {
       toolsByRef: args.toolsByRef,
     });
     assertToolCapability(resolvedBinding.toolRef);
-    promptInput = buildRolePromptInput({
-      roleId: args.roleId,
-      node: args.node,
-      branch: currentBranch,
-      state: args.state,
-      userProfile: args.userProfile
-    });
+    try {
+      promptInput = buildRolePromptInput({
+        roleId: args.roleId,
+        node: args.node,
+        branch: currentBranch,
+        state: args.state,
+        userProfile: args.userProfile,
+        onArtifactAccessAudit: (audit) => artifactAccessAudits.push(audit)
+      });
+    } finally {
+      for (const audit of artifactAccessAudits) {
+        await args.auditAppend?.({
+          type: "artifact.access",
+          ...audit,
+          roleId: args.roleId,
+          branchId,
+          loopIteration,
+          executionId: execution.executionId
+        });
+      }
+    }
     inputContextForAudit = sanitizeRoleInputContext(promptInput.input);
     projectedInputChars = promptInput.input.length;
     await args.auditAppend?.({
@@ -680,12 +697,17 @@ export async function executeRoleNode(args: {
       inputContext: inputContextForAudit
     });
     for (const condition of rolePackage.manifest.inputs.preconditions) {
-      if (!evaluateCondition(condition, {
-        state: args.state.businessState ?? {},
-        loop: { iteration: loopIteration, lineageId: currentBranch.lineageId },
-        event: {},
-        role: { roleId: args.roleId, input: promptInput.input }
-      })) throw new Error(`[IR_CONTRACT_INVALID] Role precondition failed: ${args.roleId}`);
+      try {
+        if (!evaluateCondition(condition, {
+          state: args.state.businessState ?? {},
+          loop: { iteration: loopIteration, lineageId: currentBranch.lineageId },
+          event: {},
+          role: { roleId: args.roleId, input: promptInput.input }
+        })) throw new Error(`[IR_CONTRACT_INVALID] Role precondition failed: ${args.roleId}`);
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("[IR_CONTRACT_INVALID]")) throw error;
+        throw new Error(`[IR_CONTRACT_INVALID] Role precondition failed: ${args.roleId}`);
+      }
     }
 
     if (args.contractPlan) {
@@ -1027,9 +1049,14 @@ export async function executeRoleNode(args: {
     });
     const reducedBusinessState = applySemanticBusinessState({ state: args.state, plan: args.plan, roleId: args.roleId, data: parsed.output.data });
     for (const condition of rolePackage.manifest.outputs.postconditions) {
-      if (!evaluateCondition(condition, {
-        state: reducedBusinessState ?? args.state.businessState ?? {}, loop: { iteration: loopIteration, lineageId: currentBranch.lineageId }, event: parsed.output.data ?? {}, role: { roleId: args.roleId, output: parsed.output }
-      })) throw new Error(`[IR_CONTRACT_INVALID] Role postcondition failed: ${args.roleId}`);
+      try {
+        if (!evaluateCondition(condition, {
+          state: reducedBusinessState ?? args.state.businessState ?? {}, loop: { iteration: loopIteration, lineageId: currentBranch.lineageId }, event: parsed.output.data ?? {}, role: { roleId: args.roleId, output: parsed.output }
+        })) throw new Error(`[IR_CONTRACT_INVALID] Role postcondition failed: ${args.roleId}`);
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("[IR_CONTRACT_INVALID]")) throw error;
+        throw new Error(`[IR_CONTRACT_INVALID] Role postcondition failed: ${args.roleId}`);
+      }
     }
     if (
       args.node.routingMode !== "parallel_split" &&
@@ -1116,7 +1143,21 @@ export async function executeRoleNode(args: {
         data: parsed.output.data,
         branchId,
         lineageId: currentBranch.lineageId,
-        loopIteration
+        loopIteration,
+        artifactRef: buildArtifactReference({
+          runId: args.runContext.runId,
+          executionId: execution.executionId,
+          mediaType: parsed.output.data !== undefined ? "application/json" : "text/plain"
+        }),
+        provenance: {
+          runId: args.runContext.runId,
+          executionId: execution.executionId,
+          producerRoleId: args.roleId,
+          branchId,
+          lineageId: currentBranch.lineageId,
+          loopIteration,
+          mediaType: parsed.output.data !== undefined ? "application/json" : "text/plain"
+        }
       },
       selectedEvent,
       executionId: execution.executionId,

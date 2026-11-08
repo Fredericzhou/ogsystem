@@ -1,6 +1,6 @@
 {
   "status": "selected",
-  "event": "DONE",
+  "event": "READY",
   "candidates": [
     { "flowId": "approved-route", "priority": 2, "matched": true },
     { "flowId": "fallback-route", "priority": 1, "matched": false }

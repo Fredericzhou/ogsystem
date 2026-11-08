@@ -409,7 +409,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "Usage:",
       "  ogs run review list <run-id> [--ogs-dir <path>]",
       "  ogs run review inspect <run-id> <review-id> [--ogs-dir <path>]",
-      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> --comment <reason> [--resume] [resume options] [--scope <branch|run>] [--ogs-dir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|continue|reject|pause|terminate> --comment <reason> [--target-role <role>] [--additional-budget <n>] [--resume] [resume options] [--scope <branch|run>] [--ogs-dir <path>]",
       "",
       "Examples:",
       "  ogs run review list <run-id>",
@@ -694,6 +694,17 @@ function asBool(value: string | boolean | undefined): boolean {
   return value === true;
 }
 
+function parseDryRunScenario(value: string | undefined): "review-reject-once" | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "review-reject-once") {
+    throw createCliInputError(
+      "CLI_INVALID_ARGS",
+      `--dry-run-scenario must be review-reject-once; received ${value}`
+    );
+  }
+  return value;
+}
+
 function parsePositiveIntegerOption(args: {
   optionName: string;
   value: string | undefined;
@@ -867,6 +878,7 @@ async function runAdapterCommand(args: {
   workdir: string;
   targetDir?: string;
   dryRun: boolean;
+  dryRunScenario?: "review-reject-once";
   cleanupExecutionHistory?: number;
   logRun: boolean;
   traceOut?: string;
@@ -902,7 +914,12 @@ async function runAdapterCommand(args: {
   }
 
   try {
-    await ensureProjectSkeleton({ workdir: args.workdir });
+    // A resume must replay the persisted asset set exactly. Initializing a missing
+    // project skeleton here would create default profiles/tools and change the
+    // runtime-assets fingerprint before the resume validation runs.
+    if (!args.resumeRunDir) {
+      await ensureProjectSkeleton({ workdir: args.workdir });
+    }
     let initializedRun: { runId: string; runDir: string } | undefined;
     const result = await runSystemWithAdapter({
       systemPath: args.systemPath,
@@ -915,6 +932,7 @@ async function runAdapterCommand(args: {
       workdir: args.workdir,
       targetDir: args.targetDir,
       dryRun: args.dryRun,
+      dryRunScenario: args.dryRunScenario,
       cleanupExecutionHistory: args.cleanupExecutionHistory,
       logRun: args.logRun,
       onRunInitialized(run) {
@@ -1215,6 +1233,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
     "print-graph-link": { type: "boolean" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
+    "dry-run-scenario": { type: "string" },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" }
   });
@@ -1250,6 +1269,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
       workdir,
       targetDir: asString(values["target-dir"]),
       dryRun: asBool(values["dry-run"]),
+      dryRunScenario: parseDryRunScenario(asString(values["dry-run-scenario"])),
       cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
       logRun: resolveLogRunOption(values),
       traceOut: asString(values["trace-out"]),
@@ -1296,6 +1316,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     port: { type: "string" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
+    "dry-run-scenario": { type: "string" },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" }
   });
@@ -1329,6 +1350,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
       workdir,
       targetDir: asString(values["target-dir"]),
       dryRun: asBool(values["dry-run"]),
+      dryRunScenario: parseDryRunScenario(asString(values["dry-run-scenario"])),
       cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
       logRun: resolveLogRunOption(values),
       traceOut: asString(values["trace-out"]),
@@ -1652,6 +1674,11 @@ async function runRunCommand(argv: string[]): Promise<void> {
       }
       const result = await inspectHumanReview(asString(values.workdir) ?? process.cwd(), runId, reviewId);
       console.log(JSON.stringify(result, null, 2));
+      if (Array.isArray(result.actionDiagnostics) && result.actionDiagnostics.length > 0) {
+        for (const diagnostic of result.actionDiagnostics) {
+          console.error(`[review] ${String(diagnostic)}`);
+        }
+      }
       return;
     }
     if (nested === "decide") {
@@ -1659,6 +1686,8 @@ async function runRunCommand(argv: string[]): Promise<void> {
         workdir: { type: "string" },
         decision: { type: "string" },
         comment: { type: "string" },
+        "target-role": { type: "string" },
+        "additional-budget": { type: "string" },
         scope: { type: "string" },
         resume: { type: "boolean" },
         system: { type: "string" },
@@ -1674,6 +1703,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
         port: { type: "string" },
         "trace-out": { type: "string" },
         "dry-run": { type: "boolean" },
+        "dry-run-scenario": { type: "string" },
         json: { type: "boolean" },
         help: { type: "boolean", short: "h" }
       });
@@ -1687,21 +1717,18 @@ async function runRunCommand(argv: string[]): Promise<void> {
       if (!runId || !reviewId || !decision) {
         throw createCliInputError(
           "CLI_RUN_REVIEW_DECIDE_MISSING_ARGS",
-          "run review decide requires <run-id> <review-id> --decision <approve|rework|pause|terminate>"
+          "run review decide requires <run-id> <review-id> --decision <approve|rework|continue|reject|pause|terminate>"
         );
       }
-      if (!["approve", "rework", "pause", "terminate"].includes(decision)) {
+      if (!["approve", "rework", "continue", "reject", "pause", "terminate"].includes(decision)) {
         throw createCliInputError(
           "CLI_RUN_REVIEW_DECIDE_INVALID_DECISION",
           `invalid --decision value: ${decision}`
         );
       }
       const shouldResume = asBool(values.resume);
-      if (shouldResume && decision !== "approve" && decision !== "rework") {
-        throw createCliInputError(
-          "CLI_RUN_REVIEW_RESUME_INVALID_DECISION",
-          `--resume is only valid with --decision approve or rework; received ${decision}.`
-        );
+      if (shouldResume && !["approve", "rework", "continue", "reject"].includes(decision)) {
+        throw createCliInputError("CLI_RUN_REVIEW_RESUME_INVALID_DECISION", `--resume is only valid with an advancing review decision; received ${decision}.`);
       }
       const scope = asString(values.scope);
       if (scope !== undefined && scope !== "branch" && scope !== "run") {
@@ -1716,15 +1743,18 @@ async function runRunCommand(argv: string[]): Promise<void> {
           "--scope is only valid with --decision terminate"
         );
       }
+      const additionalBudget = parsePositiveIntegerOption({ optionName: "--additional-budget", value: asString(values["additional-budget"]) });
       const workdir = asString(values.workdir) ?? process.cwd();
       const result = await writeHumanReviewDecision({
         workdir,
         runId,
         reviewId,
-        decision: decision as "approve" | "rework" | "pause" | "terminate",
+        decision: decision as "approve" | "rework" | "continue" | "reject" | "pause" | "terminate",
         comment: asString(values.comment),
         principal: createLocalControlPlanePrincipal(),
-        scope: scope as "branch" | "run" | undefined
+        scope: scope as "branch" | "run" | undefined,
+        targetRoleId: asString(values["target-role"]),
+        additionalBudget
       });
       if (!shouldResume) {
         console.log(JSON.stringify(result, null, 2));
@@ -1747,6 +1777,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
           workdir,
           targetDir: asString(values["target-dir"]),
           dryRun: asBool(values["dry-run"]),
+          dryRunScenario: parseDryRunScenario(asString(values["dry-run-scenario"])),
           cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
           logRun: resolveLogRunOption(values),
           traceOut: asString(values["trace-out"]),

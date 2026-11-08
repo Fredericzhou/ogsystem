@@ -22,7 +22,7 @@ import { discoverConfiguredPiModels } from "../dist/runtime/pi-adapter.js";
 import { discoverConfiguredKimiModels } from "../dist/runtime/kimi-adapter.js";
 import { discoverConfiguredQwenModels } from "../dist/runtime/qwen-adapter.js";
 import { syncProjectModels } from "../dist/runtime/project-lifecycle.js";
-import { BackendRegistry } from "../dist/runtime/model-backend-registry.js";
+import { BackendRegistry, opencodeBackendAdapter } from "../dist/runtime/model-backend-registry.js";
 
 const fixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
 
@@ -172,6 +172,22 @@ test("OpenCode discovery reports stable actionable errors", async () => {
     () => refreshModelCatalog({ workdir: process.cwd(), commandRunner: async () => { const error = new Error("missing"); error.code = "ENOENT"; throw error; } }),
     (error) => error instanceof ModelDiscoveryError && error.code === "MODEL_DISCOVERY_COMMAND_MISSING" && /PATH/.test(error.message)
   );
+});
+
+test("OpenCode discovery retries a transient truncated verbose response", async () => {
+  const fixture = await readFile(fixturePath, "utf8");
+  let attempts = 0;
+  const result = await opencodeBackendAdapter.discover({
+    workdir: process.cwd(),
+    commandRunner: async () => ({
+      stdout: attempts++ === 0 ? `${fixture}\nprovider/truncated` : fixture,
+      exitCode: 0
+    })
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(result.status, "runnable");
+  assert.ok(result.models.length > 0);
 });
 
 test("catalog freshness is explicit and does not rewrite the pinned selection", async () => {

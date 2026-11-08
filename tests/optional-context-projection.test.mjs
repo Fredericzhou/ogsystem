@@ -5,7 +5,7 @@ import { buildProjectedContext } from "../dist/runtime/role-input-projector.js";
 
 const roleResult = (roleId, data, lineageId = "lineage-1") => ({
   roleId,
-  event: "DONE",
+  event: "READY",
   content: `${roleId} output`,
   data,
   branchId: `${roleId}@1#1`,

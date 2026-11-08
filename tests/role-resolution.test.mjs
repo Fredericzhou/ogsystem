@@ -23,7 +23,7 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
   });
 
   const values = {
-    allowed_events: JSON.stringify(["MINIMALIST_DONE", "REBUTTAL_NEEDED"]),
+    allowed_events: JSON.stringify(["READY", "NEEDS_REWORK"]),
     user_preferences: "{\"language\":\"zh-CN\"}",
     task: "Explain why minimalism matters",
     input: "current debate round 1"
@@ -43,7 +43,7 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
     values
   });
   assert.ok(rendered.includes("Explain why minimalism matters"));
-  assert.ok(rendered.includes("MINIMALIST_DONE"));
+  assert.ok(rendered.includes("READY"));
   assert.ok(rendered.includes("\"language\":\"zh-CN\""));
 });
 
@@ -57,7 +57,7 @@ test("role prompts render the new input and user_preferences fields", async () =
     promptTemplate: rolePackage.promptTemplate,
     agent: rolePackage.agent,
     values: {
-      allowed_events: JSON.stringify(["SEND_MINIMALIST", "SEND_ALIGNMENTIST"]),
+      allowed_events: JSON.stringify(["READY", "READY"]),
       user_preferences: "{\"language\":\"zh-CN\"}",
       task: "Coordinate the next debate turn",
       input: "judge requested another round"
@@ -261,7 +261,7 @@ test("output schema rejects invalid payload", async () => {
   assert.doesNotThrow(() =>
     validateRoleOutputSchema({
       output: {
-        event: "MINIMALIST_DONE",
+        event: "READY",
         content: "Minimalism is the safest path",
         data: { stance: "minimal", confidence: 0.92 }
       },
@@ -276,7 +276,7 @@ test("error-handler compensation output requires a declared verified action", as
     roleId: "error-handler-base",
     roleRootDir: path.resolve("examples/ogs-gstacklike/og-roles/roles")
   });
-  const base = { event: "COMPENSATED", content: "restored" };
+  const base = { event: "READY", content: "restored" };
 
   assert.throws(() => validateRoleOutputSchema({
     output: base,
@@ -302,7 +302,7 @@ test("schema validation supports nested objects, arrays, enums, and additionalPr
     properties: {
       event: {
         type: "string",
-        enum: ["DONE"]
+        enum: ["READY"]
       },
       content: {
         type: "string"
@@ -330,7 +330,7 @@ test("schema validation supports nested objects, arrays, enums, and additionalPr
   assert.doesNotThrow(() =>
     validateRoleOutputSchema({
       output: {
-        event: "DONE",
+        event: "READY",
         content: "ok",
         data: {
           summary: "nested",
@@ -347,7 +347,7 @@ test("schema validation supports nested objects, arrays, enums, and additionalPr
     () =>
       validateRoleOutputSchema({
         output: {
-          event: "DONE",
+          event: "READY",
           content: "ok",
           data: {
             summary: "nested",

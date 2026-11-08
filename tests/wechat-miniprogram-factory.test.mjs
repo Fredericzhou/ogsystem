@@ -33,9 +33,9 @@ test("WeChat mini-program OGS flow feeds QA findings back, passes, then seals ve
     const runResult = JSON.parse(stdout);
     assert.equal(runResult.status, "done", JSON.stringify(runResult, null, 2));
     assert.equal(runResult.finalRoleIds?.at(-1), "seal");
-    assert.ok(runResult.stages.some((stage) => stage.roleId === "testing" && stage.selectedEvent === "TEST_FAIL"));
-    assert.ok(runResult.stages.some((stage) => stage.roleId === "testing" && stage.selectedEvent === "TEST_PASS"));
-    assert.ok(runResult.stages.some((stage) => stage.roleId === "seal" && stage.selectedEvent === "SEALED"));
+    assert.ok(runResult.stages.some((stage) => stage.roleId === "testing" && stage.selectedEvent === "REJECTED"));
+    assert.ok(runResult.stages.some((stage) => stage.roleId === "testing" && stage.selectedEvent === "READY"));
+    assert.ok(runResult.stages.some((stage) => stage.roleId === "seal" && stage.selectedEvent === "READY"));
 
     const runs = await readdir(join(project, ".ogs", "runs"));
     assert.equal(runs.length, 1);

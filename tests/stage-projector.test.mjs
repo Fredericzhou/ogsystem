@@ -13,7 +13,7 @@ test("projectStages marks non-terminal successful records as RUNNING", () => {
         exitCode: 0,
         durationMs: 1,
         status: "ok",
-        selectedEvent: "NEXT"
+        selectedEvent: "READY"
       },
       {
         at: "2026-04-11T00:00:01.000Z",
@@ -22,7 +22,7 @@ test("projectStages marks non-terminal successful records as RUNNING", () => {
         exitCode: 0,
         durationMs: 1,
         status: "ok",
-        selectedEvent: "DONE"
+        selectedEvent: "READY"
       }
     ]
   });

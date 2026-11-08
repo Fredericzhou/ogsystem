@@ -14,7 +14,7 @@ import { initializeRunContext } from "../dist/runtime/run-artifacts.js";
 import { loadFlowContractPlan } from "../dist/runtime/flow-contract.js";
 import { executeRoleNode } from "../dist/runtime/role-executor.js";
 import { OpencodeExecutionError } from "../dist/runtime/opencode-executor.js";
-import { buildProjectedContext } from "../dist/runtime/role-input-projector.js";
+import { buildProjectedContext, buildRolePromptInput } from "../dist/runtime/role-input-projector.js";
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
@@ -38,7 +38,7 @@ test("optional handoff context omits unavailable fields, preserves null, and kee
     roleResults: {
       "producer@1#1": {
         roleId: "producer",
-        event: "DONE",
+        event: "READY",
         content: "source",
         data: { explicitNull: null, present: { value: 7 } },
         branchId: branch.parentBranchId,
@@ -74,7 +74,7 @@ test("optional source data selectors omit an unavailable quorum member but rejec
     roleResults: {
       "worker-a@1#1": {
         roleId: "worker-a",
-        event: "DONE",
+        event: "READY",
         content: "A",
         data: { finding: "found" },
         branchId: "worker-a@1#1",
@@ -94,6 +94,51 @@ test("optional source data selectors omit an unavailable quorum member but rejec
     }),
     (error) => error.envelope.errorCode === "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED"
   );
+});
+
+test("quorum join prompt omits a late artifact outside the persisted invocation allow-set", () => {
+  const branch = {
+    branchId: "review@1#3",
+    roleId: "review",
+    loopIteration: 1,
+    lineageId: "lineage-1"
+  };
+  const state = {
+    userPrompt: "test",
+    humanReviewContextByBranchId: {},
+    artifactAllowedByBranchId: {
+      [branch.branchId]: ["artifact:run-1:worker-a"]
+    },
+    roleResults: {
+      "worker-a@1#1": {
+        roleId: "worker-a",
+        event: "READY",
+        content: "A",
+        artifactRef: { artifactId: "artifact:run-1:worker-a", runId: "run-1", mediaType: "text/plain" },
+        branchId: "worker-a@1#1",
+        lineageId: branch.lineageId,
+        loopIteration: branch.loopIteration
+      },
+      "worker-b@1#2": {
+        roleId: "worker-b",
+        event: "READY",
+        content: "B",
+        artifactRef: { artifactId: "artifact:run-1:worker-b", runId: "run-1", mediaType: "text/plain" },
+        branchId: "worker-b@1#2",
+        lineageId: branch.lineageId,
+        loopIteration: branch.loopIteration
+      }
+    }
+  };
+  const input = buildRolePromptInput({
+    roleId: branch.roleId,
+    node: { joinMode: "quorum_of", joinSources: ["worker-a", "worker-b"], outgoing: [] },
+    branch,
+    state
+  });
+  assert.deepEqual(JSON.parse(input.input), {
+    "worker-a": { event: "READY", content: "A" }
+  });
 });
 
 async function writeRolePackage(args) {
@@ -149,7 +194,7 @@ async function writeRolePackage(args) {
         properties: {
           event: {
             type: "string",
-            enum: args.allowedEvents
+            enum: [...new Set(args.allowedEvents)]
           },
           content: {
             type: "string"
@@ -179,17 +224,17 @@ test("executeRoleNode turns a failed Role Contract precondition into IR_CONTRACT
 %% law.global=law.console.base
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     roles: [{
       roleId: "writer",
-      allowedEvents: ["DONE"],
+      allowedEvents: ["READY"],
       contract: {
         contractVersion: 1,
         purpose: "Enforces a precondition",
         responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
         inputs: { preconditions: [{ op: "equals", args: [{ kind: "path", root: "state", path: ["ready"] }, { kind: "literal", value: true }] }] },
-        outputs: { events: ["DONE"], postconditions: [] },
+        outputs: { events: ["READY"], postconditions: [] },
         authority: { controlActions: [] },
         constraints: { writableStateFields: [], allowedTools: [] },
         failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
@@ -214,7 +259,7 @@ writer[Role:writer] -->|DONE| end[结束]
     runContext: fixture.runContext,
     executor: {
       async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
-      async execute() { executeCount += 1; return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "unexpected" }), stderr: "", args: [] }; }
+      async execute() { executeCount += 1; return { exitCode: 0, stdout: JSON.stringify({ event: "READY", content: "unexpected" }), stderr: "", args: [] }; }
     },
     workdir: fixture.tempRoot
   });
@@ -233,17 +278,17 @@ test("executeRoleNode turns a failed Role Contract postcondition into IR_CONTRAC
 %% law.global=law.console.base
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     roles: [{
       roleId: "writer",
-      allowedEvents: ["DONE"],
+      allowedEvents: ["READY"],
       contract: {
         contractVersion: 1,
         purpose: "Enforces a postcondition",
         responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
         inputs: { preconditions: [] },
-        outputs: { events: ["DONE"], postconditions: [{ op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: true }] }] },
+        outputs: { events: ["READY"], postconditions: [{ op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: true }] }] },
         authority: { controlActions: [] },
         constraints: { writableStateFields: [], allowedTools: [] },
         failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
@@ -267,7 +312,7 @@ writer[Role:writer] -->|DONE| end[结束]
     runContext: fixture.runContext,
     executor: {
       async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
-      async execute() { return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "ok", data: { approved: false } }), stderr: "", args: [] }; }
+      async execute() { return { exitCode: 0, stdout: JSON.stringify({ event: "READY", content: "ok", data: { approved: false } }), stderr: "", args: [] }; }
     },
     workdir: fixture.tempRoot
   });
@@ -285,18 +330,18 @@ test("executeRoleNode evaluates state postconditions after the declared reducer"
 %% law.global=law.console.base
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     roles: [{
       roleId: "writer",
-      allowedEvents: ["DONE"],
+      allowedEvents: ["READY"],
       contract: {
         contractVersion: 1,
         purpose: "Checks reduced business state",
         responsibility: { kind: "atomic", owns: ["approved"], contributes: [], doesNotOwn: [] },
         inputs: { preconditions: [] },
         outputs: {
-          events: ["DONE"],
+          events: ["READY"],
           postconditions: [{
             op: "equals",
             args: [{ kind: "path", root: "state", path: ["approved"] }, { kind: "literal", value: true }]
@@ -335,13 +380,13 @@ writer[Role:writer] -->|DONE| end[结束]
     executor: {
       async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
       async execute() {
-        return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "approved", data: { approved: true } }), stderr: "", args: [] };
+        return { exitCode: 0, stdout: JSON.stringify({ event: "READY", content: "approved", data: { approved: true } }), stderr: "", args: [] };
       }
     },
     workdir: fixture.tempRoot
   });
   assert.equal(result.status, "ok", result.error ?? result.failure?.message);
-  assert.equal(result.selectedEvent, "DONE");
+  assert.equal(result.selectedEvent, "READY");
 });
 
 test("executeRoleNode enforces an empty Role Contract tool allowlist", async () => {
@@ -355,17 +400,17 @@ test("executeRoleNode enforces an empty Role Contract tool allowlist", async () 
 %% exec.bind.writer=profile.fixture
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     roles: [{
       roleId: "writer",
-      allowedEvents: ["DONE"],
+      allowedEvents: ["READY"],
       contract: {
         contractVersion: 1,
         purpose: "Restricts execution tools",
         responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
         inputs: { preconditions: [] },
-        outputs: { events: ["DONE"], postconditions: [] },
+        outputs: { events: ["READY"], postconditions: [] },
         authority: { controlActions: [] },
         constraints: { writableStateFields: [], allowedTools: [] },
         failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
@@ -412,11 +457,11 @@ test("executeRoleNode denies tools when the Semantic capability role entry is ab
 %% exec.bind.writer=profile.fixture
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     roles: [{
       roleId: "writer",
-      allowedEvents: ["DONE"],
+      allowedEvents: ["READY"],
       contract: {
         constraints: { writableStateFields: [], allowedTools: ["tool.fixture"] }
       }
@@ -540,19 +585,19 @@ test("executeRoleNode projects deterministic context.map for ordinary nodes", as
 %% context.map.reviewer.task=global.task
 
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
     roles: [
-      { roleId: "intake", allowedEvents: ["DONE"] },
-      { roleId: "reviewer", allowedEvents: ["DONE"] }
+      { roleId: "intake", allowedEvents: ["READY"] },
+      { roleId: "reviewer", allowedEvents: ["READY"] }
     ]
   });
 
   const state = createInitialState(fixture.plan, "projection prompt");
   state.roleResults["intake@1#1"] = {
     roleId: "intake",
-    event: "DONE",
+    event: "READY",
     content: "intake complete",
     data: {
       brief: "short brief"
@@ -570,7 +615,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
     sessionLineageId: "reviewer@1#2",
     parentBranchId: "intake@1#1",
     activatedByRoleId: "intake",
-    activatedByEvent: "DONE",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[reviewerBranch.branchId] = reviewerBranch;
@@ -603,7 +648,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
         executionRequest = request;
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_projection",
@@ -661,9 +706,9 @@ test("executeRoleNode emits technical wait heartbeats while executor is still ru
 %% law.global=law.console.base
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
+    roles: [{ roleId: "writer", allowedEvents: ["READY"] }]
   });
 
   const state = createInitialState(fixture.plan, "slow prompt");
@@ -696,7 +741,7 @@ writer[Role:writer] -->|DONE| end[结束]
         await new Promise((resolve) => setTimeout(resolve, 35));
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_wait",
@@ -734,9 +779,9 @@ test("executeRoleNode projects current human review feedback for rework branches
 %% context.map.writer.previous_score=global.human_review.current.previous_output.data.score
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
+    roles: [{ roleId: "writer", allowedEvents: ["READY"] }]
   });
 
   const state = createInitialState(fixture.plan, "rework prompt");
@@ -748,7 +793,7 @@ writer[Role:writer] -->|DONE| end[结束]
     comment: "Please tighten the argument.",
     previousOutput: {
       roleId: "writer",
-      event: "DONE",
+      event: "READY",
       content: "v1 draft",
       data: {
         score: 67
@@ -785,7 +830,7 @@ writer[Role:writer] -->|DONE| end[结束]
       async execute() {
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_review_projection",
@@ -820,7 +865,7 @@ writer[Role:writer] -->|DONE| end[结束]
       comment: "Please tighten the argument.",
       previousOutput: {
         roleId: "writer",
-        event: "DONE",
+        event: "READY",
         content: "v1 draft",
         data: {
           score: 67
@@ -847,9 +892,9 @@ test("executeRoleNode omits optional human review fields when no rework context 
 %% context.map.writer.previous_output=global.human_review.current.previous_output.content?
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
+    roles: [{ roleId: "writer", allowedEvents: ["READY"] }]
   });
 
   const state = createInitialState(fixture.plan, "first pass prompt");
@@ -881,7 +926,7 @@ writer[Role:writer] -->|DONE| end[结束]
       async execute() {
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_review_optional",
@@ -916,27 +961,27 @@ test("executeRoleNode fails closed when join projection source is unavailable", 
 %% context.map.review.missing=source(worker_c).content
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
-dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
-dispatch[Role:dispatch] -->|TO_C| workerC[Role:worker_c]
-workerA[Role:worker_a] -->|A_DONE| review[Role:review]
-workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-workerC[Role:worker_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+dispatch[Role:dispatch] -->|READY| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| workerB[Role:worker_b]
+dispatch[Role:dispatch] -->|READY| workerC[Role:worker_c]
+workerA[Role:worker_a] -->|READY| review[Role:review]
+workerB[Role:worker_b] -->|READY| review[Role:review]
+workerC[Role:worker_c] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `,
     roles: [
-      { roleId: "dispatch", allowedEvents: ["TO_A", "TO_B", "TO_C"], requireEvent: false },
-      { roleId: "worker_a", allowedEvents: ["A_DONE"] },
-      { roleId: "worker_b", allowedEvents: ["B_DONE"] },
-      { roleId: "worker_c", allowedEvents: ["C_DONE"] },
-      { roleId: "review", allowedEvents: ["DONE"] }
+      { roleId: "dispatch", allowedEvents: ["READY", "READY", "READY"], requireEvent: false },
+      { roleId: "worker_a", allowedEvents: ["READY"] },
+      { roleId: "worker_b", allowedEvents: ["READY"] },
+      { roleId: "worker_c", allowedEvents: ["READY"] },
+      { roleId: "review", allowedEvents: ["READY"] }
     ]
   });
 
   const state = createInitialState(fixture.plan, "quorum prompt");
   state.roleResults["worker_a@1#2"] = {
     roleId: "worker_a",
-    event: "A_DONE",
+    event: "READY",
     content: "alpha",
     branchId: "worker_a@1#2",
     lineageId: "dispatch@1#1",
@@ -944,7 +989,7 @@ review[Role:review] -->|DONE| end[结束]
   };
   state.roleResults["worker_b@1#3"] = {
     roleId: "worker_b",
-    event: "B_DONE",
+    event: "READY",
     content: "beta",
     branchId: "worker_b@1#3",
     lineageId: "dispatch@1#1",
@@ -959,7 +1004,7 @@ review[Role:review] -->|DONE| end[结束]
     sessionLineageId: "review@1#5",
     parentBranchId: "worker_b@1#3",
     activatedByRoleId: "worker_b",
-    activatedByEvent: "B_DONE",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[reviewBranch.branchId] = reviewBranch;
@@ -992,7 +1037,7 @@ review[Role:review] -->|DONE| end[结束]
         executeCount += 1;
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_projection_fail",
@@ -1021,19 +1066,19 @@ test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null direc
 %% context.map.reviewer.missing=direct.data.detail.summary
 
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
     roles: [
-      { roleId: "intake", allowedEvents: ["DONE"] },
-      { roleId: "reviewer", allowedEvents: ["DONE"] }
+      { roleId: "intake", allowedEvents: ["READY"] },
+      { roleId: "reviewer", allowedEvents: ["READY"] }
     ]
   });
 
   const state = createInitialState(fixture.plan, "path missing prompt");
   state.roleResults["intake@1#1"] = {
     roleId: "intake",
-    event: "DONE",
+    event: "READY",
     content: "intake complete",
     data: {
       detail: null
@@ -1051,7 +1096,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
     sessionLineageId: "reviewer@1#2",
     parentBranchId: "intake@1#1",
     activatedByRoleId: "intake",
-    activatedByEvent: "DONE",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[reviewerBranch.branchId] = reviewerBranch;
@@ -1084,7 +1129,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
         executeCount += 1;
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_path_missing_direct",
@@ -1116,24 +1161,24 @@ test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null join 
 %% context.map.review.primary_risk=source(worker_b).data.risks.primary
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
-dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
-workerA[Role:worker_a] -->|A_DONE| review[Role:review]
-workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+dispatch[Role:dispatch] -->|READY| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| workerB[Role:worker_b]
+workerA[Role:worker_a] -->|READY| review[Role:review]
+workerB[Role:worker_b] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `,
     roles: [
-      { roleId: "dispatch", allowedEvents: ["TO_A", "TO_B"], requireEvent: false },
-      { roleId: "worker_a", allowedEvents: ["A_DONE"] },
-      { roleId: "worker_b", allowedEvents: ["B_DONE"] },
-      { roleId: "review", allowedEvents: ["DONE"] }
+      { roleId: "dispatch", allowedEvents: ["READY", "READY"], requireEvent: false },
+      { roleId: "worker_a", allowedEvents: ["READY"] },
+      { roleId: "worker_b", allowedEvents: ["READY"] },
+      { roleId: "review", allowedEvents: ["READY"] }
     ]
   });
 
   const state = createInitialState(fixture.plan, "join path missing prompt");
   state.roleResults["worker_a@1#2"] = {
     roleId: "worker_a",
-    event: "A_DONE",
+    event: "READY",
     content: "alpha",
     data: {
       risks: {
@@ -1146,7 +1191,7 @@ review[Role:review] -->|DONE| end[结束]
   };
   state.roleResults["worker_b@1#3"] = {
     roleId: "worker_b",
-    event: "B_DONE",
+    event: "READY",
     content: "beta",
     data: {
       risks: null
@@ -1164,7 +1209,7 @@ review[Role:review] -->|DONE| end[结束]
     sessionLineageId: "review@1#4",
     parentBranchId: "worker_b@1#3",
     activatedByRoleId: "worker_b",
-    activatedByEvent: "B_DONE",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[reviewBranch.branchId] = reviewBranch;
@@ -1197,7 +1242,7 @@ review[Role:review] -->|DONE| end[结束]
         executeCount += 1;
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_path_missing_join",
@@ -1229,12 +1274,12 @@ test("executeRoleNode validates role_input contracts against projected context o
 %% context.map.reviewer.task=global.task
 
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
     roles: [
-      { roleId: "intake", allowedEvents: ["DONE"] },
-      { roleId: "reviewer", allowedEvents: ["DONE"] }
+      { roleId: "intake", allowedEvents: ["READY"] },
+      { roleId: "reviewer", allowedEvents: ["READY"] }
     ]
   });
 
@@ -1299,7 +1344,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
   const state = createInitialState(fixture.plan, "contract prompt");
   state.roleResults["intake@1#1"] = {
     roleId: "intake",
-    event: "DONE",
+    event: "READY",
     content: "intake complete",
     data: {
       brief: "short brief"
@@ -1317,7 +1362,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
     sessionLineageId: "reviewer@1#2",
     parentBranchId: "intake@1#1",
     activatedByRoleId: "intake",
-    activatedByEvent: "DONE",
+    activatedByEvent: "READY",
     status: "active"
   };
   state.branchRecords[reviewerBranch.branchId] = reviewerBranch;
@@ -1351,7 +1396,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
         executeCount += 1;
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stdout: JSON.stringify({ event: "READY", content: "ok" }),
           stderr: "",
           args: [],
           sessionId: "ses_contract_fail",
@@ -1381,9 +1426,9 @@ test("executeRoleNode redacts prompt and audit artifacts by default", async () =
 %% system.version=1.0.0
 %% law.global=law.console.base
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["READY"] }]
   });
 
   const state = createInitialState(fixture.plan, "token=secret-value");
@@ -1414,7 +1459,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
       async execute() {
         return {
           exitCode: 0,
-          stdout: JSON.stringify({ event: "DONE", content: "api_key=top-secret" }),
+          stdout: JSON.stringify({ event: "READY", content: "api_key=top-secret" }),
           stderr: "Bearer abcdefghijklmnop",
           args: [],
           sessionId: "ses_redacted",
@@ -1443,9 +1488,9 @@ test("executeRoleNode falls back once for retryable model channel errors and met
 %% system.version=1.0.0
 %% law.global=law.console.base
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], fallback: { backend: "opencode", modelId: "fallback", modelRef: "fallback" } }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["READY"], fallback: { backend: "opencode", modelId: "fallback", modelRef: "fallback" } }]
   });
   assert.deepEqual(getExecutionPlanNode(fixture.plan, "reviewer").binding.fallback, { backend: "opencode", modelId: "fallback", modelRef: "fallback" });
   const state = createInitialState(fixture.plan, "fallback prompt");
@@ -1467,7 +1512,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
       async execute(request) {
         requests.push(request);
         if (requests.length === 1) throw new OpencodeExecutionError("HTTP 503 upstream unavailable");
-        return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "fallback worked" }), stderr: "", args: [] };
+        return { exitCode: 0, stdout: JSON.stringify({ event: "READY", content: "fallback worked" }), stderr: "", args: [] };
       }
     },
     workdir: fixture.tempRoot
@@ -1492,9 +1537,9 @@ test("executeRoleNode switches to the configured fallback backend", async () => 
 %% system.version=1.0.0
 %% law.global=law.console.base
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"], backend: "codex", modelId: "gpt-5.6-sol", fallback: { backend: "opencode", modelId: "openai/gpt-5.4", modelRef: "openai/gpt-5.4" } }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["READY"], backend: "codex", modelId: "gpt-5.6-sol", fallback: { backend: "opencode", modelId: "openai/gpt-5.4", modelRef: "openai/gpt-5.4" } }]
   });
   const state = createInitialState(fixture.plan, "cross backend fallback prompt");
   const requests = [];
@@ -1515,7 +1560,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
       async execute(request) {
         requests.push(request);
         if (requests.length === 1) throw new OpencodeExecutionError("HTTP 503 upstream unavailable");
-        return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "fallback worked" }), stderr: "", args: [] };
+        return { exitCode: 0, stdout: JSON.stringify({ event: "READY", content: "fallback worked" }), stderr: "", args: [] };
       }
     },
     workdir: fixture.tempRoot
@@ -1538,9 +1583,9 @@ test("executeRoleNode separately meters correction prompts and blocks them at th
 %% system.version=1.0.0
 %% law.global=law.console.base
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["READY"] }]
   });
   const state = createInitialState(fixture.plan, "correction prompt");
   let primaryPrompt;
@@ -1561,7 +1606,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
       async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
       async execute(request) {
         primaryPrompt = request.prompt;
-        const primaryOutput = JSON.stringify({ event: "DONE", content: "primary" });
+        const primaryOutput = JSON.stringify({ event: "READY", content: "primary" });
         await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "before", prompt: request.prompt });
         await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "after", prompt: request.prompt, output: primaryOutput });
         fixture.runContext.promptBudgetLedger.maxTotalPromptCharsPerRun = request.prompt.length;
@@ -1589,9 +1634,9 @@ test("executeRoleNode records a successful internal correction as its own call",
 %% system.version=1.0.0
 %% law.global=law.console.base
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
 `,
-    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
+    roles: [{ roleId: "reviewer", allowedEvents: ["READY"] }]
   });
   const state = createInitialState(fixture.plan, "correction prompt");
   const result = await executeRoleNode({
@@ -1610,7 +1655,7 @@ reviewer[Role:reviewer] -->|DONE| end[结束]
       supportsPromptCallMetering: true,
       async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
       async execute(request) {
-        const output = JSON.stringify({ event: "DONE", content: "corrected" });
+        const output = JSON.stringify({ event: "READY", content: "corrected" });
         const correctionPrompt = `${request.prompt}\nReturn exactly one JSON object.`;
         await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "before", prompt: request.prompt });
         await request.onPromptCall({ phase: "primary", ordinal: 1, stage: "after", prompt: request.prompt, output });

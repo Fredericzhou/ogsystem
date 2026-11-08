@@ -391,7 +391,7 @@ function buildItem(args: {
     (kind === "join" && (type.includes("activated") || type.includes("quorum_reached")) ? "activated" : undefined) ??
     (kind === "join" && type.includes("timed_out") ? "timed_out" : undefined) ??
     (kind === "human_review" && type.includes("requested") ? "pending" : undefined) ??
-    (kind === "human_review" && (type.includes("approved") || type.includes("rework") || type.includes("terminated")) ? "resolved" : undefined) ??
+    (kind === "human_review" && (type.includes("approved") || type.includes("rework") || type.includes("rejected") || type.includes("terminated")) ? "resolved" : undefined) ??
     (kind === "human_review" && type.includes("paused") ? "paused" : undefined);
   const status = normalizeConversationItemStatus(rawStatus);
   const result: ConversationItem = {
@@ -547,6 +547,7 @@ function snapshotItems(args: {
       expectedSources: join.expectedSourceRoleIds,
       readySources: join.readySourceRoleIds,
       missingSources: join.missingSourceRoleIds,
+      sourceStatuses: join.sourceStatusByRoleId,
       status: join.status,
       timedOut: join.status === "timed_out",
       finalAction: join.timeoutAction

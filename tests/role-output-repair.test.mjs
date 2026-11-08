@@ -18,7 +18,7 @@ async function setupRepairFixture(args) {
 %% exec.bind.${roleId}=profile.repair
 
 start[开始] -->|START| operator[Role:${roleId}]
-operator[Role:${roleId}] -->|DONE| end[结束]
+operator[Role:${roleId}] -->|READY| end[结束]
 `;
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-repair-"));
   const scriptPath = path.resolve(tempRoot, "repair-tool.js");
@@ -32,7 +32,7 @@ operator[Role:${roleId}] -->|DONE| end[结束]
     `const mode = process.argv[2];
 switch (mode) {
   case "wrapped-json":
-    console.log('assistant\\n\\\`\\\`\\\`json\\n{"event":"DONE","content":"wrapped"}\\n\\\`\\\`\\\`');
+    console.log('assistant\\n\\\`\\\`\\\`json\\n{"event":"READY","content":"wrapped"}\\n\\\`\\\`\\\`');
     break;
   case "unknown-event":
     console.log(JSON.stringify({ event: "NOT_DONE", content: "normalized" }));
@@ -46,7 +46,7 @@ switch (mode) {
   case "allowed-events-echo":
     console.log(
       JSON.stringify({
-        event: "DONE",
+        event: "READY",
         content: process.env.OGSYSTEM_ALLOWED_EVENTS ?? ""
       })
     );
@@ -146,7 +146,7 @@ test("runtime normalizes unknown event only when one event is allowed", async ()
 
   assert.strictEqual(result.status, "done");
   assert.strictEqual(result.finalRoleIds?.at(-1), "test-operator");
-  assert.equal(result.auditTrail[0]?.selectedEvent, "DONE");
+  assert.equal(result.auditTrail[0]?.selectedEvent, "READY");
   assert.equal(result.auditTrail[0]?.repair?.kind, "unknown_event");
 });
 
@@ -161,10 +161,10 @@ test("runtime fails fast on schema mismatch after parsing output", async () => {
 %% exec.bind.test-decision=profile.repair
 
 start[开始] -->|START| decision[Role:test-decision]
-decision[Role:test-decision] -->|PATH_A| branchA[Role:test-branch-a]
-decision[Role:test-decision] -->|PATH_B| branchB[Role:test-branch-b]
-branchA[Role:test-branch-a] -->|END_A| end[结束]
-branchB[Role:test-branch-b] -->|END_B| end[结束]
+decision[Role:test-decision] -->|APPROVED| branchA[Role:test-branch-a]
+decision[Role:test-decision] -->|REJECTED| branchB[Role:test-branch-b]
+branchA[Role:test-branch-a] -->|READY| end[结束]
+branchB[Role:test-branch-b] -->|READY| end[结束]
 `
   });
   const result = await runSystemWithAdapter({
@@ -211,9 +211,9 @@ test('runtime excludes ERROR* edges from role-facing allowed_events contract', a
 %% exec.bind.test-branch-a=profile.repair
 
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| end[结束]
 operator[Role:test-operator] -->|ERROR| branchA[Role:test-branch-a]
-branchA[Role:test-branch-a] -->|END_A| end[结束]
+branchA[Role:test-branch-a] -->|READY| end[结束]
 `
   });
   const result = await runSystemWithAdapter({
@@ -228,5 +228,5 @@ branchA[Role:test-branch-a] -->|END_A| end[结束]
 
   assert.strictEqual(result.status, "done");
   assert.strictEqual(result.finalRoleIds?.at(-1), "test-operator");
-  assert.deepStrictEqual(result.finalOutputsByRoleId["test-operator"], [{ content: "DONE" }]);
+  assert.deepStrictEqual(result.finalOutputsByRoleId["test-operator"], [{ content: "READY" }]);
 });

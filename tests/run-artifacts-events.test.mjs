@@ -84,7 +84,7 @@ test("timeline projection rebuilds machine-readable records from events", async 
         branchId: "role-a@1#1",
         lineageId: "role-a@1#1",
         loopIteration: 1,
-        selectedEvent: "DONE",
+        selectedEvent: "READY",
         status: "ok",
         durationMs: 1
       }),
@@ -112,7 +112,7 @@ test("timeline projection rebuilds machine-readable records from events", async 
   );
   assert.equal(records[0].type, "run_start");
   assert.equal(records[1].roleId, "role-a");
-  assert.equal(records[1].event, "DONE");
+  assert.equal(records[1].event, "READY");
   assert.equal(records[1].status, "ok");
   assert.equal(records[1].durationMs, 1);
   assert.equal(records[2].errorCode, "TOOL_EXECUTION_FAILED");
@@ -225,4 +225,29 @@ test("appendEvent keeps redacted events as single-line jsonl records", async () 
   assert.equal(typeof record.stdoutPreview, "string");
   assert.match(record.stdoutPreview, /\[REDACTED\]/);
   assert.doesNotMatch(record.stdoutPreview, /secret-token-value/);
+});
+
+test("appendEvent de-duplicates a stable result commit event id", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-result-event-idempotency-"));
+  const logsDir = path.resolve(tempRoot, "logs");
+  const runContext = {
+    runDir: tempRoot,
+    eventsPath: path.resolve(tempRoot, "events.ndjson"),
+    engineLogPath: path.resolve(logsDir, "engine.ndjson"),
+    roleLogsDir: path.resolve(logsDir, "roles"),
+    redaction: { enabled: true }
+  };
+  await mkdir(runContext.roleLogsDir, { recursive: true });
+  const event = {
+    type: "result_committed",
+    eventId: "result_committed:result:run-1",
+    resultId: "result:run-1",
+    at: "2026-04-18T00:00:00.000Z"
+  };
+  await appendEvent(runContext, event);
+  await appendEvent(runContext, event);
+  await flushBufferedRunArtifacts(runContext);
+  const lines = (await readFile(runContext.eventsPath, "utf8")).trim().split("\n");
+  assert.equal(lines.length, 1);
+  assert.equal(JSON.parse(lines[0]).eventId, event.eventId);
 });

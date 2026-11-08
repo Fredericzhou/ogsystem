@@ -114,9 +114,9 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "start[开始] -->|START| <split>[Role:<split-role>]",
       "<split>[Role:<split-role>] -->|<EVENT>| <worker-a>[Role:<worker-a>]",
       "<split>[Role:<split-role>] -->|<EVENT>| <worker-b>[Role:<worker-b>]",
-      "<worker-a>[Role:<worker-a>] -->|<DONE>| <join>[Role:<join-role>]",
-      "<worker-b>[Role:<worker-b>] -->|<DONE>| <join>[Role:<join-role>]",
-      "<join>[Role:<join-role>] -->|DONE| end[结束]"
+      "<worker-a>[Role:<worker-a>] -->|<READY>| <join>[Role:<join-role>]",
+      "<worker-b>[Role:<worker-b>] -->|<READY>| <join>[Role:<join-role>]",
+      "<join>[Role:<join-role>] -->|READY| end[结束]"
     ]
   },
   {
@@ -149,9 +149,9 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "start[开始] -->|START| <lead>[Role:<lead-role>]",
       "<lead>[Role:<lead-role>] -->|<EVENT>| <consultant-a>[Role:<consultant-a>]",
       "<lead>[Role:<lead-role>] -->|<EVENT>| <consultant-b>[Role:<consultant-b>]",
-      "<consultant-a>[Role:<consultant-a>] -->|<DONE>| <merge>[Role:<join-role>]",
-      "<consultant-b>[Role:<consultant-b>] -->|<DONE>| <merge>[Role:<join-role>]",
-      "<merge>[Role:<join-role>] -->|DONE| end[结束]"
+      "<consultant-a>[Role:<consultant-a>] -->|<READY>| <merge>[Role:<join-role>]",
+      "<consultant-b>[Role:<consultant-b>] -->|<READY>| <merge>[Role:<join-role>]",
+      "<merge>[Role:<join-role>] -->|READY| end[结束]"
     ]
   },
   {
@@ -182,7 +182,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% route.order.<from-role>=<sibling-a>,<sibling-b>",
       "start[开始] -->|START| <source>[Role:<source-role>]",
       "<source>[Role:<source-role>] -->|<EVENT>| <target>[Role:<target-role>]",
-      "<target>[Role:<target-role>] -->|DONE| end[结束]"
+      "<target>[Role:<target-role>] -->|READY| end[结束]"
     ]
   },
   {
@@ -206,9 +206,9 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
       "start[开始] -->|START| <main>[Role:<main-role>]",
-      "<main>[Role:<main-role>] -->|DONE| end[结束]",
+      "<main>[Role:<main-role>] -->|READY| end[结束]",
       "<main>[Role:<main-role>] -->|ERROR.<CODE>| <recovery>[Role:<recovery-role>]",
-      "<recovery>[Role:<recovery-role>] -->|DONE| end[结束]"
+      "<recovery>[Role:<recovery-role>] -->|READY| end[结束]"
     ]
   },
   {
@@ -220,8 +220,8 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "loop.max.<role>"],
     requiredSlots: [
       slot("loop-cap", "Declare the role-local iteration limit.", ["loop.max.review=3"]),
-      slot("loop-back", "Add the return edge and the exit edge.", ["review -->|RETRY| intake", "review -->|DONE| end[结束]"]),
-      slot("exit", "Describe the terminating condition or stop event.", ["DONE"])
+      slot("loop-back", "Add the return edge and the exit edge.", ["review -->|NEEDS_REWORK| intake", "review -->|READY| end[结束]"]),
+      slot("exit", "Describe the terminating condition or stop event.", ["READY"])
     ],
     optionalSlots: [
       slot("loop-summary", "Capture how the loop state is projected or summarized.", ["context.map.review.last_attempt=direct.content"], false)
@@ -230,8 +230,8 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "flowchart TD",
       "%% loop.max.<role>=<N>",
       "start[开始] -->|START| <loop>[Role:<role>]",
-      "<loop>[Role:<role>] -->|RETRY| <loop>[Role:<role>]",
-      "<loop>[Role:<role>] -->|DONE| end[结束]"
+      "<loop>[Role:<role>] -->|NEEDS_REWORK| <loop>[Role:<role>]",
+      "<loop>[Role:<role>] -->|READY| end[结束]"
     ]
   },
   {
@@ -244,7 +244,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("reviewed-role", "Declare the role whose durable result requires review.", ["review.mode.writer=required"]),
       slot("decision", "Describe control-plane decisions and the role's normal event routes.", ["approve / rework / pause / terminate"]),
-      slot("post-review", "Describe the downstream path resumed after an approved draft.", ["writer -->|DONE| end[结束]"])
+      slot("post-review", "Describe the downstream path resumed after an approved draft.", ["writer -->|READY| end[结束]"])
     ],
     optionalSlots: [
       slot("review-policy", "Declare review timeout, rework, and termination policy; timeout is currently persisted policy, not an automatic timer.", ["review.timeout.action.writer=pause", "review.rework.max.writer=3"], false)
@@ -281,7 +281,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% exec.bind.<exec-role>=<profile-id>",
       "start[开始] -->|START| <model>[Role:<model-role>]",
       "<model>[Role:<model-role>] -->|NEXT| <exec>[Role:<exec-role>]",
-      "<exec>[Role:<exec-role>] -->|DONE| end[结束]"
+      "<exec>[Role:<exec-role>] -->|READY| end[结束]"
     ]
   }
 ] as const;

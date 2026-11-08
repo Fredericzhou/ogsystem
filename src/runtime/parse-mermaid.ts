@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
+import { validateSystemEventBoundaries } from "./business-events.js";
 import { hasJoinModeHandler, hasRoutingModeHandler } from "./graph-mode-registry.js";
 import { createRuntimeError, RuntimeError } from "./runtime-errors.js";
 import {
@@ -1414,6 +1415,17 @@ export function parseSystemFromMermaidSource(source: string): SystemDefinition {
 export async function loadSystemFromMermaid(path: string): Promise<SystemDefinition> {
   const source = await readFile(path, "utf8");
   const system = parseSystemFromMermaidSource(source);
+  const repositoryExamplesRoot = resolve(process.cwd(), "examples");
+  if (resolve(path).startsWith(repositoryExamplesRoot + "/")) {
+    const eventBoundaryErrors = validateSystemEventBoundaries(system);
+    if (eventBoundaryErrors.length > 0) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_BUSINESS_EVENT_INVALID",
+        message: eventBoundaryErrors.join("; ")
+      });
+    }
+  }
   if (!system.graph?.handoffContracts) {
     return system;
   }

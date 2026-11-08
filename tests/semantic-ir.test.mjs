@@ -23,6 +23,8 @@ import {
   validateConditionAst,
   validateSemanticIR
 } from "../dist/runtime/adapter.js";
+import { buildJoinSourceStatus, mergeJoinSourceStatus } from "../dist/runtime/graph-mode-registry.js";
+import { buildArtifactReference, createArtifactResolver } from "../dist/runtime/artifact-access.js";
 import { validateSemanticRoleContracts } from "../dist/runtime/adapter.js";
 import { loadSystemFromMermaid } from "../dist/runtime/parse-mermaid.js";
 import {
@@ -31,7 +33,7 @@ import {
 } from "../dist/runtime/graph-runner.js";
 import { createInitialGraphState } from "../dist/runtime/graph-runtime-state.js";
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
-import { planTransition } from "../dist/runtime/transition-planner.js";
+import { planTransition, planHumanReviewDecisionTransition } from "../dist/runtime/transition-planner.js";
 import { createRunConsoleLogger } from "../dist/runtime/console-run-log.js";
 
 function validIr() {
@@ -42,7 +44,7 @@ function validIr() {
       { roleId: "a", binding: {}, modes: { default: {} }, defaultMode: "default" },
       { roleId: "b", binding: {}, modes: { default: {} }, defaultMode: "default" }
     ],
-    transitions: [{ flowId: "a-b", fromRoleId: "a", toRoleId: "b", eventType: "NEXT", channel: "normal", priority: 0 }],
+    transitions: [{ flowId: "a-b", fromRoleId: "a", toRoleId: "b", eventType: "READY", channel: "normal", priority: 0 }],
     stateSchema: { schemaVersion: 1, ref: "state.json" },
     loops: [],
     joins: [],
@@ -60,11 +62,11 @@ test("execution role mode is explicit and filters declared events", () => {
       incoming: [],
       outgoing: [
         { fromRoleId: "reviewer", toRoleId: "approve", eventType: "APPROVE" },
-        { fromRoleId: "reviewer", toRoleId: "rework", eventType: "REWORK" }
+        { fromRoleId: "reviewer", toRoleId: "rework", eventType: "NEEDS_REWORK" }
       ],
       joinSources: [],
       executionMode: "judge_feedback",
-      modeAllowedEvents: ["REWORK"],
+      modeAllowedEvents: ["NEEDS_REWORK"],
       binding: { kind: "noop" },
       isTerminal: false
     },
@@ -79,7 +81,7 @@ test("execution role mode is explicit and filters declared events", () => {
   });
   assert.equal(input.role_id, "reviewer");
   assert.equal(input.mode, "judge_feedback");
-  assert.deepEqual(JSON.parse(input.allowed_events), ["REWORK"]);
+  assert.deepEqual(JSON.parse(input.allowed_events), ["NEEDS_REWORK"]);
 });
 
 test("semantic IR digest is stable across object key order", () => {
@@ -94,6 +96,19 @@ test("Join scope key separates lineages while display id remains deterministic",
   const second = { ...first, lineageId: "l2" };
   assert.notEqual(buildJoinScopeKey(first), buildJoinScopeKey(second));
   assert.equal(buildJoinDisplayId(first), "j#l1#1");
+});
+
+test("Join source status keeps skipped and failed distinct", () => {
+  assert.deepEqual(buildJoinSourceStatus({
+    declaredSources: ["finance", "legal", "security"],
+    completedSourceRoleIds: ["finance"],
+    skippedSourceRoleIds: ["security"],
+    failedSourceRoleIds: ["legal"]
+  }), {
+    finance: "arrived",
+    legal: "failed",
+    security: "skipped"
+  });
 });
 
 test("versioned state store linearizes CAS and duplicate commits", () => {
@@ -164,7 +179,7 @@ test("checkpoint recovery does not replay a WAL record already included in versi
 });
 
 test("restricted conditions evaluate only allowlisted paths", () => {
-  const context = { state: { score: 3 }, loop: {}, event: { type: "NEXT" }, role: {} };
+  const context = { state: { score: 3 }, loop: {}, event: { type: "READY" }, role: {} };
   assert.equal(evaluateCondition({ op: "greater_than", args: [
     { kind: "path", root: "state", path: ["score"] },
     { kind: "literal", value: 2 }
@@ -179,20 +194,54 @@ test("restricted conditions evaluate only allowlisted paths", () => {
     { kind: "path", root: "state", path: ["bad-key"] },
     { kind: "literal", value: 1 }
   ] }, context), /Invalid condition path segment/);
+  assert.equal(evaluateCondition({ op: "exists", args: [
+    { kind: "path", root: "state", path: ["nullable"] }
+  ] }, { ...context, state: { nullable: null } }), true);
+  assert.equal(evaluateCondition({ op: "equals", args: [
+    { kind: "path", root: "state", path: ["nullable"] },
+    { kind: "literal", value: null }
+  ] }, { ...context, state: { nullable: null } }), true);
+  assert.throws(
+    () => evaluateCondition({ op: "in", args: [
+      { kind: "literal", value: "ready" },
+      { kind: "literal", value: "not-an-array" }
+    ] }, context), /array right operand/);
+  assert.throws(
+    () => selectSemanticRoute({
+      transitions: [{ flowId: "missing", eventType: "READY", toRoleId: "b", priority: 1, condition: {
+        op: "equals",
+        args: [{ kind: "path", root: "state", path: ["absent"] }, { kind: "literal", value: true }]
+      } }],
+      eventType: "READY",
+      context: { state: {}, loop: {}, event: {}, role: {} }
+    }),
+    (error) => error.code === "IR_ROUTE_CONDITION_INPUT_MISSING"
+  );
+  assert.throws(
+    () => selectSemanticRoute({
+      transitions: [{ flowId: "typed", eventType: "READY", toRoleId: "b", priority: 1, condition: {
+        op: "greater_than",
+        args: [{ kind: "path", root: "state", path: ["value"] }, { kind: "literal", value: 1 }]
+      } }],
+      eventType: "READY",
+      context: { state: { value: "one" }, loop: {}, event: {}, role: {} }
+    }),
+    (error) => error.code === "IR_ROUTE_CONDITION_TYPE_INVALID"
+  );
 });
 
 test("semantic route selection is priority based and fail-closed on ambiguity", () => {
   const transitions = [
-    { flowId: "fallback", eventType: "NEXT", toRoleId: "b", priority: 0 },
-    { flowId: "conditional", eventType: "NEXT", toRoleId: "c", priority: 1, condition: { op: "equals", args: [{ kind: "path", root: "state", path: ["ok"] }, { kind: "literal", value: true }] } }
+    { flowId: "fallback", eventType: "READY", toRoleId: "b", priority: 0 },
+    { flowId: "conditional", eventType: "READY", toRoleId: "c", priority: 1, condition: { op: "equals", args: [{ kind: "path", root: "state", path: ["ok"] }, { kind: "literal", value: true }] } }
   ];
-  assert.equal(selectSemanticRoute({ transitions, eventType: "NEXT", context: { state: { ok: true }, loop: {}, event: {}, role: {} } }).toRoleId, "c");
+  assert.equal(selectSemanticRoute({ transitions, eventType: "READY", context: { state: { ok: true }, loop: {}, event: {}, role: {} } }).toRoleId, "c");
   assert.throws(
-    () => selectSemanticRoute({ transitions: [], eventType: "NEXT", context: { state: {}, loop: {}, event: {}, role: {} } }),
+    () => selectSemanticRoute({ transitions: [], eventType: "READY", context: { state: {}, loop: {}, event: {}, role: {} } }),
     (error) => error.code === "IR_ROUTE_NO_CANDIDATE"
   );
-  assert.throws(() => selectSemanticRoute({ transitions: transitions.slice(1), eventType: "NEXT", context: { state: { ok: false }, loop: {}, event: {}, role: {} } }), /No condition matched/);
-  assert.throws(() => selectSemanticRoute({ transitions: [transitions[0], { ...transitions[0], flowId: "other", toRoleId: "c" }], eventType: "NEXT", context: { state: {}, loop: {}, event: {}, role: {} } }), /Ambiguous routes/);
+  assert.throws(() => selectSemanticRoute({ transitions: transitions.slice(1), eventType: "READY", context: { state: { ok: false }, loop: {}, event: {}, role: {} } }), /No condition matched/);
+  assert.throws(() => selectSemanticRoute({ transitions: [transitions[0], { ...transitions[0], flowId: "other", toRoleId: "c" }], eventType: "READY", context: { state: {}, loop: {}, event: {}, role: {} } }), /Ambiguous routes/);
 });
 
 test("state reducers produce the route-visible state for the same transition", () => {
@@ -215,10 +264,10 @@ test("state reducers produce the route-visible state for the same transition", (
   });
   const route = selectSemanticRoute({
     transitions: [
-      { flowId: "fallback", eventType: "DONE", toRoleId: "retry", priority: 0 },
-      { flowId: "approved", eventType: "DONE", toRoleId: "publish", priority: 1, condition: { op: "equals", args: [{ kind: "path", root: "state", path: ["approved"] }, { kind: "literal", value: true }] } }
+      { flowId: "fallback", eventType: "READY", toRoleId: "retry", priority: 0 },
+      { flowId: "approved", eventType: "READY", toRoleId: "publish", priority: 1, condition: { op: "equals", args: [{ kind: "path", root: "state", path: ["approved"] }, { kind: "literal", value: true }] } }
     ],
-    eventType: "DONE",
+    eventType: "READY",
     context: { state: routedState, loop: {}, event: {}, role: {} }
   });
   assert.equal(route.toRoleId, "publish");
@@ -240,7 +289,7 @@ test("Loop Scope increments only at its declared boundary", () => {
   assert.equal(getTargetLoopIteration({ targetRoleId: "b", currentLoopIteration: 1, state, plan, lineageId: "lineage" }), 2);
 });
 
-test("Loop Scope routes a boundary transition to onExhausted at max rounds", () => {
+test("Loop Scope parks a boundary transition for budget review at max rounds", () => {
   const system = {
     systemId: "loop-exhaustion",
     systemVersion: "1",
@@ -250,7 +299,7 @@ test("Loop Scope routes a boundary transition to onExhausted at max rounds", () 
     flows: [
       { fromRoleId: "boundary", toRoleId: "boundary", eventType: "REBUTTAL" },
       { fromRoleId: "boundary", toRoleId: "summary", eventType: "SUMMARY" },
-      { fromRoleId: "summary", toRoleId: "__system_end__", eventType: "DONE" }
+      { fromRoleId: "summary", toRoleId: "__system_end__", eventType: "READY" }
     ],
     lawBinding: { globalLawRef: "law.test" },
     executionBinding: {},
@@ -312,22 +361,55 @@ test("Loop Scope routes a boundary transition to onExhausted at max rounds", () 
     }
   });
 
-  assert.equal(transition.update.status, "running");
-  assert.equal(transition.update.branchRecords?.[branch.branchId]?.status, "completed");
-  const exhaustedBranch = Object.values(transition.update.branchRecords ?? {}).find(
-    (candidate) => candidate.roleId === "summary"
-  );
-  assert.equal(exhaustedBranch?.status, "active");
+  assert.equal(transition.update.status, "waiting_review");
+  assert.equal(transition.update.branchRecords?.[branch.branchId]?.status, "waiting_review");
+  const review = Object.values(transition.update.pendingReviewsById ?? {})[0];
+  assert.equal(review?.kind, "loop_budget");
   assert.deepEqual(transition.events, [{
     type: "loop_exhausted",
+    eventId: `loop_exhausted:${review?.reviewId}`,
     at: transition.events[0].at,
     loopId: "debate",
     roleId: "boundary",
     lineageId: branch.lineageId,
     loopIteration: 1,
     maxRounds: 1,
-    onExhausted: "summary"
+    onExhausted: "summary",
+    reviewId: review?.reviewId
   }]);
+
+  const reviewState = {
+    ...state,
+    stateVersion: 1,
+    pendingReviewsById: transition.update.pendingReviewsById,
+    reviewRoundByRoleLineageKey: transition.update.reviewRoundByRoleLineageKey,
+    branchRecords: transition.update.branchRecords,
+    lastWaitingReviewId: transition.update.lastWaitingReviewId
+  };
+  const decision = planHumanReviewDecisionTransition({
+    runId: "run-loop-exhaustion",
+    state: reviewState,
+    plan,
+    review,
+    decision: {
+      reviewId: review.reviewId,
+      round: review.round,
+      lineageId: review.lineageId,
+      branchId: review.branchId,
+      loopIteration: review.loopIteration,
+      stateVersion: 1,
+      committedAt: "2026-09-02T00:01:00.000Z",
+      decidedAt: "2026-09-02T00:01:00.000Z",
+      decision: "continue",
+      targetRoleId: "boundary",
+      additionalBudget: 1
+    },
+    rolePackagesByRoleId: new Map(),
+    logger: createRunConsoleLogger(false)
+  });
+  assert.equal(decision.update.pendingReviewsById?.[review.reviewId]?.status, "resolved");
+  assert.equal(decision.update.loopBudgetAuthorizationsByScope?.[`${branch.lineageId}::debate`], 0);
+  assert.equal(decision.update.branchRecords?.["boundary@2#2"]?.status, "active");
 });
 
 test("conditional route transition persists a value-free decision trace", async () => {
@@ -338,8 +420,8 @@ test("conditional route transition persists a value-free decision trace", async 
     startDispatch: { mode: "all" },
     roleIds: ["dispatch", "approved", "fallback"],
     flows: [
-      { fromRoleId: "dispatch", toRoleId: "approved", eventType: "DONE" },
-      { fromRoleId: "dispatch", toRoleId: "fallback", eventType: "DONE" }
+      { fromRoleId: "dispatch", toRoleId: "approved", eventType: "READY" },
+      { fromRoleId: "dispatch", toRoleId: "fallback", eventType: "READY" }
     ],
     lawBinding: { globalLawRef: "law.test" },
     executionBinding: {},
@@ -348,8 +430,8 @@ test("conditional route transition persists a value-free decision trace", async 
   const plan = createExecutionPlan(system);
   plan.semanticIR = {
     transitions: [
-      { flowId: "approved-route", fromRoleId: "dispatch", toRoleId: "approved", eventType: "DONE", priority: 2, channel: "normal", condition: { op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: true }] } },
-      { flowId: "fallback-route", fromRoleId: "dispatch", toRoleId: "fallback", eventType: "DONE", priority: 1, channel: "normal", condition: { op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: false }] } }
+      { flowId: "approved-route", fromRoleId: "dispatch", toRoleId: "approved", eventType: "READY", priority: 2, channel: "normal", condition: { op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: true }] } },
+      { flowId: "fallback-route", fromRoleId: "dispatch", toRoleId: "fallback", eventType: "READY", priority: 1, channel: "normal", condition: { op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: false }] } }
     ],
     stateSchema: { defaults: {} },
     loops: [],
@@ -374,17 +456,17 @@ test("conditional route transition persists a value-free decision trace", async 
       branch,
       committedAt: "2026-09-02T00:00:00.000Z",
       status: "ok",
-      selectedEvent: "DONE",
+      selectedEvent: "READY",
       storedResult: {
         roleId: "dispatch",
-        event: "DONE",
+        event: "READY",
         content: "approved=true",
         data: { approved: true, token: "must-not-be-recorded" },
         branchId: branch.branchId,
         lineageId: branch.lineageId,
         loopIteration: 0
       },
-      audit: { at: "2026-09-02T00:00:00.000Z", roleId: "dispatch", branchId: branch.branchId, loopIteration: 0, exitCode: 0, durationMs: 1, selectedEvent: "DONE", status: "ok" }
+      audit: { at: "2026-09-02T00:00:00.000Z", roleId: "dispatch", branchId: branch.branchId, loopIteration: 0, exitCode: 0, durationMs: 1, selectedEvent: "READY", status: "ok" }
     }
   };
   const transition = planTransition(args);
@@ -427,7 +509,7 @@ test("conditional route transition persists a value-free decision trace", async 
   }];
   const evaluationFailure = planTransition(args);
   assert.equal(evaluationFailure.update.status, "failed");
-  assert.equal(evaluationFailure.events[0].errorCode, "IR_ROUTE_CONDITION_EVALUATION_FAILED");
+  assert.equal(evaluationFailure.events[0].errorCode, "IR_ROUTE_CONDITION_TYPE_INVALID");
   assert.equal(evaluationFailure.events[0].candidates[0].matched, undefined);
 });
 
@@ -449,8 +531,8 @@ test("debate example compiles its business state and event contracts", async () 
   assert.equal(compiled.ir.joins[0].mode, "all_of");
   assert.equal(compiled.ir.joins[0].timeoutSeconds, 3600);
   assert.equal(compiled.ir.loops[0].onExhausted, "debate-summary");
-  assert.deepEqual(compiled.ir.events?.SEND_MINIMALIST?.payloadSchema?.required, ["debate_round"]);
-  assert.ok(compiled.ir.events?.DECISION_READY?.payloadSchema);
+  assert.equal(compiled.ir.events?.READY?.kind, "handoff");
+  assert.equal(compiled.ir.events?.NEEDS_REWORK?.kind, "correction");
   assert.ok(compiled.digest.length > 0);
 });
 
@@ -458,15 +540,15 @@ test("event contracts validate declaration, payload shape, and writable fields",
   const result = validateEventCandidate({
     roleId: "worker",
     mode: "default",
-    eventType: "DONE",
+    eventType: "READY",
     payload: { answer: "ok" },
-    contracts: { DONE: { eventType: "DONE", payloadSchema: { type: "object", required: ["answer"] }, writableStateFields: ["answer"] } },
+    contracts: { READY: { eventType: "READY", payloadSchema: { type: "object", required: ["answer"] }, writableStateFields: ["answer"] } },
     stateUpdateFields: ["answer"]
   });
-  assert.equal(result.eventType, "DONE");
+  assert.equal(result.eventType, "READY");
   assert.match(result.payloadDigest, /^[a-f0-9]{64}$/);
   assert.throws(() => validateEventCandidate({ roleId: "worker", mode: "default", eventType: "UNKNOWN", payload: {}, contracts: {} }), /not declared/);
-  assert.throws(() => validateEventCandidate({ roleId: "worker", mode: "default", eventType: "DONE", payload: {}, contracts: { DONE: { eventType: "DONE", payloadSchema: { type: "object", required: ["answer"] } } } }), /schema mismatch/);
+  assert.throws(() => validateEventCandidate({ roleId: "worker", mode: "default", eventType: "READY", payload: {}, contracts: { READY: { eventType: "READY", payloadSchema: { type: "object", required: ["answer"] } } } }), /schema mismatch/);
 });
 
 test("Join policy waits before timeout and fails closed when quorum is not met", () => {
@@ -497,6 +579,29 @@ test("Join policy consumes source failure policy and keeps terminate distinct", 
   assert.equal(resolveJoinPolicy({ ...base, onTimeout: "pause", now: 60000 }).action, "pause");
   assert.equal(resolveJoinPolicy({ ...base, onTimeout: "terminate", now: 60000 }).action, "terminate");
   assert.throws(() => resolveJoinPolicy({ ...base, mode: "all_of", onTimeout: "quorum_continue", now: 60000 }), /requires quorum_of/);
+});
+
+test("Join policy distinguishes required skipped from real failed sources", () => {
+  const base = { mode: "all_of", sources: ["finance", "legal"], readySources: ["finance"], min: 2, timeoutSeconds: 10, startedAt: 0, now: 1, onTimeout: "fail" };
+  assert.equal(resolveJoinPolicy({ ...base, sourceStatusByRoleId: { finance: "arrived", legal: "skipped" } }).reason, "required source skipped");
+  assert.equal(resolveJoinPolicy({ ...base, sourceStatusByRoleId: { finance: "arrived", legal: "failed" }, failurePolicy: "fail" }).reason, "required source failed");
+  assert.equal(resolveJoinPolicy({ ...base, sourceStatusByRoleId: { finance: "arrived", legal: "pending" } }).action, "wait");
+});
+
+test("Join source outcomes are monotonic and never regress terminal status to pending", () => {
+  assert.equal(mergeJoinSourceStatus("skipped", "pending"), "skipped");
+  assert.equal(mergeJoinSourceStatus("arrived", "skipped"), "arrived");
+  assert.equal(mergeJoinSourceStatus("failed", "arrived"), "failed");
+});
+
+test("Artifact resolver enforces invocation allowed-set", () => {
+  const result = { roleId: "producer", branchId: "b", lineageId: "l", loopIteration: 0, artifactRef: buildArtifactReference({ runId: "run-1", executionId: "exec-1", mediaType: "application/json" }), provenance: { runId: "run-1", producerRoleId: "producer", branchId: "b", lineageId: "l", loopIteration: 0, mediaType: "application/json" } };
+  const resolver = createArtifactResolver([result]);
+  assert.equal(resolver.resolve(result.artifactRef, { consumerRoleId: "consumer", allowedArtifactIds: new Set([result.artifactRef.artifactId]) }).provenance.producerRoleId, "producer");
+  assert.throws(() => resolver.resolve(result.artifactRef, { consumerRoleId: "consumer", allowedArtifactIds: new Set() }), /ARTIFACT_ACCESS_DENIED/);
+  assert.throws(() => resolver.resolve({ ...result.artifactRef, mediaType: "text/plain" }, { consumerRoleId: "consumer", allowedArtifactIds: new Set([result.artifactRef.artifactId]) }), /ARTIFACT_MEDIA_TYPE_MISMATCH/);
+  const badProvenance = { ...result, provenance: { ...result.provenance, mediaType: "text/plain" } };
+  assert.throws(() => createArtifactResolver([badProvenance]).resolve(badProvenance.artifactRef, { consumerRoleId: "consumer", allowedArtifactIds: new Set([badProvenance.artifactRef.artifactId]) }), /ARTIFACT_MEDIA_TYPE_MISMATCH/);
 });
 
 test("Semantic IR rejects unresolved loop exhausted targets and invalid seat budgets", () => {
@@ -583,12 +688,12 @@ test("semantic compiler binds Mermaid topology to versioned semantics", async ()
   const snapshot = await loadOgsSpecification(workdir);
   const system = {
     systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b"],
-    flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }],
+    flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "READY" }],
     lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
   };
   const compiled = compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 });
   assert.equal(compiled.ir.joins[0].roleId, "b");
-  assert.equal(compiled.ir.transitions[0].flowId, "a:NEXT:b");
+  assert.equal(compiled.ir.transitions[0].flowId, "a:READY:b");
   assert.match(compiled.digest, /^[a-f0-9]{64}$/);
   assert.equal(buildLoopScopeKey("lineage-a", "debate"), "lineage-a::debate");
 });
@@ -601,15 +706,15 @@ test("semantic compiler freezes event contracts, retry policy, reducers, and cap
   await writeFile(join(workdir, ".ogs", "semantics.yaml"), [
     "version: '1'", "system:", "  systemId: demo", "  systemVersion: '1'", "state:",
     "  schema: contracts/state.json", "  reducers: { count: increment }", "events:",
-    "  DONE:", "    payload: { schema: contracts/done.json }", "    writable_state_fields: [count]",
+    "  READY:", "    payload: { schema: contracts/done.json }", "    writable_state_fields: [count]",
     "errors:", "  a:", "    retry: { max_attempts: 2, backoff: exponential }", "capabilities:",
     "  max_transitions_per_run: 10"
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
-  const system = { systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "DONE" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
+  const system = { systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "READY" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
   const compiled = compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 20 });
   assert.equal(compiled.ir.stateSchema.reducers.count, "increment");
-  assert.equal(compiled.ir.events.DONE.payloadSchema.required[0], "ok");
+  assert.equal(compiled.ir.events.READY.payloadSchema.required[0], "ok");
   assert.deepEqual(compiled.ir.retryByRoleId.a, { maxAttempts: 2, backoff: "exponential" });
   assert.equal(compiled.ir.capabilities.maxTransitionsPerRun, 10);
 });
@@ -619,7 +724,7 @@ test("Role Contract contributions must resolve to state or declared event payloa
     manifest: {
       responsibility: { kind: "atomic", owns: [], contributes: ["decision", "finding"], doesNotOwn: [] },
       constraints: { writableStateFields: [], allowedTools: [] },
-      outputs: { events: ["DONE"], postconditions: [] },
+      outputs: { events: ["READY"], postconditions: [] },
       failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
       authority: { controlActions: [] }
     },
@@ -628,7 +733,7 @@ test("Role Contract contributions must resolve to state or declared event payloa
   const args = {
     semanticIR: {
       stateSchema: { ref: "state.json", writableRolesByField: {} },
-      events: { DONE: { payloadSchema: { type: "object", properties: { finding: { type: "string" } } } } },
+      events: { READY: { payloadSchema: { type: "object", properties: { finding: { type: "string" } } } } },
       composites: [],
       capabilities: { allowedToolsByRoleId: { reviewer: [] } }
     },
@@ -651,7 +756,7 @@ test("semantic compiler rejects join declarations that diverge from topology", a
     "version: '1'", "system:", "  systemId: demo", "  systemVersion: '1'", "state:", "  schema: contracts/state.json", "joins:", "  b:", "    mode: all_of", "    sources: [x]", "    timeoutSeconds: 10", "    onTimeout: fail"
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
-  const system = { systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b", "x"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
+  const system = { systemId: "demo", systemVersion: "1", entryRoleIds: ["a"], roleIds: ["a", "b", "x"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "READY" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
   assert.throws(() => compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 }), /sources must match Mermaid/);
 });
 

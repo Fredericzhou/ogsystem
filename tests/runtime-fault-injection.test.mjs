@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { writeHumanReviewDecision } from "../dist/runtime/project-lifecycle.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import {
@@ -24,7 +25,7 @@ const systemSource = `flowchart TD
 %% law.global=law.console.base
 
 start[开始] -->|START| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| end[结束]
+operator[Role:test-operator] -->|READY| end[结束]
 `;
 
 const cliPath = path.resolve("dist/runtime/cli.js");
@@ -68,6 +69,24 @@ function runCli(args, options = {}) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+function runAdapterChild(args, options = {}) {
+  const adapterPath = path.resolve("dist/runtime/adapter.js");
+  const script = `import(${JSON.stringify(adapterPath)}).then(({ runSystemWithAdapter }) => runSystemWithAdapter(${JSON.stringify(args)})).then((result) => { process.stdout.write(JSON.stringify(result)); }, (error) => { process.stderr.write(String(error?.stack || error)); process.exit(1); });`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...(options.env ?? {}) }
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
@@ -163,6 +182,35 @@ async function createCrashWindowFixture(args) {
   return { tempRoot, systemPath, runtimePath };
 }
 
+async function createLoopBudgetCrashFixture(repoRoot) {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-loop-review-commit-crash-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await writeFile(systemPath, `flowchart TD
+%% system.id=test.loop-budget.review.crash
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% loop.max.opencode-reviewer=1
+start[开始] -->|START| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|REJECTED| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|APPROVED| end[结束]
+`, "utf8");
+  await writeFile(runtimePath, JSON.stringify({
+    executor: "opencode",
+    roleRepo: path.resolve(tempRoot, "og-roles"),
+    runsDir: ".ogs/runs"
+  }, null, 2), "utf8");
+  await writeDefaultModelSelection(tempRoot);
+  await writeRolePackage({
+    rolesRoot,
+    roleId: "opencode-reviewer",
+    allowedEvents: ["REJECTED", "APPROVED"]
+  });
+  return { tempRoot, systemPath, runtimePath, lawsPath: path.resolve(repoRoot, ".ogs", "laws.json") };
+}
+
 async function readSingleRunDirectory(tempRoot) {
   const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
   assert.strictEqual(runIds.length, 1);
@@ -208,6 +256,7 @@ async function waitForRoleExecution(runDir, roleId, timeoutMs = 5000) {
 async function runCrashAfterOutcome(baseArgs, options = {}) {
   const crashed = await runCli(baseArgs, {
     env: {
+      OGSYSTEM_ENABLE_TEST_HOOKS: "1",
       OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME: "1",
       ...(options.env ?? {})
     }
@@ -441,6 +490,170 @@ test("forced crash after durable outcome resumes without duplicate execution", a
   assert.deepStrictEqual(executionDirsAfterSecondResume, executionDirsAfterResume);
 });
 
+test("human review state commit survives a crash before decision markers and rejects a later duplicate decision", async () => {
+  const repoRoot = process.cwd();
+  const reviewSystemSource = `flowchart TD
+%% system.id=test.review.commit.crash
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% review.mode.test-operator=required
+start[开始] -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|READY| end[结束]
+`;
+  const { tempRoot, systemPath, runtimePath } = await createCrashWindowFixture({
+    tempPrefix: "ogsystem-review-commit-crash-",
+    repoRoot,
+    systemSource: reviewSystemSource
+  });
+  const baseArgs = [
+    "run",
+    "start",
+    "--system",
+    systemPath,
+    "--runtime",
+    runtimePath,
+    "--laws",
+    path.resolve(repoRoot, ".ogs", "laws.json"),
+    "--ogs-dir",
+    tempRoot,
+    "--input",
+    "review commit crash drill",
+    "--dry-run"
+  ];
+
+  const first = await runCli(baseArgs);
+  assert.equal(first.code, 0, first.stderr);
+  const { runId, runDir } = await readSingleRunDirectory(tempRoot);
+  const reviewId = "review.test-operator@1#1.r1";
+
+  const crashed = await runCli([
+    "run", "review", "decide", runId, reviewId,
+    "--decision", "approve", "--resume", "--dry-run",
+    "--runtime", runtimePath,
+    "--laws", path.resolve(repoRoot, ".ogs", "laws.json"),
+    "--ogs-dir", tempRoot
+  ], {
+    env: {
+      OGSYSTEM_ENABLE_TEST_HOOKS: "1",
+      OGSYSTEM_TEST_CRASH_AFTER_REVIEW_STATE_COMMIT: "1"
+    }
+  });
+  assert.equal(crashed.code, 92, crashed.stderr || crashed.stdout);
+  assert.match(crashed.stderr, /after human review state commit before decision markers/i);
+
+  const checkpointFiles = await readdir(path.resolve(runDir, "checkpoints"));
+  assert.ok(checkpointFiles.length >= 2);
+  const decisionPath = path.resolve(runDir, "control", "reviews", `${reviewId}.decision.json`);
+  const decision = JSON.parse(await readFile(decisionPath, "utf8"));
+  assert.equal(decision.appliedAt, undefined);
+  assert.equal(decision.reconciledAt, undefined);
+
+  // Simulate a competing control-plane write after the state checkpoint. Resume must use the
+  // resolved review state as the idempotency boundary and must not apply this second decision.
+  await writeFile(decisionPath, JSON.stringify({
+    ...decision,
+    decision: "terminate",
+    scope: "run",
+    decidedAt: "2099-01-01T00:00:00.000Z",
+    committedAt: "2099-01-01T00:00:00.000Z"
+  }, null, 2), "utf8");
+
+  const resumed = await runCli(withResumeRun(baseArgs, runId));
+  assert.equal(resumed.code, 0, resumed.stderr);
+  const resumedResult = JSON.parse(resumed.stdout);
+  assert.equal(resumedResult.status, "done", JSON.stringify(resumedResult, null, 2));
+
+  const reconciledDecision = JSON.parse(await readFile(decisionPath, "utf8"));
+  assert.equal(typeof reconciledDecision.appliedAt, "string");
+  assert.equal(typeof reconciledDecision.reconciledAt, "string");
+  const events = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8"))
+    .trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events.filter((event) => event.type === "human_review_approved").length, 1);
+  assert.equal(events.filter((event) => event.type === "human_review_terminated").length, 0);
+});
+
+test("loop budget decision survives a crash before markers and rejects a later duplicate terminate", async () => {
+  const repoRoot = process.cwd();
+  const { tempRoot, systemPath, runtimePath, lawsPath } = await createLoopBudgetCrashFixture(repoRoot);
+  const first = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    lawsPath,
+    prompt: "loop budget review crash drill",
+    workdir: tempRoot,
+    dryRun: true,
+    dryRunScenario: "review-reject-once"
+  });
+  assert.equal(first.status, "stopped");
+  const { runId, runDir } = await readSingleRunDirectory(tempRoot);
+  const state = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  const reviewId = Object.values(state.graphState.pendingReviewsById ?? {})
+    .find((review) => review.kind === "loop_budget")?.reviewId;
+  assert.ok(reviewId, "expected loop budget review");
+
+  await writeHumanReviewDecision({
+    workdir: tempRoot,
+    runId,
+    reviewId,
+    decision: "continue",
+    targetRoleId: "opencode-reviewer",
+    additionalBudget: 1,
+    principal: { id: "local:loop-budget-crash", issuer: "ogs:local", displayName: "loop-budget-crash" },
+    comment: "Continue exactly one additional bounded round."
+  });
+  const crashed = await runAdapterChild({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    lawsPath,
+    prompt: "loop budget review crash drill",
+    workdir: tempRoot,
+    resumeRunDir: runId,
+    dryRun: true,
+    dryRunScenario: "review-reject-once"
+  }, {
+    env: {
+      OGSYSTEM_ENABLE_TEST_HOOKS: "1",
+      OGSYSTEM_TEST_CRASH_AFTER_REVIEW_STATE_COMMIT: "1"
+    }
+  });
+  assert.equal(crashed.code, 92, crashed.stderr || crashed.stdout);
+  assert.match(crashed.stderr, /after human review state commit before decision markers/i);
+
+  const decisionPath = path.resolve(runDir, "control", "reviews", `${reviewId}.decision.json`);
+  const decision = JSON.parse(await readFile(decisionPath, "utf8"));
+  assert.equal(decision.appliedAt, undefined);
+  assert.equal(decision.reconciledAt, undefined);
+  await writeFile(decisionPath, JSON.stringify({
+    ...decision,
+    decision: "terminate",
+    scope: "run",
+    decidedAt: "2099-01-01T00:00:00.000Z",
+    committedAt: "2099-01-01T00:00:00.000Z"
+  }, null, 2), "utf8");
+
+  const resumed = await runAdapterChild({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    lawsPath,
+    prompt: "loop budget review crash drill",
+    workdir: tempRoot,
+    resumeRunDir: runId,
+    dryRun: true,
+    dryRunScenario: "review-reject-once"
+  });
+  assert.equal(resumed.code, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).status, "done");
+  const reconciledDecision = JSON.parse(await readFile(decisionPath, "utf8"));
+  assert.equal(typeof reconciledDecision.appliedAt, "string");
+  assert.equal(typeof reconciledDecision.reconciledAt, "string");
+  const events = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8"))
+    .trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  assert.equal(events.filter((event) => event.type === "loop_budget_decision").length, 1);
+  assert.equal(events.filter((event) => event.type === "human_review_approved").length, 1);
+  assert.equal(events.filter((event) => event.type === "human_review_terminated").length, 0);
+  assert.equal(events.filter((event) => event.type === "run_terminated").length, 0);
+});
+
 test("ERROR* handled failure survives crash window resume without duplicate routing events", async () => {
   const repoRoot = process.cwd();
   const { tempRoot, systemPath, runtimePath } = await createCrashWindowFixture({
@@ -459,10 +672,10 @@ test("ERROR* handled failure survives crash window resume without duplicate rout
 start[开始] -->|START| source[Role:test-branch-a]
 source[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| handler[Role:error-handler-base]
 source[Role:test-branch-a] -->|ERROR| handler[Role:error-handler-base]
-handler[Role:error-handler-base] -->|COMPENSATED| finalizer[Role:test-operator]
-handler[Role:error-handler-base] -->|ESCALATED| end[结束]
-handler[Role:error-handler-base] -->|ABORTED| end[结束]
-finalizer[Role:test-operator] -->|DONE| end[结束]
+handler[Role:error-handler-base] -->|READY| finalizer[Role:test-operator]
+handler[Role:error-handler-base] -->|BLOCKED| end[结束]
+handler[Role:error-handler-base] -->|REJECTED| end[结束]
+finalizer[Role:test-operator] -->|READY| end[结束]
 `,
     runtimeOverrides: {
       error_flows: {
@@ -476,10 +689,10 @@ finalizer[Role:test-operator] -->|DONE| end[结束]
   await writeRolePackage({
     roleId: "error-handler-base",
     rolesRoot,
-    allowedEvents: ["ABORTED", "COMPENSATED", "ESCALATED"],
+    allowedEvents: ["REJECTED", "READY", "BLOCKED"],
     allowedTools: ["tool.handler"]
   });
-  await writeRolePackage({ roleId: "test-operator", rolesRoot, allowedEvents: ["DONE"], allowedTools: ["tool.finalizer"] });
+  await writeRolePackage({ roleId: "test-operator", rolesRoot, allowedEvents: ["READY"], allowedTools: ["tool.finalizer"] });
   await writeFile(
     runtimePath,
     JSON.stringify({
@@ -503,12 +716,12 @@ finalizer[Role:test-operator] -->|DONE| end[结束]
   );
   await writeFile(
     path.resolve(scriptsDir, "handler.mjs"),
-    'console.log(JSON.stringify({ event: "COMPENSATED", content: "handled in resume drill" }));\n',
+    'console.log(JSON.stringify({ event: "READY", content: "handled in resume drill" }));\n',
     "utf8"
   );
   await writeFile(
     path.resolve(scriptsDir, "finalizer.mjs"),
-    'console.log(JSON.stringify({ event: "DONE", content: "resume drill completed" }));\n',
+    'console.log(JSON.stringify({ event: "READY", content: "resume drill completed" }));\n',
     "utf8"
   );
 
@@ -757,13 +970,13 @@ test("runner consumes stop request after current transition and lands in stopped
   await writeRolePackage({
     rolesRoot,
     roleId: "slow_role",
-    allowedEvents: ["NEXT"],
+    allowedEvents: ["READY"],
     allowedTools: ["tool.slow"]
   });
   await writeRolePackage({
     rolesRoot,
     roleId: "second_role",
-    allowedEvents: ["DONE"],
+    allowedEvents: ["READY"],
     allowedTools: ["tool.second"]
   });
 
@@ -771,7 +984,7 @@ test("runner consumes stop request after current transition and lands in stopped
     path.resolve(scriptsDir, "slow-role.mjs"),
     [
       "setTimeout(() => {",
-      '  console.log(JSON.stringify({ event: "NEXT", content: "slow role done" }));',
+      '  console.log(JSON.stringify({ event: "READY", content: "slow role done" }));',
       "}, 400);"
     ].join("\n"),
     "utf8"
@@ -781,7 +994,7 @@ test("runner consumes stop request after current transition and lands in stopped
     [
       'import { writeFileSync } from "node:fs";',
       `writeFileSync(${JSON.stringify(secondRoleMarkerPath)}, "ran", "utf8");`,
-      'console.log(JSON.stringify({ event: "DONE", content: "second role ran" }));'
+      'console.log(JSON.stringify({ event: "READY", content: "second role ran" }));'
     ].join("\n"),
     "utf8"
   );
@@ -834,8 +1047,8 @@ test("runner consumes stop request after current transition and lands in stopped
 %% exec.bind.second_role=profile.second
 
 start[开始] -->|START| slow_role[Role:slow_role]
-slow_role[Role:slow_role] -->|NEXT| second_role[Role:second_role]
-second_role[Role:second_role] -->|DONE| end[结束]
+slow_role[Role:slow_role] -->|READY| second_role[Role:second_role]
+second_role[Role:second_role] -->|READY| end[结束]
 `,
     "utf8"
   );

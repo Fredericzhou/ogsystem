@@ -14,6 +14,7 @@ import { readJsonFile } from "./json-file.js";
 import { assertJsonSchema } from "./json-schema.js";
 import { listJsonSchemaIssues } from "./json-schema.js";
 import { validateConditionAst } from "./condition-ast.js";
+import { isBusinessEvent } from "./business-events.js";
 import { RUNTIME_ROLE_PROMPT_INPUT_SCHEMA } from "./role-prompt-input-schema.js";
 import type {
   LoadedRolePackage,
@@ -154,7 +155,8 @@ function expectContract(value: unknown, filePath: string): Pick<RolePackageManif
   const terminalErrorCodes = expectSortedUniqueStrings(failure.terminalErrorCodes, filePath, "$.failure.terminalErrorCodes");
   if (![...retryableErrorCodes, ...terminalErrorCodes].every((code) => /^[A-Z][A-Z0-9_]*$/.test(code))) fail(filePath, "$.failure", "error codes must be stable uppercase identifiers");
   if (retryableErrorCodes.some((code) => terminalErrorCodes.includes(code))) fail(filePath, "$.failure", "an error code cannot be both retryable and terminal");
-  return { contractVersion: 1, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { events: expectSortedUniqueStrings(outputs.events, filePath, "$.outputs.events"), postconditions: postconditions as any[] }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields"), allowedTools: expectSortedUniqueStrings(constraints.allowedTools, filePath, "$.constraints.allowedTools") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
+  const outputEvents = expectSortedUniqueStrings(outputs.events, filePath, "$.outputs.events");
+  return { contractVersion: 1, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { events: outputEvents, postconditions: postconditions as any[] }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields"), allowedTools: expectSortedUniqueStrings(constraints.allowedTools, filePath, "$.constraints.allowedTools") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
 }
 
 function validateAuditFields(manifest: RolePackageManifest, outputSchema: unknown, filePath: string): void {
@@ -296,10 +298,18 @@ export function validateRoleSourceRecord(value: unknown, filePath: string): void
 export async function loadRolePackage(args: {
   roleId: string;
   roleRootDir: string;
+  strictEvents?: boolean;
 }): Promise<LoadedRolePackage> {
   const resolvedPath = resolve(args.roleRootDir, args.roleId);
   const manifestPath = resolve(resolvedPath, "role.json");
   const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
+  if (args.strictEvents) {
+    for (const eventType of manifest.outputs.events) {
+      if (!isBusinessEvent(eventType)) {
+        fail(manifestPath, "$.outputs.events", `Role output event "${eventType}" is not registered; system events are runtime-owned`);
+      }
+    }
+  }
 
   if (manifest.roleId !== args.roleId) {
     throw new Error(

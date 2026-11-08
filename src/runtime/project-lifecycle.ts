@@ -46,6 +46,8 @@ import type { RunSummaryProjection } from "./run-summary-schema.js";
 import type { SystemDefinition } from "./types.js";
 import type { ControlPlanePrincipal } from "./identity.js";
 import { systemDefinitionToDesign, saveSystemDesign, loadSystemDesign } from "../design/index.js";
+import { RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED } from "../business-events.js";
+import { getLoopBudgetTargetRoleIds, resolveLoopBudgetTerminateScope } from "./loop-budget.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -61,7 +63,7 @@ const DEFAULT_DEBUG_TOOL_SCRIPT_FILE = "scripts/console-print.mjs";
 const DEFAULT_DEBUG_PROFILE_ID = "profile.console.print";
 const DEFAULT_DEBUG_TOOL_REF = "tool.console.print";
 const MINIMAL_HELLO_ROLE_ID = "hello-ogsystem";
-const MINIMAL_HELLO_EVENT = "HELLO_DONE";
+const MINIMAL_HELLO_EVENT = "READY";
 const MINIMAL_HELLO_PROFILE_ID = "profile.hello.ogsystem";
 const MINIMAL_HELLO_TOOL_REF = "tool.hello.ogsystem";
 const MINIMAL_HELLO_TOOL_SCRIPT_FILE = "scripts/hello-ogsystem.mjs";
@@ -143,7 +145,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% law.global=law.project.base",
       "",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -165,7 +167,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% law.global=law.project.base",
       "",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     syncDependencies: true,
@@ -227,12 +229,12 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% review.terminate.scope.advanced-reviewer=branch",
       "",
       "start[开始] -->|START| coordinator[Role:advanced-coordinator]",
-      "coordinator[Role:advanced-coordinator] -->|START_A| workera[Role:advanced-worker-a]",
-      "coordinator[Role:advanced-coordinator] -->|START_B| workerb[Role:advanced-worker-b]",
-      "workera[Role:advanced-worker-a] -->|A_DONE| reviewer[Role:advanced-reviewer]",
-      "workerb[Role:advanced-worker-b] -->|B_DONE| reviewer[Role:advanced-reviewer]",
-      "reviewer[Role:advanced-reviewer] -->|REVIEW_READY| end[结束]",
-      "reviewer[Role:advanced-reviewer] -->|REWORK| coordinator[Role:advanced-coordinator]",
+      "coordinator[Role:advanced-coordinator] -->|READY| workera[Role:advanced-worker-a]",
+      "coordinator[Role:advanced-coordinator] -->|READY| workerb[Role:advanced-worker-b]",
+      "workera[Role:advanced-worker-a] -->|READY| reviewer[Role:advanced-reviewer]",
+      "workerb[Role:advanced-worker-b] -->|READY| reviewer[Role:advanced-reviewer]",
+      "reviewer[Role:advanced-reviewer] -->|READY| end[结束]",
+      "reviewer[Role:advanced-reviewer] -->|NEEDS_REWORK| coordinator[Role:advanced-coordinator]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -263,9 +265,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "start[开始] -->|START| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
       "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
-      "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
-      "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
-      "testop[Role:test-operator] -->|RESULT_READY| end[结束]",
+      "brancha[Role:test-branch-a] -->|READY| testop[Role:test-operator]",
+      "branchb[Role:test-branch-b] -->|READY| testop[Role:test-operator]",
+      "testop[Role:test-operator] -->|READY| end[结束]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -291,9 +293,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% law.global=law.consultation.base",
       "",
       "start[开始] -->|START| intake[Role:demo-intake]",
-      "intake[Role:demo-intake] -->|INTAKE_DONE| dispatch[Role:diagnosis-dispatch]",
-      "dispatch[Role:diagnosis-dispatch] -->|DISPATCH_DONE| chief[Role:diagnosis-chief-review]",
-      "chief[Role:diagnosis-chief-review] -->|REPORT_READY| end[结束]",
+      "intake[Role:demo-intake] -->|READY| dispatch[Role:diagnosis-dispatch]",
+      "dispatch[Role:diagnosis-dispatch] -->|READY| chief[Role:diagnosis-chief-review]",
+      "chief[Role:diagnosis-chief-review] -->|READY| end[结束]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -399,7 +401,7 @@ function createDefaultConsolePrintToolScript(): string {
     "function chooseEvent(events) {",
     '  const explicit = (process.argv[2] || env.OGSYSTEM_DEBUG_EVENT || "").trim();',
     "  if (explicit && (!events.length || events.includes(explicit))) return explicit;",
-    '  return events[0] || explicit || "DONE";',
+    '  return events[0] || explicit || "READY";',
     "}",
     "",
     "const prompt = await readPrompt();",
@@ -882,28 +884,31 @@ function deriveEffectiveTerminateScope(args: {
   requestSnapshot?: unknown;
   currentState?: unknown;
 }): "branch" | "run" | undefined {
-  const currentState =
-    typeof args.currentState === "object" &&
-    args.currentState !== null &&
-    !Array.isArray(args.currentState)
-      ? (args.currentState as { spec?: { terminateScope?: unknown } })
-      : undefined;
-  if (currentState?.spec?.terminateScope === "branch" || currentState?.spec?.terminateScope === "run") {
-    return currentState.spec.terminateScope;
-  }
+  const readScope = (value: unknown): "branch" | "run" | undefined => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+    const record = value as {
+      kind?: unknown;
+      loopBudget?: { terminateScope?: unknown };
+      spec?: { terminateScope?: unknown };
+    };
+    if (record.kind === "loop_budget") {
+      const loopScope = record.loopBudget?.terminateScope;
+      const legacyScope = record.spec?.terminateScope;
+      if (loopScope === "branch" || loopScope === "run" || legacyScope === "branch" || legacyScope === "run") {
+        return resolveLoopBudgetTerminateScope({
+          loopBudget: loopScope === "branch" || loopScope === "run" ? { terminateScope: loopScope } : undefined,
+          legacySpec: legacyScope === "branch" || legacyScope === "run" ? { terminateScope: legacyScope } : undefined
+        });
+      }
+    }
+    const scope = record.spec?.terminateScope;
+    return scope === "branch" || scope === "run" ? scope : undefined;
+  };
+  const currentScope = readScope(args.currentState);
+  if (currentScope) return currentScope;
 
-  const requestSnapshot =
-    typeof args.requestSnapshot === "object" &&
-    args.requestSnapshot !== null &&
-    !Array.isArray(args.requestSnapshot)
-      ? (args.requestSnapshot as { spec?: { terminateScope?: unknown } })
-      : undefined;
-  if (
-    requestSnapshot?.spec?.terminateScope === "branch" ||
-    requestSnapshot?.spec?.terminateScope === "run"
-  ) {
-    return requestSnapshot.spec.terminateScope;
-  }
+  const requestScope = readScope(args.requestSnapshot);
+  if (requestScope) return requestScope;
 
   return undefined;
 }
@@ -936,6 +941,22 @@ function normalizeReviewProjection(args: {
       ? (args.decisionSnapshot as Record<string, unknown>)
       : undefined;
   const source = currentState ?? requestSnapshot;
+  const loopBudget =
+    source?.kind === "loop_budget" && typeof source.loopBudget === "object" && source.loopBudget !== null && !Array.isArray(source.loopBudget)
+      ? source.loopBudget as Record<string, unknown>
+      : undefined;
+  const actionDiagnostics: string[] = [];
+  if (loopBudget) {
+    if (!Array.isArray(loopBudget.reworkTargetRoleIds) || loopBudget.reworkTargetRoleIds.length === 0) {
+      actionDiagnostics.push("rework unavailable: current node declares no NEEDS_REWORK path");
+    }
+    if (!Array.isArray(loopBudget.rejectTargetRoleIds) || loopBudget.rejectTargetRoleIds.length === 0) {
+      actionDiagnostics.push("reject unavailable: current node declares no REJECTED path");
+    }
+    if (!Array.isArray(loopBudget.targetRoleIds) || loopBudget.targetRoleIds.length === 0) {
+      actionDiagnostics.push("continue unavailable: current node declares no budget continuation target");
+    }
+  }
 
   return {
     reviewId: args.reviewId,
@@ -949,6 +970,9 @@ function normalizeReviewProjection(args: {
     requestedAt: asString(source?.requestedAt),
     requestedByExecutionId: asString(source?.requestedByExecutionId),
     round: asNumber(source?.round),
+    kind: source?.kind === "loop_budget" ? "loop_budget" : undefined,
+    loopBudget,
+    actionDiagnostics,
     selectedEvent: asString(source?.selectedEvent),
     draftResult:
       typeof source?.draftResult === "object" &&
@@ -1919,9 +1943,24 @@ async function reconcileHumanReviewTimeoutsUnlocked(
     if (!spec || timeoutSeconds === undefined || timeoutSeconds < 0 || !Number.isFinite(requestedAt)) continue;
     const expiresAtMs = requestedAt + timeoutSeconds * 1000;
     if (now < expiresAtMs) continue;
+    const reviewRound = typeof review.round === "number" ? review.round : undefined;
+    const reviewLineageId = typeof review.lineageId === "string" ? review.lineageId : undefined;
+    const reviewBranchId = typeof review.branchId === "string" ? review.branchId : undefined;
+    const reviewLoopIteration = typeof review.loopIteration === "number" ? review.loopIteration : undefined;
+    const reviewStateVersion = typeof review.stateVersion === "number" ? review.stateVersion : undefined;
+    if (reviewRound === undefined || reviewLineageId === undefined || reviewBranchId === undefined || reviewLoopIteration === undefined || reviewStateVersion === undefined) {
+      await ensureHumanReviewBindingRejectedEvent({ runDir, reviewId, request });
+      timedOut.push({ reviewId, action: "terminate" });
+      continue;
+    }
     const expiredAt = new Date(expiresAtMs).toISOString();
     const decision: HumanReviewDecisionRecord = {
       reviewId,
+      round: reviewRound,
+      lineageId: reviewLineageId,
+      branchId: reviewBranchId,
+      loopIteration: reviewLoopIteration,
+      stateVersion: reviewStateVersion,
       committedAt: new Date(now).toISOString(),
       decidedAt: expiredAt,
       decision: spec.timeoutAction === "terminate" ? "terminate" : "pause",
@@ -1971,6 +2010,38 @@ async function ensureHumanReviewTimeoutEvent(args: {
     loopIteration: requestRecord.loopIteration,
     action: args.action,
     ...(args.decision.scope ? { scope: args.decision.scope } : {})
+  };
+  const handle = await open(eventsPath, "a");
+  try {
+    await handle.writeFile(`${JSON.stringify(event)}\n`, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function ensureHumanReviewBindingRejectedEvent(args: {
+  runDir: string;
+  reviewId: string;
+  request: unknown;
+}): Promise<void> {
+  const eventId = `human_review_decision_rejected:${args.reviewId}:binding-missing`;
+  const eventsPath = resolve(args.runDir, "events.ndjson");
+  const events = await readFile(eventsPath, "utf8").catch(() => "");
+  if (events.split(/\r?\n/).some((line) => line.includes(`\"id\":\"${eventId}\"`))) return;
+  const requestRecord = typeof args.request === "object" && args.request !== null && !Array.isArray(args.request)
+    ? args.request as Record<string, unknown>
+    : {};
+  const event = {
+    type: RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
+    id: eventId,
+    at: new Date().toISOString(),
+    reviewId: args.reviewId,
+    roleId: requestRecord.roleId,
+    branchId: requestRecord.branchId,
+    lineageId: requestRecord.lineageId,
+    reasonCode: "GRAPH_REVIEW_BINDING_MISSING",
+    message: "Human review request is missing the required round, lineageId, branchId, loopIteration, or stateVersion binding."
   };
   const handle = await open(eventsPath, "a");
   try {
@@ -2121,6 +2192,8 @@ export async function writeHumanReviewDecision(args: {
   principal: import("./identity.js").ControlPlanePrincipal;
   comment?: string;
   scope?: "branch" | "run";
+  targetRoleId?: string;
+  additionalBudget?: number;
 }): Promise<Record<string, unknown>> {
   const currentReview = await inspectHumanReview(args.workdir, args.runId, args.reviewId);
   const currentStatus =
@@ -2154,8 +2227,15 @@ export async function writeHumanReviewDecision(args: {
   if (!roleRepoDir || !roleId) {
     throw new Error(`[IR_CONTRACT_INVALID] Review "${args.reviewId}" has no resolvable Role Contract`);
   }
+  const reviewSnapshot = asRecord(currentReview.requestSnapshot) ?? asRecord(currentReview.currentState) ?? {};
+  const isLoopBudgetReview = currentReview.kind === "loop_budget" || reviewSnapshot.kind === "loop_budget";
   const rolePackage = await loadRolePackage({ roleId, roleRootDir: roleRepoDir });
-  if (!rolePackage.manifest.authority.controlActions.includes(args.decision)) {
+  if (isLoopBudgetReview && !["continue", "rework", "reject", "terminate"].includes(args.decision)) {
+    throw new Error(
+      `[GRAPH_LOOP_BUDGET_DECISION_INVALID] Loop budget review "${args.reviewId}" requires continue, rework, reject, or terminate; received ${args.decision}.`
+    );
+  }
+  if (!isLoopBudgetReview && !rolePackage.manifest.authority.controlActions.includes(args.decision as "approve" | "rework" | "pause" | "terminate")) {
     throw new Error(`[IR_CONTRACT_INVALID] Role ${roleId} does not authorize human review action ${args.decision}`);
   }
   if (args.scope !== undefined && args.decision !== "terminate") {
@@ -2174,15 +2254,46 @@ export async function writeHumanReviewDecision(args: {
       `Review "${args.reviewId}" does not expose a valid terminate scope; expected "branch" or "run".`
     );
   }
+  if (isLoopBudgetReview && args.decision !== "terminate") {
+    const loopBudget = asRecord(reviewSnapshot.loopBudget) ?? {};
+    const allowedTargets = getLoopBudgetTargetRoleIds({
+      targetRoleIds: Array.isArray(loopBudget.targetRoleIds) ? loopBudget.targetRoleIds.filter((value): value is string => typeof value === "string") : [],
+      reworkTargetRoleIds: Array.isArray(loopBudget.reworkTargetRoleIds) ? loopBudget.reworkTargetRoleIds.filter((value): value is string => typeof value === "string") : [],
+      rejectTargetRoleIds: Array.isArray(loopBudget.rejectTargetRoleIds) ? loopBudget.rejectTargetRoleIds.filter((value): value is string => typeof value === "string") : []
+    }, args.decision as "continue" | "rework" | "reject");
+    if (allowedTargets.length === 0) {
+      const pathLabel = args.decision === "rework" ? "NEEDS_REWORK" : args.decision === "reject" ? "REJECTED" : "budget continuation";
+      throw new Error(`[GRAPH_LOOP_BUDGET_TARGET_UNAVAILABLE] Current node declares no ${pathLabel} path for review "${args.reviewId}".`);
+    }
+    if (!args.targetRoleId || !allowedTargets.includes(args.targetRoleId)) {
+      throw new Error(`[GRAPH_LOOP_BUDGET_TARGET_INVALID] Decision ${args.decision} must select one of the declared targets for review "${args.reviewId}".`);
+    }
+  }
 
   const runDir = resolveRunDir(args.workdir, args.runId);
   const reviewsDir = resolveReviewsDir(runDir);
   await mkdir(reviewsDir, { recursive: true });
+  const reviewBinding = asRecord(currentReview.currentState) ?? asRecord(currentReview.requestSnapshot) ?? {};
+  const reviewRound = typeof reviewBinding.round === "number" ? reviewBinding.round : undefined;
+  const reviewLineageId = typeof reviewBinding.lineageId === "string" ? reviewBinding.lineageId : undefined;
+  const reviewBranchId = typeof reviewBinding.branchId === "string" ? reviewBinding.branchId : undefined;
+  const reviewLoopIteration = typeof reviewBinding.loopIteration === "number" ? reviewBinding.loopIteration : undefined;
+  const reviewStateVersion = typeof reviewBinding.stateVersion === "number" ? reviewBinding.stateVersion : undefined;
+  if (reviewRound === undefined || reviewLineageId === undefined || reviewBranchId === undefined || reviewLoopIteration === undefined || reviewStateVersion === undefined) {
+    throw new Error(`[GRAPH_REVIEW_BINDING_MISSING] Review "${args.reviewId}" does not contain the required round, lineageId, branchId, loopIteration, and stateVersion binding.`);
+  }
   const record: HumanReviewDecisionRecord = {
     reviewId: args.reviewId,
+    round: reviewRound,
+    lineageId: reviewLineageId,
+    branchId: reviewBranchId,
+    loopIteration: reviewLoopIteration,
+    stateVersion: reviewStateVersion,
     committedAt: new Date().toISOString(),
     decidedAt: new Date().toISOString(),
     decision: args.decision,
+    ...(args.targetRoleId ? { targetRoleId: args.targetRoleId } : {}),
+    ...(args.additionalBudget !== undefined ? { additionalBudget: args.additionalBudget } : {}),
     ...(comment ? { comment } : {}),
     actor: args.principal.id,
     principal: args.principal,

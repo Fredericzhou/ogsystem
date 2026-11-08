@@ -24,7 +24,7 @@ test("profile tool paths stay rooted in control workdir when coding target diffe
       executionsDir: "/tmp/control/.ogs/runs/run-1/roles/builder/executions",
       latestSessionPath: "/tmp/control/.ogs/runs/run-1/roles/builder/latest-session.json"
     },
-    allowedEvents: ["DONE"],
+    allowedEvents: ["READY"],
     effectiveLaw: {
       forbiddenToolRefs: [],
       allowNoopWithoutExecutionBinding: false

@@ -48,7 +48,7 @@ function makeRunClient(overrides = {}) {
               id: "msg_456",
               info: {
                 structured: {
-                  event: "SEND_MINIMALIST",
+                  event: "READY",
                   content: "dispatch"
                 }
               },
@@ -138,7 +138,7 @@ test("executeOpencodeModelRole keeps variant separate from reasoning effort", as
               id: "msg_456",
               info: {
                 structured: {
-                  event: "SEND_MINIMALIST",
+                  event: "READY",
                   content: "dispatch"
                 }
               },
@@ -197,7 +197,7 @@ test("executeOpencodeModelRole keeps variant separate from reasoning effort", as
   });
   assert.strictEqual(promptArgs.format.type, "json_schema");
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "SEND_MINIMALIST",
+    event: "READY",
     content: "dispatch"
   });
   assert.match(result.stderr, /step-start/);
@@ -221,7 +221,7 @@ test("executeOpencodeModelRole replays a frozen effective reasoning value for au
           return {
             data: {
               id: "msg_frozen",
-              info: { structured: { event: "SEND_MINIMALIST", content: "dispatch" } },
+              info: { structured: { event: "READY", content: "dispatch" } },
               parts: []
             }
           };
@@ -303,7 +303,7 @@ test("executeOpencodeModelRole keeps sessions isolated on one shared server", as
               id: `msg_${args.sessionID}`,
               info: {
                 structured: {
-                  event: "NEXT",
+                  event: "READY",
                   content: `${args.sessionID}:${args.parts[0].text}`
                 }
               },
@@ -381,11 +381,11 @@ test("executeOpencodeModelRole keeps sessions isolated on one shared server", as
   assert.strictEqual(first.messageId, "msg_ses_1");
   assert.strictEqual(second.messageId, "msg_ses_2");
   assert.deepStrictEqual(JSON.parse(first.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "ses_1:first"
   });
   assert.deepStrictEqual(JSON.parse(second.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "ses_2:second"
   });
 });
@@ -415,7 +415,7 @@ test("executeOpencodeModelRole keeps session-local memory isolated for sibling s
                 id: `msg_${args.sessionID}_remember`,
                 info: {
                   structured: {
-                    event: "NEXT",
+                    event: "READY",
                     content: `stored:${rememberMatch[1]}`
                   }
                 },
@@ -429,7 +429,7 @@ test("executeOpencodeModelRole keeps session-local memory isolated for sibling s
               id: `msg_${args.sessionID}_recall`,
               info: {
                 structured: {
-                  event: "NEXT",
+                  event: "READY",
                   content: memoryBySessionId.get(args.sessionID) ?? "missing"
                 }
               },
@@ -491,11 +491,11 @@ test("executeOpencodeModelRole keeps session-local memory isolated for sibling s
   assert.strictEqual(first.sessionId, "ses_1");
   assert.strictEqual(sibling.sessionId, "ses_2");
   assert.deepStrictEqual(JSON.parse(sibling.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "missing"
   });
   assert.deepStrictEqual(JSON.parse(continued.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "branch-a"
   });
 });
@@ -538,7 +538,7 @@ test("executeOpencodeModelRole reuses an existing session when provided", async 
                 id: "msg_loop",
                 info: {
                   structured: {
-                    event: "NEXT",
+                    event: "READY",
                     content: "continued"
                   }
                 },
@@ -596,7 +596,7 @@ test("executeOpencodeModelRole keeps session-local memory isolated across sessio
               id: `msg_${args.sessionID}_${sessionMemory.size}`,
               info: {
                 structured: {
-                  event: "NEXT",
+                  event: "READY",
                   content: sessionMemory.get(args.sessionID) ?? ""
                 }
               },
@@ -647,11 +647,11 @@ test("executeOpencodeModelRole keeps session-local memory isolated across sessio
   assert.strictEqual(branchASecond.sessionId, "ses_1");
   assert.strictEqual(branchBFirst.sessionId, "ses_2");
   assert.deepStrictEqual(JSON.parse(branchASecond.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "branch-a-secret"
   });
   assert.deepStrictEqual(JSON.parse(branchBFirst.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: ""
   });
 });
@@ -873,7 +873,7 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
                 id: "msg_2",
                 info: {
                   structured: {
-                    event: "NEXT",
+                    event: "READY",
                     content: "recovered"
                   }
                 },
@@ -897,7 +897,7 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
   assert.strictEqual(result.sessionId, "ses_1");
   assert.strictEqual(result.messageId, "msg_2");
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "recovered"
   });
 });
@@ -945,7 +945,7 @@ test("executeOpencodeModelRole continues retry when transient-error abort cleanu
                 id: "msg_retry_abort_fail",
                 info: {
                   structured: {
-                    event: "NEXT",
+                    event: "READY",
                     content: "recovered despite abort failure"
                   }
                 },
@@ -965,7 +965,7 @@ test("executeOpencodeModelRole continues retry when transient-error abort cleanu
   assert.strictEqual(result.sessionId, "ses_retry_abort_fail");
   assert.strictEqual(result.messageId, "msg_retry_abort_fail");
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "recovered despite abort failure"
   });
 });
@@ -998,7 +998,7 @@ test("executeOpencodeModelRole accepts JSON string structured output", async () 
               data: {
                 id: "msg_string",
                 info: {
-                  structured: '{"event":"NEXT","content":"string"}'
+                  structured: '{"event":"READY","content":"string"}'
                 },
                 parts: [{ type: "step-start" }, { type: "step-finish" }]
               }
@@ -1013,7 +1013,7 @@ test("executeOpencodeModelRole accepts JSON string structured output", async () 
   });
 
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "string"
   });
 });
@@ -1050,7 +1050,7 @@ test("executeOpencodeModelRole falls back to text parts when structured output i
                   { type: "step-start" },
                   {
                     type: "text",
-                    text: '{"event":"NEXT","content":"from-parts"}'
+                    text: '{"event":"READY","content":"from-parts"}'
                   }
                 ]
               }
@@ -1065,7 +1065,7 @@ test("executeOpencodeModelRole falls back to text parts when structured output i
   });
 
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "from-parts"
   });
 });
@@ -1115,7 +1115,7 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
                 id: "msg_retry_2",
                 info: {
                   structured: {
-                    event: "NEXT",
+                    event: "READY",
                     content: "corrected"
                   }
                 },
@@ -1136,7 +1136,7 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
   assert.deepEqual(promptMeterEvents.filter((event) => event.stage === "before").map(({ phase, ordinal }) => [phase, ordinal]), [["primary", 1], ["repair", 1]]);
   assert.equal(promptMeterEvents.filter((event) => event.stage === "after").length, 2);
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "corrected"
   });
 });
@@ -1187,7 +1187,7 @@ test("executeOpencodeModelRole falls back to schemaless JSON when provider rejec
                 parts: [
                   {
                     type: "text",
-                    text: '{"event":"NEXT","content":"fallback"}'
+                    text: '{"event":"READY","content":"fallback"}'
                   }
                 ]
               }
@@ -1207,7 +1207,7 @@ test("executeOpencodeModelRole falls back to schemaless JSON when provider rejec
   assert.equal(promptCalls[1].format, undefined);
   assert.match(promptCalls[1].parts[0].text, /JSON schema:/);
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "fallback"
   });
 });
@@ -1262,7 +1262,7 @@ test("executeOpencodeModelRole uses schemaless corrective retry after tool_choic
               data: {
                 id: "msg_tool_choice_text_2",
                 info: {},
-                parts: [{ type: "text", text: '{"event":"NEXT","content":"corrected"}' }]
+                parts: [{ type: "text", text: '{"event":"READY","content":"corrected"}' }]
               }
             };
           },
@@ -1278,7 +1278,7 @@ test("executeOpencodeModelRole uses schemaless corrective retry after tool_choic
   assert.match(promptInputs[1], /JSON schema:/);
   assert.match(promptInputs[2], /Return exactly one JSON object/);
   assert.deepStrictEqual(JSON.parse(result.stdout), {
-    event: "NEXT",
+    event: "READY",
     content: "corrected"
   });
 });

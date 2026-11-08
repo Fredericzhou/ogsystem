@@ -35,7 +35,7 @@ export function isPendingHumanReview(
     typeof (value as PendingHumanReview).round === "number" &&
     typeof (value as PendingHumanReview).spec === "object" &&
     (value as PendingHumanReview).spec !== null &&
-    ((value as PendingHumanReview).stateVersion === undefined || Number.isInteger((value as PendingHumanReview).stateVersion)) &&
+    Number.isInteger((value as PendingHumanReview).stateVersion) &&
     ((value as PendingHumanReview).irDigest === undefined || typeof (value as PendingHumanReview).irDigest === "string")
   );
 }
@@ -50,10 +50,17 @@ export function isHumanReviewDecisionRecord(
     typeof (value as HumanReviewDecisionRecord).reviewId === "string" &&
     typeof (value as HumanReviewDecisionRecord).committedAt === "string" &&
     typeof (value as HumanReviewDecisionRecord).decidedAt === "string" &&
+    Number.isInteger((value as HumanReviewDecisionRecord).round) &&
+    typeof (value as HumanReviewDecisionRecord).lineageId === "string" &&
+    typeof (value as HumanReviewDecisionRecord).branchId === "string" &&
+    Number.isInteger((value as HumanReviewDecisionRecord).loopIteration) &&
+    Number.isInteger((value as HumanReviewDecisionRecord).stateVersion) &&
     ((value as HumanReviewDecisionRecord).decision === "approve" ||
       (value as HumanReviewDecisionRecord).decision === "rework" ||
       (value as HumanReviewDecisionRecord).decision === "pause" ||
-      (value as HumanReviewDecisionRecord).decision === "terminate")
+      (value as HumanReviewDecisionRecord).decision === "terminate" ||
+      (value as HumanReviewDecisionRecord).decision === "continue" ||
+      (value as HumanReviewDecisionRecord).decision === "reject")
   );
 }
 

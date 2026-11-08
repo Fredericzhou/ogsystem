@@ -52,6 +52,10 @@ import { buildRunSummaryProjection } from "./run-summary-schema.js";
 import { projectStages } from "./stage-projector.js";
 import { applySemanticBusinessState } from "./semantic-state.js";
 import { resolveJoinPolicy } from "./join-policy.js";
+import {
+  RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
+  RUNTIME_EVENT_LOOP_EXHAUSTED
+} from "../business-events.js";
 import { semanticIRDigest } from "./semantic-ir.js";
 import type { RuntimeExecutionServices } from "./engine-adapter.js";
 import { rebuildTimelineProjection } from "./timeline-projector.js";
@@ -60,6 +64,7 @@ import {
   appendEvent as appendFilesystemEvent,
   clearRunStopRequest,
   cleanupHistoricalExecutionSnapshots,
+  eventIdsForContext,
   flushBufferedRunArtifacts,
   loadAuditTrailFromEvents,
   persistRunStopOutcome,
@@ -103,15 +108,65 @@ const runtimeServicesByContext = new WeakMap<object, RuntimeExecutionServices>()
 
 /** Routes every graph event through the adapter port when one is active. */
 async function appendEvent(context: RunContext, payload: Record<string, unknown>): Promise<void> {
+  const eventId = typeof payload.eventId === "string" && payload.eventId ? payload.eventId : undefined;
+  const eventIds = eventId ? await eventIdsForContext(context) : undefined;
   const runtimeServices = runtimeServicesByContext.get(context);
   if (runtimeServices) {
     await runtimeServices.audit.append({
       ...payload,
       type: typeof payload.type === "string" ? payload.type : "runtime_event"
     });
+    if (eventIds && eventId) eventIds.add(eventId);
     return;
   }
   await appendFilesystemEvent(context, payload);
+  if (eventIds && eventId) eventIds.add(eventId);
+}
+
+async function ensureResultCommitEvent(args: {
+  context: RunContext;
+  resultCommit: NonNullable<GraphState["resultCommit"]>;
+  roleId?: string;
+  stateVersion: number;
+}): Promise<void> {
+  const eventId = `result_committed:${args.resultCommit.resultId}`;
+  const eventIds = await eventIdsForContext(args.context);
+  if (eventIds.has(eventId)) return;
+  await appendEvent(args.context, {
+    type: "result_committed",
+    eventId,
+    at: args.resultCommit.committedAt ?? new Date().toISOString(),
+    resultId: args.resultCommit.resultId,
+    roleId: args.roleId,
+    stateVersion: args.stateVersion
+  });
+}
+
+async function ensureLoopBudgetReviewEvents(args: {
+  context: RunContext;
+  state: GraphState;
+}): Promise<void> {
+  const reviews = Object.values(args.state.pendingReviewsById).filter(
+    (review) => review.kind === "loop_budget" && review.loopBudget
+  );
+  if (!reviews.length) return;
+  const eventIds = await eventIdsForContext(args.context);
+  for (const review of reviews) {
+    const eventId = `loop_exhausted:${review.reviewId}`;
+    if (eventIds.has(eventId)) continue;
+    await appendEvent(args.context, {
+      type: RUNTIME_EVENT_LOOP_EXHAUSTED,
+      eventId,
+      at: review.requestedAt,
+      loopId: review.loopBudget?.loopId,
+      roleId: review.roleId,
+      branchId: review.branchId,
+      lineageId: review.lineageId,
+      loopIteration: review.loopIteration,
+      maxRounds: review.loopBudget?.maxRounds,
+      reviewId: review.reviewId
+    });
+  }
 }
 
 function runtimeEdgeId(
@@ -157,7 +212,9 @@ const DEFAULT_TRANSITION_BUDGET = 100;
 const GRAPH_RECURSION_MARGIN = 20;
 const RECENT_AUDIT_WINDOW = 5;
 const GANTT_RENDER_LIMIT = 200;
+const TEST_HOOKS_ENABLED_ENV = "OGSYSTEM_ENABLE_TEST_HOOKS";
 const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME";
+const TEST_CRASH_AFTER_REVIEW_STATE_COMMIT_ENV = "OGSYSTEM_TEST_CRASH_AFTER_REVIEW_STATE_COMMIT";
 const DEFAULT_ROLE_EXECUTION_TIMEOUT_MS = 120000;
 const ROLE_NODE_TIMEOUT_GRACE_MS = 5000;
 
@@ -217,6 +274,16 @@ function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunS
   if (current === "terminated" || update === "terminated") {
     return "terminated";
   }
+  // A resolved human review explicitly re-enters the scheduler. Without this
+  // transition, the waiting_review marker wins forever and the resumed branch
+  // is never dispatched. Any still-pending review is re-parked by the final
+  // pending-review check after the graph drains.
+  if (update === "running" && current === "waiting_review") {
+    return "running";
+  }
+  if (current === "waiting_review" || update === "waiting_review") {
+    return "waiting_review";
+  }
   if (current === "stopped" || update === "stopped") {
     return "stopped";
   }
@@ -230,7 +297,7 @@ function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunS
 }
 
 function liftWaitingHumanReviewStop(state: GraphState): GraphState {
-  if (state.status !== "stopped" || state.error !== "waiting for human review") {
+  if (!((state.status === "stopped" && state.error === "waiting for human review") || state.status === "waiting_review")) {
     return state;
   }
   return {
@@ -323,9 +390,29 @@ const GraphStateAnnotation = Annotation.Root({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
   }),
+  loopBudgetAuthorizationsByScope: Annotation<Record<string, number>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
   roleActivationsByScope: Annotation<Record<string, number>>({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
+  }),
+  artifactAllowedByBranchId: Annotation<Record<string, string[]>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  joinScopes: Annotation<NonNullable<GraphState["joinScopes"]>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  joinSourceOutcomesByScope: Annotation<NonNullable<GraphState["joinSourceOutcomesByScope"]>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  resultCommit: Annotation<GraphState["resultCommit"]>({
+    reducer: (current, update) => update ?? current,
+    default: () => undefined
   }),
   selectedEventByBranchId: Annotation<Record<string, string>>({
     reducer: (current, update) => ({ ...current, ...update }),
@@ -362,6 +449,13 @@ const GraphStateAnnotation = Annotation.Root({
 });
 
 function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpdate {
+  const mergedBudgetDeltas: Record<string, number> = {};
+  for (const [key, value] of Object.entries(current.loopBudgetAuthorizationDeltasByScope ?? {})) {
+    mergedBudgetDeltas[key] = (mergedBudgetDeltas[key] ?? 0) + value;
+  }
+  for (const [key, value] of Object.entries(update.loopBudgetAuthorizationDeltasByScope ?? {})) {
+    mergedBudgetDeltas[key] = (mergedBudgetDeltas[key] ?? 0) + value;
+  }
   return {
     stateVersion: Math.max(current.stateVersion ?? 0, update.stateVersion ?? 0),
     lastEventId: update.lastEventId ?? current.lastEventId,
@@ -402,7 +496,15 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
     branchRecords: { ...(current.branchRecords ?? {}), ...(update.branchRecords ?? {}) },
     loopIterations: { ...(current.loopIterations ?? {}), ...(update.loopIterations ?? {}) },
     loopCountersByScope: { ...(current.loopCountersByScope ?? {}), ...(update.loopCountersByScope ?? {}) },
+    loopBudgetAuthorizationsByScope: { ...(current.loopBudgetAuthorizationsByScope ?? {}), ...(update.loopBudgetAuthorizationsByScope ?? {}) },
+    ...(Object.keys(mergedBudgetDeltas).length
+      ? { loopBudgetAuthorizationDeltasByScope: mergedBudgetDeltas }
+      : {}),
     roleActivationsByScope: { ...(current.roleActivationsByScope ?? {}), ...(update.roleActivationsByScope ?? {}) },
+    artifactAllowedByBranchId: { ...(current.artifactAllowedByBranchId ?? {}), ...(update.artifactAllowedByBranchId ?? {}) },
+    joinScopes: { ...(current.joinScopes ?? {}), ...(update.joinScopes ?? {}) },
+    joinSourceOutcomesByScope: { ...(current.joinSourceOutcomesByScope ?? {}), ...(update.joinSourceOutcomesByScope ?? {}) },
+    resultCommit: update.resultCommit ?? current.resultCommit,
     selectedEventByBranchId: {
       ...(current.selectedEventByBranchId ?? {}),
       ...(update.selectedEventByBranchId ?? {})
@@ -421,6 +523,13 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
 }
 
 export function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
+  const loopBudgetAuthorizationsByScope = {
+    ...(state.loopBudgetAuthorizationsByScope ?? {}),
+    ...(update.loopBudgetAuthorizationsByScope ?? {})
+  };
+  for (const [key, delta] of Object.entries(update.loopBudgetAuthorizationDeltasByScope ?? {})) {
+    loopBudgetAuthorizationsByScope[key] = Math.max(0, (state.loopBudgetAuthorizationsByScope?.[key] ?? 0) + delta);
+  }
   return {
     stateVersion: state.stateVersion + 1,
     lastEventId: update.lastEventId ?? state.lastEventId,
@@ -457,8 +566,12 @@ export function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphS
     branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
     loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
     loopCountersByScope: { ...(state.loopCountersByScope ?? {}), ...(update.loopCountersByScope ?? {}) },
+    loopBudgetAuthorizationsByScope,
     roleActivationsByScope: { ...(state.roleActivationsByScope ?? {}), ...(update.roleActivationsByScope ?? {}) },
+    artifactAllowedByBranchId: { ...(state.artifactAllowedByBranchId ?? {}), ...(update.artifactAllowedByBranchId ?? {}) },
+    resultCommit: update.resultCommit ?? state.resultCommit,
     joinScopes: { ...(state.joinScopes ?? {}), ...(update.joinScopes ?? {}) },
+    joinSourceOutcomesByScope: { ...(state.joinSourceOutcomesByScope ?? {}), ...(update.joinSourceOutcomesByScope ?? {}) },
     selectedEventByBranchId: {
       ...state.selectedEventByBranchId,
       ...(update.selectedEventByBranchId ?? {})
@@ -482,9 +595,22 @@ async function persistProjectedState(args: {
   runContext: RunContext;
 }): Promise<void> {
   try {
+    // LangGraph can omit empty annotation values from a streamed state. Keep the
+    // durable GraphState contract complete so every stopped run remains resumable.
+    const maxBranchSequence = Object.values(args.state.branchRecords ?? {}).reduce(
+      (max, branch) => Math.max(max, Number.isInteger(branch.branchSequence) ? branch.branchSequence : 0),
+      0
+    );
+    const persistedState: GraphState = {
+      ...args.state,
+      error: typeof args.state.error === "string" ? args.state.error : "",
+      nextBranchSequence: Number.isInteger(args.state.nextBranchSequence)
+        ? args.state.nextBranchSequence
+        : maxBranchSequence + 1
+    };
     const projectionUpdatedAt = new Date().toISOString();
     const stateWriteStartedAt = Date.now();
-    await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)));
+    await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot({ ...args, state: persistedState })));
     const stateWriteMs = Date.now() - stateWriteStartedAt;
     await writeAtomicFile(
       args.runContext.metricsPath,
@@ -613,6 +739,15 @@ export async function replayPendingRuntimeCheckpoints(args: {
     }
     replayedState = applyGraphUpdate(replayedState, checkpoint.update);
   }
+  if (replayedState.resultCommit?.status === "committed") {
+    await ensureResultCommitEvent({
+      context: args.runContext,
+      resultCommit: replayedState.resultCommit,
+      roleId: replayedState.lastExecutedRoleId,
+      stateVersion: replayedState.stateVersion
+    });
+  }
+  await ensureLoopBudgetReviewEvents({ context: args.runContext, state: replayedState });
   return {
     state: replayedState,
     checkpoints
@@ -627,13 +762,23 @@ function calculateGraphRecursionLimit(maxTransitions?: number): number {
 }
 
 function maybeCrashAfterExecutionOutcome(): never | void {
-  if (process.env[TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV] !== "1") {
+  if (process.env[TEST_HOOKS_ENABLED_ENV] !== "1" || process.env[TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV] !== "1") {
     return;
   }
   process.stderr.write(
     `[test-failpoint] forced crash after execution outcome before checkpoint\n`
   );
   process.exit(91);
+}
+
+function maybeCrashAfterHumanReviewStateCommit(): never | void {
+  if (process.env[TEST_HOOKS_ENABLED_ENV] !== "1" || process.env[TEST_CRASH_AFTER_REVIEW_STATE_COMMIT_ENV] !== "1") {
+    return;
+  }
+  process.stderr.write(
+    `[test-failpoint] forced crash after human review state commit before decision markers\n`
+  );
+  process.exit(92);
 }
 
 function buildGraphUpdateFromOutcome(args: {
@@ -745,6 +890,10 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
     for (const event of transitionPlan.events) {
       await appendEvent(args.runContext, event);
     }
+    await ensureLoopBudgetReviewEvents({ context: args.runContext, state: reconciledState });
+    if (transitionPlan.update.resultCommit?.status === "committed") {
+      await ensureResultCommitEvent({ context: args.runContext, resultCommit: transitionPlan.update.resultCommit, roleId: outcome.roleId, stateVersion: reconciledState.stateVersion + 1 });
+    }
     pendingCheckpointByExecutionId.set(outcome.executionId, checkpoint);
     const stateCommit = args.runtimeServices
       ? await args.runtimeServices.stateStore.commit({
@@ -778,6 +927,11 @@ function hasAppliedHumanReviewDecision(args: {
   return (args.state.reviewHistoryByBranchId[args.branchId] ?? []).some(
     (entry) => entry.reviewId === args.reviewId && entry.decidedAt === args.decidedAt
   );
+}
+
+function reviewDecisionRejectionCode(error: unknown): string {
+  const match = error instanceof Error ? error.message.match(/^\[([A-Z0-9_]+)\]/) : undefined;
+  return match?.[1] ?? "GRAPH_REVIEW_DECISION_REJECTED";
 }
 
 async function reconcileCommittedHumanReviewDecisions(args: {
@@ -834,19 +988,60 @@ async function reconcileCommittedHumanReviewDecisions(args: {
     }
 
     if (!pendingReview) {
+      const rejectionCode = "GRAPH_REVIEW_NOT_FOUND";
+      await appendEvent(args.runContext, {
+        type: RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
+        at: new Date().toISOString(),
+        reviewId: decision.reviewId,
+        reasonCode: rejectionCode,
+        decidedAt: decision.decidedAt
+      });
+      await filesystemReviewStore.markApplied({
+        context: args.runContext,
+        reviewId: decision.reviewId,
+        checkpointSequence: decision.checkpointSequence ?? reconciledState.lastCheckpointSequence,
+        appliedAt: decision.appliedAt ?? new Date().toISOString()
+      });
+      await filesystemReviewStore.markReconciled({ context: args.runContext, reviewId: decision.reviewId });
       continue;
     }
 
-    const transitionPlan = planHumanReviewDecisionTransition({
-      state: reconciledState,
-      plan: args.plan,
-      contractPlan: args.contractPlan,
-      review: pendingReview,
-      decision,
-      logger,
-      indexes,
-      rolePackagesByRoleId: args.rolePackagesByRoleId
-    });
+    let transitionPlan: TransitionPlan;
+    try {
+      transitionPlan = planHumanReviewDecisionTransition({
+        runId: args.runContext.runId,
+        state: reconciledState,
+        plan: args.plan,
+        contractPlan: args.contractPlan,
+        review: pendingReview,
+        decision,
+        logger,
+        indexes,
+        rolePackagesByRoleId: args.rolePackagesByRoleId
+      });
+    } catch (error) {
+      const rejectionCode = reviewDecisionRejectionCode(error);
+      await appendEvent(args.runContext, {
+        type: RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
+        at: new Date().toISOString(),
+        reviewId: decision.reviewId,
+        roleId: pendingReview.roleId,
+        branchId: pendingReview.branchId,
+        lineageId: pendingReview.lineageId,
+        round: pendingReview.round,
+        reasonCode: rejectionCode,
+        decidedAt: decision.decidedAt,
+        message: error instanceof Error ? error.message : String(error)
+      });
+      await filesystemReviewStore.markApplied({
+        context: args.runContext,
+        reviewId: decision.reviewId,
+        checkpointSequence: decision.checkpointSequence ?? reconciledState.lastCheckpointSequence,
+        appliedAt: decision.appliedAt ?? new Date().toISOString()
+      });
+      await filesystemReviewStore.markReconciled({ context: args.runContext, reviewId: decision.reviewId });
+      continue;
+    }
     const checkpoint = await filesystemCheckpointStore.persist({
       context: args.runContext,
       roleId: pendingReview.roleId,
@@ -861,20 +1056,20 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       idempotencyKey: `${args.runContext.runId}:${pendingReview.executionId}:${reconciledState.stateVersion + 1}`
     });
     await args.runtimeServices?.checkpointStore.append(checkpoint);
-    for (const event of transitionPlan.events) {
-      await appendEvent(args.runContext, event);
+    for (const [eventIndex, event] of transitionPlan.events.entries()) {
+      const eventId = `human_review_decision:${decision.reviewId}:${decision.decidedAt}:${eventIndex}`;
+      await appendEvent(args.runContext, {
+        ...event,
+        eventId
+      });
     }
-    await filesystemReviewStore.markApplied({
-      context: args.runContext,
-      reviewId: decision.reviewId,
-      checkpointSequence: checkpoint.checkpointSequence,
-      appliedAt: new Date().toISOString(),
-      reconciledAt: new Date().toISOString()
-    });
-    await filesystemReviewStore.markReconciled({
-      context: args.runContext,
-      reviewId: decision.reviewId
-    });
+    // Review decision events are part of the durable control-plane audit. Flush them before the
+    // state frontier is committed so a crash after state commit cannot leave a resolved decision
+    // without its corresponding audit record.
+    await flushBufferedRunArtifacts(args.runContext);
+    if (transitionPlan.update.resultCommit?.status === "committed") {
+      await ensureResultCommitEvent({ context: args.runContext, resultCommit: transitionPlan.update.resultCommit, roleId: pendingReview.roleId, stateVersion: reconciledState.stateVersion + 1 });
+    }
     const stateCommit = args.runtimeServices
       ? await args.runtimeServices.stateStore.commit({
           runId: args.runContext.runId,
@@ -890,6 +1085,21 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       : checkpoint.update;
     reconciledState = stateCommit?.snapshot.state ?? applyGraphUpdate(reconciledState, effectiveUpdate);
     indexes = applyGraphUpdateToIndexes(indexes, effectiveUpdate);
+    // Commit the state frontier before marking the control-plane decision consumed. If the
+    // process stops in this window, resume replays the checkpoint and then reconciles the
+    // still-unmarked decision from the already-resolved review state.
+    maybeCrashAfterHumanReviewStateCommit();
+    await filesystemReviewStore.markApplied({
+      context: args.runContext,
+      reviewId: decision.reviewId,
+      checkpointSequence: checkpoint.checkpointSequence,
+      appliedAt: new Date().toISOString(),
+      reconciledAt: new Date().toISOString()
+    });
+    await filesystemReviewStore.markReconciled({
+      context: args.runContext,
+      reviewId: decision.reviewId
+    });
   }
 
   return {
@@ -1288,6 +1498,10 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       for (const event of transitionPlan.events) {
         await appendEvent(args.runContext, event);
       }
+      await ensureLoopBudgetReviewEvents({ context: args.runContext, state: workingState });
+      if (transitionPlan.update.resultCommit?.status === "committed") {
+        await ensureResultCommitEvent({ context: args.runContext, resultCommit: transitionPlan.update.resultCommit, roleId, stateVersion: workingState.stateVersion + 1 });
+      }
 
       const stateCommit = args.runtimeServices
         ? await args.runtimeServices.stateStore.commit({
@@ -1528,7 +1742,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     }
   }
 
-  if (finalState.status === "running" && args.contractPlan?.handoffMode === "transition") {
+  const hasSkippedJoinSource = Object.values(finalState.joinSourceOutcomesByScope ?? {})
+    .some((outcomes) => Object.values(outcomes).some((status) => status === "skipped"));
+  if (
+    finalState.status === "running" &&
+    (args.contractPlan?.handoffMode === "transition" || hasSkippedJoinSource)
+  ) {
     const orphanedJoinGroup = findOrphanedJoinGroup({
       state: finalState,
       plan: args.plan,
@@ -1566,12 +1785,11 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         const joinMin = spec?.min ?? scope.joinMin ?? scope.expectedSourceRoleIds.length;
         const failurePolicy = spec?.failurePolicy ?? scope.failurePolicy ?? "wait";
         const timeoutAction = scope.timeoutAction ?? spec?.onTimeout ?? "fail";
-        const activeSourceExists = Object.values(finalState.branchRecords).some(
-          (branch) =>
-            branch.status === "active" &&
-            branch.lineageId === scope.lineageId &&
-            branch.loopIteration === scope.loopIteration &&
-            scope.missingSourceRoleIds.includes(branch.roleId)
+        const sourceStatusByRoleId = scope.sourceStatusByRoleId ?? Object.fromEntries(
+          scope.expectedSourceRoleIds.map((sourceRoleId) => [
+            sourceRoleId,
+            scope.readySourceRoleIds.includes(sourceRoleId) ? "arrived" : "pending"
+          ])
         );
         const decision = resolveJoinPolicy({
           mode: joinMode,
@@ -1583,21 +1801,23 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           now,
           onTimeout: timeoutAction,
           failurePolicy,
-          sourceFailure: !activeSourceExists
+          sourceStatusByRoleId
         });
         if (decision.action === "wait" || decision.action === "activate") continue;
-        const sourceFailure = decision.reason.startsWith("source failure");
+        const sourceFailure = decision.reason.includes("source failed") || decision.reason.startsWith("source failure");
+        const requiredSourceSkipped = decision.reason === "required source skipped";
         const resolutionAt = new Date(now).toISOString();
         nextScopes[scopeKey] = {
           ...scope,
           status: sourceFailure ? "failed" : "timed_out",
+          sourceStatusByRoleId,
           completedAt: resolutionAt,
           resolutionReason: decision.reason,
           resolutionAction: decision.action
         };
         await appendEvent(args.runContext, {
-          type: sourceFailure ? "join_source_failed" : "join_timed_out",
-          status: sourceFailure ? "failed" : "timed_out",
+          type: sourceFailure || requiredSourceSkipped ? "join_source_outcome_rejected" : "join_timed_out",
+          status: sourceFailure ? "failed" : requiredSourceSkipped ? "skipped" : "timed_out",
           at: resolutionAt,
           roleId: scope.joinRoleId,
           joinId: scope.joinId,
@@ -1619,7 +1839,11 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           scopeKey,
           roleId: scope.joinRoleId,
           message,
-          errorCode: sourceFailure ? "GRAPH_JOIN_SOURCE_FAILED" : "GRAPH_JOIN_TIMEOUT"
+          errorCode: sourceFailure
+            ? "GRAPH_JOIN_REQUIRED_SOURCE_FAILED"
+            : requiredSourceSkipped
+              ? "GRAPH_JOIN_REQUIRED_SOURCE_SKIPPED"
+              : "GRAPH_JOIN_TIMEOUT"
         };
         else if (decision.action === "terminate") terminated = true;
         else paused = true;
@@ -1638,6 +1862,19 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       }
       await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
     }
+  }
+
+  if (finalState.status === "waiting_review") {
+    const pendingReviewCount = countPendingHumanReviews(finalState);
+    logger.runWaiting({ waitKind: "business", reason: "human_review", pendingReviewCount });
+    await appendEvent(args.runContext, {
+      type: "run_waiting",
+      at: new Date().toISOString(),
+      waitKind: "business",
+      reason: "human_review",
+      pendingReviewCount
+    });
+    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
   if (finalState.status === "running") {
@@ -1767,7 +2004,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         ? "failed"
         : finalState.status === "terminated"
           ? "terminated"
-        : finalState.status === "stopped"
+        : finalState.status === "stopped" || finalState.status === "waiting_review"
           ? "stopped"
           : "done",
     finalRoleIds: finalState.finalRoleIds.length ? finalState.finalRoleIds : undefined,
@@ -1786,7 +2023,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         ? "failed"
         : finalState.status === "terminated"
           ? "terminated"
-        : finalState.status === "stopped"
+        : finalState.status === "stopped" || finalState.status === "waiting_review"
           ? "stopped"
           : "done",
     finalRoleIds: finalState.finalRoleIds.length ? finalState.finalRoleIds : undefined,

@@ -18,8 +18,10 @@ import {
   resolvePrivateWorkspaceDir
 } from "./run-artifacts.js";
 import type { RunContext, RoleExecutionOutcomeRecord, RoleExecutionRecord } from "./types.js";
+import { createArtifactResolver } from "./artifact-access.js";
 
 export type ArtifactStore = {
+  createResolver: typeof createArtifactResolver;
   allocateExecution: typeof allocateRoleExecution;
   buildSessionKey: typeof buildRoleSessionKey;
   resolvePrivateWorkspace: typeof resolvePrivateWorkspaceDir;
@@ -34,6 +36,7 @@ export type ArtifactStore = {
 };
 
 export const filesystemArtifactStore: ArtifactStore = {
+  createResolver: createArtifactResolver,
   allocateExecution: allocateRoleExecution,
   buildSessionKey: buildRoleSessionKey,
   resolvePrivateWorkspace: resolvePrivateWorkspaceDir,

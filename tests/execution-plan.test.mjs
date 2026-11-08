@@ -25,12 +25,12 @@ const source = `flowchart TD
 %% exec.bind.worker_a=profile.a
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
-dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
-workerA[Role:worker_a] -->|A_DONE| review[Role:review]
-workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|RETRY| dispatch[Role:dispatch]
-review[Role:review] -->|DONE| end[结束]
+dispatch[Role:dispatch] -->|READY| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| workerB[Role:worker_b]
+workerA[Role:worker_a] -->|READY| review[Role:review]
+workerB[Role:worker_b] -->|READY| review[Role:review]
+review[Role:review] -->|NEEDS_REWORK| dispatch[Role:dispatch]
+review[Role:review] -->|READY| end[结束]
 `;
 
 test("execution plan normalizes graph semantics and bindings", () => {

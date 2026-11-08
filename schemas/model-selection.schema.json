@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["configVersion"],
   "properties": {
-    "configVersion": { "const": "2" },
+    "configVersion": { "const": "3" },
     "defaults": { "$ref": "#/$defs/selection" },
     "roles": {
       "type": "object",

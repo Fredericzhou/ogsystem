@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
+import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 const cliPath = path.resolve("dist/runtime/cli.js");
 const opencodeModelsFixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
@@ -76,6 +79,54 @@ async function seedRuntimeProject(tempRoot) {
     await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"),
     "utf8"
   );
+}
+
+async function createCliLoopBudgetFixture(tempRoot) {
+  const repoRoot = process.cwd();
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles", "opencode-reviewer");
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await mkdir(rolesRoot, { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(path.resolve(repoRoot, ".ogs", "laws.json"), path.resolve(tempRoot, ".ogs", "laws.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
+  await writeFile(path.resolve(tempRoot, ".ogs", "runtime.json"), JSON.stringify({
+    configVersion: "2",
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    runsDir: ".ogs/runs"
+  }, null, 2), "utf8");
+  await writeFile(path.resolve(tempRoot, ".ogs", "model-selection.json"), JSON.stringify({
+    configVersion: "3",
+    defaults: { backend: "opencode", modelId: "opencode/gpt-5-nano", timeoutMs: 120000, maxOutputBytes: 65536 }
+  }, null, 2), "utf8");
+  await writeFile(path.resolve(rolesRoot, "role.json"), JSON.stringify({
+    roleId: "opencode-reviewer",
+    roleVersion: "1.0.0",
+    name: "CLI Loop Reviewer",
+    description: "CLI loop budget fixture",
+    promptTemplate: "prompt.md",
+    outputSchema: "output.schema.json",
+    ...latestRoleContract({ events: ["REJECTED", "APPROVED"] })
+  }, null, 2), "utf8");
+  await writeFile(path.resolve(rolesRoot, "prompt.md"), "{{agent}}\nAllowed events: {{allowed_events}}\nTask: {{task}}\nInput: {{input}}\n", "utf8");
+  await writeFile(path.resolve(rolesRoot, "agent.md"), "# CLI Loop Reviewer\n", "utf8");
+  await writeFile(path.resolve(rolesRoot, "output.schema.json"), JSON.stringify({
+    type: "object",
+    required: ["event", "content"],
+    properties: { event: { type: "string", enum: ["REJECTED", "APPROVED"] }, content: { type: "string" } },
+    additionalProperties: false
+  }, null, 2), "utf8");
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  await writeFile(systemPath, `flowchart TD
+%% system.id=test.cli.loop-budget
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% loop.max.opencode-reviewer=1
+start[开始] -->|START| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|REJECTED| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|APPROVED| end[结束]
+`, "utf8");
+  return { repoRoot, systemPath };
 }
 
 test("lifecycle cli project init/create commands scaffold project control plane", { concurrency: false }, async () => {
@@ -184,9 +235,9 @@ test("lifecycle cli project init/create commands scaffold project control plane"
       "%% exec.bind.debate-judge=profile.console.print",
       "",
       "start[开始] -->|START| minimalist[Role:debate-minimalist]",
-      "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
-      "judge[Role:debate-judge] -->|DECISION_READY| end[结束]",
-      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| end[结束]",
+      "minimalist[Role:debate-minimalist] -->|READY| judge[Role:debate-judge]",
+      "judge[Role:debate-judge] -->|READY| end[结束]",
+      "judge[Role:debate-judge] -->|NEEDS_REWORK| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -230,9 +281,9 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
   const reviewerSchemaSource = await readFile(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "output.schema.json"), "utf8");
   const reviewerAgentSource = await readFile(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "agent.md"), "utf8");
   const systemSource = await readFile(path.resolve(projectDir, "system.mmd"), "utf8");
-  assert.match(reviewerSchemaSource, /"enum": \["REVIEW_READY", "REWORK"\]/);
-  assert.match(reviewerAgentSource, /REVIEW_READY/);
-  assert.match(reviewerAgentSource, /REWORK/);
+  assert.match(reviewerSchemaSource, /"enum": \["READY", "NEEDS_REWORK"\]/);
+  assert.match(reviewerAgentSource, /READY/);
+  assert.match(reviewerAgentSource, /NEEDS_REWORK/);
   assert.match(systemSource, /%% role\.mode\.advanced-coordinator=parallel_split/);
   assert.match(systemSource, /%% loop\.max\.advanced-coordinator=2/);
   assert.match(systemSource, /%% join\.mode\.advanced-reviewer=all_of/);
@@ -240,7 +291,7 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
   assert.match(systemSource, /%% context\.map\.advanced-coordinator\.review_comment=global\.human_review\.current\.comment\?/);
   assert.match(systemSource, /%% review\.mode\.advanced-reviewer=required/);
   assert.match(systemSource, /%% review\.rework\.target\.advanced-reviewer=advanced-coordinator/);
-  assert.match(systemSource, /reviewer\[Role:advanced-reviewer\] -->\|REWORK\| coordinator\[Role:advanced-coordinator\]/);
+  assert.match(systemSource, /reviewer\[Role:advanced-reviewer\] -->\|NEEDS_REWORK\| coordinator\[Role:advanced-coordinator\]/);
 
   const start = await runCli(
     ["run", "start", "--system", "system.mmd", "--input", "advanced template review loop"],
@@ -329,9 +380,9 @@ test("lifecycle cli resolves explicit system paths from the command directory", 
       "%% law.global=law.console.base",
       "",
       "start[开始] -->|START| minimalist[Role:debate-minimalist]",
-      "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
-      "judge[Role:debate-judge] -->|DECISION_READY| end[结束]",
-      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| end[结束]"
+      "minimalist[Role:debate-minimalist] -->|READY| judge[Role:debate-judge]",
+      "judge[Role:debate-judge] -->|READY| end[结束]",
+      "judge[Role:debate-judge] -->|NEEDS_REWORK| end[结束]"
     ].join("\n"),
     "utf8"
   );
@@ -620,7 +671,7 @@ test("lifecycle cli review commands expose pending human review state and can ap
       "%% review.mode.test-operator=required",
       "",
       "start[开始] -->|START| operator[Role:test-operator]",
-      "operator[Role:test-operator] -->|DONE| end[结束]",
+      "operator[Role:test-operator] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -770,7 +821,7 @@ test("lifecycle cli review commands preserve paused status and allow a later app
       "%% review.mode.test-operator=required",
       "",
       "start[开始] -->|START| operator[Role:test-operator]",
-      "operator[Role:test-operator] -->|DONE| end[结束]",
+      "operator[Role:test-operator] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -898,7 +949,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
       "%% review.rework.target.test-operator=test-operator",
       "",
       "start[开始] -->|START| operator[Role:test-operator]",
-      "operator[Role:test-operator] -->|DONE| end[结束]",
+      "operator[Role:test-operator] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -1180,4 +1231,93 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
   assert.doesNotMatch(failedResume.stderr, /--resume-run/);
   assert.doesNotMatch(failedResume.stderr, /--profiles/);
   assert.doesNotMatch(failedResume.stderr, /--tools/);
+});
+
+test("lifecycle cli review help exposes loop budget decision controls and validates budget input", { concurrency: false }, async () => {
+  const help = await runCli(["run", "review", "--help"]);
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(help.stdout, /--decision <approve\|rework\|continue\|reject\|pause\|terminate>/);
+  assert.match(help.stdout, /--target-role <role>/);
+  assert.match(help.stdout, /--additional-budget <n>/);
+  assert.doesNotMatch(help.stdout, /dry-run-scenario/);
+
+  const invalidBudget = await runCli([
+    "run", "review", "decide", "run-missing", "review-missing",
+    "--decision", "continue", "--target-role", "boundary", "--additional-budget", "0"
+  ]);
+  assert.equal(invalidBudget.code, 1);
+  assert.match(invalidBudget.stderr, /--additional-budget must be a positive integer/);
+});
+
+test("lifecycle cli completes a loop budget review through list, inspect, decide, and resume", { concurrency: false }, async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-loop-budget-"));
+  const { repoRoot, systemPath } = await createCliLoopBudgetFixture(tempRoot);
+  try {
+    const firstRun = await runSystemWithAdapter({
+      systemPath,
+      runtimeConfigPath: path.resolve(tempRoot, ".ogs", "runtime.json"),
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "CLI loop budget review",
+      workdir: tempRoot,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(firstRun.status, "stopped");
+
+    const runId = (await readdir(path.resolve(tempRoot, ".ogs", "runs"))).find((entry) => !entry.startsWith("."));
+    assert.ok(runId);
+    const list = await runCli(["run", "review", "list", runId, "--ogs-dir", tempRoot]);
+    assert.equal(list.code, 0, list.stderr);
+    const listPayload = JSON.parse(list.stdout);
+    const review = listPayload.reviews.find((item) => item.kind === "loop_budget");
+    assert.ok(review?.reviewId);
+
+    const inspect = await runCli(["run", "review", "inspect", runId, review.reviewId, "--ogs-dir", tempRoot]);
+    assert.equal(inspect.code, 0, inspect.stderr);
+    const inspectPayload = JSON.parse(inspect.stdout);
+    assert.equal(inspectPayload.kind, "loop_budget");
+    assert.deepEqual(inspectPayload.loopBudget.targetRoleIds, ["opencode-reviewer"]);
+
+    const invalidDecision = await runCli([
+      "run", "review", "decide", runId, review.reviewId,
+      "--decision", "approve",
+      "--comment", "This action is invalid for a loop budget review.",
+      "--ogs-dir", tempRoot
+    ]);
+    assert.equal(invalidDecision.code, 1);
+    assert.match(invalidDecision.stderr, /GRAPH_LOOP_BUDGET_DECISION_INVALID/);
+
+    const decision = await runCli([
+      "run", "review", "decide", runId, review.reviewId,
+      "--decision", "continue",
+      "--comment", "Continue one explicitly authorized round.",
+      "--target-role", "opencode-reviewer",
+      "--additional-budget", "1",
+      "--resume",
+      "--dry-run",
+      "--system", systemPath,
+      "--runtime", path.resolve(tempRoot, ".ogs", "runtime.json"),
+      "--user-profile", path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      "--laws", path.resolve(repoRoot, ".ogs", "laws.json"),
+      "--ogs-dir", tempRoot
+    ]);
+    assert.equal(decision.code, 0, decision.stderr);
+
+    const runDir = path.resolve(tempRoot, ".ogs", "runs", runId);
+    const decisionRecord = JSON.parse(await readFile(path.resolve(runDir, "control", "reviews", `${review.reviewId}.decision.json`), "utf8"));
+    assert.equal(decisionRecord.decision, "continue");
+    assert.equal(decisionRecord.targetRoleId, "opencode-reviewer");
+    assert.equal(decisionRecord.additionalBudget, 1);
+    assert.equal(typeof decisionRecord.appliedAt, "string");
+    assert.equal(typeof decisionRecord.reconciledAt, "string");
+    const state = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+    assert.equal(state.graphState.status, "done");
+    const events = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8"))
+      .trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+    assert.equal(events.filter((event) => event.type === "loop_budget_decision").length, 1);
+    assert.equal(events.filter((event) => event.type === "human_review_approved").length, 1);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });

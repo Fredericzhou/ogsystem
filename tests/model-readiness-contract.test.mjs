@@ -23,7 +23,7 @@ async function createFixture(options = {}) {
   );
   await writeFile(
     path.join(workdir, "og-roles", "roles", "writer", "role.json"),
-    JSON.stringify({ roleId: "writer", roleVersion: "1.0.0", name: "writer", description: "fixture", promptTemplate: "prompt.md", outputSchema: "output.schema.json", ...latestRoleContract({ events: ["DONE"] }) }),
+    JSON.stringify({ roleId: "writer", roleVersion: "1.0.0", name: "writer", description: "fixture", promptTemplate: "prompt.md", outputSchema: "output.schema.json", ...latestRoleContract({ events: ["READY"] }) }),
     "utf8"
   );
   await writeFile(path.join(workdir, "og-roles", "roles", "writer", "prompt.md"), "{{task}}", "utf8");
@@ -37,7 +37,7 @@ async function createFixture(options = {}) {
       "%% system.version=1.0.0",
       "%% law.global=law.model.test",
       "start[开始] -->|START| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| end[结束]"
+      "writer[Role:writer] -->|READY| end[结束]"
     ].join("\n"),
     "utf8"
   );

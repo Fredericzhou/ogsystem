@@ -29,7 +29,7 @@ async function createRunContext() {
 %% law.global=law.test
 %% exec.bind.writer=profile.writer
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `);
   await writeFile(systemPath, `flowchart TD
 %% system.id=test.human.review.artifacts
@@ -37,7 +37,7 @@ writer[Role:writer] -->|DONE| end[结束]
 %% law.global=law.test
 %% exec.bind.writer=profile.writer
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `, "utf8");
   await writeFile(runtimeConfigPath, JSON.stringify({ executor: "opencode", roleRepo: "./og-roles" }), "utf8");
 
@@ -70,10 +70,10 @@ test("human review request and decision artifacts persist, reload, and track app
       lineageId: "writer@1#1",
       loopIteration: 1,
       executionId: "exec-writer-1",
-      selectedEvent: "DONE",
+      selectedEvent: "READY",
       draftResult: {
         roleId: "writer",
-        event: "DONE",
+        event: "READY",
         content: "draft",
         branchId: "writer@1#1",
         lineageId: "writer@1#1",
@@ -83,6 +83,7 @@ test("human review request and decision artifacts persist, reload, and track app
       requestedByExecutionId: "exec-writer-1",
       status: "pending",
       round: 1,
+      stateVersion: 0,
       spec: {
         mode: "required",
         timeoutSeconds: 120,
@@ -97,6 +98,11 @@ test("human review request and decision artifacts persist, reload, and track app
     context,
     decision: {
       reviewId: "review.writer@1#1.r1",
+      round: 1,
+      lineageId: "writer@1#1",
+      branchId: "writer@1#1",
+      loopIteration: 1,
+      stateVersion: 0,
       committedAt: "2026-04-22T08:01:00.000Z",
       decidedAt: "2026-04-22T08:00:30.000Z",
       decision: "approve",
@@ -159,6 +165,7 @@ test("human review inspection lazily commits one timeout decision at its deadlin
       requestedByExecutionId: "exec-writer-timeout",
       status: "pending",
       round: 1,
+      stateVersion: 0,
       spec: { mode: "required", timeoutSeconds: 60, timeoutAction: "terminate", reworkTargetRoleId: "writer", terminateScope: "branch" }
     }
   });
@@ -217,6 +224,35 @@ test("human review without a timeout remains pending and creates no timeout arti
   await assert.rejects(readFile(buildHumanReviewDecisionPath(context, reviewId), "utf8"), { code: "ENOENT" });
 });
 
+test("loop budget review projection explains undeclared rework and reject paths", async () => {
+  const context = await createRunContext();
+  const reviewId = "loop-budget.writer@1#1.r1";
+  await persistHumanReviewRequest({
+    context,
+    review: {
+      reviewId,
+      roleId: "writer",
+      branchId: "writer@1#1",
+      lineageId: "writer@1#1",
+      loopIteration: 1,
+      executionId: "exec-writer-budget",
+      requestedAt: "2026-04-22T08:00:00.000Z",
+      requestedByExecutionId: "exec-writer-budget",
+      status: "pending",
+      round: 1,
+      stateVersion: 0,
+      kind: "loop_budget",
+      loopBudget: { targetRoleIds: ["writer"], reworkTargetRoleIds: [], rejectTargetRoleIds: [] },
+      spec: { mode: "required", timeoutAction: "terminate", terminateScope: "run" }
+    }
+  });
+  const detail = await inspectHumanReview(path.dirname(path.dirname(path.dirname(context.runDir))), context.runId, reviewId);
+  assert.deepEqual(detail.actionDiagnostics, [
+    "rework unavailable: current node declares no NEEDS_REWORK path",
+    "reject unavailable: current node declares no REJECTED path"
+  ]);
+});
+
 test("human review timeout does not fire before the deadline", async () => {
   const context = await createRunContext();
   const reviewId = "review.writer@1#1.r1";
@@ -235,6 +271,7 @@ test("human review timeout does not fire before the deadline", async () => {
       requestedByExecutionId: "exec-writer-timeout",
       status: "pending",
       round: 1,
+      stateVersion: 0,
       spec: { mode: "required", timeoutSeconds: 60, timeoutAction: "pause", reworkTargetRoleId: "writer", terminateScope: "run" }
     }
   });
@@ -262,6 +299,7 @@ test("human review timeout pause stays actionable after its deadline", async () 
       requestedByExecutionId: "exec-writer-timeout-pause",
       status: "pending",
       round: 1,
+      stateVersion: 0,
       spec: { mode: "required", timeoutSeconds: 60, timeoutAction: "pause", reworkTargetRoleId: "writer", terminateScope: "run" }
     }
   });

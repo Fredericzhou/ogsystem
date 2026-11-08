@@ -6,7 +6,7 @@ import {
   validateContractAgainstSchema
 } from "./flow-contract.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
-import { evaluateJoinNodeReadiness, selectRoutingTargets } from "./graph-mode-registry.js";
+import { evaluateJoinNodeReadiness, mergeJoinSourceStatus, selectRoutingTargets } from "./graph-mode-registry.js";
 import {
   activateBranch,
   buildBranchId,
@@ -15,6 +15,8 @@ import {
   buildRoleActivationScopeKey,
   completeBranch,
   getBranchResult,
+  findRoleResult,
+  getLoopBudgetBindings,
   getTargetLoopIteration,
   getLoopScopeForRole,
   storeRoleResult,
@@ -24,8 +26,13 @@ import {
 import { buildReviewId, buildReviewRoundKey } from "./human-review.js";
 import { evaluateCondition, SemanticRouteSelectionError, selectSemanticRoute } from "./condition-ast.js";
 import { semanticIRDigest } from "./semantic-ir.js";
+import {
+  RUNTIME_EVENT_HUMAN_REVIEW_REJECTED,
+  RUNTIME_EVENT_LOOP_EXHAUSTED
+} from "../business-events.js";
 import { sanitizeRoleInputContext } from "./role-input-projector.js";
 import { buildAuditSummaryDelta } from "./run-summary.js";
+import { getLoopBudgetTargetRoleIds, resolveLoopBudgetTerminateScope } from "./loop-budget.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
@@ -41,6 +48,7 @@ import type {
   HandledFailureArtifactData,
   HumanReviewDecision,
   HumanReviewDecisionRecord,
+  LoopBudgetReview,
   LoadedRolePackage,
   PendingHumanReview,
   RoleExecutionOutcomeRecord,
@@ -113,6 +121,17 @@ type HumanReviewTransitionEvent =
       targetRoleId: string;
     }
   | {
+      type: typeof RUNTIME_EVENT_HUMAN_REVIEW_REJECTED;
+      at: string;
+      roleId: string;
+      branchId: string;
+      lineageId: string;
+      loopIteration: number;
+      reviewId: string;
+      decidedAt: string;
+      targetRoleId: string;
+    }
+  | {
       type: "human_review_paused";
       at: string;
       roleId: string;
@@ -149,14 +168,19 @@ type HumanReviewTransitionEvent =
     };
 
 type LoopTransitionEvent = {
-  type: "loop_exhausted";
+  type: "loop_exhausted" | "loop_budget_decision";
+  eventId?: string;
   at: string;
   loopId: string;
   roleId: string;
   lineageId: string;
   loopIteration: number;
   maxRounds: number;
-  onExhausted: string;
+  onExhausted?: string;
+  reviewId?: string;
+  decision?: HumanReviewDecision;
+  targetRoleId?: string;
+  additionalBudget?: number;
 };
 
 type RouteDecisionTransitionEvent = {
@@ -174,12 +198,22 @@ type RouteDecisionTransitionEvent = {
   errorCode?: string;
 };
 
+type RunTerminationTransitionEvent = {
+  type: "run_terminated";
+  eventId?: string;
+  at: string;
+  reason: string;
+  reviewId?: string;
+  branchId?: string;
+};
+
 export type RuntimeTransitionEvent =
   | JoinTransitionEvent
   | FailureHandledTransitionEvent
   | HumanReviewTransitionEvent
   | LoopTransitionEvent
-  | RouteDecisionTransitionEvent;
+  | RouteDecisionTransitionEvent
+  | RunTerminationTransitionEvent;
 
 export type TransitionPlan = {
   update: GraphUpdate;
@@ -199,6 +233,7 @@ export type TransitionPlannerInput = {
 };
 
 export type ReviewDecisionTransitionInput = {
+  runId?: string;
   state: GraphState;
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
@@ -232,12 +267,40 @@ function buildRoleMetricsDelta(audit: AuditRecord): Record<string, GraphRoleMetr
 }
 
 function buildFailureUpdate(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
   roleId: string;
   branch: BranchRecord;
   error: string;
   errorEnvelope: RuntimeErrorEnvelope;
   audit: AuditRecord;
 }): GraphUpdate {
+  const joinScopes = args.state?.joinScopes
+    ? Object.fromEntries(Object.entries(args.state.joinScopes).map(([key, scope]) => {
+        if (scope.lineageId !== args.branch.lineageId || scope.loopIteration !== args.branch.loopIteration || !scope.expectedSourceRoleIds.includes(args.roleId)) return [key, scope];
+        return [key, {
+          ...scope,
+          sourceStatusByRoleId: { ...(scope.sourceStatusByRoleId ?? {}), [args.roleId]: "failed" },
+          missingSourceRoleIds: scope.expectedSourceRoleIds.filter((source) => source !== args.roleId && !scope.readySourceRoleIds.includes(source))
+        }];
+      }))
+    : undefined;
+  const joinSourceOutcomesByScope = buildJoinSourceOutcomeUpdates({
+    state: args.state,
+    plan: args.plan,
+    roleId: args.roleId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration,
+    candidateTargets: [],
+    failure: true
+  });
+  const compensatesBudget = args.errorEnvelope.retryable &&
+    (args.errorEnvelope.errorCategory === "execution" ||
+      args.errorEnvelope.errorCategory === "io" ||
+      args.errorEnvelope.errorCategory === "system");
+  const budgetAuthorizationRollback = compensatesBudget
+    ? Object.fromEntries((args.branch.consumedLoopBudgetKeys ?? []).map((key) => [key, 1]))
+    : {};
   return {
     status: "failed",
     error: args.error,
@@ -246,6 +309,11 @@ function buildFailureUpdate(args: {
     recentAudits: [args.audit],
     auditSummary: buildAuditSummaryDelta(args.audit),
     roleMetricsByRoleId: buildRoleMetricsDelta(args.audit),
+    ...(joinScopes ? { joinScopes } : {}),
+    joinSourceOutcomesByScope,
+    ...(Object.keys(budgetAuthorizationRollback).length
+      ? { loopBudgetAuthorizationDeltasByScope: budgetAuthorizationRollback }
+      : {}),
     branchRecords: {
       [args.branch.branchId]: completeBranch(args.branch)
     },
@@ -387,6 +455,9 @@ export function findOrphanedJoinGroup(args: {
 
     for (const branch of Object.values(mergedBranches)) {
       if (branch.status !== "completed" || !sourceRoleIds.includes(branch.roleId)) {
+        continue;
+      }
+      if (branch.terminatedByHumanReview) {
         continue;
       }
       const groupKey = `${branch.lineageId}::${branch.loopIteration}`;
@@ -595,6 +666,109 @@ function buildContractValidationFailureTransition(args: {
   };
 }
 
+function buildLoopBudgetReviewPendingTransition(args: {
+  runId?: string;
+  state: GraphState;
+  plan: ExecutionPlan;
+  roleId: string;
+  branch: BranchRecord;
+  audit: AuditRecord;
+  executionId: string;
+  selectedEvent?: string;
+  result: StoredRoleResult;
+  loopId: string;
+  maxRounds: number;
+  onExhausted?: string;
+  targetRoleIds: string[];
+  reworkTargetRoleIds?: string[];
+  rejectTargetRoleIds?: string[];
+}): TransitionPlan {
+  const roundKey = buildReviewRoundKey(`loop-budget:${args.loopId}`, args.branch.lineageId);
+  const round = (args.state.reviewRoundByRoleLineageKey[roundKey] ?? 0) + 1;
+  const reviewId = `loop-budget.${args.branch.branchId}.${args.loopId}.r${round}`;
+  const requestedAt = args.audit.at ?? new Date().toISOString();
+  const loopBudget: LoopBudgetReview = {
+    loopId: args.loopId,
+    maxRounds: args.maxRounds,
+    currentIteration: args.branch.loopIteration,
+    triggerRoleId: args.roleId,
+    terminateScope: "run",
+    targetRoleIds: Array.from(new Set(args.targetRoleIds.filter((roleId) => roleId && roleId !== SYSTEM_END_ROLE_ID))),
+    reworkTargetRoleIds: Array.from(new Set((args.reworkTargetRoleIds ?? []).filter(Boolean))),
+    rejectTargetRoleIds: Array.from(new Set((args.rejectTargetRoleIds ?? []).filter(Boolean))),
+    maxAdditionalRounds: Math.max(1, args.maxRounds)
+  };
+  const review: PendingHumanReview = {
+    reviewId,
+    roleId: args.roleId,
+    branchId: args.branch.branchId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration,
+    executionId: args.executionId,
+    selectedEvent: args.selectedEvent,
+    draftResult: args.result,
+    requestedAt,
+    requestedByExecutionId: args.executionId,
+    status: "pending",
+    round,
+    // The synthetic spec keeps the existing review persistence contract. Loop controls are
+    // authorized from loopBudget below, never from the triggering Role package.
+    spec: {
+      mode: "required",
+      timeoutAction: "terminate",
+      reworkTargetRoleId: loopBudget.reworkTargetRoleIds[0] ?? loopBudget.targetRoleIds[0] ?? args.roleId,
+      terminateScope: "run"
+    },
+    kind: "loop_budget",
+    loopBudget,
+    stateVersion: args.state.stateVersion + 1,
+    ...(args.plan.semanticIR ? { irDigest: semanticIRDigest(args.plan.semanticIR) } : {})
+  };
+  const branch = args.state.branchRecords[args.branch.branchId] ?? args.branch;
+  return {
+    update: {
+      status: "waiting_review",
+      transitionCount: 1,
+      recentAudits: [args.audit],
+      auditSummary: buildAuditSummaryDelta(args.audit),
+      roleMetricsByRoleId: buildRoleMetricsDelta(args.audit),
+      roleResults: { [args.branch.branchId]: args.result },
+      selectedEventByBranchId: args.selectedEvent ? { [args.branch.branchId]: args.selectedEvent } : {},
+      pendingReviewsById: { [reviewId]: review },
+      reviewRoundByRoleLineageKey: { [roundKey]: round },
+      lastWaitingReviewId: reviewId,
+      branchRecords: { [args.branch.branchId]: waitForHumanReview(branch) },
+      loopIterations: { [args.roleId]: args.branch.loopIteration },
+      lastExecutedRoleId: args.roleId
+    },
+    events: [{
+      type: RUNTIME_EVENT_LOOP_EXHAUSTED,
+      eventId: `loop_exhausted:${reviewId}`,
+      at: requestedAt,
+      loopId: args.loopId,
+      roleId: args.roleId,
+      lineageId: args.branch.lineageId,
+      loopIteration: args.branch.loopIteration,
+      maxRounds: args.maxRounds,
+      ...(args.onExhausted ? { onExhausted: args.onExhausted } : {}),
+      reviewId
+    }],
+    reviewRequests: [review]
+  };
+}
+
+function findExceededLoopBudget(args: {
+  targetRoleId: string;
+  currentLoopIteration: number;
+  state: GraphState;
+  plan: ExecutionPlan;
+  lineageId?: string;
+}) {
+  return getLoopBudgetBindings(args).find(
+    (binding) => binding.nextIteration > binding.maxRounds + binding.grant
+  );
+}
+
 function buildHumanReviewPendingTransition(args: {
   state: GraphState;
   plan: ExecutionPlan;
@@ -688,6 +862,7 @@ function buildReviewHistoryUpdate(args: {
 }
 
 function buildApprovedHumanReviewTransition(args: {
+  runId?: string;
   state: GraphState;
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
@@ -819,6 +994,15 @@ function buildApprovedHumanReviewTransition(args: {
   };
   const loopScopeUpdates: Record<string, number> = {};
   const roleActivationUpdates: Record<string, number> = {};
+  const artifactAllowedByBranchId: Record<string, string[]> = {};
+  const joinSourceOutcomeUpdates = buildJoinSourceOutcomeUpdates({
+    state: args.state,
+    plan: args.plan,
+    roleId: args.review.roleId,
+    lineageId: args.review.lineageId,
+    loopIteration: args.review.loopIteration,
+    candidateTargets
+  });
   const joinEvents: RuntimeTransitionEvent[] = [];
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
@@ -850,7 +1034,84 @@ function buildApprovedHumanReviewTransition(args: {
     };
   }
 
-  for (const targetRoleId of candidateTargets.filter((targetRoleId) => !skippedTargets.has(targetRoleId))) {
+  // Approval is itself a routed transition. If its next Role would exhaust a loop,
+  // park the approval at the same Runtime budget review used by normal execution.
+  // Preflight all targets so a parallel route cannot partially activate before the
+  // budget decision is created.
+  const routedTargets = candidateTargets.filter((targetRoleId) => !skippedTargets.has(targetRoleId));
+  const exhaustedTarget = routedTargets
+    .map((targetRoleId) => ({
+      targetRoleId,
+      budget: targetRoleId === SYSTEM_END_ROLE_ID
+        ? undefined
+        : findExceededLoopBudget({
+            targetRoleId,
+            currentLoopIteration: args.review.loopIteration,
+            state: args.state,
+            plan: args.plan,
+            lineageId: args.review.lineageId
+          })
+    }))
+    .find((item) => item.budget);
+  if (exhaustedTarget) {
+    const exhaustedTargetRoleId = exhaustedTarget.targetRoleId;
+    const exhaustedBudget = exhaustedTarget.budget!;
+    const budgetReview = buildLoopBudgetReviewPendingTransition({
+      runId: args.runId,
+      state: args.state,
+      plan: args.plan,
+      roleId: args.review.roleId,
+      branch: currentBranch,
+      audit: {
+        at: args.decision.decidedAt,
+        roleId: args.review.roleId,
+        branchId: args.review.branchId,
+        lineageId: args.review.lineageId,
+        loopIteration: args.review.loopIteration,
+        exitCode: 0,
+        durationMs: 0,
+        status: "ok",
+        selectedEvent: args.review.selectedEvent,
+        executionId: args.review.executionId
+      },
+      executionId: args.review.executionId,
+      selectedEvent: args.review.selectedEvent,
+      result: args.review.draftResult,
+      loopId: exhaustedBudget.loopId,
+      maxRounds: exhaustedBudget.maxRounds,
+      onExhausted: exhaustedBudget.kind === "scope"
+        ? getLoopScopeForRole(args.plan, exhaustedTargetRoleId)?.onExhausted
+        : undefined,
+      targetRoleIds: routedTargets,
+      reworkTargetRoleIds: selectRoutingTargets({ node: args.node, selectedEvent: "NEEDS_REWORK", mode: "ok" }),
+      rejectTargetRoleIds: selectRoutingTargets({ node: args.node, selectedEvent: "REJECTED", mode: "ok" })
+    });
+    budgetReview.update.pendingReviewsById = {
+      ...(budgetReview.update.pendingReviewsById ?? {}),
+      [args.review.reviewId]: { ...args.review, status: "resolved" }
+    };
+    budgetReview.update.reviewHistoryByBranchId = buildReviewHistoryUpdate({
+      state: args.state,
+      review: args.review,
+      decision: args.decision
+    });
+    budgetReview.events = [
+      {
+        type: "human_review_approved",
+        at: args.decision.decidedAt,
+        roleId: args.review.roleId,
+        branchId: args.review.branchId,
+        lineageId: args.review.lineageId,
+        loopIteration: args.review.loopIteration,
+        reviewId: args.review.reviewId,
+        decidedAt: args.decision.decidedAt
+      },
+      ...budgetReview.events
+    ];
+    return budgetReview;
+  }
+
+  for (const targetRoleId of routedTargets) {
     const targetEvent = eventByTargetRoleId.get(targetRoleId) ?? args.review.selectedEvent;
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
       reachedSystemOutput = true;
@@ -980,6 +1241,22 @@ function buildApprovedHumanReviewTransition(args: {
       });
       nextBranchSequence += 1;
       branchUpdates[branch.branchId] = branch;
+      artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
+        state: {
+          ...args.state,
+          roleResults: {
+            ...args.state.roleResults,
+            [args.review.branchId]: args.review.draftResult
+          }
+        },
+        targetNode,
+        targetLoopIteration: nextLoopIteration,
+        currentRoleId: args.review.roleId,
+        currentResult: args.review.draftResult,
+        currentBranch,
+        readiness,
+        indexes: args.indexes
+      });
       if (targetNode.joinMode === "quorum_of") {
         joinEvents.push({
           type: "join_quorum_reached",
@@ -1043,6 +1320,21 @@ function buildApprovedHumanReviewTransition(args: {
     });
     nextBranchSequence += 1;
     branchUpdates[branch.branchId] = branch;
+    artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
+      state: {
+        ...args.state,
+        roleResults: {
+          ...args.state.roleResults,
+          [args.review.branchId]: args.review.draftResult
+        }
+      },
+      targetNode,
+      targetLoopIteration: nextLoopIteration,
+      currentRoleId: args.review.roleId,
+      currentResult: args.review.draftResult,
+      currentBranch,
+      indexes: args.indexes
+    });
     args.logger.transition({
       fromRoleId: args.review.roleId,
       event: targetEvent,
@@ -1116,6 +1408,7 @@ function buildApprovedHumanReviewTransition(args: {
       branchRecords: branchUpdates,
       loopIterations: loopUpdates,
       loopCountersByScope: loopScopeUpdates,
+      artifactAllowedByBranchId,
       selectedEventByBranchId: args.review.selectedEvent
         ? { [args.review.branchId]: args.review.selectedEvent }
         : {},
@@ -1131,6 +1424,15 @@ function buildApprovedHumanReviewTransition(args: {
         decision: args.decision
       }),
       finalOutputsByRoleId,
+      joinSourceOutcomesByScope: joinSourceOutcomeUpdates,
+      ...(finalStatus === "done" && args.state.resultCommit?.status !== "committed" ? {
+        resultCommit: {
+          resultId: `result:${args.runId ?? "run"}`,
+          status: "committed" as const,
+          createdAt: args.decision.committedAt,
+          committedAt: args.decision.decidedAt
+        }
+      } : {}),
       finalOutputRoleOrder,
       finalRoleIds,
       lastExecutedRoleId: args.review.roleId,
@@ -1152,21 +1454,251 @@ function buildApprovedHumanReviewTransition(args: {
   };
 }
 
+function buildLoopBudgetDecisionTransition(args: ReviewDecisionTransitionInput): TransitionPlan {
+  const loopBudget = args.review.loopBudget;
+  if (!loopBudget) throw new Error(`[GRAPH_LOOP_BUDGET_BINDING_MISSING] Loop budget review ${args.review.reviewId} has no budget binding`);
+  const decision = args.decision.decision;
+  if (decision === "pause" || decision === "approve") {
+    throw new Error(`[GRAPH_LOOP_BUDGET_DECISION_INVALID] Loop budget review ${args.review.reviewId} requires continue, rework, terminate, or reject`);
+  }
+  if (decision !== "continue" && decision !== "rework" && decision !== "reject" && decision !== "terminate") {
+    throw new Error(`[HUMAN_REVIEW_DECISION_INVALID] Loop budget review ${args.review.reviewId} does not allow decision ${String(decision)}`);
+  }
+  if (decision === "terminate") {
+    const terminateScope = resolveLoopBudgetTerminateScope({
+      requestedScope: args.decision.scope,
+      loopBudget,
+      legacySpec: args.review.spec
+    });
+    const base = {
+      ...args.review,
+      status: "resolved" as const
+    };
+    const branchUpdates = {
+      [args.review.branchId]: completeBranch({
+        ...(args.state.branchRecords[args.review.branchId] ?? {
+          branchId: args.review.branchId,
+          roleId: args.review.roleId,
+          loopIteration: args.review.loopIteration,
+          branchSequence: 0,
+          lineageId: args.review.lineageId,
+          sessionLineageId: args.review.branchId
+        })
+      })
+    };
+    branchUpdates[args.review.branchId] = {
+      ...branchUpdates[args.review.branchId],
+      terminatedByHumanReview: true
+    };
+    const joinSourceOutcomeUpdates = buildJoinSourceOutcomeUpdates({
+      state: args.state,
+      plan: args.plan,
+      roleId: args.review.roleId,
+      lineageId: args.review.lineageId,
+      loopIteration: args.review.loopIteration,
+      candidateTargets: []
+    });
+    const joinScopeUpdates = mergeJoinScopeOutcomeUpdates({
+      state: args.state,
+      updates: joinSourceOutcomeUpdates
+    });
+    const hasActiveSibling = Object.values({ ...args.state.branchRecords, ...branchUpdates })
+      .some((branch) => branch.status === "active");
+    const terminateRun = terminateScope === "run" || !hasActiveSibling;
+    return {
+      update: {
+        status: terminateRun ? (terminateScope === "run" ? "stopped" : "terminated") : "running",
+        error: terminateRun ? "loop budget terminated by human review" : "",
+        pendingReviewsById: { [args.review.reviewId]: base },
+        reviewHistoryByBranchId: buildReviewHistoryUpdate({ state: args.state, review: args.review, decision: args.decision }),
+        branchRecords: branchUpdates,
+        joinScopes: joinScopeUpdates,
+        joinSourceOutcomesByScope: joinSourceOutcomeUpdates,
+        lastExecutedRoleId: args.review.roleId
+      },
+      events: [{
+        type: "human_review_terminated",
+        at: args.decision.decidedAt,
+        roleId: args.review.roleId,
+        branchId: args.review.branchId,
+        lineageId: args.review.lineageId,
+        loopIteration: args.review.loopIteration,
+        reviewId: args.review.reviewId,
+        decidedAt: args.decision.decidedAt,
+        scope: terminateScope
+      },
+      ...(terminateRun && terminateScope === "branch" ? [{
+        type: "run_terminated",
+        eventId: `run_terminated:${args.review.reviewId}`,
+        at: args.decision.decidedAt,
+        reason: "loop_budget_branch_terminate",
+        reviewId: args.review.reviewId,
+        branchId: args.review.branchId
+      } as RunTerminationTransitionEvent] : [])]
+    };
+  }
+  const targetRoleId = args.decision.targetRoleId;
+  const routedEvent = decision === "reject"
+    ? "REJECTED"
+    : decision === "rework"
+      ? "NEEDS_REWORK"
+      : args.review.selectedEvent;
+  const allowedTargets = getLoopBudgetTargetRoleIds(loopBudget, decision);
+  if (!targetRoleId || !allowedTargets.includes(targetRoleId)) {
+    throw new Error(`[GRAPH_LOOP_BUDGET_TARGET_INVALID] Decision ${decision} must select a declared target for review ${args.review.reviewId}`);
+  }
+  const additionalBudget = args.decision.additionalBudget ?? 0;
+  if (decision === "reject" && additionalBudget !== 0) {
+    throw new Error(`[GRAPH_LOOP_BUDGET_AUTHORIZATION_INVALID] Reject decisions cannot grant additional rounds`);
+  }
+  if (decision !== "reject" && (!Number.isInteger(additionalBudget) || additionalBudget <= 0 || additionalBudget > loopBudget.maxAdditionalRounds)) {
+    throw new Error(`[GRAPH_LOOP_BUDGET_AUTHORIZATION_INVALID] Decision ${decision} must grant 1..${loopBudget.maxAdditionalRounds} additional rounds`);
+  }
+  const authorizedState: GraphState = additionalBudget > 0
+    ? {
+        ...args.state,
+        loopBudgetAuthorizationsByScope: {
+          ...(args.state.loopBudgetAuthorizationsByScope ?? {}),
+          [buildLoopScopeKey(args.review.lineageId, loopBudget.loopId)]:
+            (args.state.loopBudgetAuthorizationsByScope?.[buildLoopScopeKey(args.review.lineageId, loopBudget.loopId)] ?? 0) + additionalBudget
+        }
+      }
+    : args.state;
+  const node = getExecutionPlanNode(args.plan, args.review.roleId);
+  const transition = buildRoutedTransitionPlan({
+    runId: args.runId,
+    state: authorizedState,
+    plan: args.plan,
+    contractPlan: args.contractPlan,
+    node,
+    roleId: args.review.roleId,
+    currentBranch: args.state.branchRecords[args.review.branchId] ?? {
+      branchId: args.review.branchId,
+      roleId: args.review.roleId,
+      loopIteration: args.review.loopIteration,
+      branchSequence: 0,
+      lineageId: args.review.lineageId,
+      sessionLineageId: args.review.branchId,
+      status: "waiting_review"
+    } as BranchRecord,
+    audit: {
+      at: args.decision.decidedAt,
+      roleId: args.review.roleId,
+      branchId: args.review.branchId,
+      lineageId: args.review.lineageId,
+      loopIteration: args.review.loopIteration,
+      exitCode: 0,
+      durationMs: 0,
+      status: "ok",
+      selectedEvent: routedEvent,
+      executionId: args.review.executionId
+    },
+    currentResult: args.review.draftResult,
+    selectedEvent: routedEvent,
+    candidateTargets: [targetRoleId],
+    eventByTargetRoleId: new Map([[targetRoleId, routedEvent]]),
+    logger: args.logger,
+    terminalOutput: args.review.draftResult.content ?? "",
+    loopBudgetFailureMode: "fail_run",
+    allowOrphanedJoinFailure: false,
+    indexes: args.indexes
+  });
+  if (!transition) throw new Error(`[GRAPH_LOOP_BUDGET_TRANSITION_ABORTED] Could not activate ${targetRoleId}`);
+  const authorizationKey = buildLoopScopeKey(args.review.lineageId, loopBudget.loopId);
+  const authorizationDeltas = {
+    ...(transition.update.loopBudgetAuthorizationDeltasByScope ?? {})
+  };
+  if (additionalBudget > 0) {
+    authorizationDeltas[authorizationKey] = (authorizationDeltas[authorizationKey] ?? 0) + additionalBudget;
+  }
+  transition.update = {
+    ...transition.update,
+    loopBudgetAuthorizationsByScope: {
+      ...(authorizedState.loopBudgetAuthorizationsByScope ?? {}),
+      ...(transition.update.loopBudgetAuthorizationsByScope ?? {})
+    },
+    ...(Object.keys(authorizationDeltas).length
+      ? { loopBudgetAuthorizationDeltasByScope: authorizationDeltas }
+      : {}),
+    pendingReviewsById: {
+      ...(transition.update.pendingReviewsById ?? {}),
+      [args.review.reviewId]: { ...args.review, status: "resolved" }
+    },
+    reviewHistoryByBranchId: buildReviewHistoryUpdate({ state: args.state, review: args.review, decision: args.decision }),
+    // The routed transition decrements one authorized round when it activates the target.
+  };
+  transition.events = [
+    ...transition.events,
+    {
+      type: "loop_budget_decision",
+      eventId: `loop_budget_decision:${args.review.reviewId}:${args.decision.decidedAt}`,
+      at: args.decision.decidedAt,
+      loopId: loopBudget.loopId,
+      roleId: args.review.roleId,
+      lineageId: args.review.lineageId,
+      loopIteration: args.review.loopIteration,
+      maxRounds: loopBudget.maxRounds,
+      reviewId: args.review.reviewId,
+      decision,
+      ...(targetRoleId ? { targetRoleId } : {}),
+      ...(additionalBudget > 0 ? { additionalBudget } : {})
+    },
+    {
+        type: decision === "reject"
+        ? RUNTIME_EVENT_HUMAN_REVIEW_REJECTED
+        : decision === "rework"
+          ? "human_review_rework_requested"
+          : "human_review_approved",
+      at: args.decision.decidedAt,
+      roleId: args.review.roleId,
+      branchId: args.review.branchId,
+      lineageId: args.review.lineageId,
+      loopIteration: args.review.loopIteration,
+      reviewId: args.review.reviewId,
+      decidedAt: args.decision.decidedAt,
+      ...(decision === "rework" || decision === "reject" ? { targetRoleId } : {})
+    } as HumanReviewTransitionEvent
+  ];
+  return transition;
+}
+
 export function planHumanReviewDecisionTransition(args: ReviewDecisionTransitionInput): TransitionPlan {
+  if (!Number.isInteger(args.decision.round) || !args.decision.lineageId || !args.decision.branchId || !Number.isInteger(args.decision.loopIteration) || !Number.isInteger(args.decision.stateVersion)) {
+    throw new Error(`[GRAPH_REVIEW_BINDING_MISSING] Human review ${args.review.reviewId} decision must include round, lineageId, branchId, loopIteration, and stateVersion`);
+  }
+  if (args.decision.lineageId !== args.review.lineageId) {
+    throw new Error(`[GRAPH_REVIEW_LINEAGE_MISMATCH] Human review ${args.review.reviewId} decision lineage does not match the pending review`);
+  }
+  if (args.decision.branchId !== args.review.branchId) {
+    throw new Error(`[GRAPH_REVIEW_BRANCH_MISMATCH] Human review ${args.review.reviewId} decision branch does not match the pending review`);
+  }
+  if (args.decision.round !== args.review.round) {
+    throw new Error(`[GRAPH_REVIEW_ROUND_MISMATCH] Human review ${args.review.reviewId} decision round does not match the pending review`);
+  }
+  if (args.decision.loopIteration !== args.review.loopIteration) {
+    throw new Error(`[GRAPH_REVIEW_LOOP_MISMATCH] Human review ${args.review.reviewId} decision loop iteration does not match the pending review`);
+  }
+  if (args.decision.stateVersion !== args.state.stateVersion) {
+    throw new Error(`[GRAPH_REVIEW_STATE_VERSION_STALE] Human review ${args.review.reviewId} decision state version ${args.decision.stateVersion} is stale for current version ${args.state.stateVersion}`);
+  }
   if (args.review.stateVersion !== undefined && args.review.stateVersion !== args.state.stateVersion) {
-    throw new Error(`Human review ${args.review.reviewId} is bound to state version ${args.review.stateVersion}, current version is ${args.state.stateVersion}`);
+    throw new Error(`[GRAPH_REVIEW_STATE_VERSION_STALE] Human review ${args.review.reviewId} is bound to state version ${args.review.stateVersion}, current version is ${args.state.stateVersion}`);
   }
   if (args.review.irDigest && args.plan.semanticIR && args.review.irDigest !== semanticIRDigest(args.plan.semanticIR)) {
     throw new Error(`Human review ${args.review.reviewId} Semantic IR digest mismatch`);
   }
+  if (args.review.kind === "loop_budget") {
+    return buildLoopBudgetDecisionTransition(args);
+  }
   const node = getExecutionPlanNode(args.plan, args.review.roleId);
   const rolePackage = args.rolePackagesByRoleId.get(args.review.roleId);
   if (!rolePackage) throw new Error(`[IR_CONTRACT_INVALID] Role Contract is missing for review role ${args.review.roleId}`);
-  if (!rolePackage.manifest.authority.controlActions.includes(args.decision.decision)) {
+  if (!rolePackage.manifest.authority.controlActions.includes(args.decision.decision as "approve" | "rework" | "pause" | "terminate")) {
     throw new Error(`[IR_CONTRACT_INVALID] Role ${args.review.roleId} does not authorize human review action ${args.decision.decision}`);
   }
   if (args.decision.decision === "approve") {
     return buildApprovedHumanReviewTransition({
+      runId: args.runId,
       state: args.state,
       plan: args.plan,
       contractPlan: args.contractPlan,
@@ -1201,7 +1733,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
       events: args.decision.timedOut
         ? [{
             type: "human_review_expired",
-            at: new Date().toISOString(),
+            at: args.decision.decidedAt,
             roleId: args.review.roleId,
             branchId: args.review.branchId,
             lineageId: args.review.lineageId,
@@ -1214,7 +1746,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
           }]
         : [{
             type: "human_review_paused",
-            at: new Date().toISOString(),
+            at: args.decision.decidedAt,
             roleId: args.review.roleId,
             branchId: args.review.branchId,
             lineageId: args.review.lineageId,
@@ -1260,7 +1792,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
       events: args.decision.timedOut
         ? [{
             type: "human_review_expired",
-            at: new Date().toISOString(),
+            at: args.decision.decidedAt,
             roleId: args.review.roleId,
             branchId: args.review.branchId,
             lineageId: args.review.lineageId,
@@ -1274,7 +1806,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
           }]
         : [{
             type: "human_review_terminated",
-            at: new Date().toISOString(),
+            at: args.decision.decidedAt,
             roleId: args.review.roleId,
             branchId: args.review.branchId,
             lineageId: args.review.lineageId,
@@ -1315,7 +1847,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     sessionLineageId,
     parentBranchId: args.review.branchId,
     activatedByRoleId: args.review.roleId,
-    activatedByEvent: "REWORK"
+    activatedByEvent: "NEEDS_REWORK"
   });
   return {
     update: {
@@ -1374,7 +1906,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     events: [
       {
         type: "human_review_rework_requested",
-        at: new Date().toISOString(),
+        at: args.decision.decidedAt,
         roleId: args.review.roleId,
         branchId: args.review.branchId,
         lineageId: args.review.lineageId,
@@ -1385,6 +1917,87 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
       }
     ]
   };
+}
+
+function buildJoinSourceOutcomeUpdates(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  roleId: string;
+  lineageId: string;
+  loopIteration: number;
+  candidateTargets: string[];
+  failure?: boolean;
+}): NonNullable<GraphState["joinSourceOutcomesByScope"]> {
+  const updates: NonNullable<GraphState["joinSourceOutcomesByScope"]> = {};
+  for (const node of args.plan.nodesByRoleId.values()) {
+    if (!node.joinMode || !node.joinSources.includes(args.roleId) || !node.incoming.some((flow) => flow.fromRoleId === args.roleId)) continue;
+    const targetLoopIteration = getTargetLoopIteration({
+      targetRoleId: node.roleId,
+      currentLoopIteration: args.loopIteration,
+      state: args.state,
+      plan: args.plan,
+      lineageId: args.lineageId
+    });
+    const key = JSON.stringify([node.roleId, args.lineageId, targetLoopIteration]);
+    const previous = args.state.joinSourceOutcomesByScope?.[key] ?? {};
+    const nextStatus = args.failure
+      ? "failed"
+      : args.candidateTargets.includes(node.roleId) ? "arrived" : "skipped";
+    updates[key] = {
+      ...previous,
+      [args.roleId]: mergeJoinSourceStatus(previous[args.roleId], nextStatus)
+    };
+  }
+  return updates;
+}
+
+function mergeJoinScopeOutcomeUpdates(args: {
+  state: GraphState;
+  updates: NonNullable<GraphState["joinSourceOutcomesByScope"]>;
+}): NonNullable<GraphState["joinScopes"]> {
+  const updates: NonNullable<GraphState["joinScopes"]> = {};
+  for (const [scopeKey, outcomes] of Object.entries(args.updates)) {
+    const scope = args.state.joinScopes?.[scopeKey];
+    if (!scope || scope.status !== "waiting") continue;
+    const sourceStatusByRoleId = { ...(scope.sourceStatusByRoleId ?? {}) };
+    for (const [roleId, status] of Object.entries(outcomes)) {
+      sourceStatusByRoleId[roleId] = mergeJoinSourceStatus(sourceStatusByRoleId[roleId], status);
+    }
+    const readySourceRoleIds = scope.expectedSourceRoleIds.filter((roleId) => sourceStatusByRoleId[roleId] === "arrived");
+    updates[scopeKey] = {
+      ...scope,
+      sourceStatusByRoleId,
+      readySourceRoleIds,
+      missingSourceRoleIds: scope.expectedSourceRoleIds.filter((roleId) => sourceStatusByRoleId[roleId] !== "arrived")
+    };
+  }
+  return updates;
+}
+
+function buildArtifactAllowedIdsForActivation(args: {
+  state: GraphState;
+  targetNode: ExecutionPlanNode;
+  targetLoopIteration: number;
+  currentRoleId: string;
+  currentResult?: StoredRoleResult;
+  currentBranch: BranchRecord;
+  readiness?: { completedSourceRoleIds: string[] };
+  indexes?: RuntimeIndexes;
+}): string[] {
+  const results = args.targetNode.joinMode
+    ? (args.readiness?.completedSourceRoleIds ?? []).map((sourceRoleId) =>
+        sourceRoleId === args.currentRoleId && args.currentResult
+          ? args.currentResult
+          : findRoleResult({
+              state: args.state,
+              roleId: sourceRoleId,
+              lineageId: args.currentBranch.lineageId,
+              loopIteration: args.targetLoopIteration,
+              indexes: args.indexes
+            })
+      )
+    : [args.currentResult];
+  return Array.from(new Set(results.flatMap((result) => result?.artifactRef?.artifactId ? [result.artifactRef.artifactId] : [])));
 }
 
 function buildRoutedTransitionPlan(args: {
@@ -1404,6 +2017,7 @@ function buildRoutedTransitionPlan(args: {
   terminalOutput: string;
   extraEvents?: RuntimeTransitionEvent[];
   loopBudgetFailureMode: "fail_run" | "abort_routing";
+  budgetAuthorizationRollbackKeys?: string[];
   allowOrphanedJoinFailure: boolean;
   indexes?: RuntimeIndexes;
 }): TransitionPlan | undefined {
@@ -1414,9 +2028,21 @@ function buildRoutedTransitionPlan(args: {
     [args.roleId]: args.currentBranch.loopIteration
   };
   const loopScopeUpdates: Record<string, number> = {};
+  const loopBudgetAuthorizationUpdates: Record<string, number> = {};
+  const loopBudgetAuthorizationDeltasByScope: Record<string, number> = {};
   const roleActivationUpdates: Record<string, number> = {};
   const joinEvents: RuntimeTransitionEvent[] = [];
   const joinScopeUpdates: NonNullable<GraphState["joinScopes"]> = {};
+  const artifactAllowedByBranchId: Record<string, string[]> = {};
+  const joinSourceOutcomeUpdates = buildJoinSourceOutcomeUpdates({
+    state: args.state,
+    plan: args.plan,
+    roleId: args.roleId,
+    lineageId: args.currentBranch.lineageId,
+    loopIteration: args.currentBranch.loopIteration,
+    candidateTargets: args.candidateTargets
+  });
+  Object.assign(joinScopeUpdates, mergeJoinScopeOutcomeUpdates({ state: args.state, updates: joinSourceOutcomeUpdates }));
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
@@ -1425,6 +2051,10 @@ function buildRoutedTransitionPlan(args: {
   let finalRoleIds: string[] = [];
   let finalErrorEnvelope: RuntimeErrorEnvelope | undefined;
   let reachedSystemOutput = false;
+
+  for (const key of args.budgetAuthorizationRollbackKeys ?? []) {
+    loopBudgetAuthorizationDeltasByScope[key] = (loopBudgetAuthorizationDeltasByScope[key] ?? 0) + 1;
+  }
 
   for (const candidateTargetRoleId of args.candidateTargets) {
     let targetRoleId = candidateTargetRoleId;
@@ -1441,45 +2071,52 @@ function buildRoutedTransitionPlan(args: {
       continue;
     }
 
-    if (wouldExceedLoopBudget({
-        targetRoleId,
-        currentLoopIteration: args.currentBranch.loopIteration,
-        state: args.state,
-        plan: args.plan,
-        lineageId: args.currentBranch.lineageId
-      })) {
+    const exceededBudget = findExceededLoopBudget({
+      targetRoleId,
+      currentLoopIteration: args.currentBranch.loopIteration,
+      state: args.state,
+      plan: args.plan,
+      lineageId: args.currentBranch.lineageId
+    });
+    if (exceededBudget) {
       if (args.loopBudgetFailureMode === "abort_routing") {
         return undefined;
       }
-      const exhaustedScope = getLoopScopeForRole(args.plan, targetRoleId);
-      const exhaustedTarget = exhaustedScope?.onExhausted;
-      if (exhaustedScope && exhaustedTarget && exhaustedTarget !== targetRoleId) {
-        joinEvents.push({
-          type: "loop_exhausted",
-          at: new Date().toISOString(),
-          loopId: exhaustedScope.loopId,
+      const rejectTargetRoleIds = selectRoutingTargets({
+        node: args.node,
+        selectedEvent: "REJECTED",
+        mode: "ok"
+      });
+      const reworkTargetRoleIds = selectRoutingTargets({
+        node: args.node,
+        selectedEvent: "NEEDS_REWORK",
+        mode: "ok"
+      });
+      return buildLoopBudgetReviewPendingTransition({
+        runId: args.runId,
+        state: args.state,
+        plan: args.plan,
+        roleId: args.roleId,
+        branch: args.currentBranch,
+        audit: args.audit,
+        executionId: args.audit.executionId ?? `loop-exhausted:${args.currentBranch.branchId}`,
+        selectedEvent: targetEvent,
+        result: args.currentResult ?? {
           roleId: args.roleId,
+          branchId: args.currentBranch.branchId,
           lineageId: args.currentBranch.lineageId,
           loopIteration: args.currentBranch.loopIteration,
-          maxRounds: exhaustedScope.maxRounds,
-          onExhausted: exhaustedTarget
-        });
-        targetRoleId = exhaustedTarget === "end" ? SYSTEM_END_ROLE_ID : exhaustedTarget;
-      } else {
-      finalStatus = "failed";
-      finalError = `Loop budget exceeded for ${targetRoleId}`;
-      finalErrorEnvelope = {
-        errorCode: "GRAPH_LOOP_BUDGET_EXCEEDED",
-        errorCategory: "state",
-        message: finalError,
-        retryable: false,
-        stage: "execute",
-        roleId: args.roleId,
-        branchId: args.currentBranch.branchId
-      };
-      finalRoleIds = [args.roleId];
-      break;
-      }
+          content: args.terminalOutput
+        },
+        loopId: exceededBudget.loopId,
+        maxRounds: exceededBudget.maxRounds,
+        onExhausted: exceededBudget.kind === "scope"
+          ? getLoopScopeForRole(args.plan, targetRoleId)?.onExhausted
+          : undefined,
+        targetRoleIds: args.candidateTargets,
+        reworkTargetRoleIds,
+        rejectTargetRoleIds
+      });
     }
 
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
@@ -1500,13 +2137,34 @@ function buildRoutedTransitionPlan(args: {
       plan: args.plan,
       lineageId: args.currentBranch.lineageId
     });
+    const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
+    const budgetBindings = getLoopBudgetBindings({
+      targetRoleId,
+      currentLoopIteration: args.currentBranch.loopIteration,
+      state: args.state,
+      plan: args.plan,
+      lineageId: args.currentBranch.lineageId
+    });
+    const consumeLoopBudgetAuthorization = () => {
+      const consumedKeys: string[] = [];
+      for (const binding of budgetBindings) {
+        if (!binding.key || binding.grant <= 0 || binding.nextIteration <= binding.maxRounds) continue;
+        const remainingBudget = loopBudgetAuthorizationUpdates[binding.key]
+          ?? args.state.loopBudgetAuthorizationsByScope?.[binding.key]
+          ?? 0;
+        if (remainingBudget <= 0) continue;
+        loopBudgetAuthorizationUpdates[binding.key] = remainingBudget - 1;
+        loopBudgetAuthorizationDeltasByScope[binding.key] =
+          (loopBudgetAuthorizationDeltasByScope[binding.key] ?? 0) - 1;
+        consumedKeys.push(binding.key);
+      }
+      return consumedKeys;
+    };
     loopUpdates[targetRoleId] = nextLoopIteration;
     const loopScope = getLoopScopeForRole(args.plan, targetRoleId);
     if (loopScope && targetRoleId === loopScope.boundaryRoleId) {
       loopScopeUpdates[buildLoopScopeKey(args.currentBranch.lineageId, loopScope.loopId)] = nextLoopIteration;
     }
-    const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
-
     if (targetNode.joinMode) {
       const readiness = evaluateJoinNodeReadiness({
         node: targetNode,
@@ -1554,6 +2212,7 @@ function buildRoutedTransitionPlan(args: {
           loopIteration: nextLoopIteration, joinMode: targetNode.joinMode, joinMin: targetNode.joinMin,
           expectedSourceRoleIds: targetNode.joinSources,
           readySourceRoleIds: readiness.completedSourceRoleIds, missingSourceRoleIds: readiness.missingSourceRoleIds,
+          sourceStatusByRoleId: readiness.sourceStatusByRoleId,
           startedAt: existingScope?.startedAt ?? now, timeoutSeconds: joinSpec?.timeoutSeconds ?? 3600,
           status: "waiting", timeoutAction: joinSpec?.onTimeout, failurePolicy: joinSpec?.failurePolicy
         };
@@ -1593,6 +2252,7 @@ function buildRoutedTransitionPlan(args: {
         break;
       }
       roleActivationUpdates[activationKey] = activationCount;
+      const consumedBudgetKeys = consumeLoopBudgetAuthorization();
 
       const sessionLineageId = resolveNextSessionLineageId({
         currentNode: args.node,
@@ -1614,7 +2274,19 @@ function buildRoutedTransitionPlan(args: {
         activatedByEvent: targetEvent
       });
       nextBranchSequence += 1;
-      branchUpdates[branch.branchId] = branch;
+      branchUpdates[branch.branchId] = consumedBudgetKeys.length
+        ? { ...branch, consumedLoopBudgetKeys: consumedBudgetKeys }
+        : branch;
+      artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
+        state: args.state,
+        targetNode,
+        targetLoopIteration: nextLoopIteration,
+        currentRoleId: args.roleId,
+        currentResult: args.currentResult,
+        currentBranch: args.currentBranch,
+        readiness,
+        indexes: args.indexes
+      });
       const scopeKey = JSON.stringify([targetRoleId, args.currentBranch.lineageId, nextLoopIteration]);
       const existingScope = args.state.joinScopes?.[scopeKey];
       if (existingScope) {
@@ -1622,6 +2294,7 @@ function buildRoutedTransitionPlan(args: {
           ...existingScope,
           readySourceRoleIds: readiness.completedSourceRoleIds,
           missingSourceRoleIds: readiness.missingSourceRoleIds,
+          sourceStatusByRoleId: readiness.sourceStatusByRoleId,
           status: "activated",
           completedAt: new Date().toISOString()
         };
@@ -1692,6 +2365,7 @@ function buildRoutedTransitionPlan(args: {
       break;
     }
     roleActivationUpdates[activationKey] = activationCount;
+    const consumedBudgetKeys = consumeLoopBudgetAuthorization();
 
     const sessionLineageId = resolveNextSessionLineageId({
       currentNode: args.node,
@@ -1713,7 +2387,18 @@ function buildRoutedTransitionPlan(args: {
       activatedByEvent: targetEvent
     });
     nextBranchSequence += 1;
-    branchUpdates[branch.branchId] = branch;
+    branchUpdates[branch.branchId] = consumedBudgetKeys.length
+      ? { ...branch, consumedLoopBudgetKeys: consumedBudgetKeys }
+      : branch;
+    artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
+      state: args.state,
+      targetNode,
+      targetLoopIteration: nextLoopIteration,
+      currentRoleId: args.roleId,
+      currentResult: args.currentResult,
+      currentBranch: args.currentBranch,
+      indexes: args.indexes
+    });
     args.logger.transition({
       fromRoleId: args.roleId,
       event: targetEvent,
@@ -1782,12 +2467,26 @@ function buildRoutedTransitionPlan(args: {
       branchRecords: branchUpdates,
       loopIterations: loopUpdates,
       loopCountersByScope: loopScopeUpdates,
+      loopBudgetAuthorizationsByScope: loopBudgetAuthorizationUpdates,
+      ...(Object.keys(loopBudgetAuthorizationDeltasByScope).length
+        ? { loopBudgetAuthorizationDeltasByScope }
+        : {}),
       roleActivationsByScope: roleActivationUpdates,
+      artifactAllowedByBranchId,
       joinScopes: joinScopeUpdates,
+      joinSourceOutcomesByScope: joinSourceOutcomeUpdates,
       selectedEventByBranchId: args.selectedEvent
         ? { [args.currentBranch.branchId]: args.selectedEvent }
         : {},
       ...(finalOutputsByRoleId ? { finalOutputsByRoleId } : {}),
+      ...(finalStatus === "done" && args.state.resultCommit?.status !== "committed" ? {
+        resultCommit: {
+          resultId: `result:${args.runId ?? "run"}`,
+          status: "committed" as const,
+          createdAt: new Date().toISOString(),
+          committedAt: new Date().toISOString()
+        }
+      } : {}),
       ...(finalOutputRoleOrder.length || finalOutputsByRoleId ? { finalOutputRoleOrder } : {}),
       ...(finalRoleIds.length ? { finalRoleIds } : {}),
       lastExecutedRoleId: args.roleId,
@@ -1851,6 +2550,12 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
             }
           ],
           loopBudgetFailureMode: "abort_routing",
+          ...(args.outcome.failure.retryable &&
+            (args.outcome.failure.errorCategory === "execution" ||
+              args.outcome.failure.errorCategory === "io" ||
+              args.outcome.failure.errorCategory === "system")
+            ? { budgetAuthorizationRollbackKeys: args.outcome.branch.consumedLoopBudgetKeys }
+            : {}),
           allowOrphanedJoinFailure: false,
           indexes: args.indexes
         });
@@ -1861,6 +2566,8 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
     }
     return {
       update: buildFailureUpdate({
+        state: args.state,
+        plan: args.plan,
         roleId: args.outcome.roleId,
         branch: args.outcome.branch,
         error: args.outcome.error,
@@ -1911,7 +2618,7 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
       } catch (error) {
         const errorCode = error instanceof SemanticRouteSelectionError
           ? error.code
-          : "IR_ROUTE_CONDITION_EVALUATION_FAILED";
+          : "IR_ROUTE_CONDITION_TYPE_INVALID";
         const failedEvent: RouteDecisionTransitionEvent = {
           type: "route_decision",
           status: "failed",
@@ -2048,6 +2755,9 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
     }
   }
 
+  const hasSkippedJoinSource = Object.values(args.state.joinSourceOutcomesByScope ?? {})
+    .some((outcomes) => Object.values(outcomes).some((status) => status === "skipped"));
+
   return (
     buildRoutedTransitionPlan({
       runId: args.runId,
@@ -2066,7 +2776,9 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
       terminalOutput: args.outcome.storedResult?.content ?? "",
       extraEvents: routeDecisionEvent ? [routeDecisionEvent] : undefined,
       loopBudgetFailureMode: "fail_run",
-      allowOrphanedJoinFailure: args.contractPlan?.handoffMode === "transition",
+      // A branch termination records a skipped source before its siblings finish. Once the
+      // graph drains, the same orphan check must apply even without transition-mode contracts.
+      allowOrphanedJoinFailure: args.contractPlan?.handoffMode === "transition" || hasSkippedJoinSource,
       indexes: args.indexes
     }) ?? buildContractValidationFailureTransition({
       roleId: args.outcome.roleId,

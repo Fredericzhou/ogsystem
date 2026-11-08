@@ -215,13 +215,15 @@ export async function loadLaws(
 export async function loadRolePackages(args: {
   system: SystemDefinition;
   roleRootDir: string;
+  strictEvents?: boolean;
 }): Promise<Map<string, LoadedRolePackage>> {
   const rolePackagesByRoleId = new Map<string, LoadedRolePackage>();
 
   for (const roleId of args.system.roleIds) {
     const rolePackage = await loadRolePackage({
       roleId: args.system.rolePackageRefByRoleId?.[roleId] ?? roleId,
-      roleRootDir: args.roleRootDir
+      roleRootDir: args.roleRootDir,
+      strictEvents: args.strictEvents
     });
     rolePackagesByRoleId.set(roleId, rolePackage);
   }

@@ -26,7 +26,7 @@ function baseDesign() {
   };
   design.bindings.intake = structuredClone(design.seats.intake.binding);
   design.transitions.push({ transitionId: "start-intake", fromSeatId: "__system_start__", toSeatId: "intake", eventType: "START" });
-  design.transitions.push({ transitionId: "intake-end", fromSeatId: "intake", toSeatId: "__system_end__", eventType: "DONE" });
+  design.transitions.push({ transitionId: "intake-end", fromSeatId: "intake", toSeatId: "__system_end__", eventType: "READY" });
   return design;
 }
 
@@ -43,7 +43,7 @@ test("System Design validates the role-seat graph and exports deterministic Merm
     transitionId: "intake-done-review",
     fromSeatId: "intake",
     toSeatId: "review",
-    eventType: "DONE"
+    eventType: "READY"
   });
   design.transitions.push({
     transitionId: "review-approved-output",
@@ -55,7 +55,7 @@ test("System Design validates the role-seat graph and exports deterministic Merm
   assert.equal(validateSystemDesign(design).ok, true);
   const source = exportDesignToMermaid(design);
   assert.match(source, /system\.id=test\.design/);
-  assert.match(source, /intake.*DONE.*review/);
+  assert.match(source, /intake.*READY.*review/);
   assert.match(source, /start\[开始\].*START.*intake/);
   assert.match(source, /review.*APPROVED.*end\[结束\]/);
 });
@@ -178,14 +178,14 @@ test("Mermaid special role flows survive design import and export", () => {
 %% system.version=1.0.0
 %% law.global=law.global
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| end[结束]
 `);
 
   assert.equal(system.startEventType, "START");
   const design = systemDefinitionToDesign(system);
   assert.deepEqual(design.transitions.map(({ fromSeatId, toSeatId, eventType }) => ({ fromSeatId, toSeatId, eventType })), [
     { fromSeatId: "__system_start__", toSeatId: "intake", eventType: "START" },
-    { fromSeatId: "intake", toSeatId: "__system_end__", eventType: "DONE" }
+    { fromSeatId: "intake", toSeatId: "__system_end__", eventType: "READY" }
   ]);
   assert.match(exportDesignToMermaid(design), /start\[开始\] -->\|START\|/);
   assert.match(exportDesignToMermaid(design), /end\[结束\]/);

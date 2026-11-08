@@ -32,8 +32,8 @@ function createSystemSource(iterationCount) {
 %% loop.max.test-loop-probe=${iterationCount}
 
 start[开始] -->|START| operator[Role:test-loop-probe]
-operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
-operator[Role:test-loop-probe] -->|DONE| end[结束]
+operator[Role:test-loop-probe] -->|NEEDS_REWORK| operator[Role:test-loop-probe]
+operator[Role:test-loop-probe] -->|READY| end[结束]
 `;
 }
 
@@ -265,7 +265,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
         description: "Runtime replay benchmark role",
         promptTemplate: "prompt.md",
         outputSchema: "output.schema.json",
-        ...latestRoleContract({ events: ["RETRY", "DONE"] })
+        ...latestRoleContract({ events: ["NEEDS_REWORK", "READY"] })
       },
       null,
       2
@@ -290,7 +290,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
         properties: {
           event: {
             type: "string",
-            enum: ["RETRY", "DONE"]
+            enum: ["NEEDS_REWORK", "READY"]
           },
           content: {
             type: "string"

@@ -19,6 +19,9 @@ import type {
   UserProfile
 } from "./types.js";
 
+/** Bump when resume semantics change, independently of physical source paths. */
+export const RUNTIME_SEMANTICS_VERSION = "semantic-ir-v1/2";
+
 function sortedRecordEntries(record: Record<string, string>): Array<[string, string]> {
   return Object.entries(record).sort(([left], [right]) => left.localeCompare(right));
 }
@@ -268,6 +271,7 @@ export function buildRunPlanFingerprint(args: {
     : undefined;
   const runtimeAssetsComponent = buildRuntimeAssetsFingerprintComponent(args);
   const componentValues: Record<string, unknown> = {
+    runtimeSemanticsVersion: RUNTIME_SEMANTICS_VERSION,
     system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
     modelSelection: modelSelectionComponents.map((component) => component.identity),
@@ -297,6 +301,10 @@ export function buildRunPlanFingerprint(args: {
       system: {
         digest: componentDigests.system,
         value: componentValues.system
+      },
+      runtimeSemanticsVersion: {
+        digest: componentDigests.runtimeSemanticsVersion,
+        value: componentValues.runtimeSemanticsVersion
       },
       rolePackages: {
         digest: componentDigests.rolePackages,
@@ -356,7 +364,7 @@ export function buildRunPlanFingerprint(args: {
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 7,
+    version: 8,
     algorithm: "sha256",
     digest,
     payload

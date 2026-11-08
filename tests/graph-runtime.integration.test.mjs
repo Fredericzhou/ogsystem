@@ -90,7 +90,7 @@ async function writeModelBoundRole(args) {
         properties: {
           event: {
             type: "string",
-            enum: args.allowedEvents
+            enum: [...new Set(args.allowedEvents)]
           },
           content: {
             type: "string"
@@ -110,6 +110,240 @@ async function writeModelBoundRole(args) {
   );
 }
 
+async function createLoopBudgetRuntimeFixture(repoRoot, prefix) {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), prefix));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(path.resolve(repoRoot, ".ogs", "laws.json"), path.resolve(tempRoot, ".ogs", "laws.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
+  await writeDefaultModelSelection(tempRoot);
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "opencode-reviewer",
+    allowedEvents: ["REJECTED", "APPROVED"]
+  });
+  await writeFile(systemPath, `flowchart TD
+%% system.id=test.loop-budget.integration
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% loop.max.opencode-reviewer=1
+start[开始] -->|START| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|REJECTED| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|APPROVED| end[结束]
+`, "utf8");
+  return { tempRoot, systemPath };
+}
+
+async function createLoopBudgetJoinRuntimeFixture(repoRoot, prefix) {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), prefix));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(path.resolve(repoRoot, ".ogs", "laws.json"), path.resolve(tempRoot, ".ogs", "laws.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
+  await writeDefaultModelSelection(tempRoot);
+  await writeModelBoundRole({ rolesRoot, roleId: "dispatch", allowedEvents: ["READY"] });
+  await writeModelBoundRole({ rolesRoot, roleId: "opencode-reviewer", allowedEvents: ["REJECTED", "APPROVED"] });
+  await writeModelBoundRole({ rolesRoot, roleId: "sibling", allowedEvents: ["READY"] });
+  await writeModelBoundRole({ rolesRoot, roleId: "summary", allowedEvents: ["READY"] });
+  await writeFile(systemPath, `flowchart TD
+%% system.id=test.loop-budget.branch-join.integration
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% role.mode.dispatch=parallel_split
+%% loop.max.opencode-reviewer=1
+%% join.mode.summary=all_of
+%% join.sources.summary=opencode-reviewer,sibling
+start[开始] -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|READY| reviewer[Role:opencode-reviewer]
+dispatch[Role:dispatch] -->|READY| sibling[Role:sibling]
+reviewer[Role:opencode-reviewer] -->|REJECTED| reviewer[Role:opencode-reviewer]
+reviewer[Role:opencode-reviewer] -->|APPROVED| summary[Role:summary]
+sibling[Role:sibling] -->|READY| summary[Role:summary]
+summary[Role:summary] -->|READY| end[结束]
+`, "utf8");
+  return { tempRoot, systemPath };
+}
+
+async function loopBudgetReviewFromRun(tempRoot) {
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs"))).find((entry) => !entry.startsWith("."));
+  assert.ok(runId, "expected one persisted run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
+  const state = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  const reviewId = Object.values(state.graphState.pendingReviewsById ?? {})
+    .find((review) => review.kind === "loop_budget")?.reviewId;
+  assert.ok(reviewId, "expected a persisted loop budget review");
+  return { runId, runDir, state, reviewId };
+}
+
+test("graph runtime parks on loop budget exhaustion, persists a decision, and resumes to completion", async () => {
+  const repoRoot = process.cwd();
+  const { tempRoot, systemPath } = await createLoopBudgetRuntimeFixture(
+    repoRoot,
+    "ogsystem-loop-budget-runtime-"
+  );
+  try {
+    const firstRun = await runSystemWithAdapter({
+      systemPath,
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "run until the bounded review gate",
+      workdir: tempRoot,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(firstRun.status, "stopped");
+
+    const pending = await loopBudgetReviewFromRun(tempRoot);
+    assert.equal(pending.state.graphState.status, "waiting_review");
+    const requestPath = path.resolve(pending.runDir, "control", "reviews", `${pending.reviewId}.request.json`);
+    assert.ok(JSON.parse(await readFile(requestPath, "utf8")).kind === "loop_budget");
+
+    await writeHumanReviewDecision({
+      workdir: tempRoot,
+      runId: pending.runId,
+      reviewId: pending.reviewId,
+      decision: "continue",
+      targetRoleId: "opencode-reviewer",
+      additionalBudget: 1,
+      principal: { id: "local:loop-budget-test", issuer: "ogs:local", displayName: "loop-budget-test" },
+      comment: "Continue exactly one additional bounded round."
+    });
+
+    const resumed = await runSystemWithAdapter({
+      systemPath,
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "run until the bounded review gate",
+      workdir: tempRoot,
+      resumeRunDir: pending.runId,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(resumed.status, "done");
+    assert.equal(resumed.finalRoleIds?.at(-1), "opencode-reviewer");
+
+    const events = (await readFile(path.resolve(pending.runDir, "events.ndjson"), "utf8"))
+      .trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+    assert.equal(events.filter((event) => event.type === "loop_exhausted").length, 1);
+    assert.equal(events.filter((event) => event.type === "loop_budget_decision").length, 1);
+    assert.equal(events.filter((event) => event.type === "human_review_approved").length, 1);
+    assert.equal(JSON.parse(await readFile(path.resolve(pending.runDir, "state.json"), "utf8"))
+      .graphState.pendingReviewsById[pending.reviewId].status, "resolved");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("graph runtime rejects an illegal loop budget decision and records durable audit evidence", async () => {
+  const repoRoot = process.cwd();
+  const { tempRoot, systemPath } = await createLoopBudgetRuntimeFixture(
+    repoRoot,
+    "ogsystem-loop-budget-rejected-"
+  );
+  try {
+    const firstRun = await runSystemWithAdapter({
+      systemPath,
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "inject an invalid loop budget action",
+      workdir: tempRoot,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(firstRun.status, "stopped");
+    const pending = await loopBudgetReviewFromRun(tempRoot);
+
+    await assert.rejects(
+      () => writeHumanReviewDecision({
+        workdir: tempRoot,
+        runId: pending.runId,
+        reviewId: pending.reviewId,
+        decision: "approve",
+        targetRoleId: "opencode-reviewer",
+        additionalBudget: 1,
+        principal: { id: "local:loop-budget-test", issuer: "ogs:local", displayName: "loop-budget-test" },
+        comment: "This action is intentionally invalid for a loop budget review."
+      }),
+      /GRAPH_LOOP_BUDGET_DECISION_INVALID/
+    );
+
+    const resumed = await runSystemWithAdapter({
+      systemPath,
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "inject an invalid loop budget action",
+      workdir: tempRoot,
+      resumeRunDir: pending.runId,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(resumed.status, "stopped");
+    const events = (await readFile(path.resolve(pending.runDir, "events.ndjson"), "utf8"))
+      .trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+    const rejected = events.filter((event) => event.type === "human_review_decision_rejected");
+    assert.equal(rejected.length, 0);
+    assert.equal(await access(path.resolve(pending.runDir, "control", "reviews", `${pending.reviewId}.decision.json`)).then(() => true).catch(() => false), false);
+
+    const resumedState = JSON.parse(await readFile(path.resolve(pending.runDir, "state.json"), "utf8"));
+    assert.equal(Object.values(resumedState.graphState.pendingReviewsById ?? {}).filter((review) => review.status === "pending").length, 1);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("graph runtime fails closed when branch termination orphaned an all_of join", async () => {
+  const repoRoot = process.cwd();
+  const { tempRoot, systemPath } = await createLoopBudgetJoinRuntimeFixture(
+    repoRoot,
+    "ogsystem-loop-budget-branch-join-"
+  );
+  try {
+    const firstRun = await runSystemWithAdapter({
+      systemPath,
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "terminate the exhausted branch",
+      workdir: tempRoot,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(firstRun.status, "stopped");
+    const pending = await loopBudgetReviewFromRun(tempRoot);
+
+    await writeHumanReviewDecision({
+      workdir: tempRoot,
+      runId: pending.runId,
+      reviewId: pending.reviewId,
+      decision: "terminate",
+      scope: "branch",
+      principal: { id: "local:loop-budget-join-test", issuer: "ogs:local", displayName: "loop-budget-join-test" },
+      comment: "Terminate the exhausted branch and fail closed if the all_of join cannot converge."
+    });
+
+    const resumed = await runSystemWithAdapter({
+      systemPath,
+      lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+      userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+      prompt: "terminate the exhausted branch",
+      workdir: tempRoot,
+      resumeRunDir: pending.runId,
+      dryRun: true,
+      dryRunScenario: "review-reject-once"
+    });
+    assert.equal(resumed.status, "failed");
+    assert.equal(resumed.errorEnvelope?.errorCode, "GRAPH_JOIN_UNREACHABLE_AFTER_TRANSITION_SKIP");
+    const state = JSON.parse(await readFile(path.resolve(pending.runDir, "state.json"), "utf8"));
+    const outcomes = Object.values(state.graphState.joinSourceOutcomesByScope ?? {});
+    assert.ok(outcomes.some((entry) => entry["opencode-reviewer"] === "skipped"));
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("parallel split dry-run supplies a schema-valid declared event", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-parallel-split-dry-run-"));
@@ -121,14 +355,14 @@ test("parallel split dry-run supplies a schema-valid declared event", async () =
   await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
   await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
   await writeDefaultModelSelection(tempRoot);
-  await writeModelBoundRole({ rolesRoot, roleId: "splitter", allowedEvents: ["DONE"] });
+  await writeModelBoundRole({ rolesRoot, roleId: "splitter", allowedEvents: ["READY"] });
   await writeFile(systemPath, `flowchart TD
 %% system.id=test.parallel-split-dry-run
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% role.mode.splitter=parallel_split
 start[开始] -->|START| splitter[Role:splitter]
-splitter[Role:splitter] -->|DONE| end[结束]
+splitter[Role:splitter] -->|READY| end[结束]
 `, "utf8");
 
   let runDir;
@@ -147,7 +381,7 @@ splitter[Role:splitter] -->|DONE| end[结束]
     });
 
     assert.equal(result.status, "done");
-    assert.equal(result.auditTrail[0].selectedEvent, "DONE");
+    assert.equal(result.auditTrail[0].selectedEvent, "READY");
     await assert.rejects(access(path.resolve(runDir, ".site", "active-run.lock")), { code: "ENOENT" });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -166,16 +400,16 @@ test("multiple input entries receive the same task and aggregate terminal output
     await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
     await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
     await writeDefaultModelSelection(tempRoot);
-    await writeModelBoundRole({ rolesRoot, roleId: "alpha", allowedEvents: ["DONE"] });
-    await writeModelBoundRole({ rolesRoot, roleId: "beta", allowedEvents: ["DONE"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "alpha", allowedEvents: ["READY"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "beta", allowedEvents: ["READY"] });
     await writeFile(systemPath, `flowchart TD
 %% system.id=test.multiple-entry-terminal
 %% system.version=1.0.0
 %% law.global=law.console.base
 start[开始] -->|START| alpha[Role:alpha]
 start[开始] -->|START| beta[Role:beta]
-alpha[Role:alpha] -->|DONE| end[结束]
-beta[Role:beta] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
+beta[Role:beta] -->|READY| end[结束]
 `, "utf8");
 
     let runId;
@@ -207,7 +441,7 @@ test("random entry selection is persisted and fails clearly when it cannot satis
     await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
     await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
     await writeDefaultModelSelection(tempRoot);
-    for (const roleId of ["alpha", "beta", "gamma"]) await writeModelBoundRole({ rolesRoot, roleId, allowedEvents: ["DONE"] });
+    for (const roleId of ["alpha", "beta", "gamma"]) await writeModelBoundRole({ rolesRoot, roleId, allowedEvents: ["READY"] });
     await writeFile(systemPath, `flowchart TD
 %% system.id=test.random-entry-unreachable-end
 %% system.version=1.0.0
@@ -219,9 +453,9 @@ test("random entry selection is persisted and fails clearly when it cannot satis
 start[开始] -->|START| alpha[Role:alpha]
 start[开始] -->|START| beta[Role:beta]
 start[开始] -->|START| gamma[Role:gamma]
-alpha[Role:alpha] -->|DONE| end[结束]
-beta[Role:beta] -->|DONE| end[结束]
-gamma[Role:gamma] -->|DONE| end[结束]
+alpha[Role:alpha] -->|READY| end[结束]
+beta[Role:beta] -->|READY| end[结束]
+gamma[Role:gamma] -->|READY| end[结束]
 `, "utf8");
 
     let runId;
@@ -250,7 +484,7 @@ test("expense spot check selects two reviewers and completes after both End resu
     await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
     await writeDefaultModelSelection(tempRoot);
     const reviewers = ["expense-reviewer-a", "expense-reviewer-b", "expense-reviewer-c"];
-    for (const roleId of reviewers) await writeModelBoundRole({ rolesRoot, roleId, allowedEvents: ["REVIEW_DONE"] });
+    for (const roleId of reviewers) await writeModelBoundRole({ rolesRoot, roleId, allowedEvents: ["READY"] });
     await writeFile(systemPath, `flowchart TD
 %% system.id=test.expense-spot-check
 %% system.version=1.0.0
@@ -262,9 +496,9 @@ test("expense spot check selects two reviewers and completes after both End resu
 start[开始] -->|START| reviewerA[Role:expense-reviewer-a]
 start[开始] -->|START| reviewerB[Role:expense-reviewer-b]
 start[开始] -->|START| reviewerC[Role:expense-reviewer-c]
-reviewerA[Role:expense-reviewer-a] -->|REVIEW_DONE| end[结束]
-reviewerB[Role:expense-reviewer-b] -->|REVIEW_DONE| end[结束]
-reviewerC[Role:expense-reviewer-c] -->|REVIEW_DONE| end[结束]
+reviewerA[Role:expense-reviewer-a] -->|READY| end[结束]
+reviewerB[Role:expense-reviewer-b] -->|READY| end[结束]
+reviewerC[Role:expense-reviewer-c] -->|READY| end[结束]
 `, "utf8");
 
     let runId;
@@ -324,21 +558,21 @@ test("repeated activation of one terminal role preserves every output in branch 
     await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
     await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
     await writeDefaultModelSelection(tempRoot);
-    await writeModelBoundRole({ rolesRoot, roleId: "dispatcher", allowedEvents: ["LEFT", "RIGHT"] });
-    await writeModelBoundRole({ rolesRoot, roleId: "left", allowedEvents: ["TO_TERMINAL"] });
-    await writeModelBoundRole({ rolesRoot, roleId: "right", allowedEvents: ["TO_TERMINAL"] });
-    await writeModelBoundRole({ rolesRoot, roleId: "terminal", allowedEvents: ["PUBLISHED"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "dispatcher", allowedEvents: ["READY", "READY"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "left", allowedEvents: ["READY"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "right", allowedEvents: ["READY"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "terminal", allowedEvents: ["READY"] });
     await writeFile(systemPath, `flowchart TD
 %% system.id=test.repeated-terminal-output
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% role.mode.dispatcher=parallel_split
 start[开始] -->|START| dispatcher[Role:dispatcher]
-dispatcher[Role:dispatcher] -->|LEFT| left[Role:left]
-dispatcher[Role:dispatcher] -->|RIGHT| right[Role:right]
-left[Role:left] -->|TO_TERMINAL| terminal[Role:terminal]
-right[Role:right] -->|TO_TERMINAL| terminal[Role:terminal]
-terminal[Role:terminal] -->|PUBLISHED| end[结束]
+dispatcher[Role:dispatcher] -->|READY| left[Role:left]
+dispatcher[Role:dispatcher] -->|READY| right[Role:right]
+left[Role:left] -->|READY| terminal[Role:terminal]
+right[Role:right] -->|READY| terminal[Role:terminal]
+terminal[Role:terminal] -->|READY| end[结束]
 `, "utf8");
 
     const result = await runSystemWithAdapter({ systemPath, prompt: "retain repeated final outputs", workdir: tempRoot, dryRun: true });
@@ -374,7 +608,7 @@ test("project-mode adapter resumes a current fingerprint through the full runtim
     await writeModelBoundRole({
       rolesRoot,
       roleId: "writer",
-      allowedEvents: ["DONE"],
+      allowedEvents: ["READY"],
       controlActions: ["approve", "pause", "rework", "terminate"]
     });
     await writeFile(systemPath, `flowchart TD
@@ -384,7 +618,7 @@ test("project-mode adapter resumes a current fingerprint through the full runtim
 %% exec.bind.writer=profile.fixture
 %% review.mode.writer=required
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `, "utf8");
 
     const firstRun = await runSystemWithAdapter({
@@ -465,14 +699,14 @@ test("project-mode adapter stores run evidence under its owner while loading ass
     await writeFile(path.resolve(tempRoot, "tools.json"), JSON.stringify({ tools: [
       { toolRef: "tool.fixture", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }
     ] }), "utf8");
-    await writeModelBoundRole({ rolesRoot, roleId: "writer", allowedEvents: ["DONE"] });
+    await writeModelBoundRole({ rolesRoot, roleId: "writer", allowedEvents: ["READY"] });
     await writeFile(systemPath, `flowchart TD
 %% system.id=test.project.owned.evidence
 %% system.version=1.0.0
 %% law.global=law.minimal.base
 %% exec.bind.writer=profile.fixture
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `, "utf8");
 
     const result = await runSystemWithAdapter({
@@ -544,7 +778,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.deepStrictEqual(result.finalRoleIds, ["debate-summary"]);
   assert.ok(result.auditTrail.some((item) => item.roleId === "debate-minimalist"));
   assert.ok(result.auditTrail.some((item) => item.roleId === "debate-alignmentist"));
-  assert.ok(result.auditTrail.some((item) => item.selectedEvent === "REBUTTAL_NEEDED"));
+  assert.ok(result.auditTrail.some((item) => item.selectedEvent === "NEEDS_REWORK"));
   assert.ok(result.auditTrail.some((item) => item.loopIteration === 2));
   const minimalistAudits = result.auditTrail.filter((item) => item.roleId === "debate-minimalist");
   const moderatorAudits = result.auditTrail.filter((item) => item.roleId === "debate-moderator");
@@ -698,13 +932,13 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
     "debate-minimalist",
     "debate-alignmentist"
   ]);
-  assert.strictEqual(judgeContext["debate-minimalist"].event, "MINIMALIST_DONE");
-  assert.strictEqual(judgeContext["debate-alignmentist"].event, "ALIGNMENTIST_DONE");
+  assert.strictEqual(judgeContext["debate-minimalist"].event, "READY");
+  assert.strictEqual(judgeContext["debate-alignmentist"].event, "READY");
   assert.match(judgePrompt, /"debate-minimalist"/);
   assert.match(judgePrompt, /"debate-alignmentist"/);
   assert.match(summaryPrompt, /Input:/);
   assert.match(summaryPrompt, /\[dry-run\] opencode-sdk/);
-  assert.match(summaryPrompt, /SUMMARY_READY/);
+  assert.match(summaryPrompt, /READY/);
 
   const resumed = await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
@@ -760,7 +994,7 @@ test("adapter runs expert consultation example with parallel specialists and fin
   assert.ok(result.auditTrail.some((item) => item.roleId === "diagnosis-cardiology"));
   assert.ok(result.auditTrail.some((item) => item.roleId === "diagnosis-neurology"));
   assert.ok(result.auditTrail.some((item) => item.roleId === "diagnosis-imaging"));
-  assert.ok(result.auditTrail.some((item) => item.selectedEvent === "CONSULTATION_READY"));
+  assert.ok(result.auditTrail.some((item) => item.selectedEvent === "READY"));
 
   const runs = await readdir(path.resolve(tempRoot, ".ogs/runs"));
   assert.strictEqual(runs.length, 1);
@@ -806,28 +1040,28 @@ test("adapter preserves session lineage semantics and join context projection ac
   await writeModelBoundRole({
     rolesRoot,
     roleId: "coordinator",
-    allowedEvents: ["TO_A", "TO_B"],
+    allowedEvents: ["READY", "READY"],
     requireEvent: false
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "analyst_a",
-    allowedEvents: ["A_DONE"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "analyst_b",
-    allowedEvents: ["B_DONE"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "merger",
-    allowedEvents: ["MERGED"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "summary",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["READY"]
   });
 
   await writeFile(
@@ -841,12 +1075,12 @@ test("adapter preserves session lineage semantics and join context projection ac
 %% join.sources.merger=analyst_a,analyst_b
 
 start[开始] -->|START| coordinator[Role:coordinator]
-coordinator[Role:coordinator] -->|TO_A| analystA[Role:analyst_a]
-coordinator[Role:coordinator] -->|TO_B| analystB[Role:analyst_b]
-analystA[Role:analyst_a] -->|A_DONE| merger[Role:merger]
-analystB[Role:analyst_b] -->|B_DONE| merger[Role:merger]
-merger[Role:merger] -->|MERGED| summary[Role:summary]
-summary[Role:summary] -->|DONE| end[结束]
+coordinator[Role:coordinator] -->|READY| analystA[Role:analyst_a]
+coordinator[Role:coordinator] -->|READY| analystB[Role:analyst_b]
+analystA[Role:analyst_a] -->|READY| merger[Role:merger]
+analystB[Role:analyst_b] -->|READY| merger[Role:merger]
+merger[Role:merger] -->|READY| summary[Role:summary]
+summary[Role:summary] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -885,7 +1119,7 @@ summary[Role:summary] -->|DONE| end[结束]
   assert.match(mergerInbox, /\\"analyst_a\\"/);
   assert.match(mergerInbox, /\\"analyst_b\\"/);
   assert.match(mergerInbox, /"input":/);
-  assert.match(mergerInbox, /"allowed_events": \[\s*"MERGED"\s*\]/);
+  assert.match(mergerInbox, /"allowed_events": \[\s*"READY"\s*\]/);
 });
 
 test("adapter stops with pending human review and keeps reviewed output unreleased", async () => {
@@ -918,7 +1152,7 @@ test("adapter stops with pending human review and keeps reviewed output unreleas
   await writeModelBoundRole({
     rolesRoot,
     roleId: "writer",
-    allowedEvents: ["DONE"],
+    allowedEvents: ["READY"],
     controlActions: ["approve", "pause", "rework", "terminate"]
   });
 
@@ -934,7 +1168,7 @@ test("adapter stops with pending human review and keeps reviewed output unreleas
 %% review.terminate.scope.writer=run
 %% review.rework.max.writer=2
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -1029,7 +1263,7 @@ test("adapter resume applies approved human review and releases the reviewed res
   await writeModelBoundRole({
     rolesRoot,
     roleId: "writer",
-    allowedEvents: ["DONE"],
+    allowedEvents: ["READY"],
     controlActions: ["approve", "pause", "rework", "terminate"]
   });
 
@@ -1041,7 +1275,7 @@ test("adapter resume applies approved human review and releases the reviewed res
 %% law.global=law.console.base
 %% review.mode.writer=required
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -1089,7 +1323,7 @@ writer[Role:writer] -->|DONE| end[结束]
   assert.strictEqual(summaryJson.pendingReviewCount, 0);
   assert.strictEqual(summaryJson.hasWaitingHumanReview, false);
   assert.strictEqual(stateJson.graphState.pendingReviewsById["review.writer@1#1.r1"].status, "resolved");
-  assert.strictEqual(stateJson.graphState.roleResults["writer@1#1"].event, "DONE");
+  assert.strictEqual(stateJson.graphState.roleResults["writer@1#1"].event, "READY");
   assert.ok(decisionJson.checkpointSequence >= 1);
   assert.ok(typeof decisionJson.appliedAt === "string");
   assert.ok(typeof decisionJson.reconciledAt === "string");
@@ -1125,7 +1359,7 @@ test("adapter resume backfills applied human review decision metadata without du
   await writeModelBoundRole({
     rolesRoot,
     roleId: "writer",
-    allowedEvents: ["DONE"],
+    allowedEvents: ["READY"],
     controlActions: ["approve", "pause", "rework", "terminate"]
   });
 
@@ -1137,7 +1371,7 @@ test("adapter resume backfills applied human review decision metadata without du
 %% law.global=law.console.base
 %% review.mode.writer=required
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -1278,7 +1512,7 @@ const outputs = {
     }
   },
   worker_a: {
-    event: "A_DONE",
+    event: "READY",
     content: "alpha summary",
     data: {
       risks: {
@@ -1287,7 +1521,7 @@ const outputs = {
     }
   },
   worker_b: {
-    event: "B_DONE",
+    event: "READY",
     content: "beta summary",
     data: {
       risks: {
@@ -1296,7 +1530,7 @@ const outputs = {
     }
   },
   worker_c: {
-    event: "C_DONE",
+    event: "READY",
     content: "gamma summary",
     data: {
       risks: {
@@ -1305,39 +1539,39 @@ const outputs = {
     }
   },
   review: {
-    event: "DONE",
+    event: "READY",
     content: "review ready"
   }
 };
-process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content: roleId ?? "unknown" }));\n`,
+process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "READY", content: roleId ?? "unknown" }));\n`,
     "utf8"
   );
 
   await writeModelBoundRole({
     rolesRoot,
     roleId: "coordinator",
-    allowedEvents: ["TO_A", "TO_B", "TO_C"],
+    allowedEvents: ["READY", "READY", "READY"],
     requireEvent: false
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "worker_a",
-    allowedEvents: ["A_DONE"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "worker_b",
-    allowedEvents: ["B_DONE"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "worker_c",
-    allowedEvents: ["C_DONE"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "review",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["READY"]
   });
 
   await writeFile(
@@ -1363,13 +1597,13 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
 %% exec.bind.review=profile.fixture
 
 start[开始] -->|START| coordinator[Role:coordinator]
-coordinator[Role:coordinator] -->|TO_A| workerA[Role:worker_a]
-coordinator[Role:coordinator] -->|TO_B| workerB[Role:worker_b]
-coordinator[Role:coordinator] -->|TO_C| workerC[Role:worker_c]
-workerA[Role:worker_a] -->|A_DONE| review[Role:review]
-workerB[Role:worker_b] -->|B_DONE| review[Role:review]
-workerC[Role:worker_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+coordinator[Role:coordinator] -->|READY| workerA[Role:worker_a]
+coordinator[Role:coordinator] -->|READY| workerB[Role:worker_b]
+coordinator[Role:coordinator] -->|READY| workerC[Role:worker_c]
+workerA[Role:worker_a] -->|READY| review[Role:review]
+workerB[Role:worker_b] -->|READY| review[Role:review]
+workerC[Role:worker_c] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -1507,37 +1741,37 @@ test("adapter transition skips warned contract violations and still activates va
 const roleId = process.env.OGSYSTEM_ROLE_ID;
 const outputs = {
   dispatcher: {
-    event: "PASS",
+    event: "READY",
     content: "dispatch to the valid branch"
   },
   good: {
-    event: "DONE",
+    event: "READY",
     content: "good branch completed"
   },
   bad: {
-    event: "DONE",
+    event: "READY",
     content: "bad branch should not run"
   }
 };
-process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content: roleId ?? "unknown" }));\n`,
+process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "READY", content: roleId ?? "unknown" }));\n`,
     "utf8"
   );
 
   await writeModelBoundRole({
     rolesRoot,
     roleId: "dispatcher",
-    allowedEvents: ["PASS"],
+    allowedEvents: ["READY"],
     requireEvent: false
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "good",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["READY"]
   });
   await writeModelBoundRole({
     rolesRoot,
     roleId: "bad",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["READY"]
   });
 
   await writeFile(
@@ -1549,7 +1783,7 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
         properties: {
           event: {
             type: "string",
-            enum: ["PASS"]
+            enum: ["READY"]
           },
           content: {
             type: "string"
@@ -1572,7 +1806,7 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
         properties: {
           event: {
             type: "string",
-            enum: ["PASS"]
+            enum: ["READY"]
           },
           content: {
             type: "string",
@@ -1620,7 +1854,7 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
             kind: "flow",
             match: {
               fromRoleId: "dispatcher",
-              eventType: "PASS",
+              eventType: "READY",
               toRoleId: "good"
             },
             schema: "dispatch-good.schema.json",
@@ -1631,7 +1865,7 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
             kind: "flow",
             match: {
               fromRoleId: "dispatcher",
-              eventType: "PASS",
+              eventType: "READY",
               toRoleId: "bad"
             },
             schema: "dispatch-bad.schema.json",
@@ -1671,10 +1905,10 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
 %% context.map.good.dispatch_note=direct.content
 
 start[开始] -->|START| dispatcher[Role:dispatcher]
-dispatcher[Role:dispatcher] -->|PASS| good[Role:good]
-dispatcher[Role:dispatcher] -->|PASS| bad[Role:bad]
-good[Role:good] -->|DONE| end[结束]
-bad[Role:bad] -->|DONE| end[结束]
+dispatcher[Role:dispatcher] -->|READY| good[Role:good]
+dispatcher[Role:dispatcher] -->|READY| bad[Role:bad]
+good[Role:good] -->|READY| end[结束]
+bad[Role:bad] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -1734,12 +1968,12 @@ test("adapter executes non-join multi-incoming role once per active branch", asy
 %% role.mode.debate-moderator=parallel_split
 
 start[开始] -->|START| moderator[Role:debate-moderator]
-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| branchA[Role:test-branch-a]
-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| branchB[Role:test-branch-b]
-branchA[Role:test-branch-a] -->|END_A| decision[Role:test-decision]
-branchB[Role:test-branch-b] -->|END_B| decision[Role:test-decision]
-decision[Role:test-decision] -->|PATH_A| end[结束]
-decision[Role:test-decision] -->|PATH_B| end[结束]
+moderator[Role:debate-moderator] -->|READY| branchA[Role:test-branch-a]
+moderator[Role:debate-moderator] -->|READY| branchB[Role:test-branch-b]
+branchA[Role:test-branch-a] -->|READY| decision[Role:test-decision]
+branchB[Role:test-branch-b] -->|READY| decision[Role:test-decision]
+decision[Role:test-decision] -->|APPROVED| end[结束]
+decision[Role:test-decision] -->|REJECTED| end[结束]
 `,
     "utf8"
   );
@@ -1984,7 +2218,7 @@ test("adapter persists metrics fields on failed graph runs", async () => {
   await writeModelBoundRole({
     rolesRoot: path.resolve(tempRoot, "og-roles", "roles"),
     roleId: "test-budget-failure",
-    allowedEvents: ["RETRY", "DONE"]
+    allowedEvents: ["NEEDS_REWORK", "READY"]
   });
 
   const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"));
@@ -2005,8 +2239,8 @@ test("adapter persists metrics fields on failed graph runs", async () => {
 %% loop.max.test-budget-failure=10
 
 start[开始] -->|START| worker[Role:test-budget-failure]
-worker[Role:test-budget-failure] -->|RETRY| worker[Role:test-budget-failure]
-worker[Role:test-budget-failure] -->|DONE| end[结束]
+worker[Role:test-budget-failure] -->|NEEDS_REWORK| worker[Role:test-budget-failure]
+worker[Role:test-budget-failure] -->|READY| end[结束]
 `,
     "utf8"
   );
@@ -2067,7 +2301,7 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
         description: "Scheduler recursion stress role",
         promptTemplate: "prompt.md",
         outputSchema: "output.schema.json",
-        ...latestRoleContract({ events: ["DONE", "RETRY"] })
+        ...latestRoleContract({ events: ["READY", "NEEDS_REWORK"] })
       },
       null,
       2
@@ -2097,7 +2331,7 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
         properties: {
           event: {
             type: "string",
-            enum: ["RETRY", "DONE"]
+            enum: ["NEEDS_REWORK", "READY"]
           },
           content: {
             type: "string"
@@ -2130,8 +2364,8 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
 %% loop.max.test-loop-probe=40
 
 start[开始] -->|START| operator[Role:test-loop-probe]
-operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
-operator[Role:test-loop-probe] -->|DONE| end[结束]
+operator[Role:test-loop-probe] -->|NEEDS_REWORK| operator[Role:test-loop-probe]
+operator[Role:test-loop-probe] -->|READY| end[结束]
 `,
     "utf8"
   );
