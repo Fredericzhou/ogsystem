@@ -73,15 +73,15 @@ test("conversion creates a traceable, unverified package with safe display metad
 test("explicit confirmations are kept separate from source prose", () => {
   const result = convert({
     identityConfirmed: true,
-    outputEvents: ["DONE", "BLOCKED"],
+    outputEvents: ["READY", "BLOCKED"],
     allowedTools: ["team.search"]
   });
 
   assert.equal(result.verification.status, "ready-for-validation");
   assert.deepEqual(result.verification.missingConfirmations, []);
-  assert.deepEqual(result.role.outputs.events, ["BLOCKED", "DONE"]);
+  assert.deepEqual(result.role.outputs.events, ["BLOCKED", "READY"]);
   assert.deepEqual(result.role.constraints.allowedTools, ["team.search"]);
-  assert.deepEqual(JSON.parse(result.files["output.schema.json"]).properties.event.enum, ["BLOCKED", "DONE"]);
+  assert.deepEqual(JSON.parse(result.files["output.schema.json"]).properties.event.enum, ["BLOCKED", "READY"]);
 });
 
 test("safe YAML rejects missing front matter, malformed syntax, duplicate keys, and non-scalar metadata", () => {

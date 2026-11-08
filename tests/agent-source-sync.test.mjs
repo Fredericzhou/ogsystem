@@ -166,8 +166,8 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
       "",
       "start[开始] -->|START| agent[Role:imported.agency.frontend-developer]",
       "agent[Role:imported.agency.frontend-developer] -->|BLOCKED| end[结束]",
-      "agent[Role:imported.agency.frontend-developer] -->|DONE| end[结束]",
-      "agent[Role:imported.agency.frontend-developer] -->|NEEDS_CLARIFICATION| end[结束]"
+      "agent[Role:imported.agency.frontend-developer] -->|READY| end[结束]",
+      "agent[Role:imported.agency.frontend-developer] -->|BLOCKED| end[结束]"
     ].join("\n"),
     "utf8"
   );
