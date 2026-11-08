@@ -19,7 +19,7 @@ async function writeRolePackage(workdir, roleId) {
       description: `${roleId} role`,
       promptTemplate: "prompt.md",
       outputSchema: "output.schema.json",
-      ...latestRoleContract({ events: ["DONE"] })
+      ...latestRoleContract({ events: ["READY"] })
     }),
     "utf8"
   );
@@ -73,8 +73,8 @@ async function createProject() {
       "%% handoff.mode=strict",
       `%% handoff.contracts=${contractPath}`,
       "start[开始] -->|START| plannerNode[Role:planner]",
-      "plannerNode[Role:planner] -->|DONE| writerNode[Role:writer]",
-      "writerNode[Role:writer] -->|DONE| end[结束]"
+      "plannerNode[Role:planner] -->|READY| writerNode[Role:writer]",
+      "writerNode[Role:writer] -->|READY| end[结束]"
     ].join("\n"),
     "utf8"
   );
@@ -85,7 +85,7 @@ async function createProject() {
       contracts: [{
         id: "planner-to-writer",
         kind: "flow",
-        match: { fromRoleId: "planner", toRoleId: "writer", eventType: "DONE" },
+        match: { fromRoleId: "planner", toRoleId: "writer", eventType: "READY" },
         schema: "flow.schema.json"
       }]
     }),

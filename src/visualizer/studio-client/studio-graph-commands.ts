@@ -9,6 +9,7 @@ import {
   type StudioAuthoringRole,
   type StudioGraphSnapshot
 } from "../studio-contracts.js";
+import { BUSINESS_EVENT_TYPES, isBusinessEvent, isRuntimeErrorEvent } from "../../business-events.js";
 
 type StudioAuthoringLeafCommand =
   | {
@@ -594,19 +595,19 @@ export function applyStudioAuthoringCommand(args: {
     ) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
-    let eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType) || "DONE";
-    if (!EVENT_TYPE_PATTERN.test(eventType)) {
+    const requestedEventType = normalizeEventType(command.eventType);
+    let eventType = sourceIsStart ? "START" : requestedEventType || "READY";
+    if (!EVENT_TYPE_PATTERN.test(eventType) || (!sourceIsStart && !isBusinessEvent(eventType) && !(isRuntimeErrorEvent(eventType) && command.runtimeOnlyErrorFlow))) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
     }
-    if (!normalizeEventType(command.eventType)) {
-      let suffix = 2;
-      while (Object.values(authoring.flows).some((flow) =>
-        flow.fromRoleId === sourceRoleId &&
-        flow.toRoleId === targetRoleId &&
-        flow.eventType === eventType
-      )) {
-        eventType = `DONE_${suffix}`;
-        suffix += 1;
+    if (!requestedEventType) {
+      const usedEvents = new Set(Object.values(authoring.flows)
+        .filter((flow) => flow.fromRoleId === sourceRoleId && flow.toRoleId === targetRoleId)
+        .map((flow) => flow.eventType));
+      if (usedEvents.has(eventType)) {
+        const nextEventType = BUSINESS_EVENT_TYPES.find((candidate) => !usedEvents.has(candidate));
+        if (!nextEventType) return { authoring, canvas, blockedCode: "duplicate-edge" };
+        eventType = nextEventType;
       }
     } else if (Object.values(authoring.flows).some((flow) =>
       flow.fromRoleId === sourceRoleId &&
@@ -670,8 +671,8 @@ export function applyStudioAuthoringCommand(args: {
     ) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
-    const eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType || "DONE");
-    if (!EVENT_TYPE_PATTERN.test(eventType)) {
+    const eventType = sourceIsStart ? "START" : normalizeEventType(command.eventType || "READY");
+    if (!EVENT_TYPE_PATTERN.test(eventType) || (!sourceIsStart && !isBusinessEvent(eventType) && !(isRuntimeErrorEvent(eventType) && command.runtimeOnlyErrorFlow))) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
     }
     const original = findMatchingFlowEntry(authoring, {
@@ -918,7 +919,7 @@ export function deriveInverseCommand(
       flowId: flow.flowId || flowId,
       originalSourceRoleId: normalizeRoleId(command.sourceRoleId),
       originalTargetRoleId: commandTargetRoleId(normalizeStudioGraphStoredRoleId(command.targetRoleId)),
-      originalEventType: normalizeEventType(command.eventType || "DONE"),
+      originalEventType: normalizeEventType(command.eventType || "READY"),
       sourceRoleId: flow.fromRoleId,
       targetRoleId: commandTargetRoleId(flow.toRoleId),
       eventType: flow.eventType,

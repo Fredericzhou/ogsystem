@@ -36,7 +36,7 @@ test("studio chat request parsing keeps trimmed identifiers and ignores non-reco
     message: "  refine the graph  ",
     sessionId: "  session-1  ",
     selectedRoleId: "  analyst  ",
-    selectedFlowKey: "  planner:DONE:review  ",
+    selectedFlowKey: "  planner:READY:review  ",
     runtimePath: "  runtime.json  ",
     validation: ["not-a-record"]
   });
@@ -44,7 +44,7 @@ test("studio chat request parsing keeps trimmed identifiers and ignores non-reco
   assert.equal(parsed.message, "refine the graph");
   assert.equal(parsed.sessionId, "session-1");
   assert.equal(parsed.selectedRoleId, "analyst");
-  assert.equal(parsed.selectedFlowKey, "planner:DONE:review");
+  assert.equal(parsed.selectedFlowKey, "planner:READY:review");
   assert.equal(parsed.runtimeConfigPath, "runtime.json");
   assert.equal(parsed.validation, undefined);
 });
@@ -424,7 +424,7 @@ async function seedProjectFixture(workdir) {
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -453,7 +453,7 @@ async function seedAlternateProjectFixture(workdir) {
       "%% system.version=2.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -499,7 +499,7 @@ async function seedRunnableReviewProjectFixture(workdir) {
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -662,7 +662,7 @@ async function createFixtureRun(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| alpha[Role:alpha]",
-      "alpha[Role:alpha] -->|DONE| end[结束]",
+      "alpha[Role:alpha] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -795,10 +795,10 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
             lineageId: "demo-analyst@1#1",
             loopIteration: 1,
             executionId: "exec-1",
-            selectedEvent: "DONE",
+            selectedEvent: "READY",
             draftResult: {
               roleId: "demo-analyst",
-              event: "DONE",
+              event: "READY",
               content: "draft",
               branchId: "demo-analyst@1#1",
               lineageId: "demo-analyst@1#1",
@@ -808,6 +808,7 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
             requestedByExecutionId: "exec-1",
             status: "pending",
             round: 1,
+            stateVersion: 0,
             spec: {
               mode: "required",
               timeoutAction: "pause",
@@ -896,7 +897,7 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
     "start[开始] -->|START| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+    "analyst[Role:demo-analyst] -->|READY| end[结束]",
     ""
   ].join("\n");
   await writeFile(path.resolve(runDir, "system.mmd"), systemSource, "utf8");
@@ -954,10 +955,10 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         lineageId: "demo-analyst@1#1",
         loopIteration: 1,
         executionId: "exec-1",
-        selectedEvent: "ANALYSIS_DONE",
+        selectedEvent: "READY",
         draftResult: {
           roleId: "demo-analyst",
-          event: "ANALYSIS_DONE",
+          event: "READY",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -967,6 +968,7 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         requestedByExecutionId: "exec-1",
         status: "pending",
         round: 1,
+        stateVersion: 0,
         spec: {
           mode: "required",
           timeoutAction: "pause",
@@ -1026,10 +1028,10 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         },
         committedAt: "2026-04-22T09:15:00.000Z",
         status: "ok",
-        selectedEvent: "ANALYSIS_DONE",
+        selectedEvent: "READY",
         storedResult: {
           roleId: "demo-analyst",
-          event: "ANALYSIS_DONE",
+          event: "READY",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -1079,7 +1081,7 @@ async function seedRoleIoExecutionArtifacts(runDir) {
   );
   await writeFile(
     path.resolve(executionDir, "result.json"),
-    JSON.stringify({ event: "ANALYSIS_DONE", content: "fixture result" }, null, 2),
+    JSON.stringify({ event: "READY", content: "fixture result" }, null, 2),
     "utf8"
   );
   await writeFile(path.resolve(executionDir, "inbox.md"), "# Inbox\n\nfixture input\n", "utf8");
@@ -1331,7 +1333,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(detail.header.transitionCount, 5);
     assert.equal(detail.header.finalRoleIds?.at(-1), "alpha");
     assert.equal(detail.header.isSimulation, true);
-    assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|DONE\| end\[结束\]/);
+    assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|READY\| end\[结束\]/);
 
     const failureResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/failure`);
     assert.equal(failureResponse.status, 200);
@@ -1418,7 +1420,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(graph.graph.mode, "run");
     assert.equal(Object.values(graph.authoring.flows).some((flow) => flow.fromRoleId === "__system_start__" && flow.toRoleId === "alpha"), true);
     assert.equal(graph.graph.nodes.some((node) => node.roleId === "alpha" && node.roleSeat === true), true);
-    assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
+    assert.equal(graph.graph.edges.some((edge) => edge.eventType === "READY"), true);
 
     const engineLogsResponse = await fetch(`${url}/api/v1/ogs/runs/${runId}/logs?engine=true`);
     assert.equal(engineLogsResponse.status, 200);
@@ -2105,7 +2107,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridge.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.target === "__system_end__"), true);
     assert.equal(bridge.extracted.systemId, "viz.project.demo");
     assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
-    assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "ANALYSIS_DONE"), true);
+    assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "READY"), true);
 
     const fallbackBridgeResponse = await fetch(`${url}/api/v1/ogs/workspace/studio/bridge`, {
       method: "POST",
@@ -2228,7 +2230,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(applyCanvasResponse.status, 200);
     const appliedCanvas = await applyCanvasResponse.json();
     assert.equal(appliedCanvas.validation.ok, true);
-    assert.match(appliedCanvas.systemSource, /\|ANALYSIS_DONE\| end\[结束\]/);
+    assert.match(appliedCanvas.systemSource, /\|READY\| end\[结束\]/);
     assert.equal(appliedCanvas.authoring.layout.nodes["demo-analyst"].x, 500);
     assert.equal(appliedCanvas.canvas.nodes.some((node) => node.roleId === "demo-analyst" && node.x === 500), true);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
@@ -2237,12 +2239,12 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       {
         label: "authoring-only",
         body: { authoring: movedAuthoring },
-        expectedEventType: "ANALYSIS_DONE"
+        expectedEventType: "READY"
       },
       {
         label: "canvas-only-compatible",
         body: { authoring: movedAuthoring, canvas },
-        expectedEventType: "ANALYSIS_DONE"
+        expectedEventType: "READY"
       },
       {
         label: "authoring-and-canvas",
@@ -2251,7 +2253,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
           canvas: {
             ...canvas,
             edges: [
-              ...canvas.edges.filter((edge) => edge.eventType !== "ANALYSIS_DONE"),
+              ...canvas.edges.filter((edge) => edge.eventType !== "READY"),
               {
                 source: "demo-analyst",
                 target: "__system_end__",
@@ -2263,7 +2265,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
             ]
           }
         },
-        expectedEventType: "ANALYSIS_DONE"
+        expectedEventType: "READY"
       }
     ];
     for (const fixture of compatibilityPayloads) {
@@ -2677,7 +2679,7 @@ test("visualizer server marks invalid project directories and exposes diagnostic
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"

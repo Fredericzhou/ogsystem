@@ -177,6 +177,8 @@ export type ReviewListItem = {
   branchId?: string;
   branchStatus?: string;
   round?: number;
+  kind?: "human" | "loop_budget";
+  loopBudget?: unknown;
   requestedAt?: string;
   decision?: string;
   actor?: string;
@@ -397,6 +399,8 @@ export function mapReviewListItem(value: unknown): ReviewListItem | undefined {
     branchId: asString(source.branchId),
     branchStatus: asString(source.branchStatus),
     round: asNumber(source.round),
+    kind: source.kind === "human" || source.kind === "loop_budget" ? source.kind : undefined,
+    loopBudget: source.loopBudget,
     requestedAt: asString(source.requestedAt),
     decision: asString(source.decision),
     actor: asString(source.actor),

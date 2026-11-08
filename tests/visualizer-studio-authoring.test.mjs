@@ -51,9 +51,9 @@ const source = [
   "%% review.terminate.scope.review=branch",
   "%% context.map.review.summary=source(worker).content",
   "start[开始] -->|START| a[Role:dispatch]",
-  "a[Role:dispatch] -->|WORK| b[Role:worker]",
+  "a[Role:dispatch] -->|READY| b[Role:worker]",
   "a[Role:dispatch] -->|REVIEW| c[Role:review]",
-  "b[Role:worker] -->|DONE| c[Role:review]",
+  "b[Role:worker] -->|READY| c[Role:review]",
   "c[Role:review] -->|APPROVED| end[结束]",
   ""
 ].join("\n");
@@ -76,7 +76,7 @@ test("Studio authoring commands reject reverse boundary flows and direct Start-t
     const result = applyStudioAuthoringCommand({
       authoring,
       canvas,
-      command: { type: "add-edge", sourceRoleId, targetRoleId, eventType: "DONE" }
+      command: { type: "add-edge", sourceRoleId, targetRoleId, eventType: "READY" }
     });
     assert.equal(result.blockedCode, "invalid-edge-endpoints", `${sourceRoleId} -> ${targetRoleId} must be rejected`);
   }
@@ -237,7 +237,7 @@ test("Studio conditional route editing persists a validated Semantic IR route an
     ""
   ].join("\n"), "utf8");
   const authoring = importMermaidToAuthoring({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source });
-  const flow = Object.values(authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+  const flow = Object.values(authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "READY");
   assert.ok(flow);
   flow.condition = {
     op: "equals",
@@ -252,11 +252,11 @@ test("Studio conditional route editing persists a validated Semantic IR route an
   assert.match(semantics, /priority: 4/);
   assert.match(semantics, /path:\n\s+- approved/);
   const reloaded = await inspectStudioBridgeDraft({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source, validateSystemSource: async () => ({ ok: true }) });
-  const restored = Object.values(reloaded.authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+  const restored = Object.values(reloaded.authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "READY");
   assert.deepEqual(restored.condition, flow.condition);
   assert.equal(restored.priority, 4);
   const invalid = structuredClone(authoring);
-  const invalidFlow = Object.values(invalid.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+  const invalidFlow = Object.values(invalid.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "READY");
   invalidFlow.priority = -1;
   await assert.rejects(() => saveStudioAuthoringDraft({ workdir, authoring: invalid }), /IR_INVALID_CONDITION/);
 });
@@ -265,7 +265,7 @@ test("Studio creates the missing Semantic IR files when adding the first conditi
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-first-condition-"));
   try {
     const authoring = importMermaidToAuthoring({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source });
-    const flow = Object.values(authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+    const flow = Object.values(authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "READY");
     flow.condition = { op: "equals", args: [{ kind: "literal", value: "ready" }, { kind: "literal", value: "ready" }] };
     await saveStudioAuthoringDraft({ workdir, authoring });
     const semantics = await readFile(path.resolve(workdir, ".ogs/semantics.yaml"), "utf8");
@@ -429,7 +429,7 @@ test("Studio authoring preserves entry boundary event types across Mermaid round
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
     "start[开始] -->|START| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+    "analyst[Role:demo-analyst] -->|READY| end[结束]",
     ""
   ].join("\n");
   const authoring = importMermaidToAuthoring({
@@ -452,7 +452,7 @@ test("Studio canvas adapter keeps layout state out of generated Mermaid", () => 
   });
   const canvas = authoringToCanvasDocument(authoring);
   assert.equal(canvas.nodes.some((node) => node.roleId === "review" && node.badges.includes("J")), true);
-  assert.equal(canvas.edges.some((edge) => edge.eventType === "DONE" && edge.participatesInJoin), true);
+  assert.equal(canvas.edges.some((edge) => edge.eventType === "READY" && edge.participatesInJoin), true);
 
   const moved = applyCanvasDocumentToAuthoring({
     authoring,
@@ -531,8 +531,8 @@ test("Studio canvas apply stabilizes missing and duplicate edge ids", () => {
         {
           source: "dispatch",
           target: "worker",
-          label: "WORK",
-          eventType: "WORK",
+          label: "READY",
+          eventType: "READY",
           runtimeOnlyErrorFlow: false,
           participatesInJoin: false
         },
@@ -549,8 +549,8 @@ test("Studio canvas apply stabilizes missing and duplicate edge ids", () => {
           id: "duplicate-edge",
           source: "worker",
           target: "review",
-          label: "DONE",
-          eventType: "DONE",
+          label: "READY",
+          eventType: "READY",
           runtimeOnlyErrorFlow: false,
           participatesInJoin: true
         }
@@ -559,12 +559,12 @@ test("Studio canvas apply stabilizes missing and duplicate edge ids", () => {
   });
 
   assert.deepEqual(Object.keys(applied.flows), [
-    "1:dispatch:WORK:worker",
+    "1:dispatch:READY:worker",
     "duplicate-edge",
-    "3:worker:DONE:review"
+    "3:worker:READY:review"
   ]);
-  assert.equal(applied.flows["3:worker:DONE:review"].fromRoleId, "worker");
-  assert.equal(applied.flows["3:worker:DONE:review"].toRoleId, "review");
+  assert.equal(applied.flows["3:worker:READY:review"].fromRoleId, "worker");
+  assert.equal(applied.flows["3:worker:READY:review"].toRoleId, "review");
   assert.equal(serializeAuthoringToMermaid(applied), serializeAuthoringToMermaid(applied));
 });
 
@@ -579,8 +579,8 @@ test("Studio canvas apply keeps duplicate edge fallback ids finite and unique", 
     id: "duplicate-edge",
     source: index % 2 === 0 ? "dispatch" : "worker",
     target: "review",
-    label: index % 2 === 0 ? "REVIEW" : "DONE",
-    eventType: index % 2 === 0 ? "REVIEW" : "DONE",
+    label: index % 2 === 0 ? "REVIEW" : "READY",
+    eventType: index % 2 === 0 ? "REVIEW" : "READY",
     runtimeOnlyErrorFlow: false,
     participatesInJoin: index % 2 !== 0
   }));
@@ -595,8 +595,8 @@ test("Studio canvas apply keeps duplicate edge fallback ids finite and unique", 
   assert.equal(Object.keys(applied.flows).length, 12);
   assert.equal(new Set(Object.keys(applied.flows)).size, 12);
   assert.equal(applied.flows["duplicate-edge"].flowId, "duplicate-edge");
-  assert.equal(applied.flows["2:worker:DONE:review"].flowId, "2:worker:DONE:review");
-  assert.equal(applied.flows["12:worker:DONE:review"].flowId, "12:worker:DONE:review");
+  assert.equal(applied.flows["2:worker:READY:review"].flowId, "2:worker:READY:review");
+  assert.equal(applied.flows["12:worker:READY:review"].flowId, "12:worker:READY:review");
 });
 
 test("Studio flow labels round-trip through authoring and canvas without changing runtime ids", () => {
@@ -606,10 +606,10 @@ test("Studio flow labels round-trip through authoring and canvas without changin
     systemSource: source
   });
   authoring.roles.dispatch.title = "需求分发";
-  authoring.flows["2:dispatch:WORK:worker"].label = "需求已完成";
+  authoring.flows["2:dispatch:READY:worker"].label = "需求已完成";
 
   const canvas = authoringToCanvasDocument(authoring);
-  const labeledEdge = canvas.edges.find((edge) => edge.eventType === "WORK");
+  const labeledEdge = canvas.edges.find((edge) => edge.eventType === "READY");
   assert.equal(labeledEdge.label, "需求已完成");
 
   const applied = applyCanvasDocumentToAuthoring({
@@ -617,7 +617,7 @@ test("Studio flow labels round-trip through authoring and canvas without changin
     canvas: {
       ...canvas,
       edges: canvas.edges.map((edge) =>
-        edge.eventType === "WORK"
+        edge.eventType === "READY"
           ? { ...edge, eventType: "WORK_READY" }
           : edge
       )
@@ -834,7 +834,7 @@ test("Studio authoring commands create validated roles and edges from command fo
       type: "add-edge",
       sourceRoleId: "qa_gate",
       targetRoleId: "__system_end__",
-      eventType: "DONE",
+      eventType: "READY",
       label: "交付完成",
       runtimeOnlyErrorFlow: false
     }
@@ -843,7 +843,7 @@ test("Studio authoring commands create validated roles and edges from command fo
   assert.equal(addedEdge.blockedCode, undefined);
   const edge = Object.values(addedEdge.authoring.flows).find((flow) => flow.fromRoleId === "qa_gate");
   assert.equal(edge.toRoleId, "__system_end__");
-  assert.equal(edge.eventType, "DONE");
+  assert.equal(edge.eventType, "READY");
   assert.equal(edge.label, "交付完成");
   assert.equal(edge.runtimeOnlyErrorFlow, false);
 
@@ -855,7 +855,7 @@ test("Studio authoring commands create validated roles and edges from command fo
       flowId: edge.flowId,
       originalSourceRoleId: "qa_gate",
       originalTargetRoleId: "__system_end__",
-      originalEventType: "DONE",
+      originalEventType: "READY",
       sourceRoleId: "qa_gate",
       targetRoleId: "__system_end__",
       eventType: "APPROVED",
@@ -947,7 +947,7 @@ test("Studio authoring commands derive batch inverses for semantic undo when the
         type: "add-edge",
         sourceRoleId: "review",
         targetRoleId: "qa_gate",
-        eventType: "ESCALATE",
+        eventType: "APPROVAL_PROPOSED",
         label: "Escalate"
       }
     ]
@@ -1105,7 +1105,7 @@ test("add-edge command form reuses an event already emitted by its selected sour
           flowId: "backend-planner:PLAN_READY:reviewer",
           fromRoleId: "backend-planner",
           toRoleId: "reviewer",
-          eventType: "PLAN_READY"
+          eventType: "APPROVAL_PROPOSED"
         }
       }
     }
@@ -1117,7 +1117,7 @@ test("add-edge command form reuses an event already emitted by its selected sour
     sourceRoleId: "backend-planner",
     targetRoleId: "publisher"
   });
-  assert.equal(state.fields.eventType, "PLAN_READY");
+  assert.equal(state.fields.eventType, "APPROVAL_PROPOSED");
   assert.equal(state.validation.diagnostics.some((item) => item.code === "EDGE_EVENT_UNSUPPORTED"), false);
 
   const startState = createDefaultStudioCommandFormState({
@@ -1191,10 +1191,10 @@ test("Studio edge command forms keep display labels distinct from event types", 
   const state = createDefaultStudioCommandFormState({
     kind: "edit-edge",
     context,
-    flowId: "1:dispatch:WORK:worker",
+    flowId: "1:dispatch:READY:worker",
     sourceRoleId: "dispatch",
     targetRoleId: "worker",
-    eventType: "WORK",
+    eventType: "READY",
     label: "需求已完成"
   });
 
@@ -1204,7 +1204,7 @@ test("Studio edge command forms keep display labels distinct from event types", 
 
   const command = commandFromStudioCommandFormState(state);
   assert.equal(command.type, "update-edge");
-  assert.equal(command.eventType, "WORK");
+  assert.equal(command.eventType, "READY");
   assert.equal(command.label, "需求已完成");
 });
 

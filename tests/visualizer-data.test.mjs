@@ -43,7 +43,7 @@ async function seedProjectFixture(workdir) {
   }
   const diagnosisRolePath = path.resolve(workdir, "og-roles", "roles", "diagnosis-dispatch", "role.json");
   const diagnosisRole = JSON.parse(await readFile(diagnosisRolePath, "utf8"));
-  diagnosisRole.outputs.events = ["DONE"];
+  diagnosisRole.outputs.events = ["READY"];
   await writeFile(diagnosisRolePath, JSON.stringify(diagnosisRole, null, 2), "utf8");
   for (const file of [
     "runtime.json",
@@ -96,7 +96,7 @@ async function seedProjectFixture(workdir) {
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -118,8 +118,8 @@ async function seedStrictContractProjectFixture(workdir) {
       `%% handoff.contracts=${contractBundlePath}`,
       "%% context.map.diagnosis-dispatch.content=direct.content",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| tracker[Role:diagnosis-dispatch]",
-      "tracker[Role:diagnosis-dispatch] -->|DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| tracker[Role:diagnosis-dispatch]",
+      "tracker[Role:diagnosis-dispatch] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -171,7 +171,7 @@ async function seedStrictContractProjectFixture(workdir) {
             kind: "flow",
             match: {
               fromRoleId: "demo-analyst",
-              eventType: "ANALYSIS_DONE",
+              eventType: "READY",
               toRoleId: "diagnosis-dispatch"
             },
             schema: "flow-envelope.schema.json",
@@ -307,7 +307,7 @@ async function createSimulationRun(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| alpha[Role:alpha]",
-      "alpha[Role:alpha] -->|DONE| end[结束]",
+      "alpha[Role:alpha] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -332,7 +332,7 @@ function buildLargeSystemSource(nodeCount = 700) {
     const roleId = `role-${index}`;
     lines.push(`alpha[Role:alpha] -->|STEP_${index}| ${roleId}[Role:${roleId}]`);
   }
-  lines.push("alpha[Role:alpha] -->|DONE| end[结束]", "");
+  lines.push("alpha[Role:alpha] -->|READY| end[结束]", "");
   return lines.join("\n");
 }
 
@@ -359,7 +359,7 @@ async function createContractFailureRun(workdir) {
               stage: "contract",
               contract: {
                 contractId: "demo-analyst.to.tracker.v1",
-                flowKey: "demo-analyst:ANALYSIS_DONE:diagnosis-dispatch"
+                flowKey: "demo-analyst:READY:diagnosis-dispatch"
               }
             }
           }
@@ -493,10 +493,10 @@ async function createWaitingReviewRun(workdir, options = {}) {
             lineageId: "demo-analyst@1#1",
             loopIteration: 1,
             executionId: "exec-1",
-            selectedEvent: "ANALYSIS_DONE",
+            selectedEvent: "READY",
             draftResult: {
               roleId: "demo-analyst",
-              event: "ANALYSIS_DONE",
+              event: "READY",
               content: "draft",
               branchId: "demo-analyst@1#1",
               lineageId: "demo-analyst@1#1",
@@ -534,7 +534,7 @@ async function createWaitingReviewRun(workdir, options = {}) {
             comment: "ship it",
             previousOutput: {
               roleId: "demo-analyst",
-              event: "ANALYSIS_DONE",
+              event: "READY",
               content: "draft",
               branchId: "demo-analyst@1#1",
               lineageId: "demo-analyst@1#1",
@@ -621,7 +621,7 @@ async function createWaitingReviewRun(workdir, options = {}) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -636,10 +636,10 @@ async function createWaitingReviewRun(workdir, options = {}) {
         lineageId: "demo-analyst@1#1",
         loopIteration: 1,
         executionId: "exec-1",
-        selectedEvent: "ANALYSIS_DONE",
+        selectedEvent: "READY",
         draftResult: {
           roleId: "demo-analyst",
-          event: "ANALYSIS_DONE",
+          event: "READY",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -706,10 +706,10 @@ async function createWaitingReviewRun(workdir, options = {}) {
         },
         committedAt: "2026-04-22T09:15:00.000Z",
         status: "ok",
-        selectedEvent: "ANALYSIS_DONE",
+        selectedEvent: "READY",
         storedResult: {
           roleId: "demo-analyst",
-          event: "ANALYSIS_DONE",
+          event: "READY",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -803,7 +803,7 @@ async function createJoinRun(workdir) {
             sessionLineageId: "test-operator@1#1",
             status: "active",
             activatedByRoleId: "test-branch-a",
-            activatedByEvent: "A_DONE"
+            activatedByEvent: "READY"
           }
         },
         loopIterations: {},
@@ -833,9 +833,9 @@ async function createJoinRun(workdir) {
       "start[开始] -->|START| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
       "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
-      "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
-      "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
-      "testop[Role:test-operator] -->|RESULT_READY| end[结束]",
+      "brancha[Role:test-branch-a] -->|READY| testop[Role:test-operator]",
+      "branchb[Role:test-branch-b] -->|READY| testop[Role:test-operator]",
+      "testop[Role:test-operator] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"
@@ -880,7 +880,7 @@ test("visualizer data projects project and graph information", async () => {
   assert.equal(alphaNode.runtime.status, "active");
   assert.equal(alphaNode.runtime.lastErrorCode, "E_VIS_TEST");
   assert.equal(alphaNode.runtime.lastFailure.errorCode, "E_VIS_TEST");
-  assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
+  assert.equal(graph.graph.edges.some((edge) => edge.eventType === "READY"), true);
 });
 
 test("visualizer data omits Mermaid Live URL when encoded graph exceeds browser-safe length", async () => {
@@ -972,7 +972,7 @@ test("visualizer data projects failure triage and resume readiness", async () =>
   const failure = await inspectRunFailureVisualization(workdir, runId);
   assert.equal(failure.status, "failed");
   assert.equal(failure.summary.errorCode, "E_VIS_TEST");
-  assert.equal(failure.detail.allowedEvents.includes("DONE"), true);
+  assert.equal(failure.detail.allowedEvents.includes("READY"), true);
   assert.equal(failure.suggestedNextChecks.some((item) => item.action === "inspect-binding-resolution"), true);
 
   const reviewWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-readiness-"));

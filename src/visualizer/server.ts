@@ -2133,11 +2133,11 @@ async function handleApiRunReviewDecision(
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const decision = asString(body.decision);
-  if (decision !== "approve" && decision !== "rework" && decision !== "pause" && decision !== "terminate") {
+  if (decision !== "approve" && decision !== "rework" && decision !== "pause" && decision !== "terminate" && decision !== "continue" && decision !== "reject") {
     throw new HttpError(
       400,
       "INVALID_REVIEW_DECISION",
-      "decision must be one of: approve, rework, pause, terminate."
+      "decision must be one of: approve, rework, pause, terminate, continue, reject."
     );
   }
   const scopeValue = asString(body.scope);
@@ -2154,13 +2154,19 @@ async function handleApiRunReviewDecision(
     decision,
     comment: asString(body.comment),
     principal,
-    scope: scopeValue
+    scope: scopeValue,
+    targetRoleId: asString(body.targetRoleId),
+    additionalBudget: typeof body.additionalBudget === "number" ? body.additionalBudget : undefined
   });
   const semanticStatus =
     decision === "pause"
       ? "human-review-paused"
       : decision === "terminate"
         ? `human-review-terminated:${scopeValue ?? "branch"}`
+        : decision === "continue"
+          ? "loop-budget-continued"
+          : decision === "reject"
+            ? "loop-budget-rejected"
         : `human-review-${decision}d`;
   jsonResponse(
     response,

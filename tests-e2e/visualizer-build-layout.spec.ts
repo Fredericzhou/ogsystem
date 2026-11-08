@@ -50,7 +50,7 @@ async function seedProject(workdir: string): Promise<void> {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n"),
     "utf8"

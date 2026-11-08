@@ -438,7 +438,7 @@ export function deriveStudioRuntimeVisualState(args: {
           if (flow.targetRoleId !== event.roleId || flow.branchId !== String(event.branchId || "")) continue;
           flow.status = "waiting";
         }
-      } else if (["human_review_approved", "human_review_rework_requested"].includes(event.type)) {
+      } else if (["human_review_approved", "human_review_rework_requested", "human_review_rejected"].includes(event.type)) {
         const key = activationKey(event);
         const activeExecution = activeExecutions.get(key);
         if (event.executionId && activeExecution?.executionId && event.executionId !== activeExecution.executionId) continue;

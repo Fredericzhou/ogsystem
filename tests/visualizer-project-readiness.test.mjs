@@ -35,7 +35,7 @@ async function writeRolePackage(workdir, roleId, options = {}) {
         description: `${roleId} role`,
         promptTemplate: "prompt.md",
         outputSchema: "output.schema.json",
-        ...latestRoleContract({ events: ["DONE"] })
+        ...latestRoleContract({ events: ["READY"] })
       },
       null,
       2
@@ -114,8 +114,8 @@ test("project readiness reports missing execution bindings", async () => {
       "%% law.global=law.minimal.base",
       "%% model.bind.planner=opencode/gpt-5-nano",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| writer[Role:writer]",
+      "writer[Role:writer] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -160,7 +160,7 @@ test("project readiness warns when a profile tool drops role input", async () =>
       "%% law.global=law.minimal.base",
       "%% exec.bind.planner=profile.profile.planner",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -197,8 +197,8 @@ test("project readiness exposes doctor skipped health per resolved model without
       "%% model.bind.planner=opencode/offline-planner",
       "%% model.bind.writer=opencode/offline-writer",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| writer[Role:writer]",
+      "writer[Role:writer] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -241,7 +241,7 @@ test("project readiness blocks role contracts whose declared events differ from 
     const issue = readiness.blockers.find((item) => item.code === "READINESS_ROLE_EVENTS_MISMATCH");
 
     assert.equal(readiness.canDryRun, false);
-    assert.deepEqual(issue?.detail, { declaredEvents: ["DONE"], graphEvents: ["PLANNED"] });
+    assert.deepEqual(issue?.detail, { declaredEvents: ["READY"], graphEvents: ["PLANNED"] });
   });
 });
 
@@ -255,7 +255,7 @@ test("project readiness blocks Codex output schemas outside the strict structure
       "%% law.global=law.minimal.base",
       "%% model.bind.planner=opencode/gpt-5-nano",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
     await writeFile(
       path.join(workdir, ".ogs", "model-selection.json"),
@@ -282,7 +282,7 @@ test("project readiness keeps missing catalog distinct from skipped provider hea
       "%% law.global=law.minimal.base",
       "%% model.bind.planner=opencode/pinned-model",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -303,7 +303,7 @@ test("project readiness resolves TeamVersion model bindings from the shared Plat
       "%% law.global=law.minimal.base",
       "%% model.bind.planner=opencode/pinned-model",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir, {
@@ -337,7 +337,7 @@ test("project readiness distinguishes an unbound role from missing provider cata
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -363,7 +363,7 @@ test("project readiness reports missing required role package files", async () =
       "%% law.global=law.minimal.base",
       "%% model.bind.planner=opencode/gpt-5-nano",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -391,7 +391,7 @@ test("project readiness rejects a role manifest without the current contract", a
       "%% law.global=law.minimal.base",
       "%% model.bind.planner=opencode/gpt-5-nano",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -425,7 +425,7 @@ test("project readiness reports strict handoff missing contract coverage", async
       "%% model.bind.writer=opencode/gpt-5-nano",
       "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|HANDOFF| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| end[结束]"
+      "writer[Role:writer] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);
@@ -482,8 +482,8 @@ test("project readiness blocks model capability mismatches and warns on missing 
       "%% model.bind.planner=opencode/textless",
       "%% model.bind.writer=opencode/no-tools",
       "start[开始] -->|START| planner[Role:planner]",
-      "planner[Role:planner] -->|DONE| writer[Role:writer]",
-      "writer[Role:writer] -->|DONE| end[结束]"
+      "planner[Role:planner] -->|READY| writer[Role:writer]",
+      "writer[Role:writer] -->|READY| end[结束]"
     ]);
 
     const readiness = await inspectProjectReadiness(workdir);

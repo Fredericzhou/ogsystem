@@ -119,7 +119,7 @@ test("Conversation view explains conditional route winners without showing evalu
       itemId: "route-1",
       kind: "route_decision",
       roleId: "dispatch",
-      event: "DONE",
+      event: "READY",
       status: "selected",
       at: "2026-09-02T00:00:00.000Z",
       route: {
@@ -488,7 +488,7 @@ test("Studio Bridge panel prioritizes selected flow configuration over fallback 
           bindingKind: "model",
           incomingFlowCount: 0,
           outgoingFlowCount: 1,
-          allowedEvents: ["DONE"],
+          allowedEvents: ["READY"],
           badges: []
         },
         {
@@ -502,11 +502,11 @@ test("Studio Bridge panel prioritizes selected flow configuration over fallback 
         }
       ],
       flows: [{
-        flowId: "1:demo-analyst:DONE:output",
-        flowKey: "demo-analyst:DONE:output",
+        flowId: "1:demo-analyst:READY:output",
+        flowKey: "demo-analyst:READY:output",
         fromRoleId: "demo-analyst",
         toRoleId: "output",
-        eventType: "DONE",
+        eventType: "READY",
         label: "Done",
         runtimeOnlyErrorFlow: false,
         participatesInJoin: false
@@ -517,7 +517,7 @@ test("Studio Bridge panel prioritizes selected flow configuration over fallback 
     bridge,
     readiness: null,
     selectedRoleId: "",
-    selectedFlowKey: "demo-analyst:DONE:output",
+    selectedFlowKey: "demo-analyst:READY:output",
     workbenchView: "bridge",
     graphRootContentHtml: "",
     filter: "",
@@ -528,11 +528,11 @@ test("Studio Bridge panel prioritizes selected flow configuration over fallback 
     rolePackageEditor: null,
     executionConfigEditor: null,
     flowConfigEditor: {
-      flowKey: "demo-analyst:DONE:output",
+      flowKey: "demo-analyst:READY:output",
       data: {
         sourceRoleId: "demo-analyst",
         targetRoleId: "output",
-        eventType: "DONE",
+        eventType: "READY",
         label: "Done",
         runtimeOnlyErrorFlow: false,
         participatesInJoin: false
@@ -551,14 +551,14 @@ test("Studio Bridge derives stable flow keys when extracted flows omit flowKey",
   const bridge = {
     extracted: {
       roles: [
-        { roleId: "demo-analyst", bindingKind: "model", allowedEvents: ["DONE"], badges: [] },
+        { roleId: "demo-analyst", bindingKind: "model", allowedEvents: ["READY"], badges: [] },
         { roleId: "output", bindingKind: "noop", allowedEvents: [], badges: [] }
       ],
       flows: [{
-        flowId: "1:demo-analyst:DONE:output",
+        flowId: "1:demo-analyst:READY:output",
         fromRoleId: "demo-analyst",
         toRoleId: "__system_end__",
-        eventType: "DONE",
+        eventType: "READY",
         label: "Done",
         runtimeOnlyErrorFlow: false,
         participatesInJoin: false
@@ -568,7 +568,7 @@ test("Studio Bridge derives stable flow keys when extracted flows omit flowKey",
   const filtered = filterStudioBridgeItems({
     roles: bridge.extracted.roles,
     flows: bridge.extracted.flows,
-    filter: "demo-analyst:DONE:output",
+    filter: "demo-analyst:READY:output",
     mode: "flows"
   });
   assert.equal(filtered.flows.length, 1);
@@ -577,7 +577,7 @@ test("Studio Bridge derives stable flow keys when extracted flows omit flowKey",
     bridge,
     readiness: null,
     selectedRoleId: "",
-    selectedFlowKey: "demo-analyst:DONE:output",
+    selectedFlowKey: "demo-analyst:READY:output",
     workbenchView: "bridge",
     graphRootContentHtml: "",
     filter: "",
@@ -587,11 +587,11 @@ test("Studio Bridge derives stable flow keys when extracted flows omit flowKey",
     selectionResultsHtml: "",
     rolePackageEditor: null,
     flowConfigEditor: {
-      flowKey: "demo-analyst:DONE:output",
+      flowKey: "demo-analyst:READY:output",
       data: {
         sourceRoleId: "demo-analyst",
         targetRoleId: "output",
-        eventType: "DONE",
+        eventType: "READY",
         label: "Done"
       }
     },
@@ -599,9 +599,9 @@ test("Studio Bridge derives stable flow keys when extracted flows omit flowKey",
     actionBusy: "",
     t: testTranslator
   });
-  assert.match(panelHtml, /data-studio-flow-key="demo-analyst:DONE:output"/);
-  assert.match(panelHtml, /studio-flow-contract active" data-studio-flow-key="demo-analyst:DONE:output"/);
-  assert.match(panelHtml, /data-flow-config-save="demo-analyst:DONE:output"/);
+  assert.match(panelHtml, /data-studio-flow-key="demo-analyst:READY:output"/);
+  assert.match(panelHtml, /studio-flow-contract active" data-studio-flow-key="demo-analyst:READY:output"/);
+  assert.match(panelHtml, /data-flow-config-save="demo-analyst:READY:output"/);
 });
 
 function matchesSelector(element, selector) {
@@ -1229,11 +1229,11 @@ function buildRunFixture({
       runDir: `/tmp/${runId}`,
       executionId: `exec-${runId}`,
       requestedByExecutionId: `exec-${runId}`,
-      selectedEvent: "DONE",
+      selectedEvent: "READY",
       spec: { terminateScope: "branch" },
       history: [],
       reviewRequestSnapshot: {
-        selectedEvent: "DONE",
+        selectedEvent: "READY",
         scope: "branch",
         roleId,
         branchId
@@ -1329,7 +1329,7 @@ function buildRunFixture({
             waitingReviewCount: 0,
             pendingReviewCount: 0,
             loopIteration: 0,
-            lastSelectedEvent: "DONE",
+            lastSelectedEvent: "READY",
             missingSources: []
           }
         ],
@@ -1337,7 +1337,7 @@ function buildRunFixture({
           {
             sourceRoleId: roleId,
             targetRoleId: "qa",
-            event: "DONE",
+            event: "READY",
             isErrorFlow: false,
             recentlyActivated: true
           }
@@ -1356,7 +1356,7 @@ function buildRunFixture({
         durationMs
       },
       detail: {
-        allowedEvents: ["DONE", "REWORK"],
+        allowedEvents: ["READY", "NEEDS_REWORK"],
         inputContext: { prompt: "draft answer", facts: ["law-1"] },
         rawOutput: { answer: "timed out response" },
         schemaPath: `og-roles/${roleId}/output.schema.json`,
@@ -1371,7 +1371,7 @@ function buildRunFixture({
         timeoutMs,
         upstreamRoleIds: ["legal-product-manager"],
         contract: {
-          flowKey: `${roleId}->qa:DONE`,
+          flowKey: `${roleId}->qa:READY`,
           contractId: "flow.answer.done",
           kind: "flow",
           schemaPath: ".ogs/contracts/flow.answer.done.schema.json"
@@ -1391,7 +1391,7 @@ function buildRunFixture({
         }
       ],
       driftBySource: {
-        contracts: [{ flowKey: `${roleId}->qa:DONE`, contractId: "flow.answer.done" }],
+        contracts: [{ flowKey: `${roleId}->qa:READY`, contractId: "flow.answer.done" }],
         modelSelection: [{ roleId, resolvedBinding }]
       }
     },
@@ -1446,7 +1446,7 @@ function buildRunFixture({
       loopIteration: 1,
       executionId: `exec-${runId}`,
       status: "ok",
-      selectedEvent: "DONE",
+      selectedEvent: "READY",
       committedAt: "2026-04-23T09:15:00.000Z",
       audit: {
         at: "2026-04-23T09:15:00.000Z",
@@ -1455,7 +1455,7 @@ function buildRunFixture({
         profileId: "profile.review"
       },
       result: {
-        event: "DONE",
+        event: "READY",
         content: "structured role output"
       },
       session: {
@@ -1659,7 +1659,7 @@ function createBackend(options = {}) {
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
-          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| end[结束]\n",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|READY| end[结束]\n",
           validation: {
             ok: true,
             diagnostics: [],
@@ -1670,7 +1670,7 @@ function createBackend(options = {}) {
               roleCount: 1,
               flowCount: 1,
               roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
-              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "READY" }]
             }
           }
         });
@@ -1691,7 +1691,7 @@ function createBackend(options = {}) {
                 roleCount: 1,
                 flowCount: 1,
                 roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
-                flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+                flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "READY" }]
               }
             : null
         });
@@ -1713,7 +1713,7 @@ function createBackend(options = {}) {
               roleCount: 1,
               flowCount: 1,
               roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
-              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "READY" }]
             } : null
           },
           followUpActions: [{ action: "refresh-project-summary", label: "Reload project and graph views to reflect the saved system." }]
@@ -1739,7 +1739,7 @@ function createBackend(options = {}) {
               roleCount: 1,
               flowCount: 1,
               roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
-              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "READY" }]
             }
           },
           authoring: {
@@ -1760,11 +1760,11 @@ function createBackend(options = {}) {
               }
             },
             flows: {
-              "1:demo-analyst:DONE:output": {
-                flowId: "1:demo-analyst:DONE:output",
+              "1:demo-analyst:READY:output": {
+                flowId: "1:demo-analyst:READY:output",
                 fromRoleId: "demo-analyst",
                 toRoleId: "__system_end__",
-                eventType: "DONE"
+                eventType: "READY"
               }
             },
             layout: { nodes: { "demo-analyst": { x: 120, y: 120 } } }
@@ -1781,15 +1781,15 @@ function createBackend(options = {}) {
               review: { mode: "required" },
               incomingFlowCount: 0,
               outgoingFlowCount: 1,
-              allowedEvents: ["DONE"],
+              allowedEvents: ["READY"],
               badges: ["entry", "M", "R"]
             }],
             flows: [{
-              flowId: "1:demo-analyst:DONE:output",
-              flowKey: "demo-analyst:DONE:output",
+              flowId: "1:demo-analyst:READY:output",
+              flowKey: "demo-analyst:READY:output",
               fromRoleId: "demo-analyst",
               toRoleId: "__system_end__",
-              eventType: "DONE",
+              eventType: "READY",
               runtimeOnlyErrorFlow: false,
               participatesInJoin: false
             }]
@@ -1896,7 +1896,7 @@ function createBackend(options = {}) {
             "%% law.global=law.minimal.base",
             "start[开始] -->|START| analyst[Role:demo-analyst]",
             "analyst[Role:demo-analyst] -->|REVIEW| reviewer[Role:qa-reviewer]",
-            "reviewer[Role:qa-reviewer] -->|DONE| end[结束]",
+            "reviewer[Role:qa-reviewer] -->|READY| end[结束]",
             ""
           ].join("\n"),
           validation: {
@@ -1948,7 +1948,7 @@ function createBackend(options = {}) {
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
-          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| r1[Role:demo-analyst]\nr1[Role:demo-analyst] -->|DONE| end[结束]\n",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| r1[Role:demo-analyst]\nr1[Role:demo-analyst] -->|READY| end[结束]\n",
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
@@ -1960,7 +1960,7 @@ function createBackend(options = {}) {
           systemPath: "/tmp/demo/system.mmd",
           authoring,
           canvas: authoringToCanvasDocument(authoring),
-          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| r1[Role:demo-analyst]\nr1[Role:demo-analyst] -->|DONE| end[结束]\n",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\nstart[开始] -->|START| r1[Role:demo-analyst]\nr1[Role:demo-analyst] -->|READY| end[结束]\n",
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
@@ -2058,7 +2058,7 @@ function createBackend(options = {}) {
               ]
             : [
                 {
-                  flowKey: "demo-analyst->qa:DONE",
+                  flowKey: "demo-analyst->qa:READY",
                   contractId: "flow.answer.done",
                   kind: "flow",
                   schemaPath: ".ogs/contracts/flow.answer.done.schema.json",
@@ -2096,7 +2096,7 @@ function createBackend(options = {}) {
                 description: "fixture",
                 promptTemplate: "prompt.md",
                 outputSchema: "output.schema.json",
-                ...latestRoleContract({ events: ["DONE"] })
+                ...latestRoleContract({ events: ["READY"] })
               }, null, 2)
             },
             "agent.md": {
@@ -2116,7 +2116,7 @@ function createBackend(options = {}) {
                 type: "object",
                 required: ["event", "content"],
                 properties: {
-                  event: { type: "string", enum: ["DONE", "REWORK"] },
+                  event: { type: "string", enum: ["READY", "NEEDS_REWORK"] },
                   content: { type: "string" }
                 }
               }, null, 2)
@@ -2132,7 +2132,7 @@ function createBackend(options = {}) {
               roleId: "demo-analyst",
               summary: "primary answer generator",
               outputSchemaPath: "og-roles/demo-analyst/output.schema.json",
-              allowedEvents: ["DONE", "REWORK"],
+              allowedEvents: ["READY", "NEEDS_REWORK"],
               files: {
                 "role.json": true,
                 "prompt.md": true,
@@ -2144,7 +2144,7 @@ function createBackend(options = {}) {
               roleId: "qa",
               summary: "human review gate",
               outputSchemaPath: "og-roles/qa/output.schema.json",
-              allowedEvents: ["APPROVE", "REWORK"],
+              allowedEvents: ["APPROVE", "NEEDS_REWORK"],
               files: {
                 "role.json": true,
                 "prompt.md": true,
@@ -2333,12 +2333,12 @@ function createBackend(options = {}) {
             kind: "role_message",
             roleId: "demo-analyst",
             type: "audit",
-            event: "DONE",
+            event: "READY",
             status: "ok",
             at: "2026-04-23T09:15:00.000Z",
             durationMs: 15,
             source: { file: "events.ndjson", cursor: 0 },
-            content: { text: "event=DONE | content=Representative role output", redacted: false, truncated: false }
+            content: { text: "event=READY | content=Representative role output", redacted: false, truncated: false }
           }],
           filters: {}
         });
@@ -2793,7 +2793,7 @@ test("visualizer client release readiness decision gates every visible blocker c
     readiness: { blockers: [], contractCoverage: { missingFlowCount: 0 } },
     bindings: { roles: [{ roleId: "demo", effectiveBinding: "model:gpt" }] },
     rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, promptTemplate: true } }] },
-    contracts: { flows: [{ flowKey: "demo:DONE:output", contractId: "flow.done", schemaPath: "schema.json", lastStatus: "covered" }] },
+    contracts: { flows: [{ flowKey: "demo:READY:output", contractId: "flow.done", schemaPath: "schema.json", lastStatus: "covered" }] },
     workbenchDirty: false
   });
   assert.equal(ready.canExport, true);
@@ -2806,7 +2806,7 @@ test("visualizer client release readiness decision gates every visible blocker c
     },
     bindings: { roles: [{ roleId: "demo", resolved: false }] },
     rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, promptTemplate: false } }] },
-    contracts: { flows: [{ flowKey: "audit", contractId: null, schemaPath: null, lastStatus: "missing" }], uncoveredEdges: [{ flowKey: "demo:DONE:output" }] },
+    contracts: { flows: [{ flowKey: "audit", contractId: null, schemaPath: null, lastStatus: "missing" }], uncoveredEdges: [{ flowKey: "demo:READY:output" }] },
     workbenchDirty: true
   });
   assert.equal(blocked.canExport, false);
@@ -2877,7 +2877,7 @@ test("release gate distinguishes optional flow contracts from strict requirement
   const render = (handoffMode) => renderReleaseGatePanel({
     validation: { ok: true, diagnostics: [] },
     readiness: { blockers: [], contractCoverage: { handoffMode, missingFlowCount: 1 } },
-    contracts: { uncoveredEdges: [{ flowKey: "writer:DONE:reviewer" }] },
+    contracts: { uncoveredEdges: [{ flowKey: "writer:READY:reviewer" }] },
     rolePackages: {},
     bindings: {},
     workbenchSavedPath: "system.mmd",
@@ -2906,7 +2906,7 @@ test("contract inspector labels unconfigured handoff contracts as optional", () 
     contracts: {
       handoffMode: null,
       flows: [],
-      uncoveredEdges: [{ flowKey: "writer:DONE:reviewer", fromRoleId: "writer", toRoleId: "reviewer" }]
+      uncoveredEdges: [{ flowKey: "writer:READY:reviewer", fromRoleId: "writer", toRoleId: "reviewer" }]
     },
     t: testTranslator
   });
@@ -3078,7 +3078,7 @@ test("visualizer client retries graph workspace warmup until graph content becom
           project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" },
           system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleIds: ["demo-analyst"], lawGlobalRef: "law.minimal.base" },
           roles: { "demo-analyst": { roleId: "demo-analyst", bindingKind: "model" } },
-          flows: { "1:demo-analyst:DONE:output": { flowId: "1:demo-analyst:DONE:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "DONE" } },
+          flows: { "1:demo-analyst:READY:output": { flowId: "1:demo-analyst:READY:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "READY" } },
           layout: { nodes: { "demo-analyst": { x: 120, y: 120 } } }
         },
         extracted: {
@@ -3086,8 +3086,8 @@ test("visualizer client retries graph workspace warmup until graph content becom
           systemVersion: "1.0.0",
           entryRoleIds: ["demo-analyst"],
           lawGlobal: "law.minimal.base",
-          roles: [{ roleId: "demo-analyst", bindingKind: "model", incomingFlowCount: 0, outgoingFlowCount: 1, allowedEvents: ["DONE"], badges: ["entry", "M"] }],
-          flows: [{ flowId: "1:demo-analyst:DONE:output", flowKey: "demo-analyst:DONE:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "DONE", runtimeOnlyErrorFlow: false, participatesInJoin: false }]
+          roles: [{ roleId: "demo-analyst", bindingKind: "model", incomingFlowCount: 0, outgoingFlowCount: 1, allowedEvents: ["READY"], badges: ["entry", "M"] }],
+          flows: [{ flowId: "1:demo-analyst:READY:output", flowKey: "demo-analyst:READY:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "READY", runtimeOnlyErrorFlow: false, participatesInJoin: false }]
         }
       })
     ]
@@ -3106,7 +3106,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
       createResponse({
         workdir: "/tmp/demo",
         systemPath: "/tmp/demo/system.mmd",
-        systemSource: "flowchart TD\nstart[开始] -->|START| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| end[结束]\n",
+        systemSource: "flowchart TD\nstart[开始] -->|START| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|READY| end[结束]\n",
         validation: {
           ok: true,
           diagnostics: [],
@@ -3117,7 +3117,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
             roleCount: 1,
             flowCount: 1,
             roles: [{ roleId: "demo-analyst", bindingKind: "model" }],
-            flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+            flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "READY" }]
           }
         },
         authoring: {
@@ -3138,11 +3138,11 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
             }
           },
           flows: {
-            "1:demo-analyst:DONE:output": {
-              flowId: "1:demo-analyst:DONE:output",
+            "1:demo-analyst:READY:output": {
+              flowId: "1:demo-analyst:READY:output",
               fromRoleId: "demo-analyst",
               toRoleId: "__system_end__",
-              eventType: "DONE"
+              eventType: "READY"
             }
           },
           layout: {
@@ -3177,7 +3177,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
   assert.ok(latestMount);
   assert.ok(latestMount.authoring);
   assert.ok(latestMount.canvas.nodes.some((node) => node.roleId === "demo-analyst"));
-  assert.ok(latestMount.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.eventType === "DONE"));
+  assert.ok(latestMount.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.eventType === "READY"));
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]").length > 0);
@@ -4351,7 +4351,7 @@ test("visualizer client keeps the workbench editor visible with source intact du
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n")
   );
@@ -4476,7 +4476,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| end[结束]",
+      "analyst[Role:demo-analyst] -->|READY| end[结束]",
       ""
     ].join("\n")
   );
@@ -4651,15 +4651,15 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await roleSelectionButton.click();
   await settle();
   await settle();
-  latestEditableMount().onSelectFlow("demo-analyst:DONE:output");
+  latestEditableMount().onSelectFlow("demo-analyst:READY:output");
   await settle();
   assert.equal(
     harness.document.getElementById("studio-graph-root").dataset.selectedFlowKey,
-    "demo-analyst:DONE:output"
+    "demo-analyst:READY:output"
   );
   const flowConfigSaveButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-flow-config-save]")[0];
   assert.ok(flowConfigSaveButton);
-  assert.equal(flowConfigSaveButton.getAttribute("data-flow-config-save"), "demo-analyst:DONE:output");
+  assert.equal(flowConfigSaveButton.getAttribute("data-flow-config-save"), "demo-analyst:READY:output");
   assert.match(
     harness.document.getElementById("workbench-body").querySelectorAll("[data-flow-config-editor]")[0].textContent,
     /flow config|流转配置/i
@@ -4910,7 +4910,7 @@ test("visualizer client shows role config labels and opens role I/O modal from s
       manifest: { path: "contracts/handoff.json", content: JSON.stringify({ version: 1, contracts: [{ id: "input.demo", kind: "role_input", match: { roleId: "demo-analyst" }, schema: "schemas/input.json" }] }) },
       contracts: [
         { flowKey: "role_input:demo-analyst", kind: "role_input", roleId: "demo-analyst", contractId: "input.demo", schemaPath: "contracts/schemas/input.json", lastStatus: "covered" },
-        { flowKey: "writer:DONE:reviewer", kind: "flow", fromRoleId: "writer", toRoleId: "reviewer", contractId: null, schemaPath: null, lastStatus: "missing" },
+        { flowKey: "writer:READY:reviewer", kind: "flow", fromRoleId: "writer", toRoleId: "reviewer", contractId: null, schemaPath: null, lastStatus: "missing" },
         { flowKey: "orphan", kind: "unknown", contractId: null, schemaPath: null, lastStatus: "missing" }
       ],
       schemaFiles: [{ path: "contracts/schemas/input.json", content: "{}" }],
@@ -4920,7 +4920,7 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   });
   assert.match(contractEditorHtml, /data-contract-kind/);
   assert.match(contractEditorHtml, /data-studio-contract-target-kind="role" data-studio-contract-target-id="demo-analyst"/);
-  assert.match(contractEditorHtml, /data-studio-contract-target-kind="flow" data-studio-contract-target-id="writer:DONE:reviewer"/);
+  assert.match(contractEditorHtml, /data-studio-contract-target-kind="flow" data-studio-contract-target-id="writer:READY:reviewer"/);
   assert.doesNotMatch(contractEditorHtml, /data-studio-contract-target-kind=""/);
   assert.match(contractEditorHtml, /data-contract-role-fields/);
   assert.match(contractEditorHtml, /data-contract-flow-fields/);
@@ -4940,13 +4940,13 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   assert.match(quorumConfigHtml, /Source selectors are unavailable until the quorum threshold includes every incoming source/);
 
   const flowConfigHtml = renderStudioFlowConfigEditor({
-    flowKey: "writer:DONE:reviewer",
+    flowKey: "writer:READY:reviewer",
     editor: {
-      flowKey: "writer:DONE:reviewer",
+      flowKey: "writer:READY:reviewer",
       data: {
         sourceRoleId: "writer",
         targetRoleId: "reviewer",
-        eventType: "DONE",
+        eventType: "READY",
         label: "Draft ready",
         runtimeOnlyErrorFlow: false,
         participatesInJoin: false,

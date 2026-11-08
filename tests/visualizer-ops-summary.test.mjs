@@ -49,7 +49,7 @@ async function seedOpsProject(workdir) {
     "%% review.rework.max.demo-analyst=2",
     "%% review.terminate.scope.demo-analyst=branch",
     "start[开始] -->|START| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|DONE| end[结束]",
+    "analyst[Role:demo-analyst] -->|READY| end[结束]",
     ""
   ].join("\n");
   await writeFile(path.resolve(workdir, "system.mmd"), systemSource, "utf8");
@@ -108,6 +108,17 @@ async function seedOpsRun(workdir, systemSource) {
             loopIteration: 1,
             executionId: "exec-1",
             status: "pending",
+            kind: "loop_budget",
+            loopBudget: {
+              loopId: "review-loop",
+              maxRounds: 2,
+              currentIteration: 2,
+              triggerRoleId: "demo-analyst",
+              targetRoleIds: ["demo-analyst"],
+              reworkTargetRoleIds: ["demo-analyst"],
+              rejectTargetRoleIds: [],
+              maxAdditionalRounds: 1
+            },
             round: 1,
             requestedAt: "2026-04-28T01:02:03.000Z",
             spec: {
@@ -140,7 +151,7 @@ async function seedOpsRun(workdir, systemSource) {
             sessionLineageId: "demo-analyst@2#2",
             parentBranchId: "demo-analyst@1#1",
             activatedByRoleId: "demo-analyst",
-            activatedByEvent: "REWORK",
+            activatedByEvent: "NEEDS_REWORK",
             status: "active"
           }
         },
@@ -182,6 +193,11 @@ async function seedOpsRun(workdir, systemSource) {
   await writeFile(
     path.resolve(runDir, "resolved-config.json"),
     JSON.stringify({ systemId: "viz.ops.demo", effective: { invocation: { dryRun: false } } }, null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "events.ndjson"),
+    `${JSON.stringify({ type: "loop_exhausted", at: "2026-04-28T01:02:04.500Z", loopId: "review-loop", roleId: "demo-analyst", lineageId: "demo-analyst@1#1", loopIteration: 2, maxRounds: 2, onExhausted: "waiting_review" })}\n`,
     "utf8"
   );
   await writeFile(
@@ -230,6 +246,10 @@ test("ops summary aggregates failures, review/rework pending, and resume blocker
   assert.equal(summary.failureGroups.byErrorCode[0].key, "CONTRACT_OUTPUT_INVALID");
   assert.equal(summary.failureGroups.byErrorCategory[0].key, "contract");
   assert.equal(summary.reviewRework.pendingReviewCount, 1);
+  assert.equal(summary.loopControl.exhaustedCount, 1);
+  assert.equal(summary.loopControl.pendingBudgetReviewCount, 1);
+  assert.equal(summary.loopControl.recentExhaustions[0].loopId, "review-loop");
+  assert.equal(summary.loopControl.recentExhaustions[0].onExhausted, "waiting_review");
   assert.equal(summary.reviewRework.pendingReworkCount, 1);
   assert.equal(summary.reviewRework.pendingReviewByRole[0].key, "demo-analyst");
   assert.equal(summary.resumeReadiness.inspectedRunCount, 1);

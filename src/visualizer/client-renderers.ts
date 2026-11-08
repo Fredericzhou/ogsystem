@@ -2,6 +2,7 @@ import { escapeHtml as escapeText } from "./html-escape.js";
 import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
 import { roleColorForId } from "./role-color.js";
 import { listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
+import { BUSINESS_EVENT_TYPES } from "../runtime/business-events.js";
 
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
@@ -586,6 +587,7 @@ export function renderOpsSummaryPanel(args: {
   const summary = (args.opsSummary?.summary ?? {}) as JsonRecord;
   const failureGroups = (args.opsSummary?.failureGroups ?? {}) as JsonRecord;
   const reviewRework = (args.opsSummary?.reviewRework ?? {}) as JsonRecord;
+  const loopControl = (args.opsSummary?.loopControl ?? {}) as JsonRecord;
   const resumeReadiness = (args.opsSummary?.resumeReadiness ?? {}) as JsonRecord;
   const longRunningHealth = (args.opsSummary?.longRunningHealth ?? {}) as JsonRecord;
   const executionDirHealth = (longRunningHealth.executionDirCount ?? {}) as JsonRecord;
@@ -602,6 +604,9 @@ export function renderOpsSummaryPanel(args: {
     : [];
   const blockingByCategory = Array.isArray(resumeReadiness.blockingByCategory)
     ? resumeReadiness.blockingByCategory as JsonRecord[]
+    : [];
+  const recentLoopExhaustions = Array.isArray(loopControl.recentExhaustions)
+    ? loopControl.recentExhaustions as JsonRecord[]
     : [];
   const cards = [
     '<div class="event"><div class="event-top"><span>' + escapeText(t("ops.recentFailures", undefined, "recent failures")) + '</span><span>' +
@@ -665,6 +670,24 @@ export function renderOpsSummaryPanel(args: {
         "</div></div>"
       )
     : ['<div class="event"><div class="event-top"><span>' + escapeText(t("ops.recentFailureList", undefined, "recent failure list")) + '</span><span>0</span></div><strong>' + escapeText(t("ops.noFailureEntries", undefined, "No failure entries in the sampled runs")) + '</strong></div>'];
+  const loopControlCard = '<div class="event"><div class="event-top"><span>' +
+    escapeText(t("ops.loopControl", undefined, "loop budget control")) +
+    '</span><span>' + escapeText(String(loopControl.exhaustedCount ?? summary.loopExhaustedCount ?? 0)) +
+    '</span></div><strong>' + escapeText(
+      t("ops.loopControlHeadline", {
+        exhausted: String(loopControl.exhaustedCount ?? summary.loopExhaustedCount ?? 0),
+        pending: String(loopControl.pendingBudgetReviewCount ?? summary.loopBudgetReviewCount ?? 0)
+      }, "{exhausted} exhausted · {pending} budget review(s) waiting")
+    ) + '</strong><div class="hint">' + escapeText(
+      recentLoopExhaustions.length
+        ? recentLoopExhaustions.slice(0, 3).map((item) => [
+            String(item.loopId ?? "loop"),
+            item.roleId ? String(item.roleId) : "",
+            item.maxRounds === undefined ? "" : "max " + String(item.maxRounds),
+            item.onExhausted ? "target " + String(item.onExhausted) : ""
+          ].filter(Boolean).join(" · ")).join(" | ")
+        : t("ops.noLoopExhaustions", undefined, "No loop budget exhaustion recorded in sampled runs.")
+    ) + '</div></div>';
   return [
     '<div class="ops-summary-layout">',
     '<section class="ops-group ops-attention-group"><h4>' + escapeText(t("ops.groupAttention", undefined, "Needs attention")) + '</h4><div class="ops-attention-grid">',
@@ -672,6 +695,9 @@ export function renderOpsSummaryPanel(args: {
     '</div></section>',
     '<details class="ops-group ops-disclosure"><summary>' + escapeText(t("ops.groupHealth", undefined, "Runtime health")) + '</summary><div class="ops-disclosure-body">',
     cards[3],
+    '</div></details>',
+    '<details class="ops-group ops-disclosure"><summary>' + escapeText(t("ops.loopControl", undefined, "Loop budget control")) + '</summary><div class="ops-disclosure-body">',
+    loopControlCard,
     '</div></details>',
     '<details class="ops-group ops-disclosure"><summary>' + escapeText(t("ops.groupRecentFailures", { count: String(summary.recentFailureCount ?? 0) }, "Recent failures ({count})")) + '</summary><div class="ops-disclosure-body ops-failure-list">',
     ...failureCards,
@@ -1439,7 +1465,7 @@ export function renderStudioFlowConfigEditor(args: {
     '<div class="form-grid">' +
       '<label class="field"><span>' + escapeText(t("studio.form.sourceRole", undefined, "Source role")) + '</span><select data-flow-config-field="sourceRoleId"' + disabled + ">" + sourceOptions + '</select></label>' +
       '<label class="field"><span>' + escapeText(t("studio.form.targetRole", undefined, "Target role")) + '</span><select data-flow-config-field="targetRoleId"' + disabled + ">" + targetOptions + '</select></label>' +
-      '<label class="field"><span>' + escapeText(t("studio.form.eventType", undefined, "Event type")) + '</span><input data-flow-config-field="eventType" value="' + escapeText(eventType) + '"' + (sourceIsStart ? " readonly" : disabled) + '><div class="hint">' + escapeText(sourceIsStart ? t("studio.startFlowEventFixed", undefined, "Start flows share the fixed START event.") : t("studio.flowEventHint", undefined, "Uppercase event token used by authoring and validation.")) + '</div></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.eventType", undefined, "Event type")) + '</span>' + (sourceIsStart ? '<input data-flow-config-field="eventType" value="START" readonly>' : '<select data-flow-config-field="eventType">' + BUSINESS_EVENT_TYPES.map((item) => '<option value="' + escapeText(item) + '"' + (item === eventType ? " selected" : "") + '>' + escapeText(item) + '</option>').join("") + '</select>') + '<div class="hint">' + escapeText(sourceIsStart ? t("studio.startFlowEventFixed", undefined, "Start flows share the fixed START event.") : t("studio.flowEventHint", undefined, "Select a registered business event.")) + '</div></label>' +
       '<label class="field"><span>' + escapeText(t("studio.form.flowLabel", undefined, "Display name")) + '</span><input data-flow-config-field="label" value="' + escapeText(label) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowLabelHint", undefined, "Optional display label. Empty falls back to the event type.")) + '</div></label>' +
       (sourceIsStart ? "" : '<label class="field checkbox"><input type="checkbox" data-flow-config-field="runtimeOnlyErrorFlow"' + (runtimeOnlyErrorFlow ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow")) + '</span></label>') +
       (targetIsEnd || sourceIsStart ? "" : '<label class="field checkbox"><input type="checkbox" data-flow-config-field="participatesInJoin"' + (participatesInJoin ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.participatesInJoin", undefined, "Join source")) + '</span></label>') +
@@ -2167,7 +2193,17 @@ export function renderStudioDebugOutcomePanel(args: {
   const reviewItems = reviews.map((review) => {
     const reviewStatus = String(review.currentStatus ?? "unknown");
     const reviewStatusClass = reviewStatus.toLowerCase().replace(/[^a-z0-9_-]/g, "");
-    const context = [review.reviewId, review.branchId, review.selectedEvent, review.reworkTarget].filter(Boolean).map(String).join(" · ");
+    const loopBudget = asRecord(review.loopBudget);
+    const context = [
+      review.reviewId,
+      review.branchId,
+      review.selectedEvent,
+      review.reworkTarget,
+      review.kind === "loop_budget" ? t("studio.debugLoopBudgetReview", undefined, "loop budget review") : "",
+      loopBudget?.loopId ? "loop " + String(loopBudget.loopId) : "",
+      loopBudget?.maxRounds === undefined ? "" : "max " + String(loopBudget.maxRounds),
+      loopBudget?.currentIteration === undefined ? "" : "at " + String(loopBudget.currentIteration)
+    ].filter(Boolean).map(String).join(" · ");
     const decision = [review.decision, review.actor, review.comment].filter(Boolean).map(String).join(" · ");
     const statusLabel = reviewStatus === "pending"
       ? t("status.waitingReview", undefined, "waiting review")

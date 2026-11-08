@@ -53,6 +53,7 @@ import {
   statusTone
 } from "./client-renderers.js";
 import { isValidSelectorPath, isValidSourceRoleId, listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
+import { BUSINESS_EVENT_TYPES, isBusinessEvent, isRuntimeErrorEvent } from "../business-events.js";
 import { HUMAN_REVIEW_COMMENT_MAX_LENGTH, HumanReviewCommentError, normalizeHumanReviewComment } from "../runtime/human-review-comment.js";
 import {
   buildRouteSearch,
@@ -298,6 +299,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const normalizeStudioEventType = ${normalizeStudioEventType.toString()};
     const normalizeStudioGraphStoredRoleId = ${normalizeStudioGraphStoredRoleId.toString()};
     const normalizeStudioGraphTargetRoleId = ${normalizeStudioGraphTargetRoleId.toString()};
+    const BUSINESS_EVENT_TYPES = ${JSON.stringify(BUSINESS_EVENT_TYPES)};
+    const BUSINESS_EVENT_SET = new Set(BUSINESS_EVENT_TYPES);
+    const isBusinessEvent = ${isBusinessEvent.toString()};
+    const isRuntimeErrorEvent = ${isRuntimeErrorEvent.toString()};
     const STUDIO_SYSTEM_END_ROLE_ID = "${STUDIO_SYSTEM_END_ROLE_ID}";
     const STUDIO_SYSTEM_START_ROLE_ID = "${STUDIO_SYSTEM_START_ROLE_ID}";
     const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_:-]*$/;
@@ -1037,6 +1042,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         "human_review_requested",
         "human_review_approved",
         "human_review_rework_requested",
+        "human_review_rejected",
+        "human_review_decision_rejected",
         "role.completed",
         "role.skipped",
         "role.failed",
@@ -1204,7 +1211,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function studioBridgeFlowRuntimeKey(sourceRoleId, eventType, targetRoleId) {
-      return String(sourceRoleId || "") + ":" + String(eventType || "DONE") + ":" + normalizeStudioTargetRoleId(targetRoleId || "__system_end__");
+      return String(sourceRoleId || "") + ":" + String(eventType || "READY") + ":" + normalizeStudioTargetRoleId(targetRoleId || "__system_end__");
     }
 
     function runtimeBadgesForRunNode(node) {
@@ -1521,7 +1528,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function runGraphFlowKey(edge) {
       const source = String(edge?.sourceRoleId || edge?.source || "");
-      const event = String(edge?.event || edge?.eventType || "DONE");
+      const event = String(edge?.event || edge?.eventType || "READY");
       const target = normalizeStudioTargetRoleId(edge?.targetRoleId || edge?.target || "__system_end__");
       return source + ":" + event + ":" + target;
     }
@@ -3440,6 +3447,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 })
               : [];
             const meta = [
+              record?.type === "loop_exhausted" ? t("studio.debugLoopExhausted", undefined, "loop budget exhausted") : "",
+              record?.loopId ? "loop " + String(record.loopId) : "",
+              record?.maxRounds === undefined ? "" : "max " + String(record.maxRounds),
+              record?.onExhausted ? "target " + String(record.onExhausted) : "",
               record?.branchId ? "branch " + String(record.branchId) : "",
               Number.isFinite(record?.loopIteration) ? "loop " + String(record.loopIteration) : "",
               record?.reviewId ? "review " + String(record.reviewId) : "",
@@ -4876,7 +4887,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         originalEventType: String(current.eventType || ""),
         sourceRoleId: String(draft.sourceRoleId || "").trim(),
         targetRoleId: String(draft.targetRoleId || "").trim(),
-        eventType: normalizeStudioEventType(draft.eventType || "DONE"),
+        eventType: normalizeStudioEventType(draft.eventType || "READY"),
         label: String(draft.label || "").trim() || undefined,
         runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
         participatesInJoin: draft.participatesInJoin === true,
@@ -5889,7 +5900,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             "%% system.version=0.0.1",
             "%% law.global=law.minimal.base",
             "start[开始] -->|START| analyst[Role:demo-analyst]",
-            "analyst[Role:demo-analyst] -->|DONE| end[结束]",
+            "analyst[Role:demo-analyst] -->|READY| end[结束]",
             ""
           ].join("\\n");
           state.workbenchView = "source";
@@ -6068,14 +6079,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ? t("review.requestRework")
             : decision === "pause"
               ? t("review.pause")
-              : t("review.terminateScope", { scope });
+              : decision === "continue"
+                ? "Continue with budget"
+                : decision === "reject"
+                  ? "Reject and route"
+                  : t("review.terminateScope", { scope });
         const effectKey = decision === "approve"
           ? "form.reviewEffectApprove"
           : decision === "rework"
             ? "form.reviewEffectRework"
             : decision === "pause"
               ? "form.reviewEffectPause"
-              : "form.reviewEffectTerminate";
+              : decision === "continue" || decision === "reject" ? "form.reviewEffectApprove" : "form.reviewEffectTerminate";
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.confirmReviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(decisionLabel) + '</strong><div class="hint">' + escapeText(t(effectKey, { scope })) + '</div></div>',
           '<dl class="form-grid review-decision-preview">',
@@ -6085,6 +6100,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ? '<dt>' + escapeText(t("form.reviewAutoResume")) + '</dt><dd>' + escapeText(autoResume ? t("common.yes") : t("common.no")) + '</dd>'
             : "",
           decision === "terminate" ? '<dt>' + escapeText(t("form.terminateScope")) + '</dt><dd>' + escapeText(scope) + '</dd>' : "",
+          form.fields.targetRoleId ? '<dt>targetRoleId</dt><dd>' + escapeText(form.fields.targetRoleId) + '</dd>' : "",
+          form.fields.additionalBudget ? '<dt>additionalBudget</dt><dd>' + escapeText(form.fields.additionalBudget) + '</dd>' : "",
           '</dl>',
           '<div class="actions"><button id="action-review-back" class="button subtle"' + disabled + '>' + escapeText(t("form.editReviewDecision")) + '</button><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.confirmAndRecordReviewDecision")) + '</button></div>'
         ].join("");
@@ -6101,11 +6118,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<div class="form-grid">',
           '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
           '<label class="field full"><span>' + escapeText(t("form.reviewReasonOptional")) + '</span><textarea id="action-review-comment" maxlength="' + HUMAN_REVIEW_COMMENT_MAX_LENGTH + '" aria-describedby="action-review-comment-hint"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea><span id="action-review-comment-hint" class="hint">' + escapeText(t(reasonHintKey)) + '</span></label>',
-          (form.fields.decision === "approve" || form.fields.decision === "rework"
+          (form.fields.decision === "approve" || form.fields.decision === "rework" || form.fields.decision === "continue" || form.fields.decision === "reject"
             ? '<label class="field checkbox full"><input type="checkbox" id="action-review-auto-resume"' + (form.fields.autoResume === false ? "" : " checked") + disabled + ' /><span>' + escapeText(t("form.reviewAutoResume")) + '</span></label>'
             : ""),
           (form.fields.decision === "terminate"
             ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
+            : ""),
+          (form.fields.loopBudget && form.fields.decision !== "terminate"
+            ? '<label class="field"><span>Target role</span><select id="action-review-target-role"' + disabled + '>' + (function() { const budget = form.fields.loopBudget || {}; const list = form.fields.decision === "rework" ? (budget.reworkTargetRoleIds || []) : form.fields.decision === "reject" ? (budget.rejectTargetRoleIds || []) : (budget.targetRoleIds || []); return list.map((roleId) => '<option value="' + escapeText(String(roleId)) + '"' + (String(roleId) === String(form.fields.targetRoleId || list[0] || "") ? " selected" : "") + '>' + escapeText(String(roleId)) + '</option>').join(""); })() + '</select></label><label class="field"><span>Additional budget</span><input id="action-review-additional-budget" type="number" min="1" step="1" value="' + escapeText(form.fields.additionalBudget || "") + '"' + (form.fields.decision === "reject" ? " disabled" : disabled) + ' /></label>'
             : ""),
           '</div>',
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.continueToReviewConfirmation")) + '</button></div>'
@@ -6767,11 +6787,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const detail = state.reviewDetail;
       reviewDetailEl.innerHTML = renderReviewDetailPanel(detail, t, formatTime);
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
+      const loopBudget = detail?.kind === "loop_budget" && detail.loopBudget && typeof detail.loopBudget === "object" ? detail.loopBudget : undefined;
       reviewActionsEl.innerHTML = actionable && !state.projectsDiagnostic
         ? [
-          '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button>',
-          '<button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button>',
-          '<button class="button warn" data-review-action="pause">' + escapeText(t("review.pause")) + '</button>',
+          detail?.kind === "loop_budget"
+            ? '<button class="button primary" data-review-action="continue">Continue with budget</button><button class="button" data-review-action="rework">Rework with budget</button><button class="button" data-review-action="reject">Reject and route</button>'
+            : '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button><button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button><button class="button warn" data-review-action="pause">' + escapeText(t("review.pause")) + '</button>' ,
           '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">' + escapeText(t("review.terminateScope", { scope: detail.scope || "branch" })) + '</button>'
           ].join("")
         : "";
@@ -6781,8 +6802,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             reviewId: state.selectedReviewId,
             decision: button.getAttribute("data-review-action"),
             scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
+            loopBudget,
             comment: "",
-            autoResume: button.getAttribute("data-review-action") === "approve" || button.getAttribute("data-review-action") === "rework"
+            autoResume: button.getAttribute("data-review-action") === "approve" || button.getAttribute("data-review-action") === "rework" || button.getAttribute("data-review-action") === "continue" || button.getAttribute("data-review-action") === "reject"
           }, { returnFocusEl: button })
         );
       }
@@ -8073,9 +8095,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             : undefined;
           const autoResumeInput = document.getElementById("action-review-auto-resume");
           const autoResume = form.fields.decision === "approve" || form.fields.decision === "rework"
+            || form.fields.decision === "continue" || form.fields.decision === "reject"
             ? autoResumeInput ? autoResumeInput.checked !== false : form.fields.autoResume !== false
             : false;
-          state.actionForm.fields = Object.assign({}, form.fields, { comment, scope, autoResume });
+          const targetRoleInput = document.getElementById("action-review-target-role");
+          const additionalBudgetInput = document.getElementById("action-review-additional-budget");
+          state.actionForm.fields = Object.assign({}, form.fields, {
+            comment,
+            scope,
+            autoResume,
+            targetRoleId: targetRoleInput?.value || form.fields.targetRoleId,
+            additionalBudget: additionalBudgetInput?.value || form.fields.additionalBudget
+          });
           state.actionForm.confirming = true;
           renderActionForm();
           focusActionField("action-form-submit");
@@ -8087,6 +8118,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ? form.fields.scope || "branch"
             : undefined,
           comment,
+          targetRoleId: form.fields.targetRoleId || undefined,
+          additionalBudget: form.fields.additionalBudget ? Number(form.fields.additionalBudget) : undefined,
           autoResume: form.fields.autoResume === true
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
@@ -8740,6 +8773,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           {
             decision: args.decision,
             scope: args.decision === "terminate" ? args.scope : undefined,
+            targetRoleId: args.targetRoleId,
+            additionalBudget: args.additionalBudget,
             actor: args.actor,
             comment: args.comment
           }
@@ -8756,7 +8791,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         );
         let resumeError;
         let resumed = false;
-        if (args.autoResume === true && (args.decision === "approve" || args.decision === "rework")) {
+        if (args.autoResume === true && (args.decision === "approve" || args.decision === "rework" || args.decision === "continue" || args.decision === "reject")) {
           setFlash("info", t("flash.reviewResuming", { runId }, "Decision recorded. Resuming run {runId}..."));
           const paths = defaultProjectArtifactPaths();
           try {

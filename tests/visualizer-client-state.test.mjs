@@ -19,11 +19,11 @@ test("graph reading route state is bounded, validated, and round-trips", () => {
     logSince: "",
     graphMode: "upstream",
     graphRoleId: "planner",
-    graphFlowKey: "planner:NEXT:review",
+    graphFlowKey: "planner:READY:review",
     graphChannel: "error",
     conversationMode: true,
     timelineRoleId: "planner",
-    timelineType: "NEXT",
+    timelineType: "READY",
     timelineStatus: "failed",
     timelineBranchId: "branch-1",
     timelineReviewId: "review-1",
@@ -40,11 +40,11 @@ test("graph reading route state is bounded, validated, and round-trips", () => {
     since: "",
     graphMode: "upstream",
     graphRoleId: "planner",
-    graphFlowKey: "planner:NEXT:review",
+    graphFlowKey: "planner:READY:review",
     graphChannel: "error",
     conversationMode: true,
     timelineRoleId: "planner",
-    timelineType: "NEXT",
+    timelineType: "READY",
     timelineStatus: "failed",
     timelineBranchId: "branch-1",
     timelineReviewId: "review-1",
@@ -418,7 +418,7 @@ test("runtime renderers fold payload-heavy details by default", () => {
         rawOutput: { body: "y".repeat(260) },
         contract: { contractId: "contract-1", flowKey: "a:b:c", schemaPath: "schemas/out.json" },
         selectedBinding: { bindingKind: "model", resolvedBinding: "gpt-x" },
-        allowedEvents: ["DONE"]
+        allowedEvents: ["READY"]
       }
     },
     t
@@ -484,7 +484,7 @@ test("client release readiness state reports each export blocker category", () =
     rolePackages: { roles: [{ roleId: "writer", files: { promptTemplate: false } }] },
     contracts: {
       flows: [{ contractId: null, schemaPath: null, lastStatus: "missing" }],
-      uncoveredEdges: [{ flowKey: "writer:DONE:output" }]
+      uncoveredEdges: [{ flowKey: "writer:READY:output" }]
     },
     workbenchDirty: true
   });
@@ -765,13 +765,13 @@ test("visualizer dto guards preserve finite numbers and booleans after helper co
       durationMs: Number.POSITIVE_INFINITY
     },
     detail: {
-      allowedEvents: ["DONE", 42, ""],
+      allowedEvents: ["READY", 42, ""],
       upstreamRoleIds: ["planner", null, "review"]
     }
   });
   assert.equal(failure.summary.durationMs, undefined);
   assert.equal(failure.summary.retryable, false);
-  assert.deepEqual(failure.detail.allowedEvents, ["DONE"]);
+  assert.deepEqual(failure.detail.allowedEvents, ["READY"]);
   assert.deepEqual(failure.detail.upstreamRoleIds, ["planner", "review"]);
 });
 
@@ -803,7 +803,7 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
       roleCount: 1,
       flowCount: 1,
       roles: [{ roleId: "planner", bindingKind: "model", routingMode: "single" }],
-      flows: [{ fromRoleId: "planner", toRoleId: "output", eventType: "DONE", label: "完成" }]
+      flows: [{ fromRoleId: "planner", toRoleId: "output", eventType: "READY", label: "完成" }]
     },
     t,
     escapeText
@@ -852,7 +852,7 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
           itemId: "run-1:role_message:events.ndjson:1",
           kind: "role_message",
           roleId: "planner",
-          event: "DONE",
+          event: "READY",
           status: "ok",
           at: "2026-04-16T01:02:04.000Z",
           content: { text: "operator-safe output", redacted: false, truncated: false },
@@ -1062,7 +1062,7 @@ test("client project/studio controller binders delegate interactions without own
   ]);
 
   const roleButton = new FakeBoundElement({ "data-studio-role-id": "planner" });
-  const flowButton = new FakeBoundElement({ "data-studio-flow-key": "planner:DONE:output" });
+  const flowButton = new FakeBoundElement({ "data-studio-flow-key": "planner:READY:output" });
   const filterInput = new FakeBoundElement({}, "需求");
   const listModeSelect = new FakeBoundElement({}, "flows");
   const studioRoot = new FakeQueryRoot({
@@ -1088,7 +1088,7 @@ test("client project/studio controller binders delegate interactions without own
   listModeSelect.dispatch("change", "flows");
   assert.deepEqual(studioCalls, [
     ["role", "planner"],
-    ["flow", "planner:DONE:output"],
+    ["flow", "planner:READY:output"],
     ["filter", "需求"],
     ["mode", "flows"]
   ]);
@@ -1251,7 +1251,7 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     { roleId: "cycle" }
   ];
   const flows = [
-    { flowKey: "writer:DONE:qa", fromRoleId: "writer", toRoleId: "qa", eventType: "DONE" },
+    { flowKey: "writer:READY:qa", fromRoleId: "writer", toRoleId: "qa", eventType: "READY" },
     { flowKey: "input:START:writer", fromRoleId: "input", toRoleId: "writer", eventType: "START" },
     { flowKey: "qa:APPROVE:publisher", fromRoleId: "qa", toRoleId: "publisher", eventType: "APPROVE" },
     { flowKey: "cycle:LOOP:cycle", fromRoleId: "cycle", toRoleId: "cycle", eventType: "LOOP" }
@@ -1263,7 +1263,7 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
   assert.deepEqual(orderedFlows.map((flow) => flow.flowKey), [
     "input:START:writer",
     "cycle:LOOP:cycle",
-    "writer:DONE:qa",
+    "writer:READY:qa",
     "qa:APPROVE:publisher"
   ]);
 
@@ -1272,7 +1272,7 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     readiness: { blockers: [], contractCoverage: { handoffMode: null, missingFlowCount: 2 } },
     bindings: { roles: [{ roleId: "writer", effectiveBinding: "model:gpt" }] },
     rolePackages: { roles: [{ roleId: "writer", files: { roleJson: true, promptTemplate: true } }] },
-    contracts: { handoffMode: null, uncoveredEdges: [{ flowKey: "writer:DONE:output" }] },
+    contracts: { handoffMode: null, uncoveredEdges: [{ flowKey: "writer:READY:output" }] },
     workbenchDirty: false
   });
   assert.equal(contractsOptional.canExport, true);
@@ -1282,7 +1282,7 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     readiness: { blockers: [], warnings: [{ code: "READINESS_TRANSITION_HANDOFF_CONTRACT_GAPS" }], contractCoverage: { handoffMode: "transition", missingFlowCount: 2 } },
     bindings: { roles: [{ roleId: "writer", effectiveBinding: "model:gpt" }] },
     rolePackages: { roles: [{ roleId: "writer", files: { roleJson: true, promptTemplate: true } }] },
-    contracts: { handoffMode: "transition", uncoveredEdges: [{ flowKey: "writer:DONE:output" }] },
+    contracts: { handoffMode: "transition", uncoveredEdges: [{ flowKey: "writer:READY:output" }] },
     workbenchDirty: false
   });
   assert.equal(transitionWarningsAreNonBlocking.canExport, true);

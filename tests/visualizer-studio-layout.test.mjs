@@ -26,8 +26,8 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
     "start[开始] -->|START| dispatch[Role:dispatch]",
-    "dispatch[Role:dispatch] -->|WORK| worker[Role:worker]",
-    "worker[Role:worker] -->|DONE| end[结束]",
+    "dispatch[Role:dispatch] -->|READY| worker[Role:worker]",
+    "worker[Role:worker] -->|READY| end[结束]",
     ""
   ].join("\n");
   const system = parseSystemFromMermaidSource(source);
@@ -48,10 +48,10 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     progressEvents: [
       { type: "flow.activated", fromRoleId: "__system_start__", toRoleId: "dispatch", eventType: "START", branchId: "entry-1" },
       { type: "role.started", roleId: "dispatch", branchId: "entry-1", executionId: "dispatch-1" },
-      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", edgeId: workFlow.id, branchId: "worker-1" },
-      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "worker-2" },
+      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "READY", edgeId: workFlow.id, branchId: "worker-1" },
+      { type: "flow.activated", fromRoleId: "dispatch", toRoleId: "worker", eventType: "READY", branchId: "worker-2" },
       { type: "human_review_requested", roleId: "dispatch", branchId: "entry-1" },
-      { type: "flow.activated", fromRoleId: "worker", toRoleId: "__system_end__", eventType: "DONE", branchId: "worker-1" },
+      { type: "flow.activated", fromRoleId: "worker", toRoleId: "__system_end__", eventType: "READY", branchId: "worker-1" },
       { type: "role.completed", roleId: "worker", branchId: "worker-1", executionId: "worker-1" },
       { type: "role.started", roleId: "worker", branchId: "worker-2", executionId: "worker-2" }
     ]
@@ -74,7 +74,7 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     authoring,
     viewModel,
     progressEvents: [
-      { type: "flow.activated", handoffId: "retry-flow", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "retry-branch" },
+      { type: "flow.activated", handoffId: "retry-flow", fromRoleId: "dispatch", toRoleId: "worker", eventType: "READY", branchId: "retry-branch" },
       { type: "role.started", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
       { type: "role.failed", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
       { type: "role_retry_scheduled", roleId: "worker", branchId: "retry-branch", executionId: "attempt-1", attempt: 1 },
@@ -90,7 +90,7 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     authoring,
     viewModel,
     progressEvents: [
-      { type: "flow.activated", handoffId: "stop-flow", fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "stop-branch" },
+      { type: "flow.activated", handoffId: "stop-flow", fromRoleId: "dispatch", toRoleId: "worker", eventType: "READY", branchId: "stop-branch" },
       { type: "role.started", roleId: "worker", branchId: "stop-branch", executionId: "stop-execution", attempt: 1 },
       { type: "run_stopped" },
       { type: "role.started", roleId: "worker", branchId: "stop-branch", executionId: "late-execution", attempt: 2 }
@@ -105,10 +105,10 @@ test("Studio runtime progress marks boundary and role flow states across concurr
     authoring,
     viewModel,
     progressEvents: [
-      { type: "flow.activated", handoffId: "failed-branch", edgeId: workFlow.id, fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "failed-branch" },
+      { type: "flow.activated", handoffId: "failed-branch", edgeId: workFlow.id, fromRoleId: "dispatch", toRoleId: "worker", eventType: "READY", branchId: "failed-branch" },
       { type: "role.started", roleId: "worker", branchId: "failed-branch", executionId: "failed-execution", attempt: 1 },
       { type: "role.failed", roleId: "worker", branchId: "failed-branch", executionId: "failed-execution", attempt: 1, errorEnvelope: { errorCode: "MODEL_TIMEOUT", message: "Primary model timed out" } },
-      { type: "flow.activated", handoffId: "active-branch", edgeId: workFlow.id, fromRoleId: "dispatch", toRoleId: "worker", eventType: "WORK", branchId: "active-branch" },
+      { type: "flow.activated", handoffId: "active-branch", edgeId: workFlow.id, fromRoleId: "dispatch", toRoleId: "worker", eventType: "READY", branchId: "active-branch" },
       { type: "role.started", roleId: "worker", branchId: "active-branch", executionId: "active-execution", attempt: 1 }
     ]
   });
@@ -211,7 +211,7 @@ test("Mini Program factory stored layout keeps its feedback loop clear of nodes 
   const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
   const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
   const projection = createStoredLayoutProjection(viewModel);
-  const feedback = projection.edges.find((item) => item.id === "4:testing:TEST_FAIL:coding");
+  const feedback = projection.edges.find((item) => item.id === "4:testing:REJECTED:coding");
 
   assert.ok(feedback);
   assert.ok(feedback.routing.routePoints.length >= 2);
@@ -229,7 +229,7 @@ test("Mini Program factory stacked feedback route leaves both role borders norma
   const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
   const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
   const projection = await createElkLayoutProjection(viewModel, "stacked");
-  const edge = projection.edges.find((item) => item.id === "4:testing:TEST_FAIL:coding");
+  const edge = projection.edges.find((item) => item.id === "4:testing:REJECTED:coding");
   assert.ok(edge);
   const nodes = new Map(projection.nodes.map((item) => [item.id, item]));
   const source = nodes.get(edge.source);
@@ -389,12 +389,12 @@ test("Start and End roles align with their connected role groups", () => {
     flows: {
       startA: { flowId: "start-a", fromRoleId: "__system_start__", toRoleId: "entry-a", eventType: "START" },
       startB: { flowId: "start-b", fromRoleId: "__system_start__", toRoleId: "entry-b", eventType: "START" },
-      a: { flowId: "a", fromRoleId: "entry-a", toRoleId: "middle", eventType: "NEXT" },
-      b: { flowId: "b", fromRoleId: "entry-b", toRoleId: "middle", eventType: "NEXT" },
-      c: { flowId: "c", fromRoleId: "middle", toRoleId: "end-a", eventType: "NEXT" },
-      d: { flowId: "d", fromRoleId: "middle", toRoleId: "end-b", eventType: "NEXT" },
-      e: { flowId: "e", fromRoleId: "end-a", toRoleId: "__system_end__", eventType: "DONE" },
-      f: { flowId: "f", fromRoleId: "end-b", toRoleId: "__system_end__", eventType: "DONE" }
+      a: { flowId: "a", fromRoleId: "entry-a", toRoleId: "middle", eventType: "READY" },
+      b: { flowId: "b", fromRoleId: "entry-b", toRoleId: "middle", eventType: "READY" },
+      c: { flowId: "c", fromRoleId: "middle", toRoleId: "end-a", eventType: "READY" },
+      d: { flowId: "d", fromRoleId: "middle", toRoleId: "end-b", eventType: "READY" },
+      e: { flowId: "e", fromRoleId: "end-a", toRoleId: "__system_end__", eventType: "READY" },
+      f: { flowId: "f", fromRoleId: "end-b", toRoleId: "__system_end__", eventType: "READY" }
     },
     layout: { nodes: {
       "entry-a": { x: 100, y: 20 },
@@ -447,8 +447,8 @@ test("ELK expands stacked columns for long handoff labels", async () => {
   viewModel.edges = [
     edge("start-source", "__system_start__", "source", { label: "GO" }),
     edge("start-target", "__system_start__", "target", { label: "GO" }),
-    edge("source-end", "source", "__system_end__", { label: "DONE" }),
-    edge("target-end", "target", "__system_end__", { label: "DONE" })
+    edge("source-end", "source", "__system_end__", { label: "READY" }),
+    edge("target-end", "target", "__system_end__", { label: "READY" })
   ];
   const compactLabel = await createElkLayoutProjection(viewModel, "stacked");
   viewModel.edges[0].label = "PROPOSAL_READY_WITH_REVIEW_AND_VALIDATION";

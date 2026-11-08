@@ -20,7 +20,7 @@ const view = {
     editable: false
   })),
   edges: [
-    { id: "ab", source: "a", target: "b", eventType: "NEXT", channel: "normal" },
+    { id: "ab", source: "a", target: "b", eventType: "READY", channel: "normal" },
     { id: "bc", source: "b", target: "c", eventType: "ERROR", channel: "error" },
     { id: "ca", source: "c", target: "a", eventType: "LOOP", channel: "loop" }
   ],

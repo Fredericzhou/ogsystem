@@ -10,6 +10,7 @@ import {
   extractStudioRolePackages,
   normalizeStudioEventType,
   validateStudioAddEdgeDraft,
+  listStudioBusinessEventTypes,
   validateStudioAddRoleDraft,
   type StudioAddEdgeDraft,
   type StudioAddRoleDraft,
@@ -214,7 +215,7 @@ export function defaultStudioFlowEventType(context: StudioCommandValidationConte
   if (declared) return declared;
   const roleId = context.authoring?.roles?.[sourceRoleId]?.roleId || sourceRoleId;
   const stem = roleId.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
-  return `${stem || "ROLE"}_DONE`;
+  return "READY";
 }
 
 export function commandFromStudioCommandFormState(state: StudioCommandFormState): StudioAuthoringCommand | null {
@@ -257,10 +258,10 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       flowId: state.fields.flowId,
       originalSourceRoleId: state.fields.originalSourceRoleId || state.fields.sourceRoleId.trim(),
       originalTargetRoleId: state.fields.originalTargetRoleId || state.fields.targetRoleId.trim(),
-      originalEventType: state.fields.originalEventType || normalizeStudioEventType(state.fields.eventType || "DONE"),
+      originalEventType: state.fields.originalEventType || normalizeStudioEventType(state.fields.eventType || "READY"),
       sourceRoleId: state.fields.sourceRoleId.trim(),
       targetRoleId: state.fields.targetRoleId.trim(),
-      eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+      eventType: normalizeStudioEventType(state.fields.eventType || "READY"),
       label: state.fields.label?.trim(),
       runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(state.fields.participatesInJoin),
@@ -272,7 +273,7 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
     type: "add-edge",
     sourceRoleId: state.fields.sourceRoleId.trim(),
     targetRoleId: state.fields.targetRoleId.trim(),
-    eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+    eventType: normalizeStudioEventType(state.fields.eventType || "READY"),
     label: state.fields.label?.trim(),
     runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
     participatesInJoin: Boolean(state.fields.participatesInJoin),
@@ -535,7 +536,7 @@ export function renderStudioCommandForm(args: {
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "sourceRole", "Source role")) + '</span><select name="sourceRoleId">' + renderRoleOptions(args.context, fields.sourceRoleId) + "</select>" + renderStudioCommandFormFieldError(args.state, "sourceRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "targetRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "flowLabel", "Display name")) + '</span><input name="label" value="' + escapeHtml(fields.label || "") + '"></label>',
-    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
+    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><select name="eventType">' + listStudioBusinessEventTypes().map((eventType) => '<option value="' + escapeHtml(eventType) + '"' + (eventType === fields.eventType ? " selected" : "") + '>' + escapeHtml(eventType) + '</option>').join("") + '</select>' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
     '<label class="studio-command-form-row"><span>Condition AST (JSON, optional)</span><textarea name="conditionJson" rows="8" spellcheck="false">' + escapeHtml(fields.conditionJson || "") + '</textarea><div class="studio-command-form-hint">Restricted AST. Paths may read state, loop, event, or role. Leave empty for an unconditional route.</div>' + renderStudioCommandFormFieldError(args.state, "conditionJson") + '</label>',
     '<label class="studio-command-form-row"><span>Priority</span><input type="number" name="priority" min="0" step="1" value="' + escapeHtml(fields.priority || "0") + '">' + renderStudioCommandFormFieldError(args.state, "priority") + '</label>',
     '<label class="studio-command-form-check"><input type="checkbox" name="runtimeOnlyErrorFlow"' + (fields.runtimeOnlyErrorFlow ? " checked" : "") + "> " + escapeHtml(label(labels, "runtimeOnlyErrorFlow", "Runtime error flow")) + "</label>",

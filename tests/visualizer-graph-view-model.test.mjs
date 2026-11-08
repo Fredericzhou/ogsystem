@@ -21,9 +21,9 @@ const source = [
   "%% loop.max.worker=3",
   "%% review.mode.review=required",
   "start[开始] -->|START| a[Role:dispatch]",
-  "a[Role:dispatch] -->|WORK| b[Role:worker]",
+  "a[Role:dispatch] -->|READY| b[Role:worker]",
   "a[Role:dispatch] -->|REVIEW| c[Role:review]",
-  "b[Role:worker] -->|DONE| c[Role:review]",
+  "b[Role:worker] -->|READY| c[Role:review]",
   "c[Role:review] -->|APPROVED| end[结束]",
   ""
 ].join("\n");
@@ -111,7 +111,7 @@ test("GraphViewModel projects Semantic IR modes, loop scopes, and edge routing m
       { roleId: "review", modes: { default: {} }, defaultMode: "default" }
     ],
     loops: [{ loopId: "delivery", members: ["worker"], boundaryRoleId: "worker", maxRounds: 3, onExhausted: "review" }],
-    transitions: [{ flowId: "dispatch:WORK:worker", priority: 4, channel: "normal", condition: { op: "exists", args: [{ kind: "path", root: "state", path: ["task"] }] } }]
+    transitions: [{ flowId: "dispatch:READY:worker", priority: 4, channel: "normal", condition: { op: "exists", args: [{ kind: "path", root: "state", path: ["task"] }] } }]
   };
   const view = buildGraphViewModel({ authoring, semanticIR, mode: "edit" });
   const dispatch = view.nodes.find((node) => node.roleId === "dispatch");
@@ -216,7 +216,7 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
         lineageId: "L0",
         sessionLineageId: "S0",
         activatedByRoleId: "dispatch",
-        activatedByEvent: "WORK",
+        activatedByEvent: "READY",
         status: "active"
       },
       b2: {
@@ -238,7 +238,7 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
         lineageId: "L0",
         sessionLineageId: "S0",
         activatedByRoleId: "worker",
-        activatedByEvent: "DONE",
+        activatedByEvent: "READY",
         status: "waiting_review"
       }
     },

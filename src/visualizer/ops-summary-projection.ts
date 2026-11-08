@@ -34,6 +34,17 @@ type GroupCount = {
   count: number;
 };
 
+type LoopExhaustionEntry = {
+  runId: string;
+  loopId: string;
+  roleId: string;
+  lineageId?: string;
+  loopIteration?: number;
+  maxRounds?: number;
+  onExhausted?: string;
+  at?: string;
+};
+
 function extractGraphState(state: unknown): JsonRecord | undefined {
   const record = asRecord(state);
   return asRecord(record?.graphState) ?? record;
@@ -156,6 +167,51 @@ async function extractFailuresFromRuntimeEvents(runId: string, runDir: string): 
   return failures;
 }
 
+async function extractLoopExhaustionsFromRuntimeEvents(runId: string, runDir: string): Promise<LoopExhaustionEntry[]> {
+  const entries = ["timeline.jsonl", "events.ndjson"];
+  const exhaustions: LoopExhaustionEntry[] = [];
+  for (const file of entries) {
+    const content = await readFile(resolve(runDir, file), "utf8").catch(() => "");
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      const record = asRecord(parsed);
+      const event = asRecord(record?.record) ?? record;
+      if (asString(event?.type) !== "loop_exhausted") continue;
+      const loopId = asString(event?.loopId);
+      const roleId = asString(event?.roleId);
+      if (!loopId || !roleId) continue;
+      exhaustions.push({
+        runId,
+        loopId,
+        roleId,
+        lineageId: asString(event?.lineageId),
+        loopIteration: asNumber(event?.loopIteration),
+        maxRounds: asNumber(event?.maxRounds),
+        onExhausted: asString(event?.onExhausted),
+        at: asString(event?.at)
+      });
+    }
+  }
+  return exhaustions;
+}
+
+function dedupeLoopExhaustions(entries: LoopExhaustionEntry[]): LoopExhaustionEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = [entry.runId, entry.at ?? "", entry.loopId, entry.roleId, entry.lineageId ?? "", entry.loopIteration ?? ""].join("\u0000");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function extractFailures(args: {
   runId: string;
   runDir: string;
@@ -229,7 +285,7 @@ function countReworkBranches(state: JsonRecord | undefined): {
   const branches = asRecord(state?.branchRecords) ?? {};
   for (const branch of Object.values(branches)) {
     const record = asRecord(branch);
-    if (asString(record?.activatedByEvent) !== "REWORK") {
+    if (asString(record?.activatedByEvent) !== "NEEDS_REWORK") {
       continue;
     }
     if (asString(record?.status) !== "active") {
@@ -283,14 +339,18 @@ export async function inspectProjectOpsSummaryVisualization(
   const readinessLimit = options.readinessLimit ?? 10;
   const indexedRuns = (await loadRecentRuns(workdir)).slice(0, runLimit);
   const failures: FailureEntry[] = [];
+  const loopExhaustions: LoopExhaustionEntry[] = [];
   const failuresByRole = new Map<string, number>();
   const failuresByErrorCode = new Map<string, number>();
   const failuresByErrorCategory = new Map<string, number>();
   const reviewByRole = new Map<string, number>();
   const reworkByRole = new Map<string, number>();
+  const loopById = new Map<string, number>();
+  const loopByRole = new Map<string, number>();
   let pendingReviews = 0;
   let pausedReviews = 0;
   let pendingReworks = 0;
+  let pendingLoopBudgetReviews = 0;
   let inspectedRuns = 0;
   let skippedRuns = 0;
   let sampledExecutionDirRunCount = 0;
@@ -328,6 +388,12 @@ export async function inspectProjectOpsSummaryVisualization(
         ...(await extractFailuresFromRuntimeEvents(runId, runDir))
       ]);
       failures.push(...runFailures);
+      const runLoopExhaustions = dedupeLoopExhaustions(await extractLoopExhaustionsFromRuntimeEvents(runId, runDir));
+      loopExhaustions.push(...runLoopExhaustions);
+      for (const exhaustion of runLoopExhaustions) {
+        pushCount(loopById, exhaustion.loopId);
+        pushCount(loopByRole, exhaustion.roleId);
+      }
       for (const failure of runFailures) {
         pushCount(failuresByRole, failure.roleId);
         pushCount(failuresByErrorCode, failure.errorCode);
@@ -339,6 +405,10 @@ export async function inspectProjectOpsSummaryVisualization(
       for (const item of reviewCounts.byRole) {
         reviewByRole.set(item.key, (reviewByRole.get(item.key) ?? 0) + item.count);
       }
+      const pendingLoopReviews = Object.values(asRecord(state?.pendingReviewsById) ?? {})
+        .filter((review) => asRecord(review)?.kind === "loop_budget")
+        .length;
+      pendingLoopBudgetReviews += pendingLoopReviews;
       const reworkCounts = countReworkBranches(state);
       pendingReworks += reworkCounts.pending;
       for (const item of reworkCounts.byRole) {
@@ -394,6 +464,7 @@ export async function inspectProjectOpsSummaryVisualization(
   }
 
   failures.sort((left, right) => String(right.at ?? "").localeCompare(String(left.at ?? "")));
+  loopExhaustions.sort((left, right) => String(right.at ?? "").localeCompare(String(left.at ?? "")));
   const blockedRuns = resumeRuns.filter((run) => asBoolean(run.canResume) === false).length;
   const cleanupRecommendation =
     sampledExecutionDirRunCount === 0
@@ -448,6 +519,13 @@ export async function inspectProjectOpsSummaryVisualization(
       pendingReviewByRole: toGroupCounts(reviewByRole),
       pendingReworkByRole: toGroupCounts(reworkByRole)
     },
+    loopControl: {
+      exhaustedCount: loopExhaustions.length,
+      pendingBudgetReviewCount: pendingLoopBudgetReviews,
+      byLoop: toGroupCounts(loopById),
+      byRole: toGroupCounts(loopByRole),
+      recentExhaustions: loopExhaustions.slice(0, failureLimit)
+    },
     resumeReadiness: {
       inspectedRunCount: resumeRuns.length,
       blockedRunCount: blockedRuns,
@@ -474,6 +552,8 @@ export async function inspectProjectOpsSummaryVisualization(
       recentFailureCount: failures.length,
       pendingReviewCount: pendingReviews + pausedReviews,
       pendingReworkCount: pendingReworks,
+      loopExhaustedCount: loopExhaustions.length,
+      loopBudgetReviewCount: pendingLoopBudgetReviews,
       resumeBlockedRunCount: blockedRuns,
       maxExecutionDirCount,
       cleanupRecommendation: cleanupRecommendation.action

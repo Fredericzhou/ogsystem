@@ -40,6 +40,7 @@ import {
   studioSccGroupPreviousPosition
 } from "./studio-graph-render.js";
 import { createElkLayoutProjection } from "./elk-layout-adapter.js";
+import { BUSINESS_EVENT_TYPES } from "../../business-events.js";
 import {
   createStoredLayoutProjection,
   STUDIO_NODE_EDGE_CLEARANCE,
@@ -1100,7 +1101,7 @@ export class StudioGraphIsland {
                 }
               }
             },
-            labels: [{ attrs: { label: { text: "DONE" } } }]
+            labels: [{ attrs: { label: { text: "READY" } } }]
           });
         },
         validateConnection: ({ sourceCell, targetCell }) => !this.isReadOnly() && validateStudioConnectionCells(sourceCell, targetCell).ok
@@ -1433,11 +1434,15 @@ export class StudioGraphIsland {
         return;
       }
       this.clearRelationshipSource();
+      const usedEvents = new Set(Object.values(this.options.authoring?.flows ?? {})
+        .filter((flow) => flow.fromRoleId === source && flow.toRoleId === target)
+        .map((flow) => flow.eventType));
+      const eventType = BUSINESS_EVENT_TYPES.find((candidate) => !usedEvents.has(candidate)) || "READY";
       const command = {
         type: "add-edge" as const,
         sourceRoleId: source,
         targetRoleId: target,
-        eventType: defaultStudioFlowEventType(this.validationContext(), source),
+        eventType,
         label: ""
       };
       void this.applyCommand(command).then(() => {
@@ -3024,7 +3029,7 @@ export class StudioGraphIsland {
     const sourceRoleId = (this.commandForm.fields.sourceRoleId || "").trim();
     const rawTargetRoleId = (this.commandForm.fields.targetRoleId || "").trim();
     const targetRoleId = rawTargetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : rawTargetRoleId;
-    const eventType = (this.commandForm.fields.eventType || "").trim() || "DONE";
+    const eventType = (this.commandForm.fields.eventType || "").trim() || "READY";
     const label = (this.commandForm.fields.label || "").trim() || eventType;
     const targetCellId = normalizeStudioGraphTargetRoleId(targetRoleId);
     const sourceCell = this.graph.getCellById(sourceRoleId);
@@ -3482,7 +3487,7 @@ export class StudioGraphIsland {
           type: "add-edge",
           sourceRoleId: command.roleId?.trim() || "",
           targetRoleId: insertion.edge.target,
-          eventType: "DONE",
+          eventType: "READY",
           participatesInJoin: Boolean(insertion.edge.participatesInJoin)
         }
       ]

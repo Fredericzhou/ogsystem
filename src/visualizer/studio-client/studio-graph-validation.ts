@@ -9,6 +9,7 @@ import {
 } from "../studio-contracts.js";
 import { asRecord, asTrimmedString } from "../json-guards.js";
 import type { SemanticIRConditionAst } from "../studio-contracts.js";
+import { BUSINESS_EVENT_TYPES, isBusinessEvent, isRuntimeErrorEvent } from "../../business-events.js";
 
 export function validateStudioConditionAst(ast: unknown, path = "condition"): string[] {
   if (!ast || typeof ast !== "object" || Array.isArray(ast)) return [`${path} must be an object`];
@@ -248,6 +249,10 @@ export function normalizeStudioEventType(value: unknown): string {
   return asTrimmedStringOrEmpty(value).toUpperCase();
 }
 
+export function listStudioBusinessEventTypes(): readonly string[] {
+  return BUSINESS_EVENT_TYPES;
+}
+
 export function validateStudioAddRoleDraft(
   draft: StudioAddRoleDraft,
   context: StudioCommandValidationContext
@@ -395,7 +400,7 @@ export function validateStudioAddEdgeDraft(
   const targetDisplay = normalizeStudioGraphTargetRoleId(targetRoleId);
   const sourceIsStart = sourceRoleId === STUDIO_SYSTEM_START_ROLE_ID;
   const targetIsEnd = targetRoleId === STUDIO_SYSTEM_END_ROLE_ID;
-  const eventType = normalizeStudioEventType(draft.eventType || "DONE");
+  const eventType = normalizeStudioEventType(draft.eventType || "READY");
   const flowKey = sourceRoleId && targetRoleId && eventType
     ? `${sourceRoleId}:${eventType}:${targetDisplay}`
     : undefined;
@@ -429,14 +434,17 @@ export function validateStudioAddEdgeDraft(
       message: "Self loops require explicit loop semantics."
     }));
   }
-  if (!eventType || !EVENT_TYPE_PATTERN.test(eventType)) {
+  const validRegisteredEvent = sourceIsStart
+    ? eventType === "START"
+    : isBusinessEvent(eventType) || isRuntimeErrorEvent(eventType) && Boolean(draft.runtimeOnlyErrorFlow);
+  if (!eventType || !EVENT_TYPE_PATTERN.test(eventType) || !validRegisteredEvent) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "eventType",
       flowKey,
       code: "EDGE_EVENT_UNSUPPORTED",
       messageKey: "studio.validation.eventTypeInvalid",
-      message: "Event type must be uppercase and may use digits, _, : or -."
+      message: "Use one of the registered business events: READY, APPROVAL_PROPOSED, APPROVED, REJECTED, NEEDS_REWORK, or BLOCKED."
     }));
   }
   if (sourceIsStart && eventType !== "START") {

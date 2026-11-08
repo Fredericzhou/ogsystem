@@ -64,7 +64,7 @@ export function graphToCanvasDocument(graph: Graph, authoring: StudioAuthoringDo
       source,
       target,
       label: studioEdge.label || studioEdge.eventType,
-      eventType: studioEdge.eventType || "DONE",
+      eventType: studioEdge.eventType || "READY",
       runtimeOnlyErrorFlow: Boolean(studioEdge.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(studioEdge.participatesInJoin),
       condition: studioEdge.condition,
