@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["REBUTTAL_NEEDED", "DECISION_READY"]
+      "enum": ["NEEDS_REWORK", "READY"]
     },
     "content": { "type": "string" },
     "data": {
@@ -24,7 +24,7 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "event": { "const": "REBUTTAL_NEEDED" } } },
+      "if": { "properties": { "event": { "const": "NEEDS_REWORK" } } },
       "then": {
         "properties": {
           "data": {
@@ -36,7 +36,7 @@
       }
     },
     {
-      "if": { "properties": { "event": { "const": "DECISION_READY" } } },
+      "if": { "properties": { "event": { "const": "READY" } } },
       "then": {
         "properties": {
           "data": {

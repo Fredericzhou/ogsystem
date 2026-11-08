@@ -4,7 +4,7 @@ This project adapts the role based investment debate flow in `D:\Coder\AAI\mulit
 
 The project has five seats: `investment-proposer`, `investment-critic`, `investment-optimizer`, `debate-judge`, and `debate-summary`. The proposer fans work out to the critic and optimizer, the judge joins both reviews, and `loop.max.investment-proposer=2` bounds a rebuttal cycle.
 
-The source workflow runs its optimizer and critic sequentially, gathers their judge feedback, and only requests manual finalization when both reject the judge's proposal. The current Mermaid graph runtime cannot express those state dependent route conditions or conditional review gate. This OGS adaptation therefore uses a parallel review join and routes review through the judge's `REBUTTAL_NEEDED` or `DECISION_READY` events. It does not claim behavioral parity with the source LangGraph workflow.
+The source workflow runs its optimizer and critic sequentially, gathers their judge feedback, and only requests manual finalization when both reject the judge's proposal. The current Mermaid graph runtime cannot express those state dependent route conditions or conditional review gate. This OGS adaptation therefore uses a parallel review join and routes review through the judge's `NEEDS_REWORK` or `READY` events. It does not claim behavioral parity with the source LangGraph workflow.
 
 ## Validate
 

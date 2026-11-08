@@ -22,7 +22,7 @@
   },
   "outputs": {
     "events": [
-      "CITATION_PLAN_READY"
+      "READY"
     ],
     "postconditions": []
   },

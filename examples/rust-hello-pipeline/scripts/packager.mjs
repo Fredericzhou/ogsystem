@@ -46,7 +46,7 @@ if (stdout !== expected) {
 
 process.stdout.write(
   JSON.stringify({
-    event: "PACKAGE_DONE",
+    event: "READY",
     content: stdout,
     data: {
       packagedBinaryPath

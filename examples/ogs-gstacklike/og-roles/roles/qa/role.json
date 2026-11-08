@@ -22,9 +22,9 @@
   },
   "outputs": {
     "events": [
-      "QA_BLOCKED",
-      "QA_FAIL",
-      "QA_PASS"
+      "BLOCKED",
+      "READY",
+      "REJECTED"
     ],
     "postconditions": []
   },

@@ -4,10 +4,10 @@ This example demonstrates runtime failure routing with `ERROR*` edges.
 
 Flow:
 
-1. The worker's declared `END_A` event can finish directly at `output`.
+1. The worker's declared `READY` event can finish directly at `output`.
 2. In the default fixture the worker fails intentionally, so runtime matches `ERROR.<code>` first, then `ERROR` fallback.
-3. `error-handler-base` emits `COMPENSATED` and forwards to `test-operator`.
-4. `test-operator` emits `DONE` to `output`.
+3. `error-handler-base` emits `READY` and forwards to `test-operator`.
+4. `test-operator` emits `READY` to `output`.
 
 Run:
 

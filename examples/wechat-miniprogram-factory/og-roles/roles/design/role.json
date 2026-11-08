@@ -9,7 +9,7 @@
   "purpose": "Turn accepted requirements into a small implementable design.",
   "responsibility": { "kind": "atomic", "owns": ["page and state design"], "contributes": [], "doesNotOwn": ["implementation"] },
   "inputs": { "preconditions": [] },
-  "outputs": { "events": ["DESIGN_READY"], "postconditions": [] },
+  "outputs": { "events": ["READY"], "postconditions": [] },
   "authority": { "controlActions": [] },
   "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
   "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },

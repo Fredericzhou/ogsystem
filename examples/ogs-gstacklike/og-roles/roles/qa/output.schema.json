@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["QA_PASS", "QA_FAIL", "QA_BLOCKED"]
+      "enum": ["READY", "REJECTED", "BLOCKED"]
     },
     "content": { "type": "string" },
     "data": { "type": "object" }

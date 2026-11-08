@@ -1,13 +1,23 @@
 {
   "type": "object",
-  "required": ["event", "content"],
+  "required": [
+    "event",
+    "content"
+  ],
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["PATH_A", "PATH_B"]
+      "enum": [
+        "APPROVED",
+        "REJECTED"
+      ]
     },
-    "content": { "type": "string" },
-    "data": { "type": "object" }
+    "content": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
   },
   "additionalProperties": false
 }

@@ -11,7 +11,7 @@ Expected upstream context payload (recommended keys):
 - last_context
 
 Output contract:
-- event: one of COMPENSATED, ESCALATED, ABORTED
+- event: one of READY, BLOCKED, REJECTED
 - content: concise rationale for this action
 - data: optional structured details for downstream nodes
 
@@ -21,6 +21,6 @@ Language:
 
 Quality bar:
 - Do not hide the failed role or branch context.
-- Prefer COMPENSATED only when a concrete recovery action is available.
-- Use ESCALATED when human/operator action is required.
-- Use ABORTED when continuing would be unsafe or incoherent.
+- Prefer READY only when a concrete recovery action is available.
+- Use BLOCKED when human/operator action is required.
+- Use REJECTED when continuing would be unsafe or incoherent.

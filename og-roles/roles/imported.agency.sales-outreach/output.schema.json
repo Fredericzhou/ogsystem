@@ -4,8 +4,7 @@
     "event": {
       "type": "string",
       "enum": [
-        "DONE",
-        "NEEDS_CLARIFICATION",
+        "READY",
         "BLOCKED"
       ]
     },

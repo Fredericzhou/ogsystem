@@ -34,7 +34,7 @@ try {
 
 process.stdout.write(
   JSON.stringify({
-    event: "COMPILE_DONE",
+    event: "READY",
     content: `Rust project compiled: ${binaryPath}`,
     data: {
       binaryPath

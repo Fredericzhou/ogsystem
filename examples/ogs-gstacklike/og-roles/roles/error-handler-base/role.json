@@ -23,9 +23,9 @@
   },
   "outputs": {
     "events": [
-      "ABORTED",
-      "COMPENSATED",
-      "ESCALATED"
+      "BLOCKED",
+      "READY",
+      "REJECTED"
     ],
     "postconditions": []
   },

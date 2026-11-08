@@ -1,13 +1,21 @@
 {
   "type": "object",
-  "required": ["content"],
+  "required": [
+    "content"
+  ],
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["START_CARDIOLOGY", "START_NEUROLOGY", "START_IMAGING"]
+      "enum": [
+        "READY"
+      ]
     },
-    "content": { "type": "string" },
-    "data": { "type": "object" }
+    "content": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
   },
   "additionalProperties": false
 }

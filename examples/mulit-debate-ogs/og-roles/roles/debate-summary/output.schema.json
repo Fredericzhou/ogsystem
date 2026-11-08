@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["SUMMARY_READY"]
+      "enum": ["READY"]
     },
     "content": { "type": "string" },
     "data": {

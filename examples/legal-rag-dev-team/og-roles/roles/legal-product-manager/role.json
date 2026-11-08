@@ -22,7 +22,7 @@
   },
   "outputs": {
     "events": [
-      "REQUIREMENTS_READY"
+      "READY"
     ],
     "postconditions": []
   },

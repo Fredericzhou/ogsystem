@@ -4,7 +4,7 @@
       "toolRef": "tool.office-hours",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "office-hours", "OFFICE_HOURS_EVENT", "READY_FOR_REVIEW"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "office-hours", "OFFICE_HOURS_EVENT", "READY"],
       "stdinMode": "text"
     },
     {
@@ -18,14 +18,14 @@
       "toolRef": "tool.qa",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "qa", "QA_EVENT", "QA_PASS"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "qa", "QA_EVENT", "READY"],
       "stdinMode": "text"
     },
     {
       "toolRef": "tool.ship",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "ship", "SHIP_EVENT", "READY_TO_DEPLOY"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "ship", "SHIP_EVENT", "APPROVAL_PROPOSED"],
       "stdinMode": "text"
     },
     {
@@ -39,21 +39,21 @@
       "toolRef": "tool.error-handler",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "error-handler-base", "ERROR_HANDLER_EVENT", "COMPENSATED"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "error-handler-base", "ERROR_HANDLER_EVENT", "READY"],
       "stdinMode": "text"
     },
     {
       "toolRef": "tool.retro",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "retro", "RETRO_EVENT", "RETRO_DONE"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "retro", "RETRO_EVENT", "READY"],
       "stdinMode": "text"
     },
     {
       "toolRef": "tool.learn",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "learn", "LEARN_EVENT", "LEARNED"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "learn", "LEARN_EVENT", "READY"],
       "stdinMode": "text"
     }
   ]

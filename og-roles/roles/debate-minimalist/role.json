@@ -26,7 +26,7 @@
   },
   "outputs": {
     "events": [
-      "MINIMALIST_DONE"
+      "READY"
     ],
     "postconditions": []
   },

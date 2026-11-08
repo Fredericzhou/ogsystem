@@ -39,7 +39,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "diagnosis-cardiology",
-        "eventType": "CARDIOLOGY_DONE",
+        "eventType": "READY",
         "toRoleId": "diagnosis-chief-review"
       },
       "schema": "flow-envelope.schema.json",
@@ -50,7 +50,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "diagnosis-neurology",
-        "eventType": "NEUROLOGY_DONE",
+        "eventType": "READY",
         "toRoleId": "diagnosis-chief-review"
       },
       "schema": "flow-envelope.schema.json",
@@ -61,7 +61,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "diagnosis-imaging",
-        "eventType": "IMAGING_DONE",
+        "eventType": "READY",
         "toRoleId": "diagnosis-chief-review"
       },
       "schema": "flow-envelope.schema.json",

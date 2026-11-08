@@ -24,7 +24,7 @@
     "events": [
       "APPROVED",
       "BLOCKED",
-      "CHANGES_REQUIRED"
+      "NEEDS_REWORK"
     ],
     "postconditions": []
   },

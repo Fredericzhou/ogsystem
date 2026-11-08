@@ -266,13 +266,13 @@ function buildErrorHandlerPayload(args) {
     .split(",")
     .map((event) => event.trim())
     .filter(Boolean);
-  const event = allowedEvents.includes("ESCALATED")
-    ? "ESCALATED"
-    : allowedEvents.includes("ABORTED")
-      ? "ABORTED"
+  const event = allowedEvents.includes("BLOCKED")
+    ? "BLOCKED"
+    : allowedEvents.includes("REJECTED")
+      ? "REJECTED"
       : undefined;
   if (!event) {
-    throw new Error("error-handler-base requires ESCALATED or ABORTED when no compensation is available");
+    throw new Error("error-handler-base requires BLOCKED or REJECTED when no compensation is available");
   }
   const errorContext = args.input.input ?? {};
   const summary = typeof errorContext === "string"

@@ -23,7 +23,7 @@
   },
   "outputs": {
     "events": [
-      "COMPILE_DONE"
+      "READY"
     ],
     "postconditions": []
   },

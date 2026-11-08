@@ -1,6 +1,6 @@
 console.log(
   JSON.stringify({
-    event: "COMPENSATED",
+    event: "READY",
     content: "runtime failure handled by compensation template",
     data: {
       action: "fallback_flow",

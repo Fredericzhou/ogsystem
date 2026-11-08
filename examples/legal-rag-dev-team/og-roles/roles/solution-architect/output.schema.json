@@ -1,15 +1,13 @@
 {
   "type": "object",
-  "required": ["content"],
+  "required": [
+    "content"
+  ],
   "properties": {
     "event": {
       "type": "string",
       "enum": [
-        "START_KNOWLEDGE",
-        "START_RETRIEVAL",
-        "START_ANSWERING",
-        "START_CITATION",
-        "START_EVALUATION"
+        "READY"
       ]
     },
     "content": {

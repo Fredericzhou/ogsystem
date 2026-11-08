@@ -17,7 +17,7 @@ function allowedEvents() {
 function chooseEvent(events) {
   const explicit = (process.argv[2] || env.OGSYSTEM_DEBUG_EVENT || "").trim();
   if (explicit && (!events.length || events.includes(explicit))) return explicit;
-  return events[0] || explicit || "DONE";
+  return events[0] || explicit || "READY";
 }
 
 const prompt = await readPrompt();

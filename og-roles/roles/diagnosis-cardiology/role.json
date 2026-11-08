@@ -26,7 +26,7 @@
   },
   "outputs": {
     "events": [
-      "CARDIOLOGY_DONE"
+      "READY"
     ],
     "postconditions": []
   },

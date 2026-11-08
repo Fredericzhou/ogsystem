@@ -66,53 +66,53 @@
     }
   },
   "flows": {
-    "1:investment-proposer:SEND_CRITIC:investment-critic": {
-      "flowId": "1:investment-proposer:SEND_CRITIC:investment-critic",
+    "1:investment-proposer:READY:investment-critic": {
+      "flowId": "1:investment-proposer:READY:investment-critic",
       "fromRoleId": "investment-proposer",
       "toRoleId": "investment-critic",
-      "eventType": "SEND_CRITIC",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "2:investment-proposer:SEND_OPTIMIZER:investment-optimizer": {
-      "flowId": "2:investment-proposer:SEND_OPTIMIZER:investment-optimizer",
+    "2:investment-proposer:READY:investment-optimizer": {
+      "flowId": "2:investment-proposer:READY:investment-optimizer",
       "fromRoleId": "investment-proposer",
       "toRoleId": "investment-optimizer",
-      "eventType": "SEND_OPTIMIZER",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "3:investment-critic:CRITIC_DONE:debate-judge": {
-      "flowId": "3:investment-critic:CRITIC_DONE:debate-judge",
+    "3:investment-critic:READY:debate-judge": {
+      "flowId": "3:investment-critic:READY:debate-judge",
       "fromRoleId": "investment-critic",
       "toRoleId": "debate-judge",
-      "eventType": "CRITIC_DONE",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "4:investment-optimizer:OPTIMIZER_DONE:debate-judge": {
-      "flowId": "4:investment-optimizer:OPTIMIZER_DONE:debate-judge",
+    "4:investment-optimizer:READY:debate-judge": {
+      "flowId": "4:investment-optimizer:READY:debate-judge",
       "fromRoleId": "investment-optimizer",
       "toRoleId": "debate-judge",
-      "eventType": "OPTIMIZER_DONE",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "5:debate-judge:REBUTTAL_NEEDED:investment-proposer": {
-      "flowId": "5:debate-judge:REBUTTAL_NEEDED:investment-proposer",
+    "5:debate-judge:NEEDS_REWORK:investment-proposer": {
+      "flowId": "5:debate-judge:NEEDS_REWORK:investment-proposer",
       "fromRoleId": "debate-judge",
       "toRoleId": "investment-proposer",
-      "eventType": "REBUTTAL_NEEDED",
+      "eventType": "NEEDS_REWORK",
       "runtimeOnlyErrorFlow": false
     },
-    "6:debate-judge:DECISION_READY:debate-summary": {
-      "flowId": "6:debate-judge:DECISION_READY:debate-summary",
+    "6:debate-judge:READY:debate-summary": {
+      "flowId": "6:debate-judge:READY:debate-summary",
       "fromRoleId": "debate-judge",
       "toRoleId": "debate-summary",
-      "eventType": "DECISION_READY",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "7:debate-summary:SUMMARY_READY:output": {
-      "flowId": "7:debate-summary:SUMMARY_READY:output",
+    "7:debate-summary:READY:output": {
+      "flowId": "7:debate-summary:READY:output",
       "fromRoleId": "debate-summary",
       "toRoleId": "__system_end__",
-      "eventType": "SUMMARY_READY",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     }
   },

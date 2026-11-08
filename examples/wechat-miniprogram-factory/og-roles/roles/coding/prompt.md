@@ -14,5 +14,5 @@ Input:
 
 Output requirements:
 - Implement the mini-program.
-- On a TEST_FAIL handoff, apply each supplied finding before returning CODE_READY.
+- On a REJECTED handoff, apply each supplied finding before returning READY.
 - Return exactly one object matching output.schema.json.

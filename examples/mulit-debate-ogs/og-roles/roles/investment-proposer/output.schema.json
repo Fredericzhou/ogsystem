@@ -1,17 +1,31 @@
 {
   "type": "object",
-  "required": ["content", "data"],
+  "required": [
+    "content",
+    "data"
+  ],
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["SEND_CRITIC", "SEND_OPTIMIZER"]
+      "enum": [
+        "READY"
+      ]
     },
-    "content": { "type": "string" },
+    "content": {
+      "type": "string"
+    },
     "data": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["debate_round"],
-      "properties": { "debate_round": { "type": "integer", "minimum": 1 } }
+      "required": [
+        "debate_round"
+      ],
+      "properties": {
+        "debate_round": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     }
   },
   "additionalProperties": false

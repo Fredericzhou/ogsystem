@@ -4,13 +4,13 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["COMPENSATED", "ESCALATED", "ABORTED"]
+      "enum": ["READY", "BLOCKED", "REJECTED"]
     },
     "content": { "type": "string" },
     "data": { "type": "object" }
   },
   "if": {
-    "properties": { "event": { "const": "COMPENSATED" } },
+    "properties": { "event": { "const": "READY" } },
     "required": ["event"]
   },
   "then": {

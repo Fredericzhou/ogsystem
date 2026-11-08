@@ -8,12 +8,12 @@ flowchart TD
 %% loop.max.debate-moderator=2
 
 start[开始] -->|START| debate-moderator[Role:debate-moderator]
-debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
-debate-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
+debate-moderator[Role:debate-moderator] -->|READY| debate-minimalist[Role:debate-minimalist]
+debate-moderator[Role:debate-moderator] -->|READY| debate-alignmentist[Role:debate-alignmentist]
 
-debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
-debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
+debate-minimalist[Role:debate-minimalist] -->|READY| debate-judge[Role:debate-judge]
+debate-alignmentist[Role:debate-alignmentist] -->|READY| debate-judge[Role:debate-judge]
 
-debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debate-moderator]
-debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
-debate-summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
+debate-judge[Role:debate-judge] -->|NEEDS_REWORK| debate-moderator[Role:debate-moderator]
+debate-judge[Role:debate-judge] -->|READY| debate-summary[Role:debate-summary]
+debate-summary[Role:debate-summary] -->|READY| end[结束]

@@ -26,9 +26,7 @@
   },
   "outputs": {
     "events": [
-      "START_CARDIOLOGY",
-      "START_IMAGING",
-      "START_NEUROLOGY"
+      "READY"
     ],
     "postconditions": []
   },

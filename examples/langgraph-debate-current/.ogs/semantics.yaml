@@ -33,52 +33,34 @@ roles:
   debate-moderator:
     modes:
       default:
-        events: [SEND_MINIMALIST, SEND_ALIGNMENTIST]
+        events: [READY]
   debate-minimalist:
     modes:
       default:
-        events: [MINIMALIST_DONE]
+        events: [READY]
   debate-alignmentist:
     modes:
       default:
-        events: [ALIGNMENTIST_DONE]
+        events: [READY]
   debate-judge:
     modes:
       default:
-        events: [REBUTTAL_NEEDED, DECISION_READY]
+        events: [NEEDS_REWORK, READY]
   debate-summary:
     modes:
       default:
-        events: [SUMMARY_READY]
+        events: [READY]
 
 events:
-  SEND_MINIMALIST:
-    payload:
-      schema: contracts/send-round.schema.json
-
-  SEND_ALIGNMENTIST:
-    payload:
-      schema: contracts/send-round.schema.json
-  MINIMALIST_DONE:
-    payload:
-      schema: contracts/minimalist-done.schema.json
-  ALIGNMENTIST_DONE:
-    payload:
-      schema: contracts/alignmentist-done.schema.json
-  REBUTTAL_NEEDED:
-    payload:
-      schema: contracts/rebuttal-needed.schema.json
-  DECISION_READY:
-    payload:
-      schema: contracts/decision-ready.schema.json
-  SUMMARY_READY:
-    payload:
-      schema: contracts/summary-ready.schema.json
+  READY:
+    kind: handoff
+  NEEDS_REWORK:
+    kind: correction
 
 # Route conditions are evaluated after the judge's state update is reduced.
 routes:
   - from: debate-judge
-    event: REBUTTAL_NEEDED
+    event: NEEDS_REWORK
     to: debate-moderator
     priority: 1
     when:
@@ -90,7 +72,7 @@ routes:
         - kind: literal
           value: false
   - from: debate-judge
-    event: DECISION_READY
+    event: READY
     to: debate-summary
     priority: 1
     when:

@@ -27,8 +27,8 @@
   },
   "outputs": {
     "events": [
-      "REVIEW_READY",
-      "REWORK"
+      "NEEDS_REWORK",
+      "READY"
     ],
     "postconditions": []
   },

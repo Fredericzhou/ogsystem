@@ -6,7 +6,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "legal-product-manager",
-        "eventType": "REQUIREMENTS_READY",
+        "eventType": "READY",
         "toRoleId": "solution-architect"
       },
       "schema": "flow-envelope.schema.json",
@@ -72,7 +72,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "legal-knowledge-engineer",
-        "eventType": "KNOWLEDGE_PLAN_READY",
+        "eventType": "READY",
         "toRoleId": "delivery-lead"
       },
       "schema": "flow-envelope.schema.json",
@@ -83,7 +83,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "retrieval-engineer",
-        "eventType": "RETRIEVAL_PLAN_READY",
+        "eventType": "READY",
         "toRoleId": "delivery-lead"
       },
       "schema": "flow-envelope.schema.json",
@@ -94,7 +94,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "answer-engineer",
-        "eventType": "ANSWER_PLAN_READY",
+        "eventType": "READY",
         "toRoleId": "delivery-lead"
       },
       "schema": "flow-envelope.schema.json",
@@ -105,7 +105,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "citation-engineer",
-        "eventType": "CITATION_PLAN_READY",
+        "eventType": "READY",
         "toRoleId": "delivery-lead"
       },
       "schema": "flow-envelope.schema.json",
@@ -116,7 +116,7 @@
       "kind": "flow",
       "match": {
         "fromRoleId": "evaluation-engineer",
-        "eventType": "EVAL_PLAN_READY",
+        "eventType": "READY",
         "toRoleId": "delivery-lead"
       },
       "schema": "flow-envelope.schema.json",

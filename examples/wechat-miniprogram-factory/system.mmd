@@ -11,9 +11,9 @@ flowchart TD
 %% context.map.coding.previous_output=direct.data
 
 start[开始] -->|START| requirements[Role:requirements]
-requirements[Role:requirements] -->|SPEC_READY| design[Role:design]
-design[Role:design] -->|DESIGN_READY| coding[Role:coding]
-coding[Role:coding] -->|CODE_READY| testing[Role:testing]
-testing[Role:testing] -->|TEST_FAIL| coding[Role:coding]
-testing[Role:testing] -->|TEST_PASS| seal[Role:seal]
-seal[Role:seal] -->|SEALED| end[结束]
+requirements[Role:requirements] -->|READY| design[Role:design]
+design[Role:design] -->|READY| coding[Role:coding]
+coding[Role:coding] -->|READY| testing[Role:testing]
+testing[Role:testing] -->|REJECTED| coding[Role:coding]
+testing[Role:testing] -->|READY| seal[Role:seal]
+seal[Role:seal] -->|READY| end[结束]

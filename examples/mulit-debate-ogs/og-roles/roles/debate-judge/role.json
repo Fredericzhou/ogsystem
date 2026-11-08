@@ -26,8 +26,8 @@
   },
   "outputs": {
     "events": [
-      "DECISION_READY",
-      "REBUTTAL_NEEDED"
+      "NEEDS_REWORK",
+      "READY"
     ],
     "postconditions": []
   },

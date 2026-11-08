@@ -26,27 +26,27 @@ flowchart TD
 %% context.map.learn.retrospective=direct.data.retrospective
 
 start[开始] -->|START| office-hours[Role:office-hours]
-office-hours[Role:office-hours] -->|READY_FOR_REVIEW| review[Role:review]
-office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| end[结束]
+office-hours[Role:office-hours] -->|READY| review[Role:review]
+office-hours[Role:office-hours] -->|BLOCKED| end[结束]
 office-hours[Role:office-hours] -->|REJECTED| end[结束]
 
 review[Role:review] -->|APPROVED| qa[Role:qa]
-review[Role:review] -->|CHANGES_REQUIRED| office-hours[Role:office-hours]
+review[Role:review] -->|NEEDS_REWORK| office-hours[Role:office-hours]
 review[Role:review] -->|BLOCKED| end[结束]
 
-qa[Role:qa] -->|QA_PASS| ship[Role:ship]
-qa[Role:qa] -->|QA_FAIL| office-hours[Role:office-hours]
-qa[Role:qa] -->|QA_BLOCKED| review[Role:review]
+qa[Role:qa] -->|READY| ship[Role:ship]
+qa[Role:qa] -->|REJECTED| office-hours[Role:office-hours]
+qa[Role:qa] -->|BLOCKED| review[Role:review]
 
-ship[Role:ship] -->|READY_TO_DEPLOY| ship-deploy[Role:ship-deploy]
-ship[Role:ship] -->|SHIP_BLOCKED| review[Role:review]
+ship[Role:ship] -->|APPROVAL_PROPOSED| ship-deploy[Role:ship-deploy]
+ship[Role:ship] -->|BLOCKED| review[Role:review]
 
-ship-deploy[Role:ship-deploy] -->|SHIPPED| retro[Role:retro]
+ship-deploy[Role:ship-deploy] -->|READY| retro[Role:retro]
 ship-deploy[Role:ship-deploy] -->|ERROR| error-handler-base[Role:error-handler-base]
 
-error-handler-base[Role:error-handler-base] -->|COMPENSATED| review[Role:review]
-error-handler-base[Role:error-handler-base] -->|ESCALATED| end[结束]
-error-handler-base[Role:error-handler-base] -->|ABORTED| end[结束]
+error-handler-base[Role:error-handler-base] -->|READY| review[Role:review]
+error-handler-base[Role:error-handler-base] -->|BLOCKED| end[结束]
+error-handler-base[Role:error-handler-base] -->|REJECTED| end[结束]
 
-retro[Role:retro] -->|RETRO_DONE| learn[Role:learn]
-learn[Role:learn] -->|LEARNED| end[结束]
+retro[Role:retro] -->|READY| learn[Role:learn]
+learn[Role:learn] -->|READY| end[结束]

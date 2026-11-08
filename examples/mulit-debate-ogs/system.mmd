@@ -7,10 +7,10 @@ flowchart TD
 %% role.mode.investment-proposer=parallel_split
 %% loop.max.investment-proposer=2
 start[开始] -->|START| r5[Role:investment-proposer]
-r1[Role:debate-judge] -->|DECISION_READY| r2[Role:debate-summary]
-r1[Role:debate-judge] -->|REBUTTAL_NEEDED| r5[Role:investment-proposer]
-r2[Role:debate-summary] -->|SUMMARY_READY| end[结束]
-r3[Role:investment-critic] -->|CRITIC_DONE| r1[Role:debate-judge]
-r4[Role:investment-optimizer] -->|OPTIMIZER_DONE| r1[Role:debate-judge]
-r5[Role:investment-proposer] -->|SEND_CRITIC| r3[Role:investment-critic]
-r5[Role:investment-proposer] -->|SEND_OPTIMIZER| r4[Role:investment-optimizer]
+r1[Role:debate-judge] -->|READY| r2[Role:debate-summary]
+r1[Role:debate-judge] -->|NEEDS_REWORK| r5[Role:investment-proposer]
+r2[Role:debate-summary] -->|READY| end[结束]
+r3[Role:investment-critic] -->|READY| r1[Role:debate-judge]
+r4[Role:investment-optimizer] -->|READY| r1[Role:debate-judge]
+r5[Role:investment-proposer] -->|READY| r3[Role:investment-critic]
+r5[Role:investment-proposer] -->|READY| r4[Role:investment-optimizer]

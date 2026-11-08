@@ -48,46 +48,46 @@
     }
   },
   "flows": {
-    "1:requirements:SPEC_READY:design": {
-      "flowId": "1:requirements:SPEC_READY:design",
+    "1:requirements:READY:design": {
+      "flowId": "1:requirements:READY:design",
       "fromRoleId": "requirements",
       "toRoleId": "design",
-      "eventType": "SPEC_READY",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "2:design:DESIGN_READY:coding": {
-      "flowId": "2:design:DESIGN_READY:coding",
+    "2:design:READY:coding": {
+      "flowId": "2:design:READY:coding",
       "fromRoleId": "design",
       "toRoleId": "coding",
-      "eventType": "DESIGN_READY",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "3:coding:CODE_READY:testing": {
-      "flowId": "3:coding:CODE_READY:testing",
+    "3:coding:READY:testing": {
+      "flowId": "3:coding:READY:testing",
       "fromRoleId": "coding",
       "toRoleId": "testing",
-      "eventType": "CODE_READY",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "4:testing:TEST_FAIL:coding": {
-      "flowId": "4:testing:TEST_FAIL:coding",
+    "4:testing:REJECTED:coding": {
+      "flowId": "4:testing:REJECTED:coding",
       "fromRoleId": "testing",
       "toRoleId": "coding",
-      "eventType": "TEST_FAIL",
+      "eventType": "REJECTED",
       "runtimeOnlyErrorFlow": false
     },
-    "5:testing:TEST_PASS:seal": {
-      "flowId": "5:testing:TEST_PASS:seal",
+    "5:testing:READY:seal": {
+      "flowId": "5:testing:READY:seal",
       "fromRoleId": "testing",
       "toRoleId": "seal",
-      "eventType": "TEST_PASS",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "6:seal:SEALED:output": {
-      "flowId": "6:seal:SEALED:output",
+    "6:seal:READY:output": {
+      "flowId": "6:seal:READY:output",
       "fromRoleId": "seal",
       "toRoleId": "__system_end__",
-      "eventType": "SEALED",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     }
   },

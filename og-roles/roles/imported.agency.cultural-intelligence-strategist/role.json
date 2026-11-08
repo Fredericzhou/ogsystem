@@ -25,8 +25,7 @@
   "outputs": {
     "events": [
       "BLOCKED",
-      "DONE",
-      "NEEDS_CLARIFICATION"
+      "READY"
     ],
     "postconditions": []
   },

@@ -16,12 +16,12 @@ flowchart TD
 
 start[开始] -->|START| diagnosis-dispatch[Role:diagnosis-dispatch]
 
-diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_CARDIOLOGY| diagnosis-cardiology[Role:diagnosis-cardiology]
-diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_NEUROLOGY| diagnosis-neurology[Role:diagnosis-neurology]
-diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_IMAGING| diagnosis-imaging[Role:diagnosis-imaging]
+diagnosis-dispatch[Role:diagnosis-dispatch] -->|READY| diagnosis-cardiology[Role:diagnosis-cardiology]
+diagnosis-dispatch[Role:diagnosis-dispatch] -->|READY| diagnosis-neurology[Role:diagnosis-neurology]
+diagnosis-dispatch[Role:diagnosis-dispatch] -->|READY| diagnosis-imaging[Role:diagnosis-imaging]
 
-diagnosis-cardiology[Role:diagnosis-cardiology] -->|CARDIOLOGY_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
-diagnosis-neurology[Role:diagnosis-neurology] -->|NEUROLOGY_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
-diagnosis-imaging[Role:diagnosis-imaging] -->|IMAGING_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
+diagnosis-cardiology[Role:diagnosis-cardiology] -->|READY| diagnosis-chief-review[Role:diagnosis-chief-review]
+diagnosis-neurology[Role:diagnosis-neurology] -->|READY| diagnosis-chief-review[Role:diagnosis-chief-review]
+diagnosis-imaging[Role:diagnosis-imaging] -->|READY| diagnosis-chief-review[Role:diagnosis-chief-review]
 
-diagnosis-chief-review[Role:diagnosis-chief-review] -->|CONSULTATION_READY| end[结束]
+diagnosis-chief-review[Role:diagnosis-chief-review] -->|READY| end[结束]

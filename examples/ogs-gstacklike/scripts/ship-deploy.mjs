@@ -206,7 +206,7 @@ await writeFile(outputPath, buildHtmlDocument(payload), "utf8");
 
 console.log(
   JSON.stringify({
-    event: "SHIPPED",
+    event: "READY",
     content: `ship-deploy published ${payload.headline} to ${outputPath}`,
     data: {
       roleId: "ship-deploy",

@@ -19,17 +19,17 @@ flowchart TD
 %% context.map.ship.previous_ship_output=global.human_review.current.previous_output.content?
 
 start[开始] -->|START| office-hours[Role:office-hours]
-office-hours[Role:office-hours] -->|READY_FOR_REVIEW| review[Role:review]
-office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| end[结束]
+office-hours[Role:office-hours] -->|READY| review[Role:review]
+office-hours[Role:office-hours] -->|BLOCKED| end[结束]
 office-hours[Role:office-hours] -->|REJECTED| end[结束]
 
 review[Role:review] -->|APPROVED| qa[Role:qa]
-review[Role:review] -->|CHANGES_REQUIRED| end[结束]
+review[Role:review] -->|NEEDS_REWORK| end[结束]
 review[Role:review] -->|BLOCKED| end[结束]
 
-qa[Role:qa] -->|QA_PASS| ship[Role:ship]
-qa[Role:qa] -->|QA_FAIL| end[结束]
-qa[Role:qa] -->|QA_BLOCKED| end[结束]
+qa[Role:qa] -->|READY| ship[Role:ship]
+qa[Role:qa] -->|REJECTED| end[结束]
+qa[Role:qa] -->|BLOCKED| end[结束]
 
-ship[Role:ship] -->|READY_TO_DEPLOY| end[结束]
-ship[Role:ship] -->|SHIP_BLOCKED| end[结束]
+ship[Role:ship] -->|APPROVAL_PROPOSED| end[结束]
+ship[Role:ship] -->|BLOCKED| end[结束]

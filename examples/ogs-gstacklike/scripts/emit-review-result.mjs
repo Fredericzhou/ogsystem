@@ -44,7 +44,7 @@ function inferEvent(context) {
   }
   const comment = firstNonEmptyString(context.human_review_comment);
   if (comment) {
-    return "CHANGES_REQUIRED";
+    return "NEEDS_REWORK";
   }
   return "APPROVED";
 }
@@ -60,7 +60,7 @@ console.log(
   JSON.stringify({
     event,
     content:
-      event === "CHANGES_REQUIRED"
+      event === "NEEDS_REWORK"
         ? forcedByEnv
           ? "review requested changes after operator-directed rework"
           : `review requested changes from human feedback: ${comment || "missing comment"}`

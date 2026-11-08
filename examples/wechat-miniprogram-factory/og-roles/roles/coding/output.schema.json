@@ -2,7 +2,7 @@
   "type": "object",
   "required": ["event", "content", "data"],
   "properties": {
-    "event": { "const": "CODE_READY" },
+    "event": { "const": "READY" },
     "content": { "type": "string" },
     "data": { "type": "object", "required": ["artifactPath", "feedbackApplied"], "properties": { "artifactPath": { "type": "string" }, "feedbackApplied": { "type": "boolean" }, "feedbackCodes": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": true }
   },

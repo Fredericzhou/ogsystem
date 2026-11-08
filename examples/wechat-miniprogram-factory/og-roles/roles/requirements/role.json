@@ -9,7 +9,7 @@
   "purpose": "Write a bounded product specification before design or implementation.",
   "responsibility": { "kind": "atomic", "owns": ["acceptance criteria"], "contributes": [], "doesNotOwn": ["implementation"] },
   "inputs": { "preconditions": [] },
-  "outputs": { "events": ["SPEC_READY"], "postconditions": [] },
+  "outputs": { "events": ["READY"], "postconditions": [] },
   "authority": { "controlActions": [] },
   "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
   "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },

@@ -5,5 +5,5 @@ const allowedEvents = String(env.OGSYSTEM_ALLOWED_EVENTS || "")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
-const event = allowedEvents[0] || "HELLO_DONE";
+const event = allowedEvents[0] || "READY";
 stdout.write(JSON.stringify({ event, content: "Hello OGSystem world" }));

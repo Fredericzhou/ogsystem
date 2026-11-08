@@ -6,12 +6,42 @@
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
   "contractVersion": 1,
-  "purpose": "Return QA_PASS only when all mini-program acceptance checks pass.",
-  "responsibility": { "kind": "atomic", "owns": ["test evidence"], "contributes": [], "doesNotOwn": ["source edits", "waiving failed checks"] },
-  "inputs": { "preconditions": [] },
-  "outputs": { "events": ["TEST_FAIL", "TEST_PASS"], "postconditions": [] },
-  "authority": { "controlActions": [] },
-  "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
-  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
-  "audit": { "requiredFields": [] }
+  "purpose": "Return READY only when all mini-program acceptance checks pass.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "test evidence"
+    ],
+    "contributes": [],
+    "doesNotOwn": [
+      "source edits",
+      "waiving failed checks"
+    ]
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "READY",
+      "REJECTED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.workflow.stage"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

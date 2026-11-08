@@ -38,7 +38,7 @@ await writeFile(
 
 process.stdout.write(
   JSON.stringify({
-    event: "DEVELOP_DONE",
+    event: "READY",
     content: `Rust project created at ${projectDir}`,
     data: {
       projectDir

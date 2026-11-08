@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["REBUTTAL_NEEDED", "DECISION_READY"]
+      "enum": ["NEEDS_REWORK", "READY"]
     },
     "content": { "type": "string" },
     "data": {

@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["RETRIEVAL_PLAN_READY"]
+      "enum": ["READY"]
     },
     "content": {
       "type": "string"

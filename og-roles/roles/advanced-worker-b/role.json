@@ -27,7 +27,7 @@
   },
   "outputs": {
     "events": [
-      "B_DONE"
+      "READY"
     ],
     "postconditions": []
   },

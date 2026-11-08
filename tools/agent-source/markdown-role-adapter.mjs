@@ -25,7 +25,7 @@ export const OG_PROMPT_TEMPLATE = [
   "",
   "Output requirements:",
   "- Choose the most appropriate event from allowed_events.",
-  "- Use NEEDS_CLARIFICATION when the task or input is underspecified.",
+  "- Use BLOCKED when the task or input is underspecified.",
   "- Use BLOCKED when you cannot proceed without an external dependency or missing access.",
   "- Put the main answer in content and optional structured details in data."
 ].join("\n");

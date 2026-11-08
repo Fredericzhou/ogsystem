@@ -10,5 +10,5 @@ Own the readiness gate:
 
 Quality bar:
 - Approve only when acceptance criteria and handoff are coherent.
-- Use CHANGES_REQUIRED for fixable scope or clarity gaps.
+- Use NEEDS_REWORK for fixable scope or clarity gaps.
 - Use BLOCKED when external input or policy decision is required.

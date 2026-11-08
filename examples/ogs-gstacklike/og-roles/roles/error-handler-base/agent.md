@@ -11,9 +11,9 @@ Expected upstream context payload (recommended keys):
 - last_context
 
 Output contract:
-- event: one of COMPENSATED, ESCALATED, ABORTED
+- event: one of READY, BLOCKED, REJECTED
 - content: concise rationale for this action
-- data: include compensation.action and compensation.verified=true when event is COMPENSATED
+- data: include compensation.action and compensation.verified=true when event is READY
 
 Language:
 - Use user_preferences when present.
@@ -21,7 +21,7 @@ Language:
 
 Quality bar:
 - Do not hide the failed role or branch context.
-- Prefer COMPENSATED only when a concrete recovery action is available.
+- Prefer READY only when a concrete recovery action is available.
 - Do not claim an action was verified unless the output or an external check confirms it.
-- Use ESCALATED when human/operator action is required.
-- Use ABORTED when continuing would be unsafe or incoherent.
+- Use BLOCKED when human/operator action is required.
+- Use REJECTED when continuing would be unsafe or incoherent.

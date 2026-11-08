@@ -2,7 +2,7 @@
   "type": "object",
   "required": ["event", "content", "data"],
   "properties": {
-    "event": { "enum": ["TEST_PASS", "TEST_FAIL"] },
+    "event": { "enum": ["READY", "REJECTED"] },
     "content": { "type": "string" },
     "data": { "type": "object", "required": ["findings", "report"], "properties": { "findings": { "type": "array" }, "report": { "type": "object" } }, "additionalProperties": true }
   },

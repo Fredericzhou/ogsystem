@@ -1,6 +1,6 @@
 console.log(
   JSON.stringify({
-    event: "DONE",
+    event: "READY",
     content: "compensation flow completed"
   })
 );

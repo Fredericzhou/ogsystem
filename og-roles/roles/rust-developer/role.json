@@ -23,7 +23,7 @@
   },
   "outputs": {
     "events": [
-      "DEVELOP_DONE"
+      "READY"
     ],
     "postconditions": []
   },

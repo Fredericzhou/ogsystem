@@ -27,8 +27,7 @@
   },
   "outputs": {
     "events": [
-      "START_A",
-      "START_B"
+      "READY"
     ],
     "postconditions": []
   },

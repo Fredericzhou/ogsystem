@@ -9,7 +9,7 @@
   "purpose": "Implement the requested mini-program and apply bounded test feedback.",
   "responsibility": { "kind": "atomic", "owns": ["mini-program source"], "contributes": [], "doesNotOwn": ["acceptance decision"] },
   "inputs": { "preconditions": [] },
-  "outputs": { "events": ["CODE_READY"], "postconditions": [] },
+  "outputs": { "events": ["READY"], "postconditions": [] },
   "authority": { "controlActions": [] },
   "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
   "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },

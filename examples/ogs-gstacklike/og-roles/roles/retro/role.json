@@ -22,7 +22,7 @@
   },
   "outputs": {
     "events": [
-      "RETRO_DONE"
+      "READY"
     ],
     "postconditions": []
   },

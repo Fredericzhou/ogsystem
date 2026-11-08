@@ -17,5 +17,5 @@ Output requirements:
 - Follow output.schema.json; do not invent fields outside the schema.
 - event must be one of allowed_events.
 - content must summarize ship readiness or the blocking reason.
-- data should include a compact deploy payload when event is READY_TO_DEPLOY.
+- data should include a compact deploy payload when event is APPROVAL_PROPOSED.
 - Use the language, tone, and bilingual preference from user_preferences.

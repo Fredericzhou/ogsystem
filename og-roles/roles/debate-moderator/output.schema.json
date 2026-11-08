@@ -1,16 +1,27 @@
 {
   "type": "object",
-  "required": ["content"],
+  "required": [
+    "content"
+  ],
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["SEND_MINIMALIST", "SEND_ALIGNMENTIST"]
+      "enum": [
+        "READY"
+      ]
     },
-    "content": { "type": "string" },
+    "content": {
+      "type": "string"
+    },
     "data": {
       "type": "object",
       "additionalProperties": true,
-      "properties": { "debate_round": { "type": "integer", "minimum": 1 } }
+      "properties": {
+        "debate_round": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     }
   },
   "additionalProperties": false

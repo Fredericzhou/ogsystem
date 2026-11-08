@@ -81,39 +81,39 @@
     }
   },
   "flows": {
-    "1:error-handler-base:ABORTED:output": {
-      "flowId": "1:error-handler-base:ABORTED:output",
+    "1:error-handler-base:REJECTED:output": {
+      "flowId": "1:error-handler-base:REJECTED:output",
       "fromRoleId": "error-handler-base",
       "toRoleId": "__system_end__",
-      "eventType": "ABORTED",
+      "eventType": "REJECTED",
       "runtimeOnlyErrorFlow": false
     },
-    "2:error-handler-base:ESCALATED:output": {
-      "flowId": "2:error-handler-base:ESCALATED:output",
+    "2:error-handler-base:BLOCKED:output": {
+      "flowId": "2:error-handler-base:BLOCKED:output",
       "fromRoleId": "error-handler-base",
       "toRoleId": "__system_end__",
-      "eventType": "ESCALATED",
+      "eventType": "BLOCKED",
       "runtimeOnlyErrorFlow": false
     },
-    "3:error-handler-base:COMPENSATED:review": {
-      "flowId": "3:error-handler-base:COMPENSATED:review",
+    "3:error-handler-base:READY:review": {
+      "flowId": "3:error-handler-base:READY:review",
       "fromRoleId": "error-handler-base",
       "toRoleId": "review",
-      "eventType": "COMPENSATED",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "4:learn:LEARNED:output": {
-      "flowId": "4:learn:LEARNED:output",
+    "4:learn:READY:output": {
+      "flowId": "4:learn:READY:output",
       "fromRoleId": "learn",
       "toRoleId": "__system_end__",
-      "eventType": "LEARNED",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "5:office-hours:NEEDS_MORE_INPUT:output": {
-      "flowId": "5:office-hours:NEEDS_MORE_INPUT:output",
+    "5:office-hours:BLOCKED:output": {
+      "flowId": "5:office-hours:BLOCKED:output",
       "fromRoleId": "office-hours",
       "toRoleId": "__system_end__",
-      "eventType": "NEEDS_MORE_INPUT",
+      "eventType": "BLOCKED",
       "runtimeOnlyErrorFlow": false
     },
     "6:office-hours:REJECTED:output": {
@@ -123,39 +123,39 @@
       "eventType": "REJECTED",
       "runtimeOnlyErrorFlow": false
     },
-    "7:office-hours:READY_FOR_REVIEW:review": {
-      "flowId": "7:office-hours:READY_FOR_REVIEW:review",
+    "7:office-hours:READY:review": {
+      "flowId": "7:office-hours:READY:review",
       "fromRoleId": "office-hours",
       "toRoleId": "review",
-      "eventType": "READY_FOR_REVIEW",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "8:qa:QA_FAIL:office-hours": {
-      "flowId": "8:qa:QA_FAIL:office-hours",
+    "8:qa:REJECTED:office-hours": {
+      "flowId": "8:qa:REJECTED:office-hours",
       "fromRoleId": "qa",
       "toRoleId": "office-hours",
-      "eventType": "QA_FAIL",
+      "eventType": "REJECTED",
       "runtimeOnlyErrorFlow": false
     },
-    "9:qa:QA_BLOCKED:review": {
-      "flowId": "9:qa:QA_BLOCKED:review",
+    "9:qa:BLOCKED:review": {
+      "flowId": "9:qa:BLOCKED:review",
       "fromRoleId": "qa",
       "toRoleId": "review",
-      "eventType": "QA_BLOCKED",
+      "eventType": "BLOCKED",
       "runtimeOnlyErrorFlow": false
     },
-    "10:qa:QA_PASS:ship": {
-      "flowId": "10:qa:QA_PASS:ship",
+    "10:qa:READY:ship": {
+      "flowId": "10:qa:READY:ship",
       "fromRoleId": "qa",
       "toRoleId": "ship",
-      "eventType": "QA_PASS",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
-    "11:retro:RETRO_DONE:learn": {
-      "flowId": "11:retro:RETRO_DONE:learn",
+    "11:retro:READY:learn": {
+      "flowId": "11:retro:READY:learn",
       "fromRoleId": "retro",
       "toRoleId": "learn",
-      "eventType": "RETRO_DONE",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     },
     "12:review:BLOCKED:output": {
@@ -165,11 +165,11 @@
       "eventType": "BLOCKED",
       "runtimeOnlyErrorFlow": false
     },
-    "13:review:CHANGES_REQUIRED:office-hours": {
-      "flowId": "13:review:CHANGES_REQUIRED:office-hours",
+    "13:review:NEEDS_REWORK:office-hours": {
+      "flowId": "13:review:NEEDS_REWORK:office-hours",
       "fromRoleId": "review",
       "toRoleId": "office-hours",
-      "eventType": "CHANGES_REQUIRED",
+      "eventType": "NEEDS_REWORK",
       "runtimeOnlyErrorFlow": false
     },
     "14:review:APPROVED:qa": {
@@ -179,18 +179,18 @@
       "eventType": "APPROVED",
       "runtimeOnlyErrorFlow": false
     },
-    "15:ship:SHIP_BLOCKED:review": {
-      "flowId": "15:ship:SHIP_BLOCKED:review",
+    "15:ship:BLOCKED:review": {
+      "flowId": "15:ship:BLOCKED:review",
       "fromRoleId": "ship",
       "toRoleId": "review",
-      "eventType": "SHIP_BLOCKED",
+      "eventType": "BLOCKED",
       "runtimeOnlyErrorFlow": false
     },
-    "16:ship:READY_TO_DEPLOY:ship-deploy": {
-      "flowId": "16:ship:READY_TO_DEPLOY:ship-deploy",
+    "16:ship:APPROVAL_PROPOSED:ship-deploy": {
+      "flowId": "16:ship:APPROVAL_PROPOSED:ship-deploy",
       "fromRoleId": "ship",
       "toRoleId": "ship-deploy",
-      "eventType": "READY_TO_DEPLOY",
+      "eventType": "APPROVAL_PROPOSED",
       "runtimeOnlyErrorFlow": false
     },
     "17:ship-deploy:ERROR:error-handler-base": {
@@ -200,11 +200,11 @@
       "eventType": "ERROR",
       "runtimeOnlyErrorFlow": true
     },
-    "18:ship-deploy:SHIPPED:retro": {
-      "flowId": "18:ship-deploy:SHIPPED:retro",
+    "18:ship-deploy:READY:retro": {
+      "flowId": "18:ship-deploy:READY:retro",
       "fromRoleId": "ship-deploy",
       "toRoleId": "retro",
-      "eventType": "SHIPPED",
+      "eventType": "READY",
       "runtimeOnlyErrorFlow": false
     }
   },

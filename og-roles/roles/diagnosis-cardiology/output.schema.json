@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["CARDIOLOGY_DONE"]
+      "enum": ["READY"]
     },
     "content": { "type": "string" },
     "data": { "type": "object" }

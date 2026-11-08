@@ -22,8 +22,8 @@
   },
   "outputs": {
     "events": [
-      "NEEDS_MORE_INPUT",
-      "READY_FOR_REVIEW",
+      "BLOCKED",
+      "READY",
       "REJECTED"
     ],
     "postconditions": []

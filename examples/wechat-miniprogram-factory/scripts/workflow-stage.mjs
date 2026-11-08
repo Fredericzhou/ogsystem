@@ -63,7 +63,7 @@ if (role === "requirements") {
     constraints: ["No cloud service or third-party packages", "Use native WeChat Mini Program APIs"]
   };
   await put("requirements.json", `${JSON.stringify(requirements, null, 2)}\n`);
-  result("SPEC_READY", "Requirements are recorded as verifiable acceptance checks.", { requirements });
+  result("READY", "Requirements are recorded as verifiable acceptance checks.", { requirements });
 } else if (role === "design") {
   const design = {
     screens: [{ page: "pages/index/index", sections: ["标题与完成统计", "可切换任务列表", "空列表提示"] }],
@@ -71,7 +71,7 @@ if (role === "requirements") {
     files: ["app.js", "app.json", "pages/index/index.js", "pages/index/index.wxml", "pages/index/index.wxss", "pages/index/index.json"]
   };
   await put("design.json", `${JSON.stringify(design, null, 2)}\n`);
-  result("DESIGN_READY", "Page structure, persistence, and source boundaries are defined.", { design });
+  result("READY", "Page structure, persistence, and source boundaries are defined.", { design });
 } else if (role === "coding") {
   const previous = input().previous_output;
   const findings = previous?.findings;
@@ -89,7 +89,7 @@ if (role === "requirements") {
     "README.md": `# Light Task WeChat Mini Program\n\nOpen this directory in WeChat DevTools to preview. It uses native Mini Program APIs and has no cloud or third-party dependency.\n\n## Behavior\n\n- View three sample tasks and their completion count.\n- Tap a task to toggle it; changes persist in local storage.\n- An empty list displays an empty state.\n\nThe OGS delivery flow runs structural and interaction checks before sealing.\n`
   };
   for (const [path, content] of Object.entries(files)) await put(join("miniprogram", path), content);
-  result("CODE_READY", "Mini Program source has been written to the run shared artifact.", {
+  result("READY", "Mini Program source has been written to the run shared artifact.", {
     artifactPath: appRoot,
     feedbackApplied: fixesEmptyState,
     feedbackCodes: feedback.map((item) => item.code).filter(Boolean)
@@ -97,7 +97,7 @@ if (role === "requirements") {
 } else if (role === "testing") {
   const report = await verifyMiniProgram(appRoot);
   await put("test-report.json", `${JSON.stringify(report, null, 2)}\n`);
-  result(report.passed ? "TEST_PASS" : "TEST_FAIL", report.passed ? "Mini Program acceptance checks passed." : "Mini Program acceptance failed; structured findings were returned to coding.", { findings: report.findings, report });
+  result(report.passed ? "READY" : "REJECTED", report.passed ? "Mini Program acceptance checks passed." : "Mini Program acceptance failed; structured findings were returned to coding.", { findings: report.findings, report });
 } else if (role === "seal") {
   const testReport = await readFile(join(shared, "test-report.json"), "utf8").then(JSON.parse);
   if (!testReport.passed) throw new Error("Fail closed: test report is not passing");
@@ -113,7 +113,7 @@ if (role === "requirements") {
     })))
   };
   await put("seal-manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
-  result("SEALED", "The passing Mini Program is sealed with a SHA-256 source manifest.", { manifest });
+  result("READY", "The passing Mini Program is sealed with a SHA-256 source manifest.", { manifest });
 } else {
   throw new Error(`Unsupported workflow role: ${role}`);
 }
