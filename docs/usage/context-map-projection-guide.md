@@ -155,8 +155,8 @@ flowchart TD
 %% context.map.review.b_content=source(writer_b).content
 %% context.map.review.task=global.task
 
-writer_a[Role:writer_a] -->|DONE| review[Role:review]
-writer_b[Role:writer_b] -->|DONE| review[Role:review]
+writer_a[Role:writer_a] -->|READY| review[Role:review]
+writer_b[Role:writer_b] -->|READY| review[Role:review]
 ```
 
 这个例子里：

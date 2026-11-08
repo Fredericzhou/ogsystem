@@ -1,6 +1,6 @@
 # OGSystem 统一计划与演进清单 (Unified Plan & Backlog)
 
-更新日期：2026-11-05
+更新日期：2026-11-08
 状态：active（工作区唯一活动计划入口）
 
 ## 1. 规划原则与防过度设计边界
@@ -23,6 +23,7 @@
 - **可视化布局与 Team Site 工作台**：`Semantic IR -> Semantic Layout Projection -> ELK.js -> LayoutProjection -> GraphViewModel -> X6` 唯一显式分层布局链路；`RunQueryService` 基于游标与字节偏移的增量事件读取；Team Site 统一 `pageFrame` 响应式外壳、一级菜单紧凑头部、Studio 仿真运行态图谱只读锁，以及浮动面板级联避让与 `Escape` 焦点管理。
 - **模型 Backend 与原生 CLI**：`BackendRegistry` 已收敛 Codex、OpenCode、Ollama、Pi、Qwen Code、Kimi Code；各 adapter 独立读取官方 API-provider 配置、发现模型并按协议执行探测。Gemini 暂不纳入当前交付。
 - **Role 输入投影与语义抽象**：`direct.*` / `source(role).*` 可选 selector 已落地并由 Runtime 测试覆盖；扩展状态机、DAG 比较和社会化协作模型见双语技术参考。
+- **语义合同与真实案例**：固定业务事件注册表（`READY` 为正常交接事件）、显式 Handoff、条件路由 fail-closed、Join source outcome、Review 血缘、Artifact provenance/Resolver、Run Result commit 和 Loop Budget Review 已接入；Debate Loop、Medical quorum、条件审批、Artifact 证据链、Error compensation 与 GStacklike Review 案例已完成自动化真实运行验证，详见当前[发布验证记录](release-validation-2026-11-08.md)。
 
 ---
 
@@ -31,7 +32,7 @@
 ### P1-1 发布前验收（Release UAT）与语义一致性收口
 - [ ] **完成 [`release-uat-checklist.md`](release-uat-checklist.md) 待签收场景**：重点完成场景 14/15（双控制目录共享同一业务 Workspace、版本冻结与运行证据隔离）及真实 Sandbox 下的人工审核（批准/打回/分支终止）端到端记录。
 - [ ] **条件路由与 Join 运行态浏览器验证**：在真实 Runtime/Operate 流程中验证条件路由决策（命中、无匹配、同优先级歧义）与 Join 等待/超时原因的可检索性，收敛跨语义 Engine Adapter 黄金测试夹具（conformance fixtures）。
-- [ ] **全局循环预算人工审核策略**：将 `loop_exhausted` 作为独立 Runtime 控制事件；任何超预算统一进入 `waiting_review`，禁止按原业务事件、`onExhausted` 或 End 自动继续；实现 `continue / rework / terminate / reject` 的合法目标校验、新增预算授权、幂等恢复、审计记录和调试上下文展示。固定业务事件中的 `APPROVAL_PROPOSED` 仅表示拟批准建议，不替代人工审核授权。详见 [`business-event-protocol-v1.md`](business-event-protocol-v1.md)。
+- [x] **全局循环预算人工审核策略**：将 `loop_exhausted` 作为独立 Runtime 控制事件；任何超预算统一进入预算审核等待，禁止按原业务事件、`onExhausted` 或 End 自动继续；实现 `continue / rework / terminate / reject` 的合法目标校验、新增预算授权、幂等恢复、审计记录和调试上下文展示。固定业务事件中的 `APPROVAL_PROPOSED` 仅表示拟批准建议，不替代人工审核授权。详见 [`business-event-protocol-v1.md`](business-event-protocol-v1.md)。
 
 ### P1-2 Team Site 细节修复与冗余代码清理
 - [ ] **清理旧版浮动面板冗余代码**：在现有浏览器回归测试守护下，移除 `apps/team-site/public/app/views/app.js` 中被 `dataset.floatingPanelController !== "true"` 保护的旧拖拽监听分支及未引用的 `resizePanel` 函数。
@@ -49,6 +50,8 @@
 - [ ] **超大前端视图文件按业务域渐进拆分**：在修改对应面板时，将 `apps/team-site/public/app/views/app.js`（5000+ 行）和 `src/visualizer/client-app.ts`（9000+ 行）按面板职责（如 `workbench`、`asset-drawer`、`build-panel`、`debug-panel`）拆分为独立 ESM 模块。**约束**：保持原生 ESM 调用，不引入 EventBus、PanelRegistry 或第三方前端框架。
 - [ ] **Backend 图标本地注册表**：参考 CC Switch 的 `ProviderIcon`/本地图标映射方式，为每个 Backend 提供受控的 bundled SVG/PNG 或内联资源、可访问文本标签和通用 fallback；图标按 Backend ID 查找，不读取远程图片，不把图标 URL、厂商元数据或模型来源写入 selection/catalog。一个 CLI 可访问多个模型来源时仍只显示该 CLI Backend 图标，模型 ID 原样显示。
 - [ ] **单机文件型外部信号等待与项目生命周期补充**：当出现外部异步回调场景时，提供最小单机文件型 `signal` 恢复入口；按需补充已验证 Run 产物的显式导出（Artifact Promotion）校验与项目归档（Archived 只读）状态。
+- [x] **Loop Review 故障窗口补测**：真实 Runner 已覆盖“决策应用后、标记已处理前崩溃”、重复决策改写只应用一次、CLI `list / inspect / decide --target-role --additional-budget / resume`，并验证恢复后的唯一审计事件。
+- [x] **Runtime 事件写入索引**：Run 上下文缓存已用于稳定事件 ID 去重，首次加载仍读取 `events.ndjson`，并保持该文件作为唯一审计事实源。
 
 ---
 

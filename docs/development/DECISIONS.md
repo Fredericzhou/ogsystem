@@ -1,5 +1,8 @@
 # OGSystem Decisions
 
+> 本文记录已接受的架构决定和实现不变量。治理原则与硬规则见
+> [OGSystem Constitution and Rules](ogsystem-constitution-v1.md)；运行语义细节见 `docs/usage/`。
+
 Date: 2026-11-02
 Status: active
 

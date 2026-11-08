@@ -3,6 +3,10 @@
 Date: 2026-11-05  
 Scope: all Markdown under `docs/`, current source/test alignment, and release-state claims.
 
+> Status: historical audit. The active governance entry point is
+> [OGSystem Constitution and Rules](ogsystem-constitution-v1.md), and the current acceptance
+> evidence is [release-validation-2026-11-08.md](release-validation-2026-11-08.md).
+
 ## Authority Order
 
 1. Source code and executable tests define current behavior.
@@ -24,7 +28,7 @@ When documents disagree, the higher item wins and the lower document must be cor
 | Compiler and file boundaries | `docs/development/compiler-semantics-v1.md`, `docs/development/file-sets.md` | source comments and tests |
 | CLI and model backends | `docs/development/cli-integration-plan.md`, `docs/development/model-availability-probe-api.md` | `docs/usage/usage-manual.md` model configuration section |
 | Team Site and Studio operation | `apps/team-site/README.md`, `docs/usage/visualizer-console.md`, `docs/usage/usage-manual.md` | browser tests and current release record |
-| Release evidence | `docs/development/release-validation-2026-11-05.md`, active `release-uat-checklist.md` | dated acceptance, benchmark, and isolation reports |
+| Release evidence | `docs/development/release-validation-2026-11-08.md`, active `release-uat-checklist.md` | dated acceptance, benchmark, and isolation reports |
 | Active work | `docs/development/todo-backlog.md` | issue-specific tests and records |
 | Historical plans | `docs/development/archive/` | never used as current acceptance evidence |
 
@@ -47,14 +51,15 @@ When documents disagree, the higher item wins and the lower document must be cor
 
 ### No Contract Drift Found In The Reviewed Semantic Areas
 
-The current source and targeted tests agree with the documented model for Role-first graphs, typed
+The current source and targeted tests at the time of this audit agreed with the documented model for Role-first graphs, typed
 events, task/input separation, conditional routing, `parallel_split`, `all_of`/`quorum_of` Join,
 bounded Loop, checkpoints, and Studio Simulation isolation. The latest semantic execution record
 reports `98/98` focused tests passed; the latest full records remain in
-`release-validation-2026-11-05.md`.
+`release-validation-2026-11-08.md`.
 
-The fixed business-event protocol remains explicitly documented as a target protocol. It must not be
-described as already enforced by the current Role Contract runtime.
+The fixed business-event protocol was a target at the time of this audit. The current implementation
+has since promoted it to the active contract; see the dated validation record and
+`business-event-protocol-v1.md` for the current registry-backed behavior.
 
 ## Open Items That Do Not Match The Release Design Yet
 

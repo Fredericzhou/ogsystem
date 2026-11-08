@@ -1,6 +1,10 @@
 # OGSystem 语义手册（实现对齐版）
 
-更新时间：2026-09-02
+本文是语法、运行细节和示例手册。不可违反的原则见
+[OGSystem Constitution and Rules](../development/ogsystem-constitution-v1.md)，Handoff、Join、Review、
+Artifact、Result 和 Resume 的紧凑合同见 [Semantic IR v1 Handoff 补充规范](ogsystem-handoff-semantics-v1.md)。
+
+更新时间：2026-11-08
 适用范围：当前 `src/runtime/*` 的解析器与执行器实现（含 `ERROR*` 语义开关）
 文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/usage/ogsystem-orchestration-semantics-v1.md` 为准。
 
@@ -38,8 +42,8 @@ flowchart TD
 %% system.id=demo.basic
 %% system.version=1.0.0
 %% law.global=law.default
-plannerNode[Role:planner] -->|TO_WRITER| writerNode[Role:writer]
-writerNode[Role:writer] -->|DONE| end[结束]
+plannerNode[Role:planner] -->|READY| writerNode[Role:writer]
+writerNode[Role:writer] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -81,7 +85,7 @@ writerNode[Role:writer] -->|DONE| end[结束]
 ## 3. 路由语义
 
 反馈建模规则：反馈是已有责任席位之间的事件流，不是默认的独立节点。A 向 B 反馈时使用
-`A --|FEEDBACK|--> B`，由 A 产生事件/Payload、由 B 消费；不要创建 `a-feedback`、`b-feedback`
+`A --|NEEDS_REWORK|--> B`，由 A 产生事件/Payload、由 B 消费；不要创建 `a-feedback`、`b-feedback`
 等仅表示反馈动作的席位。只有反馈由独立主体承担独立职责、权限和审计责任时，才建立独立角色。
 
 ### 3.1 默认事件路由（无 `role.mode`）
@@ -93,10 +97,10 @@ flowchart TD
 %% system.id=demo.event.route
 %% system.version=1.0.0
 %% law.global=law.default
-judgeNode[Role:judge] -->|PASS| passNode[Role:pass_node]
-judgeNode[Role:judge] -->|REJECT| rejectNode[Role:reject_node]
-passNode[Role:pass_node] -->|DONE| end[结束]
-rejectNode[Role:reject_node] -->|DONE| end[结束]
+judgeNode[Role:judge] -->|APPROVED| passNode[Role:pass_node]
+judgeNode[Role:judge] -->|REJECTED| rejectNode[Role:reject_node]
+passNode[Role:pass_node] -->|READY| end[结束]
+rejectNode[Role:reject_node] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -121,11 +125,11 @@ flowchart LR
 %% role.mode.dispatcher=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=dev,qa
-dispatcherNode[Role:dispatcher] -->|TO_DEV| devNode[Role:dev]
-dispatcherNode[Role:dispatcher] -->|TO_QA| qaNode[Role:qa]
-devNode[Role:dev] -->|DEV_DONE| mergeNode[Role:merge]
-qaNode[Role:qa] -->|QA_DONE| mergeNode[Role:merge]
-mergeNode[Role:merge] -->|DONE| end[结束]
+dispatcherNode[Role:dispatcher] -->|READY| devNode[Role:dev]
+dispatcherNode[Role:dispatcher] -->|READY| qaNode[Role:qa]
+devNode[Role:dev] -->|READY| mergeNode[Role:merge]
+qaNode[Role:qa] -->|READY| mergeNode[Role:merge]
+mergeNode[Role:merge] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -168,11 +172,11 @@ flowchart TD
 %% role.mode.splitter=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=a,b
-splitterNode[Role:splitter] -->|TO_A| nodeA[Role:a]
-splitterNode[Role:splitter] -->|TO_B| nodeB[Role:b]
-nodeA[Role:a] -->|A_DONE| mergeNode[Role:merge]
-nodeB[Role:b] -->|B_DONE| mergeNode[Role:merge]
-mergeNode[Role:merge] -->|DONE| end[结束]
+splitterNode[Role:splitter] -->|READY| nodeA[Role:a]
+splitterNode[Role:splitter] -->|READY| nodeB[Role:b]
+nodeA[Role:a] -->|READY| mergeNode[Role:merge]
+nodeB[Role:b] -->|READY| mergeNode[Role:merge]
+mergeNode[Role:merge] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -198,13 +202,13 @@ flowchart TD
 %% join.mode.judge=quorum_of
 %% join.sources.judge=expert_a,expert_b,expert_c
 %% join.min.judge=2
-dispatcherNode[Role:dispatcher] -->|TO_A| expertANode[Role:expert_a]
-dispatcherNode[Role:dispatcher] -->|TO_B| expertBNode[Role:expert_b]
-dispatcherNode[Role:dispatcher] -->|TO_C| expertCNode[Role:expert_c]
-expertANode[Role:expert_a] -->|A_DONE| judgeNode[Role:judge]
-expertBNode[Role:expert_b] -->|B_DONE| judgeNode[Role:judge]
-expertCNode[Role:expert_c] -->|C_DONE| judgeNode[Role:judge]
-judgeNode[Role:judge] -->|DONE| end[结束]
+dispatcherNode[Role:dispatcher] -->|READY| expertANode[Role:expert_a]
+dispatcherNode[Role:dispatcher] -->|READY| expertBNode[Role:expert_b]
+dispatcherNode[Role:dispatcher] -->|READY| expertCNode[Role:expert_c]
+expertANode[Role:expert_a] -->|READY| judgeNode[Role:judge]
+expertBNode[Role:expert_b] -->|READY| judgeNode[Role:judge]
+expertCNode[Role:expert_c] -->|READY| judgeNode[Role:judge]
+judgeNode[Role:judge] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -246,8 +250,8 @@ flowchart TD
 %% context.map.writer.profile=global.user_profile
 %% context.map.writer.brief=direct.content
 %% context.map.writer.outline=direct.data.outline
-plannerNode[Role:planner] -->|PLAN_DONE| writerNode[Role:writer]
-writerNode[Role:writer] -->|DONE| end[结束]
+plannerNode[Role:planner] -->|READY| writerNode[Role:writer]
+writerNode[Role:writer] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -277,11 +281,11 @@ flowchart TD
 %% context.map.merge.left_text=source(left).content
 %% context.map.merge.right_data=source(right).data
 %% context.map.merge.task=global.task
-splitterNode[Role:splitter] -->|TO_LEFT| leftNode[Role:left]
-splitterNode[Role:splitter] -->|TO_RIGHT| rightNode[Role:right]
-leftNode[Role:left] -->|LEFT_DONE| mergeNode[Role:merge]
-rightNode[Role:right] -->|RIGHT_DONE| mergeNode[Role:merge]
-mergeNode[Role:merge] -->|DONE| end[结束]
+splitterNode[Role:splitter] -->|READY| leftNode[Role:left]
+splitterNode[Role:splitter] -->|READY| rightNode[Role:right]
+leftNode[Role:left] -->|READY| mergeNode[Role:merge]
+rightNode[Role:right] -->|READY| mergeNode[Role:merge]
+mergeNode[Role:merge] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -310,9 +314,9 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% loop.max.draft=3
-draftNode[Role:draft] -->|SUBMIT| reviewNode[Role:review]
-reviewNode[Role:review] -->|REWRITE| draftNode[Role:draft]
-reviewNode[Role:review] -->|PASS| end[结束]
+draftNode[Role:draft] -->|APPROVAL_PROPOSED| reviewNode[Role:review]
+reviewNode[Role:review] -->|NEEDS_REWORK| draftNode[Role:draft]
+reviewNode[Role:review] -->|APPROVED| end[结束]
 ```
 
 #### 含义
@@ -324,7 +328,18 @@ reviewNode[Role:review] -->|PASS| end[结束]
 
 - 图中存在环时，至少一个环内角色必须声明 `loop.max`，否则解析失败。
 - `loop.max.<role>` 必须是可达角色且为正整数。
-- 每个声明预算的目标角色独立计数；环上多个角色分别声明预算时，任一角色超限都会失败。
+- 每个声明预算的目标角色独立计数；环上多个角色分别声明预算时，任一角色超限都会产生 Runtime 控制事件 `loop_exhausted`。
+- 如果一个角色同时属于 Semantic IR Loop Scope 且声明了 `loop.max.<role>`，两套预算按合取关系同时生效；任一预算耗尽都必须先经过人工审核。追加额度只绑定触发该次审核的预算，另一套预算仍会独立检查，必要时会再次挂起。
+- 预算审核的控制权归 `review.loopBudget`：目标白名单、追加额度上限和 `terminateScope` 都从该绑定读取。`review.spec` 中为兼容旧版审核读取而保留的字段只是投影，不得作为循环预算的第二个权威配置源。
+- Semantic IR Loop Scope 与角色级 `loop.max.<role>` 先归一化为同一组预算绑定，再分别检查和扣减授权；命中任一预算即 fail closed。这样既保留两种 DSL 表达方式，也不会因为命中其中一种而短路另一种。
+- `loop_exhausted` 不使用原业务事件、`onExhausted` 或 End 自动继续。运行会保存预算审核上下文并进入等待人工控制的状态；`onExhausted` 仅作为原图配置和审计上下文保留。
+- 预算审核只接受 `continue`、`rework`、`terminate`、`reject`。`continue` 必须选择原声明目标并提交正整数 `additionalBudget`；`rework` 和 `reject` 必须选择对应业务事件声明的目标；所有目标都按当前 IR 校验，不能指向未声明角色或隐式 End。
+- 审核决定的审计事件与业务路由保持一致：`rework` 记录 `human_review_rework_requested` 并沿 `NEEDS_REWORK`，`reject` 记录 `human_review_rejected` 并沿 `REJECTED`；两者都不能被记作另一类动作。
+- 如果当前节点没有 `NEEDS_REWORK` 或 `REJECTED` 出边，预算审核中的对应动作不可用。Team Site 会禁用空目标选择，CLI inspect 会显示缺失路径，控制面提交以 `GRAPH_LOOP_BUDGET_TARGET_UNAVAILABLE` fail closed。
+- 普通节点审核 `approve` 后，如果下游目标将达到循环上限，Runtime 会先生成 `loop_exhausted` 并进入预算审核；不会绕过审核直接失败或按原业务事件继续。
+- 每个额外预算授权只消费一次激活，授权写入 Run 状态并随 checkpoint/CAS 恢复；重复 resume 通过 `reviewId`、决策文件和事件幂等键不会重复激活或重复授权。
+- 如果激活后的 Role 执行发生可恢复的基础设施失败，Runtime 会按分支记录的已消费 binding 回补授权 Delta，再进入 ERROR 补偿或失败收敛；成功执行和业务拒绝不会回补。
+- `terminate(branch)` 会把当前分支从所有相关 Join source 中标记为 `skipped`。`all_of` 因必需 source 缺失而 fail closed；`quorum_of` 仍按已到达 source 数量判断，不能把被终止分支当作 `arrived`。
 
 ---
 
@@ -383,11 +398,11 @@ flowchart TD
 %% system.id=demo.error.edge
 %% system.version=1.0.0
 %% law.global=law.default
-workerNode[Role:worker] -->|OK| end[结束]
+workerNode[Role:worker] -->|READY| end[结束]
 workerNode[Role:worker] -->|ERROR.IO_TIMEOUT| retryNode[Role:retry_handler]
 workerNode[Role:worker] -->|ERROR| fallbackNode[Role:fallback_handler]
-retryNode[Role:retry_handler] -->|DONE| end[结束]
-fallbackNode[Role:fallback_handler] -->|DONE| end[结束]
+retryNode[Role:retry_handler] -->|READY| end[结束]
+fallbackNode[Role:fallback_handler] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -549,13 +564,13 @@ flowchart LR
 %% join.min.judge=3
 %% context.map.judge.a_view=source(a).content
 %% context.map.judge.task=global.task
-dispatch[Role:dispatch] -->|TO_A| a[Role:a]
-dispatch[Role:dispatch] -->|TO_B| b[Role:b]
-dispatch[Role:dispatch] -->|TO_C| c[Role:c]
+dispatch[Role:dispatch] -->|READY| a[Role:a]
+dispatch[Role:dispatch] -->|READY| b[Role:b]
+dispatch[Role:dispatch] -->|READY| c[Role:c]
 a[Role:a] -->|DONE_A| judge[Role:judge]
 b[Role:b] -->|DONE_B| judge[Role:judge]
 c[Role:c] -->|DONE_C| judge[Role:judge]
-judge[Role:judge] -->|DONE| end[结束]
+judge[Role:judge] -->|READY| end[结束]
 ```
 
 #### 含义
@@ -582,8 +597,8 @@ flowchart TD
 %% loop.max.recover=1
 worker[Role:worker] -->|ERROR.IO| recover[Role:recover]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-recover[Role:recover] -->|RETRY| worker[Role:worker]
-fallback[Role:fallback] -->|DONE| end[结束]
+recover[Role:recover] -->|READY| worker[Role:worker]
+fallback[Role:fallback] -->|READY| end[结束]
 ```
 
 #### 含义

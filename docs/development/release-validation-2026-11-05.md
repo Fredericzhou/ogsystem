@@ -1,6 +1,7 @@
-# Release Validation Record
+# Historical Release Validation Record (Superseded)
 
 Date: 2026-11-05
+Status: superseded by [release-validation-2026-11-08.md](release-validation-2026-11-08.md).
 Scope: current runtime, model discovery, native CLI integrations, role repository trial, Studio/Projects browser flows, and documentation alignment.
 
 ## Automated Verification

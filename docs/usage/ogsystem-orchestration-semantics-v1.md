@@ -206,7 +206,7 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 | **`join.mode: quorum_of`** | **法定人数汇合**。等待 `join.sources` 中至少 `join.min.<roleId>` 个唯一上游在同一 `lineageId + loopIteration` 下完成；`join.sources.<roleId>` 本身也必须只声明唯一 source role，并与 Mermaid 中该节点的全部入边角色严格一致；达到阈值后 join 节点只激活一次，迟到 source 只记审计、不重触发。 | **1. 阈值判定**：运行时按唯一 source role 计数，而不是按到达次数计数。 <br> **2. 默认上下文**：未配置 `context.map` 时，仍按 `join.sources` 归一化注入 JSON 命名空间到 `input`。 |
 | **`context.map.<roleId>.*`** | **字段级上下文投影**。运行时用稳定字段顺序构造新的 JSON `input`。 | **1. 普通节点来源**：`direct.*`、`global.task`、`global.user_profile.*`。 <br> **2. Join 节点来源**：`source(<roleId>).*(仅限 join.sources)` 与 `global.*`。 <br> **3. Fail-closed**：缺字段、缺 source、非法 selector 均直接失败。 |
 | **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 <br> **3. 命中规则**：运行时会激活所有 `eventType == 输出 event` 的出边；若 `PASS/REJECT` 指向同一目标，仍是单次二选一路由（由输出 event 决定命中哪一组边）。 <br> **4. `noop` 例外**：仅在 law 显式允许 `allowNoopWithoutExecutionBinding=true` 且该节点最多一个出边时，运行时可无模型执行直接走唯一出边。 |
-| **Semantic IR 条件路由** | 对同一源角色和输出事件的候选 Transition 求值；无条件边恒匹配。条件为封闭形状的受限 AST，只能读取白名单 `state/loop/event/role` 路径；literal 只允许有限数值、字符串、布尔值或 null，不允许对象、脚本或额外字段。 | 只激活唯一最高优先级匹配边；无匹配、条件求值失败或最高优先级并列均 fail closed，稳定错误码分别为 `IR_ROUTE_NO_MATCH`、`IR_ROUTE_CONDITION_EVALUATION_FAILED`、`IR_ROUTE_AMBIGUOUS`（无候选为 `IR_ROUTE_NO_CANDIDATE`）。`route_decision` 事件记录候选 flow、priority、匹配布尔值、胜出 flow/目标或失败码；不记录参与比较的字段值。Studio/Run 的 Conversation 视图读取同一持久化事件。 |
+| **Semantic IR 条件路由** | 对同一源角色和输出事件的候选 Transition 求值；无条件边恒匹配。条件为封闭形状的受限 AST，只能读取白名单 `state/loop/event/role` 路径；literal 只允许有限数值、字符串、布尔值或 null，不允许对象、脚本或额外字段。显式 `null` 可用于 `exists` 和 `equals null`。 | 只激活唯一最高优先级匹配边；缺失输入、操作数类型错误、无匹配或最高优先级并列均 fail closed，稳定错误码分别为 `IR_ROUTE_CONDITION_INPUT_MISSING`、`IR_ROUTE_CONDITION_TYPE_INVALID`、`IR_ROUTE_NO_MATCH`、`IR_ROUTE_AMBIGUOUS`（无候选为 `IR_ROUTE_NO_CANDIDATE`）。`route_decision` 事件记录候选 flow、priority、匹配布尔值、胜出 flow/目标或失败码；不记录参与比较的字段值。Studio/Run 的 Conversation 视图读取同一持久化事件。 |
 | **反馈事件** | **席位间的业务事件流**。例如 `A --|FEEDBACK|--> B` 表示 A 产生反馈，B 消费反馈；`FEEDBACK` 本身不是节点或执行实例。 | 反馈内容放入事件 Payload，并按 B 的输入/事件合同校验；除非存在独立职责、权限和审计边界，不新增 `a-feedback` / `b-feedback` 席位。 |
 | **`role.mode: parallel_split`** | 在一次状态转移中激活该 Role 的全部静态声明普通下游分支；`ERROR*` 异常流不属于普通分支。它不按业务集合生成子任务、不选择一个独占目标，也不承诺物理同时执行。 | 业务任务拆解必须由上游输出及显式输入/上下文映射完成。运行时按 `sessionLineageId` 隔离分支会话；默认不提供分支级独立工作目录，同一 Role 仍共享其 `privateDir`。 |
 | **`loop.max`** | **循环预算**。限制拓扑环路迭代。 | **1. 输入稳定性**：`task` 始终保持原始用户请求，轮次变化只通过新的 `input` 上下文体现。 <br> **2. 运行时守卫**：解析期要求每个拓扑环至少有一个角色声明 `loop.max.*`；执行期由 loop budget 拦截超限激活。Semantic IR 的 Loop Scope 计数按 `runId + lineageId + loopId` 隔离；`counterField` 只引用业务方声明的状态字段，不是 OGS 预置字段。 |
@@ -278,7 +278,8 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 *   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。
 *   **顺序链路会继承 `sessionLineageId`**：只有并行分叉、一次激活多个目标，或进入任意 join（`all_of` / `quorum_of`）时，运行时才会切换到新的会话血缘；普通单路顺序流转会沿用当前 branch 的 `sessionLineageId`。
 *   **状态机扩展事件是单触发语义**：`quorum_of` 达阈值后 join 分支只激活一次；迟到 source 仅追加 `join_late_arrival_ignored` 事件，不重复激活 join。
-*   **`loop.max` 是按“声明该 budget 的目标角色”独立计数**：进入该角色一次记一次；捷径若绕过该角色，不会增加该角色计数。若环上多个角色都声明了 `loop.max`，它们各自独立生效，任一超限都会触发失败。
+*   **`loop.max` 是按“声明该 budget 的目标角色”独立计数**：进入该角色一次记一次；捷径若绕过该角色，不会增加该角色计数。若环上多个角色都声明了 `loop.max`，它们各自独立生效，任一超限都会触发控制面审核。角色级预算与 Semantic IR Loop Scope 同时存在时按合取关系检查，追加额度只作用于触发审核的预算。
+*   **分支终止必须影响 Join source 状态**：`terminate(branch)` 将当前 source 记录为 `skipped`；`all_of` 不会把它计入已到达来源，`quorum_of` 只按实际 `arrived` 来源计算阈值，无法收敛的 Join 以稳定错误结束。
 
 ---
 

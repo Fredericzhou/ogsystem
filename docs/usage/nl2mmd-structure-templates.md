@@ -44,8 +44,8 @@ flowchart TD
 %% law.global=law.console.base
 
 start[开始] -->|START| intake[Role:intake]
-intake[Role:intake] -->|DONE| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+intake[Role:intake] -->|READY| writer[Role:writer]
+writer[Role:writer] -->|READY| end[结束]
 ```
 
 ### 2.2 `fanout_fanin`
@@ -72,11 +72,11 @@ flowchart TD
 %% join.sources.review=worker_a,worker_b
 
 start[开始] -->|START| dispatch[Role:dispatch]
-dispatch[Role:dispatch] -->|TO_A| worker_a[Role:worker_a]
-dispatch[Role:dispatch] -->|TO_B| worker_b[Role:worker_b]
-worker_a[Role:worker_a] -->|A_DONE| review[Role:review]
-worker_b[Role:worker_b] -->|B_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+dispatch[Role:dispatch] -->|READY| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|READY| worker_b[Role:worker_b]
+worker_a[Role:worker_a] -->|READY| review[Role:review]
+worker_b[Role:worker_b] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 ```
 
 ### 2.3 `quorum_consultation`
@@ -105,10 +105,10 @@ start[开始] -->|START| lead[Role:lead]
 lead[Role:lead] -->|ASK_A| expert_a[Role:expert_a]
 lead[Role:lead] -->|ASK_B| expert_b[Role:expert_b]
 lead[Role:lead] -->|ASK_C| expert_c[Role:expert_c]
-expert_a[Role:expert_a] -->|A_DONE| review[Role:review]
-expert_b[Role:expert_b] -->|B_DONE| review[Role:review]
-expert_c[Role:expert_c] -->|C_DONE| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+expert_a[Role:expert_a] -->|READY| review[Role:review]
+expert_b[Role:expert_b] -->|READY| review[Role:review]
+expert_c[Role:expert_c] -->|READY| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 ```
 
 ### 2.4 `contract_gated_handoff`
@@ -135,8 +135,8 @@ flowchart TD
 start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|REVIEW| reviewer[Role:reviewer]
 intake[Role:intake] -->|OBSERVE| observer[Role:observer]
-reviewer[Role:reviewer] -->|DONE| end[结束]
-observer[Role:observer] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
+observer[Role:observer] -->|READY| end[结束]
 ```
 
 ### 2.5 `error_compensation`
@@ -160,9 +160,9 @@ flowchart TD
 %% law.global=law.console.base
 
 start[开始] -->|START| main[Role:main]
-main[Role:main] -->|DONE| end[结束]
+main[Role:main] -->|READY| end[结束]
 main[Role:main] -->|ERROR.CONTRACT_MISSING| recovery[Role:recovery]
-recovery[Role:recovery] -->|DONE| end[结束]
+recovery[Role:recovery] -->|READY| end[结束]
 ```
 
 ### 2.6 `bounded_loop`
@@ -185,8 +185,8 @@ flowchart TD
 %% loop.max.review=3
 
 start[开始] -->|START| review[Role:review]
-review[Role:review] -->|RETRY| review[Role:review]
-review[Role:review] -->|DONE| end[结束]
+review[Role:review] -->|NEEDS_REWORK| review[Role:review]
+review[Role:review] -->|READY| end[结束]
 ```
 
 ### 2.7 `human_gate`（runtime-native review）
@@ -210,7 +210,7 @@ flowchart TD
 %% review.timeout.action.writer=pause
 
 start[开始] -->|START| writer[Role:writer]
-writer[Role:writer] -->|DONE| end[结束]
+writer[Role:writer] -->|READY| end[结束]
 ```
 
 ### 2.8 `mixed_binding`
@@ -232,8 +232,8 @@ flowchart TD
 %% exec.bind.publisher=publish-profile
 
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|PUBLISH| publisher[Role:publisher]
-publisher[Role:publisher] -->|DONE| end[结束]
+reviewer[Role:reviewer] -->|APPROVAL_PROPOSED| publisher[Role:publisher]
+publisher[Role:publisher] -->|READY| end[结束]
 ```
 
 ## 3. 使用建议

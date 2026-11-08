@@ -4,8 +4,9 @@ These documents are historical proposals or completed implementation plans. They
 change was made, but they are not the current product contract and their old test counts, screenshots,
 or acceptance statements must not be used as release evidence.
 
-Current behavior is defined by source code, tests, active manuals, [DECISIONS.md](../DECISIONS.md),
-and the latest [release validation record](../release-validation-2026-11-05.md).
+Current behavior is defined by source code, tests, active manuals, the
+[OGSystem Constitution and Rules](../ogsystem-constitution-v1.md), [DECISIONS.md](../DECISIONS.md),
+and the latest [release validation record](../release-validation-2026-11-08.md).
 
 ## Archived Items
 

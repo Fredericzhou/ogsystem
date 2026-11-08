@@ -63,6 +63,7 @@ Non-goals:
 
 Product introduction:
 
+- `docs/development/ogsystem-constitution-v1.md`
 - `docs/usage/product-introduction.md`
 - `docs/README.md`
 - `docs/development/todo-backlog.md`
@@ -308,7 +309,9 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 ## Documentation
 
 - `docs/README.md` is the authoritative document index and archive policy.
+- `docs/development/ogsystem-constitution-v1.md` is the governance entry point for principles, design boundaries, and hard rules.
 - `docs/usage/product-introduction.md` is the project-level overview.
 - `docs/usage/usage-manual.md` is the main operator/developer manual.
 - `docs/usage/ogsystem-orchestration-semantics-v1.md` is the orchestration semantics source of truth.
+- `docs/usage/ogsystem-handoff-semantics-v1.md` is the compact Handoff, Join, Review, Artifact, Result, and Resume contract.
 - `docs/development/DECISIONS.md` records architecture decisions.

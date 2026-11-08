@@ -4,12 +4,14 @@ This is the active documentation entry point. Runtime behavior, source code, and
 
 ## Usage
 
+- [Constitution, design principles, and rules](development/ogsystem-constitution-v1.md)
 - [Product introduction](usage/product-introduction.md)
 - [Core concepts](usage/ogsystem-core-concepts.md)
 - [Team Site guide](../apps/team-site/README.md)
 - [Usage manual](usage/usage-manual.md)
 - [Professional workbench](usage/visualizer-console.md)
 - [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md)
+- [Handoff semantics supplement](usage/ogsystem-handoff-semantics-v1.md)
 - [Semantics manual](usage/ogsystem-semantics-manual.md)
 - [Context map guide](usage/context-map-projection-guide.md)
 - [Data projection spec](usage/ogsystem-data-projection-spec.md)
@@ -18,6 +20,7 @@ This is the active documentation entry point. Runtime behavior, source code, and
 
 ## Development
 
+- [Constitution, design principles, and rules](development/ogsystem-constitution-v1.md): the compact governance entry point and document map.
 - [Unified plan and backlog](development/todo-backlog.md)
 - [Decisions](development/DECISIONS.md)
 - [Product boundary and evolution](development/ogs-product-boundary-and-evolution.md)
@@ -32,6 +35,7 @@ This is the active documentation entry point. Runtime behavior, source code, and
 - [Release compatibility policy](development/release-compatibility-policy.md)
 - [Documentation audit and classification](development/documentation-audit-2026-11-05.md)
 - [Release UAT checklist](development/release-uat-checklist.md)
+- [Current release validation (2026-11-08)](development/release-validation-2026-11-08.md)
 - [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
 - [Design release validation template](development/design-release-validation-template.md)
 - [Release 1.0.0 notes](development/release-notes-1.0.0.md)
@@ -47,13 +51,16 @@ This is the active documentation entry point. Runtime behavior, source code, and
 1. Update the active manuals and contracts when behavior changes.
 2. Keep plans and checklists only while they guide current work; remove superseded material.
 3. Update the usage manual when CLI, installation, run artifacts, or security boundaries change.
-4. Update semantic manuals, decisions, tests, and UAT cases when orchestration or recovery contracts change.
+4. Keep [Semantic IR v1 Handoff supplement](usage/ogsystem-handoff-semantics-v1.md) aligned with runtime route, Join, review, Artifact, and resume behavior.
+5. Update semantic manuals, decisions, tests, and UAT cases when orchestration or recovery contracts change.
 
 ## Suggested Reading Order
 
-1. Product introduction
-2. Core concepts
-3. Usage manual
-4. Orchestration semantics
-5. Compiler semantics
-6. Decisions
+1. [Constitution, design principles, and rules](development/ogsystem-constitution-v1.md)
+2. [Product introduction](usage/product-introduction.md)
+3. [Core concepts](usage/ogsystem-core-concepts.md)
+4. [Usage manual](usage/usage-manual.md)
+5. [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md)
+6. [Handoff semantics supplement](usage/ogsystem-handoff-semantics-v1.md)
+7. [Compiler semantics](development/compiler-semantics-v1.md)
+8. [Decisions](development/DECISIONS.md)

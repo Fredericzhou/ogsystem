@@ -9,8 +9,8 @@ flowchart TD
 %% law.global=law.minimal.base
 start[开始] -->|START| analyst[Role:analyst]
 start[开始] -->|START| reviewer[Role:reviewer]
-analyst[Role:analyst] -->|DONE| end[结束]
-reviewer[Role:reviewer] -->|DONE| end[结束]
+analyst[Role:analyst] -->|READY| end[结束]
+reviewer[Role:reviewer] -->|READY| end[结束]
 ```
 
 ## 开始分发

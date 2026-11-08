@@ -628,8 +628,8 @@ flowchart TD
 %% law.global=law.console.base
 
 start[开始] -->|START| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
-judge[Role:debate-judge] -->|DECISION_READY| end[结束]
+minimalist[Role:debate-minimalist] -->|READY| judge[Role:debate-judge]
+judge[Role:debate-judge] -->|READY| end[结束]
 ```
 
 Local-shell execution example:
@@ -642,7 +642,7 @@ flowchart TD
 %% exec.bind.demo-analyst=exec.console.codex.v1
 
 start[开始] -->|START| analyst[Role:demo-analyst]
-analyst[Role:demo-analyst] -->|ANALYSIS_DONE| end[结束]
+analyst[Role:demo-analyst] -->|READY| end[结束]
 ```
 
 Graph execution example (debate domain fixture; these role IDs, events, and laws are example-owned and are not OGS platform keywords):
@@ -658,13 +658,13 @@ flowchart TD
 %% loop.max.debate-moderator=2
 
 start[开始] -->|START| debate-moderator[Role:debate-moderator]
-debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
-debate-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
-debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
-debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
-debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debate-moderator]
-debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
-debate-summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
+debate-moderator[Role:debate-moderator] -->|READY| debate-minimalist[Role:debate-minimalist]
+debate-moderator[Role:debate-moderator] -->|READY| debate-alignmentist[Role:debate-alignmentist]
+debate-minimalist[Role:debate-minimalist] -->|READY| debate-judge[Role:debate-judge]
+debate-alignmentist[Role:debate-alignmentist] -->|READY| debate-judge[Role:debate-judge]
+debate-judge[Role:debate-judge] -->|NEEDS_REWORK| debate-moderator[Role:debate-moderator]
+debate-judge[Role:debate-judge] -->|READY| debate-summary[Role:debate-summary]
+debate-summary[Role:debate-summary] -->|READY| end[结束]
 ```
 
 Orchestration semantics contract:
@@ -900,7 +900,7 @@ OGS does not load a separate credential file. Configure authentication through t
 
 Current rules:
 
-- `configVersion` is optional for the current repo default, but when present it must be `"2"`
+- `configVersion` is required and must be `"3"`
 - unsupported config versions fail fast
 - `workspace.workspaceIsolation` defaults to `role`; set it to `branch` only when same-role sibling branches need isolated private workspaces
 - `redaction.enabled` defaults to `true`; it only affects operator-facing prompt/audit/result/event projections and does not rewrite resume truth files
@@ -1017,7 +1017,7 @@ Upstream role output:
 
 ```json
 {
-  "event": "ANALYSIS_DONE",
+  "event": "READY",
   "content": "Authentication flow looks riskiest.",
   "data": {
     "brief": "Authentication flow looks riskiest.",
@@ -1030,7 +1030,7 @@ Without `context.map`, the downstream prompt-input shell looks like:
 
 ```json
 {
-  "allowed_events": "[\"REVIEW_DONE\",\"NEED_MORE_INFO\"]",
+  "allowed_events": "[\"READY\",\"NEEDS_REWORK\"]",
   "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
   "task": "Assess the current request",
   "input": "Authentication flow looks riskiest."
@@ -1049,7 +1049,7 @@ the downstream prompt-input shell becomes:
 
 ```json
 {
-  "allowed_events": "[\"REVIEW_DONE\",\"NEED_MORE_INFO\"]",
+  "allowed_events": "[\"READY\",\"NEEDS_REWORK\"]",
   "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
   "task": "Assess the current request",
   "input": "{\"brief\":\"Authentication flow looks riskiest.\",\"risk_level\":\"high\",\"task\":\"Assess the current request\"}"
@@ -1062,7 +1062,7 @@ When a join node does not declare `context.map`, runtime injects all declared so
 
 ```json
 {
-  "allowed_events": "[\"REPORT_READY\"]",
+  "allowed_events": "[\"READY\"]",
   "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
   "task": "Produce a final review",
   "input": "{\"worker_a\":{\"event\":\"DONE\",\"content\":\"Cardiology risk is high\",\"data\":{\"score\":8}},\"worker_b\":{\"event\":\"DONE\",\"content\":\"Neurology risk is low\",\"data\":{\"score\":2}}}"
@@ -1084,7 +1084,7 @@ the join input becomes one projected object instead:
 
 ```json
 {
-  "allowed_events": "[\"REPORT_READY\"]",
+  "allowed_events": "[\"READY\"]",
   "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
   "task": "Produce a final review",
   "input": "{\"a_summary\":\"Cardiology risk is high\",\"a_score\":8,\"b_summary\":\"Neurology risk is low\",\"task\":\"Produce a final review\"}"

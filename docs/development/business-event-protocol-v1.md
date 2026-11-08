@@ -1,16 +1,33 @@
-# OGS 固定业务事件协议与 Studio 配置方案（目标协议）
+# OGS 固定业务事件协议与 Studio 配置方案
 
-> **文档状态：目标设计，尚未纳入当前发布运行时合同。** 当前版本仍允许普通 Flow 使用
-> 非空业务事件字符串；`START` 和 `ERROR*` 的保留边界已经生效。本文描述下一次协议切换
-> 的目标、迁移范围和验收门禁，不能作为当前版本已经完成的能力清单。
+> **文档状态：已生效架构约束。** 业务事件由
+> `src/business-events.ts` 的共享注册表管理，`src/runtime/business-events.ts` 只提供 Runtime 导出入口。普通 Flow 只能使用注册的业务事件；
+> `START` 和 `ERROR*` 是系统保留事件。
+
+## 0. 文档边界与权威实现
+
+本文只定义可路由的业务事件、系统保留事件的边界，以及 Studio/Role 契约如何使用这些事件。
+它不把所有 `events.ndjson` 记录都变成业务事件：Join、Loop、审核、Result、恢复和运行生命周期记录
+属于 Runtime 证据事件，由 `src/runtime/transition-planner.ts` 的 `RuntimeTransitionEvent` 联合类型、
+`src/runtime/types.ts` 的状态合同和 Runtime 测试共同约束。
+
+| 问题 | 权威位置 | 说明 |
+| --- | --- | --- |
+| 哪些事件可以出现在 Flow/Role 输出中？ | `src/business-events.ts` | `BUSINESS_EVENT_TYPES`、`isBusinessEvent()`、`BUSINESS_EVENT_KIND` |
+| 哪些事件是系统保留的？ | `src/business-events.ts` 与 `src/runtime/error-flow-utils.ts` | `START`、`ERROR`、`ERROR.<code>` 只能由系统边界产生 |
+| Runtime 如何记录审核、Join、Loop 和 Result？ | `src/runtime/transition-planner.ts`、`src/runtime/graph-runner.ts` | 这些是审计/控制事实，不能作为 Flow 事件 |
+| Studio 如何展示和编辑？ | `src/visualizer/studio-client/` 与 `src/visualizer/studio-authoring.ts` | 只能消费共享注册表，不复制一套事件枚举 |
+
+当本文与实现或可执行测试不一致，按 [OGSystem Constitution and Rules](ogsystem-constitution-v1.md)
+的权威顺序修正本文；不要通过增加兼容事件来掩盖漂移。
 
 ## 1. 决策
 
-目标版本将业务事件收敛为固定集合。Role 不再定义领域化事件名，例如 `ANALYSIS_READY`、`CODE_READY` 或 `READY_TO_DEPLOY`；正常业务差异通过 Role、目标 Flow、条件路由和 `data` 表达。
+当前版本将业务事件收敛为固定集合。Role 不再定义领域化事件名，例如 `ANALYSIS_READY`、`CODE_READY` 或 `READY_TO_DEPLOY`；正常业务差异通过 Role、目标 Flow、条件路由和 `data` 表达。
 
-当前发布版本的实际合同仍由 `src/runtime/*`、`docs/usage/ogsystem-semantics-manual.md` 和
-`docs/usage/ogsystem-orchestration-semantics-v1.md` 定义；固定事件注册表、编辑器下拉框和
-全仓库事件改写完成后，才能将本文升级为 active architecture guidance。
+当前运行时合同由 `src/runtime/*`、`docs/usage/ogsystem-semantics-manual.md`、
+`docs/usage/ogsystem-orchestration-semantics-v1.md` 和本文共同定义。解析器、Role 包加载器、
+Studio 编辑器和运行时输出校验均引用同一注册表。
 
 本方案采用直接切换：
 
@@ -20,7 +37,21 @@
 - 现有示例、测试夹具、语义定义和规范手册全部改为新协议；
 - `START` 和 `ERROR.*` 保留为系统保留事件，不属于 Role 业务事件集合。
 
-这是一项协议变更。发布新版本前，仓库中的所有 TeamVersion、角色包、示例和测试数据必须完成改写。
+Runtime 还定义独立的审计事件集合 `RUNTIME_AUDIT_EVENT_TYPES`，当前包括：
+
+```text
+human_review_rejected
+human_review_decision_rejected
+```
+
+这些记录只描述人工审核控制面的结果：`human_review_rejected` 表示预算审核的
+`reject` 决定已沿合法 `REJECTED` 路由落地；`human_review_decision_rejected` 表示提交的
+审核决定未通过 `reviewId`、轮次、血缘、分支或状态版本校验。两者都不能出现在 Mermaid
+Flow、Role `outputs.events` 或可路由业务事件列表中。Team Site 和 Visualizer 只将其作为
+运行时间线和调试审计记录展示。
+
+这次直接切换已应用到当前源码、TeamVersion、角色包、示例和测试夹具；当前输入边界不提供旧事件名的兼容或迁移。
+后续如果扩展固定集合，必须先更新共享注册表、契约测试和本协议，再更新活动案例与发布证据。
 
 ## 2. 事件与状态边界
 
@@ -157,12 +188,14 @@ running -> loop_exhausted -> waiting_review
 - `reject`：进入已声明的业务拒绝路径；没有合法拒绝路径时拒绝该操作。
 
 `approve` 不能无条件绕过预算。新增预算只对当前运行、循环作用域和 lineage 生效，并受
-系统级上限约束。没有人工决定时，运行保持 `waiting_review`，不得继续激活角色。
+审核请求自身的 `maxAdditionalRounds` 上限约束。没有人工决定时，运行保持 `waiting_review`，不得继续激活角色。
 
 `loop_exhausted` 属于 Runtime 图控制事件，不属于固定业务事件集合。它必须与
 `APPROVAL_PROPOSED`、`APPROVED`、`REJECTED`、`NEEDS_REWORK` 等业务事件分开记录和展示。
 人工审核决定通过现有 Human Review 控制面持久化，并记录 loop ID、触发角色、目标角色、
-当前轮次、预算、决策人、决策时间和新增预算。
+当前轮次、预算、决策人、决策时间和新增预算。当前实现把单次 `maxAdditionalRounds`
+绑定为 `max(1, maxRounds)`；它是审核请求的明确上限，不代表可无限追加，独立的运维额度策略
+需要后续增加显式配置后才会生效。
 
 ### 4.5 多个同名事件出边
 
@@ -299,44 +332,49 @@ type SemanticEventDefinition = {
 
 `START`、`ERROR.*` 不进入 `BusinessEventKind`。
 
-## 7. Runtime 改造清单
+## 7. 已落地实现与维护规则
 
-### 7.1 新增协议模块
+### 7.1 共享注册表
 
-新增：
+当前实现位于：
 
 ```text
-src/runtime/business-events.ts
+src/business-events.ts
+src/runtime/business-events.ts  # Runtime re-export
 ```
 
-提供：
+注册表提供：
 
-- `BUSINESS_EVENTS`；
-- `BusinessEvent` 类型；
+- `BUSINESS_EVENT_TYPES`；
+- `BusinessEventType` 类型；
 - `BUSINESS_EVENT_KIND`；
 - `isBusinessEvent()`；
 - `assertBusinessEvent()`；
-- `isReservedRuntimeEvent()`。
+- `isRuntimeErrorEvent()`、`isRuntimeControlEvent()`、`isRuntimeAuditEvent()`。
 
-### 7.2 输出解析
+新增业务事件必须先修改该注册表、类型和测试，再更新 compiler、Role 契约、Studio 和文档。
+新增 Runtime 审计事件必须先加入 `RuntimeTransitionEvent` 或对应集中事件合同及测试；不得在业务边或
+Role 输出中直接写入审计事件名。
 
-修改 `src/runtime/role-output-parser.ts`：
+### 7.2 输出解析与编译门禁
+
+`src/runtime/role-output-parser.ts` 与 Semantic IR 编译链已经执行以下门禁：
 
 - `event` 必须是固定业务事件；
 - `ERROR*` 继续单独拒绝；
 - 不允许新增 `status`、`state`、`phase` 等自由字段；
 - 保持输出对象只允许 `event`、`content`、`data`。
 
-### 7.3 编译与发布校验
+### 7.3 Studio 与运行审计
 
-修改：
+以下位置共同消费同一注册表：
 
-- `src/runtime/compiler.ts`：校验普通 Flow 事件属于固定集合；
 - `src/runtime/semantic-ir-compiler.ts`：校验 Semantic IR 事件类别；
-- `src/visualizer/project-readiness.ts`：发布前拒绝自定义事件；
+- `src/runtime/role-repo.ts`：校验 Role 输出事件集合；
+- `src/visualizer/project-readiness.ts` 与 `src/visualizer/studio-client/`：发布与编辑门禁；
 - `src/visualizer/studio-authoring.ts`：生成 Mermaid 和 Role 包时只写固定事件。
 
-校验错误建议：
+稳定诊断包括：
 
 ```text
 IR_BUSINESS_EVENT_UNKNOWN
@@ -467,9 +505,9 @@ flowchart TD
     analyst -->|READY| end[结束]
 ```
 
-## 10. 必须同步更新的文档与语义定义
+## 10. 维护时必须同步更新的文档与语义定义
 
-实现完成后必须同步修改以下内容，不能只修改 Runtime：
+事件协议变化时必须同步修改以下内容，不能只修改 Runtime：
 
 ### 10.1 语义定义
 
@@ -533,7 +571,8 @@ pnpm run build
 node --test apps/team-site/tests/studio-simulation-browser.test.mjs
 ```
 
-发布前增加仓库扫描，确保不存在新协议范围外的普通业务事件：
+发布前增加仓库扫描，确保生产 Flow、Role 契约和活动案例不存在新协议范围外的普通业务事件。
+下面是应被拒绝的历史命名示例，不是兼容白名单：
 
 ```text
 ANALYSIS_READY
@@ -543,11 +582,11 @@ READY_TO_DEPLOY
 SHIP_BLOCKED
 ```
 
-扫描只针对新协议要求改写的 TeamVersion、示例和测试，不保留兼容白名单。
+扫描只针对新协议要求改写的 TeamVersion、示例和测试，不保留兼容白名单；生产业务边只能使用共享注册表中的 `READY`、`APPROVAL_PROPOSED`、`APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED`。
 
-## 12. 完成标准
+## 12. 持续完成标准
 
-满足以下条件后，固定事件协议才算完成：
+每次发布固定事件协议的变更都必须满足以下条件：
 
 - Runtime、Compiler、Semantic IR、Studio 和发布门禁使用同一事件注册表；
 - 新建团队不能输入或保存自定义业务事件；

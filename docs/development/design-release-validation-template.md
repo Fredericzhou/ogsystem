@@ -173,7 +173,7 @@ Check:
 
 1. Open the advanced template in Design.
 2. Confirm the rework loop is visible on the graph.
-3. Confirm `advanced-reviewer` supports `REVIEW_READY` and `REWORK`.
+3. Confirm `advanced-reviewer` supports `READY` and `NEEDS_REWORK`.
 
 Pass criteria:
 
