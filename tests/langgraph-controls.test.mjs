@@ -30,10 +30,10 @@ test("role node timeout uses the effective execution budget plus persistence gra
     binding: { kind: "noop" }
   };
 
-  assert.equal(resolveRoleNodeTimeoutMs(modelNode, new Map()), 6000);
+  assert.equal(resolveRoleNodeTimeoutMs(modelNode, new Map()), 16000);
   assert.equal(
     resolveRoleNodeTimeoutMs(profileNode, new Map([["profile.slow", { profileId: "profile.slow", timeoutMs: 2000 }]])),
-    7000
+    17000
   );
   assert.equal(resolveRoleNodeTimeoutMs(noopNode, new Map()), undefined);
 });

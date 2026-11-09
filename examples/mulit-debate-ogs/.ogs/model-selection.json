@@ -3,8 +3,8 @@
   "defaults": {
     "backend": "codex",
     "modelId": "gpt-6-luna",
-    "timeoutMs": 120000,
-    "maxOutputBytes": 65536
+    "timeoutMs": 600000,
+    "maxOutputBytes": 2097152
   },
   "roles": {}
 }

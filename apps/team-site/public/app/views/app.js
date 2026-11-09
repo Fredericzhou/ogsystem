@@ -2385,7 +2385,9 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const selectedGlobalLaw = (selection.assets?.laws?.laws || []).find((law) => law.lawId === authoring.system?.lawGlobalRef);
   const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
   const blockedRoleTools = allowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
-  const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions"><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</details>` : "";
+  const standardWorkspaceTools = new Set(["workspace.write", "workspace.run", "workspace.patch_text"]);
+  const extraTools = allowedTools.filter((toolRef) => !standardWorkspaceTools.has(toolRef));
+  const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions" open><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p data-studio-allowed-tools-summary>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div><div class="studio-tool-config-group"><span class="studio-tool-config-title">${t("Configure allowed tools", "配置允许工具")}</span><div class="studio-tool-checkboxes"><label class="field checkbox"><input type="checkbox" data-studio-role-tool="workspace.write" ${allowedTools.includes("workspace.write") ? "checked" : ""}><span>workspace.write <small>(${t("Write files in staging", "工作区文件写入")})</small></span></label><label class="field checkbox"><input type="checkbox" data-studio-role-tool="workspace.run" ${allowedTools.includes("workspace.run") ? "checked" : ""}><span>workspace.run <small>(${t("Run CLI commands in staging", "工作区命令行执行")})</small></span></label><label class="field checkbox"><input type="checkbox" data-studio-role-tool="workspace.patch_text" ${allowedTools.includes("workspace.patch_text") ? "checked" : ""}><span>workspace.patch_text <small>(${t("Patch files in staging", "工作区文件修补")})</small></span></label></div><label class="field full"><span>${t("Other tool references", "其他工具引用")}</span><input type="text" data-studio-role-tool-extra value="${esc(extraTools.join(", "))}" placeholder="${t("Comma-separated tool identifiers, e.g. web.search", "逗号分隔的工具标识，如 web.search")}"></label></div><div data-studio-role-tool-conflict>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</div></details>` : "";
   const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModel"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道发生可重试故障时触发。")}</span></label>` : "";
   const review = role?.review || {};
   const reviewTarget = review.reworkTargetRoleId || "";
@@ -3284,6 +3286,64 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       const specialField = element.dataset.studioSpecialField;
       const profileField = element.dataset.studioProfileField;
       const toolField = element.dataset.studioToolField;
+      const roleTool = element.dataset.studioRoleTool;
+      const roleToolExtra = element.dataset.studioRoleToolExtra !== undefined;
+      if (roleTool !== undefined || roleToolExtra) {
+        if (!selection.roleId) return false;
+        const roleId = selection.roleId;
+        const toolCheckboxes = inspector?.querySelectorAll("[data-studio-role-tool]") || [];
+        const checkedTools = [];
+        toolCheckboxes.forEach((cb) => {
+          if (cb.checked) checkedTools.push(cb.dataset.studioRoleTool);
+        });
+        const extraInput = inspector?.querySelector("[data-studio-role-tool-extra]");
+        const extraTools = (extraInput?.value || "")
+          .split(/[\s,]+/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+        const nextAllowedTools = Array.from(new Set([...checkedTools, ...extraTools])).sort((a, b) => a.localeCompare(b));
+        selection.assets.roles ||= {};
+        selection.assets.roles[roleId] ||= {};
+        let roleContract = {};
+        try {
+          roleContract = JSON.parse(selection.assets.roles[roleId]["role.json"] || "{}");
+        } catch {
+          roleContract = {};
+        }
+        roleContract.contractVersion ||= 1;
+        roleContract.purpose ||= `Role execution contract for ${roleId}`;
+        roleContract.responsibility ||= { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] };
+        roleContract.inputs ||= { preconditions: [] };
+        roleContract.outputs ||= { events: ["READY"], postconditions: [] };
+        roleContract.authority ||= { controlActions: [] };
+        roleContract.constraints ||= { writableStateFields: [] };
+        roleContract.constraints.writableStateFields ||= [];
+        roleContract.constraints.allowedTools = nextAllowedTools;
+        roleContract.failure ||= { retryableErrorCodes: [], terminalErrorCodes: [] };
+        roleContract.audit ||= { requiredFields: [] };
+        const nextJson = JSON.stringify(roleContract, null, 2);
+        selection.assets.roles[roleId]["role.json"] = nextJson;
+        pendingRoleAssets.add(`${roleId}/role.json`);
+        const rawEditor = inspector?.querySelector('[data-studio-role-asset="role.json"]');
+        if (rawEditor && document.activeElement !== rawEditor) {
+          rawEditor.value = nextJson;
+        }
+        const summary = inspector?.querySelector("[data-studio-allowed-tools-summary]");
+        if (summary) {
+          summary.textContent = nextAllowedTools.join(", ") || (state.locale === "en" ? "None" : "无");
+        }
+        const conflictContainer = inspector?.querySelector("[data-studio-role-tool-conflict]");
+        if (conflictContainer) {
+          const selectedGlobalLaw = (selection.assets?.laws?.laws || []).find((law) => law.lawId === authoring.system?.lawGlobalRef);
+          const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
+          const blockedRoleTools = nextAllowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
+          conflictContainer.innerHTML = blockedRoleTools.length
+            ? `<p class="studio-permission-conflict" role="alert">${state.locale === "en" ? "Disabled by global law" : "与全局禁用工具冲突"}: ${esc(blockedRoleTools.join(", "))}</p>`
+            : "";
+        }
+        markDesignDirty(state.locale === "en" ? "Allowed tools modified." : "有未保存的角色工具权限修改");
+        return true;
+      }
       if (profileField || toolField) {
         const role = authoring.roles[selection.roleId];
         if (!role) return false;
@@ -3453,6 +3513,37 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         selection.assets.roles[selection.roleId] ||= {};
         selection.assets.roles[selection.roleId][roleAsset] = element.value;
         pendingRoleAssets.add(`${selection.roleId}/${roleAsset}`);
+        if (roleAsset === "role.json") {
+          try {
+            const parsed = JSON.parse(element.value);
+            if (parsed && typeof parsed === "object" && parsed.constraints && Array.isArray(parsed.constraints.allowedTools)) {
+              const tools = parsed.constraints.allowedTools;
+              const toolCheckboxes = inspector?.querySelectorAll("[data-studio-role-tool]") || [];
+              toolCheckboxes.forEach((cb) => {
+                cb.checked = tools.includes(cb.dataset.studioRoleTool);
+              });
+              const standardTools = new Set(["workspace.write", "workspace.run", "workspace.patch_text"]);
+              const extraTools = tools.filter((toolRef) => !standardTools.has(toolRef));
+              const extraInput = inspector?.querySelector("[data-studio-role-tool-extra]");
+              if (extraInput && document.activeElement !== extraInput) {
+                extraInput.value = extraTools.join(", ");
+              }
+              const summary = inspector?.querySelector("[data-studio-allowed-tools-summary]");
+              if (summary) {
+                summary.textContent = tools.join(", ") || (state.locale === "en" ? "None" : "无");
+              }
+              const conflictContainer = inspector?.querySelector("[data-studio-role-tool-conflict]");
+              if (conflictContainer) {
+                const selectedGlobalLaw = (selection.assets?.laws?.laws || []).find((law) => law.lawId === authoring.system?.lawGlobalRef);
+                const forbiddenTools = selectedGlobalLaw?.constraints?.forbiddenToolRefs || [];
+                const blockedRoleTools = tools.filter((toolRef) => forbiddenTools.includes(toolRef));
+                conflictContainer.innerHTML = blockedRoleTools.length
+                  ? `<p class="studio-permission-conflict" role="alert">${state.locale === "en" ? "Disabled by global law" : "与全局禁用工具冲突"}: ${esc(blockedRoleTools.join(", "))}</p>`
+                  : "";
+              }
+            }
+          } catch { /* The inspector remains readable while raw JSON is invalid. */ }
+        }
       } else if (element.dataset.studioAsset === "contracts") {
         selection.assets.contracts = element.value;
         contractsDirty = true;

@@ -294,6 +294,43 @@ export type RoleExecutionOutput = {
   event?: string;
   content?: string;
   data?: Record<string, unknown>;
+  /** Model-declared candidates; Runtime verifies them before creating artifactRef. */
+  artifacts?: DeclaredRoleArtifact[];
+};
+
+export type ArtifactKind =
+  | "text"
+  | "source"
+  | "business_document"
+  | "business_data"
+  | "technical_artifact";
+
+export type DeclaredRoleArtifact = {
+  artifactId: string;
+  kind: ArtifactKind;
+  path: string;
+  mediaType: string;
+  encoding?: "utf-8" | "binary";
+  entrypoint?: string;
+  publishTarget?: string;
+};
+
+export type VerifiedArtifactFileEntry = {
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+  mediaType: string;
+  encoding?: "utf-8" | "binary";
+};
+
+export type VerifiedArtifactManifest = {
+  version: 1;
+  artifactId: string;
+  runId: string;
+  producerRoleId: string;
+  executionId: string;
+  files: VerifiedArtifactFileEntry[];
+  manifestSha256: string;
 };
 
 export type RolePackageManifest = {

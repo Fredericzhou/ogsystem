@@ -5,7 +5,8 @@
  * graph-runner. Trade-off: keeps every attempt isolated (dedicated execution dirs + outcomes) so
  * retries and diagnostics can replay without destroying prior evidence, at the cost of more files.
  */
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { createAuditRecord } from "./audit-recorder.js";
 import { resolveExecutionBinding } from "./binding-resolver.js";
@@ -29,12 +30,19 @@ import {
 } from "./compiler.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
 import { buildArtifactReference } from "./artifact-access.js";
+import {
+  artifactVerificationError,
+  verifyArtifactDirectory,
+  writeSealManifest,
+  writeVerifiedArtifactManifest
+} from "./artifact-verifier.js";
 import type { ArtifactAccessAudit } from "./artifact-access.js";
 import {
   renderRolePrompt,
   estimateTokenCount,
   validateRoleInputSchema,
-  validateRoleOutputSchema
+  validateRoleOutputSchema,
+  withRuntimeArtifactOutputSchema
 } from "./role-repo.js";
 import { commitPromptBudget, reservePromptBudget } from "./prompt-budget.js";
 import { evaluateCondition } from "./condition-ast.js";
@@ -86,6 +94,7 @@ import type {
   RuntimeErrorEnvelope,
   RunContext,
   StoredRoleResult,
+  DeclaredRoleArtifact,
   UserProfile,
   PromptCallMeterRecord
 } from "./types.js";
@@ -380,6 +389,19 @@ function buildFailureEnvelope(args: {
     };
   }
 
+  if (errorMessage.startsWith("[ERROR.ARTIFACT_VERIFICATION_FAILED]")) {
+    return {
+      errorCode: "ARTIFACT_VERIFICATION_FAILED",
+      errorCategory: "execution",
+      message: args.message ?? errorMessage,
+      retryable: false,
+      stage: "execute",
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    };
+  }
+
   return normalizeRuntimeError(args.error, {
     errorCode: "ROLE_EXECUTION_FAILED",
     errorCategory: "execution",
@@ -437,6 +459,56 @@ function assertCompilerSnapshotConsistency(args: {
   }
 }
 
+async function verifyDeclaredArtifacts(args: {
+  declarations: DeclaredRoleArtifact[] | undefined;
+  workspace: string;
+  executionDir: string;
+  sharedDir: string;
+  runId: string;
+  roleId: string;
+  executionId: string;
+}): Promise<void> {
+  const declarations = args.declarations ?? [];
+  if (declarations.length === 0) return;
+  try {
+    const mediaTypeByPath = Object.fromEntries(declarations.map((item) => [item.path, item.mediaType]));
+    const verified = await verifyArtifactDirectory({
+      root: args.workspace,
+      artifactId: buildArtifactReference({ runId: args.runId, executionId: args.executionId }).artifactId,
+      runId: args.runId,
+      producerRoleId: args.roleId,
+      executionId: args.executionId,
+      includePaths: declarations.map((item) => item.path),
+      mediaTypeByPath,
+      limits: { maxFiles: 500, maxTotalBytes: 200 * 1024 * 1024, maxFileBytes: 50 * 1024 * 1024 }
+    });
+    // Shared artifacts are the stable handoff surface consumed by Team Site and
+    // by later roles through the opaque artifact reference. Keep execution-local
+    // manifests for audit, but publish the verified bytes under run/shared.
+    const artifactsDir = resolve(args.sharedDir, "artifacts");
+    await mkdir(artifactsDir, { recursive: true });
+    await Promise.all(declarations.map(async (item) => {
+      const target = resolve(artifactsDir, item.path);
+      await mkdir(resolve(target, ".."), { recursive: true });
+      const bytes = verified.contentsByPath.get(item.path);
+      if (!bytes) throw new Error(`verified artifact content is missing: ${item.path}`);
+      await writeFile(target, bytes, { flag: "wx" });
+    }));
+    await writeVerifiedArtifactManifest({ executionDir: args.executionDir, manifest: verified.manifest });
+    const verificationPath = resolve(args.executionDir, "verification.json");
+    await writeFile(verificationPath, `${JSON.stringify({ status: "verified", files: verified.manifest.files, manifestSha256: verified.manifestSha256 }, null, 2)}\n`, { flag: "w" });
+    await writeSealManifest({
+      sharedDir: args.sharedDir,
+      artifactRelativePath: "artifacts",
+      testReportRelativePath: "verification.json",
+      verified
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("[ERROR.ARTIFACT_VERIFICATION_FAILED]")) throw error;
+    throw artifactVerificationError(error);
+  }
+}
+
 /**
  * Role execution deliberately stops at "run one node and persist durable evidence". Graph-level
  * progression, branch activation, join waiting, and terminal status are owned by graph-runner.
@@ -489,6 +561,8 @@ export async function executeRoleNode(args: {
     branchId,
     loopIteration
   });
+  const executionWorkspace = resolve(execution.executionDir, "workspace");
+  await mkdir(executionWorkspace, { recursive: true });
   await args.auditAppend?.({
     type: "role.started",
     at: new Date().toISOString(),
@@ -567,6 +641,10 @@ export async function executeRoleNode(args: {
     await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
     return result;
   }
+  // The Runtime artifact extension must be sent to every backend as well as
+  // used for return-side validation. This keeps legacy role schemas with
+  // additionalProperties:false compatible with declared artifacts.
+  const runtimeOutputSchema = withRuntimeArtifactOutputSchema(rolePackage.outputSchema, { strictResponseSchema: true });
 
   if (!rolePackage) {
     const error = `Role package not loaded for role "${args.roleId}"`;
@@ -629,6 +707,9 @@ export async function executeRoleNode(args: {
         })
       }
     : undefined;
+  if (resolvedRoleDirs) {
+    await mkdir(resolvedRoleDirs.privateDir, { recursive: true });
+  }
   const existingSession = filesystemArtifactStore.getSession(args.runContext, sessionKey);
 
   let modelId: string | undefined;
@@ -662,6 +743,7 @@ export async function executeRoleNode(args: {
       effectiveLaw: args.effectiveLaw,
       profilesById: args.profilesById,
       toolsByRef: args.toolsByRef,
+      executionWorkspace
     });
     assertToolCapability(resolvedBinding.toolRef);
     try {
@@ -753,12 +835,25 @@ export async function executeRoleNode(args: {
       roleId: args.roleId
     });
 
+    const allowedWorkspaceTools = new Set(rolePackage.manifest.constraints.allowedTools);
+    const workspaceCapabilityPolicy = {
+      // Model sessions may inspect their current staging workspace by default.
+      // Mutating files or running commands requires explicit role capabilities.
+      root: executionWorkspace,
+      read: true,
+      write: allowedWorkspaceTools.has("workspace.write") || allowedWorkspaceTools.has("workspace.patch_text"),
+      command: allowedWorkspaceTools.has("workspace.run")
+    };
     prompt = [renderRolePrompt({
       promptTemplate: rolePackage.promptTemplate,
       agent: rolePackage.agent,
       values: promptInput,
       isolateExternalData: args.effectiveLaw.isolateExternalData
-    }), "Runtime execution context:", `loop_iteration: ${loopIteration} (the first activation is 1; re-entry increments this value).`].join("\n\n");
+    }), "Runtime execution context:", `loop_iteration: ${loopIteration} (the first activation is 1; re-entry increments this value).`,
+      "workspace_root: current execution staging workspace; use relative paths only.",
+      `workspace_capabilities: read=${workspaceCapabilityPolicy.read === true ? "enabled" : "disabled"}; write=${workspaceCapabilityPolicy.write === true ? "enabled" : "disabled"}; command=${workspaceCapabilityPolicy.command === true ? "enabled" : "disabled"}.`,
+      "artifact_declarations: when producing files, return artifacts[] with artifactId, kind, path, and mediaType; Runtime verifies files before creating an opaque artifactRef."
+    ].join("\n\n");
 
     resolvedBinding = resolveExecutionBinding({
       roleId: args.roleId,
@@ -771,6 +866,7 @@ export async function executeRoleNode(args: {
       effectiveLaw: args.effectiveLaw,
       profilesById: args.profilesById,
       toolsByRef: args.toolsByRef,
+      executionWorkspace
     });
     assertToolCapability(resolvedBinding.toolRef);
     modelId = resolvedBinding.modelRef;
@@ -949,10 +1045,13 @@ export async function executeRoleNode(args: {
           roleId: args.roleId,
           sessionKey,
           prompt,
-          schema: rolePackage.outputSchema,
+          schema: runtimeOutputSchema,
           binding,
-          workdir: resolvedBinding!.workdir,
+          // Keep backend session metadata in the branch-private directory,
+          // while the CLI process itself runs in this execution's clean room.
+          workdir: resolvedBinding!.sessionDirectory ?? resolvedBinding!.workdir,
           directory: args.workdir,
+          executionDirectory: executionWorkspace,
           commandBaseDir: resolvedBinding!.commandBaseDir,
           env: binding.kind === "model"
             ? { ...resolvedBinding!.env, OGSYSTEM_MODEL_ID: binding.modelId }
@@ -976,6 +1075,7 @@ export async function executeRoleNode(args: {
               ...event
             });
           },
+          workspaceCapabilityPolicy,
           ...(reportsPromptCalls ? { promptCallPhase: phase, onPromptCall } : {})
         });
       } catch (error) {
@@ -1033,7 +1133,7 @@ export async function executeRoleNode(args: {
 
     validateRoleOutputSchema({
       output: parsed.output,
-      schema: rolePackage.outputSchema,
+      schema: withRuntimeArtifactOutputSchema(rolePackage.outputSchema),
       schemaPath: rolePackage.outputSchemaPath,
       roleId: args.roleId
     });
@@ -1067,6 +1167,18 @@ export async function executeRoleNode(args: {
         `Executable role output event "${selectedEvent ?? ""}" does not match any outgoing flow on role "${args.roleId}"`
       );
     }
+
+    // Verification is a deterministic gate after output/schema/event checks. Any failure is
+    // normalized by the existing catch path and routed through the graph's declared error policy.
+    await verifyDeclaredArtifacts({
+      declarations: parsed.output.artifacts,
+      workspace: executionWorkspace,
+      executionDir: execution.executionDir,
+      sharedDir: args.runContext.sharedDir,
+      runId: args.runContext.runId,
+      roleId: args.roleId,
+      executionId: execution.executionId
+    });
 
     const audit = createAuditRecord({
       executionId: execution.executionId,

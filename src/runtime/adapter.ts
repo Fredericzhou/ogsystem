@@ -42,6 +42,8 @@ export { buildLoopScopeKey, getTargetLoopIteration, wouldExceedLoopBudget } from
 export { validateEventCandidate } from "./event-contract.js";
 export { resolveJoinPolicy } from "./join-policy.js";
 export { buildArtifactReference, buildAllowedArtifactSet, createArtifactResolver } from "./artifact-access.js";
+export { createWorkspaceTools } from "./workspace-tools.js";
+export { artifactVerificationError, DEFAULT_MAX_IMAGE_BYTES, verifyArtifactDirectory, writeSealManifest, writeVerifiedArtifactManifest } from "./artifact-verifier.js";
 export { buildRolePromptInput } from "./role-input-projector.js";
 export { projectOgsSpan, toOgsCloudEvent } from "./observability.js";
 export { validateCapabilityPolicy } from "./capability-policy.js";

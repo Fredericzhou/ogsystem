@@ -66,6 +66,32 @@ test("Studio Simulation API rejects oversized downloads instead of returning an 
   });
 });
 
+test("Studio sealed HTML preview applies CSP and sanitizes active content", async () => {
+  const response = {
+    writeHead(status, headers) { this.status = status; this.headers = headers; },
+    end(body) { this.body = body; }
+  };
+  const useCases = {
+    readTeamVersionSimulationSealedFile: async () => ({
+      path: "artifact/report.html",
+      mediaType: undefined,
+      content: Buffer.from("<html><script>alert(1)</script><img src=\"//evil.test/x\" onload=\"alert(2)\"></html>")
+    })
+  };
+  await handleStudioSimulationRoutes({
+    request: { method: "GET" },
+    response,
+    url: new URL("http://site.test/api/v1/teams/team-1/versions/team-v1/simulations/sim-1/artifacts/sealed/report.html"),
+    readBody: async () => ({}),
+    sendJson: () => {},
+    errorStatus: () => 500,
+    useCases
+  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers["content-security-policy"], /default-src 'none'/);
+  assert.doesNotMatch(response.body.toString("utf8"), /script|evil\.test|onload/);
+});
+
 test("Studio workspace open API is local-only and delegates the bound workspace", async () => {
   const sent = [];
   const calls = [];

@@ -209,6 +209,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - The adapter runs one graph-based execution model. Explicit `start[开始]` flows select the initial branches, each role execution emits one structured result, and completion is governed by explicit flows into `end[结束]`.
 - Executable roles return one JSON object: `{"event":"EVENT_NAME","content":"..."}`. Agent roles use their selected persistent CLI backend and retain a role/thread session for the run; tool-bound roles use `exec.bind` and parse tool stdout as JSON. `event` must match an outgoing handoff label.
 - OpenCode roles share one run-scoped `opencode serve`; Codex roles share one run-scoped `codex app-server` and resume the same thread for each role branch.
+- Model-native file and command tools are constrained by the Role workspace capability policy; write and command access are independent, and ACP commands stay within the execution workspace.
 - Directory ownership is explicit: `--ogs-dir` owns the System, runtime configuration, Sessions, and `.ogs/runs/`; `--workspace-dir` is the project directory given to coding Roles. Explicit System and workspace paths are relative to the command directory; omitted `--system` selects `<ogs-dir>/system.mmd`.
 - An OGS project may bind a separate workspace through `.ogs/project.json.target.directory`. Without an explicit `--workspace-dir`, the binding is used, then `ogs-dir` is the default. `ogs serve` manages interactive Sessions; every Turn creates a fresh Run and fresh Role backend contexts. A changed System or execution configuration makes existing Sessions stale and creates a linked child Session on the next Turn request.
 - For `exec.bind`, relative tool arguments are materialized from the control project while the role process uses its run-local workspace; this keeps generated control-plane tools available in independent-target mode.
@@ -224,6 +225,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - Each run persists under `.ogs/runs/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
 - Run-id format is `YYYYMMDD-HHMMSS-<shortHash>`.
 - Each run gets its own isolated `.ogs/runs/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
+- Each execution uses a fresh clean-room workspace. Verified artifacts are tied to a canonical `artifact-manifest.json`; seals and readers authenticate that manifest and file hashes.
 - `.ogs/runs/` is generated runtime state and should stay out of version control.
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.

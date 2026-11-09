@@ -72,9 +72,11 @@ Project 1 -- 1 project workspace
 A Run freezes the selected Team version, project inputs, and execution fingerprint at start.
 Later Team releases or Project attachment changes must not alter the meaning of an existing Run.
 The Run workspace isolates runtime artifacts, not arbitrary writes to a shared target directory or
-external systems. A per-Run Git worktree is a possible code-change isolation mechanism, but Team Site
-does not currently create or manage one automatically; external effects still require sandboxing or
-explicit permissions.
+external systems. Model-native file and command tools are still subject to the Role's workspace
+capability policy: write access and command execution are separate grants, and backend permission
+prompts cannot widen the execution workspace. A per-Run Git worktree is a possible code-change
+isolation mechanism, but Team Site does not currently create or manage one automatically; external
+effects still require sandboxing or explicit permissions.
 
 Team validation confirms the static structure and supported topology; it does not certify provider
 connectivity or credentials. Project readiness is a separate, read-only projection of static

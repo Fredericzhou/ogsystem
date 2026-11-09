@@ -19,6 +19,10 @@ test("context selector optional marker supports human review and handoff data pa
   assert.equal(summarizeContextSelector("source(worker-a).data?").validPath, true);
   assert.equal(summarizeContextSelector("direct.data.issueId?").validPath, true);
   assert.equal(summarizeContextSelector("source(worker-a).data.findings?").validPath, true);
+  assert.equal(summarizeContextSelector("direct.artifact").validPath, true);
+  assert.equal(summarizeContextSelector("direct.artifact?").validPath, true);
+  assert.equal(summarizeContextSelector("source(worker-a).artifact").validPath, true);
+  assert.equal(summarizeContextSelector("source(worker-a).artifact?").validPath, true);
   assert.equal(summarizeContextSelector("direct.content?").validPath, false);
   assert.equal(summarizeContextSelector("source(worker-a).content?").validPath, true);
   assert.equal(summarizeContextSelector("source(worker-a).data.bad-key?").validPath, false);
@@ -28,11 +32,13 @@ test("context selector optional marker supports human review and handoff data pa
 test("context selector candidates follow incoming roles and quorum availability", () => {
   const direct = listContextSelectorCandidates({ incomingRoleIds: ["writer"] });
   assert.ok(direct.includes("direct.data"));
+  assert.ok(direct.includes("direct.artifact"));
   assert.ok(!direct.some((candidate) => candidate.startsWith("source(")));
 
   const join = listContextSelectorCandidates({ incomingRoleIds: ["writer", "reviewer"], joinMode: "all_of" });
   assert.ok(join.includes("source(writer).data"));
   assert.ok(join.includes("source(reviewer).content"));
+  assert.ok(join.includes("source(writer).artifact"));
 
   const unavailableQuorum = listContextSelectorCandidates({
     incomingRoleIds: ["writer", "reviewer"], joinMode: "quorum_of", joinMin: 1

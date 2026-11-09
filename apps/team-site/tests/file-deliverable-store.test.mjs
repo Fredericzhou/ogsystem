@@ -31,6 +31,29 @@ test("Deliverable snapshots publish atomically and archive each Run idempotently
   }
 });
 
+test("multi-file artifact bundles archive atomically and preserve binary-safe reads", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-deliverable-bundle-"));
+  const store = createFileDeliverableStore();
+  const project = { projectType: "collaboration", workdir };
+  try {
+    const content = { finalOutputsByRoleId: { writer: [{ content: "sealed" }] }, finalOutputRoleOrder: ["writer"] };
+    const record = await store.archive(project, { taskId: "task-1", runId: "run-bundle", attemptNumber: 1 }, content, {
+      files: [
+        { path: "report.txt", content: Buffer.from("hello"), mediaType: "text/plain" },
+        { path: "image.bin", content: Buffer.from([0, 1, 2]), mediaType: "application/octet-stream" }
+      ]
+    });
+    const listed = await store.listFiles(project, record.deliverableId);
+    assert.deepEqual(listed.files.map((entry) => entry.path), ["report.txt", "image.bin"]);
+    const file = await store.readFile(project, record.deliverableId, "image.bin", { encoding: null });
+    assert.deepEqual(file.content, Buffer.from([0, 1, 2]));
+    await writeFile(join(workdir, "workspace", "deliverables", record.deliverableId, "files", "report.txt"), "tampered");
+    await assert.rejects(store.listFiles(project, record.deliverableId), /DELIVERABLE_FILE_DIGEST_MISMATCH/);
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
 test("archive recovers a complete published snapshot and removes interrupted temporary writes", async () => {
   const workdir = await mkdtemp(join(tmpdir(), "ogs-deliverable-recovery-"));
   const store = createFileDeliverableStore();

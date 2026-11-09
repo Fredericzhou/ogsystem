@@ -50,7 +50,7 @@ test("structured debate permits one bounded rebuttal before the judge must decid
 test("management consulting keeps its parallel quorum and structured brief contract", () => {
   const consulting = cases.find((item) => item.id === "management-consulting");
   assert.ok(consulting);
-  assert.equal(consulting.roles.length, 8);
+  assert.equal(consulting.roles.length, 9);
   assert.deepEqual(consulting.joins.find((join) => join.roleId === "synthesis-consultant"), {
     roleId: "synthesis-consultant",
     mode: "quorum_of",
@@ -63,7 +63,7 @@ test("management consulting keeps its parallel quorum and structured brief contr
     "executiveSummary", "recommendations", "implementationPlan", "risks", "assumptions", "openQuestions"
   ]);
   const graph = buildCaseGraph("management-consulting", "en");
-  assert.equal(graph.edges.filter((edge) => edge.eventType === "READY" && edge.source !== "__system_start__").length, 11);
+  assert.equal(graph.edges.filter((edge) => edge.eventType === "READY" && edge.source !== "__system_start__").length, 12);
   assert.equal(graph.edges.find((edge) => edge.eventType === "READY" && edge.target === "executive-brief")?.target, "executive-brief");
 });
 

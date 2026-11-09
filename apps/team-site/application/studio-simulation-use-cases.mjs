@@ -832,6 +832,30 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       return simulationStore.readSimulationArtifact(teamVersionId, simulationId, pathValue, options);
     },
 
+    async readTeamVersionSimulationSealManifest(teamId, teamVersionId, simulationId) {
+      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      if (typeof simulationStore.readSimulationSealManifest !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      return simulationStore.readSimulationSealManifest(teamVersionId, simulationId);
+    },
+
+    async readTeamVersionSimulationVerificationReport(teamId, teamVersionId, simulationId) {
+      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      if (typeof simulationStore.readSimulationVerificationReport !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      return simulationStore.readSimulationVerificationReport(teamVersionId, simulationId);
+    },
+
+    async readTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, pathValue, options = {}) {
+      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      if (typeof simulationStore.readSimulationSealedFile !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      return simulationStore.readSimulationSealedFile(teamVersionId, simulationId, pathValue, options);
+    },
+
+    async openTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, pathValue, options = {}) {
+      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
+      if (typeof simulationStore.openSimulationSealedFile !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      return simulationStore.openSimulationSealedFile(teamVersionId, simulationId, pathValue, options);
+    },
+
     async getTeamVersionSimulationEvents(teamId, teamVersionId, simulationId, afterCursor = 0) {
       const evidence = await loadSimulationEvidence(teamId, teamVersionId, simulationId);
       const cursor = Number.isSafeInteger(Number(afterCursor)) && Number(afterCursor) >= 0 ? Number(afterCursor) : 0;

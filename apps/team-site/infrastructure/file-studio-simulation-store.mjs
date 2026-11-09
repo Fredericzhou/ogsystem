@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
@@ -11,6 +11,7 @@ import {
 import { join, resolve, sep } from "node:path";
 import { redactStudioSimulationText, redactStudioSimulationValue } from "../domain/studio-simulation-redaction.mjs";
 import { assertSafeEvidencePath, readSafeEvidenceFile, resolveSafeEvidencePath } from "./safe-evidence-path.mjs";
+import { hashVerifiedFile, openVerifiedFile } from "./verified-file-stream.mjs";
 
 const TEAM_ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
 const SIMULATION_ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
@@ -216,6 +217,127 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       if (isNotFound(error)) return fallback;
       throw new Error("STUDIO_SIMULATION_EVIDENCE_INVALID");
     }
+  }
+
+  function normalizeSealedPath(value, label = "sealed artifact path") {
+    const normalized = String(value || "").replaceAll("\\", "/");
+    if (!normalized || normalized.startsWith("/") || normalized.includes("//")) {
+      throw new Error(`STUDIO_SIMULATION_${label.toUpperCase().replaceAll(" ", "_")}_INVALID`);
+    }
+    const segments = normalized.split("/");
+    if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment.startsWith("."))) {
+      throw new Error(`STUDIO_SIMULATION_${label.toUpperCase().replaceAll(" ", "_")}_INVALID`);
+    }
+    return segments;
+  }
+
+  async function readSealedManifest(runDirectory) {
+    await assertRunDirectory(runDirectory);
+    const manifestSegments = ["shared", "seal-manifest.json"];
+    let manifest;
+    try {
+      await assertSafeEvidencePath(runDirectory, manifestSegments, {
+        kind: "file",
+        label: "sealed artifact manifest"
+      });
+      manifest = JSON.parse(await readSafeEvidenceFile(runDirectory, manifestSegments, "utf8", "sealed artifact manifest"));
+    } catch (error) {
+      if (error?.code === "ENOENT") throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_NOT_FOUND");
+      throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_INVALID");
+    }
+    if (!manifest || manifest.status !== "sealed" || !Array.isArray(manifest.files) || manifest.files.length === 0) {
+      throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_INVALID");
+    }
+    let verifiedManifest;
+    try {
+      verifiedManifest = JSON.parse(await readSafeEvidenceFile(runDirectory, ["shared", "artifact-manifest.json"], "utf8", "verified artifact manifest"));
+    } catch (error) {
+      if (error?.code === "ENOENT") throw new Error("STUDIO_SIMULATION_VERIFIED_MANIFEST_NOT_FOUND");
+      throw error;
+    }
+    const { manifestSha256: verifiedDigest, ...unsignedVerifiedManifest } = verifiedManifest || {};
+    const recomputedDigest = typeof verifiedDigest === "string"
+      ? createHash("sha256").update(`${JSON.stringify(unsignedVerifiedManifest, null, 2)}\n`, "utf8").digest("hex")
+      : "";
+    if (!verifiedDigest || recomputedDigest !== verifiedDigest.toLowerCase() || recomputedDigest !== String(manifest.manifestSha256 || "").toLowerCase()) {
+      throw new Error("STUDIO_SIMULATION_VERIFIED_MANIFEST_DIGEST_MISMATCH");
+    }
+    const verifiedFiles = Array.isArray(verifiedManifest.files) ? verifiedManifest.files : [];
+    if (!verifiedFiles.length || JSON.stringify(manifest.files) !== JSON.stringify(verifiedFiles.map(({ path, sha256, mediaType }) => ({ path, sha256, ...(mediaType ? { mediaType } : {}) })))) {
+      throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_INVALID");
+    }
+    const files = verifiedFiles.map((entry) => {
+      if (!entry || typeof entry.path !== "string" || !/^[a-f0-9]{64}$/i.test(String(entry.sha256 || ""))) {
+        throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_INVALID");
+      }
+      return {
+        ...entry,
+        path: normalizeSealedPath(entry.path).join("/"),
+        sha256: String(entry.sha256).toLowerCase()
+      };
+    });
+    if (new Set(files.map((entry) => entry.path)).size !== files.length) {
+      throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_INVALID");
+    }
+    return { ...manifest, files, path: manifestSegments.join("/") };
+  }
+
+  function sealedFileRelativePath(pathValue, manifest) {
+    const requested = normalizeSealedPath(pathValue).join("/").replace(/^shared\//, "");
+    const artifactRoot = normalizeSealedPath(String(manifest.artifact || "").replace(/\/$/, "")).join("/");
+    const candidate = requested.startsWith(`${artifactRoot}/`) ? requested.slice(artifactRoot.length + 1) : requested;
+    const entry = manifest.files.find((item) => item.path === candidate);
+    if (!entry) throw new Error("STUDIO_SIMULATION_SEALED_FILE_NOT_FOUND");
+    return { entry, relative: `${artifactRoot}/${candidate}` };
+  }
+
+  async function readSealedFile(runDirectory, pathValue, { maxBytes = 2 * 1024 * 1024, encoding = "utf8" } = {}) {
+    const manifest = await readSealedManifest(runDirectory);
+    const { entry, relative } = sealedFileRelativePath(pathValue, manifest);
+    const segments = ["shared", ...normalizeSealedPath(relative)];
+    const target = await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "sealed artifact file" });
+    const stats = await lstat(target);
+    if (stats.size > maxBytes) {
+      let verified;
+      try { verified = await hashVerifiedFile(target, entry.sha256, "sealed artifact file"); }
+      catch (error) {
+        if (error?.code === "FILE_DIGEST_MISMATCH") throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+        throw error;
+      }
+      return { path: relative, size: stats.size, sha256: verified.sha256, mediaType: entry.mediaType || "application/octet-stream", tooLarge: true, manifest };
+    }
+    const bytes = await readFile(target);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    if (digest !== entry.sha256) throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+    return {
+      path: relative,
+      size: stats.size,
+      sha256: digest,
+      mediaType: entry.mediaType || "application/octet-stream",
+      content: encoding === null ? bytes : bytes.toString(encoding),
+      manifest
+    };
+  }
+
+  async function openSealedFile(runDirectory, pathValue, options = {}) {
+    const manifest = await readSealedManifest(runDirectory);
+    const { entry, relative } = sealedFileRelativePath(pathValue, manifest);
+    const segments = ["shared", ...normalizeSealedPath(relative)];
+    const target = await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "sealed artifact file" });
+    let result;
+    try {
+      result = await openVerifiedFile(target, {
+        expectedSha256: entry.sha256,
+        range: options.range,
+        maxBytes: options.maxBytes ?? 256 * 1024 * 1024,
+        maxRangeBytes: options.maxRangeBytes ?? 32 * 1024 * 1024,
+        label: "sealed artifact file"
+      });
+    } catch (error) {
+      if (error?.code === "FILE_DIGEST_MISMATCH") throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+      throw error;
+    }
+    return { ...result, path: relative, mediaType: entry.mediaType || "application/octet-stream", manifest };
   }
 
   async function readEvents(simulationDirectory) {
@@ -467,6 +589,46 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       }
       const content = await readSafeEvidenceFile(runDirectory, segments, "utf8", "Simulation artifact");
       return { path: segments.join("/"), size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString(), content };
+    },
+
+    async readSimulationSealManifest(teamVersionId, simulationId) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      return readSealedManifest(resolveSimulationRunDirectory(teamVersionId, simulationId));
+    },
+
+    async readSimulationVerificationReport(teamVersionId, simulationId) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      const runDirectory = resolveSimulationRunDirectory(teamVersionId, simulationId);
+      const segments = ["shared", "verification.json"];
+      try {
+        await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "sealed verification report" });
+        return redactStudioSimulationValue(JSON.parse(await readSafeEvidenceFile(runDirectory, segments, "utf8", "sealed verification report")));
+      } catch (error) {
+        if (error?.code === "ENOENT") throw new Error("STUDIO_SIMULATION_VERIFICATION_NOT_FOUND");
+        throw new Error("STUDIO_SIMULATION_VERIFICATION_INVALID");
+      }
+    },
+
+    async readSimulationSealedFile(teamVersionId, simulationId, pathValue, options = {}) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      return readSealedFile(resolveSimulationRunDirectory(teamVersionId, simulationId), pathValue, options);
+    },
+
+    async openSimulationSealedFile(teamVersionId, simulationId, pathValue, options = {}) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      return openSealedFile(resolveSimulationRunDirectory(teamVersionId, simulationId), pathValue, options);
     },
 
     async listVersionSimulations(teamVersionId) {

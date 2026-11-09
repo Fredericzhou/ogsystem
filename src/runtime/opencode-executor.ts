@@ -79,6 +79,7 @@ type SessionApi = {
     };
     variant?: string;
     reasoningEffort?: ReasoningEffort;
+    tools?: Record<string, boolean>;
     format?: {
       type: "json_schema";
       schema: Record<string, unknown>;
@@ -911,6 +912,12 @@ export async function executeOpencodeModelRole(
     workdir: string;
     /** Coding project used for OpenCode SDK session scope. */
     directory?: string;
+    workspaceCapabilityPolicy?: {
+      root: string;
+      read?: boolean;
+      write?: boolean;
+      command?: boolean;
+    };
     timeoutMs: number;
     maxOutputBytes: number;
     runClient?: OpencodeRunClient;
@@ -958,7 +965,7 @@ export async function executeOpencodeModelRole(
     ? undefined
     : await startOpencodeRunClient(
         {
-          timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 30000)),
+          timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 120000)),
           directory: args.directory ?? args.workdir
         },
         transport
@@ -968,6 +975,18 @@ export async function executeOpencodeModelRole(
     throw new Error("OpenCode run client is unavailable");
   }
   const directory = args.directory ?? args.workdir;
+  const workspaceTools = args.workspaceCapabilityPolicy
+    ? {
+        read: args.workspaceCapabilityPolicy.read === true,
+        list: args.workspaceCapabilityPolicy.read === true,
+        glob: args.workspaceCapabilityPolicy.read === true,
+        grep: args.workspaceCapabilityPolicy.read === true,
+        edit: args.workspaceCapabilityPolicy.write === true,
+        bash: args.workspaceCapabilityPolicy.command === true,
+        external_directory: false,
+        task: false
+      }
+    : undefined;
   let sessionId = args.sessionId ?? "";
   let messageId: string | undefined;
   let timeoutCleanupSessionId: string | undefined;
@@ -1089,6 +1108,7 @@ export async function executeOpencodeModelRole(
                     },
                     variant,
                     ...(configuredReasoningEffort ? { reasoningEffort: configuredReasoningEffort } : {}),
+                    ...(workspaceTools ? { tools: workspaceTools } : {}),
                     ...(mode === "structured"
                       ? {
                           format: {

@@ -836,6 +836,23 @@ Model rules:
   - backend protocol failures retain backend-specific diagnostics where available
   - the selected backend and model are included in run/session audit metadata
 
+Workspace capabilities are enforced at the backend boundary as well as in the Role contract:
+
+- `workspace.read` permits inspection of the execution workspace; `workspace.write` and
+  `workspace.patch_text` permit writes inside that workspace; `workspace.run` is required for
+  command execution. Granting write does not grant command execution, and granting command does
+  not grant a writable directory.
+- Native file and command tools exposed by the selected model backend receive the same capability
+  policy. A backend must not be treated as an escape hatch from `constraints.allowedTools` or the
+  System capability entry.
+- OpenCode maps the policy to its read/edit/bash tools. Codex separates command approval from the
+  writable roots: command-disabled roles cannot obtain shell approval, while command-only roles get
+  no writable root. Qwen and Kimi ACP permission requests are denied unless the capability is
+  explicitly granted and the request has a bounded allow-once option.
+- ACP commands are limited to a simple command whose path tokens and working directory stay inside
+  the current execution workspace. Shell composition, redirection, substitution, interpreter
+  wrappers, and host paths are rejected.
+
 ### 文件、视频和其他多媒体产物
 
 文件格式不是默认的 Runtime 白名单。文本文件可以直接生成；DOCX、XLSX、PPTX、PDF、图片、音频和视频等格式由 Role 可调用的模型 CLI、项目脚本或 `tools.json`/`profiles.json` 工具生成。宿主机必须安装实际使用的工具，例如视频渲染通常需要 `ffmpeg` 及所需编码器。
@@ -901,9 +918,11 @@ video-renderer -->|READY| end[结束]
 }
 ```
 
-Runtime 会检查文件存在性、路径和符号链接、SHA-256 及配额，并生成 `artifact-manifest.json`、`verification.json` 和 `seal-manifest.json`。当前 Role 产物封存配额为单文件 50 MiB、单次 Role 总量 200 MiB、最多 500 个文件；图片默认 20 MiB。Team Site 的大文件 Range 流式读取不等于放宽 Runtime 封存配额。
+Runtime 会检查文件存在性、路径和符号链接、SHA-256 及配额，并生成 `artifact-manifest.json`、`verification.json` 和 `seal-manifest.json`。验证时使用不跟随符号链接的文件句柄，并复用同一份已读取内容进行哈希和快照，避免检查后文件被替换到工作区外。`artifact-manifest.json` 是 canonical verified manifest；`seal-manifest.json.manifestSha256` 必须匹配它的内容摘要。Team Site 和 Studio reader 会重新验证 canonical manifest 及每个文件哈希，不把可变的 `seal-manifest.files` 当作信任根。当前 Role 产物封存配额为单文件 50 MiB、单次 Role 总量 200 MiB、最多 500 个文件；图片默认 20 MiB。Team Site 的大文件 Range 流式读取不等于放宽 Runtime 封存配额。
 
-当前已完成真实 Codex 两 Role 文本协作验收；尚未完成真实 FFmpeg 视频端到端验收。验证视频时，应在宿主机先执行 `command -v ffmpeg` 和 `ffprobe -v error -show_streams output/demo.mp4`，再检查 Run 目录中的 manifest、verification 和 seal 文件。Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务闭环尚未完成，因此当前支持生成和归档业务数据文件，不宣称已经写入外部业务数据库。
+Workspace 写入在最终落盘后还会重新计算文件数和总字节数。若因此超过 quota，操作会删除新内容并恢复被替换的原文件；失败的写入不会留下超额文件。
+
+当前版本的经典团队包含声明式本地发布角色：管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3。Runtime 会在 execution workspace 中验证这些文件，并将混合文件包写入 `run/shared/artifacts`；可用 `ffprobe -v error -show_streams` 检查音视频流，Pandoc/XeLaTeX 检查 DOCX/PDF 可读性。OpenCode 与 Codex 未登录时，模型依赖案例必须标记为 BLOCKED，不能用 dry-run 冒充真实模型证据。Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务闭环尚未完成，因此当前支持生成和归档业务数据文件，不宣称已经写入外部业务数据库。
 
 ## 7. User Profile Contract
 
@@ -1009,6 +1028,10 @@ When a run starts, `.ogs/runs/<run-id>/` should persist:
 - log channels: `logs/engine.ndjson`, `logs/roles/<roleId>.ndjson`
 - per-role latest files: `role.md`, `execution.json`, `latest-session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
 - per-role history: `executions/<execution-id>/...` including `session.json` and `execution-outcome.json`
+- artifact evidence: each artifact execution records its verified `artifact-manifest.json` and
+  `verification.json`; sealed bundles also keep `shared/artifact-manifest.json` as the canonical
+  verified manifest and `shared/seal-manifest.json` as the seal metadata. The seal's
+  `manifestSha256` authenticates the canonical manifest.
 
 Workspace isolation:
 
@@ -1045,6 +1068,9 @@ Audit/operator artifacts:
 `summary.json` is the machine-readable run summary projection used by `run list`, `run status`, visualizer, and automation. It is not consumed by resume.
 `events.ndjson` is append-only complete history; `timeline.jsonl` is the machine-readable timeline projection derived from it. CLI logs filtering uses the split log channels first.
 `latest-session.json` is an operator-facing latest snapshot only.
+Every execution uses a fresh clean-room execution workspace. An ACP session is reusable only while
+its session key remains bound to that same workspace; a later execution with a new directory creates
+or loads a session for the new directory instead of continuing in the old one.
 `repro.sh` is a run-local resume repro script generated for troubleshooting handoff, with environment context comments (Node/OS/timestamp).
 Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
@@ -1210,6 +1236,8 @@ OpenCode persistent-service behavior:
 - sibling branches of the same role always share the same role directory; private workspace sharing depends on `workspace.workspaceIsolation` (`role` shares, `branch` isolates under `private/branches/<branchId>/`)
 - ordinary single-target sequential flow keeps the current `sessionLineageId`; fan-out and `all_of/quorum_of` join activation allocate a new lineage
 - each node prompt still binds to that node's role directory
+- the OpenCode executor receives the role's workspace capability policy, so native read/edit/bash
+  tools cannot exceed the declared workspace capabilities
 - node audit records include `sessionId`, `messageId`, and shared `serverPid`
 - run events include `opencode_server_started` and `opencode_server_closed`
 - transient provider/service failures are retried on the same role session
@@ -1220,6 +1248,8 @@ Codex persistent-service behavior:
 
 - one OGSystem run starts one `codex app-server --stdio`
 - each role branch starts or resumes a persistent thread on that server
+- Codex chooses its sandbox and approval policy from the workspace capabilities: command access is
+  independently enforced, and command-only roles receive no writable roots
 - session metadata is retained for audit and run resume; the app-server closes with the run
 
 Join context projection rule:

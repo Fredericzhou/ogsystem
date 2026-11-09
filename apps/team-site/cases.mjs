@@ -43,7 +43,7 @@ export const cases = [
       en: "Use a classic consulting SOP: parallel market, operations, commercial, and risk analysis, followed by synthesis, review, and an executive brief."
     },
     category: { "zh-CN": "管理咨询", en: "Management consulting" },
-    duration: { "zh-CN": "8 个角色", en: "8 roles" },
+    duration: { "zh-CN": "9 个角色", en: "9 roles" },
     icon: "briefcase",
     detail: {
       scenario: { "zh-CN": "一家成长中的企业希望评估进入新市场的机会、实施路径和主要风险。请基于给定资料形成决策建议。", en: "A growing company is assessing entry into a new market and needs a decision recommendation, implementation path, and risk view based on the supplied brief." },
@@ -60,7 +60,8 @@ export const cases = [
         "risk-advisor": { "zh-CN": "识别风险、合规边界、依赖和不可确认事项。", en: "Identifies risks, compliance boundaries, dependencies, and what cannot be confirmed." },
         "synthesis-consultant": { "zh-CN": "汇总并行分析，形成候选方案和优先级。", en: "Synthesizes the parallel analyses into options and priorities." },
         "quality-reviewer": { "zh-CN": "复核证据、假设、风险和建议是否一致。", en: "Checks the evidence, assumptions, risks, and recommendations for consistency." },
-        "executive-brief": { "zh-CN": "输出最终决策摘要、行动计划、风险和待确认问题。", en: "Produces the final decision summary, action plan, risks, and open questions." }
+        "executive-brief": { "zh-CN": "输出最终决策摘要、行动计划、风险和待确认问题。", en: "Produces the final decision summary, action plan, risks, and open questions." },
+        "document-publisher": { "zh-CN": "把高管简报发布为文档和结构化业务文件。", en: "Publishes the executive brief as documents and structured business files." }
       }
     },
     accent: "gold",
@@ -72,7 +73,8 @@ export const cases = [
       "risk-advisor": [355, 300],
       "synthesis-consultant": [690, 165],
       "quality-reviewer": [980, 165],
-      "executive-brief": [1260, 165]
+      "executive-brief": [1260, 165],
+      "document-publisher": [1540, 165]
     },
     semantics: ["parallel_split", "quorum_of", "all_of", "context.map"],
     joins: [
@@ -143,6 +145,12 @@ export const cases = [
         id: "executive-brief", label: { "zh-CN": "高管简报顾问", en: "Executive brief consultant" },
         purpose: "Produce a decision-ready executive summary and action plan.", events: ["READY"],
         prompt: "Act as the executive brief consultant. Use the reviewed synthesis and quality findings to produce the final decision brief. Return exactly one JSON object with event READY and content set to a JSON object serialized as a string, with exactly these keys: executiveSummary (string), recommendations (array of strings), implementationPlan (array of strings), risks (array of strings), assumptions (array of strings), openQuestions (array of strings). Distinguish facts, assumptions, risks, and questions. Do not add Markdown, external data, or extra keys."
+      },
+      {
+        id: "document-publisher", label: { "zh-CN": "文件发布员", en: "Document publisher" },
+        purpose: "Publish the reviewed executive brief as document and structured business files.", events: ["READY"],
+        execution: { profileId: "consulting-publisher", toolRef: "tool.consulting.publisher", format: "consulting", timeoutMs: 180000, maxOutputBytes: 65536 },
+        prompt: "Publish the reviewed brief using the configured local publisher. Return the publisher JSON unchanged."
       }
     ],
     flows: [
@@ -157,7 +165,8 @@ export const cases = [
       ["risk-advisor", "synthesis-consultant", "READY"],
       ["synthesis-consultant", "quality-reviewer", "READY"],
       ["quality-reviewer", "executive-brief", "READY"],
-      ["executive-brief", "__system_end__", "READY"]
+      ["executive-brief", "document-publisher", "READY"],
+      ["document-publisher", "__system_end__", "READY"]
     ]
   },
   {
@@ -321,7 +330,7 @@ export const cases = [
       en: "Two sides argue from a shared brief while a neutral judge reviews both and closes within a bounded number of rounds."
     },
     category: { "zh-CN": "观点讨论", en: "Deliberation" },
-    duration: { "zh-CN": "5 个角色", en: "5 roles" },
+    duration: { "zh-CN": "6 个角色", en: "6 roles" },
     icon: "scales",
     detail: {
       scenario: { "zh-CN": "讨论议题：一家 30 人的公司，是否应要求员工每周到办公室三天？", en: "Debate topic: should a 30-person company ask employees to work from the office three days each week?" },
@@ -335,7 +344,8 @@ export const cases = [
         "proponent": { "zh-CN": "提出支持方案的理由、依据与成立条件。", en: "Builds the case for the proposal, its rationale, and conditions." },
         "opponent": { "zh-CN": "指出方案的假设、代价、风险与替代思路。", en: "Challenges assumptions and explains costs, risks, and alternatives." },
         "neutral-judge": { "zh-CN": "按共同标准比较双方论据，说明评议依据与不确定性。", en: "Compares both cases against shared criteria and explains its reasoning and uncertainty." },
-        "debate-reporter": { "zh-CN": "整理双方强点、评议结论和仍待回答的问题。", en: "Records each side's strongest points, the review, and unanswered questions." }
+      "debate-reporter": { "zh-CN": "整理双方强点、评议结论和仍待回答的问题。", en: "Records each side's strongest points, the review, and unanswered questions." },
+      "media-publisher": { "zh-CN": "把辩论纪要发布为图片、视频和音频文件。", en: "Publishes the debate brief as image, video, and audio files." }
       }
     },
     accent: "blue",
@@ -344,7 +354,8 @@ export const cases = [
       proponent: [360, 55],
       opponent: [360, 250],
       "neutral-judge": [640, 155],
-      "debate-reporter": [900, 155]
+      "debate-reporter": [900, 155],
+      "media-publisher": [1190, 155]
     },
     semantics: ["parallel_split", "all_of", "loop.max"],
     joins: [{ roleId: "neutral-judge", mode: "all_of", sources: ["proponent", "opponent"] }],
@@ -379,6 +390,12 @@ export const cases = [
         id: "debate-reporter", label: { "zh-CN": "辩论记录员", en: "Debate reporter" },
         purpose: "Present the judge's final decision and the strongest reasoning from both sides.", events: ["READY"],
         prompt: "Prepare a balanced final report from the judge's decision. Include the decision, strongest argument for each side, key uncertainty, and follow-up question. Do not introduce new evidence. Set content to a JSON object with keys decision (string), propositionCase (object with strongestPoint and reasoning strings), oppositionCase (object with strongestPoint and reasoning strings), judgeReasoning (string), uncertainty (array of strings), and followUpQuestions (array of strings). Return valid JSON with event READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
+      },
+      {
+        id: "media-publisher", label: { "zh-CN": "媒体发布员", en: "Media publisher" },
+        purpose: "Publish the debate report as PNG, MP4, and MP3 files.", events: ["READY"],
+        execution: { profileId: "debate-publisher", toolRef: "tool.debate.publisher", format: "debate", timeoutMs: 180000, maxOutputBytes: 65536 },
+        prompt: "Publish the final debate report using the configured local media publisher. Return the publisher JSON unchanged."
       }
     ],
     flows: [
@@ -389,7 +406,8 @@ export const cases = [
       ["opponent", "neutral-judge", "READY"],
       ["neutral-judge", "debate-host", "NEEDS_REWORK"],
       ["neutral-judge", "debate-reporter", "READY"],
-      ["debate-reporter", "__system_end__", "READY"]
+      ["debate-reporter", "media-publisher", "READY"],
+      ["media-publisher", "__system_end__", "READY"]
     ]
   }
 ];

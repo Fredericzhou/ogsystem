@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildProjectedContext } from "../dist/runtime/role-input-projector.js";
+import { buildArtifactReference } from "../dist/runtime/artifact-access.js";
 
 const roleResult = (roleId, data, lineageId = "lineage-1") => ({
   roleId,
@@ -52,6 +53,13 @@ test("optional direct data selectors preserve explicit null and present values",
   const roleResults = { "producer@1#1": roleResult("producer", { findings: null, issue: { id: "ISSUE-7" } }) };
   assert.deepEqual(project({ finding: "direct.data.findings?" }, { roleResults }), { finding: null });
   assert.deepEqual(project({ issueId: "direct.data.issue.id?" }, { roleResults }), { issueId: "ISSUE-7" });
+});
+
+test("direct and join artifact selectors project opaque references with optional omission", () => {
+  const artifactRef = buildArtifactReference({ runId: "run-1", executionId: "exec-1", mediaType: "text/plain" });
+  const producer = { ...roleResult("producer", { findings: ["A"] }), artifactRef, provenance: { runId: "run-1", executionId: "exec-1", producerRoleId: "producer", branchId: "producer@1#1", lineageId: "lineage-1", loopIteration: 1, mediaType: "text/plain" } };
+  assert.deepEqual(project({ artifact: "direct.artifact" }, { roleResults: { "producer@1#1": producer } }), { artifact: artifactRef });
+  assert.deepEqual(project({ artifact: "direct.artifact?" }, { parentBranchId: null }), {});
 });
 
 test("optional join source selectors omit missing source data while required selectors fail closed", () => {

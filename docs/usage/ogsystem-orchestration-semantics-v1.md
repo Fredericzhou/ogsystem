@@ -311,6 +311,9 @@ Run 开始时必须冻结所选 Team 版本、项目输入和执行指纹。之�
 *   **人工审核原生化**：`review.*` 让 role 执行后先进入 `waiting_review`，draft result 落在 pending review 控制面，approve / rework / pause / terminate 通过 `control/reviews/` 与 resume/reconcile 主链完成，而不是通过单独 human-gate role 节点。
 *   **审核超时边界**：`review.timeout.*` 会进入编译快照与 pending review spec。status、inspect、review list 和 resume 惰性检查到期时间，并幂等写入超时 decision 与审计事件；没有后台计时服务。`pause` 保留可操作的暂停审核，`terminate` 按配置终止分支或运行；resume 幂等应用持久化 decision。
 *   **语义分叉与物理并发分离**：`parallel_split` 只保证多个下游分支被激活及其 session lineage 隔离；当前 scheduler 按活动队列顺序处理，物理并发属于未来执行策略。
+*   **执行工作区与 ACP session 绑定**：每次 role execution 使用新的 clean-room workspace。ACP session 只能在创建它的 execution directory 中复用；同一 `sessionKey` 遇到新的 execution directory 时必须重新创建或按新目录加载 session，不能把旧 workspace 的会话带入本次执行。
+*   **能力策略下沉到 backend**：`workspace.read`、`workspace.write`、`workspace.patch_text` 与 `workspace.run` 是独立能力。OpenCode native tools、Codex sandbox/approval、以及 ACP permission request 都必须服从同一策略；ACP 命令还必须是执行 workspace 内的简单命令。
+*   **产物证据链**：`artifact-manifest.json` 是验证后的 canonical manifest，`verification.json` 记录本次检查，`seal-manifest.json` 通过 `manifestSha256` 指向 canonical manifest。读取方必须重新验证 canonical manifest 和文件摘要，不能只信封存清单中的可变文件条目。
 
 ---
 

@@ -11,7 +11,8 @@ import { filesystemArtifactStore } from "./artifact-store.js";
 import {
   defaultBackendRegistry,
   type BackendRunSession,
-  type ModelBackendId
+  type ModelBackendId,
+  type WorkspaceCapabilityPolicy
 } from "./model-backend-registry.js";
 import { getSideEffectByKey, recordSideEffect } from "./side-effect-store.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
@@ -96,10 +97,12 @@ export type ExecutorRequest = {
   binding: ExecutorBinding;
   workdir: string;
   directory: string;
+  executionDirectory?: string;
   commandBaseDir?: string;
   env?: Record<string, string>;
   timeoutMs: number;
   maxOutputBytes: number;
+  workspaceCapabilityPolicy?: WorkspaceCapabilityPolicy;
   reasoningEffort?: ReasoningEffort;
   effectiveReasoningEffort?: ReasoningEffortLevel;
   signal?: AbortSignal;
@@ -271,8 +274,10 @@ export function createDefaultExecutor(args: {
             ?? request.binding.effectiveReasoningEffort,
           workdir: request.workdir,
           directory: request.directory,
+          executionDirectory: request.executionDirectory,
           timeoutMs: request.timeoutMs,
           maxOutputBytes: request.maxOutputBytes,
+          workspaceCapabilityPolicy: request.workspaceCapabilityPolicy,
           signal: request.signal,
           promptCallPhase: request.promptCallPhase,
           onPromptCall: request.onPromptCall,

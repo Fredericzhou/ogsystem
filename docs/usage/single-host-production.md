@@ -90,7 +90,10 @@ pnpm run bench:runtime-replay -- --iterations 10000 --restore-checkpoint 9900 --
 
 Check final state, recovery correctness, run-directory count, and total `.ogs/runs` bytes. Use the
 filesystem's own quota/alerting for total disk capacity; OGS's execution-directory count is not a
-byte quota.
+byte quota. Workspace and artifact byte/file limits are separate Runtime contracts applied during
+role execution. A failed workspace write that exceeds its quota is rolled back, while artifact
+verification rejects the artifact before sealing; neither limit is replaced by the retention
+threshold.
 
 ## Backup And Recovery
 

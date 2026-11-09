@@ -1,7 +1,78 @@
 import type {
+  ArtifactKind,
+  DeclaredRoleArtifact,
   RoleExecutionOutput,
   RoleOutputRepairRecord
 } from "./types.js";
+
+const ARTIFACT_KINDS = new Set<ArtifactKind>([
+  "text",
+  "source",
+  "business_document",
+  "business_data",
+  "technical_artifact"
+]);
+
+function assertSafeArtifactPath(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Executable role output artifact field "${field}" must be a non-empty relative path`);
+  }
+  const normalized = value.replaceAll("\\", "/");
+  if (
+    normalized.startsWith("/") ||
+    normalized.includes("\0") ||
+    normalized.split("/").some((segment) => !segment || segment === "." || segment === ".." || segment.startsWith("."))
+  ) {
+    throw new Error(`Executable role output artifact field "${field}" must be a safe relative path`);
+  }
+  return normalized;
+}
+
+function parseDeclaredArtifacts(value: unknown): DeclaredRoleArtifact[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Executable role output field "artifacts" must be an array');
+  }
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new Error(`Executable role output artifact[${index}] must be an object`);
+    }
+    const record = entry as Record<string, unknown>;
+    const allowedKeys = new Set(["artifactId", "kind", "path", "mediaType", "encoding", "entrypoint", "publishTarget"]);
+    for (const key of Object.keys(record)) {
+      if (!allowedKeys.has(key)) throw new Error(`Executable role output artifact contains unsupported field "${key}"`);
+    }
+    if (typeof record.artifactId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(record.artifactId)) {
+      throw new Error(`Executable role output artifact[${index}].artifactId is invalid`);
+    }
+    if (seen.has(record.artifactId)) throw new Error(`Executable role output contains duplicate artifactId "${record.artifactId}"`);
+    seen.add(record.artifactId);
+    if (typeof record.kind !== "string" || !ARTIFACT_KINDS.has(record.kind as ArtifactKind)) {
+      throw new Error(`Executable role output artifact[${index}].kind is invalid`);
+    }
+    if (typeof record.mediaType !== "string" || !record.mediaType.trim()) {
+      throw new Error(`Executable role output artifact[${index}].mediaType must be a non-empty string`);
+    }
+    if (record.encoding !== undefined && record.encoding !== null && record.encoding !== "utf-8" && record.encoding !== "binary") {
+      throw new Error(`Executable role output artifact[${index}].encoding must be "utf-8" or "binary"`);
+    }
+    const artifact: DeclaredRoleArtifact = {
+      artifactId: record.artifactId,
+      kind: record.kind as ArtifactKind,
+      path: assertSafeArtifactPath(record.path, "path"),
+      mediaType: record.mediaType.trim(),
+      ...(record.encoding ? { encoding: record.encoding } : {})
+    };
+    if (record.entrypoint !== undefined && record.entrypoint !== null) artifact.entrypoint = assertSafeArtifactPath(record.entrypoint, "entrypoint");
+    if (record.publishTarget !== undefined && record.publishTarget !== null) {
+      if (typeof record.publishTarget !== "string" || !record.publishTarget.trim() || record.publishTarget.length > 256) {
+        throw new Error(`Executable role output artifact[${index}].publishTarget must be a non-empty string of at most 256 characters`);
+      }
+      artifact.publishTarget = record.publishTarget.trim();
+    }
+    return artifact;
+  });
+}
 
 function extractJsonObjectCandidate(raw: string): string | undefined {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -93,7 +164,7 @@ export function parseRoleExecutionOutputWithRepair(args: {
   }
 
   const record = parsed as Record<string, unknown>;
-  const allowedKeys = new Set(["event", "content", "data"]);
+  const allowedKeys = new Set(["event", "content", "data", "artifacts"]);
   for (const key of Object.keys(record)) {
     if (!allowedKeys.has(key)) {
       throw new Error(`Executable role output contains unsupported field "${key}"`);
@@ -118,6 +189,9 @@ export function parseRoleExecutionOutputWithRepair(args: {
       throw new Error('Executable role output field "data" must be an object');
     }
     output.data = record.data as Record<string, unknown>;
+  }
+  if (record.artifacts !== undefined) {
+    output.artifacts = parseDeclaredArtifacts(record.artifacts);
   }
   if (args.requireEvent && !output.event) {
     throw new Error('Executable role output must include "event" for roles with outgoing flows');

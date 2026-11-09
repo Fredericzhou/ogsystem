@@ -9,9 +9,12 @@ test("Deliverable archive requires a completed Run and stores an independent sna
   const useCases = createDeliverableUseCases({
     getProject: async () => project,
     getRun: async (_projectId, taskId, runId) => ({ runId, taskId, teamVersionId: "team-v1", attemptNumber: runId === "run-2" ? 2 : 1, state: { status: runId === "run-failed" ? "failed" : "completed" } }),
-    runResultStore: { readFinalOutputs: async () => ({ finalOutputsByRoleId: { writer: [{ content: "final output" }] }, finalOutputRoleOrder: ["writer"] }) },
+    runResultStore: {
+      readFinalOutputs: async () => ({ finalOutputsByRoleId: { writer: [{ content: "final output" }] }, finalOutputRoleOrder: ["writer"] }),
+      readSealedArtifactBundle: async () => ({ files: [{ path: "report.txt", content: Buffer.from("report"), mediaType: "text/plain" }] })
+    },
     deliverableStore: {
-      archive: async (_project, metadata, content) => (archives.push({ metadata, content }), { deliverableId: "d-1", ...metadata }),
+      archive: async (_project, metadata, content, artifactBundle) => (archives.push({ metadata, content, artifactBundle }), { deliverableId: "d-1", ...metadata }),
       list: async () => [],
       readContent: async () => "snapshot"
     }
@@ -23,6 +26,7 @@ test("Deliverable archive requires a completed Run and stores an independent sna
   assert.equal(second.deliverable.attemptNumber, 2);
   assert.equal(archives.length, 2);
   assert.deepEqual(archives[0].content, { finalOutputsByRoleId: { writer: [{ content: "final output" }] }, finalOutputRoleOrder: ["writer"] });
+  assert.equal(archives[0].artifactBundle.files[0].path, "report.txt");
   assert.equal(archives[0].metadata.summary, "writer: final output");
 });
 

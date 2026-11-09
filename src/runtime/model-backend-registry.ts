@@ -55,6 +55,17 @@ export type BackendStartRunArgs = {
   targetDir: string;
 };
 
+/**
+ * Capabilities granted to a model session for the current execution staging
+ * directory. An omitted capability remains denied by backend adapters.
+ */
+export type WorkspaceCapabilityPolicy = {
+  root: string;
+  read?: boolean;
+  write?: boolean;
+  command?: boolean;
+};
+
 export type BackendExecuteRequest = {
   roleId: string;
   sessionKey?: string;
@@ -67,8 +78,10 @@ export type BackendExecuteRequest = {
   variant?: string;
   workdir: string;
   directory: string;
+  executionDirectory?: string;
   timeoutMs: number;
   maxOutputBytes: number;
+  workspaceCapabilityPolicy?: WorkspaceCapabilityPolicy;
   signal?: AbortSignal;
   promptCallPhase?: "primary" | "fallback";
   onPromptCall?: (event: {
@@ -309,7 +322,8 @@ export const opencodeBackendAdapter: BackendAdapter = {
           reasoningEffort: request.reasoningEffort,
           effectiveReasoningEffort: request.effectiveReasoningEffort,
           workdir: request.workdir,
-          directory: request.directory,
+          directory: request.executionDirectory ?? request.directory,
+          workspaceCapabilityPolicy: request.workspaceCapabilityPolicy,
           timeoutMs: request.timeoutMs,
           maxOutputBytes: request.maxOutputBytes,
           signal: request.signal,
@@ -476,10 +490,11 @@ export const codexBackendAdapter: BackendAdapter = {
             prompt: request.prompt,
             schema: request.schema,
             modelId: request.modelId,
-            cwd: request.directory,
+            cwd: request.executionDirectory ?? request.directory,
             timeoutMs: request.timeoutMs,
             sessionId: request.sessionId,
-            signal: request.signal
+            signal: request.signal,
+            workspaceCapabilityPolicy: request.workspaceCapabilityPolicy
           });
           outputChars = result.stdout.length;
           output = result.stdout;

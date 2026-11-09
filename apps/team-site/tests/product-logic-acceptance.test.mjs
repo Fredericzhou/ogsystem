@@ -476,6 +476,23 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-role-field="modelRef"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
     assert.equal(await inspector.locator('[data-studio-role-field="fallbackModel"]').count(), 1, "model-bound roles can select a fallback model");
     assert.equal(await inspector.locator(".studio-contract-permissions").count(), 1, "the role inspector summarizes its contract permissions");
+    const writeToolCheckbox = inspector.locator('[data-studio-role-tool="workspace.write"]');
+    const runToolCheckbox = inspector.locator('[data-studio-role-tool="workspace.run"]');
+    const extraToolsInput = inspector.locator('[data-studio-role-tool-extra]');
+    assert.equal(await writeToolCheckbox.count(), 1, "role inspector exposes workspace.write checkbox");
+    assert.equal(await runToolCheckbox.count(), 1, "role inspector exposes workspace.run checkbox");
+    assert.equal(await extraToolsInput.count(), 1, "role inspector exposes extra tools input");
+    await writeToolCheckbox.check();
+    await runToolCheckbox.check();
+    assert.match(await inspector.locator('[data-studio-allowed-tools-summary]').innerText(), /workspace\.run/);
+    assert.match(await inspector.locator('[data-studio-allowed-tools-summary]').innerText(), /workspace\.write/);
+    await extraToolsInput.fill("tool.disabled.example");
+    await extraToolsInput.dispatchEvent("input");
+    assert.equal(await inspector.locator(".studio-permission-conflict").count(), 1, "conflict badge displayed for forbidden tool");
+    assert.match(await inspector.locator(".studio-permission-conflict").innerText(), /tool\.disabled\.example/);
+    await extraToolsInput.fill("");
+    await extraToolsInput.dispatchEvent("input");
+    assert.equal(await inspector.locator(".studio-permission-conflict").count(), 0, "conflict badge removed after clearing forbidden tool");
     await inspector.locator('[data-studio-role-field="fallbackModel"]').selectOption(JSON.stringify(["codex", "gpt-6-luna"]));
     assert.equal(await inspector.locator('[data-studio-role-field="routingMode"]').count(), 0, "single-successor roles do not expose a routing mode");
     assert.equal(await inspector.locator('[data-studio-role-field="loopMax"]').count(), 0, "acyclic roles do not expose a loop limit");
@@ -572,6 +589,8 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
 
     const persistedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const persistedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
+    const persistedRoleContract = JSON.parse(persistedAssets.roles[roleId]["role.json"]);
+    assert.deepEqual(persistedRoleContract.constraints.allowedTools, ["workspace.run", "workspace.write"]);
     assert.deepEqual(persistedAssets.modelSelection?.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "codex/gpt-6-luna" } }, JSON.stringify({ persistedAssets, submittedRole: submittedAuthoring?.roles?.[roleId] }, null, 2));
     assert.deepEqual(persistedDesign.authoring.roles[roleId].contextMap, { brief: "global.task", audience: "global.task" }, JSON.stringify({ authoring: persistedDesign.authoring, assets: persistedAssets }, null, 2));
     assert.equal("modelRef" in persistedDesign.authoring.roles[roleId], false);

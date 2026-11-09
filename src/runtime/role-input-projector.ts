@@ -143,13 +143,13 @@ function resolveObjectPath(args: {
 
 function resolveArtifactField(args: {
   artifact: StoredRoleResult;
-  field: "content" | "event" | "data";
+  field: "content" | "event" | "data" | "artifactRef";
   selector: string;
   roleId: string;
   branchId: string;
   optional?: boolean;
 }): unknown {
-  const value = args.artifact[args.field];
+  const value = args.field === "artifactRef" ? args.artifact.artifactRef : args.artifact[args.field];
   if (value === undefined) {
     if (args.optional) return undefined;
     failContextProjection({
@@ -425,19 +425,35 @@ function evaluateContextSelector(args: {
     }
   }
 
-  if (normalizedSelector === "direct.content" || normalizedSelector === "direct.event" || normalizedSelector === "direct.data") {
-    const artifact = getRequiredDirectArtifact({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId,
-      onArtifactAccessAudit: args.onArtifactAccessAudit
-    });
+  if (normalizedSelector === "direct.content" || normalizedSelector === "direct.event" || normalizedSelector === "direct.data" || normalizedSelector === "direct.artifact") {
+    const rawArtifact = optional
+      ? args.branch.parentBranchId ? getBranchResult(args.state, args.branch.parentBranchId) : undefined
+      : getRequiredDirectArtifact({
+          state: args.state,
+          branch: args.branch,
+          roleId: args.roleId,
+          onArtifactAccessAudit: args.onArtifactAccessAudit
+        });
+    if (!rawArtifact) return undefined;
+    const artifact = optional
+      ? authorizeArtifact({
+          artifact: rawArtifact,
+          roleId: args.roleId,
+          branchId: args.branch.branchId,
+          state: args.state,
+          allowedArtifacts: [rawArtifact],
+          onArtifactAccessAudit: args.onArtifactAccessAudit
+        })
+      : rawArtifact;
     return resolveArtifactField({
       artifact,
-      field: normalizedSelector.slice("direct.".length) as "content" | "event" | "data",
+      field: normalizedSelector === "direct.artifact"
+        ? "artifactRef"
+        : normalizedSelector.slice("direct.".length) as "content" | "event" | "data",
       selector,
       roleId: args.roleId,
-      branchId: args.branch.branchId
+      branchId: args.branch.branchId,
+      optional
     });
   }
 
@@ -477,21 +493,30 @@ function evaluateContextSelector(args: {
     });
   }
 
-  const sourceMatch = normalizedSelector.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data)(?:\.(.+))?$/);
+  const sourceMatch = normalizedSelector.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data|artifact)(?:\.(.+))?$/);
   if (sourceMatch) {
     const [, sourceRoleId, field, nestedPath] = sourceMatch;
     const artifact = optional
       ? getOptionalJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId, onArtifactAccessAudit: args.onArtifactAccessAudit })
       : getRequiredJoinSourceArtifact({ state: args.state, branch: args.branch, roleId: args.roleId, node: args.node, sourceRoleId, onArtifactAccessAudit: args.onArtifactAccessAudit });
     if (!artifact) return undefined;
-    const fieldValue = resolveArtifactField({
-      artifact,
-      field: field as "content" | "event" | "data",
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId,
-      optional
-    });
+    const fieldValue = sourceMatch[2] === "artifact"
+      ? resolveArtifactField({
+          artifact,
+          field: "artifactRef",
+          selector,
+          roleId: args.roleId,
+          branchId: args.branch.branchId,
+          optional
+        })
+      : resolveArtifactField({
+          artifact,
+          field: field as "content" | "event" | "data",
+          selector,
+          roleId: args.roleId,
+          branchId: args.branch.branchId,
+          optional
+      });
     if (!nestedPath) {
       return fieldValue;
     }

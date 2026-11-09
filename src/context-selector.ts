@@ -21,12 +21,14 @@ export function listContextSelectorCandidates(args: {
         selectors.add(`source(${source}).content`);
         selectors.add(`source(${source}).event`);
         selectors.add(`source(${source}).data`);
+        selectors.add(`source(${source}).artifact`);
       }
     }
   } else if (sources.length) {
     selectors.add("direct.content");
     selectors.add("direct.event");
     selectors.add("direct.data");
+    selectors.add("direct.artifact");
   }
   return Array.from(selectors).sort((left, right) => left.localeCompare(right));
 }
@@ -52,21 +54,22 @@ export function summarizeContextSelector(selector: string): SelectorSummary {
   const value = optional ? selector.slice(0, -1) : selector;
   const optionalAllowed = value.startsWith("global.human_review.current") ||
     value === "direct.data" ||
+    value === "direct.artifact" ||
     value.startsWith("direct.data.") ||
-    /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data)(?:\.|$)/.test(value);
+    /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data|artifact)(?:\.|$)/.test(value);
   if (optional && !optionalAllowed) return { selectorKind: "unsupported", validPath: false, optional };
   if (value === "global.task" || value === "global.user_profile") return { selectorKind: value, validPath: true, optional };
   if (value.startsWith("global.user_profile.")) return { selectorKind: "global.user_profile.path", validPath: isValidSelectorPath(value.slice("global.user_profile.".length)), optional };
   if (value === "global.human_review.current") return { selectorKind: value, validPath: true, optional };
   if (value === "global.human_review.current.comment" || value === "global.human_review.current.round" || value === "global.human_review.current.previous_output") return { selectorKind: value, validPath: true, optional };
   if (value.startsWith("global.human_review.current.previous_output.")) return { selectorKind: "global.human_review.current.previous_output.path", validPath: isValidSelectorPath(value.slice("global.human_review.current.previous_output.".length)), optional };
-  if (["direct.content", "direct.event", "direct.data"].includes(value)) return { selectorKind: "direct", validPath: true, optional };
+  if (["direct.content", "direct.event", "direct.data", "direct.artifact"].includes(value)) return { selectorKind: "direct", validPath: true, optional };
   if (value.startsWith("direct.data.")) return { selectorKind: "direct.data.path", validPath: isValidSelectorPath(value.slice("direct.data.".length)), optional };
   const sourceEnd = value.startsWith("source(") ? value.indexOf(").") : -1;
   if (sourceEnd > 7) {
     const sourceRoleId = value.slice(7, sourceEnd);
     const sourceValue = value.slice(sourceEnd + 2);
-    const validSourceValue = ["content", "event", "data"].includes(sourceValue)
+    const validSourceValue = ["content", "event", "data", "artifact"].includes(sourceValue)
       || (sourceValue.startsWith("data.") && isValidSelectorPath(sourceValue.slice("data.".length)));
     if (isValidSourceRoleId(sourceRoleId) && validSourceValue) return { selectorKind: "source", sourceRoleId, validPath: true, optional };
   }

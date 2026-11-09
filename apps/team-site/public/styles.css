@@ -2309,6 +2309,16 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-permission-columns strong { color: var(--muted); font-size: 10px; }
 .studio-permission-columns p { font-size: 11px; line-height: 1.5; margin: 5px 0 0; overflow-wrap: anywhere; }
 .studio-permission-conflict { background: #fff6e8; border-left: 3px solid #d29132; color: #744814; font-size: 11px; line-height: 1.5; margin: 8px 0 0; padding: 8px 10px; }
+.studio-tool-config-group { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 8px; margin-top: 10px; padding: 10px; }
+.studio-tool-config-title { color: var(--muted); font-size: 10px; font-weight: 650; }
+.studio-tool-checkboxes { display: grid; gap: 6px; }
+.studio-tool-checkboxes .field.checkbox { align-items: center; display: flex; gap: 8px; margin: 0; }
+.studio-tool-checkboxes .field.checkbox input { accent-color: var(--mint-dark); min-height: 0; width: auto; }
+.studio-tool-checkboxes .field.checkbox span { color: var(--ink); font-size: 11px; }
+.studio-tool-checkboxes .field.checkbox small { color: var(--muted); font-size: 10px; }
+.studio-tool-config-group .field { display: grid; gap: 4px; margin-top: 4px; }
+.studio-tool-config-group .field > span { color: var(--muted); font-size: 10px; font-weight: 650; }
+.studio-tool-config-group .field input { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: inherit; font-size: 11px; min-height: 32px; padding: 6px 8px; width: 100%; }
 .studio-batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .studio-batch-status { color: var(--text); font-size: 12px; line-height: 1.5; margin: 12px 0 6px; min-height: 20px; overflow-wrap: anywhere; }
 .studio-baseline-batch progress { display: block; height: 8px; margin: 0 0 12px; width: 100%; }
@@ -2327,6 +2337,8 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-audit-badges { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
 .studio-audit-badges span { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 10px; line-height: 1.4; max-width: 100%; overflow-wrap: anywhere; padding: 4px 7px; }
 :root[data-visualizer-theme="dark"] .studio-permission-conflict { background: #3b3020; border-color: #d29132; color: #f5d18d; }
+:root[data-visualizer-theme="dark"] .studio-tool-config-group { background: var(--surface); border-color: var(--line); }
+:root[data-visualizer-theme="dark"] .studio-tool-config-group .field input { background: var(--canvas); border-color: var(--line); color: var(--ink); }
 @media (max-width: 760px) {
   .studio-run-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .studio-comparison-select { align-items: flex-start; flex-direction: column; }

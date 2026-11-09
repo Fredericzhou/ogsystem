@@ -495,8 +495,8 @@ function createDefaultOgsReadme(): string {
     '    "backend": "<opencode|codex|ollama|pi|qwen|kimi>",',
     '    "modelId": "<cli-model-id>",',
     '    "variant": "<optional-variant>",',
-    '    "timeoutMs": 120000,',
-    '    "maxOutputBytes": 65536',
+    '    "timeoutMs": 600000,',
+    '    "maxOutputBytes": 2097152',
     "  },",
     '  "roles": { "proposal-author": { "backend": "codex", "modelId": "gpt-5.6-sol" } }',
     "}",
@@ -1312,8 +1312,8 @@ function createDefaultModelSelection(args: {
       backend: selected.backend,
       modelId: selected.modelId,
       variant: selected.variants.includes("medium") ? "medium" : undefined,
-      timeoutMs: 120000,
-      maxOutputBytes: 65536
+      timeoutMs: 600000,
+      maxOutputBytes: 2097152
     } } : {})
   };
 }

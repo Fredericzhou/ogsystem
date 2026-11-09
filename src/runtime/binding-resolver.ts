@@ -35,15 +35,19 @@ export function resolveExecutionBinding(args: {
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
+  /** Per-attempt clean-room workspace. Session metadata remains in role-private storage. */
+  executionWorkspace?: string;
 }): ResolvedExecutionBinding {
   const defaults = {
-    timeoutMs: 120000,
-    maxOutputBytes: 64 * 1024
+    // Long-running builds, document rendering and FFmpeg jobs need more than
+    // the original short Q&A budget. Explicit role/profile values still win.
+    timeoutMs: 600000,
+    maxOutputBytes: 2 * 1024 * 1024
   };
   const sessionDirectory = args.roleDirs?.privateDir;
 
   if (args.node.binding.kind === "model") {
-    const workdir = sessionDirectory ?? args.roleDirs?.roleDir ?? args.baseWorkdir;
+    const workdir = args.executionWorkspace ?? sessionDirectory ?? args.roleDirs?.roleDir ?? args.baseWorkdir;
     const modelRef = args.node.binding.modelRef;
     const variant = args.node.binding.variant;
     if (!modelRef) {
@@ -105,7 +109,7 @@ export function resolveExecutionBinding(args: {
       bindingLabel: `profile:${profile.profileId}`,
       timeoutMs: profile.timeoutMs ?? defaults.timeoutMs,
       maxOutputBytes: profile.maxOutputBytes ?? defaults.maxOutputBytes,
-      workdir: sessionDirectory ?? args.baseWorkdir,
+      workdir: args.executionWorkspace ?? sessionDirectory ?? args.baseWorkdir,
       commandBaseDir: args.commandBaseDir ?? args.baseWorkdir,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
@@ -129,6 +133,6 @@ export function resolveExecutionBinding(args: {
     bindingLabel: "noop",
     timeoutMs: defaults.timeoutMs,
     maxOutputBytes: defaults.maxOutputBytes,
-    workdir: args.baseWorkdir
+    workdir: args.executionWorkspace ?? args.baseWorkdir
   };
 }

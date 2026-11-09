@@ -14,6 +14,9 @@ export function createDeliverableUseCases({ getProject, getRun, runResultStore, 
       if (run.state?.status !== "completed") throw new Error("DELIVERABLE_RUN_NOT_SUCCESSFUL: only a completed Run can be archived.");
       const result = await runResultStore.readFinalOutputs(run);
       if (!result || !Object.keys(result.finalOutputsByRoleId).length) throw new Error("DELIVERABLE_RESULT_UNAVAILABLE: this Run has no final outputs to archive.");
+      const artifactBundle = typeof runResultStore.readSealedArtifactBundle === "function"
+        ? await runResultStore.readSealedArtifactBundle(run)
+        : undefined;
       const summary = result.finalOutputRoleOrder.flatMap((roleId) =>
         (result.finalOutputsByRoleId[roleId] || []).map((output) => `${roleId}: ${output.content || JSON.stringify(output.data || {})}`)
       ).join(" | ");
@@ -24,13 +27,31 @@ export function createDeliverableUseCases({ getProject, getRun, runResultStore, 
         attemptNumber: run.attemptNumber,
         summary: summary.replace(/\s+/g, " ").slice(0, 500),
         contentFormat: "application/json"
-      }, result);
+      }, result, artifactBundle);
       return { projectId, deliverable: record };
     },
     async getProjectDeliverableContent(projectId, deliverableId) {
       const project = await getProject(projectId);
       if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: deliverables belong to collaboration projects.");
       return { projectId, deliverableId, content: await deliverableStore.readContent(project, deliverableId) };
+    },
+    async listProjectDeliverableFiles(projectId, deliverableId) {
+      const project = await getProject(projectId);
+      if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: deliverables belong to collaboration projects.");
+      if (typeof deliverableStore.listFiles !== "function") throw new Error("DELIVERABLE_FILES_UNAVAILABLE");
+      return { projectId, deliverableId, ...(await deliverableStore.listFiles(project, deliverableId)) };
+    },
+    async readProjectDeliverableFile(projectId, deliverableId, filePath, options = {}) {
+      const project = await getProject(projectId);
+      if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: deliverables belong to collaboration projects.");
+      if (typeof deliverableStore.readFile !== "function") throw new Error("DELIVERABLE_FILES_UNAVAILABLE");
+      return deliverableStore.readFile(project, deliverableId, filePath, options);
+    },
+    async openProjectDeliverableFile(projectId, deliverableId, filePath, options = {}) {
+      const project = await getProject(projectId);
+      if (project.projectType !== "collaboration") throw new Error("PROJECT_TYPE_INVALID: deliverables belong to collaboration projects.");
+      if (typeof deliverableStore.openFile !== "function") throw new Error("DELIVERABLE_FILES_UNAVAILABLE");
+      return deliverableStore.openFile(project, deliverableId, filePath, options);
     }
   });
 }

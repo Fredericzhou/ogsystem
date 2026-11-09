@@ -5,7 +5,7 @@ try {
   const server = await createOpencodeServer({
     hostname: "127.0.0.1",
     port: 0,
-    timeout: Number(process.env.OGS_OPENCODE_SERVER_TIMEOUT_MS) || 30000
+    timeout: Number(process.env.OGS_OPENCODE_SERVER_TIMEOUT_MS) || 120000
   });
   process.stdout.write(`${JSON.stringify({ type: "ready", url: server.url })}\n`);
   const input = createInterface({ input: process.stdin });

@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 
 import { CodexAppServerClient } from "../dist/runtime/codex-app-server.js";
+import { decideAcpPermission } from "../dist/runtime/acp-adapter-support.js";
 
 class FakeAppServerProcess extends EventEmitter {
   stdout = new PassThrough();
@@ -79,4 +80,17 @@ test("Codex app-server paginates models and resumes a persistent thread between 
   } finally {
     await client.close();
   }
+});
+
+test("ACP permission decisions require explicit bounded workspace capability", () => {
+  const allowed = decideAcpPermission({
+    action: "write",
+    path: "output/report.txt",
+    options: [{ optionId: "allow-once" }, { optionId: "allow-session" }]
+  }, { root: "/tmp/ogs-execution", write: true });
+  assert.equal(allowed.allowed, true);
+  assert.equal(allowed.response.outcome.optionId, "allow-once");
+  assert.equal(decideAcpPermission({ action: "write", path: "../outside", options: [{ optionId: "allow-once" }] }, { root: "/tmp/ogs-execution", write: true }).allowed, false);
+  assert.equal(decideAcpPermission({ action: "write", path: "output/report.txt", options: [{ optionId: "allow-once" }] }, { root: "/tmp/ogs-execution" }).allowed, false);
+  assert.equal(decideAcpPermission({ action: "command", command: "npm test", options: [{ optionId: "allow-once" }] }, { root: "/tmp/ogs-execution", command: true }).allowed, true);
 });

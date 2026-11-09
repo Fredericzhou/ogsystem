@@ -137,15 +137,27 @@ export class CodexAppServerClient {
     timeoutMs: number;
     sessionId?: string;
     signal?: AbortSignal;
+    workspaceCapabilityPolicy?: { root: string; read?: boolean; write?: boolean; command?: boolean };
   }): Promise<{ sessionId: string; stdout: string; messageId?: string }> {
     const threadId = args.sessionId || undefined;
+    const canWrite = args.workspaceCapabilityPolicy?.write === true;
+    const canCommand = args.workspaceCapabilityPolicy?.command === true;
+    // A command-capable, non-writing role still needs a command-capable
+    // sandbox. An empty writableRoots list keeps that mode read-only.
+    const sandboxMode = canWrite || canCommand ? "workspace-write" : "read-only";
+    // Codex's sandbox controls filesystem scope, while approvalPolicy controls
+    // whether shell commands may run. Keep these dimensions independent.
+    // `untrusted` routes every shell command through an approval request; this
+    // client rejects unsupported requests, so command=false fails closed while
+    // command=true can run under `never`.
+    const approvalPolicy = canCommand ? "never" : "untrusted";
     const thread = threadId
       ? await this.request("thread/resume", { threadId, cwd: args.cwd }) as JsonRecord
       : await this.request("thread/start", {
           model: args.modelId,
           cwd: args.cwd,
-          approvalPolicy: "never",
-          sandbox: "read-only",
+          approvalPolicy,
+          sandbox: sandboxMode,
           ephemeral: false
         }) as JsonRecord;
     const threadRecord = (thread.thread ?? thread) as JsonRecord;
@@ -181,8 +193,10 @@ export class CodexAppServerClient {
       threadId: sessionId,
       cwd: args.cwd,
       model: args.modelId,
-      approvalPolicy: "never",
-      sandboxPolicy: { type: "readOnly" },
+      approvalPolicy,
+      sandboxPolicy: canWrite || canCommand
+        ? { type: "workspaceWrite", writableRoots: canWrite ? [args.workspaceCapabilityPolicy?.root ?? args.cwd] : [] }
+        : { type: "readOnly" },
       outputSchema: args.schema,
       input: [{ type: "text", text: args.prompt, text_elements: [] }]
     });

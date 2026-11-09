@@ -33,11 +33,11 @@
 
 ## 2. 当前边界
 
-当前 Runtime 已经能够为每次 Role 激活创建独立 execution staging。Codex、OpenCode、ACP 后端和 `local_shell` Profile 都接收该目录作为本次执行的工作目录，并对 Role 声明的文件生成执行级 manifest、verification、seal 和不可变快照。各 backend 对写入、命令和权限请求的策略实现并不完全相同，不能把一种 backend 的 permission 行为推断为所有 backend 都相同。Team Site 已支持封存文件读取、Projects 多文件 Deliverable 归档以及媒体 Range 响应。
+当前 Runtime 已经能够为每次 Role 激活创建独立 execution staging。Codex、OpenCode、ACP 后端和 `local_shell` Profile 都接收该目录作为本次执行的工作目录，并对 Role 声明的文件生成执行级 manifest、verification、seal 和不可变快照。OpenCode、Codex、Qwen 和 Kimi 的 native permission/capability 请求均由 Role workspace policy 约束；具体映射仍由各 adapter 实现，不能把一个 backend 的工具名称或审批界面当成另一个 backend 的协议。Team Site 已支持封存文件读取、Projects 多文件 Deliverable 归档以及媒体 Range 响应。
 
 当前仍有以下边界：
 
-1. `workspace.run` 等通用 Workspace 工具原语尚未作为统一的 backend-native 工具协议完整暴露给所有 CLI；当前主要依赖各 CLI 的原生能力或 `tools.json` 中的 `local_shell` Profile。工作目录隔离已接入，但不同 backend 的 permission/capability 策略仍需分别核对。
+1. `workspace.run` 等通用 Workspace 工具原语尚未作为统一的 backend-native 工具协议完整暴露给所有 CLI；当前主要依赖各 CLI 的原生能力或 `tools.json` 中的 `local_shell` Profile。已接入的 model backend 会在 adapter 边界执行 workspace capability policy，新增 backend 仍需实现对应的映射和审计。
 2. Role 产物验证目前执行路径、符号链接、文件存在性、SHA-256 和固定配额检查；配置化 build/test/lint verifier 尚未接入 Role 的验证配置。当前生成的 `verification.json` 不等同于测试命令通过证明，Promotion 仍要求封存报告中的 `passed: true`。
 3. `run-artifacts.ts` 的 artifact manifest 与 checkpoint/resume 端到端对账，以及跨 Role 只读输入自动挂载，仍属于后续接线工作。
 4. Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务端口和前端 artifact canvas 尚未完成。因此当前可以生成并归档业务数据文件，但不能宣称已经完成外部业务数据库事务写入闭环。
@@ -124,6 +124,8 @@ roles/<roleId>/executions/<executionId>/artifact-manifest.json
 
 `StoredRoleResult.artifactRef` 只包含 `artifactId`、`runId` 和可选 `mediaType`。文件清单、物理路径、大小和 SHA-256 属于执行证据，只能通过 `src/runtime/artifact-access.ts` 的 `ArtifactResolver` 读取。Resolver 必须同时校验 `artifactAllowedByBranchId`、Run/producer provenance、manifest hash、文件路径和符号链接，并记录允许和拒绝的读取审计。
 
+验证器使用不跟随符号链接的文件句柄，并复用已校验的文件内容生成 hash 和不可变快照。`shared/artifact-manifest.json` 是 canonical verified manifest；`seal-manifest.json.manifestSha256` 必须匹配该 manifest，读取方必须重新验证 canonical manifest 和每个文件 hash，不能把 seal 中可变的 `files` 数组当作信任根。
+
 ## 5. Workspace 工具
 
 角色可以使用受控的 Workspace 能力：
@@ -156,7 +158,7 @@ workspace.patch_text(path, edits)
 
 有两种受支持的配置方式：
 
-1. **模型 Role**：Role 的 `constraints.allowedTools` 显式包含 `workspace.write`、`workspace.patch_text` 和 `workspace.run`，模型 CLI 在 execution staging 中调用宿主机 `ffmpeg` 或项目脚本。具体 backend 是否能自动批准写入或命令请求，仍取决于该 backend adapter 的 capability/permission 实现。
+1. **模型 Role**：Role 的 `constraints.allowedTools` 显式包含 `workspace.write`、`workspace.patch_text` 和 `workspace.run`，模型 CLI 在 execution staging 中调用宿主机 `ffmpeg` 或项目脚本。OpenCode、Codex、Qwen 和 Kimi 的 adapter 会分别将这些能力映射到 native tools、sandbox/approval 或 ACP permission request；未显式授权的请求必须失败。
 2. **CLI 工具 Role**：在 TeamVersion 的 `tools.json` 声明 `local_shell` 工具，在 `profiles.json` 设置 `timeoutMs` 和 `maxOutputBytes`，再通过 `system.mmd` 的 `exec.bind.<roleId>` 绑定 Profile。该 Role 的 `allowedTools` 必须包含实际的 `toolRef`。
 
 典型视频产物声明如下：
@@ -183,12 +185,12 @@ workspace.patch_text(path, edits)
 
 1. 角色声明预期文件和入口。
 2. 角色在 execution staging workspace 写入文件。
-3. Runtime 检查路径、普通文件、符号链接、大小和文件哈希；`mediaType` 记录在 manifest 中，不构成格式白名单。
+3. Runtime 检查路径、普通文件、符号链接、大小和文件哈希；验证使用 no-follow 文件句柄，`mediaType` 记录在 manifest 中，不构成格式白名单。
 4. 如果 Role 使用已配置的 CLI/Profile，工具可以在 staging 中执行 build、test、lint、渲染或转码命令；当前 Runtime 尚未把这些命令作为统一的 verifier 配置自动执行。
 5. 保存 stdout、stderr、退出码、耗时和测试摘要。
 6. 对最终文件树计算 SHA-256。
 7. 校验输出 Schema 和已声明文件。
-8. 生成 `verification.json` 和 `seal-manifest.json`。验证失败只产生 `ERROR.ARTIFACT_VERIFICATION_FAILED` RuntimeErrorEnvelope，交由 system.mmd 已声明的 ERROR 路由、Loop 返工、Retry 或 Human Review 处理；Verifier 不启动隐藏修复循环。
+8. 生成 `artifact-manifest.json`、`verification.json` 和 `seal-manifest.json`。验证失败只产生 `ERROR.ARTIFACT_VERIFICATION_FAILED` RuntimeErrorEnvelope，交由 system.mmd 已声明的 ERROR 路由、Loop 返工、Retry 或 Human Review 处理；Verifier 不启动隐藏修复循环。
 
 示例：
 
@@ -206,7 +208,7 @@ workspace.patch_text(path, edits)
 }
 ```
 
-只有 seal 状态、文件清单、hash 和验证结果均有效时，产物才可发布。
+只有 seal 状态、canonical manifest、文件 hash 和验证结果均有效时，产物才可发布。
 
 ## 7. 源码生成和执行
 
@@ -238,6 +240,7 @@ Run 证据目录：
 ├── shared/                 # Run 级共享投影；当前不会自动接收每个 Role 的产物
 │   ├── artifact/           # 仅显式汇聚/发布流程使用
 │   ├── seal-manifest.json
+│   ├── artifact-manifest.json  # canonical verified manifest
 │   └── verification.json
 ├── logs/
 ├── tests/
@@ -404,20 +407,20 @@ ogs run artifact promote <run-id> \
 截至 2026-11-10，当前仓库已经落地：
 
 - 门禁一的候选 `artifacts` 输出解析、相对路径校验、opaque `artifactRef`、显式 ArtifactResolver 授权和访问审计。
-- 各模型 backend 和 `local_shell` Profile 的执行目录已接入 per-attempt execution staging；Codex/ACP 的 workspace capability policy 已接入，其他 backend 的 permission 语义仍按 adapter 分别核对。
+- 各模型 backend 和 `local_shell` Profile 的执行目录已接入 per-attempt execution staging；OpenCode、Codex、Qwen 和 Kimi 的 workspace capability policy 已接入其 native tool/permission 边界。
 - Codex strict response schema 由 Runtime 生成兼容视图：递归补齐对象 `required`、`additionalProperties:false`，移除后端不接受的组合关键字；原始 Role Schema 仍用于返回侧完整校验。
 - 每个 execution 的 clean staging、声明产物路径/符号链接/配额/SHA-256 核验，以及 execution 级 `artifact-manifest.json`、`verification.json`、`seal-manifest.json` 和不可变文件快照。
-- 门禁二的 execution staging、Workspace 路径/符号链接/配额安全检查、统一的 SHA-256 manifest/seal 生成、封存文件包读取，以及现有 Promotion Service 的封存校验复用；配置化 verifier 命令和 Run 级共享投影尚未完成。
+- 门禁二的 execution staging、Workspace 路径/符号链接/配额安全检查、统一的 SHA-256 manifest/seal 生成、`run/shared/artifacts` 封存文件包读取，以及现有 Promotion Service 的封存校验复用；配置化 verifier 命令仍未完成。
 - 门禁三的 Studio 专用 seal/verification/file 只读 API、Projects 多文件 Deliverable 存储、Run 封存文件包归档、旧快照恢复兼容、文件哈希复核、Range 流式媒体响应和 HTML/SVG 预览安全响应头。
 - 新增契约、selector、Resolver、Workspace/Verifier、Studio API、Run 文件包和 Deliverable 完整性测试。
 - 使用本机真实 Codex `gpt-6-luna` 完成两 Role 端到端协作验证：`debate-minimalist -> debate-judge`，2/2 Role 成功，Run `status=done`，真实 session/message/audit 证据已写入 `.ogs/runs`。
-- 真实视频端到端验收尚未完成；当前证据证明的是 Runtime/CLI 文件产物链路和真实 Codex 文本 Role 协作，不是 FFmpeg 视频生成案例。
+- 2026-11-10 本机验证了经典管理咨询发布角色的 Markdown、DOCX、PDF、JSON、CSV、XLSX 和正反方辩论发布角色的 PNG、MP4、MP3；`ffprobe`、Pandoc/XeLaTeX 和 SHA-256 manifest/seal 检查通过。OpenCode/Codex 当前未登录，五个案例的真实模型 Sandbox Run 保持 BLOCKED，不能把本地发布脚本验证当作模型端到端证据。
 - 当前 Role 产物封存配额为：单文件 50 MiB、单次 Role 声明文件总量 200 MiB、最多 500 个文件；图片默认另有 20 MiB 上限。Team Site 非文本封存文件支持最大 256 MiB 的流式读取，不能据此绕过 Runtime 封存配额。
 
 以下内容仍是后续接线工作，当前版本不作为已完成能力宣称：
 
 - 将 `workspace.run` 等 Workspace 工具原语完整暴露给各 CLI 的内层工具循环，并接入配置化 build/test/lint verifier 命令。
-- 统一各 backend 的 workspace capability/permission policy 传递和审计语义，并补充真实 CLI 文件生成验收。
+- 为新增 backend 接入 workspace capability/permission policy，并补充真实 CLI 文件生成验收。
 - 在 `run-artifacts.ts` 中完成 artifact manifest 与 checkpoint/resume 的端到端对账和只读输入挂载。
 - 实现 Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务端口，以及前端 artifact canvas。
 

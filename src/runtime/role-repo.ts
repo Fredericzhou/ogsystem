@@ -24,6 +24,25 @@ import type {
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
+function strictifyResponseSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => strictifyResponseSchema(item));
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (["allOf", "anyOf", "oneOf", "if", "then", "else"].includes(key)) continue;
+    result[key] = strictifyResponseSchema(item);
+  }
+  const properties = record.properties && typeof record.properties === "object" && !Array.isArray(record.properties)
+    ? record.properties as Record<string, unknown>
+    : undefined;
+  if (properties) {
+    result.required = Object.keys(properties);
+    result.additionalProperties = false;
+  }
+  return result;
+}
+
 function describeType(value: unknown): string {
   if (value === null) {
     return "null";
@@ -257,6 +276,56 @@ export function validateRoleOutputSchemaDefinition(outputSchema: unknown, filePa
   }
 }
 
+/**
+ * Adds the Runtime-owned artifact declaration extension to a role output
+ * schema without mutating the role package on disk. Role packages commonly
+ * use `additionalProperties: false`; keeping this overlay in one helper makes
+ * executor-side and return-side validation agree on the accepted contract.
+ */
+export function withRuntimeArtifactOutputSchema(schema: unknown, options: { strictResponseSchema?: boolean } = {}): unknown {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const record = schema as Record<string, unknown>;
+  const properties = record.properties && typeof record.properties === "object" && !Array.isArray(record.properties)
+    ? record.properties as Record<string, unknown>
+    : {};
+  const strictResponseSchema = options.strictResponseSchema === true;
+  const strictRequired = strictResponseSchema
+    ? [...Object.keys(properties), "artifacts"]
+    : record.required;
+  const result = {
+    ...record,
+    ...(strictResponseSchema ? { required: strictRequired } : {}),
+    // Codex response_format accepts object/property constraints but rejects
+    // JSON Schema composition keywords. The original schema remains the
+    // authoritative return-side validator, so conditional rules are still
+    // enforced after the model responds.
+    ...(strictResponseSchema ? { allOf: undefined } : {}),
+    properties: {
+      ...properties,
+      artifacts: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          ...(strictResponseSchema
+            ? { required: ["artifactId", "kind", "path", "mediaType", "encoding", "entrypoint", "publishTarget"] }
+            : { required: ["artifactId", "kind", "path", "mediaType"] }),
+          properties: {
+            artifactId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+            kind: { enum: ["text", "source", "business_document", "business_data", "technical_artifact"] },
+            path: { type: "string", minLength: 1 },
+            mediaType: { type: "string", minLength: 1 },
+            encoding: strictResponseSchema ? { type: ["string", "null"], enum: ["utf-8", "binary", null] } : { enum: ["utf-8", "binary"] },
+            entrypoint: strictResponseSchema ? { type: ["string", "null"], minLength: 1 } : { type: "string", minLength: 1 },
+            publishTarget: strictResponseSchema ? { type: ["string", "null"], minLength: 1, maxLength: 256 } : { type: "string", minLength: 1, maxLength: 256 }
+          }
+        }
+      }
+    }
+  };
+  return strictResponseSchema ? strictifyResponseSchema(result) : result;
+}
+
 export function validateRoleSourceRecord(value: unknown, filePath: string): void {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(filePath, "$.source", "expected an object");
   const record = value as Record<string, unknown>;
@@ -395,7 +464,7 @@ export function validateRoleOutputSchema(args: {
   schemaPath?: string;
 }): void {
   assertJsonSchema({
-    schema: args.schema,
+    schema: withRuntimeArtifactOutputSchema(args.schema),
     data: args.output,
     schemaPath: args.schemaPath ?? "(inline output schema)",
     roleId: args.roleId,
