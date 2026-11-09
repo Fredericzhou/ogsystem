@@ -138,8 +138,9 @@ OpenCode is the current default executor behind the `Executor` abstraction.
 - the runtime depends on `executor.ts`, not on OpenCode lifecycle details everywhere
 - one run starts one shared `opencode serve`
 - sessions are keyed by `roleId:sessionLineageId`
-- sibling branches of the same role do not share a session, but they still share the same role directory/private workspace
-- `opencode serve` is started with its hostname/port arguments and no OGSystem directory binding; OpenCode SDK session `directory` is the resolved coding project
+- sibling branches of the same role do not share a session or execution staging workspace; session metadata remains under role-private storage
+- `opencode serve` is started with its hostname/port arguments and no OGSystem directory binding; each Role session receives its per-attempt execution staging directory
+- Codex, OpenCode, ACP and `local_shell` Profile execution use the per-attempt execution staging workspace; permission/capability policy mapping remains backend-specific
 - an optional external `targetDir` may be attached to the OGSystem project; when present, OpenCode SDK sessions and CLI project commands use that target while artifacts remain under the OGSystem root
 - Visualizer run APIs accept the same optional `targetDir`; when omitted they resolve the project attachment, preserving the CLI and UI default behavior
 
@@ -293,3 +294,16 @@ External inputs and model token/character budgets are enforced at runtime bounda
 - `isolateExternalData` defaults to `true`, wrapping non-task `input` payloads in `<ogs_external_data>` blocks with closing-tag escaping and recording `externalDataIsolated` in audit records
 - prompt character budgets (`maxPromptCharsPerRole`, `maxTotalPromptCharsPerRun`) are tracked in `RunPromptBudgetLedger` keyed by per-request `callId` (`${executionId}:${phase}:${ordinal}`) across parallel branches, retries, JSON repairs, fallbacks, and checkpoint resumes
 - `fallbackModelId` is a model ID within the role's selected backend; it is restricted to `binding.kind === "model"` and triggers only on retryable model-channel failures (timeouts, HTTP 429/502/503/504, transient network resets), never on schema/contract/auth/budget errors
+
+## 16. File Artifacts And Code Execution v1
+
+The file artifact and code execution plan is governed by
+[`text-artifact-business-delivery-architecture.md`](text-artifact-business-delivery-architecture.md).
+
+- `READY` and the other registered business events remain the only normal Role output routes; artifact declaration does not create a new business event.
+- `StoredRoleResult.artifactRef` remains opaque. Verified file manifests and file contents are evidence behind `ArtifactResolver`, never direct path-based authorization.
+- Every Role execution gets an isolated staging workspace. Rework starts clean unless a declared `context.map` or `baselineArtifact` explicitly authorizes an upstream artifact input.
+- Verifier failures produce a deterministic `ERROR.ARTIFACT_VERIFICATION_FAILED` envelope and use declared Runtime ERROR, Retry, Loop, or Review paths. Verifier does not run a hidden repair loop.
+- `local_shell` environment minimization is not network isolation. A `networkPolicy: "none"` request is rejected unless the underlying executor can enforce it at the OS, Container, or Sandbox boundary.
+- Studio may preview and download sealed evidence through dedicated read-only Artifact APIs, but never publishes Project Deliverables or business data. Only Projects Run control paths may perform promotion and business adapter commits.
+- Deliverable migration preserves `metadata.json`, `content.json`, and the existing content digest; multi-file manifests and file trees are additional integrity-checked records.

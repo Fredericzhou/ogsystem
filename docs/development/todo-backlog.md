@@ -1,6 +1,6 @@
 # OGSystem 统一计划与演进清单 (Unified Plan & Backlog)
 
-更新日期：2026-11-08
+更新日期：2026-11-10
 状态：active（工作区唯一活动计划入口）
 
 ## 1. 规划原则与防过度设计边界
@@ -36,6 +36,16 @@
 
 ### P1-2 Team Site 细节修复与冗余代码清理
 - [ ] **清理旧版浮动面板冗余代码**：在现有浏览器回归测试守护下，移除 `apps/team-site/public/app/views/app.js` 中被 `dataset.floatingPanelController !== "true"` 保护的旧拖拽监听分支及未引用的 `resizePanel` 函数。
+
+### P1-3 文件产物与代码执行能力建设
+- [x] **门禁一：文件产物契约（基础实现）**：候选 `artifacts` 声明和 parser 校验、固定业务事件、opaque `StoredRoleResult.artifactRef`、ArtifactResolver 显式授权和访问审计已落地。
+- [ ] **门禁二：文件持久化与验证（部分实现）**：execution staging、声明产物验证、verified manifest、verification/seal、封存文件包读取和 Promotion 复用已落地；配置化 verifier 命令、shared artifact 投影及 checkpoint/resume 端到端对账仍待完成。
+- [ ] **门禁三：产品发布闭环（部分实现）**：Studio 专用只读 API、Projects 多文件 Deliverable、Run 文件包归档、旧快照恢复和 CSP/SVG 边界已落地；Business Data Adapter 四步事务和前端 artifact canvas 仍待完成。
+- [x] **长任务预算**：角色默认执行预算已放宽至 10 分钟，Graph Runner 增加 15 秒持久化宽限，OpenCode 启动预算上限提高至 2 分钟，显式 Role/Profile/Model 配置仍可覆盖。
+- [x] **真实模型协作验收**：使用本机 Codex `gpt-6-luna` 完成两 Role 真实 API/模型运行，状态机、上下文交接、Schema 校验和审计证据均通过；复杂三分支案例另有模型响应超过 10 分钟而按门禁失败的记录。
+- [ ] **多媒体真实验收**：尚未完成真实 FFmpeg 视频端到端 Role 协作验收；当前仅确认文件产物契约、CLI/模型执行链路和真实 Codex 文本协作。
+- [ ] **多 backend capability 对齐**：各 backend 已使用 per-attempt execution staging，但 workspace capability/permission policy 的传递、自动批准语义和审计字段仍需分别核对并补充真实 CLI 文件生成验收。
+- [ ] **阶段验收**：每道门禁完成契约测试、持久化/恢复测试和 Studio/Projects 边界测试后，才进入下一阶段。详细规格见 [`text-artifact-business-delivery-architecture.md`](text-artifact-business-delivery-architecture.md)。
 
 ### P1-4 Visualizer 前端打包与高频流渲染优化
 - [ ] **用 `esbuild` 直接打包替代 `.toString()` 拼接**：将 Visualizer `client-app.js` 的运行时函数字符串拼接改为与 `build:studio-client` 一致的 `esbuild` 编译压缩产物，配合静态资源内容哈希与服务端 HTML 首屏静态骨架屏，降低加载体积与首屏空白时间。

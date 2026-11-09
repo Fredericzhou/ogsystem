@@ -523,7 +523,7 @@ ogs serve --ogs-dir ./ogs-control --workspace-dir ../my-application
 
 The service exposes authenticated Session endpoints at `/api/v1/sessions`: create a Session with `POST`, submit Turns to `/api/v1/sessions/<id>/turns` with an `Idempotency-Key`, poll the Session for Turn status, and stream Session events from `/api/v1/sessions/<id>/events`. Each Turn creates a fresh Run and fresh Role backend context. Sessions pin the System and execution configuration; if either changes, the old Session becomes stale and the response includes a linked child Session ID. Existing Run resume continues to use its persisted checkpoint.
 
-For `exec.bind`, relative tool arguments such as `scripts/console-print.mjs` are resolved from the OGSystem control project. The role process still runs in its run-local role workspace, while OpenCode session APIs use the resolved coding project.
+For `exec.bind`, relative tool arguments such as `scripts/console-print.mjs` are resolved from the OGSystem control project. The role process and model backend session receive the run-local execution workspace as their execution directory; backend-specific permission handling remains adapter-dependent.
 
 Recommended test split:
 
@@ -811,8 +811,8 @@ Example:
   "defaults": {
     "backend": "opencode",
     "modelId": "provider/model-id",
-    "timeoutMs": 120000,
-    "maxOutputBytes": 65536
+    "timeoutMs": 600000,
+    "maxOutputBytes": 2097152
   },
   "roles": {
     "test-operator": {
@@ -831,10 +831,79 @@ Model rules:
 - `ogs models discover` refreshes the local CLI/model catalog; `ogs models sync` also initializes a missing selection file
 - keep model choices out of `system.mmd`; use Studio or `.ogs/model-selection.json` to change a role's backend/model
 - model roles run through their selected persistent CLI service:
-  - input = rendered role prompt + `output.schema.json` + model selection; role-private file access uses the role working directory, while OpenCode SDK session APIs use the resolved coding project as `directory`
+  - input = rendered role prompt + `output.schema.json` + model selection; role-private file access and model backend sessions use the per-attempt execution workspace
   - output is normalized to the role's validated JSON output contract
   - backend protocol failures retain backend-specific diagnostics where available
   - the selected backend and model are included in run/session audit metadata
+
+### 文件、视频和其他多媒体产物
+
+文件格式不是默认的 Runtime 白名单。文本文件可以直接生成；DOCX、XLSX、PPTX、PDF、图片、音频和视频等格式由 Role 可调用的模型 CLI、项目脚本或 `tools.json`/`profiles.json` 工具生成。宿主机必须安装实际使用的工具，例如视频渲染通常需要 `ffmpeg` 及所需编码器。
+
+模型 Role 要写文件或执行命令时，Role 契约必须显式授权。当前视频等文件生成任务可使用支持相应 native tool loop 的模型 backend，也可使用固定 CLI Profile；不同 backend 的 permission/capability 行为需要按 adapter 和宿主机配置验证：
+
+```json
+{
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": ["workspace.write", "workspace.patch_text", "workspace.run"]
+  }
+}
+```
+
+固定 CLI 工具 Role 则在 TeamVersion 的 `tools.json` 和 `profiles.json` 中定义，并在 `system.mmd` 绑定：
+
+```json
+// tools.json
+{
+  "tools": [{
+    "toolRef": "tool.video.render",
+    "runner": "local_shell",
+    "command": "node",
+    "argsTemplate": ["scripts/render-video.mjs"],
+    "stdinMode": "none"
+  }]
+}
+```
+
+```json
+// profiles.json
+[
+  {
+    "profileId": "profile.video.render",
+    "toolRef": "tool.video.render",
+    "timeoutMs": 1800000,
+    "maxOutputBytes": 2097152
+  }
+]
+```
+
+```mermaid
+flowchart TD
+%% exec.bind.video-renderer=profile.video.render
+start[开始] -->|START| video-renderer[Role:video-renderer]
+video-renderer -->|READY| end[结束]
+```
+
+视频 Role 完成后必须在最终 JSON 中声明 staging 内的相对路径：
+
+```json
+{
+  "event": "READY",
+  "content": "视频已生成。",
+  "artifacts": [{
+    "artifactId": "demo-video",
+    "kind": "technical_artifact",
+    "path": "output/demo.mp4",
+    "mediaType": "video/mp4",
+    "encoding": "binary"
+  }]
+}
+```
+
+Runtime 会检查文件存在性、路径和符号链接、SHA-256 及配额，并生成 `artifact-manifest.json`、`verification.json` 和 `seal-manifest.json`。当前 Role 产物封存配额为单文件 50 MiB、单次 Role 总量 200 MiB、最多 500 个文件；图片默认 20 MiB。Team Site 的大文件 Range 流式读取不等于放宽 Runtime 封存配额。
+
+当前已完成真实 Codex 两 Role 文本协作验收；尚未完成真实 FFmpeg 视频端到端验收。验证视频时，应在宿主机先执行 `command -v ffmpeg` 和 `ffprobe -v error -show_streams output/demo.mp4`，再检查 Run 目录中的 manifest、verification 和 seal 文件。Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务闭环尚未完成，因此当前支持生成和归档业务数据文件，不宣称已经写入外部业务数据库。
 
 ## 7. User Profile Contract
 
