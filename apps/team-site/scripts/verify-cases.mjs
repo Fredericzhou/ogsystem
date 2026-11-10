@@ -12,10 +12,12 @@ for (const item of cases) {
     const lint = await lintCase(item.id);
     if (lint.status && lint.status !== "ok" && lint.status !== "ready") throw new Error(JSON.stringify(lint));
     process.stdout.write("[lint] passed\n");
-    const expectedBindings = [...new Set(item.roles.map((role) => {
-      const model = resolveCaseRoleModel(item, role);
-      return `${model.backend}/${model.modelId}`;
-    }))].join(", ");
+    const expectedBindings = [...new Set(item.roles.map((role) => role.execution
+      ? `profile:${role.execution.profileId}`
+      : (() => {
+          const model = resolveCaseRoleModel(item, role);
+          return `${model.backend}/${model.modelId}`;
+        })()))].join(", ");
     process.stdout.write(`[model-run] ${item.id} via ${expectedBindings}\n`);
     const result = await runCase({
       caseId: item.id,
@@ -27,20 +29,30 @@ for (const item of cases) {
     const successfulEntries = result.auditTrail.filter((entry) => entry.status === "ok");
     const completedRoles = new Set(successfulEntries.map((entry) => entry.roleId));
     const missing = [...expectedRoles].filter((roleId) => !completedRoles.has(roleId));
-    const expectedBindingByRole = new Map(item.roles.map((role) => [role.id, resolveCaseRoleModel(item, role)]));
+    const expectedBindingByRole = new Map(item.roles.map((role) => [role.id, role.execution
+      ? { kind: "profile", profileId: role.execution.profileId, toolRef: role.execution.toolRef }
+      : { kind: "model", ...resolveCaseRoleModel(item, role) }]));
     const wrongBindings = successfulEntries.filter((entry) => {
       const expected = expectedBindingByRole.get(entry.roleId);
-      return !expected || entry.backend !== expected.backend || entry.modelId !== expected.modelId;
+      if (!expected) return true;
+      if (expected.kind === "profile") {
+        return entry.profileId !== expected.profileId || entry.toolRef !== expected.toolRef;
+      }
+      return entry.backend !== expected.backend || entry.modelId !== expected.modelId;
     });
     if (result.status !== "done" || missing.length || wrongBindings.length) {
-      const actual = [...new Set(successfulEntries.map((entry) => `${entry.backend || "unknown"}/${entry.modelId || "unknown"}`))].join(", ");
+      const actual = [...new Set(successfulEntries.map((entry) => entry.profileId
+        ? `profile:${entry.profileId}`
+        : `${entry.backend || "unknown"}/${entry.modelId || "unknown"}`))].join(", ");
       const failures = result.auditTrail.filter((entry) => entry.failure).map((entry) => `${entry.roleId}: ${entry.failure}`).join(" | ");
       const runError = result.errorEnvelope?.errorCode
         ? `[${result.errorEnvelope.errorCode}] ${result.error}`
         : result.error;
       throw new Error(`Run status ${result.status}; missing successful roles: ${missing.join(", ") || "none"}; backend/model mismatches: ${wrongBindings.length}; actual=${actual || "no successful audit entries"}${runError ? `; run-error=${runError}` : ""}${failures ? `; role-errors=${failures}` : ""}`);
     }
-    const bindings = [...new Set(successfulEntries.map((entry) => `${entry.backend}/${entry.modelId}`))].join(", ");
+    const bindings = [...new Set(successfulEntries.map((entry) => entry.profileId
+      ? `profile:${entry.profileId}`
+      : `${entry.backend}/${entry.modelId}`))].join(", ");
     process.stdout.write(`[model-run] passed in ${result.durationMs} ms; roles=${completedRoles.size}; transitions=${result.summary.totalTransitions}; audit=${bindings}\n`);
   } catch (error) {
     failures.push({ caseId: item.id, message: error instanceof Error ? error.message : String(error) });

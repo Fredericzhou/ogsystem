@@ -302,6 +302,17 @@ function getOptionalJoinSourceArtifact(args: {
     loopIteration: args.branch.loopIteration
   });
   if (!result) return result;
+  // A quorum branch freezes its invocation allow-set when the threshold is
+  // reached. Sources that arrive after activation are valid run history but
+  // are outside this invocation and must be omitted by optional selectors;
+  // required selectors still fail closed through authorizeArtifact.
+  if (result.artifactRef) {
+    const persistedAllowSet = args.state.artifactAllowedByBranchId;
+    if (persistedAllowSet && Object.hasOwn(persistedAllowSet, args.branch.branchId)) {
+      const allowedArtifactIds = new Set(persistedAllowSet[args.branch.branchId] ?? []);
+      if (!allowedArtifactIds.has(result.artifactRef.artifactId)) return undefined;
+    }
+  }
   const allowedArtifacts = args.node.joinSources.map((sourceRoleId) => findRoleResult({
     state: args.state,
     roleId: sourceRoleId,

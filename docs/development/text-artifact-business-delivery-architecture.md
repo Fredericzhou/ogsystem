@@ -414,7 +414,7 @@ ogs run artifact promote <run-id> \
 - 门禁三的 Studio 专用 seal/verification/file 只读 API、Projects 多文件 Deliverable 存储、Run 封存文件包归档、旧快照恢复兼容、文件哈希复核、Range 流式媒体响应和 HTML/SVG 预览安全响应头。
 - 新增契约、selector、Resolver、Workspace/Verifier、Studio API、Run 文件包和 Deliverable 完整性测试。
 - 使用本机真实 Codex `gpt-6-luna` 完成两 Role 端到端协作验证：`debate-minimalist -> debate-judge`，2/2 Role 成功，Run `status=done`，真实 session/message/audit 证据已写入 `.ogs/runs`。
-- 2026-11-10 本机验证了经典管理咨询发布角色的 Markdown、DOCX、PDF、JSON、CSV、XLSX 和正反方辩论发布角色的 PNG、MP4、MP3；`ffprobe`、Pandoc/XeLaTeX 和 SHA-256 manifest/seal 检查通过。OpenCode/Codex 当前未登录，五个案例的真实模型 Sandbox Run 保持 BLOCKED，不能把本地发布脚本验证当作模型端到端证据。
+- 2026-11-10 通过已配置的 Codex/OpenCode API 协议完成五个经典团队的真实模型验证；管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3，`ffprobe`、Pandoc/XeLaTeX 和 SHA-256 manifest/seal 检查通过。CLI 的交互式 login 状态不作为模型可用性判断；dry-run 仍不计入真实模型证据。
 - 当前 Role 产物封存配额为：单文件 50 MiB、单次 Role 声明文件总量 200 MiB、最多 500 个文件；图片默认另有 20 MiB 上限。Team Site 非文本封存文件支持最大 256 MiB 的流式读取，不能据此绕过 Runtime 封存配额。
 
 以下内容仍是后续接线工作，当前版本不作为已完成能力宣称：

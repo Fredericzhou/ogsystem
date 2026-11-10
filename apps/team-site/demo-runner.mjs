@@ -104,7 +104,11 @@ export function buildCaseSystem(caseSpec) {
     "%% system.version=1.0.0",
     `%% law.global=law.site.${caseSpec.id}`,
     ...caseSpec.roles.filter((role) => role.mode).map((role) => `%% role.mode.${role.id}=${role.mode}`),
-    ...caseSpec.roles.filter((role) => role.execution?.profileId).map((role) => `%% exec.bind.${role.id}=profile.${role.execution.profileId}`),
+    ...caseSpec.roles.filter((role) => role.execution?.profileId).map((role) => {
+      const profileId = role.execution.profileId;
+      const profileRef = profileId.startsWith("profile.") ? profileId : `profile.${profileId}`;
+      return `%% exec.bind.${role.id}=${profileRef}`;
+    }),
     ...caseSpec.joins.flatMap((joinSpec) => [
       `%% join.mode.${joinSpec.roleId}=${joinSpec.mode}`,
       `%% join.sources.${joinSpec.roleId}=${joinSpec.sources.join(",")}`,
@@ -371,6 +375,9 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
         durationMs: item.durationMs,
         backend: item.backend,
         modelId: item.modelId,
+        profileId: item.profileId,
+        toolRef: item.toolRef,
+        command: item.command,
         failure: item.error
       })) : [],
       summary: result.runSummary ?? {},

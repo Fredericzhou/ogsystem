@@ -107,7 +107,7 @@ CLI 的账号或凭据。模型请求超时只表示等待**单次模型请求�
 
 ## 浏览器验收记录
 
-真实验收应在 Team Site 页面中打开管理咨询团队，进入设计页的调试面板，选择 `sandbox`，使用默认 OpenCode `gpt-6-luna` 执行任务。记录 TeamVersion ID、Simulation ID、最终状态、运行目录 URL、角色头像/消息展开、绿色动态 Flow、关键截图和控制台错误；刷新页面后再次打开运行目录，确认 `events.ndjson`、`timeline.jsonl`、`audit/`、`logs/` 和 `roles/` 仍可读取。另起一次运行，在活动期间点击红色“停止”，记录 `stopping` 到 `stopped`，并在桌面、平板和移动视口检查切换、返回、滚动和控件可操作性。真实模型或凭据不可用时，将该验收记录为阻塞，不用 Mock Runner 代替。
+真实验收应在 Team Site 页面中打开管理咨询团队，进入设计页的调试面板，选择 `sandbox`，使用已配置 API 的 Codex 或 OpenCode 协议模型执行任务。记录 TeamVersion ID、Simulation ID、最终状态、运行目录 URL、角色头像/消息展开、绿色动态 Flow、关键截图和控制台错误；刷新页面后再次打开运行目录，确认 `events.ndjson`、`timeline.jsonl`、`audit/`、`logs/` 和 `roles/` 仍可读取。另起一次运行，在活动期间点击红色“停止”，记录 `stopping` 到 `stopped`，并在桌面、平板和移动视口检查切换、返回、滚动和控件可操作性。应以协议握手和最小 API 请求结果判断模型可用性，不以 CLI 的交互式登录状态判断，也不能用 Mock Runner 代替真实模型证据。
 
 ## 验证
 
@@ -123,7 +123,7 @@ node --test apps/team-site/tests/layout-acceptance.test.mjs
 pnpm --dir apps/team-site test --test-concurrency=1
 ```
 
-运行团队案例的真实底座验证前，请先完成对应 CLI 的登录：
+运行团队案例的真实底座验证使用对应 CLI 的 API/协议配置：
 
 ```powershell
 pnpm --dir apps/team-site verify:cases

@@ -1047,9 +1047,12 @@ export async function executeRoleNode(args: {
           prompt,
           schema: runtimeOutputSchema,
           binding,
-          // Keep backend session metadata in the branch-private directory,
-          // while the CLI process itself runs in this execution's clean room.
-          workdir: resolvedBinding!.sessionDirectory ?? resolvedBinding!.workdir,
+          // Keep model backend session metadata in the branch-private directory.
+          // Profile tools must run from the execution workspace because declared
+          // artifacts are verified from that same clean room.
+          workdir: binding.kind === "profile"
+            ? resolvedBinding!.workdir
+            : resolvedBinding!.sessionDirectory ?? resolvedBinding!.workdir,
           directory: args.workdir,
           executionDirectory: executionWorkspace,
           commandBaseDir: resolvedBinding!.commandBaseDir,

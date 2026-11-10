@@ -1984,18 +1984,29 @@ function buildArtifactAllowedIdsForActivation(args: {
   readiness?: { completedSourceRoleIds: string[] };
   indexes?: RuntimeIndexes;
 }): string[] {
+  // Freeze the invocation allow-set from the results that are actually present
+  // at activation time. Indexes can lag a parallel branch merge by one
+  // scheduler step, so use the persisted state as the authoritative fallback
+  // and always include the current result explicitly. This preserves the
+  // quorum boundary while preventing a valid source artifact from being lost
+  // merely because its index was not refreshed yet.
   const results = args.targetNode.joinMode
-    ? (args.readiness?.completedSourceRoleIds ?? []).map((sourceRoleId) =>
-        sourceRoleId === args.currentRoleId && args.currentResult
-          ? args.currentResult
-          : findRoleResult({
-              state: args.state,
-              roleId: sourceRoleId,
-              lineageId: args.currentBranch.lineageId,
-              loopIteration: args.targetLoopIteration,
-              indexes: args.indexes
-            })
-      )
+    ? (args.readiness?.completedSourceRoleIds ?? []).map((sourceRoleId) => {
+        if (sourceRoleId === args.currentRoleId && args.currentResult) return args.currentResult;
+        const indexed = findRoleResult({
+          state: args.state,
+          roleId: sourceRoleId,
+          lineageId: args.currentBranch.lineageId,
+          loopIteration: args.targetLoopIteration,
+          indexes: args.indexes
+        });
+        if (indexed) return indexed;
+        return Object.values(args.state.roleResults ?? {}).find((result) =>
+          result.roleId === sourceRoleId &&
+          result.lineageId === args.currentBranch.lineageId &&
+          result.loopIteration === args.targetLoopIteration
+        );
+      })
     : [args.currentResult];
   return Array.from(new Set(results.flatMap((result) => result?.artifactRef?.artifactId ? [result.artifactRef.artifactId] : [])));
 }

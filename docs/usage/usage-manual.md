@@ -922,7 +922,7 @@ Runtime 会检查文件存在性、路径和符号链接、SHA-256 及配额，�
 
 Workspace 写入在最终落盘后还会重新计算文件数和总字节数。若因此超过 quota，操作会删除新内容并恢复被替换的原文件；失败的写入不会留下超额文件。
 
-当前版本的经典团队包含声明式本地发布角色：管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3。Runtime 会在 execution workspace 中验证这些文件，并将混合文件包写入 `run/shared/artifacts`；可用 `ffprobe -v error -show_streams` 检查音视频流，Pandoc/XeLaTeX 检查 DOCX/PDF 可读性。OpenCode 与 Codex 未登录时，模型依赖案例必须标记为 BLOCKED，不能用 dry-run 冒充真实模型证据。Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务闭环尚未完成，因此当前支持生成和归档业务数据文件，不宣称已经写入外部业务数据库。
+当前版本的经典团队包含声明式本地发布角色：管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3。Runtime 会在 execution workspace 中验证这些文件，并将混合文件包写入 `run/shared/artifacts`；可用 `ffprobe -v error -show_streams` 检查音视频流，Pandoc/XeLaTeX 检查 DOCX/PDF 可读性。模型依赖案例通过 Codex/OpenCode 的 API 协议握手和实际请求验证；CLI 的交互式 login 状态不作为可用性判断，dry-run 也不能冒充真实模型证据。Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务闭环尚未完成，因此当前支持生成和归档业务数据文件，不宣称已经写入外部业务数据库。
 
 ## 7. User Profile Contract
 

@@ -149,7 +149,7 @@ export const cases = [
       {
         id: "document-publisher", label: { "zh-CN": "文件发布员", en: "Document publisher" },
         purpose: "Publish the reviewed executive brief as document and structured business files.", events: ["READY"],
-        execution: { profileId: "consulting-publisher", toolRef: "tool.consulting.publisher", format: "consulting", timeoutMs: 180000, maxOutputBytes: 65536 },
+        execution: { profileId: "profile.consulting-publisher", toolRef: "tool.consulting.publisher", format: "consulting", timeoutMs: 180000, maxOutputBytes: 65536 },
         prompt: "Publish the reviewed brief using the configured local publisher. Return the publisher JSON unchanged."
       }
     ],
@@ -394,7 +394,7 @@ export const cases = [
       {
         id: "media-publisher", label: { "zh-CN": "媒体发布员", en: "Media publisher" },
         purpose: "Publish the debate report as PNG, MP4, and MP3 files.", events: ["READY"],
-        execution: { profileId: "debate-publisher", toolRef: "tool.debate.publisher", format: "debate", timeoutMs: 180000, maxOutputBytes: 65536 },
+        execution: { profileId: "profile.debate-publisher", toolRef: "tool.debate.publisher", format: "debate", timeoutMs: 180000, maxOutputBytes: 65536 },
         prompt: "Publish the final debate report using the configured local media publisher. Return the publisher JSON unchanged."
       }
     ],
