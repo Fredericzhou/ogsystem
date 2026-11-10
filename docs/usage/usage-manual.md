@@ -76,7 +76,10 @@ Team Site 的当前入口：
 
 主导航按“业务协作、团队工程、共享平台”分组。普通模式默认展示 Projects；切换到专业模式可访问 OGS Studio、项目运行历史和 Platform。Studio 设计与 Simulation 历史为独立页面，不嵌入协作项目的窄面板。静态结构检查不验证外部网络或 Harness 凭据；隔离运行会由服务端再次检查。
 
-本地 Team Site 默认监听 `4173`，可通过 `PORT` 覆盖。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 使用，
+本地 Team Site 默认监听 `127.0.0.1:4173`，可通过 `PORT` 覆盖。要从同一局域网的手机或其他电脑访问，
+在仓库根目录执行 `pnpm team-site:restart:lan`；服务会监听 `0.0.0.0:4173`，再用
+`pnpm team-site:status` 查看当前网卡地址。也可执行 `pnpm team-site:restart -- --host 192.168.0.109`
+只绑定一个局域网地址。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 使用，
 不是另一个面向用户的 Origin；可通过 `OGS_VIS_URL` 配置上游服务地址。Windows 上从仓库根目录执行
 `pnpm start:team-site:tailnet` 可启动 Team Site 并提供 Tailnet 入口。浏览器中的产品页面始终从 Team Site 地址打开。
 

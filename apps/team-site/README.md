@@ -81,6 +81,18 @@ launchd 作业、`/healthz` 和 `/readyz`；日志位于 `~/.ogsystem/team-site/
 不会清理 `.ogs/runs/` 或 Team Site 的持久化项目数据。直接运行 `pnpm --dir apps/team-site start`
 仍适合测试和临时隔离环境，但不适合作为长期本地服务启动方式。
 
+需要让同一局域网的手机或其他电脑访问时，使用：
+
+```sh
+pnpm team-site:restart:lan
+pnpm team-site:status
+```
+
+`--lan` 将服务绑定到 `0.0.0.0`，状态命令会列出当前网卡的访问地址，例如
+`http://192.168.0.109:4173/projects`。也可以使用 `pnpm team-site:restart -- --host 192.168.0.109`
+绑定到单个地址。局域网模式面向受信任网络；如果网络不受信任，应在 macOS 防火墙或路由器上限制
+4173 端口，或使用 Tailnet/HTTPS 入口，不要直接暴露到公网。
+
 本地宣传首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入。可用 `PORT` 覆盖。项目、团队设计、运行诊断和平台配置
 都从这个 Team Site Origin 进入。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 调用；它是
 内部上游服务，不是另一个产品入口。需要自定义服务地址时，在启动 Team Site 前设置 `OGS_VIS_URL`。

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { homedir, platform } from "node:os";
+import { homedir, networkInterfaces, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -105,14 +105,14 @@ async function ensureBuild() {
   execFileSync("pnpm", ["--dir", appRoot, "run", "build:assets"], { cwd: repoRoot, stdio: "inherit" });
 }
 
-export async function installService({ prepare = true } = {}) {
+export async function installService({ prepare = true, host = process.env.OGS_SITE_HOST || process.env.HOST || "127.0.0.1", port = process.env.PORT || "4173" } = {}) {
   if (platform() !== "darwin") throw new Error("team-site service management requires macOS launchd.");
   if (prepare) await ensureBuild();
   await mkdir(dirname(launchAgentPath), { recursive: true });
   await mkdir(logRoot, { recursive: true });
   await mkdir(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"), { recursive: true });
   await mkdir(process.env.OGS_VIS_WORKDIR || join(homedir(), ".ogsystem", "visualizer-workspace"), { recursive: true });
-  await writeFile(launchAgentPath, createLaunchdPlist(), "utf8");
+  await writeFile(launchAgentPath, createLaunchdPlist({ host, port }), "utf8");
   const domain = guiDomain();
   await stopService();
   launchctl(["bootstrap", domain, launchAgentPath]);
@@ -153,15 +153,46 @@ export async function waitForReady({ timeoutMs = 15000 } = {}) {
 export async function readServiceStatus() {
   const details = launchctl(["print", serviceDomain()], { allowFailure: true });
   const pid = Number(details.match(/\bpid\s*=\s*(\d+)/)?.[1] || 0);
-  const health = await probe();
-  const ready = await probe("http://127.0.0.1:4173/readyz");
-  return { label: SERVICE_LABEL, launchd: Boolean(details), pid: pid || null, health, ready, plist: launchAgentPath };
+  const host = details.match(/\bHOST\s*=>\s*(\S+)/)?.[1] || null;
+  const port = details.match(/\bPORT\s*=>\s*(\d+)/)?.[1] || "4173";
+  const health = await probe(`http://127.0.0.1:${port}/healthz`);
+  const ready = await probe(`http://127.0.0.1:${port}/readyz`);
+  return { label: SERVICE_LABEL, launchd: Boolean(details), pid: pid || null, host, port: Number(port), urls: serviceUrls(host, port), health, ready, plist: launchAgentPath };
 }
 
-async function main(command = process.argv[2] || "status") {
+function serviceUrls(host, port = process.env.PORT || 4173) {
+  if (!host || host === "127.0.0.1" || host === "localhost") return [`http://127.0.0.1:${port}/projects`];
+  const addresses = Object.values(networkInterfaces()).flatMap((items) => items || [])
+    .filter((item) => item.family === "IPv4" && !item.internal)
+    .map((item) => item.address);
+  return [...new Set(addresses)].map((address) => `http://${address}:${port}/projects`);
+}
+
+function parseOptions(args) {
+  const options = {};
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === "--lan") options.host = "0.0.0.0";
+    else if (value === "--host") {
+      options.host = args[index + 1];
+      if (!options.host || options.host.startsWith("--")) throw new Error("--host requires an address.");
+      index += 1;
+    } else if (value === "--port") {
+      options.port = args[index + 1];
+      if (!options.port || options.port.startsWith("--")) throw new Error("--port requires a number.");
+      index += 1;
+    } else if (value) throw new Error(`Unknown option: ${value}`);
+  }
+  if (options.host === undefined && process.env.OGS_SITE_HOST) options.host = process.env.OGS_SITE_HOST;
+  if (options.port === undefined && process.env.PORT) options.port = process.env.PORT;
+  return options;
+}
+
+async function main(command = process.argv[2] || "status", args = process.argv.slice(3)) {
+  const options = parseOptions(args);
   if (command === "start") {
-    await installService();
-    console.log(`Team Site started: http://127.0.0.1:${process.env.PORT || 4173}/projects`);
+    await installService(options);
+    console.log(`Team Site started:\n${serviceUrls(options.host || "127.0.0.1", options.port).join("\n")}`);
     return;
   }
   if (command === "stop") {
@@ -171,8 +202,8 @@ async function main(command = process.argv[2] || "status") {
   }
   if (command === "restart") {
     await stopService();
-    await installService();
-    console.log(`Team Site restarted: http://127.0.0.1:${process.env.PORT || 4173}/projects`);
+    await installService(options);
+    console.log(`Team Site restarted:\n${serviceUrls(options.host || "127.0.0.1", options.port).join("\n")}`);
     return;
   }
   if (command === "status") {
