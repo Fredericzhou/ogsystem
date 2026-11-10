@@ -68,12 +68,18 @@ Team Site 使用固定应用外壳：桌面侧栏可收起并记住选择，平�
 
 ## 本地启动
 
-在仓库根目录执行：
+在仓库根目录执行一次构建，然后使用用户级 launchd 托管 Team Site：
 
-```powershell
+```sh
 pnpm build
-pnpm --dir apps/team-site start
+pnpm team-site:start
 ```
+
+服务由 macOS launchd 持有，不依赖启动它的终端会话。常用生命周期命令为
+`pnpm team-site:status`、`pnpm team-site:restart` 和 `pnpm team-site:stop`。状态命令同时检查
+launchd 作业、`/healthz` 和 `/readyz`；日志位于 `~/.ogsystem/team-site/logs/`。服务重启只重建进程，
+不会清理 `.ogs/runs/` 或 Team Site 的持久化项目数据。直接运行 `pnpm --dir apps/team-site start`
+仍适合测试和临时隔离环境，但不适合作为长期本地服务启动方式。
 
 本地宣传首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入。可用 `PORT` 覆盖。项目、团队设计、运行诊断和平台配置
 都从这个 Team Site Origin 进入。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 调用；它是

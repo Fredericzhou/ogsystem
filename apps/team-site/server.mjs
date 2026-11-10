@@ -265,6 +265,8 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+let ready = false;
+
 const modelCatalog = createModelCatalog({ workdir: discoveryWorkdir });
 const platformUseCases = createPlatformUseCases({
   platformSettingsStore,
@@ -568,6 +570,14 @@ async function serveStatic(pathname, request, response, { immutable = false, hea
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
+  if (request.method === "GET" && url.pathname === "/healthz") {
+    sendJson(response, 200, { status: "ok" });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/readyz") {
+    sendJson(response, ready ? 200 : 503, { status: ready ? "ready" : "starting" });
+    return;
+  }
   if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases })) return;
   if (await handleRoleSourceAdminRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases, scheduler: roleSourceSyncScheduler })) return;
   if (await handleRoleSourceCatalogRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases })) return;
@@ -673,6 +683,7 @@ teamLifecycleUseCases.provisionBuiltInTeamTemplates()
   .then(() => roleSourceSyncScheduler.recoverInterrupted())
   .then(() => {
   server.listen(port, host, () => {
+    ready = true;
     const address = server.address();
     const boundPort = address && typeof address === "object" ? address.port : port;
     process.stdout.write(`OGS Projects is ready at http://${host}:${boundPort}\n`);
@@ -683,7 +694,14 @@ teamLifecycleUseCases.provisionBuiltInTeamTemplates()
 });
 
 function close() {
+  if (!server.listening) {
+    process.exit(0);
+    return;
+  }
+  ready = false;
   server.close(() => process.exit(0));
+  server.closeAllConnections?.();
+  setTimeout(() => process.exit(0), 5000).unref();
 }
 process.on("SIGINT", close);
 process.on("SIGTERM", close);
