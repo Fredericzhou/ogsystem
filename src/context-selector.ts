@@ -75,3 +75,63 @@ export function summarizeContextSelector(selector: string): SelectorSummary {
   }
   return { selectorKind: "unsupported", validPath: false, optional };
 }
+
+export type SchemaPropertyPath = {
+  path: string;
+  type: string;
+  description: string;
+};
+
+/**
+ * Extract flat dot-notation property paths from a JSON Schema.
+ * If properties.data exists, paths are scoped inside data (for direct.data.* and source(*).data.*).
+ * Otherwise top-level domain properties (excluding envelope event/content/artifacts/data) are extracted.
+ */
+export function extractSchemaPropertyPaths(schema: unknown): SchemaPropertyPath[] {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+  const schemaRecord = schema as Record<string, unknown>;
+  const properties = (schemaRecord.properties && typeof schemaRecord.properties === "object" && !Array.isArray(schemaRecord.properties))
+    ? (schemaRecord.properties as Record<string, unknown>)
+    : undefined;
+  if (!properties) return [];
+
+  const dataProperty = properties.data && typeof properties.data === "object" && !Array.isArray(properties.data)
+    ? (properties.data as Record<string, unknown>)
+    : undefined;
+  const dataProperties = dataProperty?.properties && typeof dataProperty.properties === "object" && !Array.isArray(dataProperty.properties)
+    ? (dataProperty.properties as Record<string, unknown>)
+    : undefined;
+
+  let targetProperties: Record<string, unknown> | undefined = dataProperties;
+  if (!targetProperties) {
+    const filtered: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(properties)) {
+      if (key !== "event" && key !== "content" && key !== "artifacts" && key !== "data") {
+        filtered[key] = val;
+      }
+    }
+    if (Object.keys(filtered).length > 0) {
+      targetProperties = filtered;
+    }
+  }
+
+  if (!targetProperties) return [];
+
+  const results: SchemaPropertyPath[] = [];
+  function walk(current: Record<string, unknown>, prefix = ""): void {
+    for (const [key, val] of Object.entries(current)) {
+      if (!isValidSelectorPath(key)) continue;
+      const path = prefix ? `${prefix}.${key}` : key;
+      const propRecord = val && typeof val === "object" && !Array.isArray(val) ? (val as Record<string, unknown>) : {};
+      const type = typeof propRecord.type === "string" ? propRecord.type : (Array.isArray(propRecord.enum) ? "enum" : "any");
+      const description = typeof propRecord.description === "string" ? propRecord.description : "";
+      results.push({ path, type, description });
+      if (propRecord.properties && typeof propRecord.properties === "object" && !Array.isArray(propRecord.properties)) {
+        walk(propRecord.properties as Record<string, unknown>, path);
+      }
+    }
+  }
+
+  walk(targetProperties);
+  return results;
+}

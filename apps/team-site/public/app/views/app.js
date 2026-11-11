@@ -2614,7 +2614,51 @@ function studioRouteOrderMarkup(authoring, role, locale) {
   return `<section class="studio-inspector-section studio-route-order-editor"><h3>${label}<span class="studio-order-count">${targets.length}</span></h3><p class="field-hint">${hint}</p><div class="studio-route-order-list" data-studio-route-order-list role="list">${targets.map((target, index) => `<div class="studio-route-order-row" data-studio-route-order-item data-studio-route-order="${esc(target)}" draggable="true" role="listitem" aria-posinset="${index + 1}" aria-setsize="${targets.length}"><span class="studio-route-order-position" data-studio-route-order-position>${index + 1}</span><span class="studio-route-order-name">${esc(roleName(target))}</span><button type="button" class="studio-order-handle" data-studio-route-order-handle aria-label="${locale === "en" ? `Drag to reorder ${esc(roleName(target))}` : `拖动调整${esc(roleName(target))}顺序`}" title="${locale === "en" ? "Drag to reorder" : "拖动调整顺序"}">⠿</button><span class="studio-route-order-moves"><button type="button" class="studio-order-move" data-studio-route-order-move="up" aria-label="${locale === "en" ? `Move ${esc(roleName(target))} up` : `将${esc(roleName(target))}上移`}" title="${locale === "en" ? "Move up" : "上移"}" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" class="studio-order-move" data-studio-route-order-move="down" aria-label="${locale === "en" ? `Move ${esc(roleName(target))} down` : `将${esc(roleName(target))}下移`}" title="${locale === "en" ? "Move down" : "下移"}" ${index === targets.length - 1 ? "disabled" : ""}>↓</button></span></div>`).join("")}</div></section>`;
 }
 
-function studioContextMapMarkup(authoring, role, locale) {
+function extractSchemaPropertyPaths(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+  const properties = (schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties))
+    ? schema.properties
+    : undefined;
+  if (!properties) return [];
+
+  const dataProperty = properties.data && typeof properties.data === "object" && !Array.isArray(properties.data)
+    ? properties.data
+    : undefined;
+  const dataProperties = dataProperty?.properties && typeof dataProperty.properties === "object" && !Array.isArray(dataProperty.properties)
+    ? dataProperty.properties
+    : undefined;
+
+  let targetProperties = dataProperties;
+  if (!targetProperties) {
+    const filtered = {};
+    for (const [key, val] of Object.entries(properties)) {
+      if (key !== "event" && key !== "content" && key !== "artifacts" && key !== "data") {
+        filtered[key] = val;
+      }
+    }
+    if (Object.keys(filtered).length > 0) targetProperties = filtered;
+  }
+  if (!targetProperties) return [];
+
+  const results = [];
+  function walk(current, prefix = "") {
+    for (const [key, val] of Object.entries(current)) {
+      if (!/^[a-zA-Z0-9_]+$/.test(key)) continue;
+      const path = prefix ? `${prefix}.${key}` : key;
+      const propRecord = val && typeof val === "object" && !Array.isArray(val) ? val : {};
+      const type = typeof propRecord.type === "string" ? propRecord.type : (Array.isArray(propRecord.enum) ? "enum" : "any");
+      const description = typeof propRecord.description === "string" ? propRecord.description : "";
+      results.push({ path, type, description });
+      if (propRecord.properties && typeof propRecord.properties === "object" && !Array.isArray(propRecord.properties)) {
+        walk(propRecord.properties, path);
+      }
+    }
+  }
+  walk(targetProperties);
+  return results;
+}
+
+function studioContextMapMarkup(authoring, role, locale, selection) {
   const incoming = [...new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === role.roleId).map((flow) => flow.fromRoleId))];
   const candidates = new Set([
     "global.task", "global.user_profile", "global.human_review.current.comment",
@@ -2622,17 +2666,17 @@ function studioContextMapMarkup(authoring, role, locale) {
   ]);
   if (role.joinMode) {
     if (role.joinMode !== "quorum_of" || Number(role.joinMin || incoming.length) >= incoming.length) {
-      for (const source of incoming) for (const suffix of ["content", "event", "data"]) candidates.add(`source(${source}).${suffix}`);
+      for (const source of incoming) for (const suffix of ["content", "event", "data", "artifact"]) candidates.add(`source(${source}).${suffix}`);
     }
   } else if (incoming.length) {
-    for (const source of ["direct.content", "direct.event", "direct.data"]) candidates.add(source);
+    for (const source of ["direct.content", "direct.event", "direct.data", "direct.artifact"]) candidates.add(source);
   }
   const sourceLabel = (value) => {
-    const roleSource = value.match(/^source\((.+)\)\.(content|event|data)$/);
+    const roleSource = value.match(/^source\((.+)\)\.(content|event|data|artifact)$/);
     if (roleSource) {
       const labels = locale === "en"
-        ? { content: "role output", event: "flow event", data: "structured data" }
-        : { content: "角色输出", event: "流转事件", data: "结构化数据" };
+        ? { content: "role output", event: "flow event", data: "structured data", artifact: "artifact bundle" }
+        : { content: "角色输出", event: "流转事件", data: "结构化数据", artifact: "交付产物" };
       return `${studioRoleDisplayName(authoring, roleSource[1], locale)} · ${labels[roleSource[2]]}`;
     }
     const labels = locale === "en" ? {
@@ -2643,7 +2687,8 @@ function studioContextMapMarkup(authoring, role, locale) {
       "global.human_review.current.previous_output.content": "Previous role output",
       "direct.content": "Direct upstream content",
       "direct.event": "Direct upstream event",
-      "direct.data": "Direct upstream data"
+      "direct.data": "Direct upstream data",
+      "direct.artifact": "Direct upstream artifact"
     } : {
       "global.task": "本次任务",
       "global.user_profile": "用户档案",
@@ -2652,20 +2697,100 @@ function studioContextMapMarkup(authoring, role, locale) {
       "global.human_review.current.previous_output.content": "上轮角色输出",
       "direct.content": "直接上游内容",
       "direct.event": "直接上游事件",
-      "direct.data": "直接上游数据"
+      "direct.data": "直接上游数据",
+      "direct.artifact": "直接上游产物"
     };
     return labels[value] || value;
   };
+  const getPropertyPathsForBase = (base) => {
+    if (base === "direct.data") {
+      const upstreamId = incoming.length === 1 ? incoming[0] : "";
+      if (!upstreamId) return [];
+      try {
+        const raw = selection?.assets?.roles?.[upstreamId]?.["output.schema.json"];
+        return extractSchemaPropertyPaths(typeof raw === "string" ? JSON.parse(raw) : raw);
+      } catch { return []; }
+    }
+    const sourceMatch = base.match(/^source\((.+)\)\.data$/);
+    if (sourceMatch) {
+      const upstreamId = sourceMatch[1];
+      try {
+        const raw = selection?.assets?.roles?.[upstreamId]?.["output.schema.json"];
+        return extractSchemaPropertyPaths(typeof raw === "string" ? JSON.parse(raw) : raw);
+      } catch { return []; }
+    }
+    if (base === "global.user_profile") {
+      return [
+        { path: "name", type: "string", description: locale === "en" ? "User name" : "用户姓名" },
+        { path: "role", type: "string", description: locale === "en" ? "User role" : "用户身份" },
+        { path: "department", type: "string", description: locale === "en" ? "Department" : "所属部门" },
+        { path: "language", type: "string", description: locale === "en" ? "Language" : "首选语言" },
+        { path: "preferences", type: "object", description: locale === "en" ? "User preferences" : "偏好设置" }
+      ];
+    }
+    return [];
+  };
+
+  let targetFieldCandidates = [];
+  const promptText = selection?.assets?.roles?.[role.roleId]?.["prompt.md"] || "";
+  for (const match of promptText.matchAll(/\{\{([a-zA-Z0-9_]+)\}\}/g)) {
+    const builtins = new Set(["agent", "task", "allowed_events", "user_preferences", "input", "loop_iteration"]);
+    if (!builtins.has(match[1])) targetFieldCandidates.push(match[1]);
+  }
+  try {
+    const manifest = JSON.parse(selection?.assets?.contracts || "{}");
+    const contract = (manifest.contracts || []).find((c) => c.kind === "role_input" && c.match?.roleId === role.roleId);
+    if (contract?.schema) {
+      const contractSchemaStr = selection?.assets?.contractSchemas?.[contract.schema];
+      if (contractSchemaStr) {
+        const contractSchema = JSON.parse(contractSchemaStr);
+        if (contractSchema.properties && typeof contractSchema.properties === "object") {
+          for (const key of Object.keys(contractSchema.properties)) {
+            if (/^[a-zA-Z0-9_]+$/.test(key)) targetFieldCandidates.push(key);
+          }
+        }
+      }
+    }
+  } catch { /* Ignore malformed JSON during editing */ }
+  targetFieldCandidates = [...new Set(targetFieldCandidates)].sort();
+  const targetDatalistId = `studio-context-target-datalist-${esc(role.roleId)}`;
+  const targetDatalistMarkup = targetFieldCandidates.length > 0
+    ? `<datalist id="${targetDatalistId}">${targetFieldCandidates.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("")}</datalist>`
+    : "";
+
+  const datalists = [];
+  if (targetDatalistMarkup) datalists.push(targetDatalistMarkup);
+  for (const candidate of candidates) {
+    const paths = getPropertyPathsForBase(candidate);
+    if (paths.length > 0) {
+      const safeId = `studio-context-paths-${esc(role.roleId)}-${candidate.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+      const options = paths.map((item) => {
+        const label = item.description ? `${item.path} (${item.type}) · ${item.description}` : `${item.path} (${item.type})`;
+        return `<option value="${esc(item.path)}">${esc(label)}</option>`;
+      }).join("");
+      datalists.push(`<datalist id="${safeId}">${options}</datalist>`);
+    }
+  }
+
   const candidateOptions = [...candidates].sort().map((value) => `<option value="${esc(value)}">${esc(sourceLabel(value))}</option>`).join("");
   const rows = Object.entries(role.contextMap || {}).sort(([left], [right]) => left.localeCompare(right)).map(([target, raw]) => {
     const optional = String(raw).endsWith("?");
     const selector = optional ? String(raw).slice(0, -1) : String(raw);
     const base = [...candidates].sort((left, right) => right.length - left.length).find((candidate) => selector === candidate || selector.startsWith(`${candidate}.`)) || "global.task";
     const path = selector === base ? "" : selector.slice(base.length + 1);
-    const optionalAllowed = base === "direct.data" || base.startsWith("source(") && base.endsWith(".data") || base.startsWith("global.human_review.current");
-    return `<div class="studio-context-map-row" data-studio-context-row><label class="field"><span>${locale === "en" ? "Target field" : "目标字段"}</span><input data-studio-context-target value="${esc(target)}"></label><label class="field"><span>${locale === "en" ? "Source" : "来源"}</span><select data-studio-context-source>${candidateOptions}<option value="${esc(base)}" selected>${esc(sourceLabel(base))}</option></select></label><label class="field"><span>${locale === "en" ? "Field path" : "字段路径"}</span><input data-studio-context-path value="${esc(path)}" placeholder="issue.id"></label><label class="field checkbox"><input type="checkbox" data-studio-context-optional ${optional ? "checked" : ""}${optionalAllowed ? "" : " disabled"}><span>${locale === "en" ? "Optional" : "可选"}</span></label><button type="button" class="icon-button" data-studio-context-remove aria-label="${locale === "en" ? "Remove mapping" : "移除映射"}" title="${locale === "en" ? "Remove mapping" : "移除映射"}">×</button></div>`;
+    const optionalAllowed = base === "direct.data" || base === "direct.artifact" || /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data|artifact)$/.test(base) || base.startsWith("global.human_review.current");
+    const pathAllowed = base === "direct.data" || base.startsWith("source(") && base.endsWith(".data") || base === "global.user_profile" || base.startsWith("global.human_review.current.previous_output");
+    const safeBaseId = `studio-context-paths-${esc(role.roleId)}-${base.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+    const hasDatalist = getPropertyPathsForBase(base).length > 0;
+    const pathDatalistAttr = hasDatalist ? ` list="${safeBaseId}"` : "";
+    const pathPlaceholder = pathAllowed
+      ? (locale === "en" ? "Select or enter property, e.g. issue.id" : "选择或输入属性，如 issue.id")
+      : (locale === "en" ? "Not applicable" : "不可用");
+    const targetListAttr = targetFieldCandidates.length > 0 ? ` list="${targetDatalistId}"` : "";
+
+    return `<div class="studio-context-map-row" data-studio-context-row><label class="field"><span>${locale === "en" ? "Target field" : "目标字段"}</span><input data-studio-context-target value="${esc(target)}"${targetListAttr} placeholder="${locale === "en" ? "Target input key" : "输入字段名"}"></label><label class="field"><span>${locale === "en" ? "Source" : "来源"}</span><select data-studio-context-source>${candidateOptions}<option value="${esc(base)}" selected>${esc(sourceLabel(base))}</option></select></label><label class="field"><span>${locale === "en" ? "Field path" : "字段路径"}</span><input data-studio-context-path value="${esc(path)}"${pathDatalistAttr} placeholder="${esc(pathPlaceholder)}"></label><label class="field checkbox"><input type="checkbox" data-studio-context-optional ${optional ? "checked" : ""}${optionalAllowed ? "" : " disabled"}><span>${locale === "en" ? "Optional" : "可选"}</span></label><button type="button" class="icon-button" data-studio-context-remove aria-label="${locale === "en" ? "Remove mapping" : "移除映射"}" title="${locale === "en" ? "Remove mapping" : "移除映射"}">×</button></div>`;
   }).join("");
-  return `<section class="studio-inspector-section studio-context-map-editor"><h3>${locale === "en" ? "Context Map" : "上下文映射"}</h3><p class="field-hint">${locale === "en" ? "Map supported incoming values to role input fields." : "将受支持的上游值映射到角色输入字段。"}</p><div data-studio-context-rows>${rows}</div><button type="button" class="secondary-button" data-studio-context-add>${locale === "en" ? "Add mapping" : "添加映射"}</button></section>`;
+  return `<section class="studio-inspector-section studio-context-map-editor"><h3>${locale === "en" ? "Context Map" : "上下文映射"}</h3><p class="field-hint">${locale === "en" ? "Map supported incoming values to role input fields." : "将受支持的上游值映射到角色输入字段。"}</p><div data-studio-context-rows>${rows}</div><button type="button" class="secondary-button" data-studio-context-add>${locale === "en" ? "Add mapping" : "添加映射"}</button>${datalists.join("")}</section>`;
 }
 
 function studioRoleInputContractMarkup(authoring, selection, locale) {
@@ -3218,7 +3343,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (selectedRole?.bindingKind === "exec") inspector.insertAdjacentHTML("beforeend", studioExecutionConfigMarkup(selectedRole, selection, state.locale));
       if (selectedRole) {
         inspector.insertAdjacentHTML("beforeend", studioRouteOrderMarkup(authoring, selectedRole, state.locale));
-        inspector.insertAdjacentHTML("beforeend", studioContextMapMarkup(authoring, selectedRole, state.locale));
+        inspector.insertAdjacentHTML("beforeend", studioContextMapMarkup(authoring, selectedRole, state.locale, selection));
       }
       if (!selectedRole && !selection.roleId && !selection.flowId && !selection.flowKey) inspector.insertAdjacentHTML("beforeend", studioRoleInputContractMarkup(authoring, selection, state.locale));
       localizeStudioInspector(inspector, state.locale);
@@ -3385,11 +3510,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (option.value) option.textContent = roleName(option.value);
       });
       inspector?.querySelectorAll("[data-studio-context-source] option").forEach((option) => {
-        const match = String(option.value || "").match(/^source\((.+)\)\.(content|event|data)$/);
+        const match = String(option.value || "").match(/^source\((.+)\)\.(content|event|data|artifact)$/);
         if (!match) return;
         const labels = state.locale === "en"
-          ? { content: "role output", event: "flow event", data: "structured data" }
-          : { content: "角色输出", event: "流转事件", data: "结构化数据" };
+          ? { content: "role output", event: "flow event", data: "structured data", artifact: "artifact bundle" }
+          : { content: "角色输出", event: "流转事件", data: "结构化数据", artifact: "交付产物" };
         option.textContent = `${roleName(match[1])} · ${labels[match[2]]}`;
       });
     };
@@ -3758,7 +3883,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const optional = row.querySelector("[data-studio-context-optional]")?.checked === true;
         if (!/^[a-zA-Z0-9_]+$/.test(target) || Object.hasOwn(mappings, target)) return false;
         if (path && !/^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$/.test(path)) return false;
-        const optionalAllowed = source === "direct.data" || source.startsWith("source(") && source.endsWith(".data") || source.startsWith("global.human_review.current");
+        const optionalAllowed = source === "direct.data" || source === "direct.artifact" || /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data|artifact)$/.test(source) || source.startsWith("global.human_review.current");
         if (optional && !optionalAllowed) return false;
         mappings[target] = `${source}${path ? `.${path}` : ""}${optional ? "?" : ""}`;
       }
@@ -3782,6 +3907,19 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (element.dataset.studioContractField) return;
       if (element.dataset.studioProfileField === "profileId" || element.dataset.studioRoleField === "profileId") return;
       if (element.closest("[data-studio-context-row]")) {
+        const row = element.closest("[data-studio-context-row]");
+        const pathInput = row?.querySelector("[data-studio-context-path]");
+        const targetInput = row?.querySelector("[data-studio-context-target]");
+        if (element === pathInput && targetInput) {
+          const currentTarget = targetInput.value.trim();
+          const currentPath = pathInput.value.trim();
+          if (currentPath && (!currentTarget || /^new_field(?:_\d+)?$/.test(currentTarget))) {
+            const leaf = currentPath.split(".").pop();
+            if (leaf && /^[a-zA-Z0-9_]+$/.test(leaf)) {
+              targetInput.value = leaf;
+            }
+          }
+        }
         if (!syncContextMapFromRows()) setEditorState(state.locale === "en" ? "Check the mapping fields and keep target names unique." : "请检查映射字段，并确保目标字段不重复。");
         return;
       }
@@ -3793,6 +3931,35 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       const element = event.target;
       if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) return;
       recordInspectorEdit();
+      if (element.closest("[data-studio-context-row]")) {
+        const row = element.closest("[data-studio-context-row]");
+        if (element.matches("[data-studio-context-source]")) {
+          const newSource = element.value;
+          const pathInput = row.querySelector("[data-studio-context-path]");
+          const optionalCheckbox = row.querySelector("[data-studio-context-optional]");
+          const roleId = selection?.roleId || "";
+          const safeBaseId = `studio-context-paths-${roleId.replace(/[^a-zA-Z0-9_]/g, "_")}-${newSource.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+          const datalist = inspector.querySelector(`#${CSS.escape(safeBaseId)}`);
+          if (pathInput) {
+            if (datalist) {
+              pathInput.setAttribute("list", safeBaseId);
+            } else {
+              pathInput.removeAttribute("list");
+            }
+            const pathAllowed = newSource === "direct.data" || (newSource.startsWith("source(") && newSource.endsWith(".data")) || newSource === "global.user_profile" || newSource.startsWith("global.human_review.current.previous_output");
+            pathInput.placeholder = pathAllowed
+              ? (state.locale === "en" ? "Select or enter property, e.g. issue.id" : "选择或输入属性，如 issue.id")
+              : (state.locale === "en" ? "Not applicable" : "不可用");
+          }
+          if (optionalCheckbox) {
+            const optionalAllowed = newSource === "direct.data" || newSource === "direct.artifact" || /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data|artifact)$/.test(newSource) || newSource.startsWith("global.human_review.current");
+            optionalCheckbox.disabled = !optionalAllowed;
+            if (!optionalAllowed) optionalCheckbox.checked = false;
+          }
+        }
+        if (!syncContextMapFromRows()) setEditorState(state.locale === "en" ? "Check the mapping fields and keep target names unique." : "请检查映射字段，并确保目标字段不重复。");
+        return;
+      }
       const contractField = element.dataset.studioContractField;
       if (contractField && selection.flowId) {
         const flow = Object.values(authoring.flows || {}).find((item) => item.flowId === selection.flowId);
