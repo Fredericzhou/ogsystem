@@ -622,6 +622,8 @@ export type AuditRecord = {
   selectedEvent?: string;
   nextRoleId?: string;
   status: "ok" | "failed" | "noop";
+  /** Redacted complete role output, retained for in-place inspection. */
+  stdout?: string;
   stdoutPreview?: string;
   stderrPreview?: string;
   error?: string;
@@ -1191,4 +1193,9 @@ export type RuntimeErrorEnvelope = {
   runId?: string;
   branchId?: string;
   line?: number;
+  backend?: string;
+  modelId?: string;
+  timeoutMs?: number;
+  elapsedMs?: number;
+  timedOut?: boolean;
 };

@@ -102,6 +102,7 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     selectedEvent: args.selectedEvent,
     nextRoleId: args.nextRoleId,
     status: args.status,
+    stdout: args.stdout || undefined,
     stdoutPreview: previewStructuredStdout(args.stdout ?? ""),
     stderrPreview: preview(args.stderr ?? ""),
     error: args.error,
@@ -144,6 +145,7 @@ export async function appendAuditRecord(args: {
 }): Promise<void> {
   const redactedAudit: AuditRecord = {
     ...args.audit,
+    stdout: redactOptionalText(args.audit.stdout, args.runContext.redaction),
     stdoutPreview: redactOptionalText(args.audit.stdoutPreview, args.runContext.redaction),
     stderrPreview: redactOptionalText(args.audit.stderrPreview, args.runContext.redaction),
     error: redactOptionalText(args.audit.error, args.runContext.redaction),

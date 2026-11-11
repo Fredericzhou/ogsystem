@@ -382,6 +382,27 @@ function buildFailureEnvelope(args: {
         branchId: args.branchId
       };
     }
+    if (args.error.details?.timedOut) {
+      const details = args.error.details;
+      const timeout = Number.isFinite(details.timeoutMs) ? `${details.timeoutMs}ms` : "configured limit";
+      const elapsed = Number.isFinite(details.elapsedMs) ? ` after ${details.elapsedMs}ms` : "";
+      const backend = details.providerID ? ` (${details.providerID}/${details.modelID || "model"})` : "";
+      return {
+        errorCode: "OPENCODE_REQUEST_TIMEOUT",
+        errorCategory: "execution",
+        message: args.message ?? `OpenCode API model request timed out${backend} after ${timeout}${elapsed}`,
+        retryable: true,
+        stage: "execute",
+        roleId: args.roleId,
+        runId: args.runId,
+        branchId: args.branchId,
+        backend: details.providerID,
+        modelId: details.modelID,
+        timeoutMs: details.timeoutMs,
+        elapsedMs: details.elapsedMs,
+        timedOut: true
+      };
+    }
     return {
       errorCode: "OPENCODE_EXECUTION_ERROR",
       errorCategory: "execution",

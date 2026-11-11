@@ -182,7 +182,7 @@ function validateAuditFields(manifest: RolePackageManifest, outputSchema: unknow
   const builtInAuditFields = new Set([
     "at", "roleId", "branchId", "joinId", "loopIteration", "lawRef", "modelId", "profileId", "toolRef",
     "command", "args", "sessionId", "messageId", "serverPid", "exitCode", "durationMs", "selectedEvent",
-    "nextRoleId", "status", "stdoutPreview", "stderrPreview", "error", "errorEnvelope", "compilerDigest",
+    "nextRoleId", "status", "stdout", "stdoutPreview", "stderrPreview", "error", "errorEnvelope", "compilerDigest",
     "compilerDiagnosticCode", "repair", "correctionRequest", "inputContext", "handledByEvent", "handledTargetRoleId",
     "executionId", "promptCalls", "projectedInputChars", "renderedPromptChars", "outputChars",
     "estimatedInputTokens", "estimatedOutputTokens", "externalDataIsolated", "fallbackUsed", "primaryModelId"

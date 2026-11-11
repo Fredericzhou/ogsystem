@@ -154,6 +154,7 @@ test("audit recorder delegates the canonical audit event to the runtime service 
       status: "ok",
       exitCode: 0,
       durationMs: 1,
+      stdout: "{\"event\":\"READY\",\"data\":{\"items\":[1,2,3,4,5]}} token=secret",
       stdoutPreview: "token=secret"
     },
     append: async (event) => received.push(event)
@@ -162,4 +163,6 @@ test("audit recorder delegates the canonical audit event to the runtime service 
   assert.equal(received[0].type, "audit");
   assert.equal(received[0].roleId, "worker");
   assert.equal(received[0].stdoutPreview, "token=[REDACTED]");
+  assert.match(received[0].stdout, /items/);
+  assert.doesNotMatch(received[0].stdout, /token=secret/);
 });

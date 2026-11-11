@@ -659,6 +659,7 @@ test("executeOpencodeModelRole keeps session-local memory isolated across sessio
 test("executeOpencodeModelRole aborts only the timed out session", async () => {
   const aborted = [];
 
+  let timeoutError;
   await assert.rejects(
     executeOpencodeModelRole({
       roleId: "role-timeout",
@@ -705,8 +706,16 @@ test("executeOpencodeModelRole aborts only the timed out session", async () => {
         }
       })
     }),
-    /Command timeout/
+    (error) => {
+      timeoutError = error;
+      return /OpenCode API model request timed out/.test(error.message);
+    }
   );
+
+  assert.equal(timeoutError.name, "OpencodeExecutionError");
+  assert.equal(timeoutError.details.timedOut, true);
+  assert.equal(timeoutError.details.timeoutMs, 10);
+  assert.equal(timeoutError.details.providerID, "openai");
 
   assert.deepStrictEqual(aborted, [
     {
@@ -767,7 +776,7 @@ test("executeOpencodeModelRole aborts a session created after timeout", async ()
         }
       })
     }),
-    /Command timeout/
+    /OpenCode API model request timed out/
   );
 
   await new Promise((resolve) => setTimeout(resolve, 80));

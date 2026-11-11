@@ -142,6 +142,10 @@ export class OpencodeExecutionError extends Error {
       messageId?: string;
       serverPid?: number;
       timedOut?: boolean;
+      timeoutMs?: number;
+      elapsedMs?: number;
+      providerID?: string;
+      modelID?: string;
     }
   ) {
     super(message);
@@ -652,7 +656,7 @@ function enforceOutputLimit(stdout: string, stderr: string, maxOutputBytes: numb
 }
 
 function createTimeoutError(timeoutMs: number): ToolExecutionError {
-  return new ToolExecutionError("timeout", `Command timeout after ${timeoutMs}ms`);
+  return new ToolExecutionError("timeout", `OpenCode API model request timed out after ${timeoutMs}ms`);
 }
 
 function isTimeoutError(error: unknown): error is ToolExecutionError {
@@ -949,6 +953,7 @@ export async function executeOpencodeModelRole(
   reasoningKind?: "effort";
   reasoningSupported?: boolean;
 }> {
+  const executionStartedAt = Date.now();
   if (typeof args.schema !== "object" || args.schema === null || Array.isArray(args.schema)) {
     throw new Error(`Role "${args.roleId}" output schema must be a JSON object`);
   }
@@ -1383,7 +1388,11 @@ export async function executeOpencodeModelRole(
         sessionId,
         messageId,
         serverPid: runClient.pid,
-        timedOut: true
+        timedOut: true,
+        timeoutMs: args.timeoutMs,
+        elapsedMs: Date.now() - executionStartedAt,
+        providerID,
+        modelID
       });
     }
     if (error instanceof OpencodeExecutionError) {
@@ -1404,7 +1413,11 @@ export async function executeOpencodeModelRole(
         sessionId: error.details?.sessionId,
         messageId: error.details?.messageId,
         serverPid: error.details?.serverPid,
-        timedOut: error.details?.timedOut
+        timedOut: error.details?.timedOut,
+        timeoutMs: error.details?.timeoutMs,
+        elapsedMs: error.details?.elapsedMs,
+        providerID: error.details?.providerID,
+        modelID: error.details?.modelID
       });
     }
     throw error;

@@ -328,6 +328,7 @@ function safeContent(value: unknown, options: ConversationProjectionOptions): Co
 
 function contentFromRecord(value: RecordValue): unknown {
   if (Object.prototype.hasOwnProperty.call(value, "content")) return value.content;
+  if (Object.prototype.hasOwnProperty.call(value, "stdout")) return value.stdout;
   if (Object.prototype.hasOwnProperty.call(value, "stdoutPreview")) return value.stdoutPreview;
   if (Object.prototype.hasOwnProperty.call(value, "message")) return value.message;
   if (Object.prototype.hasOwnProperty.call(value, "error")) return value.error;
