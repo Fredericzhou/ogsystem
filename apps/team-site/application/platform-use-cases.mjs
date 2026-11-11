@@ -136,8 +136,8 @@ export function createPlatformUseCases({
     async updatePlatformSettings(payload) {
       const timeoutSeconds = Number(payload.timeoutSeconds);
       const retryCount = Number(payload.retryCount);
-      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 10 || timeoutSeconds > 3600) {
-        throw new Error("timeoutSeconds must be between 10 and 3600.");
+      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 10 || timeoutSeconds > 604800) {
+        throw new Error("timeoutSeconds must be between 10 and 604800.");
       }
       if (!Number.isInteger(retryCount) || retryCount < 0 || retryCount > 5) {
         throw new Error("retryCount must be between 0 and 5.");
@@ -213,7 +213,14 @@ export function resolvePlatformDefaultModelSelection({ settings = {}, discoverie
   }
 
   return {
-    ...(effectiveSelection ? { modelSelectionDefaults: effectiveSelection } : {}),
+    ...(effectiveSelection ? {
+      modelSelectionDefaults: {
+        ...effectiveSelection,
+        ...(Number.isFinite(Number(settings.timeoutSeconds)) && Number(settings.timeoutSeconds) > 0
+          ? { timeoutMs: Number(settings.timeoutSeconds) * 1000 }
+          : {})
+      }
+    } : {}),
     ...(unverifiedConfiguredModel ? { unverifiedConfiguredModel } : {}),
     modelCatalogGeneratedAt: generatedAt,
     modelCatalogModels: runnableModels.map((model) => ({

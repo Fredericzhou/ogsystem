@@ -1,3 +1,5 @@
+import { calculateSafeTransitionBudget } from "../public/app/safe-transition-budget.js";
+
 export function createTeamDesignUseCases({
   teamCatalog,
   withTeamVersionLock,
@@ -110,6 +112,19 @@ export function createTeamDesignUseCases({
     };
   }
 
+  async function assertSafeTransitionBudget(team, authoring, lawCatalogOverride) {
+    if (!designAssetStore || !authoring) return;
+    const roleIds = Object.keys(authoring.roles || {});
+    const currentAssets = await designAssetStore.readAssets({ workdir: team.workdir, roleIds });
+    const lawCatalog = lawCatalogOverride || currentAssets.laws || { laws: [] };
+    const law = (lawCatalog.laws || []).find((item) => item.lawId === authoring.system?.lawGlobalRef);
+    const configuredBudget = law?.constraints?.maxTransitions ?? 100;
+    const { budget } = calculateSafeTransitionBudget(authoring);
+    if (configuredBudget < budget) {
+      throw new Error(`TEAM_TRANSITION_BUDGET_TOO_LOW: maxTransitions is ${configuredBudget}, but the complete graph structure requires at least ${budget}; recommended reference is ${Math.ceil(budget * 1.5)}.`);
+    }
+  }
+
   async function modelSelectionForAuthoring(team, authoring) {
     const roles = authoring?.roles && typeof authoring.roles === "object" ? authoring.roles : {};
     const current = await designAssetStore.readAssets({ workdir: team.workdir, roleIds: Object.keys(roles) });
@@ -219,6 +234,8 @@ export function createTeamDesignUseCases({
             throw new Error("TEAM_HANDOFF_PATH_UNSUPPORTED: Studio stores the manifest at .ogs/contracts/handoff.json.");
           }
         }
+        const authoring = body.authoring && typeof body.authoring === "object" ? body.authoring : design.authoring;
+        await assertSafeTransitionBudget(team, authoring, body.assets?.laws);
         const assets = { ...(body.assets || {}) };
         if (body.authoring && typeof body.authoring === "object") {
           assets.modelSelection = await modelSelectionForAuthoring(team, body.authoring);
@@ -323,6 +340,8 @@ export function createTeamDesignUseCases({
             ? designSerializer.serialize(body.authoring)
             : "";
         if (!systemSource) throw new Error("SYSTEM_SOURCE_REQUIRED: design source is required.");
+        const currentDesign = await projectDesign(team);
+        await assertSafeTransitionBudget(team, body.authoring || currentDesign.authoring);
         const saved = body.authoring && typeof body.authoring === "object" && typeof designStore.saveAuthoring === "function"
           ? await designStore.saveAuthoring({ workdir: team.workdir, authoring: body.authoring })
           : await designStore.saveSystemSource({ workdir: team.workdir, systemSource });

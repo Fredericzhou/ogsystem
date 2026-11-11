@@ -386,16 +386,10 @@ async function runOnlineModelConnectivityCheck(args: {
   }
   if (opencodeModels.length === 0) return;
 
-  let serverTimeoutMs = ONLINE_CHECK_MIN_TIMEOUT_MS;
-  for (const [, selectionConfig] of opencodeModels) {
-    serverTimeoutMs = Math.max(serverTimeoutMs, selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS);
-  }
-  serverTimeoutMs = Math.min(Math.max(serverTimeoutMs, ONLINE_CHECK_MIN_TIMEOUT_MS), ONLINE_CHECK_MAX_TIMEOUT_MS);
-
   // Trade-off: reuse one short-lived OpenCode server for all probes to keep doctor latency/cost
   // bounded while still validating each model binding independently.
   const runClient = await startOpencodeRunClient({
-    timeoutMs: serverTimeoutMs,
+    startupTimeoutMs: ONLINE_CHECK_MAX_TIMEOUT_MS,
     directory: args.targetDir
   });
 

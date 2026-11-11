@@ -140,7 +140,7 @@ test("platform settings read and update preserve defaults, validation, and respo
 
   for (const body of [
     { timeoutSeconds: 9, retryCount: 0 },
-    { timeoutSeconds: 3601, retryCount: 0 },
+    { timeoutSeconds: 604801, retryCount: 0 },
     { timeoutSeconds: 10, retryCount: 1.5 },
     { timeoutSeconds: 10, retryCount: 6 }
   ]) {

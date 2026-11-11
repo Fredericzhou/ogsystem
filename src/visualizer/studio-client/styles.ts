@@ -125,6 +125,15 @@ export function injectStudioGraphStyles(): void {
       font-size: 13px;
       font-weight: 700;
       line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .studio-graph-toolbar-icon svg {
+      width: 14px;
+      height: 14px;
+      display: block;
     }
     .studio-graph-toolbar-text {
       font-size: 10px;

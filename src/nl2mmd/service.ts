@@ -125,7 +125,7 @@ export async function createNl2MmdConversation(args: {
     modelRef: args.modelRef
   });
   const runClient = await startOpencodeRunClient({
-    timeoutMs: 30000,
+    startupTimeoutMs: 30000,
     directory: args.workdir,
     env: {
       OGSYSTEM_NL2MMD: "1"

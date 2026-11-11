@@ -105,7 +105,7 @@ type OpencodeClientLike = {
  */
 export type OpencodeSdkTransport = {
   startServer(args: {
-    timeoutMs: number;
+    startupTimeoutMs: number;
     env?: Record<string, string>;
   }): Promise<StartedServer>;
   createClient(args: {
@@ -113,6 +113,8 @@ export type OpencodeSdkTransport = {
     directory?: string;
   }): OpencodeClientLike;
 };
+
+const OPENCODE_SERVER_STARTUP_TIMEOUT_MS = 120000;
 
 /**
  * Surface layer for a running OpenCode server; used to create sessions and collect diagnostics.
@@ -750,13 +752,13 @@ function withTimeout<T>(
 }
 
 async function startServer(args: {
-  timeoutMs: number;
+  startupTimeoutMs: number;
   env?: Record<string, string>;
 }): Promise<StartedServer> {
   const sourceRuntime = import.meta.url.endsWith(".ts");
   const hostPath = fileURLToPath(new URL(sourceRuntime ? "./opencode-server-host.ts" : "./opencode-server-host.js", import.meta.url));
   const hostArgs = sourceRuntime ? ["--import", "tsx", hostPath] : [hostPath];
-  const env: NodeJS.ProcessEnv = { ...process.env, ...args.env, OGS_OPENCODE_SERVER_TIMEOUT_MS: String(args.timeoutMs) };
+  const env: NodeJS.ProcessEnv = { ...process.env, ...args.env, OGS_OPENCODE_SERVER_STARTUP_TIMEOUT_MS: String(args.startupTimeoutMs) };
   if (!env.CODEX_GATEWAY_API_KEY) {
     try {
       const config = readFileSync(`${homedir()}/.codex/config.toml`, "utf8");
@@ -809,9 +811,9 @@ async function startServer(args: {
     const timer = setTimeout(() => {
       void terminateChildProcessTree(child).catch(() => undefined);
       finishReject(
-        new ToolExecutionError("timeout", `OpenCode server startup timeout after ${args.timeoutMs}ms`)
+        new ToolExecutionError("timeout", `OpenCode server startup timeout after ${args.startupTimeoutMs}ms`)
       );
-    }, args.timeoutMs + 5000);
+    }, args.startupTimeoutMs + 5000);
 
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
@@ -862,14 +864,14 @@ const defaultTransport: OpencodeSdkTransport = {
  */
 export async function startOpencodeRunClient(
   args: {
-    timeoutMs: number;
+    startupTimeoutMs: number;
     env?: Record<string, string>;
     directory?: string;
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<OpencodeRunClient> {
   const server = await transport.startServer({
-    timeoutMs: args.timeoutMs,
+    startupTimeoutMs: args.startupTimeoutMs,
     env: args.env
   });
   return {
@@ -965,7 +967,7 @@ export async function executeOpencodeModelRole(
     ? undefined
     : await startOpencodeRunClient(
         {
-          timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 120000)),
+          startupTimeoutMs: OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
           directory: args.directory ?? args.workdir
         },
         transport

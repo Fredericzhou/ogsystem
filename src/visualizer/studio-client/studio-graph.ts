@@ -636,6 +636,10 @@ function syncRuntimeMetricsPill(args: {
   }
 }
 
+const TOOLBAR_ICON_SAVE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>';
+const TOOLBAR_ICON_ADD_ROLE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+const TOOLBAR_ICON_ADD_EDGE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="3"/><circle cx="17" cy="12" r="3"/><path d="M8 12h6"/><path d="M11 9.5l2.5 2.5-2.5 2.5"/><line x1="20" y1="4" x2="20" y2="8"/><line x1="22" y1="6" x2="18" y2="6"/></svg>';
+
 export class StudioGraphIsland {
   private graph: Graph;
   private toolbar: HTMLDivElement;
@@ -761,14 +765,14 @@ export class StudioGraphIsland {
       this.toolbarButton("debug-run", "debugRun", "▶", this.label("debugRunShort")),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
-      this.toolbarButton("add-role", "addRole", "+R"),
-      this.toolbarButton("add-edge", "addEdge", "+E"),
+      this.toolbarButton("add-role", "addRole", TOOLBAR_ICON_ADD_ROLE),
+      this.toolbarButton("add-edge", "addEdge", TOOLBAR_ICON_ADD_EDGE),
       this.toolbarButton("assets", "teamConfiguration", "⚙"),
       this.toolbarButton("delete", "deleteSelection", "⌫"),
       this.toolbarButton("undo", "undo", "↶"),
       this.toolbarButton("redo", "redo", "↷"),
       this.toolbarButton("validate", "validateWorkbench", "✓"),
-      this.toolbarButton("save", "saveWorkbench", "Sv"),
+      this.toolbarButton("save", "saveWorkbench", TOOLBAR_ICON_SAVE),
       '</div>',
       '</div>',
       '</div>',
@@ -2937,9 +2941,11 @@ export class StudioGraphIsland {
   private toolbarButton(action: string, key: StudioGraphLabelKey, icon: string, shortLabel?: string): string {
     const label = this.label(key);
     const expanded = action === "assets" ? ' aria-expanded="false" aria-controls="studio-asset-drawer"' : "";
+    const isSvg = typeof icon === "string" && icon.trim().startsWith("<svg");
+    const renderedIcon = isSvg ? icon : this.escapeHtml(icon);
     return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
       this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '"' + expanded + '><span class="studio-graph-toolbar-icon" aria-hidden="true">' +
-      this.escapeHtml(icon) + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
+      renderedIcon + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
   }
 
   private sameCanvas(left: StudioCanvasSnapshot, right: StudioCanvasSnapshot): boolean {

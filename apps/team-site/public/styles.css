@@ -385,6 +385,7 @@ h1, h2, p { margin-top: 0; }
 .studio-inspector-fields .field { display: grid; gap: 5px; min-width: 0; }
 .studio-inspector-fields .field > span:first-child { color: var(--muted); font-size: 10px; font-weight: 650; }
 .studio-inspector-fields .field input, .studio-inspector-fields .field select, .studio-inspector-fields .field textarea { background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: inherit; font-size: 11px; min-height: 34px; min-width: 0; padding: 7px 8px; width: 100%; }
+.studio-inspector-fields .field select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 13px) 14px, calc(100% - 9px) 14px; background-repeat: no-repeat; background-size: 4px 4px, 4px 4px; padding-right: 24px; cursor: pointer; }
 .studio-inspector-fields .field textarea { line-height: 1.5; resize: vertical; }
 .studio-inspector-fields .field.full { grid-column: 1 / -1; }
 .studio-inspector-fields .field.checkbox { align-items: center; display: flex; gap: 8px; }
@@ -1609,8 +1610,13 @@ body { min-width: 0; font-size: 15px; }
 .studio-role-avatar { align-items: center; background: transparent; border: 0; display: inline-flex !important; flex: 0 0 32px; height: 32px; justify-content: center; position: relative; width: 32px; }
 .studio-role-avatar svg { fill: var(--role-accent); height: 24px; width: 24px; }
 .studio-role-avatar .role-avatar-badge { bottom: -1px; height: 13px; position: absolute; right: -1px; width: 13px; }
-.studio-flow-contract-icon { align-items: center; background: transparent; border: 0; color: var(--accent); display: inline-flex !important; flex: 0 0 32px; height: 32px; justify-content: center; width: 32px; }
-.studio-flow-contract-icon svg { fill: none; height: 24px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; width: 24px; }
+.studio-flow-contract-icon { align-items: center; background: transparent; border: 0; color: var(--flow-accent, var(--accent)); display: inline-flex !important; flex: 0 0 32px; height: 32px; justify-content: center; position: relative; width: 32px; }
+.studio-flow-contract-icon svg.flow-contract-svg { display: block; fill: var(--flow-accent, currentColor); height: 24px; width: 24px; }
+.studio-flow-contract-icon svg:not(.flow-contract-badge svg):not(.flow-contract-svg) { display: block; fill: none; height: 24px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; width: 24px; }
+.studio-flow-contract-icon .flow-contract-badge { align-items: center; background: var(--surface); border: 1.5px solid var(--surface); border-radius: 50%; bottom: -1px; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); color: var(--mint, #16a34a); display: inline-flex; height: 13px; justify-content: center; position: absolute; right: -1px; transition: transform .15s ease; width: 13px; z-index: 2; }
+.studio-flow-contract-icon .flow-contract-badge:hover { transform: scale(1.18); }
+.studio-flow-contract-icon .flow-contract-badge svg { display: block; height: 9px; width: 9px; }
+:root[data-visualizer-theme="dark"] .studio-flow-contract-icon .flow-contract-badge { background: #0f172a; border-color: #1e293b; box-shadow: 0 2px 6px rgba(0, 0, 0, .6); color: #4ade80; }
 .studio-panel-resize-handle { align-items: center; background: transparent; border: 0; border-radius: 4px; bottom: 3px; color: var(--muted); cursor: nwse-resize; display: inline-flex; height: 26px; justify-content: center; padding: 3px; position: absolute; right: 3px; touch-action: none; transition: color .12s ease, background .12s ease; width: 26px; z-index: 2; }
 .studio-panel-resize-handle:hover { background: var(--surface-soft, rgba(0,0,0,.06)); color: var(--mint); }
 .studio-panel-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }

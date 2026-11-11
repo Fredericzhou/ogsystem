@@ -80,7 +80,7 @@ test("startOpencodeRunClient starts one reusable shared server", async () => {
 
   const runClient = await startOpencodeRunClient(
     {
-      timeoutMs: 5000,
+      startupTimeoutMs: 5000,
       directory: "/tmp/project"
     },
     {
@@ -106,7 +106,7 @@ test("startOpencodeRunClient starts one reusable shared server", async () => {
   assert.strictEqual(runClient.pid, 321);
   assert.strictEqual(createClientArgs.baseUrl, "http://127.0.0.1:4096");
   assert.deepStrictEqual(startServerArgs, {
-    timeoutMs: 5000,
+    startupTimeoutMs: 5000,
     env: undefined
   });
   assert.strictEqual(createClientArgs.directory, "/tmp/project");

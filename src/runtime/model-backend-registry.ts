@@ -284,7 +284,7 @@ export const opencodeBackendAdapter: BackendAdapter = {
   },
   async startRun(args): Promise<BackendRunSession> {
     const runClient = await startOpencodeRunClient({
-      timeoutMs: 30000,
+      startupTimeoutMs: 30000,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
         OGSYSTEM_SHARED_DIR: args.runContext.sharedDir
@@ -381,7 +381,7 @@ export const opencodeBackendAdapter: BackendAdapter = {
   },
   async probe(args) {
     const runClient = await startOpencodeRunClient({
-      timeoutMs: args.timeoutMs,
+      startupTimeoutMs: 30000,
       directory: args.workdir
     });
     try {
