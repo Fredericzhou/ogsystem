@@ -82,7 +82,7 @@ test("Visualizer design projector uses business flow names or localized event la
   await projector.project({ workdir: "/workspace/project" }, "zh-CN");
   assert.deepEqual(graphOptions.presentation.edgeLabels, {
     "flow.named": "方案已确认",
-    "flow.localized": "就绪"
+    "flow.localized": "准备好了"
   });
 });
 

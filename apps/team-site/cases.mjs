@@ -2,20 +2,20 @@ export const cases = [
   {
     id: "cross-backend-review-loop",
     title: { "zh-CN": "跨底座审核循环", en: "Cross-backend review loop" },
-    short: { "zh-CN": "Codex 分析、OpenCode 审核，打回后回到分析角色，直到审核通过。", en: "Codex analyzes and OpenCode reviews, looping back for rework until approval." },
+    short: { "zh-CN": "Codex 分析、OpenCode 审核，打回后回到分析角色，直到审核同意。", en: "Codex analyzes and OpenCode reviews, looping back for rework until approval." },
     category: { "zh-CN": "工程协作", en: "Engineering collaboration" },
     duration: { "zh-CN": "2 个角色 · 最多 3 轮", en: "2 roles · up to 3 rounds" },
     icon: "refresh",
     detail: {
       scenario: { "zh-CN": "验证一个由 Codex 编写、OpenCode 复核的有界交付流程。", en: "Validate a bounded delivery flow written by Codex and reviewed by OpenCode." },
-      relationship: { "zh-CN": "分析角色提交结果，审核关系可以通过、要求返工或拒绝；返工意见回传给分析角色。", en: "The analyst submits a result. The reviewing relationship can approve, request rework, or reject it; rework feedback returns to the analyst." },
+      relationship: { "zh-CN": "分析角色提交结果，审核角色可以说“同意”“请再改改”或“不同意”；修改意见会回传给分析角色。", en: "The analyst submits a result. The reviewing relationship can approve, request rework, or reject it; rework feedback returns to the analyst." },
       background: { "zh-CN": "跨模型协作需要明确的审核决策和循环上限。", en: "Cross-model collaboration needs an explicit review decision and a bounded loop." },
       problem: { "zh-CN": "适合验证共享工作目录中的分析、复核和返工。", en: "Use this to validate analysis, review, and rework in one shared workspace." },
-      collaboration: { "zh-CN": "Codex 负责分析，OpenCode 负责审核；NEEDS_REWORK 回到 Codex，APPROVED 通过，REJECTED 终止处置。", en: "Codex analyzes and OpenCode reviews; NEEDS_REWORK returns to Codex, APPROVED passes, and REJECTED ends in disposition." },
-      deliverable: { "zh-CN": "包含分析内容、审核决策、反馈和最终通过结果的审计记录。", en: "An audit trail containing analysis, review decision, feedback, and the approved result." },
+      collaboration: { "zh-CN": "Codex 负责分析，OpenCode 负责审核；OpenCode 可以说“请再改改”并把意见交回 Codex，也可以说“同意”或“不同意”。", en: "Codex analyzes and OpenCode reviews; NEEDS_REWORK returns to Codex, APPROVED passes, and REJECTED ends in disposition." },
+      deliverable: { "zh-CN": "包含分析内容、审核对话、修改意见和最终同意结果的审计记录。", en: "An audit trail containing analysis, review decision, feedback, and the approved result." },
       roles: {
         "codex-analyst": { "zh-CN": "分析并根据审核意见返工。", en: "Analyzes and reworks from review feedback." },
-        "opencode-reviewer": { "zh-CN": "复核分析结果并决定通过、返工或拒绝。", en: "Reviews the analysis and decides whether to approve, request rework, or reject it." }
+        "opencode-reviewer": { "zh-CN": "复核分析结果，并决定说“同意”“请再改改”还是“不同意”。", en: "Reviews the analysis and decides whether to approve, request rework, or reject it." }
       }
     },
     accent: "mint",
