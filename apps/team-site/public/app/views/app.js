@@ -115,6 +115,18 @@ function professionalWorkspaceUrl(projectId, runId = "") {
   if (!projectId || !runId) return "";
   return `/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`;
 }
+function isStudioArtifactEntryVisible(entry) {
+  if (!entry || entry.kind !== "file") return false;
+  const path = String(entry.path || "");
+  return entry.sealed === true || path.startsWith("sealed/")
+    || /^roles\/[^/]+\/(?:outbox\.md|result\.json)$/.test(path)
+    || /^roles\/[^/]+\/executions\/[^/]+\/execution-outcome\.json$/.test(path);
+}
+function studioArtifactIsText(entry) {
+  const mediaType = String(entry?.mediaType || "").toLowerCase();
+  if (mediaType.startsWith("text/") || /^(application\/json|application\/xml|application\/javascript|application\/graphql)/.test(mediaType)) return true;
+  return /\.(?:md|txt|log|mmd|json|jsonl|ndjson|csv|xml|html|svg)$/i.test(String(entry?.path || ""));
+}
 const themeStorageKey = "ogs.visualizer.theme";
 const navStorageKey = "ogs.team-site.nav-state";
 let navPreferenceStored = false;
@@ -1302,10 +1314,7 @@ async function renderStudioArtifactsPage(teamVersionId, simulationId, pageReques
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "无法读取运行目录");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
-    const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter((entry) => {
-      const path = String(entry.path || "");
-      return /^roles\/[^/]+\/(?:outbox\.md|result\.json)$/.test(path) || /^roles\/[^/]+\/executions\/[^/]+\/execution-outcome\.json$/.test(path);
-    });
+    const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter(isStudioArtifactEntryVisible);
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulationId)}" data-route="/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulationId)}">← 返回运行详情</a><div class="eyebrow">OGS Studio · 工作目录</div><h1>运行产物</h1><p>查看本次调试运行生成的角色成果和交接文件。</p></div><span class="status-chip">${entries.length} 个产物</span></section><section class="studio-artifact-browser"><aside class="studio-artifact-list"><div class="panel-head"><div><span class="section-kicker">Work directory</span><h2>产物文件</h2></div></div>${entries.length ? entries.map((entry, index) => `<button type="button" class="studio-artifact-entry${index === 0 ? " selected" : ""}" data-artifact-path="${esc(entry.path)}"><strong>${esc(entry.path)}</strong><span>${Number(entry.size || 0).toLocaleString()} bytes · ${esc(entry.updatedAt || entry.modifiedAt || "")}</span></button>`).join("") : '<p class="empty-note">本次运行暂无可展示产物。</p>'}</aside><section class="studio-artifact-preview"><div class="panel-head"><div><span class="section-kicker">Artifact preview</span><h2 data-artifact-title>${esc(entries[0]?.path || "未选择产物")}</h2></div><a class="secondary-button" data-artifact-download href="#" hidden>下载产物</a></div><pre data-artifact-content>选择左侧产物查看内容。</pre></section></section>`;
     const title = root.querySelector("[data-artifact-title]");
     const content = root.querySelector("[data-artifact-content]");
@@ -1320,7 +1329,9 @@ async function renderStudioArtifactsPage(teamVersionId, simulationId, pageReques
       content.textContent = "正在读取文件...";
       try {
         const fileResponse = await pageFetch(rawUrl);
-        content.textContent = fileResponse.ok ? await fileResponse.text() : "无法读取该文件。";
+        if (!fileResponse.ok) content.textContent = "无法读取该文件。";
+        else if (!studioArtifactIsText(entry)) content.textContent = `已封存文件 · ${entry.mediaType || "二进制文件"}\n请使用“下载产物”获取原文件。`;
+        else content.textContent = await fileResponse.text();
       } catch (error) {
         if (!isAbort(error)) content.textContent = error.message || "无法读取该文件。";
       }
@@ -1977,10 +1988,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
             const apiBase = `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/artifacts`;
             const resp = await pageFetch(apiBase);
             const payload = await resp.json();
-            const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter((entry) => {
-              const p = String(entry.path || "");
-              return /^roles\/[^/]+\/(?:outbox\.md|result\.json)$/.test(p) || /^roles\/[^/]+\/executions\/[^/]+\/execution-outcome\.json$/.test(p);
-            });
+            const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter(isStudioArtifactEntryVisible);
             if (!entries.length) {
               listContainer.innerHTML = `<p class="empty-note">${state.locale === "en" ? "No artifacts found." : "本次运行暂无可展示产物。"}</p>`;
               return;
@@ -1995,7 +2003,9 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
               contentEl.textContent = state.locale === "en" ? "Reading file…" : "正在读取文件…";
               try {
                 const fileResp = await pageFetch(rawUrl);
-                contentEl.textContent = fileResp.ok ? await fileResp.text() : "无法读取该文件。";
+                if (!fileResp.ok) contentEl.textContent = "无法读取该文件。";
+                else if (!studioArtifactIsText(entry)) contentEl.textContent = `已封存文件 · ${entry.mediaType || "二进制文件"}\n请使用“下载产物”获取原文件。`;
+                else contentEl.textContent = await fileResp.text();
               } catch (err) {
                 contentEl.textContent = err.message || "无法读取该文件。";
               }

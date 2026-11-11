@@ -5,7 +5,7 @@ import path from "node:path";
 import http from "node:http";
 import https from "node:https";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, cp, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -27,7 +27,7 @@ import {
 } from "../dist/visualizer/request-body.js";
 import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
-import { loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
+import { exportTeamPackage, loadTeamPackage, saveProjectSystemSource } from "../dist/visualizer/project-projection.js";
 import { loadRunRuntimeEventsIncremental } from "../dist/visualizer/run-query-service.js";
 import { materializeCaseTeam } from "../apps/team-site/demo-runner.mjs";
 
@@ -3466,6 +3466,24 @@ test("project persistence keeps Save As and bundle import from replacing canonic
     await assert.rejects(() => stat(staleRoleAssetPath), { code: "ENOENT" });
   } finally {
     await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("Team Package carries project-local execution helpers into isolated runs", async () => {
+  const source = await mkdtemp(path.join(os.tmpdir(), "ogsystem-package-tools-source-"));
+  const isolated = await mkdtemp(path.join(os.tmpdir(), "ogsystem-package-tools-isolated-"));
+  try {
+    await materializeCaseTeam("management-consulting", source, "zh-CN");
+    const bundle = await exportTeamPackage(source);
+    assert.ok(bundle.team.executableFiles.some((file) => file.path === "tools/publish-artifacts.mjs"));
+    await mkdir(path.join(isolated, ".ogs"), { recursive: true });
+    await loadTeamPackage({ workdir: isolated, bundle });
+    await access(path.join(isolated, "tools", "publish-artifacts.mjs"));
+    const importedTool = JSON.parse(await readFile(path.join(isolated, "tools.json"), "utf8"));
+    assert.equal(importedTool.tools[0].argsTemplate[0], "tools/publish-artifacts.mjs");
+  } finally {
+    await rm(source, { recursive: true, force: true });
+    await rm(isolated, { recursive: true, force: true });
   }
 });
 

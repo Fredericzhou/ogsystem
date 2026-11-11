@@ -816,12 +816,34 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       await loadSimulationEvidence(teamId, teamVersionId, simulationId);
       if (typeof simulationStore.listSimulationArtifacts !== "function") throw new Error("STUDIO_SIMULATION_ARTIFACTS_UNAVAILABLE");
       const payload = await simulationStore.listSimulationArtifacts(teamVersionId, simulationId);
+      let sealedEntries = [];
+      if (typeof simulationStore.readSimulationSealManifest === "function") {
+        try {
+          const manifest = await simulationStore.readSimulationSealManifest(teamVersionId, simulationId);
+          const artifactRoot = String(manifest.artifact || "").replace(/^shared\//, "").replace(/\/$/, "");
+          if (artifactRoot && Array.isArray(manifest.files)) {
+            sealedEntries = manifest.files.map((entry) => ({
+              path: `sealed/${artifactRoot}/${entry.path}`,
+              kind: "file",
+              size: Number(entry.sizeBytes || 0),
+              sizeBytes: Number(entry.sizeBytes || 0),
+              sha256: entry.sha256,
+              mediaType: entry.mediaType || "application/octet-stream",
+              sealed: true
+            }));
+          }
+        } catch (error) {
+          // Runs without declared artifacts have no seal manifest. Their
+          // ordinary role evidence remains available through this endpoint.
+          if (!String(error?.message || "").includes("NOT_FOUND")) throw error;
+        }
+      }
       return publicSimulation({
         teamId,
         teamVersionId,
         simulationId,
         ...payload,
-        entries: (payload.entries || []).map((entry) => ({
+        entries: [...(payload.entries || []), ...sealedEntries].map((entry) => ({
           ...entry,
           url: `${artifactsUrl(teamId, teamVersionId, simulationId)}/${entry.path.split("/").map(encodeURIComponent).join("/")}`
         }))

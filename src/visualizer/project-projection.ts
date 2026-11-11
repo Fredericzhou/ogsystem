@@ -853,7 +853,12 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
   const roleRoot = resolveProjectRoleRootDir(workdir, roleRepo);
   const executableFiles = [
     ...await collectPortablePackageFiles(roleRoot, "og-roles/roles"),
-    ...await collectPortablePackageFiles(resolve(workdir, ".ogs", "contracts"), ".ogs/contracts")
+    ...await collectPortablePackageFiles(resolve(workdir, ".ogs", "contracts"), ".ogs/contracts"),
+    // Execution profiles may point at project-local helpers (for example the
+    // classic-team document/media publishers). Keep those helpers in the
+    // Team Package so an isolated simulation has the same executable assets
+    // as the authored TeamVersion.
+    ...await collectPortablePackageFiles(resolve(workdir, "tools"), "tools")
   ];
   for (const fileName of [
     "semantics.yaml",
@@ -919,6 +924,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
         ".ogs/systems/**",
         ".ogs/subsystems/**",
         ".ogs/contracts/**",
+        "tools/**",
         "og-roles/roles/**"
       ],
       requiredEnv: [],
