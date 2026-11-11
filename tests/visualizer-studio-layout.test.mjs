@@ -13,7 +13,7 @@ import {
   layoutNodeSize
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
 import { addTopologyFlowOrder, topologyComponentIds } from "../src/visualizer/topology-order.ts";
-import { formatStudioEdgeLabel } from "../src/visualizer/studio-edge-semantics.ts";
+import { formatStudioEdgeLabel, studioEdgeGlyph, studioEdgeSemanticColor, studioEdgeSemanticBg } from "../src/visualizer/studio-edge-semantics.ts";
 import { studioRoleMarkerVisible, studioRoleMonogram } from "../src/visualizer/studio-client/studio-role-marker.ts";
 import { studioSccGroupGeometry } from "../src/visualizer/studio-client/studio-graph-render.ts";
 import { buildGraphViewModel } from "../src/visualizer/graph-view-model.ts";
@@ -695,7 +695,7 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /interacting: true/);
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
-  assert.match(renderer, /text: renderedSummaryLabel,[\s\S]*?fontSize: 11/);
+  assert.match(renderer, /text: renderedSummaryLabel,[\s\S]*?fontSize: 10/);
   assert.match(renderer, /labels\.push\(\{\s+markup: \[\s+\{ tagName: "rect", selector: "body", className: "studio-edge-label-body" \},\s+\{ tagName: "text", selector: "label" \}\s+\],\s+position: \{\s+distance: summaryPosition\.distance/s);
   assert.match(renderer, /inlineTopologyLabel = hasWrappedSummaryLabel \? formatStudioEdgeTopologyLabel\(edge\) : ""/);
   assert.match(renderer, /offset: positions\?\.topology\?\.offset \?\? -topologyLabelOffset/);
@@ -718,4 +718,47 @@ test("Studio graph disposal invalidates pending asynchronous layouts", async () 
   const disposeStart = studioGraph.indexOf("dispose(): void {");
   assert.notEqual(disposeStart, -1);
   assert.match(studioGraph.slice(disposeStart, disposeStart + 160), /this\.updateGeneration \+= 1/);
+});
+
+test("Studio edge semantics map glyphs, colors, and backgrounds into semantic categories", () => {
+  const baseEdge = {
+    id: "e1",
+    source: "a",
+    target: "b",
+    label: "",
+    eventType: "",
+    runtimeOnlyErrorFlow: false,
+    participatesInJoin: false,
+    editable: true
+  };
+
+  // 1. Glyphs
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "START" }), "▶");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, target: "__system_end__" }), "🏁");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "ERROR" }), "⚡");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, runtimeOnlyErrorFlow: true }), "⚡");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "BLOCKED" }), "⛔");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "NEEDS_REWORK" }), "↺");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "REJECTED" }), "✗");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "APPROVED" }), "✓");
+  assert.equal(studioEdgeGlyph({ ...baseEdge, eventType: "READY" }), "✓");
+
+  // 2. Semantic Colors (Red group)
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "ERROR" }, false), "#dc2626");
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "REJECTED" }, false), "#e11d48");
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "BLOCKED" }, false), "#ea580c");
+
+  // Semantic Colors (Yellow group)
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "START" }, false), "#d97706");
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "NEEDS_REWORK" }, false), "#b45309");
+
+  // Semantic Colors (Green group)
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "APPROVED" }, false), "#059669");
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, eventType: "READY" }, false), "#059669");
+  assert.equal(studioEdgeSemanticColor({ ...baseEdge, target: "__system_end__" }, false), "#059669");
+
+  // 3. Semantic Backgrounds
+  assert.equal(studioEdgeSemanticBg({ ...baseEdge, eventType: "ERROR" }, false), "#fef2f2");
+  assert.equal(studioEdgeSemanticBg({ ...baseEdge, eventType: "REJECTED" }, false), "#fff1f2");
+  assert.equal(studioEdgeSemanticBg({ ...baseEdge, eventType: "APPROVED" }, false), "#f0fdf4");
 });

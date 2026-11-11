@@ -947,7 +947,7 @@ test("Studio authoring commands derive batch inverses for semantic undo when the
         type: "add-edge",
         sourceRoleId: "review",
         targetRoleId: "qa_gate",
-        eventType: "APPROVAL_PROPOSED",
+        eventType: "APPROVED",
         label: "Escalate"
       }
     ]
@@ -1105,7 +1105,7 @@ test("add-edge command form reuses an event already emitted by its selected sour
           flowId: "backend-planner:PLAN_READY:reviewer",
           fromRoleId: "backend-planner",
           toRoleId: "reviewer",
-          eventType: "APPROVAL_PROPOSED"
+          eventType: "READY"
         }
       }
     }
@@ -1117,7 +1117,7 @@ test("add-edge command form reuses an event already emitted by its selected sour
     sourceRoleId: "backend-planner",
     targetRoleId: "publisher"
   });
-  assert.equal(state.fields.eventType, "APPROVAL_PROPOSED");
+  assert.equal(state.fields.eventType, "READY");
   assert.equal(state.validation.diagnostics.some((item) => item.code === "EDGE_EVENT_UNSUPPORTED"), false);
 
   const startState = createDefaultStudioCommandFormState({

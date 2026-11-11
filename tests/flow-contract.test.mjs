@@ -72,7 +72,14 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
           toRoleId: "review"
         },
         schema: "flow.schema.json",
-        onViolation: "FAIL"
+        onViolation: "FAIL",
+        relation: {
+          kind: "handoff",
+          purpose: "review",
+          authority: "binding",
+          response: { mode: "one" },
+          contractRef: "review-v1"
+        }
       },
       {
         id: "review.input.v1",
@@ -125,6 +132,13 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
   });
   const contract = plan.flowContractsByKey.get("flow:dispatcher:READY:review");
   assert.ok(contract);
+  assert.deepEqual(contract.definition.relation, {
+    kind: "handoff",
+    purpose: "review",
+    authority: "binding",
+    response: { mode: "one" },
+    contractRef: "review-v1"
+  });
   assert.deepStrictEqual(
     validateContractAgainstSchema({
       contract,
@@ -152,6 +166,34 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
     }),
     /amount/
   );
+});
+
+test("flow-contract loader rejects an incomplete quorum relationship", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-flow-contract-relation-"));
+  const contractsDir = path.resolve(tempRoot, "contracts");
+  await mkdir(contractsDir, { recursive: true });
+  await writeJson(path.resolve(contractsDir, "flow.schema.json"), { type: "object" });
+  const contractPath = path.resolve(contractsDir, "handoff.contracts.json");
+  await writeJson(contractPath, {
+    version: 1,
+    contracts: [{
+      id: "dispatcher.review.v1",
+      kind: "flow",
+      match: { fromRoleId: "dispatcher", eventType: "READY", toRoleId: "review" },
+      schema: "flow.schema.json",
+      relation: { kind: "request", purpose: "review", authority: "binding", response: { mode: "quorum" } }
+    }]
+  });
+  const system = {
+    systemId: "demo.flow.contract.relation",
+    systemVersion: "1.0.0",
+    entryRoleIds: ["dispatcher"],
+    roleIds: ["dispatcher", "review"],
+    flows: [{ fromRoleId: "dispatcher", toRoleId: "review", eventType: "READY" }],
+    lawBinding: { globalLawRef: "law.demo" }, executionBinding: {}, modelBinding: {},
+    graph: { handoffMode: "strict", handoffContracts: contractPath, contextMapByRoleId: {}, routingModeByRoleId: {}, joinModeByRoleId: {}, joinSourcesByRoleId: {}, joinMinByRoleId: {}, loopMaxByRoleId: {} }
+  };
+  await assert.rejects(() => loadFlowContractPlan({ system, contractPath }), /quorum requires min/);
 });
 
 test("flow-contract loader rejects remote schema $ref", async () => {

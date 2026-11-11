@@ -25,7 +25,7 @@
       "toolRef": "tool.ship",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["scripts/emit-role-result.mjs", "ship", "SHIP_EVENT", "APPROVAL_PROPOSED"],
+      "argsTemplate": ["scripts/emit-role-result.mjs", "ship", "SHIP_EVENT", "READY"],
       "stdinMode": "text"
     },
     {

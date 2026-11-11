@@ -39,7 +39,7 @@ const templates: StudioAuthoringTemplate[] = [
       "%% join.mode.synthesizer=all_of",
       "%% join.sources.synthesizer=proposer,critic",
       "start[开始] -->|START| a[Role:moderator]",
-      "a[Role:moderator] -->|APPROVAL_PROPOSED| b[Role:proposer]",
+      "a[Role:moderator] -->|READY| b[Role:proposer]",
       "a[Role:moderator] -->|READY| c[Role:critic]",
       "b[Role:proposer] -->|READY| d[Role:synthesizer]",
       "c[Role:critic] -->|READY| d[Role:synthesizer]",

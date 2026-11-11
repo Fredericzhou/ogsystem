@@ -373,7 +373,7 @@ ogs run artifact promote <run-id> \
 
 ### 门禁一：契约门禁
 
-- `READY`、`APPROVAL_PROPOSED` 等固定业务事件保持不变。
+- `READY`、`APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED` 五个固定业务结果保持不变；审批请求由 Review 控制面表达。
 - 角色输出允许候选 `artifacts`，但拒绝绝对路径、`..`、空路径、非法字符和符号链接引用。
 - `StoredRoleResult.artifactRef` 保持 opaque；文件清单和文件内容只能通过 ArtifactResolver 读取。
 - `context.map` 未声明的 Artifact 读取必须 fail-closed，并写入 `ArtifactAccessAudit`。

@@ -85,7 +85,6 @@ Role 只能通过以下信封输出业务结果：
 
 ```text
 READY
-APPROVAL_PROPOSED
 APPROVED
 REJECTED
 NEEDS_REWORK
@@ -95,7 +94,6 @@ BLOCKED
 | 事件 | 固定语义 | 典型目标 |
 | --- | --- | --- |
 | `READY` | 当前 Role 已产出可交接结果 | 下游处理 Role 或 End |
-| `APPROVAL_PROPOSED` | 当前 Role 建议批准，但不代表最终授权 | 授权 Role 或人工审核 |
 | `APPROVED` | 结果通过业务审核或决策 | 发布、交付或 End |
 | `REJECTED` | 结果被业务审核否决 | End、阻断或人工处置 |
 | `NEEDS_REWORK` | 结果需要修改后重新处理 | 原 Role 或返工 Role |
@@ -155,8 +153,8 @@ reviewer -->|REJECTED| end[结束]
 | `pause` | Runtime 控制动作 |
 | `terminate` | Runtime 控制动作 |
 
-`APPROVAL_PROPOSED` 表示业务角色提出拟批准建议，不等同于人工审核动作 `approve`，也不
-直接产生 `human_review_approved`。最终批准仍需由有权限的业务角色或人工审核控制面产生。
+“建议批准”不是核心业务事件。Role 可以在 `READY` 的 `data` 中携带
+`decisionRecommendation: "approve"`，但最终批准仍需由有权限的业务角色或人工审核控制面产生。
 
 ### 4.3 业务阻塞
 
@@ -191,7 +189,7 @@ running -> loop_exhausted -> waiting_review
 审核请求自身的 `maxAdditionalRounds` 上限约束。没有人工决定时，运行保持 `waiting_review`，不得继续激活角色。
 
 `loop_exhausted` 属于 Runtime 图控制事件，不属于固定业务事件集合。它必须与
-`APPROVAL_PROPOSED`、`APPROVED`、`REJECTED`、`NEEDS_REWORK` 等业务事件分开记录和展示。
+`APPROVED`、`REJECTED`、`NEEDS_REWORK` 等业务结果事件分开记录和展示。
 人工审核决定通过现有 Human Review 控制面持久化，并记录 loop ID、触发角色、目标角色、
 当前轮次、预算、决策人、决策时间和新增预算。当前实现把单次 `maxAdditionalRounds`
 绑定为 `max(1, maxRounds)`；它是审核请求的明确上限，不代表可无限追加，独立的运维额度策略
@@ -539,14 +537,14 @@ flowchart TD
 
 ### 11.1 Runtime 单元测试
 
-- 固定集合中的六个事件全部通过；
+- 固定集合中的五个事件全部通过；
 - 自定义事件被拒绝；
 - `START` 不能由 Role 输出；
 - `ERROR.*` 不能由 Role 输出；
 - 生命周期词不能作为业务事件；
 - Role `outputs.events` 与普通出边集合不一致时失败；
 - `READY` 的 Role-specific `data` Schema 可以不同；
-- `APPROVAL_PROPOSED` 不能绕过人工审核授权；
+- `READY.data.decisionRecommendation` 不能绕过人工审核授权；
 - 循环预算耗尽必须生成 `loop_exhausted` 并进入 `waiting_review`；
 - 没有人工决定时不得继续运行；
 - 人工继续或返工必须使用已声明的合法目标并记录新增预算；
@@ -582,7 +580,7 @@ READY_TO_DEPLOY
 SHIP_BLOCKED
 ```
 
-扫描只针对新协议要求改写的 TeamVersion、示例和测试，不保留兼容白名单；生产业务边只能使用共享注册表中的 `READY`、`APPROVAL_PROPOSED`、`APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED`。
+扫描只针对新协议要求改写的 TeamVersion、示例和测试，不保留兼容白名单；生产业务边只能使用共享注册表中的 `READY`、`APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED`。
 
 ## 12. 持续完成标准
 

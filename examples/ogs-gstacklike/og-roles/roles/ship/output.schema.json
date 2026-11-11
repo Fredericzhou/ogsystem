@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["APPROVAL_PROPOSED", "BLOCKED"]
+      "enum": ["BLOCKED", "READY"]
     },
     "content": { "type": "string" },
     "data": { "type": "object" }

@@ -38,7 +38,7 @@ qa[Role:qa] -->|READY| ship[Role:ship]
 qa[Role:qa] -->|REJECTED| office-hours[Role:office-hours]
 qa[Role:qa] -->|BLOCKED| review[Role:review]
 
-ship[Role:ship] -->|APPROVAL_PROPOSED| ship-deploy[Role:ship-deploy]
+ship[Role:ship] -->|READY| ship-deploy[Role:ship-deploy]
 ship[Role:ship] -->|BLOCKED| review[Role:review]
 
 ship-deploy[Role:ship-deploy] -->|READY| retro[Role:retro]

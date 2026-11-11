@@ -40,6 +40,20 @@ export type SystemEndJoin = {
 
 export type HandoffMode = "strict" | "transition";
 
+/** Relationship metadata is independent from role names and routable events. */
+export type CollaborationRelation = {
+  kind: "request" | "handoff" | "decision";
+  purpose: "work" | "information" | "review" | "support" | "notify";
+  authority: "advisory" | "binding";
+  response?: {
+    mode: "one" | "all" | "any" | "quorum";
+    min?: number;
+  };
+  contractRef?: string;
+  timeoutSeconds?: number;
+  blockedPolicy?: "wait" | "escalate" | "terminate";
+};
+
 export type FlowContractKind = "flow" | "role_input";
 
 export type FlowContractViolationPolicy = "FAIL" | "WARN";
@@ -58,6 +72,7 @@ export type FlowContractDefinition = {
   match: FlowContractMatch;
   schema: string;
   onViolation?: FlowContractViolationPolicy;
+  relation?: CollaborationRelation;
 };
 
 export type FlowContractFile = {

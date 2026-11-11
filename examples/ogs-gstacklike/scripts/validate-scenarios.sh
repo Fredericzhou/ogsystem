@@ -223,7 +223,7 @@ happy_run_dir="$(run_dir_for "$happy_run_id")"
 
 assert_status "$happy_run_id" 'data.status === "stopped" && data.pendingReviewCount === 1 && data.hasWaitingHumanReview === true && data.latestPendingReviewId === "review.ship@1#4.r1"'
 assert_file_exists "$(request_path_for "$happy_run_id" "$happy_review_id")"
-assert_review_inspect "$happy_run_id" "$happy_review_id" 'data.currentStatus === "pending" && data.currentState.status === "pending" && data.requestSnapshot.selectedEvent === "APPROVAL_PROPOSED"'
+assert_review_inspect "$happy_run_id" "$happy_review_id" 'data.currentStatus === "pending" && data.currentState.status === "pending" && data.requestSnapshot.selectedEvent === "READY"'
 assert_file_absent "${happy_run_dir}/shared/index.html"
 
 cli run review decide "$happy_run_id" "$happy_review_id" \

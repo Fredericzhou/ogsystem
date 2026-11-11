@@ -314,7 +314,7 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% loop.max.draft=3
-draftNode[Role:draft] -->|APPROVAL_PROPOSED| reviewNode[Role:review]
+draftNode[Role:draft] -->|READY| reviewNode[Role:review]
 reviewNode[Role:review] -->|NEEDS_REWORK| draftNode[Role:draft]
 reviewNode[Role:review] -->|APPROVED| end[结束]
 ```

@@ -232,7 +232,7 @@ flowchart TD
 %% exec.bind.publisher=publish-profile
 
 start[开始] -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|APPROVAL_PROPOSED| publisher[Role:publisher]
+reviewer[Role:reviewer] -->|APPROVED| publisher[Role:publisher]
 publisher[Role:publisher] -->|READY| end[结束]
 ```
 

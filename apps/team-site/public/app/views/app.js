@@ -45,7 +45,6 @@ function mountStudioGraph(root, options) {
     if (value.mode !== "product-edit" || !value.authoring) return value;
     const previousEdges = previousViewModel?.edges || [];
     const previousEdgeById = new Map(previousEdges.map((edge) => [edge.id, edge]));
-    const previousFlowById = new Map(Object.values(previousAuthoring?.flows || {}).map((flow) => [flow.flowId, flow]));
     const previousLabelByEvent = new Map();
     for (const edge of previousEdges) {
       if (edge.label && edge.label !== edge.eventType && !previousLabelByEvent.has(edge.eventType)) {
@@ -56,14 +55,12 @@ function mountStudioGraph(root, options) {
       const flowId = typeof flow.flowId === "string" ? flow.flowId : "";
       if (!flowId) return [];
       const previous = previousEdgeById.get(flowId);
-      const previousFlow = previousFlowById.get(flowId);
-      const previousPresentationLabel = previousFlow?.eventType === flow.eventType
-        ? value.presentation?.edgeLabels?.[flowId]
-        : "";
+      const isSameEvent = previous ? previous.eventType === flow.eventType : true;
+      const previousPresentationLabel = isSameEvent ? value.presentation?.edgeLabels?.[flowId] : "";
       const label = flow.label?.trim()
-        || (previous?.eventType === flow.eventType ? previous.label : "")
+        || (isSameEvent ? previous?.label : "")
         || previousPresentationLabel
-        || previousLabelByEvent.get(flow.eventType)
+        || (isSameEvent ? previousLabelByEvent.get(flow.eventType) : "")
         || localizedEventLabel(flow.eventType, copy);
       return [[flowId, label]];
     }));
@@ -2348,6 +2345,18 @@ function studioRoleTopology(authoring = {}, roleId = "") {
   return { incoming, outgoing, hasJoin: incoming.length > 1, hasRoute: outgoing.length > 1, hasCycle: visit(roleId) };
 }
 
+const STUDIO_BUSINESS_EVENT_TYPES = [
+  { value: "READY", zh: "就绪", en: "Result ready", glyph: "✓" },
+  { value: "APPROVED", zh: "通过", en: "Approved", glyph: "✓" },
+  { value: "REJECTED", zh: "拒绝", en: "Rejected", glyph: "✗" },
+  { value: "NEEDS_REWORK", zh: "需要返工", en: "Needs rework", glyph: "↺" },
+  { value: "BLOCKED", zh: "业务阻塞", en: "Business blocked", glyph: "⛔" }
+];
+
+const STUDIO_ROUTING_ERROR_EVENT_TYPES = [
+  { value: "ERROR", zh: "运行时错误", en: "Runtime error", glyph: "⚡" }
+];
+
 function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredModels = []) {
   const english = locale === "en";
   const copyOverrides = {
@@ -2442,26 +2451,23 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   if (selection.roleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Structural role", "结构角色")}</span><h2>${t("Start", "开始")}</h2></div><div class="studio-inspector-fields"><label class="field"><span>${t("Dispatch", "分发策略")}</span><select data-studio-special-field="startDispatchMode"><option value="all" ${system.startDispatch?.mode !== "random_n" ? "selected" : ""}>${t("All connected roles", "全部候选角色")}</option><option value="random_n" ${system.startDispatch?.mode === "random_n" ? "selected" : ""}>${t("Random number", "随机选择数量")}</option></select></label>${system.startDispatch?.mode === "random_n" ? `<label class="field"><span>${t("Candidate count", "选择数量")}</span><input type="number" min="1" max="${Math.max(1, roleIds.filter((roleId) => Object.values(authoring.flows || {}).some((flow) => flow.fromRoleId === startRoleId && flow.toRoleId === roleId)).length)}" step="1" data-studio-special-field="startDispatchCount" value="${esc(system.startDispatch.count)}"></label>` : ""}<p class="field-hint full">${t("Candidates are defined by flows connected from Start. Random selection is fixed for each run.", "候选角色由开始节点的连线决定；随机选择在每次运行中固定。")}</p><p class="studio-structure-rule full">${t("Start can connect only to business roles. It cannot connect directly to End.", "开始只能连接业务角色，不能直接连接结束。")}</p></div>`;
   if (selection.roleId === endRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Structural role", "结构角色")}</span><h2>${t("End", "结束")}</h2></div><div class="studio-inspector-fields"><label class="field"><span>${t("Aggregation", "汇聚策略")}</span><select data-studio-special-field="endJoinMode"><option value="all_of" ${system.endJoin?.mode !== "quorum_of" ? "selected" : ""}>${t("All connected roles", "全部连接角色到达")}</option><option value="quorum_of" ${system.endJoin?.mode === "quorum_of" ? "selected" : ""}>${t("Minimum number", "达到指定数量")}</option></select></label>${system.endJoin?.mode === "quorum_of" ? `<label class="field"><span>${t("Minimum arrivals", "最少到达数")}</span><input type="number" min="1" max="${Math.max(1, terminalRoleCount)}" step="1" data-studio-special-field="endJoinMin" value="${esc(system.endJoin.min ?? 1)}"></label>` : ""}<p class="field-hint full">${t("Only distinct roles connected directly to End are counted.", "只统计直接连接到结束节点的不同角色。")}</p><p class="studio-structure-rule full">${t("End can receive flows only from business roles. Start cannot connect directly to End.", "结束只能接收业务角色的连接，不能与开始直接连接。")}</p></div>`;
   const deleteFlowButton = selectedFlow ? `<button type="button" class="secondary-button danger-button" data-studio-flow-delete>${t("Delete flow", "删除关系")}</button>` : "";
-  if (selectedFlow?.fromRoleId === startRoleId) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Structural event", "结构事件")}</span><input value="${t("Start", "开始")}" readonly></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || localizedEventLabel("START", copy))}"></label><p class="field-hint full">${t("Start dispatch is configured on the Start role. This flow defines one eligible role.", "开始分发策略在开始角色中配置；此关系定义一个候选角色。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
+  if (selectedFlow?.fromRoleId === startRoleId) {
+    const flowIcon = renderStudioFlowContractIcon(selectedFlow, authoring, selection?.assets?.contracts, locale);
+    return `<div class="studio-inspector-heading">${flowIcon}<div><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Structural event", "结构事件")}</span><input value="${t("Start", "开始")}" readonly></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || localizedEventLabel("START", copy))}"></label><p class="field-hint full">${t("Start dispatch is configured on the Start role. This flow defines one eligible role.", "开始分发策略在开始角色中配置；此关系定义一个候选角色。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
+  }
   if (selectedFlow) {
-    const standardEventTypes = [
-      { value: "READY", zh: "结果已就绪", en: "Result ready" },
-      { value: "APPROVAL_PROPOSED", zh: "提交审批", en: "Approval proposed" },
-      { value: "APPROVED", zh: "审批通过", en: "Approved" },
-      { value: "REJECTED", zh: "已拒绝", en: "Rejected" },
-      { value: "NEEDS_REWORK", zh: "需要返工", en: "Needs rework" },
-      { value: "BLOCKED", zh: "业务阻塞", en: "Business blocked" },
-      { value: "ERROR", zh: "运行时错误", en: "Runtime error" }
-    ];
-    const runtimeOnlyEventLabels = {
-      loop_exhausted: locale === "en" ? "Loop budget exhausted (runtime only; not a flow)" : "循环预算耗尽（仅运行时事件，不可连线）",
-      human_review_rejected: locale === "en" ? "Review rejected (runtime audit; not a flow)" : "审核拒绝（运行时审计事件，不可连线）",
-      human_review_decision_rejected: locale === "en" ? "Review decision rejected (runtime audit; not a flow)" : "审核决策拒绝（运行时审计事件，不可连线）"
-    };
-    const selectedRuntimeOnlyLabel = runtimeOnlyEventLabels[selectedFlow.eventType];
-    const isKnownEvent = standardEventTypes.some((item) => item.value === selectedFlow.eventType);
-    const eventTypeOptions = `${selectedRuntimeOnlyLabel ? `<optgroup label="${locale === "en" ? "Runtime-only events" : "仅运行时事件"}"><option value="${esc(selectedFlow.eventType)}" selected disabled>${esc(selectedRuntimeOnlyLabel)}</option></optgroup>` : !isKnownEvent && selectedFlow.eventType ? `<optgroup label="${locale === "en" ? "Custom event" : "自定义事件"}"><option value="${esc(selectedFlow.eventType)}" selected>${esc(selectedFlow.eventType)} (${locale === "en" ? "Custom" : "自定义"})</option></optgroup>` : ""}<optgroup label="${locale === "en" ? "Business and routing events" : "业务与错误路由事件"}">${standardEventTypes.map((item) => `<option value="${esc(item.value)}" ${selectedFlow.eventType === item.value ? "selected" : ""}>${esc(item.value)} · ${locale === "en" ? item.en : item.zh}</option>`).join("")}</optgroup>`;
-    return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><select data-studio-flow-field="eventType">${eventTypeOptions}</select></label><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
+    const isBusiness = STUDIO_BUSINESS_EVENT_TYPES.some((item) => item.value === selectedFlow.eventType);
+    const isRoutingError = STUDIO_ROUTING_ERROR_EVENT_TYPES.some((item) => item.value === selectedFlow.eventType);
+    const isKnownEvent = isBusiness || isRoutingError;
+
+    const preservedOption = !isKnownEvent && selectedFlow.eventType
+      ? `<optgroup label="${locale === "en" ? "Current preserved value" : "当前保留值"}"><option value="${esc(selectedFlow.eventType)}" selected>◇ ${esc(selectedFlow.eventType)} · ${locale === "en" ? "Preserved" : "保留值"}</option></optgroup>`
+      : "";
+    const businessOptions = `<optgroup label="${locale === "en" ? "Business events" : "业务事件"}">${STUDIO_BUSINESS_EVENT_TYPES.map((item) => `<option value="${esc(item.value)}" ${selectedFlow.eventType === item.value ? "selected" : ""}>${item.glyph} ${esc(item.value)} · ${locale === "en" ? item.en : item.zh}</option>`).join("")}</optgroup>`;
+    const routingErrorOptions = `<optgroup label="${locale === "en" ? "Runtime error routing" : "运行时错误路由"}">${STUDIO_ROUTING_ERROR_EVENT_TYPES.map((item) => `<option value="${esc(item.value)}" ${selectedFlow.eventType === item.value ? "selected" : ""}>${item.glyph} ${esc(item.value)} · ${locale === "en" ? item.en : item.zh}</option>`).join("")}</optgroup>`;
+    const eventTypeOptions = `${preservedOption}${businessOptions}${routingErrorOptions}`;
+    const flowIcon = renderStudioFlowContractIcon(selectedFlow, authoring, selection?.assets?.contracts, locale);
+    return `<div class="studio-inspector-heading">${flowIcon}<div><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><select data-studio-flow-field="eventType">${eventTypeOptions}</select></label><p class="field-hint full">${t("Note: loop_exhausted is a runtime budget control event and human_review_rejected is an audit event; both are raised by the engine and cannot be wired as flow edges.", "说明：loop_exhausted（预算耗尽）由运行时引擎控制，human_review_rejected（审核拒绝）为审计事件；两者由系统自动捕获，不作为流转连线事件。")}</p><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
   }
   if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(roleName(role.roleId))}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${t("Display name", "显示名称")}</span><input data-studio-role-field="title" value="${esc(role.title || "")}" maxlength="80"></label><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}${routingField}${joinField}${loopField}<label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
   return `<div class="studio-inspector-heading"><span class="section-kicker">${t("No selection", "未选择对象")}</span><h2>${t("Select a role or flow", "请选择角色或流程")}</h2></div><p class="form-hint">${t("Open Global from Team configuration to edit team-wide settings.", "请从团队配置中选择“全局”编辑团队级配置。")}</p>`;
@@ -2702,11 +2708,12 @@ function studioContractTargetRoleId(roleId) {
 function getStudioFlowType(flow) {
   if (flow.fromRoleId === "__system_start__" || flow.eventType === "START") return "start";
   if (flow.toRoleId === "__system_end__") return "end";
-  if (flow.runtimeOnlyErrorFlow || flow.eventType === "BLOCKED" || (typeof flow.eventType === "string" && (flow.eventType === "ERROR" || flow.eventType.startsWith("ERROR.")))) return "error";
+  if (flow.runtimeOnlyErrorFlow || (typeof flow.eventType === "string" && (flow.eventType === "ERROR" || flow.eventType.startsWith("ERROR.")))) return "error";
+  if (flow.eventType === "BLOCKED") return "blocked";
   if (flow.eventType === "NEEDS_REWORK") return "rework";
   if (flow.eventType === "REJECTED") return "rejected";
-  if (flow.eventType === "APPROVAL_PROPOSED") return "approval";
   if (flow.eventType === "APPROVED") return "approved";
+  if (flow.eventType === "READY") return "ready";
   if (flow.condition && typeof flow.condition === "object" && Object.keys(flow.condition).length > 0) return "condition";
   return "handoff";
 }
@@ -2715,27 +2722,36 @@ function flowColorForType(type) {
   const isDark = (typeof document !== "undefined" && document.documentElement.dataset.visualizerTheme === "dark")
     || (typeof state !== "undefined" && state.theme === "dark");
   const palettes = {
+    // 黄（待办/分发类）
     start: isDark
-      ? { accent: "hsl(168 76% 56%)", fill: "hsl(168 40% 18%)", nameEn: "Start dispatch", nameZh: "开始分发" }
-      : { accent: "hsl(168 80% 32%)", fill: "hsl(168 45% 94%)", nameEn: "Start dispatch", nameZh: "开始分发" },
-    end: isDark
-      ? { accent: "hsl(234 82% 67%)", fill: "hsl(234 40% 18%)", nameEn: "End delivery", nameZh: "结束交付" }
-      : { accent: "hsl(234 65% 42%)", fill: "hsl(234 50% 95%)", nameEn: "End delivery", nameZh: "结束交付" },
-    approval: isDark
-      ? { accent: "hsl(42 95% 58%)", fill: "hsl(42 45% 18%)", nameEn: "Approval review", nameZh: "审批审核" }
-      : { accent: "hsl(42 90% 36%)", fill: "hsl(42 60% 95%)", nameEn: "Approval review", nameZh: "审批审核" },
-    approved: isDark
-      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Approved", nameZh: "审批通过" }
-      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Approved", nameZh: "审批通过" },
-    rejected: isDark
-      ? { accent: "hsl(0 75% 64%)", fill: "hsl(0 40% 18%)", nameEn: "Rejected", nameZh: "已拒绝" }
-      : { accent: "hsl(0 70% 45%)", fill: "hsl(0 55% 95%)", nameEn: "Rejected", nameZh: "已拒绝" },
+      ? { accent: "hsl(38 92% 58%)", fill: "hsl(38 45% 18%)", nameEn: "Start dispatch", nameZh: "开始分发" }
+      : { accent: "hsl(38 90% 36%)", fill: "hsl(38 60% 95%)", nameEn: "Start dispatch", nameZh: "开始分发" },
     rework: isDark
-      ? { accent: "hsl(275 80% 68%)", fill: "hsl(275 40% 18%)", nameEn: "Rework cycle", nameZh: "返工循环" }
-      : { accent: "hsl(275 65% 44%)", fill: "hsl(275 50% 95%)", nameEn: "Rework cycle", nameZh: "返工循环" },
+      ? { accent: "hsl(45 92% 58%)", fill: "hsl(45 45% 18%)", nameEn: "Needs rework", nameZh: "需要返工" }
+      : { accent: "hsl(45 90% 36%)", fill: "hsl(45 60% 95%)", nameEn: "Needs rework", nameZh: "需要返工" },
+
+    // 绿（成功/通过类）
+    approved: isDark
+      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Approved", nameZh: "通过" }
+      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Approved", nameZh: "通过" },
+    ready: isDark
+      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Result ready", nameZh: "就绪" }
+      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Result ready", nameZh: "就绪" },
+    end: isDark
+      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "End delivery", nameZh: "结束交付" }
+      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "End delivery", nameZh: "结束交付" },
+
+    // 红（错误/拒绝类）
+    rejected: isDark
+      ? { accent: "hsl(0 75% 64%)", fill: "hsl(0 40% 18%)", nameEn: "Rejected", nameZh: "拒绝" }
+      : { accent: "hsl(0 70% 45%)", fill: "hsl(0 55% 95%)", nameEn: "Rejected", nameZh: "拒绝" },
+    blocked: isDark
+      ? { accent: "hsl(15 88% 60%)", fill: "hsl(15 40% 18%)", nameEn: "Business blocked", nameZh: "业务阻塞" }
+      : { accent: "hsl(15 80% 40%)", fill: "hsl(15 55% 95%)", nameEn: "Business blocked", nameZh: "业务阻塞" },
     error: isDark
-      ? { accent: "hsl(12 85% 65%)", fill: "hsl(12 40% 18%)", nameEn: "Runtime error / blocked", nameZh: "异常阻塞" }
-      : { accent: "hsl(12 75% 42%)", fill: "hsl(12 55% 95%)", nameEn: "Runtime error / blocked", nameZh: "异常阻塞" },
+      ? { accent: "hsl(0 80% 65%)", fill: "hsl(0 40% 18%)", nameEn: "Runtime error", nameZh: "运行时错误" }
+      : { accent: "hsl(0 75% 45%)", fill: "hsl(0 55% 95%)", nameEn: "Runtime error", nameZh: "运行时错误" },
+
     condition: isDark
       ? { accent: "hsl(199 85% 58%)", fill: "hsl(199 40% 18%)", nameEn: "Conditional branch", nameZh: "条件分支" }
       : { accent: "hsl(199 80% 36%)", fill: "hsl(199 50% 95%)", nameEn: "Conditional branch", nameZh: "条件分支" },
@@ -2749,11 +2765,12 @@ function flowColorForType(type) {
 const STUDIO_FLOW_GLYPH_PATHS = {
   start: "M 10 9.5 L 15.5 12.5 L 10 15.5 Z",
   end: "M 9 9 L 9 17 L 10.5 17 L 10.5 14 L 15.5 11.5 L 10.5 9 Z",
-  approval: "M 12 8.5 L 15.5 10 L 15.5 12.5 C 15.5 14.5 14 16 12 16.8 C 10 16 8.5 14.5 8.5 12.5 L 8.5 10 Z",
   approved: "M 10.2 15.2 L 7.5 12.5 L 8.7 11.3 L 10.2 12.8 L 15.3 7.7 L 16.5 8.9 Z",
+  ready: "M 10.2 15.2 L 7.5 12.5 L 8.7 11.3 L 10.2 12.8 L 15.3 7.7 L 16.5 8.9 Z",
   rejected: "M 9 10.2 L 10.2 9 L 12 10.8 L 13.8 9 L 15 10.2 L 13.2 12 L 15 13.8 L 13.8 15 L 12 13.2 L 10.2 15 L 9 13.8 L 10.8 12 Z",
   rework: "M 12 8.5 C 14.2 8.5 16 10.3 16 12.5 C 16 14.7 14.2 16.5 12 16.5 C 10.2 16.5 8.7 15.3 8.2 13.7 L 9.8 13.2 C 10.1 14.3 11 15 12 15 C 13.4 15 14.5 13.9 14.5 12.5 C 14.5 11.1 13.4 10 12 10 L 12 11.5 L 8.5 9.2 L 12 7 Z",
-  error: "M 11.1 8.5 L 12.9 8.5 L 12.6 13.5 L 11.4 13.5 Z M 11.1 14.8 L 12.9 14.8 L 12.9 16.5 L 11.1 16.5 Z",
+  blocked: "M 12 7.5 C 9.5 7.5 7.5 9.5 7.5 12 C 7.5 14.5 9.5 16.5 12 16.5 C 14.5 16.5 16.5 14.5 16.5 12 C 16.5 9.5 14.5 7.5 12 7.5 Z M 9.2 11.2 L 14.8 11.2 L 14.8 12.8 L 9.2 12.8 Z",
+  error: "M 12.5 7 L 8.5 12.5 L 11.5 12.5 L 10.5 17 L 15.5 11.5 L 12.5 11.5 Z",
   condition: "M 12 8 L 16 12.5 L 12 17 L 8 12.5 Z",
   handoff: "M 8 11.7 L 13 11.7 L 11.2 9.9 L 12.4 8.7 L 16.2 12.5 L 12.4 16.3 L 11.2 15.1 L 13 13.3 L 8 13.3 Z"
 };
@@ -3636,6 +3653,20 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             markDesignDirty("有未保存的专业配置修改");
             return true;
           }
+          const previousEventType = flow.eventType;
+          const previousDefaultZh = STUDIO_BUSINESS_EVENT_TYPES.find((item) => item.value === previousEventType)?.zh
+            || (previousEventType === "ERROR" ? "运行时错误" : undefined);
+          const previousDefaultEn = STUDIO_BUSINESS_EVENT_TYPES.find((item) => item.value === previousEventType)?.en
+            || (previousEventType === "ERROR" ? "Runtime error" : undefined);
+          const currentLabel = flow.label?.trim();
+          const nextDefaultLabel = STUDIO_BUSINESS_EVENT_TYPES.find((item) => item.value === element.value)?.[state.locale === "en" ? "en" : "zh"]
+            || STUDIO_ROUTING_ERROR_EVENT_TYPES.find((item) => item.value === element.value)?.[state.locale === "en" ? "en" : "zh"]
+            || localizedEventLabel(element.value, copy);
+          if (!currentLabel || currentLabel === previousEventType || currentLabel === previousDefaultZh || currentLabel === previousDefaultEn) {
+            flow.label = nextDefaultLabel;
+            const labelInput = inspector?.querySelector('[data-studio-flow-field="label"]');
+            if (labelInput) labelInput.value = nextDefaultLabel;
+          }
           try {
             const manifest = JSON.parse(selection.assets.contracts || '{"version":1,"contracts":[]}');
             const contract = manifest.contracts?.find((item) => item?.kind === "flow"
@@ -3651,6 +3682,16 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           } catch { /* The manifest editor remains available for correcting invalid JSON. */ }
           flow.eventType = element.value;
           syncFlowPresentation(flow);
+          const headingIconContainer = inspector?.querySelector(".studio-inspector-heading");
+          if (headingIconContainer) {
+            const currentIcon = headingIconContainer.querySelector(".studio-flow-contract-icon");
+            if (currentIcon) {
+              const temp = document.createElement("div");
+              temp.innerHTML = renderStudioFlowContractIcon(flow, authoring, selection?.assets?.contracts, state.locale);
+              const newIcon = temp.firstElementChild;
+              if (newIcon) headingIconContainer.replaceChild(newIcon, currentIcon);
+            }
+          }
         } else {
           flow[flowField] = element.value;
         }

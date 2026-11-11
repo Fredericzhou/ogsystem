@@ -23,7 +23,6 @@ test("runtime review rejection records are registered separately from routable b
   }).length, 1);
   assert.deepEqual(BUSINESS_EVENT_TYPES, [
     "READY",
-    "APPROVAL_PROPOSED",
     "APPROVED",
     "REJECTED",
     "NEEDS_REWORK",

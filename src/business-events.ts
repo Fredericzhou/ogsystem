@@ -3,7 +3,6 @@
  */
 export const BUSINESS_EVENT_TYPES = [
   "READY",
-  "APPROVAL_PROPOSED",
   "APPROVED",
   "REJECTED",
   "NEEDS_REWORK",
@@ -35,7 +34,6 @@ const RUNTIME_AUDIT_EVENT_SET = new Set<string>(RUNTIME_AUDIT_EVENT_TYPES);
 
 export const BUSINESS_EVENT_KIND: Readonly<Record<BusinessEventType, BusinessEventKind>> = Object.freeze({
   READY: "handoff",
-  APPROVAL_PROPOSED: "decision",
   APPROVED: "decision",
   REJECTED: "decision",
   NEEDS_REWORK: "correction",
@@ -83,7 +81,6 @@ export function listBusinessEventTypes(): BusinessEventType[] {
 export function businessEventDescription(eventType: BusinessEventType): string {
   switch (eventType) {
     case "READY": return "Role has produced a result ready for handoff";
-    case "APPROVAL_PROPOSED": return "Role proposes approval for an authorized decision";
     case "APPROVED": return "Result was approved";
     case "REJECTED": return "Result was rejected";
     case "NEEDS_REWORK": return "Result needs revision before continuing";

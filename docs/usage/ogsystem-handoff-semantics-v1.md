@@ -12,6 +12,31 @@ Flow Contract 负责校验交接 payload，运行时状态、checkpoint 和执�
 Handoff 不提供动态 fan-out、可变 Blackboard、抢单池或隐式 Role memory。并行分支继续使用
 `sessionLineageId` 隔离模型会话，连续性必须通过已声明的 context、审核反馈或 loop 结果表达。
 
+### 1.1 协作关系合同
+
+Flow 的参与者是责任席位，关系合同描述双方为什么协作。关系不按 `reviewer`、`publisher` 等角色名称分类，
+而使用以下稳定维度：
+
+```json
+{
+  "kind": "handoff",
+  "purpose": "review",
+  "authority": "binding",
+  "response": { "mode": "one" },
+  "contractRef": "review-v1",
+  "timeoutSeconds": 3600,
+  "blockedPolicy": "escalate"
+}
+```
+
+`kind` 只取 `request`、`handoff`、`decision`；`purpose` 只取 `work`、`information`、`review`、`support`、
+`notify`；`authority` 区分建议性意见和必须服从的决定。`response.mode` 表达参与关系的收敛方式：`one`、
+`all`、`any` 或带 `min` 的 `quorum`。`contractRef` 连接业务合同或验收标准；它不是角色类型，也不会改变
+五个业务事件的路由语义。超时和阻塞策略属于关系策略，实际调度仍由 Runtime 的 Join、Review 和 Loop 控制面负责。
+
+关系合同作为 `handoff.contracts.json` 中 Flow Contract 的可选 `relation` 字段保存。业务人员可以只配置关系类型、
+目的和响应方式；专业人员再补充合同引用、超时和阻塞策略。缺省时保持现有 Flow 行为。
+
 ## 2. 条件路由
 
 条件 AST 只读取现有白名单路径，并采用 fail-closed 路由：
@@ -65,8 +90,8 @@ Result intent、完成状态和 checkpoint 恢复必须通过幂等提交和 CAS
 
 ## 6. 集中业务事件
 
-普通 Flow 事件来自 `src/runtime/business-events.ts` 的共享注册表：`READY`、`APPROVAL_PROPOSED`、
-`APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED`。`START` 和 `ERROR*` 是系统保留事件，
+普通 Flow 事件来自 `src/business-events.ts` 的共享注册表：`READY`、`APPROVED`、`REJECTED`、
+`NEEDS_REWORK`、`BLOCKED`。`START` 和 `ERROR*` 是系统保留事件，
 `loop_exhausted` 是 Runtime 控制事件。`human_review_rejected` 与
 `human_review_decision_rejected` 属于独立的 Runtime 审计事件集合，只进入运行时间线，
 不得作为 Flow 或 Role 输出事件。不同 Role 的 `READY.data` 可以使用各自的 Schema；业务事件名

@@ -6,6 +6,9 @@ import {
   formatStudioEdgeLabel,
   formatStudioEdgeSummaryLabel,
   formatStudioEdgeTopologyLabel,
+  formatStudioEdgeDisplayLabel,
+  studioEdgeSemanticColor,
+  studioEdgeSemanticBg,
   estimateStudioEdgeSummaryLabelWidth,
   STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
 } from "../studio-edge-semantics.js";
@@ -46,11 +49,7 @@ function nodeStroke(node: GraphViewModelNode): string {
 }
 
 function edgeStroke(edge: GraphViewModelEdge): string {
-  if (edge.diagnostic?.severity === "error") return "#c9674b";
-  if (edge.diagnostic?.severity === "warning" || edge.runtimeOnlyErrorFlow) return "#bc8b39";
-  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return isDarkTheme() ? "#38bdf8" : "#55798c";
-  if (edge.participatesInJoin) return isDarkTheme() ? "#34d399" : "#1b7662";
-  return isDarkTheme() ? "#94a3b8" : "#82998e";
+  return studioEdgeSemanticColor(edge, isDarkTheme());
 }
 
 function isLoopEdge(edge: GraphViewModelEdge): boolean {
@@ -754,7 +753,7 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
     });
   const ordered = edges.map((edge) => ({
     edge,
-    width: estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label)
+    width: estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeDisplayLabel(edge, showTechnicalDetails))
   })).sort((left, right) => right.width - left.width || left.edge.id.localeCompare(right.edge.id));
   const canvasBounds = graph.container.getBoundingClientRect();
   const viewport: StudioLabelRect = {
@@ -769,7 +768,7 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
   // first so both kinds of labels share the same node and label reservations.
   for (const { edge } of ordered) {
     const hasTopologyLabel = Boolean(formatStudioEdgeTopologyLabel(edge)) &&
-      estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeDisplayLabel(edge, showTechnicalDetails)) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
     if (!hasTopologyLabel) continue;
     const defaultLabels = studioEdgeLabels(edge, undefined, showTechnicalDetails);
     const defaultPosition = defaultLabels[0]?.position as StudioEdgeLabelPosition | undefined;
@@ -789,7 +788,7 @@ function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEd
 
   for (const { edge } of ordered) {
     const topologyLabel = Boolean(formatStudioEdgeTopologyLabel(edge)) &&
-      estimateStudioEdgeSummaryLabelWidth(showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeDisplayLabel(edge, showTechnicalDetails)) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
     const labelIndex = topologyLabel ? 1 : 0;
     const defaultLabels = studioEdgeLabels(edge, undefined, showTechnicalDetails);
     const defaultPosition = defaultLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
@@ -841,7 +840,7 @@ function findStudioEdgeLabelPosition(
     top: obstacle.top - nodeClearance,
     bottom: obstacle.bottom + nodeClearance
   }));
-  const summaryText = showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label;
+  const summaryText = formatStudioEdgeDisplayLabel(edge, showTechnicalDetails);
   const inlineTopology = estimateStudioEdgeSummaryLabelWidth(summaryText) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
     ? formatStudioEdgeTopologyLabel(edge)
     : "";
@@ -983,7 +982,7 @@ function studioEdgeLabels(
 ): Edge.Metadata["labels"] {
   const dark = isDarkTheme();
   const labels: NonNullable<Edge.Metadata["labels"]> = [];
-  const summaryLabel = showTechnicalDetails ? formatStudioEdgeSummaryLabel(edge) : edge.label;
+  const summaryLabel = formatStudioEdgeDisplayLabel(edge, showTechnicalDetails);
   const topologyLabel = formatStudioEdgeTopologyLabel(edge);
   const hasWrappedSummaryLabel = estimateStudioEdgeSummaryLabelWidth(summaryLabel) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
   const inlineTopologyLabel = hasWrappedSummaryLabel ? formatStudioEdgeTopologyLabel(edge) : "";
@@ -1039,7 +1038,7 @@ function studioEdgeLabels(
       label: {
         text: renderedSummaryLabel,
         fill: dark ? "#e5eefb" : "#33483f",
-        fontSize: 11,
+        fontSize: 10,
         textWrap: {
           width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,
           height: summaryLabelHeight,
@@ -1047,11 +1046,11 @@ function studioEdgeLabels(
         }
       },
       body: {
-        fill: dark ? "#101827" : "#ffffff",
-        stroke: edgeStroke(edge),
-        strokeWidth: 1.2,
-        rx: 4,
-        ry: 4
+        fill: studioEdgeSemanticBg(edge, dark),
+        stroke: studioEdgeSemanticColor(edge, dark),
+        strokeWidth: 1.4,
+        rx: 5,
+        ry: 5
       }
     }
   });

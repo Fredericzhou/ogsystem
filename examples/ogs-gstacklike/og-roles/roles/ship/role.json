@@ -22,8 +22,8 @@
   },
   "outputs": {
     "events": [
-      "APPROVAL_PROPOSED",
-      "BLOCKED"
+      "BLOCKED",
+      "READY"
     ],
     "postconditions": []
   },

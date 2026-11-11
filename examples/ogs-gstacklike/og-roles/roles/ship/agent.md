@@ -11,6 +11,6 @@ Own the release handoff:
 - for Chinese inputs, respond in clear Chinese unless user_preferences asks otherwise
 
 Quality bar:
-- APPROVAL_PROPOSED requires a compact deploy payload in data.
+- READY requires a compact deploy payload in data; human review is handled by the Runtime control plane.
 - BLOCKED must explain which review or QA condition is unmet.
 - Rework must preserve the previous useful work while addressing reviewer feedback.

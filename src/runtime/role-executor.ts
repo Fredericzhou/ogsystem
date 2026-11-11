@@ -262,7 +262,12 @@ function pickDryRunEvent(args: {
     return undefined;
   }
   if (args.dryRunScenario === "review-reject-once" && args.node.roleId === "opencode-reviewer") {
-    const preferred = args.branch.loopIteration <= 1 ? "REJECTED" : "APPROVED";
+    // Exercise a bounded review cycle when the graph provides a correction
+    // route. Loop-budget fixtures may only expose REJECTED as their loop edge,
+    // so keep that route as the deterministic fallback for those graphs.
+    const preferred = args.branch.loopIteration <= 1
+      ? (selectableOutgoing.some((flow) => flow.eventType === "NEEDS_REWORK") ? "NEEDS_REWORK" : "REJECTED")
+      : "APPROVED";
     const selected = selectableOutgoing.find((flow) => flow.eventType === preferred);
     if (selected) return selected.eventType;
   }

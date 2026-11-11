@@ -1,10 +1,9 @@
 import { BUSINESS_EVENT_TYPES, RUNTIME_AUDIT_EVENT_TYPES } from "../../dist/business-events.js";
 
 const businessEventLabels = {
-  READY: ["结果已就绪", "Result ready"],
-  APPROVAL_PROPOSED: ["提交审批", "Approval proposed"],
-  APPROVED: ["审批通过", "Approved"],
-  REJECTED: ["已拒绝", "Rejected"],
+  READY: ["就绪", "Result ready"],
+  APPROVED: ["通过", "Approved"],
+  REJECTED: ["拒绝", "Rejected"],
   NEEDS_REWORK: ["需要返工", "Needs rework"],
   BLOCKED: ["业务阻塞", "Business blocked"]
 };

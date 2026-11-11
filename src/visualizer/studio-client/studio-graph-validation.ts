@@ -444,7 +444,7 @@ export function validateStudioAddEdgeDraft(
       flowKey,
       code: "EDGE_EVENT_UNSUPPORTED",
       messageKey: "studio.validation.eventTypeInvalid",
-      message: "Use one of the registered business events: READY, APPROVAL_PROPOSED, APPROVED, REJECTED, NEEDS_REWORK, or BLOCKED."
+      message: "Use one of the registered business events: READY, APPROVED, REJECTED, NEEDS_REWORK, or BLOCKED."
     }));
   }
   if (sourceIsStart && eventType !== "START") {

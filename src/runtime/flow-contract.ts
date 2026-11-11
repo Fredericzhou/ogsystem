@@ -14,6 +14,7 @@ import { listJsonSchemaIssues } from "./json-schema.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   CompiledFlowContract,
+  CollaborationRelation,
   FlowContractDefinition,
   FlowContractFile,
   FlowContractPlan,
@@ -28,6 +29,7 @@ type FlowContractSourceRecord = {
   kind: "flow" | "role_input";
   match: Record<string, string>;
   onViolation: FlowContractViolationPolicy;
+  relation?: CollaborationRelation;
   schema: unknown;
   schemaPath: string;
 };
@@ -273,6 +275,50 @@ function expectOptionalViolation(
   fail(`Invalid contract file in ${filePath} at ${fieldPath}: expected FAIL or WARN`);
 }
 
+function expectRelation(value: unknown, filePath: string, fieldPath: string): CollaborationRelation {
+  const relation = expectRecord(value, filePath, fieldPath);
+  const enumValue = <T extends string>(key: string, allowed: readonly T[]): T => {
+    const candidate = relation[key];
+    if (typeof candidate !== "string" || !allowed.includes(candidate as T)) {
+      fail(`Invalid relation in ${filePath} at ${fieldPath}.${key}: expected one of ${allowed.join(", ")}`);
+    }
+    return candidate as T;
+  };
+  const result: CollaborationRelation = {
+    kind: enumValue("kind", ["request", "handoff", "decision"] as const),
+    purpose: enumValue("purpose", ["work", "information", "review", "support", "notify"] as const),
+    authority: enumValue("authority", ["advisory", "binding"] as const)
+  };
+  if (relation.response !== undefined) {
+    const response = expectRecord(relation.response, filePath, `${fieldPath}.response`);
+    const mode = response.mode;
+    if (typeof mode !== "string" || !["one", "all", "any", "quorum"].includes(mode)) {
+      fail(`Invalid relation in ${filePath} at ${fieldPath}.response.mode: expected one, all, any, or quorum`);
+    }
+    const min = response.min;
+    if (min !== undefined && (typeof min !== "number" || !Number.isInteger(min) || min < 1)) {
+      fail(`Invalid relation in ${filePath} at ${fieldPath}.response.min: expected a positive integer`);
+    }
+    if (mode === "quorum" && min === undefined) {
+      fail(`Invalid relation in ${filePath} at ${fieldPath}.response.min: quorum requires min`);
+    }
+    result.response = { mode: mode as "one" | "all" | "any" | "quorum", ...(min !== undefined ? { min } : {}) };
+  }
+  if (relation.contractRef !== undefined) {
+    if (typeof relation.contractRef !== "string" || !relation.contractRef.trim()) fail(`Invalid relation in ${filePath} at ${fieldPath}.contractRef: expected a non-empty string`);
+    result.contractRef = relation.contractRef.trim();
+  }
+  if (relation.timeoutSeconds !== undefined) {
+    if (typeof relation.timeoutSeconds !== "number" || !Number.isInteger(relation.timeoutSeconds) || relation.timeoutSeconds <= 0) fail(`Invalid relation in ${filePath} at ${fieldPath}.timeoutSeconds: expected a positive integer`);
+    result.timeoutSeconds = relation.timeoutSeconds;
+  }
+  if (relation.blockedPolicy !== undefined) {
+    if (!["wait", "escalate", "terminate"].includes(String(relation.blockedPolicy))) fail(`Invalid relation in ${filePath} at ${fieldPath}.blockedPolicy: expected wait, escalate, or terminate`);
+    result.blockedPolicy = relation.blockedPolicy as "wait" | "escalate" | "terminate";
+  }
+  return result;
+}
+
 function expectContractFile(value: unknown, filePath: string): FlowContractFile {
   const record = expectRecord(value, filePath, "$");
   if (record.version !== 1) {
@@ -296,6 +342,9 @@ function expectContractFile(value: unknown, filePath: string): FlowContractFile 
       filePath,
       `$.contracts[${index}].onViolation`
     );
+    const relation = contract.relation === undefined
+      ? undefined
+      : expectRelation(contract.relation, filePath, `$.contracts[${index}].relation`);
 
     return {
       id,
@@ -304,7 +353,8 @@ function expectContractFile(value: unknown, filePath: string): FlowContractFile 
         Object.entries(match).map(([key, entryValue]) => [key, expectString(entryValue, filePath, `$.contracts[${index}].match.${key}`)])
       ),
       schema,
-      onViolation
+      onViolation,
+      ...(relation ? { relation } : {})
     } satisfies FlowContractDefinition;
   });
 
@@ -372,6 +422,7 @@ function normalizeFlowContractDefinition(definition: FlowContractDefinition): Fl
     kind: definition.kind,
     match: { ...definition.match },
     onViolation,
+    relation: definition.relation,
     schema: undefined,
     schemaPath: definition.schema
   };
@@ -384,6 +435,7 @@ function buildNormalizedContractDigest(contracts: Array<FlowContractSourceRecord
       kind: contract.kind,
       match: contract.match,
       onViolation: contract.onViolation,
+      relation: contract.relation,
       schema: contract.schema
     }))
   );
