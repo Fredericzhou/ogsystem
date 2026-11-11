@@ -16,6 +16,10 @@ const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
 export const DEFAULT_DEMO_BACKEND = "opencode";
 export const DEFAULT_DEMO_MODEL = "gpt-6-luna";
 const DEFAULT_DEMO_MODEL_TIMEOUT_MS = 120000;
+// A classic team can contain several sequential model activations. The
+// process wrapper must outlive that chain; each role still keeps its own
+// model timeout and Runtime node budget.
+const DEFAULT_DEMO_RUN_TIMEOUT_MS = 600000;
 
 // Deterministic local publisher used by the classic teams. It writes only to
 // the Runtime execution workspace and emits one JSON Role result on stdout.
@@ -357,7 +361,7 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
       "--ogs-dir", workdir, "--json", "--quiet-run"
     ];
     if (mode === "simulation") args.push("--dry-run");
-    const execution = await runCli(args, { cwd: workdir, timeoutMs: timeoutMs ?? (mode === "model" ? 180000 : 30000) });
+    const execution = await runCli(args, { cwd: workdir, timeoutMs: timeoutMs ?? (mode === "model" ? DEFAULT_DEMO_RUN_TIMEOUT_MS : 30000) });
     const result = parseJsonTail(execution.stdout);
     return {
       caseId,
