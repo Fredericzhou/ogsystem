@@ -26,14 +26,15 @@ export function pageFetch(input, options = {}) {
     if (!request) return response;
     return new Proxy(response, {
       get(target, property, receiver) {
-        if (property === "json") {
+        if (typeof property === "string" && ["arrayBuffer", "blob", "formData", "json", "text"].includes(property)) {
           return async (...args) => {
-            const payload = await target.json(...args);
+            const payload = await target[property](...args);
             if (!isCurrentRequest(request)) throw requestAbortError();
             return payload;
           };
         }
-        return Reflect.get(target, property, target);
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
       }
     });
   });
