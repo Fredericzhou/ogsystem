@@ -108,6 +108,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
             primaryModelId: item.primaryModelId,
             failure: item.error,
             inputContext: item.inputContext,
+            stdout: item.stdout,
             stdoutPreview: item.stdoutPreview,
             errorEnvelope: item.errorEnvelope
           })) : [],

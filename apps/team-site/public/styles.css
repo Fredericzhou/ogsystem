@@ -677,11 +677,19 @@ h1, h2, p { margin-top: 0; }
 .studio-message-section { display: grid; gap: 5px; min-width: 0; }
 .studio-message-preview { color: var(--ink); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .studio-message-event { color: var(--mint-dark, #087c51); display: block; font-weight: 700; }
+.studio-message-event-emoji { display: inline-block; margin-right: 4px; }
 .studio-message-content-preview { display: block; }
 .studio-message-more { align-self: start; background: transparent; border: 0; color: var(--accent, var(--mint-dark)); cursor: pointer; font: inherit; font-size: 11px; padding: 0; }
 .studio-message-more:hover { text-decoration: underline; }
 .studio-message-section pre[hidden] { display: none !important; }
-.studio-message-section pre { margin-top: 3px; }
+.studio-message-section pre {
+  margin-top: 3px;
+  max-height: clamp(120px, 30vh, 260px);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
 .chat-mention-callout {
   align-items: center;
   background: color-mix(in srgb, var(--role-accent, var(--mint)) 8%, var(--surface));

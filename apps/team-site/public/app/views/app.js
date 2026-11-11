@@ -900,7 +900,7 @@ async function renderPlatformConfig() {
   const isModels = location.pathname === "/platform/models" || location.pathname === "/platform";
   const title = isModels ? (state.locale === "en" ? "Model services" : "模型服务") : (state.locale === "en" ? "Platform settings" : "平台配置");
   const subtitle = state.locale === "en" ? "Manage execution runtime connectivity, credentials, and default model routes." : "配置运行底座连接状态、API 凭据与默认模型路由。";
-  root.innerHTML = `<section class="project-library-toolbar page-heading"><div class="repository-heading"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="project-library-filters repository-actions"><button id="platform-discovery-refresh" class="secondary-button platform-action-button" type="button"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 10a7.5 7.5 0 0 1 12.7-3L20 9M4 17v-5h5m10.2 2a7.5 7.5 0 0 1-12.7 3L4 15"/></svg><span>${state.locale === "en" ? "Refresh" : "刷新"}</span></button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>${state.locale === "en" ? "Discovered services" : "发现到的服务"}</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker" id="platform-models-kicker">模型目录</span><h2>${state.locale === "en" ? "Discovered models" : "发现到的模型"}</h2></div><div class="platform-filter-toggle" role="group" aria-label="${state.locale === "en" ? "Model filter mode" : "模型列表过滤模式"}"><button type="button" class="filter-toggle-btn active" data-model-filter="service" data-touch-target-exempt>${state.locale === "en" ? "By service" : "按服务"}</button><button type="button" class="filter-toggle-btn" data-model-filter="available" data-touch-target-exempt>${state.locale === "en" ? "Available only" : "仅可用"}</button></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="ollama">Ollama</option></select></label><label>默认模型<select name="defaultModel"><option value="default">自动选择</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="604800" value="120" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button platform-action-button" type="submit"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg><span>保存</span></button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
+  root.innerHTML = `<section class="project-library-toolbar page-heading"><div class="repository-heading"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="project-library-filters repository-actions"><button id="platform-discovery-refresh" class="secondary-button platform-action-button" type="button"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.8 10a7.5 7.5 0 0 1 12.7-3L20 9M4 17v-5h5m10.2 2a7.5 7.5 0 0 1-12.7 3L4 15"/></svg><span>${state.locale === "en" ? "Refresh" : "刷新"}</span></button></div></section><section class="platform-config-grid"><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker">运行底座</span><h2>${state.locale === "en" ? "Discovered services" : "发现到的服务"}</h2></div></div><div id="platform-providers" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-discovery-panel"><div class="panel-head"><div><span class="section-kicker" id="platform-models-kicker">模型目录</span><h2>${state.locale === "en" ? "Discovered models" : "发现到的模型"}</h2></div><div class="platform-filter-toggle" role="group" aria-label="${state.locale === "en" ? "Model filter mode" : "模型列表过滤模式"}"><button type="button" class="filter-toggle-btn active" data-model-filter="service" data-touch-target-exempt>${state.locale === "en" ? "By service" : "按服务"}</button><button type="button" class="filter-toggle-btn" data-model-filter="available" data-touch-target-exempt>${state.locale === "en" ? "Available only" : "仅可用"}</button></div></div><div id="platform-models" class="platform-list" data-layout-scroll>正在读取...</div></article><article class="project-panel platform-settings-panel"><div class="panel-head"><div><span class="section-kicker">默认值</span><h2>执行设置</h2></div><p class="panel-note" id="platform-discovery-meta">正在读取探测时间...</p></div><form id="platform-settings-form" class="compact-form"><label>默认底座<select name="defaultProvider"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="ollama">Ollama</option></select></label><label>默认模型<select name="defaultModel"><option value="default">自动选择</option></select></label><label><span>模型请求超时（秒）</span><input name="timeoutSeconds" type="number" min="10" max="604800" value="600" title="等待本次模型请求返回的最长时间；不限制整个任务的执行时长" aria-describedby="platform-timeout-help"><small id="platform-timeout-help" class="platform-field-hint">只计算单次模型请求等待返回的时间，不限制整个任务执行多久。超过后该次请求异常，可从任务记录重新处理。</small></label><label>失败重试次数<input name="retryCount" type="number" min="0" max="5" value="1"></label><button class="primary-button platform-action-button" type="submit"><svg class="platform-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg><span>保存</span></button><p class="form-status" id="platform-settings-status"></p><p class="form-status platform-runtime-status" id="platform-runtime-status" role="status" aria-live="polite"></p></form></article></section>`;
   const modelProbes = new Map();
   let discoverySnapshot;
   let selectedSettings;
@@ -1221,6 +1221,7 @@ function studioSimulationEventTime(event) {
 const {
   messagePresentation: studioMessagePresentation,
   messageSectionMarkup: studioTranscriptSectionMarkup,
+  messageBodyMarkup: studioTranscriptBodyMarkup,
   bindMessageMore: bindStudioMessageMore,
   auditDrawerMarkup: studioRuntimeAuditDrawerMarkup,
   roleCardMarkup: studioRuntimeRoleCardMarkup,
@@ -1588,9 +1589,12 @@ function studioSimulationErrorText(message) {
     TEAM_WORKSPACE_UNBOUND: ["No business workspace is bound to this TeamVersion.", "此团队版本尚未绑定业务工作目录。"],
     TEAM_WORKSPACE_INVALID: ["The bound business workspace is unavailable.", "绑定的业务工作目录不可用。"],
     MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"],
-    TEAM_ASSISTANT_MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"]
+    TEAM_ASSISTANT_MODEL_UNAVAILABLE: ["A runnable model is unavailable. Check Platform settings and retry.", "当前没有可运行的模型，请检查平台设置后重试。"],
+    OPENCODE_REQUEST_TIMEOUT: ["The OpenCode API model request exceeded its configured timeout. Increase the model request timeout in Platform settings and retry.", "OpenCode API 模型请求超过了配置的等待时间，请在平台设置中提高模型请求超时后重试。"]
   };
   if (code && messages[code]) return messages[code][state.locale === "en" ? 0 : 1];
+  const embeddedCode = detail.match(/\b(OPENCODE_REQUEST_TIMEOUT)\b/)?.[1];
+  if (embeddedCode) return messages[embeddedCode][state.locale === "en" ? 0 : 1];
   if (code) return state.locale === "en" ? "The debug run could not be completed. Check the TeamVersion and retry." : "调试无法完成，请检查团队版本后重试。";
   return detail || (state.locale === "en" ? "The debug run could not be completed. Try again." : "调试无法完成，请重试。");
 }
@@ -1740,7 +1744,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         : "";
       const handoffMarkup = legacyHandoffMarkup ? legacyHandoffMarkup.slice(0, -6) + completionMarkup + "</div>" : completionMarkup;
       const inputText = item.inputContext ? JSON.stringify(item.inputContext, null, 2) : "";
-      const outputText = item.stdoutPreview || item.failure || item.error || "";
+      const outputText = item.stdout || item.stdoutPreview || item.failure || item.error || "";
       const calls = item.promptCalls || [];
       const callChars = calls.reduce((sum, call) => sum + (Number(call.renderedPromptChars) || 0), 0);
       const callTokens = calls.reduce((sum, call) => sum + (Number(call.estimatedInputTokens) || 0) + (Number(call.estimatedOutputTokens) || 0), 0);
@@ -2346,11 +2350,11 @@ function studioRoleTopology(authoring = {}, roleId = "") {
 }
 
 const STUDIO_BUSINESS_EVENT_TYPES = [
-  { value: "READY", zh: "就绪", en: "Result ready", glyph: "✓" },
-  { value: "APPROVED", zh: "通过", en: "Approved", glyph: "✓" },
-  { value: "REJECTED", zh: "拒绝", en: "Rejected", glyph: "✗" },
-  { value: "NEEDS_REWORK", zh: "需要返工", en: "Needs rework", glyph: "↺" },
-  { value: "BLOCKED", zh: "业务阻塞", en: "Business blocked", glyph: "⛔" }
+  { value: "READY", zh: "准备好了", en: "Result ready", glyph: "✓" },
+  { value: "APPROVED", zh: "同意", en: "Approved", glyph: "✓" },
+  { value: "REJECTED", zh: "不同意", en: "Rejected", glyph: "✗" },
+  { value: "NEEDS_REWORK", zh: "请再改改", en: "Needs rework", glyph: "↺" },
+  { value: "BLOCKED", zh: "办不了", en: "Business blocked", glyph: "⛔" }
 ];
 
 const STUDIO_ROUTING_ERROR_EVENT_TYPES = [
@@ -2727,27 +2731,27 @@ function flowColorForType(type) {
       ? { accent: "hsl(38 92% 58%)", fill: "hsl(38 45% 18%)", nameEn: "Start dispatch", nameZh: "开始分发" }
       : { accent: "hsl(38 90% 36%)", fill: "hsl(38 60% 95%)", nameEn: "Start dispatch", nameZh: "开始分发" },
     rework: isDark
-      ? { accent: "hsl(45 92% 58%)", fill: "hsl(45 45% 18%)", nameEn: "Needs rework", nameZh: "需要返工" }
-      : { accent: "hsl(45 90% 36%)", fill: "hsl(45 60% 95%)", nameEn: "Needs rework", nameZh: "需要返工" },
+      ? { accent: "hsl(45 92% 58%)", fill: "hsl(45 45% 18%)", nameEn: "Needs rework", nameZh: "请再改改" }
+      : { accent: "hsl(45 90% 36%)", fill: "hsl(45 60% 95%)", nameEn: "Needs rework", nameZh: "请再改改" },
 
     // 绿（成功/通过类）
     approved: isDark
-      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Approved", nameZh: "通过" }
-      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Approved", nameZh: "通过" },
+      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Approved", nameZh: "同意" }
+      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Approved", nameZh: "同意" },
     ready: isDark
-      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Result ready", nameZh: "就绪" }
-      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Result ready", nameZh: "就绪" },
+      ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "Result ready", nameZh: "准备好了" }
+      : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "Result ready", nameZh: "准备好了" },
     end: isDark
       ? { accent: "hsl(142 72% 52%)", fill: "hsl(142 40% 17%)", nameEn: "End delivery", nameZh: "结束交付" }
       : { accent: "hsl(142 70% 34%)", fill: "hsl(142 45% 94%)", nameEn: "End delivery", nameZh: "结束交付" },
 
     // 红（错误/拒绝类）
     rejected: isDark
-      ? { accent: "hsl(0 75% 64%)", fill: "hsl(0 40% 18%)", nameEn: "Rejected", nameZh: "拒绝" }
-      : { accent: "hsl(0 70% 45%)", fill: "hsl(0 55% 95%)", nameEn: "Rejected", nameZh: "拒绝" },
+      ? { accent: "hsl(0 75% 64%)", fill: "hsl(0 40% 18%)", nameEn: "Rejected", nameZh: "不同意" }
+      : { accent: "hsl(0 70% 45%)", fill: "hsl(0 55% 95%)", nameEn: "Rejected", nameZh: "不同意" },
     blocked: isDark
-      ? { accent: "hsl(15 88% 60%)", fill: "hsl(15 40% 18%)", nameEn: "Business blocked", nameZh: "业务阻塞" }
-      : { accent: "hsl(15 80% 40%)", fill: "hsl(15 55% 95%)", nameEn: "Business blocked", nameZh: "业务阻塞" },
+      ? { accent: "hsl(15 88% 60%)", fill: "hsl(15 40% 18%)", nameEn: "Business blocked", nameZh: "办不了" }
+      : { accent: "hsl(15 80% 40%)", fill: "hsl(15 55% 95%)", nameEn: "Business blocked", nameZh: "办不了" },
     error: isDark
       ? { accent: "hsl(0 80% 65%)", fill: "hsl(0 40% 18%)", nameEn: "Runtime error", nameZh: "运行时错误" }
       : { accent: "hsl(0 75% 45%)", fill: "hsl(0 55% 95%)", nameEn: "Runtime error", nameZh: "运行时错误" },
@@ -2885,12 +2889,13 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
           pendingHandoffs.delete(roleId);
         }
         item._studioAuditItem = { ...(item._studioAuditItem || {}), ...event };
-        const detail = event.failure || event.stdoutPreview || event.content || event.reason || event.eventType || "";
+        const detail = event.failure || event.stdout || event.stdoutPreview || event.content || event.reason || event.eventType || "";
         if (detail) {
-          const presentation = studioMessagePresentation(detail);
-          const short = presentation.content.length > 280 ? `${presentation.content.slice(0, 280).trimEnd()}…` : presentation.content;
           const body = item.querySelector(".team-debug-bubble-body");
-          body.innerHTML = `${presentation.label ? `<span class="studio-message-event">${esc(presentation.label)}</span>` : ""}<span class="studio-message-content-preview">${esc(short)}</span>${presentation.content.length > 280 ? `<button type="button" class="studio-message-more">${state.locale === "en" ? "More" : "更多"}</button><pre hidden>${esc(presentation.content)}</pre>` : ""}`;
+          const messageValue = event.stdout || (typeof detail === "string" && /^\s*event\s*=\s*[^|]+?\s*\|\s*content\s*=\s*[\s\S]*$/i.test(detail)
+            ? detail
+            : { event: event.eventType, content: detail });
+          body.innerHTML = studioTranscriptBodyMarkup(messageValue);
           bindStudioMessageMore(body);
         }
       }
@@ -4179,10 +4184,10 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             "join_quorum_reached": english ? `Join condition met for ${role}` : `${role} 已满足汇聚条件`,
             "join_late_arrival_ignored": english ? `Late result ignored at ${role}` : `${role} 忽略了迟到结果`,
             "human_review_requested": english ? `Review requested for ${role}` : `${role} 已提交人工审核`,
-            "human_review_approved": english ? `Review approved for ${role}` : `${role} 审核已通过`,
-            "human_review_rework_requested": english ? `Rework requested for ${role}` : `${role} 收到返工要求`,
-            "human_review_rejected": english ? `Review rejected and routed for ${role}` : `${role} 审核拒绝并已路由`,
-            "human_review_decision_rejected": english ? `Review decision rejected for ${role}` : `${role} 审核决定被拒绝`,
+            "human_review_approved": english ? `Review approved for ${role}` : `${role} 说同意`,
+            "human_review_rework_requested": english ? `Rework requested for ${role}` : `${role} 说请再改改`,
+            "human_review_rejected": english ? `Review rejected and routed for ${role}` : `${role} 说不同意，已转交`,
+            "human_review_decision_rejected": english ? `Review decision rejected for ${role}` : `${role} 的审核决定是不同意`,
             "human_review_paused": english ? `Run paused for review` : "运行已暂停，等待审核",
             "human_review_terminated": english ? `Run terminated during review` : "审核终止了运行",
             "human_review_expired": english ? `Review timed out` : "审核已超时",
@@ -4353,8 +4358,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
                 : (state.locale === "en" ? "Working" : "工作中");
               addSection(card, state.locale === "en" ? "Working" : "工作中", waitText, "waiting");
             }
-            if (item.stdoutPreview || item.failure) {
-              addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdoutPreview, "output");
+            if (item.stdout || item.stdoutPreview || item.failure) {
+              addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdout || item.stdoutPreview, "output");
             }
             const diagnostics = {
               ...(item.backend ? { backend: item.backend } : {}),
@@ -6050,7 +6055,7 @@ async function openTaskReview(projectId, taskId, task = {}) {
   const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const dialog = document.createElement("dialog");
   dialog.className = "task-review-dialog";
-  dialog.innerHTML = `<form method="dialog" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">任务审核</span><h2>确认这次交付</h2></div><button class="text-button" value="cancel" aria-label="关闭">关闭</button></div><label>审核结果<select name="decision"><option value="approve">通过并继续</option><option value="rework">退回修改</option><option value="terminate">终止任务</option></select></label><label>给执行团队的反馈<textarea name="comment" rows="5" maxlength="4000" placeholder="说明通过条件、需要修改的内容或终止原因"></textarea></label><p class="form-status" id="task-review-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" value="cancel">取消</button><button class="primary-button" value="submit">提交审核</button></div></form>`;
+  dialog.innerHTML = `<form method="dialog" class="task-review-form"><div class="panel-head"><div><span class="section-kicker">任务审核</span><h2>确认这次交付</h2></div><button class="text-button" value="cancel" aria-label="关闭">关闭</button></div><label>审核结果<select name="decision"><option value="approve">同意并继续</option><option value="rework">请再改改</option><option value="terminate">不同意并终止</option></select></label><label>给执行团队的反馈<textarea name="comment" rows="5" maxlength="4000" placeholder="说清楚同意条件、需要修改的内容或终止原因"></textarea></label><p class="form-status" id="task-review-status" role="status" aria-live="polite"></p><div class="form-actions"><button class="secondary-button" value="cancel">取消</button><button class="primary-button" value="submit">提交审核</button></div></form>`;
   document.body.append(dialog);
   let releaseTrap;
   let releaseScroll;

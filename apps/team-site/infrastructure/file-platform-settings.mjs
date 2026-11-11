@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
-const defaults = Object.freeze({ defaultProvider: "opencode", defaultModel: "gpt-6-luna", timeoutSeconds: 120, retryCount: 1 });
+const defaults = Object.freeze({ defaultProvider: "opencode", defaultModel: "gpt-6-luna", timeoutSeconds: 600, retryCount: 1 });
 
 export function createFilePlatformSettings({ path }) {
   if (!path) throw new TypeError("Platform settings path is required.");

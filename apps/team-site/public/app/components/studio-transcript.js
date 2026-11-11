@@ -2,23 +2,63 @@ import { state } from "../state.js";
 import { esc } from "./dom.js";
 
 export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWithBadge, formatEventTime, formatStatus }) {
-  const eventLabels = {
-    APPROVED: ["Approved", "同意"],
-    REJECTED: ["Rejected", "不同意"],
-    START: ["Started", "开始"],
-    DONE: ["Completed", "完成"],
-    COMPLETED: ["Completed", "完成"],
-    FAILED: ["Failed", "失败"],
-    STOPPED: ["Stopped", "已停止"]
+  const fallbackEventLabels = {
+    READY: { en: "Result ready", zh: "准备好了" },
+    APPROVED: { en: "Approved", zh: "同意" },
+    REJECTED: { en: "Rejected", zh: "不同意" },
+    NEEDS_REWORK: { en: "Needs rework", zh: "请再改改" },
+    BLOCKED: { en: "Business blocked", zh: "办不了" },
+    START: { en: "Started", zh: "开始" },
+    DONE: { en: "Completed", zh: "完成" },
+    COMPLETED: { en: "Completed", zh: "完成" },
+    FAILED: { en: "Failed", zh: "失败" },
+    STOPPED: { en: "Stopped", zh: "已停止" }
   };
+  const eventEmojis = {
+    READY: "✅",
+    APPROVED: "👍",
+    REJECTED: "🙅",
+    NEEDS_REWORK: "🔁",
+    BLOCKED: "🚫"
+  };
+  let messageId = 0;
+
+  function eventLabel(event) {
+    const key = String(event || "").trim();
+    if (!key) return "";
+    const normalized = key.toUpperCase();
+    const configured = state.eventLabels?.[key]
+      || state.eventLabels?.[normalized]
+      || Object.entries(state.eventLabels || {}).find(([candidate]) => candidate.toUpperCase() === normalized)?.[1];
+    const fallback = fallbackEventLabels[normalized];
+    const labels = configured || fallback;
+    return Array.isArray(labels)
+      ? labels[state.locale === "en" ? 1 : 0] || labels[0] || key
+      : labels && typeof labels === "object"
+        ? labels[state.locale === "en" ? "en" : "zh"] || labels[state.locale === "en" ? "en" : "zh-CN"] || labels.zh || labels.en || key
+        : labels || key;
+  }
+
+  function eventEmoji(event) {
+    return state.locale === "en" ? "" : eventEmojis[String(event || "").trim().toUpperCase()] || "";
+  }
 
   function messagePresentation(value) {
     const raw = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value, null, 2);
+    let structuredValue = value;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) structuredValue = parsed;
+      } catch {
+        // Plain text and event=... previews use the existing string parser below.
+      }
+    }
     let event = "";
     let content = raw;
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      event = String(value.event || value.type || "").trim();
-      if (Object.hasOwn(value, "content")) content = typeof value.content === "string" ? value.content : JSON.stringify(value.content, null, 2);
+    if (structuredValue && typeof structuredValue === "object" && !Array.isArray(structuredValue)) {
+      event = String(structuredValue.event || structuredValue.type || "").trim();
+      if (Object.hasOwn(structuredValue, "content")) content = typeof structuredValue.content === "string" ? structuredValue.content : JSON.stringify(structuredValue.content, null, 2);
     } else {
       const match = raw.match(/^\s*event\s*=\s*([^|]+?)\s*\|\s*content\s*=\s*([\s\S]*)$/i);
       if (match) {
@@ -26,24 +66,34 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
         content = match[2].trim();
       }
     }
-    const english = state.locale === "en";
-    return { event, label: eventLabels[event.toUpperCase()]?.[english ? 0 : 1] || event, content: String(content || ""), raw };
+    return { event, label: eventLabel(event), content: String(content || ""), raw, fullText: typeof value === "string" && structuredValue !== value ? raw : undefined };
   }
 
-  function messageSectionMarkup(label, value) {
+  function messageMarkup(sectionLabel, value) {
     const presentation = messagePresentation(value);
     const long = presentation.content.length > 280;
     const preview = long ? `${presentation.content.slice(0, 280).trimEnd()}…` : presentation.content;
+    const eventIcon = eventEmoji(presentation.event);
     const heading = presentation.label
-      ? `<span class="studio-message-event">${esc(presentation.label)}</span><span class="studio-message-content-preview">${esc(preview)}</span>`
+      ? `<span class="studio-message-event">${eventIcon ? `<span class="studio-message-event-emoji" aria-hidden="true">${eventIcon}</span>` : ""}${esc(presentation.label)}</span><span class="studio-message-content-preview">${esc(preview)}</span>`
       : `<span class="studio-message-content-preview">${esc(preview)}</span>`;
-    return `<section class="studio-message-section" data-studio-message-section><small>${esc(label)}</small><div class="studio-message-preview">${heading}</div>${long ? `<button type="button" class="studio-message-more" data-studio-message-more aria-expanded="false">${state.locale === "en" ? "More" : "更多"}</button><pre hidden>${esc(presentation.label ? `${presentation.label}\n${presentation.content}` : presentation.content)}</pre>` : ""}</section>`;
+    const fullId = `studio-message-full-${++messageId}`;
+    const fullText = presentation.fullText || (presentation.label ? `${presentation.label}\n${presentation.content}` : presentation.content);
+    return `<section class="studio-message-section" data-studio-message-section>${sectionLabel ? `<small>${esc(sectionLabel)}</small>` : ""}<div class="studio-message-preview">${heading}</div>${long ? `<button type="button" class="studio-message-more" data-studio-message-more aria-expanded="false" aria-controls="${fullId}">${state.locale === "en" ? "More" : "更多"}</button><pre id="${fullId}" data-studio-message-full hidden>${esc(fullText)}</pre>` : ""}</section>`;
+  }
+
+  function messageSectionMarkup(label, value) {
+    return messageMarkup(label, value);
+  }
+
+  function messageBodyMarkup(value) {
+    return messageMarkup("", value);
   }
 
   function bindMessageMore(section) {
     section?.querySelector("[data-studio-message-more]")?.addEventListener("click", (event) => {
       const button = event.currentTarget;
-      const pre = section.querySelector("pre");
+      const pre = section.querySelector("[data-studio-message-full]");
       if (!pre) return;
       const expanded = button.getAttribute("aria-expanded") === "true";
       pre.hidden = expanded;
@@ -188,7 +238,7 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
         return;
       }
       const value = key === "input" ? activeItem.inputContext
-        : key === "output" ? (activeItem.stdoutPreview || activeItem.failure || activeItem.content)
+        : key === "output" ? (activeItem.stdout || activeItem.failure || activeItem.content || activeItem.stdoutPreview)
           : key === "diagnostics" ? (activeItem.errorEnvelope || { failure: activeItem.failure, error: activeItem.error, attempt: activeItem.attempt })
             : activeItem;
       const label = key === "input" ? (state.locale === "en" ? "Input Context" : "输入上下文")
@@ -231,6 +281,7 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
   return Object.freeze({
     messagePresentation,
     messageSectionMarkup,
+    messageBodyMarkup,
     bindMessageMore,
     auditDrawerMarkup,
     roleCardMarkup,
