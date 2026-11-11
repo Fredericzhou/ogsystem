@@ -99,7 +99,7 @@ export function renderBackendIcon(backendId, { displayName, iconKey, status, siz
     ? " backend-icon--muted"
     : "";
   const pixelSize = Number.isFinite(Number(size)) && Number(size) > 0 ? Number(size) : 22;
-  return `<span class="backend-icon backend-icon--${esc(entry.iconKey)}${stateClass}" role="img" aria-label="${esc(label)}" title="${esc(label)}" style="--backend-icon-size:${pixelSize}px"><img src="${esc(entry.assetPath)}" alt="" width="${pixelSize}" height="${pixelSize}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="backend-icon-initials" aria-hidden="true" hidden>${esc(entry.initials)}</span></span>`;
+  return `<span class="backend-icon backend-icon--${esc(entry.iconKey)}${stateClass}" role="img" aria-label="${esc(label)}" title="${esc(label)}" style="--backend-icon-size:${pixelSize}px"><img data-backend-icon-image src="${esc(entry.assetPath)}" alt="" width="${pixelSize}" height="${pixelSize}" loading="lazy"><span class="backend-icon-initials" aria-hidden="true" hidden>${esc(entry.initials)}</span></span>`;
 }
 
 export function formatBackendStatusBadge(status, locale = "zh") {
