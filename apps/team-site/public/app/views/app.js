@@ -6127,7 +6127,7 @@ function projectTaskStatusLabel(status) {
 function teamStudioErrorMarkup(message) {
   const detail = String(message || "团队操作暂时不可用");
   if (detail.includes("TEAM_ASSISTANT_MODEL_UNAVAILABLE")) {
-    return '部署环境尚未发现可运行的 OpenCode 模型。请确认 OpenCode 已安装并登录，再到<a href="/platform" data-route="/platform">平台设置</a>刷新底座与模型后重试。';
+    return '部署环境尚未发现可运行的 OpenCode 模型。请确认 OpenCode 已安装并配置 API provider，再到<a href="/platform" data-route="/platform">平台设置</a>刷新底座与模型后重试。';
   }
   if (detail.includes("TEAM_ASSISTANT_UNAVAILABLE") || /fetch failed/i.test(detail)) {
     return `团队助手无法连接 Visualizer。请启动 Visualizer，或在启动 Team Site 时将 OGS_VIS_URL 配置为可访问的服务地址。<br><small>${esc(detail)}</small> <a href="/platform" data-route="/platform">检查运行底座与模型</a>`;
