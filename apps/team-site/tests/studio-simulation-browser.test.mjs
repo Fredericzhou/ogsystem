@@ -412,7 +412,7 @@ registerHooks({
     assert.equal(await debugPanel.locator(":scope.is-open").count(), 0, "runtime debug and team configuration panels are mutually exclusive");
     assert.equal(await page.locator("#studio-asset-drawer input:not([type='search']), #studio-asset-drawer select, #studio-asset-drawer textarea").evaluateAll((fields) => fields.every((field) => field.disabled)), true, "runtime team configuration is read-only");
     assert.equal(await page.locator(".studio-design-workbench").evaluate((workbench) => typeof workbench._studioRuntimeSwitchSidePanel), "function", "runtime side panel switch is attached to the active workbench");
-    await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').evaluate((button) => button.click());
+    await page.locator('#project-graph-stage [data-studio-graph-action="debug-run"]').click();
     await page.waitForTimeout(200);
     assert.equal(await page.locator("#team-debug-dialog.is-open[aria-hidden='false']").count(), 1, `debug switches back from runtime team configuration: ${await page.locator(".studio-design-workbench").evaluate((workbench) => JSON.stringify({ className: workbench.className, debug: { className: workbench.querySelector('#team-debug-dialog')?.className, hidden: workbench.querySelector('#team-debug-dialog')?.getAttribute('aria-hidden') }, asset: { className: workbench.querySelector('#studio-asset-drawer')?.className, hidden: workbench.querySelector('#studio-asset-drawer')?.getAttribute('aria-hidden') } }))}`);
     assert.equal(await page.locator("#studio-asset-drawer.is-open[aria-hidden='false']").count(), 0, "debug switches back from runtime team configuration");

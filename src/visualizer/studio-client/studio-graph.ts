@@ -2755,7 +2755,7 @@ export class StudioGraphIsland {
       generate.disabled = this.busy || readOnly;
     }
     if (debugRun) {
-      debugRun.hidden = readOnly;
+      debugRun.hidden = this.options.readOnly === true;
       debugRun.disabled = this.busy || this.options.readOnly === true || (typeof this.options.onOpenDebug !== "function" && typeof this.options.onFocusDebugInput !== "function");
     }
     for (const action of ["layout", "add-role", "add-edge", "delete", "validate", "save"]) {
