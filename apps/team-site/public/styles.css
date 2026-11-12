@@ -111,6 +111,9 @@ body.modal-open, body.drawer-open { overflow: hidden; }
 .confirm-form { display: grid; gap: 14px; padding: 22px; }
 .confirm-form h2 { font-size: 18px; margin: 0; }
 .confirm-message { color: var(--muted); line-height: 1.6; margin: 0; }
+.studio-error-dialog .dialog-head { align-items: center; display: flex; justify-content: space-between; gap: 14px; }
+.studio-error-dialog .dialog-head h2 { font-size: 18px; margin: 3px 0 0; }
+.studio-error-dialog .confirm-message { overflow-wrap: anywhere; white-space: pre-wrap; }
 button, textarea { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid #74b8a5; outline-offset: 2px; }

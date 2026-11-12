@@ -527,9 +527,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-role-field="reviewTerminateScope"]').selectOption("branch");
     await inspector.getByText("角色资产包", { exact: true }).click();
     const reviewRoleDefinition = JSON.parse(await inspector.locator('[data-studio-role-asset="role.json"]').inputValue());
-    reviewRoleDefinition.authority ||= {};
-    reviewRoleDefinition.authority.controlActions = [...new Set([...(reviewRoleDefinition.authority.controlActions || []), "approve", "rework", "terminate"])];
-    await inspector.locator('[data-studio-role-asset="role.json"]').fill(JSON.stringify(reviewRoleDefinition));
+    assert.deepEqual([...new Set(reviewRoleDefinition.authority?.controlActions || [])].sort(), ["approve", "pause", "rework", "terminate"]);
     const orderRoleId = Object.keys(design.authoring.roles).find((id) => new Set(Object.values(design.authoring.flows).filter((item) => item.fromRoleId === id && item.toRoleId !== "__system_end__").map((item) => item.toRoleId)).size > 1);
     let expectedRouteOrder = [];
     if (orderRoleId) {
@@ -619,7 +617,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     assert.equal(persistedDesign.authoring.flows[flow.flowId].label, "Review completed");
     assert.equal(persistedDesign.authoring.flows[flow.flowId].priority, 7);
     assert.equal(persistedAssets.roles[roleId]["prompt.md"], "Review source material and return cited findings.");
-    assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "rework", "terminate"]);
+    assert.deepEqual(JSON.parse(persistedAssets.roles[reviewRoleId]["role.json"]).authority.controlActions, ["approve", "pause", "rework", "terminate"]);
     assert.deepEqual(persistedAssets.modelSelection.roles?.[roleId], { backend: "codex", modelId: "gpt-6-luna", fallback: { backend: "codex", modelId: "gpt-6-luna", modelRef: "codex/gpt-6-luna" } }, JSON.stringify({ submittedAssets, persistedAssets }, null, 2));
     const manifest = JSON.parse(persistedAssets.contracts);
     assert.ok(manifest.contracts.some((item) => item.id === "review-handoff" && item.schema === schemaPath && item.onViolation === "WARN"));
@@ -764,6 +762,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Updated prompt with a simulated asset-store failure.");
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
     await assert.doesNotReject(() => page.getByText("TEAM_ASSET_WRITE_FAILED", { exact: true }).waitFor());
+    await page.locator("[data-close-studio-error]").first().click();
     const unchangedDesign = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design`).then((response) => response.json());
     const unchangedAssets = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
     assert.equal("modelRef" in unchangedDesign.authoring.roles[roleId], false);
@@ -787,6 +786,7 @@ test("Studio professional inspector edits TeamVersion role and flow assets and p
     await inspector.locator('[data-studio-role-asset="prompt.md"]').fill("Assets persisted before a simulated design conflict.");
     await page.locator('#project-graph-stage [data-studio-graph-action="save"]').click();
     await assert.doesNotReject(() => page.getByText("TEAM_VERSION_DIGEST_CONFLICT", { exact: true }).waitFor());
+    await page.locator("[data-close-studio-error]").first().click();
     const assetsAfterConflict = await page.request.get(`${url}/api/v1/team-versions/${team.projectId}/design/assets`).then((response) => response.json());
     assert.equal(assetsAfterConflict.roles[roleId]["prompt.md"], "Updated prompt with a simulated asset-store failure.");
   } finally {

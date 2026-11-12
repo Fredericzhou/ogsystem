@@ -759,6 +759,20 @@ function showBlockedTeamProjects(projects) {
   });
   dialog.showModal();
 }
+function showStudioErrorDialog(message) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "confirm-dialog studio-error-dialog";
+  dialog.setAttribute("aria-labelledby", "studio-error-title");
+  dialog.innerHTML = `<div class="confirm-form"><div class="dialog-head"><div><span class="section-kicker">${state.locale === "en" ? "Unable to continue" : "操作未完成"}</span><h2 id="studio-error-title">${state.locale === "en" ? "Studio error" : "Studio 异常"}</h2></div><button type="button" class="close-button" data-close-studio-error aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><p class="confirm-message" role="alert"></p><div class="form-actions"><button type="button" class="primary-button" data-close-studio-error>${state.locale === "en" ? "Got it" : "知道了"}</button></div></div>`;
+  dialog.querySelector(".confirm-message").textContent = String(message || (state.locale === "en" ? "The operation failed." : "操作失败。"));
+  document.body.append(dialog);
+  const close = () => { if (dialog.open) dialog.close(); else dialog.remove(); };
+  dialog.querySelectorAll("[data-close-studio-error]").forEach((button) => button.addEventListener("click", close));
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  dialog.showModal();
+  dialog.querySelector("[data-close-studio-error]")?.focus({ preventScroll: true });
+}
 async function renderProjectLibrary() {
   const root = $("#workspace-view");
   const importLabelText = () => { const label = root.querySelector(".import-project-button"); if (label?.firstChild) label.firstChild.textContent = "导入团队"; };
@@ -3124,7 +3138,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
   } catch (error) {
     stage.removeAttribute("aria-busy");
     stage.textContent = error.message || "Studio graph engine is unavailable.";
-    setEditorState(error.message || (state.locale === "en" ? "Unable to load the graph editor." : "图谱编辑器加载失败。"));
+    showStudioErrorDialog(error.message || (state.locale === "en" ? "Unable to load the graph editor." : "图谱编辑器加载失败。"));
     return;
   }
   if (!stage.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
@@ -3132,7 +3146,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     const message = state.locale === "en" ? "Graph editor is unavailable. Reload the page and try again." : "图谱编辑器不可用，请刷新页面后重试。";
     stage.removeAttribute("aria-busy");
     stage.textContent = message;
-    setEditorState(message);
+    showStudioErrorDialog(message);
     return;
   }
   try {
@@ -3624,6 +3638,50 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       }
       return tool;
     };
+    const syncRoleReviewAuthority = (role) => {
+      if (!role?.roleId || role.review?.mode !== "required") return false;
+      selection.assets.roles ||= {};
+      selection.assets.roles[role.roleId] ||= {};
+      let roleContract = {};
+      try {
+        const parsed = JSON.parse(selection.assets.roles[role.roleId]["role.json"] || "{}");
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) roleContract = parsed;
+      } catch { /* Repair the contract envelope when enabling human review. */ }
+      roleContract.authority = roleContract.authority && typeof roleContract.authority === "object" && !Array.isArray(roleContract.authority)
+        ? roleContract.authority
+        : {};
+      const controlActions = Array.isArray(roleContract.authority.controlActions)
+        ? roleContract.authority.controlActions.filter((action) => typeof action === "string")
+        : [];
+      const requiredActions = ["approve", "rework", role.review.timeoutAction === "terminate" ? "terminate" : "pause"];
+      roleContract.authority.controlActions = [...new Set([...controlActions, ...requiredActions])].sort((left, right) => left.localeCompare(right));
+      roleContract.contractVersion ||= 1;
+      roleContract.purpose ||= `Role execution contract for ${role.roleId}`;
+      roleContract.responsibility ||= { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] };
+      roleContract.inputs ||= { preconditions: [] };
+      roleContract.outputs ||= { events: ["READY"], postconditions: [] };
+      roleContract.constraints ||= { writableStateFields: [] };
+      roleContract.failure ||= { retryableErrorCodes: [], terminalErrorCodes: [] };
+      roleContract.audit ||= { requiredFields: [] };
+      const nextJson = JSON.stringify(roleContract, null, 2);
+      const changed = selection.assets.roles[role.roleId]["role.json"] !== nextJson;
+      if (!changed) return false;
+      selection.assets.roles[role.roleId]["role.json"] = nextJson;
+      pendingRoleAssets.add(`${role.roleId}/role.json`);
+      const rawEditor = selection.roleId === role.roleId ? inspector?.querySelector('[data-studio-role-asset="role.json"]') : null;
+      if (rawEditor && document.activeElement !== rawEditor) rawEditor.value = nextJson;
+      return true;
+    };
+    const syncAllRoleReviewAuthorities = () => {
+      let changed = false;
+      Object.values(authoring.roles || {}).forEach((role) => { changed = syncRoleReviewAuthority(role) || changed; });
+      if (changed) {
+        dirty = true;
+        setDirty("project-graph");
+        updateStudioGraph?.update({ historyContext: captureEditorHistoryContext() });
+      }
+      return changed;
+    };
     const updateInspector = (element) => {
       const systemField = element.dataset.studioSystemField;
       const roleField = element.dataset.studioRoleField;
@@ -3758,17 +3816,37 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             || Object.entries(parsed.value).some(([key, value]) => !key.trim() || typeof value !== "string" || !value.trim())) return false;
           role.contextMap = parsed.value;
         } else if (roleField === "reviewEnabled") {
+          if (element.checked && role.bindingKind === "noop") {
+            element.checked = false;
+            showStudioErrorDialog(state.locale === "en"
+              ? "Human review requires an executable model or tool binding for this role."
+              : "人工审核需要为该角色配置可执行的模型或工具绑定。");
+            return false;
+          }
           role.review = element.checked ? { ...role.review, mode: "required", timeoutAction: role.review?.timeoutAction || "pause", terminateScope: role.review?.terminateScope || "branch" } : undefined;
+          syncRoleReviewAuthority(role);
         } else if (roleField.startsWith("review")) {
           const review = { ...(role.review || {}), mode: "required" };
-          if (roleField === "reviewTimeout") review.timeoutSeconds = element.value === "" ? undefined : Number(element.value);
+          if (roleField === "reviewTimeout") {
+            const value = element.value === "" ? undefined : Number(element.value);
+            if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) return false;
+            review.timeoutSeconds = value;
+          }
           if (roleField === "reviewTimeoutAction") review.timeoutAction = element.value;
           if (roleField === "reviewTarget") review.reworkTargetRoleId = element.value || undefined;
-          if (roleField === "reviewReworkMax") review.reworkMax = element.value === "" ? undefined : Number(element.value);
+          if (roleField === "reviewReworkMax") {
+            const value = element.value === "" ? undefined : Number(element.value);
+            if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) return false;
+            review.reworkMax = value;
+          }
           if (roleField === "reviewTerminateScope") review.terminateScope = element.value;
           role.review = review;
+          syncRoleReviewAuthority(role);
         } else if (["joinMin", "loopMax"].includes(roleField)) {
-          role[roleField] = element.value === "" ? undefined : Number(element.value);
+          const value = element.value === "" ? undefined : Number(element.value);
+          const valid = value === undefined || (Number.isSafeInteger(value) && (roleField === "loopMax" ? value > 0 : value >= 1));
+          if (!valid) return false;
+          role[roleField] = value;
         } else if (["routingMode", "joinMode"].includes(roleField)) {
           if (element.value) role[roleField] = element.value;
           else delete role[roleField];
@@ -4927,10 +5005,19 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         setEditorState(state.locale === "en" ? "Unsaved layout changes." : "有未保存的布局修改");
       },
       onValidateWorkbench: async () => {
-        const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design/validate`, {
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring })
-        });
-        const validation = await result.json();
+        syncAllRoleReviewAuthorities();
+        let result;
+        let validation;
+        try {
+          result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/design/validate`, {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ authoring })
+          });
+          validation = await result.json();
+        } catch (error) {
+          if (isAbort(error)) return;
+          showStudioErrorDialog(error.message || (state.locale === "en" ? "Unable to validate the TeamVersion design." : "团队版本设计校验失败。"));
+          return;
+        }
         if (!isCurrentRequest(pageRequest)) return;
         const problemsDrawer = document.querySelector("#studio-problems-drawer");
         const problemsList = problemsDrawer?.querySelector(".studio-problems-list");
@@ -4938,7 +5025,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         if (!result.ok || validation.ok === false) {
           const diagnostics = validation.diagnostics || [];
           const errorMsg = validation.error || diagnostics.map((item) => item.message).join("; ") || (state.locale === "en" ? "Structure validation failed." : "结构校验失败");
-          setEditorState(errorMsg);
+          showStudioErrorDialog(errorMsg);
           if (problemsDrawer && problemsList && diagnostics.length) {
             problemsList.innerHTML = diagnostics.map((d) => {
               const roleTag = d.roleId ? `<span class="problem-role-tag">${esc(d.roleId)}</span>` : "";
@@ -4946,19 +5033,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               return `<li class="studio-problem-item" data-problem-role="${esc(d.roleId || "")}" data-problem-flow="${esc(d.flowKey || "")}" tabindex="0"><span class="problem-icon">●</span><div class="problem-item-text"><span>${esc(d.message || d.code || "校验错误")}</span>${roleTag}${flowTag}</div></li>`;
             }).join("");
             problemsDrawer.hidden = false;
-            let trigger = statusElement?.querySelector(".studio-problems-trigger");
-            if (!trigger && statusElement) {
-              trigger = document.createElement("button");
-              trigger.type = "button";
-              trigger.className = "studio-problems-trigger";
-              trigger.setAttribute("data-touch-target-exempt", "");
-              trigger.innerHTML = `<span class="problems-dot">●</span> <span>${diagnostics.length} ${state.locale === "en" ? "Problems" : "个问题"}</span>`;
-              trigger.addEventListener("click", () => {
-                problemsDrawer.hidden = !problemsDrawer.hidden;
-              });
-              statusElement.append(trigger);
-            }
           }
+          statusElement?.querySelector(".studio-problems-trigger")?.remove();
           return;
         }
         setEditorState(state.locale === "en" ? "Structure validation passed." : "结构校验通过");
@@ -4966,16 +5042,25 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         statusElement?.querySelector(".studio-problems-trigger")?.remove();
       },
       onSaveWorkbench: async () => {
-        if (!dirty) { setEditorState(state.locale === "en" ? "There are no unsaved changes." : "没有待保存的修改"); return; }
+        const reviewContractsChanged = syncAllRoleReviewAuthorities();
+        if (!dirty && !reviewContractsChanged) { setEditorState(state.locale === "en" ? "There are no unsaved changes." : "没有待保存的修改"); return; }
         setEditorState(state.locale === "en" ? "Saving TeamVersion design…" : "正在保存团队设计…");
-        const result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/save`, {
-          method: "PUT", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ authoring, assets: selection.assets, expectedTeamVersionDigest: projectDigest })
-        });
-        const saved = await result.json();
+        let result;
+        let saved;
+        try {
+          result = await pageFetch(`/api/v1/team-versions/${encodeURIComponent(projectId)}/save`, {
+            method: "PUT", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ authoring, assets: selection.assets, expectedTeamVersionDigest: projectDigest })
+          });
+          saved = await result.json();
+        } catch (error) {
+          if (isAbort(error)) return;
+          showStudioErrorDialog(error.message || (state.locale === "en" ? "Unable to save the TeamVersion design." : "团队版本设计保存失败。"));
+          return;
+        }
         if (!isCurrentRequest(pageRequest)) return;
         if (!result.ok) {
-          setEditorState(saved.error || "团队版本保存失败");
+          showStudioErrorDialog(saved.error || "团队版本保存失败");
           return;
         }
         dirty = false;
@@ -5034,7 +5119,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
   } catch (error) { if (isAbort(error)) return;
     stage.removeAttribute("aria-busy");
     stage.textContent = error.message || "Unable to load the project graph.";
-    setEditorState(error.message || (state.locale === "en" ? "Unable to load the project graph." : "团队结构加载失败。"));
+    showStudioErrorDialog(error.message || (state.locale === "en" ? "Unable to load the project graph." : "团队结构加载失败。"));
   }
 }
 
