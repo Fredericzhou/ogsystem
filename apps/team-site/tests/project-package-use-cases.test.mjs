@@ -114,11 +114,11 @@ test("project package validation checks nested released teams before catalog rea
   assert.deepEqual(calls, ["draft"]);
 });
 
-test("project package validation rejects invalid material paths, formats, and definition digests", async () => {
+test("project package validation rejects invalid material paths and definition digests", async () => {
   const { useCases } = createOperations();
 
   await assert.rejects(() => useCases.previewProjectBundle(bundle({ materials: [{ filename: "../escape.md", content: "x" }] })), /MATERIAL_PATH_INVALID/);
-  await assert.rejects(() => useCases.previewProjectBundle(bundle({ materials: [{ filename: "notes.exe", content: "x" }] })), /unsupported material format/);
+  await assert.doesNotReject(() => useCases.previewProjectBundle(bundle({ materials: [{ filename: "notes.exe", content: "x" }] })));
   const wrongDigest = createProjectPackageUseCases({
     validateTeamPackage: async () => ({ bundle: { teamCoreDigest: "team-digest" }, teamCoreDigest: "team-digest" }),
     packageIntegrity: {
@@ -130,6 +130,25 @@ test("project package validation rejects invalid material paths, formats, and de
     projectCatalog: { listProjects: async () => [] }
   });
   await assert.rejects(() => wrongDigest.previewProjectBundle(bundle()), /PROJECT_IMPORT_DIGEST_MISMATCH: projectDefinitionDigest/);
+});
+
+test("project package validation preserves base64 materials and rejects tampered content hashes", async () => {
+  const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
+  const content = bytes.toString("base64");
+  const { useCases } = createOperations();
+
+  await assert.doesNotReject(() => useCases.previewProjectBundle(bundle({
+    materials: [{
+      filename: "brief.pdf",
+      content,
+      contentType: "application/pdf",
+      encoding: "base64",
+      contentHash: "content"
+    }]
+  })));
+  await assert.rejects(() => useCases.previewProjectBundle(bundle({
+    materials: [{ filename: "brief.pdf", content, encoding: "base64", contentHash: "tampered" }]
+  })), /PROJECT_IMPORT_DIGEST_MISMATCH: material contentHash/);
 });
 
 test("project package import applies conflict policy before invoking persistence", async () => {

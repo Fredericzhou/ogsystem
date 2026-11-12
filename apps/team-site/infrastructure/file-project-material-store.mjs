@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { normalizeMaterialPath } from "../domain/material-path.mjs";
 import { projectOgsDir, projectWorkspaceDir } from "./project-paths.mjs";
@@ -40,6 +40,19 @@ async function restoreFile(path, previous) {
   }
 }
 
+async function assertNoSymlinkComponents(root, relativePath) {
+  let current = root;
+  for (const segment of relativePath.split("/")) {
+    current = resolve(current, segment);
+    try {
+      if ((await lstat(current)).isSymbolicLink()) throw new Error("MATERIAL_SYMLINK_NOT_ALLOWED: material path contains a symbolic link.");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      return;
+    }
+  }
+}
+
 export function createFileProjectMaterialStore({ computeProjectDefinitionDigest }) {
   if (typeof computeProjectDefinitionDigest !== "function") {
     throw new TypeError("File Project material store requires the Project definition digest operation.");
@@ -73,14 +86,17 @@ export function createFileProjectMaterialStore({ computeProjectDefinitionDigest 
           const materialId = `${slug(material.filename.replaceAll("/", "-").slice(0, -extension.length))}-${randomUUID().slice(0, 6)}`;
           const target = resolve(tempRoot, material.filename);
           await mkdir(resolve(target, ".."), { recursive: true });
-          await writeFile(target, material.content, "utf8");
+          await assertNoSymlinkComponents(tempRoot, material.filename);
+          const bytes = material.encoding === "base64" ? Buffer.from(material.content, "base64") : Buffer.from(material.content, "utf8");
+          await writeFile(target, bytes);
           entries.push({
             materialId,
             filename: material.filename,
             path: `workspace/files/${batchId}/${material.filename}`,
             contentType: material.contentType,
+            encoding: material.encoding || "utf-8",
             size: material.size,
-            contentHash: createHash("sha256").update(material.content).digest("hex"),
+            contentHash: createHash("sha256").update(bytes).digest("hex"),
             status: "indexed",
             createdAt: new Date().toISOString()
           });

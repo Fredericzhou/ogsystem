@@ -113,8 +113,9 @@ export function createFilePackageTransactionStore({
     const project = await readProject(projectId);
     const materials = [];
     for (const item of project.materials?.materials || []) {
-      const content = await readFile(resolve(projectWorkspaceDir(project), item.path), "utf8").catch(() => "");
-      materials.push({ ...item, content });
+      const bytes = await readFile(resolve(projectWorkspaceDir(project), item.path)).catch(() => Buffer.alloc(0));
+      const encoding = item.encoding === "base64" ? "base64" : "utf-8";
+      materials.push({ ...item, encoding, content: encoding === "base64" ? bytes.toString("base64") : bytes.toString("utf8") });
     }
     const mountedTeams = [];
     const seenTeamVersions = new Set();
@@ -131,7 +132,7 @@ export function createFilePackageTransactionStore({
         version: 1,
         materials: materials.map(({ content, ...item }) => ({
           ...item,
-          contentHash: item.contentHash || createHash("sha256").update(content).digest("hex")
+          contentHash: item.contentHash || createHash("sha256").update(item.encoding === "base64" ? Buffer.from(content, "base64") : Buffer.from(content, "utf8")).digest("hex")
         }))
       }
     });
@@ -247,14 +248,17 @@ export function createFilePackageTransactionStore({
       const filename = normalizeMaterialPath(material.filename);
       const target = resolve(root, filename);
       await mkdir(resolve(target, ".."), { recursive: true });
-      await writeFile(target, material.content, "utf8");
+      const encoding = material.encoding === "base64" ? "base64" : "utf-8";
+      const bytes = encoding === "base64" ? Buffer.from(material.content, "base64") : Buffer.from(material.content, "utf8");
+      await writeFile(target, bytes);
       entries.push({
         materialId: slug(filename.replaceAll("/", "-").slice(0, -extname(filename).length)) + "-" + randomUUID().slice(0, 6),
         filename,
         path: `workspace/files/${batchId}/${filename}`,
         contentType: material.contentType || "text/plain",
-        size: Buffer.byteLength(material.content),
-        contentHash: createHash("sha256").update(material.content).digest("hex"),
+        encoding,
+        size: bytes.byteLength,
+        contentHash: createHash("sha256").update(bytes).digest("hex"),
         status: "indexed",
         createdAt: new Date().toISOString()
       });

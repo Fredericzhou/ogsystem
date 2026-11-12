@@ -31,12 +31,15 @@ test("material application validates and persists a complete batch with updated 
   try {
     const entries = await useCases.addProjectMaterials("project-1", [
       { filename: "brief/notes.md", content: "Notes", contentType: "text/markdown" },
-      { filename: "data.json", content: "{}" }
+      { filename: "data.json", content: "{}" },
+      { filename: "brief.pdf", content: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]).toString("base64"), contentType: "application/pdf", encoding: "base64" }
     ]);
     assert.deepEqual(calls, ["material-upload"]);
-    assert.deepEqual(entries.map(({ filename }) => filename), ["brief/notes.md", "data.json"]);
+    assert.deepEqual(entries.map(({ filename }) => filename), ["brief/notes.md", "data.json", "brief.pdf"]);
     assert.ok(entries.every((entry) => entry.status === "indexed" && /^[a-f0-9]{64}$/.test(entry.contentHash)));
     assert.equal(await readFile(join(workdir, entries[0].path), "utf8"), "Notes");
+    assert.deepEqual(await readFile(join(workdir, entries[2].path)), Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]));
+    assert.equal(entries[2].encoding, "base64");
     const index = JSON.parse(await readFile(join(workdir, "workspace", "index.json"), "utf8"));
     assert.deepEqual(index.materials, entries);
     const metadata = JSON.parse(await readFile(join(workdir, ".site", "project.json"), "utf8"));
@@ -59,9 +62,10 @@ test("material application rejects unsafe or invalid batches before the store wr
 
   await assert.rejects(() => useCases.addProjectMaterials("project-1", []), /MATERIAL_BATCH_INVALID/);
   await assert.rejects(() => useCases.addProjectMaterials("project-1", [{ filename: "../escape.md", content: "x" }]), /MATERIAL_PATH_INVALID/);
-  await assert.rejects(() => useCases.addProjectMaterials("project-1", [{ filename: "script.exe", content: "x" }]), /Only md, txt, json, yaml, yml, and csv/);
+  await assert.rejects(() => useCases.addProjectMaterials("project-1", [{ filename: ".site/project.json", content: "x" }]), /MATERIAL_PATH_INVALID/);
+  await assert.doesNotReject(() => useCases.addProjectMaterials("project-1", [{ filename: "script.exe", content: "x", contentType: "application/octet-stream" }]));
   await assert.rejects(() => useCases.addProjectMaterials("project-1", [{ filename: "large.md", content: "x".repeat(1024 * 1024 + 1) }]), /up to 1 MB/);
-  assert.equal(writes, 0);
+  assert.equal(writes, 1);
 });
 
 test("file material store removes staged files when a batch contains an unsupported path", async () => {

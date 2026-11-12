@@ -244,6 +244,13 @@ test("project-v2 imports multiple nested released teams into a clean workspace t
       teamVersionIds: [firstTeam.projectId, secondTeam.projectId]
     });
     await sourceStore.addProjectMaterial(sourceProject.projectId, { filename: "brief/source.md", content: "source material", contentType: "text/markdown" });
+    const binaryMaterial = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
+    await sourceStore.addProjectMaterial(sourceProject.projectId, {
+      filename: "brief/source.pdf",
+      content: binaryMaterial.toString("base64"),
+      contentType: "application/pdf",
+      encoding: "base64"
+    });
     const bundle = await createProjectPackageOperations(sourceStore).exportProjectBundle(sourceProject.projectId);
 
     await assert.rejects(
@@ -286,6 +293,9 @@ test("project-v2 imports multiple nested released teams into a clean workspace t
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === firstTeam.projectId), false);
     assert.equal(imported.mountedTeams.some((team) => team.teamVersionId === secondTeam.projectId), false);
     assert.equal(imported.projectDefinitionDigest, bundle.project.projectDefinitionDigest);
+    const importedPdf = imported.materials.materials.find((item) => item.filename === "brief/source.pdf");
+    assert.equal(importedPdf?.encoding, "base64");
+    assert.deepEqual(await readFile(join(imported.workdir, importedPdf.path)), binaryMaterial);
     const importedTeams = (await targetStore.listProjects()).filter((project) => project.projectType === "team");
     assert.equal(importedTeams.length, 2);
     assert.equal(importedTeams.every((team) => team.teamVersionStatus === "released"), true);

@@ -1,5 +1,3 @@
-import { isSupportedMaterialPath } from "../domain/material-path.mjs";
-
 export function createProjectPackageUseCases({
   validateTeamPackage,
   packageIntegrity,
@@ -37,13 +35,15 @@ export function createProjectPackageUseCases({
     let totalSize = 0;
     for (const material of materials) {
       const filename = normalizeMaterialPath(material?.filename);
-      if (!isSupportedMaterialPath(filename)) {
-        throw new Error("PROJECT_IMPORT_INVALID: unsupported material format.");
-      }
-      if (typeof material?.content !== "string" || material.content.length > 1024 * 1024) {
-        throw new Error("PROJECT_IMPORT_INVALID: material content is too large.");
-      }
-      totalSize += new TextEncoder().encode(material.content).length;
+      if (typeof material?.content !== "string") throw new Error("PROJECT_IMPORT_INVALID: material content is missing.");
+      const encoding = material.encoding === "base64" ? "base64" : "utf-8";
+      if (material.encoding !== undefined && !["utf-8", "base64"].includes(material.encoding)) throw new Error("PROJECT_IMPORT_INVALID: unsupported material encoding.");
+      if (encoding === "base64" && (material.content.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(material.content))) throw new Error("PROJECT_IMPORT_INVALID: invalid base64 material content.");
+      const bytes = encoding === "base64" ? Buffer.from(material.content, "base64") : Buffer.from(material.content, "utf8");
+      if (bytes.byteLength > 1024 * 1024) throw new Error("PROJECT_IMPORT_INVALID: material content is too large.");
+      const contentHash = packageIntegrity.computeContentDigest(bytes);
+      if (material.contentHash !== undefined && material.contentHash !== contentHash) throw new Error("PROJECT_IMPORT_DIGEST_MISMATCH: material contentHash does not match content.");
+      totalSize += bytes.byteLength;
     }
     if (totalSize > 8 * 1024 * 1024) throw new Error("PROJECT_IMPORT_INVALID: material content exceeds the package limit.");
     if (!Array.isArray(bundle.project.mountedTeams)) throw new Error("PROJECT_IMPORT_INVALID: mountedTeams must be an array.");
@@ -79,7 +79,8 @@ export function createProjectPackageUseCases({
         version: 1,
         materials: materials.map(({ content, ...item }) => ({
           ...item,
-          contentHash: item.contentHash || packageIntegrity.computeContentDigest(content)
+          encoding: item.encoding || "utf-8",
+          contentHash: item.contentHash || packageIntegrity.computeContentDigest(item.encoding === "base64" ? Buffer.from(content, "base64") : Buffer.from(content, "utf8"))
         }))
       }
     });

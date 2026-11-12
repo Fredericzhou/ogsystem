@@ -1,4 +1,4 @@
-import { isSupportedMaterialPath, normalizeMaterialPath } from "../domain/material-path.mjs";
+import { normalizeMaterialPath } from "../domain/material-path.mjs";
 
 const MAX_MATERIALS_PER_BATCH = 200;
 const MAX_MATERIAL_SIZE = 1024 * 1024;
@@ -24,19 +24,24 @@ export function createProjectMaterialUseCases({ projectStore, materialStore, con
       let totalSize = 0;
       const materials = normalizedFiles.map((file) => {
         const filename = normalizeMaterialPath(file?.filename);
-        if (!isSupportedMaterialPath(filename)) {
-          throw new Error("Only md, txt, json, yaml, yml, and csv materials are supported.");
+        const encoding = file?.encoding === "base64" ? "base64" : "utf-8";
+        if (file?.encoding !== undefined && !["utf-8", "base64"].includes(file.encoding)) throw new Error("MATERIAL_ENCODING_INVALID: use utf-8 or base64.");
+        if (typeof file?.content !== "string") throw new Error("Material content must be a string encoded as utf-8 or base64.");
+        let bytes;
+        try {
+          if (encoding === "base64" && (file.content.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.content))) throw new Error("invalid base64");
+          bytes = encoding === "base64" ? Buffer.from(file.content, "base64") : Buffer.from(file.content, "utf8");
         }
-        if (typeof file?.content !== "string" || file.content.length > MAX_MATERIAL_SIZE) {
-          throw new Error("Material content must be text up to 1 MB.");
-        }
-        const size = Buffer.byteLength(file.content);
+        catch { throw new Error("MATERIAL_CONTENT_INVALID: unable to decode file content."); }
+        if (bytes.byteLength > MAX_MATERIAL_SIZE) throw new Error("Material content must be text or binary up to 1 MB.");
+        const size = bytes.byteLength;
         totalSize += size;
         if (totalSize > MAX_BATCH_SIZE) throw new Error("Material batch must be no larger than 8 MB.");
         return {
           filename,
           content: file.content,
           contentType: file.contentType || "text/plain",
+          encoding,
           size
         };
       });

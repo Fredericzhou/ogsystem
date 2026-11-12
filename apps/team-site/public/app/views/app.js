@@ -6634,7 +6634,13 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
     const status = $("#project-material-status");
     status.textContent = `正在读取 ${files.length} 个文件...`;
     try {
-      const payload = { files: await Promise.all(files.map(async (file) => ({ filename: file.webkitRelativePath || file.name, content: await file.text(), contentType: file.type || "text/plain" }))) };
+      const payload = { files: await Promise.all(files.map(async (file) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let offset = 0; offset < bytes.length; offset += chunkSize) binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+        return { filename: file.webkitRelativePath || file.name, content: btoa(binary), contentType: file.type || "application/octet-stream", encoding: "base64" };
+      })) };
       if (!isCurrentRequest(pageRequest)) return;
       const response = await pageFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/materials`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json();
@@ -6645,6 +6651,8 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
   };
   $("#project-material-file-input")?.addEventListener("change", uploadMaterials);
   $("#project-material-folder-input")?.addEventListener("change", uploadMaterials);
+  $("#project-material-file-input")?.removeAttribute("accept");
+  $("#project-material-folder-input")?.removeAttribute("accept");
   collaborationTaskForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;

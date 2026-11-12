@@ -96,7 +96,8 @@ export function projectDefinitionPayload(project) {
     materials: (project.materials?.materials || []).map((item) => ({
       filename: String(item.filename || ""),
       contentType: String(item.contentType || "text/plain"),
-      contentHash: item.contentHash || (typeof item.content === "string" ? computeContentDigest(item.content) : null)
+      encoding: String(item.encoding || "utf-8"),
+      contentHash: item.contentHash || (typeof item.content === "string" ? computeContentDigest(item.encoding === "base64" ? Buffer.from(item.content, "base64") : Buffer.from(item.content, "utf8")) : null)
     })).sort((left, right) => left.filename.localeCompare(right.filename))
   };
 }

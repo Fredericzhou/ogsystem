@@ -119,9 +119,9 @@ test("batch project materials are all-or-nothing and preserve relative paths", a
     await assert.rejects(
       () => store.addProjectMaterials(project.projectId, [
         { filename: "brief/valid.md", content: "valid", contentType: "text/markdown" },
-        { filename: "brief/invalid.exe", content: "must not be stored", contentType: "application/octet-stream" }
+        { filename: ".site/project.json", content: "must not be stored", contentType: "application/json" }
       ]),
-      /Only md, txt, json, yaml, yml, and csv materials are supported/
+      /MATERIAL_PATH_INVALID/
     );
     const afterFailure = await store.getProject(project.projectId);
     assert.deepEqual(afterFailure.materials.materials, []);

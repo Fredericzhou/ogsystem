@@ -275,9 +275,10 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     await writeFile(join(workdir, "tools.json"), `${JSON.stringify({ tools: executionRoles.map((role) => ({
       toolRef: role.execution.toolRef,
       runner: "local_shell",
-      command: process.execPath,
+      command: "node",
       argsTemplate: ["tools/publish-artifacts.mjs", role.execution.format],
-      stdinMode: "none"
+      stdinMode: "none",
+      requires: role.execution.format === "consulting" ? ["zip", "pandoc", "xelatex"] : ["ffmpeg"]
     })) }, null, 2)}\n`);
   }
   await writeFile(join(configDir, "user-profile.json"), `${JSON.stringify({
