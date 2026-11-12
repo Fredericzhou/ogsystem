@@ -11,6 +11,18 @@ function candidatesFor(command: string): string[] {
 }
 
 export function findExecutable(command: string): string | undefined {
+  // Runtime execution resolves the Node launcher from the current process so
+  // GUI/systemd environments with a minimal PATH use the same binary as the
+  // tool runner.
+  if (command === "node") {
+    for (const candidate of [process.env.OGSYSTEM_NODE_BIN, process.execPath]) {
+      if (!candidate) continue;
+      try {
+        accessSync(candidate, constants.F_OK | constants.X_OK);
+        return candidate;
+      } catch { /* continue with the normal PATH search */ }
+    }
+  }
   const candidates = candidatesFor(command);
   const hasPath = command.includes("/") || command.includes("\\");
   for (const candidate of candidates) {

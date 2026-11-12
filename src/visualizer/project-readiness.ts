@@ -805,10 +805,28 @@ export async function inspectProjectReadiness(
     catalog: modelCatalog
   });
   const laws = await loadLaws(undefined, workdir);
-  const [profiles, tools] = await Promise.all([
-    loadProfiles(undefined, workdir),
-    loadTools(undefined, workdir)
-  ]);
+  let profiles: Awaited<ReturnType<typeof loadProfiles>> = [];
+  let tools: Awaited<ReturnType<typeof loadTools>> = [];
+  try {
+    profiles = await loadProfiles(undefined, workdir);
+  } catch (error) {
+    blockers.push(createIssue({
+      code: "READINESS_EXECUTION_CONFIG_INVALID",
+      message: `Execution profiles cannot be loaded: ${errorMessage(error)}`,
+      severity: "blocker",
+      path: resolve(workdir, "profiles.json")
+    }));
+  }
+  try {
+    tools = await loadTools(undefined, workdir);
+  } catch (error) {
+    blockers.push(createIssue({
+      code: "READINESS_EXECUTION_CONFIG_INVALID",
+      message: `Execution tools cannot be loaded: ${errorMessage(error)}`,
+      severity: "blocker",
+      path: resolve(workdir, "tools.json")
+    }));
+  }
   const effectiveLaw = resolveEffectiveLaw(system, laws);
 
   for (const warning of resolvedModelSelection.warnings) {
@@ -829,7 +847,7 @@ export async function inspectProjectReadiness(
 
   for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
     const bindingRef = system.executionBinding[roleId];
-    if (bindingRef?.startsWith("profile.")) {
+    if (bindingRef) {
       // executionBinding stores the complete profile ID (for example profile.review),
       // matching profiles.json and the runtime binding resolver.
       const profileId = bindingRef;
@@ -848,7 +866,7 @@ export async function inspectProjectReadiness(
       }
       const requiredCommands = [...new Set([tool.command, ...(tool.requires || [])])];
       const missingCommands = requiredCommands.filter((command) => !checkExecutable(command).found);
-      if (missingCommands.length) blockers.push(createIssue({ code: "READINESS_TOOL_COMMAND_MISSING", message: `Role "${roleId}" requires unavailable tool command${missingCommands.length === 1 ? "" : "s"}: ${missingCommands.join(", ")}.`, severity: "blocker", roleId, detail: { profileId, toolRef: tool.toolRef, requiredCommands, missingCommands } }));
+      if (missingCommands.length) warnings.push(createIssue({ code: "READINESS_TOOL_COMMAND_MISSING", message: `Role "${roleId}" requires unavailable tool command${missingCommands.length === 1 ? "" : "s"}: ${missingCommands.join(", ")}. Dry-run remains available; install the command before a real run.`, severity: "warning", roleId, detail: { profileId, toolRef: tool.toolRef, requiredCommands, missingCommands } }));
       if (tool?.stdinMode === "none") {
         warnings.push(
           createIssue({

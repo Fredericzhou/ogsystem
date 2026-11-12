@@ -227,7 +227,7 @@ test("project readiness blocks invalid execution profiles, forbidden tools, and 
     assert.equal(blockers.find((issue) => issue.code === "READINESS_PROFILE_MISSING")?.roleId, "missing_profile");
     assert.equal(blockers.find((issue) => issue.code === "READINESS_TOOL_MISSING")?.roleId, "missing_tool");
     assert.equal(blockers.find((issue) => issue.code === "READINESS_TOOL_FORBIDDEN")?.roleId, "forbidden_tool");
-    assert.equal(blockers.find((issue) => issue.code === "READINESS_TOOL_COMMAND_MISSING")?.roleId, "missing_dependency");
+    assert.equal(readiness.warnings.find((issue) => issue.code === "READINESS_TOOL_COMMAND_MISSING")?.roleId, "missing_dependency");
     assert.equal(readiness.canDryRun, false);
   });
 });
