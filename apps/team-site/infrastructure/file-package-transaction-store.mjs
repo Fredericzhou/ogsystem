@@ -252,7 +252,10 @@ export function createFilePackageTransactionStore({
       const bytes = encoding === "base64" ? Buffer.from(material.content, "base64") : Buffer.from(material.content, "utf8");
       await writeFile(target, bytes);
       entries.push({
-        materialId: slug(filename.replaceAll("/", "-").slice(0, -extname(filename).length)) + "-" + randomUUID().slice(0, 6),
+        materialId: slug((() => {
+          const extension = extname(filename);
+          return extension ? filename.slice(0, -extension.length) : filename;
+        })().replaceAll("/", "-")) + "-" + randomUUID().slice(0, 6),
         filename,
         path: `workspace/files/${batchId}/${filename}`,
         contentType: material.contentType || "text/plain",

@@ -83,7 +83,8 @@ export function createFileProjectMaterialStore({ computeProjectDefinitionDigest 
         const metadata = JSON.parse(previousMetadata.toString("utf8"));
         for (const material of safeMaterials) {
           const extension = extname(material.filename).toLowerCase();
-          const materialId = `${slug(material.filename.replaceAll("/", "-").slice(0, -extension.length))}-${randomUUID().slice(0, 6)}`;
+          const stem = extension ? material.filename.slice(0, -extension.length) : material.filename;
+          const materialId = `${slug(stem.replaceAll("/", "-"))}-${randomUUID().slice(0, 6)}`;
           const target = resolve(tempRoot, material.filename);
           await mkdir(resolve(target, ".."), { recursive: true });
           await assertNoSymlinkComponents(tempRoot, material.filename);
