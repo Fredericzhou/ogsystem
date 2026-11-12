@@ -3337,6 +3337,24 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core .studio-run-micro-panel .team-debug-panel-content {
   min-height: 0;
 }
+.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel.is-runtime-config-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel.is-runtime-config-panel .studio-asset-drawer-head {
+  flex: 0 0 auto;
+}
+.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel.is-runtime-config-panel #studio-assets-list-view,
+.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel.is-runtime-config-panel #studio-assets-property-view {
+  min-height: 0;
+}
+.studio-asset-drawer.is-runtime-config-readonly .studio-asset-editor-actions {
+  display: none !important;
+}
+.studio-asset-drawer.is-runtime-config-readonly .studio-inspector-fields {
+  opacity: .88;
+}
 .studio-runtime-dual-controls {
   align-items: center;
   display: flex;
@@ -3421,7 +3439,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-run-micro-panel.is-runtime-micro-closed {
   display: none !important;
 }
-.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core:has(> .studio-run-micro-panel.is-runtime-micro-closed) {
+.studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core:not(:has(> .studio-run-micro-panel[aria-hidden="false"])) {
   grid-template-columns: minmax(0, 1fr);
 }
 .studio-runtime-split-handle {
@@ -3444,6 +3462,7 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core > .studio-runtime-split-handle,
 .studio-run-dual-core > .studio-runtime-split-handle {
   display: flex;
+  z-index: 20;
 }
 .studio-design-workbench-host .studio-design-workbench.is-runtime-dual-core[data-maximize-mode] > .studio-runtime-split-handle,
 .studio-run-dual-core[data-maximize-mode] > .studio-runtime-split-handle {

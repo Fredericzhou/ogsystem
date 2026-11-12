@@ -3215,9 +3215,39 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     let runtimeWorkbenchClassSnapshot = null;
     let runtimeGraphPanelClassSnapshot = null;
     let runtimeDebugPanelClassSnapshot = null;
+    let runtimeConfigPanelClassSnapshot = null;
+    let runtimeConfigPanelAriaHiddenSnapshot = null;
+    let runtimeConfigPanelAriaReadonlySnapshot = null;
+    let runtimeConfigEditorActionsHiddenSnapshot = null;
+    let runtimeConfigHintTextSnapshot = null;
+    const runtimeConfigFieldState = new WeakMap();
     let runtimeMicroOpen = true;
+    let runtimeSidePanel = "debug";
     let syncRuntimeDualCore = null;
+    let switchStudioSidePanel = null;
     const isCompactPanelViewport = () => window.matchMedia?.("(max-width: 760px)").matches === true;
+    const setRuntimeConfigReadOnly = (readOnly) => {
+      if (!assetDrawer) return;
+      assetDrawer.classList.toggle("is-runtime-config-readonly", readOnly);
+      assetDrawer.setAttribute("aria-readonly", String(readOnly));
+      const editorActions = assetDrawer.querySelector(".studio-asset-editor-actions");
+      if (editorActions) editorActions.hidden = readOnly;
+      assetDrawer.querySelectorAll("input, select, textarea, [contenteditable='true']").forEach((field) => {
+        if (field.matches("input[type='search']")) return;
+        if (readOnly && !runtimeConfigFieldState.has(field)) {
+          runtimeConfigFieldState.set(field, {
+            disabled: field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement ? field.disabled : null,
+            contenteditable: field instanceof HTMLElement ? field.getAttribute("contenteditable") : null
+          });
+        }
+        const snapshot = runtimeConfigFieldState.get(field);
+        if (field instanceof HTMLElement && field.getAttribute("contenteditable") === "true") field.setAttribute("contenteditable", readOnly ? "false" : (snapshot?.contenteditable || "true"));
+        if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) field.disabled = readOnly ? true : Boolean(snapshot?.disabled);
+      });
+      const hint = assetDrawer.querySelector(".studio-asset-editor-actions .form-hint");
+      if (hint && readOnly) hint.textContent = state.locale === "en" ? "Read-only snapshot used by this debug run." : "当前查看的是本次调试使用的只读团队版本快照。";
+      if (hint && !readOnly && runtimeConfigHintTextSnapshot != null) hint.textContent = runtimeConfigHintTextSnapshot;
+    };
     const showAssetPanel = (view = "list", { focusInspector = true } = {}) => {
       assetDrawer ||= workbench?.querySelector("#studio-asset-drawer");
       if (!assetDrawer) return;
@@ -3225,6 +3255,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       propertyView ||= assetDrawer.querySelector("#studio-assets-property-view");
       globalView ||= assetDrawer.querySelector("#studio-assets-global");
       assetBack ||= assetDrawer.querySelector("[data-studio-assets-back]");
+      assetPanelView = view;
       const buildPanel = workbench?.querySelector("#team-build-panel");
       const currentDebugPanel = workbench?.querySelector("#team-debug-dialog");
       if (isCompactPanelViewport()) {
@@ -3234,9 +3265,12 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         currentDebugPanel?.setAttribute("aria-hidden", "true");
         workbench?.querySelector('[data-studio-graph-action="debug-run"]')?.setAttribute("aria-expanded", "false");
       }
+      if (workbench?.classList.contains("is-runtime-dual-core") && switchStudioSidePanel) {
+        switchStudioSidePanel("config");
+        return;
+      }
       assetDrawer.classList.add("is-open");
       workbench?.studioSyncPanelDockLayout?.("asset");
-      assetPanelView = view;
       assetToggle()?.setAttribute("aria-expanded", "true");
       assetDrawer.setAttribute("aria-hidden", "false");
       const showProperties = view === "properties";
@@ -4129,6 +4163,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       const runtimeWorkbench = stage.closest(".studio-design-workbench");
       const runtimeGraphPanel = stage.closest(".project-graph-preview");
       const runtimeDebugPanel = runtimeWorkbench?.querySelector("#team-debug-dialog");
+      const runtimeConfigPanel = runtimeWorkbench?.querySelector("#studio-asset-drawer");
       if (!runtimeWorkbench || !runtimeGraphPanel || !runtimeDebugPanel) return;
       const runtimeControls = runtimeWorkbench?.querySelectorAll("[data-runtime-dual-controls]") || [];
       if (!active) {
@@ -4136,11 +4171,23 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         else runtimeWorkbench.classList.remove("studio-run-dual-core", "is-runtime-dual-core");
         if (runtimeGraphPanelClassSnapshot) runtimeGraphPanel.className = runtimeGraphPanelClassSnapshot;
         if (runtimeDebugPanelClassSnapshot) runtimeDebugPanel.className = runtimeDebugPanelClassSnapshot;
+        runtimeConfigPanel?.classList.remove("studio-run-micro-panel", "is-runtime-config-panel", "is-runtime-micro-closed", "is-open");
+        setRuntimeConfigReadOnly(false);
+        const restoredEditorActions = runtimeConfigPanel?.querySelector(".studio-asset-editor-actions");
+        if (restoredEditorActions && runtimeConfigEditorActionsHiddenSnapshot != null) restoredEditorActions.hidden = runtimeConfigEditorActionsHiddenSnapshot;
+        const restoredHint = restoredEditorActions?.querySelector(".form-hint");
+        if (restoredHint && runtimeConfigHintTextSnapshot != null) restoredHint.textContent = runtimeConfigHintTextSnapshot;
+        if (runtimeConfigPanelClassSnapshot) runtimeConfigPanel.className = runtimeConfigPanelClassSnapshot;
+        if (runtimeConfigPanelAriaHiddenSnapshot == null) runtimeConfigPanel?.removeAttribute("aria-hidden");
+        else runtimeConfigPanel?.setAttribute("aria-hidden", runtimeConfigPanelAriaHiddenSnapshot);
+        if (runtimeConfigPanelAriaReadonlySnapshot == null) runtimeConfigPanel?.removeAttribute("aria-readonly");
+        else runtimeConfigPanel?.setAttribute("aria-readonly", runtimeConfigPanelAriaReadonlySnapshot);
         delete runtimeWorkbench.dataset.layoutPreference;
         delete runtimeWorkbench.dataset.maximizeMode;
         runtimeWorkbench.style.removeProperty("--studio-runtime-split");
         if (runtimePanelStyleSnapshot) {
-          for (const [element, style] of [[runtimeWorkbench, runtimePanelStyleSnapshot.workbench], [runtimeDebugPanel, runtimePanelStyleSnapshot.debug]]) {
+          for (const [element, style] of [[runtimeWorkbench, runtimePanelStyleSnapshot.workbench], [runtimeDebugPanel, runtimePanelStyleSnapshot.debug], [runtimeConfigPanel, runtimePanelStyleSnapshot.config]]) {
+            if (!element) continue;
             if (style == null) element.removeAttribute("style");
             else element.setAttribute("style", style);
           }
@@ -4149,19 +4196,32 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         runtimeWorkbenchClassSnapshot = null;
         runtimeGraphPanelClassSnapshot = null;
         runtimeDebugPanelClassSnapshot = null;
+        runtimeConfigPanelClassSnapshot = null;
+        runtimeConfigPanelAriaHiddenSnapshot = null;
+        runtimeConfigPanelAriaReadonlySnapshot = null;
+        runtimeConfigEditorActionsHiddenSnapshot = null;
+        runtimeConfigHintTextSnapshot = null;
         runtimeMicroOpen = true;
+        runtimeSidePanel = "debug";
         runtimeControls.forEach((controls) => { controls.hidden = true; });
         runtimeDebugPanel.querySelectorAll("[data-runtime-panel-maximize]").forEach((button) => button.classList.remove("is-maximized"));
         updateStudioGraph?.fitViewport?.();
         return;
       }
       if (!runtimePanelStyleSnapshot) {
-        runtimePanelStyleSnapshot = { workbench: runtimeWorkbench.getAttribute("style"), debug: runtimeDebugPanel.getAttribute("style") };
+        runtimePanelStyleSnapshot = { workbench: runtimeWorkbench.getAttribute("style"), debug: runtimeDebugPanel.getAttribute("style"), config: runtimeConfigPanel?.getAttribute("style") };
         runtimeWorkbenchClassSnapshot = runtimeWorkbench.className;
         runtimeGraphPanelClassSnapshot = runtimeGraphPanel.className;
         runtimeDebugPanelClassSnapshot = runtimeDebugPanel.className;
+        runtimeConfigPanelClassSnapshot = runtimeConfigPanel?.className || null;
+        runtimeConfigPanelAriaHiddenSnapshot = runtimeConfigPanel?.getAttribute("aria-hidden");
+        runtimeConfigPanelAriaReadonlySnapshot = runtimeConfigPanel?.getAttribute("aria-readonly");
+        const editorActions = runtimeConfigPanel?.querySelector(".studio-asset-editor-actions");
+        runtimeConfigEditorActionsHiddenSnapshot = editorActions?.hidden ?? null;
+        runtimeConfigHintTextSnapshot = editorActions?.querySelector(".form-hint")?.textContent ?? null;
       }
       runtimeMicroOpen = microOpen !== false;
+      const activeSidePanel = runtimeSidePanel === "config" ? "config" : "debug";
       runtimeWorkbench.classList.add("studio-run-dual-core", "is-runtime-dual-core");
       const assetDrawer = runtimeWorkbench.querySelector("#studio-asset-drawer");
       if (assetDrawer?.classList.contains("is-right-docked")) {
@@ -4174,12 +4234,18 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (maximize) runtimeWorkbench.dataset.maximizeMode = maximize;
       else delete runtimeWorkbench.dataset.maximizeMode;
       runtimeGraphPanel.classList.add("studio-run-macro-panel");
-      runtimeDebugPanel.classList.add("studio-run-micro-panel");
-      runtimeDebugPanel.classList.toggle("is-runtime-micro-closed", !runtimeMicroOpen);
+      runtimeDebugPanel.classList.toggle("studio-run-micro-panel", activeSidePanel === "debug");
+      runtimeDebugPanel.classList.toggle("is-runtime-micro-closed", !runtimeMicroOpen || activeSidePanel !== "debug");
       runtimeDebugPanel.classList.remove("is-right-docked", "is-maximized");
       for (const prop of ["left", "top", "right", "bottom", "width", "height", "inset", "transform"]) runtimeDebugPanel.style.removeProperty(prop);
-      runtimeDebugPanel.setAttribute("aria-hidden", String(!runtimeMicroOpen));
-      runtimeDebugPanel.classList.toggle("is-open", runtimeMicroOpen);
+      runtimeDebugPanel.setAttribute("aria-hidden", String(!runtimeMicroOpen || activeSidePanel !== "debug"));
+      runtimeDebugPanel.classList.toggle("is-open", runtimeMicroOpen && activeSidePanel === "debug");
+      runtimeConfigPanel?.classList.toggle("studio-run-micro-panel", activeSidePanel === "config");
+      runtimeConfigPanel?.classList.toggle("is-runtime-config-panel", activeSidePanel === "config");
+      runtimeConfigPanel?.classList.toggle("is-runtime-micro-closed", !runtimeMicroOpen || activeSidePanel !== "config");
+      runtimeConfigPanel?.classList.toggle("is-open", runtimeMicroOpen && activeSidePanel === "config");
+      runtimeConfigPanel?.setAttribute("aria-hidden", String(!runtimeMicroOpen || activeSidePanel !== "config"));
+      if (activeSidePanel === "config") setRuntimeConfigReadOnly(true);
       runtimeControls.forEach((controls) => { controls.hidden = false; });
       runtimeWorkbench.querySelectorAll("[data-runtime-panel-maximize]").forEach((button) => {
         const isActive = button.dataset.runtimePanelMaximize === maximize;
@@ -4191,6 +4257,47 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         updateStudioGraph?.fitViewport?.();
       }, 60);
     };
+    switchStudioSidePanel = (panel = null) => {
+      const runtimeWorkbench = stage.closest(".studio-design-workbench");
+      const isRuntime = runtimeWorkbench?.classList.contains("is-runtime-dual-core");
+      if (!isRuntime) return false;
+      const next = panel === "config" ? "config" : panel === "debug" ? "debug" : null;
+      runtimeSidePanel = next || "debug";
+      if (next === "config") {
+        setRuntimeConfigReadOnly(true);
+        const showProperties = assetPanelView === "properties";
+        assetListView && (assetListView.hidden = showProperties);
+        propertyView && (propertyView.hidden = !showProperties);
+        assetBack && (assetBack.hidden = !showProperties);
+        debugPanel?.classList.remove("is-open");
+        debugPanel?.setAttribute("aria-hidden", "true");
+        assetDrawer?.classList.add("is-open");
+        assetDrawer?.setAttribute("aria-hidden", "false");
+        assetToggle()?.setAttribute("aria-expanded", "true");
+      } else if (next === "debug") {
+        setRuntimeConfigReadOnly(false);
+        assetDrawer?.classList.remove("is-open");
+        assetDrawer?.setAttribute("aria-hidden", "true");
+        assetToggle()?.setAttribute("aria-expanded", "false");
+        debugPanel?.classList.add("is-open");
+        debugPanel?.setAttribute("aria-hidden", "false");
+        setDebugView("run");
+      } else {
+        setRuntimeConfigReadOnly(false);
+        assetDrawer?.classList.remove("is-open");
+        assetDrawer?.setAttribute("aria-hidden", "true");
+        debugPanel?.classList.remove("is-open");
+        debugPanel?.setAttribute("aria-hidden", "true");
+      }
+      syncRuntimeDualCore?.({
+        active: true,
+        preference: runtimeWorkbench.dataset.layoutPreference || "balanced",
+        maximize: runtimeWorkbench.dataset.maximizeMode || "",
+        microOpen: next !== null
+      });
+      return true;
+    };
+    if (workbench) workbench._studioRuntimeSwitchSidePanel = (panel) => switchStudioSidePanel?.(panel);
     const ensureRuntimeDualCoreControls = () => {
       const runtimeWorkbench = stage.closest(".studio-design-workbench");
       const runtimeGraphPanel = stage.closest(".project-graph-preview");
@@ -4709,6 +4816,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         updateStudioGraph?.update({ selectedRoleId: roleId, selectedFlowKey: "" });
         renderInspector();
         syncAssetNavigatorSelection();
+        if (workbench?.classList.contains("is-runtime-dual-core")) {
+          assetPanelView = "properties";
+          switchStudioSidePanel?.("config");
+          return;
+        }
         showAssetPanel("properties", { focusInspector: false });
       },
       onSelectFlow: (flowKey) => {
@@ -4724,6 +4836,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         updateStudioGraph?.update({ selectedRoleId: "", selectedFlowKey: flowKey });
         renderInspector();
         syncAssetNavigatorSelection();
+        if (workbench?.classList.contains("is-runtime-dual-core")) {
+          assetPanelView = "properties";
+          switchStudioSidePanel?.("config");
+          return;
+        }
         showAssetPanel("properties", { focusInspector: false });
       },
       onOpenTeamAssets: () => showAssetPanel("list"),
@@ -5182,6 +5299,10 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         if (!action) return;
         const actionName = action.dataset.studioGraphAction;
         if (actionName !== "assets" && actionName !== "debug-run") return;
+        if (workbench?.classList.contains("is-runtime-dual-core")) {
+          window.setTimeout(() => workbench._studioRuntimeSwitchSidePanel?.(actionName === "assets" ? "config" : "debug"), 0);
+          return;
+        }
         window.setTimeout(() => {
           if (isCompactPanelViewport() && actionName === "assets") {
             buildPanel?.classList.remove("is-open");
@@ -5624,6 +5745,11 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       assetToggle = graphPanel.querySelector('[data-studio-graph-action="assets"]');
       assetToggle?.addEventListener("click", () => {
         if (!assetDrawer) return;
+        if (workbench?.classList.contains("is-runtime-dual-core")) {
+          assetPanelView = "list";
+          workbench._studioRuntimeSwitchSidePanel?.("config");
+          return;
+        }
         if (isCompactPanelViewport()) {
           buildPanel?.classList.remove("is-open");
           buildPanel?.setAttribute("aria-hidden", "true");
@@ -5648,6 +5774,11 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       assetDrawer?.querySelector("[data-studio-save-workspace]")?.replaceChildren(document.createTextNode(state.locale === "en" ? "Save team" : "保存团队"));
       workbench.querySelector("#studio-asset-drawer-close")?.addEventListener("click", () => {
         workbench.dispatchEvent(new CustomEvent("studio-command-dismiss"));
+        if (workbench.classList.contains("is-runtime-dual-core")) {
+          workbench._studioRuntimeSwitchSidePanel?.(null);
+          workbench.querySelector('[data-studio-graph-action="assets"]')?.setAttribute("aria-expanded", "false");
+          return;
+        }
         assetDrawer?.classList.remove("is-open");
         assetDrawer?.setAttribute("aria-hidden", "true");
         if (activeDockPanel === "asset") syncPanelDockLayout(null);
@@ -5859,6 +5990,7 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
         window.removeEventListener("pointerup", finishDockSplitDrag);
         panelControllers.forEach((controller) => controller?.destroy?.());
         workbench._studioPanelControllers = [];
+        delete workbench._studioRuntimeSwitchSidePanel;
       };
     }
     const confirmedStatus = root.querySelector(".page-heading .project-status");
@@ -5937,12 +6069,18 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       debugPanel?.setAttribute("aria-hidden", "true");
       if (activeDockPanel === "debug") syncPanelDockLayout(null);
       if (typeof syncRuntimeDualCore === "function" && workbench?.classList.contains("is-runtime-dual-core")) {
-        syncRuntimeDualCore({ active: true, preference: workbench.dataset.layoutPreference || "balanced", maximize: workbench.dataset.maximizeMode || "", microOpen: false });
+        workbench._studioRuntimeSwitchSidePanel?.(null);
       }
       debugOpenButton?.setAttribute("aria-expanded", "false");
       if (focus && debugOpenButton?.isConnected) debugOpenButton.focus({ preventScroll: true });
     };
     const openDebugPanel = () => {
+      if (workbench?.classList.contains("is-runtime-dual-core")) {
+        workbench._studioRuntimeSwitchSidePanel?.("debug");
+        debugOpenButton?.setAttribute("aria-expanded", "true");
+        $("#team-simulation-input")?.focus({ preventScroll: true });
+        return;
+      }
       if (isCompactPanelViewport()) {
         buildPanel?.classList.remove("is-open");
         buildPanel?.setAttribute("aria-hidden", "true");

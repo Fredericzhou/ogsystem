@@ -2727,7 +2727,8 @@ export class StudioGraphIsland {
     const selectedEditable = selectedRole || selectedData?.studioEdge?.editable === true;
     const editActions = this.toolbar.querySelector<HTMLElement>("[data-studio-graph-edit-actions]");
     if (editActions) {
-      editActions.hidden = readOnly;
+      // Keep panel navigation available during a locked run; individual edit actions stay disabled below.
+      editActions.hidden = this.options.readOnly === true;
     }
     const layout = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="layout"]');
     if (layout) {
@@ -2755,7 +2756,7 @@ export class StudioGraphIsland {
     }
     if (debugRun) {
       debugRun.hidden = readOnly;
-      debugRun.disabled = this.busy || readOnly || (typeof this.options.onOpenDebug !== "function" && typeof this.options.onFocusDebugInput !== "function");
+      debugRun.disabled = this.busy || this.options.readOnly === true || (typeof this.options.onOpenDebug !== "function" && typeof this.options.onFocusDebugInput !== "function");
     }
     for (const action of ["layout", "add-role", "add-edge", "delete", "validate", "save"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
