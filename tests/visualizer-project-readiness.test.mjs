@@ -158,7 +158,7 @@ test("project readiness warns when a profile tool drops role input", async () =>
       "%% system.id=readiness.input.dropped",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% exec.bind.planner=profile.profile.planner",
+      "%% exec.bind.planner=profile.planner",
       "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|READY| end[结束]"
     ]);
@@ -211,10 +211,10 @@ test("project readiness blocks invalid execution profiles, forbidden tools, and 
       "%% system.id=readiness.execution.bindings",
       "%% system.version=1.0.0",
       "%% law.global=law.readiness",
-      "%% exec.bind.missing_profile=profile.profile.does-not-exist",
-      "%% exec.bind.missing_tool=profile.profile.missing-tool",
-      "%% exec.bind.forbidden_tool=profile.profile.forbidden",
-      "%% exec.bind.missing_dependency=profile.profile.missing-dependency",
+      "%% exec.bind.missing_profile=profile.does-not-exist",
+      "%% exec.bind.missing_tool=profile.missing-tool",
+      "%% exec.bind.forbidden_tool=profile.forbidden",
+      "%% exec.bind.missing_dependency=profile.missing-dependency",
       "start[开始] -->|START| missingProfile[Role:missing_profile]",
       "missingProfile[Role:missing_profile] -->|READY| missingTool[Role:missing_tool]",
       "missingTool[Role:missing_tool] -->|READY| forbiddenTool[Role:forbidden_tool]",
@@ -287,7 +287,7 @@ test("project readiness blocks role contracts whose declared events differ from 
       "%% system.id=readiness.role.events.mismatch",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% exec.bind.planner=profile.profile.planner",
+      "%% exec.bind.planner=profile.planner",
       "start[开始] -->|START| planner[Role:planner]",
       "planner[Role:planner] -->|PLANNED| end[结束]"
     ]);

@@ -830,7 +830,9 @@ export async function inspectProjectReadiness(
   for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
     const bindingRef = system.executionBinding[roleId];
     if (bindingRef?.startsWith("profile.")) {
-      const profileId = bindingRef.slice("profile.".length);
+      // executionBinding stores the complete profile ID (for example profile.review),
+      // matching profiles.json and the runtime binding resolver.
+      const profileId = bindingRef;
       const profile = profilesById.get(profileId);
       if (!profile) {
         blockers.push(createIssue({ code: "READINESS_PROFILE_MISSING", message: `Role "${roleId}" references missing execution profile "${profileId}".`, severity: "blocker", roleId, detail: { profileId } }));

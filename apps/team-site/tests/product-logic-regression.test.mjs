@@ -3,6 +3,9 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { cases } from "../cases.mjs";
+import { materializeCaseTeam } from "../demo-runner.mjs";
+import { inspectProjectReadiness } from "../../../dist/visualizer/project-readiness.js";
 import { createTeamDesignUseCasesForStore } from "./team-design-test-helpers.mjs";
 import { withRunQueryUseCases } from "./run-query-test-helpers.mjs";
 import { withProjectMaterialUseCases } from "./project-material-test-helpers.mjs";
@@ -38,6 +41,20 @@ async function waitForTerminal(store, projectId, runId) {
   }
   throw new Error("Run did not reach a terminal state in time.");
 }
+
+test("classic team publisher profiles pass tool Readiness with the complete profile ID", async () => {
+  for (const caseSpec of cases) {
+    const workdir = await mkdtemp(join(tmpdir(), `ogs-classic-readiness-${caseSpec.id}-`));
+    try {
+      await materializeCaseTeam(caseSpec.id, workdir);
+      const readiness = await inspectProjectReadiness(workdir);
+      const toolBlockers = readiness.blockers.filter((issue) => issue.code.startsWith("READINESS_TOOL") || issue.code === "READINESS_PROFILE_MISSING");
+      assert.deepEqual(toolBlockers, [], `${caseSpec.id} should resolve all declared execution profiles and tools`);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  }
+});
 
 test("built-in provisioning creates stable persisted TeamVersion identities", async () => {
   await withStore("builtin-provisioning", async (store) => {
