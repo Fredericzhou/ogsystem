@@ -28,6 +28,7 @@ import { pathExists } from "../runtime/run-store.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
+import { checkExecutable } from "../runtime/executable-resolver.js";
 import {
   asNonEmptyString,
   asRecord
@@ -829,8 +830,23 @@ export async function inspectProjectReadiness(
   for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
     const bindingRef = system.executionBinding[roleId];
     if (bindingRef?.startsWith("profile.")) {
-      const profile = profilesById.get(bindingRef.slice("profile.".length));
-      const tool = profile ? toolsByRef.get(profile.toolRef) : undefined;
+      const profileId = bindingRef.slice("profile.".length);
+      const profile = profilesById.get(profileId);
+      if (!profile) {
+        blockers.push(createIssue({ code: "READINESS_PROFILE_MISSING", message: `Role "${roleId}" references missing execution profile "${profileId}".`, severity: "blocker", roleId, detail: { profileId } }));
+        continue;
+      }
+      const tool = toolsByRef.get(profile.toolRef);
+      if (!tool) {
+        blockers.push(createIssue({ code: "READINESS_TOOL_MISSING", message: `Execution profile "${profileId}" references missing tool "${profile.toolRef}".`, severity: "blocker", roleId, detail: { profileId, toolRef: profile.toolRef } }));
+        continue;
+      }
+      if (effectiveLaw.forbiddenToolRefs.includes(tool.toolRef)) {
+        blockers.push(createIssue({ code: "READINESS_TOOL_FORBIDDEN", message: `Tool "${tool.toolRef}" for role "${roleId}" is forbidden by the effective law.`, severity: "blocker", roleId, detail: { profileId, toolRef: tool.toolRef } }));
+      }
+      const requiredCommands = [...new Set([tool.command, ...(tool.requires || [])])];
+      const missingCommands = requiredCommands.filter((command) => !checkExecutable(command).found);
+      if (missingCommands.length) blockers.push(createIssue({ code: "READINESS_TOOL_COMMAND_MISSING", message: `Role "${roleId}" requires unavailable tool command${missingCommands.length === 1 ? "" : "s"}: ${missingCommands.join(", ")}.`, severity: "blocker", roleId, detail: { profileId, toolRef: tool.toolRef, requiredCommands, missingCommands } }));
       if (tool?.stdinMode === "none") {
         warnings.push(
           createIssue({

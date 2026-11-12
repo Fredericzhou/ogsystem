@@ -7,10 +7,10 @@
  * Boundaries:
  * - Diagnostic only; does not start graph execution.
  */
-import { accessSync, constants } from "node:fs";
 import { access, readdir, stat, statfs, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { delimiter, dirname, extname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -29,6 +29,8 @@ import { redactText } from "./redaction.js";
 import { loadRolePackage } from "./role-repo.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import { listRunArtifactPolicy } from "./run-artifact-policy.js";
+import { checkExecutable } from "./executable-resolver.js";
+export { findExecutable } from "./executable-resolver.js";
 import {
   RuntimeError,
   createRuntimeError,
@@ -37,11 +39,7 @@ import {
 } from "./runtime-errors.js";
 import type { RuntimeConfig, SystemDefinition } from "./types.js";
 
-type CheckResult = {
-  command: string;
-  found: boolean;
-  path?: string;
-};
+type CheckResult = ReturnType<typeof checkExecutable>;
 
 export type ProviderHealthCheck = {
   roleId?: string;
@@ -141,61 +139,6 @@ function parseDoctorArgs() {
       error instanceof Error ? error.message : String(error)
     );
   }
-}
-
-function fileAccessible(path: string): boolean {
-  try {
-    accessSync(path, constants.F_OK | constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveCandidates(command: string): string[] {
-  const hasExt = extname(command) !== "";
-  if (hasExt) {
-    return [command];
-  }
-  if (process.platform === "win32") {
-    return (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-      .split(";")
-      .map((ext) => ext.trim())
-      .filter(Boolean)
-      .map((ext) => `${command}${ext}`);
-  }
-  return [command];
-}
-
-function findExecutable(command: string): string | undefined {
-  const candidates = resolveCandidates(command);
-  for (const candidate of candidates) {
-    if (fileAccessible(candidate)) {
-      return candidate;
-    }
-  }
-
-  const containsSeparator = command.includes("/") || command.includes("\\");
-  if (containsSeparator) {
-    return undefined;
-  }
-
-  const pathEntries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
-  for (const entry of pathEntries) {
-    for (const candidate of candidates) {
-      const fullPath = join(entry, candidate);
-      if (fileAccessible(fullPath)) {
-        return fullPath;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function checkCommand(command: string): CheckResult {
-  const path = findExecutable(command);
-  return { command, found: Boolean(path), path: path || undefined };
 }
 
 function addError(report: DoctorReport, message: string): void {
@@ -485,7 +428,7 @@ export async function runDoctor(args: {
     status: "ok",
     required,
     missingRequired: [],
-    checks: Array.from(new Set(["opencode", "codex", "pi", "qwen", "kimi", ...required])).map((command) => checkCommand(command)),
+    checks: Array.from(new Set(["opencode", "codex", "pi", "qwen", "kimi", ...required])).map((command) => checkExecutable(command)),
     errors: [],
     warnings: [],
     notes: [],

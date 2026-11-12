@@ -174,9 +174,13 @@ export function validateProfilesConfig(value: unknown, filePath: string): Execut
   });
 }
 
+function validateStringArray(value: unknown, filePath: string, fieldPath: string): string[] {
+  return expectArray(value, filePath, fieldPath).map((item, index) => expectString(item, filePath, `${fieldPath}[${index}]`));
+}
+
 function validateTool(value: unknown, filePath: string, fieldPath: string): CliTool {
   const record = expectRecord(value, filePath, fieldPath);
-  expectNoExtraKeys(record, ["toolRef", "runner", "command", "argsTemplate", "stdinMode"], filePath, fieldPath);
+  expectNoExtraKeys(record, ["toolRef", "runner", "command", "argsTemplate", "stdinMode", "requires"], filePath, fieldPath);
 
   const runner = expectString(record.runner, filePath, `${fieldPath}.runner`);
   if (runner !== "local_shell") {
@@ -198,7 +202,8 @@ function validateTool(value: unknown, filePath: string, fieldPath: string): CliT
     runner,
     command: expectString(record.command, filePath, `${fieldPath}.command`),
     argsTemplate,
-    stdinMode
+    stdinMode,
+    ...(record.requires === undefined ? {} : { requires: validateStringArray(record.requires, filePath, `${fieldPath}.requires`) })
   };
 }
 

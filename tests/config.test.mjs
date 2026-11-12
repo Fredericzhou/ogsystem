@@ -381,6 +381,30 @@ test("tools config rejects duplicate toolRef entries", () => {
   );
 });
 
+test("tools config accepts requires and rejects invalid dependency entries", () => {
+  const config = validateToolsConfig({
+    tools: [{
+      toolRef: "tool.document",
+      runner: "local_shell",
+      command: "node",
+      argsTemplate: [],
+      stdinMode: "none",
+      requires: ["pandoc", "xelatex"]
+    }]
+  }, "tools.json");
+  assert.deepEqual(config.tools[0].requires, ["pandoc", "xelatex"]);
+  assert.throws(() => validateToolsConfig({
+    tools: [{
+      toolRef: "tool.document",
+      runner: "local_shell",
+      command: "node",
+      argsTemplate: [],
+      stdinMode: "none",
+      requires: [""]
+    }]
+  }, "tools.json"), /requires\[0\]/);
+});
+
 test("laws config rejects duplicate lawId entries", () => {
   assert.throws(
     () =>

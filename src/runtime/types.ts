@@ -267,6 +267,7 @@ export type CliTool = {
   command: string;
   argsTemplate: string[];
   stdinMode: "none" | "text";
+  requires?: string[];
 };
 
 export type CliToolRegistry = {

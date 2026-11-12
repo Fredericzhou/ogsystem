@@ -1,29 +1,7 @@
-import { access } from "node:fs/promises";
-import { constants } from "node:fs";
-import { delimiter, join } from "node:path";
+import { findExecutable } from "./executable-resolver.js";
 
 export async function resolveExecutable(command: string, candidates: string[] = []): Promise<string | undefined> {
-  const all = [command, ...candidates];
-  for (const item of all) {
-    if (item.includes("/") || item.includes("\\")) {
-      try {
-        await access(item, constants.X_OK);
-        return item;
-      } catch {
-        continue;
-      }
-    }
-    for (const directory of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
-      const path = join(directory, item);
-      try {
-        await access(path, constants.X_OK);
-        return path;
-      } catch {
-        continue;
-      }
-    }
-  }
-  return undefined;
+  return [command, ...candidates].map(findExecutable).find(Boolean);
 }
 
 export function boundedText(value: string, maxBytes: number): string {

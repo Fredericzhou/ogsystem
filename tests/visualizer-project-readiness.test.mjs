@@ -177,6 +177,61 @@ test("project readiness warns when a profile tool drops role input", async () =>
   });
 });
 
+test("project readiness blocks invalid execution profiles, forbidden tools, and missing dependencies", async () => {
+  await withTempProject(async (workdir) => {
+    for (const roleId of ["missing_profile", "missing_tool", "forbidden_tool", "missing_dependency"]) {
+      await writeRolePackage(workdir, roleId);
+    }
+    await writeFile(
+      path.join(workdir, "profiles.json"),
+      JSON.stringify([
+        { profileId: "profile.missing-tool", toolRef: "tool.not-found" },
+        { profileId: "profile.forbidden", toolRef: "tool.forbidden" },
+        { profileId: "profile.missing-dependency", toolRef: "tool.missing-dependency" }
+      ]),
+      "utf8"
+    );
+    await writeFile(
+      path.join(workdir, "tools.json"),
+      JSON.stringify({
+        tools: [
+          { toolRef: "tool.forbidden", runner: "local_shell", command: "node", argsTemplate: [], stdinMode: "none" },
+          { toolRef: "tool.missing-dependency", runner: "local_shell", command: "node", argsTemplate: [], stdinMode: "none", requires: ["ogs-command-that-does-not-exist"] }
+        ]
+      }),
+      "utf8"
+    );
+    await writeFile(
+      path.join(workdir, ".ogs", "laws.json"),
+      JSON.stringify({ laws: [{ lawId: "law.readiness", constraints: { forbiddenToolRefs: ["tool.forbidden"] } }] }),
+      "utf8"
+    );
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.execution.bindings",
+      "%% system.version=1.0.0",
+      "%% law.global=law.readiness",
+      "%% exec.bind.missing_profile=profile.profile.does-not-exist",
+      "%% exec.bind.missing_tool=profile.profile.missing-tool",
+      "%% exec.bind.forbidden_tool=profile.profile.forbidden",
+      "%% exec.bind.missing_dependency=profile.profile.missing-dependency",
+      "start[开始] -->|START| missingProfile[Role:missing_profile]",
+      "missingProfile[Role:missing_profile] -->|READY| missingTool[Role:missing_tool]",
+      "missingTool[Role:missing_tool] -->|READY| forbiddenTool[Role:forbidden_tool]",
+      "forbiddenTool[Role:forbidden_tool] -->|READY| missingDependency[Role:missing_dependency]",
+      "missingDependency[Role:missing_dependency] -->|READY| end[结束]"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+    const blockers = readiness.blockers;
+    assert.equal(blockers.find((issue) => issue.code === "READINESS_PROFILE_MISSING")?.roleId, "missing_profile");
+    assert.equal(blockers.find((issue) => issue.code === "READINESS_TOOL_MISSING")?.roleId, "missing_tool");
+    assert.equal(blockers.find((issue) => issue.code === "READINESS_TOOL_FORBIDDEN")?.roleId, "forbidden_tool");
+    assert.equal(blockers.find((issue) => issue.code === "READINESS_TOOL_COMMAND_MISSING")?.roleId, "missing_dependency");
+    assert.equal(readiness.canDryRun, false);
+  });
+});
+
 test("project readiness exposes an empty provider health array when the system cannot be parsed", async () => {
   await withTempProject(async (workdir) => {
     const readiness = await inspectProjectReadiness(workdir);
