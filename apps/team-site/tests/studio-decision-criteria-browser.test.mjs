@@ -68,6 +68,10 @@ test("Studio browser configures decision criteria and route condition descriptio
     await page.locator("[data-studio-decision-criteria]").waitFor({ state: "visible" });
     await page.locator("[data-studio-decision-add]").click();
     const criterion = page.locator("[data-studio-decision-row]").last();
+    assert.equal(await criterion.locator("[data-studio-decision-auto]").isVisible(), true, "normal mode should show an automatic condition key");
+    assert.equal(await criterion.locator('[data-studio-decision-field="id"]').isVisible(), false, "normal mode should hide condition key editing");
+    await page.locator("#product-mode-toggle").click();
+    assert.equal(await criterion.locator('[data-studio-decision-field="id"]').isVisible(), true, "professional mode should expose the condition key editor");
     await criterion.locator('[data-studio-decision-field="id"]').fill("security");
     await criterion.locator('[data-studio-decision-field="description"]').fill("没有硬性安全问题");
     await criterion.locator('[data-studio-decision-field="failureAction"]').selectOption("reject");
@@ -84,7 +88,8 @@ test("Studio browser configures decision criteria and route condition descriptio
     if (await flowButtons.count()) {
       await page.locator("[data-studio-assets-back]").click();
       await page.locator("#studio-assets-flows-tab").click();
-      await flowButtons.first().click();
+      await flowButtons.last().click();
+      assert.match(await page.locator("[data-studio-flow-field=label]").locator("xpath=preceding-sibling::span[1]").textContent(), /Route trigger|流转触发条件/);
       await page.locator('[data-studio-flow-field="label"]').fill("所有必需条件通过后发布");
       assert.equal(await page.locator('[data-studio-flow-field="label"]').inputValue(), "所有必需条件通过后发布");
     }
