@@ -3438,8 +3438,14 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   flex: 0 0 auto;
   justify-content: space-between;
   margin: 0;
-  min-height: 48px;
-  padding: 10px 14px;
+  min-height: 38px;
+  padding: 6px 10px;
+}
+.studio-run-macro-panel > .panel-head h2,
+.studio-run-micro-panel > .panel-head h2 {
+  font-size: 14px;
+  line-height: 1.2;
+  margin: 2px 0 0;
 }
 .studio-run-macro-panel .studio-run-graph-stage {
   flex: 1 1 auto;
@@ -3455,6 +3461,39 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   min-height: 0;
   overflow: hidden;
   position: relative;
+}
+.studio-events-panel {
+  padding: 0;
+}
+.studio-events-panel > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 17px 10px 32px;
+  position: relative;
+  user-select: none;
+}
+.studio-events-panel > summary::-webkit-details-marker {
+  display: none;
+}
+.studio-events-panel > summary::before {
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--muted);
+  border-top: 4px solid transparent;
+  content: "";
+  left: 17px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: transform .16s ease;
+}
+.studio-events-panel[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.studio-events-panel[open] > summary::before {
+  transform: translateY(-50%) rotate(90deg);
+}
+.studio-events-panel > .studio-event-list {
+  padding: 0 17px 17px;
 }
 
 /* Runtime split sizing is controlled by the draggable handle. */
@@ -3526,12 +3565,12 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   flex-wrap: wrap;
   gap: 12px;
   justify-content: space-between;
-  margin: 14px 0 4px 0;
+  margin: 8px 0 2px;
 }
 .studio-dual-core-meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 .studio-dual-core-meta strong {
   color: var(--ink);
