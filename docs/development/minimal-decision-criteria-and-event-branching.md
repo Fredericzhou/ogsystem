@@ -102,7 +102,7 @@ Runtime 已支持：
 | `criteria` | 验收条件数组；每项必须有稳定的 `id` |
 | `criteria[].status` | `pass`、`fail` 或 `unknown` |
 | `criteria[].severity` | `required`、`advisory` 或 `critical` |
-| `criteria[].evidence` | 支撑该条件的文件、字段或运行证据引用 |
+| `criteria[].evidence` | 支撑该条件的文件、字段或运行证据引用；Runtime 校验非空字符串合同，Artifact/发布器负责实际文件的生成、封存和哈希校验 |
 | `decisionReason` | 面向协作人员的简短判定理由 |
 | `requiredChanges` | `NEEDS_REWORK` 时必须列出可执行修改项，并引用失败条件 `id` |
 | `risks` | 已知风险；不能用风险文字替代条件状态 |
@@ -300,7 +300,7 @@ EVENT_INPUT_MAPPING_MISSING
 
 实现或发布该方案时，至少验证以下用例：
 
-1. 全部必需条件通过，Role 输出 `APPROVED`，证据引用可在运行审计中定位。
+1. 全部必需条件通过，Role 输出 `APPROVED`；证据引用会写入运行审计，文件型证据由 Artifact 封存记录定位。
 2. 必需条件失败，Role 输出 `REJECTED`；缺少失败条件或原因时被 Schema/门禁拒绝。
 3. 只有可修复问题，Role 输出 `NEEDS_REWORK`，目标路径回到已声明的返工 Role。
 4. 缺少输入或工具，Role 输出 `BLOCKED`，不会误报为 `REJECTED`。
@@ -322,12 +322,20 @@ EVENT_INPUT_MAPPING_MISSING
 - 不改变 Backend、工具绑定、工作区权限、产物封存和现有事件路由机制。
 - 不为旧配置提供兼容或迁移；新版本按本文门禁直接校验。
 
-## 10. 实施顺序
+## 10. 当前验证记录
 
-1. 先补充审核 Role 的输出 Schema 和最小门禁，保持 Runtime 路由代码不变。
-2. 在 Studio Role Inspector 增加审核标准表格、每条线路一个条件门和多入边配置预览。
-3. 保存业务线路条件说明；专业人员按需配置现有 `flow.condition` AST，复用 `context.map`、`role_input` 和 Prompt 模板保存机制。
-4. 增加结构化输出、路由歧义、Join 入站和普通 `READY` 回归测试。
-5. 用五个经典团队各跑一次审核和返工路径，再记录发布验证结果。
+当前版本已按以下顺序完成实现和验证：
+
+1. Runtime 先校验审核 Role 的输出 Schema、判定证据和事件映射，保持现有路由执行代码不变。
+2. Studio Role Inspector 提供审核标准表格、多入边映射预览和确认后 Prompt 规则生成；严格 `role_input` Schema 只生成已声明字段。
+3. 业务线路继续保存可读的 `flow.label`，专业人员按需配置现有 `flow.condition` AST，复用 `context.map`、`role_input` 和 Prompt 模板保存机制。
+4. 结构化输出、路由歧义、Join 入站、Start 入站和普通 `READY` 回归测试已覆盖；工具和外部证据的实际存在性仍由对应执行器和 Artifact 校验负责。
+5. 经典团队已完成 lint、仿真文件归档和可用 API backend 的真实模型运行验证；没有可用 provider 时，结果必须明确标记为阻塞，不以 dry-run 代替真实证据。
+
+### 10.1 实际 API 验证记录（2026-11-14）
+
+- 五个经典团队均通过直接 API 运行：跨底座审核完成 `NEEDS_REWORK -> APPROVED`，管理咨询完成并行分析、`quorum_of` 汇聚、复核和文档发布，软件研发与专家会诊完成并行汇聚，正反方辩论完成一轮返工和媒体发布。
+- 管理咨询运行目录实际封存 `md/json/csv/xlsx/docx/pdf`，正反方辩论实际封存 `json/png/mp4/mp3`；两者均生成 `artifact-manifest.json` 和 `seal-manifest.json`。
+- DOCX/PDF/XLSX 已通过实际可读性检查，PNG/MP4/MP3 已通过 `ffprobe` 格式检查。模型能力以当前 API 账户实际可执行的模型为准；目录中的“可发现”模型不等于当前账户都可调用。
 
 这样可以弥补“有事件、无判定依据”的差距，同时保持现有 Runtime、Flow Contract 和团队配置的结构稳定。
