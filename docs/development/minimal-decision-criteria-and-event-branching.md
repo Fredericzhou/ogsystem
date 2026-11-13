@@ -225,9 +225,9 @@ flowchart LR
 
 这一个条件项的作用是说明“该线路何时成立”，并与上节的质量条件保持同一套 `id` 和失败处理语义。事件仍由 Role 输出，Runtime 先按事件筛选出边，再按现有条件 AST 选择线路。
 
-常用中文条件由 Studio 提供固定模板并转换为当前已有的 `flow.condition` AST，例如“所有必需条件通过”映射为必需条件全部为 `pass`，“存在允许返工的质量条件未达标”映射为存在 `fail` 且 `failureAction` 为 `rework`。用户只看到一个条件配置项，专业人员仍可展开查看或编辑 AST。
+当前版本的中文线路条件只保存为业务可读说明，供协作人员理解和审计；页面不会把任意中文文本直接转换成可执行规则。专业人员仍可展开编辑已有的 `flow.condition` AST，并由 Runtime 按现有语义执行。
 
-任意自由文本不能直接作为 Runtime 的可执行条件。无法转换为受支持 AST 的文本只能作为说明和 Prompt 提示，不能参与确定性路由；同事件多出边在没有可执行条件时继续报告 `IR_ROUTE_AMBIGUOUS`。
+任意自由文本不能直接作为 Runtime 的可执行条件。未来若增加固定模板转换，也必须是有限、可验证的 lowering，并在保存前展示生成的 AST；无法确定转换结果的文本只能作为说明和 Prompt 提示，不能参与确定性路由。同事件多出边在没有可执行条件时继续报告 `IR_ROUTE_AMBIGUOUS`。
 
 ## 6. Studio 最小可视化配置
 
@@ -329,7 +329,7 @@ EVENT_INPUT_MAPPING_MISSING
 
 1. 先补充审核 Role 的输出 Schema 和最小门禁，保持 Runtime 路由代码不变。
 2. 在 Studio Role Inspector 增加审核标准表格、每条线路一个条件门和多入边配置预览。
-3. 将常用线路条件映射为现有 `flow.condition` AST，复用 `context.map`、`role_input` 和 Prompt 模板保存机制。
+3. 保存业务线路条件说明；专业人员按需配置现有 `flow.condition` AST，复用 `context.map`、`role_input` 和 Prompt 模板保存机制。
 4. 增加结构化输出、路由歧义、Join 入站和普通 `READY` 回归测试。
 5. 用五个经典团队各跑一次审核和返工路径，再记录发布验证结果。
 

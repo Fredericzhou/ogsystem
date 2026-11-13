@@ -314,6 +314,14 @@ export type RoleExecutionOutput = {
   artifacts?: DeclaredRoleArtifact[];
 };
 
+export type DecisionCriterionConfig = {
+  id: string;
+  description: string;
+  severity: "required" | "advisory" | "critical";
+  failureAction: "rework" | "reject";
+  evidenceHint?: string;
+};
+
 export type ArtifactKind =
   | "text"
   | "source"
@@ -377,7 +385,11 @@ export type RolePackageManifest = {
     };
   };
   inputs: { preconditions: SemanticIRConditionAst[] };
-  outputs: { events: string[]; postconditions: SemanticIRConditionAst[] };
+  outputs: {
+    events: string[];
+    postconditions: SemanticIRConditionAst[];
+    decisionCriteria?: DecisionCriterionConfig[];
+  };
   authority: { controlActions: Array<"approve" | "rework" | "pause" | "terminate"> };
   constraints: { writableStateFields: string[]; allowedTools: string[] };
   failure: { retryableErrorCodes: string[]; terminalErrorCodes: string[] };

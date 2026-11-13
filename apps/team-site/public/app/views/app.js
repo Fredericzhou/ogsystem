@@ -2383,6 +2383,64 @@ function studioRoleTopology(authoring = {}, roleId = "") {
   return { incoming, outgoing, hasJoin: incoming.length > 1, hasRoute: outgoing.length > 1, hasCycle: visit(roleId) };
 }
 
+function studioDecisionCriteriaFromContract(roleContract) {
+  const criteria = roleContract?.outputs?.decisionCriteria;
+  if (!Array.isArray(criteria)) return [];
+  return criteria.filter((criterion) => criterion && typeof criterion === "object" && !Array.isArray(criterion)).map((criterion) => ({
+    id: String(criterion.id || ""),
+    description: String(criterion.description || ""),
+    severity: ["required", "advisory", "critical"].includes(criterion.severity) ? criterion.severity : "required",
+    failureAction: criterion.failureAction === "reject" ? "reject" : "rework",
+    evidenceHint: criterion.evidenceHint ? String(criterion.evidenceHint) : ""
+  }));
+}
+
+function studioDecisionCriteriaMarkup(criteria, english) {
+  const label = (en, zh) => english ? en : zh;
+  const rows = criteria.map((criterion, index) => `<div class="studio-decision-criteria-row" data-studio-decision-row data-studio-decision-index="${index}" data-studio-decision-id="${esc(criterion.id)}"><label class="field"><span>${label("Criterion ID", "条件 ID")}</span><input data-studio-decision-field="id" value="${esc(criterion.id)}" placeholder="security"></label><label class="field full"><span>${label("Quality requirement", "达标条件")}</span><input data-studio-decision-field="description" value="${esc(criterion.description)}" placeholder="${label("No critical security issue", "没有硬性安全问题")}"></label><label class="field"><span>${label("Severity", "严重程度")}</span><select data-studio-decision-field="severity"><option value="required" ${criterion.severity === "required" ? "selected" : ""}>${label("Required", "必需")}</option><option value="advisory" ${criterion.severity === "advisory" ? "selected" : ""}>${label("Advisory", "建议")}</option><option value="critical" ${criterion.severity === "critical" ? "selected" : ""}>${label("Critical", "硬性")}</option></select></label><label class="field"><span>${label("Failure handling", "失败处理")}</span><select data-studio-decision-field="failureAction"><option value="rework" ${criterion.failureAction === "rework" ? "selected" : ""}>${label("Needs rework", "再改改")}</option><option value="reject" ${criterion.failureAction === "reject" ? "selected" : ""}>${label("Reject", "不同意")}</option></select></label><label class="field full"><span>${label("Evidence hint", "证据来源提示")}</span><input data-studio-decision-field="evidenceHint" value="${esc(criterion.evidenceHint)}" placeholder="artifacts/report.json"></label><button type="button" class="button subtle studio-decision-remove" data-studio-decision-remove aria-label="${label("Remove criterion", "删除条件")}" title="${label("Remove criterion", "删除条件")}">×</button></div>`).join("");
+  return `<details class="studio-inspector-section studio-decision-criteria" data-studio-decision-criteria open><summary>${label("Quality criteria", "审核标准")}</summary><p class="field-hint full">${label("Configure what counts as passing. The runtime checks the Role's structured evidence against these criteria.", "配置什么叫达标。运行时会用角色输出的结构化证据逐项校验。")}</p><div data-studio-decision-criteria-rows>${rows || `<p class="studio-decision-empty" data-studio-decision-empty>${label("No criteria configured yet.", "尚未配置审核标准。")}</p>`}</div><button type="button" class="button subtle" data-studio-decision-add>+ ${label("Add criterion", "添加审核条件")}</button></details>`;
+}
+
+function studioDecisionOutputSchemaWithCriteria(schemaText, criteria) {
+  if (!criteria.length) return null;
+  let schema;
+  try { schema = JSON.parse(schemaText || "{}"); } catch { return null; }
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return null;
+  const data = schema.properties?.data && typeof schema.properties.data === "object" && !Array.isArray(schema.properties.data)
+    ? { ...schema.properties.data }
+    : { type: "object" };
+  const dataProperties = data.properties && typeof data.properties === "object" && !Array.isArray(data.properties)
+    ? { ...data.properties }
+    : {};
+  dataProperties.criteria = {
+    type: "array",
+    items: {
+      type: "object",
+      required: ["id", "status", "evidence"],
+      properties: {
+        id: { type: "string" },
+        status: { enum: ["pass", "fail", "unknown"] },
+        severity: { enum: ["required", "advisory", "critical"] },
+        evidence: { type: "array", items: { type: "string" } },
+        reason: { type: "string" }
+      },
+      additionalProperties: false
+    }
+  };
+  dataProperties.decisionReason = { type: "string" };
+  dataProperties.requiredChanges = {
+    type: "array",
+    items: {
+      type: "object",
+      required: ["criterionId", "action"],
+      properties: { criterionId: { type: "string" }, action: { type: "string" } },
+      additionalProperties: false
+    }
+  };
+  data.properties = dataProperties;
+  return JSON.stringify({ ...schema, properties: { ...(schema.properties || {}), data } }, null, 2);
+}
+
 const STUDIO_BUSINESS_EVENT_TYPES = [
   { value: "READY", zh: "准备好了", en: "Result ready", glyph: "✓" },
   { value: "APPROVED", zh: "同意", en: "Approved", glyph: "✓" },
@@ -2474,6 +2532,10 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
   const blockedRoleTools = allowedTools.filter((toolRef) => forbiddenTools.includes(toolRef));
   const standardWorkspaceTools = new Set(["workspace.write", "workspace.run", "workspace.patch_text"]);
   const extraTools = allowedTools.filter((toolRef) => !standardWorkspaceTools.has(toolRef));
+  const decisionCriteria = studioDecisionCriteriaFromContract(roleContract);
+  const roleOutgoingEvents = role ? Object.values(authoring.flows || {}).filter((flow) => flow.fromRoleId === role.roleId).map((flow) => flow.eventType) : [];
+  const hasDecisionEvents = roleOutgoingEvents.some((eventType) => ["APPROVED", "REJECTED", "NEEDS_REWORK", "BLOCKED"].includes(eventType));
+  const decisionMarkup = role && (hasDecisionEvents || decisionCriteria.length > 0) ? studioDecisionCriteriaMarkup(decisionCriteria, english) : "";
   const permissionMarkup = role ? `<details class="studio-inspector-section studio-contract-permissions" open><summary>${t("Contract permissions", "契约权限边界")}</summary><div class="studio-permission-columns"><div><strong>${t("Allowed tools", "允许工具")}</strong><p data-studio-allowed-tools-summary>${esc(allowedTools.join(", ") || t("None", "无"))}</p></div><div><strong>${t("Writable state fields", "可写状态字段")}</strong><p>${esc(writableStateFields.join(", ") || t("None", "无"))}</p></div></div><div class="studio-tool-config-group"><span class="studio-tool-config-title">${t("Configure allowed tools", "配置允许工具")}</span><div class="studio-tool-checkboxes"><label class="field checkbox"><input type="checkbox" data-studio-role-tool="workspace.write" ${allowedTools.includes("workspace.write") ? "checked" : ""}><span>workspace.write <small>(${t("Write files in staging", "工作区文件写入")})</small></span></label><label class="field checkbox"><input type="checkbox" data-studio-role-tool="workspace.run" ${allowedTools.includes("workspace.run") ? "checked" : ""}><span>workspace.run <small>(${t("Run CLI commands in staging", "工作区命令行执行")})</small></span></label><label class="field checkbox"><input type="checkbox" data-studio-role-tool="workspace.patch_text" ${allowedTools.includes("workspace.patch_text") ? "checked" : ""}><span>workspace.patch_text <small>(${t("Patch files in staging", "工作区文件修补")})</small></span></label></div><label class="field full"><span>${t("Other tool references", "其他工具引用")}</span><input type="text" data-studio-role-tool-extra value="${esc(extraTools.join(", "))}" placeholder="${t("Comma-separated tool identifiers, e.g. web.search", "逗号分隔的工具标识，如 web.search")}"></label></div><div data-studio-role-tool-conflict>${blockedRoleTools.length ? `<p class="studio-permission-conflict" role="alert">${t("Disabled by global law", "与全局禁用工具冲突")}: ${esc(blockedRoleTools.join(", "))}</p>` : ""}</div></details>` : "";
   const fallbackModelField = role?.bindingKind === "model" ? `<label class="field full"><span>${t("Fallback model", "备选模型")}</span><select data-studio-role-field="fallbackModel"><option value="">${t("No fallback", "不使用备选模型")}</option>${fallbackModelOptions}</select><span class="field-hint">${t("Used only for retryable model channel failures.", "仅在模型通道发生可重试故障时触发。")}</span></label>` : "";
   const review = role?.review || {};
@@ -2505,9 +2567,9 @@ function studioPropertyInspectorMarkup(authoring, selection, locale, discoveredM
     const routingErrorOptions = `<optgroup label="${locale === "en" ? "Runtime error routing" : "运行时错误路由"}">${STUDIO_ROUTING_ERROR_EVENT_TYPES.map((item) => `<option value="${esc(item.value)}" ${selectedFlow.eventType === item.value ? "selected" : ""}>${item.glyph} ${esc(item.value)} · ${locale === "en" ? item.en : item.zh}</option>`).join("")}</optgroup>`;
     const eventTypeOptions = `${preservedOption}${businessOptions}${routingErrorOptions}`;
     const flowIcon = renderStudioFlowContractIcon(selectedFlow, authoring, selection?.assets?.contracts, locale);
-    return `<div class="studio-inspector-heading">${flowIcon}<div><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><select data-studio-flow-field="eventType">${eventTypeOptions}</select></label><p class="field-hint full">${t("Note: loop_exhausted is a runtime budget control event and human_review_rejected is an audit event; both are raised by the engine and cannot be wired as flow edges.", "说明：loop_exhausted（预算耗尽）由运行时引擎控制，human_review_rejected（审核拒绝）为审计事件；两者由系统自动捕获，不作为流转连线事件。")}</p><label class="field"><span>${t("Display label", "显示名称")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}"></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition (JSON)", "条件（JSON）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
+    return `<div class="studio-inspector-heading">${flowIcon}<div><span class="section-kicker">${t("Flow properties", "流程属性")}</span><h2>${esc(roleName(selectedFlow.fromRoleId))} → ${esc(roleName(selectedFlow.toRoleId))}</h2></div></div><details class="studio-inspector-section" open><summary>${t("Flow and condition", "流程与条件")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Event type", "事件类型")}</span><select data-studio-flow-field="eventType">${eventTypeOptions}</select></label><p class="field-hint full">${t("Note: loop_exhausted is a runtime budget control event and human_review_rejected is an audit event; both are raised by the engine and cannot be wired as flow edges.", "说明：loop_exhausted（预算耗尽）由运行时引擎控制，human_review_rejected（审核拒绝）为审计事件；两者由系统自动捕获，不作为流转连线事件。")}</p><label class="field full"><span>${t("Route condition", "线路条件")}</span><input data-studio-flow-field="label" value="${esc(selectedFlow.label || "")}" placeholder="${t("Describe when this route is valid", "描述这条线路何时成立")}"><span class="field-hint">${t("This is the business-facing condition gate. Runtime execution still uses the registered event and optional Condition AST below.", "这是面向业务人员的条件门说明；运行时仍依据固定事件和下方可选的条件 AST 执行。")}</span></label><label class="field"><span>${t("Priority", "优先级")}</span><input data-studio-flow-field="priority" type="number" step="1" value="${esc(selectedFlow.priority ?? "")}"></label><label class="field checkbox"><input data-studio-flow-field="runtimeOnlyErrorFlow" type="checkbox" ${selectedFlow.runtimeOnlyErrorFlow ? "checked" : ""}><span>${t("Error flow", "错误分支")}</span></label><label class="field full"><span>${t("Condition AST (professional)", "条件 AST（专业配置）")}</span><textarea data-studio-flow-field="condition" rows="5">${esc(selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "")}</textarea></label></div></details><details class="studio-inspector-section" open><summary>${t("Flow contract", "流程契约")}</summary><div class="studio-inspector-fields"><label class="field"><span>${t("Contract ID", "契约 ID")}</span><input data-studio-contract-field="id" value="${esc(flowContract?.id || "")}" placeholder="${esc(selectedFlow.flowId)}"></label><label class="field"><span>${t("Violation policy", "违约策略")}</span><select data-studio-contract-field="onViolation"><option value="FAIL" ${(flowContract?.onViolation || "FAIL") === "FAIL" ? "selected" : ""}>FAIL</option><option value="WARN" ${flowContract?.onViolation === "WARN" ? "selected" : ""}>WARN</option></select></label><label class="field full"><span>${t("Schema file", "Schema 文件")}</span><input data-studio-contract-field="schema" value="${esc(contractSchemaRef)}"></label><label class="field full"><span>${esc(contractSchemaRef)}</span><textarea data-studio-contract-schema="${esc(contractSchemaRef)}" rows="8">${esc(selection.assets?.contractSchemas?.[contractSchemaRef] || '{\n  "type": "object"\n}')}</textarea></label><p class="field-hint full">${t("A schema is attached to this exact flow. Contracts are stored with the TeamVersion and checked by release validation.", "Schema 绑定到当前流程。契约保存在 TeamVersion 中，并由发布校验检查。")}</p></div></details><div class="form-actions">${deleteFlowButton}</div>`;
   }
-  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(roleName(role.roleId))}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${t("Display name", "显示名称")}</span><input data-studio-role-field="title" value="${esc(role.title || "")}" maxlength="80"></label><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}${routingField}${joinField}${loopField}<label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
+  if (role) return `<div class="studio-inspector-heading"><span class="section-kicker">${t("Role properties", "角色属性")}</span><h2>${esc(roleName(role.roleId))}</h2><code>${esc(role.roleId)}</code></div><details class="studio-inspector-section" open><summary>${t("Execution and orchestration", "执行与编排")}</summary><div class="studio-inspector-fields"><label class="field full"><span>${t("Display name", "显示名称")}</span><input data-studio-role-field="title" value="${esc(role.title || "")}" maxlength="80"></label><label class="field"><span>${t("Binding type", "执行绑定")}</span><select data-studio-role-field="bindingKind"><option value="model" ${role.bindingKind === "model" ? "selected" : ""}>AI model</option><option value="exec" ${role.bindingKind === "exec" ? "selected" : ""}>CLI tool</option><option value="noop" ${role.bindingKind === "noop" ? "selected" : ""}>No-op</option></select></label>${role.bindingKind === "model" ? `<label class="field full"><span>${t("Runnable model", "可运行模型")}</span><select data-studio-role-field="modelRef"><option value="">${t("Choose a discovered model", "选择已发现且可运行的模型")}</option>${modelOptions}</select><span class="field-hint">${t("Only discovered runnable models are listed. Existing unavailable bindings remain visible for repair.", "列表仅包含已发现且可运行的模型；已有但不可用的绑定会保留显示，便于修复。")}</span></label>${fallbackModelField}` : ""}${role.bindingKind === "exec" ? `<label class="field full"><span>${t("Execution profile ID", "执行配置 ID")}</span><input list="studio-profile-options" data-studio-role-field="profileId" value="${esc(role.profileId || "")}"><datalist id="studio-profile-options">${(selection.assets.executionConfig?.profiles || []).map((profile) => `<option value="${esc(profile.profileId)}"></option>`).join("")}</datalist></label>` : ""}${routingField}${joinField}${loopField}<label class="field checkbox"><input data-studio-role-field="reviewEnabled" type="checkbox" ${review.mode === "required" ? "checked" : ""}><span>${t("Require human review", "需要人工审核")}</span></label>${review.mode === "required" ? `<label class="field"><span>${t("Review timeout (seconds)", "审核超时（秒）")}</span><input data-studio-role-field="reviewTimeout" type="number" min="0" value="${esc(review.timeoutSeconds ?? "")}"></label><label class="field"><span>${t("Timeout action", "超时动作")}</span><select data-studio-role-field="reviewTimeoutAction"><option value="pause" ${review.timeoutAction !== "terminate" ? "selected" : ""}>pause</option><option value="terminate" ${review.timeoutAction === "terminate" ? "selected" : ""}>terminate</option></select></label><label class="field"><span>${t("Rework target", "返工目标")}</span><select data-studio-role-field="reviewTarget"><option value="">${t("None", "无")}</option>${reworkRoleOptions}</select></label><label class="field"><span>${t("Maximum rework rounds", "最大返工轮次")}</span><input data-studio-role-field="reviewReworkMax" type="number" min="0" value="${esc(review.reworkMax ?? "")}"></label><label class="field"><span>${t("Termination scope", "终止范围")}</span><select data-studio-role-field="reviewTerminateScope"><option value="branch" ${review.terminateScope !== "run" ? "selected" : ""}>branch</option><option value="run" ${review.terminateScope === "run" ? "selected" : ""}>run</option></select></label>` : ""}<label class="field full"><span>${t("Context Map (JSON)", "上下文映射（JSON）")}</span><textarea data-studio-role-field="contextMap" rows="5">${esc(JSON.stringify(role.contextMap || {}, null, 2))}</textarea></label></div></details>${decisionMarkup}${permissionMarkup}<details class="studio-inspector-section" open><summary>${t("Role package", "角色资产包")}</summary><div class="studio-inspector-fields">${["agent.md", "prompt.md", "role.json", "output.schema.json"].map((file) => `<label class="field full"><span>${esc(file)}</span><textarea data-studio-role-asset="${esc(file)}" rows="${file.endsWith(".md") ? 10 : 6}">${esc(selection.assets?.roles?.[role.roleId]?.[file] || "")}</textarea></label>`).join("")}</div></details>`;
   return `<div class="studio-inspector-heading"><span class="section-kicker">${t("No selection", "未选择对象")}</span><h2>${t("Select a role or flow", "请选择角色或流程")}</h2></div><p class="form-hint">${t("Open Global from Team configuration to edit team-wide settings.", "请从团队配置中选择“全局”编辑团队级配置。")}</p>`;
 }
 
@@ -3672,6 +3734,19 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (rawEditor && document.activeElement !== rawEditor) rawEditor.value = nextJson;
       return true;
     };
+    const syncRoleDecisionOutputSchema = (roleId, criteria) => {
+      if (!roleId || !criteria.length) return false;
+      selection.assets.roles ||= {};
+      selection.assets.roles[roleId] ||= {};
+      const current = selection.assets.roles[roleId]["output.schema.json"] || "{\n  \"type\": \"object\",\n  \"properties\": {}\n}";
+      const next = studioDecisionOutputSchemaWithCriteria(current, criteria);
+      if (!next || next === current) return false;
+      selection.assets.roles[roleId]["output.schema.json"] = next;
+      pendingRoleAssets.add(`${roleId}/output.schema.json`);
+      const rawEditor = selection.roleId === roleId ? inspector?.querySelector('[data-studio-role-asset="output.schema.json"]') : null;
+      if (rawEditor && document.activeElement !== rawEditor) rawEditor.value = next;
+      return true;
+    };
     const syncAllRoleReviewAuthorities = () => {
       let changed = false;
       Object.values(authoring.roles || {}).forEach((role) => { changed = syncRoleReviewAuthority(role) || changed; });
@@ -3685,6 +3760,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
     const updateInspector = (element) => {
       const systemField = element.dataset.studioSystemField;
       const roleField = element.dataset.studioRoleField;
+      const decisionField = element.dataset.studioDecisionField;
       const flowField = element.dataset.studioFlowField;
       const roleAsset = element.dataset.studioRoleAsset;
       const specialField = element.dataset.studioSpecialField;
@@ -3897,6 +3973,48 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         } else {
           role[roleField] = element.value || undefined;
         }
+      } else if (decisionField) {
+        const role = authoring.roles[selection.roleId];
+        if (!role) return false;
+        selection.assets.roles ||= {};
+        selection.assets.roles[selection.roleId] ||= {};
+        let roleContract = {};
+        try { roleContract = JSON.parse(selection.assets.roles[selection.roleId]["role.json"] || "{}"); }
+        catch { return false; }
+        roleContract.outputs = roleContract.outputs && typeof roleContract.outputs === "object" && !Array.isArray(roleContract.outputs) ? roleContract.outputs : {};
+        const criteria = studioDecisionCriteriaFromContract(roleContract);
+        const row = element.closest("[data-studio-decision-row]");
+        const currentId = row?.dataset.studioDecisionId || "";
+        const index = currentId ? criteria.findIndex((criterion) => criterion.id === currentId) : Number(row?.dataset.studioDecisionIndex);
+        if (!Number.isSafeInteger(index) || !criteria[index]) return false;
+        if (decisionField === "id") {
+          const value = element.value.trim();
+          if (value && !/^[A-Za-z_][A-Za-z0-9_.-]{0,79}$/.test(value)) return false;
+          criteria[index].id = value;
+          if (row) row.dataset.studioDecisionId = value;
+        } else if (decisionField === "description") {
+          criteria[index].description = element.value.trim();
+        } else if (decisionField === "severity") {
+          if (!["required", "advisory", "critical"].includes(element.value)) return false;
+          criteria[index].severity = element.value;
+        } else if (decisionField === "failureAction") {
+          if (!["rework", "reject"].includes(element.value)) return false;
+          criteria[index].failureAction = element.value;
+        } else if (decisionField === "evidenceHint") {
+          criteria[index].evidenceHint = element.value.trim();
+        } else return false;
+        criteria.sort((left, right) => left.id.localeCompare(right.id));
+        roleContract.outputs.decisionCriteria = criteria.map((criterion) => criterion.evidenceHint
+          ? criterion
+          : { id: criterion.id, description: criterion.description, severity: criterion.severity, failureAction: criterion.failureAction });
+        const nextJson = JSON.stringify(roleContract, null, 2);
+        selection.assets.roles[selection.roleId]["role.json"] = nextJson;
+        pendingRoleAssets.add(`${selection.roleId}/role.json`);
+        syncRoleDecisionOutputSchema(selection.roleId, criteria);
+        const rawEditor = inspector?.querySelector('[data-studio-role-asset="role.json"]');
+        if (rawEditor && document.activeElement !== rawEditor) rawEditor.value = nextJson;
+        markDesignDirty(state.locale === "en" ? "Quality criteria have unsaved changes." : "审核标准有未保存的修改。");
+        return true;
       } else if (flowField) {
         const flow = resolveStudioSelectedFlow(authoring, selection);
         if (!flow) return false;
@@ -4169,6 +4287,53 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         renderAssetNavigator();
         showAssetPanel("list");
         markDesignDirty(state.locale === "en" ? "Flow deleted." : "关系已删除。");
+        return;
+      }
+      if (event.target.closest("[data-studio-decision-add]")) {
+        recordEditorHistory();
+        if (!selection.roleId) return;
+        selection.assets.roles ||= {};
+        selection.assets.roles[selection.roleId] ||= {};
+        let roleContract = {};
+        try { roleContract = JSON.parse(selection.assets.roles[selection.roleId]["role.json"] || "{}"); }
+        catch { setEditorState(state.locale === "en" ? "Repair role.json before adding a quality criterion." : "请先修正 role.json，再添加审核条件。"); return; }
+        roleContract.outputs = roleContract.outputs && typeof roleContract.outputs === "object" && !Array.isArray(roleContract.outputs) ? roleContract.outputs : {};
+        const criteria = studioDecisionCriteriaFromContract(roleContract);
+        let id = "criterion";
+        let suffix = 2;
+        while (criteria.some((criterion) => criterion.id === id)) id = `criterion_${suffix++}`;
+        criteria.push({ id, description: "", severity: "required", failureAction: "rework", evidenceHint: "" });
+        criteria.sort((left, right) => left.id.localeCompare(right.id));
+        roleContract.outputs.decisionCriteria = criteria.map((criterion) => criterion.evidenceHint
+          ? criterion
+          : { id: criterion.id, description: criterion.description, severity: criterion.severity, failureAction: criterion.failureAction });
+        selection.assets.roles[selection.roleId]["role.json"] = JSON.stringify(roleContract, null, 2);
+        pendingRoleAssets.add(`${selection.roleId}/role.json`);
+        syncRoleDecisionOutputSchema(selection.roleId, criteria);
+        markDesignDirty(state.locale === "en" ? "Quality criteria have unsaved changes." : "审核标准有未保存的修改。");
+        renderInspector();
+        inspector.querySelector(`[data-studio-decision-id="${CSS.escape(id)}"] [data-studio-decision-field="description"]`)?.focus();
+        return;
+      }
+      const decisionRemove = event.target.closest("[data-studio-decision-remove]");
+      if (decisionRemove) {
+        recordEditorHistory();
+        if (!selection.roleId) return;
+        const row = decisionRemove.closest("[data-studio-decision-row]");
+        const criterionId = row?.dataset.studioDecisionId || "";
+        selection.assets.roles ||= {};
+        selection.assets.roles[selection.roleId] ||= {};
+        let roleContract = {};
+        try { roleContract = JSON.parse(selection.assets.roles[selection.roleId]["role.json"] || "{}"); }
+        catch { setEditorState(state.locale === "en" ? "Repair role.json before removing a quality criterion." : "请先修正 role.json，再删除审核条件。"); return; }
+        roleContract.outputs = roleContract.outputs && typeof roleContract.outputs === "object" && !Array.isArray(roleContract.outputs) ? roleContract.outputs : {};
+        const criteria = studioDecisionCriteriaFromContract(roleContract).filter((criterion) => criterion.id !== criterionId);
+        if (criteria.length) roleContract.outputs.decisionCriteria = criteria.sort((left, right) => left.id.localeCompare(right.id));
+        else delete roleContract.outputs.decisionCriteria;
+        selection.assets.roles[selection.roleId]["role.json"] = JSON.stringify(roleContract, null, 2);
+        pendingRoleAssets.add(`${selection.roleId}/role.json`);
+        markDesignDirty(state.locale === "en" ? "Quality criteria have unsaved changes." : "审核标准有未保存的修改。");
+        renderInspector();
         return;
       }
       const remove = event.target.closest("[data-studio-context-remove]");

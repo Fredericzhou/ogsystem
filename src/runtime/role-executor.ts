@@ -46,6 +46,7 @@ import {
 } from "./role-repo.js";
 import { commitPromptBudget, reservePromptBudget } from "./prompt-budget.js";
 import { evaluateCondition } from "./condition-ast.js";
+import { validateDecisionOutput } from "./decision-criteria.js";
 import { applySemanticBusinessState } from "./semantic-state.js";
 import {
   buildProjectedContext,
@@ -1175,6 +1176,12 @@ export async function executeRoleNode(args: {
       allowedEvents,
       eventType: selectedEvent,
       payload: parsed.output.data
+    });
+    validateDecisionOutput({
+      event: selectedEvent,
+      data: parsed.output.data,
+      criteria: rolePackage.manifest.outputs.decisionCriteria,
+      roleId: args.roleId
     });
     const reducedBusinessState = applySemanticBusinessState({ state: args.state, plan: args.plan, roleId: args.roleId, data: parsed.output.data });
     for (const condition of rolePackage.manifest.outputs.postconditions) {

@@ -17,6 +17,7 @@ import { validateConditionAst } from "./condition-ast.js";
 import { isBusinessEvent } from "./business-events.js";
 import { RUNTIME_ROLE_PROMPT_INPUT_SCHEMA } from "./role-prompt-input-schema.js";
 import type {
+  DecisionCriterionConfig,
   LoadedRolePackage,
   RoleExecutionOutput,
   RolePackageManifest
@@ -116,6 +117,27 @@ function expectSortedUniqueStrings(value: unknown, filePath: string, fieldPath: 
   return result;
 }
 
+function expectDecisionCriteria(value: unknown, filePath: string): DecisionCriterionConfig[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) fail(filePath, "$.outputs.decisionCriteria", "expected array");
+  const criteria = value.map((entry, index) => {
+    const item = expectRecord(entry, filePath, `$.outputs.decisionCriteria[${index}]`);
+    expectNoExtraKeys(item, ["id", "description", "severity", "failureAction", "evidenceHint"], filePath, `$.outputs.decisionCriteria[${index}]`);
+    const id = expectString(item.id, filePath, `$.outputs.decisionCriteria[${index}].id`);
+    if (!/^[A-Za-z_][A-Za-z0-9_.-]{0,79}$/.test(id)) fail(filePath, `$.outputs.decisionCriteria[${index}].id`, "must be a safe identifier");
+    const description = expectString(item.description, filePath, `$.outputs.decisionCriteria[${index}].description`);
+    const severity = expectString(item.severity, filePath, `$.outputs.decisionCriteria[${index}].severity`) as DecisionCriterionConfig["severity"];
+    if (!["required", "advisory", "critical"].includes(severity)) fail(filePath, `$.outputs.decisionCriteria[${index}].severity`, "contains unsupported value");
+    const failureAction = expectString(item.failureAction, filePath, `$.outputs.decisionCriteria[${index}].failureAction`) as DecisionCriterionConfig["failureAction"];
+    if (!["rework", "reject"].includes(failureAction)) fail(filePath, `$.outputs.decisionCriteria[${index}].failureAction`, "contains unsupported value");
+    const evidenceHint = item.evidenceHint === undefined ? undefined : expectString(item.evidenceHint, filePath, `$.outputs.decisionCriteria[${index}].evidenceHint`);
+    return { id, description, severity, failureAction, ...(evidenceHint ? { evidenceHint } : {}) };
+  });
+  if (new Set(criteria.map((criterion) => criterion.id)).size !== criteria.length) fail(filePath, "$.outputs.decisionCriteria", "criterion ids must be unique");
+  if (criteria.some((criterion, index) => index > 0 && criteria[index - 1].id.localeCompare(criterion.id) >= 0)) fail(filePath, "$.outputs.decisionCriteria", "must be stable sorted by id");
+  return criteria;
+}
+
 function expectContract(value: unknown, filePath: string): Pick<RolePackageManifest, "contractVersion" | "purpose" | "responsibility" | "inputs" | "outputs" | "authority" | "constraints" | "failure" | "audit"> {
   const contract = expectRecord(value, filePath, "$");
   const responsibility = expectRecord(contract.responsibility, filePath, "$.responsibility");
@@ -127,7 +149,7 @@ function expectContract(value: unknown, filePath: string): Pick<RolePackageManif
   const audit = expectRecord(contract.audit, filePath, "$.audit");
   expectNoExtraKeys(responsibility, ["kind", "owns", "contributes", "doesNotOwn", "composition"], filePath, "$.responsibility");
   expectNoExtraKeys(inputs, ["preconditions"], filePath, "$.inputs");
-  expectNoExtraKeys(outputs, ["events", "postconditions"], filePath, "$.outputs");
+  expectNoExtraKeys(outputs, ["events", "postconditions", "decisionCriteria"], filePath, "$.outputs");
   expectNoExtraKeys(authority, ["controlActions"], filePath, "$.authority");
   expectNoExtraKeys(constraints, ["writableStateFields", "allowedTools"], filePath, "$.constraints");
   expectNoExtraKeys(failure, ["retryableErrorCodes", "terminalErrorCodes"], filePath, "$.failure");
@@ -175,7 +197,8 @@ function expectContract(value: unknown, filePath: string): Pick<RolePackageManif
   if (![...retryableErrorCodes, ...terminalErrorCodes].every((code) => /^[A-Z][A-Z0-9_]*$/.test(code))) fail(filePath, "$.failure", "error codes must be stable uppercase identifiers");
   if (retryableErrorCodes.some((code) => terminalErrorCodes.includes(code))) fail(filePath, "$.failure", "an error code cannot be both retryable and terminal");
   const outputEvents = expectSortedUniqueStrings(outputs.events, filePath, "$.outputs.events");
-  return { contractVersion: 1, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { events: outputEvents, postconditions: postconditions as any[] }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields"), allowedTools: expectSortedUniqueStrings(constraints.allowedTools, filePath, "$.constraints.allowedTools") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
+  const decisionCriteria = expectDecisionCriteria(outputs.decisionCriteria, filePath);
+  return { contractVersion: 1, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { events: outputEvents, postconditions: postconditions as any[], ...(decisionCriteria ? { decisionCriteria } : {}) }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields"), allowedTools: expectSortedUniqueStrings(constraints.allowedTools, filePath, "$.constraints.allowedTools") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
 }
 
 function validateAuditFields(manifest: RolePackageManifest, outputSchema: unknown, filePath: string): void {
