@@ -246,12 +246,10 @@ flowchart LR
 保存时 Studio 生成或更新：
 
 1. 该 Role 的 `output.schema.json` 条件字段；
-2. `APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED` 的出边建议；
-3. 入站事件字段的 `context.map` 草稿；
-4. Prompt 事件规则草稿；
-5. 缺少证据、出边或输出字段时的诊断。
+2. 业务人员填写的审核标准及证据提示；
+3. 缺少证据、出边或输出字段时的诊断。
 
-生成内容必须可预览、可撤销。业务模式不要求用户编辑 JSON、Semantic IR 或 Prompt 模板。
+每次修改都先留在当前设计草稿中，用户点击保存后才写入 TeamVersion。业务模式不要求用户编辑 JSON、Semantic IR 或 Prompt 模板；出边建议和 Prompt 规则仍由专业人员在对应面板确认。
 
 ### 6.2 专业模式
 
@@ -267,14 +265,13 @@ flowchart LR
 
 ### 6.3 多入边自动提示
 
-当 Studio 检测到一个 Role 有多个不同事件入边时，显示“生成入站事件处理配置”按钮，预览以下内容：
+当 Studio 检测到一个 Role 有多个不同事件入边时，显示入站事件摘要和“生成入站事件映射”按钮。按钮只在用户确认后写入当前草稿，预览/生成内容保持在现有 `context.map` 编辑器内：
 
-- 可用入站事件列表；
-- 推荐的 `direct.event` 或 `source(...).event` 映射；
-- 每个事件对应的 Prompt 规则草稿；
-- 目标 Role 当前允许的输出事件。
+- 非 Join Role：`incoming_event=direct.event`，以及带 `?` 的可选 `decision_reason`、`required_changes` 数据映射；
+- `all_of` Join：为每个已声明来源生成 `source(<roleId>).event` 映射；
+- `quorum_of` Join：只提示先声明 `join.sources`，不自动扩大读取范围。
 
-用户确认后一次性写入配置。若来源是 Join 且来源未声明，Studio 只提示需要先补充 `join.sources`，不自动扩大读取范围。
+Prompt 事件规则和输出事件仍由专业人员手工确认；Studio 不静默改写 `prompt.md`。目标 Role 当前允许的输出事件继续显示在 Role Inspector 中。
 
 ## 7. 发布门禁与诊断
 

@@ -1,202 +1,171 @@
-# Backend 内置工具标准化与 Studio 配置方案
+# Backend 内置工具标准化与 Studio 极简配置方案
 
-## 目的
+## 核心设计哲学
 
-OGSystem 的团队配置需要表达“角色可以使用哪些能力”，而不是绑定某个模型 backend 的专用工具名称。Codex、OpenCode、Pi 等 backend 的工具协议、权限模型和会话方式不同，因此标准化的边界应放在 Runtime，而不是放在模型提示词或 TeamVersion 的 backend 配置中。
+> **“底座决定工具集的物理上限；工具层面坚决避免自建，保持架构零负担、纯映射、极度轻量。”**
 
-本文是基于当前实现的设计方案。文中标记为“当前”内容来自源码；标记为“目标”内容需要后续实现。
+OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治理与可信交付物封签**，而不是底层工具的执行引擎。
 
-## 当前实现
+在实际运行时，**“当选定模型底座（CLI / Backend）时，实际上就已经锁定了可用工具集的物理边界”**。现代主流 Coding Agent（Claude Code、Codex、OpenCode、Pi、Cursor、Qwen Code 等）在本地代码编辑（Fuzzy Patching、AST 感知）、终端执行及网络检索（服务端 Grounding、权威重排、时效校验）上已经过深度微调优化。
 
-### Backend 注册与工具能力
+### 借鉴开源标杆：T3 Code 与 Orca 的架构精髓
+本方案深入吸收了业界前沿开源 Agent 平台 **T3 Code (`pingdotgg/t3code`)** 与 **Orca (`stablyai/orca`)** 的成功经验：
+1. **参考 T3 Code 的“BYOS 控制面”哲学**：
+   - T3 Code 坚持作为 Agent Harness Control Surface，自身不写任何文件编辑算法或爬虫代码，完全信任底层 Agent 原生工具能力；
+   - 通过中立协议（ACP）切分职责：底座提供原生工具与模型推理，上层仅负责项目工作区快照、DAG 任务委派与 3 档安全确认（Supervised / Auto-accept / Full access）。
+2. **参考 Orca 的“Worktree 物理沙箱”哲学**：
+   - Orca 作为底座无关包装器（Agent-Agnostic Wrapper），深刻践行“工具层越薄，物理隔离层越硬”的原则；
+   - 将安全交给文件系统级物理隔离（每个任务独占 Git Worktree / 独立目录），协调层只监听 `worker_done` 并做最终 Diff 审查与交付封签，绝不介入底层的编辑细节。
 
-Runtime 通过 `BackendRegistry` 注册模型 backend。当前注册的 backend 包括：
+基于此，OGS 严格遵循以下五项铁律：
+1. **底座反向约束工具集（Capability Projection）**：工具选项不是全局静态任意挑选的，而是由角色绑定的 `modelRef` 所属底座动态投影出可选范围；
+2. **OGS 零自建工具执行器**：OGS 不写文件编辑算法，不写网络抓取爬虫，不自建搜索引擎，坚决避免重复造轮子；
+3. **纯映射与策略开关（Pure Mapping & Switch）**：OGS 只负责“意图声明（`toolId`） $\to$ 底座原生参数/网络沙箱开关透传”；
+4. **刚性安全由现有基础设施兜底**：执行过程由 Runtime 现成的 Staging Clean Room 目录隔离与配额门禁兜底，执行后由 `artifact-verifier.ts` 做防逃逸检查与 SHA-256 存证封签；
+5. **Studio 极简联动内嵌**：不建独立的“工具库”或大盘页面，在角色检查器内提供“底座联动投影的 6 个复选框 + 3 档权限单选 + 行内就绪诊断”，10 秒内完成配置。
 
-- `codex`：通过 Codex App Server 的 stdio JSON-RPC 执行。
-- `opencode`：通过本地 OpenCode Server 的 HTTP API 执行。
-- `pi`：通过 Pi RPC stdio 会话执行。
-- `ollama`、`qwen`、`kimi`：使用各自的 adapter；可用性和模型目录由 adapter 探测。
+本文是基于当前实现的极简落地方案。文中标记为“当前”内容来自源码；标记为“目标”内容需要后续实现。
 
-Backend descriptor 中的 `toolcall: true` 表示该 backend 具有工具调用能力或可承载工具执行，但它不表示已经支持全部 OGS 工具。是否能使用某个具体工具，仍取决于 adapter 的映射和 Runtime 的权限检查。
+---
 
-### 各 backend 的实际边界
+## 主流 CLI 内置工具集全景调查现状
 
-| Backend | 当前工具相关能力 | 当前限制 |
-| --- | --- | --- |
-| Codex | 将 Workspace 读写和命令能力映射为 App Server 的 sandbox、approval policy 和 writable roots | 没有通过 OGS 注入通用自定义工具定义的统一接口 |
-| OpenCode | 请求中可以注入 Workspace tools；会话返回工具执行过程 | 已接入的工具主要是 Workspace 原语，业务工具仍需统一适配 |
-| Pi | RPC 事件可以报告 `tool_execution_start/end` | OGS 当前没有向 Pi 注册标准工具或代理执行请求 |
-| Claude | 当前没有独立 Claude backend；使用 Claude 模型时由实际承载它的 adapter 决定工具能力 | 不能把 Claude 的模型名称当作独立 OGS 工具协议 |
-| Ollama/Qwen/Kimi | 已有模型 adapter 和能力发现 | 标准工具注入和调用闭环尚未统一 |
-| `local_shell` | 通过 `profiles.json`/`tools.json` 执行固定 CLI 工具 | 它是 Runtime CLI Profile，不是模型原生 Tool Calling |
+经过对各平台官方最新手册（2026）与底层运行时的深入调查，各大主流底座的内置工具集与能力特征如下：
 
-当前已经存在的 Workspace 原语位于 Runtime 的 `workspace-tools` 和角色能力策略中，包含文件列表、文本读取、文本写入和文本修补。角色 `allowedTools`、Law、Workspace 根目录和配额共同决定这些原语是否可用。
+| 底座 (CLI / Backend) | 内置工具集全景 (Built-in Tools) | 出站 HTTP / 搜索支持机制 | 权限与沙箱控制机制 |
+| :--- | :--- | :--- | :--- |
+| **OpenAI Codex** (App Server) | • 终端命令：`exec_command`<br>• 文件补丁：`apply_patch`<br>• 扩展：`code_mode` (`exec` 脚本内批量嵌套调用)、`image_gen`、MCP | **原生支持网络与搜索**：<br>• 沙箱网络：配置 `network_access = true` 后放行出站 HTTP（通过 `exec_command` 执行 `curl` / `fetch`）<br>• 内置搜索：配置 `web_search = "live"` 开启原生网页检索 | • `sandboxPolicy`: `workspaceWrite` / `readOnly`<br>• `approvalPolicy`: `never` / `untrusted` / `on-request` |
+| **Claude Code** (Anthropic) | • 读写：`Read`、`Edit`、`MultiEdit`、`Write`、`NotebookRead/Edit`<br>• 检索：`Glob`、`Grep`、`LS`<br>• 执行：`Bash`<br>• 外部：`WebSearch` (服务端子 Agent)、`WebFetch`<br>• 调度：`Agent`、`TodoRead/Write` | **原生支持网络与搜索**：<br>• 通过 `Bash` 支持 HTTP<br>• 原生内置 `WebSearch` 与 `WebFetch` | • 参数 `--bare`（仅保留 Read/Edit/Bash）<br>• 参数 `--tools` 白名单<br>• 运行模式 Ask / Auto / Supervised |
+| **OpenCode** (OpenCode AI) | • 基础：`read`、`edit`（归口管理 write/patch/multiedit）、`write`、`bash`<br>• 检索：`glob`、`grep`<br>• 外部：`websearch`、`webfetch`<br>• 扩展：`task`、`lsp`、`skill`、MCP | **原生支持网络与搜索**：<br>• 通过 `bash` 支持 HTTP 命令<br>• 会话级原生内置 `websearch` / `webfetch` 插件 | • `opencode.json` 的 `permission` 字段（`allow`, `deny`, `ask`）<br>• 会话启动参数 `--tools` |
+| **Pi** (pi.dev / Mario) | • 默认 4 原语：`read`、`write`、`edit`、`bash`<br>• 选配只读工具：`grep`、`find`、`ls`、`powershell`<br>• 扩展：`codemode`、`tool_search`、MCP | **支持出站 HTTP，默认无内置搜索**：<br>• 通过 `bash` 支持系统 `curl`/HTTP 脚本<br>• 默认无独立网络搜索工具（需通过扩展或 MCP 挂载） | • `defaultTools: ["+grep", "-bash"]`<br>• 命令行参数 `--tools` 白名单<br>• 细粒度生命周期事件监听 |
+| **Cursor Agent** (Cursor IDE) | • 文件操作：`read_file`、`edit_file`、`delete_file`、`list_dir`<br>• 检索：`file_search`、`grep_search`、`codebase_search`<br>• 执行：`run_terminal_command`<br>• 外部：`web_search`、`fetch_rules`、MCP | **原生支持网络与搜索**：<br>• 终端命令支持 HTTP 请求<br>• 原生内置 `web_search` 搜索引擎 | • IDE 弹窗审批卡片<br>• Run Modes（Auto-accept / Supervised） |
+| **Qwen Code** (DashScope CLI) | • 基础文件读写与终端命令执行 (`execute_command`)<br>• 外部工具：`web_search`、`web_fetch`<br>• 架构：子智能体分发 (`sub_agents`)、MCP | **原生支持网络与搜索**：<br>• 终端命令支持 HTTP<br>• Responses API 原生提供服务端内置 `web_search` 工具与引用角标 | • 5 档模式：`Plan`, `Ask`, `Auto-Edit`, `Auto`, `YOLO`<br>• `settings.json` 权限管控 |
+| **纯离线 Ollama** | 仅承载模型本地前向推理，无任何原生外部工具、网络访问或沙箱基础设施。 | ❌ **不支持网络与搜索**（严格离线运行） | 依赖宿主外挂控制 |
 
-## 标准化边界
+### 现成可用资产：Staging 隔离与门禁封签
 
-### 产品配置只保存标准工具 ID
+Runtime 内部已经拥有完善的物理隔离与安全基础设施（位于 `src/runtime/role-executor.ts` 及 `src/runtime/artifact-verifier.ts`），无需新造轮子：
+- **Clean Room 独立目录**：每次角色激活（Attempt/Retry）均在 `roles/<roleId>/executions/<executionId>/workspace/` 创建全新工作区；
+- **防路径逃逸**：`safeRelativePath` 与 `isWithin` 拦截所有绝对路径与 `..` 相对段；
+- **禁止符号链接**：底层句柄携带 `O_NOFOLLOW`，严禁跨区软链逃逸；
+- **硬性安全配额**：单文件大小（默认 50MB）、总字节数（默认 200MB）、文件总数等硬配额限制；
+- **原子提升与哈希封签**：校验通过后通过 `flag: "wx"` 提升至 `run/shared/artifacts/`，生成不可变的 `seal-manifest.json` 与不透明 `artifactRef`。
 
-TeamVersion 的角色契约应引用稳定的标准工具 ID，例如：
+---
 
-```json
-{
-  "constraints": {
-    "allowedTools": [
-      "workspace.read",
-      "workspace.write",
-      "workspace.patch_text"
-    ]
-  }
-}
+## 目标标准工具契约与底座反向投影
+
+### 1. 标准化工具列表
+
+系统统一定义 6 个中立的标准工具 ID：
+
+```text
+【工作区操作 - 映射 Backend 原生文件读写】
+workspace.list        # 枚举工作区文件
+workspace.read        # 读取文本文件
+workspace.write       # 写入文件
+workspace.patch_text  # 增量打补丁
+workspace.run         # 执行工作区受控命令/脚本 (含 curl 出站 HTTP)
+
+【网络检索 - 映射 Backend 原生联网能力】
+web.search            # 原生联网检索与时效性增强
 ```
 
-配置不直接保存 `codex.write_file`、OpenCode 私有工具名或 Pi RPC 消息名。backend 专用名称只存在于 Runtime adapter 的映射层。
+### 2. 底座反向约束矩阵（Capability Projection Matrix）
 
-### CLI 工具保持独立
+**核心机制：底座决定可选范围。** 在配置和校验时，根据角色绑定的底座物理能力进行投影与门禁拦截：
+
+| 标准工具 ID | OpenCode | Claude Code | Codex (App Server) | Qwen Code | Cursor Agent | Pi (pi.dev) | 纯离线 Ollama |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `workspace.read` | ✅ `{ read: true }` | ✅ 放行 Read | ✅ `read-only` 沙箱 | ✅ 原生 read | ✅ 放行 read_file | ✅ 原生 read | ✅ 原生 read |
+| `workspace.write` | ✅ `{ edit: true }` | ✅ 放行 Write | ✅ `workspace-write` | ✅ 原生 write | ✅ 放行 edit_file | ✅ 原生 write | ✅ 原生 write |
+| `workspace.patch_text`| ✅ `{ edit: true }` | ✅ 放行 Edit | ✅ `apply_patch` 沙箱| ✅ 原生 edit | ✅ 放行 edit_file | ✅ 原生 edit | ✅ 原生 edit |
+| `workspace.list` | ✅ `{ list: true }` | ✅ 放行 LS/Glob | ✅ 沙箱内列举 | ✅ 原生 list | ✅ 放行 list_dir | ✅ 原生 list | ✅ 原生 list |
+| `workspace.run` | ✅ `{ bash: true }` | ✅ 放行 Bash | ✅ `exec_command` | ✅ 原生命令 | ✅ 放行 terminal | ✅ 原生 bash | ⚠️ 受限 Bash |
+| `web.search` | ✅ 开启 search 插件 | ✅ 放行 WebSearch | ✅ `web_search="live"`<br>+ `network_access` | ✅ 原生 `web_search` | ✅ 放行 web_search | ❌ 需扩展/MCP (默认置灰) | ❌ **不支持 (置灰/阻断)** |
+
+* **刚性 Fail-Closed 门禁**：若底层配置被绕过，Runtime 执行前校验（Readiness Check）如果发现角色声明了当前底座不支持的工具（例如 Ollama + `web.search`，或 Pi 默认内核 + `web.search`），直接抛出明确的阻断异常：
+  ```text
+  [READINESS_ERROR] Role "${roleId}" requires tool "web.search",
+  which is unsupported by backend "${backend}".
+  Please switch backend to a search-capable model (e.g. codex, qwen, claude, opencode) or remove the tool.
+  ```
+
+### 3. 简明的三档安全模式（参考业界成熟体验）
+
+不为每个工具配置繁琐的审批条件，在角色级别抽象为直观的 3 档安全模式：
+
+| 模式 (executionMode) | 行为语义与安全机制 | 推荐场景 |
+| :--- | :--- | :--- |
+| **Supervised (完全监督)** | 任何产生副作用的操作（写文件、打补丁、命令执行）均挂起触发审批卡片，必须人工 Review 确认后方可执行。 | 生产发布、敏感代码修改、关键文档定稿。 |
+| **Auto-accept (自动接受安全编辑)** | **默认推荐模式**。在独立 Staging 目录与配额范围内，自动放行工作区读写、打补丁及联网搜索；遇到 `workspace.run`（Shell 执行/出站 HTTP）时强行挂起待审批。 | 日常开发、文档编写、代码分析。兼顾吞吐与安全。 |
+| **Full access (全自动信任)** | 在 Staging 沙箱与配额硬性保护下，自动放行所有已授权工具（含受控命令执行与出站 HTTP），追求最高自动化协作吞吐。 | 自动化沙箱跑测、批量格式转换、自闭环修复重试。 |
+
+### 4. CLI 工具保持独立
 
 `local_shell` 用于固定的发布脚本、转换器和其他受控宿主机命令。它继续由 `profiles.json` 绑定到 `tools.json`，并经过现有的命令解析、依赖 Readiness、超时、输出上限和工作区隔离。
 
-模型标准工具和 `local_shell` 不合并成一个执行器：前者由模型发起调用，后者由流程中的 CLI Tool Role 启动。这样可以避免模型获得未经授权的宿主机命令能力。
+模型标准工具和 `local_shell` 不合并成一个执行器：前者由模型发起调用，后者由流程中的 CLI Tool Role 启动。
 
-## 目标标准工具契约
+---
 
-第一阶段只标准化跨 backend 语义稳定的 Workspace 能力：
+## Studio 极简可视化配置：底座联动投影
 
-```text
-workspace.list
-workspace.read
-workspace.write
-workspace.patch_text
-workspace.run
-```
-
-每个标准工具需要有版本化契约：
-
-```json
-{
-  "toolId": "workspace.write",
-  "contractVersion": 1,
-  "name": "写入工作区文件",
-  "inputSchema": {},
-  "outputSchema": {},
-  "permissions": ["workspace.write"],
-  "sideEffects": "workspace"
-}
-```
-
-契约维护规则：
-
-- `toolId` 和 `contractVersion` 唯一确定工具语义。
-- 兼容性增加沿用原版本；改变输入、输出或副作用时创建新版本。
-- 契约不保存 API Key、绝对路径或机器相关命令。
-- 每次运行快照记录实际工具契约版本、backend 映射和 adapter 版本。
-
-业务工具（搜索、数据库、外部存储、媒体转换）只有在存在明确的权限边界、输入输出 Schema 和 backend adapter 后才进入标准目录。
-
-## Backend 映射结构
-
-目标调用链如下：
+无需开辟独立一级页面，配置直接内嵌在 **角色检查器（Role Inspector）** 中。**用户先选底座模型（`modelRef`），工具选项根据底座物理能力动态联动启用或置灰：**
 
 ```text
-模型 backend 原生调用
-        ↓
-adapter 解析为标准 toolId
-        ↓
-Runtime 权限、Law、Workspace、配额和超时检查
-        ↓
-标准工具执行器
-        ↓
-标准 Tool Result 和审计事件
+┌────────────────────────────────────────────────────────┐
+│ 角色检查器 - 标准能力与安全配置                         │
+├────────────────────────────────────────────────────────┤
+│ 绑定底座模型: [ codex / gpt-6-luna                   ▼] │
+├────────────────────────────────────────────────────────┤
+│ [安全模式]                                             │
+│ ( ) Supervised (完全监督，写操作与命令均需审批)         │
+│ (•) Auto-accept (自动接受文件编辑与搜索，命令需审批 - 推荐)│
+│ ( ) Full access (全自动信任，仅限受限沙箱内)            │
+│                                                        │
+│ [工作区操作 (Backend 原生执行)]                        │
+│ [x] workspace.list       文件列表枚举 (只读)            │
+│ [x] workspace.read       文本文件读取 (只读)            │
+│ [x] workspace.write      文件写入 (沙箱修改)            │
+│ [x] workspace.patch_text 增量补丁编辑 (沙箱修改)        │
+│ [ ] workspace.run        执行工作区命令 (支持 curl/HTTP)│
+│                                                        │
+│ [网络检索 (Backend 原生联网)]                          │
+│ [x] web.search           联网检索 (原生支持实时联网搜索) │
+│                                                        │
+│ [就绪诊断]                                             │
+│ ℹ️ 当前 Backend: codex (工作区沙箱已就绪，原生搜索可用) │
+└────────────────────────────────────────────────────────┘
 ```
 
-映射原则：
+### 交互规则
+1. **联动投影**：切换 `modelRef` 时，工具复选框即时刷新状态。当切换到纯离线模型（如 Ollama）或默认 Pi 时，`web.search` 自动置灰并展示禁用原因；当切换到 Codex、Claude、OpenCode、Qwen 时，全部 6 项高亮可用；
+2. **三选一单选框**：快捷选择 `Supervised` / `Auto-accept` / `Full access`；
+3. **专业模式折叠**：专业人员可展开查看底层 JSON 结构（`allowedTools` 数组与 `executionMode`）以及 `local_shell` 绑定的 CLI Profile 参数。
 
-1. Codex 优先使用 App Server 已有的 sandbox 和 approval 约束；无需把 Codex 的内部权限名称暴露给 TeamVersion。
-2. OpenCode 将标准工具转换为请求中的工具定义，并把调用交给 Runtime Workspace 工具实现。
-3. Pi 通过 RPC 或 MCP bridge 接收标准工具定义和调用结果；在 bridge 完成前不能宣称 Pi 已支持标准工具。
-4. Claude 继续按实际承载它的 adapter 执行；只有出现独立 Claude API adapter 时，才增加独立映射。
-5. backend 不支持某项标准工具时，Readiness 返回明确的 unsupported 状态；必需工具阻止真实运行，可选工具产生警告，禁止静默替换为语义不同的工具。
+---
 
-### 统一审计字段
+## 分期落地顺序（预计 2~3 天）
 
-标准工具调用应记录：
+1. **第一步：Studio 角色面板增加底座联动与极简配置（Day 1）**
+   - 在角色检查器中增加复选框与权限单选框，依据当前 `modelRef` 动态投影工具可用性；
+   - 数据直接保存到角色的 `constraints.allowedTools` 与 `constraints.executionMode`。
+2. **第二步：Runtime 各 Adapter 极薄映射与门禁（Day 2）**
+   - 在 OpenCode、Codex（透传 `network_access` 与 `web_search`）、Qwen、Claude adapter 中增加几行纯参数映射逻辑；
+   - 增加运行前 Readiness 强校验：拦截不支持的工具组合（如 Ollama + `web.search`）。
+3. **第三步：串联现有 Staging 隔离与审计（Day 3）**
+   - 统一由现有的 `role-executor.ts` + `artifact-verifier.ts` 提供 Staging 隔离与 SHA-256 封签；
+   - 记录 `toolId`、`nativeTool`、`status`、`durationMs` 统一审计日志。
 
-```json
-{
-  "toolId": "workspace.write",
-  "contractVersion": 1,
-  "backend": "opencode",
-  "nativeTool": "write",
-  "roleId": "document-writer",
-  "executionId": "exec-123",
-  "inputDigest": "sha256:...",
-  "status": "completed",
-  "durationMs": 42
-}
-```
-
-输入正文和凭据不直接写入审计；需要复核时使用受控的 Workspace 证据和摘要哈希。
-
-## Studio 可视化配置
-
-### 普通模式
-
-角色检查器提供“标准工具”区域：
-
-- 按用途搜索和分类；
-- 显示工具说明、权限和副作用；
-- 显示当前选定 backend 的支持状态；
-- 勾选或移除工具；
-- 显示 Readiness 提示。
-
-业务人员只需要选择“角色 → 工具 → 保存团队”，不需要知道 backend 私有名称、RPC 方法或宿主机命令。
-
-### 专业模式
-
-专业人员可以展开：
-
-- 输入和输出 Schema；
-- backend 原生映射；
-- adapter 和契约版本；
-- 权限、配额和副作用；
-- 不支持的 backend 及原因；
-- `local_shell` Profile 的 command、argsTemplate、stdin、超时和输出上限。
-
-标准模型工具与 `local_shell` 工具分区显示，避免将模型可调用能力误认为宿主机命令。
-
-### 目录与 TeamVersion 的关系
-
-目标增加只读目录接口：
-
-```text
-GET /api/v1/platform/standard-tools
-```
-
-平台目录提供标准工具契约和 backend 映射状态。TeamVersion 保存角色的标准工具授权和版本引用；运行时把引用解析为当前 backend 的映射，并将解析结果写入运行快照。目录条目不会自动变成可执行命令。
-
-## 维护与发布流程
-
-1. 维护人员新增或修改标准工具契约。
-2. 为已支持的 backend 增加 adapter 映射和能力测试。
-3. 更新平台目录的版本和 Readiness 投影。
-4. 在 Studio 中显示普通模式摘要和专业模式细节。
-5. 通过 Codex、OpenCode、Pi 的真实或受控 Sandbox 运行验证输入、输出、权限和审计。
-6. 发布新的 Runtime 版本；已有 TeamVersion 继续使用其快照中的契约版本。
-
-首期实现顺序：
-
-1. 统一 `workspace.*` 工具和调用审计。
-2. 完成 OpenCode 的标准工具注入。
-3. 增加 Pi RPC/MCP bridge。
-4. 根据实际需求增加独立 Claude adapter。
-5. 最后扩展搜索、数据和外部存储等业务工具。
+---
 
 ## 验收标准
 
-- 同一个 TeamVersion 的标准工具授权可以在多个 backend 上解析；
-- 不支持的映射在运行前被发现，并给出明确原因；
-- 角色权限、Law、Workspace 根目录、文件配额和超时在所有 backend 上保持一致；
-- 工具输入、输出、失败和审计字段具有统一语义；
-- Studio 普通模式无需编辑 JSON，专业模式仍可查看细节；
-- `local_shell` 发布器继续按现有 Profile 机制运行，不被模型工具标准化改造破坏。
-
+- **底座约束严格对齐**：Studio 界面与运行前校验严格遵守“底座决定工具集上限”，不支持的工具（如 Ollama + `web.search`）在界面置灰并在运行前阻断；
+- **全底座能力释放**：在 Codex（沙箱放行与实时搜索）、Claude、OpenCode、Qwen 等主流后端上成功激活其原生工作区与网络检索能力；
+- **架构零自建与极轻量**：Runtime 内部无自建文件编辑算法，无自建网页爬虫或搜索服务器，完全依赖 Backend 原生能力；
+- **配置极简无冗余**：业务人员在角色检查器中通过联动复选框和 3 档单选框完成配置，无须编辑 JSON；
+- **执行安全刚性兜底**：即便在 `Full access` 模式下，底层依然由 Staging Clean Room、防逃逸（`isWithin`）、禁止符号链接（`O_NOFOLLOW`）与文件配额硬性保护；
+- **产物可信封签**：角色输出声明的产物通过 SHA-256 校验并封签提升至只读共享区；
+- **审计记录统一**：工具调用与搜索生成规范的审计条目，且不泄露敏感明文凭据。
