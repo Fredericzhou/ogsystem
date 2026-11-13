@@ -46,7 +46,7 @@ import {
 } from "./role-repo.js";
 import { commitPromptBudget, reservePromptBudget } from "./prompt-budget.js";
 import { evaluateCondition } from "./condition-ast.js";
-import { validateDecisionOutput } from "./decision-criteria.js";
+import { DecisionCriteriaValidationError, validateDecisionOutput } from "./decision-criteria.js";
 import { applySemanticBusinessState } from "./semantic-state.js";
 import {
   buildProjectedContext,
@@ -317,6 +317,18 @@ function buildFailureEnvelope(args: {
       errorCode: "IR_CONTRACT_INVALID",
       errorCategory: "execution",
       message: errorMessage,
+      retryable: false,
+      stage: "execute",
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    };
+  }
+  if (args.error instanceof DecisionCriteriaValidationError) {
+    return {
+      errorCode: args.error.code,
+      errorCategory: "execution",
+      message: args.message ?? errorMessage,
       retryable: false,
       stage: "execute",
       roleId: args.roleId,

@@ -34,6 +34,7 @@ import {
   asRecord
 } from "./json-guards.js";
 import type {
+  DecisionCriterionConfig,
   Flow,
   FlowContractDefinition,
   FlowContractFile,
@@ -74,6 +75,7 @@ type RoleRepoHealthItem = {
 
 type RoleReadinessInspection = RoleRepoHealthItem & {
   declaredEvents?: string[];
+  decisionCriteria?: DecisionCriterionConfig[];
   outputSchemaValue?: unknown;
 };
 
@@ -597,12 +599,14 @@ async function inspectRoleHealth(args: {
   };
   let error: string | undefined;
   let declaredEvents: string[] | undefined;
+  let decisionCriteria: DecisionCriterionConfig[] | undefined;
   let outputSchemaValue: unknown;
 
   if (files.roleJson) {
     try {
       const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
       declaredEvents = manifest.outputs.events;
+      decisionCriteria = manifest.outputs.decisionCriteria;
       const promptTemplate = asNonEmptyString(manifest.promptTemplate);
       const outputSchema = asNonEmptyString(manifest.outputSchema);
       files.promptTemplate = promptTemplate
@@ -643,6 +647,7 @@ async function inspectRoleHealth(args: {
     missingFiles,
     error,
     declaredEvents,
+    decisionCriteria,
     outputSchemaValue
   };
 }
@@ -700,6 +705,38 @@ function validateRoleEventContracts(args: {
         severity: "blocker",
         roleId,
         detail: { declaredEvents, graphEvents }
+      }));
+    }
+  }
+}
+
+function validateDecisionCriteriaSchemas(args: {
+  roles: RoleReadinessInspection[];
+  blockers: ReadinessIssue[];
+}): void {
+  for (const role of args.roles) {
+    if (role.status !== "ok" || !role.decisionCriteria?.length) continue;
+    const schema = asRecord(role.outputSchemaValue);
+    const properties = asRecord(schema?.properties);
+    const data = asRecord(properties?.data);
+    const dataProperties = asRecord(data?.properties);
+    const missing: string[] = [];
+    const criteriaSchema = asRecord(dataProperties?.criteria);
+    const decisionReasonSchema = asRecord(dataProperties?.decisionReason);
+    const requiredChangesSchema = asRecord(dataProperties?.requiredChanges);
+    if (!criteriaSchema || criteriaSchema.type !== "array") missing.push("data.criteria");
+    if (!decisionReasonSchema) missing.push("data.decisionReason");
+    if (role.decisionCriteria.some((criterion) => criterion.failureAction === "rework") &&
+      (!requiredChangesSchema || requiredChangesSchema.type !== "array")) {
+      missing.push("data.requiredChanges");
+    }
+    if (missing.length) {
+      args.blockers.push(createIssue({
+        code: "READINESS_DECISION_SCHEMA_MISSING",
+        message: `Role "${role.roleId}" declares decision criteria but its output schema is missing: ${missing.join(", ")}.`,
+        severity: "blocker",
+        roleId: role.roleId,
+        detail: { missing }
       }));
     }
   }
@@ -957,6 +994,7 @@ export async function inspectProjectReadiness(
   });
 
   validateRoleEventContracts({ system, roles: roleInspections, blockers });
+  validateDecisionCriteriaSchemas({ roles: roleInspections, blockers });
   validateCodexOutputSchemas({
     roles: roleInspections,
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
@@ -979,7 +1017,7 @@ export async function inspectProjectReadiness(
     contractCoverage,
     roleRepoHealth: {
       roleRepoRoot,
-      roles: roleInspections.map(({ declaredEvents: _declaredEvents, outputSchemaValue: _outputSchemaValue, ...role }) => role)
+      roles: roleInspections.map(({ declaredEvents: _declaredEvents, decisionCriteria: _decisionCriteria, outputSchemaValue: _outputSchemaValue, ...role }) => role)
     },
     modelCapabilityChecks,
     providerHealth: buildProviderHealth(resolvedModelSelection.resolvedByRoleId)

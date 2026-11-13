@@ -186,30 +186,27 @@ async function writeRolePackage(args) {
     `# ${args.roleId}\n\nTest fixture role.\n`,
     "utf8"
   );
+  const outputSchema = args.outputSchema ?? {
+    type: "object",
+    properties: {
+      event: {
+        type: "string",
+        enum: [...new Set(args.allowedEvents)]
+      },
+      content: {
+        type: "string"
+      },
+      data: {
+        type: "object",
+        additionalProperties: true
+      }
+    },
+    required: args.requireEvent === false ? [] : ["event"],
+    additionalProperties: true
+  };
   await writeFile(
     path.resolve(roleDir, "output.schema.json"),
-    JSON.stringify(
-      {
-        type: "object",
-        properties: {
-          event: {
-            type: "string",
-            enum: [...new Set(args.allowedEvents)]
-          },
-          content: {
-            type: "string"
-          },
-          data: {
-            type: "object",
-            additionalProperties: true
-          }
-        },
-        required: args.requireEvent === false ? [] : ["event"],
-        additionalProperties: true
-      },
-      null,
-      2
-    ),
+    JSON.stringify(outputSchema, null, 2),
     "utf8"
   );
 }
@@ -318,6 +315,75 @@ writer[Role:writer] -->|READY| end[结束]
   });
   assert.equal(result.status, "failed");
   assert.equal(result.failure.errorCode, "IR_CONTRACT_INVALID", result.error);
+});
+
+test("executeRoleNode preserves decision criteria diagnostics in the failure envelope", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-decision-criteria-failure-",
+    prompt: "decision criteria prompt",
+    systemSource: `flowchart TD
+%% system.id=role.decision.criteria.failure
+%% system.version=1.0.0
+%% law.global=law.console.base
+
+start[开始] -->|START| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|APPROVED| end[结束]
+`,
+    roles: [{
+      roleId: "reviewer",
+      allowedEvents: ["APPROVED"],
+      contract: {
+        ...latestRoleContract({ events: ["APPROVED"] }),
+        outputs: {
+          events: ["APPROVED"],
+          postconditions: [],
+          decisionCriteria: [{
+            id: "security",
+            description: "没有硬性安全问题",
+            severity: "required",
+            failureAction: "reject"
+          }]
+        }
+      }
+    }]
+  });
+  const state = createInitialState(fixture.plan, "decision criteria prompt");
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["reviewer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute() {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            event: "APPROVED",
+            content: "未通过",
+            data: {
+              decisionReason: "安全条件未通过",
+              criteria: [{ id: "security", status: "fail", evidence: [] }]
+            }
+          }),
+          stderr: "",
+          args: []
+        };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "DECISION_APPROVED_EVIDENCE_MISSING", result.error);
+  assert.equal(result.audit.errorEnvelope?.errorCode, "DECISION_APPROVED_EVIDENCE_MISSING");
 });
 
 test("executeRoleNode evaluates state postconditions after the declared reducer", async () => {
@@ -506,7 +572,8 @@ async function prepareRoleExecutorFixture(args) {
       roleId: role.roleId,
       allowedEvents: role.allowedEvents,
       requireEvent: role.requireEvent,
-      contract: role.contract
+      contract: role.contract,
+      outputSchema: role.outputSchema
     });
   }
 

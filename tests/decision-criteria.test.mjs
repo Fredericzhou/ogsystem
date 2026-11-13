@@ -70,6 +70,19 @@ test("decision output requires changes tied to a rework criterion", () => {
   }));
 });
 
+test("decision output does not treat an advisory reject as a hard rejection", () => {
+  assert.throws(
+    () => validateDecisionOutput({
+      ...output("REJECTED", {
+        criteria: [{ id: "advice", status: "fail", severity: "advisory", evidence: ["artifacts/advice.json"] }]
+      }),
+      criteria: [{ id: "advice", description: "建议项", severity: "advisory", failureAction: "reject" }],
+      roleId: "reviewer"
+    }),
+    /DECISION_REJECTED_HARD_FAILURE_REQUIRED/
+  );
+});
+
 test("role manifests accept sorted decision criteria under outputs", () => {
   assert.doesNotThrow(() => validateRolePackageManifest({
     roleId: "reviewer",
@@ -88,4 +101,32 @@ test("role manifests accept sorted decision criteria under outputs", () => {
     failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
     audit: { requiredFields: [] }
   }, "reviewer/role.json"));
+});
+
+test("role manifests reject contradictory decision severity and failure handling", () => {
+  for (const criterion of [
+    { id: "advisory_reject", description: "建议项", severity: "advisory", failureAction: "reject" },
+    { id: "critical_rework", description: "硬性项", severity: "critical", failureAction: "rework" }
+  ]) {
+    assert.throws(
+      () => validateRolePackageManifest({
+        roleId: "reviewer",
+        roleVersion: "1.0.0",
+        name: "Reviewer",
+        description: "Reviews a result.",
+        promptTemplate: "prompt.md",
+        outputSchema: "output.schema.json",
+        contractVersion: 1,
+        purpose: "Review a result against declared quality criteria.",
+        responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
+        inputs: { preconditions: [] },
+        outputs: { events: ["APPROVED", "NEEDS_REWORK", "REJECTED"], postconditions: [], decisionCriteria: [criterion] },
+        authority: { controlActions: [] },
+        constraints: { writableStateFields: [], allowedTools: [] },
+        failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+        audit: { requiredFields: [] }
+      }, "reviewer/role.json"),
+      /advisory criteria|critical criteria/
+    );
+  }
 });

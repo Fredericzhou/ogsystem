@@ -130,6 +130,12 @@ function expectDecisionCriteria(value: unknown, filePath: string): DecisionCrite
     if (!["required", "advisory", "critical"].includes(severity)) fail(filePath, `$.outputs.decisionCriteria[${index}].severity`, "contains unsupported value");
     const failureAction = expectString(item.failureAction, filePath, `$.outputs.decisionCriteria[${index}].failureAction`) as DecisionCriterionConfig["failureAction"];
     if (!["rework", "reject"].includes(failureAction)) fail(filePath, `$.outputs.decisionCriteria[${index}].failureAction`, "contains unsupported value");
+    if (severity === "advisory" && failureAction === "reject") {
+      fail(filePath, `$.outputs.decisionCriteria[${index}]`, "advisory criteria cannot reject; use rework or required/critical severity");
+    }
+    if (severity === "critical" && failureAction !== "reject") {
+      fail(filePath, `$.outputs.decisionCriteria[${index}]`, "critical criteria must reject; use required severity for rework");
+    }
     const evidenceHint = item.evidenceHint === undefined ? undefined : expectString(item.evidenceHint, filePath, `$.outputs.decisionCriteria[${index}].evidenceHint`);
     return { id, description, severity, failureAction, ...(evidenceHint ? { evidenceHint } : {}) };
   });

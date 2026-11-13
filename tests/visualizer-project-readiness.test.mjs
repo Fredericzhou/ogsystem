@@ -35,7 +35,8 @@ async function writeRolePackage(workdir, roleId, options = {}) {
         description: `${roleId} role`,
         promptTemplate: "prompt.md",
         outputSchema: "output.schema.json",
-        ...latestRoleContract({ events: ["READY"] })
+        ...latestRoleContract({ events: options.events || ["READY"] }),
+        ...(options.contract || {})
       },
       null,
       2
@@ -49,7 +50,7 @@ async function writeRolePackage(workdir, roleId, options = {}) {
     await writeFile(
       path.join(roleDir, "output.schema.json"),
       JSON.stringify(
-        {
+        options.outputSchema || {
           "$schema": "http://json-schema.org/draft-07/schema#",
           type: "object",
           properties: {
@@ -297,6 +298,44 @@ test("project readiness blocks role contracts whose declared events differ from 
 
     assert.equal(readiness.canDryRun, false);
     assert.deepEqual(issue?.detail, { declaredEvents: ["READY"], graphEvents: ["PLANNED"] });
+  });
+});
+
+test("project readiness blocks decision roles whose output schema omits decision evidence fields", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "reviewer", {
+      events: ["APPROVED"],
+      contract: {
+        outputs: {
+          events: ["APPROVED"],
+          postconditions: [],
+          decisionCriteria: [{
+            id: "security",
+            description: "没有硬性安全问题",
+            severity: "required",
+            failureAction: "rework"
+          }]
+        }
+      }
+    });
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.decision.schema.missing",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% model.bind.reviewer=opencode/gpt-5-nano",
+      "start[开始] -->|START| reviewer[Role:reviewer]",
+      "reviewer[Role:reviewer] -->|APPROVED| end[结束]"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+    const issue = readiness.blockers.find((item) => item.code === "READINESS_DECISION_SCHEMA_MISSING");
+
+    assert.equal(readiness.canDryRun, false);
+    assert.equal(issue?.roleId, "reviewer");
+    assert.deepEqual(issue?.detail, {
+      missing: ["data.criteria", "data.decisionReason", "data.requiredChanges"]
+    });
   });
 });
 

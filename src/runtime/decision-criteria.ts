@@ -90,7 +90,8 @@ export function validateDecisionOutput(args: {
     fail("DECISION_APPROVED_EVIDENCE_MISSING", `Role "${args.roleId}" cannot approve with failed or unknown required criteria`);
   }
   if (args.event === "REJECTED") {
-    if (!failures.some(({ criterion }) => criterion.failureAction === "reject")) {
+    if (!failures.some(({ criterion }) =>
+      criterion.failureAction === "reject" && (criterion.severity === "required" || criterion.severity === "critical"))) {
       fail("DECISION_REJECTED_HARD_FAILURE_REQUIRED", `Role "${args.roleId}" rejected without a configured hard failure`);
     }
   }
