@@ -829,6 +829,57 @@ function validateContracts(args: {
           roleId
         })
       );
+      continue;
+    }
+    const schema = contract.schema && typeof contract.schema === "object" && !Array.isArray(contract.schema)
+      ? contract.schema as Record<string, unknown>
+      : {};
+    const properties = schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+      ? schema.properties as Record<string, unknown>
+      : {};
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((field): field is string => typeof field === "string")
+      : [];
+    for (const field of required) {
+      if (!Object.hasOwn(contextMap, field)) {
+        args.diagnostics.push(createDiagnostic({
+          code: "EVENT_INPUT_MAPPING_MISSING",
+          message: `role_input contract "${definition.id}" requires context.map.${roleId}.${field}`,
+          contractId: definition.id,
+          roleId,
+          fieldName: field
+        }));
+      }
+    }
+    if (schema.additionalProperties === false) {
+      for (const field of Object.keys(contextMap)) {
+        if (!Object.hasOwn(properties, field)) {
+          args.diagnostics.push(createDiagnostic({
+            code: "EVENT_INPUT_MAPPING_UNDECLARED",
+            message: `context.map.${roleId}.${field} is not declared by role_input contract "${definition.id}"`,
+            contractId: definition.id,
+            roleId,
+            fieldName: field
+          }));
+        }
+      }
+    }
+    const incomingEvents = [...new Set(args.system.flows
+      .filter((flow) => flow.toRoleId === roleId && flow.fromRoleId !== SYSTEM_END_ROLE_ID && !isRuntimeOnlyErrorEvent(flow.eventType))
+      .map((flow) => flow.eventType))];
+    if (incomingEvents.length > 1) {
+      const hasEventMapping = Object.values(contextMap).some((selector) =>
+        typeof selector === "string" && /(?:^|\.)event\??$/.test(selector)
+      );
+      if (!hasEventMapping) {
+        args.diagnostics.push(createDiagnostic({
+          code: "EVENT_INPUT_MAPPING_MISSING",
+          message: `Role "${roleId}" receives multiple event types [${incomingEvents.sort().join(", ")}] but context.map has no incoming event projection`,
+          contractId: definition.id,
+          roleId,
+          fieldName: "event"
+        }));
+      }
     }
   }
 }

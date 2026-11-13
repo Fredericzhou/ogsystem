@@ -707,6 +707,22 @@ function validateRoleEventContracts(args: {
         detail: { declaredEvents, graphEvents }
       }));
     }
+    const schema = asRecord(role.outputSchemaValue);
+    const schemaProperties = asRecord(schema?.properties);
+    const eventSchema = asRecord(schemaProperties?.event);
+    const eventEnum = Array.isArray(eventSchema?.enum)
+      ? eventSchema.enum.filter((event): event is string => typeof event === "string")
+      : [];
+    const invalidSchemaEvents = [...new Set(eventEnum)].filter((event) => !declaredEvents.includes(event));
+    if (invalidSchemaEvents.length > 0) {
+      args.blockers.push(createIssue({
+        code: "READINESS_ROLE_EVENT_SCHEMA_MISMATCH",
+        message: `Role "${roleId}" output schema event.enum contains undeclared events: ${invalidSchemaEvents.join(", ")}.`,
+        severity: "blocker",
+        roleId,
+        detail: { declaredEvents, schemaEvents: [...new Set(eventEnum)], invalidSchemaEvents }
+      }));
+    }
   }
 }
 
@@ -720,15 +736,21 @@ function validateDecisionCriteriaSchemas(args: {
     const properties = asRecord(schema?.properties);
     const data = asRecord(properties?.data);
     const dataProperties = asRecord(data?.properties);
+    const dataRequired = new Set(Array.isArray(data?.required) ? data.required.filter((item): item is string => typeof item === "string") : []);
     const missing: string[] = [];
     const criteriaSchema = asRecord(dataProperties?.criteria);
     const decisionReasonSchema = asRecord(dataProperties?.decisionReason);
     const requiredChangesSchema = asRecord(dataProperties?.requiredChanges);
     if (!criteriaSchema || criteriaSchema.type !== "array") missing.push("data.criteria");
     if (!decisionReasonSchema) missing.push("data.decisionReason");
+    if (criteriaSchema && !dataRequired.has("criteria")) missing.push("data.required.criteria");
+    if (decisionReasonSchema && !dataRequired.has("decisionReason")) missing.push("data.required.decisionReason");
     if (role.decisionCriteria.some((criterion) => criterion.failureAction === "rework") &&
       (!requiredChangesSchema || requiredChangesSchema.type !== "array")) {
       missing.push("data.requiredChanges");
+    }
+    if (role.decisionCriteria.some((criterion) => criterion.failureAction === "rework") && requiredChangesSchema && !dataRequired.has("requiredChanges")) {
+      missing.push("data.required.requiredChanges");
     }
     if (missing.length) {
       args.blockers.push(createIssue({

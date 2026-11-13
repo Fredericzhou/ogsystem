@@ -301,6 +301,78 @@ test("project readiness blocks role contracts whose declared events differ from 
   });
 });
 
+test("project readiness blocks output schemas whose event enum escapes the declared events", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "reviewer", {
+      events: ["READY"],
+      outputSchema: {
+        type: "object",
+        properties: { event: { type: "string", enum: ["READY", "APPROVED"] } },
+        required: ["event"],
+        additionalProperties: false
+      }
+    });
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.event.schema.mismatch",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% model.bind.reviewer=opencode/gpt-5-nano",
+      "start[开始] -->|START| reviewer[Role:reviewer]",
+      "reviewer[Role:reviewer] -->|READY| end[结束]"
+    ]);
+    const readiness = await inspectProjectReadiness(workdir);
+    const issue = readiness.blockers.find((item) => item.code === "READINESS_ROLE_EVENT_SCHEMA_MISMATCH");
+    assert.equal(issue?.roleId, "reviewer");
+    assert.deepEqual(issue?.detail?.invalidSchemaEvents, ["APPROVED"]);
+  });
+});
+
+test("project readiness requires decision evidence fields to be declared required", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "reviewer", {
+      events: ["APPROVED"],
+      contract: {
+        outputs: {
+          events: ["APPROVED"],
+          postconditions: [],
+          decisionCriteria: [{ id: "security", description: "没有硬性安全问题", severity: "required", failureAction: "rework" }]
+        }
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          event: { type: "string", enum: ["APPROVED"] },
+          data: {
+            type: "object",
+            properties: {
+              criteria: { type: "array" },
+              decisionReason: { type: "string" },
+              requiredChanges: { type: "array" }
+            },
+            required: [],
+            additionalProperties: false
+          }
+        },
+        required: ["event"],
+        additionalProperties: false
+      }
+    });
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.decision.required",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% model.bind.reviewer=opencode/gpt-5-nano",
+      "start[开始] -->|START| reviewer[Role:reviewer]",
+      "reviewer[Role:reviewer] -->|APPROVED| end[结束]"
+    ]);
+    const readiness = await inspectProjectReadiness(workdir);
+    const issue = readiness.blockers.find((item) => item.code === "READINESS_DECISION_SCHEMA_MISSING");
+    assert.deepEqual(issue?.detail?.missing, ["data.required.criteria", "data.required.decisionReason", "data.required.requiredChanges"]);
+  });
+});
+
 test("project readiness blocks decision roles whose output schema omits decision evidence fields", async () => {
   await withTempProject(async (workdir) => {
     await writeRolePackage(workdir, "reviewer", {

@@ -83,6 +83,49 @@ test("decision output does not treat an advisory reject as a hard rejection", ()
   );
 });
 
+test("hard rejection takes precedence over a rework request", () => {
+  assert.throws(
+    () => validateDecisionOutput({
+      ...output("NEEDS_REWORK", {
+        criteria: [
+          { id: "cost_limit", status: "fail", severity: "required", evidence: ["artifacts/cost.json"], reason: "超出预算" },
+          { id: "security", status: "fail", severity: "critical", evidence: ["artifacts/security.json"], reason: "存在硬性风险" }
+        ],
+        requiredChanges: [{ criterionId: "cost_limit", action: "降低预计成本" }]
+      }),
+      criteria,
+      roleId: "reviewer"
+    }),
+    /DECISION_REWORK_HARD_FAILURE_CONFLICT/
+  );
+});
+
+test("blocked decisions require a specific reason and evidence for the missing condition", () => {
+  assert.throws(
+    () => validateDecisionOutput({
+      ...output("BLOCKED", {
+        criteria: [
+          { id: "cost_limit", status: "unknown", severity: "required", evidence: [], reason: "" },
+          { id: "security", status: "pass", severity: "critical", evidence: ["artifacts/security.json"] }
+        ]
+      }),
+      criteria,
+      roleId: "reviewer"
+    }),
+    /DECISION_BLOCKED_REASON_REQUIRED/
+  );
+  assert.doesNotThrow(() => validateDecisionOutput({
+    ...output("BLOCKED", {
+      criteria: [
+        { id: "cost_limit", status: "unknown", severity: "required", evidence: ["dependency:budget-data"], reason: "预算数据尚未提供" },
+        { id: "security", status: "pass", severity: "critical", evidence: ["artifacts/security.json"] }
+      ]
+    }),
+    criteria,
+    roleId: "reviewer"
+  }));
+});
+
 test("role manifests accept sorted decision criteria under outputs", () => {
   assert.doesNotThrow(() => validateRolePackageManifest({
     roleId: "reviewer",

@@ -213,6 +213,71 @@ test("compiler emits stable diagnostics for invalid join, context, loop, and con
   assert.ok(codes.has("COMPILER_ROLE_INPUT_UNBOUND"));
 });
 
+test("compiler requires an event projection for multi-event role input", async () => {
+  const source = await readFile(path.resolve("examples/target-model-binding-system.mmd"), "utf8");
+  const system = parseSystemFromMermaidSource(source);
+  const roleRootDir = path.resolve("og-roles", "roles");
+  const rolePackagesByRoleId = await loadRolePackages(system.roleIds, roleRootDir);
+  system.flows.push({
+    fromRoleId: "debate-minimalist",
+    toRoleId: "debate-judge",
+    eventType: "REJECTED"
+  });
+  system.graph = {
+    ...system.graph,
+    contextMapByRoleId: {
+      ...system.graph.contextMapByRoleId,
+      "debate-judge": { summary: "direct.content" }
+    }
+  };
+  alignContractEventsWithSystem(system, rolePackagesByRoleId);
+
+  const contractPlan = {
+    handoffMode: "strict",
+    contractPath: path.resolve("virtual", "handoff.contracts.json"),
+    digest: "multi-event-input-mapping",
+    flowContractsByKey: new Map(),
+    roleInputContractsByRoleId: new Map([[
+      "debate-judge",
+      {
+        definition: {
+          id: "role_input.debate-judge",
+          kind: "role_input",
+          match: { roleId: "debate-judge" },
+          schema: "input.schema.json",
+          onViolation: "FAIL"
+        },
+        schema: {
+          type: "object",
+          properties: {
+            incoming_event: { type: "string" },
+            summary: { type: "string" }
+          },
+          required: ["incoming_event", "summary"],
+          additionalProperties: false
+        },
+        schemaPath: "input.schema.json"
+      }
+    ]])
+  };
+
+  const result = compileExecutionSnapshot({
+    system,
+    rolePackagesByRoleId,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      maxTransitions: undefined,
+      allowNoopWithoutExecutionBinding: true
+    },
+    contractPlan
+  });
+
+  assert.equal(result.ok, false);
+  const diagnostics = result.diagnostics.filter((diagnostic) => diagnostic.roleId === "debate-judge");
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.code === "EVENT_INPUT_MAPPING_MISSING" && diagnostic.fieldName === "incoming_event"));
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.code === "EVENT_INPUT_MAPPING_MISSING" && diagnostic.fieldName === "event"));
+});
+
 test("compiler rejects noop roles that are unauthorized or ambiguously routed", async () => {
   const source = `flowchart TD
 %% system.id=test.compiler.noop
