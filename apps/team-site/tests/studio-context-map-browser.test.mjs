@@ -175,7 +175,7 @@ test("Studio browser generates confirmed prompt rules for multiple incoming even
     page.on("dialog", async (dialog) => dialog.accept());
 
     const teamVersionId = project.teamVersionId || project.projectId;
-    await page.goto(`${url}/studio/teams/${encodeURIComponent(teamVersionId)}/design`, { waitUntil: "networkidle" });
+    await page.goto(`${url}/studio/teams/${encodeURIComponent(teamVersionId)}/design`, { waitUntil: "domcontentloaded" });
     await page.locator("#project-graph-stage").waitFor();
     await page.locator('[data-studio-graph-action="assets"]').click();
 
