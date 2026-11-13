@@ -2397,7 +2397,7 @@ function studioDecisionCriteriaFromContract(roleContract) {
 
 function studioDecisionCriteriaMarkup(criteria, english) {
   const label = (en, zh) => english ? en : zh;
-  const rows = criteria.map((criterion, index) => `<div class="studio-decision-criteria-row" data-studio-decision-row data-studio-decision-index="${index}" data-studio-decision-id="${esc(criterion.id)}"><label class="field"><span>${label("Criterion ID", "条件 ID")}</span><input data-studio-decision-field="id" value="${esc(criterion.id)}" placeholder="security"></label><label class="field full"><span>${label("Quality requirement", "达标条件")}</span><input data-studio-decision-field="description" value="${esc(criterion.description)}" placeholder="${label("No critical security issue", "没有硬性安全问题")}"></label><label class="field"><span>${label("Severity", "严重程度")}</span><select data-studio-decision-field="severity"><option value="required" ${criterion.severity === "required" ? "selected" : ""}>${label("Required", "必需")}</option><option value="advisory" ${criterion.severity === "advisory" ? "selected" : ""}>${label("Advisory", "建议")}</option><option value="critical" ${criterion.severity === "critical" ? "selected" : ""}>${label("Critical", "硬性")}</option></select></label><label class="field"><span>${label("Failure handling", "失败处理")}</span><select data-studio-decision-field="failureAction"><option value="rework" ${criterion.failureAction === "rework" ? "selected" : ""}>${label("Needs rework", "再改改")}</option><option value="reject" ${criterion.failureAction === "reject" ? "selected" : ""}>${label("Reject", "不同意")}</option></select></label><label class="field full"><span>${label("Evidence hint", "证据来源提示")}</span><input data-studio-decision-field="evidenceHint" value="${esc(criterion.evidenceHint)}" placeholder="artifacts/report.json"></label><button type="button" class="button subtle studio-decision-remove" data-studio-decision-remove aria-label="${label("Remove criterion", "删除条件")}" title="${label("Remove criterion", "删除条件")}">×</button></div>`).join("");
+  const rows = criteria.map((criterion, index) => `<div class="studio-decision-criteria-row" data-studio-decision-row data-studio-decision-index="${index}" data-studio-decision-id="${esc(criterion.id)}"><label class="field"><span>${label("Criterion ID", "条件 ID")}</span><input data-studio-decision-field="id" value="${esc(criterion.id)}" placeholder="security"></label><label class="field full"><span>${label("Quality requirement", "达标条件")}</span><input data-studio-decision-field="description" value="${esc(criterion.description)}" placeholder="${label("No critical security issue", "没有硬性安全问题")}"></label><label class="field"><span>${label("Severity", "严重程度")}</span><select data-studio-decision-field="severity"><option value="required" ${criterion.severity === "required" ? "selected" : ""}>${label("Required", "必需")}</option><option value="advisory" ${criterion.severity === "advisory" ? "selected" : ""}>${label("Advisory", "建议")}</option><option value="critical" ${criterion.severity === "critical" ? "selected" : ""}>${label("Critical", "硬性")}</option></select></label><label class="field"><span>${label("Failure handling", "失败处理")}</span><select data-studio-decision-field="failureAction"><option value="rework" ${criterion.failureAction === "rework" ? "selected" : ""}${criterion.severity === "critical" ? " disabled" : ""}>${label("Needs rework", "再改改")}</option><option value="reject" ${criterion.failureAction === "reject" ? "selected" : ""}${criterion.severity === "advisory" ? " disabled" : ""}>${label("Reject", "不同意")}</option></select></label><label class="field full"><span>${label("Evidence hint", "证据来源提示")}</span><input data-studio-decision-field="evidenceHint" value="${esc(criterion.evidenceHint)}" placeholder="artifacts/report.json"></label><button type="button" class="button subtle studio-decision-remove" data-studio-decision-remove aria-label="${label("Remove criterion", "删除条件")}" title="${label("Remove criterion", "删除条件")}">×</button></div>`).join("");
   return `<details class="studio-inspector-section studio-decision-criteria" data-studio-decision-criteria open><summary>${label("Quality criteria", "审核标准")}</summary><p class="field-hint full">${label("Configure what counts as passing. The runtime checks the Role's structured evidence against these criteria.", "配置什么叫达标。运行时会用角色输出的结构化证据逐项校验。")}</p><div data-studio-decision-criteria-rows>${rows || `<p class="studio-decision-empty" data-studio-decision-empty>${label("No criteria configured yet.", "尚未配置审核标准。")}</p>`}</div><button type="button" class="button subtle" data-studio-decision-add>+ ${label("Add criterion", "添加审核条件")}</button></details>`;
 }
 
@@ -2755,7 +2755,9 @@ function extractSchemaPropertyPaths(schema) {
 }
 
 function studioContextMapMarkup(authoring, role, locale, selection) {
-  const incoming = [...new Set(Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === role.roleId).map((flow) => flow.fromRoleId))];
+  const incomingFlows = Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === role.roleId && flow.fromRoleId && !flow.fromRoleId.startsWith("__system_"));
+  const incoming = [...new Set(incomingFlows.map((flow) => flow.fromRoleId))];
+  const incomingEvents = [...new Set(incomingFlows.map((flow) => flow.eventType).filter(Boolean))];
   const candidates = new Set([
     "global.task", "global.user_profile", "global.human_review.current.comment",
     "global.human_review.current.round", "global.human_review.current.previous_output.content"
@@ -2886,7 +2888,11 @@ function studioContextMapMarkup(authoring, role, locale, selection) {
 
     return `<div class="studio-context-map-row" data-studio-context-row><label class="field"><span>${locale === "en" ? "Target field" : "目标字段"}</span><input data-studio-context-target value="${esc(target)}"${targetListAttr} placeholder="${locale === "en" ? "Target input key" : "输入字段名"}"></label><label class="field"><span>${locale === "en" ? "Source" : "来源"}</span><select data-studio-context-source>${candidateOptions}<option value="${esc(base)}" selected>${esc(sourceLabel(base))}</option></select></label><label class="field"><span>${locale === "en" ? "Field path" : "字段路径"}</span><input data-studio-context-path value="${esc(path)}"${pathDatalistAttr} placeholder="${esc(pathPlaceholder)}"></label><label class="field checkbox"><input type="checkbox" data-studio-context-optional ${optional ? "checked" : ""}${optionalAllowed ? "" : " disabled"}><span>${locale === "en" ? "Optional" : "可选"}</span></label><button type="button" class="icon-button" data-studio-context-remove aria-label="${locale === "en" ? "Remove mapping" : "移除映射"}" title="${locale === "en" ? "Remove mapping" : "移除映射"}">×</button></div>`;
   }).join("");
-  return `<section class="studio-inspector-section studio-context-map-editor"><h3>${locale === "en" ? "Context Map" : "上下文映射"}</h3><p class="field-hint">${locale === "en" ? "Map supported incoming values to role input fields." : "将受支持的上游值映射到角色输入字段。"}</p><div data-studio-context-rows>${rows}</div><button type="button" class="secondary-button" data-studio-context-add>${locale === "en" ? "Add mapping" : "添加映射"}</button>${datalists.join("")}</section>`;
+  const distinctEventInputs = incomingEvents.length > 1;
+  const suggestButton = distinctEventInputs
+    ? `<div class="studio-context-map-suggestion" data-studio-context-suggestion><p class="field-hint">${locale === "en" ? `Incoming events: ${incomingEvents.join(", ")}. Add explicit event fields for this Role.` : `检测到多种入站事件：${incomingEvents.join("、")}。可以为当前角色补充显式事件字段。`}</p>${role.joinMode === "quorum_of" ? `<p class="field-hint studio-context-map-warning">${locale === "en" ? "Quorum joins need declared sources before automatic mapping." : "quorum 汇聚需要先声明来源，暂不自动扩大读取范围。"}</p>` : `<button type="button" class="secondary-button" data-studio-context-suggest>${locale === "en" ? "Add event mappings" : "生成入站事件映射"}</button>`}</div>`
+    : "";
+  return `<section class="studio-inspector-section studio-context-map-editor"><h3>${locale === "en" ? "Context Map" : "上下文映射"}</h3><p class="field-hint">${locale === "en" ? "Map supported incoming values to role input fields." : "将受支持的上游值映射到角色输入字段。"}</p>${suggestButton}<div data-studio-context-rows>${rows}</div><button type="button" class="secondary-button" data-studio-context-add>${locale === "en" ? "Add mapping" : "添加映射"}</button>${datalists.join("")}</section>`;
 }
 
 function studioRoleInputContractMarkup(authoring, selection, locale) {
@@ -3997,8 +4003,12 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         } else if (decisionField === "severity") {
           if (!["required", "advisory", "critical"].includes(element.value)) return false;
           criteria[index].severity = element.value;
+          if (element.value === "advisory") criteria[index].failureAction = "rework";
+          if (element.value === "critical") criteria[index].failureAction = "reject";
         } else if (decisionField === "failureAction") {
           if (!["rework", "reject"].includes(element.value)) return false;
+          if (criteria[index].severity === "advisory" && element.value === "reject") return false;
+          if (criteria[index].severity === "critical" && element.value === "rework") return false;
           criteria[index].failureAction = element.value;
         } else if (decisionField === "evidenceHint") {
           criteria[index].evidenceHint = element.value.trim();
@@ -4340,6 +4350,36 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (remove) {
         remove.closest("[data-studio-context-row]")?.remove();
         syncContextMapFromRows();
+        return;
+      }
+      if (event.target.closest("[data-studio-context-suggest]")) {
+        recordEditorHistory();
+        const role = authoring.roles[selection.roleId];
+        if (!role) return;
+        const incomingFlows = Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === role.roleId && flow.fromRoleId && !flow.fromRoleId.startsWith("__system_"));
+        const incomingEvents = [...new Set(incomingFlows.map((flow) => flow.eventType).filter(Boolean))];
+        if (incomingEvents.length < 2 || role.joinMode === "quorum_of") return;
+        role.contextMap ||= {};
+        const addMapping = (key, value) => {
+          if (!Object.hasOwn(role.contextMap, key)) role.contextMap[key] = value;
+        };
+        if (role.joinMode === "all_of") {
+          for (const source of [...new Set(incomingFlows.map((flow) => flow.fromRoleId))]) {
+            const safeSource = source.replace(/[^A-Za-z0-9_]/g, "_");
+            let key = `${safeSource}_event`;
+            let suffix = 2;
+            while (Object.hasOwn(role.contextMap, key) && role.contextMap[key] !== `source(${source}).event`) {
+              key = `${safeSource}_${suffix++}_event`;
+            }
+            addMapping(key, `source(${source}).event`);
+          }
+        } else {
+          addMapping("incoming_event", "direct.event");
+          addMapping("decision_reason", "direct.data.decisionReason?");
+          addMapping("required_changes", "direct.data.requiredChanges?");
+        }
+        markDesignDirty(state.locale === "en" ? "Incoming event mappings have unsaved changes." : "入站事件映射有未保存的修改。");
+        renderInspector();
         return;
       }
       if (event.target.closest("[data-studio-role-input-contract-add]")) {
