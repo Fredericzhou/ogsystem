@@ -2469,7 +2469,7 @@ function studioDecisionOutputSchemaWithCriteria(schemaText, criteria) {
     type: "array",
     items: {
       type: "object",
-      required: ["id", "status", "evidence"],
+      required: ["id", "status", "severity", "evidence"],
       properties: {
         id: { type: "string" },
         status: { enum: ["pass", "fail", "unknown"] },
@@ -2496,7 +2496,9 @@ function studioDecisionOutputSchemaWithCriteria(schemaText, criteria) {
   if (criteria.some((criterion) => criterion.failureAction === "rework")) requiredData.add("requiredChanges");
   data.required = [...requiredData].sort((left, right) => left.localeCompare(right));
   data.properties = dataProperties;
-  return JSON.stringify({ ...schema, properties: { ...(schema.properties || {}), data } }, null, 2);
+  const rootRequired = new Set(Array.isArray(schema.required) ? schema.required.filter((item) => typeof item === "string") : []);
+  rootRequired.add("data");
+  return JSON.stringify({ ...schema, required: [...rootRequired].sort((left, right) => left.localeCompare(right)), properties: { ...(schema.properties || {}), data } }, null, 2);
 }
 
 const STUDIO_BUSINESS_EVENT_TYPES = [
@@ -2812,7 +2814,7 @@ function extractSchemaPropertyPaths(schema) {
   return results;
 }
 
-function studioIncomingEventRulesBlock(events, locale) {
+function studioIncomingEventRulesBlock(events, locale, eventInputs = []) {
   const labels = {
     APPROVED: locale === "en" ? "Keep the approved conclusion and continue with delivery preparation." : "保留同意结论，继续准备交付。",
     REJECTED: locale === "en" ? "Record why the result is not accepted; do not treat it as approved." : "记录不同意的原因，不得把当前结果当作已通过。",
@@ -2821,9 +2823,33 @@ function studioIncomingEventRulesBlock(events, locale) {
     READY: locale === "en" ? "Pass the received work to the next responsibility." : "将收到的结果交给下一责任角色。"
   };
   const title = locale === "en" ? "Incoming event handling" : "入站事件处理";
-  const current = locale === "en" ? "Current incoming event: input.incoming_event" : "当前入站事件：input.incoming_event";
+  const current = eventInputs.length > 0
+    ? (locale === "en" ? `Incoming event fields: ${eventInputs.join(", ")}` : `入站事件字段：${eventInputs.join("、")}`)
+    : (locale === "en" ? "Current incoming event: input.incoming_event" : "当前入站事件：input.incoming_event");
   const lines = ["<!-- ogs:event-rules:start -->", `## ${title}`, "", current, "", ...[...new Set(events)].sort((left, right) => left.localeCompare(right)).map((event) => `### ${event}\n\n${labels[event] || (locale === "en" ? "Handle this event according to the role contract." : "按角色契约处理此事件。")}`), "", "<!-- ogs:event-rules:end -->"];
   return lines.join("\n");
+}
+
+function studioRoleInputContractInfo(selection, roleId) {
+  try {
+    const manifest = JSON.parse(selection?.assets?.contracts || "{}");
+    const contract = (manifest.contracts || []).find((item) => item?.kind === "role_input" && item.match?.roleId === roleId);
+    if (!contract?.schema) return null;
+    const raw = selection?.assets?.contractSchemas?.[contract.schema];
+    const schema = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) return null;
+    const properties = schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+      ? schema.properties
+      : {};
+    return { schema, properties, strict: schema.additionalProperties === false, schemaPath: contract.schema };
+  } catch {
+    return null;
+  }
+}
+
+function studioContextTargetFor(info, preferred, aliases = []) {
+  if (!info?.strict) return preferred;
+  return [preferred, ...aliases].find((key) => Object.hasOwn(info.properties, key)) || "";
 }
 
 function studioContextMapMarkup(authoring, role, locale, selection) {
@@ -4432,23 +4458,47 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const incomingEvents = [...new Set(incomingFlows.map((flow) => flow.eventType).filter(Boolean))];
         if (incomingEvents.length < 2 || role.joinMode === "quorum_of") return;
         role.contextMap ||= {};
-        const addMapping = (key, value) => {
-          if (!Object.hasOwn(role.contextMap, key)) role.contextMap[key] = value;
+        const contractInfo = studioRoleInputContractInfo(selection, role.roleId);
+        let resolved = 0;
+        const addMapping = (key, value, aliases = []) => {
+          const target = studioContextTargetFor(contractInfo, key, aliases);
+          if (!target) return false;
+          resolved += 1;
+          if (!Object.hasOwn(role.contextMap, target)) {
+            role.contextMap[target] = value;
+          }
+          return true;
         };
         if (role.joinMode === "all_of") {
           for (const source of [...new Set(incomingFlows.map((flow) => flow.fromRoleId))]) {
             const safeSource = source.replace(/[^A-Za-z0-9_]/g, "_");
-            let key = `${safeSource}_event`;
+            const key = `${safeSource}_event`;
+            const target = studioContextTargetFor(contractInfo, key, [`event_${safeSource}`]);
+            if (!target) continue;
             let suffix = 2;
-            while (Object.hasOwn(role.contextMap, key) && role.contextMap[key] !== `source(${source}).event`) {
-              key = `${safeSource}_${suffix++}_event`;
+            let actualTarget = target;
+            while (Object.hasOwn(role.contextMap, actualTarget) && role.contextMap[actualTarget] !== `source(${source}).event`) {
+              actualTarget = `${safeSource}_${suffix++}_event`;
+              if (contractInfo?.strict && !Object.hasOwn(contractInfo.properties, actualTarget)) {
+                actualTarget = "";
+                break;
+              }
             }
-            addMapping(key, `source(${source}).event`);
+            if (actualTarget) resolved += 1;
+            if (actualTarget && !Object.hasOwn(role.contextMap, actualTarget)) {
+              role.contextMap[actualTarget] = `source(${source}).event`;
+            }
           }
         } else {
-          addMapping("incoming_event", "direct.event");
-          addMapping("decision_reason", "direct.data.decisionReason?");
-          addMapping("required_changes", "direct.data.requiredChanges?");
+          addMapping("incoming_event", "direct.event", ["event", "incomingEvent"]);
+          addMapping("decision_reason", "direct.data.decisionReason?", ["decisionReason", "reason"]);
+          addMapping("required_changes", "direct.data.requiredChanges?", ["requiredChanges", "changes"]);
+        }
+        if (contractInfo?.strict && resolved === 0) {
+          setEditorState(state.locale === "en"
+            ? "Declare the incoming event fields in the role_input schema before generating mappings."
+            : "请先在 role_input Schema 中声明入站事件字段，再生成映射。 ");
+          return;
         }
         markDesignDirty(state.locale === "en" ? "Incoming event mappings have unsaved changes." : "入站事件映射有未保存的修改。");
         renderInspector();
@@ -4464,7 +4514,11 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         selection.assets.roles ||= {};
         selection.assets.roles[selection.roleId] ||= {};
         const currentPrompt = String(selection.assets.roles[selection.roleId]["prompt.md"] || "");
-        const block = studioIncomingEventRulesBlock(incomingEvents, state.locale === "en" ? "en" : "zh-CN");
+        const eventInputs = Object.entries(role.contextMap || {})
+          .filter(([, selector]) => typeof selector === "string" && (/^direct\.event\??$/.test(selector) || /^source\([A-Za-z0-9._:-]+\)\.event\??$/.test(selector)))
+          .map(([field]) => `input.${field}`)
+          .sort((left, right) => left.localeCompare(right));
+        const block = studioIncomingEventRulesBlock(incomingEvents, state.locale === "en" ? "en" : "zh-CN", eventInputs);
         const blockPattern = /<!-- ogs:event-rules:start -->[\s\S]*?<!-- ogs:event-rules:end -->/;
         const nextPrompt = blockPattern.test(currentPrompt)
           ? currentPrompt.replace(blockPattern, block)

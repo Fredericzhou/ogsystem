@@ -369,7 +369,16 @@ test("project readiness requires decision evidence fields to be declared require
     ]);
     const readiness = await inspectProjectReadiness(workdir);
     const issue = readiness.blockers.find((item) => item.code === "READINESS_DECISION_SCHEMA_MISSING");
-    assert.deepEqual(issue?.detail?.missing, ["data.required.criteria", "data.required.decisionReason", "data.required.requiredChanges"]);
+    assert.deepEqual(issue?.detail?.missing, [
+      "required.data",
+      "data.criteria.items.required.id",
+      "data.criteria.items.required.status",
+      "data.criteria.items.required.severity",
+      "data.criteria.items.required.evidence",
+      "data.required.criteria",
+      "data.required.decisionReason",
+      "data.required.requiredChanges"
+    ]);
   });
 });
 
@@ -406,7 +415,7 @@ test("project readiness blocks decision roles whose output schema omits decision
     assert.equal(readiness.canDryRun, false);
     assert.equal(issue?.roleId, "reviewer");
     assert.deepEqual(issue?.detail, {
-      missing: ["data.criteria", "data.decisionReason", "data.requiredChanges"]
+      missing: ["required.data", "data.criteria", "data.decisionReason", "data.requiredChanges"]
     });
   });
 });

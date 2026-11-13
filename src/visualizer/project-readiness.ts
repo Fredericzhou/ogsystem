@@ -736,12 +736,21 @@ function validateDecisionCriteriaSchemas(args: {
     const properties = asRecord(schema?.properties);
     const data = asRecord(properties?.data);
     const dataProperties = asRecord(data?.properties);
+    const schemaRequired = new Set(Array.isArray(schema?.required) ? schema.required.filter((item): item is string => typeof item === "string") : []);
     const dataRequired = new Set(Array.isArray(data?.required) ? data.required.filter((item): item is string => typeof item === "string") : []);
     const missing: string[] = [];
     const criteriaSchema = asRecord(dataProperties?.criteria);
+    const criteriaItems = asRecord(criteriaSchema?.items);
+    const criteriaRequired = new Set(Array.isArray(criteriaItems?.required) ? criteriaItems.required.filter((item): item is string => typeof item === "string") : []);
     const decisionReasonSchema = asRecord(dataProperties?.decisionReason);
     const requiredChangesSchema = asRecord(dataProperties?.requiredChanges);
+    if (!data || !schemaRequired.has("data")) missing.push("required.data");
     if (!criteriaSchema || criteriaSchema.type !== "array") missing.push("data.criteria");
+    if (criteriaSchema && criteriaSchema.type === "array") {
+      for (const field of ["id", "status", "severity", "evidence"]) {
+        if (!criteriaItems || !criteriaRequired.has(field)) missing.push(`data.criteria.items.required.${field}`);
+      }
+    }
     if (!decisionReasonSchema) missing.push("data.decisionReason");
     if (criteriaSchema && !dataRequired.has("criteria")) missing.push("data.required.criteria");
     if (decisionReasonSchema && !dataRequired.has("decisionReason")) missing.push("data.required.decisionReason");
