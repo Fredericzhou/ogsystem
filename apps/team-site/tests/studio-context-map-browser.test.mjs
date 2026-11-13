@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -130,6 +131,67 @@ test("Studio browser context map editor mounts autocomplete datalists and suppor
       assert.equal(targetVal, "verdict", `Expected target field to be autofilled with leaf 'verdict', got '${targetVal}'`);
     }
 
+    assert.deepEqual(pageErrors, [], "No unhandled browser page errors should occur");
+  } finally {
+    if (browser) await browser.close();
+    server.kill("SIGTERM");
+    visualizer.kill("SIGTERM");
+  }
+});
+
+test("Studio browser generates confirmed prompt rules for multiple incoming events", async () => {
+  const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-event-rules-"));
+  const project = await seedReleasedClassicTeam(projectsRoot, "cross-backend-review-loop");
+  const systemPath = join(project.workdir, "system.mmd");
+  const systemSource = await readFile(systemPath, "utf8");
+  await writeFile(systemPath, `${systemSource}opencode-reviewer[Role:opencode-reviewer] -->|REJECTED| codex-analyst[Role:codex-analyst]\n`, "utf8");
+
+  const visualizer = spawn(process.execPath, ["--import", "tsx", "src/visualizer/cli.ts", "--ogs-dir", projectsRoot, "--port", "0"], {
+    cwd: repositoryRoot,
+    env: { ...process.env, OGS_SITE_PROJECTS_DIR: projectsRoot },
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const visualizerOutput = { value: "" };
+  visualizer.stdout.on("data", (chunk) => { visualizerOutput.value += chunk.toString(); });
+  visualizer.stderr.on("data", (chunk) => { visualizerOutput.value += chunk.toString(); });
+  const visualizerUrl = await waitForServiceUrl(visualizer, visualizerOutput, /listening on (http:\/\/127\.0\.0\.1:\d+)/, "Studio server");
+  const server = spawn(process.execPath, ["server.mjs"], {
+    cwd: appRoot,
+    env: { ...process.env, PORT: "0", OGS_SITE_PROJECTS_DIR: projectsRoot, OGS_PLATFORM_CONFIG_DIR: projectsRoot, OGS_VIS_URL: visualizerUrl },
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  let output = "";
+  server.stdout.on("data", (chunk) => { output += chunk.toString(); });
+  server.stderr.on("data", (chunk) => { output += chunk.toString(); });
+  let browser;
+  try {
+    const url = await waitForServiceUrl(server, { get value() { return output; } }, /ready at (http:\/\/127\.0\.0\.1:\d+)/, "Projects server");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.stack || error.message));
+    page.on("dialog", async (dialog) => dialog.accept());
+
+    const teamVersionId = project.teamVersionId || project.projectId;
+    await page.goto(`${url}/studio/teams/${encodeURIComponent(teamVersionId)}/design`, { waitUntil: "networkidle" });
+    await page.locator("#project-graph-stage").waitFor();
+    await page.locator('[data-studio-graph-action="assets"]').click();
+
+    const analyst = page.locator('[data-studio-asset-role="codex-analyst"]');
+    await analyst.waitFor({ state: "visible", timeout: 15000 });
+    await analyst.click();
+    const rulesButton = page.locator("[data-studio-event-rules-suggest]");
+    await rulesButton.waitFor({ state: "visible", timeout: 10000 });
+    await rulesButton.click();
+    const prompt = page.locator('[data-studio-role-asset="prompt.md"]');
+    await prompt.waitFor({ state: "attached" });
+    const promptText = await prompt.inputValue();
+    assert.match(promptText, /<!-- ogs:event-rules:start -->/);
+    assert.match(promptText, /### NEEDS_REWORK/);
+    assert.match(promptText, /### REJECTED/);
+    assert.match(promptText, /<!-- ogs:event-rules:end -->/);
     assert.deepEqual(pageErrors, [], "No unhandled browser page errors should occur");
   } finally {
     if (browser) await browser.close();

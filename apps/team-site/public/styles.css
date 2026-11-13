@@ -426,6 +426,7 @@ h1, h2, p { margin-top: 0; }
 .studio-context-map-row .icon-button:focus-visible, .studio-decision-remove:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 .studio-context-map-suggestion { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 6px; margin-bottom: 10px; padding: 8px 10px; }
 .studio-context-map-suggestion .field-hint { margin: 0; }
+.studio-context-map-suggestion-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .studio-context-map-warning { color: var(--warning, #a16207); }
 .studio-decision-criteria-row { align-items: end; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px; min-width: 0; padding: 10px; position: relative; }
 .studio-decision-auto-id { align-items: baseline; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 4px; display: flex; gap: 7px; grid-column: 1 / -1; min-height: 34px; padding: 7px 8px; }

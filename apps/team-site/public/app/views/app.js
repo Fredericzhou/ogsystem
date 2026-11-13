@@ -2490,6 +2490,11 @@ function studioDecisionOutputSchemaWithCriteria(schemaText, criteria) {
       additionalProperties: false
     }
   };
+  const requiredData = new Set(Array.isArray(data.required) ? data.required.filter((item) => typeof item === "string") : []);
+  requiredData.add("criteria");
+  requiredData.add("decisionReason");
+  if (criteria.some((criterion) => criterion.failureAction === "rework")) requiredData.add("requiredChanges");
+  data.required = [...requiredData].sort((left, right) => left.localeCompare(right));
   data.properties = dataProperties;
   return JSON.stringify({ ...schema, properties: { ...(schema.properties || {}), data } }, null, 2);
 }
@@ -2807,6 +2812,20 @@ function extractSchemaPropertyPaths(schema) {
   return results;
 }
 
+function studioIncomingEventRulesBlock(events, locale) {
+  const labels = {
+    APPROVED: locale === "en" ? "Keep the approved conclusion and continue with delivery preparation." : "保留同意结论，继续准备交付。",
+    REJECTED: locale === "en" ? "Record why the result is not accepted; do not treat it as approved." : "记录不同意的原因，不得把当前结果当作已通过。",
+    NEEDS_REWORK: locale === "en" ? "Apply every required change, then submit a new review result." : "按 requiredChanges 逐项修改，再提交新的审核结果。",
+    BLOCKED: locale === "en" ? "State the missing input or external dependency; do not guess a decision." : "说明缺少的输入或外部依赖，不要猜测审核结论。",
+    READY: locale === "en" ? "Pass the received work to the next responsibility." : "将收到的结果交给下一责任角色。"
+  };
+  const title = locale === "en" ? "Incoming event handling" : "入站事件处理";
+  const current = locale === "en" ? "Current incoming event: input.incoming_event" : "当前入站事件：input.incoming_event";
+  const lines = ["<!-- ogs:event-rules:start -->", `## ${title}`, "", current, "", ...[...new Set(events)].sort((left, right) => left.localeCompare(right)).map((event) => `### ${event}\n\n${labels[event] || (locale === "en" ? "Handle this event according to the role contract." : "按角色契约处理此事件。")}`), "", "<!-- ogs:event-rules:end -->"];
+  return lines.join("\n");
+}
+
 function studioContextMapMarkup(authoring, role, locale, selection) {
   const incomingFlows = Object.values(authoring.flows || {}).filter((flow) => flow.toRoleId === role.roleId && flow.fromRoleId && !flow.fromRoleId.startsWith("__system_"));
   const incoming = [...new Set(incomingFlows.map((flow) => flow.fromRoleId))];
@@ -2943,7 +2962,7 @@ function studioContextMapMarkup(authoring, role, locale, selection) {
   }).join("");
   const distinctEventInputs = incomingEvents.length > 1;
   const suggestButton = distinctEventInputs
-    ? `<div class="studio-context-map-suggestion" data-studio-context-suggestion><p class="field-hint">${locale === "en" ? `Incoming events: ${incomingEvents.join(", ")}. Add explicit event fields for this Role.` : `检测到多种入站事件：${incomingEvents.join("、")}。可以为当前角色补充显式事件字段。`}</p>${role.joinMode === "quorum_of" ? `<p class="field-hint studio-context-map-warning">${locale === "en" ? "Quorum joins need declared sources before automatic mapping." : "quorum 汇聚需要先声明来源，暂不自动扩大读取范围。"}</p>` : `<button type="button" class="secondary-button" data-studio-context-suggest>${locale === "en" ? "Add event mappings" : "生成入站事件映射"}</button>`}</div>`
+    ? `<div class="studio-context-map-suggestion" data-studio-context-suggestion><p class="field-hint">${locale === "en" ? `Incoming events: ${incomingEvents.join(", ")}. Add explicit event fields for this Role.` : `检测到多种入站事件：${incomingEvents.join("、")}。可以为当前角色补充显式事件字段。`}</p>${role.joinMode === "quorum_of" ? `<p class="field-hint studio-context-map-warning">${locale === "en" ? "Quorum joins need declared sources before automatic mapping." : "quorum 汇聚需要先声明来源，暂不自动扩大读取范围。"}</p>` : `<div class="studio-context-map-suggestion-actions"><button type="button" class="secondary-button" data-studio-context-suggest>${locale === "en" ? "Add event mappings" : "生成入站事件映射"}</button><button type="button" class="secondary-button" data-studio-event-rules-suggest>${locale === "en" ? "Add prompt event rules" : "生成入站事件规则"}</button></div>`}</div>`
     : "";
   return `<section class="studio-inspector-section studio-context-map-editor"><h3>${locale === "en" ? "Context Map" : "上下文映射"}</h3><p class="field-hint">${locale === "en" ? "Map supported incoming values to role input fields." : "将受支持的上游值映射到角色输入字段。"}</p>${suggestButton}<div data-studio-context-rows>${rows}</div><button type="button" class="secondary-button" data-studio-context-add>${locale === "en" ? "Add mapping" : "添加映射"}</button>${datalists.join("")}</section>`;
 }
@@ -4432,6 +4451,35 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           addMapping("required_changes", "direct.data.requiredChanges?");
         }
         markDesignDirty(state.locale === "en" ? "Incoming event mappings have unsaved changes." : "入站事件映射有未保存的修改。");
+        renderInspector();
+        return;
+      }
+      if (event.target.closest("[data-studio-event-rules-suggest]")) {
+        const role = authoring.roles[selection.roleId];
+        if (!role) return;
+        const incomingEvents = [...new Set(Object.values(authoring.flows || {})
+          .filter((flow) => flow.toRoleId === role.roleId && flow.fromRoleId && !flow.fromRoleId.startsWith("__system_"))
+          .map((flow) => flow.eventType).filter(Boolean))];
+        if (incomingEvents.length < 2 || role.joinMode === "quorum_of") return;
+        selection.assets.roles ||= {};
+        selection.assets.roles[selection.roleId] ||= {};
+        const currentPrompt = String(selection.assets.roles[selection.roleId]["prompt.md"] || "");
+        const block = studioIncomingEventRulesBlock(incomingEvents, state.locale === "en" ? "en" : "zh-CN");
+        const blockPattern = /<!-- ogs:event-rules:start -->[\s\S]*?<!-- ogs:event-rules:end -->/;
+        const nextPrompt = blockPattern.test(currentPrompt)
+          ? currentPrompt.replace(blockPattern, block)
+          : `${currentPrompt.trimEnd()}${currentPrompt.trim() ? "\n\n" : ""}${block}\n`;
+        if (nextPrompt === currentPrompt) return;
+        const confirmed = typeof window.confirm !== "function" || window.confirm(state.locale === "en"
+          ? "Add the generated event rules to this role prompt? Existing event rules will be replaced."
+          : "将生成的入站事件规则加入当前角色提示词？已有规则块会被替换。 ");
+        if (!confirmed) return;
+        recordEditorHistory();
+        selection.assets.roles[selection.roleId]["prompt.md"] = nextPrompt;
+        pendingRoleAssets.add(`${selection.roleId}/prompt.md`);
+        const rawEditor = inspector?.querySelector('[data-studio-role-asset="prompt.md"]');
+        if (rawEditor) rawEditor.value = nextPrompt;
+        markDesignDirty(state.locale === "en" ? "Prompt event rules have unsaved changes." : "入站事件规则有未保存的修改。");
         renderInspector();
         return;
       }
