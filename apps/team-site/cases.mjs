@@ -5,6 +5,12 @@ export const cases = [
     short: { "zh-CN": "Codex 分析、OpenCode 审核，打回后回到分析角色，直到审核同意。", en: "Codex analyzes and OpenCode reviews, looping back for rework until approval." },
     category: { "zh-CN": "工程协作", en: "Engineering collaboration" },
     duration: { "zh-CN": "2 个角色 · 最多 3 轮", en: "2 roles · up to 3 rounds" },
+    catalog: {
+      tier: { "zh-CN": "核心模板", en: "Core template" },
+      fit: { "zh-CN": "适合跨模型审核、返工与有限循环。", en: "For cross-model review, rework, and bounded loops." },
+      delivery: { "zh-CN": "审计记录", en: "Audit record" },
+      api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
+    },
     icon: "refresh",
     detail: {
       scenario: { "zh-CN": "验证一个由 Codex 编写、OpenCode 复核的有界交付流程。", en: "Validate a bounded delivery flow written by Codex and reviewed by OpenCode." },
@@ -45,6 +51,12 @@ export const cases = [
     },
     category: { "zh-CN": "管理咨询", en: "Management consulting" },
     duration: { "zh-CN": "9 个角色", en: "9 roles" },
+    catalog: {
+      tier: { "zh-CN": "核心模板", en: "Core template" },
+      fit: { "zh-CN": "适合多专业并行分析与文件化决策交付。", en: "For parallel specialist analysis and document-based decisions." },
+      delivery: { "zh-CN": "文档与结构化数据", en: "Documents and structured data" },
+      api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
+    },
     icon: "briefcase",
     detail: {
       scenario: { "zh-CN": "一家成长中的企业希望评估进入新市场的机会、实施路径和主要风险。请基于给定资料形成决策建议。", en: "A growing company is assessing entry into a new market and needs a decision recommendation, implementation path, and risk view based on the supplied brief." },
@@ -179,6 +191,12 @@ export const cases = [
     },
     category: { "zh-CN": "产品研发", en: "Product development" },
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
+    catalog: {
+      tier: { "zh-CN": "核心模板", en: "Core template" },
+      fit: { "zh-CN": "适合多专业拆解产品需求并形成研发方案。", en: "For shaping product requests into a cross-discipline delivery plan." },
+      delivery: { "zh-CN": "研发交付方案", en: "Engineering delivery plan" },
+      api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
+    },
     icon: "code",
     detail: {
       scenario: { "zh-CN": "为自由职业者记账工具规划首版：覆盖账目记录、月度汇总，并列出上线前的验收项。", en: "Plan the first release of a bookkeeping tool for independent professionals, including expense entry, monthly summaries, and launch checks." },
@@ -258,6 +276,12 @@ export const cases = [
     },
     category: { "zh-CN": "专业咨询", en: "Expert consultation" },
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
+    catalog: {
+      tier: { "zh-CN": "专业模板", en: "Specialized template" },
+      fit: { "zh-CN": "适合资料不完整、需要表达不确定性的复杂个案。", en: "For complex cases with incomplete information and uncertainty." },
+      delivery: { "zh-CN": "专家意见与不确定性说明", en: "Expert opinions and uncertainty" },
+      api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
+    },
     icon: "medical",
     detail: {
       scenario: { "zh-CN": "个案资料：患者反复头痛并伴短暂视物模糊。请梳理风险信号、待补充资料与合理的后续问题。", en: "Case brief: recurring headaches with brief blurred vision. Identify risk signals, missing information, and useful follow-up questions." },
@@ -332,6 +356,12 @@ export const cases = [
     },
     category: { "zh-CN": "观点讨论", en: "Deliberation" },
     duration: { "zh-CN": "6 个角色", en: "6 roles" },
+    catalog: {
+      tier: { "zh-CN": "核心模板", en: "Core template" },
+      fit: { "zh-CN": "适合需要正反观点、质询与中立评议的争议议题。", en: "For contested questions that need opposing views and neutral review." },
+      delivery: { "zh-CN": "观点记录与音视频", en: "Argument record and media" },
+      api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
+    },
     icon: "scales",
     detail: {
       scenario: { "zh-CN": "讨论议题：一家 30 人的公司，是否应要求员工每周到办公室三天？", en: "Debate topic: should a 30-person company ask employees to work from the office three days each week?" },

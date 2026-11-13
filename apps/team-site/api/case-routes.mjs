@@ -6,6 +6,7 @@ export async function handleCaseRoutes({ request, response, url, readBody, sendJ
       short: item.short,
       category: item.category,
       duration: item.duration,
+      catalog: item.catalog,
       accent: item.accent,
       icon: item.icon,
       detail: item.detail,

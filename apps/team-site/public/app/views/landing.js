@@ -67,11 +67,16 @@ function caseIcon(item) {
   return `<span class="case-icon case-icon-${esc(item.icon)}" aria-hidden="true">${icon[item.icon] || "✦"}</span>`;
 }
 
+function caseCatalogMarkup(item, values) {
+  const catalog = item.catalog || {};
+  return `<div class="case-card-labels"><span class="case-card-category">${esc(text(item.category))}</span><span class="case-tier-chip">${esc(text(catalog.tier) || values.defaultTier)}</span></div>`;
+}
+
 function renderCases() {
   const values = copy();
   const grid = $("#landing-case-grid");
   if (!grid) return;
-  grid.innerHTML = state.cases.map((item) => `<article class="landing-case-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="case-mini-graph" aria-hidden="true"><span></span><i></i><i></i><i></i><b></b></div><span class="case-more">${esc(values.openCase)}</span></a></article>`).join("");
+  grid.innerHTML = state.cases.map((item) => `<article class="landing-case-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}${caseCatalogMarkup(item, { defaultTier: state.locale === "en" ? "Template" : "模板", delivery: state.locale === "en" ? "Delivery" : "交付" })}<h3>${esc(text(item.title))}</h3><p class="case-fit">${esc(text(item.catalog?.fit) || text(item.short))}</p><div class="case-card-meta"><span>${esc(state.locale === "en" ? "Delivery" : "交付")}</span><strong>${esc(text(item.catalog?.delivery))}</strong></div><div class="case-mini-graph" aria-hidden="true"><span></span><i></i><i></i><i></i><b></b></div><span class="case-more">${esc(values.openCase)}</span></a></article>`).join("");
 }
 
 function navigateFromLanding(event) {

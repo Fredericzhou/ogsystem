@@ -54,6 +54,8 @@ test("router delegates navigation once and cancels stale page requests", async (
     await page.locator("#landing-view").waitFor();
     await page.locator("#landing-case-grid .landing-case-card").first().waitFor();
     assert.equal(await page.locator("#landing-case-grid .landing-case-card").count(), 5, "the homepage should feature every built-in collaboration team");
+    assert.equal(await page.locator("#landing-case-grid .case-tier-chip").count(), 5, "every built-in collaboration team should expose its catalog tier");
+    assert.equal(await page.locator("#landing-case-grid .case-fit").count(), 5, "every built-in collaboration team should explain its best fit");
     await page.locator('#landing-view a[href="/projects"]').first().click();
     assert.match(page.url(), /\/projects$/);
     await page.locator("#projects-view .page-heading").waitFor();

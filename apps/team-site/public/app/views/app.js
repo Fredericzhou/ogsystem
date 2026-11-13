@@ -211,11 +211,16 @@ function renderPageFrame(root, template, renderPromise) {
 }
 
 function caseIcon(item) { return `<span class="case-icon case-icon-${esc(item.icon)}" aria-hidden="true">${icon[item.icon] || "✦"}</span>`; }
+function caseCatalogMarkup(item) {
+  const catalog = item.catalog || {};
+  const english = state.locale === "en";
+  return `<div class="case-card-labels"><span class="case-card-category">${esc(text(item.category))}</span><span class="case-tier-chip">${esc(text(catalog.tier) || (english ? "Template" : "模板"))}</span></div>`;
+}
 function renderCases() {
   const library = $("#library-grid");
-  if (library) library.innerHTML = state.cases.map((item) => `<article class="library-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-more">${esc(copy[state.locale].openCase)}</span></a></article>`).join("");
+  if (library) library.innerHTML = state.cases.map((item) => `<article class="library-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}${caseCatalogMarkup(item)}<h3>${esc(text(item.title))}</h3><p class="case-fit">${esc(text(item.catalog?.fit) || text(item.short))}</p><div class="case-card-meta"><span>${state.locale === "en" ? "Delivery" : "交付"}</span><strong>${esc(text(item.catalog?.delivery))}</strong></div><span class="case-more">${esc(copy[state.locale].openCase)}</span></a></article>`).join("");
   const landingGrid = $("#landing-case-grid");
-  if (landingGrid) landingGrid.innerHTML = state.cases.map((item) => `<article class="landing-case-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}<span class="case-card-category">${esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="case-mini-graph" aria-hidden="true"><span></span><i></i><i></i><i></i><b></b></div><span class="case-more">${esc(copy[state.locale].openCase)}</span></a></article>`).join("");
+  if (landingGrid) landingGrid.innerHTML = state.cases.map((item) => `<article class="landing-case-card" data-accent="${esc(item.accent)}"><a class="case-card-link" href="/cases/${esc(item.id)}" data-route="/cases/${esc(item.id)}">${caseIcon(item)}${caseCatalogMarkup(item)}<h3>${esc(text(item.title))}</h3><p class="case-fit">${esc(text(item.catalog?.fit) || text(item.short))}</p><div class="case-card-meta"><span>${state.locale === "en" ? "Delivery" : "交付"}</span><strong>${esc(text(item.catalog?.delivery))}</strong></div><div class="case-mini-graph" aria-hidden="true"><span></span><i></i><i></i><i></i><b></b></div><span class="case-more">${esc(copy[state.locale].openCase)}</span></a></article>`).join("");
   const caseGrid = $("#case-grid");
   if (caseGrid) caseGrid.innerHTML = state.cases.map((item) => `<button class="case-card ${item.id === state.selected ? "selected" : ""}" data-case="${esc(item.id)}" data-accent="${esc(item.accent)}" type="button">${caseIcon(item)}<span class="case-selected">${item.id === state.selected ? esc(copy[state.locale].selected) : esc(text(item.category))}</span><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><span class="case-card-foot">${esc(text(item.duration))}</span></button>`).join("");
   $$('[data-case]').forEach((button) => button.addEventListener("click", () => selectCase(button.dataset.case)));
@@ -319,6 +324,7 @@ function renderDetail(item) {
     <header class="detail-heading" data-accent="${esc(item.accent)}">
       <div>${caseIcon(item)}<span class="eyebrow">${esc(copy[state.locale].detailEyebrow)} · ${esc(text(item.category))}</span></div>
       <h1>${esc(text(item.title))}</h1><p>${esc(text(item.short))}</p>
+      <div class="detail-meta-row"><span class="case-tier-chip">${esc(text(item.catalog?.tier) || (state.locale === "en" ? "Template" : "模板"))}</span><span>${esc(text(item.catalog?.fit))}</span><span>${state.locale === "en" ? "Delivery" : "交付"}：${esc(text(item.catalog?.delivery))}</span><span class="case-api-status">${esc(text(item.catalog?.api) || (state.locale === "en" ? "API runnable" : "可通过 API 运行"))}</span></div>
       <a class="primary-button" href="/teams?team=${esc(item.id)}" data-use-case="${esc(item.id)}">${esc(copy[state.locale].useCase)}</a>
     </header>
     <aside class="detail-scenario"><span>${esc(copy[state.locale].caseScenario)}</span><p>${esc(text(details.scenario))}</p></aside>
@@ -780,6 +786,16 @@ async function renderProjectLibrary() {
   importLabelText();
   const grid = $("#project-library-grid");
   root.querySelector(".project-library-toolbar")?.insertAdjacentHTML("afterend", `<section class="classic-team-section repository-classic-section"><div class="section-header"><div><div class="section-kicker">${esc(state.locale === "en" ? "Repository examples" : "典型团队")}</div><h2>${esc(state.locale === "en" ? "Ready-made collaboration patterns" : "开箱即用的协作方式")}</h2><p class="section-description">${esc(state.locale === "en" ? "Inspect a built-in team graph, then decide whether to try it or copy it into a new version." : "先查看内置团队图谱，再决定试用流程或复制为新版本。")}</p></div></div><div class="classic-team-grid">${state.cases.map((item) => `<article class="classic-team-card" data-accent="${esc(item.accent)}"><a class="classic-team-preview" href="/cases/${encodeURIComponent(item.id)}" data-route="/cases/${encodeURIComponent(item.id)}" aria-label="${esc(text(item.title))}">${caseGraphThumbnail(item)}<span class="classic-team-arrow" aria-hidden="true">↗</span></a><div class="classic-team-card-top"><span class="asset-mark">${esc(icon[item.icon] || "✦")}</span><span class="status-chip">${esc(state.locale === "en" ? "Built-in" : "内置版本")}</span></div><h3>${esc(text(item.title))}</h3><p>${esc(text(item.short))}</p><div class="classic-team-meta"><span>${esc(item.duration?.[state.locale] || item.duration?.["zh-CN"] || "")}</span><span>${item.roles.length} ${state.locale === "en" ? "roles" : "个角色"}</span></div></article>`).join("")}</div></section>`);
+  root.querySelectorAll(".repository-classic-section .classic-team-card").forEach((card, index) => {
+    const item = state.cases[index];
+    if (!item) return;
+    const tier = card.querySelector(".status-chip");
+    if (tier) tier.textContent = text(item.catalog?.tier) || (state.locale === "en" ? "Template" : "模板");
+    const description = card.querySelector("p");
+    if (description && item.catalog?.fit) { description.className = "classic-team-fit"; description.textContent = text(item.catalog.fit); }
+    const meta = card.querySelector(".classic-team-meta");
+    if (meta?.lastElementChild) meta.lastElementChild.textContent = text(item.catalog?.delivery) || `${item.roles.length} ${state.locale === "en" ? "roles" : "个角色"}`;
+  });
   root.querySelectorAll("[data-classic-team]").forEach((button) => button.addEventListener("click", async () => {
     const caseId = button.dataset.classicTeam; button.disabled = true;
     try {
