@@ -42,6 +42,22 @@ test("decision output rejects approval with a hard failed criterion", () => {
   );
 });
 
+test("decision output requires each criterion to report its configured severity", () => {
+  assert.throws(
+    () => validateDecisionOutput({
+      ...output("APPROVED", {
+        criteria: [
+          { id: "cost_limit", status: "pass", evidence: ["artifacts/cost.json"] },
+          { id: "security", status: "pass", severity: "critical", evidence: ["artifacts/security.json"] }
+        ]
+      }),
+      criteria,
+      roleId: "reviewer"
+    }),
+    /DECISION_CRITERIA_SEVERITY_REQUIRED/
+  );
+});
+
 test("decision output requires changes tied to a rework criterion", () => {
   assert.throws(
     () => validateDecisionOutput({

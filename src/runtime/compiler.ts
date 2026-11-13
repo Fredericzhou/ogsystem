@@ -865,11 +865,11 @@ function validateContracts(args: {
       }
     }
     const incomingEvents = [...new Set(args.system.flows
-      .filter((flow) => flow.toRoleId === roleId && flow.fromRoleId !== SYSTEM_END_ROLE_ID && !isRuntimeOnlyErrorEvent(flow.eventType))
+      .filter((flow) => flow.toRoleId === roleId && !flow.fromRoleId.startsWith("__system_") && !isRuntimeOnlyErrorEvent(flow.eventType))
       .map((flow) => flow.eventType))];
     if (incomingEvents.length > 1) {
       const hasEventMapping = Object.values(contextMap).some((selector) =>
-        typeof selector === "string" && /(?:^|\.)event\??$/.test(selector)
+        typeof selector === "string" && (/^direct\.event\??$/.test(selector) || /^source\([A-Za-z0-9._:-]+\)\.event\??$/.test(selector))
       );
       if (!hasEventMapping) {
         args.diagnostics.push(createDiagnostic({

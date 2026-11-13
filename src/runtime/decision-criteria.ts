@@ -58,7 +58,10 @@ export function validateDecisionOutput(args: {
     if (!config) fail("DECISION_CRITERIA_UNKNOWN", `Role "${args.roleId}" returned unknown decision criterion "${id}"`);
     if (seen.has(id)) fail("DECISION_CRITERIA_DUPLICATE", `Role "${args.roleId}" returned decision criterion "${id}" more than once`);
     seen.add(id);
-    if (raw.severity !== undefined && raw.severity !== config.severity) {
+    if (raw.severity === undefined) {
+      fail("DECISION_CRITERIA_SEVERITY_REQUIRED", `Role "${args.roleId}" criterion "${id}" must include severity "${config.severity}"`);
+    }
+    if (raw.severity !== config.severity) {
       fail("DECISION_CRITERIA_SEVERITY_MISMATCH", `Role "${args.roleId}" criterion "${id}" severity does not match its contract`);
     }
     const evidence = raw.evidence === undefined

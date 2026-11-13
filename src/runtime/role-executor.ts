@@ -1158,7 +1158,10 @@ export async function executeRoleNode(args: {
 
     const parsed = parseRoleExecutionOutputWithRepair({
       rawOutput: executionResult.stdout,
-      requireEvent: selectableOutgoing.length > 0 && args.node.routingMode !== "parallel_split"
+      // A single outgoing event is deterministic and can be restored by the
+      // existing single-event repair below. Multiple outgoing events remain
+      // fail-closed and must be selected explicitly by the role.
+      requireEvent: selectableOutgoing.length > 1 && args.node.routingMode !== "parallel_split"
     });
     assertNoReservedErrorEventFromRoleOutput({
       roleId: args.roleId,

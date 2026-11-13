@@ -265,6 +265,47 @@ writer[Role:writer] -->|READY| end[结束]
   assert.equal(executeCount, 0);
 });
 
+test("executeRoleNode restores a missing event when the role has one legal outgoing event", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-single-event-repair-",
+    prompt: "single event repair prompt",
+    systemSource: `flowchart TD
+%% system.id=role.single.event.repair
+%% system.version=1.0.0
+%% law.global=law.console.base
+
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|READY| end[结束]
+`,
+    roles: [{ roleId: "writer", allowedEvents: ["READY"] }]
+  });
+  const state = createInitialState(fixture.plan, "single event repair prompt");
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute() {
+        return { exitCode: 0, stdout: JSON.stringify({ content: "ready without an explicit event" }), stderr: "", args: [] };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "ok", result.error);
+  assert.equal(result.selectedEvent, "READY");
+  assert.equal(result.audit.repair?.strategy, "single_allowed_event");
+});
+
 test("executeRoleNode turns a failed Role Contract postcondition into IR_CONTRACT_INVALID", async () => {
   const fixture = await prepareRoleExecutorFixture({
     tempPrefix: "ogsystem-role-contract-postcondition-",
@@ -371,7 +412,7 @@ reviewer[Role:reviewer] -->|APPROVED| end[结束]
             content: "未通过",
             data: {
               decisionReason: "安全条件未通过",
-              criteria: [{ id: "security", status: "fail", evidence: [] }]
+              criteria: [{ id: "security", status: "fail", severity: "required", evidence: [] }]
             }
           }),
           stderr: "",
