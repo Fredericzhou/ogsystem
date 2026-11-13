@@ -21,6 +21,8 @@
 
 ## 2. 当前实现与差距
 
+当前版本已完成本文第 8 节所需的核心 Runtime、发布门禁和 Studio 配置链路。下面的“已有能力”描述已落地行为；剩余限制是边界约束，不是未实现的业务引擎。
+
 ### 2.1 已有能力
 
 当前版本固定使用以下五个业务结果事件：
@@ -41,16 +43,13 @@ Runtime 已支持：
    `source(<roleId>).event` 读取入站事件。
 4. `context.map` 可以将事件、内容和结构化数据投影给目标 Role。
 5. `role_input`、`output.schema.json`、`postconditions`、Join、quorum、循环预算和人工审核均已有执行路径。
+6. 审核 Role 的运行输出会校验 `decisionReason`、完整条件集合、证据引用和 `requiredChanges`；硬性否决优先于返工，办不了必须给出原因和证据。
+7. Readiness 会检查输出事件枚举、审核数据字段的 `required` 声明、Profile/Tool/Law 和工具命令；编译器会阻止多事件入口缺少事件投影。
+8. Studio 支持确认后生成 `context.map` 建议和 `prompt.md` 的 `ogs:event-rules` 规则块。
 
-### 2.2 现有缺口
+### 2.2 当前边界
 
-Runtime 当前主要校验“事件是否合法、能否路由”，不会替 Role 判断“证据是否足够”。因此：
-
-- 没有统一的验收条件字段和证据引用方式；
-- 任何拥有 `APPROVED` 出边的 Role 都可能只凭 Prompt 输出同意；
-- 没有强制要求 `REJECTED` 说明失败条件，也没有强制要求 `NEEDS_REWORK` 列出修改项；
-- 缺少输入时容易被误报成不同意或再改改，而不是办不了；
-- Studio 没有审核标准矩阵，也不会根据多条入边自动生成事件处理配置。
+判定仍然只针对 Role 自己声明的条件，不会替业务人员凭空推断标准。`flow.label` 是可读的流转触发条件说明，不会被当作可执行规则；可执行路由仍使用现有条件 AST。Studio 生成的事件规则块是可编辑 Prompt 辅助内容，保存前必须确认，最终约束仍由 Schema、Compiler 和 Runtime 执行。
 
 这里必须区分两个层次：**配置定义质量标准，运行输出报告本次检查结果**。配置不是运行结论，运行输出也不能临时发明一套未配置的标准。
 
@@ -113,7 +112,7 @@ Runtime 当前主要校验“事件是否合法、能否路由”，不会替 Ro
 - `APPROVED` 不得包含 `critical` 或 `required` 的 `fail/unknown` 项；
 - `REJECTED` 至少包含一项 `fail`，并提供 `decisionReason`；
 - `NEEDS_REWORK` 至少包含一项已配置且 `failureAction` 为 `rework` 的失败条件，并提供引用该条件的非空 `requiredChanges`；
-- `BLOCKED` 至少说明缺失条件或外部依赖，不能把“暂时没有证据”写成 `REJECTED`；
+- `BLOCKED` 至少包含一个 `unknown` 条件，并为每个未知条件提供具体 `reason` 和非空 `evidence`，不能把“暂时没有证据”写成 `REJECTED`；
 - `READY` 只需满足该 Role 自己声明的交接 Schema，不自动获得审核含义。
 
 这些规则是发布和运行前校验的最小增量。缺少审核 Role 所需 Schema、质量条件或出边时，新版本直接给出诊断并阻断发布，不静默猜测事件。
@@ -249,7 +248,7 @@ flowchart LR
 2. 业务人员填写的审核标准及证据提示；
 3. 缺少证据、出边或输出字段时的诊断。
 
-每次修改都先留在当前设计草稿中，用户点击保存后才写入 TeamVersion。业务模式不要求用户编辑 JSON、Semantic IR 或 Prompt 模板；出边建议和 Prompt 规则仍由专业人员在对应面板确认。
+每次修改都先留在当前设计草稿中，用户点击保存后才写入 TeamVersion。业务模式不要求用户编辑 JSON、Semantic IR 或 Prompt 模板；出边建议和 Prompt 规则由页面提供确认按钮，确认后才写入当前草稿。
 
 ### 6.2 专业模式
 
@@ -271,16 +270,16 @@ flowchart LR
 - `all_of` Join：为每个已声明来源生成 `source(<roleId>).event` 映射；
 - `quorum_of` Join：只提示先声明 `join.sources`，不自动扩大读取范围。
 
-Prompt 事件规则和输出事件仍由专业人员手工确认；Studio 不静默改写 `prompt.md`。目标 Role 当前允许的输出事件继续显示在 Role Inspector 中。
+同一场景还提供“生成入站事件规则”按钮。它在 `prompt.md` 中维护带 `<!-- ogs:event-rules:start/end -->` 标记的可编辑规则块；已有规则块会在确认后替换，其他 Prompt 内容保持不变。目标 Role 当前允许的输出事件继续显示在 Role Inspector 中。
 
 ## 7. 发布门禁与诊断
 
 新版本发布时，对拥有审核事件出边的 Role 执行以下检查：
 
 1. Role 的 `outputs.events` 与图谱出边集合一致；
-2. `output.schema.json` 的 `event` 枚举是实际出边事件的子集；
-3. `APPROVED`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED` 的必需数据字段已声明；
-4. `context.map` selector 合法且来源可用；
+2. `output.schema.json` 的 `event` 枚举只能包含已声明的出边事件；
+3. 审核 Role 的 `data.criteria`、`data.decisionReason` 和需要时的 `data.requiredChanges` 存在且在 `data.required` 中声明；
+4. `context.map` selector 合法且来源可用；多事件入口缺少事件投影时报 `EVENT_INPUT_MAPPING_MISSING`；
 5. 同事件多出边存在可证明的条件优先级，无法消歧时报 `IR_ROUTE_AMBIGUOUS`；
 6. 审核 Role 的每个结果都有合法目标或结束路径。
 
@@ -288,9 +287,10 @@ Prompt 事件规则和输出事件仍由专业人员手工确认；Studio 不静
 
 ```text
 DECISION_APPROVED_EVIDENCE_MISSING
-REJECTED_REASON_REQUIRED
-NEEDS_REWORK_CHANGES_REQUIRED
-BLOCKED_MISSING_INPUT
+DECISION_REJECTED_HARD_FAILURE_REQUIRED
+DECISION_REWORK_CHANGES_REQUIRED
+DECISION_BLOCKED_REASON_REQUIRED
+DECISION_BLOCKED_EVIDENCE_REQUIRED
 EVENT_INPUT_MAPPING_MISSING
 ```
 
