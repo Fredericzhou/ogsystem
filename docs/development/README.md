@@ -18,6 +18,7 @@ Current behavior is defined by source code, tests, active manuals, and [Decision
 - [Model availability probe API](model-availability-probe-api.md): Team Site discovery and single-model probe contract for frontend integration.
 - [Framework comparison](framework-comparison.md): capability-boundary comparison with LangGraph, DeerFlow, and DeepSeek Harness.
 - [Business event protocol](business-event-protocol-v1.md): active fixed-event contract and shared runtime registry.
+- [Minimal decision criteria and event branching](minimal-decision-criteria-and-event-branching.md): acceptance criteria, structured decision evidence, and low-code multi-entry event configuration.
 - [Role reasoning effort adaptation](reasoning-effort-adaptation-plan.md): long-term reasoning/thinking capability contract, adapter mapping, and acceptance method.
 - [Compiler semantics v1](compiler-semantics-v1.md): Mermaid/Semantic IR compilation rules, diagnostics, and lowering invariants.
 - [Runtime and NL2MMD file sets](file-sets.md): ownership boundaries, direct import exceptions, shared contracts, build output, and test ownership.
