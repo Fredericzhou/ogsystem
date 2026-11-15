@@ -3,11 +3,17 @@
 This document defines how business Roles bind to Harness or API/Cmd templates and become
 resolved, auditable executions.
 
+> **Status: proposed target architecture.** This document describes the breaking OGS Contract
+> Set v2 target; it does not replace the active Constitution v1 or the current Semantic IR v1
+> contract until a separate governance decision approves the cutover. Code and current release
+> documentation remain authoritative for the pre-cutover implementation.
+
 ## Contract Set Version
 
-This document describes **OGS Contract Set v2**. The cutover is breaking and does not retain
-runtime compatibility with Contract Set v1. Every persisted Role Contract, Semantic IR, Execution
-Binding, Review Request, Evidence Event, and Run snapshot must identify:
+This proposal describes **OGS Contract Set v2**. The eventual cutover is breaking and does not
+retain runtime compatibility with Contract Set v1. In the target model, every persisted Role
+Contract, Semantic IR, Execution Binding, Review Request, Evidence Event, and Run snapshot must
+identify:
 
 ```json
 { "ogsContractVersion": 2 }
@@ -29,7 +35,9 @@ Version ownership is split explicitly:
 | `RuntimeEventEnvelope.version` | Runtime evidence event format version |
 | `adapterVersion` | Backend Adapter implementation version |
 
-`ogsContractVersion` is an envelope field. It does not replace object-local version fields.
+`ogsContractVersion` is an envelope field. It does not replace object-local version fields. Until
+the v2 cutover is approved, the active Constitution v1 and Semantic IR v1 remain the current
+contract and this document is design guidance only.
 
 ## 1. Goal
 
@@ -325,9 +333,27 @@ type FlowContractHandoffView = {
 };
 ```
 
-`FlowContractHandoffView` is derived from the existing Flow Contract and the actual Flow edge.
-It does not create `handoff-contracts.json`, a second compiler, or a second validation source.
-`contextMap` and `artifactMap` extend the existing Flow Contract representation.
+`FlowContractHandoffView` is an in-memory, read-only join of the existing sources. It does not
+create `handoff-contracts.json`, a second compiler, or a second validation source. The unique
+sources are:
+
+```text
+contextMap
+  Existing graph/role `context.map`; it is the source of field projection mappings.
+
+Flow Contract
+  Existing `handoff.contracts.json` / Flow Contract compiler; it validates the payload schema
+  and relation metadata. `FlowContractDefinition` is not extended with `contextMap` or
+  `artifactMap` by this proposal.
+
+artifactMap
+  A read-only projection of declared RoleResult artifact references and the existing Artifact
+  Resolver authorization. It is not a second persisted artifact contract.
+```
+
+The view combines these sources only for execution planning and diagnostics. Any future change
+to their storage requires a new contract decision and compiler update; implementers must not
+persist a second handoff mapping file.
 
 The channels have fixed meanings:
 
@@ -1671,12 +1697,22 @@ type HumanReviewRequest = {
   trigger: "explicit" | "exception";
   reasonCode: string;
   runId: string;
-  roleId: string;
-  executionId: string;
-  branchId: string;
-  lineageId: string;
-  round: number;
+  roleId?: string;
+  executionId?: string;
+  branchId?: string;
+  lineageId?: string;
+  round?: number;
   stateVersion: number;
+  requestedAt: string;
+  expiresAt?: string;
+  timeoutPolicy?: "expire" | "pause" | "terminate";
+  resultRef?: string;
+  evidenceRefs: string[];
+  exceptionContext?: {
+    code: string;
+    scope: "run" | "branch" | "role" | "join" | "loop" | "artifact";
+    details?: Record<string, unknown>;
+  };
   availableActions: HumanReviewAction[];
   status: "pending" | "paused" | "resolved" | "expired" | "cancelled";
   decision?: HumanReviewDecision;
@@ -1723,6 +1759,24 @@ flowchart LR
 Human Review decisions are applied only by Runtime reconciliation. They never approve or reject
 individual Backend tool calls, and they do not create new Graph nodes.
 
+Request lifecycle is deterministic:
+
+```text
+pending -> resolved       a valid decision is applied
+pending -> paused         the pause action is applied
+paused  -> pending        Runtime resume reopens the request
+pending/paused -> expired the scheduler reaches expiresAt with timeoutPolicy `expire`
+pending/paused -> paused  the scheduler reaches expiresAt with timeoutPolicy `pause`
+pending/paused -> cancelled the Run or review scope is cancelled, including timeout termination
+```
+
+`resolved`, `expired`, and `cancelled` are terminal states. A request without a Role execution
+uses `exceptionContext` and `evidenceRefs` (for example a Join timeout); `roleId`, `executionId`,
+and the lineage fields are populated only when that runtime scope exists. `expiresAt` is optional
+only when the compiled review policy has no timeout; when present, `timeoutPolicy` is required.
+The scheduler records the timeout transition and its evidence before Runtime applies any resulting
+pause or termination.
+
 ## 14. Run Freeze and Recovery
 
 At Run start, write `.ogs/runs/<run-id>/resolved-config.json` containing:
@@ -1748,30 +1802,59 @@ and the session index remain the Runtime recovery authority.
 
 Existing Role-level audit remains. Add normalized native tool and resource events:
 
+All normalized evidence events use one outer envelope. `ogsContractVersion` identifies the OGS
+contract set, while `version` identifies the Runtime Event Envelope schema. Event-specific fields
+belong under `payload`; they are not a second versioned event model.
+
+```ts
+type RuntimeEventEnvelope<TPayload> = {
+  ogsContractVersion: 2;
+  version: 1;
+  eventId: string;
+  eventType: string;
+  runId: string;
+  recordedAt: string;
+  payload: TPayload;
+};
+```
+
 ```json
 {
-  "event": "tool_invocation",
+  "ogsContractVersion": 2,
+  "version": 1,
+  "eventId": "evt-1",
+  "eventType": "tool_invocation",
   "runId": "run-1",
-  "roleId": "writer",
-  "executionId": "exec-1",
-  "backend": "codex",
-  "model": "gpt-6-luna",
-  "tool": "exec_command",
-  "decision": "allow",
-  "status": "completed",
-  "durationMs": 842,
-  "policyDigest": "sha256:..."
+  "recordedAt": "2026-11-15T10:00:00.000Z",
+  "payload": {
+    "roleId": "writer",
+    "executionId": "exec-1",
+    "backend": "codex",
+    "model": "gpt-6-luna",
+    "tool": "exec_command",
+    "decision": "allow",
+    "status": "completed",
+    "durationMs": 842,
+    "policyDigest": "sha256:..."
+  }
 }
 ```
 
 ```json
 {
-  "event": "permission_request",
-  "requestId": "perm-1",
-  "backend": "acp",
-  "resource": "filesystem",
-  "decision": "deny",
-  "reason": "outside execution staging"
+  "ogsContractVersion": 2,
+  "version": 1,
+  "eventId": "evt-2",
+  "eventType": "permission_request",
+  "runId": "run-1",
+  "recordedAt": "2026-11-15T10:00:01.000Z",
+  "payload": {
+    "requestId": "perm-1",
+    "backend": "acp",
+    "resource": "filesystem",
+    "decision": "deny",
+    "reason": "outside execution staging"
+  }
 }
 ```
 

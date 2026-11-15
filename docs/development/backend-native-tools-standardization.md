@@ -128,6 +128,10 @@ web.search            # 原生联网检索与时效性增强
 
 **目标机制：底座决定可选范围。** 在配置和校验时，根据角色绑定的底座物理能力进行投影与门禁拦截。下表是待 adapter 验证的设计矩阵，不是当前 Runtime 的承诺；当前实现只保证上文列出的三项 workspace capability policy。
 
+Claude Code、Cursor Agent 等列仅用于外部能力对照，当前没有 OGS Adapter、Capability Preview
+或 verified catalog 条目。它们的矩阵值不能直接进入 Studio 选项；只有完成 OGS Adapter、探针和
+资源边界验证的 Backend 才能进入可选列表。
+
 | 标准工具 ID | OpenCode | Claude Code | Codex (App Server) | Qwen Code | Cursor Agent | Pi (pi.dev) | 纯离线 Ollama |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `workspace.read` | ✅ `{ read: true }` | ✅ 放行 Read | ✅ `read-only` 沙箱 | ✅ 原生 read | ✅ 放行 read_file | ✅ 原生 read | ✅ 原生 read |
@@ -195,7 +199,7 @@ Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以
 ```
 
 ### 交互规则（后续 Studio 能力）
-1. **联动投影**：切换 `modelRef` 时，工具复选框即时刷新状态。当切换到纯离线模型（如 Ollama）或默认 Pi 时，`web.search` 自动置灰并展示禁用原因；当切换到 Codex、Claude、OpenCode、Qwen 时，全部 6 项高亮可用；
+1. **联动投影**：切换 `modelRef` 时，工具复选框即时刷新状态。当切换到纯离线模型（如 Ollama）或默认 Pi 时，`web.search` 自动置灰并展示禁用原因；当切换到已完成 OGS Adapter 验证的 Codex、OpenCode 或 Qwen Backend 时，才按真实 Capability Preview 高亮可用工具；未接入的 Claude Code、Cursor Agent 不进入可选列表；
 2. **策略诊断**：显示 `EffectiveExecutionPolicy` 和每项 allow/deny 原因；
 3. **专业模式折叠**：专业人员可展开查看 `allowedTools`、EnvironmentIntent 和 `local_shell` Profile 参数。
 
