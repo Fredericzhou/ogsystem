@@ -957,9 +957,15 @@ Import Team
   -> Read Harness Templates
   -> Resolve Backend and Model against local Backend Registry
   -> Generate a new Capability Preview
-  -> Recalculate Effective Policy
-  -> Run Readiness
+  -> Calculate Binding Preview / Readiness Projection
+  -> Run binding readiness
 ```
+
+Import does not create a Run staging root, bind Run-specific Law/quota state, or produce an
+`EffectiveExecutionPolicy`. It only reports whether the Harness Template can become executable.
+The actual `EffectiveExecutionPolicy` and `effectiveTools` are calculated when a Run is created,
+after Run context, staging, Law, and quota are available, then frozen in the Resolved Execution
+Plan.
 
 When a target environment does not have a referenced Backend or Model, the Team can still be imported. The Harness Template is marked unresolved and the Team cannot be released or run until the binding is repaired.
 
@@ -1001,6 +1007,10 @@ Capability Preview:
   Refreshable discovery/readiness data shown while editing a Harness Template or
   importing a Team. It may change when Backend discovery is refreshed.
 
+Binding Readiness Projection:
+  Import/edit-time diagnostic derived from the Harness Template and Capability Preview. It does
+  not contain Run staging, Run-specific Law/quota, or an EffectiveExecutionPolicy.
+
 Run Capability Snapshot:
   The formal capability result created at Run start. It is stored in the Run
   snapshot and reused unchanged during recovery.
@@ -1023,14 +1033,20 @@ Human Review decision
 Human Review uses the canonical action enum. The page filters actions by trigger:
 
 ```text
-approve / continue / retry -> continue the applicable control path
-rework                    -> return to the configured Role or target
-reject                    -> follow the declared rejection path
-pause                     -> keep the Run waiting
-terminate                 -> end the configured scope
+explicit result:
+  approve / rework / reject -> resolve the business result and declared handoff
+
+Runtime exception:
+  continue / retry          -> apply the Runtime control authorization
+  pause                     -> keep the Run waiting
+  terminate                 -> end the configured Runtime scope
 ```
 
-These actions are business decisions. They do not approve or reject individual Backend tool calls.
+Explicit result review actions are business decisions about the Role's durable result and
+declared handoff. Runtime exception review actions are Execution control decisions about
+continuation, retry, budget, pause, or termination. Both use the same request, action enum,
+decision payload, and Evidence schema. Neither class approves or rejects an individual Backend
+tool call.
 
 ### 4.5 Page Save and Readiness Rules
 
@@ -1096,7 +1112,7 @@ Center: Flow canvas
 Right: selected Role or Flow business inspector
 ```
 
-The Role inspector contains only:
+The Business Role Inspector contains only:
 
 ```text
 Purpose
@@ -1116,9 +1132,9 @@ Join / Loop settings
 Review before handoff
 ```
 
-The Role inspector contains a compact `Harness Template` selector. It saves only the
-template reference, not Backend tools or permission fields. A `View template` action
-opens the shared template details without duplicating them in the Role configuration.
+The Technical Binding panel contains the compact `Harness Template` selector. It saves only
+the template reference, not Backend tools or permission fields. A `View template` action
+opens the shared template details without duplicating them in the business Role Contract.
 
 #### Environments workspace
 
@@ -1482,10 +1498,11 @@ interface BackendAdapter {
 
 The Policy Resolver uses `getResourceCapabilities()` together with the Harness
 `environment` intent, staging, Law, and quota to calculate the Effective Environment
-Policy. `validateToolResources()` then checks the selected tool at invocation time.
-This avoids adding a public resource-dependency matrix to every tool descriptor while
-still making each native request fail closed when its resource boundary cannot be
-enforced.
+Policy. During Run readiness it calls `validateToolResources()` for every `selectedTools`
+entry; only tools that pass this preflight enter `effectiveTools`. At invocation time the
+Adapter repeats the same check defensively and must never add a tool to the set. This avoids
+adding a public resource-dependency matrix to every tool descriptor while ensuring a tool is
+not first rejected on its initial call.
 
 ## 9. Capability, Technical Policy, and Permission
 
@@ -1540,14 +1557,15 @@ sequenceDiagram
 
     F->>R: Activate Role
     R->>P: Resolve binding, snapshot, Law, staging, and quota
-    P-->>R: Effective tools and environment policy
+    P->>P: Preflight every selected tool resource boundary
+    P-->>R: Freeze effectiveTools and environment policy
     R->>A: Start Backend session in execution staging
     A->>B: Create native session
 
     loop Role work
         B->>A: Native tool/resource request
         A->>P: Check resource boundary
-        A->>A: validateToolResources(toolId, effective policy)
+        A->>A: Defensive validateToolResources(toolId, effective policy)
         alt Allowed
             P-->>A: allow
             A-->>B: Backend-native allow
@@ -1775,6 +1793,19 @@ loop_budget_exceeded:
 
 retry_exhausted or artifact_verification_failed:
   retry / rework / reject / pause / terminate
+```
+
+The trigger determines the decision meaning:
+
+```text
+explicit result review
+  Business result and handoff decision.
+
+Runtime exception review
+  Execution control decision; fields such as `additionalBudget`, `attempt`, or `scope`
+  authorize Runtime reconciliation rather than changing the Backend tool set. `rework` or
+  `reject` may also be offered when the exception has a declared business route; those actions
+  select that route after the Runtime exception is reconciled.
 ```
 
 `resume` is a Runtime control command for a paused Run, not a Human Review action.
@@ -2118,3 +2149,9 @@ No dual write is kept.
 20. Review decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion`.
 21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
 22. Legacy fields produce schema errors after the one-time rewrite.
+23. Run readiness preflights every selected tool before adding it to `effectiveTools`; invocation
+    checks are defensive and cannot expand the frozen set.
+24. Business Role Inspector edits only business fields; Harness Template selection is in the
+    Technical Binding panel.
+25. Import produces Capability Preview and Binding Readiness Projection only; Run creation
+    produces and freezes EffectiveExecutionPolicy.
