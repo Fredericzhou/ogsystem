@@ -1,5 +1,9 @@
 # Backend 内置工具标准化与 Studio 极简配置方案
 
+> 本文按 **OGS Contract Set v2** 解读。旧版 `constraints.allowedTools`、三档
+> `Supervised / Auto-accept / Full access` 和技术 Permission Review 均已废弃，
+> 不属于 v2 运行时或 Studio 配置模型。本文保留 Backend 能力调查和 Adapter 纯映射参考。
+
 ## 核心设计哲学
 
 > **“底座决定工具集的物理上限；工具层面坚决避免自建，保持架构零负担、纯映射、极度轻量。”**
@@ -12,7 +16,7 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 本方案深入吸收了业界前沿开源 Agent 平台 **T3 Code (`pingdotgg/t3code`)** 与 **Orca (`stablyai/orca`)** 的成功经验：
 1. **参考 T3 Code 的“BYOS 控制面”哲学**：
    - T3 Code 坚持作为 Agent Harness Control Surface，自身不写任何文件编辑算法或爬虫代码，完全信任底层 Agent 原生工具能力；
-   - 通过中立协议（ACP）切分职责：底座提供原生工具与模型推理，上层仅负责项目工作区快照、DAG 任务委派与 3 档安全确认（Supervised / Auto-accept / Full access）。
+   - 通过中立协议（ACP）切分职责：底座提供原生工具与模型推理，上层负责项目工作区快照、任务委派和 OGS 的 allow/deny 策略映射。
 2. **参考 Orca 的“Worktree 物理沙箱”哲学**：
    - Orca 作为底座无关包装器（Agent-Agnostic Wrapper），深刻践行“工具层越薄，物理隔离层越硬”的原则；
    - 在启用 Git 协作模式时，可将安全交给文件系统级物理隔离（每个并行任务独占 Git Worktree）；普通 Role 当前仍使用 per-execution staging。协调层只监听 `worker_done` 并做最终 Diff 审查与交付封签，绝不介入底层的编辑细节。
@@ -22,7 +26,7 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 2. **OGS 零自建工具执行器**：OGS 不写文件编辑算法，不写网络抓取爬虫，不自建搜索引擎，坚决避免重复造轮子；
 3. **纯映射与策略开关（Pure Mapping & Switch）**：OGS 只负责“意图声明（`toolId`） $\to$ 底座原生参数/网络沙箱开关透传”；
 4. **刚性安全由现有基础设施兜底**：执行过程由 Runtime 现成的 Staging Clean Room 目录隔离与配额门禁兜底，执行后由 `artifact-verifier.ts` 做防逃逸检查与 SHA-256 存证封签；
-5. **Studio 极简联动内嵌（目标）**：不建独立的“工具库”或大盘页面，在角色检查器内提供“底座联动投影的 6 个复选框 + 3 档权限单选 + 行内就绪诊断”，10 秒内完成配置。当前 Studio 仅编辑已实现的 `allowedTools` 和全局 law 约束。
+5. **Studio 极简联动内嵌（目标）**：不建独立的“工具库”或大盘页面，在角色检查器内提供“底座联动投影的工具选项 + 环境意图摘要 + 行内就绪诊断”，10 秒内完成配置。Studio 只编辑 Harness Template 的 `allowedTools` 和 EnvironmentIntent。
 
 本文同时描述当前实现和目标方案。为了避免把设计草图误当成现有能力，使用以下标记：
 
@@ -31,6 +35,17 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 - **后续**：需要新增 adapter、权限协议或产品界面的能力，不能作为当前运行前提。
 
 当前后端注册表实际包含 `opencode`、`codex`、`ollama`、`pi`、`qwen` 和 `kimi`。Claude Code、Cursor Agent 等可作为外部对照，不代表 OGS 已经提供对应 adapter。
+
+本文的两个语义区必须分开阅读：
+
+```text
+Current pre-cutover implementation
+  仅记录现有源码、旧字段和迁移对象，不构成 Contract Set v2 输入。
+
+Normative Contract Set v2
+  Harness.allowedTools、EnvironmentIntent、EffectiveExecutionPolicy 和 allow/deny
+  是唯一目标模型。v2 不读取旧字段，也不保留旧权限分支。
+```
 
 ---
 
@@ -78,15 +93,20 @@ MVP 的 backend contract 位于 `src/runtime/backend-capabilities.ts`：它校�
 
 当前 `BackendDescriptor.capabilities` 表示后端会话层的通用能力（文本输入、tool call、结构化输出、会话复用和中止），不是本文标准工具 ID 的完整能力矩阵。后端 adapter 会转发工作目录及 `workspaceCapabilityPolicy`，但 OGS 不会替代各 CLI 内部的文件编辑、搜索或网络实现。
 
-`executionMode` 当前由 Project/Studio Runtime 使用 `dry-run`、`sandbox` 和 `real` 等运行模式。`Supervised`、`Auto-accept`、`Full access` 是本文的产品级权限模型草案；在没有对应 schema、审批事件和 adapter 语义之前，不应直接把它们写入现有 `executionMode` 字段。
+`executionMode` 由 Project/Studio Runtime 表示 `dry-run`、`sandbox` 和 `real` 等运行方式，
+不表示工具权限。Backend 原生 approval/sandbox 参数只存在于 Adapter。OGS v2 的技术 Permission
+只有 `allow` 和 `deny`，不创建工具调用级 Human Review。
 
-因此，现阶段的 Studio 只应编辑已经存在的 `constraints.allowedTools` 和全局 law 约束，并显示 backend discovery 的可用状态。按 backend 自动置灰六个标准工具、三档审批和 `web.search` 的动态投影属于后续功能。
+因此，v2 Studio 编辑 Harness Template 的 `allowedTools` 和 EnvironmentIntent，并显示
+Backend Capability Preview。工具选项只能来自当前 Backend 的已验证能力；不能创建工具，也不能配置三档审批模式。
 
 ---
 
 ## MVP 标准工具契约与底座反向投影
 
-以下契约是面向后续 adapter 的稳定意图命名，不是要求 Runtime 立即实现六个独立工具执行器。MVP 先保留现有 `allowedTools` 引用和 staging 策略，只为已经有明确运行语义的能力补充声明与校验；新增能力必须先在对应 adapter 和测试中落地，再进入 Studio 投影。
+以下契约是面向 v2 Adapter 的稳定意图命名，不要求 Runtime 在 OGS 内实现独立工具执行器。
+Pre-cutover 源码中的旧 `constraints.allowedTools` 只作为迁移对象记录；v2 使用 Harness Template
+的 `allowedTools` 和 staging 策略。新增能力必须先在对应 Adapter 和测试中落地，再进入 Studio 投影。
 
 ### 1. 标准化工具列表
 
@@ -124,15 +144,18 @@ web.search            # 原生联网检索与时效性增强
   Please switch backend to a search-capable model (e.g. codex, qwen, claude, opencode) or remove the tool.
   ```
 
-### 3. 简明的三档安全模式（后续产品能力）
+### 3. v2 Permission 与 Human Review 边界
 
-不为每个工具配置繁琐的审批条件，在角色级别抽象为直观的 3 档安全模式：
+OGS v2 不提供工具级三档安全模式。技术执行使用：
 
-| 模式（独立的 permission profile，尚未接入现有 `executionMode`） | 行为语义与安全机制 | 推荐场景 |
-| :--- | :--- | :--- |
-| **Supervised (完全监督)** | 任何产生副作用的操作（写文件、打补丁、命令执行）均挂起触发审批卡片，必须人工 Review 确认后方可执行。 | 生产发布、敏感代码修改、关键文档定稿。 |
-| **Auto-accept (自动接受安全编辑)** | **默认推荐模式**。在独立 Staging 目录与配额范围内，自动放行工作区读写、打补丁及联网搜索；遇到 `workspace.run`（Shell 执行/出站 HTTP）时强行挂起待审批。 | 日常开发、文档编写、代码分析。兼顾吞吐与安全。 |
-| **Full access (全自动信任)** | 在 Staging 沙箱与配额硬性保护下，自动放行所有已授权工具（含受控命令执行与出站 HTTP），追求最高自动化协作吞吐。 | 自动化沙箱跑测、批量格式转换、自闭环修复重试。 |
+```text
+Capability + allowedTools + EnvironmentIntent + Law / quota / staging
+  -> EffectiveExecutionPolicy
+  -> PermissionDecision: allow | deny
+```
+
+Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以在 Role 结果交接前
+触发，也可以由配置的 Runtime 异常触发；它不会暂停等待单个 Backend 工具的批准。
 
 ### 4. CLI 工具保持独立
 
@@ -152,10 +175,9 @@ web.search            # 原生联网检索与时效性增强
 ├────────────────────────────────────────────────────────┤
 │ 绑定底座模型: [ codex / gpt-6-luna                   ▼] │
 ├────────────────────────────────────────────────────────┤
-│ [安全模式]                                             │
-│ ( ) Supervised (完全监督，写操作与命令均需审批)         │
-│ (•) Auto-accept (自动接受文件编辑与搜索，命令需审批 - 推荐)│
-│ ( ) Full access (全自动信任，仅限受限沙箱内)            │
+│ [环境意图]                                             │
+│ 文件读写、进程、网络由 Harness Template 配置           │
+│ Runtime 根据 Capability、Law、staging 计算最终策略      │
 │                                                        │
 │ [工作区操作 (Backend 原生执行)]                        │
 │ [x] workspace.list       文件列表枚举 (只读)            │
@@ -174,8 +196,8 @@ web.search            # 原生联网检索与时效性增强
 
 ### 交互规则（后续 Studio 能力）
 1. **联动投影**：切换 `modelRef` 时，工具复选框即时刷新状态。当切换到纯离线模型（如 Ollama）或默认 Pi 时，`web.search` 自动置灰并展示禁用原因；当切换到 Codex、Claude、OpenCode、Qwen 时，全部 6 项高亮可用；
-2. **三选一单选框**：快捷选择 `Supervised` / `Auto-accept` / `Full access`；
-3. **专业模式折叠**：专业人员可展开查看底层 JSON 结构（`allowedTools` 数组与 `executionMode`）以及 `local_shell` 绑定的 CLI Profile 参数。
+2. **策略诊断**：显示 `EffectiveExecutionPolicy` 和每项 allow/deny 原因；
+3. **专业模式折叠**：专业人员可展开查看 `allowedTools`、EnvironmentIntent 和 `local_shell` Profile 参数。
 
 ---
 
@@ -189,9 +211,10 @@ web.search            # 原生联网检索与时效性增强
 2. **MVP 能力契约**：把现有 `workspace.write`、`workspace.patch_text`、`workspace.run` 的 capability policy、backend 工作目录传递和失败审计固化为测试；读取继续使用当前 staging 默认能力。此阶段不新增 `web.search` 或独立 `workspace.list` 执行器。
 3. **Git 协作接入**：`src/runtime/git-collaboration.ts` 已提供受控 native Git CLI wrapper、worktree 生命周期、固定基线、commit provenance、merge/conflict 和合并工作树验证 API；Graph Runner 在显式传入 coordinator 时已接入并行代码 Role、Join 后 Merge Stage、commit/merge 事件和 verify 门禁，并有真实临时仓库端到端测试。项目级自动构造、CAS promotion adapter 仍由调用方接线。Git 合并失败必须保留冲突证据并停止 promotion，不向业务目录写入编号冲突文件。
 4. **后端投影（后续）**：为实际注册的 backend 逐个补充可验证的 native capability descriptor 和 readiness probe。每次只接入一个能力，先实现 workspace 工具，再评估 `web.search`；不得仅凭 CLI 宣传文档把能力标为可用。
-5. **Studio 投影与审批模式（后续）**：在 runtime schema、adapter 权限参数和审批事件都具备后，再增加按 `modelRef` 置灰的工具矩阵及 `Supervised` / `Auto-accept` / `Full access` 产品模型。不要复用当前 `dry-run` / `sandbox` / `real` 字段表达两套不同语义。
+5. **Studio 投影**：按 Harness Template 的 Backend reference 动态投影 Capability Preview 和 `allowedTools`，并显示 EffectiveExecutionPolicy。不得使用 `dry-run` / `sandbox` / `real` 表达工具权限。
 
-每一步都应能独立回滚。未完成后续步骤时，现有 Role 仍沿用 `allowedTools`、staging 和原有 execution mode，不影响正常运行。
+切换前的 v1 运行保持现状，作为迁移基线；切换到 v2 后，未完成能力验证的绑定进入 readiness error，
+不回退到 v1 字段或旧权限模式。
 
 ---
 
@@ -208,5 +231,5 @@ web.search            # 原生联网检索与时效性增强
 ### 后续能力验收
 
 - 只有在 backend descriptor、adapter 映射、readiness probe 和测试同时存在时，才能把某个 native tool 标为可用；未实现的 backend 或 `web.search` 必须显示为不可用/未验证。
-- 三档审批模式必须有独立 schema、审批事件、超时/恢复语义和 adapter 行为后再进入 Studio；不得用文案或单一布尔值模拟完整权限模型。
+- 技术 Permission 只能产生 `allow` 或 `deny`；Human Review 必须使用统一 Review Request、动作枚举、超时和恢复语义。
 - 工具审计至少记录声明的 `toolId`、实际 adapter/backend、状态和耗时；凭据和搜索响应按现有 redaction 策略处理。

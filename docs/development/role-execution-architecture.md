@@ -3,6 +3,34 @@
 This document defines how business Roles bind to Harness or API/Cmd templates and become
 resolved, auditable executions.
 
+## Contract Set Version
+
+This document describes **OGS Contract Set v2**. The cutover is breaking and does not retain
+runtime compatibility with Contract Set v1. Every persisted Role Contract, Semantic IR, Execution
+Binding, Review Request, Evidence Event, and Run snapshot must identify:
+
+```json
+{ "ogsContractVersion": 2 }
+```
+
+`adapterVersion` remains an independent Backend Adapter implementation version. It does not
+identify an OGS contract version. Old v1 fields, schemas, and runtime branches are removed by the
+cutover; they are not read as fallback input.
+
+Version ownership is split explicitly:
+
+| Field | Meaning |
+| --- | --- |
+| `ogsContractVersion` | OGS cross-object contract set; v2 for this architecture |
+| `SemanticIR.version` | Semantic IR schema version |
+| `BusinessEventProtocol.version` | Shared business event protocol version |
+| `FlowContractFile.version` | Flow Contract file format version |
+| `schemaVersion` | Input, output, or business-state schema version |
+| `RuntimeEventEnvelope.version` | Runtime evidence event format version |
+| `adapterVersion` | Backend Adapter implementation version |
+
+`ogsContractVersion` is an envelope field. It does not replace object-local version fields.
+
 ## 1. Goal
 
 The target architecture separates business configuration from technical execution:
@@ -14,7 +42,315 @@ Runtime = resource boundaries, audit, and recovery
 Adapter = mapping to backend-native configuration
 ```
 
-The default execution policy is automatic. A Role uses all verified native tools exposed by its selected Backend unless an explicit technical restriction is configured. Business Human Review happens after a Role produces a durable result and before the graph hands off to the next Role.
+The default execution policy is automatic. A Role uses all verified native tools exposed by its selected Backend unless an explicit technical restriction is configured. Human Review is created either after a durable Role result before handoff or at a configured Runtime exception boundary; both triggers use the same request and decision protocol.
+
+### Final architecture constraints
+
+These constraints are normative. A new field, module, UI panel, or adapter API must
+belong to one of the following boundaries before it is added. Do not create another
+product layer for an implementation detail.
+
+```text
+Business Layer
+  Role Contract, Semantic IR, Flow, and Human Review semantics.
+
+Technical Binding Layer
+  Harness/API-Cmd Template, Backend reference, Model reference, preset, allowedTools,
+  environment intent, limits, and Profile references.
+
+Execution Layer
+  Graph Runtime, capability discovery, Policy Resolver, staging, Law, quota, Resolved
+  Plan, Adapter, Backend session, Profile/Tool Runner, retry, and process lifecycle.
+
+Evidence (cross-cutting)
+  Graph transition records, policy decisions, audit, tool events, permission results,
+  artifacts, Human Review records, checkpoints, and recovery.
+```
+
+The following rules are fixed:
+
+1. Adapter, Backend, Capability, Policy, and Permission are Execution modules, not
+   additional user-facing architecture layers.
+2. Capability Discovery has one OGS entry point. It orchestrates discovery and probe,
+   calls the selected Adapter for Backend-specific work, and produces Capability Preview
+   or the frozen Run Capability Snapshot. Adapters do not independently publish a second
+   discovery model.
+3. Technical Binding Projection is a Studio read model. It exposes binding options and
+   diagnostics, but owns no runtime decision and is not an execution layer.
+4. Harness environment intent, EffectiveEnvironmentPolicy, and Backend-native mapping
+   are three different objects. The first is user configuration, the second is computed
+   by Runtime, and the third is owned by the Adapter.
+5. `allowedTools` is the only Model Role tool restriction field. Omitted means all
+   verified tools, an empty list means no native tools, and a non-empty list is an
+   explicit allow-set. Do not add `requiredTools`, `deniedTools`, `tools.mode`, or a
+   technical permission profile.
+6. Permission decisions are only `allow` or `deny`. Technical permission never creates
+   a review, pending state, or graph transition. Human Review uses one request protocol
+   for both explicit result gates after a durable Role result and configured Runtime
+   exception boundaries; it never approves an individual tool call.
+7. `noop` is not an execution mode. Every executable Role must resolve to a Harness Template
+   or an API/Cmd Template; an unresolved binding is a readiness error.
+8. `Supervised`, `Auto-accept`, and `Full access` are not OGS permission modes. Backend-native
+   approval modes remain Adapter internals and are never exposed as a second OGS permission model.
+9. A Resolved Model Role plan must contain Backend, Model, Run Capability Snapshot,
+   `effectiveTools`, and EffectiveEnvironmentPolicy. `adapterVersion` is read from the
+   snapshot and is not duplicated on the plan node.
+10. Every Graph node remains a Responsibility Role. Model Role and API/Cmd Role describe
+    execution binding kinds for a Responsibility Role; they are not new Graph node types.
+11. Role handoff data is explicit. Only declared event, context mappings, Flow Contracts, and
+    authorized Artifact references cross a Role boundary.
+12. Evidence events are append-only; checkpoints and result records use versioned/CAS writes.
+   Evidence records and restores execution facts, but does not own mutable business or
+   technical configuration.
+13. Graph definitions, topology, business state, and handoff semantics belong to Business.
+   Graph Runtime state transitions and Policy calculation belong to Execution. Evidence
+   may record and restore both, but never owns Graph definitions or Policy logic.
+
+Current implementation status is deliberately narrower than the target model:
+
+| Capability | Current status |
+| --- | --- |
+| Runtime, staging, Law, quota, audit, artifacts, and recovery | Existing foundation |
+| Backend/model discovery and registered adapters | Partially available and Backend-specific |
+| Unified native tool discovery and resource enforceability | Not complete |
+| Codex/OpenCode policy mapping | Partially available; requires final capability/readiness integration |
+| Pi execution staging and resource policy | Incomplete; must remain degraded until mapped |
+| Claude Adapter | Not registered; must not enter the verified catalog |
+
+The target document must not describe an incomplete Adapter as a verified Backend.
+
+### Normative terminology
+
+The following terms are normative. A module, schema field, API, or UI label should not
+reuse one of these names with a broader or different meaning.
+
+#### Business objects
+
+```text
+Role Contract
+  Business responsibility, input/output contract, acceptance, and failure semantics.
+
+Business Graph
+  Business topology: Role nodes, edges, events, joins, loops, and handoff semantics.
+
+Business Event
+  A Role result label used by the Business Graph for routing.
+
+Human Review
+  A business or Runtime control-plane decision represented by one Review Request schema.
+  It may be triggered after a Role result or by a configured reviewable Runtime exception.
+```
+
+`Runtime Graph State` is not the Business Graph. It is the current execution position,
+Role status, pending event, branch, join, loop, and review state for one Run.
+
+#### Technical binding objects
+
+```text
+Harness Template
+  Backend reference, Model reference, preset, optional allowedTools, and environment intent.
+
+API/Cmd Template
+  A Profile reference for a fixed invocation. It does not duplicate command definitions.
+
+Profile ownership
+  Technical Binding stores only the Profile reference. Profile and Tool definitions,
+  parameter resolution, and the fixed-invocation runner belong to Execution.
+
+Backend reference / Model reference
+  Technical identifiers stored by a binding. They do not make the binding the owner of
+  the Backend implementation or its native tools.
+
+allowedTools
+  An optional technical allow-set of Backend-native tool IDs. It is not a tool definition.
+
+Role execution kind
+  The resolved invocation path for a Responsibility Role: `harness` or `api_cmd`.
+  It is binding metadata, not a Graph node type.
+```
+
+Backend presets are Backend-owned defaults. They are not another user configuration
+object. Run snapshots are runtime facts, not Templates.
+
+#### Runtime objects
+
+```text
+Capability Preview
+  Read-only discovery and readiness data shown while editing or importing.
+
+Run Capability Snapshot
+  The verified Backend/model/tool result frozen for one Run.
+
+EnvironmentIntent
+  The resource intent stored in a Harness Template.
+
+EffectiveExecutionPolicy
+  The coordinated Runtime result for one Run:
+  effectiveTools + EffectiveEnvironmentPolicy.
+
+EffectiveEnvironmentPolicy
+  The final filesystem, process, network, staging, and limit constraints.
+
+PermissionDecision
+  The runtime allow/deny result for one native tool or resource request.
+
+Backend Session
+  The actual model session created by an Adapter for a Run.
+```
+
+The calculation is:
+
+```text
+Capability
+  + allowedTools
+  + EnvironmentIntent
+  + Law / quota / staging
+  -> EffectiveExecutionPolicy
+  -> PermissionDecision
+```
+
+Capability describes what can be provided and enforced. Policy describes what this Run
+chooses. Permission describes the result for one request. These terms are not synonyms.
+
+#### Backend and execution terminology
+
+```text
+Backend
+  The execution backend visible to OGS, such as Codex or OpenCode.
+
+Provider
+  A Backend-internal CLI, SDK, or service provider concept. It is not an OGS product
+  configuration object.
+
+Adapter
+  The OGS conversion and protocol boundary between normalized policy and Backend-native
+  parameters. Capability Discovery is orchestrated by OGS and calls the Adapter for
+  Backend-specific discovery and probes.
+
+NativeTool
+  A tool supplied by the Model Backend and invoked by the native session.
+
+Profile
+  A reusable fixed invocation configuration for an API/Cmd Role.
+
+Tool
+  The Profile-resolved fixed invocation definition.
+
+local_shell / registered runner
+  The executor for a fixed invocation.
+```
+
+The two execution paths are distinct:
+
+```text
+Model Role
+  -> Harness Template
+  -> Backend Session
+  -> NativeTool
+
+API/Cmd Role
+  -> API/Cmd Template
+  -> Profile
+  -> Tool
+  -> local_shell / registered runner
+```
+
+#### Staging and evidence terminology
+
+```text
+Execution staging
+  The OGS execution boundary for one Role attempt.
+
+Orca worktree
+  One possible implementation substrate for staging. It is not semantically identical
+  to OGS staging.
+
+Evidence
+  Append-only or checkpointed records of execution facts. Evidence can record and
+  restore facts, but does not own Business Graph definitions or Policy calculation.
+
+Graph Transition Evidence
+  A record that a Runtime Graph State transition occurred.
+
+Policy Decision Evidence
+  A record of EffectiveExecutionPolicy or PermissionDecision results.
+
+Recovery Checkpoint
+  A durable Runtime state used to resume a Run.
+```
+
+#### T3 Code and Orca boundary
+
+```text
+T3 Code
+  Backend / Provider / Session / NativeTool / Tool UX implementation reference.
+  It maps into OGS Backend Adapter, Capability Discovery, and Native Session modules.
+
+Orca
+  staging / worktree / worker / terminal / process lifecycle implementation reference.
+  It maps into OGS Execution Environment, Process Runner, and Session Lifecycle modules.
+```
+
+T3 Code Provider, Tool, and Session objects do not become OGS configuration. Orca
+worktree, worker, and terminal objects do not become OGS Roles or Graph nodes. Their
+capabilities enter a Run only through the OGS Adapter, Capability Snapshot, and Runtime
+Policy.
+
+### Explicit Role Handoff
+
+Role-to-Role information transfer has one structural contract and three business channels:
+
+```ts
+type RoleResult = {
+  event: BusinessEventType;
+  data: Record<string, unknown>;
+  artifacts: ArtifactReference[];
+};
+
+type RoleInput = {
+  task: unknown;             // immutable Task request
+  input: Record<string, unknown>; // current hop input
+  sourceEvent: BusinessEventType;
+  data: Record<string, unknown>;
+  artifacts: ArtifactReference[];
+};
+
+// A read-only projection of an existing FlowContract; it is not a new persisted contract.
+type FlowContractHandoffView = {
+  sourceRole: string;
+  targetRole: string;
+  event: BusinessEventType;
+  contextMap: FieldMapping[];
+  artifactMap: ArtifactMapping[];
+};
+```
+
+`FlowContractHandoffView` is derived from the existing Flow Contract and the actual Flow edge.
+It does not create `handoff-contracts.json`, a second compiler, or a second validation source.
+`contextMap` and `artifactMap` extend the existing Flow Contract representation.
+
+The channels have fixed meanings:
+
+```text
+Business Event
+  Route the Flow.
+
+Typed Data
+  Carry declared structured business facts, decisions, and status values.
+
+Artifact Reference
+  Carry documents, media, code, and other large outputs through ArtifactResolver.
+```
+
+`event` must be a value from the shared Business Event registry. The Flow edge is the only
+source of the routable event; `sourceEvent` is derived from that edge and is never configured
+as a second event field.
+
+`task` remains the original user request. `input` is the changing per-hop payload. A Role does
+not receive the entire upstream context, prompt history, Backend session, workspace path, or raw
+tool output by implication. Artifact references are opaque and authorized; a filesystem path is
+not an authorization token. Join nodes use explicit source and field mappings rather than an
+implicit merge of all upstream data.
 
 ## 2. Target Architecture
 
@@ -23,32 +359,28 @@ flowchart TB
     subgraph Business["Business layer"]
         RC["Role Contract v2<br/>responsibility / inputs / outputs / acceptance"]
         IR["Semantic IR<br/>roles / topology / state / handoffs / review"]
-        HR["Business Human Review<br/>approve / rework / pause / terminate"]
+        HR["Unified Human Review<br/>scenario-specific action subset"]
     end
 
     subgraph Technical["Technical binding layer"]
-        EB["Harness / API-Cmd Template<br/>Backend + Model or fixed invocation<br/>preset + optional overrides"]
+        EB["Harness / API-Cmd Template<br/>Backend reference + Model reference or fixed invocation<br/>preset + optional overrides"]
     end
 
     subgraph Runtime["Runtime execution layer"]
         BR["Backend Registry"]
-        CS["Capability Snapshot<br/>models / native tool IDs"]
+        CS["Capability Preview / Run Snapshot<br/>models / native tool IDs"]
         PR["Policy Resolver<br/>effective tools and environment policy"]
         LAW["Law / quota / staging"]
         PLAN["Resolved Execution Plan"]
         SNAP["Run resolved config<br/>frozen snapshot / policy / law digest"]
-    end
-
-    subgraph Adapter["Adapter mapping layer"]
-        AD["Backend Adapter"]
-        MAP["EnvironmentPolicy mapping"]
-    end
-
-    subgraph Backend["Backend capability layer"]
-        BS["Backend native session"]
-        MODEL["Backend model"]
-        NT["Native tools<br/>read / edit / command / MCP / search"]
-        PP["Native permission protocol"]
+        subgraph Impl["Execution implementation modules"]
+            AD["Backend Adapter"]
+            MAP["EnvironmentPolicy mapping"]
+            BS["Backend native session"]
+            MODEL["Backend model"]
+            NT["Native tools<br/>read / edit / command / MCP / search"]
+            PP["Native permission protocol"]
+        end
     end
 
     subgraph Evidence["Evidence layer"]
@@ -92,7 +424,7 @@ The target product model has four layers. Capability discovery, policy resolutio
 ```mermaid
 flowchart TB
     B["Business layer<br/>Role Contract + Flow Semantic IR"]
-    T["Technical binding layer<br/>Backend + Model + preset + optional overrides"]
+    T["Technical binding layer<br/>Backend reference + Model reference + preset + optional overrides"]
     X["Execution layer<br/>Capability + Policy + Permission + Adapter + Backend"]
     E["Evidence layer<br/>Audit + Artifacts + Recovery + Review records"]
 
@@ -110,6 +442,11 @@ flowchart TB
 | Technical binding | Harness Template or API/Cmd Template, Backend/model reference, preset, `allowedTools`, environment intent | project or TeamVersion technical configuration and Backend catalog | normalized binding input for execution | business acceptance rules, capability snapshot, native tool implementation |
 | Execution | Backend Registry, capability discovery/snapshot, effective policy, permission allow/deny, staging, Law, quota, Adapter, Backend session | normalized technical binding, Run context, and business execution plan | Role result, native tool events, execution outcome | business review decisions and mutable Role configuration |
 | Evidence | audit, artifacts, recovery, Human Review records | events and durable results from all relevant layers | replayable Run evidence | mutable business and technical configuration |
+
+Evidence may record Graph transitions, Policy decisions, Run state, checkpoints, and
+Human Review records, and may restore them during recovery. It does not define Graph
+topology, calculate Policy, or become the source of mutable Business or Technical
+Binding configuration.
 
 ### Dependency direction
 
@@ -154,7 +491,7 @@ flowchart TB
 | Business Design / Role | Business | purpose, responsibility, inputs, outputs, acceptance criteria, business failure semantics | resolved Backend and technical policy summary |
 | Business Design / Flow | Business | roles, edges, events, topology, joins, loops, Human Review requirement | compiled business flow diagnostics |
 | Technical Binding | Technical binding | Backend, model, execution preset, optional advanced overrides | binding validation and unresolved references |
-| Capability Preview / Readiness | Execution | refresh discovery or select a verified Backend/model | verified models, native tool IDs, adapter readiness, preview time and digest |
+| Capability Preview / Readiness | Execution | refresh discovery and readiness checks | verified models, native tool IDs, adapter readiness, preview time and digest |
 | Runtime Policy / Diagnostics | Execution | normally none; technical overrides are edited in Technical Binding | effective tools, staging root, Law, quota, degradation, allow/deny reasons |
 | Adapter / Backend Diagnostics | Execution | normally none | native permission mapping, adapter version, unsupported policy fields, native tool events |
 | Run / Evidence / Review | Evidence | Human Review decision, rework, pause, terminate | tool calls, permission decisions, artifacts, errors, recovery history |
@@ -222,7 +559,9 @@ Loop budget
 Human Review gate
 ```
 
-The Flow is the single source for routable event names. The system compiles outgoing event labels into the Role's `allowed_events` runtime field.
+The Flow is the single source for routable event names. The system compiles outgoing
+event labels into the Role's `allowed_events` runtime field. Role Contract output fields
+describe result semantics; they do not define a second routable event list.
 
 ### 4.2 Technical Binding
 
@@ -244,7 +583,11 @@ Advanced overrides (collapsed by default)
   Optional timeout and quota overrides
 ```
 
-The normal page only requires Backend and Model. The selected Backend supplies the default native tools, environment policy, adapter parameters, and recommended limits through its execution preset. The Runtime still owns the enforceable staging boundary and platform safety limits. Advanced overrides are optional and are stored as differences from the preset rather than as a complete duplicate policy.
+The normal page only requires Backend and Model. The selected Backend supplies the
+default native tools, environment intent, adapter parameters, and recommended limits
+through its execution preset. The Runtime still owns the enforceable staging boundary
+and platform safety limits. Advanced overrides are optional and are stored as
+differences from the preset rather than as a complete duplicate policy.
 
 The tool list is read from the Backend Capability Preview while editing. Users cannot
 create a Model Role tool, edit a native tool command, or configure Backend-specific flags
@@ -252,7 +595,7 @@ such as `sandboxPolicy` or `allow dangerous`.
 
 ### Harness Template as the Model Role Binding
 
-The primary purpose of a `Harness Template` is to bind a Model Role to the Backend that will run it and to a model offered by that Backend. The Backend is the source of truth for the CLI/adapter, model catalog, native tools, and supported permission mapping. A template does not invent a second tool or model system.
+The primary purpose of a `Harness Template` is to bind a Model Role to the Backend that will run it and to a model offered by that Backend. The Backend is the source of truth for the CLI/adapter, model catalog, native tools, and supported permission mapping. A template stores references and restrictions; it does not own native tool definitions or Backend permission parameters.
 
 The reusable technical template for a Model Role represents the complete CLI/Backend harness in which the Role runs:
 
@@ -260,9 +603,8 @@ The reusable technical template for a Model Role represents the complete CLI/Bac
 Harness Template
   Backend / CLI adapter identity
   Model exposed by that Backend
-  Backend-supported native tools
-  Backend permission and resource mapping
-  Optional filesystem/process/network policy overrides
+  Optional allowedTools references
+  Optional filesystem/process/network policy intent
   Optional timeout and quota overrides
 ```
 
@@ -281,7 +623,8 @@ recommended storage shape is:
 
 ```json
 {
-  "version": 1,
+  "ogsContractVersion": 2,
+  "schemaVersion": 1,
   "harnessTemplates": {
     "codex-default": {
       "kind": "harness",
@@ -340,7 +683,7 @@ model:
   exposes the same model and the binding is revalidated.
 
 preset:
-  Optional Backend-owned defaults for native tools, environment policy, and limits.
+  Optional Backend-owned defaults for native tools, environment intent, and limits.
 
 environment:
   Optional resource policy intent. It is not a per-tool approval workflow.
@@ -352,8 +695,8 @@ allowedTools = []:
   Explicitly disable Backend-native tool calls for this Harness.
 
 allowedTools with entries:
-  Use only the listed tools. Every entry must exist in the selected Backend capability
-  snapshot.
+  Use only the listed tools. Every entry must exist in the Capability Preview during
+  editing and in the frozen Run Snapshot before Backend startup.
 ```
 
 Changing `backend` invalidates the model, tool, and permission resolution until the
@@ -392,6 +735,34 @@ When a Backend cannot express a requested resource boundary, the Adapter returns
 readiness failure or a denied effective resource. It never widens the execution root or
 disables a sandbox to make the binding appear runnable.
 
+### Execution substrate integration
+
+T3 Code and Orca are implementation references or optional execution substrates inside
+the Execution Layer. They do not introduce a new OGS product layer or replace OGS
+business and policy ownership.
+
+```text
+T3 Code
+  Backend / Provider / Session / Native Tool / Tool UX
+  -> OGS Backend Adapter, Capability Discovery, Native Session
+
+Orca
+  staging / worktree / worker / terminal / process lifecycle
+  -> OGS Execution Environment, Process Runner, Session Lifecycle
+
+OGS
+  Business semantics, Technical Binding, Graph orchestration, Policy resolution,
+  Audit, Artifact, and Recovery
+```
+
+The integration boundaries are fixed:
+
+1. T3 Code Provider, Tool, and Session objects do not become OGS product configuration.
+2. Orca worktree, worker, and terminal objects do not become OGS Business Roles or
+   Graph nodes.
+3. T3 Code and Orca capabilities enter a Run only through the OGS Adapter, Capability
+   Snapshot, and Runtime Policy.
+
 In this model:
 
 ```text
@@ -404,7 +775,7 @@ Backend preset:
 Capability Preview:
   Refreshable discovery/readiness data shown before Run start.
 
-Capability Snapshot:
+Run Capability Snapshot:
   Generated and frozen at Run start; not manually authored.
 
 Effective Policy:
@@ -412,8 +783,8 @@ Effective Policy:
 ```
 
 The Harness Template is a configuration template. The Capability Preview is an editing
-diagnostic; the Capability Snapshot and Effective Policy are Run execution results. This
-keeps the user model small while preserving deterministic recovery.
+diagnostic; the Run Capability Snapshot and Effective Policy are Run execution results.
+This keeps the user model small while preserving deterministic recovery.
 
 ### Default Harness Template
 
@@ -543,13 +914,14 @@ Errors and recovery history
 Human Review decision
 ```
 
-Human Review actions are:
+Human Review uses the canonical action enum. The page filters actions by trigger:
 
 ```text
-Approve -> continue graph flow
-Rework -> return to configured Role
-Pause -> keep the Run waiting
-Terminate -> end the Run
+approve / continue / retry -> continue the applicable control path
+rework                    -> return to the configured Role or target
+reject                    -> follow the declared rejection path
+pause                     -> keep the Run waiting
+terminate                 -> end the configured scope
 ```
 
 These actions are business decisions. They do not approve or reject individual Backend tool calls.
@@ -696,7 +1068,10 @@ Recovery controls
 Human Review panel
 ```
 
-The Human Review panel is shown only when the current Role has reached its post-execution review gate. Its actions are `Approve`, `Rework`, `Pause`, and `Terminate`. Native tool permission decisions remain in the audit timeline and are not presented as user approval tasks.
+The Human Review panel is shown when an explicit result review or configured Runtime exception
+creates a `HumanReviewRequest`. It displays the scenario-specific subset of the canonical actions
+`approve`, `continue`, `rework`, `retry`, `reject`, `pause`, and `terminate`. Native tool Permission
+Decisions remain in the audit timeline and are not presented as user approval tasks.
 
 #### Progressive disclosure rules
 
@@ -798,7 +1173,7 @@ Role packages do not define Backend tools, Harness configuration, API/Cmd templa
 flowchart LR
     A["Model Role"] --> B["Harness Template"]
     B --> C["Current Backend + selected model"]
-    C --> D["Capability Snapshot"]
+    C --> D["Run Capability Snapshot"]
     D --> E["Effective policy"]
     E --> F["Backend Adapter"]
     F --> G["Native session"]
@@ -844,7 +1219,8 @@ The business Role Contract does not contain Backend or tool configuration:
 
 ```json
 {
-  "contractVersion": 2,
+  "ogsContractVersion": 2,
+  "schemaVersion": 2,
   "roleId": "writer",
   "purpose": "Produce project documentation",
   "responsibility": {
@@ -857,7 +1233,6 @@ The business Role Contract does not contain Backend or tool configuration:
     "preconditions": []
   },
   "outputs": {
-    "events": ["BLOCKED", "READY"],
     "postconditions": [],
     "decisionCriteria": []
   },
@@ -874,7 +1249,11 @@ The business Role Contract does not contain Backend or tool configuration:
 }
 ```
 
-`authority.controlActions` describes business decisions that may be taken. It does not declare whether Human Review is required. The review requirement has one source in the Semantic IR or graph definition; `ExecutionPlanNode.review` is only its compiled read-only projection.
+`authority.controlActions` describes the allowed business subset of the canonical
+`HumanReviewAction` enum. It does not declare whether Human Review is required, and it does not
+define Runtime exception actions such as `retry` or budget `continue`. The review requirement has
+one source in the Semantic IR or graph definition; `ExecutionPlanNode.review` is only its compiled
+read-only projection.
 
 ## 7. Technical Binding Resolution
 
@@ -884,7 +1263,8 @@ The preferred persisted form is a template plus a Role-to-template reference. Th
 
 ```json
 {
-  "version": 1,
+  "ogsContractVersion": 2,
+  "schemaVersion": 1,
   "roles": {
     "writer": {
       "kind": "harness",
@@ -938,7 +1318,8 @@ type ResolvedExecutionPlanNode = {
   roleId: string;
   backend: string;
   model: string;
-  capabilitySnapshot: BackendCapabilitySnapshot;
+  capabilitySnapshot: RunCapabilitySnapshot;
+  effectiveTools: string[];
   effectiveEnvironmentPolicy: EffectiveEnvironmentPolicy;
 };
 ```
@@ -948,18 +1329,28 @@ Law digests. Adapter version is read from `capabilitySnapshot.adapterVersion`; i
 duplicated on the plan node. A node that lacks any required field cannot start a Model
 Role session.
 
-## 8. Backend Capability Snapshot
+## 8. Capability Preview and Run Snapshot
 
-The snapshot is frozen at Run start and reused during recovery:
+The Preview is refreshable during editing and readiness. The Run Snapshot is created
+immediately before Backend startup, frozen for the Run, and reused during recovery:
 
-For a Model Role, the snapshot always contains the resolved `backend` and `model` pair.
-`model` is optional in the type only because the registry may also expose a Backend-level
-snapshot before a model is selected.
+For a Model Role, the Run Snapshot always contains the resolved `backend` and `model`
+pair. The Preview may exist at Backend level before a model is selected.
 
 ```ts
-type BackendCapabilitySnapshot = {
+type CapabilityPreview = {
   backend: string;
   model?: string;
+  tools: string[];
+  adapterVersion?: string;
+  verifiedAt: string;
+  digest: string;
+  readiness: "ready" | "degraded" | "unavailable";
+};
+
+type RunCapabilitySnapshot = {
+  backend: string;
+  model: string;
   adapterVersion: string;
   verifiedAt: string;
   tools: string[];
@@ -967,7 +1358,9 @@ type BackendCapabilitySnapshot = {
 };
 ```
 
-The public snapshot stores verified Backend/model identity and native tool IDs. Tool
+The Capability Preview is the discovery result shown during editing. It is read-only and
+can only be refreshed. The Run Capability Snapshot stores the verified Backend/model
+identity and native tool IDs used by one Run. Tool
 resource dependencies and Backend permission protocol details remain inside the Adapter;
 they are not a second public capability matrix.
 
@@ -1082,13 +1475,19 @@ sequenceDiagram
         end
     end
 
-    B-->>R: Structured Role result
-    R->>U: Persist result and execution audit
-    alt Human Review configured
-        R->>H: Waiting for business review
-        H-->>F: approve / rework / pause / terminate
-    else No Human Review
-        R-->>F: Emit business event and continue flow
+    alt Role completed
+        B-->>R: Structured Role result
+        R->>U: Persist result and execution audit
+        alt Explicit review request created
+            R->>H: Waiting for HumanReviewRequest decision
+            H-->>F: scenario-specific action subset
+        else No explicit review
+            R-->>F: Emit business event and continue flow
+        end
+    else Reviewable Runtime exception
+        R->>U: Persist exception evidence
+        R->>H: Create exception HumanReviewRequest
+        H-->>F: scenario-specific action subset
     end
 ```
 
@@ -1096,7 +1495,18 @@ Flow transitions are driven by Role business events, not by individual native to
 
 ## 11. Effective Policy Calculation
 
-The Runtime calculates one effective policy:
+The Runtime calculates one coordinated effective execution policy. It has two related
+outputs rather than two independent policy systems:
+
+```ts
+type EffectiveExecutionPolicy = {
+  effectiveTools: string[];
+  environment: EffectiveEnvironmentPolicy;
+};
+```
+
+`effectiveTools` and `environment` are resolved together and are frozen together in the
+Resolved Execution Plan.
 
 ```text
 allowedTools omitted
@@ -1110,7 +1520,8 @@ allowedTools with entries
 ```
 
 If a configured `allowedTools` entry is not in the Capability Preview, readiness fails
-before execution. The Run Snapshot freezes the resulting verified tool IDs. At each
+before execution. Run startup repeats the check against the Run Capability Snapshot and
+freezes the resulting `effectiveTools` list in the Resolved Execution Plan. At each
 native request, the Adapter additionally validates the tool's private resource
 dependencies against the effective environment policy. A request that cannot be
 enforced is denied and recorded in audit; it does not introduce a second public tool
@@ -1160,7 +1571,9 @@ unknown tool = deny
 unknown resource request = deny
 ```
 
-All access remains subject to Law, staging, and quotas.
+All access remains subject to Law, staging, and quotas. Staging is the physical execution boundary;
+it does not grant a Role access to arbitrary upstream context or files. Handoff `contextMap` and
+the authorized Artifact set remain the business data boundary.
 
 ## 12. Permission Protocol
 
@@ -1191,39 +1604,145 @@ sequenceDiagram
     end
 ```
 
-There is no technical Permission Review. Human Review is a business gate after the Role result is durable and before graph handoff.
+There is no technical Permission Review. A denied native request is recorded as a Permission
+Decision and follows the Role's normal failure or exception policy. Human Review uses the single
+control-plane protocol below.
 
 ## 13. Human Review
+
+Human Review has one request schema and one action enum. It supports two trigger kinds:
+
+```text
+explicit
+  The Role produced a durable result and the configured review gate is before handoff.
+
+exception
+  Runtime produced a configured reviewable exception, such as loop budget exhaustion,
+  retry exhaustion, Join timeout, or Artifact verification failure.
+```
+
+The canonical action set is:
+
+```ts
+type HumanReviewAction =
+  | "approve"
+  | "continue"
+  | "rework"
+  | "retry"
+  | "reject"
+  | "pause"
+  | "terminate";
+```
+
+Action meanings are fixed:
+
+```text
+approve   Accept the business result and continue the declared handoff.
+continue  Resume the current control scope with an explicit runtime authorization.
+rework    Route to the declared rework target.
+retry     Repeat the current Role attempt or failed execution.
+reject    Produce the declared business rejection outcome or route.
+pause     Keep the Run waiting without a graph transition.
+terminate End the Run or the declared review scope.
+```
+
+The available action list is computed for the trigger. It is not a second per-scenario enum:
+
+```text
+after_role_result:
+  approve / rework / reject / pause / terminate
+
+loop_budget_exceeded:
+  continue / rework / reject / terminate
+
+retry_exhausted or artifact_verification_failed:
+  retry / rework / reject / pause / terminate
+```
+
+`resume` is a Runtime control command for a paused Run, not a Human Review action.
+The `pause` decision leaves the request in `paused`; a later `resume` reopens it as `pending`
+without creating a second Review model. Terminal decisions move the request to `resolved`.
+
+```ts
+type HumanReviewRequest = {
+  ogsContractVersion: 2;
+  schemaVersion: 1;
+  reviewId: string;
+  trigger: "explicit" | "exception";
+  reasonCode: string;
+  runId: string;
+  roleId: string;
+  executionId: string;
+  branchId: string;
+  lineageId: string;
+  round: number;
+  stateVersion: number;
+  availableActions: HumanReviewAction[];
+  status: "pending" | "paused" | "resolved" | "expired" | "cancelled";
+  decision?: HumanReviewDecision;
+};
+
+type HumanReviewDecision =
+  | { action: "approve"; actor: string; comment?: string; decidedAt: string }
+  | { action: "continue"; actor: string; targetRoleId: string; additionalBudget: number; comment?: string; decidedAt: string }
+  | { action: "rework"; actor: string; targetRoleId: string; comment?: string; decidedAt: string }
+  | { action: "retry"; actor: string; executionId: string; attempt: number; comment?: string; decidedAt: string }
+  | { action: "reject"; actor: string; targetRoleId: string; comment?: string; decidedAt: string }
+  | { action: "pause"; actor: string; comment?: string; decidedAt: string }
+  | { action: "terminate"; actor: string; scope: "branch" | "run"; comment?: string; decidedAt: string };
+```
+
+The compiled review policy is one object for both trigger kinds:
+
+```ts
+type HumanReviewPolicy = {
+  afterRoleResult: boolean;
+  exceptionCodes: string[];
+};
+```
+
+The review policy has one compiled source in the Semantic IR/Execution Plan. It may declare
+`after_role_result` and configured Runtime exception codes in the same policy. Runtime creates a
+request from that policy; it does not create a second review model for exceptions. Every request
+and decision is bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion`.
 
 ```mermaid
 flowchart LR
     A["Role execution"] --> B["Durable result"]
-    B --> C{"Human Review configured?"}
+    B --> C{"Explicit review?"}
     C -->|No| D["Graph transition"]
-    C -->|Yes| E["Waiting for business review"]
-    E -->|Approve| D
-    E -->|Rework| F["Target Role"]
-    E -->|Terminate| G["End Run"]
+    C -->|Yes| E["HumanReviewRequest"]
+    X["Runtime exception"] --> E
+    E -->|approve / continue / retry| D
+    E -->|rework| F["Declared target"]
+    E -->|reject| G["Declared rejection path"]
+    E -->|pause| H["Waiting"]
+    E -->|terminate| I["End Run"]
 ```
 
-Human Review checks business acceptance. It does not decide whether a Backend may use a native tool.
+Human Review decisions are applied only by Runtime reconciliation. They never approve or reject
+individual Backend tool calls, and they do not create new Graph nodes.
 
 ## 14. Run Freeze and Recovery
 
 At Run start, write `.ogs/runs/<run-id>/resolved-config.json` containing:
 
 ```text
+ogsContractVersion: 2
 Semantic IR digest
 Resolved Harness/API-Cmd binding
 Resolved Execution Plan
   backend
   model
-  Capability Snapshot
+  Run Capability Snapshot
+  effectiveTools
   Effective EnvironmentPolicy
 Law digest
 ```
 
 Recovery must reuse this snapshot. It must not rediscover capabilities and silently change the technical decision for the same Run.
+`resolved-config.json` freezes the technical decision; `state.json.graphState`, checkpoints,
+and the session index remain the Runtime recovery authority.
 
 ## 15. Audit
 
@@ -1298,7 +1817,7 @@ The new Runtime does not read legacy fields. A one-time repository rewrite is re
 
 ```text
 old role.json
-  -> Role Contract v2
+  -> Role Contract with ogsContractVersion: 2
 
 old allowedToolsByRoleId
   -> Harness Template allowedTools
@@ -1311,6 +1830,9 @@ Legacy fixed invocation references
 
 old tests, examples, and fixtures
   -> rewrite to the new schema
+
+noop execution paths and three-mode permission profiles
+  -> delete; do not migrate into v2
 ```
 
 The migration must classify Model Roles and API/Cmd Roles explicitly. Existing Model Role tool declarations become an optional technical `allowedTools` override. Fixed command or API declarations become API/Cmd Template entries. The old fields must not be copied into the business Role Contract.
@@ -1327,17 +1849,19 @@ No dual write is kept.
 
 ### P0: Model cutover
 
-1. Add Role Contract v2.
-2. Remove required `constraints.allowedTools`.
-3. Remove `permissionProfile`.
-4. Remove `allowedToolsByRoleId` from Semantic IR.
-5. Add `execution-bindings.json`.
-6. Add the one-time migration script.
+1. Set `ogsContractVersion: 2` on all new persisted contract roots.
+2. Add Role Contract v2 and extend the existing Flow Contract with handoff mappings.
+3. Remove `constraints.allowedTools`, `permissionProfile`, and `allowedToolsByRoleId`.
+4. Remove `noop` lifecycle and execution branches.
+5. Remove Supervised/Auto-accept/Full access permission modes and technical Permission Review.
+6. Add `execution-bindings.json` with Harness/API-Cmd references.
+7. Run the one-time repository rewrite before release, then reject all v1 fields; this is release
+   tooling, not Runtime compatibility.
 
 ### P1: Backend capabilities
 
 1. Add Backend tool and model discovery.
-2. Add Capability Snapshot.
+2. Add Capability Preview and Run Capability Snapshot.
 3. Add EnvironmentPolicyResolver.
 4. Freeze the snapshot and resolved policy per Run.
 5. Default to all verified Backend-native tools.
@@ -1354,8 +1878,10 @@ No dual write is kept.
 
 1. Normalize `tool_invocation` events.
 2. Normalize `permission_request` events.
-3. Reuse frozen capability and policy snapshots on recovery.
-4. Keep business Human Review in graph state only.
+3. Add the unified `HumanReviewRequest` and canonical action enum.
+4. Bind every review decision to review, round, lineage, branch, and state versions.
+5. Reuse frozen capability and policy snapshots on recovery.
+6. Keep review application in Runtime reconciliation and review records in Evidence.
 
 ### P4: Studio
 
@@ -1372,16 +1898,24 @@ No dual write is kept.
 3. Model Roles resolve through a Harness Template.
 4. API/Cmd Roles resolve through an API/Cmd Template, then use the existing Profile -> Tool -> local_shell chain (or equivalent registered runner), without a Backend model or native tool catalog.
 5. Every Harness Template resolves one installed Backend and one model from that Backend's verified catalog.
-6. Changing the Backend or model reruns readiness and freezes a new capability snapshot for the next Run.
+6. Changing the Backend or model reruns readiness and freezes a new Run Capability Snapshot for the next Run.
 7. Backend discovery returns verified models and tools.
 8. Verified Backend tools are enabled by default.
 9. Unknown tools and Adapter-denied resource requests are denied and audited.
-10. Configured `allowedTools` entries must exist in the frozen Backend capability snapshot.
+10. Configured `allowedTools` entries must exist in the Capability Preview and the frozen
+    Run Capability Snapshot.
 11. Policy Resolver derives EffectiveEnvironmentPolicy from environment intent and Adapter resource capabilities.
-12. Resolved Model Role plan nodes require Backend, Model, Capability Snapshot, and EffectiveEnvironmentPolicy; adapter version is read from the snapshot.
+12. Resolved Model Role plan nodes require Backend, Model, Run Capability Snapshot,
+    `effectiveTools`, and EffectiveEnvironmentPolicy; adapter version is read from the
+    snapshot.
 13. Access outside execution staging always fails.
 14. Permission decisions are only `allow` or `deny`.
-15. Human Review occurs only after a durable Role result and before handoff.
-16. Recovery reuses the original Capability Snapshot and EffectiveEnvironmentPolicy.
+15. Explicit Human Review occurs after a durable Role result and before handoff; exception-triggered
+    Review occurs at the configured Runtime control boundary.
+16. Recovery reuses the original Run Capability Snapshot and EffectiveEnvironmentPolicy.
 17. Every native tool invocation produces an audit event.
-18. Legacy fields produce schema errors after migration.
+18. Every Role handoff uses declared event, data, and Artifact mappings.
+19. Active and exception-triggered Human Review use the same request schema and action enum.
+20. Review decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion`.
+21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
+22. Legacy fields produce schema errors after the one-time rewrite.
