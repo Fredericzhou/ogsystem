@@ -1188,6 +1188,33 @@ export function renderStudioRoleConfigEditor(args: {
     const source = sourceRoleFromSelector(selector);
     return Boolean(source && (!joinMode || !joinSources.includes(source) || (joinMode === "quorum_of" && Number(joinMin) < joinSources.length)));
   };
+  // Defaults are deliberately conservative: only required schema fields with an
+  // unambiguous runtime source are suggested. They are applied by an explicit
+  // user action and never change an existing context map implicitly.
+  const suggestedContextMap: Record<string, string> = {};
+  const sourceProjectionAvailable = joinMode !== "quorum_of" || Number(joinMin) >= joinSources.length;
+  for (const field of requiredInputs) {
+    const normalizedField = field.trim().toLowerCase();
+    if (["task", "goal", "request", "prompt"].includes(normalizedField)) {
+      suggestedContextMap[field] = "global.task";
+      continue;
+    }
+    if (joinMode && sourceProjectionAvailable) {
+      const matchingSources = joinSources.filter((candidate) => {
+        const normalizedSource = candidate.toLowerCase();
+        return ["content", "summary", "text", "data"].some((suffix) => normalizedField === `${normalizedSource}_${suffix}`);
+      });
+      if (matchingSources.length === 1) {
+        const source = matchingSources[0];
+        const suffix = normalizedField.slice(source.toLowerCase().length + 1);
+        suggestedContextMap[field] = `source(${source}).${suffix === "data" ? "data" : "content"}`;
+        continue;
+      }
+    }
+    if (!joinMode && joinSources.length > 0 && ["content", "input", "brief", "summary", "text", "source"].includes(normalizedField)) {
+      suggestedContextMap[field] = "direct.content";
+    }
+  }
   const selectorOptionsFor = (selected: string) => Array.from(selectors).sort((left, right) => left.localeCompare(right)).map((selector) => {
     const forbidden = sourceUnavailable(selector);
     return '<option value="' + escapeText(selector) + '"' + (selector === selected ? " selected" : "") + (forbidden ? " disabled" : "") + '>' + escapeText(selector) + (forbidden ? " · unavailable" : "") + "</option>";
@@ -1302,6 +1329,7 @@ export function renderStudioRoleConfigEditor(args: {
       '<section class="field full"><strong>' + escapeText(t("studio.humanReview", undefined, "Human review")) + '</strong><label class="field checkbox"><input type="checkbox" data-role-setting="reviewEnabled"' + (reviewEnabled ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.reviewRequired", undefined, "Require human review")) + '</span></label>' +
       (reviewEnabled ? '<div class="form-grid"><label class="field"><span>' + escapeText(t("studio.reviewTimeout", undefined, "Timeout (seconds)")) + '</span><input type="number" min="0" step="1" data-role-setting="reviewTimeout" value="' + escapeText(String(review.timeoutSeconds ?? "")) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.reviewTimeoutAction", undefined, "Timeout action")) + '</span><select data-role-setting="reviewTimeoutAction"' + disabled + '><option value="pause"' + (review.timeoutAction === "pause" ? " selected" : "") + '>pause</option><option value="terminate"' + (review.timeoutAction === "terminate" ? " selected" : "") + '>terminate</option></select></label><label class="field"><span>' + escapeText(t("studio.reworkTarget", undefined, "Rework target")) + '</span><select data-role-setting="reviewTarget"' + disabled + '>' + reviewTargetOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.reworkLimit", undefined, "Maximum rework rounds")) + '</span><input type="number" min="0" step="1" data-role-setting="reviewReworkMax" value="' + escapeText(String(review.reworkMax ?? "")) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.terminationScope", undefined, "Termination scope")) + '</span><select data-role-setting="reviewTerminateScope"' + disabled + '><option value="branch"' + (review.terminateScope !== "run" ? " selected" : "") + '>branch</option><option value="run"' + (review.terminateScope === "run" ? " selected" : "") + '>run</option></select></label></div>' : "") + '</section>' +
       '<section class="field full studio-context-map" aria-label="' + escapeText(t("studio.contextMap", undefined, "Context map")) + '"><strong>' + escapeText(t("studio.contextMap", undefined, "Context map")) + '</strong><div class="hint">' + escapeText(t("studio.contextMapEditorHint", undefined, "Map selected runtime values to fields in this role input.")) + '</div>' +
+      (!Object.keys(contextMap).length && Object.keys(suggestedContextMap).length ? '<div class="studio-context-map-defaults" data-context-map-defaults-panel><div class="hint">' + escapeText(t("studio.contextMapDefaultsHint", undefined, "Suggested mappings are based on required role input fields and the current graph. Review them before saving.")) + '</div><button type="button" class="button subtle" data-context-map-apply-defaults data-context-map-defaults=\'' + escapeText(JSON.stringify(suggestedContextMap)) + '\'' + disabled + '>' + escapeText(t("studio.contextMapApplyDefaults", undefined, "Apply suggested mappings")) + '</button></div>' : "") +
       (quorumSourcesUnavailable ? '<div class="hint severity-warning">' + escapeText(t("studio.quorumProjectionUnavailable", undefined, "Source selectors are unavailable until the quorum threshold includes every incoming source.")) + '</div>' : "") +
       (inputContract ? '<div class="hint" data-role-input-schema-diagnostics><span>' + escapeText(String(inputContract.schemaPath ?? "role_input schema")) + '</span>' + (schemaInputIssues.length ? '<ul>' + schemaInputIssues.map((issue) => '<li>' + escapeText(issue) + '</li>').join("") + '</ul>' : '<span>Role input schema fields are covered.</span>') + '</div>' : "") +
       '<div data-context-map-rows>' + contextRows + '</div><template data-context-map-row-template><div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value=""' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector' + disabled + '>' + selectorOptionsFor("global.task") + '</select></label><label class="field"><span>' + escapeText(t("studio.contextMapPath", undefined, "Field path (optional)")) + '</span><input data-context-map-path value="" placeholder="issue.id"' + disabled + '></label><label class="field checkbox"><input type="checkbox" data-context-map-optional disabled' + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle studio-icon-button" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '" title="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div></template><button type="button" class="button subtle" data-context-map-add' + disabled + '>+ ' + escapeText(t("studio.contextMapAddField", undefined, "Add field")) + '</button><pre class="studio-context-map-preview" data-context-map-preview>' + escapeText(JSON.stringify(Object.fromEntries(Object.entries(contextMap).sort(([left], [right]) => left.localeCompare(right)).map(([field, selector]) => { const value = String(selector || ""); const optional = value.endsWith("?"); return [field, { source: optional ? value.slice(0, -1) : value, required: !optional }]; })), null, 2)) + '</pre></section>' +

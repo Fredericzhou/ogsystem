@@ -1054,6 +1054,8 @@ export const en = {
   "studio.roleConfigProfileRequired": "Execution profile is required when the role runs as a Tool.",
   "studio.contextMapObjectRequired": "Context map must be a JSON object.",
   "studio.contextMapEntriesInvalid": "Context map keys and values must be non-empty strings.",
+  "studio.contextMapDefaultsHint": "Suggested mappings are based on required role input fields and the current graph. Review them before saving.",
+  "studio.contextMapApplyDefaults": "Apply suggested mappings",
   "studio.executionConfig": "execution config",
   "studio.executionConfigHint": "Repository content is copied into this project. Business fields below are editable; ids stay system-managed.",
   "studio.executionConfigProfileId": "Profile id",

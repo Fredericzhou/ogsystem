@@ -5013,6 +5013,53 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   );
 });
 
+test("role config offers explicit context map defaults for required inputs", () => {
+  const html = renderStudioRoleConfigEditor({
+    roleId: "worker",
+    editor: { roleId: "worker", data: { roleId: "worker", bindingKind: "model" } },
+    contracts: {
+      contracts: [{ kind: "role_input", roleId: "worker", schemaPath: "schemas/worker.json" }],
+      schemaFiles: [{ path: "schemas/worker.json", content: JSON.stringify({ type: "object", required: ["task", "summary"], properties: { task: { type: "string" }, summary: { type: "string" } } }) }]
+    },
+    authoring: {
+      roles: { source: { roleId: "source" }, worker: { roleId: "worker" } },
+      flows: { input: { fromRoleId: "source", toRoleId: "worker" } }
+    },
+    t: testTranslator
+  });
+  assert.match(html, /data-context-map-apply-defaults/);
+  assert.match(html, /global\.task/);
+  assert.match(html, /direct\.content/);
+
+  const joinHtml = renderStudioRoleConfigEditor({
+    roleId: "merge",
+    editor: { roleId: "merge", data: { roleId: "merge", joinMode: "all_of" } },
+    contracts: {
+      contracts: [{ kind: "role_input", roleId: "merge", schemaPath: "schemas/merge.json" }],
+      schemaFiles: [{ path: "schemas/merge.json", content: JSON.stringify({ type: "object", required: ["source_content", "source_data"], properties: { source_content: {}, source_data: {} } }) }]
+    },
+    authoring: {
+      roles: { source: { roleId: "source" }, merge: { roleId: "merge", joinMode: "all_of" } },
+      flows: { input: { fromRoleId: "source", toRoleId: "merge" } }
+    },
+    t: testTranslator
+  });
+  assert.match(joinHtml, /source\(source\)\.content/);
+  assert.match(joinHtml, /source\(source\)\.data/);
+
+  const configured = renderStudioRoleConfigEditor({
+    roleId: "worker",
+    editor: { roleId: "worker", data: { roleId: "worker", contextMap: { task: "global.task" } } },
+    contracts: {
+      contracts: [{ kind: "role_input", roleId: "worker", schemaPath: "schemas/worker.json" }],
+      schemaFiles: [{ path: "schemas/worker.json", content: JSON.stringify({ type: "object", required: ["task"], properties: { task: { type: "string" } } }) }]
+    },
+    authoring: { roles: { worker: { roleId: "worker" } }, flows: {} },
+    t: testTranslator
+  });
+  assert.doesNotMatch(configured, /data-context-map-apply-defaults/);
+});
+
 test("visualizer client retries Studio graph mount until the Build panel is visible and sized", async () => {
   const harness = await createClientHarness();
   const mountCalls = [];

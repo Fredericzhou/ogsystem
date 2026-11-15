@@ -4382,6 +4382,53 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           });
         });
       }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-apply-defaults]"))) {
+        bindOnce(button, "click", "context-map-apply-defaults", () => {
+          const editorRoot = button.closest("[data-role-config-editor]");
+          const rows = editorRoot?.querySelector("[data-context-map-rows]");
+          const template = editorRoot?.querySelector("[data-context-map-row-template]");
+          if (!editorRoot || !rows || !template) return;
+          let defaults = {};
+          try {
+            const parsed = JSON.parse(button.getAttribute("data-context-map-defaults") || "{}");
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+            defaults = parsed;
+          } catch {
+            return;
+          }
+          for (const [field, selectorValue] of Object.entries(defaults)) {
+            if (typeof selectorValue !== "string" || !field.trim() || !selectorValue.trim()) continue;
+            const row = template.content?.firstElementChild?.cloneNode(true);
+            if (!row) continue;
+            const target = row.querySelector("[data-context-map-target]");
+            const selector = row.querySelector("[data-context-map-selector]");
+            const path = row.querySelector("[data-context-map-path]");
+            const optional = row.querySelector("[data-context-map-optional]");
+            if (!target || !selector || !path || !optional) continue;
+            target.value = field;
+            const split = selectorValue.match(/^(source\([^)]+\)\.(?:content|event|data|artifact)|direct\.(?:content|event|data|artifact)|global\.[A-Za-z0-9_.-]+?)(?:\.(.+))?$/);
+            const base = split?.[1] || selectorValue;
+            const nestedPath = split?.[2] || "";
+            if (!Array.from(selector.options || []).some((option) => option.value === base)) {
+              const option = document.createElement("option");
+              option.value = base;
+              option.textContent = base;
+              selector.appendChild(option);
+            }
+            selector.value = base;
+            path.value = nestedPath;
+            optional.checked = false;
+            rows.appendChild(row);
+          }
+          button.closest("[data-context-map-defaults-panel]")?.remove();
+          bindStudioRoleConfigEditorControls();
+          const draft = readStudioRoleConfigDraft(editorRoot);
+          state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), dirty: true, saving: false, error: "", draft };
+          const preview = editorRoot.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows(editorRoot)), null, 2);
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-add]"))) {
         bindOnce(button, "click", "context-map-add", () => {
           const editorRoot = button.closest("[data-role-config-editor]");

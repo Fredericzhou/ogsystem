@@ -1058,6 +1058,8 @@ export const zhCN = {
   "studio.roleConfigProfileRequired": "当角色以 Tool 方式运行时，必须选择执行 Profile。",
   "studio.contextMapObjectRequired": "上下文映射必须是 JSON 对象。",
   "studio.contextMapEntriesInvalid": "上下文映射的键和值都必须是非空字符串。",
+  "studio.contextMapDefaultsHint": "建议映射根据角色输入必填字段和当前图结构生成，请确认后再保存。",
+  "studio.contextMapApplyDefaults": "应用建议映射",
   "studio.executionConfig": "执行配置",
   "studio.executionConfigHint": "仓库内容引用到项目后会复制为项目本地内容。下方业务字段可编辑，id 由系统维护。",
   "studio.executionConfigProfileId": "配置标识",
