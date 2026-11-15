@@ -24,6 +24,7 @@ import { acquireActiveRunLock } from "./project-run-lock.js";
 import { createRunId } from "./run-artifacts.js";
 import { readLatestProjectRunControl } from "./project-run-control.js";
 import { resolve } from "node:path";
+import type { GitCollaboration } from "./git-collaboration.js";
 
 export { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 export { resolveEffectiveLaw } from "./runtime-setup.js";
@@ -43,10 +44,28 @@ export { validateEventCandidate } from "./event-contract.js";
 export { resolveJoinPolicy } from "./join-policy.js";
 export { buildArtifactReference, buildAllowedArtifactSet, createArtifactResolver } from "./artifact-access.js";
 export { createWorkspaceTools } from "./workspace-tools.js";
+export {
+  assertWorkspaceExecutionDirectory,
+  projectWorkspaceCapabilities,
+  validateWorkspaceCapabilityPolicy
+} from "./backend-capabilities.js";
 export { artifactVerificationError, DEFAULT_MAX_IMAGE_BYTES, verifyArtifactDirectory, writeSealManifest, writeVerifiedArtifactManifest } from "./artifact-verifier.js";
 export { buildRolePromptInput } from "./role-input-projector.js";
 export { projectOgsSpan, toOgsCloudEvent } from "./observability.js";
 export { validateCapabilityPolicy } from "./capability-policy.js";
+export {
+  createGitCollaboration,
+  probeGitCollaboration
+} from "./git-collaboration.js";
+export type {
+  GitCollaboration,
+  GitCollaborationOptions,
+  GitCollaborationProbe,
+  GitMergeVerification,
+  GitMergeResult,
+  GitRoleCommit,
+  GitRoleWorktree
+} from "./git-collaboration.js";
 export { compileSubgraphSpec, validateSubgraphSpec } from "./subgraph.js";
 export { createFilesystemRuntimeServices } from "./filesystem-runtime-services.js";
 export type { EngineRunInput, ExecutionEngineAdapter, RuntimeAuditEvent, RuntimeExecutionServices } from "./engine-adapter.js";
@@ -122,6 +141,12 @@ export async function runSystemWithAdapter(args: {
   runtimeEdgeIdsByTransition?: Record<string, string>;
   /** Deterministic dry-run scenario for repeatable Studio acceptance checks. */
   dryRunScenario?: "review-reject-once";
+  /** Explicit opt-in collaboration coordinator for Git-backed parallel Role runs. */
+  gitCollaboration?: {
+    collaboration: GitCollaboration;
+    baseCommit: string;
+    publish?: (merge: import("./git-collaboration.js").GitMergeResult) => Promise<void>;
+  };
   projectDigest?: string;
   projectRunLock?: boolean;
   materialInputs?: ProjectMaterialInput[];
@@ -385,6 +410,7 @@ export async function runSystemWithAdapter(args: {
             errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
             runtimeEdgeIdsByTransition: args.runtimeEdgeIdsByTransition,
             dryRunScenario: args.dryRunScenario,
+            gitCollaboration: args.gitCollaboration,
             logRun: args.logRun ?? false,
             runControl
           };

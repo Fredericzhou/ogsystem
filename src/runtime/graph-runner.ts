@@ -6,6 +6,7 @@
  * persistence calls (checkpoints, audit output) instead of hiding them behind helpers to keep
  * crash handling transparent.
  */
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -52,6 +53,7 @@ import { buildRunSummaryProjection } from "./run-summary-schema.js";
 import { projectStages } from "./stage-projector.js";
 import { applySemanticBusinessState } from "./semantic-state.js";
 import { resolveJoinPolicy } from "./join-policy.js";
+import type { GitCollaboration, GitMergeResult, GitMergeVerification, GitRoleCommit, GitRoleWorktree } from "./git-collaboration.js";
 import {
   RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
   RUNTIME_EVENT_LOOP_EXHAUSTED
@@ -245,6 +247,12 @@ export type RunnerInput = {
   runtimeEdgeIdsByTransition?: Record<string, string>;
   /** Named deterministic dry-run scenario used for repeatable Studio UAT. */
   dryRunScenario?: "review-reject-once";
+  /** Optional opt-in Git collaboration lifecycle for parallel code branches. */
+  gitCollaboration?: {
+    collaboration: GitCollaboration;
+    baseCommit: string;
+    publish?: (merge: GitMergeResult) => Promise<void>;
+  };
 };
 
 /**
@@ -1271,10 +1279,245 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   if (args.runtimeServices) {
     runtimeServicesByContext.set(args.runContext, args.runtimeServices);
   }
+  if (args.gitCollaboration) {
+    const probe = await args.gitCollaboration.collaboration.probe(args.workdir);
+    if (!probe.supported) {
+      const reason = probe.reason ?? "UNSUPPORTED_REPOSITORY";
+      await appendEvent(args.runContext, {
+        type: "git_collaboration_probe_failed",
+        at: new Date().toISOString(),
+        reason,
+        repositoryRoot: probe.repositoryRoot,
+        workspaceRelativePath: probe.workspaceRelativePath
+      }).catch(() => undefined);
+      throw new Error(`GIT_COLLABORATION_UNSUPPORTED: ${reason}`);
+    }
+  }
   const logger = createRunConsoleLogger(args.logRun);
   const runControl = args.runControl ?? new RunControl();
   const initialState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt, runId: args.runContext.runId });
   let runtimeIndexes = buildRuntimeIndexes(initialState);
+  const gitRoleCommitsByBranchId = new Map<string, GitRoleCommit>();
+  const gitRoleExecutionSucceededByBranchId = new Map<string, boolean>();
+  const gitMergeResults: GitMergeResult[] = [];
+  const sameStringArray = (left: unknown, right: string[]): boolean => Array.isArray(left)
+    && left.length === right.length
+    && left.every((item, index) => item === right[index]);
+  const sameCandidateCommits = (left: unknown, right: string[]): boolean => {
+    if (!sameStringArray(left, right)) return false;
+    const leftValues = left as string[];
+    return new Set(leftValues).size === leftValues.length && new Set(right).size === right.length;
+  };
+  if (args.gitCollaboration) {
+    const persistedEvents = await readFile(args.runContext.eventsPath, "utf8").catch(() => "");
+    for (const line of persistedEvents.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>;
+        if (event.type !== "git_collaboration_role_commit") continue;
+        const branchId = typeof event.branchId === "string" ? event.branchId : undefined;
+        const roleId = typeof event.roleId === "string" ? event.roleId : undefined;
+        const executionId = typeof event.executionId === "string" ? event.executionId : undefined;
+        const branch = typeof event.branch === "string" ? event.branch : undefined;
+        const path = typeof event.path === "string" ? event.path : undefined;
+        const baseCommit = typeof event.baseCommit === "string" ? event.baseCommit : undefined;
+        const resultCommit = typeof event.resultCommit === "string" ? event.resultCommit : undefined;
+        const changedPaths = Array.isArray(event.changedPaths) && event.changedPaths.every((item) => typeof item === "string")
+          ? event.changedPaths as string[]
+          : undefined;
+        if (!branchId || !roleId || !executionId || !branch || !path || !baseCommit || !resultCommit || !changedPaths) continue;
+        const commit: GitRoleCommit = {
+          roleId,
+          executionId,
+          branch,
+          path,
+          baseCommit,
+          resultCommit,
+          changedPaths,
+          provenance: {
+            version: 1,
+            kind: "role-commit",
+            runId: args.runContext.runId,
+            roleId,
+            executionId,
+            baseCommit,
+            resultCommit,
+            changedPaths
+          }
+        };
+        await args.gitCollaboration.collaboration.registerRoleCommit(commit);
+        gitRoleCommitsByBranchId.set(branchId, commit);
+        gitRoleExecutionSucceededByBranchId.set(branchId, true);
+      } catch {
+        // Ignore unrelated or malformed historical lines; normal graph recovery handles them.
+      }
+    }
+    for (const line of persistedEvents.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>;
+        if (event.type !== "git_collaboration_merge") continue;
+        const mergeId = typeof event.mergeId === "string" ? event.mergeId : undefined;
+        const path = typeof event.path === "string" ? event.path : undefined;
+        const branch = typeof event.branch === "string" ? event.branch : undefined;
+        const baseCommit = typeof event.baseCommit === "string" ? event.baseCommit : undefined;
+        const status = event.status === "merged" || event.status === "conflict" ? event.status : undefined;
+        const candidateCommits = Array.isArray(event.candidateCommits) && event.candidateCommits.every((item) => typeof item === "string")
+          ? event.candidateCommits as string[]
+          : undefined;
+        const conflictPaths = Array.isArray(event.conflictPaths) && event.conflictPaths.every((item) => typeof item === "string")
+          ? event.conflictPaths as string[]
+          : undefined;
+        const mergeCommit = typeof event.mergeCommit === "string" ? event.mergeCommit : undefined;
+        const provenance = event.provenance && typeof event.provenance === "object" ? event.provenance as Record<string, unknown> : undefined;
+        const provenanceCandidateCommits = provenance?.candidateCommits;
+        const provenanceConflictPaths = provenance?.conflictPaths;
+        const provenanceMergeCommit = typeof provenance?.mergeCommit === "string" ? provenance.mergeCommit : undefined;
+        if (!mergeId || !path || !branch || !baseCommit || !status || !candidateCommits || !conflictPaths
+          || (status === "merged" && !mergeCommit)
+          || provenance?.version !== 1
+          || provenance.kind !== "merge"
+          || provenance.runId !== args.runContext.runId
+          || provenance.mergeId !== mergeId
+          || provenance.baseCommit !== baseCommit
+          || provenance.status !== status
+          || !sameStringArray(provenanceCandidateCommits, candidateCommits)
+          || !sameStringArray(provenanceConflictPaths, conflictPaths)
+          || provenanceMergeCommit !== mergeCommit) continue;
+        gitMergeResults.push({
+          mergeId,
+          path,
+          branch,
+          baseCommit,
+          candidateCommits,
+          status,
+          ...(mergeCommit ? { mergeCommit } : {}),
+          conflictPaths,
+          provenance: {
+            version: 1,
+            kind: "merge",
+            runId: args.runContext.runId,
+            mergeId,
+            baseCommit,
+            candidateCommits,
+            status,
+            ...(mergeCommit ? { mergeCommit } : {}),
+            conflictPaths
+          }
+        });
+      } catch {
+        // Ignore unrelated or malformed historical lines; normal graph recovery handles them.
+      }
+    }
+  }
+  const persistGitRoleCommit = async (branchId: string, commit: GitRoleCommit): Promise<void> => {
+    gitRoleCommitsByBranchId.set(branchId, commit);
+    await appendEvent(args.runContext, {
+      type: "git_collaboration_role_commit",
+      eventId: `git-role-commit:${branchId}:${commit.executionId}`,
+      at: new Date().toISOString(),
+      branchId,
+      roleId: commit.roleId,
+      executionId: commit.executionId,
+      branch: commit.branch,
+      path: commit.path,
+      baseCommit: commit.baseCommit,
+      resultCommit: commit.resultCommit,
+      changedPaths: commit.changedPaths,
+      provenance: commit.provenance
+    });
+  };
+  const persistGitMerge = async (merge: GitMergeResult, phase: "join" | "final", verification?: { passed: boolean; reason?: string }): Promise<void> => {
+    await appendEvent(args.runContext, {
+      type: "git_collaboration_merge",
+      eventId: `git-merge:${phase}:${merge.mergeId}`,
+      at: new Date().toISOString(),
+      phase,
+      status: merge.status,
+      mergeId: merge.mergeId,
+      path: merge.path,
+      branch: merge.branch,
+      baseCommit: merge.baseCommit,
+      candidateCommits: merge.candidateCommits,
+      mergeCommit: merge.mergeCommit,
+      conflictPaths: merge.conflictPaths,
+      provenance: merge.provenance,
+      ...(verification ? { verification } : {})
+    });
+  };
+  const latestGitMerge = (predicate: (merge: GitMergeResult) => boolean): GitMergeResult | undefined => {
+    for (let index = gitMergeResults.length - 1; index >= 0; index -= 1) {
+      if (predicate(gitMergeResults[index])) return gitMergeResults[index];
+    }
+    return undefined;
+  };
+  const verifyGitMerge = async (merge: GitMergeResult): Promise<GitMergeVerification> => args.gitCollaboration!.collaboration.verifyMergeWorktree(
+    merge.path,
+    merge.baseCommit,
+    {
+      mergeId: merge.mergeId,
+      branch: merge.branch,
+      mergeCommit: merge.mergeCommit,
+      candidateCommits: merge.candidateCommits
+    }
+  );
+  const selectFinalGitCommits = async (state: GraphState): Promise<string[]> => {
+    const entries = Array.from(gitRoleCommitsByBranchId.entries())
+      .filter(([branchId]) => gitRoleExecutionSucceededByBranchId.get(branchId) === true)
+      .map(([branchId, commit]) => ({ branchId, commit }))
+      .sort((left, right) => {
+        const leftSequence = state.branchRecords[left.branchId]?.branchSequence ?? Number.MAX_SAFE_INTEGER;
+        const rightSequence = state.branchRecords[right.branchId]?.branchSequence ?? Number.MAX_SAFE_INTEGER;
+        return leftSequence - rightSequence || left.branchId.localeCompare(right.branchId);
+      });
+    const entryByBranchId = new Map(entries.map((entry) => [entry.branchId, entry]));
+    const branchHasCommittedDescendant = (branchId: string): boolean => entries.some((entry) => {
+      if (entry.branchId === branchId) return false;
+      const visited = new Set<string>();
+      let current = state.branchRecords[entry.branchId];
+      while (current?.parentBranchId && !visited.has(current.parentBranchId)) {
+        if (current.parentBranchId === branchId) return true;
+        visited.add(current.parentBranchId);
+        current = state.branchRecords[current.parentBranchId];
+      }
+      return false;
+    });
+    const leaves = entries.filter((entry) => !branchHasCommittedDescendant(entry.branchId));
+    const chainForLeaf = (leafBranchId: string): Array<{ branchId: string; commit: GitRoleCommit }> => {
+      const chain: Array<{ branchId: string; commit: GitRoleCommit }> = [];
+      const visited = new Set<string>();
+      let currentBranchId: string | undefined = leafBranchId;
+      while (currentBranchId && !visited.has(currentBranchId)) {
+        visited.add(currentBranchId);
+        const entry = entryByBranchId.get(currentBranchId);
+        if (entry) chain.push(entry);
+        currentBranchId = state.branchRecords[currentBranchId]?.parentBranchId;
+      }
+      return chain;
+    };
+    const leafChains = leaves.map((leaf) => ({ leaf, chain: chainForLeaf(leaf.branchId) }));
+    const selected: string[] = [];
+    for (const entry of entries) {
+      let superseded = false;
+      for (const { leaf, chain } of leafChains) {
+        if (leaf.branchId === entry.branchId) continue;
+        if (chain.some((ancestor) => ancestor.branchId === entry.branchId)) {
+          superseded = true;
+          break;
+        }
+        for (const ancestor of chain) {
+          if (ancestor.branchId === entry.branchId) continue;
+          if (await args.gitCollaboration!.collaboration.isCommitAncestor(entry.commit.resultCommit, ancestor.commit.resultCommit)) {
+            superseded = true;
+            break;
+          }
+        }
+        if (superseded) break;
+      }
+      if (!superseded && !selected.includes(entry.commit.resultCommit)) selected.push(entry.commit.resultCommit);
+    }
+    return selected;
+  };
   if (initialState.stateVersion === 0) {
     for (const roleId of initialState.selectedEntryRoleIds) {
       const branch = Object.values(initialState.branchRecords).find((candidate) => candidate.roleId === roleId);
@@ -1326,7 +1569,61 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
       // One branch per node attempt keeps LangGraph's timeout scoped to one role execution.
       const branch = activeBranches[0];
+      let joinMerge: GitMergeResult | undefined;
+      if (args.gitCollaboration?.collaboration && node.joinMode) {
+        const sourceCommitEntries = node.joinSources.flatMap((sourceRoleId) => Object.values(workingState.branchRecords)
+          .filter((candidate) => candidate.roleId === sourceRoleId
+            && candidate.lineageId === branch.lineageId
+            && candidate.loopIteration === branch.loopIteration)
+          .map((candidate) => ({
+            sourceRoleId,
+            commit: gitRoleCommitsByBranchId.get(candidate.branchId)?.resultCommit
+          }))
+          .filter((entry): entry is { sourceRoleId: string; commit: string } => Boolean(entry.commit)));
+        const sourceCommits = sourceCommitEntries.map((entry) => entry.commit);
+        const uniqueCandidates = [...new Set(sourceCommits)];
+        const resolvedSourceCount = new Set(sourceCommitEntries.map((entry) => entry.sourceRoleId)).size;
+        const sourcesReadyForMerge = node.joinMode === "quorum_of"
+          ? resolvedSourceCount >= Math.max(1, node.joinMin ?? 1)
+          : resolvedSourceCount === node.joinSources.length;
+        if (sourcesReadyForMerge && uniqueCandidates.length > 0) {
+          const mergeId = `${roleId}-${branch.branchId}`.replace(/[^a-z0-9._-]/gi, "-").slice(0, 70);
+          const persistedMerge = latestGitMerge((item) => item.mergeId === mergeId
+            && item.baseCommit === args.gitCollaboration!.baseCommit
+            && sameCandidateCommits(item.candidateCommits, uniqueCandidates));
+          joinMerge = persistedMerge;
+          if (joinMerge?.status === "merged") {
+            try {
+              const verification = await verifyGitMerge(joinMerge);
+              if (!verification.passed) throw new Error(`GIT_COLLABORATION_MERGE_VERIFICATION_FAILED: ${verification.reason ?? "unknown"}`);
+            } catch {
+              joinMerge = undefined;
+            }
+          }
+          if (joinMerge?.status === "conflict") joinMerge = undefined;
+          if (!joinMerge) {
+            joinMerge = await args.gitCollaboration.collaboration.mergeCommits({
+              mergeId,
+              baseCommit: args.gitCollaboration.baseCommit,
+              candidateCommits: uniqueCandidates
+            });
+            gitMergeResults.push(joinMerge);
+          }
+          if (joinMerge.status === "conflict") {
+            await persistGitMerge(joinMerge, "join", { passed: false, reason: "MERGE_CONFLICT" });
+            throw new Error(`GIT_COLLABORATION_MERGE_CONFLICT: ${joinMerge.conflictPaths.join(", ")}`);
+          }
+          const verification = await verifyGitMerge(joinMerge);
+          if (!verification.passed) throw new Error(`GIT_COLLABORATION_MERGE_VERIFICATION_FAILED: ${verification.reason ?? "unknown"}`);
+          await persistGitMerge(joinMerge, "join", verification);
+        }
+      }
       const retryPolicy = args.plan.semanticIR?.retryByRoleId?.[roleId];
+      if (args.gitCollaboration) {
+        // A branch that reaches execution is required to succeed before promotion. This
+        // prevents an empty commit map from making `every(Boolean)` vacuously true.
+        gitRoleExecutionSucceededByBranchId.set(branch.branchId, false);
+      }
       let result = await executeRoleNode({
           roleId, node, plan: args.plan, state: workingState, branch,
           attempt: 1,
@@ -1336,7 +1633,54 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
           logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append,
-          dryRunScenario: args.dryRunScenario
+          dryRunScenario: args.dryRunScenario,
+          ...(args.gitCollaboration && !joinMerge ? {
+            prepareExecutionWorkspace: async (execution) => {
+              const worktree = await args.gitCollaboration!.collaboration.addWorktree({
+                roleId,
+                executionId: execution.executionId,
+                baseCommit: args.gitCollaboration!.baseCommit
+              });
+              return {
+                path: worktree.path,
+                finalize: async () => {
+                  const commit = await args.gitCollaboration!.collaboration.commitWorktree(
+                    worktree,
+                    `OGS ${roleId} ${execution.executionId}`,
+                    { allowNoChanges: true }
+                  );
+                  await persistGitRoleCommit(branch.branchId, commit);
+                },
+                discard: async () => args.gitCollaboration!.collaboration.removeWorktree(worktree.path, true)
+              };
+            }
+          } : {}),
+          ...(joinMerge ? {
+            prepareExecutionWorkspace: async (execution) => {
+              const mergeWorktree: GitRoleWorktree = {
+                roleId,
+                executionId: execution.executionId,
+                branch: joinMerge!.branch,
+                path: joinMerge!.path,
+                baseCommit: joinMerge!.baseCommit
+              };
+              return {
+                path: joinMerge!.path,
+                finalize: async () => {
+                  const commit = await args.gitCollaboration!.collaboration.commitWorktree(
+                    mergeWorktree,
+                    `OGS merge ${roleId} ${execution.executionId}`,
+                    { allowNoChanges: true }
+                  );
+                  await persistGitRoleCommit(branch.branchId, commit);
+                },
+                discard: async () => {
+                  if (!joinMerge?.mergeCommit) return;
+                  await args.gitCollaboration!.collaboration.resetWorktree(joinMerge.path, joinMerge.mergeCommit);
+                }
+              };
+            }
+          } : {})
         });
       const promptCallsByCallId = new Map((result.audit.promptCalls ?? []).map((call) => [call.callId, call]));
       const priorAttemptExecutionIds: string[] = [];
@@ -1367,7 +1711,52 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
           logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append,
-          dryRunScenario: args.dryRunScenario
+          dryRunScenario: args.dryRunScenario,
+          ...(joinMerge ? {
+            prepareExecutionWorkspace: async (execution) => {
+              const mergeWorktree: GitRoleWorktree = {
+                roleId,
+                executionId: execution.executionId,
+                branch: joinMerge!.branch,
+                path: joinMerge!.path,
+                baseCommit: joinMerge!.baseCommit
+              };
+              await args.gitCollaboration!.collaboration.resetWorktree(joinMerge!.path, joinMerge!.mergeCommit!);
+              return {
+                path: joinMerge!.path,
+                finalize: async () => {
+                  const commit = await args.gitCollaboration!.collaboration.commitWorktree(
+                    mergeWorktree,
+                    `OGS merge ${roleId} ${execution.executionId}`,
+                    { allowNoChanges: true }
+                  );
+                  await persistGitRoleCommit(branch.branchId, commit);
+                },
+                discard: async () => {
+                  if (!joinMerge?.mergeCommit) return;
+                  await args.gitCollaboration!.collaboration.resetWorktree(joinMerge.path, joinMerge.mergeCommit);
+                }
+              };
+            }
+          } : args.gitCollaboration ? {
+            prepareExecutionWorkspace: async (execution) => {
+              const worktree = await args.gitCollaboration!.collaboration.addWorktree({ roleId, executionId: execution.executionId, baseCommit: args.gitCollaboration!.baseCommit });
+              return {
+                path: worktree.path,
+                finalize: async () => {
+                  await persistGitRoleCommit(
+                    branch.branchId,
+                    await args.gitCollaboration!.collaboration.commitWorktree(
+                      worktree,
+                      `OGS ${roleId} ${execution.executionId}`,
+                      { allowNoChanges: true }
+                    )
+                  );
+                },
+                discard: async () => args.gitCollaboration!.collaboration.removeWorktree(worktree.path, true)
+              };
+            }
+          } : {})
         });
         for (const call of result.audit.promptCalls ?? []) promptCallsByCallId.set(call.callId, call);
       }
@@ -1384,6 +1773,9 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           fallbackUsed: promptCalls.some((call) => call.phase === "fallback"),
           primaryModelId: result.audit.primaryModelId ?? promptCalls.find((call) => call.phase === "primary")?.modelId
         };
+      }
+      if (args.gitCollaboration) {
+        gitRoleExecutionSucceededByBranchId.set(branch.branchId, result.status !== "failed");
       }
       if (priorAttemptExecutionIds.length) {
         const roleDirs = args.runContext.roleDirsById.get(roleId);
@@ -1930,6 +2322,106 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   } else {
     await clearRunStopRequest(args.runContext.runDir);
+  }
+
+  if (args.gitCollaboration && gitRoleCommitsByBranchId.size > 0) {
+    const finalMergeId = `run-${args.runContext.runId}`;
+    const branchCommits = await selectFinalGitCommits(finalState);
+    const allGitRoleExecutionsSucceeded = [...gitRoleExecutionSucceededByBranchId.values()].every(Boolean);
+    const existingMerge = latestGitMerge((item) => item.mergeId === finalMergeId
+      && item.baseCommit === args.gitCollaboration!.baseCommit);
+    const mergeAlreadyIncludesAllBranches = existingMerge?.status === "merged"
+      && sameCandidateCommits(existingMerge.candidateCommits, branchCommits);
+    let merge: GitMergeResult | undefined;
+    let mergeVerification: { passed: boolean; reason?: string } | undefined;
+    let mergeFailure: string | undefined;
+    try {
+      merge = mergeAlreadyIncludesAllBranches ? existingMerge : await args.gitCollaboration.collaboration.mergeCommits({
+        mergeId: finalMergeId,
+        baseCommit: args.gitCollaboration.baseCommit,
+        candidateCommits: branchCommits
+      });
+      if (!mergeAlreadyIncludesAllBranches) gitMergeResults.push(merge);
+      let verification: GitMergeVerification | undefined = merge.status === "merged"
+        ? await verifyGitMerge(merge).catch(() => undefined)
+        : undefined;
+      if (!verification && merge.status === "merged") {
+        merge = await args.gitCollaboration.collaboration.mergeCommits({
+          mergeId: finalMergeId,
+          baseCommit: args.gitCollaboration.baseCommit,
+          candidateCommits: branchCommits
+        });
+        gitMergeResults.push(merge);
+        verification = merge.status === "merged"
+          ? await verifyGitMerge(merge)
+          : undefined;
+      }
+      mergeVerification = merge.status === "conflict"
+        ? { passed: false, reason: "MERGE_CONFLICT" }
+        : verification;
+      await persistGitMerge(merge, "final", mergeVerification);
+    } catch (error) {
+      mergeFailure = error instanceof Error ? error.message : String(error);
+    }
+    if (mergeFailure) {
+      finalState = { ...finalState, status: "failed", error: `Git collaboration merge failed: ${mergeFailure}` };
+      await appendEvent(args.runContext, {
+        type: "git_collaboration_merge_failed",
+        at: new Date().toISOString(),
+        phase: "final",
+        mergeId: finalMergeId,
+        error: mergeFailure
+      });
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+      await appendEvent(args.runContext, {
+        type: "git_collaboration_publish_skipped",
+        at: new Date().toISOString(),
+        reason: "MERGE_FAILED",
+        runStatus: finalState.status,
+        mergeId: finalMergeId
+      });
+    } else if (merge && (merge.status !== "merged" || mergeVerification?.passed !== true)) {
+      finalState = { ...finalState, status: "failed", error: `Git collaboration merge ${merge.status === "conflict" ? "conflict" : "verification failed"}.` };
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+    } else if (merge && finalState.status === "done" && allGitRoleExecutionsSucceeded && args.gitCollaboration.publish) {
+      try {
+        await args.gitCollaboration.publish(merge);
+      } catch (error) {
+        const publishFailure = error instanceof Error ? error.message : String(error);
+        finalState = {
+          ...finalState,
+          status: "failed",
+          error: `Git collaboration publish failed: ${publishFailure}`,
+          errorEnvelope: {
+            errorCode: "GIT_COLLABORATION_PUBLISH_FAILED",
+            errorCategory: "io",
+            message: `Git collaboration publish failed: ${publishFailure}`,
+            retryable: false,
+            stage: "execute",
+            runId: args.runContext.runId
+          }
+        };
+        await appendEvent(args.runContext, {
+          type: "git_collaboration_publish_failed",
+          at: new Date().toISOString(),
+          phase: "final",
+          mergeId: merge.mergeId,
+          mergeCommit: merge.mergeCommit,
+          error: publishFailure,
+          possiblePartialPublish: true
+        });
+        await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+      }
+    } else if (merge && (finalState.status !== "done" || !allGitRoleExecutionsSucceeded)) {
+      await appendEvent(args.runContext, {
+        type: "git_collaboration_publish_skipped",
+        at: new Date().toISOString(),
+        reason: finalState.status !== "done" ? "RUN_NOT_DONE" : "ROLE_EXECUTION_FAILED",
+        runStatus: finalState.status,
+        mergeId: merge.mergeId,
+        mergeCommit: merge.mergeCommit
+      });
+    }
   }
 
   const auditTrailFromEvents = await loadAuditTrailFromEvents({
