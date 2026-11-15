@@ -82,7 +82,7 @@ The following may be designed and implemented later without changing the core ob
 Capability Preview refresh UX and Backend tool matrix
 ACP/MCP transport details and static/request/none protocol variants
 Pi, Kimi, and other Backend-specific probes
-Runtime exception review matrices, timeout, escalation, and notification
+Extended Runtime exception review matrices, timeout, escalation, and notification
 Action-specific review payloads and detailed evidence/result references
 Alternate Artifact stores and automatic v1 migration tooling
 Service Agent, Human Agent, and Remote Agent bindings
@@ -1098,13 +1098,13 @@ explicit result:
   approve / rework / reject -> resolve the business result and declared handoff
 
 Runtime exception:
-  continue / retry / terminate -> apply the Runtime control authorization
+  exception-specific action subset -> apply the Runtime control authorization
 ```
 
 Explicit result review actions are business decisions about the Role's durable result and
 declared handoff. Runtime exception review actions are Execution control decisions about
-continuation, retry, and termination. Budget, pause, timeout, and escalation extensions are
-Deferred RFCs. Both use the same request, action enum,
+continuation, retry, declared rework/reject routes, and termination. Budget, pause, timeout, and
+escalation extensions are Deferred RFCs. Both use the same request, action enum,
 decision payload, and Evidence schema. Neither class approves or rejects an individual Backend
 tool call.
 
@@ -1840,7 +1840,8 @@ Core action meanings are fixed:
 
 ```text
 approve   Accept the business result and continue the declared handoff.
-continue  Resume the current control scope with an explicit runtime authorization.
+continue  Resume the current control scope only within the exception policy and any declared
+          loopBudget authorization.
 rework    Route to the declared rework target.
 retry     Repeat the current Role attempt or failed execution.
 reject    Produce the declared business rejection outcome or route.
@@ -1868,14 +1869,28 @@ explicit result review
   rework/reject: the unique matching Flow edge selected by the current Flow and review policy
 
 Runtime exception review
-  available actions: continue / retry / terminate
+  available actions: the exception policy's declared subset, intersected with the active Runtime
+  scope
   target and scope: the current Runtime exception context and active branch/lineage state
+
+loop_exhausted
+  continue / rework / reject / terminate
+  continue is valid only through the declared loopBudget binding and its target/grant constraints
+
+retry_exhausted
+  retry / terminate
+  rework / reject are added only when a declared route exists
+
+other exception
+  actions declared by that exception's policy; undeclared actions are unavailable
 ```
 
-The Flow, Role `authority.controlActions`, and compiled review policy must resolve each displayed
-action to exactly one target. A static ambiguity is a readiness error. A runtime ambiguity causes
-the decision to be rejected and audited; Runtime must not guess a branch, retry attempt, budget, or
-termination scope. This keeps the core request small without making action application implicit.
+The Flow, Role `authority.controlActions`, exception-specific policy, and compiled Runtime scope
+must resolve each displayed action to exactly one target. A static ambiguity is a readiness error.
+A runtime ambiguity causes the decision to be rejected and audited; Runtime must not guess a
+branch, retry attempt, budget, or termination scope. `continue` never means arbitrary budget
+increase: for `loop_exhausted`, it can only consume the target and grant already declared by the
+`loopBudget` binding. This keeps the core request small without making action application implicit.
 
 The core request has only the lifecycle needed for blocking, recovery, idempotency, and CAS:
 
@@ -1929,9 +1944,9 @@ the state/checkpoint and Evidence correlation available before creating the requ
 
 The following are Deferred RFC fields and policies: `expiresAt`, `timeoutPolicy`, `paused`,
 `requestedAt`, detailed evidence/result references, action-specific payloads such as retry attempt
-or additional budget, escalation/notification rules, and complete loop/retry/Artifact exception
-matrices. An exception review may use only `trigger: "exception"` and `exceptionContext` until
-those extensions are approved.
+or additional budget, escalation/notification rules, and exception matrices beyond the core
+derivation rules above. An exception review may use only `trigger: "exception"` and
+`exceptionContext` until those extensions are approved.
 
 The compiled review policy is one object for both trigger kinds:
 
@@ -1939,6 +1954,8 @@ The compiled review policy is one object for both trigger kinds:
 type HumanReviewPolicy = {
   afterRoleResult: boolean;
   exceptionCodes: string[];
+  // Compiled from each exception's existing Runtime policy; not a separate action registry.
+  exceptionActionsByCode?: Record<string, HumanReviewAction[]>;
 };
 ```
 
@@ -1946,8 +1963,9 @@ The review policy has one compiled source in the Semantic IR/Execution Plan. It 
 `after_role_result` and configured Runtime exception codes in the same policy. Runtime creates a
 request from that policy; it does not create a second review model for exceptions. Every request
 and decision is bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion` in the
-core model. The action subset and target are derived using the rules above; no separate action
-registry or action-specific payload is required in v2 core.
+core model. `exceptionActionsByCode` is a compiled projection of existing exception policies; it
+does not create a second action registry. The action target is derived using the rules above, so no
+action-specific payload is required in v2 core.
 
 ```mermaid
 flowchart LR
@@ -1956,7 +1974,7 @@ flowchart LR
     C -->|No| D["Graph transition"]
     C -->|Yes| E["HumanReviewRequest"]
     X["Runtime exception"] --> E
-    E -->|approve / continue / retry| D
+    E -->|derived allowed action| D
     E -->|rework| F["Declared target"]
     E -->|reject| G["Declared rejection path"]
     E -->|terminate| I["End Run"]
@@ -2283,7 +2301,7 @@ No dual write is kept.
 26. An explicit `allowedTools` entry that is missing or unenforceable fails readiness; the
     Backend is not started and the Graph does not advance.
 27. Review action subsets and targets are uniquely derived from the Flow, Role
-    `authority.controlActions`, compiled review policy, and Runtime scope; ambiguous static targets
-    fail readiness and ambiguous runtime decisions are rejected and audited.
+    `authority.controlActions`, exception-specific compiled policy, and Runtime scope; ambiguous
+    static targets fail readiness and ambiguous runtime decisions are rejected and audited.
 28. A Model Role cannot commit a successful result or advance a handoff until output
     postconditions, acceptance criteria, and declared Artifact verification pass.
