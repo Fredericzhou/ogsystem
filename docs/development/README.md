@@ -32,6 +32,7 @@ and active manuals together.
 
 - [Role execution architecture](role-execution-architecture.md): target proposal; not read by the current Runtime.
 - [Backend native tools standardization](backend-native-tools-standardization.md): v2 supporting material; not a current v1 input contract.
+- [v2 validation and acceptance](v2-validation-and-acceptance.md): target semantic, technical, cross-Backend, and production-workflow acceptance baseline.
 
 ## Reference / Research
 

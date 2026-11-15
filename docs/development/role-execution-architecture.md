@@ -2354,3 +2354,5 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
     validate Review identity and Runtime scope.
 32. `exceptionActionsByCode` is a read-only compiled projection; users do not maintain it as a
     separate configuration object.
+33. The v2 validation baseline covers semantic scenarios, technical readiness/recovery, verified
+    cross-Backend collaboration, and real software and documentation production workflows.

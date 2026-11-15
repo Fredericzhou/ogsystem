@@ -64,6 +64,7 @@ Evidence, Product Projections) remains valid for v1 and is not a competing produ
 
 - [Role execution architecture](development/role-execution-architecture.md): target proposal; not read by the current Runtime.
 - [Backend native tools standardization](development/backend-native-tools-standardization.md): v2 supporting material and adapter boundary; not a current v1 input contract.
+- [v2 validation and acceptance](development/v2-validation-and-acceptance.md): semantic, technical, cross-Backend, and production-workflow acceptance baseline.
 
 ### Reference / Research
 
