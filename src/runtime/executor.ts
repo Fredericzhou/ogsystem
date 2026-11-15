@@ -14,6 +14,7 @@ import {
   type ModelBackendId,
   type WorkspaceCapabilityPolicy
 } from "./model-backend-registry.js";
+import { assertWorkspaceExecutionDirectory } from "./backend-capabilities.js";
 import { getSideEffectByKey, recordSideEffect } from "./side-effect-store.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import type {
@@ -250,6 +251,14 @@ export function createDefaultExecutor(args: {
                 : `${backendId}-adapter`
           };
         }
+
+        // Validate before starting or reusing a backend session so malformed
+        // workspace requests fail without a backend side effect.
+        const executionDirectory = request.executionDirectory ?? request.directory;
+        assertWorkspaceExecutionDirectory({
+          policy: request.workspaceCapabilityPolicy,
+          directory: executionDirectory
+        });
 
         let session = sessionsByBackend.get(backendId);
         if (!session) {

@@ -17,6 +17,9 @@ import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-exe
 import { stringifyJson } from "./runtime-support.js";
 import { resolveExecutable } from "./cli-adapter-support.js";
 import type { ModelCatalogEntry, ModelCatalogSource, ReasoningEffort, ReasoningEffortLevel, RunContext } from "./types.js";
+import type { WorkspaceCapabilityPolicy } from "./backend-capabilities.js";
+
+export type { WorkspaceCapabilityPolicy } from "./backend-capabilities.js";
 
 export type ModelBackendId = string;
 
@@ -59,13 +62,6 @@ export type BackendStartRunArgs = {
  * Capabilities granted to a model session for the current execution staging
  * directory. An omitted capability remains denied by backend adapters.
  */
-export type WorkspaceCapabilityPolicy = {
-  root: string;
-  read?: boolean;
-  write?: boolean;
-  command?: boolean;
-};
-
 export type BackendExecuteRequest = {
   roleId: string;
   sessionKey?: string;
