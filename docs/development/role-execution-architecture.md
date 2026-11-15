@@ -1878,8 +1878,10 @@ loop_exhausted
   continue is valid only through the declared loopBudget binding and its target/grant constraints
 
 retry_exhausted
-  retry / terminate
-  rework / reject are added only when a declared route exists
+  retry is available only when the exception policy provides a valid retry grant or remaining
+  budget; otherwise retry is excluded
+  any remaining action, such as terminate or a declared rework/reject route, comes from the
+  exception policy
 
 other exception
   actions declared by that exception's policy; undeclared actions are unavailable
