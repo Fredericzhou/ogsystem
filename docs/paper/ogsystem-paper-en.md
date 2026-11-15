@@ -11,7 +11,7 @@
 ### Abstract
 While Large Language Model (LLM) Multi-Agent Systems (MAS) demonstrate remarkable capability in complex software tasks, enterprise production demands strict determinism, failure recovery, and auditable deliverables. Prevailing orchestration platforms (e.g., n8n, Dify, Coze Workflow) adhere to the Forward Acyclic Pipeline paradigm (fundamentally Directed Acyclic Graphs, or DAGs). Because DAGs structurally prohibit directed back-edges, they cannot natively model dialectic code reviews, iterative rework, and quorum synchronization without combinatorially unrolling graphs or degrading loops into opaque, intra-node iterations.
 
-To bridge this fundamental gap, this paper presents **OGSystem (OGS)**, a theory-guided, persistent Extended Finite State Machine (EFSM) runtime engineered for bounded socio-technical collaboration. OGS establishes a "Role-First" ontological primitive, decoupling invariant responsibility seats from transient model executors. Transitions are governed by a Labeled Transition System (LTS) over a closed business event vocabulary. The runtime explicitly tracks an extended state tuple comprising execution frontiers, branch lineages, state-aware join scopes ($pending, arrived, skipped, failed$), and loop budget reviews under strict Fail-Closed invariants. Beyond conversational text, OGS incorporates an end-to-end artifact delivery pipeline that sandboxes, compiles, tests, and atomically seals source code into verifiable deliverables. Comprehensive regression testing across 1,228 automated test suites and real-world fault injection experiments demonstrate robust state determinism, loop termination, self-healing after abrupt partial writes, and crash consistency recovery, providing early practical alignment with the 2026 Chinese National Standards for AI Agents (GB/Z 185 / GB/Z 242).
+To bridge this fundamental gap, this paper presents **OGSystem (OGS)**, a theory-guided, persistent Extended Finite State Machine (EFSM) runtime engineered for bounded socio-technical collaboration. OGS establishes a "Role-First" ontological primitive, decoupling invariant responsibility seats from transient model executors. Transitions are governed by a Labeled Transition System (LTS) over a closed business event vocabulary. The runtime explicitly tracks an extended state tuple comprising execution frontiers, branch lineages, state-aware join scopes ($pending, arrived, skipped, failed$), and loop budget reviews under strict Fail-Closed invariants. Delivery is split into two explicit paths: opaque artifact staging and promotion for documents/files, and Git worktrees with role provenance and Join merge verification for parallel source changes. The latest repository-wide run discovered 819 automated tests, with 818 passing, one platform-specific skip, and no failures. Three repeated runs of a real model-driven Python calculator team provide end-to-end usability evidence, not a statistical stability claim; cross-model and long-horizon evaluation remains future work.
 
 **Keywords:** Multi-Agent Systems; Extended Finite State Machine (EFSM); Labeled Transition System (LTS); Directed Acyclic Graph (DAG); Software Deliverables; Crash Consistency; Fail-Closed Defaults.
 
@@ -265,12 +265,19 @@ Transitions commit to `events.ndjson` before updating `state.json`. Resuming an 
 
 ---
 
-### 5. Artifact Verification and Delivery Pipeline
+### 5. Artifact Verification and Source Collaboration
 
-OGS guarantees a clean progression from raw generated text to sealed software deliverables:
-1. **Opaque ArtifactRef:** Model outputs reference generated files exclusively via opaque descriptors (relative path, MIME type, SHA-256 hash), preventing filesystem path traversal.
-2. **Sandbox Verifier:** Candidate files undergo automated compilation and unit testing (`npm test`, `pytest`) within isolated workspaces.
-3. **Atomic Promotion:** Verified files are sealed via a manifest and atomically promoted to the project's permanent `Deliverable Store`, completely segregated from ephemeral execution logs.
+OGS separates file delivery from source collaboration so that a shared writable directory is never mistaken for a handoff protocol.
+
+#### 5.1 ArtifactRef delivery for documents and files
+1. **Opaque ArtifactRef:** Generated code, documents, and media remain in a per-Run staging directory. Outputs expose only opaque descriptors (relative path, media type, and SHA-256 hash); paths, symbolic links, quotas, and digests are checked before sealing.
+2. **Sandbox verification:** Host tools or explicitly authorized `workspace.run` commands may build, test, or convert files inside staging. The verification report records what was checked; file integrity is not presented as proof of code quality.
+3. **Atomic promotion:** Only one sealed bundle can be promoted to the business delivery directory in the current MVP. Parallel Roles declaring independent artifacts are therefore mutually exclusive; a Join Role normally performs the single sealing step.
+
+#### 5.2 Git worktree delivery for source collaboration
+Parallel code Roles start from a fixed `baseCommit` in isolated branches/worktrees. A successful execution records `roleId`, `executionId`, `baseCommit`, `resultCommit`, changed paths, and commit provenance. Join performs ordered merges in a separate merge worktree. Candidates must belong to the current Run provenance and pass candidate-set/order, ancestry, clean-worktree, and `git diff --check` validation. The final merge selects only the latest successful leaf of each lineage, preventing loop rework or serial same-file edits from reintroducing superseded commits.
+
+Conflicts remain as Run evidence and never create numbered conflict files in the business directory. OGS currently has no AI resolver; a conflict requires human intervention or a redesigned Role partition. The caller's `publish` callback is invoked only after a successful Run and successful latest executions for all participating Roles. Promotion locks, CAS checks, idempotency, and compensation for partial external effects remain caller responsibilities.
 
 ---
 
@@ -280,32 +287,44 @@ OGS is implemented as a lightweight, zero-daemon TypeScript runtime featuring tw
 *   **OGS Studio:** Dedicated to workflow authoring, visual graph projection, and dual simulation (`dry-run` for fast topological validation; `sandbox` for isolated model calls). Baseline scenario assertions gate version releases (`team-v2`).
 *   **OGS Projects:** Dedicated to business operations, mounting released immutable team packages, scheduling tasks, maintaining isolated Run workspaces (`.ogs/runs/<runId>/`), and archiving verified deliverables.
 
+#### 6.1 Tool authorization and workspace projection
+Tool access is constrained by three contracts: Semantic IR `allowedToolsByRoleId`, the Role Contract's `constraints.allowedTools`, and the backend adapter's workspace capability policy. A Role can read its execution staging by default; `workspace.write`, `workspace.patch_text`, and `workspace.run` require separate explicit authorization. Adapters map these capabilities to native sandbox/permission boundaries for Codex, OpenCode, ACP, and other backends, with the execution workspace root passed explicitly. Legacy adapters without a policy remain compatibility behavior, not a complete fail-closed guarantee.
+
 ---
 
 ### 7. Empirical Engineering Verification and Standards Alignment
 
-To rigorously and truthfully validate the system's design invariants and resilience, OGSystem implements an exhaustive end-to-end automated test suite built natively on the Node.js test runner (`node:test`). All metrics and behaviors reported below are grounded directly in executable test suites within the open-source repository, without synthetic simulation:
+To rigorously and truthfully validate the system's design invariants and resilience, OGSystem uses an automated suite built on Node.js's native test runner (`node:test`). Deterministic local-shell and fixture tests establish runtime invariants; real model runs are reported separately and are not substituted by regression fixtures.
 
 #### 7.1 Automated Test Suite and Invariant Coverage
-The codebase contains **1,228 automated regression tests**, providing full lifecycle verification across the runtime kernel, compilation pipeline, storage layers, and dual workbenches (Table 3):
+The latest repository-wide `pnpm test` discovered **819 tests: 818 passed, one Windows-specific test skipped, and zero failed**. Coverage includes the state-machine kernel, compilation, storage, artifact delivery, Git collaboration, and visual projections (Table 3):
 
 | Subsystem / Test Suite | Test Count | Verified Design Invariants & Behaviors | Pass Rate |
 | :--- | :--- | :--- | :--- |
-| **Core Runtime & State Machine (`tests/`)** | 753 tests | • Closed LTS discrete event dictionary validation (`business-events.test.mjs`)<br>• Fail-Closed Context Map whitelist field projection (`context-selector.test.mjs`)<br>• 4-valued join convergence and anti-downgrade invariants (`transition-orphan-join.test.mjs`)<br>• Loop budget exhaustion and CAS human review pause (`loop-budget-review.test.mjs`)<br>• Artifact sandbox verification and SealManifest promotion (`artifact-promotion.test.mjs`) | 752 passed<br>(1 environment-skipped) |
-| **Business Platform & Studio (`apps/team-site/tests/`)** | 475 tests | • Two-tier physical decoupling & immutable package sealing (`team-version-lifecycle-use-cases.test.mjs`)<br>• Isolated task workspaces and Run directories (`task-execution-use-cases.test.mjs`)<br>• Deliverable store physical archiving & tamper-proof reads (`file-deliverable-store.test.mjs`)<br>• Studio simulation run & baseline scenario assertions (`studio-simulation-use-cases.test.mjs`) | 475 passed |
-| **Total System** | **1,228 tests** | **End-to-end coverage across compilation, execution, storage, and delivery** | **99.9% pass rate** |
+| **State machine and compilation runtime** | LTS, Context Maps, Joins, Loops, WAL/CAS, and Resume regressions | Included in the full run |
+| **Artifact and Git delivery** | Seal manifests, symlink/path gates, worktrees, provenance, Join merge, conflicts, and publish-failure paths | Included in the full run |
+| **Platform and visual projections** | Workspace capability projection and Studio/Projects regressions | Included in the full run |
+| **Total system** | **819 tests** | **818 passed, one skipped, zero failed** | **99.9% pass rate by discovered tests** |
 
 *Table 3: Comprehensive automated regression test suite and invariant verification metrics.*
 
 #### 7.2 Fault Injection and Crash Consistency Verification
-The system incorporates executable fault injection suites in `tests/runtime-fault-injection.test.mjs` and `task-run-recovery-faults-uat.test.mjs`:
+The system incorporates executable fault injection and recovery suites:
 1. **Crash After Execution Outcome:** Leveraging the test hook `OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME=1`, the runtime triggers an abrupt child process termination (Exit Code 91) at the critical boundary where a role outcome has been produced but state transitions are in-flight. The resumption suite (`run resume <runId>`) verifies that the system self-heals via buffered append recovery, reliably clears process lockfiles (`RESUME_RUN_LOCK_FILE`), and resumes without state corruption.
 2. **Semantic Fingerprint Matching:** Resumption strictly enforces plan fingerprint matching via `plan-fingerprint.ts`. The test suite verifies that modifying `system.mmd` or model runtime configurations out-of-band while paused immediately triggers an integrity rejection, preventing corrupt or speculative execution under semantic drift.
 
-#### 7.3 Boundary Security and Contract Interception
+#### 7.3 Real model-driven Python calculator acceptance
+On 2026-11-15, a real local Codex `gpt-6-luna` model started a temporary Python calculator project from an initial requirement using the topology `dispatch -> implementation/tests (parallel) -> join`. With the same configuration, three consecutive runs completed four Role commits, Join merge, final merge, and caller-side fast-forward publish. Eight unittest cases passed; the CLI returned 5 for `add 2 3` and 42 for `multiply 6 7`; the published repository remained clean.
+
+This demonstrates that a real model can traverse the complete collaboration path, but it is not a statistical stability result. The sample uses one model, one task, and a small number of runs; path ownership, Git-only source delivery, and acceptance entrypoints were explicit task constraints. Boundary runs also confirmed that same-path parallel edits stop at a Git conflict, parallel artifact declarations hit the single sealed-bundle gate, and whitespace errors are rejected by `git diff --check`. `tests/python-app-collaboration.test.mjs` is a deterministic local-tool regression and is not real-model evidence.
+
+#### 7.4 Boundary Security and Contract Interception
 1. **Context Map Invariant:** Tests in `tests/optional-context-projection.test.mjs` confirm that undeclared upstream context variables are physically excluded from downstream role inputs.
 2. **Artifact Sandbox Security:** Tests in `tests/workspace-and-verifier.test.mjs` assert that symbolic links, path traversals (e.g., `../`), or files exceeding byte quotas immediately throw `ARTIFACT_SYMLINK_NOT_ALLOWED` or `ARTIFACT_PATH_INVALID`, halting closed.
 3. **National Standards Alignment (GB/Z 2026 Series):** OGSystem aligns directly with the 2026 Chinese National Standard Guiding Technical Documents: **GB/Z 185.6** (discrete interaction events and joins), **GB/Z 185.7** (tool boundaries and structured errors), and **GB/Z 242** (execution checkpointing and fault recovery).
+
+#### 7.5 Current boundaries and recovery responsibilities
+The Git capability probe rejects tracked submodules, Git LFS attributes, and sparse checkout. Graph Runner invokes it at startup when `gitCollaboration` is explicitly supplied; callers using the lower-level coordinator directly must still invoke it themselves. OGS does not include an AI resolver, project-wide promotion lock/CAS, automatic build/test quality gate, or automatic read-only mounting of business data across Roles. Failed Runs do not publish to the business directory; merge/publish evidence and possible partial external effects are persisted in the Run, and the caller must perform external repository reconciliation or compensation. These are deliberate minimum-scope boundaries rather than completed capabilities.
 
 ---
 

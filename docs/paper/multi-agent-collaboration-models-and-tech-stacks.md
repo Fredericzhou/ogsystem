@@ -278,9 +278,9 @@ OGSystem 在架构设计上强调确定性、强类型与防篡改审计：
 | **3. 状态与持久化**| 内存线程 / 客户端轮询 (无 WAL) | 本地会话缓存 / 会话截断恢复 | 绑定 Google Drive 工作区文件 | 状态图 Checkpoint / LangSmith 追踪 | 云端虚拟机快照 / 本地数据库 | **全要素扩展状态元组 $\mathbf{X}$ (WAL+CAS)** |
 | **4. 数据边界治理**| 密文代理或全透传 (破坏透明度) | 任务摘要回传 (局部隔离) | 全局文档共享与上下文堆叠 | 开放共享状态字典 (开发者手动把控) | 共享文件系统 / 单体记忆堆积 | **Fail-Closed Context Map (强契约投影)** |
 | **5. 循环与控制面**| 硬限制并发数 (无循环状态机治理) | 交互式提问 (`AskUserQuestion`) | 交互式追问选项 (Clarifying Chat) | 人工断点 (`interrupt_before`) | 超时熔断 / 单体死循环重试 | **血缘绑定法定配额 ($maxIterations \to$ CAS)** |
-| **6. 交付物闭环** | 终端代码生成 / Git PR 补丁 | 本地文件读写 / 终端命令输出 | 自动生成 Drive 文档 / 电子表格 | 文本流 / 任意应用侧写入 | 自动生成演示文稿、研报、Web 页面 | **Opaque ArtifactRef $\to$ 沙箱跑测 $\to$ 原子晋升** |
+| **6. 交付物闭环** | 终端代码生成 / Git PR 补丁 | 本地文件读写 / 终端命令输出 | 自动生成 Drive 文档 / 电子表格 | 文本流 / 任意应用侧写入 | 自动生成演示文稿、研报、Web 页面 | **ArtifactRef 封存晋升 + Git Worktree/Join Merge** |
 | **7. 审计与透明度**| 争议较大：v2 密文交接破坏可读性 | 开放终端调用与工具执行明细 | 云端黑盒运行记录 | 强：LangSmith 嵌套跨度追踪 (Traces) | 云端过程录屏 / 终端调用明细 | **强：宪法级审计链 (`events.ndjson`)** |
-| **8. 核心底层技术栈**| Python/Rust 客户端 + 专用协议 | Node.js/Rust CLI + MCP 工具协议 | Google Workspace API + Web Canvas | Python/TS + LangSmith + Postgres/Redis | Linux 虚拟容器 + Playwright 无头浏览器 | **编译型 TS/Node.js + Semantic IR + WAL/CAS** |
+| **8. 核心底层技术栈**| Python/Rust 客户端 + 专用协议 | Node.js/Rust CLI + MCP 工具协议 | Google Workspace API + Web Canvas | Python/TS + LangSmith + Postgres/Redis | Linux 虚拟容器 + Playwright 无头浏览器 | **编译型 TS/Node.js + Semantic IR + WAL/CAS + Verifier + Git provenance** |
 
 ### 4.2 协作编程软件专用对比矩阵 (Table 2)
 
@@ -292,9 +292,17 @@ OGSystem 在架构设计上强调确定性、强类型与防篡改审计：
 | **角色本体本质** | 动态派生的命令执行进程 / 终端会话 | 挂载于终端窗格的 CLI 智能体子进程 | **异构模型调度配置标签** | 固定双人静态提示词角色 | **形式化责任席位集 $V$** (组织权责解耦) |
 | **上下文边界控制**| 终端管道文本传递，缺乏细粒度强契约拦截 | 跨窗格无结构明文文本注入与终端重定向 | 主会话与子任务摘要传递，无字段投影 | 全量对话历史透传，易引起上下文膨胀 | **Fail-Closed Context Map** (未声明即阻断) |
 | **循环与状态收敛**| 依赖 Task DAG 或人工终端中继 | ANSI **OSC 7501 状态口令**，无业务收敛 | 运行时步数限制与超时截断 | 单轮对话迭代，人工交互式中断确认 | **血缘绑定有界配额** ($maxIterations \to$ CAS) |
-| **产物交付与验证**| 依赖 Git 分支合并与人类 PR Review | 依赖 Agent 自发终端执行与 Git 变更 | 内置 LSP 语法检查，专用 `/review` 判定 | 自动运行本地测试命令，失败则回退 Git | **Opaque ArtifactRef $\to$ 沙箱跑测 $\to$ 原子晋升** |
+| **产物交付与验证**| 依赖 Git 分支合并与人类 PR Review | 依赖 Agent 自发终端执行与 Git 变更 | 内置 LSP 语法检查，专用 `/review` 判定 | 自动运行本地测试命令，失败则回退 Git | **ArtifactRef 封存晋升；Git worktree provenance、Join merge 与 leaf 选择** |
 | **状态一致性与恢复**| 依赖 Git 提交记录与终端日志，无 WAL | 依赖守护进程套接字重连与终端输出缓存 | 会话历史断点重连，无持久化 WAL | 依赖本地聊天记录与 Git 回滚 | **WAL (`events.ndjson`) + CAS 提交 + 指纹校验** |
-| **核心底层技术栈**| Node.js/CLI + Git Worktree + Headless Browser | Rust (`herdr-core`) + Unix Socket + OpenRPC + ANSI OSC 7501 | Rust + Hashline + 内置 LSP/DAP + Tree-sitter | Python + Tree-sitter AST repo-map + Git Diff | **TypeScript/Node.js + Semantic IR + WAL/CAS + Verifier** |
+| **核心底层技术栈**| Node.js/CLI + Git Worktree + Headless Browser | Rust (`herdr-core`) + Unix Socket + OpenRPC + ANSI OSC 7501 | Rust + Hashline + 内置 LSP/DAP + Tree-sitter | Python + Tree-sitter AST repo-map + Git Diff | **TypeScript/Node.js + Semantic IR + WAL/CAS + Verifier + Git Worktree/Commit Provenance** |
+
+### 4.2.1 OGS 新增交付路径与验证边界
+
+OGS 的文件交付和源码协作不是同一个共享目录协议。文档、媒体和普通文件走 per-Run staging、封存清单、单一 sealed bundle 和 Promotion；并行源码走固定 `baseCommit`、独立 Git worktree、Role commit provenance、Join merge worktree 和最终 leaf 选择。候选集合、合并顺序、祖先关系、工作树 clean 与 `git diff --check` 均需要验证，冲突保留为 Run evidence，不生成业务目录中的编号冲突文件。
+
+工具授权由 Semantic IR、Role Contract 和 backend workspace capability policy 三层收敛。`workspace.write`、`workspace.patch_text` 与 `workspace.run` 分别显式授权，后端 adapter 再把策略映射到原生 sandbox/permission；缺少 policy 的旧 adapter 是兼容行为，不是完整的安全证明。
+
+2026-11-15 的真实模型 Python 计算器验收在同一 `gpt-6-luna` 配置下连续 3 次通过 `dispatch -> implementation/tests -> join`，每次完成 4 个 Role commit、Join/final merge、fast-forward publish 和 8 项 unittest。该结果证明端到端链路可用，不足以证明跨模型或长期稳定性。并行同路径冲突、并行 artifact 声明互斥和 whitespace 拒绝属于已验证边界；确定性 local-shell 回归测试不计入真实模型证据。
 
 ### 4.3 工业界同质化困境与 OGSystem 八大非同质化核心创新对比
 

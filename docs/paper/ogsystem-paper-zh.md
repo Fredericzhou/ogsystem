@@ -11,7 +11,7 @@
 ### 摘要
 随着大语言模型（LLM）的突破，多智能体系统（MAS）在复杂软件工程与业务协同中展现出巨大潜力。然而，现有系统在落地企业严肃生产时，普遍面临状态漂移、非预期死循环、上下文越权穿透以及成果无法验证交付的结构性瓶颈。以 n8n、Dify、Coze 为代表的主流工作流平台，本质上遵循前向有向无环图（DAG）流水线（Pipeline）范式，因结构性严禁有向回边，无法在顶层架构上原生表达多角色之间的评审打回、博弈返工与法定多数汇聚。
 
-为破解上述难题，本文在经典分布式系统与状态机理论指导下，工程实现了 **OGSystem（简称 OGS）** —— 一个面向有界社会技术协作的事件驱动持久化扩展有限状态机（EFSM）工作流运行时与交付控制内核。系统确立了“责任席位优先（Role-First）”的图本体原语，实现了组织职责席位与动态模型执行者的正交解耦；引入标记转移系统（LTS）收敛离散业务事件；在运行时显式建模包含分支血缘（Lineage）、源状态感知汇聚（Join Scope）与循环预算（Loop Budget）的持久化全要素扩展状态，并贯彻契约闭锁（Fail-Closed）原则；构建了“不透明产物引用（Opaque ArtifactRef） $\to$ 沙箱隔离验证 $\to$ 原子晋升”的独立代码交付闭环。基于覆盖底层内核与上层平台的 1,228 项自动化回归测试与真实故障注入实验表明，系统在复杂返工拓扑下严格保障了状态拓扑确定性与死循环拦截，验证了局部写断裂自愈与崩溃一致性恢复能力，并对中国 2026 年最新人工智能智能体系列国家标准（GB/Z 185 与 GB/Z 242）形成了深度工程级覆盖。
+为破解上述难题，本文在经典分布式系统与状态机理论指导下，工程实现了 **OGSystem（简称 OGS）** —— 一个面向有界社会技术协作的事件驱动持久化扩展有限状态机（EFSM）工作流运行时与交付控制内核。系统确立了“责任席位优先（Role-First）”的图本体原语，实现了组织职责席位与动态模型执行者的正交解耦；引入标记转移系统（LTS）收敛离散业务事件；在运行时显式建模包含分支血缘（Lineage）、源状态感知汇聚（Join Scope）与循环预算（Loop Budget）的持久化全要素扩展状态，并贯彻契约闭锁（Fail-Closed）原则。交付层分为两条互补路径：文本和文件使用“不透明产物引用（Opaque ArtifactRef） $\to$ 沙箱验证 $\to$ 原子晋升”，并行源码使用 Git worktree、角色提交溯源与 Join 合并验证。当前仓库的 819 项自动化测试中 818 项通过、1 项按平台跳过；另有一次真实模型驱动的 Python 计算器协作验收，作为端到端可用性证据而非稳定性统计结论。上述证据支持 OGS 在有界返工、隔离交付和崩溃恢复方面的工程不变量，但不替代跨模型、跨任务的长期评估。
 
 **关键词：** 大模型工程；多智能体系统；扩展有限状态机（EFSM）；标记转移系统（LTS）；有向无环图（DAG）；流水线范式；故障闭锁；工程交付物
 
@@ -275,10 +275,17 @@ $$\mathbf{X} = \langle s_{\text{biz}}, \mathbf{t}_{\text{task}}, \mathbf{i}_{\te
 
 ### 5. 产物交付与代码验证体系
 
-OGSystem 确立了从不透明文件引用到业务交付物的工程落地闭环：
-1. **Opaque ArtifactRef：** 模型生成的代码与文档保存在各 Run 独立的沙箱目录中。模型输出仅包含其不透明标识符（含相对路径、媒体类型与 SHA-256 校验和），杜绝路径遍历攻击。
-2. **沙箱构建与测试验证（Verifier）：** 系统在沙箱内自动调度构建与单测工具链（如 `npm test`, `pytest`）。若验证失败，错误摘要回传至状态机触发返工重试。
-3. **交付物原子晋升（Promotion Service）：** 只有全面通过验证的代码产物，才会根据封存清单（Seal Manifest）原子化复制至项目的 `Deliverable Store`，与运行过程日志彻底分离。
+OGSystem 将“文件交付”和“源码协作”分成两条边界清晰的路径，避免把共享可写目录误当成交接协议。
+
+#### 5.1 文件与文档交付：ArtifactRef 管道
+1. **Opaque ArtifactRef：** 模型生成的代码、文档和媒体文件保存在各 Run 独立的 staging 目录中。模型输出仅包含不透明标识符（相对路径、媒体类型与 SHA-256 校验和），路径、符号链接、配额和摘要均在封存前校验。
+2. **沙箱验证（Verifier）：** 宿主机工具或显式授权的 `workspace.run` 可在 staging 中执行构建、单测或格式转换；验证结果写入独立报告。OGS 不把“文件完整且哈希一致”误写成“代码质量已经证明”。
+3. **原子晋升（Promotion）：** 只有通过封存门禁的单一 sealed bundle 才能进入业务交付目录。并行 Role 各自声明 artifact 在当前 MVP 中互斥；通常由 Join 后的单一 Role 封存。
+
+#### 5.2 源码协作：Git worktree 管道
+并行代码 Role 从固定 `baseCommit` 创建独立 branch/worktree，成功后记录 `roleId`、`executionId`、`baseCommit`、`resultCommit`、变更路径和提交溯源。Join 在独立 merge worktree 中按确定顺序合并当前候选；候选必须属于本 Run 的 Role provenance，且通过候选集合与顺序、祖先关系、工作树 clean 和 `git diff --check` 校验。最终合并只选择每条 lineage 的最新成功 leaf，因此 loop 返工或串行同文件修改不会把旧版本再次合入。
+
+冲突只保留在 Run evidence 中，不向业务目录写入带编号的冲突文件；当前没有 AI resolver，冲突需要人工处理或重新设计 Role 分工。只有 Run 成功完成且所有参与合并的 Role 最近一次执行成功时，才允许调用方提供的 `publish` 回调。回调的 promotion lock、CAS、幂等和外部中途失败补偿仍属于调用方责任。
 
 ---
 
@@ -288,32 +295,44 @@ OGSystem 采用轻量化、无常驻守护进程的 TypeScript/Node.js 实现，
 *   **OGS Studio（专业工程台）：** 面向团队架构师，负责可视化画布编辑、DSL 双向转换、Context Map 配置，以及基于 `dry-run`（快速拓扑演练）与 `sandbox`（沙箱实跑）的 Simulation 调试。发布前必须通过基线场景（Baseline Scenarios）的全量断言校验。
 *   **OGS Projects（业务协同台）：** 面向业务交付，绑定物理项目目录，挂载已发布的不可变 `TeamVersion` 资产包，管理业务 Task、派发独立的 Run 运行目录，并集中归档通过验证的 Deliverable。
 
+#### 6.1 工具授权与执行目录投影
+工具权限由三层契约共同收敛：Semantic IR 的 `allowedToolsByRoleId`、Role Contract 的 `constraints.allowedTools`，以及 backend adapter 的 workspace capability policy。默认只允许 Role 读取其 execution staging；`workspace.write`、`workspace.patch_text` 和 `workspace.run` 必须分别显式授权。适配器将同一策略映射到 Codex、OpenCode、ACP 等 backend 的原生 sandbox/permission 边界，并把 execution workspace root 作为显式输入。缺少 policy 的兼容路径不能被视为完整的 fail-closed 门禁。
+
 ---
 
 ### 7. 工程验证与自动化测试基准
 
-为如实检验系统的设计不变量与稳定性，系统构建了严密的端到端自动化测试体系。全部测试基于 Node.js 原生测试框架（`node:test`）实现，未采用外部合成模拟，所有指标均基于代码库中的真实测试套件验证：
+为如实检验系统的设计不变量与稳定性，系统构建了基于 Node.js 原生测试框架（`node:test`）的自动化测试体系。确定性 local-shell/fixture 测试用于回归运行时不变量；真实模型运行单独记录，不能用回归测试替代。
 
 #### 7.1 自动化测试覆盖与架构断言
-系统代码库累计包含 **1,228 项自动化测试**，涵盖底层状态机内核、编译管道、存储层与上层双工作台（表 3）：
+最近一次全量 `pnpm test` 发现 **819 项测试，818 项通过、1 项按 Windows 环境跳过、0 项失败**。测试覆盖底层状态机、编译管道、存储层、artifact 交付、Git 协作和可视化投影（表 3）：
 
 | 验证模块 / 测试套件 | 测试用例数 | 核心验证的不变量与工程行为 | 实测通过情况 |
 | :--- | :--- | :--- | :--- |
-| **核心运行时与状态机 (`tests/`)** | 753 项 | • LTS 离散事件受限字典校验（`business-events.test.mjs`）<br>• Context Map 白名单字段投影与阻断（`context-selector.test.mjs`）<br>• 四值源状态汇聚与防静默降级（`transition-orphan-join.test.mjs`）<br>• 循环配额超额挂起与 CAS 审核（`loop-budget-review.test.mjs`）<br>• 产物沙箱校验与 SealManifest 晋升（`artifact-promotion.test.mjs`） | 752 项通过<br>(1 项特定环境跳过) |
-| **平台业务台与 Studio (`apps/team-site/tests/`)** | 475 项 | • 双工作台物理解耦与不可变版本冻结（`team-version-lifecycle-use-cases.test.mjs`）<br>• 任务独立工作区与 Run 隔离执行（`task-execution-use-cases.test.mjs`）<br>• 交付物物理归档与防篡改读取（`file-deliverable-store.test.mjs`）<br>• Studio 仿真演练与基线场景断言（`studio-simulation-use-cases.test.mjs`） | 475 项全数通过 |
-| **全系统总计** | **1,228 项** | **全面覆盖编译期、运行期、存储期与交付期全生命周期** | **通过率 99.9%** |
+| **状态机与编译运行时** | 包含 LTS、Context Map、Join、Loop、WAL/CAS 和 Resume 回归 | 纳入上述全量统计 |
+| **Artifact 与 Git 交付** | 包含封存清单、符号链接/路径门禁、worktree、provenance、Join merge、冲突和 publish 失败路径 | 纳入上述全量统计 |
+| **平台与可视化投影** | 包含 workspace capability 投影、业务台和 Studio 相关回归 | 纳入上述全量统计 |
+| **全系统总计** | **819 项** | **818 通过，1 跳过，0 失败** | **99.9% 通过率（按测试发现数计算）** |
 
 *表 3：OGSystem 自动化工程测试套件与不变量实测统计*
 
 #### 7.2 故障注入与崩溃恢复实测 (Fault Injection & Crash Consistency)
-系统在 `tests/runtime-fault-injection.test.mjs` 与 `task-run-recovery-faults-uat.test.mjs` 中构建了真实的故障注入机制：
+系统在运行时测试中构建了故障注入和恢复机制：
 1. **进程强杀与恢复（Crash After Execution Outcome）：** 通过测试钩子环境变量 `OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME=1`，在模型执行结果产生并尝试持久化的临界时刻主动触发子进程硬退出（Exit Code 91）。断点恢复（`run resume <runId>`）实测表明，系统未发生状态损坏，通过缓冲日志回放（Buffered Append Recovery）自愈未刷盘事实，并成功释放进程排他锁（`RESUME_RUN_LOCK_FILE`）。
 2. **拓扑防篡改与语义指纹校验（Plan Fingerprint Match）：** 恢复执行时，系统通过 `plan-fingerprint.ts` 实时重新计算当前磁盘定义的 SHA-256 语义指纹。测试验证：若在崩溃后人为修改 `system.mmd` 或模型配置，系统严格拒绝非法推测性恢复，并抛出指纹不匹配异常，彻底杜绝了状态漂移。
 
-#### 7.3 边界安全性与契约拦截实测
+#### 7.3 真实模型驱动的 Python 计算器验收
+2026-11-15 使用本机真实 Codex `gpt-6-luna`，从初始需求启动一次临时 Python 计算器项目，拓扑为 `dispatch -> implementation/tests (parallel) -> join`。随后以同一配置连续运行 3 次，均完成 4 个 Role commit、Join merge、final merge、调用方 fast-forward publish；8 项 unittest 通过，CLI 的 `add 2 3` 和 `multiply 6 7` 分别得到 5 和 42，发布仓库保持 clean。
+
+这组运行证明了真实模型可以穿过完整协作链路，但不构成统计意义上的稳定性证明：样本来自单一模型、单一任务和有限次数，路径所有权、Git-only source delivery 和验收入口由任务显式约束。额外边界运行确认并行同路径修改会产生冲突并停止发布，并行 Role 各自声明 artifact 会触发单 sealed bundle 门禁，whitespace 错误会被 `git diff --check` 拒绝。确定性测试 `tests/python-app-collaboration.test.mjs` 只证明 Runtime 接线，不属于真实模型证据。
+
+#### 7.4 边界安全性与契约拦截实测
 1. **Context Map 字段闭锁：** `tests/optional-context-projection.test.mjs` 测试验证，未在图契约中显式声明的上下文变量，下游席位读取时一律返回空或触发契约异常，杜绝了上下文隐式穿透。
 2. **产物沙箱安全边界：** `tests/workspace-and-verifier.test.mjs` 验证，若产物包含符号链接（Symlink）、跨目录相对路径（如 `../`）或单文件超出字节配额，`ArtifactVerifier` 一律抛出 `ARTIFACT_SYMLINK_NOT_ALLOWED` 或 `ARTIFACT_PATH_INVALID` 并拒绝封存，有效防止路径穿越。
 3. **中国国家标准工程落地（GB/Z 2026 系列）：** 系统以可执行代码直接对齐国家标准要求：以 LTS 离散协议实现 **GB/Z 185.6** 智能体离散交互；以独立沙箱 Verifier 实现 **GB/Z 185.7** 工具调用与数据受控访问；以全要素状态持久化与 WAL 恢复实现 **GB/Z 242** 检查点与故障状态恢复。
+
+#### 7.5 当前边界与可恢复性责任
+Git capability probe 已能拒绝 tracked submodule、Git LFS attributes 和 sparse checkout；Graph Runner 在显式提供 `gitCollaboration` 时会在启动阶段调用该 probe，直接使用底层 coordinator 的调用方仍需自行调用。OGS 也不内置 AI resolver、项目级 promotion lock/CAS、自动构建测试门禁或跨 Role 的只读业务目录挂载。失败 Run 不发布业务目录，merge/publish 证据和可能的部分外部生效状态写入 Run；调用方必须据此执行外部仓库核查和补偿。这些边界是最小可用设计的刻意取舍，而不是已完成能力。
 
 ---
 

@@ -34,9 +34,20 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
                                    3. 扩展有限状态机 (EFSM 持久化全要素状态)
                                    4. 源状态感知汇聚 (State-Aware Join 代数)
                                    5. 有界循环预算 (Bounded Loop Review)
-                                   6. 独立产物晋升 (Opaque Artifact Verifier)
-                                   7. 2026 智能体国家标准 (GB/Z 185/242 落地)
+                                   6. 双路径交付 (Artifact Promotion + Git Worktree Merge)
+                                   7. 工具能力投影 (Role Contract + Backend Policy)
+                                   8. 2026 智能体国家标准 (GB/Z 185/242 落地)
 ```
+
+## 2026-11-15 工程增补与证据边界
+
+当前实现把协作交付明确分成两条路径：文档和普通文件经过 per-Run staging、路径/符号链接/配额/SHA-256 校验、单一 sealed bundle 和 Promotion；并行源码从固定 `baseCommit` 进入独立 Git worktree，Role commit 记录 provenance，由 Join 在独立 merge worktree 中按确定顺序合并，最终只选择每条 lineage 的最新成功 leaf。冲突只进入 Run evidence，不向业务目录写入编号冲突文件。
+
+工具访问由 Semantic IR 的 `allowedToolsByRoleId`、Role Contract 的 `constraints.allowedTools` 和 backend workspace capability policy 三层约束。`workspace.write`、`workspace.patch_text`、`workspace.run` 分别显式授权；缺少 policy 的旧 adapter 仍是兼容放行路径，不能表述为完整 fail-closed 门禁。
+
+真实模型证据来自 2026-11-15 的 Python 计算器团队：同一 `gpt-6-luna` 配置连续 3 次完成 `dispatch -> implementation/tests -> join`、4 个 Role commit、Join/final merge、fast-forward publish 和 8 项 unittest。该样本证明端到端可用性，不证明跨模型或长期稳定性；并行同路径冲突、并行 artifact 互斥和 whitespace 拒绝也已作为边界证据记录。确定性 `local_shell` 回归测试与真实模型运行在论文中分开统计。最近一次全量 `pnpm test` 共发现 819 项测试，818 项通过，1 项按 Windows 环境跳过。
+
+当前限制包括：没有 AI resolver；项目级 promotion lock/CAS、外部发布补偿和自动构建/测试质量门禁由调用方负责；Git capability probe 已拒绝 tracked submodule、LFS attributes 和 sparse checkout，Graph Runner 会在显式启用 Git 协作时调用 probe，底层直接调用者仍需自行调用。
 
 ---
 
@@ -54,7 +65,7 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
 | **6. 角色模型分流 (Dispatcher)** | OMP (`omp.sh`, `can1357/oh-my-pi`) | **算力标签模型路由与伴生守护者** | 将角色映射为模型调度策略 (`plan/slow/advisor`)；内置 P0–P3 缺陷专用评审 | 高性能 Rust, Hashline 行哈希紧凑编辑, Tree-sitter, 内置 LSP/DAP |
 | **7. 消息池黑板 (Blackboard)** | MetaGPT, OpenHands | **标准 SOP 驱动的异步发布-订阅黑板** | 围绕规范将结构化动作与产物发布至消息池；下游按需拉取；拓扑较固化 | Python 异步运行时, Docker 容器沙箱, Pydantic Schema, 事件队列 |
 | **8. 命令式状态图 (StateGraph)** | LangGraph + LangSmith | **编程式有向循环状态图与条件跳转边** | 允许任意有向回边；通过开放共享状态字典传参；侧重链路可观测与追踪 | Python/TS, LangSmith 链路控制塔, PostgreSQL/Redis/SQLite Checkpoints |
-| **9. 责任席位状态机 (EFSM/LTS)** | **OGSystem (本系统)** | **闭合有向图责任席位扩展状态机** ($DAG \subset EFSM$) | 席位与执行器解耦；离散业务事件字典驱动；Fail-Closed 上下文投影；有界循环预算；独立沙箱跑测与产物原子晋升 | **TypeScript/Node.js, Semantic IR 编译器, 追加 WAL (`events.ndjson`), CAS 提交 (`state.json`), 独立沙箱跑测环境** |
+| **9. 责任席位状态机 (EFSM/LTS)** | **OGSystem (本系统)** | **闭合有向图责任席位扩展状态机** ($DAG \subset EFSM$) | 席位与执行器解耦；离散业务事件字典驱动；Fail-Closed 上下文投影；有界循环预算；Artifact 与 Git Worktree 双路径交付；独立沙箱跑测与产物原子晋升 | **TypeScript/Node.js, Semantic IR 编译器, 追加 WAL (`events.ndjson`), CAS 提交 (`state.json`), Verifier, Git provenance/Join merge** |
 
 ### 拓扑结构原型与形式化对照速查 (Topological Archetypes Summary)
 

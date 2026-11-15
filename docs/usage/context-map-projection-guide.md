@@ -142,7 +142,20 @@ Join 节点默认使用按 `join.sources` 归一化后的 JSON 命名空间。
 - `context.map` 决定这个 role 能看到什么。
 - `role_input` 决定这个投影结果是否满足该 role 的输入 schema。
 
-## 8. 一个最小例子
+## 8. Studio 初始化建议
+
+当 Role 尚未配置 `context.map` 时，Studio 会根据 `role_input` schema 的必填字段和当前图结构显示一组**建议映射**。建议不会在打开编辑器或保存其他字段时自动写入；只有点击“应用建议映射”后才会加入当前草稿，并随 Role 配置一起显式保存。
+
+当前建议规则保持保守且可预测：
+
+- `task`、`goal`、`request`、`prompt` 建议为 `global.task`；
+- 非 Join 节点的 `content`、`input`、`brief`、`summary`、`text`、`source` 建议为 `direct.content`；
+- Join 节点只为形如 `<source>_content`、`<source>_summary`、`<source>_text`、`<source>_data` 且能唯一匹配已声明 source 的字段建议 `source(<source>).content` 或 `source(<source>).data`；
+- `quorum_of` 未达到全部 incoming source 时，不生成 source 建议；未知字段保持手工配置。
+
+已有映射不会被建议覆盖。建议只是 Studio 的配置辅助，不改变 Runtime 在没有 `context.map` 时的默认输入语义，也不引入新的 selector 语言。
+
+## 9. 一个最小例子
 
 ```mermaid
 flowchart TD
@@ -165,7 +178,7 @@ writer_b[Role:writer_b] -->|READY| review[Role:review]
 - `review` 只能读 `writer_a` 和 `writer_b`，因为它们在 `join.sources` 里。
 - `review` 还能读 `global.task`。
 
-## 9. 速记
+## 10. 速记
 
 - 普通节点看 `direct.*`
 - join 节点看 `source(...)`
