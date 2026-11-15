@@ -1,5 +1,9 @@
 # 国家标准智能体相关要求与 OGSystem 覆盖评估
 
+> **Reference / Research — non-normative.** This dated coverage assessment describes the current
+> repository and Contract Set v1 assets. It does not define the Contract Set v2 Role, Harness, or
+> Backend capability contract.
+
 **评估日期：** 2026-11-09  
 **评估对象：** OGSystem 当前仓库（版本 `1.0.0`，含 OGS Studio、OGS Projects、Runtime 和 CLI）  
 **依据文件：** GB/Z 185.1—2026 至 GB/Z 185.7—2026、GB/Z 195—2026、GB/Z 242—2026（用户提供的 PDF）

@@ -1,5 +1,8 @@
 # Framework Comparison
 
+> **Reference / Research — non-normative.** This comparison informs architecture decisions but
+> does not define the current Runtime contract or the Contract Set v2 product model.
+
 ## Scope
 
 This document compares OGSystem with ByteDance DeerFlow, DeepSeek Harness/DSH Superagent, and LangGraph. The comparison is about capability boundaries and architecture, not a claim that these projects are interchangeable products.

@@ -1,5 +1,9 @@
 # Model Availability Probe API
 
+> **Contract Set v1 — Current API reference.** This endpoint documents current Backend/model
+> discovery and probing. Contract Set v2 may use it as an Adapter/Capability Preview input, but
+> this API is not itself the v2 Harness or Run Snapshot contract.
+
 This document defines the Team Site API for checking one discovered model with a real, minimal
 request. It is intended for frontend integration. The API probes availability; it does not start an
 OGSystem Run or write run evidence.

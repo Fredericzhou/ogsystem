@@ -1,5 +1,9 @@
 # OGSystem 产品简介
 
+> **Contract Set v1 — Current product guide.** The product and configuration references here
+> describe the current Runtime and Studio. In particular, CLI Profiles and current model
+> selection are v1 behavior; they are not Contract Set v2 input objects.
+
 OGSystem 是一个**事件驱动的持久化扩展状态机工作流运行时**：它把一组有明确职责的 Role 组织成可执行、可恢复、可审计的协作流程。Role 执行后产生 `event`、`content` 和 `data`，Runtime 根据事件匹配 Flow，更新持久化状态，再激活下一个 Role、分支、Join、Loop 或结束节点。LangGraph 是当前使用的底层执行引擎，OGSystem 自己定义 Role、Flow、事件协议、状态、恢复和审计语义。产品由两个对等工作台和共享平台能力组成：OGS Studio 负责团队工程资产的设计、Simulation 调试、诊断和发布；OGS Projects 负责业务项目、Materials、Task、Review 和 Deliverables。两个工作台共用 Team Site Origin、Runtime 能力和平台配置，但各自拥有不同的运行数据与查询 API。工程人员也可以继续使用 CLI。
 
 核心执行模型可以概括为：

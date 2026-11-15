@@ -1,5 +1,10 @@
 # Shared Resource Architecture
 
+> **Contract Set v1 — Current implementation reference.** This document describes the current
+> shared resource catalog, TeamVersion `profiles.json`/`tools.json`, and v1 model binding. These
+> assets are not Contract Set v2 input objects; v2 uses Harness Templates and Backend-native
+> capabilities.
+
 ## Ownership
 
 OGSystem has one execution base and two product domains. The shared resource catalog is a platform capability, not a third task domain.
