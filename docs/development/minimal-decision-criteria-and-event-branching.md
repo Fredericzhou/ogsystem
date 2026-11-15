@@ -1,5 +1,8 @@
 # 固定业务事件的最小判定标准与可视化配置方案
 
+> **Contract Set v1 — 当前实现补充。** 本文沿用当前 Semantic IR v1、`context.map` 和固定业务事件
+> 协议；其中的配置描述不代表 v2 的 Harness 或 Execution Binding 模型。
+
 > **状态：当前版本方案。** 本文只补齐审核判定标准和设计器配置体验，不新增运行时抽象。
 > 固定业务事件的名称、路由约束和保留事件仍以
 > [`business-event-protocol-v1.md`](business-event-protocol-v1.md) 及

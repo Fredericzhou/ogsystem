@@ -1,5 +1,9 @@
 # OGSystem 语义手册（实现对齐版）
 
+> **Contract Set v1 — 当前实现。** 本手册描述当前 Runtime 的 Semantic IR v1、模型选择、
+> `exec.bind`、`context.map` 和受 Law 约束的 `noop` 行为，不是 v2 目标架构的输入规范。
+> v2 尚未切换前，本手册与源码和测试共同定义当前行为。
+
 本文是语法、运行细节和示例手册。不可违反的原则见
 [OGSystem Constitution and Rules](../development/ogsystem-constitution-v1.md)，Handoff、Join、Review、
 Artifact、Result 和 Resume 的紧凑合同见 [Semantic IR v1 Handoff 补充规范](ogsystem-handoff-semantics-v1.md)。

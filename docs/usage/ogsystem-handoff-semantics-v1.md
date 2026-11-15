@@ -1,5 +1,8 @@
 # Semantic IR v1 Handoff 补充规范
 
+> **Contract Set v1 — 当前交接合同。** 本文的 `context.map`、Flow Contract、Artifact 和 Review
+> 语义在 v2 切换前保持有效；v2 只作为目标映射，不应混入当前运行输入。
+
 本文补充现有 Semantic IR v1 的 Handoff、条件路由、Join、审核、Artifact 和恢复语义。
 它沿用现有 Mermaid、`context.map`、Flow Contract、ERROR 流和 `.ogs` 运行存储，不引入新的根配置格式。
 

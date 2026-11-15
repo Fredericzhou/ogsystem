@@ -41,6 +41,10 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
 
 ## 2026-11-15 工程增补与证据边界
 
+> **文档边界：** 本论文和研究材料描述当前 Contract Set v1 的实现证据与行业对照，或明确
+> 标注为目标架构；其中的 `allowedToolsByRoleId`、`constraints.allowedTools` 和
+> `workspace.*` 三层能力描述不是 Contract Set v2 的规范输入，也不应被当作 v2 Studio 设计。
+
 当前实现把协作交付明确分成两条路径：文档和普通文件经过 per-Run staging、路径/符号链接/配额/SHA-256 校验、单一 sealed bundle 和 Promotion；并行源码从固定 `baseCommit` 进入独立 Git worktree，Role commit 记录 provenance，由 Join 在独立 merge worktree 中按确定顺序合并，最终只选择每条 lineage 的最新成功 leaf。冲突只进入 Run evidence，不向业务目录写入编号冲突文件。
 
 工具访问由 Semantic IR 的 `allowedToolsByRoleId`、Role Contract 的 `constraints.allowedTools` 和 backend workspace capability policy 三层约束。`workspace.write`、`workspace.patch_text`、`workspace.run` 分别显式授权；缺少 policy 的旧 adapter 仍是兼容放行路径，不能表述为完整 fail-closed 门禁。

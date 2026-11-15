@@ -192,6 +192,11 @@ Run Capability Snapshot
 EnvironmentIntent
   The resource intent stored in a Harness Template.
 
+workspace.*
+  Current v1 OGS internal resource-capability projection (for example `workspace.write` or
+  `workspace.run`). In the v2 target it is an Adapter/Runtime implementation concept, not a
+  user-facing Backend-native tool catalog or a new tool definition.
+
 EffectiveExecutionPolicy
   The coordinated Runtime result for one Run:
   effectiveTools + EffectiveEnvironmentPolicy.
@@ -237,6 +242,10 @@ Adapter
 
 NativeTool
   A tool supplied by the Model Backend and invoked by the native session.
+
+CapabilitySnapshot
+  The verified facts for this Backend/model/run, including native tool IDs and enforceable
+  resource capabilities. It is an internal read-only fact set, not a user-managed tool library.
 
 Profile
   A reusable fixed invocation configuration for an API/Cmd Role.
@@ -464,15 +473,32 @@ flowchart TB
 
 | Layer | Owns | Receives | Produces | Must not own |
 | --- | --- | --- | --- | --- |
-| Business | responsibility, inputs, outputs, acceptance, topology, state, events, handoffs, Human Review source | business requirements and graph design | Role Contract and Semantic IR | Backend, model, native tool, resource permission |
+| Business | responsibility, inputs, outputs, acceptance, topology, state, events, handoffs, explicit Human Review intent | business requirements and graph design | Role Contract and Semantic IR | Backend, model, native tool, resource permission |
 | Technical binding | Harness Template or API/Cmd Template, Backend/model reference, preset, `allowedTools`, environment intent | project or TeamVersion technical configuration and Backend catalog | normalized binding input for execution | business acceptance rules, capability snapshot, native tool implementation |
-| Execution | Backend Registry, capability discovery/snapshot, effective policy, permission allow/deny, staging, Law, quota, Adapter, Backend session | normalized technical binding, Run context, and business execution plan | Role result, native tool events, execution outcome | business review decisions and mutable Role configuration |
+| Execution | Backend Registry, capability discovery/snapshot, effective policy, permission allow/deny, staging, Law, quota, Adapter, Backend session, exception review requests | normalized technical binding, Run context, and business execution plan | Role result, native tool events, execution outcome, Runtime-triggered review request | business review policy and mutable Role configuration |
 | Evidence | audit, artifacts, recovery, Human Review records | events and durable results from all relevant layers | replayable Run evidence | mutable business and technical configuration |
 
 Evidence may record Graph transitions, Policy decisions, Run state, checkpoints, and
 Human Review records, and may restore them during recovery. It does not define Graph
 topology, calculate Policy, or become the source of mutable Business or Technical
 Binding configuration.
+
+### Product layers versus implementation stages
+
+The four layers above are the target product ownership model. They do not replace the current
+five-stage implementation view used by the v1 Constitution:
+
+| Target product layer | Current implementation stages | Boundary |
+| --- | --- | --- |
+| Business | Authoring + business parts of Compilation | Defines Role, Flow, state, events, and review intent |
+| Technical Binding | Authoring bindings + binding parts of Compilation | Resolves Backend/Model/Profile references and validates configuration |
+| Execution | Execution Plan lowering + Runtime | Discovers capabilities, computes policy, starts sessions, and applies transitions |
+| Evidence | Evidence | Persists audit, artifacts, review records, checkpoints, and recovery facts |
+| Product projections | Cross-cutting views over all stages | Studio, Team Site, CLI, and diagnostics; not a fifth product layer |
+
+Compilation is therefore an implementation stage shared by Business and Technical Binding;
+Product Projections are read/control surfaces over the four product layers. This mapping avoids
+introducing a second architecture when the v2 implementation is built on the current pipeline.
 
 ### Dependency direction
 
@@ -494,6 +520,24 @@ Backend = the model and native tools that execute the request
 ```
 
 Capability is descriptive, while permission is prescriptive and runtime-scoped. Permission is not a separate business layer or a user-facing tool approval model.
+
+Human Review has the same split of ownership:
+
+```text
+Business
+  Declares explicit result gates, business actions, and any reviewable exception codes.
+
+Execution
+  Detects Runtime exceptions, creates the unified HumanReviewRequest, and applies decisions
+  through Runtime reconciliation. It never approves a native tool request.
+
+Evidence
+  Persists the request, decision, exception evidence, and reconciliation facts.
+```
+
+Therefore Runtime-triggered review does not create a second review concept. “Business Human
+Review” names the meaning and allowed business outcomes; “Runtime exception review” names the
+trigger and execution control path under the same request schema.
 
 ### User Page Configuration by Layer
 
@@ -713,6 +757,16 @@ preset:
 
 environment:
   Optional resource policy intent. It is not a per-tool approval workflow.
+
+Environment resolution precedence:
+  explicit Harness `environment` override
+    -> Backend `preset` defaults
+    -> conservative Runtime default
+
+The conservative Runtime default is filesystem read inside execution staging, with filesystem
+write, process, and network denied. A Backend preset may opt into additional resources only when
+the Adapter reports that their boundaries are enforceable. This makes an omitted environment
+deterministic and keeps `allowedTools` (tool selection) separate from resource policy.
 
 allowedTools omitted:
   Use every verified native tool exposed by the selected Backend.
@@ -1590,9 +1644,9 @@ Default rules:
 
 ```text
 filesystem.read = true inside execution staging
-filesystem.write = true when the Backend can enforce the staging root
-process = allow only when the Backend can enforce the process boundary
-network = allow only when the Backend can enforce the network boundary
+filesystem.write = allow only when EnvironmentIntent/preset allows it and the Backend can enforce the staging root
+process = allow only when EnvironmentIntent/preset allows it and the Backend can enforce the process boundary
+network = allow only when EnvironmentIntent/preset allows it and the Backend can enforce the network boundary
 unknown tool = deny
 unknown resource request = deny
 ```
@@ -1895,6 +1949,28 @@ Keep API/Cmd invocation editing separate from Harness Templates.
 ```
 
 ## 17. Migration
+
+### v1 to v2 mapping (target only)
+
+The following table is the single planned mapping for the eventual cutover. It describes a
+breaking rewrite, not a compatibility layer. Until that cutover is approved, the left-hand v1
+fields remain the current inputs and the right-hand fields must not be written by v1 Runtime.
+
+| Current v1 source | v2 target | Cutover rule |
+| --- | --- | --- |
+| `.ogs/model-selection.json` | Harness Template Backend/Model reference, selected through an execution-binding reference | Rewrite once; v2 Runtime does not read the selection file as a second authority |
+| `exec.bind.<roleId>` + `profiles.json` / `tools.json` | API/Cmd Template -> Profile -> Tool -> `local_shell` | Product name changes from Tool Role to API/Cmd Role; execution chain remains the same |
+| `role.json.constraints.allowedTools` | Harness Template `allowedTools` | Remove the Role field; omission means all verified native tools in v2 |
+| Semantic IR `allowedToolsByRoleId` and `workspace.*` policy | Run Capability Snapshot + EffectiveExecutionPolicy | Do not copy technical policy into v2 Semantic IR |
+| `role.json.outputs.events` and Mermaid Flow event labels | RoleResult event validated against Flow edges and the shared BusinessEvent registry | Flow edges are the only configured routable event source; no second maintained event list |
+| Law-authorized `noop` | Readiness error for an unresolved Model or API/Cmd binding | No v2 execution branch or fallback is retained |
+| v1 staging read default and explicit write/run grants | Harness EnvironmentIntent + Runtime EffectiveEnvironmentPolicy | The v2 default must be selected by the resolved Backend preset and enforceability; it is not inferred from a v1 `workspace.*` field |
+| Current workspace capability projection | Internal Adapter/Runtime projection | Never expose `workspace.*` as a user-managed Backend tool directory |
+| Current static backend capability checks | Capability Preview and frozen Run Capability Snapshot | Discovery remains internal/read-only; it does not create a Studio tool library |
+
+This table intentionally distinguishes a data rewrite from a semantic change. The default resource
+policy, event ownership, and missing-binding behavior are behavior changes that require updated
+tests and active manuals in the same release as the v2 Runtime.
 
 The new Runtime does not read legacy fields. A one-time repository rewrite is required:
 

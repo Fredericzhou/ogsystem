@@ -1,5 +1,11 @@
 # OGSystem Usage Manual
 
+> **Contract Set v1 — current release contract.** This manual documents the behavior implemented
+> by the current Runtime and Studio. It is not the proposed Contract Set v2 target in
+> [`role-execution-architecture.md`](../development/role-execution-architecture.md). Until the
+> v2 cutover is approved and implemented as one release, examples here remain authoritative for
+> current inputs such as `.ogs/model-selection.json`, `constraints.allowedTools`, and `exec.bind`.
+
 ## Read This First
 
 OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（稳定版本 `1.0.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。

@@ -1,5 +1,8 @@
 # ogsystem 编排语义架构参考手册 (v1.0)
 
+> **Contract Set v1 — 当前语义合同。** 本文定义当前 Semantic IR v1 和 Runtime 行为；v2
+> 目标架构不会在切换前改变本文的输入、字段或执行语义。
+
 > 术语基准：`Role` 是抽象责任角色，`Responsibility Seat` 是静态图位置，`Role Package` 是版本化实现
 > 资产。角色可递归负责嵌套 System，但当前 `SubgraphSpec` 尚未形成可执行的 owner 组合合同；不要将角色
 > 解释为具体人员、组织成员或运行实例。详见 [OGS Core Concepts](ogsystem-core-concepts.md)。

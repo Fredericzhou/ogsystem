@@ -2,6 +2,24 @@
 
 This is the active documentation entry point. Runtime behavior, source code, and tests define the current product contract.
 
+## Contract Status
+
+The repository currently contains two explicitly separated contract sets:
+
+| Contract set | Status | Authoritative scope | Examples |
+| --- | --- | --- | --- |
+| Contract Set v1 | **Current** | Released runtime, Studio, CLI, Semantic IR, and usage contracts | `ogsystem-constitution-v1.md`, `usage-manual.md`, `ogsystem-orchestration-semantics-v1.md`, `ogsystem-semantics-manual.md` |
+| Contract Set v2 | **Target proposal** | Planned breaking architecture refactor; not read by the current Runtime | `role-execution-architecture.md`, the v2 section of `backend-native-tools-standardization.md` |
+
+Until a separate governance decision approves the v2 cutover, v2 fields must not be added to
+current runtime inputs or mixed into v1 examples. A v2 implementation must update schemas, code,
+tests, Studio, CLI, and active usage manuals together. The v2 proposal does not provide a runtime
+compatibility layer or dual-write period after cutover.
+
+The four v2 product layers (Business, Technical Binding, Execution, Evidence) are a product
+ownership view. The current five-stage implementation view (Authoring, Compilation, Runtime,
+Evidence, Product Projections) remains valid for v1 and is not a competing product architecture.
+
 ## Usage
 
 - [Constitution, design principles, and rules](development/ogsystem-constitution-v1.md)
@@ -58,6 +76,7 @@ This is the active documentation entry point. Runtime behavior, source code, and
 3. Update the usage manual when CLI, installation, run artifacts, or security boundaries change.
 4. Keep [Semantic IR v1 Handoff supplement](usage/ogsystem-handoff-semantics-v1.md) aligned with runtime route, Join, review, Artifact, and resume behavior.
 5. Update semantic manuals, decisions, tests, and UAT cases when orchestration or recovery contracts change.
+6. Mark target proposals and current contracts explicitly; do not describe a v2 design as current behavior.
 
 ## Suggested Reading Order
 

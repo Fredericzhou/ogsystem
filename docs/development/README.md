@@ -4,6 +4,11 @@ This directory contains the constitution, current engineering rules, architectur
 unified plan and backlog, and dated verification records. Product usage belongs in `../usage/`.
 Current behavior is defined by source code, tests, active manuals, and [Decisions](DECISIONS.md).
 
+The current release is Contract Set v1. The [Role Execution Architecture](role-execution-architecture.md)
+and the v2 sections of the Backend tools document are target proposals only; they do not change the
+current Runtime input contract until an explicit cutover updates code, schemas, tests, Studio, CLI,
+and active manuals together.
+
 ## Unified Plan & Backlog
 
 - [Constitution, design principles, and rules](ogsystem-constitution-v1.md): compact source for governance boundaries and the active documentation map.
