@@ -40,7 +40,7 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 
 ```text
 Current pre-cutover implementation
-  仅记录现有源码、旧字段和迁移对象，不构成 Contract Set v2 输入。
+  仅记录现有源码和 v1 字段，不构成 Contract Set v2 输入；v2 不迁移这些对象。
 
 Normative Contract Set v2
   Harness.allowedTools、EnvironmentIntent、EffectiveExecutionPolicy 和 allow/deny
@@ -106,7 +106,7 @@ Backend Capability Preview。工具选项只能来自当前 Backend 的已验证
 
 以下契约是面向 v2 Adapter 的内部稳定意图命名，不是用户可编辑的工具目录，也不要求 Runtime
 在 OGS 内实现独立工具执行器。
-Pre-cutover 源码中的旧 `constraints.allowedTools` 只作为迁移对象记录；v2 使用 Harness Template
+Pre-cutover 源码中的旧 `constraints.allowedTools` 只作为历史参考；v2 使用 Harness Template
 的 `allowedTools` 和 staging 策略。新增能力必须先在对应 Adapter 和测试中落地，再进入 Studio 投影。
 
 ### 1. 标准化工具列表
@@ -199,8 +199,8 @@ Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以
 
 当前 v1 仍支持 `local_shell`、`profiles.json`、`tools.json` 和 `exec.bind`，用于固定脚本、转换器和
 其他受控宿主机命令。它们不是 Contract Set v2 的第二执行路径。v2 只接受 Harness Template 和
-已验证 Backend-native tools；v1 固定命令若要迁移，必须由 Backend Adapter 提供可验证的原生能力，
-否则保持在 v1，不能通过 v2 绕过 staging、quota 或资源策略。
+已验证 Backend-native tools；固定命令若无法由 Backend Adapter 提供可验证的原生能力，就不进入
+v2，不能通过 v2 绕过 staging、quota 或资源策略。
 
 ---
 
@@ -250,8 +250,8 @@ Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以
 4. **后端投影（后续）**：为实际注册的 backend 逐个补充可验证的 native capability descriptor 和 readiness probe。每次只接入一个能力，先实现 workspace 工具，再评估 `web.search`；不得仅凭 CLI 宣传文档把能力标为可用。
 5. **Studio 投影**：按 Harness Template 的 Backend reference 动态投影 Capability Preview 和 `allowedTools`，并显示 EffectiveExecutionPolicy。不得使用 `dry-run` / `sandbox` / `real` 表达工具权限。
 
-切换前的 v1 运行保持现状，作为迁移基线；切换到 v2 后，未完成能力验证的绑定进入 readiness error，
-不回退到 v1 字段或旧权限模式。
+切换前的 v1 运行保持现状；切换到 v2 后，未完成能力验证的绑定进入 readiness error，不回退到
+v1 字段或旧权限模式。v1 数据不导入 v2。
 
 ---
 

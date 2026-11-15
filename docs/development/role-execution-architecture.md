@@ -69,9 +69,10 @@ no v2 field is accepted as runtime input.
    Persist v2 event version fields, tool/permission evidence, Review scope identity, Artifact
    decisions, and frozen Run configuration; verify replay and resume from those records.
 
-7. Repository rewrite and validation
-   Rewrite v1 fixtures, examples, tests, and released Team inputs once; run schema, Runtime,
-   Adapter, Studio, CLI, UAT, and recovery tests before release.
+7. Direct replacement and validation
+   Replace v1 fixtures, examples, tests, and authoring inputs with v2-only content; do not
+   migrate released v1 data. Run schema, Runtime, Adapter, Studio, CLI, UAT, and recovery tests
+   before release.
 
 8. Documentation closure
    Mark the v1 manuals as historical/current-release background, promote the v2 entry points,
@@ -79,7 +80,8 @@ no v2 field is accepted as runtime input.
 ```
 
 This is a release gate, not a second backlog. `todo-backlog.md` remains the only active v1 work
-list until Governance Gate 1 is approved.
+list until Governance Gate 1 is approved. The cutover is a direct replacement: there is no data
+migration, offline migration tool, compatibility reader, fallback branch, or dual write.
 
 ## Core v2 Scope
 
@@ -112,9 +114,9 @@ Evidence / Review Records
 
 The v2 core does not add Service Agent, Human Agent, Remote Agent, API/Cmd Role, Profile,
 Tool, or `local_shell` objects. Fixed commands must be exposed as verified Backend-native
-capabilities or remain on the v1 runtime. Capability matrices, Studio tool-directory UX,
-Backend-specific permission protocol variants, full exception-review workflows, timeout and
-notification policy, alternate Artifact stores, and migration automation are Deferred RFCs.
+capabilities. Capability matrices, Studio tool-directory UX, Backend-specific permission protocol
+variants, full exception-review workflows, timeout and notification policy, and alternate Artifact
+stores are Deferred RFCs. v1 data is not migrated into v2.
 
 ### Deferred RFC boundary
 
@@ -126,7 +128,7 @@ ACP/MCP transport details and static/request/none protocol variants
 Pi, Kimi, and other Backend-specific probes
 Extended Runtime exception review matrices, timeout, escalation, and notification
 Action-specific review payloads and detailed evidence/result references
-Alternate Artifact stores and automatic v1 migration tooling
+Alternate Artifact stores and other non-core integrations
 Service Agent, Human Agent, and Remote Agent bindings
 ```
 
@@ -368,11 +370,11 @@ CapabilitySnapshot
   resource capabilities. It is an internal read-only fact set, not a user-managed tool library.
 
 Legacy fixed invocation
-  The v1 `exec.bind` -> Profile -> Tool -> `local_shell` path. It is retained only as migration
-  context and has no v2 product binding.
+  The v1 `exec.bind` -> Profile -> Tool -> `local_shell` path. It is historical context only and
+  has no v2 product binding or migration path.
 ```
 
-The v2 path and the retained v1 legacy path are distinct:
+Before cutover, the current v1 path and the proposed v2 path are distinct:
 
 ```text
 Model Role
@@ -2223,68 +2225,31 @@ Do not allow users to create or edit Backend-native tool definitions.
 Show the template tool selection as an advanced technical setting.
 ```
 
-## 17. Appendix: v1 Background and Cutover Mapping (Non-Core)
+## 17. Direct Switch and Cleanup
 
-This appendix is historical planning context for the breaking governance cutover. It is not part
-of the v2 product model, does not add compatibility behavior, and does not make API/Cmd, Profile,
-Tool, `local_shell`, `exec.bind`, or `noop` valid v2 objects.
+Contract Set v2 uses a direct replacement. It does not migrate v1 projects, TeamVersions, Run
+directories, fixtures, or evidence. The v2 Runtime rejects v1 roots and fields with schema errors;
+it does not read `.ogs/model-selection.json`, `exec.bind`, `profiles.json`, `tools.json`,
+`constraints.allowedTools`, `allowedToolsByRoleId`, `noop`, or `local_shell` as fallback input.
 
-### v1 to v2 mapping (target only)
-
-The following table is the single planned mapping for the eventual cutover. It describes a
-breaking rewrite, not a compatibility layer. Until that cutover is approved, the left-hand v1
-fields remain the current inputs and the right-hand fields must not be written by v1 Runtime.
-
-| Current v1 source | v2 target | Cutover rule |
-| --- | --- | --- |
-| `.ogs/model-selection.json` | Harness Template Backend/Model reference, selected through an execution-binding reference | Rewrite once; v2 Runtime does not read the selection file as a second authority |
-| `exec.bind.<roleId>` + `profiles.json` / `tools.json` | No generic v2 binding; rewrite the work as a verified Backend-native capability or keep it in v1 | API/Cmd, Profile, Tool, and `local_shell` are not v2 execution paths |
-| `role.json.constraints.allowedTools` | Harness Template `allowedTools` | Remove the Role field; template generation initializes the selected set from verified Backend tools |
-| Semantic IR `allowedToolsByRoleId` and `workspace.*` policy | Run Capability Snapshot + EffectiveExecutionPolicy | Do not copy technical policy into v2 Semantic IR |
-| `role.json.outputs.events` and Mermaid Flow event labels | RoleResult event validated against Flow edges and the shared BusinessEvent registry | Flow edges are the only configured routable event source; no second maintained event list |
-| Law-authorized `noop` | Readiness error for an unresolved Harness binding | No v2 execution branch or fallback is retained |
-| v1 staging read default and explicit write/run grants | Harness EnvironmentIntent + Runtime EffectiveEnvironmentPolicy | The v2 default must be selected by the resolved Backend preset and enforceability; it is not inferred from a v1 `workspace.*` field |
-| Current workspace capability projection | Internal Adapter/Runtime projection | Never expose `workspace.*` as a user-managed Backend tool directory |
-| Current static backend capability checks | Capability Preview and frozen Run Capability Snapshot | Discovery remains internal/read-only; it does not create a Studio tool library |
-
-This table intentionally distinguishes a data rewrite from a semantic change. The default resource
-policy, event ownership, and missing-binding behavior are behavior changes that require updated
-tests and active manuals in the same release as the v2 Runtime.
-
-The new Runtime does not read legacy fields. A one-time repository rewrite is required:
+Before the v2 release is published:
 
 ```text
-old role.json
-  -> Role Contract with ogsContractVersion: 2
+v1 schemas, parsers, runtime branches, and Studio inputs
+  -> remove
 
-old allowedToolsByRoleId
-  -> Harness Template allowedTools
+v1 fixtures, examples, and tests
+  -> replace with v2-only content
 
-old workspace.* references
-  -> Harness Template environment overrides
+v1 active authoring and execution documentation
+  -> remove from the active v2 distribution or move to the archive
 
-Legacy fixed invocation references
-  -> rewrite as a verified Backend-native capability or reject the v2 binding
-
-old tests, examples, and fixtures
-  -> rewrite to the new schema
-
-noop execution paths and three-mode permission profiles
-  -> delete; do not migrate into v2
+v1 Run data and released Team data
+  -> remain outside v2; no conversion, import, or compatibility read
 ```
 
-The migration rewrites every executable Role to a Harness Template. Existing Model Role tool
-declarations become the template's selected `allowedTools`; fixed command or API declarations
-have no generic v2 equivalent and must be rewritten as a verified Backend-native capability or
-remain on the v1 runtime. The old fields must not be copied into the business Role Contract.
-
-After migration:
-
-```text
-Legacy fields produce schema errors.
-No runtime fallback is kept.
-No dual write is kept.
-```
+No migration tool, compatibility reader, dual-write path, or data conversion utility is part of
+Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 Harness bindings.
 
 ## 18. Implementation Order
 
@@ -2301,8 +2266,8 @@ No dual write is kept.
 4. Remove `noop` lifecycle and execution branches.
 5. Remove Supervised/Auto-accept/Full access permission modes and technical Permission Review.
 6. Add `execution-bindings.json` with Harness Template references and materialized tool selections.
-7. Run the one-time repository rewrite before release, then reject all v1 fields; this is release
-   tooling, not Runtime compatibility.
+7. Delete v1 parsers, schemas, fixtures, examples, and Runtime branches before release; do not
+   migrate or import v1 data.
 
 ### P1: Backend capabilities
 
@@ -2367,7 +2332,7 @@ No dual write is kept.
 20. Core Review requests and decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`,
     and `stateVersion`; action-specific payloads are Deferred RFC extensions.
 21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
-22. Legacy fields produce schema errors after the one-time rewrite.
+22. Legacy fields and v1 data produce schema errors; no migration or compatibility read exists.
 23. Run readiness preflights every `allowedTools` entry before adding it to `effectiveTools`; invocation
     checks are defensive and cannot expand the frozen set.
 24. Business Role Inspector edits only business fields; Harness Template selection is in the

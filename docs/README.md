@@ -14,10 +14,10 @@ The repository currently contains two explicitly separated contract sets:
 Until a separate governance decision approves the v2 cutover, v2 fields must not be added to
 current runtime inputs or mixed into v1 examples. A v2 implementation must update schemas, code,
 tests, Studio, CLI, and active usage manuals together. The v2 proposal does not provide a runtime
-compatibility layer or dual-write period after cutover.
+compatibility layer, data migration, or dual-write period after cutover.
 
 The v2 cutover is a release gate, not an active work list. Its governance, contract, Runtime,
-Adapter, product-surface, evidence/recovery, repository-rewrite, and documentation prerequisites
+Adapter, product-surface, evidence/recovery, direct-replacement, and documentation prerequisites
 are defined in [v2 Cutover Gate](development/role-execution-architecture.md#v2-cutover-gate).
 
 The four v2 product layers (Business, Technical Binding, Execution, Evidence) are a product
