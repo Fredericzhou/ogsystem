@@ -22,7 +22,7 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
    - 在启用 Git 协作模式时，可将安全交给文件系统级物理隔离（每个并行任务独占 Git Worktree）；普通 Role 当前仍使用 per-execution staging。协调层只监听 `worker_done` 并做最终 Diff 审查与交付封签，绝不介入底层的编辑细节。
 
 基于此，OGS 严格遵循以下五项铁律：
-1. **底座反向约束工具集（Capability Projection，目标）**：工具选项不是全局静态任意挑选的，而是由角色绑定的 `modelRef` 所属底座动态投影出可选范围；MVP 先依赖已实现的 role contract 与 capability policy 门禁；
+1. **底座反向约束工具集（Capability Projection，目标）**：Harness Template 生成时，工具选项不是全局静态任意挑选的，而是由模板绑定的 Backend/Model 动态投影出可选范围；Role 只选择模板；MVP 先依赖已实现的 role contract 与 capability policy 门禁；
 2. **OGS 零自建工具执行器**：OGS 不写文件编辑算法，不写网络抓取爬虫，不自建搜索引擎，坚决避免重复造轮子；
 3. **纯映射与策略开关（Pure Mapping & Switch）**：OGS 只负责“意图声明（`toolId`） $\to$ 底座原生参数/网络沙箱开关透传”；
 4. **刚性安全由现有基础设施兜底**：执行过程由 Runtime 现成的 Staging Clean Room 目录隔离与配额门禁兜底，执行后由 `artifact-verifier.ts` 做防逃逸检查与 SHA-256 存证封签；
@@ -102,15 +102,16 @@ Backend Capability Preview。工具选项只能来自当前 Backend 的已验证
 
 ---
 
-## MVP 标准工具契约与底座反向投影
+## Adapter 内部意图映射与底座反向投影
 
-以下契约是面向 v2 Adapter 的稳定意图命名，不要求 Runtime 在 OGS 内实现独立工具执行器。
+以下契约是面向 v2 Adapter 的内部稳定意图命名，不是用户可编辑的工具目录，也不要求 Runtime
+在 OGS 内实现独立工具执行器。
 Pre-cutover 源码中的旧 `constraints.allowedTools` 只作为迁移对象记录；v2 使用 Harness Template
 的 `allowedTools` 和 staging 策略。新增能力必须先在对应 Adapter 和测试中落地，再进入 Studio 投影。
 
 ### 1. 标准化工具列表
 
-目标上系统可以统一定义 6 个中立的标准工具 ID：
+Adapter 可以统一定义以下内部意图 ID，用于把 Backend 原生工具映射到资源策略：
 
 ```text
 【工作区操作 - 映射 Backend 原生文件读写】
@@ -126,7 +127,7 @@ web.search            # 原生联网检索与时效性增强
 
 ### 2. 底座反向约束矩阵（目标 Capability Projection Matrix）
 
-**目标机制：底座决定可选范围。** 在配置和校验时，根据角色绑定的底座物理能力进行投影与门禁拦截。下表是待 adapter 验证的设计矩阵，不是当前 Runtime 的承诺；当前实现只保证上文列出的三项 workspace capability policy。
+**目标机制：底座决定可选范围。** 在配置和校验时，根据角色绑定的底座物理能力进行投影与门禁拦截。下表是 Adapter 内部的设计矩阵，不是 Studio 工具目录，也不是当前 Runtime 的承诺；当前实现只保证上文列出的三项 workspace capability policy。
 
 Claude Code、Cursor Agent 等列仅用于外部能力对照，当前没有 OGS Adapter、Capability Preview
 或 verified catalog 条目。它们的矩阵值不能直接进入 Studio 选项；只有完成 OGS Adapter、探针和
@@ -141,11 +142,11 @@ Claude Code、Cursor Agent 等列仅用于外部能力对照，当前没有 OGS 
 | `workspace.run` | ✅ `{ bash: true }` | ✅ 放行 Bash | ✅ `exec_command` | ✅ 原生命令 | ✅ 放行 terminal | ✅ 原生 bash | ⚠️ 受限 Bash |
 | `web.search` | ✅ 开启 search 插件 | ✅ 放行 WebSearch | ✅ `web_search="live"`<br>+ `network_access` | ✅ 原生 `web_search` | ✅ 放行 web_search | ❌ 需扩展/MCP (默认置灰) | ❌ **不支持 (置灰/阻断)** |
 
-* **目标 Fail-Closed 门禁**：当后端能力目录和 adapter 映射接入后，Runtime 执行前校验应阻断角色声明但后端不支持的工具（例如离线后端 + `web.search`）。当前已经存在的是 role contract 与 semantic capability policy 的 fail-closed 检查；它校验声明是否被项目能力策略允许，不会推断 `web.search` 等后端原生能力。
+* **目标 Fail-Closed 门禁**：当后端能力目录和 Adapter 映射接入后，Runtime 执行前校验应阻断 Harness Template 选择但后端不支持的原生工具（例如离线后端 + `web.search`）。Studio 显示的是当前 Backend Snapshot 返回的原生工具 ID；`workspace.*` 仅是 Adapter 内部资源意图，不进入用户工具目录。
   ```text
   [READINESS_ERROR] Role "${roleId}" requires tool "web.search",
   which is unsupported by backend "${backend}".
-  Please switch backend to a search-capable model (e.g. codex, qwen, claude, opencode) or remove the tool.
+  Please switch backend to a verified search-capable model (for example codex, qwen, or opencode) or remove the tool.
   ```
 
 ### 3. v2 Permission 与 Human Review 边界
@@ -154,28 +155,56 @@ OGS v2 不提供工具级三档安全模式。技术执行使用：
 
 ```text
 Capability + allowedTools + EnvironmentIntent + Law / quota / staging
-  -> EffectiveExecutionPolicy
+  -> selectedTools
+  -> effectiveTools (executable set)
   -> PermissionDecision: allow | deny
 ```
+
+Backend adapters advertise one permission protocol:
+
+```text
+static
+  Policy is mapped before session start. No unreported approval prompt or runtime tool expansion
+  is accepted.
+
+request
+  The Backend/ACP session can request a resource during execution. OGS evaluates the frozen
+  policy and returns only allow or deny; unknown requests are denied and audited.
+
+none
+  No request channel exists. Only statically verified and enforceable tools are enabled; a
+  capability requiring runtime checks fails readiness.
+```
+
+ACP is a transport and session protocol, not a new OGS product layer. ACP-capable adapters map
+model/tool discovery, staging, session events, and permission requests into the same Capability
+Snapshot, EffectiveEnvironmentPolicy, and allow/deny decision types. Pi, Kimi, Codex, OpenCode,
+and other Backends may use ACP or a native protocol; each selected mapping must pass its own
+readiness probe before entering the verified catalog.
+
+Dynamic tools, unverified MCP tools, and native approval prompts such as `ask` or `on-request`
+are not automatically executable. They must be present in the frozen template/snapshot and have
+an enforceable resource boundary; otherwise the request is denied or the binding fails readiness.
 
 Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以在 Role 结果交接前
 触发，也可以由配置的 Runtime 异常触发；它不会暂停等待单个 Backend 工具的批准。
 
-### 4. CLI 工具保持独立
+### 4. v1 CLI 工具边界
 
-`local_shell` 用于固定的发布脚本、转换器和其他受控宿主机命令。它继续由 `profiles.json` 绑定到 `tools.json`，并经过现有的命令解析、依赖 Readiness、超时、输出上限和工作区隔离。
-
-模型标准工具和 `local_shell` 不合并成一个执行器：前者由模型发起调用，后者由流程中的 CLI Tool Role 启动。
+当前 v1 仍支持 `local_shell`、`profiles.json`、`tools.json` 和 `exec.bind`，用于固定脚本、转换器和
+其他受控宿主机命令。它们不是 Contract Set v2 的第二执行路径。v2 只接受 Harness Template 和
+已验证 Backend-native tools；v1 固定命令若要迁移，必须由 Backend Adapter 提供可验证的原生能力，
+否则保持在 v1，不能通过 v2 绕过 staging、quota 或资源策略。
 
 ---
 
 ## Studio 极简可视化配置：底座联动投影（后续）
 
-无需开辟独立一级页面，配置直接内嵌在 **角色检查器（Role Inspector）** 中。**用户先选底座模型（`modelRef`），工具选项根据底座物理能力动态联动启用或置灰：**
+无需开辟独立一级页面，配置直接内嵌在 **Harness Template 编辑器** 中。**用户先选 Backend/Model，工具选项只来自 Capability Preview 返回的 Backend 原生工具 ID；`workspace.*` 不直接展示：**
 
 ```text
 ┌────────────────────────────────────────────────────────┐
-│ 角色检查器 - 标准能力与安全配置                         │
+│ Harness Template - Backend 能力与环境配置                │
 ├────────────────────────────────────────────────────────┤
 │ 绑定底座模型: [ codex / gpt-6-luna                   ▼] │
 ├────────────────────────────────────────────────────────┤
@@ -183,15 +212,10 @@ Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以
 │ 文件读写、进程、网络由 Harness Template 配置           │
 │ Runtime 根据 Capability、Law、staging 计算最终策略      │
 │                                                        │
-│ [工作区操作 (Backend 原生执行)]                        │
-│ [x] workspace.list       文件列表枚举 (只读)            │
-│ [x] workspace.read       文本文件读取 (只读)            │
-│ [x] workspace.write      文件写入 (沙箱修改)            │
-│ [x] workspace.patch_text 增量补丁编辑 (沙箱修改)        │
-│ [ ] workspace.run        执行工作区命令 (支持 curl/HTTP)│
-│                                                        │
-│ [网络检索 (Backend 原生联网)]                          │
-│ [x] web.search           联网检索 (原生支持实时联网搜索) │
+│ [Backend 原生工具（来自 Capability Preview）]          │
+│ [x] <native tool id>       由当前 Backend 提供          │
+│ [x] <native tool id>       由当前 Backend 提供          │
+│ [ ] <unsupported tool>     不可验证，置灰               │
 │                                                        │
 │ [就绪诊断]                                             │
 │ ℹ️ 当前 Backend: codex (工作区沙箱已就绪，原生搜索可用) │
@@ -199,9 +223,9 @@ Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以
 ```
 
 ### 交互规则（后续 Studio 能力）
-1. **联动投影**：切换 `modelRef` 时，工具复选框即时刷新状态。当切换到纯离线模型（如 Ollama）或默认 Pi 时，`web.search` 自动置灰并展示禁用原因；当切换到已完成 OGS Adapter 验证的 Codex、OpenCode 或 Qwen Backend 时，才按真实 Capability Preview 高亮可用工具；未接入的 Claude Code、Cursor Agent 不进入可选列表；
+1. **联动投影**：切换 Backend/Model 时，工具复选框即时刷新状态。只有已完成 OGS Adapter、权限协议和资源边界验证的 Backend 才展示可选原生工具；未接入的 Claude Code、Cursor Agent 不进入可选列表，Pi/Kimi 的未验证能力置灰并展示原因；
 2. **策略诊断**：显示 `EffectiveExecutionPolicy` 和每项 allow/deny 原因；
-3. **专业模式折叠**：专业人员可展开查看 `allowedTools`、EnvironmentIntent 和 `local_shell` Profile 参数。
+3. **专业模式折叠**：专业人员可展开查看 Harness Template 的 `allowedTools`、EnvironmentIntent 和 Backend readiness 诊断。
 
 ---
 
