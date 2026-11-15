@@ -237,8 +237,8 @@ Run 证据目录：
 
 ```text
 .ogs/runs/<run-id>/
-├── shared/                 # Run 级共享投影；当前不会自动接收每个 Role 的产物
-│   ├── artifact/           # 仅显式汇聚/发布流程使用
+├── shared/                 # Run 级共享投影；声明产物验证后由 Runtime 写入
+│   ├── artifacts/          # 已验证文件的 Run 级只读交接面
 │   ├── seal-manifest.json
 │   ├── artifact-manifest.json  # canonical verified manifest
 │   └── verification.json
@@ -252,8 +252,8 @@ Run 证据目录：
 ```text
 roles/<roleId>/executions/<executionId>/
 ├── workspace/              # 当前激活的可写 staging
-├── artifacts/              # 成功提交后的不可变文件快照
 ├── artifact-manifest.json  # verified manifest
+├── verification.json       # 当前执行的验证摘要
 └── execution-outcome.json
 ```
 
@@ -318,11 +318,11 @@ HTML/SVG 在线预览必须使用隔离 iframe 和严格 CSP：`default-src 'non
 
 ## 11. CLI 接口
 
-现有 `src/runtime/artifact-promotion.ts` 作为共享 Promotion Service，CLI 和 Team Site 都调用它。当前 CLI 已实现封存产物的显式 Promotion；文件列举、检查和验证主要通过 Team Site/API 与 Run 证据目录完成。当前 Role execution 生成的封存包不会自动投影到 Run 级 `shared/artifact`，因此只有已经存在于 `shared/` 且封存报告包含 `passed: true` 的产物才能使用下面的 CLI Promotion。
+现有 `src/runtime/artifact-promotion.ts` 作为共享 Promotion Service，CLI 和 Team Site 都调用它。当前 Role execution 在声明产物后会先完成路径、符号链接、配额和 SHA-256 验证，再把验证后的文件以不可覆盖方式写入 Run 级 `shared/artifacts`，并生成 canonical manifest、verification 和 seal；这一步是 Run 内的交接，不等于发布到项目业务目录。CLI 仍只接受 seal 记录的 `shared/artifacts` 来源，并要求 Run 完成且验证报告通过。
 
 ```bash
 ogs run artifact promote <run-id> \
-  --source shared/artifact \
+  --source shared/artifacts \
   --destination workspace/deliverables/report
 ```
 
@@ -409,13 +409,16 @@ ogs run artifact promote <run-id> \
 - 门禁一的候选 `artifacts` 输出解析、相对路径校验、opaque `artifactRef`、显式 ArtifactResolver 授权和访问审计。
 - 各模型 backend 和 `local_shell` Profile 的执行目录已接入 per-attempt execution staging；OpenCode、Codex、Qwen 和 Kimi 的 workspace capability policy 已接入其 native tool/permission 边界。
 - Codex strict response schema 由 Runtime 生成兼容视图：递归补齐对象 `required`、`additionalProperties:false`，移除后端不接受的组合关键字；原始 Role Schema 仍用于返回侧完整校验。
-- 每个 execution 的 clean staging、声明产物路径/符号链接/配额/SHA-256 核验，以及 execution 级 `artifact-manifest.json`、`verification.json`、`seal-manifest.json` 和不可变文件快照。
-- 门禁二的 execution staging、Workspace 路径/符号链接/配额安全检查、统一的 SHA-256 manifest/seal 生成、`run/shared/artifacts` 封存文件包读取，以及现有 Promotion Service 的封存校验复用；配置化 verifier 命令仍未完成。
+- 每个 execution 的 clean staging、声明产物路径/符号链接/配额/SHA-256 核验，以及 execution 级 `artifact-manifest.json` 和 `verification.json`；Run 级 `shared/artifacts` 保存本次封存包，`seal-manifest.json` 位于 Run 的 shared 目录。
+- 门禁二的 execution staging、Workspace 路径/符号链接/配额安全检查、统一的 SHA-256 manifest/seal 生成、单一 Run sealed bundle（声明产物到 `run/shared/artifacts` 的不可覆盖封存及 `shared/verification.json` 报告）、封存文件包读取，以及现有 Promotion Service 的封存校验复用；配置化 verifier 命令仍未完成。
 - 门禁三的 Studio 专用 seal/verification/file 只读 API、Projects 多文件 Deliverable 存储、Run 封存文件包归档、旧快照恢复兼容、文件哈希复核、Range 流式媒体响应和 HTML/SVG 预览安全响应头。
 - 新增契约、selector、Resolver、Workspace/Verifier、Studio API、Run 文件包和 Deliverable 完整性测试。
 - 使用本机真实 Codex `gpt-6-luna` 完成两 Role 端到端协作验证：`debate-minimalist -> debate-judge`，2/2 Role 成功，Run `status=done`，真实 session/message/audit 证据已写入 `.ogs/runs`。
 - 2026-11-10 通过已配置的 Codex/OpenCode API 协议完成五个经典团队的真实模型验证；管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3，`ffprobe`、Pandoc/XeLaTeX 和 SHA-256 manifest/seal 检查通过。CLI 的交互式 login 状态不作为模型可用性判断；dry-run 仍不计入真实模型证据。
 - 当前 Role 产物封存配额为：单文件 50 MiB、单次 Role 声明文件总量 200 MiB、最多 500 个文件；图片默认另有 20 MiB 上限。Team Site 非文本封存文件支持最大 256 MiB 的流式读取，不能据此绕过 Runtime 封存配额。
+- 2026-11-15 使用本机真实 Codex `gpt-6-luna` 从初始需求启动一个临时 Python 计算器项目，完成一次四 Role（dispatch、implementation、tests、join）协作运行：2 个并行 Git source Role、Join merge、final merge、调用方 fast-forward publish 均成功；Run 为 `done`，8 项 unittest 通过，CLI `add 2 3=5`、`multiply 6 7=42`，发布仓库保持 clean。该结果是一次端到端可用性证据，不是稳定性或随机模型输出的统计结论；Role 的路径所有权、Git 交付约束和验收入口均由本次任务显式配置。
+- 同一真实案例还验证了边界：并行 Role 同时声明 artifact 会被单一 sealed bundle 门禁拒绝；并行 Role 修改相同路径会产生 Git conflict 并停止发布；`publish` 的锁、CAS、幂等和中途失败恢复仍由调用方回调负责。当前没有 AI resolver，因此同路径冲突需要人工处理或重新设计 Role 分工。
+- `tests/python-app-collaboration.test.mjs` 是确定性本地工具脚本驱动的 Runtime 回归测试，用于验证隔离、Join、merge 和 publish 接线，不属于真实模型运行证据；真实模型验收脚本为 `scripts/run-real-python-calculator-team.mjs`。两者在报告和提交时必须分开表述。
 
 以下内容仍是后续接线工作，当前版本不作为已完成能力宣称：
 
@@ -423,9 +426,11 @@ ogs run artifact promote <run-id> \
 - 为新增 backend 接入 workspace capability/permission policy，并补充真实 CLI 文件生成验收。
 - 在 `run-artifacts.ts` 中完成 artifact manifest 与 checkpoint/resume 的端到端对账和只读输入挂载。
 - 实现 Business Data Adapter 的 `validate -> diff -> confirm -> commit` 事务端口，以及前端 artifact canvas。
-- Git branch/worktree 协作、Role commit provenance、Join 后 Merge Stage、conflict bundle 和项目级 promotion lock 尚未接入；第 17 节定义的是不改变现有单 Role/串行行为的最小目标方案，不作为当前已完成能力宣称。
+- Git 协作的项目级自动构造、默认 promotion lock 和内置 Git-aware promotion 仍未接入；当前发布由调用方显式提供 `publish` 回调。底层模块和 Graph Runner 显式接线的已实现范围见第 17 节及其端到端验收。
 
-核心结论：CLI 的源码、文档、办公文件、图片和音视频生成能力可以纳入当前框架，但必须由 Role/Profile 显式授权并由宿主机工具实际完成格式生成。当前框架已提供文件契约、基础验签和文件交付底座；配置化测试门禁、Run 级汇聚、完整恢复对账和业务数据事务仍是后续建设项。
+当前实现的交接限制：MVP 每个 Run 只有一个 immutable sealed bundle，`shared/artifacts`、`shared/artifact-manifest.json`、`shared/verification.json` 和 `shared/seal-manifest.json` 组成该 bundle。单个 Role 可以在一次声明中提交多个文件；同一 Run 内第二个 Role 的独立封存、重复路径或不同内容会在复制前 fail-closed，并保留各自 execution 证据。封存期间使用 Run 级独占锁；同机且 owner 进程已退出的锁可在下一次尝试时回收，并只清理该锁声明的未封存 partial 文件，跨机归属不明或 owner 仍存活时 fail-closed。artifact bundle 不执行文本合并，也不会把并行 Role 的结果自动组合。**因此 Git 并行代码协作与多个并行 Role 各自声明 artifact 在当前 MVP 中互斥：一个 Run 只有一个 sealed bundle，第二个并行封存（包括同进程下锁仍存活时的 `seal already in progress`）会 fail-closed；并行代码 Role 应把交付事实放在 Git commit 中，或由 Join 后的单一 Role 负责 artifact 封存。**代码协作需显式传入 Git collaboration coordinator；commit provenance、Join merge 和冲突事件进入 Run 证据，未通过验证的结果不会调用 `publish`。默认单 Role/串行路径仍使用原有 execution staging 和 artifact handoff。
+
+核心结论：CLI 的源码、文档、办公文件、图片和音视频生成能力可以纳入当前框架，但必须由 Role/Profile 显式授权并由宿主机工具实际完成格式生成。当前框架已提供文件契约、验证封存、Run 级交接、文件交付底座和显式 Git 协作合并路径；配置化测试门禁、完整恢复对账、项目级 Git-aware promotion 和业务数据事务仍是后续建设项。
 
 ## 17. 协作写入与最小合并方案
 
@@ -484,7 +489,7 @@ Git repository root             # May equal or differ from control root
 └── <workspaceDir>/             # Project business files; only published merge result
 ```
 
-Run 启动时固定 Git repository root、`baseCommit` 和 `workspaceDir` 相对仓库根的路径。两者可能不同；若 `workspaceDir` 不在所选 Git 仓库内，Git 协作模式必须拒绝启动，继续使用现有 artifact 流程。每个 Role execution 从其显式基线创建独立 branch/worktree；执行成功后提交 commit，并在 Run 证据中保存 `roleId`、`executionId`、`baseCommit`、`resultCommit` 和变更文件清单。失败或重试使用新的 execution worktree，不把未提交修改带入下一次执行。Worktree 根目录必须配置在所有被检出工作树之外，避免仓库内容递归包含其他 worktree 和控制证据。Role 不直接修改正式 `workspaceDir`。
+Run 启动时固定 Git repository root、`baseCommit` 和 `workspaceDir` 相对仓库根的路径。两者可能不同；若 `workspaceDir` 不在所选 Git 仓库内，Git 协作模式必须拒绝启动，调用方需显式选择现有 artifact 流程。每个 Role execution 从其显式基线创建独立 branch/worktree；执行成功后提交 commit，并在 Run 证据中保存 `roleId`、`executionId`、`baseCommit`、`resultCommit` 和变更文件清单。失败或重试使用新的 execution worktree，不把未提交修改带入下一次执行。Worktree 根目录必须配置在所有被检出工作树之外，避免仓库内容递归包含其他 worktree 和控制证据。Role 不直接修改正式 `workspaceDir`。
 
 ### 17.4 串行修改同一文件
 
@@ -532,7 +537,9 @@ git merge --no-edit <commitA>
 git merge --no-edit <commitB>
 ```
 
-每个成功的 merge 都形成可恢复的中间 commit。无冲突时继续合入剩余候选，最终执行 build、test、lint 和 artifact verification。有冲突时停止后续合入，正式业务目录不发生任何写入，Merge workspace 保留 Git 冲突状态，Runtime 写入 `conflict-map.json` 和冲突审计记录。重试从已记录的最后一个 merge commit 或固定 base 重建，不复用状态不明的 Git index。
+每个成功的 merge 都形成可恢复的中间 commit。无冲突时继续合入剩余候选，最终执行 build、test、lint 和 artifact verification。有冲突时停止后续合入，正式业务目录不发生任何写入，Merge workspace 保留 Git 冲突状态，Runtime 写入 `conflict-map.json` 和冲突审计记录。Join Role 重试继续使用已验证的 merge worktree，并在执行前清理回该 merge commit；不会退回未合并 base，也不会删除后续重试需要的 merge worktree。重试从已记录的最后一个 merge commit 或固定 base 重建，不复用状态不明的 Git index。
+
+最终 Run merge 只选择每个 lineage 的最新成功 leaf commit。若 Join merge 已经包含并覆盖源 Role commit，或串行/loop 的后续 leaf 已替代前一轮 commit，旧 commit 不再作为最终候选；这样避免把同一文件的历史返工版本再次合入。发布回调发生异常时，Run 持久化为 `failed`，写入 `git_collaboration_publish_failed`，并标记发布可能已部分生效；后续仍写入最终 summary，业务目录由调用方按该证据执行核查或补偿。
 
 ### 17.6 冲突保存和可选 resolver Role
 
@@ -638,8 +645,8 @@ Role 可以通过受控的 context projection 读取 Run 的全局状态，但�
 1. Git 仓库检测、固定 `baseCommit`、每个并行 Role 一个 branch/worktree。
 2. Role 完成后的 commit 记录，以及 commit 与 execution/artifact 的 provenance 绑定。
 3. Join 后 Merge Stage 的独立 worktree 和 Git clean merge/conflict 检测；AI resolver 仅作为冲突策略的可选执行器。
-4. 项目级 promotion lock、发布前 HEAD/clean tree 检查和失败恢复。
-5. 复用现有 manifest、verification、seal 和 Promotion Service；发布 Git 仓库内已有路径需要 Git-aware 发布适配，不能假定现有“目标必须不存在”的 artifact promote 命令可以覆盖更新。
+4. 复用现有 manifest、verification、seal 和 Promotion Service；发布 Git 仓库内已有路径需要 Git-aware 发布适配，不能假定现有“目标必须不存在”的 artifact promote 命令可以覆盖更新。
+5. 项目级 promotion lock、发布前 HEAD/clean tree 检查和失败恢复作为后续 Git-aware promotion 接线，不成为当前 Git worktree MVP 的隐含前置条件。
 
 第一版不实现：
 
@@ -649,7 +656,7 @@ Role 可以通过受控的 context projection 读取 Run 的全局状态，但�
 - 多个 Role 对同一个可写目录的实时协同编辑；
 - 把整个业务目录默认注入每个 Role 的上下文。
 
-Git 协作模式还要求仓库和 `workspaceDir` 映射明确、基线工作树 clean、目标分支和仓库配置受控，并禁止 Role 修改 `.git`、OGS 控制目录或仓库外路径。含 submodule、Git LFS、稀疏检出或未受支持 filter 的仓库，MVP 应拒绝或要求显式禁用协作模式，不能把普通文件 hash 当作仓库完整性证明。
+Git 协作模式还要求仓库和 `workspaceDir` 映射明确、基线工作树 clean、目标分支和仓库配置受控，并禁止 Role 修改 `.git`、OGS 控制目录或仓库外路径。当前 capability probe 已 fail-closed 拒绝 tracked submodule、Git LFS attributes 和 sparse checkout；未受支持的 filter 也必须拒绝或显式禁用协作模式，不能把普通文件 hash 当作仓库完整性证明。
 
 这样可以在不改变现有单 Role、串行 Run 和 artifact 发布行为的前提下，增加并行代码协作能力。没有启用 Git 协作的项目继续使用现有 execution staging 和 Promotion 流程；启用后，Git worktree 只承担代码变更隔离和合并，OGS 现有的 handoff、验证、审计和发布边界保持不变。
 
@@ -657,13 +664,15 @@ Git 协作模式还要求仓库和 `workspaceDir` 映射明确、基线工作树
 
 按以下顺序实现，任何一步都不要求先改造现有串行路径：
 
-1. **Git capability probe**：检测 Git 仓库、版本、clean 基线、`workspaceDir` 是否位于仓库内；不满足条件时回退到现有 artifact 模式。
-2. **Worktree manager**：为并行 Role 创建和清理 branch/worktree，记录 `baseCommit` 和 `resultCommit`。
-3. **Merge coordinator**：等待 join 完成，按固定顺序在独立 merge worktree 执行 Git merge，持久化每个中间 commit 和冲突状态。
+1. **Git capability probe**：Graph Runner 在收到 `gitCollaboration` 时会在启动阶段检测 Git 仓库、版本、clean 基线、`workspaceDir` 是否位于仓库内；直接使用底层 coordinator 的调用方仍必须显式调用 probe。不满足条件时拒绝本次 Git Run，Runner 不会自动回退到 artifact 模式，调用方需显式选择另一条路径。
+2. **Worktree manager**：为并行 Role 创建和清理 branch/worktree，记录 `baseCommit` 和 `resultCommit`；Merge coordinator 只接受当前 Run 注册的、与确定性 Role/merge branch 和 worktree 路径匹配的 provenance，拒绝仓库中任意其他后代 commit。重试和恢复使用 `resetWorktree()` 时，先由真实路径 containment 校验确认目标是当前 collaboration worktree，再执行 `reset --hard` 与 `clean -fdx`（保留 `.ogs` 控制目录）；该清理范围依赖 containment guard，后续修改不得绕过或削弱它。
+3. **Merge coordinator**：等待 join 完成，按固定顺序在独立 merge worktree 执行 Git merge，持久化每个 Role commit、merge checkpoint 和冲突状态；重试或恢复时按 `mergeId` 取最后 checkpoint，复用并验证已有 worktree，避免重复创建固定 branch。复用前必须对账候选集合、实际 first-parent 合入顺序、`HEAD`、`mergeCommit` 以及 merge branch/path，并逐个确认候选仍绑定到当前 Run 已注册的 Role commit provenance；候选集合或顺序变化时从固定 `baseCommit` 重建，未注册候选、外部推进或事件篡改时 fail-closed，并把最终 Run 状态持久化为失败。
 4. **Merge Stage**：无冲突直接进入验证；有冲突才按策略激活 AI resolver、临时 resolver Role 或 Human Review。
 5. **Git-aware promotion**：获取项目锁，校验 HEAD/CAS 和 clean 状态，以验证后的 merge commit 发布；现有非 Git artifact promotion 保持不变。
 
 第一版不要求把 Git 变更重新复制成一套自定义 artifact 文件树；merge worktree 的 commit 是代码协作事实，现有 manifest/seal 是发布验证事实，两者通过 provenance 关联。
+
+当前已完成的是可独立调用的 Git 协作底层模块、Graph Runner 的显式 probe/Join 接线和临时仓库端到端验收。Runner 不会自动替换现有项目的 `workspaceDir`，也不会在 Git 不可用时回退到 artifact 模式；只有显式提供 coordinator 时才启用 worktree/merge，未启用时继续保持现有单 Role/串行路径。
 
 ### 17.10.2 演进路径
 
@@ -686,11 +695,13 @@ MVP: Git CLI + worktree + merge + promotion lock
 - 若业务目录是 Git 仓库的受控工作树，获取项目写锁后校验 HEAD 等于 `baseCommit` 且工作树 clean，再以已验证的 merge commit 做 fast-forward 更新。发布记录保存旧 HEAD、新 HEAD、Run 和 seal digest。更新失败时保持旧 HEAD，禁止逐文件覆盖。
 - 若 `workspaceDir` 是非 Git 目录，第一版只支持发布到新的版本化目录（例如 `releases/<run-id>`），再由显式指针/元数据切换当前版本；不声称支持原位更新任意现存目录。原位目录替换需要单独设计跨平台原子交换和回滚机制。
 
+Graph Runner 的显式 `publish` 回调还受运行结果门禁：只有 Run 已进入 `done` 且所有参与 Git 协作的 Role 最近一次执行成功时才会调用；失败、停止或部分失败 Run 只保留 merge/skip 证据，不向业务目录发布。回调如果在外部仓库已产生部分效果后抛错，Runtime 不假设回滚成功，而是记录 `git_collaboration_publish_failed`、`mergeCommit` 和 `possiblePartialPublish=true`，并将 Run 状态和 summary 标记为失败。
+
 复杂情形按以下边界处理：
 
 | 情形 | MVP 行为 | 原因 |
 | --- | --- | --- |
-| Run 重试或进程崩溃 | 用持久化 commit 和 merge checkpoint 重建 worktree；仅清理确认不再被引用的分支/worktree | 保留可恢复事实，避免误删仍在运行的执行 |
+| Run 重试或进程崩溃 | 用持久化 commit 和 merge checkpoint 重建或复用 worktree；仅清理确认不再被引用的分支/worktree | 保留可恢复事实，避免误删仍在运行的执行 |
 | 基线在运行期间前进 | Promotion 拒绝并要求从新 HEAD 重合并 | 防止覆盖人工或其他 Run 的发布 |
 | 多个 Run 同时发布 | 项目级锁串行化，并在锁内再次 CAS 检查 HEAD | 锁处理竞争，CAS 处理过期基线 |
 | 删除、重命名、同文件多方修改 | Git 冲突交给 Merge Stage；按策略激活 resolver Role 或人工审核，并保留候选 commit | Git 能表达这些变更，避免自定义文件编号逻辑 |
@@ -724,7 +735,7 @@ Git 自身负责三方合并和冲突索引；OGS 只保存 merge worktree 路�
 
 | 方案 | 结论 | 原因 |
 | --- | --- | --- |
-| 原生 Git CLI + `execFile` | MVP 推荐 | 与用户安装的 Git 版本、worktree、submodule、merge 策略一致；无需维护第二套 Git 实现 |
+| 原生 Git CLI + `execFile` | MVP 推荐 | 与用户安装的 Git 版本、worktree 和 merge 策略一致；对 submodule/LFS/sparse 等当前不支持特性由 capability probe 拒绝，无需维护第二套 Git 实现 |
 | `simple-git` | 可选薄封装，不是必需依赖 | API 方便，但不能替代 OGS 的超时、权限、审计、路径和 fail-closed 规则；增加依赖后仍要理解底层 Git 行为 |
 | `isomorphic-git` | 不作为 worktree MVP 基础 | 纯 JS 便于部署，但对真实仓库特性、系统 Git 配置、worktree/filter/LFS 的兼容边界需要重新验证；容易形成与用户 Git 不同的语义 |
 | NodeGit/libgit2 等原生绑定 | 暂不采用 | 安装和跨平台 ABI 成本较高，当前需求不值得引入 |
