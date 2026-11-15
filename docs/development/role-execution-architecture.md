@@ -32,7 +32,7 @@ Version ownership is split explicitly:
 | `BusinessEventProtocol.version` | Shared business event protocol version |
 | `FlowContractFile.version` | Flow Contract file format version |
 | `schemaVersion` | Input, output, or business-state schema version |
-| `RuntimeEventEnvelope.version` | Runtime evidence event format version |
+| `RuntimeEventEnvelope.schemaVersion` | Runtime evidence event format version |
 | `adapterVersion` | Backend Adapter implementation version |
 
 `ogsContractVersion` is an envelope field. It does not replace object-local version fields. Until
@@ -61,8 +61,11 @@ Resolved Run Policy
   `effectiveTools`, EffectiveEnvironmentPolicy, policy digest, capability digest, and recovery
   identity. `selectedTools` is only a Runtime-local calculation and is never persisted.
 
-Evidence / Human Review
-  Append-only facts and the minimal review control protocol.
+Business Review semantics
+  Review triggers and business actions owned by the Business layer.
+
+Evidence / Review Records
+  Append-only facts and the minimal persisted review control record.
 ```
 
 The v2 core does not add Service Agent, Human Agent, Remote Agent, API/Cmd Role, Profile,
@@ -149,8 +152,8 @@ The following rules are fixed:
    a review, pending state, or graph transition. Human Review uses one request protocol
    for both explicit result gates after a durable Role result and configured Runtime
    exception boundaries; it never approves an individual tool call.
-7. `noop` is not an execution mode. Every executable Role must resolve to a Harness Template;
-   an unresolved binding is a readiness error.
+7. `noop` is not an execution mode. Every executable v2 Model Role must resolve to a Harness
+   Template; an unresolved binding is a readiness error.
 8. `Supervised`, `Auto-accept`, and `Full access` are not OGS permission modes. Backend-native
    approval modes remain Adapter internals and are never exposed as a second OGS permission model.
 9. A Resolved Model Role plan must contain Backend, Model, Run Capability Snapshot,
@@ -456,6 +459,13 @@ not receive the entire upstream context, prompt history, Backend session, worksp
 tool output by implication. Artifact references are opaque and authorized; a filesystem path is
 not an authorization token. Join nodes use explicit source and field mappings rather than an
 implicit merge of all upstream data.
+
+Native tool availability is not a business completion guarantee. A Model Role becomes eligible
+for a durable `RoleResult` only after its output schema, declared postconditions, acceptance
+criteria, and Artifact verification pass. If a required business effect is not produced, whether
+because the Agent did not invoke an available tool or because the tool result is invalid, the
+Runtime does not persist a successful result and does not advance the Flow handoff. It records the
+failure and applies the declared failure or exception policy.
 
 ## 2. Target Architecture
 
@@ -1560,6 +1570,28 @@ Adapter repeats the same check defensively and must never add a tool to the set.
 adding a public resource-dependency matrix to every tool descriptor while ensuring a tool is
 not first rejected on its initial call.
 
+Readiness failure semantics are strict for explicit selections:
+
+```text
+allowedTools entry missing from verifiedTools
+  -> readiness error
+  -> do not start Backend
+  -> do not advance Graph
+
+allowedTools entry whose resource boundary cannot be enforced
+  -> readiness error
+  -> do not start Backend
+  -> do not advance Graph
+
+Capability or resource not selected by allowedTools, or an omitted optional environment intent
+  -> may be absent or conservatively denied without blocking the Run
+```
+
+An edit-time Preview may report degraded optional capabilities. A degraded Preview is executable
+only when it does not invalidate any explicit `allowedTools` entry or requested enforceable
+resource boundary. Run startup repeats these checks against the frozen Snapshot; invocation checks
+are defensive only and cannot remove an explicit tool after the Backend has started.
+
 ## 9. Capability, Technical Policy, and Permission
 
 These concepts have different ownership and meaning:
@@ -1826,6 +1858,25 @@ Runtime exception review
   tool set. `rework` or `reject` select a declared route when the exception policy provides one.
 ```
 
+Action availability and action targets are derived; they are not arbitrary fields supplied by the
+reviewer:
+
+```text
+explicit result review
+  available actions: approve / rework / reject
+  approve: the current declared handoff
+  rework/reject: the unique matching Flow edge selected by the current Flow and review policy
+
+Runtime exception review
+  available actions: continue / retry / terminate
+  target and scope: the current Runtime exception context and active branch/lineage state
+```
+
+The Flow, Role `authority.controlActions`, and compiled review policy must resolve each displayed
+action to exactly one target. A static ambiguity is a readiness error. A runtime ambiguity causes
+the decision to be rejected and audited; Runtime must not guess a branch, retry attempt, budget, or
+termination scope. This keeps the core request small without making action application implicit.
+
 The core request has only the lifecycle needed for blocking, recovery, idempotency, and CAS:
 
 ```ts
@@ -1834,6 +1885,9 @@ type HumanReviewRequest = {
   schemaVersion: 1;
   reviewId: string;
   runId: string;
+  round: number;
+  lineageId: string;
+  branchId: string;
   stateVersion: number;
   trigger: "explicit" | "exception";
   exceptionContext?: {
@@ -1850,9 +1904,28 @@ type HumanReviewDecision =
 
 The only core transitions are `pending -> resolved` after a valid decision and
 `pending -> cancelled` when the Run or review scope is cancelled. Decision application is
-idempotent and requires the current `reviewId` and `stateVersion` through CAS reconciliation.
-An explicit result review blocks the handoff while the request is `pending`; recovery reopens the
-same request and does not create a second review.
+idempotent and requires the current `reviewId`, `round`, `lineageId`, `branchId`, and
+`stateVersion` through CAS reconciliation. A stale, duplicate, cross-round, cross-lineage, or
+cross-branch decision is rejected and durably audited. An explicit result review blocks the
+handoff while the request is `pending`; recovery reopens the same request and does not create a
+second review.
+
+The request identity also locates its context without adding result or evidence payloads to the
+core schema:
+
+```text
+reviewId + runId + stateVersion
+  -> immutable pending-review record in Run state/checkpoint
+round + lineageId + branchId
+  -> active execution scope used to validate the target
+explicit trigger
+  -> durable Role result and pending handoff recorded in that state/checkpoint
+exception trigger
+  -> exceptionContext and correlated Evidence events in the same Run timeline
+```
+
+`resultRef` and `evidenceRefs` remain deferred denormalized fields; the Runtime must still make
+the state/checkpoint and Evidence correlation available before creating the request.
 
 The following are Deferred RFC fields and policies: `expiresAt`, `timeoutPolicy`, `paused`,
 `requestedAt`, detailed evidence/result references, action-specific payloads such as retry attempt
@@ -1872,7 +1945,9 @@ type HumanReviewPolicy = {
 The review policy has one compiled source in the Semantic IR/Execution Plan. It may declare
 `after_role_result` and configured Runtime exception codes in the same policy. Runtime creates a
 request from that policy; it does not create a second review model for exceptions. Every request
-and decision is bound to `reviewId` and `stateVersion` in the core model.
+and decision is bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion` in the
+core model. The action subset and target are derived using the rules above; no separate action
+registry or action-specific payload is required in v2 core.
 
 ```mermaid
 flowchart LR
@@ -1921,16 +1996,59 @@ the frozen `effectiveTools` set.
 
 Core Evidence uses the existing `events.ndjson` and Runtime event contract as its single
 serialization boundary. Evidence is append-only; Artifact, Review, Policy Decision, and recovery
-facts remain traceable there. A richer `RuntimeEventEnvelope` is shown below as a Deferred RFC
-shape and is not required for the core v2 cutover.
+facts remain traceable there. At the v2 cutover, every new v2 record in `events.ndjson` must carry
+the following minimum root fields:
 
-If adopted later, `ogsContractVersion` identifies the contract set and `version` identifies the
-event envelope schema; event-specific fields remain under `payload`.
+```text
+ogsContractVersion: 2
+schemaVersion: 1
+eventId
+eventType
+runId
+recordedAt
+payload
+```
+
+`ogsContractVersion` identifies the OGS contract set and `schemaVersion` identifies the concrete
+Evidence record schema. These fields extend the existing event record; they do not create a second
+audit file or a parallel event store. Existing v1 records remain v1 history until the breaking
+cutover. A richer generic `RuntimeEventEnvelope` may be specified later, but it cannot remove
+these minimum fields from v2 records.
+
+The v2 core closes the two native execution event types used by the execution contract:
+
+```ts
+type ToolInvocationEvidence = {
+  roleId: string;
+  executionId: string;
+  backend: string;
+  model: string;
+  tool: string;
+  decision: "allow" | "deny";
+  status: "started" | "completed" | "failed" | "denied";
+  durationMs?: number;
+  policyDigest?: string;
+};
+
+type PermissionRequestEvidence = {
+  requestId: string;
+  backend: string;
+  resource: string;
+  decision: "allow" | "deny";
+  reason?: string;
+};
+```
+
+`eventType: "tool_invocation"` stores `ToolInvocationEvidence` and
+`eventType: "permission_request"` stores `PermissionRequestEvidence`; both are appended to
+`events.ndjson` with the minimum root fields above. Review, Artifact, graph transition, and
+recovery records use the same existing append-only boundary and their owning Runtime event
+contracts.
 
 ```ts
 type RuntimeEventEnvelope<TPayload> = {
   ogsContractVersion: 2;
-  version: 1;
+  schemaVersion: 1;
   eventId: string;
   eventType: string;
   runId: string;
@@ -1942,7 +2060,7 @@ type RuntimeEventEnvelope<TPayload> = {
 ```json
 {
   "ogsContractVersion": 2,
-  "version": 1,
+  "schemaVersion": 1,
   "eventId": "evt-1",
   "eventType": "tool_invocation",
   "runId": "run-1",
@@ -1964,14 +2082,14 @@ type RuntimeEventEnvelope<TPayload> = {
 ```json
 {
   "ogsContractVersion": 2,
-  "version": 1,
+  "schemaVersion": 1,
   "eventId": "evt-2",
   "eventType": "permission_request",
   "runId": "run-1",
   "recordedAt": "2026-11-15T10:00:01.000Z",
   "payload": {
     "requestId": "perm-1",
-    "backend": "acp",
+    "backend": "opencode",
     "resource": "filesystem",
     "decision": "deny",
     "reason": "outside execution staging"
@@ -2014,7 +2132,11 @@ Do not allow users to create or edit Backend-native tool definitions.
 Show the template tool selection as an advanced technical setting.
 ```
 
-## 17. Migration
+## 17. Appendix: v1 Background and Cutover Mapping (Non-Core)
+
+This appendix is historical planning context for the breaking governance cutover. It is not part
+of the v2 product model, does not add compatibility behavior, and does not make API/Cmd, Profile,
+Tool, `local_shell`, `exec.bind`, or `noop` valid v2 objects.
 
 ### v1 to v2 mapping (target only)
 
@@ -2109,8 +2231,8 @@ No dual write is kept.
 1. Normalize `tool_invocation` events.
 2. Normalize `permission_request` events.
 3. Add the unified minimal `HumanReviewRequest` and core action enum.
-4. Bind every review decision to `reviewId` and `stateVersion`; defer lineage/branch and
-   action-specific payload extensions.
+4. Bind every review request and decision to `reviewId`, `round`, `lineageId`, `branchId`, and
+   `stateVersion`; defer only action-specific payload extensions.
 5. Reuse frozen capability and policy snapshots on recovery.
 6. Keep review application in Runtime reconciliation and review records in Evidence.
 
@@ -2126,7 +2248,7 @@ No dual write is kept.
 
 1. Role Contract contains no Backend, native tool, or environment permission fields.
 2. Semantic IR contains no native tool or resource policy.
-3. Every Role resolves through a Harness Template.
+3. Every executable v2 Model Role resolves through a Harness Template.
 4. No API/Cmd, Profile, Tool, or `local_shell` execution path is required by Contract Set v2.
 5. Every Harness Template resolves one installed Backend and one model from that Backend's verified catalog.
 6. Changing the Backend or model reruns readiness and freezes a new Run Capability Snapshot for the next Run.
@@ -2148,8 +2270,8 @@ No dual write is kept.
 17. Every native tool invocation produces an audit event.
 18. Every Role handoff uses declared event, data, and Artifact mappings.
 19. Active and exception-triggered Human Review use the same request schema and action enum.
-20. Core Review decisions are bound to `reviewId` and `stateVersion`; lineage/branch and
-    action-specific payloads are Deferred RFC extensions.
+20. Core Review requests and decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`,
+    and `stateVersion`; action-specific payloads are Deferred RFC extensions.
 21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
 22. Legacy fields produce schema errors after the one-time rewrite.
 23. Run readiness preflights every `allowedTools` entry before adding it to `effectiveTools`; invocation
@@ -2158,3 +2280,10 @@ No dual write is kept.
     Technical Binding panel.
 25. Import produces Capability Preview and Binding Readiness Projection only; Run creation
     produces and freezes EffectiveExecutionPolicy.
+26. An explicit `allowedTools` entry that is missing or unenforceable fails readiness; the
+    Backend is not started and the Graph does not advance.
+27. Review action subsets and targets are uniquely derived from the Flow, Role
+    `authority.controlActions`, compiled review policy, and Runtime scope; ambiguous static targets
+    fail readiness and ambiguous runtime decisions are rejected and audited.
+28. A Model Role cannot commit a successful result or advance a handoff until output
+    postconditions, acceptance criteria, and declared Artifact verification pass.
