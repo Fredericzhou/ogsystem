@@ -153,14 +153,20 @@ Claude Code、Cursor Agent 等列仅用于外部能力对照，当前没有 OGS 
 
 OGS v2 不提供工具级三档安全模式。技术执行使用：
 
+> **核心合同只定义 `allow | deny`。** 下方 `static / request / none`、ACP transport
+> 和 Backend-specific approval mapping 属于 Deferred Adapter RFC，不是 v2 核心字段。
+
 ```text
 Capability + allowedTools + EnvironmentIntent + Law / quota / staging
-  -> selectedTools
+  -> Runtime-local candidate set (not persisted)
   -> effectiveTools (executable set)
   -> PermissionDecision: allow | deny
 ```
 
 Backend adapters advertise one permission protocol:
+
+> The following protocol taxonomy is deferred Adapter design. The v2 core contract only stores
+> the normalized `allow | deny` decision.
 
 ```text
 static

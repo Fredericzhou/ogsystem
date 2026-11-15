@@ -39,6 +39,56 @@ Version ownership is split explicitly:
 the v2 cutover is approved, the active Constitution v1 and Semantic IR v1 remain the current
 contract and this document is design guidance only.
 
+## Core v2 Scope
+
+The v2 cutover keeps one small core contract. The mandatory product objects are:
+
+```text
+Role Contract
+  Business responsibility, inputs, outputs, acceptance, and failure semantics.
+
+Business Graph / Flow
+  Role topology and handoff edges.
+
+Business Event
+  The shared event value emitted by a Role result and routed by a Flow edge.
+
+Harness Template
+  Backend, Model, allowedTools, EnvironmentIntent, and limits.
+
+Resolved Run Policy
+  Run-frozen Backend/Model, Harness `allowedTools`, Snapshot `verifiedTools`,
+  `effectiveTools`, EffectiveEnvironmentPolicy, policy digest, capability digest, and recovery
+  identity. `selectedTools` is only a Runtime-local calculation and is never persisted.
+
+Evidence / Human Review
+  Append-only facts and the minimal review control protocol.
+```
+
+The v2 core does not add Service Agent, Human Agent, Remote Agent, API/Cmd Role, Profile,
+Tool, or `local_shell` objects. Fixed commands must be exposed as verified Backend-native
+capabilities or remain on the v1 runtime. Capability matrices, Studio tool-directory UX,
+Backend-specific permission protocol variants, full exception-review workflows, timeout and
+notification policy, alternate Artifact stores, and migration automation are Deferred RFCs.
+
+### Deferred RFC boundary
+
+The following may be designed and implemented later without changing the core object model:
+
+```text
+Capability Preview refresh UX and Backend tool matrix
+ACP/MCP transport details and static/request/none protocol variants
+Pi, Kimi, and other Backend-specific probes
+Runtime exception review matrices, timeout, escalation, and notification
+Action-specific review payloads and detailed evidence/result references
+Alternate Artifact stores and automatic v1 migration tooling
+Service Agent, Human Agent, and Remote Agent bindings
+```
+
+These extensions must project into the core `allowedTools`, `verifiedTools`, `effectiveTools`,
+EnvironmentPolicy, PermissionDecision, ReviewRequest, and Evidence contracts rather than create
+parallel product objects.
+
 ## 1. Goal
 
 The target architecture separates business configuration from technical execution:
@@ -66,7 +116,7 @@ Business Layer
   Role Contract, Semantic IR, Flow, and Human Review semantics.
 
 Technical Binding Layer
-  Harness Template, Backend reference, Model reference, preset, selected allowedTools,
+  Harness Template, Backend reference, Model reference, preset, `allowedTools`,
   environment intent, and limits.
 
 Execution Layer
@@ -91,10 +141,10 @@ The following rules are fixed:
 4. Harness environment intent, EffectiveEnvironmentPolicy, and Backend-native mapping
    are three different objects. The first is user configuration, the second is computed
    by Runtime, and the third is owned by the Adapter.
-5. `allowedTools` is the only Model Role tool restriction field. Omitted means all
-   verified tools, an empty list means no native tools, and a non-empty list is an
-   explicit allow-set. Do not add `requiredTools`, `deniedTools`, `tools.mode`, or a
-   technical permission profile.
+5. `allowedTools` is the only Harness Template tool selection field. Generated defaults
+   populate it with all verified tools, an empty list means no native tools, and a non-empty
+   list is an explicit allow-set. Do not add `requiredTools`, `deniedTools`, `tools.mode`, or
+   a technical permission profile.
 6. Permission decisions are only `allow` or `deny`. Technical permission never creates
    a review, pending state, or graph transition. Human Review uses one request protocol
    for both explicit result gates after a durable Role result and configured Runtime
@@ -122,9 +172,10 @@ The following rules are fixed:
     Law, staging, quota, and readiness filtering. It is not the template's selection set. The
     selected intent is the `allowedTools` stored on the Harness Template; generated defaults
     populate it with all verified candidates before policy filtering.
-16. Backend permission protocols are normalized as `static`, `request`, or `none`. Native
-    approval prompts never become OGS Human Review. A dynamic, unverified, or unforceable
-    capability fails closed and cannot enter the executable set.
+16. Core Permission is only `allow` or `deny`. Backend permission protocol variants are
+    Adapter implementation details and Deferred RFCs. Native approval prompts never become OGS
+    Human Review. A dynamic, unverified, or unforceable capability fails closed and cannot enter
+    the executable set.
 17. Pi, Kimi, ACP, and other Backend bindings are not verified until their execution staging and
     resource policy probes pass. A missing or non-enforceable boundary produces readiness error
     or deny; it never widens the host working directory to make execution succeed.
@@ -214,9 +265,10 @@ EffectiveExecutionPolicy
   effectiveTools + EffectiveEnvironmentPolicy.
 
 Tool set stages
-  verifiedTools are Backend facts; selectedTools are the `allowedTools` intent applied to those
-  facts; effectiveTools are the final executable subset after resource, Law, staging, quota, and
-  readiness checks. Only effectiveTools may be invoked.
+  The only persisted/contract collections are `allowedTools` (Harness Template user selection),
+  `verifiedTools` (Run Capability Snapshot Backend facts), and `effectiveTools` (Run frozen
+  executable set). Runtime may use a local `selectedTools` variable while intersecting
+  `allowedTools` with `verifiedTools`, but it does not persist or expose that variable.
 
 EffectiveEnvironmentPolicy
   The final filesystem, process, network, staging, and limit constraints.
@@ -225,9 +277,8 @@ PermissionDecision
   The runtime allow/deny result for one native tool or resource request.
 
 PermissionProtocol
-  The Backend request channel mode: `static` (precomputed policy only), `request` (per-request
-  native callbacks normalized to allow/deny), or `none` (no request channel; only statically
-  verified and enforceable capabilities may run).
+  Deferred Adapter RFC term for Backend request-channel modes. It is not a v2 core persisted
+  field; every mode must normalize to the core `allow | deny` decision.
 
 Backend Session
   The actual model session created by an Adapter for a Run.
@@ -240,7 +291,7 @@ Capability
   + allowedTools
   + EnvironmentIntent
   + Law / quota / staging
-  -> selectedTools
+  -> Runtime-local candidate intersection
   -> effectiveTools + EffectiveEnvironmentPolicy
   -> PermissionDecision
 ```
@@ -268,7 +319,7 @@ NativeTool
   A tool supplied by the Model Backend and invoked by the native session.
 
 CapabilitySnapshot
-  The verified facts for this Backend/model/run, including native tool IDs and enforceable
+  The verified facts for this Backend/model/run, including `verifiedTools` and enforceable
   resource capabilities. It is an internal read-only fact set, not a user-managed tool library.
 
 Legacy fixed invocation
@@ -352,7 +403,7 @@ type RoleInput = {
 };
 
 // A read-only projection of an existing FlowContract; it is not a new persisted contract.
-type FlowContractHandoffView = {
+type HandoffProjection = {
   sourceRole: string;
   targetRole: string;
   event: BusinessEventType;
@@ -361,7 +412,7 @@ type FlowContractHandoffView = {
 };
 ```
 
-`FlowContractHandoffView` is an in-memory, read-only join of the existing sources. It does not
+`HandoffProjection` is an in-memory, read-only join of the existing sources. It does not
 create `handoff-contracts.json`, a second compiler, or a second validation source. The unique
 sources are:
 
@@ -583,7 +634,7 @@ flowchart TB
 | Capability Preview / Readiness | Execution | refresh discovery and readiness checks | verified models, native tool IDs, adapter readiness, preview time and digest |
 | Runtime Policy / Diagnostics | Execution | normally none; technical overrides are edited in Technical Binding | effective tools, staging root, Law, quota, degradation, allow/deny reasons |
 | Adapter / Backend Diagnostics | Execution | normally none | native permission mapping, adapter version, unsupported policy fields, native tool events |
-| Run / Evidence / Review | Evidence | Human Review decision, rework, pause, terminate | tool calls, permission decisions, artifacts, errors, recovery history |
+| Run / Evidence / Review | Evidence | Human Review decision, rework, retry, terminate | tool calls, permission decisions, artifacts, errors, recovery history |
 
 The normal user workflow is:
 
@@ -692,7 +743,7 @@ The reusable technical template for a Model Role represents the complete CLI/Bac
 Harness Template
   Backend / CLI adapter identity
   Model exposed by that Backend
-  selected allowedTools references
+  `allowedTools` references
   Optional filesystem/process/network policy intent
   Optional timeout and quota overrides
 ```
@@ -1037,14 +1088,13 @@ explicit result:
   approve / rework / reject -> resolve the business result and declared handoff
 
 Runtime exception:
-  continue / retry          -> apply the Runtime control authorization
-  pause                     -> keep the Run waiting
-  terminate                 -> end the configured Runtime scope
+  continue / retry / terminate -> apply the Runtime control authorization
 ```
 
 Explicit result review actions are business decisions about the Role's durable result and
 declared handoff. Runtime exception review actions are Execution control decisions about
-continuation, retry, budget, pause, or termination. Both use the same request, action enum,
+continuation, retry, and termination. Budget, pause, timeout, and escalation extensions are
+Deferred RFCs. Both use the same request, action enum,
 decision payload, and Evidence schema. Neither class approves or rejects an individual Backend
 tool call.
 
@@ -1190,8 +1240,8 @@ Human Review panel
 ```
 
 The Human Review panel is shown when an explicit result review or configured Runtime exception
-creates a `HumanReviewRequest`. It displays the scenario-specific subset of the canonical actions
-`approve`, `continue`, `rework`, `retry`, `reject`, `pause`, and `terminate`. Native tool Permission
+creates a `HumanReviewRequest`. It displays the scenario-specific subset of the core actions
+`approve`, `continue`, `rework`, `retry`, `reject`, and `terminate`. Native tool Permission
 Decisions remain in the audit timeline and are not presented as user approval tasks.
 
 #### Progressive disclosure rules
@@ -1332,7 +1382,7 @@ The business Role Contract does not contain Backend or tool configuration:
     "decisionCriteria": []
   },
   "authority": {
-    "controlActions": ["approve", "pause", "rework", "terminate"]
+    "controlActions": ["approve", "rework", "terminate"]
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -1419,6 +1469,19 @@ type ResolvedExecutionPlanNode = {
 };
 ```
 
+Persistence rule:
+
+```text
+Harness Template                  -> allowedTools
+Run Capability Snapshot           -> verifiedTools
+resolved-config.json              -> effectiveTools (one frozen copy per Role binding)
+```
+
+`EffectiveExecutionPolicy` may carry `effectiveTools` in Runtime memory while resolving and
+executing, but it must serialize that collection only through the corresponding
+`resolved-config.json` plan node. It is not copied into the Capability Snapshot, a second policy
+file, or a separate Role/IR record.
+
 The resolved node is written into the Run snapshot together with the Semantic IR and
 Law digests. Adapter version is read from `capabilitySnapshot.adapterVersion`; it is not
 duplicated on the plan node. A node that lacks any required field cannot start a Model
@@ -1436,9 +1499,7 @@ pair. The Preview may exist at Backend level before a model is selected.
 type CapabilityPreview = {
   backend: string;
   model?: string;
-  tools: string[];
-  permissionProtocol: "static" | "request" | "none";
-  transport: "native" | "acp";
+  verifiedTools: string[];
   adapterVersion?: string;
   verifiedAt: string;
   digest: string;
@@ -1450,18 +1511,16 @@ type RunCapabilitySnapshot = {
   model: string;
   adapterVersion: string;
   verifiedAt: string;
-  tools: string[];
-  permissionProtocol: "static" | "request" | "none";
-  transport: "native" | "acp";
+  verifiedTools: string[];
   digest: string;
 };
 ```
 
 The Capability Preview is the discovery result shown during editing. It is read-only and
 can only be refreshed. The Run Capability Snapshot stores the verified Backend/model
-identity, native tool IDs, transport, and permission protocol used by one Run. Tool resource
-dependencies remain private to the Adapter; the protocol mode is a frozen execution fact, not
-a user-facing approval setting or a second public capability matrix.
+identity and `verifiedTools` used by one Run. Tool resource dependencies and Backend protocol
+details remain private to the Adapter; they are not core contract fields or a second public
+capability matrix.
 
 Capability sources are ordered as follows:
 
@@ -1482,9 +1541,6 @@ type AdapterResourceCapabilities = {
 };
 
 interface BackendAdapter {
-  transport(): "native" | "acp";
-  permissionProtocol(): "static" | "request" | "none";
-
   getResourceCapabilities(): AdapterResourceCapabilities;
 
   validateToolResources(
@@ -1498,8 +1554,8 @@ interface BackendAdapter {
 
 The Policy Resolver uses `getResourceCapabilities()` together with the Harness
 `environment` intent, staging, Law, and quota to calculate the Effective Environment
-Policy. During Run readiness it calls `validateToolResources()` for every `selectedTools`
-entry; only tools that pass this preflight enter `effectiveTools`. At invocation time the
+Policy. During Run readiness it calls `validateToolResources()` for every entry in the
+Runtime-local candidate set; only tools that pass this preflight enter `effectiveTools`. At invocation time the
 Adapter repeats the same check defensively and must never add a tool to the set. This avoids
 adding a public resource-dependency matrix to every tool descriptor while ensuring a tool is
 not first rejected on its initial call.
@@ -1557,7 +1613,7 @@ sequenceDiagram
 
     F->>R: Activate Role
     R->>P: Resolve binding, snapshot, Law, staging, and quota
-    P->>P: Preflight every selected tool resource boundary
+    P->>P: Preflight every allowedTools entry resource boundary
     P-->>R: Freeze effectiveTools and environment policy
     R->>A: Start Backend session in execution staging
     A->>B: Create native session
@@ -1614,15 +1670,15 @@ Resolved Execution Plan.
 
 ```text
 Harness Template allowedTools
-  -> selectedTools
+  -> Runtime-local candidate set (not persisted)
 
 allowedTools = []
   -> no native tools
 
 allowedTools with entries
-  -> selectedTools contains exactly the listed verified Backend tools
+  -> Runtime-local candidate set contains exactly the listed verified Backend tools
 
-selectedTools
+Runtime-local candidate set
   -> capability, environment, Law, staging, quota, and readiness filtering
   -> effectiveTools (the only executable native tool set)
 ```
@@ -1685,34 +1741,18 @@ the authorized Artifact set remain the business data boundary.
 
 ## 12. Permission Protocol
 
-The Permission Protocol is a technical Backend control channel. Its transport mode is part of the
-Capability Snapshot and is never selected as a user-facing approval mode:
-
-```ts
-type PermissionProtocol = "static" | "request" | "none";
-```
-
-```text
-static
-  The Adapter maps the frozen EffectiveExecutionPolicy before session start. The Backend must
-  not introduce an unreported approval prompt or expand the tool/resource set at runtime.
-
-request
-  The Backend may request a tool/resource operation during the session. Adapter and Runtime
-  evaluate staging, Law, quota, and enforceability, then return only allow or deny. Unknown
-  requests are denied and audited; they never create Human Review.
-
-none
-  The Backend has no permission request channel. Only capabilities verified and enforceable by
-  static preflight may be enabled. A requested resource that cannot be checked or bounded is
-  denied, and a binding that requires that resource fails readiness.
-```
-
-The normalized decision is always:
+Core Permission is a single technical decision:
 
 ```ts
 type PermissionDecision = "allow" | "deny";
 ```
+
+The Adapter must apply the frozen policy to native tool/resource requests, deny unknown or
+unbounded requests, and record the decision. Native approval never becomes Human Review.
+
+Backend transport modes such as ACP callbacks and `static` / `request` / `none` protocol
+variants are Adapter implementation details and Deferred RFCs. They must preserve the core
+`allow | deny` result and fail closed when a boundary cannot be enforced.
 
 ```mermaid
 sequenceDiagram
@@ -1739,11 +1779,6 @@ There is no technical Permission Review. A denied native request is recorded as 
 Decision and follows the Role's normal failure or exception policy. Human Review uses the single
 control-plane protocol below.
 
-Native Backend approval modes such as Codex `on-request` or OpenCode `ask` are Adapter details.
-They may be mapped to a static non-interactive allow/deny configuration only when the adapter can
-prove the resulting boundary. An approval prompt that would pause for an operator is not a v2
-Permission Protocol and must be disabled or treated as readiness failure.
-
 ## 13. Human Review
 
 Human Review has one request schema and one action enum. It supports two trigger kinds:
@@ -1757,20 +1792,19 @@ exception
   retry exhaustion, Join timeout, or Artifact verification failure.
 ```
 
-The canonical action set is:
+The core action set is intentionally small:
 
 ```ts
 type HumanReviewAction =
   | "approve"
-  | "continue"
   | "rework"
-  | "retry"
   | "reject"
-  | "pause"
+  | "continue"
+  | "retry"
   | "terminate";
 ```
 
-Action meanings are fixed:
+Core action meanings are fixed:
 
 ```text
 approve   Accept the business result and continue the declared handoff.
@@ -1778,21 +1812,7 @@ continue  Resume the current control scope with an explicit runtime authorizatio
 rework    Route to the declared rework target.
 retry     Repeat the current Role attempt or failed execution.
 reject    Produce the declared business rejection outcome or route.
-pause     Keep the Run waiting without a graph transition.
 terminate End the Run or the declared review scope.
-```
-
-The available action list is computed for the trigger. It is not a second per-scenario enum:
-
-```text
-after_role_result:
-  approve / rework / reject / pause / terminate
-
-loop_budget_exceeded:
-  continue / rework / reject / terminate
-
-retry_exhausted or artifact_verification_failed:
-  retry / rework / reject / pause / terminate
 ```
 
 The trigger determines the decision meaning:
@@ -1802,54 +1822,43 @@ explicit result review
   Business result and handoff decision.
 
 Runtime exception review
-  Execution control decision; fields such as `additionalBudget`, `attempt`, or `scope`
-  authorize Runtime reconciliation rather than changing the Backend tool set. `rework` or
-  `reject` may also be offered when the exception has a declared business route; those actions
-  select that route after the Runtime exception is reconciled.
+  Execution control decision. It authorizes Runtime reconciliation and never changes the Backend
+  tool set. `rework` or `reject` select a declared route when the exception policy provides one.
 ```
 
-`resume` is a Runtime control command for a paused Run, not a Human Review action.
-The `pause` decision leaves the request in `paused`; a later `resume` reopens it as `pending`
-without creating a second Review model. Terminal decisions move the request to `resolved`.
+The core request has only the lifecycle needed for blocking, recovery, idempotency, and CAS:
 
 ```ts
 type HumanReviewRequest = {
   ogsContractVersion: 2;
   schemaVersion: 1;
   reviewId: string;
-  trigger: "explicit" | "exception";
-  reasonCode: string;
   runId: string;
-  roleId?: string;
-  executionId?: string;
-  branchId?: string;
-  lineageId?: string;
-  round?: number;
   stateVersion: number;
-  requestedAt: string;
-  expiresAt?: string;
-  timeoutPolicy?: "expire" | "pause" | "terminate";
-  resultRef?: string;
-  evidenceRefs: string[];
+  trigger: "explicit" | "exception";
   exceptionContext?: {
     code: string;
-    scope: "run" | "branch" | "role" | "join" | "loop" | "artifact";
     details?: Record<string, unknown>;
   };
-  availableActions: HumanReviewAction[];
-  status: "pending" | "paused" | "resolved" | "expired" | "cancelled";
+  status: "pending" | "resolved" | "cancelled";
   decision?: HumanReviewDecision;
 };
 
 type HumanReviewDecision =
-  | { action: "approve"; actor: string; comment?: string; decidedAt: string }
-  | { action: "continue"; actor: string; targetRoleId: string; additionalBudget: number; comment?: string; decidedAt: string }
-  | { action: "rework"; actor: string; targetRoleId: string; comment?: string; decidedAt: string }
-  | { action: "retry"; actor: string; executionId: string; attempt: number; comment?: string; decidedAt: string }
-  | { action: "reject"; actor: string; targetRoleId: string; comment?: string; decidedAt: string }
-  | { action: "pause"; actor: string; comment?: string; decidedAt: string }
-  | { action: "terminate"; actor: string; scope: "branch" | "run"; comment?: string; decidedAt: string };
+  { action: HumanReviewAction; actor: string; comment?: string; decidedAt: string };
 ```
+
+The only core transitions are `pending -> resolved` after a valid decision and
+`pending -> cancelled` when the Run or review scope is cancelled. Decision application is
+idempotent and requires the current `reviewId` and `stateVersion` through CAS reconciliation.
+An explicit result review blocks the handoff while the request is `pending`; recovery reopens the
+same request and does not create a second review.
+
+The following are Deferred RFC fields and policies: `expiresAt`, `timeoutPolicy`, `paused`,
+`requestedAt`, detailed evidence/result references, action-specific payloads such as retry attempt
+or additional budget, escalation/notification rules, and complete loop/retry/Artifact exception
+matrices. An exception review may use only `trigger: "exception"` and `exceptionContext` until
+those extensions are approved.
 
 The compiled review policy is one object for both trigger kinds:
 
@@ -1863,7 +1872,7 @@ type HumanReviewPolicy = {
 The review policy has one compiled source in the Semantic IR/Execution Plan. It may declare
 `after_role_result` and configured Runtime exception codes in the same policy. Runtime creates a
 request from that policy; it does not create a second review model for exceptions. Every request
-and decision is bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion`.
+and decision is bound to `reviewId` and `stateVersion` in the core model.
 
 ```mermaid
 flowchart LR
@@ -1875,30 +1884,11 @@ flowchart LR
     E -->|approve / continue / retry| D
     E -->|rework| F["Declared target"]
     E -->|reject| G["Declared rejection path"]
-    E -->|pause| H["Waiting"]
     E -->|terminate| I["End Run"]
 ```
 
 Human Review decisions are applied only by Runtime reconciliation. They never approve or reject
 individual Backend tool calls, and they do not create new Graph nodes.
-
-Request lifecycle is deterministic:
-
-```text
-pending -> resolved       a valid decision is applied
-pending -> paused         the pause action is applied
-paused  -> pending        Runtime resume reopens the request
-pending/paused -> expired the scheduler reaches expiresAt with timeoutPolicy `expire`
-pending/paused -> paused  the scheduler reaches expiresAt with timeoutPolicy `pause`
-pending/paused -> cancelled the Run or review scope is cancelled, including timeout termination
-```
-
-`resolved`, `expired`, and `cancelled` are terminal states. A request without a Role execution
-uses `exceptionContext` and `evidenceRefs` (for example a Join timeout); `roleId`, `executionId`,
-and the lineage fields are populated only when that runtime scope exists. `expiresAt` is optional
-only when the compiled review policy has no timeout; when present, `timeoutPolicy` is required.
-The scheduler records the timeout transition and its evidence before Runtime applies any resulting
-pause or termination.
 
 ## 14. Run Freeze and Recovery
 
@@ -1911,23 +1901,31 @@ Resolved Harness binding
 Resolved Execution Plan
   backend
   model
+  allowedTools (from the Harness Template)
   Run Capability Snapshot
+  verifiedTools (from the Run Capability Snapshot)
   effectiveTools
   Effective EnvironmentPolicy
+policyDigest
+capabilityDigest
 Law digest
 ```
 
 Recovery must reuse this snapshot. It must not rediscover capabilities and silently change the technical decision for the same Run.
 `resolved-config.json` freezes the technical decision; `state.json.graphState`, checkpoints,
 and the session index remain the Runtime recovery authority.
+`selectedTools` is not written: it is only the Runtime-local intersection used while producing
+the frozen `effectiveTools` set.
 
 ## 15. Audit
 
-Existing Role-level audit remains. Add normalized native tool and resource events:
+Core Evidence uses the existing `events.ndjson` and Runtime event contract as its single
+serialization boundary. Evidence is append-only; Artifact, Review, Policy Decision, and recovery
+facts remain traceable there. A richer `RuntimeEventEnvelope` is shown below as a Deferred RFC
+shape and is not required for the core v2 cutover.
 
-All normalized evidence events use one outer envelope. `ogsContractVersion` identifies the OGS
-contract set, while `version` identifies the Runtime Event Envelope schema. Event-specific fields
-belong under `payload`; they are not a second versioned event model.
+If adopted later, `ogsContractVersion` identifies the contract set and `version` identifies the
+event envelope schema; event-specific fields remain under `payload`.
 
 ```ts
 type RuntimeEventEnvelope<TPayload> = {
@@ -2080,7 +2078,9 @@ No dual write is kept.
 ### P0: Model cutover
 
 1. Set `ogsContractVersion: 2` on all new persisted contract roots.
-2. Add Role Contract v2 and extend the existing Flow Contract with handoff mappings.
+2. Add Role Contract v2 and compile the existing Flow edge, `context.map`, and Flow Contract
+   into the read-only HandoffProjection; do not add a second handoff contract or extend
+   `FlowContractDefinition` with mapping fields.
 3. Remove `constraints.allowedTools`, `permissionProfile`, and `allowedToolsByRoleId`.
 4. Remove `noop` lifecycle and execution branches.
 5. Remove Supervised/Auto-accept/Full access permission modes and technical Permission Review.
@@ -2108,8 +2108,9 @@ No dual write is kept.
 
 1. Normalize `tool_invocation` events.
 2. Normalize `permission_request` events.
-3. Add the unified `HumanReviewRequest` and canonical action enum.
-4. Bind every review decision to review, round, lineage, branch, and state versions.
+3. Add the unified minimal `HumanReviewRequest` and core action enum.
+4. Bind every review decision to `reviewId` and `stateVersion`; defer lineage/branch and
+   action-specific payload extensions.
 5. Reuse frozen capability and policy snapshots on recovery.
 6. Keep review application in Runtime reconciliation and review records in Evidence.
 
@@ -2139,17 +2140,19 @@ No dual write is kept.
     `effectiveTools`, and EffectiveEnvironmentPolicy; adapter version is read from the
     snapshot.
 13. Access outside execution staging always fails.
-14. Permission protocols are `static`, `request`, or `none`; decisions are only `allow` or `deny`.
+14. Permission decisions are only `allow` or `deny`; Backend protocol variants remain Adapter
+    implementation details and Deferred RFCs.
 15. Explicit Human Review occurs after a durable Role result and before handoff; exception-triggered
     Review occurs at the configured Runtime control boundary.
 16. Recovery reuses the original Run Capability Snapshot and EffectiveEnvironmentPolicy.
 17. Every native tool invocation produces an audit event.
 18. Every Role handoff uses declared event, data, and Artifact mappings.
 19. Active and exception-triggered Human Review use the same request schema and action enum.
-20. Review decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion`.
+20. Core Review decisions are bound to `reviewId` and `stateVersion`; lineage/branch and
+    action-specific payloads are Deferred RFC extensions.
 21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
 22. Legacy fields produce schema errors after the one-time rewrite.
-23. Run readiness preflights every selected tool before adding it to `effectiveTools`; invocation
+23. Run readiness preflights every `allowedTools` entry before adding it to `effectiveTools`; invocation
     checks are defensive and cannot expand the frozen set.
 24. Business Role Inspector edits only business fields; Harness Template selection is in the
     Technical Binding panel.
