@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { promoteSealedArtifact } from "../dist/runtime/artifact-promotion.js";
+import { verifyDeclaredArtifacts } from "../dist/runtime/role-executor.js";
 import { fileURLToPath } from "node:url";
 
 const runtimeCliPath = fileURLToPath(new URL("../dist/runtime/cli.js", import.meta.url));
@@ -35,14 +36,31 @@ async function createRun() {
   await writeFile(path.join(artifactDir, "app.json"), JSON.stringify({ pages: ["pages/index"] }));
   await writeFile(path.join(artifactDir, "pages", "index.js"), "Page({ data: {} });\n");
   const files = ["app.json", "pages/index.js"];
+  const canonicalFiles = await Promise.all(files.map(async (file) => ({
+    path: file,
+    sha256: createHash("sha256").update(await readFile(path.join(artifactDir, file))).digest("hex"),
+    sizeBytes: (await readFile(path.join(artifactDir, file))).byteLength,
+    mediaType: file.endsWith(".json") ? "application/json" : "text/javascript"
+  })));
+  const unsignedCanonicalManifest = {
+    version: 1,
+    status: "verified",
+    artifactId: `artifact:${runId}:fixture`,
+    runId,
+    producerRoleId: "fixture",
+    executionId: "fixture",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    files: canonicalFiles,
+    totalBytes: canonicalFiles.reduce((sum, file) => sum + file.sizeBytes, 0)
+  };
+  const manifestSha256 = createHash("sha256").update(`${JSON.stringify(unsignedCanonicalManifest, null, 2)}\n`).digest("hex");
+  await writeFile(path.join(sharedDir, "artifact-manifest.json"), JSON.stringify({ ...unsignedCanonicalManifest, manifestSha256 }, null, 2) + "\n");
   const manifest = {
     status: "sealed",
     artifact: "miniprogram/",
     testReport: "test-report.json",
-    files: await Promise.all(files.map(async (file) => ({
-      path: file,
-      sha256: createHash("sha256").update(await readFile(path.join(artifactDir, file))).digest("hex")
-    })))
+    manifestSha256,
+    files: canonicalFiles.map(({ path, sha256 }) => ({ path, sha256 }))
   };
   await writeFile(path.join(sharedDir, "seal-manifest.json"), JSON.stringify(manifest));
   return { workdir, runId, runDir, sharedDir, artifactDir };
@@ -73,6 +91,146 @@ test("promotion verifies and atomically publishes a passing sealed artifact with
     }), /destination already exists/);
   } finally {
     await rm(fixture.workdir, { recursive: true, force: true });
+  }
+});
+
+test("Role artifact sealing writes the report path consumed by promotion", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogs-role-artifact-seal-"));
+  const runId = "run-role-artifact-1";
+  const runDir = path.join(workdir, ".ogs", "runs", runId);
+  const executionDir = path.join(runDir, "roles", "writer", "executions", "exec-1");
+  const workspace = path.join(executionDir, "workspace");
+  const sharedDir = path.join(runDir, "shared");
+  try {
+    await mkdir(workspace, { recursive: true });
+    await mkdir(sharedDir, { recursive: true });
+    await writeFile(path.join(workspace, "report.txt"), "sealed report\n");
+    await verifyDeclaredArtifacts({
+      declarations: [{ artifactId: "report", kind: "text", path: "report.txt", mediaType: "text/plain" }],
+      workspace,
+      executionDir,
+      sharedDir,
+      runId,
+      roleId: "writer",
+      executionId: "exec-1"
+    });
+    const seal = JSON.parse(await readFile(path.join(sharedDir, "seal-manifest.json"), "utf8"));
+    const report = JSON.parse(await readFile(path.join(sharedDir, "verification.json"), "utf8"));
+    assert.equal(seal.testReport, "verification.json");
+    assert.equal(report.passed, true);
+    assert.deepEqual(report, JSON.parse(await readFile(path.join(executionDir, "verification.json"), "utf8")));
+    await writeFile(path.join(runDir, "summary.json"), JSON.stringify({ status: "done" }));
+    const result = await promoteSealedArtifact({
+      workdir,
+      runId,
+      source: "shared/artifacts",
+      destination: "release/report"
+    });
+    assert.equal(result.fileCount, 1);
+    assert.equal(await readFile(path.join(workdir, "release", "report", "report.txt"), "utf8"), "sealed report\n");
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("artifact verification does not remove a pre-existing target when preflight rejects it", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogs-artifact-preflight-") );
+  const runId = "run-artifact-preflight";
+  const runDir = path.join(workdir, ".ogs", "runs", runId);
+  const executionDir = path.join(runDir, "roles", "writer", "executions", "exec-1");
+  const workspace = path.join(executionDir, "workspace");
+  const sharedDir = path.join(runDir, "shared");
+  const target = path.join(sharedDir, "artifacts", "report.txt");
+  try {
+    await mkdir(workspace, { recursive: true });
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(path.join(workspace, "report.txt"), "new report\n");
+    await writeFile(target, "pre-existing evidence\n");
+    await assert.rejects(() => verifyDeclaredArtifacts({
+      declarations: [{ artifactId: "report", kind: "text", path: "report.txt", mediaType: "text/plain" }],
+      workspace,
+      executionDir,
+      sharedDir,
+      runId,
+      roleId: "writer",
+      executionId: "exec-1"
+    }), /already exists/);
+    assert.equal(await readFile(target, "utf8"), "pre-existing evidence\n");
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("parallel Role sealing admits one immutable Run bundle and rejects the other", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogs-role-artifact-race-"));
+  const runId = "run-role-artifact-race";
+  const runDir = path.join(workdir, ".ogs", "runs", runId);
+  const sharedDir = path.join(runDir, "shared");
+  const executionArgs = ["a", "b"].map((roleId) => {
+    const executionDir = path.join(runDir, "roles", roleId, "executions", "exec-1");
+    return { roleId, executionDir, workspace: path.join(executionDir, "workspace") };
+  });
+  try {
+    await mkdir(sharedDir, { recursive: true });
+    await Promise.all(executionArgs.map(async ({ roleId, workspace }) => {
+      await mkdir(workspace, { recursive: true });
+      await writeFile(path.join(workspace, `${roleId}.txt`), roleId);
+    }));
+    const results = await Promise.allSettled(executionArgs.map(({ roleId, executionDir, workspace }) => verifyDeclaredArtifacts({
+      declarations: [{ artifactId: roleId, kind: "text", path: `${roleId}.txt`, mediaType: "text/plain" }],
+      workspace,
+      executionDir,
+      sharedDir,
+      runId,
+      roleId,
+      executionId: "exec-1"
+    })));
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.match(String(rejected?.reason?.message || rejected?.reason), /Join\/Merge Stage for unified sealing/);
+    assert.equal((await readdir(path.join(sharedDir, "artifacts"))).length, 1);
+    assert.equal((await readdir(sharedDir)).includes(".artifact-seal.lock"), false);
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("Role artifact sealing recovers an interrupted stale bundle before retry", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogs-role-artifact-recovery-"));
+  const runId = "run-role-artifact-recovery";
+  const runDir = path.join(workdir, ".ogs", "runs", runId);
+  const executionDir = path.join(runDir, "roles", "writer", "executions", "exec-2");
+  const workspace = path.join(executionDir, "workspace");
+  const sharedDir = path.join(runDir, "shared");
+  try {
+    await mkdir(path.join(sharedDir, "artifacts"), { recursive: true });
+    await mkdir(workspace, { recursive: true });
+    await writeFile(path.join(workspace, "report.txt"), "retry report\n");
+    await writeFile(path.join(sharedDir, "artifacts", "report.txt"), "partial\n");
+    await writeFile(path.join(sharedDir, "artifact-manifest.json"), "partial manifest\n");
+    await writeFile(path.join(sharedDir, "verification.json"), "partial verification\n");
+    await writeFile(path.join(sharedDir, ".artifact-seal.lock"), JSON.stringify({
+      lockId: "dead-lock",
+      runId,
+      executionId: "exec-1",
+      pid: 999999,
+      host: (await import("node:os")).hostname(),
+      artifactPaths: ["report.txt"]
+    }));
+    await verifyDeclaredArtifacts({
+      declarations: [{ artifactId: "report", kind: "text", path: "report.txt", mediaType: "text/plain" }],
+      workspace,
+      executionDir,
+      sharedDir,
+      runId,
+      roleId: "writer",
+      executionId: "exec-2"
+    });
+    assert.equal(await readFile(path.join(sharedDir, "artifacts", "report.txt"), "utf8"), "retry report\n");
+    assert.equal((await readdir(sharedDir)).includes(".artifact-seal.lock"), false);
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
   }
 });
 
@@ -195,6 +353,38 @@ test("promotion rejects traversal, artifact substitution, and symlinks", async (
       await (await import("node:fs/promises")).rename(report, moved);
       await (await import("node:fs/promises")).symlink(moved, report, "file");
       await assert.rejects(() => promoteSealedArtifact({ ...fixture, source: "shared/miniprogram", destination: "release/output" }), /test report path contains a symbolic link/);
+    });
+    await t.test("seal manifest symlink", async () => {
+      const seal = path.join(fixture.sharedDir, "seal-manifest.json");
+      const moved = path.join(fixture.sharedDir, "seal-manifest-real.json");
+      const outside = await mkdtemp(path.join(os.tmpdir(), "ogs-seal-link-"));
+      const fake = path.join(outside, "seal.json");
+      await (await import("node:fs/promises")).rename(seal, moved);
+      await writeFile(fake, await readFile(moved));
+      await (await import("node:fs/promises")).symlink(fake, seal, "file");
+      try {
+        await assert.rejects(() => promoteSealedArtifact({ ...fixture, source: "shared/miniprogram", destination: "release/output" }), /ARTIFACT_SYMLINK_NOT_ALLOWED/);
+      } finally {
+        await rm(seal, { force: true });
+        await (await import("node:fs/promises")).rename(moved, seal);
+        await rm(outside, { recursive: true, force: true });
+      }
+    });
+    await t.test("canonical manifest symlink", async () => {
+      const manifest = path.join(fixture.sharedDir, "artifact-manifest.json");
+      const moved = path.join(fixture.sharedDir, "artifact-manifest-real.json");
+      const outside = await mkdtemp(path.join(os.tmpdir(), "ogs-manifest-link-"));
+      const fake = path.join(outside, "manifest.json");
+      await (await import("node:fs/promises")).rename(manifest, moved);
+      await writeFile(fake, await readFile(moved));
+      await (await import("node:fs/promises")).symlink(fake, manifest, "file");
+      try {
+        await assert.rejects(() => promoteSealedArtifact({ ...fixture, source: "shared/miniprogram", destination: "release/output" }), /ARTIFACT_SYMLINK_NOT_ALLOWED/);
+      } finally {
+        await rm(manifest, { force: true });
+        await (await import("node:fs/promises")).rename(moved, manifest);
+        await rm(outside, { recursive: true, force: true });
+      }
     });
   } finally {
     await rm(fixture.workdir, { recursive: true, force: true });

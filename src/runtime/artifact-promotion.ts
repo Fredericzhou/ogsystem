@@ -3,12 +3,20 @@ import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, r
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { resolveRunDir } from "./project-lifecycle.js";
+import { readRegularFileNoFollow } from "./artifact-verifier.js";
 
 type SealManifest = {
   status?: unknown;
   artifact?: unknown;
   testReport?: unknown;
+  manifestSha256?: unknown;
   files?: unknown;
+};
+
+type CanonicalManifest = {
+  manifestSha256?: unknown;
+  files?: unknown;
+  [key: string]: unknown;
 };
 
 type ManifestFile = {
@@ -96,11 +104,28 @@ export async function promoteSealedArtifact(args: PromoteSealedArtifactArgs): Pr
   if (!isWithin(runDir, sharedDir)) fail("run shared directory resolves outside the run.");
   const sourceRelative = requestedSource.slice("shared/".length);
   const sealPath = resolve(sharedDir, "seal-manifest.json");
-  const sealBytes = await readFile(sealPath);
+  const sealBytes = await readRegularFileNoFollow(sealPath);
   const manifest = JSON.parse(sealBytes.toString("utf8")) as SealManifest;
   if (manifest.status !== "sealed" || typeof manifest.artifact !== "string" || typeof manifest.testReport !== "string") {
     fail("seal manifest is incomplete or not sealed.");
   }
+  if (typeof manifest.manifestSha256 !== "string" || !/^[a-f0-9]{64}$/.test(manifest.manifestSha256)) {
+    fail("seal manifest has no valid canonical manifest digest.");
+  }
+  const canonicalManifestPath = resolve(sharedDir, "artifact-manifest.json");
+  const canonicalManifestBytes = await readRegularFileNoFollow(canonicalManifestPath);
+  let canonicalManifest: CanonicalManifest;
+  try {
+    canonicalManifest = JSON.parse(canonicalManifestBytes.toString("utf8")) as CanonicalManifest;
+  } catch {
+    fail("canonical artifact manifest is not valid JSON.");
+  }
+  if (canonicalManifest.manifestSha256 !== manifest.manifestSha256) {
+    fail("canonical artifact manifest digest does not match the seal.");
+  }
+  const { manifestSha256: canonicalDigest, ...unsignedCanonicalManifest } = canonicalManifest;
+  const expectedCanonicalDigest = createHash("sha256").update(`${JSON.stringify(unsignedCanonicalManifest, null, 2)}\n`, "utf8").digest("hex");
+  if (expectedCanonicalDigest !== canonicalDigest) fail("canonical artifact manifest digest is invalid.");
   const sealedArtifact = safeRelativePath(manifest.artifact.replace(/\/$/, ""), "seal manifest artifact").replaceAll(sep, "/");
   if (sourceRelative !== sealedArtifact) fail("--source does not match the artifact recorded in the seal manifest.");
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) fail("seal manifest has no source files.");
@@ -122,6 +147,15 @@ export async function promoteSealedArtifact(args: PromoteSealedArtifactArgs): Pr
     return { path: safeRelativePath(file.path, "seal manifest file"), sha256: file.sha256 };
   }).sort((left, right) => left.path.localeCompare(right.path));
   if (new Set(expectedFiles.map((file) => file.path)).size !== expectedFiles.length) fail("seal manifest contains duplicate file paths.");
+  const canonicalFiles = Array.isArray(canonicalManifest.files)
+    ? canonicalManifest.files.map((file) => {
+      if (!file || typeof file !== "object" || typeof (file as { path?: unknown }).path !== "string" || !/^[a-f0-9]{64}$/.test(String((file as { sha256?: unknown }).sha256 ?? ""))) {
+        fail("canonical artifact manifest contains an invalid file entry.");
+      }
+      return { path: safeRelativePath((file as { path: string }).path, "canonical manifest file"), sha256: String((file as { sha256: string }).sha256) };
+    }).sort((left, right) => left.path.localeCompare(right.path))
+    : [];
+  if (JSON.stringify(canonicalFiles) !== JSON.stringify(expectedFiles)) fail("canonical artifact manifest does not match the seal.");
   const actualFiles = await listFiles(realSourcePath);
   if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles.map((file) => file.path.replaceAll(sep, "/")))) {
     fail("artifact file set does not exactly match the seal manifest.");

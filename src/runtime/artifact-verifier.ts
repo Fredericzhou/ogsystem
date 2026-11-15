@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, link, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { VerifiedArtifactFileEntry, VerifiedArtifactManifest } from "./types.js";
 
@@ -48,6 +48,21 @@ function safeRelativePath(value: string): string {
 function isWithin(parent: string, candidate: string): boolean {
   const relation = relative(parent, candidate);
   return relation === "" || (relation !== ".." && !relation.startsWith(`..${sep}`) && !isAbsolute(relation));
+}
+
+/** Read a committed artifact evidence file without following a symlink. */
+export async function readRegularFileNoFollow(path: string): Promise<Buffer> {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) fail("ARTIFACT_SYMLINK_NOT_ALLOWED", path);
+  if (!info.isFile()) fail("ARTIFACT_ENTRY_INVALID", path);
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile()) fail("ARTIFACT_ENTRY_INVALID", path);
+    return await handle.readFile();
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 async function assertNoSymlinkComponents(root: string, relativePath: string): Promise<void> {
@@ -200,7 +215,7 @@ export async function writeSealManifest(args: {
   const verifiedManifestBytes = Buffer.from(`${JSON.stringify(args.verified.manifest, null, 2)}\n`, "utf8");
   await writeFile(verifiedManifestPath, verifiedManifestBytes, { flag: "wx" }).catch(async (error) => {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const existing = await readFile(verifiedManifestPath);
+    const existing = await readRegularFileNoFollow(verifiedManifestPath);
     if (createHash("sha256").update(existing).digest("hex") !== createHash("sha256").update(verifiedManifestBytes).digest("hex")) {
       fail("ARTIFACT_MANIFEST_INVALID", "canonical verified manifest already exists with different content");
     }
@@ -210,7 +225,34 @@ export async function writeSealManifest(args: {
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
   try {
     await writeFile(temporary, bytes, { flag: "wx" });
-    await rename(temporary, path);
+    try {
+      // Link a fully written temporary file into place. Unlike rename, link
+      // refuses to replace an existing seal while keeping publication atomic.
+      await link(temporary, path);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (["EOPNOTSUPP", "ENOTSUP", "EXDEV", "EPERM"].includes(code || "")) {
+        // Some filesystems do not implement hard links. Keep the exclusive
+        // create guarantee in that case; this fallback is less atomic than
+        // link(), but it still refuses to replace a concurrent seal.
+        try {
+          await writeFile(path, bytes, { flag: "wx" });
+        } catch (fallbackError) {
+          if ((fallbackError as NodeJS.ErrnoException).code !== "EEXIST") throw fallbackError;
+          const existing = await readRegularFileNoFollow(path);
+          if (createHash("sha256").update(existing).digest("hex") !== createHash("sha256").update(bytes).digest("hex")) {
+            fail("ARTIFACT_SEAL_INVALID", "sealed manifest already exists with different content");
+          }
+        }
+      } else if (code !== "EEXIST") {
+        throw error;
+      } else {
+        const existing = await readRegularFileNoFollow(path);
+        if (createHash("sha256").update(existing).digest("hex") !== createHash("sha256").update(bytes).digest("hex")) {
+          fail("ARTIFACT_SEAL_INVALID", "sealed manifest already exists with different content");
+        }
+      }
+    }
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);
   }

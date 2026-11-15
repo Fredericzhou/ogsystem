@@ -5,8 +5,10 @@
  * graph-runner. Trade-off: keeps every attempt isolated (dedicated execution dirs + outcomes) so
  * retries and diagnostics can replay without destroying prior evidence, at the cost of more files.
  */
-import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { dirname, relative, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { createAuditRecord } from "./audit-recorder.js";
 import { resolveExecutionBinding } from "./binding-resolver.js";
@@ -32,6 +34,7 @@ import { filesystemArtifactStore } from "./artifact-store.js";
 import { buildArtifactReference } from "./artifact-access.js";
 import {
   artifactVerificationError,
+  readRegularFileNoFollow,
   verifyArtifactDirectory,
   writeSealManifest,
   writeVerifiedArtifactManifest
@@ -97,7 +100,8 @@ import type {
   StoredRoleResult,
   DeclaredRoleArtifact,
   UserProfile,
-  PromptCallMeterRecord
+  PromptCallMeterRecord,
+  RoleExecutionRecord
 } from "./types.js";
 
 export type RoleExecutorResult =
@@ -121,6 +125,7 @@ export type RoleExecutorResult =
     };
 
 const DEFAULT_ROLE_WAIT_HEARTBEAT_MS = 15000;
+const PARALLEL_ARTIFACT_HANDOFF_HINT = "Parallel Role artifacts must be handed to a Join/Merge Stage for unified sealing";
 
 export function isRetryableModelChannelError(error: unknown): boolean {
   if (!(error instanceof OpencodeExecutionError)) return false;
@@ -498,7 +503,154 @@ function assertCompilerSnapshotConsistency(args: {
   }
 }
 
-async function verifyDeclaredArtifacts(args: {
+function isPathWithin(parent: string, candidate: string): boolean {
+  const relation = relative(parent, candidate);
+  return relation === "" || (relation !== ".." && !relation.startsWith(`..${sep}`));
+}
+
+async function removeEmptyArtifactDirectories(root: string, filePath: string): Promise<void> {
+  let directory = dirname(filePath);
+  while (directory !== root && isPathWithin(root, directory)) {
+    const entries = await readdir(directory).catch(() => undefined);
+    if (!entries || entries.length > 0) return;
+    await rm(directory, { recursive: false }).catch(() => undefined);
+    directory = dirname(directory);
+  }
+}
+
+async function cleanupInterruptedArtifactBundle(sharedDir: string, metadata: Record<string, unknown>): Promise<void> {
+  const sealPath = resolve(sharedDir, "seal-manifest.json");
+  const hasExplicitCreatedPaths = Array.isArray(metadata.createdArtifactPaths) || Array.isArray(metadata.createdSharedPaths);
+  if (!hasExplicitCreatedPaths && await access(sealPath).then(() => true, () => false)) return;
+
+  const artifactsRoot = resolve(sharedDir, "artifacts");
+  const artifactPaths = Array.isArray(metadata.createdArtifactPaths)
+    ? metadata.createdArtifactPaths
+    : (Array.isArray(metadata.artifactPaths) ? metadata.artifactPaths : []);
+  for (const value of artifactPaths) {
+    if (typeof value !== "string" || !value || value.includes("\\") || value.includes("\0")) {
+      throw new Error("Run artifact seal lock contains an invalid artifact path; refusing recovery cleanup");
+    }
+    const segments = value.split("/");
+    if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment.startsWith("."))) {
+      throw new Error("Run artifact seal lock contains an unsafe artifact path; refusing recovery cleanup");
+    }
+    const target = resolve(artifactsRoot, ...segments);
+    if (!isPathWithin(artifactsRoot, target) || target === artifactsRoot) {
+      throw new Error("Run artifact seal lock path escapes the artifact bundle; refusing recovery cleanup");
+    }
+    await rm(target, { force: true });
+    await removeEmptyArtifactDirectories(artifactsRoot, target);
+  }
+  const sharedPaths = Array.isArray(metadata.createdSharedPaths)
+    ? metadata.createdSharedPaths
+    : ["artifact-manifest.json", "verification.json"];
+  for (const value of sharedPaths) {
+    if (typeof value !== "string" || !value || value.includes("/") || value.includes("\\") || value.includes("\0")) {
+      throw new Error("Run artifact seal lock contains an invalid shared artifact path; refusing recovery cleanup");
+    }
+    await rm(resolve(sharedDir, value), { force: true });
+  }
+}
+
+/** Remove a sealed bundle only when its canonical manifest belongs to this execution. */
+export async function discardSealedArtifactBundle(args: {
+  sharedDir: string;
+  runId: string;
+  roleId: string;
+  executionId: string;
+}): Promise<void> {
+  const canonicalPath = resolve(args.sharedDir, "artifact-manifest.json");
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse((await readRegularFileNoFollow(canonicalPath)).toString("utf8")) as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (manifest.status !== "verified" || manifest.runId !== args.runId || manifest.producerRoleId !== args.roleId || manifest.executionId !== args.executionId) {
+    return;
+  }
+  const artifactPaths = Array.isArray(manifest.files)
+    ? manifest.files
+      .filter((entry): entry is { path: string } => Boolean(entry) && typeof entry === "object" && typeof (entry as { path?: unknown }).path === "string")
+      .map((entry) => entry.path)
+    : [];
+  await cleanupInterruptedArtifactBundle(args.sharedDir, {
+    createdArtifactPaths: artifactPaths,
+    createdSharedPaths: ["artifact-manifest.json", "verification.json", "seal-manifest.json"]
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+async function acquireArtifactBundleLock(
+  path: string,
+  metadata: Record<string, unknown>,
+  recover: (metadata: Record<string, unknown>) => Promise<void>
+): Promise<() => Promise<void>> {
+  const lockId = randomUUID();
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await writeFile(path, `${JSON.stringify({ ...metadata, lockId })}\n`, { flag: "wx" });
+      let released = false;
+      return async () => {
+        if (released) return;
+        released = true;
+        const current = await readFile(path, "utf8").then((value) => JSON.parse(value) as { lockId?: string }).catch(() => undefined);
+        if (current?.lockId === lockId) await rm(path, { force: true });
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let existing: Record<string, unknown> & { host?: unknown; pid?: unknown; lockId?: unknown };
+      try {
+        existing = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown> & { host?: unknown; pid?: unknown; lockId?: unknown };
+      } catch {
+        throw new Error("Run artifact seal lock is malformed; refusing to overwrite it");
+      }
+      if (existing.host !== hostname()) {
+        throw new Error("Run artifact seal lock belongs to another host; refusing to reclaim it");
+      }
+      const pid = typeof existing.pid === "number" ? existing.pid : 0;
+      let alive: boolean | undefined;
+      if (pid > 0) {
+        try {
+          process.kill(pid, 0);
+          alive = true;
+        } catch (processError) {
+          alive = (processError as NodeJS.ErrnoException).code === "ESRCH" ? false : undefined;
+        }
+      } else {
+        alive = false;
+      }
+      if (alive !== false) throw new Error(`Run artifact seal is already in progress; refusing concurrent sealing. ${PARALLEL_ARTIFACT_HANDOFF_HINT}.`);
+      const reclaimPath = `${path}.reclaim`;
+      let reclaimHandle;
+      try {
+        reclaimHandle = await open(reclaimPath, "wx");
+      } catch (reclaimError) {
+        if ((reclaimError as NodeJS.ErrnoException).code !== "EEXIST") throw reclaimError;
+        await sleep(10);
+        continue;
+      }
+      try {
+        const latest = JSON.parse(await readFile(path, "utf8")) as { lockId?: unknown; host?: unknown; pid?: unknown };
+        if (latest.lockId !== existing.lockId || latest.host !== hostname() || latest.pid !== pid) continue;
+        await recover(existing);
+        const current = JSON.parse(await readFile(path, "utf8")) as { lockId?: unknown };
+        if (current.lockId === existing.lockId) await rm(path, { force: true });
+      } finally {
+        await reclaimHandle.close().catch(() => undefined);
+        await rm(reclaimPath, { force: true }).catch(() => undefined);
+      }
+    }
+  }
+  throw new Error("Run artifact seal lock could not be acquired");
+}
+
+export async function verifyDeclaredArtifacts(args: {
   declarations: DeclaredRoleArtifact[] | undefined;
   workspace: string;
   executionDir: string;
@@ -509,6 +661,19 @@ async function verifyDeclaredArtifacts(args: {
 }): Promise<void> {
   const declarations = args.declarations ?? [];
   if (declarations.length === 0) return;
+  const bundleLockPath = resolve(args.sharedDir, ".artifact-seal.lock");
+  let releaseBundleLock: (() => Promise<void>) | undefined;
+  let sealed = false;
+  const createdArtifactPaths: string[] = [];
+  const createdSharedPaths: string[] = [];
+  const lockMetadata = {
+    runId: args.runId,
+    executionId: args.executionId,
+    pid: process.pid,
+    host: hostname(),
+    reservedAt: new Date().toISOString(),
+    artifactPaths: declarations.map((item) => item.path)
+  };
   try {
     const mediaTypeByPath = Object.fromEntries(declarations.map((item) => [item.path, item.mediaType]));
     const verified = await verifyArtifactDirectory({
@@ -521,6 +686,35 @@ async function verifyDeclaredArtifacts(args: {
       mediaTypeByPath,
       limits: { maxFiles: 500, maxTotalBytes: 200 * 1024 * 1024, maxFileBytes: 50 * 1024 * 1024 }
     });
+    // Reserve the single Run-level bundle before copying any files. This closes the
+    // race where parallel branches both pass the existence preflight and one leaves
+    // unmanifested files behind after the other wins the seal.
+    releaseBundleLock = await acquireArtifactBundleLock(bundleLockPath, lockMetadata, (metadata) => cleanupInterruptedArtifactBundle(args.sharedDir, metadata));
+    // The Run shared seal is a single immutable bundle in the MVP. Check all
+    // destinations before copying any bytes so a second artifact cannot leave
+    // an unmanifested file behind after the bundle has already been sealed.
+    const sharedManifestPaths = [
+      resolve(args.sharedDir, "artifact-manifest.json"),
+      resolve(args.sharedDir, "seal-manifest.json"),
+      resolve(args.sharedDir, "verification.json")
+    ];
+    for (const path of sharedManifestPaths) {
+      await access(path).then(
+        () => { throw new Error(`Run already contains a sealed artifact bundle. ${PARALLEL_ARTIFACT_HANDOFF_HINT}.`); },
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        }
+      );
+    }
+    for (const item of declarations) {
+      const target = resolve(args.sharedDir, "artifacts", item.path);
+      await access(target).then(
+        () => { throw new Error(`Run artifact path already exists: ${item.path}. ${PARALLEL_ARTIFACT_HANDOFF_HINT}.`); },
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        }
+      );
+    }
     // Shared artifacts are the stable handoff surface consumed by Team Site and
     // by later roles through the opaque artifact reference. Keep execution-local
     // manifests for audit, but publish the verified bytes under run/shared.
@@ -532,19 +726,39 @@ async function verifyDeclaredArtifacts(args: {
       const bytes = verified.contentsByPath.get(item.path);
       if (!bytes) throw new Error(`verified artifact content is missing: ${item.path}`);
       await writeFile(target, bytes, { flag: "wx" });
+      createdArtifactPaths.push(item.path);
     }));
     await writeVerifiedArtifactManifest({ executionDir: args.executionDir, manifest: verified.manifest });
+    const verificationBytes = Buffer.from(`${JSON.stringify({ status: "verified", passed: true, files: verified.manifest.files, manifestSha256: verified.manifestSha256 }, null, 2)}\n`, "utf8");
     const verificationPath = resolve(args.executionDir, "verification.json");
-    await writeFile(verificationPath, `${JSON.stringify({ status: "verified", files: verified.manifest.files, manifestSha256: verified.manifestSha256 }, null, 2)}\n`, { flag: "w" });
+    await writeFile(verificationPath, verificationBytes, { flag: "w" });
+    // The seal points at the Run-level report consumed by Promotion Service. Keep the
+    // execution-local copy for replay evidence, and create the shared copy exclusively so
+    // a second independent artifact cannot silently replace the Run's canonical report.
+    await writeFile(resolve(args.sharedDir, "verification.json"), verificationBytes, { flag: "wx" });
+    createdSharedPaths.push("verification.json");
+    const canonicalManifestPath = resolve(args.sharedDir, "artifact-manifest.json");
+    const canonicalManifestExisted = await access(canonicalManifestPath).then(() => true, () => false);
+    if (!canonicalManifestExisted) createdSharedPaths.push("artifact-manifest.json");
     await writeSealManifest({
       sharedDir: args.sharedDir,
       artifactRelativePath: "artifacts",
       testReportRelativePath: "verification.json",
       verified
     });
+    sealed = true;
   } catch (error) {
+    if (releaseBundleLock && !sealed) {
+      await cleanupInterruptedArtifactBundle(args.sharedDir, {
+        ...lockMetadata,
+        createdArtifactPaths,
+        createdSharedPaths
+      }).catch(() => undefined);
+    }
     if (error instanceof Error && error.message.startsWith("[ERROR.ARTIFACT_VERIFICATION_FAILED]")) throw error;
     throw artifactVerificationError(error);
+  } finally {
+    await releaseBundleLock?.().catch(() => undefined);
   }
 }
 
@@ -576,6 +790,11 @@ export async function executeRoleNode(args: {
   dryRunScenario?: "review-reject-once";
   /** OGS audit port supplied by the active engine adapter. */
   auditAppend?: (event: RuntimeAuditEvent) => Promise<void>;
+  prepareExecutionWorkspace?: (execution: RoleExecutionRecord) => Promise<{
+    path: string;
+    finalize: () => Promise<void>;
+    discard: () => Promise<void>;
+  }>;
 }): Promise<RoleExecutorResult> {
   const currentBranch =
     args.branch ?? listActiveBranches(args.state, args.roleId).at(-1);
@@ -600,19 +819,14 @@ export async function executeRoleNode(args: {
     branchId,
     loopIteration
   });
-  const executionWorkspace = resolve(execution.executionDir, "workspace");
-  await mkdir(executionWorkspace, { recursive: true });
-  await args.auditAppend?.({
-    type: "role.started",
-    at: new Date().toISOString(),
-    roleId: args.roleId,
-    branchId,
-    lineageId: currentBranch.lineageId,
-    loopIteration,
-    executionId: execution.executionId,
-    attempt: args.attempt,
-    maxAttempts: args.maxAttempts
-  });
+  const defaultExecutionWorkspace = resolve(execution.executionDir, "workspace");
+  let preparedWorkspace: {
+    path: string;
+    finalize: () => Promise<void>;
+    discard: () => Promise<void>;
+  } | undefined;
+  let declaredArtifactsSealed = false;
+  let executionWorkspace = defaultExecutionWorkspace;
   const compilerDigest = args.compilerSnapshot?.digest;
   // Invariant: each allocation increments the per-role execution counter and uses a unique directory so retries/replays never clobber prior evidence.
   const maxTransitions = args.effectiveLaw.maxTransitions;
@@ -771,6 +985,20 @@ export async function executeRoleNode(args: {
   const logger = args.logger ?? createRunConsoleLogger(false);
 
   try {
+    await args.auditAppend?.({
+      type: "role.started",
+      at: new Date().toISOString(),
+      roleId: args.roleId,
+      branchId,
+      lineageId: currentBranch.lineageId,
+      loopIteration,
+      executionId: execution.executionId,
+      attempt: args.attempt,
+      maxAttempts: args.maxAttempts
+    });
+    preparedWorkspace = await args.prepareExecutionWorkspace?.(execution);
+    executionWorkspace = preparedWorkspace?.path ?? defaultExecutionWorkspace;
+    await mkdir(executionWorkspace, { recursive: true });
     resolvedBinding = resolveExecutionBinding({
       roleId: args.roleId,
       node: args.node,
@@ -1004,6 +1232,10 @@ export async function executeRoleNode(args: {
         durationMs: audit.durationMs
       });
       await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
+      // Preparation can create a Git worktree before binding resolution. A successful
+      // explicit noop has no commit to preserve, so release that workspace here.
+      await preparedWorkspace?.discard().catch(() => undefined);
+      preparedWorkspace = undefined;
       return result;
     }
 
@@ -1230,6 +1462,12 @@ export async function executeRoleNode(args: {
       roleId: args.roleId,
       executionId: execution.executionId
     });
+    declaredArtifactsSealed = Array.isArray(parsed.output.artifacts) && parsed.output.artifacts.length > 0;
+    await preparedWorkspace?.finalize();
+    // Once finalize returns, the branch/worktree is the durable Git result. Do
+    // not let later audit or persistence failures discard that committed state.
+    preparedWorkspace = undefined;
+    declaredArtifactsSealed = false;
 
     const audit = createAuditRecord({
       executionId: execution.executionId,
@@ -1342,6 +1580,15 @@ export async function executeRoleNode(args: {
     await recordAudit({ context: args.runContext, audit, executionId: execution.executionId, append: args.auditAppend });
     return result;
   } catch (error) {
+    if (declaredArtifactsSealed && preparedWorkspace) {
+      await discardSealedArtifactBundle({
+        sharedDir: args.runContext.sharedDir,
+        runId: args.runContext.runId,
+        roleId: args.roleId,
+        executionId: execution.executionId
+      }).catch(() => undefined);
+    }
+    await preparedWorkspace?.discard().catch(() => undefined);
     const message = error instanceof Error ? error.message : String(error);
     const category = error instanceof ToolExecutionError ? ` (${error.category})` : "";
     const executionError = error instanceof OpencodeExecutionError ? error.details : undefined;

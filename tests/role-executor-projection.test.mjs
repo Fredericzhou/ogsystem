@@ -774,6 +774,10 @@ reviewer[Role:reviewer] -->|READY| end[结束]
   assert.equal(result.status, "ok");
   assert.equal(executionRequest.directory, fixture.tempRoot);
   assert.notEqual(executionRequest.workdir, fixture.tempRoot);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.read, true);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.write, false);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.command, false);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.root, executionRequest.executionDirectory);
   assert.equal(result.audit.compilerDigest, fixture.compilerSnapshot.digest);
   const inbox = parseJsonCodeBlock(
     await readFile(
@@ -792,6 +796,58 @@ reviewer[Role:reviewer] -->|READY| end[结束]
     userProfileId: "user.profile",
     language: "zh-CN"
   });
+});
+
+test("executeRoleNode enables workspace mutation only for explicitly declared workspace tools", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-workspace-capability-projection-",
+    prompt: "workspace capability prompt",
+    systemSource: `flowchart TD
+%% system.id=role.workspace.capability.projection
+%% system.version=1.0.0
+%% law.global=law.console.base
+
+start[开始] -->|START| writer[Role:writer]
+writer[Role:writer] -->|READY| end[结束]
+`,
+    roles: [{
+      roleId: "writer",
+      allowedEvents: ["READY"],
+      contract: { constraints: { writableStateFields: [], allowedTools: ["workspace.patch_text", "workspace.run"] } }
+    }]
+  });
+  const state = createInitialState(fixture.plan, "workspace capability prompt");
+  let executionRequest;
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() { return {}; },
+      async execute(request) {
+        executionRequest = request;
+        return { exitCode: 0, stdout: JSON.stringify({ event: "READY", content: "ok" }), stderr: "", args: [] };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "ok", result.error);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.read, true);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.write, true);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.command, true);
+  assert.equal(executionRequest.workspaceCapabilityPolicy.root, executionRequest.executionDirectory);
 });
 
 test("executeRoleNode emits technical wait heartbeats while executor is still running", async (t) => {
