@@ -2246,6 +2246,9 @@ No dual write is kept.
 
 ## 18. Implementation Order
 
+> **Target implementation sequence — not the active backlog.** This sequence describes the
+> proposed v2 cutover order. The only active work list is [`todo-backlog.md`](todo-backlog.md).
+
 ### P0: Model cutover
 
 1. Set `ogsContractVersion: 2` on all new persisted contract roots.

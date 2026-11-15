@@ -1,6 +1,6 @@
 # OGS 固定业务事件协议与 Studio 配置方案
 
-> **文档状态：已生效架构约束。** 业务事件由
+> **Contract Set v1 — Current.** 本文是已生效架构约束。业务事件由
 > `src/business-events.ts` 的共享注册表管理，`src/runtime/business-events.ts` 只提供 Runtime 导出入口。普通 Flow 只能使用注册的业务事件；
 > `START` 和 `ERROR*` 是系统保留事件。
 

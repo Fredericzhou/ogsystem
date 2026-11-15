@@ -1,5 +1,8 @@
 # 文件产物与代码执行能力建设方案 v1（修订定稿）
 
+> **Contract Set v1 — Current.** 本文描述当前文件产物与代码执行路径。文中的 `local_shell`、
+> `profiles.json` 和 `exec.bind` 只属于 v1 execution path，不是 Contract Set v2 的输入合同。
+
 本文件是文件产物、源码执行和业务成果落地能力的执行基准。它服从
 [`ogsystem-constitution-v1.md`](ogsystem-constitution-v1.md)、
 [`DECISIONS.md`](DECISIONS.md) 和

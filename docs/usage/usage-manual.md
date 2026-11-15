@@ -680,7 +680,7 @@ Orchestration semantics contract:
 
 - `parallel_split` activates all downstream targets of the current role in the same transition
 - default routing without `role.mode` is event-driven; runtime injects `allowed_events`, and non-parallel roles with outgoing flows must emit `event`
-- default routing activates all outgoing flows whose `eventType` equals the emitted `event`; when `PASS/REJECT` point to the same target, it is still one event choice (the emitted event determines the matched flow set)
+- default routing activates all outgoing flows whose `eventType` equals the emitted `event`; when `APPROVED/REJECTED` point to the same target, it is still one event choice (the emitted event determines the matched flow set)
 - `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId + loopIteration`
 - `join.mode.<roleId>=quorum_of` activates after `join.min.<roleId>` unique sources in `join.sources.<roleId>` complete under the same `lineageId + loopIteration`, activates once only, and records late arrivals without retriggering
 - semantic aliases: `quorum_of + join.min=1` is equivalent to `any`; `quorum_of + join.min=|join.sources|` is equivalent to `all`; runtime keeps `all_of` and `quorum_of` as explicit DSL modes and does not add a separate `any_of` mode (preserves `all_of` readability while avoiding extra DSL keyword surface)

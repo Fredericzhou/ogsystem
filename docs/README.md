@@ -38,15 +38,15 @@ Evidence, Product Projections) remains valid for v1 and is not a competing produ
 
 ## Development
 
+### Current v1 Contract
+
 - [Constitution, design principles, and rules](development/ogsystem-constitution-v1.md): the compact governance entry point and document map.
 - [Unified plan and backlog](development/todo-backlog.md)
 - [Decisions](development/DECISIONS.md)
 - [Product boundary and evolution](development/ogs-product-boundary-and-evolution.md)
-- [Extended state machine and social collaboration (bilingual)](development/extended-state-machine-and-dag-bilingual.md)
 - [Shared resource architecture](development/shared-resource-architecture.md)
 - [Native CLI integration contract](development/cli-integration-plan.md)
 - [Model availability probe API](development/model-availability-probe-api.md)
-- [Framework comparison](development/framework-comparison.md)
 - [Compiler semantics](development/compiler-semantics-v1.md)
 - [Runtime and NL2MMD file sets](development/file-sets.md)
 - [Source commenting style](development/commenting-style.md)
@@ -54,8 +54,19 @@ Evidence, Product Projections) remains valid for v1 and is not a competing produ
 - [Release UAT checklist](development/release-uat-checklist.md)
 - [Current version validation (2026-11-10)](development/current-version-validation-2026-11-10.md)
 - [File artifacts and code execution architecture](development/text-artifact-business-delivery-architecture.md)
-- [AI agent standards coverage assessment (2026)](development/ai-agent-standards-coverage-2026.md)
 - [Design release validation template](development/design-release-validation-template.md)
+
+### Contract Set v2 Target
+
+- [Role execution architecture](development/role-execution-architecture.md): target proposal; not read by the current Runtime.
+- [Backend native tools standardization](development/backend-native-tools-standardization.md): v2 supporting material and adapter boundary; not a current v1 input contract.
+
+### Reference / Research
+
+- [Extended state machine and social collaboration (bilingual)](development/extended-state-machine-and-dag-bilingual.md)
+- [Framework comparison](development/framework-comparison.md)
+- [AI agent standards coverage assessment (2026)](development/ai-agent-standards-coverage-2026.md)
+- [Role reasoning effort adaptation](development/reasoning-effort-adaptation-plan.md): current v1 extension reference; not a v2 core contract.
 
 ## Paper and Publications
 

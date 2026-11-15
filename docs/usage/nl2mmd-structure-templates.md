@@ -1,5 +1,8 @@
 # NL2MMD 结构模板手册
 
+> **Contract Set v1 — Current authoring reference.** 本文的 `model-selection.json`、
+> `exec.bind` 和当前 Mermaid metadata 属于 v1 输入；它们不是 v2 Contract 输入。
+
 本手册只讨论结构和内容，不讨论样式。
 
 目标是把自然语言先归入稳定的 OGSystem 语义模板，再填充 Mermaid 骨架，而不是让模型自由生成整张图。

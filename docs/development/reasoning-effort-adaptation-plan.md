@@ -1,5 +1,15 @@
 # Role Reasoning Effort 适配方案
 
+> **Contract Set v1 extension — Current implementation reference.** 本文记录当前 reasoning
+> capability、catalog、adapter、审计和 resume 行为；它不是 Contract Set v2 核心合同，也不是活动 backlog。
+
+## v2 Boundary
+
+在 Contract Set v2 中，reasoning effort 属于 Technical Binding 的 Harness Template 或
+Backend preset 扩展。Role 不直接选择 Backend 或 Model，也不把 v1 的 Role override 结构写入
+v2 Role Contract。下文的 `.ogs/model-selection.json`、Role override 和 fallback 示例均只描述
+当前 v1 输入或迁移背景；v2 映射需由 Harness Template 扩展 RFC 单独批准。
+
 ## 1. 文档目的
 
 本文定义 Role 级 reasoning/thinking 配置的长期适配方案、运行时边界、CLI adapter 映射、验收标准和验收方法。

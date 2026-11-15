@@ -237,6 +237,9 @@ Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以
 
 ## 实施顺序与依赖（MVP 优先）
 
+> **Target implementation guidance — not the active backlog.** 本节只描述 v2 能力的目标依赖；
+> 当前活动计划唯一以 [`todo-backlog.md`](todo-backlog.md) 为准。
+
 文件产物交付文档是本能力层的前置依赖。Role 必须先能在独立 staging 中产生可验证 artifact，并通过 handoff 交给串行下游或通过 Git worktree 进入 Join 后 Merge Stage；backend 工具标准化只决定 Role 如何在 staging 中工作，不改变 artifact、handoff、merge 和 promotion 的所有权。
 
 推荐按以下顺序落地：

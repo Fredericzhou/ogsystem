@@ -3,8 +3,10 @@
 > 本文记录已接受的架构决定和实现不变量。治理原则与硬规则见
 > [OGSystem Constitution and Rules](ogsystem-constitution-v1.md)；运行语义细节见 `docs/usage/`。
 
+> **Contract Set v1 — Current.** 本文记录当前 Runtime 的已接受决定；Contract Set v2 仍是目标提案，未获切换批准前不改变本文件的 v1 语义。
+
 Date: 2026-11-02
-Status: active
+Status: Contract Set v1 — Current
 
 ## 1. One Runtime
 

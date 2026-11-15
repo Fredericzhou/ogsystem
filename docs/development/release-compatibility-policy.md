@@ -1,6 +1,6 @@
 # Current CLI Input Boundary
 
-Status: current release boundary for `ogs` `1.0.0`
+Status: Contract Set v1 — Current release boundary for `ogs` `1.0.0`
 
 OGSystem follows the current runtime, schema, and storage contracts as one versioned product. Historical
 project files and run artifacts are outside the current input boundary. The product does not provide

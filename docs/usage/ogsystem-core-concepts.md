@@ -1,6 +1,6 @@
 # OGS Core Concepts
 
-Status: active product concept contract
+Status: Contract Set v1 — Current product concept contract
 
 治理边界和不可违反规则见 [OGSystem Constitution and Rules](../development/ogsystem-constitution-v1.md)。
 本文只定义产品词汇、所有权和 Role-first 图模型，避免与运行语义手册重复。

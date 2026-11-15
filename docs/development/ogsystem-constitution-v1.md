@@ -1,6 +1,6 @@
 # OGSystem Constitution and Rules v1
 
-Status: active (2026-11-08 release baseline)
+Status: Contract Set v1 — Current (2026-11-08 release baseline)
 
 This document is the compact governance entry point for OGSystem. It states the principles that
 must remain true, the design layers that implement them, and the rules contributors and operators

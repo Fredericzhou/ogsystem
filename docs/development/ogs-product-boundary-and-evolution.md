@@ -1,6 +1,6 @@
 # OGS Product Boundary And Evolution
 
-Status: active architecture guidance
+Status: Contract Set v1 — Current architecture guidance
 Date: 2026-09-03
 
 This document freezes the scope rule for OGS evolution. OGS keeps a small, strict execution core
@@ -314,7 +314,7 @@ required in the current release:
   },
   "inputs": { "preconditions": [] },
   "outputs": {
-    "events": ["APPROVED", "REJECTED", "REWORK_REQUIRED"],
+    "events": ["APPROVED", "REJECTED", "NEEDS_REWORK"],
     "postconditions": []
   },
   "authority": { "controlActions": ["approve", "rework"] },

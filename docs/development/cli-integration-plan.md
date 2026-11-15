@@ -1,6 +1,6 @@
 # Native CLI Integration Contract
 
-Status: current implementation record; adapter delivery and minimal desktop command bridge landed.
+Status: Contract Set v1 — Current implementation record; adapter delivery and minimal desktop command bridge landed.
 
 The original adapter plan has been completed for the current scope. This document now records the
 implemented boundary and the remaining acceptance work; it is not a future-only roadmap.

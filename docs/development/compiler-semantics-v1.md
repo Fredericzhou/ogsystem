@@ -1,5 +1,7 @@
 # OGSystem Compiler Semantics v1
 
+> **Contract Set v1 — Current.** 本文描述当前 Semantic IR v1 编译合同；Contract Set v2 仍是目标提案。
+
 ## Scope
 
 `src/runtime/compiler.ts` is the static compilation facade for the runtime. It collects stable
