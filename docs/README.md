@@ -16,6 +16,10 @@ current runtime inputs or mixed into v1 examples. A v2 implementation must updat
 tests, Studio, CLI, and active usage manuals together. The v2 proposal does not provide a runtime
 compatibility layer or dual-write period after cutover.
 
+The v2 cutover is a release gate, not an active work list. Its governance, contract, Runtime,
+Adapter, product-surface, evidence/recovery, repository-rewrite, and documentation prerequisites
+are defined in [v2 Cutover Gate](development/role-execution-architecture.md#v2-cutover-gate).
+
 The four v2 product layers (Business, Technical Binding, Execution, Evidence) are a product
 ownership view. The current five-stage implementation view (Authoring, Compilation, Runtime,
 Evidence, Product Projections) remains valid for v1 and is not a competing product architecture.

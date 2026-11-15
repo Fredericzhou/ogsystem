@@ -39,6 +39,48 @@ Version ownership is split explicitly:
 the v2 cutover is approved, the active Constitution v1 and Semantic IR v1 remain the current
 contract and this document is design guidance only.
 
+## v2 Cutover Gate
+
+Contract Set v2 is not current until every gate below closes in one approved release. Until then,
+the current v1 Constitution, Runtime, schemas, Studio, CLI, and active manuals remain authoritative;
+no v2 field is accepted as runtime input.
+
+```text
+1. Governance
+   Approve the v2 Contract Set and update the Constitution, DECISIONS.md, and documentation index.
+
+2. Contract implementation
+   Update Role Contract, Semantic IR projections, Harness Template, HandoffProjection,
+   HumanReviewRequest, Evidence records, and versioned schemas together.
+
+3. Runtime cutover
+   Implement resolved Run snapshots, effective policy/tool freezing, readiness fail-closed,
+   Artifact authorization, Review CAS identity, and remove v1 runtime fallback branches.
+
+4. Backend readiness
+   Verify each registered Adapter's discovery, staging, resource enforcement, native session,
+   tool invocation, permission allow/deny, error mapping, and recovery behavior.
+
+5. Product surfaces
+   Update Studio, CLI, import/export, diagnostics, and TeamVersion validation to use Harness
+   Templates; remove v1 Role tool and execution fields from v2 authoring inputs.
+
+6. Evidence and recovery
+   Persist v2 event version fields, tool/permission evidence, Review scope identity, Artifact
+   decisions, and frozen Run configuration; verify replay and resume from those records.
+
+7. Repository rewrite and validation
+   Rewrite v1 fixtures, examples, tests, and released Team inputs once; run schema, Runtime,
+   Adapter, Studio, CLI, UAT, and recovery tests before release.
+
+8. Documentation closure
+   Mark the v1 manuals as historical/current-release background, promote the v2 entry points,
+   and remove contradictory v1 instructions from the active v2 workflow.
+```
+
+This is a release gate, not a second backlog. `todo-backlog.md` remains the only active v1 work
+list until Governance Gate 1 is approved.
+
 ## Core v2 Scope
 
 The v2 cutover keeps one small core contract. The mandatory product objects are:
