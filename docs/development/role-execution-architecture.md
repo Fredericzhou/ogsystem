@@ -454,6 +454,24 @@ Artifact Reference
 source of the routable event; `sourceEvent` is derived from that edge and is never configured
 as a second event field.
 
+Artifact handoff is fail-closed:
+
+```text
+default Artifact transfer
+  none
+
+declared and authorized ArtifactReference
+  may cross the handoff through the compiled artifactMap and Artifact Resolver
+
+missing declaration, authorization, or mapping
+  reject the handoff
+
+required Artifact missing or unverifiable
+  do not commit the handoff or advance the Graph
+```
+
+An Artifact path, tool output, or workspace file is never implicitly promoted into a handoff.
+
 `task` remains the original user request. `input` is the changing per-hop payload. A Role does
 not receive the entire upstream context, prompt history, Backend session, workspace path, or raw
 tool output by implication. Artifact references are opaque and authorized; a filesystem path is
@@ -1289,7 +1307,7 @@ Output acceptance criteria:
   checks that determine whether the result is acceptable
 
 Business outcome events:
-  READY, BLOCKED, APPROVED, REWORK, or other events used by the Flow
+  READY, BLOCKED, APPROVED, NEEDS_REWORK, or other registered Business Events used by the Flow
 ```
 
 The user defines the business schema, but does not manually repeat Runtime envelope fields.
@@ -1392,7 +1410,7 @@ The business Role Contract does not contain Backend or tool configuration:
     "decisionCriteria": []
   },
   "authority": {
-    "controlActions": ["approve", "rework", "terminate"]
+    "controlActions": ["approve", "rework", "reject"]
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -1845,7 +1863,7 @@ continue  Resume the current control scope only within the exception policy and 
 rework    Route to the declared rework target.
 retry     Repeat the current Role attempt or failed execution.
 reject    Produce the declared business rejection outcome or route.
-terminate End the Run or the declared review scope.
+terminate End the explicitly resolved `branch` or `run` scope.
 ```
 
 The trigger determines the decision meaning:
@@ -1872,19 +1890,22 @@ Runtime exception review
   available actions: the exception policy's declared subset, intersected with the active Runtime
   scope
   target and scope: the current Runtime exception context and active branch/lineage state
+  terminate: explicitly resolved to `branch` or `run`; an unspecified or ambiguous scope is invalid
 
 loop_exhausted
   continue / rework / reject / terminate
   continue is valid only through the declared loopBudget binding and its target/grant constraints
+  terminate must resolve to branch or run through the exception policy
 
 retry_exhausted
   retry is available only when the exception policy provides a valid retry grant or remaining
   budget; otherwise retry is excluded
   any remaining action, such as terminate or a declared rework/reject route, comes from the
-  exception policy
+  exception policy; terminate must resolve to branch or run
 
 other exception
-  actions declared by that exception's policy; undeclared actions are unavailable
+  actions declared by that exception's policy; undeclared actions are unavailable, and any
+  terminate action must resolve to branch or run
 ```
 
 The Flow, Role `authority.controlActions`, exception-specific policy, and compiled Runtime scope
@@ -1905,6 +1926,7 @@ type HumanReviewRequest = {
   round: number;
   lineageId: string;
   branchId: string;
+  loopIteration: number;
   stateVersion: number;
   trigger: "explicit" | "exception";
   exceptionContext?: {
@@ -1935,6 +1957,8 @@ reviewId + runId + stateVersion
   -> immutable pending-review record in Run state/checkpoint
 round + lineageId + branchId
   -> active execution scope used to validate the target
+loopIteration
+  -> graph execution iteration for the active Role/lineage; it is not the Review round
 explicit trigger
   -> durable Role result and pending handoff recorded in that state/checkpoint
 exception trigger
@@ -1943,6 +1967,11 @@ exception trigger
 
 `resultRef` and `evidenceRefs` remain deferred denormalized fields; the Runtime must still make
 the state/checkpoint and Evidence correlation available before creating the request.
+
+`round` starts at 1 and identifies the review sequence within the same review scope. It increments
+when that scope enters a new review cycle. `loopIteration` identifies the graph loop execution
+iteration and may advance without creating a review, or remain unchanged across a review decision;
+the two counters must never be substituted for one another.
 
 The following are Deferred RFC fields and policies: `expiresAt`, `timeoutPolicy`, `paused`,
 `requestedAt`, detailed evidence/result references, action-specific payloads such as retry attempt
@@ -2307,3 +2336,11 @@ No dual write is kept.
     static targets fail readiness and ambiguous runtime decisions are rejected and audited.
 28. A Model Role cannot commit a successful result or advance a handoff until output
     postconditions, acceptance criteria, and declared Artifact verification pass.
+29. Every allowed `terminate` action resolves explicitly to `branch` or `run`; an ambiguous scope
+    is rejected and audited.
+30. Artifact handoff defaults to none; undeclared, unauthorized, unmapped, missing, or unverifiable
+    required artifacts prevent handoff and Graph advancement.
+31. `round` starts at 1 and is distinct from `loopIteration`; both are preserved when required to
+    validate Review identity and Runtime scope.
+32. `exceptionActionsByCode` is a read-only compiled projection; users do not maintain it as a
+    separate configuration object.
