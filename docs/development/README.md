@@ -25,16 +25,12 @@ Current behavior is defined by source code, tests, active manuals, and [Decision
 - [Source commenting style](commenting-style.md): low-noise rules for invariants, recovery context, boundaries, and generated source.
 - [Release compatibility policy](release-compatibility-policy.md): artifact schema compatibility, CLI exit codes, and upgrade guarantees.
 - [Bilingual extended state-machine reference](extended-state-machine-and-dag-bilingual.md): mathematical, socio-technical, DAG, and AI execution model.
-- [Documentation audit](documentation-audit-2026-11-05.md): historical classification and alignment findings; current governance is in the Constitution.
 
 ## Verification, UAT & Release Records
 
-- [Current release validation (2026-11-08)](release-validation-2026-11-08.md): current semantic, example, Team Site, and visual verification record.
-
+- [Current version validation (2026-11-10)](current-version-validation-2026-11-10.md): latest semantic, provider, Team Site, and visual verification record.
 - [Release UAT checklist](release-uat-checklist.md): manual and browser release verification gates.
-- [Studio and Projects test/UAT report](ogs-studio-project-run-isolation-validation-report.md): dated verification evidence for Studio/Projects isolation and lifecycle checks.
 - [Design release validation template](design-release-validation-template.md): repeatable evidence template for design and release validation runs.
-- [Release 1.0.0 notes](release-notes-1.0.0.md) & [Release 1.0.0 acceptance](release-acceptance-1.0.0.md): baseline release records.
 - [Runtime replay benchmark](benchmarks/runtime-replay.md): baseline replay throughput and latency measurements.
 
 ## Archive

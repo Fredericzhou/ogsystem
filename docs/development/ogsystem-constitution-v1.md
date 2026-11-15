@@ -216,5 +216,5 @@ For a proposed semantic change:
 | Which decisions are accepted? | [`DECISIONS.md`](DECISIONS.md) | Product boundary and compiler semantics |
 | Which events are legal? | [`business-event-protocol-v1.md`](business-event-protocol-v1.md) | Shared registry and tests |
 | How do I operate the product? | [`usage-manual.md`](../usage/usage-manual.md) | Team Site and Visualizer guides |
-| What is currently verified? | [`release-validation-2026-11-08.md`](release-validation-2026-11-08.md) | UAT checklist and test output |
+| What is currently verified? | [`current-version-validation-2026-11-10.md`](current-version-validation-2026-11-10.md) | UAT checklist and test output |
 | What remains? | [`todo-backlog.md`](todo-backlog.md) | Archive for superseded work |

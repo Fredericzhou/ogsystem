@@ -23,7 +23,7 @@
 - **可视化布局与 Team Site 工作台**：`Semantic IR -> Semantic Layout Projection -> ELK.js -> LayoutProjection -> GraphViewModel -> X6` 唯一显式分层布局链路；`RunQueryService` 基于游标与字节偏移的增量事件读取；Team Site 统一 `pageFrame` 响应式外壳、一级菜单紧凑头部、Studio 仿真运行态图谱只读锁，以及浮动面板级联避让与 `Escape` 焦点管理。
 - **模型 Backend 与原生 CLI**：`BackendRegistry` 已收敛 Codex、OpenCode、Ollama、Pi、Qwen Code、Kimi Code；各 adapter 独立读取官方 API-provider 配置、发现模型并按协议执行探测。Gemini 暂不纳入当前交付。
 - **Role 输入投影与语义抽象**：`direct.*` / `source(role).*` 可选 selector 已落地并由 Runtime 测试覆盖；扩展状态机、DAG 比较和社会化协作模型见双语技术参考。
-- **语义合同与真实案例**：固定业务事件注册表（`READY` 为正常交接事件）、显式 Handoff、条件路由 fail-closed、Join source outcome、Review 血缘、Artifact provenance/Resolver、Run Result commit 和 Loop Budget Review 已接入；Debate Loop、Medical quorum、条件审批、Artifact 证据链、Error compensation 与 GStacklike Review 案例已完成自动化真实运行验证，详见当前[发布验证记录](release-validation-2026-11-08.md)。
+- **语义合同与真实案例**：固定业务事件注册表（`READY` 为正常交接事件）、显式 Handoff、条件路由 fail-closed、Join source outcome、Review 血缘、Artifact provenance/Resolver、Run Result commit 和 Loop Budget Review 已接入；Debate Loop、Medical quorum、条件审批、Artifact 证据链、Error compensation 与 GStacklike Review 案例已完成自动化真实运行验证，详见当前[版本验证记录](current-version-validation-2026-11-10.md)。
 
 ---
 

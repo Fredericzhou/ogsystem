@@ -33,12 +33,9 @@ This is the active documentation entry point. Runtime behavior, source code, and
 - [Runtime and NL2MMD file sets](development/file-sets.md)
 - [Source commenting style](development/commenting-style.md)
 - [Release compatibility policy](development/release-compatibility-policy.md)
-- [Documentation audit and classification](development/documentation-audit-2026-11-05.md)
 - [Release UAT checklist](development/release-uat-checklist.md)
-- [Current release validation (2026-11-08)](development/release-validation-2026-11-08.md)
-- [Studio and Projects validation report](development/ogs-studio-project-run-isolation-validation-report.md)
-- [File artifacts and code execution architecture](development/text-artifact-business-delivery-architecture.md)
 - [Current version validation (2026-11-10)](development/current-version-validation-2026-11-10.md)
+- [File artifacts and code execution architecture](development/text-artifact-business-delivery-architecture.md)
 - [AI agent standards coverage assessment (2026)](development/ai-agent-standards-coverage-2026.md)
 - [Design release validation template](development/design-release-validation-template.md)
 
@@ -48,8 +45,6 @@ This is the active documentation entry point. Runtime behavior, source code, and
 - [Chinese Paper: 面向有界多智能体协作的持久化扩展状态机运行时与工程实践](paper/ogsystem-paper-zh.md)
 - [English Paper: A Persistent Extended Finite State Machine Runtime for Bounded Multi-Agent Collaboration](paper/ogsystem-paper-en.md)
 - [Traceable Literature Baseline (2015-2026)](paper/traceable-references.md): Official URLs, DOIs, standards, and repositories.
-- [Release 1.0.0 notes](development/release-notes-1.0.0.md)
-- [Release 1.0.0 acceptance](development/release-acceptance-1.0.0.md)
 - [Runtime replay benchmark](development/benchmarks/runtime-replay.md)
 
 ## Archive
