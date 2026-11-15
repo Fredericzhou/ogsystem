@@ -334,7 +334,7 @@ EVENT_INPUT_MAPPING_MISSING
 
 ### 10.1 实际 API 验证记录（2026-11-14）
 
-- 五个经典团队均通过直接 API 运行：跨底座审核完成 `NEEDS_REWORK -> APPROVED`，管理咨询完成并行分析、`quorum_of` 汇聚、复核和文档发布，软件研发与专家会诊完成并行汇聚，正反方辩论完成一轮返工和媒体发布。
+- 历史直接 API 验证覆盖五个经典团队；当前内置目录保留三个团队，分别覆盖管理咨询的并行分析与 `quorum_of` 汇聚、软件研发的并行汇聚，以及正反方辩论的一轮返工和媒体发布。
 - 管理咨询运行目录实际封存 `md/json/csv/xlsx/docx/pdf`，正反方辩论实际封存 `json/png/mp4/mp3`；两者均生成 `artifact-manifest.json` 和 `seal-manifest.json`。
 - DOCX/PDF/XLSX 已通过实际可读性检查，PNG/MP4/MP3 已通过 `ffprobe` 格式检查。模型能力以当前 API 账户实际可执行的模型为准；目录中的“可发现”模型不等于当前账户都可调用。
 

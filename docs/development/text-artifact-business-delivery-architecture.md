@@ -414,7 +414,7 @@ ogs run artifact promote <run-id> \
 - 门禁三的 Studio 专用 seal/verification/file 只读 API、Projects 多文件 Deliverable 存储、Run 封存文件包归档、旧快照恢复兼容、文件哈希复核、Range 流式媒体响应和 HTML/SVG 预览安全响应头。
 - 新增契约、selector、Resolver、Workspace/Verifier、Studio API、Run 文件包和 Deliverable 完整性测试。
 - 使用本机真实 Codex `gpt-6-luna` 完成两 Role 端到端协作验证：`debate-minimalist -> debate-judge`，2/2 Role 成功，Run `status=done`，真实 session/message/audit 证据已写入 `.ogs/runs`。
-- 2026-11-10 通过已配置的 Codex/OpenCode API 协议完成五个经典团队的真实模型验证；管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3，`ffprobe`、Pandoc/XeLaTeX 和 SHA-256 manifest/seal 检查通过。CLI 的交互式 login 状态不作为模型可用性判断；dry-run 仍不计入真实模型证据。
+- 2026-11-10 的历史验证通过已配置的 Codex/OpenCode API 协议覆盖五个经典团队；当前内置目录已收敛为三个团队。管理咨询发布 Markdown、DOCX、PDF、JSON、CSV、XLSX，正反方辩论发布 PNG、MP4、MP3，`ffprobe`、Pandoc/XeLaTeX 和 SHA-256 manifest/seal 检查通过。CLI 的交互式 login 状态不作为模型可用性判断；dry-run 仍不计入真实模型证据。
 - 当前 Role 产物封存配额为：单文件 50 MiB、单次 Role 声明文件总量 200 MiB、最多 500 个文件；图片默认另有 20 MiB 上限。Team Site 非文本封存文件支持最大 256 MiB 的流式读取，不能据此绕过 Runtime 封存配额。
 - 2026-11-15 使用本机真实 Codex `gpt-6-luna` 从初始需求启动一个临时 Python 计算器项目，完成一次四 Role（dispatch、implementation、tests、join）协作运行：2 个并行 Git source Role、Join merge、final merge、调用方 fast-forward publish 均成功；Run 为 `done`，8 项 unittest 通过，CLI `add 2 3=5`、`multiply 6 7=42`，发布仓库保持 clean。该结果是一次端到端可用性证据，不是稳定性或随机模型输出的统计结论；Role 的路径所有权、Git 交付约束和验收入口均由本次任务显式配置。
 - 同一真实案例还验证了边界：并行 Role 同时声明 artifact 会被单一 sealed bundle 门禁拒绝；并行 Role 修改相同路径会产生 Git conflict 并停止发布；`publish` 的锁、CAS、幂等和中途失败恢复仍由调用方回调负责。当前没有 AI resolver，因此同路径冲突需要人工处理或重新设计 Role 分工。

@@ -19,7 +19,7 @@ new project; historical development data and interfaces are not migration or com
    freelancer bookkeeping product. Confirm it appears as one queued Task with no Run ID.
 2. Use `Isolated run` with a ready provider and complete the Task through the page. The result
    must address the request and include an implementation breakdown, user experience, acceptance
-   checks, and delivery integration. Inspect the Run page evidence: the five classic roles,
+   checks, and delivery integration. Inspect the Run page evidence: the five software-team roles,
    per-role inputs and outputs, event history, final result, and completed status. Refresh the
    page and verify the same Task, TeamVersion, Run ID, mode, and result remain visible. A flow
    preview is not acceptable evidence of business delivery.

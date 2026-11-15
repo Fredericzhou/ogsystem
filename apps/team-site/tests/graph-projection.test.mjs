@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { cases } from "../cases.mjs";
-import { buildCaseGraph, buildCaseSystem, materializeCaseTeam } from "../demo-runner.mjs";
-import { createRuntimeTeamSimulation } from "../infrastructure/runtime-team-simulation.mjs";
+import { buildCaseGraph, buildCaseSystem } from "../demo-runner.mjs";
 
 for (const locale of ["zh-CN", "en"]) {
   for (const item of cases) {
@@ -65,39 +61,4 @@ test("management consulting keeps its parallel quorum and structured brief contr
   const graph = buildCaseGraph("management-consulting", "en");
   assert.equal(graph.edges.filter((edge) => edge.eventType === "READY" && edge.source !== "__system_start__").length, 12);
   assert.equal(graph.edges.find((edge) => edge.eventType === "READY" && edge.target === "executive-brief")?.target, "executive-brief");
-});
-
-test("cross-backend review loop exposes a bounded rework path", () => {
-  const loop = cases.find((item) => item.id === "cross-backend-review-loop");
-  assert.ok(loop);
-  assert.deepEqual(loop.loopBudgets, [{ roleId: "codex-analyst", max: 3 }]);
-  assert.deepEqual(loop.flows, [
-    ["__system_start__", "codex-analyst", "START"],
-    ["codex-analyst", "opencode-reviewer", "READY"],
-    ["opencode-reviewer", "codex-analyst", "NEEDS_REWORK"],
-    ["opencode-reviewer", "__system_end__", "APPROVED"],
-    ["opencode-reviewer", "__system_end__", "REJECTED"]
-  ]);
-  assert.match(buildCaseSystem(loop), /loop\.max\.codex-analyst=3/);
-});
-
-test("review-reject-once dry-run completes after one rework loop", async () => {
-  const workdir = await mkdtemp(join(tmpdir(), "ogs-review-loop-"));
-  try {
-    await materializeCaseTeam("cross-backend-review-loop", workdir);
-    const result = await createRuntimeTeamSimulation().simulate(
-      { workdir, source: "classic", teamVersionId: "cross-backend-review-loop" },
-      { prompt: "Validate the review loop.", mode: "dry-run", simulationScenario: "review-reject-once" }
-    );
-    assert.equal(result.status, "completed");
-    assert.deepEqual(result.auditTrail.map((item) => [item.roleId, item.loopIteration, item.selectedEvent]), [
-      ["codex-analyst", 1, "READY"],
-      ["opencode-reviewer", 1, "NEEDS_REWORK"],
-      ["codex-analyst", 2, "READY"],
-      ["opencode-reviewer", 2, "APPROVED"]
-    ]);
-    assert.deepEqual(result.finalOutputRoleOrder, ["opencode-reviewer"]);
-  } finally {
-    await rm(workdir, { recursive: true, force: true });
-  }
 });

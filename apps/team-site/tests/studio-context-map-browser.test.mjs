@@ -141,10 +141,10 @@ test("Studio browser context map editor mounts autocomplete datalists and suppor
 
 test("Studio browser generates confirmed prompt rules for multiple incoming events", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-event-rules-"));
-  const project = await seedReleasedClassicTeam(projectsRoot, "cross-backend-review-loop");
+  const project = await seedReleasedClassicTeam(projectsRoot, "structured-debate");
   const systemPath = join(project.workdir, "system.mmd");
   const systemSource = await readFile(systemPath, "utf8");
-  await writeFile(systemPath, `${systemSource}opencode-reviewer[Role:opencode-reviewer] -->|REJECTED| codex-analyst[Role:codex-analyst]\n`, "utf8");
+  await writeFile(systemPath, `${systemSource}neutral-judge[Role:neutral-judge] -->|REJECTED| debate-host[Role:debate-host]\n`, "utf8");
 
   const visualizer = spawn(process.execPath, ["--import", "tsx", "src/visualizer/cli.ts", "--ogs-dir", projectsRoot, "--port", "0"], {
     cwd: repositoryRoot,
@@ -179,9 +179,9 @@ test("Studio browser generates confirmed prompt rules for multiple incoming even
     await page.locator("#project-graph-stage").waitFor();
     await page.locator('[data-studio-graph-action="assets"]').click();
 
-    const analyst = page.locator('[data-studio-asset-role="codex-analyst"]');
-    await analyst.waitFor({ state: "visible", timeout: 15000 });
-    await analyst.click();
+    const judge = page.locator('[data-studio-asset-role="neutral-judge"]');
+    await judge.waitFor({ state: "visible", timeout: 15000 });
+    await judge.click();
     const rulesButton = page.locator("[data-studio-event-rules-suggest]");
     await rulesButton.waitFor({ state: "visible", timeout: 10000 });
     await rulesButton.click();

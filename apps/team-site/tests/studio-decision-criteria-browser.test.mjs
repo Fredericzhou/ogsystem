@@ -28,7 +28,7 @@ async function waitForServiceUrl(processHandle, outputRef, pattern, label) {
 
 test("Studio browser configures decision criteria and route condition descriptions", async () => {
   const projectsRoot = await mkdtemp(join(tmpdir(), "ogs-site-decision-criteria-"));
-  await seedReleasedClassicTeam(projectsRoot, "cross-backend-review-loop");
+  await seedReleasedClassicTeam(projectsRoot, "software-team");
   const visualizer = spawn(process.execPath, ["--import", "tsx", "src/visualizer/cli.ts", "--ogs-dir", projectsRoot, "--port", "0"], {
     cwd: repositoryRoot,
     env: { ...process.env, OGS_SITE_PROJECTS_DIR: projectsRoot },
@@ -56,7 +56,7 @@ test("Studio browser configures decision criteria and route condition descriptio
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.stack || error.message));
 
-    await page.goto(url + "/cases/cross-backend-review-loop", { waitUntil: "networkidle" });
+    await page.goto(url + "/cases/software-team", { waitUntil: "networkidle" });
     await page.locator("#detail-graph-stage").waitFor();
     await page.locator("[data-case-action=template]").click();
     await page.waitForURL(/\/studio\/teams\/[a-z0-9-]+\/design$/);

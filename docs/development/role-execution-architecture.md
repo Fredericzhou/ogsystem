@@ -1,4 +1,7 @@
-# Backend Native Tools Target Architecture
+# Role Execution Architecture
+
+This document defines how business Roles bind to Harness or API/Cmd templates and become
+resolved, auditable executions.
 
 ## 1. Goal
 
@@ -25,14 +28,14 @@ flowchart TB
 
     subgraph Technical["Technical binding layer"]
         EB["Harness / API-Cmd Template<br/>Backend + Model or fixed invocation<br/>preset + optional overrides"]
-        BR["Backend Registry"]
-        CS["Capability Snapshot<br/>models / native tools / enforceable resources"]
     end
 
     subgraph Runtime["Runtime execution layer"]
+        BR["Backend Registry"]
+        CS["Capability Snapshot<br/>models / native tool IDs"]
         PR["Policy Resolver<br/>effective tools and environment policy"]
         LAW["Law / quota / staging"]
-        PLAN["Execution Plan"]
+        PLAN["Resolved Execution Plan"]
         SNAP["Run resolved config<br/>frozen snapshot / policy / law digest"]
     end
 
@@ -56,6 +59,7 @@ flowchart TB
 
     RC --> IR
     IR --> HR
+    EB --> BR
     EB --> PR
     BR --> CS
     CS --> PR
@@ -103,8 +107,8 @@ flowchart TB
 | Layer | Owns | Receives | Produces | Must not own |
 | --- | --- | --- | --- | --- |
 | Business | responsibility, inputs, outputs, acceptance, topology, state, events, handoffs, Human Review source | business requirements and graph design | Role Contract and Semantic IR | Backend, model, native tool, resource permission |
-| Technical binding | Harness Template or API/Cmd Template | project or TeamVersion technical configuration | binding input for execution | business acceptance rules, native tool implementation |
-| Execution | capability discovery, snapshot, effective policy, permission allow/deny, staging, Law, quota, Adapter, Backend session | technical binding, Backend, Run context, and business execution plan | Role result, native tool events, execution outcome | business review decisions and mutable Role configuration |
+| Technical binding | Harness Template or API/Cmd Template, Backend/model reference, preset, `allowedTools`, environment intent | project or TeamVersion technical configuration and Backend catalog | normalized binding input for execution | business acceptance rules, capability snapshot, native tool implementation |
+| Execution | Backend Registry, capability discovery/snapshot, effective policy, permission allow/deny, staging, Law, quota, Adapter, Backend session | normalized technical binding, Run context, and business execution plan | Role result, native tool events, execution outcome | business review decisions and mutable Role configuration |
 | Evidence | audit, artifacts, recovery, Human Review records | events and durable results from all relevant layers | replayable Run evidence | mutable business and technical configuration |
 
 ### Dependency direction
@@ -137,7 +141,7 @@ flowchart TB
     BP["Business Design page"] --> L1U["L1 Role Contract"]
     BP --> L2U["Business Flow Semantic IR"]
     TP["Technical Binding page"] --> L3U["Technical binding"]
-    CP["Capability / Readiness panel"] --> L4U["Execution layer<br/>capability read-only"]
+    CP["Capability Preview / Readiness panel"] --> L4U["Execution layer<br/>capability read-only"]
     RP["Run / Diagnostics panel"] --> L5U["Execution layer<br/>effective policy read-only"]
     RP --> EU["Evidence Layer<br/>audit / artifacts / recovery"]
     L3U --> L5U
@@ -150,7 +154,7 @@ flowchart TB
 | Business Design / Role | Business | purpose, responsibility, inputs, outputs, acceptance criteria, business failure semantics | resolved Backend and technical policy summary |
 | Business Design / Flow | Business | roles, edges, events, topology, joins, loops, Human Review requirement | compiled business flow diagnostics |
 | Technical Binding | Technical binding | Backend, model, execution preset, optional advanced overrides | binding validation and unresolved references |
-| Capability / Readiness | Execution | refresh discovery or select a verified Backend/model | verified models, native tools, enforceable resources, snapshot time and digest |
+| Capability Preview / Readiness | Execution | refresh discovery or select a verified Backend/model | verified models, native tool IDs, adapter readiness, preview time and digest |
 | Runtime Policy / Diagnostics | Execution | normally none; technical overrides are edited in Technical Binding | effective tools, staging root, Law, quota, degradation, allow/deny reasons |
 | Adapter / Backend Diagnostics | Execution | normally none | native permission mapping, adapter version, unsupported policy fields, native tool events |
 | Run / Evidence / Review | Evidence | Human Review decision, rework, pause, terminate | tool calls, permission decisions, artifacts, errors, recovery history |
@@ -242,7 +246,9 @@ Advanced overrides (collapsed by default)
 
 The normal page only requires Backend and Model. The selected Backend supplies the default native tools, environment policy, adapter parameters, and recommended limits through its execution preset. The Runtime still owns the enforceable staging boundary and platform safety limits. Advanced overrides are optional and are stored as differences from the preset rather than as a complete duplicate policy.
 
-The tool list is read from the Backend Capability Snapshot. Users cannot create a Model Role tool, edit a native tool command, or configure Backend-specific flags such as `sandboxPolicy` or `allow dangerous`.
+The tool list is read from the Backend Capability Preview while editing. Users cannot
+create a Model Role tool, edit a native tool command, or configure Backend-specific flags
+such as `sandboxPolicy` or `allow dangerous`.
 
 ### Harness Template as the Model Role Binding
 
@@ -282,8 +288,7 @@ recommended storage shape is:
       "backend": "codex",
       "model": "gpt-6-luna",
       "preset": "backend-default",
-      "tools": { "mode": "all" },
-      "permissions": {
+      "environment": {
         "filesystem": { "read": true, "write": true },
         "process": true,
         "network": false
@@ -299,8 +304,7 @@ recommended storage shape is:
       "backend": "codex",
       "model": "gpt-6-luna",
       "preset": "backend-default",
-      "tools": { "mode": "all" },
-      "permissions": {
+      "environment": {
         "filesystem": { "read": true, "write": true },
         "process": true,
         "network": false
@@ -310,9 +314,7 @@ recommended storage shape is:
   "apiCmdTemplates": {
     "local-shell-builder": {
       "kind": "api_cmd",
-      "runner": "command",
-      "toolRef": "tool.local.shell.builder",
-      "command": "build-script"
+      "profileId": "local-shell-builder"
     }
   },
   "defaults": {
@@ -338,26 +340,57 @@ model:
   exposes the same model and the binding is revalidated.
 
 preset:
-  Optional Backend-owned defaults for native tools, permissions, and limits.
+  Optional Backend-owned defaults for native tools, environment policy, and limits.
 
-tools and permissions:
-  Optional differences from the Backend preset. They can only refer to tools and
-  resources exposed and enforceable by the selected Backend/Adapter. `permissions`
-  expresses resource policy intent; it is not a per-tool approval workflow.
+environment:
+  Optional resource policy intent. It is not a per-tool approval workflow.
 
-tools.mode:
-  `all` uses every verified native tool exposed by the selected Backend. The default
-  is `all` when the tools object is omitted.
+allowedTools omitted:
+  Use every verified native tool exposed by the selected Backend.
 
-tools.allowedTools:
-  Optional technical allow-set used when `mode` is `allowlist`. Every entry must
-  exist in the selected Backend capability snapshot.
+allowedTools = []:
+  Explicitly disable Backend-native tool calls for this Harness.
+
+allowedTools with entries:
+  Use only the listed tools. Every entry must exist in the selected Backend capability
+  snapshot.
 ```
 
 Changing `backend` invalidates the model, tool, and permission resolution until the
 new Backend is discovered and the template passes readiness. Changing `model` keeps
 the Backend but reruns model-specific readiness and freezes the resulting capability
 snapshot for the next Run.
+
+### Backend-specific mapping boundary
+
+The Technical Binding stores only normalized intent:
+
+```text
+backend
+model
+preset
+allowedTools
+environment intent
+limits
+```
+
+Backend-specific flags, tool names, sandbox modes, approval modes, and protocol
+responses stay inside the selected Adapter. They must not appear in Role Contract,
+Semantic IR, generic Runtime policy types, or business-facing Studio forms.
+
+The current project-level mapping is:
+
+| Backend | Current status | Native mapping owned by Adapter | Default boundary |
+| --- | --- | --- | --- |
+| Codex | registered and runnable | App Server `sandboxPolicy` / `approvalPolicy`; execution staging becomes the writable root | filesystem and command only when the corresponding policy is enforceable; network stays denied unless explicitly verified |
+| OpenCode | registered and runnable | SDK session tools for read/list/glob/grep/edit/bash; execution directory and external-directory restriction | workspace tools follow the effective policy; network stays denied until a verified adapter mapping exists |
+| Pi | registered, policy mapping incomplete | RPC session currently starts from the Backend target directory; per-execution policy still requires adapter work | do not claim write, process, or network enforcement until the staging and policy arguments are passed through |
+| Claude | no adapter currently registered | no OGS native mapping yet | unavailable in the verified Backend catalog until an adapter and probe exist |
+
+This table describes adapter readiness, not a second user-maintained capability matrix.
+When a Backend cannot express a requested resource boundary, the Adapter returns a
+readiness failure or a denied effective resource. It never widens the execution root or
+disables a sandbox to make the binding appear runnable.
 
 In this model:
 
@@ -368,6 +401,9 @@ Harness Template:
 Backend preset:
   Backend-owned default values, resolved internally and not a second user configuration object.
 
+Capability Preview:
+  Refreshable discovery/readiness data shown before Run start.
+
 Capability Snapshot:
   Generated and frozen at Run start; not manually authored.
 
@@ -375,7 +411,9 @@ Effective Policy:
   Computed by Runtime from the environment, capabilities, Law, staging, and quota.
 ```
 
-The Harness Template is a configuration template. The Capability Snapshot and Effective Policy are execution results. This keeps the user model small while preserving deterministic recovery.
+The Harness Template is a configuration template. The Capability Preview is an editing
+diagnostic; the Capability Snapshot and Effective Policy are Run execution results. This
+keeps the user model small while preserving deterministic recovery.
 
 ### Default Harness Template
 
@@ -429,14 +467,15 @@ Import Team
   -> Read Roles and Flow
   -> Read Harness Templates
   -> Resolve Backend and Model against local Backend Registry
-  -> Generate a new Capability Snapshot
+  -> Generate a new Capability Preview
   -> Recalculate Effective Policy
   -> Run Readiness
 ```
 
 When a target environment does not have a referenced Backend or Model, the Team can still be imported. The Harness Template is marked unresolved and the Team cannot be released or run until the binding is repaired.
 
-API/Cmd Role packages use `API/Cmd Template -> API/Cmd runner`. Their export contains logical API/Cmd references and reviewed argument templates, but not host-specific absolute paths, credentials, or generated execution artifacts. Local command and dependency readiness is checked after import.
+API/Cmd Role packages use `API/Cmd Template` as the configuration and UI abstraction. At Runtime the existing execution chain remains `Profile -> Tool -> local_shell` (or the equivalent registered runner). Their export contains the logical `profileId` reference, but not duplicated command definitions, host-specific paths, credentials, or generated execution artifacts. Local command and dependency readiness is checked after import.
+If the target environment does not have the referenced Profile/Tool, the API/Cmd Template is marked unresolved until that runtime binding is installed or repaired.
 
 This keeps the portable Team package small:
 
@@ -455,10 +494,9 @@ For an API/Cmd Role, the page shows a separate API/Cmd Template binding:
 
 ```text
 API/Cmd template
-API or command reference
-Command and argument template
-Stdin mode
-Timeout and output limit
+Profile reference
+Resolved Tool summary (read-only)
+Command and argument details (owned by Profile/Tool)
 ```
 
 ### 4.3 Runtime Diagnostics
@@ -467,7 +505,7 @@ Runtime Diagnostics is read-only. It explains the technical decision generated f
 
 ```text
 Selected Backend and model
-Capability Snapshot digest and verification time
+Capability Preview or Run Snapshot digest and verification time
 Effective native tools
 Execution staging root
 Effective filesystem/process/network policy
@@ -478,6 +516,18 @@ Adapter mapping summary
 ```
 
 The page explains why a capability is unavailable, but is not a second policy editor.
+
+Capability state has two stages:
+
+```text
+Capability Preview:
+  Refreshable discovery/readiness data shown while editing a Harness Template or
+  importing a Team. It may change when Backend discovery is refreshed.
+
+Run Capability Snapshot:
+  The formal capability result created at Run start. It is stored in the Run
+  snapshot and reused unchanged during recovery.
+```
 
 ### 4.4 Evidence and Review
 
@@ -521,7 +571,7 @@ Technical Binding save checks:
 ```text
 Backend is installed and verified
 Model belongs to the selected Backend
-Every allowedTools entry exists in the Capability Snapshot
+Every allowedTools entry exists in the Capability Preview
 Requested environment resources are expressible by the Adapter
 Required limits are valid
 ```
@@ -529,7 +579,8 @@ Required limits are valid
 Run readiness checks:
 
 ```text
-Capability Snapshot is frozen
+Capability Preview is available and the Run Capability Snapshot can be created
+Run Capability Snapshot is frozen before Backend startup
 Effective Policy can be calculated
 Execution staging can be created
 Law and quota checks pass
@@ -621,7 +672,9 @@ Network intent
 Timeout and quotas
 ```
 
-Capability Snapshot, effective tools, enforceability, and Adapter mapping are read-only sections below the form or in a diagnostics drawer. Switching Backend or Model refreshes these sections and validates existing overrides.
+Capability Preview, effective tools, Adapter resource validation, and Adapter mapping are
+read-only sections below the form or in a diagnostics drawer. Switching Backend or Model
+refreshes these sections and validates existing overrides.
 
 The primary action is `Use default`. The secondary action is `Customize`, which creates
 or updates a Harness Template rather than adding fields to each Role. Changing a Role's
@@ -655,7 +708,7 @@ Advanced view:
   tool and environment overrides, limits, degradation details
 
 Diagnostic view:
-  Capability Snapshot, Adapter mapping, native permission events, raw audit data
+  Capability Preview or Run Snapshot, Adapter mapping, native permission events, raw audit data
 ```
 
 The user should be able to complete a normal Role setup without seeing a native tool name. Technical detail is available for diagnosis and deliberate customization, but it is not required for ordinary business authoring.
@@ -764,13 +817,26 @@ Model Roles do not use API/Cmd Templates.
 ```mermaid
 flowchart LR
     A["API/Cmd Role"] --> B["API/Cmd Template"]
-    B --> C["API or command runner"]
-    C --> D["API/Cmd result"]
-    D --> E["Runtime audit"]
-    E --> F["Human Review / graph transition"]
+    B --> C["Profile"]
+    C --> D["Tool"]
+    D --> E["local_shell / registered runner"]
+    E --> F["API/Cmd result"]
+    F --> G["Runtime audit"]
+    G --> H["Human Review / graph transition"]
 ```
 
-API/Cmd Templates are independent of Models and Backend native tools. They cover fixed API calls and commands such as compilers, converters, test runners, publishing scripts, and `tool.console.print`.
+API/Cmd Templates are independent of Models and Backend native tools. They are the
+configuration and UI abstraction for fixed API calls and commands such as compilers,
+converters, test runners, publishing scripts, and `tool.console.print`.
+
+An API/Cmd Template stores only the `profileId`. Command definitions, arguments,
+timeouts, output limits, and Tool details remain owned by the referenced Profile/Tool
+configuration.
+
+The Runtime implementation remains the existing `Profile -> Tool -> local_shell`
+chain (or an equivalent registered runner). API/Cmd Template does not create a second
+command executor. `API/Cmd Role` is the product-facing name; `Tool Role` may remain as
+an implementation or legacy term only when it refers to this same role kind.
 
 ## 6. Role Contract
 
@@ -838,15 +904,49 @@ Rules:
 Backend preset omitted:
   Use the selected Backend's default execution preset.
 
-tools, permissions, or limits omitted:
+tools, environment, or limits omitted:
   Use the selected Backend/model preset's verified tools, resource policy,
   adapter settings, and limits.
 
-tools.mode = allowlist:
-  It is an optional technical allow-set and can only name tools from the Backend snapshot.
+allowedTools:
+  Omitted means all verified tools; an empty list means no native tools; a non-empty
+  list is an allow-set and can only name tools from the Backend capability preview.
 ```
 
 The initial model does not keep a separate `deniedTools` field. Users cannot create Model Role tools in OGS. The resolved policy is generated from the Backend preset and optional overrides.
+
+### Static and Resolved Execution Plan
+
+The plan has a deliberate boundary between compilation and execution:
+
+```text
+Static Execution Plan
+  Role and Flow references
+  Harness/API-Cmd Template references
+  May omit Backend capability and effective policy
+
+Resolved Execution Plan
+  Created before Backend startup
+  Contains the complete frozen technical decision for the Run
+```
+
+An executable Model Role node must use the resolved form. These fields are required,
+not optional:
+
+```ts
+type ResolvedExecutionPlanNode = {
+  roleId: string;
+  backend: string;
+  model: string;
+  capabilitySnapshot: BackendCapabilitySnapshot;
+  effectiveEnvironmentPolicy: EffectiveEnvironmentPolicy;
+};
+```
+
+The resolved node is written into the Run snapshot together with the Semantic IR and
+Law digests. Adapter version is read from `capabilitySnapshot.adapterVersion`; it is not
+duplicated on the plan node. A node that lacks any required field cannot start a Model
+Role session.
 
 ## 8. Backend Capability Snapshot
 
@@ -863,17 +963,13 @@ type BackendCapabilitySnapshot = {
   adapterVersion: string;
   verifiedAt: string;
   tools: string[];
-  enforceableResources: {
-    filesystem: boolean;
-    process: boolean;
-    network: boolean;
-  };
-  permissionProtocol: "static" | "request" | "none";
   digest: string;
 };
 ```
 
-The resource booleans mean that the Adapter can actually enforce the resource boundary. They do not merely mean that the Backend theoretically supports the resource.
+The public snapshot stores verified Backend/model identity and native tool IDs. Tool
+resource dependencies and Backend permission protocol details remain inside the Adapter;
+they are not a second public capability matrix.
 
 Capability sources are ordered as follows:
 
@@ -881,7 +977,36 @@ Capability sources are ordered as follows:
 2. Adapter static descriptor when discovery is unavailable;
 3. No user-created descriptors.
 
-Unverified or unenforceable capabilities are not included in the default effective set.
+Unverified tools are not included in the default effective set. Resource enforceability
+is checked by the Adapter when the effective environment policy is applied.
+
+The Adapter keeps the tool-to-resource mapping private:
+
+```ts
+type AdapterResourceCapabilities = {
+  filesystem: boolean;
+  process: boolean;
+  network: boolean;
+};
+
+interface BackendAdapter {
+  getResourceCapabilities(): AdapterResourceCapabilities;
+
+  validateToolResources(
+    toolId: string,
+    policy: EffectiveEnvironmentPolicy
+  ): { allowed: boolean; reason?: string };
+
+  mapEnvironmentPolicy(policy: EffectiveEnvironmentPolicy): BackendNativeConfig;
+}
+```
+
+The Policy Resolver uses `getResourceCapabilities()` together with the Harness
+`environment` intent, staging, Law, and quota to calculate the Effective Environment
+Policy. `validateToolResources()` then checks the selected tool at invocation time.
+This avoids adding a public resource-dependency matrix to every tool descriptor while
+still making each native request fail closed when its resource boundary cannot be
+enforced.
 
 ## 9. Capability, Technical Policy, and Permission
 
@@ -894,6 +1019,9 @@ Capability
 Technical policy
   What this Project and Run choose to permit within the available capabilities.
 
+Environment policy
+  The resource policy intent for filesystem, process, network, staging, and limits.
+
 Permission decision
   The final allow/deny result for one resource request at execution time.
 ```
@@ -905,12 +1033,16 @@ The relationship is:
 ```text
 Backend capability snapshot
   + Harness Template or API/Cmd Template reference
+  + Adapter resource capabilities
   + Law / quota / staging
   -> Effective technical policy
   -> Permission allow / deny
 ```
 
 The capability layer belongs to Backend discovery and readiness. The technical policy belongs to Runtime policy resolution. Permission is the enforcement result produced by Runtime and Adapter; it is not a second business configuration layer.
+
+Backend-native settings such as `sandboxPolicy` and `approvalPolicy` exist only inside
+the Adapter mapping. They are not persisted as OGS permission fields.
 
 ## 10. Flow Execution Model
 
@@ -936,6 +1068,7 @@ sequenceDiagram
     loop Role work
         B->>A: Native tool/resource request
         A->>P: Check resource boundary
+        A->>A: validateToolResources(toolId, effective policy)
         alt Allowed
             P-->>A: allow
             A-->>B: Backend-native allow
@@ -966,13 +1099,32 @@ Flow transitions are driven by Role business events, not by individual native to
 The Runtime calculates one effective policy:
 
 ```text
-verifiedTools
-  intersect optional allowedTools when configured
-  intersect tools whose resources are enforceable
-= effectiveTools
+allowedTools omitted
+  -> all verified Backend tools
+
+allowedTools = []
+  -> no native tools
+
+allowedTools with entries
+  -> exactly the listed verified Backend tools
 ```
 
-If a configured `allowedTools` entry is not in the capability snapshot, readiness fails before execution. When `allowedTools` is omitted, the verified Backend tool set is used. A tool that is unavailable because its resource boundary cannot be enforced is denied when called and is recorded in audit; it does not stop the Role unless the binding explicitly selected that tool.
+If a configured `allowedTools` entry is not in the Capability Preview, readiness fails
+before execution. The Run Snapshot freezes the resulting verified tool IDs. At each
+native request, the Adapter additionally validates the tool's private resource
+dependencies against the effective environment policy. A request that cannot be
+enforced is denied and recorded in audit; it does not introduce a second public tool
+configuration model.
+
+Resource policy resolution is explicit:
+
+```text
+Harness environment intent
+  + Adapter.getResourceCapabilities()
+  + staging boundary
+  + Law and quota
+  -> EffectiveEnvironmentPolicy
+```
 
 The effective environment policy is resource-oriented:
 
@@ -1063,10 +1215,12 @@ At Run start, write `.ogs/runs/<run-id>/resolved-config.json` containing:
 ```text
 Semantic IR digest
 Resolved Harness/API-Cmd binding
-Capability Snapshot
-Effective EnvironmentPolicy
+Resolved Execution Plan
+  backend
+  model
+  Capability Snapshot
+  Effective EnvironmentPolicy
 Law digest
-Adapter version
 ```
 
 Recovery must reuse this snapshot. It must not rediscover capabilities and silently change the technical decision for the same Run.
@@ -1216,16 +1370,18 @@ No dual write is kept.
 1. Role Contract contains no Backend, native tool, or environment permission fields.
 2. Semantic IR contains no native tool or resource policy.
 3. Model Roles resolve through a Harness Template.
-4. API/Cmd Roles resolve through an API/Cmd Template and do not depend on a Backend model or native tool catalog.
+4. API/Cmd Roles resolve through an API/Cmd Template, then use the existing Profile -> Tool -> local_shell chain (or equivalent registered runner), without a Backend model or native tool catalog.
 5. Every Harness Template resolves one installed Backend and one model from that Backend's verified catalog.
 6. Changing the Backend or model reruns readiness and freezes a new capability snapshot for the next Run.
 7. Backend discovery returns verified models and tools.
 8. Verified Backend tools are enabled by default.
-9. Unknown or unenforceable capabilities are denied.
+9. Unknown tools and Adapter-denied resource requests are denied and audited.
 10. Configured `allowedTools` entries must exist in the frozen Backend capability snapshot.
-11. Access outside execution staging always fails.
-12. Permission decisions are only `allow` or `deny`.
-13. Human Review occurs only after a durable Role result and before handoff.
-14. Recovery reuses the original Capability Snapshot and Effective EnvironmentPolicy.
-15. Every native tool invocation produces an audit event.
-16. Legacy fields produce schema errors after migration.
+11. Policy Resolver derives EffectiveEnvironmentPolicy from environment intent and Adapter resource capabilities.
+12. Resolved Model Role plan nodes require Backend, Model, Capability Snapshot, and EffectiveEnvironmentPolicy; adapter version is read from the snapshot.
+13. Access outside execution staging always fails.
+14. Permission decisions are only `allow` or `deny`.
+15. Human Review occurs only after a durable Role result and before handoff.
+16. Recovery reuses the original Capability Snapshot and EffectiveEnvironmentPolicy.
+17. Every native tool invocation produces an audit event.
+18. Legacy fields produce schema errors after migration.

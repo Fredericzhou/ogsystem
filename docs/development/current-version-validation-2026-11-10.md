@@ -8,8 +8,8 @@ This record describes the validation boundary for the current working version.
 - Runtime artifact, workspace, permission and selector contract tests
 - Team Site Deliverable, sealed bundle, verified stream and integrity tests
 - `pnpm run test:visualizer-browser` (17 passed, 2 deployment-only tests skipped)
-- Lint for all five classic teams
-- Real API model runs for all five classic teams using the configured Codex app-server API (`gpt-6-luna`); the cross-backend review case also used the OpenCode protocol route `codex-gateway/gpt-6-luna`
+- Historical validation linted all five classic teams; the current built-in catalog retains three: software delivery, management consulting, and structured debate.
+- Historical validation ran all five classic teams using the configured Codex app-server API (`gpt-6-luna`); the removed cases are not part of the current built-in catalog.
 - Local publisher output: Markdown, DOCX, PDF, JSON, CSV, XLSX, PNG, MP4 and MP3
 - `ffprobe` media streams and SHA-256 manifest/seal generation
 

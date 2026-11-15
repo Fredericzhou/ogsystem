@@ -11,7 +11,7 @@ const landingCopy = {
     visualTask: "一个清楚的目标", visualTaskSub: "让团队朝同一个目标推进", visualRoleOne: "工程规划", visualRoleOneSub: "实现与依赖",
     visualRoleTwo: "体验设计", visualRoleTwoSub: "流程与细节", visualRoleThree: "质量把关", visualRoleThreeSub: "验收与风险",
     visualResult: "汇成一份共同成果", visualResultSub: "职责 · 交接 · 下一步", visualFooter: "职责清晰，协作有序，过程可追踪",
-    homeCasesEyebrow: "四类常见协作场景", homeCasesTitle: "从典型团队协作开始", homeAllCases: "查看全部协作案例",
+    homeCasesEyebrow: "三类常见协作场景", homeCasesTitle: "从典型团队协作开始", homeAllCases: "查看全部协作案例",
     promiseKicker: "面向真实工作", promiseTitle: "过程清楚，交付有据。", promiseOne: "每个职责都有清晰边界", promiseOneBody: "从目标拆解到结果整合，每项责任都在流程中明确。",
     promiseTwo: "工作交接看得见", promiseTwoBody: "随时了解谁在处理、信息如何流转。", promiseThree: "结果可以逐步检查", promiseThreeBody: "回看各方意见、汇总过程和最终输出。",
     homeFooter: "为复杂工作构建协作团队", homeFooterCta: "进入协作项目", openCase: "查看案例详情"
@@ -23,7 +23,7 @@ const landingCopy = {
     visualTask: "A clear shared goal", visualTaskSub: "One direction for the whole team", visualRoleOne: "Engineering plan", visualRoleOneSub: "Build and dependencies",
     visualRoleTwo: "Experience design", visualRoleTwoSub: "Flow and details", visualRoleThree: "Quality review", visualRoleThreeSub: "Acceptance and risks",
     visualResult: "One shared outcome", visualResultSub: "Ownership · Handoffs · Next steps", visualFooter: "Clear roles. Coordinated work. Visible progress.",
-    homeCasesEyebrow: "Four common collaboration scenarios", homeCasesTitle: "Explore representative team workflows", homeAllCases: "Browse all collaboration examples",
+    homeCasesEyebrow: "Three common collaboration scenarios", homeCasesTitle: "Explore representative team workflows", homeAllCases: "Browse all collaboration examples",
     promiseKicker: "Built for real work", promiseTitle: "Clear process. Reviewable results.", promiseOne: "Every responsibility has a clear boundary", promiseOneBody: "Each responsibility is explicit, from framing the task to assembling the result.",
     promiseTwo: "Handoffs stay visible", promiseTwoBody: "See who is working and how information moves through the team.", promiseThree: "Results are easy to review", promiseThreeBody: "Revisit each view, the synthesis, and the final output.",
     homeFooter: "Teams for complex work", homeFooterCta: "Open the team workspace", openCase: "Explore case details"
