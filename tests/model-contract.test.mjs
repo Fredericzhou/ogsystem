@@ -17,7 +17,7 @@ import {
   validateModelSelection,
   withDefaultModelSelection
 } from "../dist/runtime/model-selection.js";
-import { assertPiOutputWithinLimit, discoverConfiguredPiModels, mapPiEffectiveTools } from "../dist/runtime/pi-adapter.js";
+import { assertPiOutputWithinLimit, discoverConfiguredPiModels, mapPiEffectiveTools, resolvePiModelId } from "../dist/runtime/pi-adapter.js";
 import { discoverConfiguredKimiModels } from "../dist/runtime/kimi-adapter.js";
 import { discoverConfiguredQwenModels } from "../dist/runtime/qwen-adapter.js";
 import { BackendRegistry, opencodeBackendAdapter } from "../dist/runtime/model-backend-registry.js";
@@ -143,6 +143,8 @@ test("native CLI configuration discovery keeps Pi, Kimi, and Qwen model IDs back
     process.env.OGS_KIMI_MODEL = "env-only/kimi-model";
     process.env.OGS_QWEN_MODEL = "env-only/qwen-model";
     assert.deepEqual((await discoverConfiguredPiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna"]);
+    assert.equal(await resolvePiModelId("gpt-6-luna"), "ogs-codex/gpt-6-luna");
+    assert.equal(await resolvePiModelId("openai/gpt-6-luna"), "openai/gpt-6-luna");
     assert.deepEqual((await discoverConfiguredKimiModels()).map((model) => model.modelId), ["ogs-codex/gpt-6-luna", "env-only/kimi-model"]);
     assert.deepEqual((await discoverConfiguredQwenModels()).map((model) => model.modelId), ["gpt-6-luna", "env-only/qwen-model"]);
   } finally {
