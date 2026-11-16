@@ -35,11 +35,15 @@ import {
   redactPromptText,
   stringifyRedactedUnknown
 } from "./redaction.js";
+import { validateV2ContractValue } from "./contract-v2-loader.js";
+import type { HumanReviewRequestV2 } from "./contract-v2.js";
 import type {
   AuditRecord,
   BranchRecord,
   GraphState,
   HumanReviewDecisionRecord,
+  HumanReviewSpec,
+  LoopBudgetReview,
   OpencodeSessionRecord,
   PendingHumanReview,
   RoleExecutionOutput,
@@ -49,6 +53,7 @@ import type {
   RuntimeCheckpointRecord,
   RunContext,
   RuntimeConfig,
+  StoredRoleResult,
   SystemDefinition
 } from "./types.js";
 import { stringifyJson } from "./runtime-support.js";
@@ -1759,30 +1764,103 @@ export async function persistHumanReviewRequest(args: {
   await mkdir(args.context.reviewsDir, { recursive: true });
   const trigger = args.review.kind === "loop_budget" ? "exception" : "explicit";
   const status = args.review.status === "expired" ? "cancelled" : args.review.status === "paused" ? "pending" : args.review.status;
-  const request = {
-    ...args.review,
+  const request: HumanReviewRequestV2 & { payload: Record<string, unknown> } = {
     ogsContractVersion: 2,
     schemaVersion: 1,
+    reviewId: args.review.reviewId,
+    runId: args.context.runId,
+    round: args.review.round,
+    lineageId: args.review.lineageId,
+    branchId: args.review.branchId,
+    loopIteration: args.review.loopIteration,
+    stateVersion: args.review.stateVersion,
     trigger,
-    ...(trigger === "exception" ? { exceptionContext: { code: "loop_exhausted" } } : {}),
     status,
+    ...(trigger === "exception" ? { exceptionContext: { code: "loop_exhausted" } } : {}),
     payload: {
-      reviewId: args.review.reviewId,
-      runId: args.context.runId,
       roleId: args.review.roleId,
-      round: args.review.round,
-      lineageId: args.review.lineageId,
-      branchId: args.review.branchId,
-      loopIteration: args.review.loopIteration,
-      stateVersion: args.review.stateVersion,
-      trigger,
-      status
+      executionId: args.review.executionId,
+      ...(args.review.selectedEvent ? { selectedEvent: args.review.selectedEvent } : {}),
+      draftResult: args.review.draftResult,
+      requestedAt: args.review.requestedAt,
+      requestedByExecutionId: args.review.requestedByExecutionId,
+      spec: args.review.spec,
+      ...(args.review.kind ? { kind: args.review.kind } : {}),
+      ...(args.review.loopBudget ? { loopBudget: args.review.loopBudget } : {}),
+      ...(args.review.irDigest ? { irDigest: args.review.irDigest } : {})
     }
   };
+  await validateV2ContractValue(request, `human review request ${args.review.reviewId}`);
   await writeAtomicFile(
     buildHumanReviewRequestPath(args.context, args.review.reviewId),
     stringifyJson(request)
   );
+}
+
+type PersistedReviewPayload = {
+  roleId?: unknown;
+  executionId?: unknown;
+  selectedEvent?: unknown;
+  draftResult?: unknown;
+  requestedAt?: unknown;
+  requestedByExecutionId?: unknown;
+  spec?: unknown;
+  kind?: unknown;
+  loopBudget?: unknown;
+  irDigest?: unknown;
+  committedAt?: unknown;
+  timedOut?: unknown;
+  expiredAt?: unknown;
+  checkpointSequence?: unknown;
+  appliedAt?: unknown;
+  reconciledAt?: unknown;
+  rejectionCode?: unknown;
+  principal?: unknown;
+};
+
+function asPersistedReviewPayload(value: unknown): PersistedReviewPayload {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as PersistedReviewPayload
+    : {};
+}
+
+function pendingReviewFromV2(value: unknown, path: string): PendingHumanReview {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`Invalid human review request: ${path}`);
+  const root = value as Record<string, unknown>;
+  const payload = asPersistedReviewPayload(root.payload);
+  if (typeof root.reviewId !== "string" || typeof root.runId !== "string" || typeof root.lineageId !== "string" || typeof root.branchId !== "string" || typeof root.round !== "number" || typeof root.loopIteration !== "number" || typeof root.stateVersion !== "number") {
+    throw new Error(`Invalid human review request binding: ${path}`);
+  }
+  if (typeof payload.roleId !== "string" || typeof payload.executionId !== "string" || typeof payload.requestedAt !== "string" || typeof payload.requestedByExecutionId !== "string" || !payload.draftResult || !payload.spec || typeof payload.spec !== "object" || Array.isArray(payload.spec)) {
+    throw new Error(`Invalid human review request payload: ${path}`);
+  }
+  const status = root.status === "cancelled" ? "expired" : root.status === "pending" ? "pending" : root.status === "resolved" ? "resolved" : undefined;
+  if (!status) throw new Error(`Invalid human review request status: ${path}`);
+  return {
+    reviewId: root.reviewId,
+    roleId: payload.roleId,
+    branchId: root.branchId,
+    lineageId: root.lineageId,
+    loopIteration: root.loopIteration,
+    executionId: payload.executionId,
+    ...(typeof payload.selectedEvent === "string" ? { selectedEvent: payload.selectedEvent } : {}),
+    draftResult: payload.draftResult as StoredRoleResult,
+    requestedAt: payload.requestedAt,
+    requestedByExecutionId: payload.requestedByExecutionId,
+    status,
+    round: root.round,
+    spec: payload.spec as HumanReviewSpec,
+    ...(payload.kind === "human" || payload.kind === "loop_budget" ? { kind: payload.kind } : {}),
+    ...(payload.loopBudget && typeof payload.loopBudget === "object" && !Array.isArray(payload.loopBudget) ? { loopBudget: payload.loopBudget as LoopBudgetReview } : {}),
+    stateVersion: root.stateVersion,
+    ...(typeof payload.irDigest === "string" ? { irDigest: payload.irDigest } : {})
+  };
+}
+
+async function readV2ReviewRequest(path: string): Promise<PendingHumanReview> {
+  const raw = await readJsonFile(path);
+  await validateV2ContractValue(raw, path);
+  return pendingReviewFromV2(raw, path);
 }
 
 export async function loadHumanReviewRequests(args: {
@@ -1797,11 +1875,7 @@ export async function loadHumanReviewRequests(args: {
     if (!entry.isFile() || !entry.name.endsWith(".request.json")) {
       continue;
     }
-    const raw = await readJsonFile(resolve(args.context.reviewsDir, entry.name));
-    if (!isPendingHumanReview(raw)) {
-      throw new Error(`Invalid human review request: ${resolve(args.context.reviewsDir, entry.name)}`);
-    }
-    reviews.push(raw);
+    reviews.push(await readV2ReviewRequest(resolve(args.context.reviewsDir, entry.name)));
   }
   return reviews.sort((left, right) => left.reviewId.localeCompare(right.reviewId));
 }
@@ -1811,14 +1885,31 @@ export async function persistHumanReviewDecision(args: {
   decision: HumanReviewDecisionRecord;
 }): Promise<void> {
   await mkdir(args.context.reviewsDir, { recursive: true });
-  const decision = {
-    ...args.decision,
+  const action = args.decision.decision;
+  if (action === "pause") throw new Error("Runtime timeout pause is not a persisted Human Review decision");
+  let trigger: "explicit" | "exception" = "explicit";
+  const requestPath = buildHumanReviewRequestPath(args.context, args.decision.reviewId);
+  const request = await readJsonFile(requestPath).catch(() => undefined);
+  if (request && typeof request === "object" && !Array.isArray(request) && (request as Record<string, unknown>).trigger === "exception") trigger = "exception";
+  const exceptionActions = new Set(["continue", "retry", "rework", "reject", "terminate"]);
+  const businessActions = new Set(["approve", "rework", "reject"]);
+  if (!(trigger === "explicit" ? businessActions : exceptionActions).has(action)) {
+    throw new Error(`V2_REVIEW_ACTION_INVALID: ${trigger} review cannot persist action "${action}"`);
+  }
+  const decision: HumanReviewRequestV2 & { payload: Record<string, unknown> } = {
     ogsContractVersion: 2,
     schemaVersion: 1,
-    status: args.decision.decision === "pause" ? "pending" : "resolved",
-    payload: {
-      reviewId: args.decision.reviewId,
-      action: args.decision.decision,
+    reviewId: args.decision.reviewId,
+    runId: args.context.runId,
+    round: args.decision.round,
+    lineageId: args.decision.lineageId,
+    branchId: args.decision.branchId,
+    loopIteration: args.decision.loopIteration,
+    stateVersion: args.decision.stateVersion,
+    trigger,
+    status: "resolved",
+    decision: {
+      action,
       actor: args.decision.actor ?? "unknown",
       decidedAt: args.decision.decidedAt,
       round: args.decision.round,
@@ -1830,12 +1921,62 @@ export async function persistHumanReviewDecision(args: {
       ...(args.decision.targetRoleId ? { targetRoleId: args.decision.targetRoleId } : {}),
       ...(args.decision.scope ? { scope: args.decision.scope } : {}),
       ...(args.decision.additionalBudget !== undefined ? { additionalBudget: args.decision.additionalBudget } : {})
+    },
+    payload: {
+      committedAt: args.decision.committedAt,
+      ...(args.decision.timedOut ? { timedOut: true } : {}),
+      ...(args.decision.expiredAt ? { expiredAt: args.decision.expiredAt } : {}),
+      ...(args.decision.checkpointSequence !== undefined ? { checkpointSequence: args.decision.checkpointSequence } : {}),
+      ...(args.decision.appliedAt ? { appliedAt: args.decision.appliedAt } : {}),
+      ...(args.decision.reconciledAt ? { reconciledAt: args.decision.reconciledAt } : {}),
+      ...(args.decision.rejectionCode ? { rejectionCode: args.decision.rejectionCode } : {}),
+      ...(args.decision.principal ? { principal: args.decision.principal } : {})
     }
   };
-  await writeAtomicFile(
-    buildHumanReviewDecisionPath(args.context, args.decision.reviewId),
-    stringifyJson(decision)
-  );
+  await validateV2ContractValue(decision, `human review decision ${args.decision.reviewId}`);
+  await writeAtomicFile(buildHumanReviewDecisionPath(args.context, args.decision.reviewId), stringifyJson(decision));
+}
+
+function decisionFromV2(value: unknown, path: string): HumanReviewDecisionRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`Invalid human review decision: ${path}`);
+  const root = value as Record<string, unknown>;
+  const rawDecision = root.decision;
+  if (typeof rawDecision !== "object" || rawDecision === null || Array.isArray(rawDecision)) throw new Error(`Invalid human review decision action: ${path}`);
+  const decision = rawDecision as Record<string, unknown>;
+  const payload = asPersistedReviewPayload(root.payload);
+  if (typeof root.reviewId !== "string" || typeof root.runId !== "string" || typeof root.lineageId !== "string" || typeof root.branchId !== "string" || typeof root.round !== "number" || typeof root.loopIteration !== "number" || typeof root.stateVersion !== "number") throw new Error(`Invalid human review decision binding: ${path}`);
+  const action = decision.action;
+  if (!["approve", "rework", "reject", "continue", "retry", "terminate"].includes(String(action))) throw new Error(`Invalid human review decision action: ${path}`);
+  if (typeof decision.actor !== "string" || typeof decision.decidedAt !== "string") throw new Error(`Invalid human review decision metadata: ${path}`);
+  return {
+    reviewId: root.reviewId,
+    round: root.round,
+    lineageId: root.lineageId,
+    branchId: root.branchId,
+    loopIteration: root.loopIteration,
+    stateVersion: root.stateVersion,
+    committedAt: typeof payload.committedAt === "string" ? payload.committedAt : decision.decidedAt,
+    decidedAt: decision.decidedAt,
+    decision: action as HumanReviewDecisionRecord["decision"],
+    actor: decision.actor,
+    ...(typeof decision.comment === "string" ? { comment: decision.comment } : {}),
+    ...(typeof decision.targetRoleId === "string" ? { targetRoleId: decision.targetRoleId } : {}),
+    ...(decision.scope === "branch" || decision.scope === "run" ? { scope: decision.scope } : {}),
+    ...(typeof decision.additionalBudget === "number" ? { additionalBudget: decision.additionalBudget } : {}),
+    ...(payload.timedOut === true ? { timedOut: true } : {}),
+    ...(typeof payload.expiredAt === "string" ? { expiredAt: payload.expiredAt } : {}),
+    ...(typeof payload.checkpointSequence === "number" ? { checkpointSequence: payload.checkpointSequence } : {}),
+    ...(typeof payload.appliedAt === "string" ? { appliedAt: payload.appliedAt } : {}),
+    ...(typeof payload.reconciledAt === "string" ? { reconciledAt: payload.reconciledAt } : {}),
+    ...(typeof payload.rejectionCode === "string" ? { rejectionCode: payload.rejectionCode } : {}),
+    ...(payload.principal && typeof payload.principal === "object" ? { principal: payload.principal as HumanReviewDecisionRecord["principal"] } : {})
+  };
+}
+
+async function readV2ReviewDecision(path: string): Promise<HumanReviewDecisionRecord> {
+  const raw = await readJsonFile(path);
+  await validateV2ContractValue(raw, path);
+  return decisionFromV2(raw, path);
 }
 
 export async function loadHumanReviewDecisions(args: {
@@ -1851,14 +1992,11 @@ export async function loadHumanReviewDecisions(args: {
     if (!entry.isFile() || !entry.name.endsWith(".decision.json")) {
       continue;
     }
-    const raw = await readJsonFile(resolve(args.context.reviewsDir, entry.name));
-    if (!isHumanReviewDecisionRecord(raw)) {
-      throw new Error(`Invalid human review decision: ${resolve(args.context.reviewsDir, entry.name)}`);
-    }
-    if (args.unresolvedOnly && raw.reconciledAt && raw.appliedAt && raw.checkpointSequence !== undefined) {
+    const decision = await readV2ReviewDecision(resolve(args.context.reviewsDir, entry.name));
+    if (args.unresolvedOnly && decision.reconciledAt && decision.appliedAt && decision.checkpointSequence !== undefined) {
       continue;
     }
-    decisions.push(raw);
+    decisions.push(decision);
   }
   return decisions.sort((left, right) => left.reviewId.localeCompare(right.reviewId));
 }
@@ -1871,17 +2009,14 @@ export async function markHumanReviewDecisionApplied(args: {
   reconciledAt?: string;
 }): Promise<HumanReviewDecisionRecord> {
   const path = buildHumanReviewDecisionPath(args.context, args.reviewId);
-  const raw = await readJsonFile(path);
-  if (!isHumanReviewDecisionRecord(raw)) {
-    throw new Error(`Invalid human review decision: ${path}`);
-  }
+  const raw = await readV2ReviewDecision(path);
   const updated: HumanReviewDecisionRecord = {
     ...raw,
     checkpointSequence: args.checkpointSequence,
     appliedAt: args.appliedAt ?? raw.appliedAt ?? new Date().toISOString(),
     reconciledAt: args.reconciledAt ?? raw.reconciledAt
   };
-  await writeJsonFileAtomic(path, updated);
+  await persistHumanReviewDecision({ context: args.context, decision: updated });
   return updated;
 }
 
@@ -1891,15 +2026,12 @@ export async function markHumanReviewDecisionReconciled(args: {
   reconciledAt?: string;
 }): Promise<HumanReviewDecisionRecord> {
   const path = buildHumanReviewDecisionPath(args.context, args.reviewId);
-  const raw = await readJsonFile(path);
-  if (!isHumanReviewDecisionRecord(raw)) {
-    throw new Error(`Invalid human review decision: ${path}`);
-  }
+  const raw = await readV2ReviewDecision(path);
   const updated: HumanReviewDecisionRecord = {
     ...raw,
     reconciledAt: args.reconciledAt ?? new Date().toISOString()
   };
-  await writeJsonFileAtomic(path, updated);
+  await persistHumanReviewDecision({ context: args.context, decision: updated });
   return updated;
 }
 
@@ -2310,6 +2442,33 @@ export async function appendEvent(
     path: context.engineLogPath,
     content: `${state.pendingByKey.get("engine-log")?.content ?? ""}${encoded}`
   });
+}
+
+/**
+ * Append recovery/lifecycle evidence when the full live RunContext is not
+ * available (for example during timeout reconciliation after process restart).
+ * The event still goes through the same envelope, deduplication, redaction and
+ * buffered flush path as live execution events.
+ */
+export async function appendRunLifecycleEvent(args: {
+  runDir: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  const runDir = resolve(args.runDir);
+  const logsDir = resolve(runDir, "logs");
+  const context = {
+    runId: basename(runDir),
+    runDir,
+    eventsPath: resolve(runDir, "events.ndjson"),
+    logsDir,
+    engineLogPath: resolve(logsDir, "engine.ndjson"),
+    roleLogsDir: resolve(logsDir, "roles"),
+    redaction: { enabled: true }
+  } as unknown as RunContext;
+  await mkdir(logsDir, { recursive: true });
+  await mkdir(context.roleLogsDir, { recursive: true });
+  await appendEvent(context, args.payload);
+  await flushBufferedRunArtifacts(context);
 }
 
 export async function appendBufferedText(args: {

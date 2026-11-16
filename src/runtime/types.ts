@@ -98,7 +98,7 @@ export type FlowContractPlan = {
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
 /** Decisions accepted from the control plane. Runtime timeout pause is internal-only. */
-export type HumanReviewDecision = "approve" | "rework" | "terminate" | "continue" | "reject";
+export type HumanReviewDecision = "approve" | "rework" | "terminate" | "continue" | "retry" | "reject";
 export type RuntimeReviewTimeoutAction = "pause" | "terminate";
 
 export type HumanReviewSpec = {
@@ -854,7 +854,7 @@ export type HumanReviewDecisionRecord = {
   stateVersion: number;
   committedAt: string;
   decidedAt: string;
-  /** A timeout may persist the internal-only `pause` lifecycle action. */
+  /** A timeout may use the internal-only `pause` lifecycle action in memory. */
   decision: HumanReviewDecision | "pause";
   targetRoleId?: string;
   additionalBudget?: number;

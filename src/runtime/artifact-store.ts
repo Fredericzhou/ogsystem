@@ -8,6 +8,7 @@ import {
   allocateRoleExecution,
   appendBufferedText,
   appendEvent,
+  appendRunLifecycleEvent,
   buildRoleSessionKey,
   flushBufferedRunArtifacts,
   getRoleSession,
@@ -31,6 +32,7 @@ export type ArtifactStore = {
   persistResult: typeof persistRoleResult;
   persistExecutionOutcome: typeof persistRoleExecutionOutcome;
   appendEvent: typeof appendEvent;
+  appendRunLifecycleEvent: typeof appendRunLifecycleEvent;
   appendText: typeof appendBufferedText;
   flush: typeof flushBufferedRunArtifacts;
 };
@@ -46,6 +48,7 @@ export const filesystemArtifactStore: ArtifactStore = {
   persistResult: persistRoleResult,
   persistExecutionOutcome: persistRoleExecutionOutcome,
   appendEvent,
+  appendRunLifecycleEvent,
   appendText: appendBufferedText,
   flush: flushBufferedRunArtifacts
 };

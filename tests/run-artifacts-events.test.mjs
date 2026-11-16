@@ -308,6 +308,51 @@ test("human review persistence writes v2 request and decision metadata", async (
   assert.equal(decision.ogsContractVersion, 2);
   assert.equal(decision.schemaVersion, 1);
   assert.equal(decision.status, "resolved");
-  assert.equal(decision.decision, "approve");
-  assert.equal(decision.payload.reviewId, review.reviewId);
+  assert.equal(decision.decision.action, "approve");
+  assert.equal(decision.reviewId, review.reviewId);
+  assert.equal(decision.runId, context.runId);
+  assert.equal(Object.hasOwn(decision, "draftResult"), false);
+});
+
+test("explicit Human Review rejects runtime exception actions at the persistence boundary", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-review-v2-action-boundary-"));
+  const context = {
+    runId: "run-review-v2-action-boundary",
+    reviewsDir: path.resolve(tempRoot, "control", "reviews")
+  };
+  await persistHumanReviewRequest({
+    context,
+    review: {
+      reviewId: "review.branch-1.r1",
+      roleId: "writer",
+      branchId: "branch-1",
+      lineageId: "lineage-1",
+      loopIteration: 0,
+      executionId: "exec-1",
+      draftResult: { content: "draft", data: {} },
+      requestedAt: "2026-04-18T00:00:00.000Z",
+      requestedByExecutionId: "exec-1",
+      status: "pending",
+      round: 1,
+      spec: { mode: "required", timeoutAction: "pause", terminateScope: "run" },
+      stateVersion: 1
+    }
+  });
+  await assert.rejects(
+    persistHumanReviewDecision({
+      context,
+      decision: {
+        reviewId: "review.branch-1.r1",
+        round: 1,
+        lineageId: "lineage-1",
+        branchId: "branch-1",
+        loopIteration: 0,
+        stateVersion: 1,
+        committedAt: "2026-04-18T00:00:01.000Z",
+        decidedAt: "2026-04-18T00:00:01.000Z",
+        decision: "retry"
+      }
+    }),
+    /V2_REVIEW_ACTION_INVALID/
+  );
 });

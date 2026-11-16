@@ -28,6 +28,7 @@ import { chooseDefaultModelFromCatalog, discoverLocalModelCatalog, type Discover
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
 import { ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
+import { filesystemArtifactStore } from "./artifact-store.js";
 import { filesystemRunStore } from "./run-store.js";
 import { projectTargetConfig } from "./project-target.js";
 import { stringifyJson } from "./runtime-support.js";
@@ -38,7 +39,7 @@ import type { ControlPlanePrincipal } from "./identity.js";
 import { systemDefinitionToDesign, saveSystemDesign, loadSystemDesign } from "../design/index.js";
 import { RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED } from "../business-events.js";
 import { getLoopBudgetTargetRoleIds, resolveLoopBudgetTerminateScope } from "./loop-budget.js";
-import { loadExecutionBindingsV2 } from "./contract-v2-loader.js";
+import { loadExecutionBindingsV2, validateV2ContractValue } from "./contract-v2-loader.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -805,30 +806,18 @@ function deriveCurrentReviewStatus(args: {
     !Array.isArray(args.currentState)
       ? (args.currentState as { status?: unknown })
       : undefined;
-  const decision =
-    typeof args.decisionSnapshot === "object" && args.decisionSnapshot !== null && !Array.isArray(args.decisionSnapshot)
-      ? args.decisionSnapshot as Record<string, unknown>
-      : undefined;
+  const decision = normalizePersistedReview(args.decisionSnapshot);
   if (decision?.timedOut === true && decision.decision === "terminate") return "expired";
   if (decision?.timedOut === true && decision.decision === "pause") return "paused";
   if (typeof currentState?.status === "string") {
     return currentState.status;
   }
 
-  if (
-    typeof args.decisionSnapshot === "object" &&
-    args.decisionSnapshot !== null &&
-    !Array.isArray(args.decisionSnapshot)
-  ) {
+  if (decision) {
     return "resolved";
   }
 
-  const requestSnapshot =
-    typeof args.requestSnapshot === "object" &&
-    args.requestSnapshot !== null &&
-    !Array.isArray(args.requestSnapshot)
-      ? (args.requestSnapshot as { status?: unknown })
-      : undefined;
+  const requestSnapshot = normalizePersistedReview(args.requestSnapshot);
   if (typeof requestSnapshot?.status === "string") {
     return requestSnapshot.status;
   }
@@ -836,24 +825,27 @@ function deriveCurrentReviewStatus(args: {
   return "unknown";
 }
 
+/** Flatten V2 persisted review payloads for legacy UI/state projections. */
+function normalizePersistedReview(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const payload = typeof record.payload === "object" && record.payload !== null && !Array.isArray(record.payload)
+    ? record.payload as Record<string, unknown>
+    : {};
+  const flattened = { ...payload, ...record };
+  const decision = typeof(record.decision) === "object" && record.decision !== null && !Array.isArray(record.decision)
+    ? record.decision as Record<string, unknown>
+    : undefined;
+  if (decision) Object.assign(flattened, decision, { decision: decision.action });
+  return flattened;
+}
+
 function deriveReviewDecisionPhase(decisionSnapshot: unknown):
   | "recorded"
   | "pending_reconcile"
   | "applied"
   | undefined {
-  const decision =
-    typeof decisionSnapshot === "object" &&
-    decisionSnapshot !== null &&
-    !Array.isArray(decisionSnapshot)
-      ? (decisionSnapshot as {
-          committedAt?: unknown;
-          checkpointSequence?: unknown;
-          appliedAt?: unknown;
-          reconciledAt?: unknown;
-          decision?: unknown;
-          decidedAt?: unknown;
-        })
-      : undefined;
+  const decision = normalizePersistedReview(decisionSnapshot);
   if (!decision) {
     return undefined;
   }
@@ -878,15 +870,17 @@ function deriveEffectiveTerminateScope(args: {
   currentState?: unknown;
 }): "branch" | "run" | undefined {
   const readScope = (value: unknown): "branch" | "run" | undefined => {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-    const record = value as {
-      kind?: unknown;
-      loopBudget?: { terminateScope?: unknown };
-      spec?: { terminateScope?: unknown };
-    };
+    const record = normalizePersistedReview(value);
+    if (!record) return undefined;
+    const loopBudget = record.loopBudget && typeof record.loopBudget === "object" && !Array.isArray(record.loopBudget)
+      ? record.loopBudget as { terminateScope?: unknown }
+      : undefined;
+    const spec = record.spec && typeof record.spec === "object" && !Array.isArray(record.spec)
+      ? record.spec as { terminateScope?: unknown }
+      : undefined;
     if (record.kind === "loop_budget") {
-      const loopScope = record.loopBudget?.terminateScope;
-      const legacyScope = record.spec?.terminateScope;
+      const loopScope = loopBudget?.terminateScope;
+      const legacyScope = spec?.terminateScope;
       if (loopScope === "branch" || loopScope === "run" || legacyScope === "branch" || legacyScope === "run") {
         return resolveLoopBudgetTerminateScope({
           loopBudget: loopScope === "branch" || loopScope === "run" ? { terminateScope: loopScope } : undefined,
@@ -894,7 +888,7 @@ function deriveEffectiveTerminateScope(args: {
         });
       }
     }
-    const scope = record.spec?.terminateScope;
+    const scope = spec?.terminateScope;
     return scope === "branch" || scope === "run" ? scope : undefined;
   };
   const currentScope = readScope(args.currentState);
@@ -915,24 +909,14 @@ function normalizeReviewProjection(args: {
   history?: Record<string, unknown>[];
   humanReviewContext?: Record<string, unknown>;
 }): Record<string, unknown> {
-  const requestSnapshot =
-    typeof args.requestSnapshot === "object" &&
-    args.requestSnapshot !== null &&
-    !Array.isArray(args.requestSnapshot)
-      ? (args.requestSnapshot as Record<string, unknown>)
-      : undefined;
+  const requestSnapshot = normalizePersistedReview(args.requestSnapshot);
   const currentState =
     typeof args.currentState === "object" &&
     args.currentState !== null &&
     !Array.isArray(args.currentState)
       ? (args.currentState as Record<string, unknown>)
       : undefined;
-  const decisionSnapshot =
-    typeof args.decisionSnapshot === "object" &&
-    args.decisionSnapshot !== null &&
-    !Array.isArray(args.decisionSnapshot)
-      ? (args.decisionSnapshot as Record<string, unknown>)
-      : undefined;
+  const decisionSnapshot = normalizePersistedReview(args.decisionSnapshot);
   const source = currentState ?? requestSnapshot;
   const loopBudget =
     source?.kind === "loop_budget" && typeof source.loopBudget === "object" && source.loopBudget !== null && !Array.isArray(source.loopBudget)
@@ -1423,21 +1407,6 @@ export async function syncProjectModels(args: {
     commandRunner: args.commandRunner
   });
   await writeJsonFileAtomic(paths.modelCatalogPath, catalog);
-  const candidate = chooseDefaultModelFromCatalog(catalog);
-  if (candidate && await stat(paths.executionBindingsPath).then(() => true).catch(() => false)) {
-    const bindings = await readJsonFile(paths.executionBindingsPath);
-    if (bindings && typeof bindings === "object" && !Array.isArray(bindings)) {
-      const root = bindings as Record<string, unknown>;
-      const templates = root.harnessTemplates;
-      if (templates && typeof templates === "object" && !Array.isArray(templates)) {
-        const updatedTemplates = Object.fromEntries(Object.entries(templates as Record<string, unknown>).map(([id, value]) => {
-          if (!value || typeof value !== "object" || Array.isArray(value)) return [id, value];
-          return [id, { ...(value as Record<string, unknown>), backend: candidate.backend, model: candidate.modelId }];
-        }));
-        await writeJsonFileAtomic(paths.executionBindingsPath, { ...root, harnessTemplates: updatedTemplates });
-      }
-    }
-  }
   return {
     catalogPath: paths.modelCatalogPath,
     executionBindingsPath: paths.executionBindingsPath
@@ -1790,6 +1759,27 @@ function resolveReviewsDir(runDir: string): string {
 
 async function createReviewDecision(path: string, decision: HumanReviewDecisionRecord): Promise<boolean> {
   await mkdir(dirname(path), { recursive: true });
+  if (decision.decision === "pause") {
+    const timeoutPath = resolve(dirname(path), `${decision.reviewId}.timeout.json`);
+    try {
+      await writeFile(timeoutPath, `${JSON.stringify({
+        kind: "human_review_timeout",
+        reviewId: decision.reviewId,
+        action: "pause",
+        timedOut: true,
+        expiredAt: decision.expiredAt ?? decision.decidedAt,
+        recordedAt: decision.committedAt
+      })}\n`, { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    return true;
+  }
+  const requestPath = resolve(dirname(path), `${decision.reviewId}.request.json`);
+  const request = await readJsonFile(requestPath).catch(() => undefined);
+  const trigger = request && typeof request === "object" && !Array.isArray(request) && (request as Record<string, unknown>).trigger === "exception"
+    ? "exception"
+    : "explicit";
   let handle: Awaited<ReturnType<typeof open>>;
   try {
     handle = await open(path, "wx");
@@ -1800,16 +1790,39 @@ async function createReviewDecision(path: string, decision: HumanReviewDecisionR
   try {
     const runId = basename(dirname(dirname(dirname(path))));
     const persisted = {
-      ...decision,
       ogsContractVersion: 2,
       schemaVersion: 1,
-      status: decision.decision === "pause" ? "paused" : "resolved",
-      eventId: `review_decision:${decision.reviewId}:${decision.committedAt}`,
-      eventType: "human_review_decision",
+      reviewId: decision.reviewId,
       runId,
-      recordedAt: decision.decidedAt,
-      payload: decision
+      round: decision.round,
+      lineageId: decision.lineageId,
+      branchId: decision.branchId,
+      loopIteration: decision.loopIteration,
+      stateVersion: decision.stateVersion,
+      trigger,
+      status: "resolved" as const,
+      decision: {
+        action: decision.decision,
+        actor: decision.actor ?? "unknown",
+        decidedAt: decision.decidedAt,
+        round: decision.round,
+        lineageId: decision.lineageId,
+        branchId: decision.branchId,
+        loopIteration: decision.loopIteration,
+        stateVersion: decision.stateVersion,
+        ...(decision.comment ? { comment: decision.comment } : {}),
+        ...(decision.targetRoleId ? { targetRoleId: decision.targetRoleId } : {}),
+        ...(decision.scope ? { scope: decision.scope } : {}),
+        ...(decision.additionalBudget !== undefined ? { additionalBudget: decision.additionalBudget } : {})
+      },
+      payload: {
+        committedAt: decision.committedAt,
+        ...(decision.timedOut ? { timedOut: true } : {}),
+        ...(decision.expiredAt ? { expiredAt: decision.expiredAt } : {}),
+        ...(decision.principal ? { principal: decision.principal } : {})
+      }
     };
+    await validateV2ContractValue(persisted, path);
     await handle.writeFile(`${JSON.stringify(persisted, null, 2)}\n`, "utf8");
     await handle.sync();
   } finally {
@@ -1851,8 +1864,9 @@ async function reconcileHumanReviewTimeoutsUnlocked(
     const decisionPath = resolve(reviewsDir, `${reviewId}.decision.json`);
     const existingDecision = await loadReviewRecord(decisionPath);
     if (existingDecision) {
-      if (typeof existingDecision === "object" && !Array.isArray(existingDecision) && (existingDecision as Record<string, unknown>).timedOut === true) {
-        const decision = existingDecision as Record<string, unknown>;
+      const existingDecisionView = normalizePersistedReview(existingDecision);
+      if (existingDecisionView?.timedOut === true) {
+        const decision = existingDecisionView;
         const action = decision.decision === "terminate" ? "terminate" : "pause";
         timedOut.push({ reviewId, action });
         const request = await loadReviewRecord(resolve(reviewsDir, entry.name));
@@ -1862,7 +1876,7 @@ async function reconcileHumanReviewTimeoutsUnlocked(
     }
     const request = await loadReviewRecord(resolve(reviewsDir, entry.name));
     if (!request || typeof request !== "object" || Array.isArray(request)) continue;
-    const review = request as Record<string, unknown>;
+    const review = normalizePersistedReview(request) ?? {};
     const spec = typeof review.spec === "object" && review.spec !== null && !Array.isArray(review.spec)
       ? review.spec as Record<string, unknown>
       : undefined;
@@ -1939,23 +1953,7 @@ async function ensureHumanReviewTimeoutEvent(args: {
     action: args.action,
     ...(args.decision.scope ? { scope: args.decision.scope } : {})
   };
-  const event = {
-    ...payload,
-    ogsContractVersion: 2,
-    schemaVersion: 1,
-    eventId,
-    eventType: payload.type,
-    runId: basename(args.runDir),
-    recordedAt: payload.at,
-    payload
-  };
-  const handle = await open(eventsPath, "a");
-  try {
-    await handle.writeFile(`${JSON.stringify(event)}\n`, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
+  await filesystemArtifactStore.appendRunLifecycleEvent({ runDir: args.runDir, payload: { ...payload, eventId } });
 }
 
 async function ensureHumanReviewBindingRejectedEvent(args: {
@@ -1966,10 +1964,16 @@ async function ensureHumanReviewBindingRejectedEvent(args: {
   const eventId = `human_review_decision_rejected:${args.reviewId}:binding-missing`;
   const eventsPath = resolve(args.runDir, "events.ndjson");
   const events = await readFile(eventsPath, "utf8").catch(() => "");
-  if (events.split(/\r?\n/).some((line) => line.includes(`\"id\":\"${eventId}\"`))) return;
-  const requestRecord = typeof args.request === "object" && args.request !== null && !Array.isArray(args.request)
-    ? args.request as Record<string, unknown>
-    : {};
+  if (events.split(/\r?\n/).some((line) => {
+    if (!line) return false;
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      return parsed.eventId === eventId || parsed.id === eventId;
+    } catch {
+      return false;
+    }
+  })) return;
+  const requestRecord = normalizePersistedReview(args.request) ?? {};
   const payload = {
     type: RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
     at: new Date().toISOString(),
@@ -1980,23 +1984,7 @@ async function ensureHumanReviewBindingRejectedEvent(args: {
     reasonCode: "GRAPH_REVIEW_BINDING_MISSING",
     message: "Human review request is missing the required round, lineageId, branchId, loopIteration, or stateVersion binding."
   };
-  const event = {
-    ...payload,
-    ogsContractVersion: 2,
-    schemaVersion: 1,
-    eventId,
-    eventType: payload.type,
-    runId: basename(args.runDir),
-    recordedAt: payload.at,
-    payload
-  };
-  const handle = await open(eventsPath, "a");
-  try {
-    await handle.writeFile(`${JSON.stringify(event)}\n`, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
+  await filesystemArtifactStore.appendRunLifecycleEvent({ runDir: args.runDir, payload: { ...payload, eventId } });
 }
 
 async function loadReviewRecord(path: string): Promise<unknown | undefined> {
@@ -2254,16 +2242,40 @@ export async function writeHumanReviewDecision(args: {
   };
   const decisionPath = resolve(reviewsDir, `${args.reviewId}.decision.json`);
   if (priorDecision) {
-    await writeJsonFileAtomic(decisionPath, {
-      ...record,
+    const persisted = {
       ogsContractVersion: 2,
       schemaVersion: 1,
-      status: record.decision === "pause" ? "paused" : "resolved",
-      eventId: `review_decision:${record.reviewId}:${record.committedAt}`,
-      eventType: "human_review_decision",
+      reviewId: record.reviewId,
       runId: args.runId,
-      recordedAt: record.decidedAt,
-      payload: record
+      round: record.round,
+      lineageId: record.lineageId,
+      branchId: record.branchId,
+      loopIteration: record.loopIteration,
+      stateVersion: record.stateVersion,
+      trigger: isLoopBudgetReview ? "exception" as const : "explicit" as const,
+      status: "resolved" as const,
+      decision: {
+        action: record.decision,
+        actor: record.actor ?? "unknown",
+        decidedAt: record.decidedAt,
+        round: record.round,
+        lineageId: record.lineageId,
+        branchId: record.branchId,
+        loopIteration: record.loopIteration,
+        stateVersion: record.stateVersion,
+        ...(record.comment ? { comment: record.comment } : {}),
+        ...(record.targetRoleId ? { targetRoleId: record.targetRoleId } : {}),
+        ...(record.scope ? { scope: record.scope } : {}),
+        ...(record.additionalBudget !== undefined ? { additionalBudget: record.additionalBudget } : {})
+      },
+      payload: {
+        committedAt: record.committedAt,
+        ...(record.principal ? { principal: record.principal } : {})
+      }
+    };
+    await validateV2ContractValue(persisted, decisionPath);
+    await writeJsonFileAtomic(decisionPath, {
+      ...persisted,
     });
   } else if (!(await createReviewDecision(decisionPath, record))) {
     throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
