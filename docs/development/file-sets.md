@@ -1,8 +1,9 @@
 # Runtime And NL2MMD File Sets
 
-This document records the current source ownership boundaries for `src/runtime/*` and
+This document records the current v2 source ownership boundaries for `src/runtime/*` and
 `src/nl2mmd/*`. It is a dependency and review map, not a second API specification. Code and
-tests remain the source of truth when this map and the implementation disagree.
+tests remain the source of truth when this map and the implementation disagree. Historical v1
+names below identify internal adapters or rejection diagnostics only; they are not v2 inputs.
 
 ## Authorities
 
@@ -10,8 +11,8 @@ tests remain the source of truth when this map and the implementation disagree.
 
 - Mermaid parsing, static semantics, Semantic IR, execution plans, routing, joins, loops, and
   state reduction;
-- role/model binding resolution, model catalog and selection rules, configuration validation, and
-  executor contracts;
+- Harness Binding resolution, capability previews, model catalog normalization, configuration
+  validation, and executor contracts;
 - graph execution, OpenCode/tool execution, error envelopes, human-review control, persistence,
   checkpoints, resume, audit records, and runtime projections;
 - runtime/project lifecycle and the top-level `ogs` CLI dispatch.
@@ -24,9 +25,10 @@ tests remain the source of truth when this map and the implementation disagree.
 - NL2MMD-facing validation orchestration and text-graph preview.
 
 NL2MMD may ask runtime to validate or resolve a contract, but it must not redefine runtime
-execution semantics, model selection semantics, or persisted run authority. Runtime remains the
-authority for model selection and execution contracts. NL2MMD remains the authority for turning
-natural-language requests into Mermaid candidates and coordinating that workflow.
+execution semantics or persisted run authority. Runtime remains the authority for Harness
+bindings and execution contracts. NL2MMD remains the authority for turning natural-language
+requests into Mermaid candidates and coordinating that workflow; its `--model` option is an
+authoring model only and never creates a Runtime binding.
 
 ## Internal File Sets
 
@@ -38,7 +40,7 @@ set, but a change should be reviewed by the owner of the set whose contract it c
 | Runtime contracts and planning | `types.ts`, `flow-contract.ts`, `event-contract.ts`, `condition-ast.ts`, `static-semantics.ts`, `semantic-ir.ts`, `semantic-ir-compiler.ts`, `compiler.ts`, `execution-plan.ts`, `plan-fingerprint.ts`, `transition-planner.ts`, `graph-mode-registry.ts`, `join-policy.ts`, `subgraph.ts`, `graph-runtime-state.ts`, `state-reducer.ts`, `capability-policy.ts` | Parsed/compiled contracts, graph semantics, planning, fingerprints, and state transition rules |
 | Runtime execution | `graph-runner.ts`, `executor.ts`, `role-executor.ts`, `opencode-executor.ts`, `tool-runner.ts`, `adapter.ts`, `engine-adapter.ts`, `langgraph-engine-adapter.ts`, `filesystem-runtime-services.ts` | Scheduling, role execution, engine ports, and execution backends |
 | Runtime persistence and recovery | `artifact-store.ts`, `audit-recorder.ts`, `checkpoint-store.ts`, `run-artifact-policy.ts`, `run-artifacts.ts`, `run-store.ts`, `review-store.ts`, `role-execution-recorder.ts`, `versioned-state.ts`, `timeline-projector.ts` | Durable artifacts, locks, checkpoints, WAL/replay, review records, and recovery evidence |
-| Runtime configuration and repositories | `config.ts`, `bundled-repos.ts`, `system-home.ts`, `runtime-loader.ts`, `runtime-setup.ts`, `role-repo.ts`, `model-repo.ts`, `model-catalog.ts`, `model-selection.ts`, `project-target.ts`, `project-lifecycle.ts`, `ogs-spec-loader.ts` | Project/system configuration, role/model repositories, discovery/selection, and lifecycle files |
+| Runtime configuration and repositories | `config.ts`, `bundled-repos.ts`, `system-home.ts`, `runtime-loader.ts`, `runtime-setup.ts`, `role-repo.ts`, `model-repo.ts`, `model-catalog.ts`, `model-selection.ts`, `contract-v2-loader.ts`, `v2-execution-policy.ts`, `project-target.ts`, `project-lifecycle.ts`, `ogs-spec-loader.ts` | Project/system configuration, Role repositories, Harness resolution, capability/policy snapshots, and lifecycle files |
 | Runtime support and entrypoints | `cli.ts`, `lint.ts`, `doctor.ts`, `console-run-log.ts`, `observability.ts`, `run-summary.ts`, `run-summary-schema.ts`, `stage-projector.ts`, `runtime-indexes.ts`, `runtime-support.ts`, `json-file.ts`, `json-schema.ts`, `redaction.ts`, `runtime-errors.ts`, `binding-resolver.ts`, `error-flow-utils.ts`, `human-review.ts`, `role-input-projector.ts`, `role-output-parser.ts`, `role-prompt-input-schema.ts`, `parse-mermaid.ts` | Public command entrypoints, diagnostics, projections, shared utilities, error normalization, and parsing entry |
 
 The NL2MMD set is intentionally smaller and centered on the generation workflow:
@@ -58,10 +60,10 @@ cross-set imports:
 
 | Importing file | Runtime dependency | Reason and status |
 | --- | --- | --- |
-| `nl2mmd/catalog.ts` | `bundled-repos.ts`, `config.ts`, `json-file.ts`, `model-catalog.ts`, `model-selection.ts`, `role-repo.ts` | Builds prompt context from the same project, role, law, and model sources used by runtime. Allowed context adapter; it must not duplicate their validation or selection rules. |
+| `nl2mmd/catalog.ts` | `bundled-repos.ts`, `config.ts`, `json-file.ts`, `model-catalog.ts`, `contract-v2-loader.ts`, `role-repo.ts` | Builds prompt context from the same project, role, law, catalog, and Harness sources used by runtime. Allowed context adapter; it must not duplicate their validation or selection rules. |
 | `nl2mmd/types.ts` | `runtime/types.ts` (type-only: `ModelCatalog`, `ModelSelectionConfig`, `SystemDefinition`) | Shared canonical contracts. Allowed shared-contract boundary; do not create NL2MMD copies of these types. |
 | `nl2mmd/service.ts` | `opencode-executor.ts`, `model-selection.ts` | NL2MMD needs a managed OpenCode turn and direct model-reference validation. This is an execution-facade boundary candidate: future extraction should preserve the runtime executor contract and keep NL2MMD from depending on unrelated executor internals. |
-| `nl2mmd/validate.ts` | `json-file.ts`, `model-selection.ts`, `parse-mermaid.ts`, `role-repo.ts`, `config.ts` | Candidate validation delegates syntax, runtime semantics, model resolution, role loading, and config validation to their runtime authorities. Allowed validation adapter; it must remain non-executing. |
+| `nl2mmd/validate.ts` | `json-file.ts`, `model-selection.ts`, `parse-mermaid.ts`, `role-repo.ts`, `config.ts` | Candidate validation delegates syntax, runtime semantics, Harness-derived model normalization, Role loading, and config validation to their runtime authorities. Allowed validation adapter; it must remain non-executing. |
 | `nl2mmd/cli.ts` | `model-selection.ts`, `project-lifecycle.ts` | CLI needs the canonical model-reference check and project dependency synchronization. Boundary candidate if lifecycle operations are later exposed through a narrower runtime CLI/service port. |
 | `runtime/cli.ts` | `nl2mmd/cli.ts` | Top-level command dispatch exposes `ogs nl2mmd`. This is an entrypoint exception, not a runtime-core dependency; runtime internals must not import NL2MMD modules. |
 
@@ -89,12 +91,15 @@ accepted, removed, or changed from an exception into a supported boundary.
 
 Use runtime-owned contracts for values that cross into execution or parsing:
 
-- `runtime/types.ts` is the canonical source for `SystemDefinition`, `ModelCatalog`,
-  `ModelSelectionConfig`, and runtime execution/state shapes.
-- `runtime/config.ts` owns validation of runtime, laws, profiles, tools, and user-profile data.
+- `runtime/types.ts` is the canonical source for `SystemDefinition`, `ModelCatalog`, Harness
+  resolution inputs, and runtime execution/state shapes.
+- `runtime/config.ts` owns validation of runtime, laws, and user-profile data. V1 profile/tool
+  registries are rejected at the Contract Set v2 boundary.
 - `runtime/parse-mermaid.ts` owns the accepted Mermaid subset and parsed system semantics.
-- `runtime/model-selection.ts` owns pinned model resolution and capability checks; NL2MMD may
-  display/search the catalog but must not invent a selection policy.
+- `runtime/model-selection.ts` is an internal normalization adapter for resolved Harness model
+  identities; it does not read or write `.ogs/model-selection.json`.
+- `runtime/contract-v2-loader.ts` owns Harness Template loading and rejection of v1 execution
+  assets. `runtime/v2-execution-policy.ts` owns frozen capability and environment policy snapshots.
 - NL2MMD `types.ts` owns conversation, hint, search, and validation-result shapes that are not
   runtime contracts.
 

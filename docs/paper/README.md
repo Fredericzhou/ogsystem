@@ -159,8 +159,8 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
 ---
 
 ## 关联研发与语义规范文档
-*   [OGSystem 宪法与硬规则](../development/ogsystem-constitution-v1.md)
+*   [OGSystem v2 宪法与硬规则](../development/ogsystem-constitution-v2.md)
 *   [扩展状态机与社会化协作形式化模型](../development/extended-state-machine-and-dag-bilingual.md)
 *   [主流多智能体框架对比分析](../development/framework-comparison.md)
-*   [2026 国家智能体标准覆盖评估报告](../development/ai-agent-standards-coverage-2026.md)
-*   [文本产物与代码执行架构方案](../development/text-artifact-business-delivery-architecture.md)
+*   [2026 国家智能体标准覆盖评估报告（历史 v1）](../development/archive/v1/ai-agent-standards-coverage-2026.md)
+*   [文本产物与代码执行架构方案（历史 v1）](../development/archive/v1/text-artifact-business-delivery-architecture.md)

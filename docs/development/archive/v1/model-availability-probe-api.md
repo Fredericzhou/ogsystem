@@ -11,8 +11,8 @@ OGSystem Run or write run evidence.
 ## Endpoint
 
 Platform discovery is split into a backend health/catalog phase and an explicit model probe.
-`GET /api/v1/platform/backends` returns the registered backends immediately. Each backend is
-then discovered independently with `GET /api/v1/platform/backends/{backend}/discovery`.
+`GET /api/v2/platform/backends` returns the registered backends immediately. Each backend is
+then discovered independently with `GET /api/v2/platform/backends/{backend}/discovery`.
 
 The per-backend endpoint returns `202` with `discoveryPending: true` when the first discovery is
 still running. A cached result may be returned with `stale: true`. It never uses an empty model
@@ -25,7 +25,7 @@ Backend statuses are `runnable`, `unavailable`, `not_installed`, `installed_but_
 `unavailable`. A model probe failure does not change the backend status or remove its catalog.
 
 ```http
-POST /api/v1/platform/models/probe
+POST /api/v2/platform/models/probe
 Content-Type: application/json
 ```
 
@@ -104,7 +104,7 @@ and receive only the configured environment variables required by the provider.
 
 ```js
 async function probeModel(model) {
-  const response = await fetch("/api/v1/platform/models/probe", {
+  const response = await fetch("/api/v2/platform/models/probe", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ backend: model.backend, modelId: model.modelId })
@@ -124,13 +124,13 @@ if (result.status === "verified") {
 
 ## Discovery Flow
 
-1. Read `GET /api/v1/platform/backends` and render every backend as `checking` immediately.
+1. Read `GET /api/v2/platform/backends` and render every backend as `checking` immediately.
 2. Discover each backend independently and merge its source and model catalog as it completes.
 3. Call the probe endpoint only for the selected model or before a debug run.
 4. Render `verified`, `unavailable`, or `failed` from `result.status`; show `message` when present.
 
-`GET /api/v1/platform/models` returns only `{ "models": [...] }` when a page only needs the model
-list. `GET /api/v1/platform/providers` returns backend source metadata.
+`GET /api/v2/platform/models` returns only `{ "models": [...] }` when a page only needs the model
+list. `GET /api/v2/platform/providers` returns backend source metadata.
 
 Do not probe every catalog model automatically on page load or after every refresh. A probe launches
 the installed backend and sends one minimal prompt to its configured model service. The request can

@@ -1,7 +1,7 @@
 # OGSystem
 
-OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current stable release:
-`1.0.0`.
+OGSystem is a console runtime for a restricted Mermaid flowchart DSL. This branch implements the
+Contract Set v2 cutover defined by `docs/development/role-execution-architecture.md`.
 
 Implemented scope:
 
@@ -20,8 +20,8 @@ Product boundaries:
 - Framework: Runtime, parser/compiler, CLI, and `nl2mmd`.
 - Shared Platform: model/tool discovery, shared defaults, reusable tool/storage metadata, immutable
   dataset snapshots, and shared execution infrastructure including Runtime/Harness adapters.
-  TeamVersion owns the selected model references and role-specific `profiles.json`/`tools.json`
-  execution definitions; platform catalogs describe available resources and do not own Team, Task,
+  TeamVersion owns Harness Templates and selected model references; platform catalogs describe
+  available resources and do not own Team, Task,
   Run, or Deliverable records.
 - OGS Studio: Team and TeamVersion authoring, role templates, graph design, Simulation evidence,
   diagnostics, and release.
@@ -33,18 +33,19 @@ Product boundaries:
 - Project Run and Studio Simulation use the same execution base but have separate owners, storage,
   APIs, and lifecycles.
 
-The Product Site portable team package format is `team-v2`; it contains a static released team
-definition and excludes framework code, credentials, model catalogs, and execution artifacts.
-Collaboration project exports use `project-v2` and embed their released `team-v2` dependencies.
+The Product Site portable team package mode remains `team-v2` as a transport/container label. It
+must carry `ogsContractVersion: 2`; the package mode is not the OGS contract version. Collaboration
+project exports use `project-v2` as their container label and embed v2 team dependencies. v1 package
+data is rejected and is not migrated.
 The stable framework paths are `.ogs/`, `og-roles/`, `system.mmd`, and `.ogs/runs/`.
 
 Product usage:
 
 - Product Site: `apps/team-site/README.md` — OGS Studio and OGS Projects, shared resource menus,
   task controls, model discovery, and product boundaries.
-- Product boundary: `docs/usage/ogsystem-core-concepts.md` — Framework, Platform, Team, Project,
+- Product boundary: `docs/usage/usage-manual.md` — v2 Framework, Platform, Team, Project,
   Task, Run, and Studio/Projects ownership boundaries.
-- Professional workbench: `docs/usage/visualizer-console.md` — precise graph authoring, debugging,
+- Professional workbench: Team Site and v2 Usage Manual — precise graph authoring, debugging,
   diagnostics, and runtime evidence.
 
 Graph modeling invariant:
@@ -63,10 +64,11 @@ Non-goals:
 
 Product introduction:
 
-- `docs/development/ogsystem-constitution-v1.md`
-- `docs/usage/product-introduction.md`
+- `docs/development/role-execution-architecture.md`
+- `docs/development/v2-validation-and-acceptance.md`
+- `docs/development/ogsystem-constitution-v2.md`
 - `docs/README.md`
-- `docs/development/todo-backlog.md`
+- `docs/development/role-execution-architecture.md`
 
 Detailed usage manual:
 
@@ -152,11 +154,11 @@ ogs vis --ogs-dir .
 ogs visualizer --ogs-dir .
 ```
 
-Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model choices live in `.ogs/model-selection.json`; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
+Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model/tool/environment choices live in `.ogs/execution-bindings.json` Harness Templates; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
 
-Version `1.0.0` is the current stable release. It uses Semantic IR v1 and the current versioned
-runtime contracts directly. Older development artifacts are outside the supported input boundary;
-start with a new project when using this release.
+Version `2.0.0` is the active Contract Set v2 release. It uses the v2 Role Contract, Harness
+Template, Semantic IR, and frozen execution policy. Historical v1 projects and data are outside
+the supported input boundary; start with a new v2 project.
 
 OGS invokes installed CLI services using their own user-level configuration and credentials. It does not load a separate OGS credential file or manage provider credentials.
 
@@ -208,14 +210,14 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 ## Runtime Guarantees
 
 - The adapter runs one graph-based execution model. Explicit `start[开始]` flows select the initial branches, each role execution emits one structured result, and completion is governed by explicit flows into `end[结束]`.
-- Executable roles return one JSON object: `{"event":"EVENT_NAME","content":"..."}`. Agent roles use their selected persistent CLI backend and retain a role/thread session for the run; tool-bound roles use `exec.bind` and parse tool stdout as JSON. `event` must match an outgoing handoff label.
+- Executable roles return one JSON object: `{"event":"EVENT_NAME","content":"..."}`. Agent roles use their selected persistent CLI backend and retain a role/thread session for the run. Each role resolves through a v2 Harness Template; `event` must match an outgoing handoff label.
 - OpenCode roles share one run-scoped `opencode serve`; Codex roles share one run-scoped `codex app-server` and resume the same thread for each role branch.
 - Model-native file and command tools are constrained by the Role workspace capability policy; write and command access are independent, and ACP commands stay within the execution workspace.
 - Directory ownership is explicit: `--ogs-dir` owns the System, runtime configuration, Sessions, and `.ogs/runs/`; `--workspace-dir` is the project directory given to coding Roles. Explicit System and workspace paths are relative to the command directory; omitted `--system` selects `<ogs-dir>/system.mmd`.
 - An OGS project may bind a separate workspace through `.ogs/project.json.target.directory`. Without an explicit `--workspace-dir`, the binding is used, then `ogs-dir` is the default. `ogs serve` manages interactive Sessions; every Turn creates a fresh Run and fresh Role backend contexts. A changed System or execution configuration makes existing Sessions stale and creates a linked child Session on the next Turn request.
-- For `exec.bind`, relative tool arguments are materialized from the control project while the role process uses its run-local workspace; this keeps generated control-plane tools available in independent-target mode.
+- Harness-native tools are materialized inside the run-local staging boundary and remain subject to the frozen EffectiveExecutionPolicy.
 - Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
-- Each role's model binding is configured in `.ogs/model-selection.json` as a `backend` and `modelId` pair. `system.mmd` defines roles and handoffs, not model bindings.
+- Each role's technical binding is configured through a Harness Template in `.ogs/execution-bindings.json`. `system.mmd` defines roles and handoffs, not backend, model, tool, or environment bindings.
 - Agent execution retries transient service failures on the same role session while keeping the run-level service alive.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly.
 - `parallel_split` activates every statically declared normal downstream branch. It does not automatically split a task or promise simultaneous execution; express task decomposition in role outputs and input/context mappings.
@@ -231,30 +233,30 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `ogs run resume <run-id>` against the same run directory.
-- `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `handledFailureCount`, `unhandledFailureCount`, `handledFailureByEvent`, `handledFailureByTargetRole`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
-- Runtime failure routing supports explicit error flows expressed as `ERROR*` edge labels behind `runtime.error_flows.v1` (default `false`): exact `ERROR.<errorCode>` first, then fallback `ERROR`; no match remains fail-stop.
+- `audit/summary.md` and result JSON expose transition, failure, evidence, and frozen-policy digests; v2 runs do not produce noop executions.
+- Runtime failure routing supports explicit `ERROR*` edge labels under the v2 exception policy; exact `ERROR.<errorCode>` is evaluated before fallback `ERROR`.
 - `ERROR*` routing is evaluated only after executor-level retries for the attempt are exhausted.
 - Mermaid parsing is fail-closed for reserved error events: only `ERROR` and `ERROR.<errorCode>` are accepted.
 - Role outputs cannot proactively emit `ERROR*` events; `ERROR*` is reserved for runtime failure routing only.
 - run progress logs are printed to `stderr` by default; final result JSON remains on `stdout`. Use `--quiet-run` to silence progress logs.
-- Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
+- Roles without a resolved Harness Template fail closed before Backend startup.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
 
 ## Configuration Boundaries
 
-- `.ogs/model-selection.json` is the single backend/model binding source, with project defaults and per-role overrides.
-- The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
+- `.ogs/execution-bindings.json` is the sole technical binding source. Harness Templates freeze backend, model, native tools, and environment policy for each Role.
+- The law catalog resolves `law.global`, transition limits, and v2 capability/policy constraints.
 - Role packages live under `og-roles/roles/<roleId>/` and provide `role.json` with the complete current Role Contract, plus `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
 - The runtime-owned prompt-input shell remains fixed across roles and exposes `allowed_events`, `user_preferences`, `task`, and `input`.
 - Upstream agent repositories live under `agent-sources/` only during development; runtime executes only canonical role packages under `og-roles/roles/`.
 - `node tools/agent-source/sync-agent-sources.mjs --source agency-agents` imports an upstream checkout into canonical `imported.<source>.*` role packages and updates `tools/agent-source/sources.lock.json`.
 - Prompt-shell field names and selector syntax are separate layers: prompts use `user_preferences`, while `context.map` selectors still use `global.user_profile.*`.
 - The installed CLI ships bundled role/model templates, but those are import sources, not runtime execution dependencies.
-- `system.mmd` owns role and handoff structure; role packages own prompt and I/O contract; `.ogs/model-selection.json` owns backend/model selection.
+- `system.mmd` owns role and handoff structure; role packages own prompt and I/O contract; Harness Templates own backend/model/tool/environment intent.
 
 ## Target Scaffolding
 
-- `.ogs/model-catalog.json` records discovered CLI backends and runnable model IDs; `.ogs/model-selection.json` stores `backend` and `modelId` selections.
+- `.ogs/model-catalog.json` records discovered CLI backends and runnable model IDs; `.ogs/execution-bindings.json` stores Harness Template selections.
 - `.ogs/runtime.json` provides runtime defaults for the role repo and runs directory.
 - `~/.ogsystem/` stores shared system role packages; CLI backend credentials remain in each CLI's own user-level configuration.
 - `.ogs/runtime.json` may include `configVersion: "2"`; unsupported versions fail fast.
@@ -263,19 +265,16 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - `ogs project init` scaffolds the current directory as a runnable project using the selected template.
 - `ogs project create <name> [--template <...>]` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles referenced by that system into the project-local role repo.
-- `ogs models discover` refreshes installed CLI/model discovery; `ogs models sync` also creates `.ogs/model-selection.json` when missing without replacing existing choices.
+- `ogs models discover` refreshes installed CLI/model discovery. Bindings are edited through Harness Template authoring and are never inferred from the discovery cache.
 - `ogs vis --ogs-dir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses cursor-based incremental runtime and timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - The Visualizer API contract is in `schemas/openapi.yaml`. `/healthz` and `/readyz` expose anonymous liveness/readiness probes; `/metrics` requires authentication along with the UI, assets, and APIs.
 - Control actions record the principal resolved by the identity provider; request bodies cannot choose an audit actor. Loopback mode uses the current OS account. Non-loopback binds require HTTPS and the built-in single-operator Basic Auth (`OGS_VIS_USERNAME` / `OGS_VIS_PASSWORD`).
-- Remote execution protocol v1 and its runtime validators are documented in `src/runtime/remote-execution-contract.ts`; it defines the replaceable-call boundary but does not enable remote worker dispatch in this release.
-- Model backend/model configuration is managed in Studio or `.ogs/model-selection.json`, not in Mermaid metadata.
+- Backend Adapter protocol details are documented in `docs/development/backend-native-tools-standardization.md`; unverified capabilities remain unavailable.
+- Harness backend/model/tool/environment configuration is managed in Studio through `.ogs/execution-bindings.json`, not in Mermaid metadata.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
-- `D:\Coder\AAI\mulit-debate-ogs\` is a standalone OGSystem application adapted from the sibling `mulit-debate` project, with bounded parallel debate and required human review.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 - `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.
-- `examples/error-flow-compensation/` shows failure-to-compensation routing via error flows expressed as `ERROR*` edge labels.
-- `examples/runtime-native-human-review/` shows the smallest runtime-native stop-review-resume path.
-- `examples/ogs-gstacklike/` shows a project-style flow with project-local `og-roles/`, runtime-native human review, run-level shared artifacts, and compensation routing.
+- Historical v1 examples are under `examples/archive/v1/` and are not active runtime inputs.
 - `examples/README.md` is the training handbook for minimal example set and coverage matrix.
 - `og-roles/roles/error-handler-base/` provides the reusable compensation template role package.
 
@@ -312,9 +311,8 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 ## Documentation
 
 - `docs/README.md` is the authoritative document index and archive policy.
-- `docs/development/ogsystem-constitution-v1.md` is the governance entry point for principles, design boundaries, and hard rules.
-- `docs/usage/product-introduction.md` is the project-level overview.
+- `docs/development/ogsystem-constitution-v2.md` is the governance entry point for principles, design boundaries, and hard rules.
 - `docs/usage/usage-manual.md` is the main operator/developer manual.
-- `docs/usage/ogsystem-orchestration-semantics-v1.md` is the orchestration semantics source of truth.
-- `docs/usage/ogsystem-handoff-semantics-v1.md` is the compact Handoff, Join, Review, Artifact, Result, and Resume contract.
+- `docs/development/role-execution-architecture.md` is the v2 architecture source of truth.
+- `docs/development/v2-validation-and-acceptance.md` is the release acceptance source of truth.
 - `docs/development/DECISIONS.md` records architecture decisions.

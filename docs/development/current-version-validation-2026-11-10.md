@@ -1,6 +1,11 @@
-# Current Version Validation 2026-11-10
+# Historical v1 Validation Record 2026-11-10
 
-This record describes the validation boundary for the current working version.
+> Historical Contract Set v1 evidence. This record is retained for archaeology only and does not
+> close any Contract Set v2 validation gate. The package, Team Site, and runtime evidence below
+> predates the v2 direct replacement and must not be presented as current v2 evidence.
+
+This record describes a historical v1 validation boundary. It is not an acceptance record for the
+active v2 worktree and must not be used to close a v2 Gate A, B, or C scenario.
 
 ## Passed
 

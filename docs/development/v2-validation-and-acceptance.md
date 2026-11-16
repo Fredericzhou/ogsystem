@@ -1,8 +1,7 @@
 # Contract Set v2 Validation and Acceptance
 
-> **Status: Contract Set v2 target validation plan.** This document defines the evidence required
-> before the direct v2 cutover. It does not change the current v1 Runtime contract and does not
-> accept v1 data, fixtures, or compatibility paths as v2 evidence.
+> **Status: Contract Set v2 release acceptance standard.** This document defines the evidence
+> required for the active direct replacement and does not accept v1 data or compatibility paths.
 
 ## 1. Purpose
 
@@ -41,11 +40,13 @@ Verify the Technical Binding and Execution Layers:
 - Role -> Harness Template -> Backend -> Model -> `allowedTools` -> EnvironmentIntent resolves without v1 fields.
 - Capability Preview and Run Capability Snapshot contain only verified Backend facts.
 - Explicit `allowedTools` entries that are unavailable or unenforceable fail before Backend startup.
-- `effectiveTools`, EffectiveEnvironmentPolicy, staging root, Law digest, capability digest,
+- `allowedTools`, `verifiedTools`, EffectiveEnvironmentPolicy, staging root, Law digest, capability digest,
   policy digest, Harness revision, and Adapter version are frozen in the Run configuration.
 - Recovery reuses the frozen configuration and does not rediscover or silently change capabilities.
-- Codex and OpenCode complete discovery, staging, resource probes, native mapping, tool events,
-  permission decisions, errors, and recovery tests before being marked verified.
+- Codex completes discovery, staging, resource probes, native mapping, tool events, permission
+  decisions, errors, and recovery tests for its verified tool profile. OpenCode is verified for
+  text-only execution and business handoff; filesystem/process tools remain degraded until its
+  staging boundary is proven.
 - Pi and Kimi remain unavailable or degraded until their probes pass. Claude is not a verified Backend.
 - Unknown tools, dynamic MCP/tool-search requests, unbounded resources, staging escapes, and
   unauthorized Artifact reads are denied and audited.
@@ -73,6 +74,25 @@ At least two real workflows must pass with real verified Backends and real deliv
 The workflows must complete through the actual Studio/CLI or supported product path. Mock model
 responses, synthetic success events, and a graph preview without a delivered result do not pass
 Gate C.
+
+### Current Evidence Status
+
+The engineering execution portion of Gate C is passed for both required workflows. The attached
+evidence record [`v2-gate-c-real-workflow-success-2026-11-16.md`](evidence/v2-gate-c-real-workflow-success-2026-11-16.md)
+records real Codex `gpt-6-luna` Runs, frozen capability/policy configuration, sealed Artifacts,
+verification reports, and reviewer decisions. Gate C remains a release gate until the
+[Release UAT checklist](release-uat-checklist.md) contains the required workflow-operator and
+product-owner sign-offs. Historical v1 validation records, archived Team Site tests, API-only
+smoke runs, and dry-run graph previews do not satisfy this gate. A row marked `Blocked` or `Not run`
+is an outstanding release blocker.
+
+The cross-Backend business-flow requirement is also exercised by the immutable evidence record
+[`v2-cross-backend-real-workflow-2026-11-16.md`](evidence/v2-cross-backend-real-workflow-2026-11-16.md):
+Codex `gpt-6-luna` executes the first Role and OpenCode's provider-qualified `gpt-6-luna` executes
+the downstream Role in the same Flow. Pi has probe and adapter coverage, but is not claimed as a
+verified production Backend until its complete staging, resource, tool, permission, and recovery
+evidence is recorded. Earlier failed Codex/OpenCode attempts remain failure evidence and are not
+hidden by the latest successful Codex/OpenCode run.
 
 ## 3. Semantic Scenario Matrix
 
@@ -131,7 +151,7 @@ Every passed scenario must attach one immutable evidence package containing:
 - TeamVersion and Semantic IR digests;
 - Run ID and resolved Harness Template revision;
 - Capability Snapshot and `verifiedTools` digest;
-- `resolved-config.json` with `allowedTools`, `effectiveTools`, EffectiveEnvironmentPolicy,
+- `resolved-config.json` with `allowedTools`, `verifiedTools`, EffectiveEnvironmentPolicy,
   staging, Law, policy, capability, and Adapter identities;
 - Role inputs, outputs, Business Events, HandoffProjection, and Artifact authorization records;
 - tool invocation and PermissionDecision events;
@@ -174,5 +194,4 @@ Schema and contract fixtures
   -> direct v2 cutover
 ```
 
-The existing v1 release UAT remains the current-release checklist until the v2 cutover. This
-document becomes the v2 acceptance baseline only after Governance approves Contract Set v2.
+Historical v1 UAT remains archived background. This document is the active v2 acceptance baseline.

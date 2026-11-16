@@ -3,10 +3,9 @@
 This document defines how business Roles bind to Harness Templates and become resolved,
 auditable executions.
 
-> **Status: proposed target architecture.** This document describes the breaking OGS Contract
-> Set v2 target; it does not replace the active Constitution v1 or the current Semantic IR v1
-> contract until a separate governance decision approves the cutover. Code and current release
-> documentation remain authoritative for the pre-cutover implementation.
+> **Status: Contract Set v2 architecture standard.** This document is the sole v2 architecture
+> authority after the direct replacement. Source code and executable tests define the implemented
+> behavior; historical v1 documents are archived and are not runtime inputs.
 
 ## Contract Set Version
 
@@ -35,15 +34,12 @@ Version ownership is split explicitly:
 | `RuntimeEventEnvelope.schemaVersion` | Runtime evidence event format version |
 | `adapterVersion` | Backend Adapter implementation version |
 
-`ogsContractVersion` is an envelope field. It does not replace object-local version fields. Until
-the v2 cutover is approved, the active Constitution v1 and Semantic IR v1 remain the current
-contract and this document is design guidance only.
+`ogsContractVersion` is an envelope field. It does not replace object-local version fields.
 
 ## v2 Cutover Gate
 
-Contract Set v2 is not current until every gate below closes in one approved release. Until then,
-the current v1 Constitution, Runtime, schemas, Studio, CLI, and active manuals remain authoritative;
-no v2 field is accepted as runtime input.
+Contract Set v2 is released only while every gate below remains closed. Historical v1 inputs are
+rejected by the active Runtime.
 
 ```text
 1. Governance
@@ -79,8 +75,7 @@ no v2 field is accepted as runtime input.
    and remove contradictory v1 instructions from the active v2 workflow.
 ```
 
-This is a release gate, not a second backlog. `todo-backlog.md` remains the only active v1 work
-list until Governance Gate 1 is approved. The cutover is a direct replacement: there is no data
+This is the release gate for the active v2 work. The cutover is a direct replacement: there is no data
 migration, offline migration tool, compatibility reader, fallback branch, or dual write.
 
 ## Core v2 Scope
@@ -102,8 +97,9 @@ Harness Template
 
 Resolved Run Policy
   Run-frozen Backend/Model, Harness `allowedTools`, Snapshot `verifiedTools`,
-  `effectiveTools`, EffectiveEnvironmentPolicy, policy digest, capability digest, and recovery
-  identity. `selectedTools` is only a Runtime-local calculation and is never persisted.
+  EffectiveEnvironmentPolicy, policy digest, capability digest, and recovery identity. Runtime
+  computes `allowedTools ∩ verifiedTools` in memory after resource checks; it is not persisted as a
+  third tool-set fact.
 
 Business Review semantics
   Review triggers and business actions owned by the Business layer.
@@ -132,8 +128,8 @@ Alternate Artifact stores and other non-core integrations
 Service Agent, Human Agent, and Remote Agent bindings
 ```
 
-These extensions must project into the core `allowedTools`, `verifiedTools`, `effectiveTools`,
-EnvironmentPolicy, PermissionDecision, ReviewRequest, and Evidence contracts rather than create
+These extensions must project into the core `allowedTools`, `verifiedTools`, the in-memory executable
+intersection, EnvironmentPolicy, PermissionDecision, ReviewRequest, and Evidence contracts rather than create
 parallel product objects.
 
 ## 1. Goal
@@ -201,7 +197,8 @@ The following rules are fixed:
 8. `Supervised`, `Auto-accept`, and `Full access` are not OGS permission modes. Backend-native
    approval modes remain Adapter internals and are never exposed as a second OGS permission model.
 9. A Resolved Model Role plan must contain Backend, Model, Run Capability Snapshot,
-   `effectiveTools`, and EffectiveEnvironmentPolicy. `adapterVersion` is read from the
+  `allowedTools`, `verifiedTools`, and EffectiveEnvironmentPolicy. Runtime computes the executable
+  `allowedTools ∩ verifiedTools` set in memory. `adapterVersion` is read from the
    snapshot and is not duplicated on the plan node.
 10. Every Graph node remains a Responsibility Role. The v2 Harness binding describes how a
     Responsibility Role executes; it is not a new Graph node type.
@@ -215,7 +212,8 @@ The following rules are fixed:
    may record and restore both, but never owns Graph definitions or Policy logic.
 14. The EffectiveExecutionPolicy applies to every v2 Harness execution. There is no separate
     API/Cmd or `local_shell` execution path in Contract Set v2.
-15. `effectiveTools` is the executable tool set after capability, `allowedTools`, environment,
+15. The executable tool set is the in-memory intersection of `allowedTools` and `verifiedTools`
+    after capability, environment,
     Law, staging, quota, and readiness filtering. It is not the template's selection set. The
     selected intent is the `allowedTools` stored on the Harness Template; generated defaults
     populate it with all verified candidates before policy filtering.
@@ -303,19 +301,18 @@ EnvironmentIntent
   The resource intent stored in a Harness Template.
 
 workspace.*
-  Current v1 OGS internal resource-capability projection (for example `workspace.write` or
+  Current OGS internal resource-capability projection (for example `workspace.write` or
   `workspace.run`). In the v2 target it is an Adapter/Runtime implementation concept, not a
   user-facing Backend-native tool catalog or a new tool definition.
 
 EffectiveExecutionPolicy
   The coordinated Runtime result for one Harness Run:
-  effectiveTools + EffectiveEnvironmentPolicy.
+  an in-memory `allowedTools ∩ verifiedTools` set + EffectiveEnvironmentPolicy.
 
 Tool set stages
-  The only persisted/contract collections are `allowedTools` (Harness Template user selection),
-  `verifiedTools` (Run Capability Snapshot Backend facts), and `effectiveTools` (Run frozen
-  executable set). Runtime may use a local `selectedTools` variable while intersecting
-  `allowedTools` with `verifiedTools`, but it does not persist or expose that variable.
+  The persisted/contract collections are `allowedTools` (Harness Template user selection) and
+  `verifiedTools` (Run Capability Snapshot Backend facts). Runtime computes their intersection
+  in memory after resource checks. It does not persist a third tool-set fact.
 
 EffectiveEnvironmentPolicy
   The final filesystem, process, network, staging, and limit constraints.
@@ -339,7 +336,7 @@ Capability
   + EnvironmentIntent
   + Law / quota / staging
   -> Runtime-local candidate intersection
-  -> effectiveTools + EffectiveEnvironmentPolicy
+  -> in-memory executable intersection + EffectiveEnvironmentPolicy
   -> PermissionDecision
 ```
 
@@ -944,9 +941,9 @@ The current project-level mapping is:
 | Backend | Current status | Native mapping owned by Adapter | Default boundary |
 | --- | --- | --- | --- |
 | Codex | registered and runnable | App Server `sandboxPolicy` / `approvalPolicy`; execution staging becomes the writable root | filesystem and command only when the corresponding policy is enforceable; network stays denied unless explicitly verified |
-| OpenCode | registered and runnable | SDK session tools for read/list/glob/grep/edit/bash; execution directory and external-directory restriction | workspace tools follow the effective policy; network stays denied until a verified adapter mapping exists |
+| OpenCode | registered for text-only execution; filesystem/process degraded | SDK session tools and provider protocol; native cwd does not prove absolute-path/symlink isolation | filesystem/process tools are denied until a staging sandbox is verified; network stays denied |
 | ACP-capable Backend | protocol-compatible when the Adapter and probe are present | ACP session, capability discovery, and permission request callbacks | `request` protocol is normalized to allow/deny; missing resource enforcement remains denied |
-| Pi | registered, policy mapping incomplete | RPC or ACP session; per-execution staging and policy probe required | do not claim write, process, or network enforcement until the staging and policy arguments are passed through |
+| Pi | registered for text-only execution; filesystem/process degraded | RPC/ACP session and native capability probe | filesystem/process tools are denied until per-execution staging isolation is verified; unknown tools and network remain denied |
 | Kimi | registered, Adapter/probe required per installed CLI or protocol | Backend-native or ACP session mapping | unavailable capabilities remain unverified until the selected mapping passes readiness |
 | Claude | no adapter currently registered | no OGS native mapping yet | unavailable in the verified Backend catalog until an adapter and probe exist |
 
@@ -968,7 +965,8 @@ Native approval prompts
   Adapter must map it to a proven non-interactive allow/deny boundary or fail readiness.
 
 Pi and Kimi
-  These Backends remain degraded until their selected native or ACP session passes staging,
+  Pi may be marked verified only for the exact native tools and resource boundaries observed by
+  its probe; Kimi remains degraded until its selected native or ACP session passes staging,
   filesystem, process, network, and permission protocol probes. A session that starts without
   those guarantees cannot be marked verified for the corresponding capability.
 
@@ -1086,9 +1084,10 @@ Import Team
 
 Import does not create a Run staging root, bind Run-specific Law/quota state, or produce an
 `EffectiveExecutionPolicy`. It only reports whether the Harness Template can become executable.
-The actual `EffectiveExecutionPolicy` and `effectiveTools` are calculated when a Run is created,
-after Run context, staging, Law, and quota are available, then frozen in the Resolved Execution
-Plan.
+The actual `EffectiveExecutionPolicy` and executable intersection are calculated when a Run is
+created, after Run context, staging, Law, and quota are available. The Run freezes the source facts
+(`allowedTools`, `verifiedTools`, and environment policy); the intersection is recomputed from
+those facts during execution and recovery.
 
 When a target environment does not have a referenced Backend or Model, the Team can still be imported. The Harness Template is marked unresolved and the Team cannot be released or run until the binding is repaired.
 
@@ -1536,7 +1535,8 @@ type ResolvedExecutionPlanNode = {
   backend: string;
   model: string;
   capabilitySnapshot: RunCapabilitySnapshot;
-  effectiveTools: string[];
+  allowedTools: string[];
+  verifiedTools: string[];
   effectiveEnvironmentPolicy: EffectiveEnvironmentPolicy;
 };
 ```
@@ -1546,13 +1546,13 @@ Persistence rule:
 ```text
 Harness Template                  -> allowedTools
 Run Capability Snapshot           -> verifiedTools
-resolved-config.json              -> effectiveTools (one frozen copy per Role binding)
+resolved-config.json              -> allowedTools + verifiedTools (frozen source facts)
+Runtime memory                    -> allowedTools ∩ verifiedTools (after resource checks)
 ```
 
-`EffectiveExecutionPolicy` may carry `effectiveTools` in Runtime memory while resolving and
-executing, but it must serialize that collection only through the corresponding
-`resolved-config.json` plan node. It is not copied into the Capability Snapshot, a second policy
-file, or a separate Role/IR record.
+`EffectiveExecutionPolicy` may carry the executable intersection in Runtime memory while resolving
+and executing. Persisting it separately would create a third tool-set fact that could drift from
+the frozen Harness selection and Capability Snapshot.
 
 The resolved node is written into the Run snapshot together with the Semantic IR and
 Law digests. Adapter version is read from `capabilitySnapshot.adapterVersion`; it is not
@@ -1627,7 +1627,7 @@ interface BackendAdapter {
 The Policy Resolver uses `getResourceCapabilities()` together with the Harness
 `environment` intent, staging, Law, and quota to calculate the Effective Environment
 Policy. During Run readiness it calls `validateToolResources()` for every entry in the
-Runtime-local candidate set; only tools that pass this preflight enter `effectiveTools`. At invocation time the
+Runtime-local candidate set; only tools that pass this preflight enter the in-memory executable set. At invocation time the
 Adapter repeats the same check defensively and must never add a tool to the set. This avoids
 adding a public resource-dependency matrix to every tool descriptor while ensuring a tool is
 not first rejected on its initial call.
@@ -1708,7 +1708,7 @@ sequenceDiagram
     F->>R: Activate Role
     R->>P: Resolve binding, snapshot, Law, staging, and quota
     P->>P: Preflight every allowedTools entry resource boundary
-    P-->>R: Freeze effectiveTools and environment policy
+    P-->>R: Freeze source tool facts and environment policy
     R->>A: Start Backend session in execution staging
     A->>B: Create native session
 
@@ -1754,13 +1754,14 @@ outputs rather than two independent policy systems:
 
 ```ts
 type EffectiveExecutionPolicy = {
-  effectiveTools: string[];
+  allowedTools: string[];
+  verifiedTools: string[];
   environment: EffectiveEnvironmentPolicy;
 };
 ```
 
-`effectiveTools` and `environment` are resolved together and are frozen together in the
-Resolved Execution Plan.
+The executable set and environment are resolved together. The environment and its policy digest
+are frozen; the executable set is recomputed from frozen `allowedTools` and `verifiedTools`.
 
 ```text
 Harness Template allowedTools
@@ -1774,12 +1775,12 @@ allowedTools with entries
 
 Runtime-local candidate set
   -> capability, environment, Law, staging, quota, and readiness filtering
-  -> effectiveTools (the only executable native tool set)
+  -> in-memory executable set (the only executable native tool set)
 ```
 
 If a configured `allowedTools` entry is not in the Capability Preview, readiness fails
 before the Harness Template is saved or used. Run startup repeats the check against the Run
-Capability Snapshot and freezes the resulting `effectiveTools` list in the Resolved Execution Plan.
+Capability Snapshot and computes the executable set in memory from the frozen facts.
 At each native request, the Adapter additionally validates the tool's private resource
 dependencies against the effective environment policy. A request that cannot be
 enforced is denied and recorded in audit; it does not introduce a second public tool
@@ -1875,7 +1876,7 @@ control-plane protocol below.
 
 ## 13. Human Review
 
-Human Review has one request schema and one action enum. It supports two trigger kinds:
+Human Review has one request schema with trigger-specific action contracts. It supports two trigger kinds:
 
 ```text
 explicit
@@ -1886,7 +1887,7 @@ exception
   retry exhaustion, Join timeout, or Artifact verification failure.
 ```
 
-The core action set is intentionally small:
+The persisted action set is intentionally small and excludes the internal timeout state:
 
 ```ts
 type HumanReviewAction =
@@ -1896,7 +1897,15 @@ type HumanReviewAction =
   | "continue"
   | "retry"
   | "terminate";
+
+type BusinessReviewAction = "approve" | "rework" | "reject";
+type ExceptionReviewAction = "continue" | "retry" | "rework" | "reject" | "terminate";
 ```
+
+For `trigger: "explicit"`, `decision.action` must be a `BusinessReviewAction`. For
+`trigger: "exception"`, it must be an `ExceptionReviewAction`. `pause` is not a persisted
+decision action: Runtime may record it only as an internal timeout lifecycle state while a review
+remains unresolved.
 
 Core action meanings are fixed:
 
@@ -1982,7 +1991,8 @@ type HumanReviewRequest = {
 };
 
 type HumanReviewDecision =
-  { action: HumanReviewAction; actor: string; comment?: string; decidedAt: string };
+  | { action: BusinessReviewAction; actor: string; comment?: string; decidedAt: string }
+  | { action: ExceptionReviewAction; actor: string; comment?: string; decidedAt: string };
 ```
 
 The only core transitions are `pending -> resolved` after a valid decision and
@@ -2030,7 +2040,7 @@ type HumanReviewPolicy = {
   afterRoleResult: boolean;
   exceptionCodes: string[];
   // Compiled from each exception's existing Runtime policy; not a separate action registry.
-  exceptionActionsByCode?: Record<string, HumanReviewAction[]>;
+  exceptionActionsByCode?: Record<string, ExceptionReviewAction[]>;
 };
 ```
 
@@ -2072,7 +2082,6 @@ Resolved Execution Plan
   allowedTools (from the Harness Template)
   Run Capability Snapshot
   verifiedTools (from the Run Capability Snapshot)
-  effectiveTools
   Effective EnvironmentPolicy
 policyDigest
 capabilityDigest
@@ -2081,9 +2090,8 @@ Law digest
 
 Recovery must reuse this snapshot. It must not rediscover capabilities and silently change the technical decision for the same Run.
 `resolved-config.json` freezes the technical decision; `state.json.graphState`, checkpoints,
-and the session index remain the Runtime recovery authority.
-`selectedTools` is not written: it is only the Runtime-local intersection used while producing
-the frozen `effectiveTools` set.
+and the session index remain the Runtime recovery authority. The in-memory executable intersection
+is recomputed from the frozen `allowedTools` and `verifiedTools` during recovery.
 
 ## 15. Audit
 
@@ -2229,8 +2237,11 @@ Show the template tool selection as an advanced technical setting.
 
 Contract Set v2 uses a direct replacement. It does not migrate v1 projects, TeamVersions, Run
 directories, fixtures, or evidence. The v2 Runtime rejects v1 roots and fields with schema errors;
-it does not read `.ogs/model-selection.json`, `exec.bind`, `profiles.json`, `tools.json`,
-`constraints.allowedTools`, `allowedToolsByRoleId`, `noop`, or `local_shell` as fallback input.
+it does not read `exec.bind`, `profiles.json`, `tools.json`, `constraints.allowedTools`,
+`allowedToolsByRoleId`, `noop`, `local_shell`, or `model-selection.json` as input. Backend/model
+identity, native tool selection, and EnvironmentIntent are stored only in the v2 Harness Template
+binding. Capability discovery may update a read-only Capability Preview, but it never creates a
+second execution configuration or a compatibility file.
 
 Before the v2 release is published:
 
@@ -2254,9 +2265,10 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 ## 18. Implementation Order
 
 > **Target implementation sequence — not the active backlog.** This sequence describes the
-> proposed v2 cutover order. The only active work list is [`todo-backlog.md`](todo-backlog.md).
+> proposed v2 cutover order. The active release evidence is tracked by
+> [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md).
 
-### P0: Model cutover
+### P0: Contract and boundary cutover
 
 1. Set `ogsContractVersion: 2` on all new persisted contract roots.
 2. Add Role Contract v2 and compile the existing Flow edge, `context.map`, and Flow Contract
@@ -2266,7 +2278,8 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 4. Remove `noop` lifecycle and execution branches.
 5. Remove Supervised/Auto-accept/Full access permission modes and technical Permission Review.
 6. Add `execution-bindings.json` with Harness Template references and materialized tool selections.
-7. Delete v1 parsers, schemas, fixtures, examples, and Runtime branches before release; do not
+7. Make Harness resolution mandatory for every executable Role and reject missing or stale bindings.
+8. Delete v1 parsers, schemas, fixtures, examples, and Runtime branches before release; do not
    migrate or import v1 data.
 
 ### P1: Backend capabilities
@@ -2275,7 +2288,9 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 2. Add Capability Preview and Run Capability Snapshot.
 3. Add EnvironmentPolicyResolver.
 4. Freeze the snapshot and resolved policy per Run.
-5. Generate default Harness Templates with all verified Backend-native tools selected.
+5. Generate default Harness Templates with an explicit discovered Backend/Model; keep
+   `allowedTools` empty until a model-specific Capability Preview verifies native tools.
+6. Persist Capability Preview per project and expose the same preview to Studio, CLI, and Readiness.
 
 ### P2: Adapter mapping
 
@@ -2318,7 +2333,7 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
     Run Capability Snapshot.
 11. Policy Resolver derives EffectiveEnvironmentPolicy from environment intent and Adapter resource capabilities.
 12. Resolved Model Role plan nodes require Backend, Model, Run Capability Snapshot,
-    `effectiveTools`, and EffectiveEnvironmentPolicy; adapter version is read from the
+    `allowedTools`, `verifiedTools`, and EffectiveEnvironmentPolicy; adapter version is read from the
     snapshot.
 13. Access outside execution staging always fails.
 14. Permission decisions are only `allow` or `deny`; Backend protocol variants remain Adapter
@@ -2333,7 +2348,7 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
     and `stateVersion`; action-specific payloads are Deferred RFC extensions.
 21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
 22. Legacy fields and v1 data produce schema errors; no migration or compatibility read exists.
-23. Run readiness preflights every `allowedTools` entry before adding it to `effectiveTools`; invocation
+23. Run readiness preflights every `allowedTools` entry before adding it to the in-memory executable set; invocation
     checks are defensive and cannot expand the frozen set.
 24. Business Role Inspector edits only business fields; Harness Template selection is in the
     Technical Binding panel.

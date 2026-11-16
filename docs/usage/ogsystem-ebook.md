@@ -38,7 +38,7 @@ OGSystem 故意不追求“大而全”。它把目标限定为：
 
 - 执行受限 Mermaid DSL。
 - 驱动多角色节点。
-- 绑定模型或本地 profile/tool 执行路径。
+- 通过 Harness Template 绑定 Backend、模型、原生工具和环境意图。
 - 生成可恢复、可审计的运行产物。
 
 这让系统可以在较低复杂度下，把正确性和可靠性做得足够扎实。
@@ -58,7 +58,7 @@ OGSystem 近期的重点始终是：
 
 可以把 OGSystem 理解为六层：
 
-1. **输入层**：CLI、`system.mmd`、`.ogs/runtime.json`、laws、user profile。
+1. **输入层**：CLI、`system.mmd`、`.ogs/runtime.json`、`.ogs/execution-bindings.json`、laws、user profile。
 2. **解析层**：把 Mermaid DSL 解析并验证成 `SystemDefinition`。
 3. **计划层**：把 `SystemDefinition` 进一步归一化为 `ExecutionPlan`。
 4. **执行层**：graph runner 调度 role executor，role executor 调用具体 executor。
@@ -86,7 +86,7 @@ Adapter 是整个运行时的组合根。
 它负责：
 
 - 读取 runtime config、laws、user profile。
-- 加载角色包和模型包。
+- 加载角色包、Harness Template 和 Backend capability snapshot。
 - 从 `system.mmd` 构建 `SystemDefinition` 与 `ExecutionPlan`。
 - 计算 `plan-fingerprint.json` 所需的运行计划指纹。
 - 初始化 `RunContext`。
@@ -191,7 +191,7 @@ Role executor 只关心单节点执行。
 
 - 构造 prompt 输入投影
 - 渲染 prompt
-- 选择 model binding 或 profile binding
+- 解析 Role 到 Harness Template，再由 Adapter 解析 Backend/model 和 frozen effective tools
 - 调用 executor
 - 修复有限范围内的输出问题
 - 校验 output schema
@@ -211,7 +211,7 @@ Role executor 只关心单节点执行。
 
 - `executor.ts` 定义统一执行器接口。
 - `opencode-executor.ts` 负责 OpenCode 路径。
-- `tool-runner.ts` 负责 profile/tool 调用。
+- Adapter 模块负责 Backend 原生工具调用；v2 不再通过 profile/tool registry 绕过 Harness。
 
 它们的设计价值是：
 
@@ -313,9 +313,9 @@ Resume 不是简单“接着跑”，而是先完成一套完整校验：
 
 只有这些都通过，系统才会继续推进。
 
-### 5.5 异常控制流边界（V1 delivered，默认 flag off）
+### 5.5 异常控制流边界
 
-`ERROR*` 异常流语义已实现，发布默认仍通过 `runtime.error_flows.v1=false` 灰度控制；边界如下：
+`ERROR*` 异常流是受显式 Flow 声明约束的 Runtime 语义；边界如下：
 
 - `ERROR` 与 `ERROR.<errorCode>` 复用现有事件标签，不新增 DSL。
 - 仅声明了 `ERROR*` 出边的节点启用异常流（节点级 opt-in）。
@@ -331,7 +331,7 @@ OGSystem 的指纹不只是系统 ID，而是对实际加载内容做哈希，�
 
 - 系统定义
 - 角色包 manifest、prompt、schema、persona/work
-- 模型包 manifest
+- Harness Template、Backend capability snapshot 和 effective policy
 - 生效后的 law 约束
 
 这保证了 resume 绑定的是“同一份执行合同”，而不是“名字相同的一套新内容”。

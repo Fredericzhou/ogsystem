@@ -1,6 +1,6 @@
 # Backend 内置工具标准化与 Studio 极简配置方案
 
-> 本文按 **OGS Contract Set v2** 解读。旧版 `constraints.allowedTools`、三档
+> 本文按 **OGS Contract Set v2** 的 Adapter/Backend 边界解读。旧版 `constraints.allowedTools`、三档
 > `Supervised / Auto-accept / Full access` 和技术 Permission Review 均已废弃，
 > 不属于 v2 运行时或 Studio 配置模型。本文保留 Backend 能力调查和 Adapter 纯映射参考。
 
@@ -36,15 +36,16 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 
 当前后端注册表实际包含 `opencode`、`codex`、`ollama`、`pi`、`qwen` 和 `kimi`。Claude Code、Cursor Agent 等可作为外部对照，不代表 OGS 已经提供对应 adapter。
 
-本文的两个语义区必须分开阅读：
+本文的两个语义区必须分开阅读。本文不定义 Role Contract、Semantic IR、Flow 或 Harness
+的核心对象；这些定义只能来自 [Role Execution Architecture](role-execution-architecture.md)：
 
 ```text
 Current pre-cutover implementation
   仅记录现有源码和 v1 字段，不构成 Contract Set v2 输入；v2 不迁移这些对象。
 
-Normative Contract Set v2
+Inherited v2 execution mapping
   Harness.allowedTools、EnvironmentIntent、EffectiveExecutionPolicy 和 allow/deny
-  是唯一目标模型。v2 不读取旧字段，也不保留旧权限分支。
+  只作为架构文档定义对象的 Backend 映射参考。v2 不读取旧字段，也不保留旧权限分支。
 ```
 
 ---
@@ -159,7 +160,7 @@ OGS v2 不提供工具级三档安全模式。技术执行使用：
 ```text
 Capability + allowedTools + EnvironmentIntent + Law / quota / staging
   -> Runtime-local candidate set (not persisted)
-  -> effectiveTools (executable set)
+  -> in-memory executable intersection (not persisted)
   -> PermissionDecision: allow | deny
 ```
 
@@ -195,10 +196,10 @@ an enforceable resource boundary; otherwise the request is denied or the binding
 Human Review 只使用统一的 `HumanReviewRequest` 和动作枚举。它可以在 Role 结果交接前
 触发，也可以由配置的 Runtime 异常触发；它不会暂停等待单个 Backend 工具的批准。
 
-### 4. v1 CLI 工具边界
+### 4. 历史 v1 CLI 工具边界（仅考古）
 
-当前 v1 仍支持 `local_shell`、`profiles.json`、`tools.json` 和 `exec.bind`，用于固定脚本、转换器和
-其他受控宿主机命令。它们不是 Contract Set v2 的第二执行路径。v2 只接受 Harness Template 和
+切换前的 v1 曾支持 `local_shell`、`profiles.json`、`tools.json` 和 `exec.bind`，用于固定脚本、转换器和
+其他受控宿主机命令。它们不是 Contract Set v2 的第二执行路径。当前 v2 只接受 Harness Template 和
 已验证 Backend-native tools；固定命令若无法由 Backend Adapter 提供可验证的原生能力，就不进入
 v2，不能通过 v2 绕过 staging、quota 或资源策略。
 
@@ -238,7 +239,8 @@ v2，不能通过 v2 绕过 staging、quota 或资源策略。
 ## 实施顺序与依赖（MVP 优先）
 
 > **Target implementation guidance — not the active backlog.** 本节只描述 v2 能力的目标依赖；
-> 当前活动计划唯一以 [`todo-backlog.md`](todo-backlog.md) 为准。
+> v2 活动标准以 [`role-execution-architecture.md`](role-execution-architecture.md) 和
+> [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md) 为准。
 
 文件产物交付文档是本能力层的前置依赖。Role 必须先能在独立 staging 中产生可验证 artifact，并通过 handoff 交给串行下游或通过 Git worktree 进入 Join 后 Merge Stage；backend 工具标准化只决定 Role 如何在 staging 中工作，不改变 artifact、handoff、merge 和 promotion 的所有权。
 
@@ -250,7 +252,7 @@ v2，不能通过 v2 绕过 staging、quota 或资源策略。
 4. **后端投影（后续）**：为实际注册的 backend 逐个补充可验证的 native capability descriptor 和 readiness probe。每次只接入一个能力，先实现 workspace 工具，再评估 `web.search`；不得仅凭 CLI 宣传文档把能力标为可用。
 5. **Studio 投影**：按 Harness Template 的 Backend reference 动态投影 Capability Preview 和 `allowedTools`，并显示 EffectiveExecutionPolicy。不得使用 `dry-run` / `sandbox` / `real` 表达工具权限。
 
-切换前的 v1 运行保持现状；切换到 v2 后，未完成能力验证的绑定进入 readiness error，不回退到
+本节只记录切换前的 v1 实现边界；当前 v2 对未完成能力验证的绑定进入 readiness error，不回退到
 v1 字段或旧权限模式。v1 数据不导入 v2。
 
 ---
