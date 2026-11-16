@@ -2031,10 +2031,13 @@ body { min-width: 0; font-size: 15px; }
 .platform-settings-panel .compact-form .form-status { grid-column: 1 / -1; }
 .platform-runtime-status { color: var(--gold); }
 .harness-repository-page .page-frame-body { display: grid; gap: 14px; }
-.harness-repository-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
-.harness-repository-toolbar label { flex: 1 1 280px; }
-.harness-repository-toolbar input, .harness-repository-toolbar select { box-sizing: border-box; min-height: 40px; width: 100%; }
-.harness-repository-toolbar select { flex: 0 1 170px; width: auto; }
+.harness-repository-page .repository-heading { flex: 1 1 360px; }
+.harness-repository-filters { flex: 0 1 560px !important; min-width: min(100%, 560px); }
+.harness-repository-filters > label { display: flex; min-width: 0; }
+.harness-repository-filters > label:first-child { flex: 1 1 190px; }
+.harness-repository-filters > label:nth-child(2) { flex: 0 1 145px; }
+.harness-repository-filters :is(input, select) { width: 100%; }
+.harness-repository-status { margin: 0; min-height: 0; white-space: nowrap; }
 .harness-template-list { display: grid; gap: 8px; }
 .harness-section { display: grid; gap: 12px; }
 .harness-section-heading { align-items: end; display: flex; gap: 16px; justify-content: space-between; }
@@ -2455,6 +2458,12 @@ html[data-product-mode="normal"] .primary-nav .nav-group-label:has(+ a[href="/st
   .studio-run-layout, .studio-info-layout { grid-template-columns: minmax(0, 1fr); }
   :is(.project-library-toolbar, .studio-repository-toolbar) { align-items: stretch; flex-direction: column; }
   :is(.project-library-toolbar, .studio-repository-toolbar) .project-library-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, .55fr); }
+  .harness-repository-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+  .harness-repository-filters .harness-repository-status { grid-column: 1 / -1; }
+  .harness-repository-page .page-frame-header { flex-wrap: nowrap; }
+  .harness-repository-page .repository-heading,
+  .harness-repository-page .harness-repository-filters { flex: 0 0 auto !important; }
+  .harness-repository-page .harness-repository-filters { align-self: stretch; }
 }
 @media (max-width: 700px) { .topbar-actions { gap: 8px; } .mode-switch button { min-width: 42px; padding: 5px 6px; } }
 .task-group { display: grid; gap: 8px; margin: 12px 0; }
