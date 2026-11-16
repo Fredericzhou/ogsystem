@@ -1322,10 +1322,15 @@ export async function executeRoleNode(args: {
           executionId: execution.executionId,
           attempt: args.attempt,
           onEvent: async (event) => {
-            await filesystemArtifactStore.appendEvent(args.runContext, {
+            const agentEvent = {
               type: "agent_event",
               ...event
-            });
+            } satisfies RuntimeAuditEvent;
+            if (args.auditAppend) {
+              await args.auditAppend(agentEvent);
+            } else {
+              await filesystemArtifactStore.appendEvent(args.runContext, agentEvent);
+            }
           },
           workspaceCapabilityPolicy,
           artifactToolPhase: rolePackage.promptTemplate.toLowerCase().includes("artifact")

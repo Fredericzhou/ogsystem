@@ -319,3 +319,35 @@ test("resume reuses the frozen Harness plan when the current binding is removed"
     /V2_RECOVERY_SNAPSHOT_MISMATCH.*verifiedTools/
   );
 });
+
+test("dry-run simulates a tool-enabled Harness with an empty verified tool set", async () => {
+  const repoRoot = process.cwd();
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-v2-dry-run-harness-tools-"));
+  await mkdir(join(workdir, ".ogs"), { recursive: true });
+  await symlink(join(repoRoot, "og-roles"), join(workdir, "og-roles"), "dir");
+  for (const name of ["runtime.json", "model-catalog.json", "user-profile.json", "laws.json"]) {
+    await symlink(join(repoRoot, ".ogs", name), join(workdir, ".ogs", name));
+  }
+  const bindings = JSON.parse(await readFile(join(repoRoot, ".ogs", "execution-bindings.json"), "utf8"));
+  bindings.harnessTemplates["default-codex"].allowedTools = ["apply_patch", "exec_command"];
+  await writeFile(join(workdir, ".ogs", "execution-bindings.json"), `${JSON.stringify(bindings)}\n`, "utf8");
+  const systemPath = join(repoRoot, "examples/target-model-binding-system.mmd");
+  let runId;
+  const result = await runSystemWithAdapter({
+    systemPath,
+    prompt: "dry-run tool boundary",
+    workdir,
+    dryRun: true,
+    onRunInitialized: (run) => { runId = run.runId; }
+  });
+  assert.equal(result.status, "done");
+  assert.equal(result.runSummary.failedCount, 0);
+  assert.equal(result.runSummary.noopCount, 0);
+  const resolved = JSON.parse(await readFile(join(workdir, ".ogs", "runs", runId, "resolved-config.json"), "utf8"));
+  const plan = resolved.effective.resolvedExecutionPlans["debate-minimalist"];
+  assert.deepEqual(plan.allowedTools, []);
+  assert.deepEqual(plan.verifiedTools, []);
+  assert.deepEqual(plan.effectiveEnvironmentPolicy.filesystem, { read: false, write: false });
+  assert.equal(plan.effectiveEnvironmentPolicy.process, false);
+  assert.equal(plan.effectiveEnvironmentPolicy.network, false);
+});

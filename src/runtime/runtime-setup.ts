@@ -167,9 +167,6 @@ async function materializeV2ExecutionPolicies(
     if (template && template.allowedTools.length > 0 && !frozen && !options?.skipCapabilityDiscovery && !discovered) {
       throw new Error(`V2_CAPABILITY_DISCOVERY_UNAVAILABLE: ${node.binding.backend} does not expose native tool discovery`);
     }
-    if (template && template.allowedTools.length > 0 && !frozen && options?.skipCapabilityDiscovery) {
-      throw new Error(`V2_CAPABILITY_DISCOVERY_REQUIRED: dry-run cannot verify Harness tools; refresh Capability Preview or run without dry-run`);
-    }
     const resources = discovered?.resources ?? adapter?.getResourceCapabilities?.() ?? { filesystem: true, process: false, network: false };
     if (discovered && !frozen) {
       snapshot = createRunCapabilitySnapshot({
@@ -183,7 +180,14 @@ async function materializeV2ExecutionPolicies(
         verifiedTools: discovered.verifiedTools
       });
     }
-    const intent = template?.environment
+    // A dry-run is a semantic simulation. It must not claim that the Harness
+    // tools or host resources were verified, so it executes with no tools and
+    // an explicitly denied resource policy while preserving the user's
+    // Harness binding in the project assets.
+    const simulation = options?.skipCapabilityDiscovery === true;
+    const intent = simulation
+      ? { filesystem: "none" as const, process: "deny" as const, network: "deny" as const }
+      : template?.environment
       ? {
           filesystem: template.environment.filesystem,
           process: template.environment.process,
@@ -202,7 +206,7 @@ async function materializeV2ExecutionPolicies(
       }
       });
     const policy = createEffectiveExecutionPolicy({
-      allowedTools: template?.allowedTools ?? [],
+      allowedTools: simulation ? [] : template?.allowedTools ?? [],
       snapshot,
       environment,
       validateToolResources: adapter?.validateToolResources?.bind(adapter)
