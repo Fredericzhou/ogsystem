@@ -2,13 +2,13 @@ import { resolve } from "node:path";
 import { runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 import { ensureTeamVersionManifest } from "./team-version-manifest.mjs";
 
-export function createRuntimeProjectRunExecutor({ execute = runSystemWithAdapter, getDefaultModelSelection = async () => undefined, projectTeamDesign } = {}) {
+export function createRuntimeProjectRunExecutor({ execute = runSystemWithAdapter, getDefaultHarnessBinding = async () => undefined, projectTeamDesign } = {}) {
   return Object.freeze({
     async execute(project, {
       prompt, mode, runId, resumeRunDir, resumeProjectDigest, materialInputs,
       materialSourceRoot, materialSnapshotPolicy, onPrepared, owner, runKind
     }) {
-      const modelConfig = resumeRunDir || mode === "dry-run" ? undefined : await getDefaultModelSelection();
+      const modelConfig = resumeRunDir || mode === "dry-run" ? undefined : await getDefaultHarnessBinding();
       const assetWorkdir = project.assetWorkdir || project.workdir;
       const ogsDir = resolve(project.ogsDir || project.workdir);
       const workspaceDir = resolve(project.workspaceDir || project.workdir);
@@ -43,7 +43,6 @@ export function createRuntimeProjectRunExecutor({ execute = runSystemWithAdapter
         projectRunLock: false,
         materialInputs,
         materialSourceRoot: materialSourceRoot || workspaceDir,
-        modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
         modelCatalogModels: modelConfig?.modelCatalogModels,
         modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
         runtimeEdgeIdsByTransition,

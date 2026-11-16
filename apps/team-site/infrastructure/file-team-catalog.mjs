@@ -70,6 +70,18 @@ async function hasSystemSource(workdir) {
   try { return (await stat(join(workdir, "system.mmd"))).isFile(); } catch { return false; }
 }
 
+async function hasV2ExecutionBinding(workdir) {
+  try {
+    const value = JSON.parse(await readFile(join(workdir, ".ogs", "execution-bindings.json"), "utf8"));
+    return value?.ogsContractVersion === 2
+      && value?.schemaVersion === 1
+      && value?.harnessTemplates
+      && value?.roles;
+  } catch {
+    return false;
+  }
+}
+
 export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects")) } = {}) {
   const root = resolve(projectsRoot);
 
@@ -92,6 +104,12 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
       if (team.teamProjectId || (!includeCollaboration && team.projectType === "collaboration")) continue;
       const requiresSystemSource = ["classic", "classic-template", "version-edit", "team-ir-v2"].includes(String(team.source || ""));
       if (requiresSystemSource && !await hasSystemSource(join(root, entry.name))) continue;
+      // Team Site is a V2 surface. Historical drafts created before Harness
+      // bindings existed remain on disk for audit, but must not be routable
+      // from the active repository because their Studio projection cannot load.
+      const hasV2Binding = await hasV2ExecutionBinding(join(root, entry.name));
+      if (team.source === "team-factory" && !hasV2Binding) continue;
+      if (team.source === "classic-template" && !hasV2Binding && !getCase(team.caseId)) continue;
       if (!includeUnreleased && (team.teamVersionStatus !== "released" || team.archivedAt)) continue;
       const runIndex = await readJson(join(root, entry.name, ".ogs", "runs-index.json"), { runs: [] });
       const runs = Array.isArray(runIndex?.runs) ? runIndex.runs : [];

@@ -9,7 +9,7 @@ export async function handleCollaborationProjectRoutes({
   visualizerUrl,
   useCases,
 }) {
-  const teamReadinessMatch = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/readiness$/);
+  const teamReadinessMatch = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/readiness$/);
   if (teamReadinessMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getTeamVersionReadiness(teamReadinessMatch[1], teamReadinessMatch[2]));
@@ -19,7 +19,7 @@ export async function handleCollaborationProjectRoutes({
     return true;
   }
 
-  const adjustmentMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/team-adjustments$/);
+  const adjustmentMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/team-adjustments$/);
   if (adjustmentMatch && request.method === "POST") {
     try {
       const payload = await readBody(request);
@@ -35,7 +35,7 @@ export async function handleCollaborationProjectRoutes({
     return true;
   }
 
-  const readinessMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/readiness$/);
+  const readinessMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/readiness$/);
   if (readinessMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getProjectReadiness(readinessMatch[1]));
@@ -45,7 +45,7 @@ export async function handleCollaborationProjectRoutes({
     return true;
   }
 
-  const confirmMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/team\/confirm$/);
+  const confirmMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/team\/confirm$/);
   if (confirmMatch && request.method === "POST") {
     try {
       sendJson(response, 200, publicProject(await useCases.confirmProjectTeam(confirmMatch[1])));
@@ -55,7 +55,7 @@ export async function handleCollaborationProjectRoutes({
     return true;
   }
 
-  const materialsMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/materials$/);
+  const materialsMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/materials$/);
   if (materialsMatch && request.method === "POST") {
     try {
       const payload = await readBody(request, 10 * 1024 * 1024);
@@ -70,7 +70,7 @@ export async function handleCollaborationProjectRoutes({
     return true;
   }
 
-  const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)$/);
+  const projectMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)$/);
   if (projectMatch && request.method === "GET") {
     try {
       sendJson(response, 200, publicProject(await useCases.getProject(projectMatch[1])));

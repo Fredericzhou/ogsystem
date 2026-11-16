@@ -4,19 +4,19 @@ function sendError(response, sendJson, errorStatus, error) {
 }
 
 export async function handleRoleSourceCatalogRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases }) {
-  const root = "/api/v1/studio/role-sources";
+  const root = "/api/v2/studio/role-sources";
   if (url.pathname === root && request.method === "GET") {
     try { sendJson(response, 200, { sources: await useCases.listRoleSources() }); }
     catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const versions = url.pathname.match(/^\/api\/v1\/studio\/role-sources\/([a-z0-9-]+)\/versions$/);
+  const versions = url.pathname.match(/^\/api\/v2\/studio\/role-sources\/([a-z0-9-]+)\/versions$/);
   if (versions && request.method === "GET") {
     try { sendJson(response, 200, { versions: await useCases.listRoleSourceVersions(versions[1]) }); }
     catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const copy = url.pathname.match(/^\/api\/v1\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)\/copy$/);
+  const copy = url.pathname.match(/^\/api\/v2\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)\/copy$/);
   if (copy && request.method === "POST") {
     try {
       const body = await readBody(request, 1024 * 1024);
@@ -27,7 +27,7 @@ export async function handleRoleSourceCatalogRoutes({ request, response, url, re
     } catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const action = url.pathname.match(/^\/api\/v1\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)\/(convert|trial)$/);
+  const action = url.pathname.match(/^\/api\/v2\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)\/(convert|trial)$/);
   if (action && request.method === "POST") {
     try {
       const body = await readBody(request, 1024 * 1024);
@@ -37,7 +37,7 @@ export async function handleRoleSourceCatalogRoutes({ request, response, url, re
     } catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const role = url.pathname.match(/^\/api\/v1\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)$/);
+  const role = url.pathname.match(/^\/api\/v2\/studio\/role-sources\/([a-z0-9-]+)\/roles\/([a-z0-9-]+)$/);
   if (role && request.method === "GET") {
     try {
       const result = await useCases.getRoleSourceRole(role[1], role[2], url.searchParams.get("commit") || undefined);

@@ -122,7 +122,7 @@ export function createPlatformUseCases({
       };
     },
     readPlatformSettings: () => platformSettingsStore.read(),
-    async getDefaultModelSelection() {
+    async getDefaultHarnessBinding() {
       const settings = await platformSettingsStore.read();
       const backendIds = [settings.defaultProvider, ...modelCatalog.listBackends()
         .map((backend) => backend.backend)
@@ -214,7 +214,7 @@ export function resolvePlatformDefaultModelSelection({ settings = {}, discoverie
 
   return {
     ...(effectiveSelection ? {
-      modelSelectionDefaults: {
+      harnessBindingDefaults: {
         ...effectiveSelection,
         ...(Number.isFinite(Number(settings.timeoutSeconds)) && Number(settings.timeoutSeconds) > 0
           ? { timeoutMs: Number(settings.timeoutSeconds) * 1000 }

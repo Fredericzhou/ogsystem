@@ -46,7 +46,7 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     });
     artifact.stream.pipe(response);
   };
-  const workspaceOpen = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/workspace\/open-directory$/);
+  const workspaceOpen = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/workspace\/open-directory$/);
   if (workspaceOpen && request.method === "POST") {
     const remoteAddress = String(request.socket?.remoteAddress || "").replace(/^::ffff:/, "");
     const localRequest = remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress === "localhost";
@@ -62,7 +62,7 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     return true;
   }
 
-  const collection = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations$/);
+  const collection = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations$/);
   if (collection && request.method === "POST") {
     try {
       sendJson(response, 202, await useCases.createSimulation(collection[1], collection[2], { ...(await readBody(request)), awaitCompletion: false }));
@@ -88,7 +88,7 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     return true;
   }
 
-  const artifactPathMatch = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/artifacts(?:\/(.*))?$/);
+  const artifactPathMatch = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/artifacts(?:\/(.*))?$/);
   if (artifactPathMatch && request.method === "GET") {
     try {
       const teamId = artifactPathMatch[1];
@@ -187,7 +187,7 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     return true;
   }
 
-  const stop = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/stop$/);
+  const stop = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/stop$/);
   if (stop && request.method === "POST") {
     try {
       const body = await readBody(request, 32 * 1024);
@@ -198,7 +198,7 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     return true;
   }
 
-  const detail = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)(?:\/(events))?$/);
+  const detail = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)(?:\/(events))?$/);
   if (detail && request.method === "GET") {
     try {
       if (detail[4]) {

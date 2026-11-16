@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseSystemFromMermaidSource } from "../../../dist/runtime/parse-mermaid.js";
-import { authoringToCanvasDocument, importMermaidToAuthoring, loadStudioAuthoringDraft, loadStudioSemanticConfig, serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
+import { authoringToCanvasDocument, harnessBindingsAsModelSelection, importMermaidToAuthoring, loadStudioAuthoringDraft, loadStudioSemanticConfig, serializeAuthoringToMermaid } from "../../../dist/visualizer/studio-authoring.js";
+import { loadExecutionBindingsV2 } from "../../../dist/runtime/contract-v2-loader.js";
 import { buildGraphViewModel } from "../../../dist/visualizer/graph-view-model.js";
 import { localizedEventLabel } from "../event-labels.mjs";
 
@@ -30,9 +31,9 @@ export function createVisualizerProjectDesignProjector({
         }
         throw error;
       }
-      parseSystem(systemSource);
+      const parsedSystem = parseSystem(systemSource);
       const design = await readJson(join(project.workdir, "system.design.json"), read);
-      const modelSelection = await readJson(join(project.workdir, ".ogs", "model-selection.json"), read);
+      const executionBindings = await loadExecutionBindingsV2(join(project.workdir, ".ogs", "execution-bindings.json"));
       const roleDisplayNames = new Map(
         Object.entries(design?.seats && typeof design.seats === "object" ? design.seats : {})
           .flatMap(([roleId, seat]) => {
@@ -47,7 +48,7 @@ export function createVisualizerProjectDesignProjector({
         systemPath: "system.mmd",
         systemSource,
         roleDisplayNames,
-        modelSelection,
+        modelSelection: harnessBindingsAsModelSelection(executionBindings, parsedSystem),
         semanticLoops: semanticConfig.loops
       });
       let authoring = canonicalAuthoring;

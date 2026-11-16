@@ -59,6 +59,11 @@ import { createFileTeamVersionLifecycle } from "./infrastructure/file-team-versi
 import { createPlatformUseCases } from "./application/platform-use-cases.mjs";
 import { createSharedResourceUseCases } from "./application/shared-resource-use-cases.mjs";
 import { createFilePlatformSettings } from "./infrastructure/file-platform-settings.mjs";
+import { createFileHarnessRepositoryStore } from "./infrastructure/file-harness-repository-store.mjs";
+import { createHarnessRepositoryUseCases } from "./application/harness-repository-use-cases.mjs";
+import { defaultBackendRegistry } from "../../dist/runtime/model-backend-registry.js";
+import { validateV2ContractValue } from "../../dist/runtime/contract-v2-loader.js";
+import { harnessTemplateDigest } from "./infrastructure/file-harness-repository-store.mjs";
 import { createFileSharedResourceStore } from "./infrastructure/file-shared-resource-store.mjs";
 import { createModelCatalog } from "./infrastructure/model-catalog.mjs";
 import { createModelAvailabilityProbe } from "./infrastructure/model-availability-probe.mjs";
@@ -106,6 +111,7 @@ import { createProjectQueryUseCases } from "./application/project-query-use-case
 import { ACTIVE_RUN_STATUSES } from "./domain/contracts.mjs";
 import { projectVisualizerStore } from "./infrastructure/project-visualizer-store.mjs";
 import { caseTeamMaterializer } from "./infrastructure/case-team-materializer.mjs";
+import { initializeV2TeamDraftAssets } from "./infrastructure/v2-team-draft-asset-initializer.mjs";
 import { createProjectCreationUseCases } from "./application/project-creation-use-cases.mjs";
 import { createFileRunRecoveryStore } from "./infrastructure/file-run-recovery-store.mjs";
 import { createRuntimeTaskReviewStore } from "./infrastructure/runtime-task-review-store.mjs";
@@ -198,7 +204,7 @@ const teamDesignProjector = createVisualizerProjectDesignProjector();
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
   teamStore: { getTeamVersion: getProject },
-  runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor({ getDefaultModelSelection: getPlatformDefaultModelSelection, projectTeamDesign: (team) => teamDesignProjector.project(team) }) },
+  runStore: { ...createFileProjectRunStore(), ...createRuntimeProjectRunExecutor({ getDefaultHarnessBinding: getPlatformDefaultHarnessBinding, projectTeamDesign: (team) => teamDesignProjector.project(team) }) },
   readiness: taskExecutionReadiness,
   identifiers: createTaskExecutionIdentifiers(),
   evaluateResult: evaluateProjectRunResult
@@ -273,11 +279,21 @@ const platformUseCases = createPlatformUseCases({
   modelCatalog,
   probeModelAvailability: createModelAvailabilityProbe()
 });
+const harnessRepository = createFileHarnessRepositoryStore({ path: join(platformConfigRoot, "harness-repository.json") });
+const harnessUseCases = createHarnessRepositoryUseCases({
+  repository: harnessRepository,
+  modelCatalog,
+  backendRegistry: defaultBackendRegistry,
+  computeDigest: harnessTemplateDigest,
+  validateContract: validateV2ContractValue,
+  workdir: discoveryWorkdir,
+  probeModelAvailability: async ({ backend, modelId }) => platformUseCases.probeModelAvailability({ backend, modelId })
+});
 const sharedResourceUseCases = createSharedResourceUseCases({
   store: createFileSharedResourceStore({ root: join(platformConfigRoot, "shared-resources") })
 });
-async function getPlatformDefaultModelSelection() {
-  return platformUseCases.getDefaultModelSelection();
+async function getPlatformDefaultHarnessBinding() {
+  return platformUseCases.getDefaultHarnessBinding();
 }
 const teamCatalog = createFileTeamCatalog({ projectsRoot: siteProjectsRoot });
 const teamCatalogUseCases = createTeamCatalogUseCases({ teamCatalog });
@@ -310,7 +326,7 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
   teamPackageReader: projectVisualizerStore,
   packageIntegrity: { computeTeamPackageCoreDigest, computeReleaseBaselineDigest },
   simulationStore: studioSimulationStore,
-  simulationRunner: createRuntimeTeamSimulation({ getDefaultModelSelection: getPlatformDefaultModelSelection }),
+  simulationRunner: createRuntimeTeamSimulation({ getDefaultHarnessBinding: getPlatformDefaultHarnessBinding }),
   identifiers: { simulationId: randomUUID },
   requestRunStop,
   openWorkspaceDirectory,
@@ -323,14 +339,14 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
 });
 const projectReadinessUseCases = createProjectReadinessUseCases({
   getProject,
-  readinessInspector: createRuntimeProjectReadinessInspector({ getRuntimeModelConfig: getPlatformDefaultModelSelection })
+  readinessInspector: createRuntimeProjectReadinessInspector({ getRuntimeModelConfig: getPlatformDefaultHarnessBinding })
 });
-const projectDesignValidator = createVisualizerProjectDesignValidator({ getRuntimeModelConfig: getPlatformDefaultModelSelection });
+const projectDesignValidator = createVisualizerProjectDesignValidator({ getRuntimeModelConfig: getPlatformDefaultHarnessBinding });
 const teamDesignUseCases = createTeamDesignUseCases({
   teamCatalog,
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
   teamMetadataStore: { saveTeamMetadata: saveProjectMetadata },
-  designStore: createVisualizerProjectDesignStore({ getRuntimeModelConfig: getPlatformDefaultModelSelection }),
+  designStore: createVisualizerProjectDesignStore({ getRuntimeModelConfig: getPlatformDefaultHarnessBinding }),
   designProjector: teamDesignProjector,
   designSerializer: { serialize: serializeAuthoringToMermaid },
   designValidator: projectDesignValidator,
@@ -383,7 +399,7 @@ const roleSourceCatalogUseCases = createRoleSourceCatalogUseCases({
   store: roleSourceCatalogStore,
   adapters: roleSourceAdapters,
   copyRoleSourceToDraft: teamDesignUseCases.copyRoleSourceToDraft,
-  runRoleTrial: createRuntimeRoleSourceTrial({ getDefaultModelSelection: getPlatformDefaultModelSelection })
+  runRoleTrial: createRuntimeRoleSourceTrial({ getDefaultHarnessBinding: getPlatformDefaultHarnessBinding })
 });
 const roleSourceSyncScheduler = createRoleSourceSyncScheduler({
   listSources: roleSourceCatalogStore.listSources,
@@ -449,6 +465,7 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
   confirmation: createRuntimeTeamConfirmation(),
   releaseEvidence: studioSimulationUseCases,
   caseMaterializer: caseTeamMaterializer,
+  initializeV2DraftAssets: initializeV2TeamDraftAssets,
   caseCatalog: { getCase: (caseId) => cases.find((item) => item.id === caseId), listCases: () => cases },
   assertTrustedTeamTopology: (team) => ["classic", "classic-template"].includes(team.source) && Boolean(team.caseId)
 });
@@ -578,7 +595,7 @@ const server = createServer(async (request, response) => {
     sendJson(response, ready ? 200 : 503, { status: ready ? "ready" : "starting" });
     return;
   }
-  if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases })) return;
+  if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases, harnessUseCases })) return;
   if (await handleRoleSourceAdminRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases, scheduler: roleSourceSyncScheduler })) return;
   if (await handleRoleSourceCatalogRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases })) return;
   if (await handleSharedResourceRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: sharedResourceUseCases })) return;
@@ -658,7 +675,7 @@ const server = createServer(async (request, response) => {
       || url.pathname === "/studio/roles"
       || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+(?:\/artifacts)?)?|release|simulations)\/?$/.test(url.pathname)
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
-    const isPlatformRoute = ["/platform", "/platform/models", "/platform/role-sources"].includes(url.pathname);
+    const isPlatformRoute = ["/platform", "/platform/models", "/platform/harnesses", "/platform/role-sources"].includes(url.pathname);
     if (url.pathname === "/" || url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {
       await serveStatic("/index.html", request, response, isStudioRoute
         ? { headers: { link: "</assets/ogs-studio-graph.js>; rel=preload; as=script" } }

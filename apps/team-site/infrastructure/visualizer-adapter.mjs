@@ -7,7 +7,7 @@ export function createVisualizerAdapter({ baseUrl, username, password, fetchImpl
   const root = String(baseUrl || "").replace(/\/$/, "");
   return {
     async chat({ projectId, payload }) {
-      const target = new URL(`/api/v1/ogs/workspace/studio/chat?projectId=${encodeURIComponent(projectId)}`, root);
+      const target = new URL(`/api/v2/ogs/workspace/studio/chat?projectId=${encodeURIComponent(projectId)}`, root);
       const headers = { "content-type": "application/json" };
       const authorization = authorizationHeader(username, password);
       if (authorization) headers.authorization = authorization;

@@ -17,7 +17,7 @@ function teamVersionIdentity(team) {
 }
 
 function artifactsUrl(teamId, teamVersionId, simulationId) {
-  return `/api/v1/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/artifacts`;
+  return `/api/v2/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/artifacts`;
 }
 
 function publicSimulation(evidence) {

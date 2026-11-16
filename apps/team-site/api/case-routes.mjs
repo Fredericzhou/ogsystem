@@ -1,5 +1,5 @@
 export async function handleCaseRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, cases, eventLabels, buildCaseGraph, runCase, createClassicTeamProject }) {
-  if (request.method === "GET" && url.pathname === "/api/v1/cases") {
+  if (request.method === "GET" && url.pathname === "/api/v2/cases") {
     sendJson(response, 200, { eventLabels, cases: cases.map((item) => ({
       id: item.id,
       title: item.title,
@@ -18,8 +18,8 @@ export async function handleCaseRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const graphMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/graph$/);
-  const caseActionMatch = url.pathname.match(/^\/api\/v1\/cases\/([a-z0-9-]+)\/(use|template)$/);
+  const graphMatch = url.pathname.match(/^\/api\/v2\/cases\/([a-z0-9-]+)\/graph$/);
+  const caseActionMatch = url.pathname.match(/^\/api\/v2\/cases\/([a-z0-9-]+)\/(use|template)$/);
   if (caseActionMatch && request.method === "POST") {
     try {
       const payload = await readBody(request);
@@ -44,7 +44,7 @@ export async function handleCaseRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  if (request.method === "POST" && url.pathname === "/api/v1/demo-runs") {
+  if (request.method === "POST" && url.pathname === "/api/v2/demo-runs") {
     try {
       const payload = await readBody(request);
       const result = await runCase({ caseId: payload.caseId, prompt: payload.prompt, locale: payload.locale, mode: "simulation" });

@@ -37,7 +37,7 @@ export function createRunPoller({
     const pollVersion = ++version;
     const controller = new AbortController();
     activeController = controller;
-    const base = `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}`;
+    const base = `/api/v2/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}`;
     try {
       const runResponse = await request(base, { signal: controller.signal });
       const run = await runResponse.json();

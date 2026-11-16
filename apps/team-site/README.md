@@ -64,7 +64,7 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 
 Team Site 使用固定应用外壳：桌面侧栏可收起并记住选择，平板默认显示图标导航，手机从顶栏打开导航抽屉；抽屉支持 Escape、遮罩关闭和焦点恢复。页面内容在各自的页面区/面板内滚动，路由切换重置当前页面滚动位置。浏览器无法访问 `localStorage` 时，导航和语言仍使用视口默认值及中文回退。
 
-列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。工作台与前端后续轻量演进项见 [统一计划与演进清单](../../docs/development/todo-backlog.md)。真实设备、屏幕阅读器、Windows 与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
+列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。工作台与前端后续轻量演进遵循 [v2 验收清单](../../docs/development/v2-validation-and-acceptance.md)。真实设备、屏幕阅读器、Windows 与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
 
 ## 本地启动
 
@@ -129,15 +129,16 @@ CLI 的账号或凭据。模型请求超时只表示等待**单次模型请求�
 
 ## 验证
 
-页面框架与响应式布局回归：
+Team Site 活动测试与页面框架回归：
 
 ```sh
-node --test apps/team-site/tests/layout-acceptance.test.mjs
+pnpm --dir apps/team-site test --test-concurrency=1
 ```
 
-外壳和页面迁移后运行完整 Team Site 测试：
+根目录构建与活动 Team Site 测试也可一起运行：
 
 ```sh
+pnpm build
 pnpm --dir apps/team-site test --test-concurrency=1
 ```
 

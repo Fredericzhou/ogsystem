@@ -1,5 +1,5 @@
 export async function handleTaskRoutes({ request, response, url, readBody, sendJson, errorStatus, publicTask, useCases }) {
-  const collectionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks$/);
+  const collectionMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/tasks$/);
   if (collectionMatch && request.method === "POST") {
     try {
       sendJson(response, 201, publicTask(await useCases.createProjectTask(collectionMatch[1], await readBody(request))));
@@ -9,7 +9,7 @@ export async function handleTaskRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const itemMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)$/);
+  const itemMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)$/);
   if (itemMatch && request.method === "GET") {
     try {
       sendJson(response, 200, publicTask(await useCases.getProjectTask(itemMatch[1], itemMatch[2])));
@@ -19,7 +19,7 @@ export async function handleTaskRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const reviewContextMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/review$/);
+  const reviewContextMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/review$/);
   if (reviewContextMatch && request.method === "GET") {
     try { sendJson(response, 200, await useCases.getProjectTaskReviewContext(reviewContextMatch[1], reviewContextMatch[2])); }
     catch (error) { sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read Task review context." }); }
@@ -34,7 +34,7 @@ export async function handleTaskRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const actionMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|cancel|review|retry)$/);
+  const actionMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/(start|pause|resume|cancel|review|retry)$/);
   if (!actionMatch || request.method !== "POST") return false;
   try {
     const [, projectId, taskId, action] = actionMatch;

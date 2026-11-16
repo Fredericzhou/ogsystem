@@ -210,7 +210,7 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
     versionBar.append(versionSelect);
     detail.replaceChildren(element("p", "project-loading", en ? "Loading source versions…" : "正在读取来源版本…"));
     try {
-      const versionsPayload = await request("/api/v1/studio/role-sources/" + encodeURIComponent(sourceId) + "/versions");
+      const versionsPayload = await request("/api/v2/studio/role-sources/" + encodeURIComponent(sourceId) + "/versions");
       if (requestId !== detailRequest) return;
       const versions = Array.isArray(versionsPayload.versions) ? versionsPayload.versions : [];
       if (!versions.some((version) => version.commit === commit)) versions.unshift({ commit, updatedAt: role?.updatedAt || source.updatedAt, roleCount: source.roles?.length || 0 });
@@ -221,7 +221,7 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
       versionSelect.value = commit;
       versionSelect.addEventListener("change", () => { void renderDetail(sourceId, roleId, versionSelect.value); });
       detail.replaceChildren(versionBar, element("p", "project-loading", en ? "Loading source preview…" : "正在读取来源预览…"));
-      const path = "/api/v1/studio/role-sources/" + encodeURIComponent(sourceId) + "/roles/" + encodeURIComponent(roleId) + "?commit=" + encodeURIComponent(commit);
+      const path = "/api/v2/studio/role-sources/" + encodeURIComponent(sourceId) + "/roles/" + encodeURIComponent(roleId) + "?commit=" + encodeURIComponent(commit);
       const payload = await request(path);
       if (requestId !== detailRequest) return;
       const current = payload.role || role;
@@ -315,7 +315,7 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
         status.textContent = en ? "Running with the platform model…" : "正在使用平台模型运行…";
         output.hidden = true;
         try {
-          const result = await request("/api/v1/studio/role-sources/" + encodeURIComponent(sourceId) + "/roles/" + encodeURIComponent(roleId) + "/trial?commit=" + encodeURIComponent(commit), "POST", {
+          const result = await request("/api/v2/studio/role-sources/" + encodeURIComponent(sourceId) + "/roles/" + encodeURIComponent(roleId) + "/trial?commit=" + encodeURIComponent(commit), "POST", {
             task: taskField.input.value,
             input: parsedInput,
             userPreferences: preferencesField.input.value
@@ -344,7 +344,7 @@ export function renderRoleSourceCatalog(root, locale, navigate) {
   };
 
   const refresh = async () => {
-    const payload = await request("/api/v1/studio/role-sources");
+    const payload = await request("/api/v2/studio/role-sources");
     sources = Array.isArray(payload.sources) ? payload.sources : [];
     if (selectedSourceId && !sources.some((source) => source.sourceId === selectedSourceId)) {
       selectedSourceId = sources.some((source) => source.sourceId === "agency-agents-cn")

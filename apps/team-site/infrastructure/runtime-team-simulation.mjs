@@ -22,7 +22,7 @@ function normalizeRuntimeStatus(status) {
   return value;
 }
 
-export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultModelSelection = async () => undefined } = {}) {
+export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultHarnessBinding = async () => undefined } = {}) {
   return Object.freeze({
     async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent, runEvidenceDirectory, simulationScenario }) {
       if (simulationScenario && (mode !== "dry-run" || simulationScenario !== "review-reject-once")) {
@@ -35,7 +35,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
         const bundle = teamPackageBundle || await exportTeamPackage(team.workdir);
         const loaded = await loadTeamPackage({ workdir, bundle });
         if (loaded.validation?.ok === false) throw new Error("TEAM_SIMULATION_INVALID: team version failed validation.");
-        const modelConfig = await getDefaultModelSelection();
+        const modelConfig = await getDefaultHarnessBinding();
         const result = await run({
           systemPath: resolve(workdir, "system.mmd"),
           prompt,
@@ -46,7 +46,6 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           executionMode: mode,
           runKind: "studio_simulation",
           trustedProjectTopology: team.source === "classic" || team.source === "classic-template",
-          modelSelectionDefaults: modelConfig?.modelSelectionDefaults,
           modelCatalogModels: modelConfig?.modelCatalogModels,
           modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
           runtimeEdgeIdsByTransition,

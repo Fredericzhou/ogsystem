@@ -47,7 +47,7 @@ function sendError(response, sendJson, errorStatus, error) {
 }
 
 export async function handleRoleSourceAdminRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases, scheduler }) {
-  const root = "/api/v1/platform/role-sources";
+  const root = "/api/v2/platform/role-sources";
   if (url.pathname === root && request.method === "GET") {
     if (!isLoopbackOrTailnet(request)) { sendJson(response, 403, { error: "ROLE_SOURCE_ADMIN_ACCESS_REQUIRED" }); return true; }
     try { sendJson(response, 200, { sources: await useCases.listConfiguredRoleSources() }); }
@@ -62,7 +62,7 @@ export async function handleRoleSourceAdminRoutes({ request, response, url, read
     } catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const sourceMatch = url.pathname.match(/^\/api\/v1\/platform\/role-sources\/([a-z0-9-]+)$/);
+  const sourceMatch = url.pathname.match(/^\/api\/v2\/platform\/role-sources\/([a-z0-9-]+)$/);
   if (sourceMatch && request.method === "PUT") {
     if (!isLoopbackOrTailnet(request)) { sendJson(response, 403, { error: "ROLE_SOURCE_ADMIN_ACCESS_REQUIRED" }); return true; }
     try {
@@ -72,7 +72,7 @@ export async function handleRoleSourceAdminRoutes({ request, response, url, read
     } catch (error) { sendError(response, sendJson, errorStatus, error); }
     return true;
   }
-  const operation = url.pathname.match(/^\/api\/v1\/platform\/role-sources\/([a-z0-9-]+)\/(sync|reindex)$/);
+  const operation = url.pathname.match(/^\/api\/v2\/platform\/role-sources\/([a-z0-9-]+)\/(sync|reindex)$/);
   if (operation && request.method === "POST") {
     if (!isLoopbackOrTailnet(request)) { sendJson(response, 403, { error: "ROLE_SOURCE_ADMIN_ACCESS_REQUIRED" }); return true; }
     try {

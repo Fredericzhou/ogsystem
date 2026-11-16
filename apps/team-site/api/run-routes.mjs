@@ -1,5 +1,5 @@
 export async function handleRunRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases }) {
-  if (request.method === "GET" && url.pathname === "/api/v1/projects/runs/recent") {
+  if (request.method === "GET" && url.pathname === "/api/v2/projects/runs/recent") {
     try {
       sendJson(response, 200, { runs: await useCases.listRecentProjectRuns(Number(url.searchParams.get("limit") || 50)) });
     } catch (error) {
@@ -8,7 +8,7 @@ export async function handleRunRoutes({ request, response, url, readBody, sendJs
     return true;
   }
 
-  const runMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/runs\/([A-Za-z0-9._-]+)(?:\/(events|result))?$/);
+  const runMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/tasks\/([A-Za-z0-9._-]+)\/runs\/([A-Za-z0-9._-]+)(?:\/(events|result))?$/);
   if (!runMatch) return false;
   const [, projectId, taskId, runId, action] = runMatch;
   if (action === "result" && request.method === "GET") {

@@ -1,5 +1,5 @@
 export async function handleProjectRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
-  if (request.method === "GET" && url.pathname === "/api/v1/projects") {
+  if (request.method === "GET" && url.pathname === "/api/v2/projects") {
     try {
       const projects = await useCases.listCollaborationProjects();
       sendJson(response, 200, { projects: projects.map(publicProject) });
@@ -9,7 +9,7 @@ export async function handleProjectRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/v1/projects") {
+  if (request.method === "POST" && url.pathname === "/api/v2/projects") {
     try {
       const payload = await readBody(request);
       const project = await useCases.createCollaborationProject({
@@ -27,7 +27,7 @@ export async function handleProjectRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)$/);
+  const projectMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)$/);
   if (projectMatch && request.method === "DELETE") {
     try {
       sendJson(response, 200, await useCases.deleteCollaborationProject(projectMatch[1]));
@@ -37,7 +37,7 @@ export async function handleProjectRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  const projectTeamMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/teams$/);
+  const projectTeamMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/teams$/);
   if (!projectTeamMatch) return false;
 
   try {

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,11 +108,6 @@ export function buildCaseSystem(caseSpec) {
     "%% system.version=1.0.0",
     `%% law.global=law.site.${caseSpec.id}`,
     ...caseSpec.roles.filter((role) => role.mode).map((role) => `%% role.mode.${role.id}=${role.mode}`),
-    ...caseSpec.roles.filter((role) => role.execution?.profileId).map((role) => {
-      const profileId = role.execution.profileId;
-      const profileRef = profileId.startsWith("profile.") ? profileId : `profile.${profileId}`;
-      return `%% exec.bind.${role.id}=${profileRef}`;
-    }),
     ...caseSpec.joins.flatMap((joinSpec) => [
       `%% join.mode.${joinSpec.roleId}=${joinSpec.mode}`,
       `%% join.sources.${joinSpec.roleId}=${joinSpec.sources.join(",")}`,
@@ -142,6 +137,16 @@ export function buildCaseGraph(caseId, locale = "zh-CN") {
     systemSource,
     roleDisplayNames: new Map(caseSpec.roles.map((role) => [role.id, role.label[locale] || role.label["zh-CN"]]))
   });
+  for (const role of caseSpec.roles) {
+    const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
+    authoring.roles[role.id] = {
+      ...authoring.roles[role.id],
+      bindingKind: "model",
+      backend: resolved.backend,
+      modelId: resolved.modelId,
+      modelRef: `${resolved.backend}/${resolved.modelId}`
+    };
+  }
   authoring.layout.nodes = Object.fromEntries(caseSpec.roles.map((role) => {
     const [x, y] = caseSpec.layout[role.id] || [120, 120];
     return [role.id, { x, y, width: 230, height: 104 }];
@@ -178,13 +183,14 @@ function roleManifest(role) {
     promptTemplate: "prompt.md",
     outputSchema: "output.schema.json",
     tags: ["site-demo", "agent-team"],
-    contractVersion: 1,
+    ogsContractVersion: 2,
+    schemaVersion: 2,
     purpose: role.purpose,
     responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
     inputs: { preconditions: [] },
-    outputs: { events: [...role.events].sort((left, right) => left.localeCompare(right)), postconditions: [] },
+    outputs: { postconditions: [], decisionCriteria: [] },
     authority: { controlActions: [] },
-    constraints: { writableStateFields: [], allowedTools: role.execution?.toolRef ? [role.execution.toolRef] : [] },
+    constraints: { writableStateFields: [] },
     failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
     audit: { requiredFields: [] }
   };
@@ -199,10 +205,15 @@ export async function materializeCaseTeam(caseId, workdir, locale = "zh-CN") {
 
 async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
   const rolesRoot = join(workdir, "team-roles", "roles");
-  const executionRoles = caseSpec.roles.filter((role) => role.execution);
-  if (executionRoles.length) {
-    await mkdir(join(workdir, "tools"), { recursive: true });
-    await writeFile(join(workdir, "tools", "publish-artifacts.mjs"), PUBLISH_ARTIFACTS_SCRIPT);
+  // Team Site templates are V2 model roles. Legacy profile/tool assets are
+  // intentionally not materialized; business artifacts belong to the Role
+  // output contract and Evidence, not an executable V1 profile.
+  await mkdir(rolesRoot, { recursive: true });
+  const expectedRoleIds = new Set(caseSpec.roles.map((role) => role.id));
+  for (const entry of await readdir(rolesRoot, { withFileTypes: true }).catch(() => [])) {
+    if (entry.isDirectory() && !expectedRoleIds.has(entry.name)) {
+      await rm(join(rolesRoot, entry.name), { recursive: true, force: true });
+    }
   }
   for (const role of caseSpec.roles) {
     const roleDir = join(rolesRoot, role.id);
@@ -223,6 +234,12 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
 
   const configDir = join(workdir, ".ogs");
   await mkdir(configDir, { recursive: true });
+  await Promise.all([
+    rm(join(configDir, "model-selection.json"), { force: true }),
+    rm(join(workdir, "profiles.json"), { force: true }),
+    rm(join(workdir, "tools.json"), { force: true }),
+    rm(join(workdir, "tools"), { recursive: true, force: true })
+  ]);
   const systemSource = buildCaseSystem(caseSpec);
   await writeFile(join(workdir, "system.mmd"), systemSource);
   const authoring = importSystemToAuthoring({
@@ -231,12 +248,29 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     system: parseSystemFromMermaidSource(systemSource),
     roleDisplayNames: new Map(caseSpec.roles.map((role) => [role.id, role.label[locale] || role.label["zh-CN"]]))
   });
+  for (const role of caseSpec.roles) {
+    const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
+    authoring.roles[role.id] = {
+      ...authoring.roles[role.id],
+      bindingKind: "model",
+      backend: resolved.backend,
+      modelId: resolved.modelId,
+      modelRef: `${resolved.backend}/${resolved.modelId}`
+    };
+  }
   await writeFile(join(workdir, "system.design.json"), `${JSON.stringify(authoringToDesign(authoring), null, 2)}\n`);
+  await mkdir(join(configDir, "studio"), { recursive: true });
+  await writeFile(join(configDir, "studio", "system.authoring.json"), `${JSON.stringify({
+    ...authoring,
+    ogsContractVersion: 2,
+    version: 2,
+    project: { workdir, systemPath: "system.mmd" }
+  }, null, 2)}\n`);
   const catalog = await readFile(join(repositoryRoot, ".ogs", "model-catalog.json"), "utf8").catch(() => undefined);
   if (catalog) await writeFile(join(configDir, "model-catalog.json"), catalog);
   await writeFile(join(configDir, "laws.json"), `${JSON.stringify({ laws: [{
     lawId: `law.site.${caseSpec.id}`,
-    constraints: { forbiddenToolRefs: [], maxTransitions: 32, allowNoopWithoutExecutionBinding: false }
+    constraints: { forbiddenToolRefs: [], maxTransitions: 32 }
   }] }, null, 2)}\n`);
   await writeFile(join(configDir, "runtime.json"), `${JSON.stringify({
     configVersion: "2",
@@ -246,41 +280,43 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     tools: { environmentPolicy: "minimal", envAllowlist: [] },
     runtime: { error_flows: { v1: false } }
   }, null, 2)}\n`);
-  const demoBackend = resolveDemoBackend();
-  const demoModel = resolveDemoModel(process.env, demoBackend);
   const modelTimeoutMs = Number(process.env.OGS_CASE_MODEL_TIMEOUT_MS || DEFAULT_DEMO_MODEL_TIMEOUT_MS);
   if (!Number.isFinite(modelTimeoutMs) || modelTimeoutMs <= 0) {
     throw new Error("OGS_CASE_MODEL_TIMEOUT_MS must be a positive number.");
   }
-  const roleSelections = Object.fromEntries(caseSpec.roles
-    .filter((role) => role.backend)
-    .map((role) => [role.id, resolveCaseRoleModel(caseSpec, role)]));
-  await writeFile(join(configDir, "model-selection.json"), `${JSON.stringify({
-    configVersion: "3",
-    defaults: {
-      backend: demoBackend,
-      modelId: demoModel,
-      timeoutMs: modelTimeoutMs,
-      maxOutputBytes: 65536
-    },
-    ...(Object.keys(roleSelections).length ? { roles: roleSelections } : {})
-  }, null, 2)}\n`);
-  if (executionRoles.length) {
-    await writeFile(join(workdir, "profiles.json"), `${JSON.stringify(executionRoles.map((role) => ({
-      profileId: role.execution.profileId,
-      toolRef: role.execution.toolRef,
-      timeoutMs: role.execution.timeoutMs ?? 180000,
-      maxOutputBytes: role.execution.maxOutputBytes ?? 65536
-    })), null, 2)}\n`);
-    await writeFile(join(workdir, "tools.json"), `${JSON.stringify({ tools: executionRoles.map((role) => ({
-      toolRef: role.execution.toolRef,
-      runner: "local_shell",
-      command: "node",
-      argsTemplate: ["tools/publish-artifacts.mjs", role.execution.format],
-      stdinMode: "none",
-      requires: role.execution.format === "consulting" ? ["zip", "pandoc", "xelatex"] : ["ffmpeg"]
-    })) }, null, 2)}\n`);
+  const harnessTemplates = {};
+  const bindings = {};
+  const textOnlyCrossBackend = caseSpec.id === "cross-backend-review-loop";
+  for (const role of caseSpec.roles) {
+    const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
+    const templateId = `harness.site.${caseSpec.id}.${role.id}`;
+    harnessTemplates[templateId] = {
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      kind: "harness",
+      templateId,
+      backend: resolved.backend,
+      model: resolved.modelId,
+      // Cross-backend evidence validates business handoff and adapter identity;
+      // it does not claim filesystem/process capabilities for OpenCode.
+      allowedTools: textOnlyCrossBackend ? [] : ["apply_patch", "exec_command"],
+      environment: {
+        filesystem: textOnlyCrossBackend ? "none" : { read: true, write: true },
+        process: textOnlyCrossBackend ? "deny" : "allow",
+        network: "deny",
+        limits: { timeoutMs: role.execution?.timeoutMs ?? modelTimeoutMs, maxOutputBytes: role.execution?.maxOutputBytes ?? 65536 }
+      },
+      preset: "site-demo"
+    };
+    bindings[role.id] = { kind: "harness", harnessTemplate: templateId };
   }
+  await writeFile(join(configDir, "execution-bindings.json"), `${JSON.stringify({
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    defaults: { harnessTemplate: Object.keys(harnessTemplates)[0] },
+    harnessTemplates,
+    roles: bindings
+  }, null, 2)}\n`);
   await writeFile(join(configDir, "user-profile.json"), `${JSON.stringify({
     userProfileId: "site.demo",
     language: locale === "en" ? "en" : "zh-CN",

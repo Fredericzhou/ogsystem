@@ -6,6 +6,7 @@ export function createTeamLifecycleUseCases({
   confirmation,
   releaseEvidence,
   caseMaterializer,
+  initializeV2DraftAssets = async () => {},
   assertTrustedTeamTopology = () => false
 }) {
   for (const operation of ["getProject", "listProjects", "createProject", "saveProjectMetadata", "removeProject"]) {
@@ -163,13 +164,15 @@ export function createTeamLifecycleUseCases({
     async createTeamDraft({ name, overview = "", locale = "zh-CN" } = {}) {
       const normalizedName = String(name || "").trim().slice(0, 120);
       if (!normalizedName) throw new Error("TEAM_NAME_REQUIRED: enter a name for the Team draft.");
-      return projectStore.createProject({
+      const project = await projectStore.createProject({
         name: normalizedName,
         overview: String(overview || "").trim().slice(0, 4000),
         templateId: "empty",
         source: "team-factory",
         locale: locale === "en" ? "en" : "zh-CN"
       });
+      await initializeV2DraftAssets(project, locale === "en" ? "en" : "zh-CN");
+      return projectStore.getProject(project.projectId);
     },
 
     async createClassicTeamProject(input) {

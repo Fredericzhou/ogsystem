@@ -70,10 +70,8 @@ export function teamCorePayload(bundle) {
     }) : null,
     laws: canonicalTeamValue(bundle?.team?.laws || null),
     runtime: canonicalTeamValue(runtimeExecution),
-    modelSelection: canonicalTeamValue(bundle?.team?.modelSelection || null),
+    executionBindings: canonicalTeamValue(bundle?.team?.executionBindings || null),
     teamDefaults: canonicalTeamValue(bundle?.team?.userProfile || null),
-    profiles: canonicalTeamValue(bundle?.team?.profiles || []),
-    tools: canonicalTeamValue(bundle?.team?.tools || { tools: [] }),
     releaseBaselineScenarios: canonicalReleaseBaselines(bundle?.team?.releaseBaselineScenarios || []),
     executableFiles: canonicalExecutableFiles(bundle?.team?.executableFiles)
   };

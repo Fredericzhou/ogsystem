@@ -1,5 +1,5 @@
 export async function handlePackageRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
-  if (request.method === "POST" && url.pathname === "/api/v1/team-packages/import") {
+  if (request.method === "POST" && url.pathname === "/api/v2/team-packages/import") {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
       const { conflictStrategy, teamName, ...bundle } = payload || {};
@@ -11,7 +11,7 @@ export async function handlePackageRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/v1/team-packages/preview") {
+  if (request.method === "POST" && url.pathname === "/api/v2/team-packages/preview") {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
       sendJson(response, 200, await useCases.previewTeamPackage(payload));
@@ -21,7 +21,7 @@ export async function handlePackageRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/v1/project-packages/import") {
+  if (request.method === "POST" && url.pathname === "/api/v2/project-packages/import") {
     try {
       const payload = await readBody(request, 8 * 1024 * 1024);
       const { conflictStrategy, ...bundle } = payload || {};
@@ -32,7 +32,7 @@ export async function handlePackageRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/v1/project-packages/preview") {
+  if (request.method === "POST" && url.pathname === "/api/v2/project-packages/preview") {
     try {
       sendJson(response, 200, await useCases.previewProjectBundle(await readBody(request, 8 * 1024 * 1024)));
     } catch (error) {
@@ -41,7 +41,7 @@ export async function handlePackageRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  const teamExportMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/team\/export$/);
+  const teamExportMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/team\/export$/);
   if (teamExportMatch && request.method === "GET") {
     try {
       const bundle = await useCases.exportProjectTeam(teamExportMatch[1]);
@@ -58,7 +58,7 @@ export async function handlePackageRoutes({ request, response, url, readBody, se
     return true;
   }
 
-  const projectExportMatch = url.pathname.match(/^\/api\/v1\/projects\/([a-z0-9-]+)\/export$/);
+  const projectExportMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/export$/);
   if (projectExportMatch && request.method === "GET") {
     try {
       const bundle = await useCases.exportProjectBundle(projectExportMatch[1]);

@@ -1,5 +1,5 @@
 export async function handleTeamRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
-  const batchCancelMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
+  const batchCancelMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
   if (batchCancelMatch && request.method === "POST") {
     try {
       sendJson(response, 200, { batch: await useCases.cancelReleaseBaselineBatch(batchCancelMatch[1], batchCancelMatch[2]) });
@@ -8,7 +8,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const batchStatusMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/latest$/);
+  const batchStatusMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/latest$/);
   if (batchStatusMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getReleaseBaselineBatchStatus(batchStatusMatch[1]));
@@ -17,7 +17,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const batchStartMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches$/);
+  const batchStartMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches$/);
   if (batchStartMatch && request.method === "POST") {
     try {
       const body = await readBody(request, 1024 * 1024);
@@ -27,7 +27,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const comparisonMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines\/comparison$/);
+  const comparisonMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/comparison$/);
   if (comparisonMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.compareReleaseBaselines(comparisonMatch[1], url.searchParams.get("target") || "parent_version"));
@@ -36,7 +36,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const releaseReadinessMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-readiness$/);
+  const releaseReadinessMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-readiness$/);
   if (releaseReadinessMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getTeamReleaseReadiness(releaseReadinessMatch[1]));
@@ -45,7 +45,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const releaseBaselinesMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release-baselines$/);
+  const releaseBaselinesMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines$/);
   if (releaseBaselinesMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getReleaseBaselineScenarios(releaseBaselinesMatch[1]));
@@ -62,7 +62,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const graphMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/graph$/);
+  const graphMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/graph$/);
   if (graphMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getTeamGraph(graphMatch[1], url.searchParams.get("locale") || "zh-CN"));
@@ -71,7 +71,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const chatMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/chat$/);
+  const chatMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/chat$/);
   if (chatMatch && request.method === "POST") {
     try {
       const upstream = await useCases.chatTeamAssistant(chatMatch[1], await readBody(request, 4 * 1024 * 1024));
@@ -81,7 +81,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const teamVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)(?:\/(design(?:\/validate)?|release|archive|edit))?$/);
+  const teamVersionMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)(?:\/(design(?:\/validate)?|release|archive|edit))?$/);
   if (teamVersionMatch && request.method === "GET" && !teamVersionMatch[2]) {
     try {
       sendJson(response, 200, publicProject(await useCases.getTeamVersion(teamVersionMatch[1])));
@@ -134,7 +134,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const saveVersionMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/save$/);
+  const saveVersionMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/save$/);
   if (saveVersionMatch && request.method === "PUT") {
     try {
       sendJson(response, 200, await useCases.saveTeamVersion(saveVersionMatch[1], await readBody(request, 8 * 1024 * 1024)));
@@ -147,7 +147,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const assetsMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/design\/assets$/);
+  const assetsMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/design\/assets$/);
   if (assetsMatch && request.method === "GET") {
     try {
       sendJson(response, 200, await useCases.getTeamDesignAssets(assetsMatch[1]));
@@ -164,12 +164,12 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  if (request.method === "GET" && url.pathname === "/api/v1/team-factory") {
+  if (request.method === "GET" && url.pathname === "/api/v2/team-factory") {
     sendJson(response, 200, { teams: (await useCases.listTeamFactory()).map(publicProject) });
     return true;
   }
 
-  if (request.method === "GET" && url.pathname === "/api/v1/team-repository") {
+  if (request.method === "GET" && url.pathname === "/api/v2/team-repository") {
     const result = await useCases.queryTeamRepository({
       query: url.searchParams.get("query") || "",
       category: url.searchParams.get("category") || "",
@@ -182,7 +182,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const deleteTeamMatch = url.pathname.match(/^\/api\/v1\/teams\/([a-z0-9-]+)$/);
+  const deleteTeamMatch = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)$/);
   if (deleteTeamMatch && request.method === "DELETE") {
     try {
       sendJson(response, 200, await useCases.deleteTeam(deleteTeamMatch[1]));
@@ -196,7 +196,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/v1/team-factory") {
+  if (request.method === "POST" && url.pathname === "/api/v2/team-factory") {
     try {
       const payload = await readBody(request);
       const team = await useCases.createTeamDraft({
@@ -211,7 +211,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const editMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/edit$/);
+  const editMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/edit$/);
   if (editMatch && request.method === "POST") {
     try {
       sendJson(response, 201, publicProject(await useCases.forkTeamVersion(editMatch[1])));
@@ -221,7 +221,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const releaseMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/release$/);
+  const releaseMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release$/);
   if (releaseMatch && request.method === "POST") {
     try {
       sendJson(response, 200, publicProject(await useCases.releaseTeamVersion(releaseMatch[1])));
@@ -231,7 +231,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const archiveMatch = url.pathname.match(/^\/api\/v1\/team-versions\/([a-z0-9-]+)\/archive$/);
+  const archiveMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/archive$/);
   if (archiveMatch && request.method === "POST") {
     try {
       sendJson(response, 200, publicProject(await useCases.archiveTeamVersion(archiveMatch[1])));

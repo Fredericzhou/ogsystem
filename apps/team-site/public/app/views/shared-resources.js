@@ -40,7 +40,7 @@ async function jsonRequest(path, method, body) {
 function renderCatalogPage(root, section, locale) {
   const tools = section === "tools";
   const title = tools ? (locale === "en" ? "Tool" : "工具") : (locale === "en" ? "Storage target" : "存储目标");
-  const path = tools ? "/api/v1/platform/tools" : "/api/v1/platform/storage-targets";
+  const path = tools ? "/api/v2/platform/tools" : "/api/v2/platform/storage-targets";
   const typeOptions = tools
     ? '<option value="exec">Command line</option><option value="http">HTTP</option><option value="mcp">MCP</option>'
     : '<option value="database">Database</option><option value="object">Object storage</option><option value="http">HTTP</option>';
@@ -71,7 +71,7 @@ function renderDatasetPage(root, locale) {
   root.innerHTML = `${pageHeading("data", locale)}<div class="shared-resource-layout"><form id="dataset-form" class="project-panel compact-form"><div class="panel-head"><div><span class="section-kicker">${locale === "en" ? "Immutable snapshot" : "不可变快照"}</span><h2>${locale === "en" ? "Publish dataset version" : "发布数据集版本"}</h2></div></div><label>${locale === "en" ? "Dataset ID" : "数据集标识"}<input name="resourceId" required pattern="[a-z0-9][a-z0-9-]{0,79}"></label><label>${locale === "en" ? "Version ID" : "版本标识"}<input name="versionId" required pattern="[a-z0-9][a-z0-9-]{0,79}"></label><label>${locale === "en" ? "Display name" : "显示名称"}<input name="name" maxlength="120"></label><label>${locale === "en" ? "Files as JSON object" : "文件内容（JSON 对象）"}<textarea name="files" rows="10" required spellcheck="false">{"README.md":"Shared reference data"}</textarea><small class="field-hint">${locale === "en" ? "Keys are relative file paths. Published versions cannot be overwritten." : "键为相对文件路径。已发布版本不能覆盖。"}</small></label><button class="primary-button" type="submit">${locale === "en" ? "Publish version" : "发布版本"}</button><p class="form-status" id="dataset-status" role="status" aria-live="polite"></p></form><section><div class="panel-head"><div><span class="section-kicker">${locale === "en" ? "Published snapshots" : "已发布快照"}</span><h2>${locale === "en" ? "Dataset versions" : "数据集版本"}</h2></div></div><div id="dataset-list" class="shared-resource-list"><p class="project-loading">${locale === "en" ? "Loading…" : "正在读取…"}</p></div></section></div>`;
   const list = root.querySelector("#dataset-list");
   const refresh = async () => {
-    const payload = await jsonRequest("/api/v1/platform/data-sets", "GET");
+    const payload = await jsonRequest("/api/v2/platform/data-sets", "GET");
     list.innerHTML = payload.datasets.length ? payload.datasets.map((dataset) => `<article class="shared-resource-row"><div><strong>${esc(dataset.name)}</strong><code>${esc(dataset.resourceId)} · ${esc(dataset.versionId)}</code><p>${dataset.files.length} files · SHA-256 ${esc(dataset.digest)}</p></div><span class="status-chip confirmed">${locale === "en" ? "Read only" : "只读"}</span></article>`).join("") : `<p class="empty-note">${locale === "en" ? "No published datasets." : "尚无已发布数据集。"}</p>`;
   };
   root.querySelector("#dataset-form").addEventListener("submit", async (event) => {
@@ -84,7 +84,7 @@ function renderDatasetPage(root, locale) {
     catch { status.textContent = locale === "en" ? "Files must be a JSON object of path to text content." : "文件内容必须是“路径: 文本内容”的 JSON 对象。"; return; }
     status.textContent = locale === "en" ? "Publishing…" : "正在发布…";
     try {
-      await jsonRequest("/api/v1/platform/data-sets/versions", "POST", { resourceId: fields.get("resourceId"), versionId: fields.get("versionId"), name: fields.get("name"), files });
+      await jsonRequest("/api/v2/platform/data-sets/versions", "POST", { resourceId: fields.get("resourceId"), versionId: fields.get("versionId"), name: fields.get("name"), files });
       status.textContent = locale === "en" ? "Immutable version published." : "不可变版本已发布。";
       await refresh();
     } catch (error) { status.textContent = error.message; }

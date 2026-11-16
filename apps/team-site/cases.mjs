@@ -1,5 +1,68 @@
 export const cases = [
   {
+    id: "cross-backend-review-loop",
+    title: { "zh-CN": "跨底座审核循环", en: "Cross-backend review loop" },
+    short: {
+      "zh-CN": "由 Codex 先形成实施判断，再交给 OpenCode 复核并完成业务交接。",
+      en: "Codex forms the implementation decision first, then OpenCode reviews the handoff and closes the business loop."
+    },
+    category: { "zh-CN": "跨底座协作", en: "Cross-backend collaboration" },
+    duration: { "zh-CN": "2 个角色", en: "2 roles" },
+    catalog: {
+      tier: { "zh-CN": "交叉验证模板", en: "Cross-validated template" },
+      fit: { "zh-CN": "用于验证不同 CLI 底座之间的业务交接和证据闭环。", en: "For validating business handoff and evidence across different CLI backends." },
+      delivery: { "zh-CN": "审核结论与交接证据", en: "Review decision and handoff evidence" },
+      api: { "zh-CN": "Codex → OpenCode", en: "Codex → OpenCode" }
+    },
+    icon: "workflow",
+    detail: {
+      scenario: { "zh-CN": "验证一个由 Codex 形成初步实现判断、再由 OpenCode 复核的有界交付流程。", en: "Validate a bounded delivery flow where Codex forms an implementation decision and OpenCode reviews it." },
+      relationship: { "zh-CN": "规划角色输出业务判断，复核角色只接收业务数据和元数据，不接收上游 Harness 或角色私有配置。", en: "The planner emits a business decision. The reviewer receives business data and metadata only, never the upstream Harness or private role configuration." },
+      background: { "zh-CN": "跨底座协作必须验证模型服务、CLI 适配、业务交接和 Evidence 能否在同一条 Flow 中闭合。", en: "Cross-backend collaboration must prove that model service, CLI adapters, business handoff, and Evidence close within one Flow." },
+      problem: { "zh-CN": "适合验证跨 Backend 的角色交接、只传递业务数据以及最终业务结论。", en: "Use this team to verify cross-backend role handoff, business-only downstream inputs, and a final decision." },
+      collaboration: { "zh-CN": "Codex 规划员输出审核清单，OpenCode 复核员基于交接内容确认是否继续。", en: "The Codex planner produces a review checklist, and the OpenCode reviewer decides whether to proceed from the handoff." },
+      deliverable: { "zh-CN": "带 handoff=true 的审核结论和完整运行证据。", en: "A review decision with handoff=true and complete run evidence." },
+      roles: {
+        planner: { "zh-CN": "形成跨底座交接所需的业务判断。", en: "Forms the business decision required for the cross-backend handoff." },
+        implementer: { "zh-CN": "复核交接内容并给出最终业务结论。", en: "Reviews the handoff and returns the final business decision." }
+      }
+    },
+    accent: "blue",
+    layout: { planner: [120, 150], implementer: [620, 150] },
+    semantics: ["business_handoff", "cross_backend", "evidence"],
+    joins: [],
+    projections: [["implementer", "task", "global.task"]],
+    outputSchema: {
+      type: "object",
+      required: ["handoff"],
+      properties: { handoff: { type: "boolean" }, decision: { type: "string" } },
+      additionalProperties: true
+    },
+    roles: [
+      {
+        id: "planner",
+        label: { "zh-CN": "Codex 规划员", en: "Codex planner" },
+        backend: "codex",
+        purpose: "Prepare a concise business handoff for the downstream reviewer.",
+        events: ["READY"],
+        prompt: "Summarize the requested cross-backend business handoff. State the verified decision, acceptance checks, and whether the downstream reviewer should proceed. Return JSON with event READY and content only; do not expose Harness, tool, permission, or private role configuration."
+      },
+      {
+        id: "implementer",
+        label: { "zh-CN": "OpenCode 复核员", en: "OpenCode reviewer" },
+        backend: "opencode",
+        purpose: "Review the planner's business handoff and close the workflow.",
+        events: ["READY"],
+        prompt: "Review the business handoff you received. Confirm the decision and return JSON with event READY, content containing CROSS_BACKEND_HANDOFF_OK, and data.handoff=true. Do not request or disclose upstream Harness, tool, permission, or private role configuration."
+      }
+    ],
+    flows: [
+      ["__system_start__", "planner", "START"],
+      ["planner", "implementer", "READY"],
+      ["implementer", "__system_end__", "READY"]
+    ]
+  },
+  {
     id: "management-consulting",
     title: { "zh-CN": "管理咨询交付", en: "Management consulting delivery" },
     short: {

@@ -204,14 +204,14 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
     }
   };
   const refresh = async () => {
-    const payload = await request("/api/v1/platform/role-sources");
+    const payload = await request("/api/v2/platform/role-sources");
     sources = Array.isArray(payload.sources) ? payload.sources : [];
     renderSources();
   };
   async function trigger(id, operation) {
     formStatus.textContent = en ? "Starting background task…" : "正在启动后台任务…";
     try {
-      await request("/api/v1/platform/role-sources/" + encodeURIComponent(id) + "/" + operation, "POST", {});
+      await request("/api/v2/platform/role-sources/" + encodeURIComponent(id) + "/" + operation, "POST", {});
       await refresh();
       formStatus.textContent = en ? "Background task queued." : "后台任务已启动。";
     } catch (error) { formStatus.textContent = error.message; }
@@ -222,8 +222,8 @@ export async function renderPlatformRoleSources(root, locale = "zh-CN") {
     save.disabled = true;
     const body = { name: name.value.trim(), enabled: enabled.checked };
     const path = selectedId
-      ? "/api/v1/platform/role-sources/" + encodeURIComponent(selectedId)
-      : "/api/v1/platform/role-sources";
+      ? "/api/v2/platform/role-sources/" + encodeURIComponent(selectedId)
+      : "/api/v2/platform/role-sources";
     if (!selectedId) Object.assign(body, { sourceId: sourceId.value.trim(), gitUrl: gitUrl.value.trim(), branch: branch.value.trim(), adapterId: adapter.value });
     formStatus.textContent = en ? "Saving…" : "正在保存…";
     try {

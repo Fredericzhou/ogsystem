@@ -125,37 +125,30 @@ export function createTeamDesignUseCases({
     }
   }
 
-  async function modelSelectionForAuthoring(team, authoring) {
+  async function harnessBindingsForAuthoring(team, authoring, submittedBindings) {
     const roles = authoring?.roles && typeof authoring.roles === "object" ? authoring.roles : {};
     const current = await designAssetStore.readAssets({ workdir: team.workdir, roleIds: Object.keys(roles) });
-    const roleOverrides = {};
+    const currentBindings = current.executionBindings || { ogsContractVersion: 2, schemaVersion: 1, harnessTemplates: {}, roles: {} };
+    const candidate = submittedBindings && typeof submittedBindings === "object" ? submittedBindings : currentBindings;
+    if (candidate.ogsContractVersion !== 2 || candidate.schemaVersion !== 1) throw new Error("TEAM_HARNESS_BINDINGS_INVALID");
+    const templates = { ...(candidate.harnessTemplates || {}) };
+    const rolesOut = { ...(candidate.roles || {}) };
     for (const [roleId, role] of Object.entries(roles)) {
-      if (role?.bindingKind !== "model") continue;
-      const override = {};
-      const modelRef = String(role.modelRef || "").trim();
-      if (role.modelSelectionSource !== "default") {
-        const explicitBackend = String(role.backend || "").trim();
-        const explicitModelId = String(role.modelId || "").trim();
-        const separator = modelRef.indexOf("/");
-        if (explicitBackend && explicitModelId) {
-          override.backend = explicitBackend;
-          override.modelId = explicitModelId;
-        } else if (separator > 0 && separator < modelRef.length - 1) {
-          override.backend = modelRef.slice(0, separator);
-          override.modelId = modelRef.slice(separator + 1);
-        } else {
-          throw new Error(`TEAM_MODEL_BINDING_REQUIRED: select a runnable model for ${roleId} before saving.`);
-        }
+      const templateId = String(role?.harnessTemplate || rolesOut[roleId]?.harnessTemplate || "").trim();
+      if (!templateId) {
+        delete rolesOut[roleId];
+        continue;
       }
-      if (role.fallback) override.fallback = role.fallback;
-      if (override.backend && override.modelId) roleOverrides[roleId] = override;
-      else if (override.fallback) roleOverrides[roleId] = override;
+      const template = templates[templateId];
+      if (!template || template.kind !== "harness" || template.templateId !== templateId) {
+        throw new Error(`TEAM_HARNESS_TEMPLATE_UNRESOLVED: ${roleId} -> ${templateId}`);
+      }
+      rolesOut[roleId] = { kind: "harness", harnessTemplate: templateId };
     }
-    return {
-      configVersion: "3",
-      ...(current.modelSelection?.defaults ? { defaults: current.modelSelection.defaults } : {}),
-      roles: roleOverrides
-    };
+    const referenced = new Set(Object.values(rolesOut).map((binding) => binding?.harnessTemplate).filter(Boolean));
+    if (candidate.defaults?.harnessTemplate) referenced.add(candidate.defaults.harnessTemplate);
+    const boundTemplates = Object.fromEntries(Object.entries(templates).filter(([templateId]) => referenced.has(templateId)));
+    return { ...candidate, ogsContractVersion: 2, schemaVersion: 1, harnessTemplates: boundTemplates, roles: rolesOut };
   }
 
   return Object.freeze({
@@ -238,7 +231,7 @@ export function createTeamDesignUseCases({
         await assertSafeTransitionBudget(team, authoring, body.assets?.laws);
         const assets = { ...(body.assets || {}) };
         if (body.authoring && typeof body.authoring === "object") {
-          assets.modelSelection = await modelSelectionForAuthoring(team, body.authoring);
+          assets.executionBindings = await harnessBindingsForAuthoring(team, body.authoring, body.assets?.executionBindings);
         }
         return designAssetStore.saveAssets({ workdir: team.workdir, assets, roleIds });
       });
@@ -265,7 +258,10 @@ export function createTeamDesignUseCases({
         if (selectedEvents && (selectedEvents.length !== outgoingEvents.length || selectedEvents.some((event, index) => event !== outgoingEvents[index]))) {
           throw new Error("TEAM_SOURCE_EVENTS_MISMATCH: selected events must match the role's Team outgoing events.");
         }
-        const configuredTools = new Set((current.executionConfig?.tools?.tools || []).map((tool) => String(tool.toolRef || "")).filter(Boolean));
+        const configuredTools = new Set(Object.values(current.executionBindings?.harnessTemplates || {})
+          .flatMap((template) => Array.isArray(template?.allowedTools) ? template.allowedTools : [])
+          .map((tool) => String(tool || "").trim())
+          .filter(Boolean));
         const selectedTools = allowedTools === undefined ? undefined : normalizeConfirmedList(allowedTools, "allowedTools");
         if (selectedTools?.some((tool) => !configuredTools.has(tool))) throw new Error("TEAM_SOURCE_TOOL_NOT_ALLOWED");
         if (!selectedEvents || !selectedTools || identityConfirmed !== true) {
@@ -284,7 +280,6 @@ export function createTeamDesignUseCases({
         if (!sourceVersionMatches) throw new Error("TEAM_SOURCE_PROVENANCE_MISMATCH");
         role.roleId = roleId;
         role.outputs = { ...role.outputs, events: selectedEvents || [] };
-        role.constraints = { ...role.constraints, allowedTools: selectedTools || [] };
         const verification = selectedEvents && selectedTools && identityConfirmed === true
           ? { status: "verified", identityConfirmed: true, eventsConfirmed: true, toolsConfirmed: true, confirmedEvents: selectedEvents, confirmedTools: selectedTools }
           : { status: "unverified", identityConfirmed: identityConfirmed === true, eventsConfirmed: selectedEvents !== undefined, toolsConfirmed: selectedTools !== undefined, missingConfirmations: [

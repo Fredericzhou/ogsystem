@@ -105,7 +105,7 @@ export async function bootstrapLanding() {
   });
   $$('[data-site-theme-choice]').forEach((button) => button.addEventListener("click", () => applyTheme(button.dataset.siteThemeChoice)));
   $("#landing-view")?.addEventListener("click", navigateFromLanding);
-  const response = await pageFetch("/api/v1/cases");
+  const response = await pageFetch("/api/v2/cases");
   if (!response.ok) throw new Error("Unable to load team cases.");
   const payload = await response.json();
   state.cases = payload.cases || [];

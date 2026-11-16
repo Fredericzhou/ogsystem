@@ -1,16 +1,14 @@
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { validateLawsConfig, validateProfilesConfig, validateToolsConfig } from "../../../dist/runtime/config.js";
-import { validateModelSelection } from "../../../dist/runtime/model-selection.js";
+import { assertNoLegacyV1ExecutionAssets } from "../../../dist/runtime/contract-v2-loader.js";
+import { validateLawsConfig } from "../../../dist/runtime/config.js";
 
 const ROLE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const ROLE_FILES = ["agent.md", "prompt.md", "role.json", "output.schema.json", "source.json"];
 const EDITABLE_ROLE_FILES = ROLE_FILES.filter((file) => file !== "source.json");
 const CONTRACT_PATH = ".ogs/contracts/handoff.json";
-const PROFILE_PATH = "profiles.json";
-const TOOL_PATH = "tools.json";
-const MODEL_SELECTION_PATH = ".ogs/model-selection.json";
+const EXECUTION_BINDINGS_PATH = ".ogs/execution-bindings.json";
 const LAWS_PATH = ".ogs/laws.json";
 const MAX_FILE_BYTES = 1024 * 1024;
 
@@ -89,21 +87,20 @@ function validateAsset(file, content) {
   }
 }
 
-async function readExecutionConfig(root, read) {
-  const profilesPath = resolve(root, PROFILE_PATH);
-  const toolsPath = resolve(root, TOOL_PATH);
-  await assertSafePath(root, profilesPath);
-  await assertSafePath(root, toolsPath);
-  let profiles = [];
-  let tools = { tools: [] };
-  try { profiles = JSON.parse(await read(profilesPath, "utf8")); }
-  catch (error) { if (error?.code !== "ENOENT") throw error; }
-  try { tools = JSON.parse(await read(toolsPath, "utf8")); }
-  catch (error) { if (error?.code !== "ENOENT") throw error; }
-  return {
-    profiles: validateProfilesConfig(profiles, profilesPath),
-    tools: validateToolsConfig(tools, toolsPath)
-  };
+async function readExecutionBindings(root, read) {
+  await assertNoLegacyV1ExecutionAssets(root);
+  const path = resolve(root, EXECUTION_BINDINGS_PATH);
+  await assertSafePath(root, path);
+  try {
+    const bindings = JSON.parse(await read(path, "utf8"));
+    if (!bindings || typeof bindings !== "object" || Array.isArray(bindings) || bindings.ogsContractVersion !== 2) {
+      throw new Error("TEAM_HARNESS_BINDINGS_INVALID: execution-bindings.json must declare ogsContractVersion=2.");
+    }
+    return bindings;
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 export function createFileTeamDesignAssetStore({ write = writeFile, read = readFile, publish = rename, makeId = randomUUID } = {}) {
@@ -169,11 +166,6 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
         try { contractSchemas[schemaPath] = await read(path, "utf8"); }
         catch (error) { if (error?.code !== "ENOENT") throw error; contractSchemas[schemaPath] = ""; }
       }
-      const modelSelectionPath = resolve(root, MODEL_SELECTION_PATH);
-      await assertSafePath(root, modelSelectionPath);
-      let modelSelection = { configVersion: "3" };
-      try { modelSelection = validateModelSelection(JSON.parse(await read(modelSelectionPath, "utf8")), modelSelectionPath); }
-      catch (error) { if (error?.code !== "ENOENT") throw error; }
       const lawsPath = resolve(root, LAWS_PATH);
       await assertSafePath(root, lawsPath);
       let lawsText = "";
@@ -184,7 +176,7 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
       } catch (error) {
         if (error?.code !== "ENOENT") throw new Error("TEAM_LAWS_CONFIG_INVALID: .ogs/laws.json is malformed or invalid.");
       }
-      return { roles, contracts, contractSchemas, executionConfig: await readExecutionConfig(root, read), modelSelection, laws, lawsText };
+      return { roles, contracts, contractSchemas, executionBindings: await readExecutionBindings(root, read), laws, lawsText };
     },
     async saveAssets({ workdir, assets = {}, roleIds = [] }) {
       const root = resolve(workdir);
@@ -219,16 +211,17 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
         files.push({ path: contractSchemaPath(root, relativePath), content });
       }
       if (assets.executionConfig !== undefined) {
-        const executionConfig = assets.executionConfig;
-        const profiles = validateProfilesConfig(executionConfig.profiles, resolve(root, PROFILE_PATH));
-        const tools = validateToolsConfig(executionConfig.tools, resolve(root, TOOL_PATH));
-        files.push({ path: resolve(root, PROFILE_PATH), content: `${JSON.stringify(profiles, null, 2)}\n` });
-        files.push({ path: resolve(root, TOOL_PATH), content: `${JSON.stringify(tools, null, 2)}\n` });
+        throw new Error("V2_LEGACY_EXECUTION_CONFIG: profiles.json/tools.json are not accepted; configure a v2 Harness Template in .ogs/execution-bindings.json.");
+      }
+      if (assets.executionBindings !== undefined) {
+        const bindings = assets.executionBindings;
+        if (!bindings || typeof bindings !== "object" || Array.isArray(bindings) || bindings.ogsContractVersion !== 2) {
+          throw new Error("TEAM_HARNESS_BINDINGS_INVALID: execution-bindings.json must declare ogsContractVersion=2.");
+        }
+        files.push({ path: resolve(root, EXECUTION_BINDINGS_PATH), content: `${JSON.stringify(bindings, null, 2)}\n` });
       }
       if (assets.modelSelection !== undefined) {
-        const path = resolve(root, MODEL_SELECTION_PATH);
-        const modelSelection = validateModelSelection(assets.modelSelection, path);
-        files.push({ path, content: `${JSON.stringify(modelSelection, null, 2)}\n` });
+        throw new Error("V2_LEGACY_MODEL_SELECTION: .ogs/model-selection.json is not an active v2 asset; update Harness Templates in execution-bindings.json.");
       }
       if (assets.laws !== undefined || assets.lawsText !== undefined) {
         let laws;
