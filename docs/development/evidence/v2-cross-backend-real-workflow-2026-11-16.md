@@ -4,8 +4,8 @@
 
 The repository reproducibility probe `scripts/run-cross-backend-evidence.mjs` completed a real
 Codex -> OpenCode run with model `gpt-6-luna`. The latest sanitized result is stored in
-`v2-cross-backend-real-run-latest.json` (Run `20261116-230555-a2fefc26`) and reports two
-transitions, two successful Roles, zero failed Roles, zero noop executions, 115 V2 Evidence
+`v2-cross-backend-real-run-latest.json` (Run `20261116-231449-7e30e7c9`) and reports two
+transitions, two successful Roles, zero failed Roles, zero noop executions, 98 V2 Evidence
 events, a valid V2 envelope on every event, and both Backend identities observed.
 The Flow was:
 
@@ -27,8 +27,8 @@ provider naming remains inside the Technical Binding and Adapter boundary.
 - Successful Roles: `2`
 - Failed Roles: `0`
 - Noop executions: `0`
-- Duration: approximately `26,129 ms`
-- Evidence events: `115`, all with `ogsContractVersion`, `schemaVersion`, `eventId`,
+- Duration: approximately `25,574 ms`
+- Evidence events: `98`, all with `ogsContractVersion`, `schemaVersion`, `eventId`,
   `eventType`, `runId`, `recordedAt`, and `payload`
 - Codex adapter: `codex-app-server-v2`, model `gpt-6-luna`
 - OpenCode adapter: `opencode-sdk-v2-native-tools-1`, with `allowedTools=[]` in this
