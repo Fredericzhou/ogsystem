@@ -146,6 +146,15 @@ test("native adapters map the frozen environment policy into bounded workspace c
   });
 });
 
+test("OpenCode denies task and dynamic tools when host resources are not fully enforceable", () => {
+  const restricted = { filesystem: { read: false, write: false }, process: false, network: false };
+  assert.equal(opencodeBackendAdapter.validateToolResources("task", restricted).allowed, false);
+  assert.equal(opencodeBackendAdapter.validateToolResources("external_directory", restricted).allowed, false);
+  assert.equal(opencodeBackendAdapter.validateToolResources("mcp/filesystem", restricted).allowed, false);
+  assert.equal(opencodeBackendAdapter.validateToolResources("plugin.custom_tool", restricted).allowed, false);
+  assert.equal(opencodeBackendAdapter.validateToolResources("question", restricted).allowed, true);
+});
+
 
 test("Codex protocol notifications normalize to bounded agent progress events", () => {
   assert.deepEqual(normalizeCodexProtocolEvent({

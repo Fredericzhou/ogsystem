@@ -378,6 +378,21 @@ export const opencodeBackendAdapter: BackendAdapter = {
     return { root: policy.root, read: policy.filesystem.read, write: policy.filesystem.write, command: policy.process, network: policy.network };
   },
   validateToolResources(toolId, policy) {
+    const normalized = toolId.trim().toLowerCase();
+    // OpenCode's task, skill, MCP and dynamically registered tools can invoke
+    // resources outside the current prompt's direct workspace tool set. Until
+    // the adapter can prove their resource boundary, keep them fail-closed.
+    const knownResourceFreeTools = new Set(["invalid", "question", "todowrite"]);
+    const isMcpOrDynamic = normalized.startsWith("mcp") || normalized.includes("mcp/") || normalized.includes(":") || normalized.startsWith("plugin.");
+    const requiresAllResources = normalized === "task" || normalized === "skill" || normalized === "external_directory" || isMcpOrDynamic || ![
+      "invalid", "question", "todowrite", "bash", "read", "glob", "grep", "edit", "write",
+      "apply_patch", "webfetch", "websearch", "external_directory", "workspace.read", "workspace.list",
+      "workspace.glob", "workspace.search", "workspace.write", "workspace.patch_text", "workspace.run"
+    ].includes(normalized);
+    if (requiresAllResources && !knownResourceFreeTools.has(normalized)
+      && (!policy.filesystem.read || !policy.filesystem.write || !policy.process || !policy.network)) {
+      return { allowed: false, reason: `${toolId} may access host resources that OpenCode cannot constrain under the effective environment policy` };
+    }
     if (["read", "list", "glob", "grep", "workspace.read", "workspace.list", "workspace.glob", "workspace.search"].includes(toolId) && !policy.filesystem.read) {
       return { allowed: false, reason: "filesystem reads are disabled by the effective environment policy" };
     }

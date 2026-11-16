@@ -167,7 +167,7 @@ async function runModelsCommand(argv: string[]): Promise<void> {
       command: "models capabilities",
       workdir,
       contractVersion: 2,
-      userConfigurable: ["backend", "model", "allowedTools", "environment"],
+      userConfigurable: ["backend", "model", "variant", "reasoningEffort", "allowedTools", "environment"],
       readOnlyDiagnostics: ["capabilities", "resources", "permission", "modes", "adapterVersion", "nativeTools"],
       backends: projectBackendCapabilityDirectory(defaultBackendRegistry, await loadCapabilityPreviewMap(workdir))
     }, null, 2));

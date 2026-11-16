@@ -125,3 +125,25 @@ test("Harness discovery distinguishes tool visibility from tool restriction", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Harness verification checks requested reasoning against the discovered model capability", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
+  try {
+    const repository = createFileHarnessRepositoryStore({ path: join(root, "harness-repository.json") });
+    const modelCatalog = {
+      discoverBackend: async () => ({
+        source: { backend: "codex", status: "runnable" },
+        models: [{ modelId: "gpt-6-luna", status: "active", reasoning: { supported: true, kind: "effort", levels: ["low", "medium"], default: "medium" } }]
+      })
+    };
+    const backendRegistry = {
+      getAdapter: () => ({ getResourceCapabilities: () => ({ filesystem: true, process: true, network: false }), discoverNativeTools: async () => ({ verifiedTools: [] }) }),
+      listDescriptors: () => []
+    };
+    const useCases = createHarnessRepositoryUseCases({ repository, modelCatalog, backendRegistry, computeDigest: (value) => JSON.stringify(value), validateContract: async () => undefined, workdir: root });
+    await useCases.saveTemplate({ template: { ...template(), reasoningEffort: "high" } });
+    await assert.rejects(useCases.verifyTemplate("harness.test"), (failure) => failure?.code === "HARNESS_REASONING_UNSUPPORTED");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

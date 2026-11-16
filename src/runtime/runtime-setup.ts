@@ -132,6 +132,9 @@ async function materializeV2ExecutionPolicies(
         roleId,
         backend: node.binding.backend,
         model: node.binding.modelId,
+        ...(node.binding.variant ? { variant: node.binding.variant } : {}),
+        ...(node.binding.reasoningEffort ? { reasoningEffort: node.binding.reasoningEffort } : {}),
+        ...(node.binding.effectiveReasoningEffort ? { effectiveReasoningEffort: node.binding.effectiveReasoningEffort } : {}),
         harnessTemplate: frozen.harnessTemplate,
         allowedTools: [...frozenAllowedTools] as string[],
         capabilitySnapshot: snapshot,
@@ -204,6 +207,9 @@ async function materializeV2ExecutionPolicies(
       roleId,
       backend: node.binding.backend,
       model: node.binding.modelId,
+      ...(node.binding.variant ? { variant: node.binding.variant } : {}),
+      ...(node.binding.reasoningEffort ? { reasoningEffort: node.binding.reasoningEffort } : {}),
+      ...(node.binding.effectiveReasoningEffort ? { effectiveReasoningEffort: node.binding.effectiveReasoningEffort } : {}),
       harnessTemplate: template?.templateId,
       allowedTools: policy.allowedTools,
       capabilitySnapshot: snapshot,
@@ -713,6 +719,8 @@ export async function prepareRuntimeSetup(args: {
       // Backend catalogs and native SDKs use the provider/model reference as
       // the immutable model identity; keep it intact for Adapter execution.
       modelId: template.model,
+      ...(template.variant ? { variant: template.variant } : {}),
+      ...(template.reasoningEffort ? { reasoningEffort: template.reasoningEffort } : {}),
     }];
   }));
   // The model-selection resolver is an internal normalization adapter only.

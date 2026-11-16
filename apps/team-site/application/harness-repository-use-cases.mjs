@@ -16,6 +16,10 @@ function normalizeTemplate(input) {
   if (!Array.isArray(template.allowedTools) || template.allowedTools.some((tool) => typeof tool !== "string" || !tool.trim())) {
     throw error("HARNESS_ALLOWED_TOOLS_INVALID", "allowedTools must contain non-empty strings.");
   }
+  const reasoningEffort = template.reasoningEffort === undefined ? undefined : String(template.reasoningEffort).trim();
+  if (reasoningEffort !== undefined && !["auto", "off", "on", "low", "medium", "high", "xhigh", "max"].includes(reasoningEffort)) {
+    throw error("HARNESS_REASONING_INVALID", `Unsupported reasoning effort ${reasoningEffort}.`);
+  }
   const environment = template.environment;
   if (!environment || typeof environment !== "object" || Array.isArray(environment)) throw error("HARNESS_ENVIRONMENT_REQUIRED");
   for (const field of ["filesystem", "process", "network"]) {
@@ -45,6 +49,8 @@ function normalizeTemplate(input) {
     templateId: String(template.templateId || "").trim(),
     backend,
     model,
+    ...(template.variant ? { variant: String(template.variant).trim() } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
     ...(template.preset ? { preset: String(template.preset).trim() } : {}),
     allowedTools: [...new Set(template.allowedTools.map((tool) => tool.trim()))],
     environment: {
@@ -149,6 +155,15 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
         throw error("HARNESS_MODEL_UNAVAILABLE", `Model ${template.model} is unavailable in ${template.backend}.`);
       }
       evidence.checks.push({ name: "backend-model", status: "passed" });
+      if (template.reasoningEffort && template.reasoningEffort !== "auto") {
+        const reasoning = model.reasoning;
+        if (!reasoning || reasoning.supported !== true || !Array.isArray(reasoning.levels) || !reasoning.levels.includes(template.reasoningEffort)) {
+          throw error("HARNESS_REASONING_UNSUPPORTED", `Model ${template.model} does not report reasoning effort ${template.reasoningEffort}.`);
+        }
+        evidence.checks.push({ name: "reasoning", status: "passed", requested: template.reasoningEffort, capability: reasoning });
+      } else {
+        evidence.checks.push({ name: "reasoning", status: "skipped", requested: template.reasoningEffort || "auto" });
+      }
       const adapter = backendRegistry.getAdapter(template.backend);
       const resources = adapter?.getResourceCapabilities?.() || {};
       const environmentError = environmentFailure(template, resources);
