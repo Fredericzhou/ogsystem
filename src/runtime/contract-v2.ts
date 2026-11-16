@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from "./types.js";
+
 /**
  * Contract Set v2 core objects.
  *
@@ -91,6 +93,10 @@ export type HarnessTemplateV2 = ContractRoot & {
   templateId: string;
   backend: string;
   model: string;
+  /** Optional backend/model variant passed through the Adapter contract. */
+  variant?: string;
+  /** Canonical reasoning selection; the Adapter maps it to provider settings. */
+  reasoningEffort?: ReasoningEffort;
   allowedTools: string[];
   environment: EnvironmentIntentV2;
   preset?: string;
@@ -108,6 +114,8 @@ export type ExecutionBindingsV2 = ContractRoot & {
 export type CapabilityPreviewV2 = ContractRoot & {
   backend: string;
   model?: string;
+  variant?: string;
+  reasoningEfforts?: string[];
   verifiedTools: string[];
   adapterVersion?: string;
   verifiedAt: string;
@@ -118,6 +126,9 @@ export type CapabilityPreviewV2 = ContractRoot & {
 export type RunCapabilitySnapshotV2 = ContractRoot & {
   backend: string;
   model: string;
+  variant?: string;
+  requestedReasoningEffort?: string;
+  effectiveReasoningEffort?: string;
   adapterVersion: string;
   verifiedAt: string;
   verifiedTools: string[];
@@ -139,6 +150,9 @@ export type ResolvedExecutionPlanV2 = ContractRoot & {
   roleId: string;
   backend: string;
   model: string;
+  variant?: string;
+  reasoningEffort?: ReasoningEffort;
+  effectiveReasoningEffort?: Exclude<ReasoningEffort, "auto">;
   capabilitySnapshot: RunCapabilitySnapshotV2;
   allowedTools: string[];
   verifiedTools: string[];
@@ -205,7 +219,6 @@ export type PermissionRequestEvidenceV2 = {
 };
 
 const legacyKeys = new Set([
-  "constraints",
   "allowedToolsByRoleId",
   "permissionProfile",
   "requiredTools",

@@ -85,6 +85,9 @@ async function materializeV2ExecutionPolicies(
       snapshot = createRunCapabilitySnapshot({
         backend: node.binding.backend,
         model: node.binding.modelId,
+        ...(node.binding.variant ? { variant: node.binding.variant } : {}),
+        ...(node.binding.reasoningEffort ? { requestedReasoningEffort: node.binding.reasoningEffort } : {}),
+        ...(node.binding.effectiveReasoningEffort ? { effectiveReasoningEffort: node.binding.effectiveReasoningEffort } : {}),
         adapterVersion,
         verifiedAt: new Date().toISOString(),
         // Dry-run planning does not execute an Adapter probe. It therefore has
@@ -109,6 +112,11 @@ async function materializeV2ExecutionPolicies(
         || typeof frozenPolicyDigest !== "string" || !frozenPolicyDigest
         || typeof frozenRecoveryIdentity !== "string" || !frozenRecoveryIdentity) {
         throw new Error(`V2_RECOVERY_FROZEN_CONFIG_INVALID: ${roleId} resolved technical binding is incomplete`);
+      }
+      const snapshotTools = [...snapshot.verifiedTools].sort();
+      const frozenTools = [...frozenVerifiedTools].sort();
+      if (snapshotTools.length !== frozenTools.length || snapshotTools.some((tool, index) => tool !== frozenTools[index])) {
+        throw new Error(`V2_RECOVERY_SNAPSHOT_MISMATCH: ${roleId} frozen verifiedTools do not match the Capability Snapshot`);
       }
       if (frozen.capabilityDigest !== undefined && frozen.capabilityDigest !== snapshot.digest) {
         throw new Error(`V2_RECOVERY_SNAPSHOT_MISMATCH: ${roleId} capability digest changed during recovery`);
@@ -167,6 +175,9 @@ async function materializeV2ExecutionPolicies(
       snapshot = createRunCapabilitySnapshot({
         backend: node.binding.backend,
         model: node.binding.modelId,
+        ...(node.binding.variant ? { variant: node.binding.variant } : {}),
+        ...(node.binding.reasoningEffort ? { requestedReasoningEffort: node.binding.reasoningEffort } : {}),
+        ...(node.binding.effectiveReasoningEffort ? { effectiveReasoningEffort: node.binding.effectiveReasoningEffort } : {}),
         adapterVersion,
         verifiedAt: new Date().toISOString(),
         verifiedTools: discovered.verifiedTools

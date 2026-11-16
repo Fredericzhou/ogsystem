@@ -198,15 +198,12 @@ export function resolvePlatformDefaultModelSelection({ settings = {}, discoverie
     ? { backend: matchedUnverified.backend, modelId: matchedUnverified.modelId || matchedUnverified.id }
     : undefined;
 
-  const fallbackSelection = !selectedRunnable && !runnableModels.length && !unverifiedConfiguredModel && !discoveries.length && configured !== "default"
-    ? { backend: settings.defaultProvider || "opencode", modelId: configured }
-    : !selectedRunnable && !runnableModels.length && !unverifiedConfiguredModel && !discoveries.length
-      ? { backend: settings.defaultProvider || "opencode", modelId: "gpt-6-luna" }
-      : undefined;
-
+  // A configured provider/model is only a preference. It is not evidence that
+  // the model exists or is runnable. Keep the platform unbound until discovery
+  // returns an actual candidate so a new project cannot claim a phantom model.
   const effectiveSelection = selectedRunnable
     ? { backend: selectedRunnable.backend, modelId: selectedRunnable.modelId || selectedRunnable.id }
-    : fallbackSelection;
+    : undefined;
 
   if (!effectiveSelection && !runnableModels.length && !unverifiedConfiguredModel) {
     return undefined;

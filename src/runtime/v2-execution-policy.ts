@@ -7,6 +7,8 @@ export type CapabilityPreview = {
   schemaVersion: 1;
   backend: string;
   model?: string;
+  variant?: string;
+  reasoningEfforts?: string[];
   verifiedTools: string[];
   adapterVersion?: string;
   verifiedAt: string;
@@ -20,6 +22,9 @@ export type RunCapabilitySnapshot = {
   schemaVersion: 1;
   backend: string;
   model: string;
+  variant?: string;
+  requestedReasoningEffort?: string;
+  effectiveReasoningEffort?: string;
   adapterVersion: string;
   verifiedAt: string;
   verifiedTools: string[];
@@ -114,6 +119,9 @@ export function assertCapabilitySnapshot(snapshot: RunCapabilitySnapshot): void 
     schemaVersion: 1,
     backend: snapshot.backend,
     model: snapshot.model,
+    ...(snapshot.variant ? { variant: snapshot.variant } : {}),
+    ...(snapshot.requestedReasoningEffort ? { requestedReasoningEffort: snapshot.requestedReasoningEffort } : {}),
+    ...(snapshot.effectiveReasoningEffort ? { effectiveReasoningEffort: snapshot.effectiveReasoningEffort } : {}),
     adapterVersion: snapshot.adapterVersion,
     verifiedAt: snapshot.verifiedAt,
     verifiedTools: [...snapshot.verifiedTools].sort()

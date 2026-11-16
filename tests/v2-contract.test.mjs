@@ -30,8 +30,19 @@ test("legacy v1 execution fields are discovered and rejected", () => {
     constraints: { allowedTools: ["workspace.run"] },
     execution: { mode: "noop" }
   };
-  assert.deepEqual(findLegacyV1Paths(value), ["$.constraints", "$.constraints.allowedTools"]);
+  assert.deepEqual(findLegacyV1Paths(value), ["$.constraints.allowedTools"]);
   assert.throws(() => assertV2ContractRoot(value), /legacy v1 fields/);
+});
+
+test("v2 Role Contract business constraints are not treated as legacy execution fields", () => {
+  const value = {
+    ogsContractVersion: 2,
+    schemaVersion: 2,
+    roleId: "writer",
+    constraints: { writableStateFields: [] }
+  };
+  assert.doesNotThrow(() => assertV2ContractRoot(value));
+  assert.deepEqual(findLegacyV1Paths(value), []);
 });
 
 test("v2 never routes a noop execution state", () => {
@@ -49,6 +60,31 @@ test("v2 contract loader does not read unversioned or v1 files", async () => {
   const path = join(root, "legacy.json");
   await writeFile(path, JSON.stringify({ contractVersion: 1, schemaVersion: 1 }));
   await assert.rejects(loadV2ContractFile(path), /ogsContractVersion must be 2/);
+});
+
+test("Harness templates persist variant and reasoning selection as frozen configuration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-v2-harness-params-"));
+  const path = join(root, "bindings.json");
+  await writeFile(path, JSON.stringify({
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    harnessTemplates: {
+      "harness.codex": {
+        ogsContractVersion: 2,
+        schemaVersion: 1,
+        kind: "harness",
+        templateId: "harness.codex",
+        backend: "codex",
+        model: "gpt-6-luna",
+        variant: "balanced",
+        reasoningEffort: "high",
+        allowedTools: [],
+        environment: { filesystem: "none", process: "deny", network: "deny" }
+      }
+    },
+    roles: { writer: { kind: "harness", harnessTemplate: "harness.codex" } }
+  }), "utf8");
+  await assert.doesNotReject(loadV2ContractFile(path));
 });
 
 test("v2 Human Review schema uses one action contract with CAS scope", async () => {
@@ -269,4 +305,17 @@ test("resume reuses the frozen Harness plan when the current binding is removed"
   const frozenPlan = frozenConfig.effective.resolvedExecutionPlans["debate-minimalist"];
   assert.equal(node?.policyDigest, frozenPlan.policyDigest);
   assert.equal(Object.hasOwn(frozenPlan, "effectiveTools"), false, "resolved config must persist allowedTools + verifiedTools only");
+
+  frozenPlan.verifiedTools = ["tampered-tool"];
+  await writeFile(join(workdir, ".ogs", "runs", runId, "resolved-config.json"), `${JSON.stringify(frozenConfig)}\n`, "utf8");
+  await assert.rejects(
+    prepareRuntimeSetup({
+      systemPath,
+      prompt: "freeze binding",
+      workdir,
+      resumeRunDir: runId,
+      dryRun: true
+    }),
+    /V2_RECOVERY_SNAPSHOT_MISMATCH.*verifiedTools/
+  );
 });

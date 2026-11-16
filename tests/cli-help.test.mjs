@@ -132,7 +132,7 @@ test("models capabilities prints the v2 read-only Backend directory", async () =
   assert.strictEqual(result.code, 0);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.contractVersion, 2);
-  assert.deepEqual(payload.userConfigurable, ["backend", "model", "allowedTools", "environment"]);
+  assert.deepEqual(payload.userConfigurable, ["backend", "model", "variant", "reasoningEffort", "allowedTools", "environment"]);
   assert.deepEqual(payload.readOnlyDiagnostics, ["capabilities", "resources", "permission", "modes", "adapterVersion", "nativeTools"]);
   assert.equal(payload.backends.some((entry) => entry.backendId === "claude"), false);
   assert.equal(payload.backends.find((entry) => entry.backendId === "codex").permission.configurable, false);
