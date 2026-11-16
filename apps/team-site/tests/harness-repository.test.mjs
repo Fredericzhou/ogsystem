@@ -88,3 +88,40 @@ test("Harness verification checks the discovered tool set without invoking a mod
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Harness discovery distinguishes tool visibility from tool restriction", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
+  try {
+    const repository = createFileHarnessRepositoryStore({ path: join(root, "harness-repository.json") });
+    const modelCatalog = {
+      discoverBackend: async () => ({
+        source: { backend: "codex", status: "runnable" },
+        models: [{ modelId: "gpt-6-luna", status: "active" }]
+      })
+    };
+    const backendRegistry = {
+      getAdapter: () => ({
+        nativeToolsConfigurable: false,
+        getResourceCapabilities: () => ({ filesystem: true, process: true, network: false }),
+        discoverNativeTools: async () => ({ verifiedTools: ["apply_patch", "exec_command"] })
+      }),
+      listDescriptors: () => []
+    };
+    const useCases = createHarnessRepositoryUseCases({
+      repository,
+      modelCatalog,
+      backendRegistry,
+      computeDigest: (value) => JSON.stringify(value),
+      validateContract: async () => undefined,
+      workdir: root
+    });
+    const discovery = await useCases.discoverBackend("codex", false, "gpt-6-luna");
+    assert.deepEqual(discovery.nativeTools, {
+      status: "ready",
+      verifiedTools: ["apply_patch", "exec_command"],
+      configurable: false
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

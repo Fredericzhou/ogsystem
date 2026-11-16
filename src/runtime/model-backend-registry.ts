@@ -75,7 +75,8 @@ export type BackendCapabilityDirectoryEntry = {
   nativeTools: {
     status: "ready" | "refresh_required" | "unavailable";
     verifiedTools: string[];
-    configurable: true;
+    /** Whether the adapter can enforce an explicit native-tool allowlist. */
+    configurable: boolean;
   };
   resources: AdapterResourceCapabilities;
   permission: {
@@ -180,6 +181,14 @@ export interface BackendAdapter {
   startRun?(args: BackendStartRunArgs): Promise<BackendRunSession>;
   probe?(args: { modelId: string; workdir: string; timeoutMs: number }): Promise<void>;
   /** Discover and verify the native tool IDs that can be constrained for a model session. */
+  /**
+   * Native tool discovery and native tool restriction are separate facts. A
+   * backend may report its built-in tools while only accepting its default
+   * tool set at execution time (for example Codex app-server's workspace
+   * sandbox). In that case the Harness UI must not offer a misleading
+   * per-tool allowlist; the runtime keeps the backend default tool set.
+   */
+  readonly nativeToolsConfigurable?: boolean;
   discoverNativeTools?(args: { modelId: string; workdir: string; timeoutMs: number }): Promise<{
     verifiedTools: string[];
     resources?: AdapterResourceCapabilities;
@@ -312,7 +321,7 @@ export function projectBackendCapabilityDirectory(
       nativeTools: {
         status: preview ? "ready" : hasNativeDiscovery ? "refresh_required" : "unavailable",
         verifiedTools: preview?.verifiedTools ?? [],
-        configurable: true
+        configurable: adapter.nativeToolsConfigurable === true
       },
       resources: { ...resources },
       permission: {
@@ -357,6 +366,7 @@ export const opencodeBackendAdapter: BackendAdapter = {
   backendId: "opencode",
   verifiedRunnable: true,
   adapterVersion: "opencode-sdk-v2-native-tools-1",
+  nativeToolsConfigurable: true,
   getResourceCapabilities() {
     // OpenCode's native bash/write tools do not provide a verifiable path
     // boundary for absolute paths and symlink traversal. Keep text-only Roles
@@ -631,6 +641,9 @@ export const codexBackendAdapter: BackendAdapter = {
   backendId: "codex",
   verifiedRunnable: true,
   adapterVersion: "codex-app-server-v2-native-tools-1",
+  // Codex app-server exposes a workspace sandbox and approval policy, but no
+  // protocol for disabling one native tool while retaining another.
+  nativeToolsConfigurable: false,
   getResourceCapabilities() {
     return { filesystem: true, process: true, network: false };
   },

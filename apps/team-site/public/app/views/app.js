@@ -1300,10 +1300,12 @@ async function renderHarnessRepository() {
     const statusHost = dialog.querySelector("[data-harness-editor-status]");
     const toolHint = dialog.querySelector("[data-harness-tool-hint]");
     if (toolHint) toolHint.textContent = en
-      ? "Choose from the Backend tool catalog. Saving does not run a model; template verification performs the minimal contract checks."
-      : "从底座工具清单中选择；保存不会调用模型，模板验证只执行最小合同检查。";
+      ? "The Backend reports this catalog. Saving does not run a model; template verification performs only the minimal contract checks."
+      : "工具清单由底座报告；保存不会调用模型，模板验证只执行最小合同检查。";
     const backendSelect = form.elements.backend;
     const selectedTools = new Set(item.allowedTools || []);
+    let discoveredTools = [];
+    let toolsConfigurable = true;
     const showDiscovery = async () => {
       toolHost.innerHTML = `<span class="empty-note">${en ? "Discovering native tools…" : "正在发现原生工具…"}</span>`;
       try {
@@ -1312,12 +1314,16 @@ async function renderHarnessRepository() {
         const capabilities = sourceInfo.capabilities || payload.capabilities || {};
         const nativeStatus = payload.nativeTools?.status || "ready";
         const nativeDetail = payload.nativeTools?.detail || "";
+        toolsConfigurable = payload.nativeTools?.configurable !== false;
         const tools = Array.isArray(payload.nativeTools?.verifiedTools)
           ? payload.nativeTools.verifiedTools.filter((tool) => typeof tool === "string" && tool.trim())
           : [];
-        toolHost.innerHTML = tools.length
-          ? tools.map((tool) => { const name = typeof tool === "string" ? tool : tool.name || tool.id; return `<label class="harness-tool-option"><input type="checkbox" name="allowedTools" value="${esc(name)}"${selectedTools.has(name) ? " checked" : ""}><span>${esc(name)}</span></label>`; }).join("")
-          : `<span class="empty-note">${nativeStatus === "unavailable" && nativeDetail ? esc(nativeDetail) : (en ? "No verified native tools. Empty tool set is valid." : "没有已验证原生工具；空工具集仍可使用。")}</span>`;
+        discoveredTools = [...new Set(tools.map((tool) => typeof tool === "string" ? tool : tool.name || tool.id).filter(Boolean))];
+        toolHost.innerHTML = toolsConfigurable && discoveredTools.length
+          ? discoveredTools.map((name) => `<label class="harness-tool-option"><input type="checkbox" name="allowedTools" value="${esc(name)}"${selectedTools.has(name) ? " checked" : ""}><span>${esc(name)}</span></label>`).join("")
+          : toolsConfigurable
+            ? `<span class="empty-note">${nativeStatus === "unavailable" && nativeDetail ? esc(nativeDetail) : (en ? "No verified native tools. An empty tool set is valid." : "没有已验证原生工具；空工具集仍可使用。")}</span>`
+            : `<div class="harness-tool-default"><strong>${en ? "Backend default tool set" : "使用底座默认工具集"}</strong><span>${en ? "This Backend cannot enforce a per-tool allowlist. All discovered native tools remain available." : "该底座不能强制逐项工具白名单，将开放底座发现的全部原生工具。"}</span>${discoveredTools.length ? `<code>${esc(discoveredTools.join(", "))}</code>` : ""}</div>`;
         capHost.innerHTML = Object.entries({ ...(sourceInfo.resources || {}), ...(sourceInfo.permission || {}), ...(sourceInfo.modes || {}), ...capabilities }).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => `<span><strong>${esc(key)}</strong> ${esc(typeof value === "object" ? JSON.stringify(value) : String(value))}</span>`).join("") || `<span class="empty-note">${en ? "No capability details reported." : "底座未报告更多能力。"}</span>`;
       } catch (error) { toolHost.innerHTML = `<span class="harness-template-error">${esc(error.message || (en ? "Discovery failed." : "能力发现失败。"))}</span>`; capHost.innerHTML = ""; }
     };
@@ -1329,7 +1335,7 @@ async function renderHarnessRepository() {
     const save = async (event, draftOnly = false) => {
       event?.preventDefault();
       const data = new FormData(form);
-      const payload = { templateId: String(data.get("templateId") || "").trim(), name: String(data.get("name") || "").trim(), description: String(data.get("description") || "").trim(), backend: String(data.get("backend") || "").trim(), model: String(data.get("model") || "").trim(), allowedTools: data.getAll("allowedTools").map(String), environment: { filesystem: String(data.get("filesystem") || "none"), process: String(data.get("process") || "deny"), network: String(data.get("network") || "deny"), limits: { timeoutMs: Number(data.get("timeoutMs")), maxOutputBytes: Number(data.get("maxOutputBytes")), maxStorageBytes: Number(data.get("maxStorageBytes")) } } };
+      const payload = { templateId: String(data.get("templateId") || "").trim(), name: String(data.get("name") || "").trim(), description: String(data.get("description") || "").trim(), backend: String(data.get("backend") || "").trim(), model: String(data.get("model") || "").trim(), allowedTools: toolsConfigurable ? data.getAll("allowedTools").map(String) : [...discoveredTools], environment: { filesystem: String(data.get("filesystem") || "none"), process: String(data.get("process") || "deny"), network: String(data.get("network") || "deny"), limits: { timeoutMs: Number(data.get("timeoutMs")), maxOutputBytes: Number(data.get("maxOutputBytes")), maxStorageBytes: Number(data.get("maxStorageBytes")) } } };
       statusHost.textContent = en ? "Saving…" : "正在保存…";
       try {
         const endpoint = source ? `/api/v2/harness/templates/${encodeURIComponent(item.templateId)}` : "/api/v2/harness/templates";

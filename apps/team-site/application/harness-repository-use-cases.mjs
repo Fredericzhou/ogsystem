@@ -90,13 +90,28 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
     };
     const discovery = await bounded(() => modelCatalog.discoverBackend(backend, refresh));
     const adapter = backendRegistry.getAdapter(backend);
-    if (!adapter || typeof adapter.discoverNativeTools !== "function") return discovery;
+    if (!adapter || typeof adapter.discoverNativeTools !== "function") {
+      return {
+        ...discovery,
+        nativeTools: {
+          status: "unavailable",
+          verifiedTools: [],
+          configurable: false,
+          detail: "This backend does not expose a native tool discovery or restriction contract."
+        },
+        resources: adapter?.getResourceCapabilities?.() || {}
+      };
+    }
     const modelId = String(requestedModel || discovery?.models?.find((item) => item.runnable || item.status === "active")?.modelId || "gpt-6-luna").trim();
     try {
       const native = await bounded(() => adapter.discoverNativeTools({ modelId, workdir, timeoutMs: discoveryTimeoutMs }));
       return {
         ...discovery,
-        nativeTools: { status: "ready", verifiedTools: [...new Set(native?.verifiedTools || [])] },
+        nativeTools: {
+          status: "ready",
+          verifiedTools: [...new Set(native?.verifiedTools || [])],
+          configurable: adapter.nativeToolsConfigurable === true
+        },
         resources: adapter.getResourceCapabilities?.() || {},
         permission: { decisions: ["allow", "deny"], interactiveApproval: false, configurable: false },
         modes: { execution: ["staged", "read_only"], approval: ["non_interactive"], configurable: false }
@@ -104,7 +119,12 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
     } catch (failure) {
       return {
         ...discovery,
-        nativeTools: { status: "unavailable", verifiedTools: [], detail: failure instanceof Error ? failure.message : String(failure) },
+        nativeTools: {
+          status: "unavailable",
+          verifiedTools: [],
+          configurable: adapter.nativeToolsConfigurable === true,
+          detail: failure instanceof Error ? failure.message : String(failure)
+        },
         resources: adapter.getResourceCapabilities?.() || {},
         permission: { decisions: ["allow", "deny"], interactiveApproval: false, configurable: false },
         modes: { execution: ["staged", "read_only"], approval: ["non_interactive"], configurable: false }
@@ -142,7 +162,7 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
         evidence.verifiedTools = [...new Set(native?.verifiedTools || [])];
         const missing = template.allowedTools.filter((tool) => !evidence.verifiedTools.includes(tool));
         if (missing.length) throw error("HARNESS_ALLOWED_TOOLS_UNVERIFIED", `Unverified tools: ${missing.join(", ")}`);
-        evidence.checks.push({ name: "native-tools", status: "passed", verifiedTools: evidence.verifiedTools });
+        evidence.checks.push({ name: "native-tools", status: "passed", verifiedTools: evidence.verifiedTools, configurable: adapter?.nativeToolsConfigurable === true });
       } else {
         evidence.checks.push({ name: "native-tools", status: "skipped", verifiedTools: [] });
       }
@@ -197,6 +217,9 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
         sessionKind: descriptor.sessionKind,
         capabilities: descriptor.capabilities,
         resources: backendRegistry.getAdapter(descriptor.backendId)?.getResourceCapabilities?.() || {},
+        nativeTools: {
+          configurable: backendRegistry.getAdapter(descriptor.backendId)?.nativeToolsConfigurable === true
+        },
         permission: { decisions: ["allow", "deny"], interactiveApproval: false, configurable: false },
         modes: { execution: ["staged", "read_only"], approval: ["non_interactive"], configurable: false },
         configurable: ALLOWED_BACKENDS.has(descriptor.backendId)

@@ -2083,21 +2083,48 @@ body { min-width: 0; font-size: 15px; }
 .harness-template-error { color: var(--coral-dark, #a83d32); font-size: 12px; margin: 0; }
 .harness-editor-dialog { border: 0; border-radius: 10px; box-shadow: 0 18px 70px rgba(23, 31, 44, .24); max-height: min(92vh, 860px); max-width: min(760px, calc(100vw - 28px)); padding: 0; width: 760px; }
 .harness-editor-dialog::backdrop { background: rgba(19, 25, 33, .46); }
-.harness-editor-form { display: grid; gap: 16px; padding: 22px; }
+.harness-editor-form { background: var(--surface); display: grid; gap: 16px; padding: 22px; }
 .harness-editor-form .dialog-head { align-items: flex-start; display: flex; justify-content: space-between; }
 .harness-editor-form .dialog-head h2 { margin: 4px 0 0; }
 .harness-editor-grid { display: grid; gap: 13px; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 62vh; overflow: auto; padding: 2px 4px 2px 0; }
-.harness-editor-grid > label, .harness-editor-grid fieldset { display: grid; gap: 6px; }
-.harness-editor-grid > label > :is(input, select, textarea) { box-sizing: border-box; min-height: 40px; width: 100%; }
+.harness-editor-grid > label, .harness-editor-grid fieldset { display: grid; gap: 7px; }
+.harness-editor-grid > label { color: var(--muted); font-size: 12px; font-weight: 650; }
+.harness-editor-grid > label > :is(input, select, textarea), .harness-environment-grid :is(input, select) {
+  appearance: none;
+  background: var(--canvas);
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 450;
+  min-height: 40px;
+  outline: 0;
+  padding: 9px 10px;
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+  width: 100%;
+}
+.harness-editor-grid > label > textarea { line-height: 1.45; min-height: 76px; resize: vertical; }
+.harness-editor-grid > label > select, .harness-environment-grid select { background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 15px) 17px, calc(100% - 10px) 17px; background-repeat: no-repeat; background-size: 5px 5px, 5px 5px; padding-right: 28px; }
+.harness-editor-grid > label > :is(input, select, textarea):focus-visible, .harness-environment-grid :is(input, select):focus-visible { border-color: var(--mint-dark); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 22%, transparent); }
+.harness-editor-grid > label > :is(input, select, textarea):read-only { background: var(--surface-alt, var(--surface)); color: var(--muted); }
+.harness-editor-grid > label > :is(input, select, textarea):disabled { cursor: not-allowed; opacity: .58; }
 .harness-wide { grid-column: 1 / -1; }
 .harness-tool-fieldset, .harness-environment-fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0; padding: 12px; }
 .harness-tool-fieldset legend, .harness-environment-fieldset legend { color: var(--ink); font-size: 12px; font-weight: 650; padding: 0 5px; }
 .harness-tool-options { display: grid; gap: 7px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .harness-tool-option { align-items: center; background: var(--canvas); border: 1px solid var(--line); border-radius: 6px; display: flex; gap: 7px; padding: 8px; }
 .harness-tool-option input { accent-color: var(--mint-dark); }
+.harness-tool-option:has(input:focus-visible) { border-color: var(--mint-dark); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 22%, transparent); }
+.harness-tool-default { background: var(--canvas); border: 1px dashed var(--line-strong, var(--line)); border-radius: 6px; display: grid; gap: 5px; padding: 10px; }
+.harness-tool-default strong { color: var(--ink); font-size: 12px; }
+.harness-tool-default span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.harness-tool-default code { color: var(--ink); font-size: 11px; overflow-wrap: anywhere; }
 .harness-environment-grid { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .harness-environment-grid label { display: grid; gap: 5px; }
-.harness-environment-grid :is(input, select) { box-sizing: border-box; min-height: 36px; width: 100%; }
+.harness-environment-grid label { color: var(--muted); font-size: 11px; font-weight: 650; }
+.harness-environment-grid :is(input, select) { min-height: 38px; }
 .harness-capabilities-readonly { display: flex; flex-wrap: wrap; gap: 7px; }
 .harness-capabilities-readonly span { background: var(--canvas); border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 11px; padding: 5px 7px; }
 .harness-capabilities-readonly strong { color: var(--ink); margin-right: 4px; }
