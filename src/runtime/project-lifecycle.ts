@@ -40,6 +40,7 @@ import { systemDefinitionToDesign, saveSystemDesign, loadSystemDesign } from "..
 import { RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED } from "../business-events.js";
 import { getLoopBudgetTargetRoleIds, resolveLoopBudgetTerminateScope } from "./loop-budget.js";
 import { loadExecutionBindingsV2, validateV2ContractValue } from "./contract-v2-loader.js";
+import { defaultBackendRegistry } from "./model-backend-registry.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -1171,12 +1172,25 @@ async function ensureTemplateRuntimeAssets(args: {
   }]));
   let defaultBackend = "unbound";
   let defaultModel = "unavailable";
+  let defaultEnvironment: Record<string, unknown> = {
+    filesystem: "none",
+    process: "deny",
+    network: "deny"
+  };
   try {
     const catalog = await discoverLocalModelCatalog({ workdir: args.workdir });
     const candidate = chooseDefaultModelFromCatalog(catalog);
     if (candidate) {
       defaultBackend = candidate.backend;
       defaultModel = candidate.modelId;
+      const resources = defaultBackendRegistry.getAdapter(candidate.backend)?.getResourceCapabilities?.();
+      if (resources?.filesystem === true && resources.process === true) {
+        defaultEnvironment = {
+          filesystem: "staged",
+          process: "allow",
+          network: "deny"
+        };
+      }
     }
   } catch {
     // A project can be scaffolded without an installed CLI. Keep the binding
@@ -1197,11 +1211,7 @@ async function ensureTemplateRuntimeAssets(args: {
         // Tools are enabled only after a model-specific Capability Preview has
         // verified them. This prevents a scaffold from claiming native facts.
         allowedTools: [],
-        environment: {
-          filesystem: { read: true, write: true },
-          process: "allow",
-          network: "deny"
-        },
+        environment: defaultEnvironment,
         preset: "default"
       }
     },

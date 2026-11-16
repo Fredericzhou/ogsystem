@@ -50,6 +50,10 @@ Verify the Technical Binding and Execution Layers:
 - Pi and Kimi remain unavailable or degraded until their probes pass. Claude is not a verified Backend.
 - Unknown tools, dynamic MCP/tool-search requests, unbounded resources, staging escapes, and
   unauthorized Artifact reads are denied and audited.
+- Studio/debug simulation uses a text-only Harness (`allowedTools=[]`, `filesystem=none`,
+  `process=deny`, `network=deny`) and never promotes simulated capability facts into a Run
+  Snapshot. Real artifact-producing classic teams default to the verified Codex staging profile;
+  OpenCode/Pi remain text-only unless their Adapter proves the requested resource boundary.
 - Review decisions are idempotent and CAS-bound to `reviewId`, `round`, `lineageId`, `branchId`,
   `loopIteration`, and `stateVersion`.
 - Evidence is append-only and includes the v2 version fields and the normalized tool/permission events.

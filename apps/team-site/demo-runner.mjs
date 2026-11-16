@@ -7,13 +7,17 @@ import { fileURLToPath } from "node:url";
 import { getCase } from "./cases.mjs";
 import { localizedEventLabel } from "./event-labels.mjs";
 import { parseSystemFromMermaidSource } from "../../dist/runtime/parse-mermaid.js";
+import { defaultBackendRegistry } from "../../dist/runtime/model-backend-registry.js";
 import { authoringToDesign, importSystemToAuthoring } from "../../dist/visualizer/studio-authoring.js";
 import { buildGraphViewModel } from "../../dist/visualizer/graph-view-model.js";
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(process.env.OGSYSTEM_ROOT || appRoot, process.env.OGSYSTEM_ROOT ? "." : "../..");
 const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
-export const DEFAULT_DEMO_BACKEND = "opencode";
+// Codex is the default real-run backend because its app-server exposes a
+// verifiable staging boundary for artifact-producing teams. OpenCode remains
+// available for explicit cross-backend and text-only scenarios.
+export const DEFAULT_DEMO_BACKEND = "codex";
 export const DEFAULT_DEMO_MODEL = "gpt-6-luna";
 const DEFAULT_DEMO_MODEL_TIMEOUT_MS = 120000;
 // A classic team can contain several sequential model activations. The
@@ -286,9 +290,15 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
   }
   const harnessTemplates = {};
   const bindings = {};
+  // Simulation is a semantic/debug run. It must not claim verified native
+  // tools or request resources that the selected adapter has not discovered.
+  // The real model run below materializes the requested tools separately.
+  const textOnlySimulation = mode === "simulation";
   const textOnlyCrossBackend = caseSpec.id === "cross-backend-review-loop";
   for (const role of caseSpec.roles) {
     const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
+    const adapterResources = defaultBackendRegistry.getAdapter(resolved.backend)?.getResourceCapabilities?.() || {};
+    const canUseWorkspaceTools = adapterResources.filesystem === true && adapterResources.process === true;
     const templateId = `harness.site.${caseSpec.id}.${role.id}`;
     harnessTemplates[templateId] = {
       ogsContractVersion: 2,
@@ -299,10 +309,10 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       model: resolved.modelId,
       // Cross-backend evidence validates business handoff and adapter identity;
       // it does not claim filesystem/process capabilities for OpenCode.
-      allowedTools: textOnlyCrossBackend ? [] : ["apply_patch", "exec_command"],
+      allowedTools: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools ? [] : ["apply_patch", "exec_command"],
       environment: {
-        filesystem: textOnlyCrossBackend ? "none" : { read: true, write: true },
-        process: textOnlyCrossBackend ? "deny" : "allow",
+        filesystem: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools ? "none" : { read: true, write: true },
+        process: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools ? "deny" : "allow",
         network: "deny",
         limits: { timeoutMs: role.execution?.timeoutMs ?? modelTimeoutMs, maxOutputBytes: role.execution?.maxOutputBytes ?? 65536 }
       },

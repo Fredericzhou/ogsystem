@@ -737,7 +737,9 @@ function buildStudioHarnessBindings(args: {
       backend: role.backend,
       model: role.modelId,
       allowedTools: existing?.allowedTools ?? [],
-      environment: existing?.environment ?? { filesystem: "staged", process: "allow", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072 } },
+      // An auto-created template starts text-only. Resource access is opened
+      // only by an explicit Harness template whose Adapter can enforce it.
+      environment: existing?.environment ?? { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072 } },
       ...(existing?.preset ? { preset: existing.preset } : {})
     };
     roles[roleId] = { kind: "harness", harnessTemplate: templateId };

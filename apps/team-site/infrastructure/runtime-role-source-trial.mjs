@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
+import { defaultBackendRegistry } from "../../../dist/runtime/model-backend-registry.js";
 
 const TRIAL_EVENT = "ROLE_TRIAL_COMPLETE";
 
@@ -46,6 +47,9 @@ export function createRuntimeRoleSourceTrial({ run = runSystemWithAdapter, getDe
       await writeFile(join(workdir, ".ogs", "runtime.json"), JSON.stringify({ configVersion: "2", roleRepo: "team-roles", runsDir: ".ogs/runs", tools: { environmentPolicy: "minimal", envAllowlist: [] } }));
       await writeFile(join(workdir, ".ogs", "laws.json"), JSON.stringify({ laws: [{ lawId: "law.role-trial", constraints: { forbiddenToolRefs: [], maxTransitions: 4 } }] }));
       const templateId = "harness.role-trial.default";
+      const adapter = defaultBackendRegistry.getAdapter(selection.harnessBindingDefaults.backend);
+      const resources = adapter?.getResourceCapabilities?.() || {};
+      const canUseWorkspaceTools = resources.filesystem === true && resources.process === true;
       await writeFile(join(workdir, ".ogs", "execution-bindings.json"), JSON.stringify({
         ogsContractVersion: 2,
         schemaVersion: 1,
@@ -58,8 +62,10 @@ export function createRuntimeRoleSourceTrial({ run = runSystemWithAdapter, getDe
             templateId,
             backend: selection.harnessBindingDefaults.backend,
             model: selection.harnessBindingDefaults.modelId,
-            allowedTools: ["apply_patch", "exec_command"],
-            environment: { filesystem: { read: true, write: true }, process: "allow", network: "deny" }
+            allowedTools: canUseWorkspaceTools ? ["apply_patch", "exec_command"] : [],
+            environment: canUseWorkspaceTools
+              ? { filesystem: { read: true, write: true }, process: "allow", network: "deny" }
+              : { filesystem: "none", process: "deny", network: "deny" }
           }
         },
         roles: { [roleId]: { kind: "harness", harnessTemplate: templateId } }
