@@ -40,7 +40,20 @@ export const caseTeamMaterializer = Object.freeze({
         && Object.values(bindings.harnessTemplates).every((template) => {
           const timeoutMs = Number(template?.environment?.limits?.timeoutMs);
           return Number.isFinite(timeoutMs) && timeoutMs >= 600000;
-        });
+        })
+        && await Promise.all(caseSpec.roles.map(async (role) => {
+          try {
+            const schema = JSON.parse(await readFile(join(workdir, "team-roles", "roles", role.id, "output.schema.json"), "utf8"));
+            const prompt = await readFile(join(workdir, "team-roles", "roles", role.id, "prompt.md"), "utf8");
+            const schemaReady = role.id !== "document-publisher" || Object.hasOwn(schema?.properties || {}, "artifacts");
+            const promptReady = role.id === "document-publisher"
+              ? prompt.includes("write-capable staging")
+              : prompt.includes("does not publish files");
+            return schemaReady && promptReady;
+          } catch {
+            return false;
+          }
+        })).then((values) => values.every(Boolean));
     } catch {
       return false;
     }

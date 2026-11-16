@@ -182,7 +182,7 @@ export const cases = [
       {
         id: "document-publisher", label: { "zh-CN": "文件发布员", en: "Document publisher" },
         purpose: "Publish the reviewed executive brief as document and structured business files.", events: ["READY"],
-        prompt: "Based on the reviewed executive brief, produce the final business document delivery. Include the executive summary, recommendations, implementation plan, risks, assumptions, open questions, and document metadata such as title, format, and output path when available. Return valid JSON with event READY and the structured business result. If the current Harness exposes verified native tools and a document artifact is requested, use only those tools; otherwise return the document content and metadata without claiming a file was created."
+        prompt: "Based on the reviewed executive brief, produce the final business document delivery. Include the executive summary, recommendations, implementation plan, risks, assumptions, and open questions. When the Harness exposes write-capable staging, create a Markdown document named executive-brief.md in the execution workspace using an available native tool, then declare it in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Return valid JSON with event READY, the structured business result, and the artifact declaration. If the Harness cannot write files, return the document content and metadata without claiming a file was created."
       }
     ],
     flows: [
@@ -357,7 +357,7 @@ export const cases = [
       {
         id: "document-publisher", label: { "zh-CN": "文档发布员", en: "Document publisher" },
         purpose: "Publish the judge's completed review as a final business document.", events: ["READY"],
-        prompt: "Based on the judge's completed review, produce the final debate brief for delivery. Include the decision, strongest point for each side, judge reasoning, uncertainty, and follow-up questions, plus document metadata such as title, format, and output path when available. Return valid JSON with event READY and content containing the structured business result. If the current Harness exposes verified native tools and a document artifact is requested, use only those tools; otherwise return the document content and metadata without claiming a file was created."
+        prompt: "Based on the judge's completed review, produce the final debate brief for delivery. Include the decision, strongest point for each side, judge reasoning, uncertainty, and follow-up questions. When the Harness exposes write-capable staging, always create a Markdown document named debate-brief.md in the execution workspace using an available native tool, then declare it in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Return valid JSON with event READY, content containing the structured business result, and the artifact declaration. If the Harness cannot write files, return the document content and metadata without claiming a file was created."
       }
     ],
     flows: [

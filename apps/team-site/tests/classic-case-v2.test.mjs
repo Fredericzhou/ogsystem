@@ -16,7 +16,8 @@ test("structured debate classic team uses the V2 five-role document workflow", (
   assert.deepEqual(debate.flows.at(-1), ["document-publisher", "__system_end__", "READY"]);
   assert.equal(debate.roles.some((role) => role.execution), false);
   assert.equal(debate.roles.some((role) => /media-publisher|debate-reporter/.test(role.id)), false);
-  assert.match(debate.roles.find((role) => role.id === "document-publisher").prompt, /current Harness exposes verified native tools/i);
+  assert.match(debate.roles.find((role) => role.id === "document-publisher").prompt, /write-capable staging/i);
+  assert.match(debate.roles.find((role) => role.id === "document-publisher").prompt, /artifacts/i);
 });
 
 test("active classic cases do not carry V1 execution bindings", () => {

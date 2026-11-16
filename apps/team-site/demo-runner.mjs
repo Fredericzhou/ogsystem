@@ -224,13 +224,36 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     await mkdir(roleDir, { recursive: true });
     await writeFile(join(roleDir, "role.json"), `${JSON.stringify(roleManifest(role), null, 2)}\n`);
     await writeFile(join(roleDir, "agent.md"), role.prompt);
-    await writeFile(join(roleDir, "prompt.md"), "{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nUser preferences:\n{{user_preferences}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n\nOutput requirements:\n- Return exactly one schema-compliant JSON object and no Markdown.\n- event must be one of allowed_events.\n- Put the useful role result in content.\n");
+    const artifactProperties = role.id === "document-publisher" ? {
+      artifacts: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["artifactId", "kind", "path", "mediaType"],
+          properties: {
+            artifactId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+            kind: { enum: ["business_document", "business_data", "text"] },
+            path: { type: "string", pattern: "^(?![./])(?!.*(?:^|/)[.][.]?(?:/|$))(?!.*(?:^|/)[.][^/]*)(?!.*\\\\).+$" },
+            mediaType: { type: "string", minLength: 1 },
+            encoding: { enum: ["utf-8", "binary"] },
+            entrypoint: { type: "string" },
+            publishTarget: { type: "string", minLength: 1, maxLength: 256 }
+          },
+          additionalProperties: false
+        }
+      }
+    } : {};
+    const artifactInstruction = role.id === "document-publisher"
+      ? "- When the Harness exposes write-capable staging and the task requests a document, create the document in the execution workspace and declare it in artifacts."
+      : "- This Role does not publish files. Do not create files or declare artifacts, even when the user task mentions document delivery; return only this Role's business result in content.";
+    await writeFile(join(roleDir, "prompt.md"), `{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nUser preferences:\n{{user_preferences}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n\nOutput requirements:\n- Return exactly one schema-compliant JSON object and no Markdown.\n- event must be one of allowed_events.\n- Put the useful role result in content.\n${artifactInstruction}\n`);
     await writeFile(join(roleDir, "output.schema.json"), `${JSON.stringify({
       type: "object",
       required: ["event", "content"],
       properties: {
         event: { type: "string", enum: role.events },
-        content: { type: "string", minLength: 1 }
+        content: { type: "string", minLength: 1 },
+        ...artifactProperties
       },
       additionalProperties: false
     }, null, 2)}\n`);
