@@ -2057,17 +2057,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       details.append(summary, pre);
       section.replaceWith(details);
     });
-    root.addEventListener("click", (event) => {
-      const more = event.target.closest?.("[data-studio-message-more]");
-      if (!more) return;
-      const section = more.closest("[data-studio-message-section]");
-      const pre = section?.querySelector("pre");
-      if (!pre) return;
-      const expanded = more.getAttribute("aria-expanded") === "true";
-      pre.hidden = expanded;
-      more.setAttribute("aria-expanded", String(!expanded));
-      more.textContent = expanded ? (state.locale === "en" ? "More" : "更多") : (state.locale === "en" ? "Less" : "收起");
-    });
+    root.querySelectorAll("[data-studio-message-section]").forEach((section) => bindStudioMessageMore(section));
     const historyGraphStage = root.querySelector("#studio-run-graph-stage");
     let historyGraph;
     const focusHistoryEntry = ({ roleId = "", edgeId = "" } = {}) => {
@@ -3227,6 +3217,13 @@ function studioAgentProgressSummary(item, locale = "zh-CN") {
   return english ? "Working through the task…" : "正在处理任务…";
 }
 
+function studioRoleWaitingSummary(item, locale = "zh-CN") {
+  const english = locale === "en";
+  if (item?.stage === "model_provider") return english ? "Connecting to the model service…" : "正在连接模型服务…";
+  if (item?.stage === "cli_tool") return english ? "Running the backend tool…" : "正在运行底座工具…";
+  return english ? "Working through the task…" : "正在处理任务…";
+}
+
 function resolveStudioSelectedFlow(authoring, selection) {
   if (selection.roleId) return null;
   if (!selection.flowKey || !selection.flowId) return null;
@@ -3424,6 +3421,12 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
           item.dataset.status = "working";
           const statusSpan = item.querySelector(".team-debug-time-status") || item.querySelector("header span");
           if (statusSpan) statusSpan.textContent = studioAgentProgressSummary(event, state.locale);
+          continue;
+        }
+        if (event.type === "role_waiting" || event.type === "role.started") {
+          item.dataset.status = "working";
+          const statusSpan = item.querySelector(".team-debug-time-status") || item.querySelector("header span");
+          if (statusSpan) statusSpan.textContent = studioRoleWaitingSummary(event, state.locale);
           continue;
         }
         const detail = event.failure || event.stdout || event.stdoutPreview || event.content || event.reason || event.eventType || "";
@@ -5186,32 +5189,14 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             const duration = item.durationMs !== undefined ? ` · ${Number(item.durationMs).toLocaleString(state.locale)} ms` : "";
             const statusSpan = card.querySelector(".team-debug-time-status") || card.querySelector("header span");
             if (statusSpan) {
-              if (item.type === "role_waiting") {
-                const waitStage = item.stage === "model_provider"
-                  ? (state.locale === "en" ? "model service" : "模型服务")
-                  : item.stage === "cli_tool"
-                    ? (state.locale === "en" ? "execution tool" : "执行工具")
-                    : item.stage;
-                statusSpan.textContent = waitStage
-                  ? `${state.locale === "en" ? "Working" : "工作中"} · ${waitStage}`
-                  : (state.locale === "en" ? "Working" : "工作中");
+              if (item.type === "role_waiting" || item.type === "role.started") {
+                statusSpan.textContent = studioRoleWaitingSummary(item, state.locale);
               } else {
                 statusSpan.textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
               }
             }
             if (item.type === "role.input_ready" || item.inputContext) {
               addSection(card, state.locale === "en" ? "Input" : "收到的任务", item.inputContext, "input");
-            }
-            if (item.type === "role_waiting") {
-              const waitStage = item.stage === "model_provider"
-                ? (state.locale === "en" ? "Model service" : "模型服务")
-                : item.stage === "cli_tool"
-                  ? (state.locale === "en" ? "Execution tool" : "执行工具")
-                  : item.stage;
-              const waitText = Number.isFinite(item.elapsedMs)
-                ? (state.locale === "en" ? `Working · ${item.elapsedMs} ms` : `工作中 · ${item.elapsedMs} 毫秒`)
-                : (state.locale === "en" ? "Working" : "工作中");
-              addSection(card, state.locale === "en" ? "Working" : "工作中", waitText, "waiting");
             }
             if (item.stdout || item.stdoutPreview || item.failure) {
               addSection(card, item.failure ? (state.locale === "en" ? "Failure" : "异常诊断") : (state.locale === "en" ? "Output" : "执行输出"), item.failure || item.stdout || item.stdoutPreview, "output");

@@ -76,12 +76,13 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     const long = presentation.content.length > 280;
     const preview = long ? `${presentation.content.slice(0, 280).trimEnd()}…` : presentation.content;
     const eventIcon = eventEmoji(presentation.event);
-    const heading = presentation.label
-      ? `<span class="studio-message-event">${eventIcon ? `<span class="studio-message-event-emoji" aria-hidden="true">${eventIcon}</span>` : ""}${esc(presentation.label)}</span><span class="studio-message-content-preview">${esc(preview)}</span>`
-      : `<span class="studio-message-content-preview">${esc(preview)}</span>`;
     const fullId = `studio-message-full-${++messageId}`;
-    const fullText = presentation.fullText || (presentation.label ? `${presentation.label}\n${presentation.content}` : presentation.content);
-    return `<section class="studio-message-section" data-studio-message-section>${sectionLabel ? `<small>${esc(sectionLabel)}</small>` : ""}<div class="studio-message-preview">${heading}</div>${long ? `<button type="button" class="studio-message-more" data-studio-message-more aria-expanded="false" aria-controls="${fullId}">${state.locale === "en" ? "More" : "更多"}</button><pre id="${fullId}" data-studio-message-full hidden>${esc(fullText)}</pre>` : ""}</section>`;
+    const fullText = presentation.fullText || presentation.content;
+    const eventMarkup = presentation.label
+      ? `<span class="studio-message-event">${eventIcon ? `<span class="studio-message-event-emoji" aria-hidden="true">${eventIcon}</span>` : ""}${esc(presentation.label)}</span>`
+      : "";
+    const contentMarkup = `<div class="studio-message-content" data-studio-message-content${long ? ` data-expanded="false"` : ""}>${eventMarkup}<span class="studio-message-text studio-message-content-preview" data-studio-message-preview>${esc(preview)}</span>${long ? `<span id="${fullId}" class="studio-message-text studio-message-content-full" data-studio-message-full hidden>${esc(fullText)}</span>` : ""}</div>`;
+    return `<section class="studio-message-section" data-studio-message-section>${sectionLabel ? `<small>${esc(sectionLabel)}</small>` : ""}${contentMarkup}${long ? `<button type="button" class="studio-message-more" data-studio-message-more aria-expanded="false" aria-controls="${fullId}">${state.locale === "en" ? "More" : "更多"}</button>` : ""}</section>`;
   }
 
   function messageSectionMarkup(label, value) {
@@ -95,10 +96,14 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
   function bindMessageMore(section) {
     section?.querySelector("[data-studio-message-more]")?.addEventListener("click", (event) => {
       const button = event.currentTarget;
-      const pre = section.querySelector("[data-studio-message-full]");
-      if (!pre) return;
+      const content = section.querySelector("[data-studio-message-content]");
+      const preview = section.querySelector("[data-studio-message-preview]");
+      const full = section.querySelector("[data-studio-message-full]");
+      if (!content || !preview || !full) return;
       const expanded = button.getAttribute("aria-expanded") === "true";
-      pre.hidden = expanded;
+      preview.hidden = !expanded;
+      full.hidden = expanded;
+      content.dataset.expanded = String(!expanded);
       button.setAttribute("aria-expanded", String(!expanded));
       button.textContent = expanded ? (state.locale === "en" ? "More" : "更多") : (state.locale === "en" ? "Less" : "收起");
     });

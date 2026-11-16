@@ -19,3 +19,14 @@ test("structured chat expansion keeps natural language content instead of raw JS
   assert.match(markup, /The review is complete\./);
   assert.doesNotMatch(markup, /\\"event\\"|\\"content\\"/);
 });
+
+test("long messages expand inside the original message container", () => {
+  const content = "A structured result that remains readable in the chat. ".repeat(12);
+  const markup = tools.messageBodyMarkup({ event: "READY", content });
+  assert.match(markup, /data-studio-message-content/);
+  assert.match(markup, /data-studio-message-preview/);
+  assert.match(markup, /data-studio-message-full/);
+  assert.match(markup, /aria-controls="studio-message-full-/);
+  assert.doesNotMatch(markup, /<pre[^>]*data-studio-message-full/);
+  assert.doesNotMatch(markup, /\\"event\\"|\\"content\\"/);
+});
